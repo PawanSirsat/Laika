@@ -144,3 +144,42 @@ export const READINESS_WORDS: Readonly<
     notYet: 'The helper has not checked in, so this agent cannot take over work yet.',
   },
 };
+
+/** The last step's three outcomes: the proof is a request **from this agent's own token**. */
+export const VERIFY_STATES = ['waiting', 'verified', 'failed'] as const;
+export type VerifyState = (typeof VERIFY_STATES)[number];
+
+export const VERIFY_WORDS: Readonly<Record<VerifyState, string>> = {
+  waiting: 'Waiting for a request from this agent',
+  verified: 'Verified — this agent reached Laika with its own token',
+  failed: 'Not verified yet',
+};
+
+/**
+ * A project's hand-off policy (proposal §4.5), edited on Settings → Access.
+ * The defaults are the proposal's.
+ */
+export interface HandoffPolicy {
+  readonly allowOtherOwners: boolean;
+  readonly crossOwnerRequiresApproval: boolean;
+  readonly maxHandoffs: number;
+  readonly offerTtlMinutes: number;
+}
+
+export const DEFAULT_HANDOFF_POLICY: HandoffPolicy = {
+  allowOtherOwners: false,
+  crossOwnerRequiresApproval: true,
+  maxHandoffs: 3,
+  offerTtlMinutes: 30,
+};
+
+/** What an offer's lifetime may be set to, in minutes. */
+export const OFFER_TTL_CHOICES = [15, 30, 60, 120] as const;
+
+/**
+ * Project context (proposal §4.6): what Laika can know is that a revision
+ * **reached** a session. It cannot know that the model read or understood it,
+ * and nothing here may say so.
+ */
+export const CONTEXT_RECEIVED_ONLY =
+  'Received means the revision reached that session. It does not mean the agent read or understood it.';

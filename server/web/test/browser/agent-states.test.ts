@@ -75,7 +75,16 @@ void describe('agent states on /design/states (LAI-536)', () => {
         'panel-offered',
         'dialog',
         'inbox',
-        'wizard',
+        'policy-default',
+        'policy-other-owners',
+        'context',
+        'wizard-identity',
+        'wizard-access',
+        'wizard-credential',
+        'wizard-instructions',
+        'verify-waiting',
+        'verify-verified',
+        'verify-failed',
         'credential-created',
         'connected',
         'ready',
@@ -218,13 +227,89 @@ void describe('agent states on /design/states (LAI-536)', () => {
         await specimen(h.page, 'picker').innerText(),
         /Offline\. The work request waits until this agent reconnects\./,
       );
-      // Down past the last pickable agent skips the two that are out.
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('disabled agents are reachable by keyboard, read with their reason, and cannot be chosen', async () => {
+    const h = await gallery();
+    try {
+      const box = specimen(h.page, 'picker').getByRole('combobox', { name: 'Agent' });
+      await box.focus();
       await h.page.keyboard.press('ArrowDown');
       await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
-      for (let i = 0; i < 5; i += 1) await h.page.keyboard.press('ArrowDown');
+      const listId = (await box.getAttribute('aria-controls')) ?? '';
+      const active = async () => {
+        const id = await box.getAttribute('aria-activedescendant');
+        assert.ok(id !== null, 'nothing is active');
+        return h.page.locator(`[id="${id}"]`);
+      };
+      // Claude Code → Codex → Cursor → Gemini CLI, which is disabled: the
+      // arrow stops on it rather than stepping over it.
+      for (let i = 0; i < 3; i += 1) await h.page.keyboard.press('ArrowDown');
+      const gemini = await active();
+      assert.equal(await gemini.getAttribute('data-value'), 'ag-runner');
+      assert.equal(await gemini.getAttribute('aria-disabled'), 'true');
+      // Its accessible name — what a screen reader announces as it becomes
+      // the active descendant — carries the reason.
+      const named = h.page
+        .locator(`[id="${listId}"]`)
+        .getByRole('option', { name: /Gemini CLI .*Not granted on this space/ });
+      assert.equal(await named.count(), 1, 'the reason is not in the option’s accessible name');
+      assert.equal(await named.getAttribute('id'), await gemini.getAttribute('id'));
+      // Enter does not choose it; the list stays open on it.
       await h.page.keyboard.press('Enter');
-      await until(async () => (await box.getAttribute('aria-expanded')) === 'false');
-      assert.equal(await box.getAttribute('data-value'), 'ag-studio');
+      await h.page.waitForTimeout(150);
+      assert.equal(
+        await box.getAttribute('data-value'),
+        'ag-laptop',
+        'a disabled agent was chosen',
+      );
+      assert.equal(await box.getAttribute('aria-expanded'), 'true');
+      // On to the next disabled one, and End lands on the last, also disabled.
+      await h.page.keyboard.press('ArrowDown');
+      assert.equal(await (await active()).getAttribute('data-value'), 'ag-old');
+      assert.match(
+        (await (await active()).innerText()).replace(/\s+/g, ' '),
+        /OpenCode — Sam Reyes · old-laptop Revoked/,
+      );
+      await h.page.keyboard.press('Space');
+      await h.page.waitForTimeout(150);
+      assert.equal(
+        await box.getAttribute('data-value'),
+        'ag-laptop',
+        'Space chose a disabled agent',
+      );
+      if (SHOTS !== undefined) {
+        for (const width of [1440, 390]) {
+          await h.page.setViewportSize({ width, height: 900 });
+          for (const theme of ['light', 'dark']) {
+            await setTheme(h.page, theme);
+            if ((await box.getAttribute('aria-expanded')) !== 'true') {
+              await box.focus();
+              await h.page.keyboard.press('ArrowDown');
+              await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
+              for (let i = 0; i < 3; i += 1) await h.page.keyboard.press('ArrowDown');
+            }
+            await box.scrollIntoViewIfNeeded();
+            await h.page.screenshot({
+              path: join(SHOTS, `agent-picker-disabled-active-${theme}-${String(width)}.png`),
+            });
+          }
+        }
+      }
+      // Up again reaches the enabled ones, and Enter takes Cursor.
+      await h.page.keyboard.press('Escape');
+      await box.focus();
+      await h.page.keyboard.press('ArrowDown');
+      await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
+      await h.page.keyboard.press('End');
+      assert.equal(await (await active()).getAttribute('data-value'), 'ag-old');
+      await h.page.keyboard.press('ArrowUp');
+      await h.page.keyboard.press('ArrowUp');
+      await h.page.keyboard.press('Enter');
+      await until(async () => (await box.getAttribute('data-value')) === 'ag-studio');
     } finally {
       await h.close();
     }
@@ -300,6 +385,145 @@ void describe('agent states on /design/states (LAI-536)', () => {
       await inbox.locator('[data-filter="sent"]').click();
       assert.deepEqual(await kinds(), ['Hand-off', 'Work request']);
       assert.match(await inbox.innerText(), /Expired/);
+      await inbox.locator('[data-filter="needs_approval"]').click();
+      assert.deepEqual(await kinds(), ['Hand-off']);
+      assert.match(await inbox.innerText(), /Waiting for your approval/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('screenshots: every inbox filter, both themes, desktop and phone', async () => {
+    if (SHOTS === undefined) return;
+    for (const width of [1440, 390]) {
+      const h = await gallery(width);
+      try {
+        const inbox = specimen(h.page, 'inbox');
+        for (const theme of ['light', 'dark']) {
+          await setTheme(h.page, theme);
+          for (const filter of ['received', 'sent', 'needs_approval', 'recovery']) {
+            await inbox.locator(`[data-filter="${filter}"]`).click();
+            await until(
+              async () =>
+                (await inbox.locator(`[data-filter="${filter}"]`).getAttribute('aria-pressed')) ===
+                'true',
+            );
+            await inbox.screenshot({
+              path: join(SHOTS, `agent-inbox-${filter}-${theme}-${String(width)}.png`),
+            });
+          }
+        }
+      } finally {
+        await h.close();
+      }
+    }
+  });
+
+  void test('hand-off policy: four settings, approval says why it is off', async () => {
+    const h = await gallery();
+    try {
+      const policy = specimen(h.page, 'policy-default');
+      const switches = policy.getByRole('switch');
+      assert.equal(await switches.count(), 2);
+      const others = policy.getByRole('switch', { name: /Agents other people own/ });
+      const approval = policy.getByRole('switch', { name: /A person approves/ });
+      assert.equal(await others.getAttribute('aria-checked'), 'false');
+      assert.equal(await approval.isDisabled(), true);
+      assert.match(
+        await policy.innerText(),
+        /Applies only when other people’s agents are allowed\./,
+      );
+      assert.equal(
+        await policy.getByRole('spinbutton', { name: 'Hand-offs per task' }).inputValue(),
+        '3',
+      );
+      assert.equal(
+        await policy
+          .getByRole('combobox', { name: 'An offer expires after' })
+          .getAttribute('data-value'),
+        '30',
+      );
+      await others.click();
+      assert.equal(await approval.isDisabled(), false);
+      assert.match(await policy.innerText(), /never the receiver itself/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('project context says received, never understood', async () => {
+    const h = await gallery();
+    try {
+      const ctx = specimen(h.page, 'context');
+      const text = (await ctx.locator('[data-context-revisions]').innerText()).replace(/\s+/g, ' ');
+      assert.match(text, /r14 Current/);
+      assert.match(text, /Received r14/);
+      assert.match(text, /Received r12 — 2 behind/);
+      assert.match(text, /Has not received any revision/);
+      assert.match(text, /Project context changed: r12 → r14/);
+      // "understood" appears once — in the sentence that says it is not known.
+      const rows = await ctx.locator('.agent-ctx-session').allInnerTexts();
+      assert.ok(
+        rows.every((r) => !/understood|has read|knows/i.test(r)),
+        rows.join(' | '),
+      );
+      assert.equal(
+        await ctx.locator('[data-received-only]').innerText(),
+        'Received means the revision reached that session. It does not mean the agent read or understood it.',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the five wizard steps, and verify waiting, verified and failed', async () => {
+    const h = await gallery();
+    try {
+      const where = async (id: string) =>
+        specimen(h.page, id).locator('[aria-current="step"] .reg-step-name').innerText();
+      assert.equal(await where('wizard-identity'), 'Name, harness and device');
+      assert.equal(await where('wizard-access'), 'Projects and permissions');
+      assert.equal(await where('wizard-credential'), 'Credential');
+      assert.equal(await where('wizard-instructions'), 'Harness instructions');
+      assert.equal(await where('verify-failed'), 'Verify a request from this agent');
+
+      const identity = specimen(h.page, 'wizard-identity');
+      assert.equal(
+        await identity.getByRole('textbox', { name: 'Device' }).inputValue(),
+        'laptop-1',
+      );
+      assert.equal(
+        await identity.getByRole('combobox', { name: 'Harness' }).getAttribute('data-value'),
+        'claude-code',
+      );
+      const access = specimen(h.page, 'wizard-access');
+      assert.equal(
+        await access.getByRole('combobox', { name: 'Billing' }).getAttribute('data-value'),
+        'read_only',
+      );
+      const credential = specimen(h.page, 'wizard-credential');
+      assert.match(await credential.innerText(), /Copy this now — it is not shown again/);
+      assert.ok(
+        !(await credential.innerText()).includes('lai_'),
+        'the credential specimen shows something shaped like a real token',
+      );
+      assert.match(
+        await specimen(h.page, 'wizard-instructions').innerText(),
+        /LAIKA_TOKEN[\s\S]*laika agent session start/,
+      );
+      for (const [id, words] of [
+        ['verify-waiting', 'Waiting for a request from this agent'],
+        ['verify-verified', 'Verified — this agent reached Laika with its own token'],
+        ['verify-failed', 'Not verified yet'],
+      ] as const) {
+        const box = specimen(h.page, id).locator('[data-verify]');
+        assert.match(await box.innerText(), new RegExp(words));
+        assert.equal(await box.getAttribute('role'), 'status');
+      }
+      const failed = specimen(h.page, 'verify-failed');
+      assert.match(await failed.innerText(), /signed with your own token, not this agent’s/);
+      await failed.getByRole('button', { name: 'Check again' }).click();
+      assert.match(await failed.innerText(), /Checked again once/);
     } finally {
       await h.close();
     }

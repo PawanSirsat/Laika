@@ -14,7 +14,9 @@
 
 import type { AgentChoice } from '../agent/AgentPicker.tsx';
 import type { PanelAgent, PanelCheckpoint } from '../agent/ExecutionPanel.tsx';
+import type { ContextRevision, ContextSession } from '../agent/ContextRevisions.tsx';
 import type { HandoffItem } from '../agent/handoff-inbox.ts';
+import type { ProjectGrant } from '../agent/RegistrationStep.tsx';
 import type { ExecutionState } from '../agent/agent-states.ts';
 
 export const OWNER = 'Ada Okafor';
@@ -182,3 +184,43 @@ export const INBOX: readonly HandoffItem[] = [
     age: '2 h ago',
   },
 ];
+
+export const REVISIONS: readonly ContextRevision[] = [
+  {
+    revision: 14,
+    author: OWNER,
+    age: '2 h ago',
+    summary: 'Release checklist and the new branch rule',
+  },
+  {
+    revision: 13,
+    author: OTHER_OWNER,
+    age: 'yesterday',
+    summary: 'Importer owns the CSV parser now',
+  },
+  { revision: 12, author: OWNER, age: '3 days ago', summary: 'First brief for the importer work' },
+];
+
+export const CONTEXT_SESSIONS: readonly ContextSession[] = [
+  { id: 's1', agent: LAPTOP, received: 14 },
+  { id: 's2', agent: DESKTOP, received: 12 },
+  { id: 's3', agent: SAMS, received: null },
+];
+
+export const AGENT_NAME = 'Ada’s laptop agent';
+
+export const GRANTS: readonly ProjectGrant[] = [
+  { id: 'p1', name: 'Importer', scope: 'full' },
+  { id: 'p2', name: 'Billing', scope: 'read_only' },
+  { id: 'p3', name: 'Website', scope: 'none' },
+];
+
+/** Not a token, and not shaped like one: tokens start `lai_`. */
+export const EXAMPLE_SECRET = 'EXAMPLE-shown-once-in-the-real-wizard';
+
+export const VERIFIED_DETAIL =
+  'A request signed with this agent’s token arrived from Claude Code on laptop-1, 10 s ago.';
+export const WAITING_DETAIL =
+  'Run laika agent session start on laptop-1. This page updates when the request arrives.';
+export const FAILED_DETAIL =
+  'A request arrived from laptop-1 signed with your own token, not this agent’s. Check LAIKA_TOKEN in the agent’s environment.';

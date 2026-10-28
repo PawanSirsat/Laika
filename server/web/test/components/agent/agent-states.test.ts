@@ -10,7 +10,10 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import type { AgentChoice } from '../../../src/components/agent/AgentPicker.tsx';
 import {
+  CONTEXT_RECEIVED_ONLY,
+  DEFAULT_HANDOFF_POLICY,
   EXECUTION_STATE_WORDS,
   EXECUTION_STATES,
   HANDOFF_FILTER_WORDS,
@@ -21,6 +24,8 @@ import {
   RECEIVER_MUST_ACCEPT,
   REGISTRATION_STEPS,
   VERIFICATION_WORDS,
+  VERIFY_STATES,
+  VERIFY_WORDS,
 } from '../../../src/components/agent/agent-states.ts';
 import { code } from '../../helpers/code.ts';
 
@@ -75,6 +80,36 @@ void describe('every state proposal §6 names has words', () => {
       Object.values(READINESS_WORDS).map((w) => w.label),
       ['Credential created', 'Connected', 'Ready for recovery'],
     );
+  });
+});
+
+void describe('the rest of §6, and §4.5 and §4.6', () => {
+  void test('verify has three outcomes, each in words', () => {
+    assert.deepEqual([...VERIFY_STATES], ['waiting', 'verified', 'failed']);
+    assert.match(VERIFY_WORDS.verified, /its own token/);
+    assert.equal(new Set(Object.values(VERIFY_WORDS)).size, 3);
+  });
+
+  void test('the hand-off policy defaults are the proposal’s (§4.5)', () => {
+    assert.deepEqual(DEFAULT_HANDOFF_POLICY, {
+      allowOtherOwners: false,
+      crossOwnerRequiresApproval: true,
+      maxHandoffs: 3,
+      offerTtlMinutes: 30,
+    });
+  });
+
+  void test('context says received, and says that is not understood (§4.6)', () => {
+    assert.match(CONTEXT_RECEIVED_ONLY, /^Received means the revision reached that session\./);
+    assert.match(CONTEXT_RECEIVED_ONLY, /does not mean the agent read or understood it/);
+  });
+
+  void test('an agent that cannot be picked must carry a reason (compile-time)', () => {
+    const base = { id: 'x', client: 'codex', owner: 'Someone', device: 'box' } as const;
+    // @ts-expect-error — LAI-536: `unavailable` without a reason must not type-check.
+    const silent: AgentChoice = { ...base, availability: 'unavailable' };
+    const said: AgentChoice = { ...base, availability: 'unavailable', reason: 'Revoked' };
+    assert.equal(silent.availability, said.availability);
   });
 });
 

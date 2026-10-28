@@ -2,17 +2,29 @@ import { useRef, useState, type ReactNode } from 'react';
 import { AgentChip } from '../agent/AgentChip.tsx';
 import { AgentPicker, choiceLabel, NO_AGENT } from '../agent/AgentPicker.tsx';
 import { AgentReadiness } from '../agent/AgentReadiness.tsx';
-import { RegistrationSteps } from '../agent/RegistrationSteps.tsx';
+import { ContextRevisions } from '../agent/ContextRevisions.tsx';
+import { HandoffPolicyForm } from '../agent/HandoffPolicyForm.tsx';
+import { RegistrationStep, type WizardStep } from '../agent/RegistrationStep.tsx';
 import { ExecutionPanel, type PanelAgent } from '../agent/ExecutionPanel.tsx';
 import { ExecutionStateLine } from '../agent/ExecutionStateLine.tsx';
 import { HandoffDialog } from '../agent/HandoffDialog.tsx';
 import { HandoffInbox } from '../agent/HandoffInbox.tsx';
-import type { ExecutionState, HandoffFilter } from '../agent/agent-states.ts';
+import {
+  DEFAULT_HANDOFF_POLICY,
+  type ExecutionState,
+  type HandoffFilter,
+  type HandoffPolicy,
+} from '../agent/agent-states.ts';
 import {
   AGENT_CHOICES,
+  AGENT_NAME,
   CARD_STATES,
+  CONTEXT_SESSIONS,
   CARD_TITLE,
   DESKTOP,
+  EXAMPLE_SECRET,
+  FAILED_DETAIL,
+  GRANTS,
   HANDOFF_NOTE,
   HANDOFF_REASON,
   INBOX,
@@ -20,11 +32,14 @@ import {
   OTHER_OWNER,
   OWNER,
   PENDING,
+  REVISIONS,
   SAMS,
   TASK_KEY,
   VERIFIED,
   VERIFIED_NO_NOTE,
+  VERIFIED_DETAIL,
   VERIFIED_OLD_NOTE,
+  WAITING_DETAIL,
 } from './agent-state-fixtures.ts';
 import './agent-state-gallery.css';
 
@@ -183,11 +198,110 @@ export default function AgentStateGallery() {
           <InboxSpecimen />
         </Specimen>
         <Specimen
-          id="wizard"
-          title="Agents tab — registration steps"
-          note="Five steps. Here, on the third: the credential."
+          id="policy-default"
+          title="Settings → Access — hand-off policy, defaults"
+          note="Other owners’ agents off; approval greyed out with the reason; three hand-offs; 30 minutes."
         >
-          <RegistrationSteps current={2} />
+          <PolicySpecimen initial={DEFAULT_HANDOFF_POLICY} />
+        </Specimen>
+        <Specimen
+          id="policy-other-owners"
+          title="Settings → Access — other owners allowed"
+          note="Approval between owners on: a person approves, never the receiver."
+        >
+          <PolicySpecimen initial={{ ...DEFAULT_HANDOFF_POLICY, allowOtherOwners: true }} />
+        </Specimen>
+        <Specimen
+          id="context"
+          title="Project context — revisions and who received them"
+          note="Received is all Laika can know. It never says a session understood anything."
+          wide
+        >
+          <ContextRevisions revisions={REVISIONS} sessions={CONTEXT_SESSIONS} />
+        </Specimen>
+        <Specimen
+          id="wizard-identity"
+          title="Register an agent — 1. name, harness and device"
+          note="Harness and device are self-reported, and the step says so."
+        >
+          <WizardSpecimen
+            initial={{
+              kind: 'identity',
+              name: AGENT_NAME,
+              client: 'claude-code',
+              device: 'laptop-1',
+            }}
+          />
+        </Specimen>
+        <Specimen
+          id="wizard-access"
+          title="Register an agent — 2. projects and permissions"
+          note="Never more than the owner can do: the overlap of their role and this."
+        >
+          <WizardSpecimen initial={{ kind: 'access', grants: GRANTS }} />
+        </Specimen>
+        <Specimen
+          id="wizard-credential"
+          title="Register an agent — 3. credential, shown once"
+          note="The example here is not a token. The real one is shown once, then only rotated."
+        >
+          <WizardSpecimen
+            initial={{ kind: 'credential', agentName: AGENT_NAME, secret: EXAMPLE_SECRET }}
+          />
+        </Specimen>
+        <Specimen
+          id="wizard-instructions"
+          title="Register an agent — 4. harness instructions"
+          note="Where the token goes, and the one command to run."
+        >
+          <WizardSpecimen
+            initial={{ kind: 'instructions', client: 'claude-code', device: 'laptop-1' }}
+          />
+        </Specimen>
+        <Specimen
+          id="verify-waiting"
+          title="Register an agent — 5. verify, waiting"
+          note="Nothing has called in with this agent’s token yet."
+        >
+          <WizardSpecimen
+            initial={{
+              kind: 'verify',
+              state: 'waiting',
+              client: 'claude-code',
+              device: 'laptop-1',
+              detail: WAITING_DETAIL,
+            }}
+          />
+        </Specimen>
+        <Specimen
+          id="verify-verified"
+          title="Register an agent — 5. verify, verified"
+          note="Proved by a request from this agent’s own token — not yours."
+        >
+          <WizardSpecimen
+            initial={{
+              kind: 'verify',
+              state: 'verified',
+              client: 'claude-code',
+              device: 'laptop-1',
+              detail: VERIFIED_DETAIL,
+            }}
+          />
+        </Specimen>
+        <Specimen
+          id="verify-failed"
+          title="Register an agent — 5. verify, failed"
+          note="Says what arrived instead, and what to check."
+        >
+          <WizardSpecimen
+            initial={{
+              kind: 'verify',
+              state: 'failed',
+              client: 'claude-code',
+              device: 'laptop-1',
+              detail: FAILED_DETAIL,
+            }}
+          />
         </Specimen>
         <Specimen
           id="credential-created"
@@ -367,4 +481,30 @@ function DialogLaunchers() {
 function InboxSpecimen() {
   const [filter, setFilter] = useState<HandoffFilter>('received');
   return <HandoffInbox items={INBOX} filter={filter} onFilter={setFilter} />;
+}
+
+function PolicySpecimen({ initial }: { readonly initial: HandoffPolicy }) {
+  const [policy, setPolicy] = useState(initial);
+  return <HandoffPolicyForm policy={policy} onChange={setPolicy} mayEdit />;
+}
+
+function WizardSpecimen({ initial }: { readonly initial: WizardStep }) {
+  const [step, setStep] = useState(initial);
+  const [checks, setChecks] = useState(0);
+  return (
+    <>
+      <RegistrationStep
+        step={step}
+        onStep={setStep}
+        onRetry={() => {
+          setChecks((n) => n + 1);
+        }}
+      />
+      {checks > 0 && (
+        <p className="agent-gallery-legend">
+          Checked again {checks === 1 ? 'once' : `${String(checks)} times`} — still the same answer.
+        </p>
+      )}
+    </>
+  );
 }
