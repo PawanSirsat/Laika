@@ -269,7 +269,12 @@ function world(options: { readonly role?: 'lead' | 'viewer' } = {}): World {
     }
     if (sent === undefined) return current;
     const from = (current.selected_agent as { id?: string } | null)?.id ?? null;
-    Object.assign(current, { selected_agent: sent === null ? null : viewOf(sent) });
+    // Every write moves `updated_at` forward, as the server's does — the
+    // drawer tells a newer read from an older one by it.
+    Object.assign(current, {
+      selected_agent: sent === null ? null : viewOf(sent),
+      updated_at: Math.max(Number(current.updated_at) + 1, Date.now()),
+    });
     activity.unshift(
       event({
         type: 'task.agent_selected',
@@ -898,19 +903,71 @@ void describe('who an agent’s activity row says acted', () => {
 });
 
 void describe('a selection still in flight when the drawer moves on', () => {
+  /** A promise for the next response matching method, path and status — set up before acting. */
+  const nextResponse = (
+    h: Harness,
+    method: string,
+    path: string | RegExp,
+    status?: number,
+  ): Promise<unknown> =>
+    h.page.waitForResponse(
+      (r) => {
+        const at = new URL(r.url()).pathname;
+        return (
+          r.request().method() === method &&
+          (typeof path === 'string' ? at === path : path.test(at)) &&
+          (status === undefined || r.status() === status)
+        );
+      },
+      { timeout: 15_000 },
+    );
+
+  /** A gate a route waits on, opened by the test. */
+  const gate = () => {
+    let open: () => void = () => undefined;
+    const shut = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    return { shut, open: () => open() };
+  };
+
+  const settledRow = async (h: Harness, value: string, line: RegExp | null) => {
+    const box = await agentBox(h);
+    const row = await agentRow(h);
+    await until(
+      async () =>
+        (await box.getAttribute('data-value')) === value &&
+        !(await row.innerText()).includes('Saving agent') &&
+        (line === null
+          ? !(await row.innerText()).includes('Waiting for agent')
+          : line.test(await row.innerText())),
+    );
+    assert.equal(await box.getAttribute('data-value'), value);
+    assert.doesNotMatch(await row.innerText(), /Saving agent/);
+    if (line === null) assert.doesNotMatch(await row.innerText(), /Waiting for agent/);
+    else assert.match(await row.innerText(), line);
+    assert.equal(await row.getByRole('alert').count(), 0);
+    assert.equal(await box.isDisabled(), false);
+  };
+
+  const LAPTOP_LINE = /Waiting for agent · Ada Lovelace’s Claude Code · laptop-1/;
+  const DESKTOP_LINE = /Waiting for agent · Ada Lovelace’s Codex · desktop-2/;
+
+  const goTo = async (h: Harness, id: string, title: string) => {
+    await navigateInApp(h.page, `/board?project=laika-core&task=${id}`);
+    await h.page.getByRole('dialog').filter({ hasText: title }).waitFor({ timeout: 10_000 });
+  };
+
   void test('stays with its own task: the next task shows its own agent and can be picked', async () => {
     const { stub } = world();
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let held = false;
+    const held = gate();
+    let sent = false;
     const h = await open('/board?project=laika-core&task=t2', stub, {
       before: async (page) => {
         await page.route('**/api/v1/tasks/t2', async (route) => {
           if (route.request().method() === 'PATCH') {
-            held = true;
-            await gate;
+            sent = true;
+            await held.shut;
           }
           await route.continue();
         });
@@ -920,53 +977,34 @@ void describe('a selection still in flight when the drawer moves on', () => {
       const box = await agentBox(h);
       await until(async () => (await box.getAttribute('data-value')) === 'ag-laptop');
       await pick(box, 'ag-desktop');
-      await until(() => held);
-      assert.ok(held, 'the PATCH on LC-2 was never sent — nothing was tested');
+      await until(() => sent);
+      assert.ok(sent, 'the PATCH on LC-2 was never sent — nothing was tested');
 
-      // The reader moves on before LC-2's answer comes back.
-      await navigateInApp(h.page, '/board?project=laika-core&task=t1');
-      await h.page
-        .getByRole('dialog')
-        .filter({ hasText: 'Wire the agent field' })
-        .waitFor({ timeout: 10_000 });
-      await until(async () => (await box.getAttribute('data-value')) === '');
-      assert.equal(await box.getAttribute('data-value'), '', 'LC-2’s pending agent shows on LC-1');
-      assert.equal(await box.isDisabled(), false);
-      const row = await agentRow(h);
-      assert.doesNotMatch(await row.innerText(), /Waiting for agent/);
+      await goTo(h, 't1', 'Wire the agent field');
+      await settledRow(h, '', null);
 
       // LC-1 can be picked while LC-2's write is still out.
+      const t1Done = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
       await pick(box, 'ag-laptop');
-      await until(() => patches(h, 't1').length > 0);
-      assert.deepEqual(patches(h, 't1')[0]?.body, { selected_agent_id: 'ag-laptop' });
-      await until(async () => (await row.innerText()).includes('Waiting for agent'));
+      await t1Done;
+      await settledRow(h, 'ag-laptop', LAPTOP_LINE);
 
-      // LC-2's answer arrives late, and changes nothing here.
-      release();
-      await until(() => patches(h, 't2').length > 0);
+      // LC-2's answer arrives late — awaited, not slept on — and changes nothing here.
+      const t2Done = nextResponse(h, 'PATCH', '/api/v1/tasks/t2', 200);
+      held.open();
+      await t2Done;
       assert.deepEqual(patches(h, 't2')[0]?.body, { selected_agent_id: 'ag-desktop' });
-      await h.page.waitForTimeout(400);
-      assert.equal(await box.getAttribute('data-value'), 'ag-laptop');
-      assert.equal(await row.getByRole('alert').count(), 0);
-      assert.match(
-        await row.innerText(),
-        /Waiting for agent · Ada Lovelace’s Claude Code · laptop-1/,
-      );
+      await settledRow(h, 'ag-laptop', LAPTOP_LINE);
     } finally {
-      release();
+      held.open();
       await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
   });
 
-  void test('an old request on a task, answered after a newer one there, changes nothing', async () => {
-    // A → B → back to A, then a second pick on A. The first A request rejects
-    // last; the newer A selection and no error must survive it.
+  void test('A → B → back to A: an old write still out holds A, and its late refusal is not shown', async () => {
     const { stub } = world();
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const held = gate();
     let t1Patches = 0;
     const h = await open('/board?project=laika-core&task=t1', stub, {
       before: async (page) => {
@@ -974,7 +1012,7 @@ void describe('a selection still in flight when the drawer moves on', () => {
           if (route.request().method() !== 'PATCH') return route.continue();
           t1Patches += 1;
           if (t1Patches > 1) return route.continue();
-          await gate;
+          await held.shut;
           return route.fulfill({
             status: 422,
             contentType: 'application/json',
@@ -995,42 +1033,163 @@ void describe('a selection still in flight when the drawer moves on', () => {
       await until(() => t1Patches === 1);
       assert.equal(t1Patches, 1, 'the first LC-1 request was never sent');
 
-      await navigateInApp(h.page, '/board?project=laika-core&task=t2');
-      await h.page
-        .getByRole('dialog')
-        .filter({ hasText: 'Chip on the card' })
-        .waitFor({ timeout: 10_000 });
-      await until(async () => (await box.getAttribute('data-value')) === 'ag-laptop');
-      await pick(box, 'ag-desktop');
-      await until(() => patches(h, 't2').length > 0);
+      await goTo(h, 't2', 'Chip on the card');
+      await settledRow(h, 'ag-laptop', LAPTOP_LINE);
 
-      await navigateInApp(h.page, '/board?project=laika-core&task=t1');
-      await h.page
-        .getByRole('dialog')
-        .filter({ hasText: 'Wire the agent field' })
-        .waitFor({ timeout: 10_000 });
-      await until(async () => (await box.getAttribute('data-value')) === '');
-      await pick(box, 'ag-laptop');
-      await until(() => patches(h, 't1').length > 0);
-      assert.equal(t1Patches, 2, 'the newer LC-1 request was blocked');
+      // Back on LC-1 with its first write still out: held, and said.
+      await goTo(h, 't1', 'Wire the agent field');
       const row = await agentRow(h);
-      await until(async () => (await row.innerText()).includes('Waiting for agent'));
+      await until(async () => (await row.innerText()).includes('Saving agent…'));
+      assert.match(await row.innerText(), /Saving agent…/);
+      assert.equal(await box.isDisabled(), true, 'a second write on LC-1 could start');
+      await box.click({ force: true });
+      assert.equal(t1Patches, 1, 'a second LC-1 write went out over the first');
 
-      // Now the first LC-1 request answers, late, with a refusal.
-      release();
-      await h.page.waitForTimeout(500);
-      assert.equal(await box.getAttribute('data-value'), 'ag-laptop');
-      assert.equal(await row.getByRole('alert').count(), 0, 'the stale refusal was shown');
-      assert.match(
-        await row.innerText(),
-        /Waiting for agent · Ada Lovelace’s Claude Code · laptop-1/,
-      );
+      // The old write is refused — the response itself is awaited.
+      const refused = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 422);
+      held.open();
+      await refused;
+      await settledRow(h, '', null);
+
+      // Now the reader's pick goes out, alone, and stands.
+      const done = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+      await pick(box, 'ag-laptop');
+      await done;
+      assert.equal(t1Patches, 2);
+      await settledRow(h, 'ag-laptop', LAPTOP_LINE);
     } finally {
-      release();
+      held.open();
       await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
   });
+
+  void test('an old withdraw held across a revisit lands first; the reader’s last pick is what the server holds', async () => {
+    const { stub, tasks } = world();
+    const held = gate();
+    let t2Patches = 0;
+    const h = await open('/board?project=laika-core&task=t2', stub, {
+      before: async (page) => {
+        await page.route('**/api/v1/tasks/t2', async (route) => {
+          if (route.request().method() === 'PATCH') {
+            t2Patches += 1;
+            // The withdraw waits here, before it reaches the server.
+            if (t2Patches === 1) await held.shut;
+          }
+          await route.continue();
+        });
+      },
+    });
+    try {
+      const box = await agentBox(h);
+      await until(async () => (await box.getAttribute('data-value')) === 'ag-laptop');
+      await pick(box, '');
+      await until(() => t2Patches === 1);
+
+      await goTo(h, 't1', 'Wire the agent field');
+      await goTo(h, 't2', 'Chip on the card');
+      const row = await agentRow(h);
+      await until(async () => (await row.innerText()).includes('Saving agent…'));
+      assert.equal(await box.isDisabled(), true);
+      // The newer selection cannot overtake the withdraw.
+      await box.click({ force: true });
+      assert.equal(t2Patches, 1, 'a select went out while the withdraw was still in flight');
+
+      const withdrawn = nextResponse(h, 'PATCH', '/api/v1/tasks/t2', 200);
+      held.open();
+      await withdrawn;
+      await settledRow(h, '', null);
+
+      const selected = nextResponse(h, 'PATCH', '/api/v1/tasks/t2', 200);
+      await pick(box, 'ag-desktop');
+      await selected;
+      await settledRow(h, 'ag-desktop', DESKTOP_LINE);
+
+      // The server holds the reader's last intent, in the order it was asked.
+      const t2 = tasks.find((t) => t.id === 't2');
+      assert.equal((t2?.selected_agent as { id?: string } | null)?.id, 'ag-desktop');
+      assert.deepEqual(
+        patches(h, 't2').map((c) => c.body),
+        [{ selected_agent_id: null }, { selected_agent_id: 'ag-desktop' }],
+      );
+    } finally {
+      held.open();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  for (const [what, second, value, line] of [
+    ['a newer select', 'ag-desktop', 'ag-desktop', DESKTOP_LINE],
+    ['a withdraw', '', '', null],
+  ] as const) {
+    void test(`${what} confirmed after the read caught up to the earlier one still shows`, async () => {
+      // Confirm X → send Y → the read reaches X while Y is out → Y confirms,
+      // and its follow-up read fails. The drawer must show Y, not X.
+      const { stub } = world();
+      let reads: 'pass' | 'hold' | 'fail' = 'pass';
+      const readGate = gate();
+      const patchGate = gate();
+      let t1Patches = 0;
+      const fail = {
+        status: 500,
+        contentType: 'application/json',
+        body: '{"error":{"code":"internal","message":"down"}}',
+      };
+      const read = async (route: Parameters<Parameters<Page['route']>[1]>[0]) => {
+        if (reads === 'hold') await readGate.shut;
+        if (reads === 'fail') return route.fulfill(fail);
+        return route.continue();
+      };
+      const h = await open('/board?project=laika-core&task=t1', stub, {
+        before: async (page) => {
+          await page.route('**/api/v1/tasks/t1', async (route) => {
+            if (route.request().method() !== 'PATCH') return read(route);
+            t1Patches += 1;
+            if (t1Patches === 2) await patchGate.shut;
+            return route.continue();
+          });
+          await page.route('**/api/v1/projects/laika-core/tasks**', read);
+        },
+      });
+      try {
+        const box = await agentBox(h);
+        reads = 'hold';
+        const first = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+        await pick(box, 'ag-laptop');
+        await first;
+        await settledRow(h, 'ag-laptop', LAPTOP_LINE);
+
+        await pick(box, second);
+        await until(() => t1Patches === 2);
+
+        // The held read now lands, carrying X.
+        const caughtUp = nextResponse(h, 'GET', /\/api\/v1\/projects\/laika-core\/tasks$/, 200);
+        reads = 'pass';
+        readGate.open();
+        await caughtUp;
+
+        // Y confirms; every read after it fails.
+        reads = 'fail';
+        const confirmed = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+        const failedRead = nextResponse(
+          h,
+          'GET',
+          /\/api\/v1\/(projects\/laika-core\/tasks|tasks\/t1)$/,
+          500,
+        );
+        patchGate.open();
+        await confirmed;
+        await failedRead;
+        await settledRow(h, value, line);
+      } finally {
+        readGate.open();
+        patchGate.open();
+        await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+        await h.close();
+      }
+    });
+  }
 
   void test('a confirmed write shows, and the picker stays usable, when the follow-up read fails', async () => {
     const { stub } = world();
@@ -1057,23 +1216,25 @@ void describe('a selection still in flight when the drawer moves on', () => {
     });
     try {
       const box = await agentBox(h);
-      await pick(box, 'ag-laptop');
-      await until(() => patches(h, 't1').length === 1);
-      const row = await agentRow(h);
-      await until(async () => (await row.innerText()).includes('Waiting for agent'));
-      assert.equal(await box.getAttribute('data-value'), 'ag-laptop');
-      assert.match(
-        await row.innerText(),
-        /Waiting for agent · Ada Lovelace’s Claude Code · laptop-1/,
+      const first = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+      // Proof the follow-up read really failed, not just that a flag was set.
+      const failedRead = nextResponse(
+        h,
+        'GET',
+        /\/api\/v1\/(projects\/laika-core\/tasks|tasks\/t1)$/,
+        500,
       );
-      assert.ok(failReads, 'the follow-up read was never made to fail — nothing was tested');
+      await pick(box, 'ag-laptop');
+      await first;
+      await failedRead;
+      await settledRow(h, 'ag-laptop', LAPTOP_LINE);
 
-      // Not held by a refresh that will never come: the next pick goes out.
+      // Not held by a refresh that will never come: the next pick goes out and settles.
+      const second = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
       await pick(box, 'ag-desktop');
-      await until(() => patches(h, 't1').length === 2);
+      await second;
       assert.deepEqual(patches(h, 't1')[1]?.body, { selected_agent_id: 'ag-desktop' });
-      await until(async () => (await box.getAttribute('data-value')) === 'ag-desktop');
-      assert.equal(await box.getAttribute('data-value'), 'ag-desktop');
+      await settledRow(h, 'ag-desktop', DESKTOP_LINE);
     } finally {
       await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
