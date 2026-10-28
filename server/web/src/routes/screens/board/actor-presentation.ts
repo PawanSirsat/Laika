@@ -1,5 +1,6 @@
 import type { ActivityEvent } from '../../../api/activity.ts';
 import type { Member } from '../../../api/tasks.ts';
+import { agentVia, type AgentNaming } from '../../../api/selected-agent.ts';
 
 /**
  * Who did this, and how it is marked (SPEC §7, LAI-411).
@@ -35,6 +36,20 @@ export type ActorBadge = 'agent' | 'system';
 export interface ActorPresentation {
   readonly name: string;
   readonly badge: ActorBadge | undefined;
+  /**
+   * On an agent's row, **which** agent (LAI-538): *Claude Code · laptop-1*
+   * where the reader can name it, *a registered agent* where they cannot, and
+   * *agent (unregistered token)* for a legacy token, whose rows carry no
+   * `agent_id`. The person stays the name — the agent acted *for* them.
+   */
+  readonly via: string | undefined;
+}
+
+const NO_AGENTS: ReadonlyMap<string, AgentNaming> = new Map();
+
+/** *Pawan via Claude Code · laptop-1*, or the name alone on a person's row. */
+export function actorLine(actor: ActorPresentation): string {
+  return actor.via === undefined ? actor.name : `${actor.name} via ${actor.via}`;
 }
 
 /** What Laika calls itself when it acts. */
@@ -48,16 +63,21 @@ const SYSTEM_NAME = 'Laika';
 const UNKNOWN_NAME = 'Someone';
 
 export function describeActor(
-  event: Pick<ActivityEvent, 'actor_id' | 'actor_kind'>,
+  event: Pick<ActivityEvent, 'actor_id' | 'actor_kind' | 'agent_id'>,
   members: ReadonlyMap<string, Member>,
+  agents: ReadonlyMap<string, AgentNaming> | undefined = NO_AGENTS,
 ): ActorPresentation {
   switch (event.actor_kind) {
     case 'system':
-      return { name: SYSTEM_NAME, badge: 'system' };
+      return { name: SYSTEM_NAME, badge: 'system', via: undefined };
     case 'agent':
-      return { name: nameOf(event.actor_id, members), badge: 'agent' };
+      return {
+        name: nameOf(event.actor_id, members),
+        badge: 'agent',
+        via: agentVia(event, agents),
+      };
     case 'user':
-      return { name: nameOf(event.actor_id, members), badge: undefined };
+      return { name: nameOf(event.actor_id, members), badge: undefined, via: undefined };
   }
 }
 

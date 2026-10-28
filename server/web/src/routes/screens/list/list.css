@@ -136,6 +136,32 @@
 .list-col-spr {
   width: 2.875rem;
 }
+/* The agent's mark and device (LAI-538); a long device ellipsises. Drawn
+   only in a space that uses agents, and then **added** to the minimum, so
+   SUMMARY keeps its room — the table scrolls in its card instead. */
+.list-with-agent {
+  min-width: 78.25rem;
+}
+.list-col-agent {
+  width: 6.5rem;
+}
+.list-agent-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+.list-agent-cell .agent-mark {
+  flex: none;
+}
+.list-agent-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* **Wide enough for the longest date, on one line** (LAI-491). The design's
    84px was sized for `6d`; D-065's labels run to `25 Aug 2025, 01:01` — 18
    mono characters at 10px plus the cell's padding. Both columns hold the same

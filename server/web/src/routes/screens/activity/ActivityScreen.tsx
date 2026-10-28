@@ -8,6 +8,8 @@ import { listMembers, type Member, type TaskSummary } from '../../../api/tasks.t
 import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { staleTasks } from '../../../api/board-derive.ts';
 import { ActivityPanels } from './ActivityPanels.tsx';
+import { agentNamesFrom } from '../../../api/selected-agent.ts';
+import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import './activity.css';
 
 export interface ActivityScreenProps {
@@ -69,6 +71,17 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
     };
   }, [slug]);
 
+  /*
+   * Which agent wrote a row, where this reader may see it (LAI-538 review):
+   * their own agents, and those selected on the space's tasks. Above the
+   * early returns, as every hook must be.
+   */
+  const myAgents = useMyAgents();
+  const agentNames = useMemo(
+    () => agentNamesFrom(agentsOf(myAgents), tasks ?? []),
+    [myAgents, tasks],
+  );
+
   if (slug === undefined) {
     return <EmptyState headline="No space chosen" body="Pick a space to see its activity." />;
   }
@@ -124,6 +137,7 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
         events={stream.recent}
         gapped={stream.gapped}
         members={members}
+        agentNames={agentNames}
         presence={presence}
         stale={stale}
       />

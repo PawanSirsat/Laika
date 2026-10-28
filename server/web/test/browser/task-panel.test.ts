@@ -241,6 +241,8 @@ void describe('the task panel', () => {
        */
       assert.deepEqual(labels, [
         'assignee',
+        // The agent meant to do the work, under the person accountable (LAI-538).
+        'agent',
         'priority',
         'parent',
         'due date',
@@ -337,15 +339,22 @@ void describe('the task panel', () => {
       assert.equal(m.avatar, 36);
 
       /*
-       * **`X's agent`, not `X`.** An agent comment was written by a tool
-       * running as somebody, and the possessive is the honest attribution.
+       * **`X via …`, not `X` and not `X's agent`** (LAI-538, D-114). An agent
+       * comment was written by a tool acting for somebody: the person, then
+       * the agent — by name where its activity row says which, *agent
+       * (unregistered token)* for a legacy token's, and only *an agent* here,
+       * where the fixture serves no activity row to say either.
        */
       assert.ok(
-        m.names.some((n) => n.endsWith("'s agent")),
+        m.names.some((n) => n.endsWith(' via an agent')),
         `no agent attribution: ${m.names.join(', ')}`,
       );
       assert.ok(
-        m.names.some((n) => !n.endsWith("'s agent")),
+        m.names.every((n) => !/['’]s agent$/.test(n)),
+        `an agent comment invents whose agent it was: ${m.names.join(', ')}`,
+      );
+      assert.ok(
+        m.names.some((n) => !n.includes(' via ')),
         'every comment claims to be an agent',
       );
 
@@ -473,33 +482,29 @@ void describe('the task panel', () => {
     }
   });
 
-  void test('the invented claim deadline cannot reach a production build', async () => {
+  void test('no invented claim deadline, agent build or hand-off button is drawn', async () => {
     /*
-     * **D-032, asserted from the outside.**
+     * **D-032, asserted from the outside — and now for every build.**
      *
-     * A claim has no TTL: `POST /tasks/:id/claim` is a compare-and-swap and
-     * nothing expires it. The design draws *"until 14:32"*, so the panel can
-     * only show one from `demo/agent-runtime.ts` — and that file must be
-     * incapable of reaching a normal build, because a self-hoster reading an
-     * expiry would wait for a lock that never lapses.
-     *
-     * The harness builds without `VITE_LAIKA_DEMO=1`, so this is that build.
-     * The first version of this test asserted the *opposite* — that the line is
-     * on screen — and failed, which is the guarantee working rather than a bug.
+     * `demo/agent-runtime.ts` drew three things Laika did not have: a claim
+     * deadline (*"until 14:32"*), the agent's version and token scope, and a
+     * *Hand to my agent* button with no endpoint. LAI-541 made claims real,
+     * with a lease the server keeps, so LAI-543 deleted the file and every
+     * caller. What the drawer says about a claim now comes from the task's
+     * own activity (`agent-execution.test.ts`).
      */
     const h = await open('/board?project=laika-core', STUB);
     try {
       await openSubject(h);
 
-      // Positive control: the task is assigned, so a demo build would draw it.
+      // Positive control: the task is assigned, so the old demo would draw it.
       assert.match(await h.page.locator('.drawer').innerText(), /Ada Lovelace/);
 
-      assert.equal(
-        await h.page.locator('.claim-lock').count(),
-        0,
-        'an invented claim deadline reached a production build',
-      );
-      assert.doesNotMatch(await h.page.locator('.drawer').innerText(), /has the claim until/i);
+      const drawer = await h.page.locator('.drawer').innerText();
+      assert.doesNotMatch(drawer, /claim lock until|has the claim until/i);
+      assert.doesNotMatch(drawer, /hand to my agent/i);
+      assert.doesNotMatch(drawer, /placeholder/i);
+      assert.equal(await h.page.locator('.meta-placeholder, .meta-sub-claim').count(), 0);
     } finally {
       await h.close();
     }

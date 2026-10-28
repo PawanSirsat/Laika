@@ -44,9 +44,10 @@ import { ApiError } from '../errors.ts';
 import { assertCan, effectiveProjectRole } from '../policy/can.ts';
 import {
   assertClaimFence,
+  claimFenceRefusal,
   claimView,
+  holdsLiveClaim,
   hasOpenWorkRequest,
-  liveClaim,
   registeredAgent,
   releaseLiveClaim,
   takeClaim,
@@ -483,10 +484,19 @@ export function assertMayCloseReview(
   actor: ServiceCaller,
   task: { assigneeId: string | null; projectId: string },
   to: 'review' | 'done',
+  /**
+   * The caller's agent holds the task's live claim (LAI-541). A claim does not
+   * assign (D-114 item 7), so on a task **nobody is assigned to** the agent
+   * working it answers this rule as an assignee would; the fence has already
+   * checked its generation. On a task another person is assigned to it does
+   * not: the rule is asked of the agent's owner (`actor.userId`), and an agent
+   * is never more than its owner (D-114).
+   */
+  holdsClaim = false,
 ): void {
   if (isSystemPrincipal(actor)) return;
   const scoped = withProject(actor, task.projectId);
-  const isAssignee = task.assigneeId === actor.userId;
+  const isAssignee = task.assigneeId === actor.userId || (holdsClaim && task.assigneeId === null);
   // The effective role: a lead by membership, or by *Open every project*
   // (§3, LAI-958) — which is what an owner and, by default, an admin hold.
   const isLeadOrAbove = effectiveProjectRole(scoped) === 'lead';
@@ -1564,19 +1574,17 @@ export interface StartWorkingOptions {
  *
  * The API twin of the file-move lock the build sessions use by hand — getting it
  * wrong puts two agents on one task. The swap runs inside `BEGIN IMMEDIATE` and
- * the `UPDATE` itself carries the assignee it read, so the check and the write
+ * the `UPDATE` itself carries `assignee_id IS NULL`, so the check and the write
  * cannot be separated by another writer. A loser is told **who** holds it, since
  * "conflict" alone does not tell an agent what to do next.
  *
  * ## A registered agent's claim (LAI-541)
  *
- * On top of everything above, its session takes the task's one live claim
- * (`takeClaim`). **The human assignee is never moved for it** (D-114 item 7):
- * an unassigned task is assigned to the agent's owner exactly as any claim
- * assigns it, recorded on the claim's `task.status_changed` row; a task the
- * owner already holds stays theirs; and a task held by **someone else** may be
- * claimed only when a work request asks this agent for it — and stays theirs.
- * A legacy token cannot claim a task an agent's session holds (D-114 item 6).
+ * Takes a different path, {@link agentStartWorking}: its session takes the
+ * task's one live claim, and **`assignee_id` is never written** (D-114 item 7).
+ * A person and a legacy token claim by assignee, as above — and a legacy token
+ * cannot claim a task an agent's session holds, or whose claim lapsed (D-114
+ * item 6).
  */
 export function startWorking(
   sqlite: Database.Database,
@@ -1596,22 +1604,12 @@ export function startWorking(
     const before = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
     const from = statusRow(db, project.id, before.statusId)!;
 
-    // D-114 item 6: a token with no agent cannot take what a session holds.
-    if (agent === null && actor.token !== null && actor.token !== undefined) {
-      const live = liveClaim(db, taskId);
-      if (live !== undefined) {
-        throw new ApiError('conflict', 'A registered agent holds this task', {
-          reason: 'claim_held',
-          task_id: taskId,
-          agent_id: live.agentId,
-        });
-      }
-    }
+    if (agent !== null) return agentStartWorking(db, actor, project, before, from, options, now);
 
-    // Asked for this agent by a work request (LAI-535): it may work a task
-    // somebody else is accountable for, without becoming accountable itself.
-    const requested = agent !== null && hasOpenWorkRequest(db, taskId, agent.id);
-    const holdsIt = before.assigneeId === actor.userId || (requested && before.assigneeId !== null);
+    // D-114 item 6: a token with no agent cannot take what a session holds,
+    // or a claim that lapsed and waits for recovery.
+    const refusal = claimFenceRefusal(db, actor, taskId, now);
+    if (refusal !== null) throw refusal;
 
     // The holder's own claim of a task already under way is a **mark, not a
     // move** (LAI-770 review, B2, the owner's decision): a session resuming the
@@ -1619,32 +1617,13 @@ export function startWorking(
     // its tokens tied to nothing. It keeps the branch it is given and changes
     // nothing else — no status, no activity row, `started_at` and the frozen
     // estimate untouched. Anyone else, and a holder whose task is not in
-    // progress, still hear who has it below. A registered agent's session
-    // takes — or resumes — its claim here too, and a claim it newly takes is
-    // recorded as the field it is (D-027's shape), so it is never silent.
-    if (holdsIt && before.status === 'in_progress') {
-      const taken =
-        agent === null ? null : takeClaim(db, actor, before, { sessionId: options.sessionId, now });
+    // progress, still hear who has it below.
+    if (before.assigneeId === actor.userId && before.status === 'in_progress') {
       if (onBranch !== undefined && onBranch !== before.branch) {
         db.update(tasks)
           .set({ branch: onBranch, updatedAt: now })
           .where(eq(tasks.id, taskId))
           .run();
-      }
-      if (taken !== null && !taken.resumed) {
-        appendActivity(db, {
-          orgId: project.orgId,
-          projectId: project.id,
-          taskId,
-          ...activityActor(actor),
-          type: 'task.updated',
-          payload: {
-            field: 'claim',
-            from: null,
-            to: { generation: taken.claim.generation, session_id: taken.claim.sessionId },
-          },
-          now,
-        });
       }
       return {
         task: viewOne(
@@ -1652,15 +1631,11 @@ export function startWorking(
           db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
           project.prefix,
         ),
-        claim: taken === null ? null : claimView(taken.claim),
+        claim: null,
       };
     }
-    // Held first, so a second claimant still hears **who** has it (AC3). An
-    // agent asked by a work request, or acting for the person who holds it,
-    // goes on (LAI-541); a person keeps today's rule — an assigned task is
-    // somebody's.
-    const mayTakeAssigned = agent !== null && holdsIt;
-    if (before.assigneeId !== null && !mayTakeAssigned) {
+    // Held first, so a second claimant still hears **who** has it (AC3).
+    if (before.assigneeId !== null) {
       throw new ApiError('conflict', 'That task is already claimed', {
         assignee_id: before.assigneeId,
         status: before.status,
@@ -1673,29 +1648,16 @@ export function startWorking(
     // took anything unassigned: a cancelled task came back to life, a done one
     // reopened, and one in review skipped the person's decision — none of
     // which `changeStatus` would have let the same caller do.
-    if (!CLAIMABLE.includes(before.status)) {
-      throw new ApiError(
-        'unprocessable',
-        `Only a task in a backlog, to-do or released in-progress status can be claimed; this one is in ${from.name}`,
-        { from: before.status, to: 'in_progress', allowed_from: CLAIMABLE },
-      );
-    }
-    // The agent's claim before the task moves, so a refusal leaves the task
-    // exactly as it was.
-    const taken =
-      agent === null ? null : takeClaim(db, actor, before, { sessionId: options.sessionId, now });
+    assertClaimable(before, from);
     // A released task stays in the in-progress status it was in; anything else
     // lands in the project's first visible one (LAI-738).
     const to =
       before.status === 'in_progress' ? from : statusForCategory(db, project.id, 'in_progress');
-    // Never moved for a claim: an unassigned task becomes its claimant's (or
-    // its claimant's owner's), an assigned one stays whose it is.
-    const assignee = before.assigneeId ?? actor.userId;
 
     const changed = db
       .update(tasks)
       .set({
-        assigneeId: assignee,
+        assigneeId: actor.userId,
         status: 'in_progress',
         statusId: to.id,
         // The **first** entry to `in_progress` (§4.5), as `changeStatus`
@@ -1706,14 +1668,7 @@ export function startWorking(
         ...(onBranch === undefined ? {} : { branch: onBranch }),
         updatedAt: now,
       })
-      .where(
-        and(
-          eq(tasks.id, taskId),
-          before.assigneeId === null
-            ? isNull(tasks.assigneeId)
-            : eq(tasks.assigneeId, before.assigneeId),
-        ),
-      )
+      .where(and(eq(tasks.id, taskId), isNull(tasks.assigneeId)))
       .run();
 
     if (changed.changes === 0) {
@@ -1738,26 +1693,142 @@ export function startWorking(
         from: before.status,
         to: 'in_progress',
         ...statusPayload(from, to),
-        assignee_id: assignee,
+        assignee_id: actor.userId,
         via: 'claim',
-        ...(taken === null ? {} : { claim_generation: taken.claim.generation }),
       },
       now,
     });
 
-    // What the claimant said, then the forecast work starts under (D-085
-    // items 4–5) — the freeze at the first start only, as `started_at` is.
-    // After the activity row and best effort, so neither can cost the claim
-    // its record (LAI-771 review, B1).
-    if (estimate !== undefined) recordClaimEstimate(db, actor, taskId, estimate, now);
-    if (before.startedAt === null) freezeEstimateAtStart(db, taskId, now);
-    else if (estimate !== undefined) refreshEstimate(db, taskId, now);
+    afterStart(db, actor, taskId, before.startedAt, estimate, now);
 
     return {
       task: viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix),
-      claim: taken === null ? null : claimView(taken.claim),
+      claim: null,
     };
   });
+}
+
+/** Where a claim may start from (§5, M7), or `422` naming the status. */
+function assertClaimable(before: TaskRow, from: StatusRef): void {
+  if (CLAIMABLE.includes(before.status)) return;
+  throw new ApiError(
+    'unprocessable',
+    `Only a task in a backlog, to-do or released in-progress status can be claimed; this one is in ${from.name}`,
+    { from: before.status, to: 'in_progress', allowed_from: CLAIMABLE },
+  );
+}
+
+/**
+ * What the claimant said, then the forecast work starts under (D-085 items
+ * 4–5) — the freeze at the first start only, as `started_at` is. After the
+ * activity row and best effort, so neither can cost the claim its record
+ * (LAI-771 review, B1).
+ */
+function afterStart(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  startedAt: number | null,
+  estimate: ClaimEstimateInput | undefined,
+  now: number,
+): void {
+  if (estimate !== undefined) recordClaimEstimate(db, actor, taskId, estimate, now);
+  if (startedAt === null) freezeEstimateAtStart(db, taskId, now);
+  else if (estimate !== undefined) refreshEstimate(db, taskId, now);
+}
+
+/**
+ * A registered agent's `start_working` (§5, §4.66, LAI-541): its session takes
+ * — or resumes — the task's one live claim, and **`assignee_id` is never
+ * written** (D-114 item 7: the assignee, the selected agent and the claim are
+ * three facts, and changing the assignee is always its own explicit act). An
+ * unassigned task stays unassigned; the claim is the lock.
+ *
+ * Whose task it may take: an unassigned one, its owner's, or — only when an
+ * open work request asks this agent for it — somebody else's. From where: §5's
+ * claimable statuses. A task not yet in progress moves there, as any claim
+ * moves it; one already in progress is a claim on work under way, recorded as
+ * `task.updated` with `field: "claim"` (a resume records nothing).
+ */
+function agentStartWorking(
+  db: Db,
+  actor: ResolvedActor,
+  project: typeof projects.$inferSelect,
+  before: TaskRow,
+  from: StatusRef,
+  options: StartWorkingOptions,
+  now: number,
+): StartedWork {
+  const taskId = before.id;
+  const onBranch = options.branch?.trim() === '' ? undefined : options.branch?.trim();
+  const agent = registeredAgent(actor)!;
+
+  const requested = hasOpenWorkRequest(db, taskId, agent.id);
+  if (before.assigneeId !== null && before.assigneeId !== actor.userId && !requested) {
+    throw new ApiError('conflict', 'That task is already claimed', {
+      assignee_id: before.assigneeId,
+      status: before.status,
+    });
+  }
+  assertClaimable(before, from);
+
+  // The claim before the task moves, so a refusal leaves the task exactly as it was.
+  const taken = takeClaim(db, actor, before, { sessionId: options.sessionId, now });
+
+  if (before.status === 'in_progress') {
+    if (onBranch !== undefined && onBranch !== before.branch) {
+      db.update(tasks).set({ branch: onBranch, updatedAt: now }).where(eq(tasks.id, taskId)).run();
+    }
+    if (!taken.resumed) {
+      appendActivity(db, {
+        orgId: project.orgId,
+        projectId: project.id,
+        taskId,
+        ...activityActor(actor),
+        type: 'task.updated',
+        payload: {
+          field: 'claim',
+          from: null,
+          to: { generation: taken.claim.generation, session_id: taken.claim.sessionId },
+        },
+        now,
+      });
+    }
+  } else {
+    const to = statusForCategory(db, project.id, 'in_progress');
+    db.update(tasks)
+      .set({
+        status: 'in_progress',
+        statusId: to.id,
+        startedAt: before.startedAt ?? now,
+        ...(onBranch === undefined ? {} : { branch: onBranch }),
+        updatedAt: now,
+      })
+      .where(eq(tasks.id, taskId))
+      .run();
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId,
+      ...activityActor(actor),
+      type: 'task.status_changed',
+      // No `assignee_id`: a claim does not assign (D-114 item 7).
+      payload: {
+        from: before.status,
+        to: 'in_progress',
+        ...statusPayload(from, to),
+        via: 'claim',
+        claim_generation: taken.claim.generation,
+      },
+      now,
+    });
+    afterStart(db, actor, taskId, before.startedAt, options.estimate, now);
+  }
+
+  return {
+    task: viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix),
+    claim: claimView(taken.claim),
+  };
 }
 
 /**
@@ -1879,7 +1950,9 @@ export function changeStatus(
   // resolved to, holding `task.write` and nothing else**. It cannot widen into
   // "the system may do anything" without §3.4 changing, and §3.4 is a document
   // somebody reads. `assertMayCloseReview` returns for it.
-  if (to === 'review' || to === 'done') assertMayCloseReview(actor, task, to);
+  if (to === 'review' || to === 'done') {
+    assertMayCloseReview(actor, task, to, holdsLiveClaim(db, actor, taskId));
+  }
 
   db.update(tasks)
     .set({

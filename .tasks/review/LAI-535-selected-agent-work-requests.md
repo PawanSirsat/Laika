@@ -164,3 +164,20 @@ exactly:
 
 The `server` and `cli` workspaces are green. Lint and format exit 0.
 
+
+## Review follow-ups (CORE, 2026-10-28)
+
+Codex reviewed PR #105 twice, and each round was fixed in new commits only.
+
+- **At `38ab6851` (PASS, two non-blocking items).**
+  - `list_ready_tasks` now applies `project` and `limit` to `work_requests`. The REST twin takes `?project=`.
+  - Added a pagination regression test: requests at one timestamp, read across continuation cursors.
+- **At `1f146d93` (FAIL, one blocking item: project-existence probing).**
+  - The bug: the slug was looked up before authorisation, so an existing project the agent has no grant on answered `403 agent_not_granted`, and a made-up slug answered `404`.
+  - The fix: the slug is now resolved only among the projects the agent may read (its grants ∩ its owner's `project.read`, with `can()` applying the token's own narrowing).
+  - Real-but-ungranted and made-up slugs now get one refusal, the same on both: `403 forbidden`, `{ action: 'project.read', reason: 'agent_not_granted' }`, with no slug or id in the body. 403 is how `can()` already answers an agent outside its grants.
+  - MCP `list_ready_tasks` asks the work-request question first on an agent's token, so its `project` argument gives the same answer before the task list's own lookup can run.
+  - Regressions assert identical status and body over REST, and identical content over MCP. Reintroducing the lookup before authorisation turned both red; the file was restored and checksum-verified.
+  - SPEC §6.4 is updated.
+
+**Not changed, and outside this task.** The rest of the API still answers a real-but-unreadable project slug `403` and an unknown one `404`. For example, `GET /projects/:slug` and the task list for a legacy token or a person. That is the existing convention and was left alone; only this endpoint and the agent path of `list_ready_tasks` are made uniform here.
