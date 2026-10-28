@@ -357,6 +357,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.estimate.refit', {}],
     ['system.time.prune', {}],
     ['system.idempotency.prune', {}],
+    ['system.claim.expire', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
   ];

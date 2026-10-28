@@ -4,6 +4,7 @@ import type Database from 'better-sqlite3';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
+import { reclaimTask } from '../services/claims.ts';
 import { addComment } from '../services/comments.ts';
 import {
   getProjectContext,
@@ -26,12 +27,12 @@ import {
   assertTaskExists,
   changeStatus,
   CLAIM_CONFIDENCES,
-  claimTask,
   createTask,
   finishTask,
   getTask,
   resolveTaskRef,
   SIZE_LEVELS,
+  startWorking,
   TASK_PRIORITIES,
   TASK_STATUSES,
   updateTask,
@@ -159,6 +160,24 @@ const ASSIGNEE_REF = z
   .max(320)
   .describe('A user id, or the email of a project member. `null` unassigns.');
 
+/**
+ * The claim generation a registered agent's change acts under (proposal §4.2,
+ * LAI-541) — REST's `X-Laika-Claim-Generation`. Set on the actor for that one
+ * call, so the fence in the shared service reads it as it reads the header.
+ */
+const CLAIM_GENERATION = z
+  .number()
+  .int()
+  .min(1)
+  .optional()
+  .describe(
+    'The `generation` of the claim `start_working` gave your session. Required on a task your session holds; a stale one is refused with `conflict`, `reason: stale_claim`.',
+  );
+
+function underClaim(actor: ResolvedActor, generation: number | undefined): ResolvedActor {
+  return generation === undefined ? actor : { ...actor, claimGeneration: generation };
+}
+
 export interface WriteToolContext {
   db: Db;
   sqlite: Database.Database;
@@ -284,7 +303,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Start working on a task',
       description:
-        "Claim a task and move it to in_progress. Claim before you write any code for it, and pass the `branch` you work on — name it after the key, `LAI-42-short-name` — so the task keeps it and the tokens your session spends are tied to this task. Optionally pass your own `estimate`: a `size` (the effort, XS–XL, relative to this project's typical task) and a `confidence` (green, yellow, red) that it will land as asked. It is kept, scored against what happens, and moves the forecast only once estimates here have beaten the project median. Call it also when the task is already yours and in progress, as when you resume it: that changes nothing but the branch and marks the task as the one you are on, and keeps no estimate. Fails with `conflict` if somebody else holds it — check the error before assuming you have it.",
+        "Claim a task and move it to in_progress. Claim before you write any code for it, and pass the `branch` you work on — name it after the key, `LAI-42-short-name` — so the task keeps it and the tokens your session spends are tied to this task. Optionally pass your own `estimate`: a `size` (the effort, XS–XL, relative to this project's typical task) and a `confidence` (green, yellow, red) that it will land as asked. It is kept, scored against what happens, and moves the forecast only once estimates here have beaten the project median. Call it also when the task is already yours and in progress, as when you resume it: that changes nothing but the branch and marks the task as the one you are on, and keeps no estimate. Fails with `conflict` if somebody else holds it — check the error before assuming you have it. On a registered agent's token it also takes the task's exclusive `claim` for your session: keep its `session_id` and `generation`, pass `session_id` on your next `start_working`, and `claim_generation` on every change to the task. Calling it again from the same session renews the claim. If your claim expired, `reclaim: true` takes it back at a new generation — the old one is never valid again.",
       inputSchema: z.strictObject({
         task: TASK_REF,
         branch: z.string().max(200).optional(),
@@ -297,26 +316,58 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .describe(
             'Your own estimate at claim (D-085): `size` is the effort relative to the typical task here, `confidence` green, yellow or red.',
           ),
+        session_id: z
+          .string()
+          .min(1)
+          .max(64)
+          .optional()
+          .describe(
+            'A registered agent only: the session to claim under, as an earlier `start_working` returned it. Absent opens a new session.',
+          ),
+        reclaim: z
+          .boolean()
+          .optional()
+          .describe(
+            'A registered agent only: take back a task whose claim of yours expired, at the next generation. Nothing else changes.',
+          ),
       }),
     },
-    ({ task, branch, estimate }) => {
+    ({ task, branch, estimate, session_id, reclaim }) => {
       try {
-        // `claimTask` already refuses a claimed task with `conflict` and names the
-        // current assignee in `details` — surfaced as-is rather than reworded,
-        // because §7.2 wants an agent branching on the code, not parsing prose.
-        const claimed = claimTask(
-          sqlite,
-          db,
-          actor,
-          resolveTaskRef(db, task, actor),
-          clock(),
+        const id = resolveTaskRef(db, task, actor);
+        const now = clock();
+
+        // The explicit reclaim (proposal §4.2): its own service, one
+        // `BEGIN IMMEDIATE`, the same one `POST /tasks/:id/claim/reclaim` runs.
+        if (reclaim === true) {
+          const taken = reclaimTask(sqlite, db, actor, id, { sessionId: session_id, now });
+          const view = getTask(db, actor, id);
+          return answer(
+            `Reclaimed \`${view.key}\` at generation ${String(taken.claim.generation)}; generation ${String(taken.from_generation)} is no longer valid.`,
+            { task: view, claim: taken.claim },
+          );
+        }
+
+        // `startWorking` already refuses a claimed task with `conflict` and names
+        // the current assignee — or the claim's `reason` — in `details`,
+        // surfaced as-is rather than reworded, because §7.2 wants an agent
+        // branching on the code, not parsing prose.
+        const started = startWorking(sqlite, db, actor, id, {
+          now,
           branch,
           estimate,
-        );
-
-        return answer(`Claimed \`${claimed.key}\` — now ${statusText(claimed)}.`, {
-          task: claimed,
+          sessionId: session_id,
         });
+        const claimed = started.task;
+
+        return answer(
+          `Claimed \`${claimed.key}\` — now ${statusText(claimed)}.${
+            started.claim === null
+              ? ''
+              : ` Your session \`${started.claim.session_id}\` holds it at generation ${String(started.claim.generation)}; send \`claim_generation: ${String(started.claim.generation)}\` with every change.`
+          }`,
+          { task: claimed, claim: started.claim },
+        );
       } catch (error) {
         return toolError(error);
       }
@@ -337,15 +388,22 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         // `status`, so every caller written against the enum is unchanged.
         status: z.string().trim().min(1).max(40),
         note: z.string().max(10_000).optional(),
+        claim_generation: CLAIM_GENERATION,
       }),
     },
-    ({ task, status, note }) => {
+    ({ task, status, note, claim_generation }) => {
       try {
         const id = resolveTaskRef(db, task, actor);
         const now = clock();
 
         const category = TASK_STATUSES.find((s) => s === status);
-        const moved = changeStatus(db, actor, id, category ?? { status_name: status }, now);
+        const moved = changeStatus(
+          db,
+          underClaim(actor, claim_generation),
+          id,
+          category ?? { status_name: status },
+          now,
+        );
         // The note is a comment, not a field: §4.5 has nowhere to put it, and a
         // status change with an explanation is exactly what a comment is for.
         if (note !== undefined && note.trim() !== '') addComment(db, actor, id, note, now);
@@ -437,11 +495,13 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .max(EVIDENCE_LIMITS.tests)
           .optional()
           .describe('Each test, lint or build command you ran, with its exit code.'),
+        claim_generation: CLAIM_GENERATION,
       }),
     },
-    ({ task, summary, checklist, commits, branch, pull_request, tests }) => {
+    ({ task, summary, checklist, commits, branch, pull_request, tests, claim_generation }) => {
       try {
-        const finished = finishTask(sqlite, db, actor, resolveTaskRef(db, task, actor), {
+        const claimed = underClaim(actor, claim_generation);
+        const finished = finishTask(sqlite, db, claimed, resolveTaskRef(db, task, actor), {
           summary,
           ...(checklist === undefined ? {} : { checklist }),
           ...(commits === undefined ? {} : { commits }),
@@ -599,6 +659,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .describe(
             'Select a registered agent (its id) to do this task — a work request; it does not assign or claim it. Only your own agents, active and granted full access here. `null` withdraws the request.',
           ),
+        claim_generation: CLAIM_GENERATION,
       }),
     },
     ({
@@ -616,10 +677,12 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       size,
       external_ref,
       agent,
+      claim_generation,
     }) => {
       try {
         const id = resolveTaskRef(db, task, actor);
         const now = clock();
+        const claimed = underClaim(actor, claim_generation);
 
         const assigneeId =
           assignee === undefined || assignee === null
@@ -631,7 +694,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
                 assignee,
               );
 
-        const updated = updateTask(db, actor, id, {
+        const updated = updateTask(db, claimed, id, {
           ...(title === undefined ? {} : { title }),
           ...(description === undefined ? {} : { description_md: description }),
           ...(acceptance === undefined ? {} : { acceptance_md: acceptance }),
@@ -653,7 +716,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         // service pair `set_task_sprint` calls, so both tools take one path and
         // the activity row says `sprint.tasks_changed` either way.
         const after =
-          sprint === undefined ? updated : moveTaskToSprint(sqlite, db, actor, id, sprint, now);
+          sprint === undefined ? updated : moveTaskToSprint(sqlite, db, claimed, id, sprint, now);
 
         return answer(`Updated \`${after.key}\` — ${after.priority}, ${statusText(after)}.`, {
           task: after,
@@ -677,14 +740,15 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         sprint: SPRINT_REF.nullable().describe(
           'The sprint to put it in, or `null` to take it out.',
         ),
+        claim_generation: CLAIM_GENERATION,
       }),
     },
-    ({ task, sprint }) => {
+    ({ task, sprint, claim_generation }) => {
       try {
         const moved = moveTaskToSprint(
           sqlite,
           db,
-          actor,
+          underClaim(actor, claim_generation),
           resolveTaskRef(db, task, actor),
           sprint,
           clock(),

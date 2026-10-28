@@ -74,6 +74,8 @@ describe('migrations', () => {
     'activity',
     // LAI-534, D-114: what each registered agent may reach.
     'agent_project_grants',
+    // LAI-541: an agent's running processes, and the claims they hold.
+    'agent_sessions',
     // LAI-833: when the agent worked, by session and five minutes.
     'agent_time_buckets',
     // LAI-787, D-088: Claude Code's active time, agent minutes.
@@ -120,6 +122,7 @@ describe('migrations', () => {
     'tags',
     // LAI-772, D-085: what a claimant said at claim, as append-only history.
     'task_claim_estimates',
+    'task_claims',
     'task_dependencies',
     // LAI-771, D-085: sizes and forecasts, as append-only history.
     'task_estimates',

@@ -4,9 +4,14 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildJobs, startScheduler, type SchedulerDeps } from '../../src/jobs/scheduler.ts';
 import { newId } from '../../src/db/ids.ts';
-import { heartbeats, localActivityDays, users } from '../../src/db/schema.ts';
+import { eq } from 'drizzle-orm';
+import { heartbeats, localActivityDays, taskClaims, users } from '../../src/db/schema.ts';
+import { loadActor, resolveTokenActor } from '../../src/auth/resolve-actor.ts';
+import { registerAgent } from '../../src/services/agents.ts';
+import { configureClaims, DEFAULT_CLAIM_TIMINGS } from '../../src/services/claims.ts';
+import { createTask, startWorking } from '../../src/services/tasks.ts';
 import { captureLog, type CapturedLog } from '../helpers/app.ts';
-import { freshDb, seed, type TestDb } from '../helpers/db.ts';
+import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
  * §11.6's one in-process scheduler (LAI-431).
@@ -21,6 +26,7 @@ const NOW = 1_800_000_000_000;
 let t: TestDb;
 let dir: string;
 let log: CapturedLog;
+let seeded: Seed;
 
 /** A timer that never fires by itself — the test decides when a tick happens. */
 function fakeTimers() {
@@ -54,7 +60,7 @@ function deps(extra: Partial<SchedulerDeps> = {}): SchedulerDeps {
 
 beforeEach(() => {
   t = freshDb();
-  seed(t.db);
+  seeded = seed(t.db);
   dir = mkdtempSync(join(tmpdir(), 'laika-cron-'));
   log = captureLog();
 });
@@ -71,6 +77,7 @@ describe('the jobs §11.6 names', () => {
 
     expect(names).toEqual([
       'backup.snapshot',
+      'claim.expiry',
       'db.vacuum',
       'estimate.refit',
       'heartbeat.retention',
@@ -292,6 +299,48 @@ describe('logging', () => {
     // A nightly "deleted 0" in every log for a year is how the one that says
     // 40000 goes unnoticed.
     expect(log.find('cron.job_ran')).toBeUndefined();
+    scheduler.stop();
+  });
+});
+
+describe('claim.expiry across a restart (§9.1, proposal §4.2, LAI-541)', () => {
+  afterEach(() => {
+    configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+  });
+
+  it('runs every scan interval, configurable per deployment', () => {
+    configureClaims({ timings: { ...DEFAULT_CLAIM_TIMINGS, scanMs: 7_000 } });
+    expect(buildJobs(deps()).find((j) => j.name === 'claim.expiry')?.everyMs).toBe(7_000);
+    configureClaims({ timings: DEFAULT_CLAIM_TIMINGS });
+    expect(buildJobs(deps()).find((j) => j.name === 'claim.expiry')?.everyMs).toBe(30_000);
+  });
+
+  it('expires nothing during the boot grace, then everything overdue on the first scan after it', async () => {
+    const s = seeded;
+    const owner = loadActor(t.db, s.userId)!;
+    const { secret } = registerAgent(t.sqlite, t.db, owner, {
+      displayName: 'Restart',
+      harness: 'claude-code',
+      grants: [{ projectId: s.projectId, scope: 'full' }],
+    });
+    const agent = resolveTokenActor(t.db, secret, NOW);
+    const taskId = createTask(t.sqlite, t.db, owner, 'laika', { title: 'Held', now: NOW }).id;
+    startWorking(t.sqlite, t.db, agent, taskId, { now: NOW });
+
+    // The server stops, and comes back twenty minutes later: every lease is overdue.
+    const boot = NOW + 20 * 60_000;
+    configureClaims({ bootedAt: boot });
+    let clock = boot + 1_000;
+    const scheduler = startScheduler(deps({ ...fakeTimers(), now: () => clock }));
+    const state = () =>
+      t.db.select().from(taskClaims).where(eq(taskClaims.taskId, taskId)).get()?.state;
+
+    expect((await scheduler.runOnce('claim.expiry'))?.changed).toBe(0);
+    expect(state()).toBe('active');
+
+    clock = boot + DEFAULT_CLAIM_TIMINGS.heartbeatMs;
+    expect((await scheduler.runOnce('claim.expiry'))?.changed).toBe(1);
+    expect(state()).toBe('expired');
     scheduler.stop();
   });
 });

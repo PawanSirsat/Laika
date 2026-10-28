@@ -5,6 +5,7 @@ import { newId } from '../db/ids.ts';
 import { agentProjectGrants, agents, handoffOffers, projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
+import { liveClaim } from './claims.ts';
 
 /**
  * A task's selected agent and the work request it opens (D-114 item 7,
@@ -123,14 +124,20 @@ export function assertAgentSelectable(
 }
 
 /**
- * **The seam for LAI-541 and LAI-546.** Changing the selected agent while a
- * session holds the task's live claim must go through a hand-off (proposal §3);
- * claims do not exist yet, so there is nothing to refuse and this returns. A
- * test pins today's behaviour and names both tasks, so the day `task_claims`
- * lands, the test that must change is the one that says so.
+ * Changing the selected agent while a session holds the task's live claim
+ * must go through a hand-off (proposal §3) — LAI-546's. Until hand-offs
+ * exist it is refused: `409 conflict`, `reason: claim_held`, the fence's
+ * own reason (LAI-541), naming the agent that holds it. A task with no live
+ * claim — never claimed, released, or expired — changes freely.
  */
-export function assertSelectionChangeAllowed(_db: Db, _task: TaskRow): void {
-  // TODO(LAI-541, LAI-546): refuse `409` while a live claim is held.
+export function assertSelectionChangeAllowed(db: Db, task: TaskRow): void {
+  const live = liveClaim(db, task.id);
+  if (live === undefined) return;
+  throw new ApiError(
+    'conflict',
+    'An agent session holds this task; changing the agent needs a hand-off',
+    { reason: 'claim_held', task_id: task.id, agent_id: live.agentId, field: 'selected_agent_id' },
+  );
 }
 
 /**

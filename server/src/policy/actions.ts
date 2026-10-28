@@ -140,6 +140,9 @@ export const SYSTEM_ACTIONS = [
   // §11.6: the idempotency store's expired rows, and the rows written before
   // LAI-534 excluded one-time secrets from it (Codex review of PR #102).
   'system.idempotency.prune',
+  // §11.6: a claim whose lease lapsed is marked `expired` (proposal §4.2,
+  // LAI-541) — nobody did it, so nobody is the actor.
+  'system.claim.expire',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];

@@ -47,6 +47,7 @@ import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts
 import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
 import { eventRoutes } from './http/routes/events.ts';
 import { agentRoutes } from './http/routes/agents.ts';
+import { agentSessionRoutes } from './http/routes/agent-sessions.ts';
 import { tokenRoutes, userTokenRoutes } from './http/routes/tokens.ts';
 import { mcpRoutes } from './http/routes/mcp.ts';
 import { meetingReviewRoutes, projectMeetingReviewRoutes } from './http/routes/meeting-reviews.ts';
@@ -365,6 +366,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/tokens`, tokenRoutes({ db, sqlite: options.sqlite }));
     // D-114 (LAI-534): a person's registered agents and their credentials.
     app.route(`${API_BASE}/agents`, agentRoutes({ db, sqlite: options.sqlite }));
+    app.route(`${API_BASE}/agent-sessions`, agentSessionRoutes({ db, sqlite: options.sqlite }));
     app.route(
       `${API_BASE}/invites`,
       inviteRoutes({ db, auth: options.auth, publicUrl: options.publicUrl }),

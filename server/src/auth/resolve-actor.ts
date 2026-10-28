@@ -48,6 +48,14 @@ export interface ResolvedActor extends Actor {
   name: string;
   /** Every project the user belongs to, so `/me` can report them (§6.4). */
   memberships: { projectId: string; role: ProjectRole }[];
+  /**
+   * The claim generation this request says it acts under (proposal §4.2,
+   * LAI-541): REST's `X-Laika-Claim-Generation`, MCP's `claim_generation`.
+   * **A claim, not a credential** — the fence in `services/claims.ts` checks it
+   * against the task's live claim and the token's agent, and it grants
+   * nothing by itself. Absent when the caller sent none.
+   */
+  claimGeneration?: number | undefined;
 }
 
 export interface ResolveActorOptions {

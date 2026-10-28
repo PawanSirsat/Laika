@@ -229,6 +229,11 @@ const UNPAIRED = new Map<string, string>([
   // task drawer's Agent field (LAI-538) brings the mirror.
   ['SelectedAgentView', 'no client type exists'],
   ['WorkRequestView', 'no client type exists'],
+  // LAI-541's sessions and claims; the execution states (LAI-543) bring the
+  // mirror. Served to an agent, not yet read by the web client.
+  ['AgentSessionView', 'no client type exists'],
+  ['TaskClaimView', 'no client type exists'],
+  ['ReclaimView', 'no client type exists'],
 ]);
 
 /**
