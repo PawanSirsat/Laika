@@ -41,7 +41,7 @@ silent reassignment.
 - [x] A change with a stale generation gets `409 stale_claim` on REST and on MCP; a sweep lists every task-mutating path and each is asserted fenced (census, not a sample).
 - [x] With an injected clock, a lease past expiry is marked `expired` by the next scan and a `claim_expired` row is written.
 - [x] After a simulated restart nothing expires during the boot grace, then overdue leases expire on the first scan.
-- [x] Repo-root gate exits 0, or red only on the client mirror assertion quoted verbatim, which LAI-543 turns green.
+- [ ] Repo-root gate exits 0, or red only on the client mirror assertion quoted verbatim, which LAI-543 turns green. **Not met as written:** `pnpm test` exits 1, and not only on LAI-543's mirror. The verb mirror reds (activity-labels, dashboard-derive, stream types) are turned green by **LAI-543** (with LAI-538). `endpoint-coverage` is red for the four agent-only routes, which only **LAI-567** turns green; that red falls outside the mirror exception. The client/server drift red is LAI-535's, unchanged, and goes with LAI-538. `pnpm lint` and `pnpm format` exit 0.
 - [x] Once a claim is `expired`, requests carrying its generation get `409 stale_claim` even after the same session's heartbeats resume (asserted with an injected clock).
 - [x] Reclaim by the old session inserts a new claim at `generation + 1` and writes `claim_reclaimed`; the old generation stays refused afterwards (asserted on REST and MCP).
 - [x] Reclaim re-checks permissions: a revoked agent or a token without `full` scope is refused with a specific `code`.
@@ -189,3 +189,35 @@ on. Claims made by people or legacy tokens (the assignee CAS) never expire,
 which is LAIKA-489's remaining scope. Sessions of a single agent share one
 credential: the generation fences a stale writer, but not a second process of
 the same agent that reads the live generation.
+
+## Review fixes (Codex cross-vendor review of #107 at `3e17cfad`: FAIL)
+
+All six blocking findings are fixed in new commits only, with no rebase, amend or force-push.
+
+1. **Omitting the generation got round an expired claim.** The fence's rule is now four ordered steps (`claimFenceRefusal`):
+   - The system and a person signed in pass.
+   - A live claim admits only its holder's agent, with the live generation.
+   - A **lapsed** claim (`expired` or `transferred`, task still in progress) refuses every token, with or without a generation. The old holder gets `stale_claim` with `reclaim: true`; anyone else gets `claim_held`.
+   - A task nobody holds lets a token change it without a generation; a generation sent there is `stale_claim`.
+
+   Test B1 ×4.
+2. **The census missed indirect changes.** These are now fenced for every task they would touch: sprint delete, tag rename and delete, and offboarding (member removal or deactivation with `open_tasks`). Status delete was already fenced through `changeStatus`. The presence heartbeat still answers 202, but it no longer writes its branch onto a claimed task unless the beat comes from the holder's agent.
+
+   The REST census now reads **`h.app.routes`**, every mounted mutating route (more than 100), and classifies each as FENCED (with a probe that checks the task row, its tags and its dependencies are unchanged) or NOT_FENCED with a reason. The MCP census still reads a live `listTools()`.
+
+   LAI-534's heartbeat `can()` fix is **not yet on `origin/LAI-534-registered-agents`**. Nothing came after `63dff7e3` when checked on 2026-10-28, so the claim fence went in on its own, and LAI-534's fix will merge beside it.
+3. **Reclaim trusted the cached actor.** It now reloads the token, agent, owner and grant inside its `BEGIN IMMEDIATE`, with refusals `agent_revoked`, `token_revoked`, `token_read_only`, `owner_inactive` and `agent_not_granted`/`agent_read_only`. Tests B3 ×2, plus a read-only token narrowed in the database.
+4. **Reclaim ignored the task's status.** It now requires `in_progress`; anything else is `409 task_not_claimable`. Test B4.
+5. **A claim assigned the task.** An agent's claim never writes `assignee_id`, and an unassigned task stays unassigned. One flow relied on that assignment: §5's review rule, which only an assignee, a lead or an admin passes. The holder of the live claim now answers that rule as the assignee would, so `finish_task` still works on an unassigned task. `isReady` already excludes `in_progress`, so a claimed task is never listed as ready. Tests B5 ×2, and the claim payload no longer carries `assignee_id`. SPEC §5, §6.3, §6.4, §7.1, §9.1.1 and §11.6 are corrected.
+6. **The gate tick was unsupported.** It is now unticked above, with the precise reds and the task that turns each one green.
+
+**Non-blocking, also fixed:** the scan now expires each claim in one transaction. The test makes the activity insert abort, then asserts the claim is still active with no row.
+
+**Mutation checks** (each file restored and confirmed by `shasum`):
+
+| Mutation | Test that went red |
+| --- | --- |
+| A: lapsed-claim branch off | B1, expired holder without generation; B1, sibling and legacy |
+| B: reclaim status check off | B4 |
+| C: sprint-delete fence off | B2b (run with `-t`; the whole file timed out under a load average of 120–150) |
+| D: owner-active check weakened | B3, owner_inactive |
