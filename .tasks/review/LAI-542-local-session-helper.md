@@ -190,3 +190,39 @@ at the same base SHA `71dd4217` on its push run (40327823156). No passing run
 on any branch since 2026-10-26. The runner's Node default heap (~2 GB) is at
 the edge; that is a CI change for whoever owns the workflow, not a change in
 this branch.
+
+## Review round 2 (Codex at `b55e7c49`: FAIL, two blocking)
+
+Both fixed as new commits: `4a571539` (code) and `4c667c9c` (docs). Each
+fix was broken on purpose to confirm its test goes red, then restored by
+checksum.
+
+1. **The key was lost after an HTTP error.** The `Idempotency-Key` now lives
+   for the whole unconfirmed logical start. Any earlier attempt of the same
+   harness process that never confirmed a session keeps its key, whatever
+   followed: 5xx, refusal, or drops across hooks. 5xx, 408 and 429 are
+   retried in the loop. A new key is minted only for a new harness process,
+   or after a confirmed session has ended. Regressions: (a) created, body
+   dropped, 503, 503, then a later hook succeeds — one key, one session;
+   (b) dropped, then 401, then a later start — same key; (c) a new key after
+   a confirmed session ends. Mutants: key kept only while `starting` → (b)
+   red; 5xx not retryable → (a) red.
+2. **The launcher leaked the token to its utilities.** It now unsets
+   `LAIKA_AGENT_TOKEN` and `LAIKA_TOKEN` before `readlink`, `find` or `head`
+   runs (`dirname` is replaced by a parameter expansion). Every utility reads
+   `/dev/null`. The agent's token is restored for the node entry alone.
+   Regression: PATH shims for `readlink`, `find`, `head`, `dirname`, `cat`,
+   `sed` and `env` dump their environment, and none holds either sentinel.
+   As positive controls, the instruments ran, the consumer received the
+   agent token and the hook JSON intact, and it never received the person's
+   token. Mutants: no unset → red (*"the agent token reached find"*); no
+   handback → red.
+
+Hardening: lost claims are kept as data (`pending_lost`), checked again with
+`asLost` and rendered by `lostNotice` at delivery. A cached `notice` string
+from an older helper is dropped unread (mutant that shows it → red). `ps`
+gets a 5 s timeout, and a hung one counts as no answer (mutant → red).
+
+**Gate this round** (touched files only): `tsc --noEmit` 0;
+`node --test test/agent-session.test.ts test/agent-session-e2e.test.ts
+test/cli.test.ts` 0 (63 tests, 63 pass); `pnpm lint` 0; `pnpm format` 0.
