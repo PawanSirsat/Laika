@@ -10,7 +10,7 @@ import { ensureActivityTriggers, MIGRATIONS_FOLDER, runMigrations } from '../../
 import { expectSqliteError, freshDb, seed, type TestDb } from '../helpers/db.ts';
 import { eq } from 'drizzle-orm';
 import { newId } from '../../src/db/ids.ts';
-import { comments, taskDependencies, tasks } from '../../src/db/schema.ts';
+import { comments, idempotencyKeys, taskDependencies, tasks } from '../../src/db/schema.ts';
 import { createLogger } from '../../src/log.ts';
 import { statusForCategory } from '../../src/db/project-statuses.ts';
 import { resolveTokenActor } from '../../src/auth/resolve-actor.ts';
@@ -2020,6 +2020,60 @@ describe('0061 adds registered agents to a populated database with legacy tokens
       }
     },
   );
+});
+
+describe('runMigrations purges pre-LAI-534 idempotency rows before the port is bound (round 3)', () => {
+  function seedRows(db: TestDb['db']): void {
+    for (const actorId of ['01OLDUSER', 'v2:user:01NEWUSER']) {
+      db.insert(idempotencyKeys)
+        .values({
+          actorId,
+          key: 'k',
+          requestHash: 'h',
+          responseStatus: 201,
+          responseBody: actorId === '01OLDUSER' ? '{"secret":"lai_old"}' : '{}',
+          createdAt: 1,
+          expiresAt: Date.now() + 60_000,
+        })
+        .run();
+    }
+  }
+
+  it('deletes them on a boot with nothing to migrate, and says so', () => {
+    const t2 = freshDb();
+    try {
+      seedRows(t2.db);
+      const lines: string[] = [];
+      runMigrations(t2.db, { logger: createLogger((line) => lines.push(line)) });
+      expect(
+        t2.db
+          .select()
+          .from(idempotencyKeys)
+          .all()
+          .map((r) => r.actorId),
+      ).toEqual(['v2:user:01NEWUSER']);
+      expect(lines.map((l) => JSON.parse(l) as { event: string; rows?: number })).toContainEqual(
+        expect.objectContaining({ event: 'db.idempotency_purged', rows: 1 }),
+      );
+    } finally {
+      t2.close();
+    }
+  });
+
+  it('fails the boot when the purge fails, rather than serving with them on disk', () => {
+    const t2 = freshDb();
+    try {
+      seedRows(t2.db);
+      t2.db.run(sql`
+        CREATE TRIGGER refuse_purge BEFORE DELETE ON idempotency_keys
+        BEGIN SELECT RAISE(ABORT, 'purge refused for the test'); END
+      `);
+      expect(() => runMigrations(t2.db)).toThrow(/purge refused for the test/);
+      expect(t2.db.select().from(idempotencyKeys).all()).toHaveLength(2);
+    } finally {
+      t2.close();
+    }
+  });
 });
 
 describe('0062 selects agents and attributes activity on a populated database (LAI-535)', () => {

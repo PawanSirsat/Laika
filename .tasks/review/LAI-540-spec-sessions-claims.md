@@ -38,7 +38,7 @@ behaviour, so LAI-541 builds against one text.
 - [x] Every default in proposal §4.2's table appears in SPEC §9.1 and is named as configurable per deployment.
 - [x] SPEC states two agents of the same human are fenced from each other.
 - [x] SPEC §4.8 carries `claim_expired`, naming LAI-541 (enum) and LAI-543 (client mirror).
-- [ ] Repo-root gate exits 0 after the last edit. **Not met as written:** `pnpm test` exits 1, and only on the `server/web` mirror assertions LAI-541 quotes (LAI-543, LAI-567). Lint and format exit 0.
+- [ ] Repo-root gate exits 0 after the last edit. **Not met as written:** `pnpm test` exits 1, and only on `server/web` assertions. **LAI-543** (with LAI-538) turns the verb mirror green, and **LAI-567** turns endpoint-coverage green; LAI-541's task file quotes both. Lint and format exit 0.
 - [x] SPEC states an expired claim's generation is invalid for good — `409 stale_claim` even if the same session's heartbeats resume — and that only the explicit reclaim gives the old session a new claim at `generation + 1`.
 - [x] SPEC §4.8 carries `claim_reclaimed`, naming LAI-541 (enum) and LAI-543 (client mirror).
 
@@ -105,3 +105,5 @@ SPEC was written as named crossings in LAI-541's branch, in commit
   there are no MCP session tools.
 
 The gate is LAI-541's; its numbers are in that task file.
+
+**Review fixes (LAI-541, after the #107 review):** SPEC is corrected so that a claim never assigns. It now states the lapsed-claim rule (omitting the generation gets nothing past it), that indirect changes are fenced, that reclaim reloads its checks and works only on in-progress tasks, and that each scan expiry is atomic.

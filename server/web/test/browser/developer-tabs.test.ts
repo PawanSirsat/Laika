@@ -1,6 +1,6 @@
 /**
- * Developer access as one page of four tabs (LAI-507, D-111): Connect — the
- * wizard — then Projects, Activity, Tokens. And the two prompts that replaced
+ * Developer access as one page of tabs (LAI-507, D-111): Connect — the
+ * wizard — then Agents (LAI-537), Projects, Activity, Tokens. And the two prompts that replaced
  * the one: the machine prompt installs and, when the organisation collects
  * local activity, turns the collector on, never touching a repository; the
  * project prompt writes the block and nothing else.
@@ -83,12 +83,12 @@ after(async () => {
 const tabs = async (h: Awaited<ReturnType<typeof open>>) =>
   (await h.page.locator('.page-tab').allInnerTexts()).map((t) => t.trim());
 
-void describe('four tabs (LAI-507)', () => {
-  void test('/developer opens on Connect, and the four tabs are the four', async () => {
+void describe('the tabs (LAI-507, LAI-537)', () => {
+  void test('/developer opens on Connect, and the five tabs are the five', async () => {
     const h = await open('/developer', stub(false));
     try {
       await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
-      assert.deepEqual(await tabs(h), ['Connect', 'Projects', 'Activity', 'Tokens']);
+      assert.deepEqual(await tabs(h), ['Connect', 'Agents', 'Projects', 'Activity', 'Tokens']);
       assert.match(await h.page.locator('.page-tab-active').innerText(), /Connect/);
       assert.match(await h.page.locator('.screen-page-title').innerText(), /Developer access/);
       // The wizard's own header gave up its band: the board's address sits in

@@ -39,9 +39,11 @@ import { useEvents } from '../../api/use-events.ts';
 import { listSprints, type Sprint } from '../../api/sprints.ts';
 import { everyPage } from '../../api/every-page.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
+import { executionSignal } from '../../components/agent/execution-derive.ts';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard, type BoardPresenter } from '../../api/use-board.ts';
 import { isPriority, isTagName } from '../../api/task-filter.ts';
+import { agentsOnTasks, matchesAgentFilter } from '../../api/selected-agent.ts';
 import {
   flashTasks,
   motionAllowed,
@@ -218,6 +220,9 @@ export function BoardScreen({
   const readyParam = params.get('ready');
   const ready = readyParam === null ? undefined : readyParam === 'true';
   const agentOnly = params.get('agent') === 'true';
+  /** `?selected_agent=` (LAI-538): an agent id, `any` or `none`; applied in memory. */
+  const selectedAgentParam = params.get('selected_agent') ?? '';
+  const agentFilter = selectedAgentParam === '' ? undefined : selectedAgentParam;
   /** `?sprint=` as written; `all` and nothing are both every sprint to the query. */
   const sprintParam = params.get('sprint');
   const sprintScope = readSprintScope(params);
@@ -545,6 +550,16 @@ export function BoardScreen({
     () => [...new Set(board.state.all.flatMap((t) => t.tags))].sort(),
     [board.state.all],
   );
+
+  /**
+   * The agents the Agent filter offers (LAI-538): those selected on a task in
+   * the whole set — fetched by nothing, and naming no agent a card does not.
+   */
+  const agentChoices = useMemo(() => agentsOnTasks(board.state.all), [board.state.all]);
+  const agentsById = useMemo(
+    () => new Map(agentChoices.map((agent) => [agent.id, agent])),
+    [agentChoices],
+  );
   const [overflowAt, setOverflowAt] = useState<{ top: number; right: number } | undefined>(
     undefined,
   );
@@ -659,6 +674,7 @@ export function BoardScreen({
   const matches = useMemo(() => {
     return (task: TaskSummary): boolean => {
       if (agentOnly && task.created_via !== AGENT_VIA) return false;
+      if (!matchesAgentFilter(task, agentFilter)) return false;
       /*
        * Blocked is decided here, not by the server: it needs the dependency
        * graph (LAI-487). **"Cannot tell" stays in**, i.e. `!== false`, not
@@ -679,7 +695,7 @@ export function BoardScreen({
       if (overdueOnly && !isOverdue(task, Date.now())) return false;
       return matchesSearch(task, needle);
     };
-  }, [needle, agentOnly, blockedOnly, topOnly, overdueOnly, board.byId]);
+  }, [needle, agentOnly, agentFilter, blockedOnly, topOnly, overdueOnly, board.byId]);
 
   /**
    * Cards into lanes, against the project's own columns (LAI-266).
@@ -716,10 +732,15 @@ export function BoardScreen({
    */
   const shownTasks = useMemo(
     () =>
-      needle === '' && !agentOnly && !blockedOnly && !topOnly && !overdueOnly
+      needle === '' &&
+      !agentOnly &&
+      agentFilter === undefined &&
+      !blockedOnly &&
+      !topOnly &&
+      !overdueOnly
         ? visibleTasks.kept
         : visibleTasks.kept.filter(matches),
-    [visibleTasks.kept, needle, agentOnly, blockedOnly, topOnly, overdueOnly, matches],
+    [visibleTasks.kept, needle, agentOnly, agentFilter, blockedOnly, topOnly, overdueOnly, matches],
   );
 
   const collapsedGroups = useMemo(
@@ -811,6 +832,8 @@ export function BoardScreen({
         membersKnown: slug !== undefined && membersFor === slug,
         sprintsKnown,
         member: (id) => members.get(id)?.name,
+        agents: agentsById,
+        agentsKnown: board.state.all.length > 0 || board.state.status === 'ready',
         sprint: (id) => {
           const found = sprints.find((s) => s.id === id);
           return found === undefined
@@ -828,6 +851,9 @@ export function BoardScreen({
       sprintsKnown,
       sprints,
       sprintLabels,
+      agentsById,
+      board.state.all,
+      board.state.status,
     ],
   );
 
@@ -1034,6 +1060,17 @@ export function BoardScreen({
           ready={readyParam === 'true'}
           notReady={readyParam === 'false'}
           agentOnly={agentOnly}
+          selectedAgent={agentFilter}
+          agentChoices={agentChoices}
+          // The field is offered once a task in the space has an agent, or
+          // when a link already sets it — never as an empty list.
+          onSelectedAgent={
+            agentChoices.length > 0 || agentFilter !== undefined
+              ? (value) => {
+                  setParam('selected_agent', value);
+                }
+              : undefined
+          }
           tags={knownTags}
           members={[...members.values()]}
           group={group}
@@ -1564,6 +1601,7 @@ export function BoardScreen({
           {view === 'list' ? (
             <ListView
               tasks={tasks}
+              showAgent={agentChoices.length > 0}
               byId={board.byId}
               members={members}
               sprintLabels={sprintLabels}
@@ -1730,7 +1768,9 @@ export function BoardScreen({
         <TaskDrawerContent>
           <TaskDetailPanel
             slug={slug}
+            executionSignal={executionSignal(stream.recent, openTask.id)}
             sprints={sprints}
+            agentsAllowed={project?.agents_allowed}
             /*
              * Assigning to a sprint is member+ (§3.2) — the same rule the
              * Sprints screen uses, asked through the same helper rather than
@@ -1753,6 +1793,7 @@ export function BoardScreen({
             onOpen={openTaskInUrl}
             task={openTask}
             listReadAt={board.state.asOf}
+            listReadOrder={board.state.readOrder}
             byId={board.byId}
             members={members}
             moving={board.movingId === openTask.id}

@@ -52,6 +52,33 @@ configured repo contains that SHA on that ref — never by calling GitHub.
 - [ ] Retention keeps checkpoint and referenced delivery rows 90 days after Done/Cancelled (injected clock), then the usual 30-day rule applies.
 - [ ] **Live test recorded in this file:** whether GitHub sends a `push` delivery for creating and for deleting a `laika-ckpt/*` tag, checked against the real webhook (proposal §4.3.1 marks it Documented-not-tested). If it does not, stop and report before building on it.
 
+
+### D-116 recovery and ordering — added by CHIEF 2026-10-28 (task still in backlog; D-116 revision 2, PR #99)
+
+Run these against a real configured GitHub repository on the owner's account,
+and record the evidence on LAIKA-797.
+
+- [ ] (a) A delivery whose handler fails before applying it, then redelivered
+      with the same `X-GitHub-Delivery` id, is applied, and the checkpoint is
+      `verified`.
+- [ ] (b) A checkpoint whose delivery never arrived becomes `verified` after
+      `laika agent checkpoint reverify <id>` pushes `…-r1`. The checkpoint's
+      state then follows its newest ref.
+- [ ] (c) An `uncertain` ref stays `uncertain` whatever later deliveries
+      arrive. A re-tag clears it.
+- [ ] (d) The helper pushes exactly one tag per `git push`. A test documents
+      that pushing four tags at once produces no push delivery, which is
+      GitHub's three-tag limit.
+- [ ] (e) An annotated tag at a checkpoint name leaves that checkpoint
+      `uncertain`.
+- [ ] (f) A tag ruleset on `laika-ckpt/**/*` with Restrict updates and Restrict
+      deletions refuses both moving and deleting a checkpoint tag.
+- [ ] (g) Deliveries for the same ref are applied one at a time. A concurrent
+      test shows that two handlers cannot interleave.
+- [ ] Every state is computed from the set of transitions, never from arrival
+      order. A delete that arrives before its create gives `uncertain`, and
+      the create arriving later does not make it `verified`.
+
 ## Tests and UI evidence required
 
 Service + webhook tests with signed fixture deliveries; idempotency; retention job with injected clock.

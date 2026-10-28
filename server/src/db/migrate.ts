@@ -4,7 +4,11 @@ import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { backfillTaskPositions, backfillTaskTimestamps } from './backfill.ts';
+import {
+  backfillTaskPositions,
+  backfillTaskTimestamps,
+  purgeUnversionedIdempotencyKeys,
+} from './backfill.ts';
 import { type Db } from './client.ts';
 import { type Logger } from '../log.ts';
 
@@ -557,6 +561,14 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
     // timestamp backfill — the keys are computed — and idempotent the same way: it only
     // fills a null.
     backfillTaskPositions(db);
+
+    // **Idempotency rows written before LAI-534 may hold plaintext secrets**
+    // (Codex review of PR #102, round 3). Deleted here, before `index.ts`
+    // binds the port, and inside the protected window, so a failure fails the
+    // boot rather than leaving a server answering with them still on disk.
+    // Idempotent: once clean it deletes nothing.
+    const purged = purgeUnversionedIdempotencyKeys(db);
+    if (purged > 0) options.logger?.info('db.idempotency_purged', { rows: purged });
   } catch (cause) {
     if (snapshotPath === null) throw cause;
 

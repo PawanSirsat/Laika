@@ -58,12 +58,14 @@ export const ORGANISATION_TABS: readonly PageTab[] = [
 
 /**
  * Developer access (LAI-507): connecting an agent — the four-step wizard —
- * then what is once per project, what the organisation collects from the
- * machine, and the reader's tokens. Nothing is gated: every tab is about the
- * reader. The order is the order a new developer meets them.
+ * then the reader's registered agents (LAI-537, D-114), what is once per
+ * project, what the organisation collects from the machine, and the reader's
+ * tokens. Nothing is gated: every tab is about the reader. The order is the
+ * order a new developer meets them.
  */
 export const DEVELOPER_TABS: readonly PageTab[] = [
   { id: 'connect', label: 'Connect' },
+  { id: 'agents', label: 'Agents' },
   { id: 'projects', label: 'Projects' },
   { id: 'activity', label: 'Activity' },
   { id: 'tokens', label: 'Tokens' },

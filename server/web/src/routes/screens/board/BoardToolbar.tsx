@@ -30,7 +30,17 @@ import { isInDropdownPanel } from '../../../components/dropdown-model.ts';
 import { PRIORITY_NAMES, PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { tagColor } from './tag-colors.ts';
+import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
+import {
+  AGENT_FILTER_ANY,
+  AGENT_FILTER_NONE,
+  agentLabel,
+  selectedHarness,
+  type SelectedAgent,
+} from '../../../api/selected-agent.ts';
 import './board-toolbar.css';
+
+const NO_AGENT_CHOICES: readonly SelectedAgent[] = [];
 
 export interface BoardToolbarProps {
   /**
@@ -72,6 +82,11 @@ export interface BoardToolbarProps {
    */
   readonly notReady: boolean;
   readonly agentOnly: boolean;
+  /** `?selected_agent=`: an agent id, `any` or `none` (LAI-538). */
+  readonly selectedAgent?: string | undefined;
+  /** The agents selected on the project's tasks — what the Agent field offers. */
+  readonly agentChoices?: readonly SelectedAgent[] | undefined;
+  readonly onSelectedAgent?: ((value: string | undefined) => void) | undefined;
   readonly tags: readonly string[];
   readonly members: readonly Member[];
   readonly group: string;
@@ -265,6 +280,9 @@ export function BoardToolbar({
   ready,
   notReady,
   agentOnly,
+  selectedAgent,
+  agentChoices = NO_AGENT_CHOICES,
+  onSelectedAgent,
   tags,
   members,
   group,
@@ -386,6 +404,26 @@ export function BoardToolbar({
     ],
     [],
   );
+  /*
+   * The agent the work is meant for (LAI-538) — a field of its own, never
+   * folded into Assignee: an agent is not a person, and that list is people.
+   */
+  const agentOptions = useMemo<DropdownOption[]>(
+    () => [
+      { value: '', label: 'Any', pinned: true },
+      { value: AGENT_FILTER_ANY, label: 'Any agent', pinned: true },
+      { value: AGENT_FILTER_NONE, label: 'No agent', pinned: true },
+      ...agentChoices.map((agent) => ({
+        value: agent.id,
+        label: agentLabel(agent),
+        keywords: agent.owner.name,
+        detail: agent.owner.name,
+        icon: <AgentMark client={selectedHarness(agent)} size="sm" />,
+      })),
+    ],
+    [agentChoices],
+  );
+
   const assigneeOptions = useMemo<DropdownOption[]>(
     () => [
       { value: '', label: 'Anyone', pinned: true },
@@ -686,6 +724,28 @@ export function BoardToolbar({
                     />
                   )}
                 </FilterField>
+
+                {onSelectedAgent !== undefined && (
+                  <FilterField
+                    label="Agent"
+                    set={selectedAgent !== undefined}
+                    onReset={() => {
+                      onSelectedAgent(undefined);
+                    }}
+                  >
+                    {(labelId) => (
+                      <Dropdown
+                        aria-labelledby={labelId}
+                        noun="agents"
+                        value={selectedAgent ?? ''}
+                        options={agentOptions}
+                        onChange={(value) => {
+                          onSelectedAgent(value === '' ? undefined : value);
+                        }}
+                      />
+                    )}
+                  </FilterField>
+                )}
 
                 <FilterField
                   label="Label"

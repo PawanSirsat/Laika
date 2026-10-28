@@ -171,6 +171,7 @@ export function createToken(
     });
   }
 
+  assertWithinOwnPin(actor, input.projectIds ?? null);
   const projectIds = assertReadableProjects(db, actor, input.projectIds ?? null);
   const scope = forcedTokenScope(actor.orgRole, input.scope);
 
@@ -379,6 +380,44 @@ export function revokeTokenRow(db: Db, actor: ResolvedActor, row: TokenRow, now:
     payload: { token_id: row.id, name: row.name, prefix: row.prefix, owner_id: row.userId },
     now,
   });
+}
+
+/**
+ * A token pinned to projects mints only inside its pin (§6.2, audit H4, LAI-562).
+ *
+ * H4 keeps `token.create_own` for a pinned token — its own tokens are its own
+ * record — and without this the pin was one request from gone: `project_ids`
+ * absent or `null` means *every project*, and that was minted without looking
+ * at the caller's pin. A list naming a project outside the pin was already
+ * refused, as a `422` from `assertReadableProjects` (whose `canSeeProject`
+ * reads the pin); it is refused here first so both widenings say the same
+ * thing.
+ *
+ * **Refused, never narrowed**, for the reason `assertReadableProjects` gives:
+ * a token quietly scoped to fewer projects than asked is one that stops working
+ * later for reasons nothing recorded. And `403` with H4's `project_pinned`,
+ * because the person may and the same token unpinned may — the pin is why not.
+ * Before the existence check, so a pinned token cannot probe which ids exist.
+ *
+ * Scope needs no twin here: `token.create_own` is not a read, so `can()`
+ * already refuses a `read_only` token minting anything at all.
+ */
+function assertWithinOwnPin(actor: ResolvedActor, requested: readonly string[] | null): void {
+  const pin = actor.token?.projectIds ?? null;
+  if (pin === null) return;
+
+  const outside = requested === null ? null : requested.filter((id) => !pin.includes(id));
+  if (outside !== null && outside.length === 0) return;
+
+  throw new ApiError(
+    'forbidden',
+    'This token is pinned to projects and can only mint a token inside its pin',
+    {
+      action: 'token.create_own',
+      reason: 'project_pinned',
+      project_ids: outside === null ? null : [...new Set(outside)],
+    },
+  );
 }
 
 /** Single-org deployment (§4.2), so there is exactly one row to find. */

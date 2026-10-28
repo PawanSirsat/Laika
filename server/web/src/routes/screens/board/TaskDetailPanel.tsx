@@ -18,8 +18,10 @@ import { useTaskDetail } from '../../../api/use-task-detail.ts';
 import { useTaskText } from '../../../api/use-task-text.ts';
 import { useDelayed } from '../../../components/use-delayed.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
-import { describeActor } from './actor-presentation.ts';
+import { actorLine, describeActor } from './actor-presentation.ts';
 import { threadOrder, type ThreadItem } from './thread-order.ts';
+import { agentNamesFrom, agentVia } from '../../../api/selected-agent.ts';
+import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import {
   getTask,
   listWatchers,
@@ -41,11 +43,8 @@ import { CommentComposer } from '../task/CommentComposer.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { ForecastSection } from '../task/ForecastSection.tsx';
 import { TokensSection } from '../task/TokensSection.tsx';
-import {
-  demoAgentBuild,
-  demoClaimLock,
-  DEMO_HANDOFF_ENABLED,
-} from '../../../demo/agent-runtime.ts';
+import { ExecutionPanel } from '../../../components/agent/ExecutionPanel.tsx';
+import { executionView, hasExecution } from '../../../components/agent/execution-derive.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { avatarColorSolid } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -55,6 +54,13 @@ import './task-detail.css';
 
 export interface TaskDetailPanelProps {
   readonly slug: string;
+  /**
+   * The newest live frame that changes this task's execution (LAI-543), by
+   * `seq`. When it moves the panel re-reads its activity quietly.
+   */
+  readonly executionSignal?: number | undefined;
+  /** The space's `agents_allowed`, for the Agent row (LAI-538); absent reads as allowed. */
+  readonly agentsAllowed?: boolean | undefined;
   /**
    * The store's copy, which is live and has no description or acceptance
    * (LAI-795). The panel reads those itself — {@link useTaskText}.
@@ -121,6 +127,8 @@ export interface TaskDetailPanelProps {
    * description is tried again at the next one (LAI-795 review, B1).
    */
   readonly listReadAt?: number | null | undefined;
+  /** When the read behind `task` started, in the page's order (LAI-538). */
+  readonly listReadOrder?: number | undefined;
 }
 
 /**
@@ -162,6 +170,7 @@ function personName(id: string | null, members: ReadonlyMap<string, Member>): st
  */
 export function TaskDetailPanel({
   slug,
+  agentsAllowed,
   task,
   byId,
   members,
@@ -182,8 +191,23 @@ export function TaskDetailPanel({
   onAssigned,
   onOpen,
   listReadAt = null,
+  listReadOrder = 0,
+  executionSignal,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
+  /*
+   * A claim taken, lapsed or taken back while the drawer is open (LAI-543):
+   * re-read the activity **quietly**, so the panel follows it without a
+   * loading state, a re-render of the thread, or the focus moving. The first
+   * value is what the drawer opened with, which the first read already has.
+   */
+  const { refresh: refreshDetail } = detail;
+  const seenSignal = useRef(executionSignal);
+  useEffect(() => {
+    if (executionSignal === seenSignal.current) return;
+    seenSignal.current = executionSignal;
+    refreshDetail();
+  }, [executionSignal, refreshDetail]);
   /*
    * **The texts, read on open** (LAI-795). Until they land the two sections
    * hold their place rather than drawing an empty description someone could
@@ -307,17 +331,9 @@ export function TaskDetailPanel({
   );
   const panelRef = useRef<HTMLDivElement>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const [handoff, setHandoff] = useState<string | undefined>(undefined);
   const statusRef = useRef<HTMLButtonElement | null>(null);
   const { theme } = useTheme();
   const now = Date.now();
-  /*
-   * The claim's deadline and the agent's build are the only things on this
-   * panel Laika cannot answer — see `demo/agent-runtime.ts`. Both are
-   * `undefined` in a production build, and every reader below treats that as
-   * "no such thing" rather than "not loaded yet".
-   */
-  const claimLock = demoClaimLock(task, now);
 
   /**
    * Who is watching, read once and used twice — the header's Watch button and
@@ -371,7 +387,42 @@ export function TaskDetailPanel({
     detail.status === 'ready'
       ? detail.activity.filter((event) => event.type.startsWith('webhook.'))
       : [];
-  const agentBuild = demoAgentBuild(task.created_by_client, task.id);
+  /**
+   * The reader's own agents, read once for the drawer (LAI-538): the Agent
+   * row's choices, and half of what names an agent in the activity below.
+   */
+  const myAgents = useMyAgents();
+  /**
+   * Agents this reader may see, by id (LAI-538 review): their own, and every
+   * one selected on a task the board holds — this one's included. A row by
+   * any other agent reads *a registered agent*, which is true, not a guess.
+   */
+  const agentNames = useMemo(
+    () => agentNamesFrom(agentsOf(myAgents), [task, ...byId.values()]),
+    [myAgents, task, byId],
+  );
+  /**
+   * Which agent wrote each agent comment, from its `comment.added` row:
+   * `CommentView` carries no `agent_id`, and the activity row does (LAI-535).
+   * A row with none is a legacy token's — *agent (unregistered token)*, never
+   * an agent's name (D-114).
+   */
+  const commentAgents = useMemo(() => {
+    const found = new Map<string, string>();
+    if (detail.status !== 'ready') return found;
+    for (const event of detail.activity) {
+      if (event.type !== 'comment.added') continue;
+      const id = (event.payload as { comment_id?: unknown } | null)?.comment_id;
+      const via = agentVia(event, agentNames);
+      if (typeof id === 'string' && via !== undefined) found.set(id, via);
+    }
+    return found;
+  }, [detail, agentNames]);
+  /** The execution panel's facts: the task view, and its claim rows (LAI-543). */
+  const execution = useMemo(
+    () => executionView(task, detail.status === 'ready' ? detail.activity : [], agentNames),
+    [task, detail, agentNames],
+  );
   /**
    * Which tab is showing.
    *
@@ -475,7 +526,15 @@ export function TaskDetailPanel({
               was written *by a tool running as* somebody; the possessive is
               the honest attribution and it is what the design writes.
             */}
-            <span className="cmt-who">{agent ? `${who}'s agent` : who}</span>
+            {/* The person, and the agent they acted through (LAI-538): named
+                where this reader may see it, *agent (unregistered token)* for
+                a legacy token's. An agent comment whose activity row is not
+                loaded says only *an agent* — it is never given a name. */}
+            <span className="cmt-who">
+              {agent || commentAgents.has(comment.id)
+                ? `${who} via ${commentAgents.get(comment.id) ?? 'an agent'}`
+                : who}
+            </span>
             {agent && <span className="cmt-agent">AGENT</span>}
             {comment.edited_at !== null && <span className="cmt-edited">edited</span>}
             {/* The reason a person sent the task back from review (D-082). */}
@@ -511,10 +570,11 @@ export function TaskDetailPanel({
     // Not `personName`: on an activity row a null actor is the system by
     // CHECK constraint, and "someone edited this task" reads as an
     // unidentified human (LAI-411).
-    const actor = describeActor(event, members);
+    const actor = describeActor(event, members, agentNames);
     return (
       <li key={`${event.id}-${String(event.seq)}`} className="panel-event">
-        <span className="panel-event-who">{actor.name}</span>
+        {/* *Pawan via Claude Code · laptop-1* on an agent's row (LAI-538). */}
+        <span className="panel-event-who">{actorLine(actor)}</span>
         {/* The word itself, not a colour — an `agent` and a `system` marker
             must be told apart by someone who cannot separate violet from
             grey (AC3). */}
@@ -522,7 +582,7 @@ export function TaskDetailPanel({
           <span className={`marker marker-${actor.badge}`}>{actor.badge}</span>
         )}
         <span className="panel-event-what">
-          {describeEvent(event)}
+          {describeEvent(event, agentNames)}
           {move !== undefined && (
             <>
               {' '}
@@ -1094,7 +1154,7 @@ export function TaskDetailPanel({
                         {changes.map((event) => (
                           <li key={`${event.id}-${String(event.seq)}`} className="panel-change">
                             <span className="panel-change-who">
-                              {describeActor(event, members).name}
+                              {actorLine(describeActor(event, members, agentNames))}
                             </span>
                             <span className="panel-change-what">
                               {pushSummary(event) ?? describeEvent(event)}
@@ -1141,8 +1201,6 @@ export function TaskDetailPanel({
             mayEdit={mayEdit === true}
             moving={moving}
             watchers={watchers}
-            claimLock={claimLock}
-            agentBuild={agentBuild}
             parent={parent}
             openSubtasks={openSubtasks}
             changesCount={changes.length}
@@ -1152,33 +1210,28 @@ export function TaskDetailPanel({
             onTagsChanged={onTagsChanged}
             onOpen={onOpen}
             statusRef={statusRef}
+            agentsAllowed={agentsAllowed}
+            myAgents={myAgents}
+            readOrder={listReadOrder}
           />
 
-          {DEMO_HANDOFF_ENABLED && (
-            <div className="panel-side-actions">
-              <button
-                type="button"
-                className="panel-action panel-action-primary"
-                onClick={() => {
-                  /*
-                    The refusal lives here, not in `demo/`: it is the screen's
-                    own explanation, and a sentence in that directory reaches
-                    the production bundle — `DEMO_ENABLED` is a runtime value,
-                    so the minifier keeps the text even when the behaviour is
-                    gone.
-                  */
-                  setHandoff(
-                    'Laika has no endpoint that hands a task to a runtime yet, so nothing was queued. This button is part of the imported design.',
-                  );
-                }}
-              >
-                <span aria-hidden="true">▷</span> Hand to my agent
-              </button>
-              {handoff !== undefined && (
-                <p className="panel-alert" role="status">
-                  {handoff}
-                </p>
-              )}
+          {/*
+            **Execution, from real data only** (LAI-543): the agent picked
+            beside the one that last took the work, and that claim as the
+            task's activity records it — an expired one in words. Whether a session is
+            checking in *now* is not served yet (LAI-568), so neither
+            *Working* nor *Connection lost* is drawn from a guess.
+          */}
+          {hasExecution(execution) && (
+            <div className="panel-side-exec">
+              <ExecutionPanel
+                /* The Agent row above carries *Waiting for agent*. */
+                state={null}
+                intended={execution.intended}
+                claim={execution.claim}
+                claimExpired={execution.claimExpired}
+                generation={execution.generation}
+              />
             </div>
           )}
         </div>

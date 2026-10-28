@@ -8,7 +8,7 @@ import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { projects, sprints, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertClaimFence } from './claims.ts';
+import { assertClaimFence, assertClaimFenceAll } from './claims.ts';
 import { assertCan } from '../policy/can.ts';
 import { requireProjectBySlug } from './projects.ts';
 import { getTask, type TaskView } from './tasks.ts';
@@ -503,6 +503,14 @@ export function deleteSprint(
       .from(tasks)
       .where(eq(tasks.sprintId, sprintId))
       .all();
+    // Deleting the sprint clears each task's `sprint_id` — a change to every
+    // one of them, so each passes the claim fence first (LAI-541).
+    assertClaimFenceAll(
+      db,
+      actor,
+      released.map((t) => t.id),
+      now,
+    );
 
     db.delete(sprints).where(eq(sprints.id, sprintId)).run();
 
