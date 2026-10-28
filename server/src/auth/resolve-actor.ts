@@ -2,12 +2,20 @@ import { and, eq, isNull, lte, or } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type ActorKind, type ProjectRole } from '../db/enums.ts';
 import { mergeGrants, readStoredGrants } from '../db/org-grants.ts';
-import { agentProjectGrants, agents, projectMemberships, projects, users } from '../db/schema.ts';
+import {
+  agentProjectGrants,
+  agents,
+  projectMemberships,
+  projects,
+  type tokens,
+  users,
+} from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { type Logger } from '../log.ts';
 import {
   type Actor,
   type AgentContext,
+  type TokenContext,
   type Principal,
   type ProjectRules,
   type SystemPrincipal,
@@ -188,24 +196,45 @@ export function resolveTokenActor(
   // **An agent's token is refused here, before any handler runs, once its
   // agent is revoked** (D-114). Revoking the agent revokes its tokens in the
   // same transaction, so this is the second lock on the same door: a token
-  // row that somehow kept `revoked_at` null still opens nothing. The agent is
-  // read from `tokens.agent_id` and from nowhere else.
-  const agent = found.row.agentId === null ? null : loadAgent(db, found.row.agentId);
-  if (found.row.agentId !== null) {
-    if (agent?.status !== 'active') throw new TokenAuthError('agent_revoked');
-    touchAgentSeen(db, agent.id, now);
+  // row that somehow kept `revoked_at` null still opens nothing.
+  const token = tokenContextFor(db, found.row);
+  if (!token.ok) throw new TokenAuthError(token.reason);
+  if (token.token.agent !== null && token.token.agent !== undefined) {
+    touchAgentSeen(db, token.token.agent.id, now);
   }
 
   touchTokenUsage(db, found.row, now, log);
 
+  return { ...actor, token: token.token };
+}
+
+/**
+ * A token row that is still good → the credential `can()` narrows by: its
+ * scope, its pin, and its registered agent with that agent's grants — or why
+ * the agent no longer lets it act (D-114, LAI-534).
+ *
+ * **The one place a token's context is built**, so every path that turns a
+ * row into an actor narrows it the same way. `resolveTokenActor` uses it per
+ * request; a credential that outlives its request — an open event stream
+ * re-reading its actor (LAI-539) — must use it too, or a reloaded stream keeps
+ * the token's pin and drops the agent's grants and revocation. The agent is
+ * read from `tokens.agent_id` and from nowhere else.
+ *
+ * Reads only; it checks nothing about the row's own revocation or expiry,
+ * which its callers have already applied (`findTokenBySecret`, and LAI-539's
+ * `findTokenById`).
+ */
+export function tokenContextFor(
+  db: Db,
+  row: typeof tokens.$inferSelect,
+): { ok: true; token: TokenContext } | { ok: false; reason: 'agent_revoked' } {
+  const agent = row.agentId === null ? null : loadAgent(db, row.agentId);
+  if (row.agentId !== null && agent?.status !== 'active') {
+    return { ok: false, reason: 'agent_revoked' };
+  }
   return {
-    ...actor,
-    token: {
-      id: found.row.id,
-      scope: found.row.scope,
-      projectIds: tokenProjectIds(found.row),
-      agent,
-    },
+    ok: true,
+    token: { id: row.id, scope: row.scope, projectIds: tokenProjectIds(row), agent },
   };
 }
 

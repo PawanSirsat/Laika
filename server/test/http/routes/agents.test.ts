@@ -1,6 +1,15 @@
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { activity, agents, orgs, tokens, users } from '../../../src/db/schema.ts';
+import {
+  activity,
+  agents,
+  heartbeats,
+  idempotencyKeys,
+  orgs,
+  tasks,
+  tokens,
+  users,
+} from '../../../src/db/schema.ts';
 import { RateLimiter } from '../../../src/http/rate-limit.ts';
 import {
   type AuthHarness,
@@ -638,5 +647,296 @@ describe('rate limits', () => {
     // Its sibling, and its owner's browser, are separate buckets.
     expect((await listTasks('alpha', sibling.secret)).status).toBe(200);
     expect((await req('/api/v1/agents', {}, { cookie: bob.cookie })).status).toBe(200);
+  });
+});
+
+/**
+ * The idempotency store and secrets (Codex review of PR #102, LAI-534).
+ *
+ * The store replays before the route runs, so before `can()`. Two things
+ * follow, each asserted on the table itself rather than inferred from a
+ * response: a one-time secret is never written to it, and a stored answer is
+ * found only by the credential that earned it.
+ */
+describe('idempotency never keeps a secret, and replays only to its own credential', () => {
+  const KEY = { 'Idempotency-Key': 'retry-1' };
+
+  function storedBodies(): string {
+    return JSON.stringify(h.db.select().from(idempotencyKeys).all());
+  }
+
+  it('stores no row for any route that reveals a secret, and a retry mints afresh', async () => {
+    // The positive control first: an ordinary keyed POST is stored, so an
+    // empty table below means "not stored", not "the store is off".
+    const plain = await req(
+      '/api/v1/projects/alpha/tasks',
+      { method: 'POST', body: JSON.stringify({ title: 'control' }), headers: KEY },
+      { cookie: bob.cookie },
+    );
+    expect(plain.status).toBe(201);
+    expect(h.db.select().from(idempotencyKeys).all()).toHaveLength(1);
+
+    const secrets: string[] = [];
+    const reveal = async (
+      path: string,
+      body: unknown,
+      cookie: string,
+      pick: (b: Record<string, unknown>) => string,
+      // The retry runs the route again. Most mint a second secret; the two
+      // invite routes refuse instead (already invited, already replaced) —
+      // either way it is the route answering, never a stored copy.
+      retryStatus = 201,
+    ) => {
+      const init = {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { 'Idempotency-Key': `secret-${path}` },
+      };
+      const first = await ok(await req(path, init, { cookie }), 201);
+      secrets.push(pick(first));
+      const retry = await req(path, init, { cookie });
+      expect(retry.headers.get('Idempotent-Replay'), path).toBeNull();
+      const again = await ok(retry, retryStatus);
+      if (retryStatus === 201) {
+        expect(pick(again), path).not.toBe(pick(first));
+        secrets.push(pick(again));
+      }
+      return first;
+    };
+
+    await reveal(
+      '/api/v1/tokens',
+      { name: 'cli', scope: 'full' },
+      bob.cookie,
+      (b) => b.secret as string,
+    );
+    const agent = await reveal(
+      '/api/v1/agents',
+      { display_name: 'a', harness: 'other', grants: [] },
+      bob.cookie,
+      (b) => b.secret as string,
+    );
+    const agentId = (agent.agent as { id: string }).id;
+    const tokenId = (agent.token as { id: string }).id;
+    // Rotation with a key: the retry is a second rotation, refused because
+    // the first one already revoked that token — never a replayed secret.
+    const rotateInit = {
+      method: 'POST',
+      body: JSON.stringify({ token_id: tokenId }),
+      headers: { 'Idempotency-Key': 'secret-rotate' },
+    };
+    const rotated = await ok(
+      await req(`/api/v1/agents/${agentId}/rotate-token`, rotateInit, { cookie: bob.cookie }),
+      201,
+    );
+    secrets.push(rotated.secret as string);
+    const retry = await req(`/api/v1/agents/${agentId}/rotate-token`, rotateInit, {
+      cookie: bob.cookie,
+    });
+    expect(retry.headers.get('Idempotent-Replay')).toBeNull();
+    expect(await error(retry)).toEqual({ status: 409, code: 'conflict', reason: 'token_revoked' });
+
+    const invite = await reveal(
+      '/api/v1/invites',
+      { email: 'dora@example.test', org_role: 'member' },
+      ownerCookie,
+      (b) => b.token as string,
+      409,
+    );
+    await reveal(
+      `/api/v1/invites/${(invite.invite as { id: string }).id}/reissue`,
+      {},
+      ownerCookie,
+      (b) => b.token as string,
+      // Reissuing replaces the invite, so a retry of the old id is not found.
+      404,
+    );
+    await reveal(`/api/v1/users/${bob.id}/reset-link`, {}, ownerCookie, (b) => b.url as string);
+    await reveal('/api/v1/org/github-webhook', {}, ownerCookie, (b) => b.secret as string);
+
+    // Still only the control row, and no secret anywhere in the table.
+    expect(h.db.select().from(idempotencyKeys).all()).toHaveLength(1);
+    const dump = storedBodies();
+    expect(secrets.length).toBe(11);
+    for (const secret of secrets) {
+      expect(secret.length).toBeGreaterThan(20);
+      expect(dump).not.toContain(secret);
+    }
+  });
+
+  it('a sibling token of the same person never receives another credential’s stored answer', async () => {
+    const wide = await register([{ project_id: alpha, scope: 'full' }]);
+    const narrow = await register([]);
+    const init = {
+      method: 'POST',
+      body: JSON.stringify({ title: 'by the wide agent' }),
+      headers: KEY,
+    };
+
+    const first = await ok(
+      await req('/api/v1/projects/alpha/tasks', init, { bearer: wide.secret }),
+      201,
+    );
+    // The same key and body from the narrow agent is not a replay: the route
+    // runs and the grant refuses it.
+    const sibling = await req('/api/v1/projects/alpha/tasks', init, { bearer: narrow.secret });
+    expect(sibling.headers.get('Idempotent-Replay')).toBeNull();
+    expect(await error(sibling)).toEqual({
+      status: 403,
+      code: 'forbidden',
+      reason: 'agent_not_granted',
+    });
+    // Nor does the owner's web session get the token's answer by its key.
+    const session = await req('/api/v1/projects/alpha/tasks', init, { cookie: bob.cookie });
+    expect(session.headers.get('Idempotent-Replay')).toBeNull();
+    expect(session.status).toBe(201);
+    expect(((await session.json()) as { id: string }).id).not.toBe(first.id);
+
+    // And the credential that earned it still replays its own.
+    const own = await req('/api/v1/projects/alpha/tasks', init, { bearer: wide.secret });
+    expect(own.headers.get('Idempotent-Replay')).toBe('true');
+    expect(((await own.json()) as { id: string }).id).toBe(first.id);
+  });
+
+  it('agent.manage_own stays session only through a replay', async () => {
+    const created = await register([{ project_id: alpha, scope: 'full' }]);
+    const init = {
+      method: 'POST',
+      body: JSON.stringify({ grants: [] }),
+      headers: KEY,
+    };
+    // A session's keyed, stored answer to a managing POST …
+    const revoked = await ok(
+      await req(`/api/v1/agents/${created.agent.id}/revoke`, init, { cookie: bob.cookie }),
+    );
+    expect(revoked).toMatchObject({ status: 'revoked' });
+    const sibling = await register([{ project_id: alpha, scope: 'full' }]);
+
+    // … is not handed to the person's token holding the same key and body:
+    // the route runs, and refuses it as a token.
+    const replay = await req(`/api/v1/agents/${created.agent.id}/revoke`, init, {
+      bearer: sibling.secret,
+    });
+    expect(replay.headers.get('Idempotent-Replay')).toBeNull();
+    expect(await error(replay)).toEqual({
+      status: 403,
+      code: 'forbidden',
+      reason: 'session_required',
+    });
+  });
+
+  it('a replay to its own credential after the credential changed answers as the credential now is', async () => {
+    const created = await register([{ project_id: alpha, scope: 'full' }]);
+    const init = {
+      method: 'POST',
+      body: JSON.stringify({ title: 'before the change' }),
+      headers: KEY,
+    };
+    await ok(await req('/api/v1/projects/alpha/tasks', init, { bearer: created.secret }), 201);
+
+    // Revoked in between: the resolver refuses the token before the store is
+    // consulted, so the stored answer is unreachable.
+    await ok(
+      await req(
+        `/api/v1/agents/${created.agent.id}/revoke`,
+        { method: 'POST' },
+        { cookie: bob.cookie },
+      ),
+    );
+    const after = await req('/api/v1/projects/alpha/tasks', init, { bearer: created.secret });
+    expect(after.status).toBe(401);
+    expect(after.headers.get('Idempotent-Replay')).toBeNull();
+  });
+});
+
+/**
+ * Heartbeats write a task's branch only as far as the sender may (M4,
+ * LAIKA-537; Codex review of PR #102). The beat always lands; the task link
+ * needs `project.read` and the branch needs `task.write`, both asked of the
+ * whole actor — owner, agent grant, token.
+ */
+describe('heartbeats respect the grant, the role and the pin', () => {
+  let taskId: string;
+  let number: number;
+
+  beforeEach(async () => {
+    await ok(
+      await req(
+        '/api/v1/projects/alpha',
+        { method: 'PATCH', body: JSON.stringify({ repo: 'kvell/alpha' }) },
+        { cookie: ownerCookie },
+      ),
+    );
+    const task = await ok(
+      await req(
+        '/api/v1/projects/alpha/tasks',
+        { method: 'POST', body: JSON.stringify({ title: 'beat me' }) },
+        { cookie: ownerCookie },
+      ),
+      201,
+    );
+    taskId = task.id as string;
+    number = task.number as number;
+  });
+
+  /** `branch` is `written` or `unchanged`, compared with the task before the beat. */
+  async function beat(secret: string): Promise<{ branch: string; matched: string | null }> {
+    const branchOf = () => h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()?.branch;
+    const before = branchOf();
+    const branch = `alp-${String(number)}-work-${String(Math.random()).slice(2, 8)}`;
+    const res = await req(
+      '/api/v1/heartbeats',
+      { method: 'POST', body: JSON.stringify({ repo: 'kvell/alpha', branch }) },
+      { bearer: secret },
+    );
+    expect(res.status, await res.clone().text()).toBe(202);
+    const row = h.db.select().from(heartbeats).where(eq(heartbeats.branch, branch)).get();
+    expect(row, 'the beat itself always lands').toBeDefined();
+    const after = branchOf();
+    expect([branch, before], 'the branch is this beat’s or what it was').toContain(after);
+    return {
+      branch: after === branch ? 'written' : 'unchanged',
+      matched: row?.matchedTaskId ?? null,
+    };
+  }
+
+  it('a full grant writes the branch', async () => {
+    const { secret } = await register([{ project_id: alpha, scope: 'full' }]);
+    expect(await beat(secret)).toEqual({ branch: 'written', matched: taskId });
+  });
+
+  it('an agent with no grant there neither links nor writes', async () => {
+    const { secret } = await register([{ project_id: beta, scope: 'full' }]);
+    expect(await beat(secret)).toEqual({ branch: 'unchanged', matched: null });
+  });
+
+  it('a read_only grant links the beat and writes nothing', async () => {
+    const { secret } = await register([{ project_id: alpha, scope: 'read_only' }]);
+    expect(await beat(secret)).toEqual({ branch: 'unchanged', matched: taskId });
+  });
+
+  it('a legacy token: as before for a member, nothing for someone outside the project', async () => {
+    const mint = async (cookie: string, body: unknown) =>
+      (
+        (await ok(
+          await req('/api/v1/tokens', { method: 'POST', body: JSON.stringify(body) }, { cookie }),
+          201,
+        )) as { secret: string }
+      ).secret;
+
+    expect(await beat(await mint(bob.cookie, { name: 'cli', scope: 'full' }))).toEqual({
+      branch: 'written',
+      matched: taskId,
+    });
+
+    const carol = await join('carol@example.test', 'member'); // on no project
+    expect(await beat(await mint(carol.cookie, { name: 'cli', scope: 'full' }))).toEqual({
+      branch: 'unchanged',
+      matched: null,
+    });
+
+    // Pinned to another project: the pin refuses this one.
+    const pinned = await mint(bob.cookie, { name: 'pinned', scope: 'full', project_ids: [beta] });
+    expect(await beat(pinned)).toEqual({ branch: 'unchanged', matched: null });
   });
 });

@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   loadActor,
   resolveTokenActor,
+  tokenContextFor,
   touchAgentSeen,
   type ResolvedActor,
 } from '../../src/auth/resolve-actor.ts';
 import { LAST_USED_THROTTLE_MS, TokenAuthError } from '../../src/auth/tokens.ts';
+import { createToken } from '../../src/services/tokens.ts';
 import { activity, agents, tokens } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import {
@@ -175,5 +177,67 @@ describe('registering is session only', () => {
       expect((err as ApiError).code).toBe('forbidden');
       expect(((err as ApiError).details as { reason?: string }).reason).toBe('session_required');
     }
+  });
+});
+
+/**
+ * The resolver piece an open event stream re-reads its credential through
+ * (LAI-539 calls it on each reload; Codex review of PR #102). It must carry
+ * the agent's current grants and refuse a revoked agent, or a reloaded stream
+ * keeps the pin and drops D-114.
+ */
+describe('tokenContextFor — the token as can() narrows it, read again', () => {
+  const rowOf = (id: string) => t.db.select().from(tokens).where(eq(tokens.id, id)).get()!;
+
+  it('carries the agent with its grants as they are now, not as they were', () => {
+    const created = register();
+    const first = tokenContextFor(t.db, rowOf(created.token.id));
+    expect(first.ok && [...(first.token.agent?.grants ?? new Map()).entries()]).toEqual([
+      [s.projectId, 'full'],
+    ]);
+
+    setAgentGrants(t.sqlite, t.db, owner, created.agent.id, [
+      { projectId: s.projectId, scope: 'read_only' },
+    ]);
+    const again = tokenContextFor(t.db, rowOf(created.token.id));
+    expect(again).toMatchObject({
+      ok: true,
+      token: { id: created.token.id, scope: 'full', projectIds: null },
+    });
+    expect(again.ok && again.token.agent?.grants.get(s.projectId)).toBe('read_only');
+  });
+
+  it('refuses a revoked agent, whatever its token row says', () => {
+    const created = register();
+    const changed = t.db
+      .update(agents)
+      .set({ status: 'revoked', revokedAt: Date.now() })
+      .where(eq(agents.id, created.agent.id))
+      .run();
+    expect(changed.changes).toBe(1);
+    expect(rowOf(created.token.id).revokedAt).toBeNull();
+    expect(tokenContextFor(t.db, rowOf(created.token.id))).toEqual({
+      ok: false,
+      reason: 'agent_revoked',
+    });
+  });
+
+  it('gives a legacy token no agent, and its pin and scope unchanged', () => {
+    const legacy = createToken(t.sqlite, t.db, owner, {
+      name: 'cli',
+      scope: 'read_only',
+      projectIds: [s.projectId],
+    });
+    expect(tokenContextFor(t.db, rowOf(legacy.token.id))).toEqual({
+      ok: true,
+      token: { id: legacy.token.id, scope: 'read_only', projectIds: [s.projectId], agent: null },
+    });
+  });
+
+  it('is what resolveTokenActor uses, so the two cannot disagree', () => {
+    const created = register();
+    const resolved = resolveTokenActor(t.db, created.secret, Date.now()).token;
+    const built = tokenContextFor(t.db, rowOf(created.token.id));
+    expect(built.ok && built.token).toEqual(resolved);
   });
 });
