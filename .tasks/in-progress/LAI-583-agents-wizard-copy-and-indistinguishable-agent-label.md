@@ -2,11 +2,12 @@
 id: LAI-583
 title: 'Agents wizard says the name shows on cards and that the agent''s token is "your token"; two agents on one device share a label'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-582
-status: backlog
+started: 2026-10-28T21:53:57Z
+status: in-progress
 ---
 
 ## Goal
