@@ -12,9 +12,9 @@ import { SizeChip } from '../../../components/SizeChip.tsx';
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
 import {
   agentDevice,
-  devicesOnTasks,
   selectedAgentOf,
   selectedHarness,
+  twinsOnTasks,
 } from '../../../api/selected-agent.ts';
 import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
 import { cardExecutionState } from '../../../components/agent/execution-derive.ts';
@@ -327,8 +327,9 @@ export function TaskCard({
           <span className="card-agent card-above">
             <AgentChip
               client={selectedHarness(agent)}
+              device={agentDevice(agent)}
               // Told apart from another on this board that shares both (LAI-583).
-              device={devicesOnTasks(byId).get(agent.id) ?? agentDevice(agent)}
+              twin={twinsOnTasks(byId).get(agent.id)}
               owner={agent.owner.name}
             />
           </span>

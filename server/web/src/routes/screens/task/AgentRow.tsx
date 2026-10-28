@@ -10,6 +10,7 @@ import {
   agentDevice,
   distinctDevices,
   shownAs,
+  twinNames,
   type SelectedAgent,
 } from '../../../api/selected-agent.ts';
 import { getTask, type TaskSummary } from '../../../api/tasks.ts';
@@ -168,20 +169,20 @@ export function AgentRow({
   }, [retired]);
 
   /** The current agent as the picker names it: told apart from another of the reader's (LAI-583). */
-  const shown = useMemo(
+  const peers = useMemo(
     () =>
       current === null
-        ? null
-        : shownAs(
-            current,
-            distinctDevices(
-              load.kind === 'ready'
-                ? [...load.agents.filter((a) => a.status !== 'revoked'), current]
-                : [current],
-            ),
-          ),
+        ? []
+        : load.kind === 'ready'
+          ? [...load.agents.filter((a) => a.status !== 'revoked'), current]
+          : [current],
     [current, load],
   );
+  const shown = useMemo(
+    () => (current === null ? null : shownAs(current, distinctDevices(peers))),
+    [current, peers],
+  );
+  const twin = current === null ? undefined : twinNames(peers).get(current.id);
 
   const choices = useMemo(
     () =>
@@ -301,7 +302,8 @@ export function AgentRow({
             ) : (
               <AgentChip
                 client={selectedHarness(shown)}
-                device={agentDevice(shown)}
+                device={agentDevice(current ?? shown)}
+                twin={twin}
                 owner={shown.owner.name}
               />
             )}

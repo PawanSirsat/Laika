@@ -22,7 +22,6 @@ import {
   agentVia,
   AVAILABLE_WITHIN_MS,
   describeAgentSelected,
-  devicesOnTasks,
   distinctDevices,
   ineligibleReason,
   matchesAgentFilter,
@@ -31,6 +30,7 @@ import {
   refusalOf,
   SELECTED_AGENT_REFUSALS,
   selectionErrorWords,
+  twinsOnTasks,
   type SelectedAgent,
 } from '../../src/api/selected-agent.ts';
 import { AVAILABILITY_WORDS } from '../../src/components/agent/agent-states.ts';
@@ -356,8 +356,8 @@ void describe('two agents that share a harness and a device', () => {
       ['t1', onPolly],
       ['t2', onDirect],
     ]);
-    assert.equal(devicesOnTasks(board).get('ag-0001'), 'Belka (polly workers)');
-    assert.equal(devicesOnTasks(board), devicesOnTasks(board), 'kept per board, not per card');
+    assert.equal(twinsOnTasks(board).get('ag-0001'), 'polly workers');
+    assert.equal(twinsOnTasks(board), twinsOnTasks(board), 'kept per board, not per card');
 
     // History: one is on a task, the other is only the reader's own.
     const names = agentNamesFrom([direct], [onPolly]);

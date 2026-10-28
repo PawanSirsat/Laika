@@ -1757,8 +1757,21 @@ void describe('two agents that share a harness and a device', () => {
       await chip('t2').waitFor({ timeout: 20_000 });
       for (const theme of ['light', 'dark']) {
         await setTheme(h.page, theme);
+        // Read aloud in full; on screen, the name that differs (LAI-583).
         assert.equal(folded(await chip('t2').textContent()), FIRST, theme);
         assert.equal(folded(await chip('t1').textContent()), SECOND, theme);
+        const shown = (id: string) =>
+          chip(id).evaluate((el) => {
+            const copy = el.cloneNode(true) as HTMLElement;
+            for (const hidden of copy.querySelectorAll('.visually-hidden')) hidden.remove();
+            return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
+          });
+        assert.equal(await shown('t1'), 'Claude Code · Second laptop agent', theme);
+        assert.equal(await shown('t2'), 'Claude Code · Laptop agent', theme);
+        assert.match(
+          (await chip('t1').getAttribute('title')) ?? '',
+          /on laptop-1 \(Second laptop agent\)$/,
+        );
         assert.equal(folded(await chip('t3').textContent()), 'Codex · desktop-2', theme);
       }
 

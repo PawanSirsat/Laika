@@ -126,18 +126,18 @@ export function shownAs<T extends Peer>(agent: T, devices: ReadonlyMap<string, s
 }
 
 /**
- * The devices for the agents selected on a set of tasks — the board's
+ * {@link twinNames} for the agents selected on a set of tasks — the board's
  * cards. Kept per map, since every card asks of the same one.
  */
 const onTasks = new WeakMap<object, ReadonlyMap<string, string>>();
-export function devicesOnTasks(
+export function twinsOnTasks(
   tasks: ReadonlyMap<string, Pick<TaskSummary, 'selected_agent'>>,
 ): ReadonlyMap<string, string> {
   const known = onTasks.get(tasks);
   if (known !== undefined) return known;
-  const devices = distinctDevices(selectedOn([...tasks.values()]));
-  onTasks.set(tasks, devices);
-  return devices;
+  const twins = twinNames(selectedOn([...tasks.values()]));
+  onTasks.set(tasks, twins);
+  return twins;
 }
 
 /** A task's selected agent; a view served before LAI-535 carries none. */
