@@ -297,3 +297,46 @@ No org switch exists in the app (one organisation per instance), so
 `setStoreUser` is the only session boundary.
 
 **The full repo gate is still owed**; CHIEF runs it.
+
+## Round-5 fixes (Codex review of PR #106 at `ecca7b2b`, SHELL, 2026-10-28)
+
+Round 5 verified the deadline, reset and token fixes. One blocking issue
+remained, and it came from round 4's P2: *"on a tie, prefer the confirmed
+result"* was wrong. The reviewer withdrew it.
+
+**On a timestamp tie, a read started after the save is the truth**
+(`d9fb583b`, `ee179b71`, `c5ae1167`). The server stamps `updated_at` with
+`Date.now()`, not a revision, so the round-4 rule let a confirmed agent ignore,
+for good, a later read of another write made in the same millisecond. Now:
+- `server/web/src/api/read-order.ts` hands out one rising number per page.
+- The task store tags each list read with the number it **started** at
+  (`readOrder`). `asOf` stays the time the read answered.
+- A save takes a number when it **completes**.
+- On a tie, props from a read that started after the save completed retire the
+  confirmed answer, whatever agent they name. Only a snapshot that predates the
+  completion may be ignored, unless it agrees.
+
+Tests: the tie test is now two cases.
+- An equal-timestamp snapshot started before the save completed (taken with
+  `route.fetch` while the PATCH is held, delivered after) does not overturn the
+  confirmation.
+- The read the save itself triggers, with the same timestamp and a different
+  agent, does overturn it.
+
+Break-the-fix checks, each restored by SHA-256 checksum:
+
+| What was broken | Test that went red |
+| --- | --- |
+| Ignore the read order | the fresh-read test (`ag-laptop` shown where `ag-desktop` was read) |
+| Props win every tie | the old-snapshot test |
+| Order stamped when a read *answers*, not when it starts | the old-snapshot test |
+
+**Known limitation: the read-back is not a write fence.** At the deadline the
+client aborts the PATCH and reads the task back, but an aborted request is not
+a cancelled write. If the server still executes that PATCH *after* the
+read-back, it can overwrite a later pick, and nothing on the client can prevent
+it. Only a server-enforced precondition (`If-Match` or an expected
+`updated_at`/revision on `PATCH /tasks/:id`) would guarantee the order. Filed as
+**LAI-571** (CORE, card LAIKA-823), file only.
+
+**The full repo gate is still owed**; CHIEF runs it.
