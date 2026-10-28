@@ -10,13 +10,7 @@ import { ensureActivityTriggers, MIGRATIONS_FOLDER, runMigrations } from '../../
 import { expectSqliteError, freshDb, seed, type TestDb } from '../helpers/db.ts';
 import { eq } from 'drizzle-orm';
 import { newId } from '../../src/db/ids.ts';
-import {
-  activity,
-  comments,
-  idempotencyKeys,
-  taskDependencies,
-  tasks,
-} from '../../src/db/schema.ts';
+import { comments, idempotencyKeys, taskDependencies, tasks } from '../../src/db/schema.ts';
 import { createLogger } from '../../src/log.ts';
 import { statusForCategory } from '../../src/db/project-statuses.ts';
 import { resolveTokenActor } from '../../src/auth/resolve-actor.ts';
