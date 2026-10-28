@@ -151,3 +151,45 @@ LAIKA-813) turns it green. Every server test passes; `pnpm lint` and
   not a parity or SPEC-drift exemption).
 - Found and filed **LAI-562**: a legacy pinned token can mint an unpinned one
   (H4 territory). Closed here for agent tokens only.
+
+## Review round 1 — Codex cross-vendor review of PR #102 (head 63dff7e3): fixes (CORE, 2026-10-28)
+
+New commits only; branches LAI-535/537/538/541/542/543 are stacked on 63dff7e3.
+
+1. **Secrets in the idempotency store, and replay across credentials**
+   (blocking). `markOneTimeSecret` on every route that reveals a secret —
+   `POST /tokens`, `POST /agents`, `POST /agents/:id/rotate-token`,
+   `POST /invites`, `POST /invites/:id/reissue`, `POST /users/:id/reset-link`,
+   `POST /org/github-webhook` — and the middleware stores none of them. **`POST
+   /tokens` had the same exposure before this task** (mutation M2 below), as
+   did the invite, reset-link and webhook routes. A token's idempotency rows
+   are now keyed by `token:<id>` (`idempotencyOwner`); a web session's stay
+   keyed by the person. `/api/v1/auth/*` (better-auth; its sign-in body carries
+   a session token) is passed through untouched. A keyed retry of a secret
+   route runs the route again (a second secret, or the route's own refusal).
+   Rows already stored before this fix are no longer reachable by a token and
+   age out within 24 h (§11.6 prune).
+2. **Heartbeats bypassed grants** (blocking; M4, LAIKA-537). The branch write
+   now asks `can(task.write)` of the whole actor, and the task link needs
+   `project.read`; the beat always lands. Applies to every token, legacy
+   included: a legacy token whose owner cannot read the project no longer
+   links or writes there.
+3. **SSE discards credential restrictions** (blocking). **Requires LAI-539;
+   after both land, the stream must also apply agent grants and agent
+   revocation.** The resolver half is here: `tokenContextFor(db, row)` in
+   `auth/resolve-actor.ts` is the one place a token row becomes the context
+   `can()` narrows by (agent grants included, `agent_revoked` refused), and
+   `resolveTokenActor` uses it. LAI-539's `reloadActor` should build its
+   `token` with it instead of `{ id, scope, projectIds }`. Nothing new filed;
+   CHIEF tracks the integration.
+
+**SPEC drift for CHIEF's docs half (not a named crossing, so not edited):**
+§6.3's Idempotency bullet ("keyed by user rather than credential") and §6.4's
+"Idempotency keys are the person's, not the credential's (LAI-748)" are now
+true for web sessions only; a token's keys are its own, and one-time secrets
+are never stored.
+
+Mutation checks (each restored by checksum): M1 store ignores the flag → red;
+M2 `POST /tokens` unmarked → red; M3 key by person → 2 red; M4 branch write
+without `can()` → red; M5 link without `project.read` → 2 red; M6 resolver
+drops agent revocation → 2 red; M7 better-auth answers stored → red.
