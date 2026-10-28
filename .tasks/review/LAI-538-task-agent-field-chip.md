@@ -238,3 +238,62 @@ Break-the-fix checks, each restored by SHA-256 checksum:
   second write on LC-1 could start*).
 
 **The full repo gate is still owed**; CHIEF runs it.
+
+## Round-4 fixes (Codex review of PR #106 at `145005d7`, SHELL, 2026-10-28)
+
+Round 4 confirmed as fixed:
+- the confirmed-version override, including withdraw;
+- same-task writes serialised across visits;
+- release on success, sync error, 422, 401 and AbortError;
+- the test-quality changes;
+- `role=status` on *Saving agent…*;
+- focus kept on own-visit saves.
+
+One blocking issue remained, plus a P2. Both are fixed in new commits (`eb727f35`, `4525407f`, `47ea971d`).
+
+1. **A write that never settles locked its task for the session.** The record
+   moved to `server/web/src/api/agent-writes.ts`, and every record now ends in
+   one of three ways:
+   - it settles;
+   - `AGENT_SAVE_DEADLINE_MS` (30 s) aborts its request with `'deadline'`;
+   - the session ends. `setStoreUser` calls `resetAgentWrites`, which aborts
+     every write with `'reset'` on sign-out or a user change.
+
+   At the deadline the outcome is **uncertain**, so `AgentRow` reads the task
+   back (that read has its own deadline) and shows the server's agent before
+   the next write may go. If that read fails, the record ends marked uncertain
+   and the row says *Couldn't confirm the agent was saved — reload to check.*
+   It does not hold the picker. Each record has a token, so only the request
+   holding it may end it. Timers are injectable.
+2. **Tie (P2).** On an equal `updated_at`, props that disagree with the
+   confirmed answer no longer win.
+
+Tests:
+- `test/api/agent-writes.test.ts` (new, the module's mirror) runs on a fake
+  clock.
+- `agent-field.test.ts` uses Playwright's `page.clock` (no real 30 s waits)
+  and covers:
+  - a hung PATCH → deadline → read back → picker shows the server's agent;
+  - a failed read-back → the could-not-confirm text, and the picker is free;
+  - a hung PATCH, then sign-out and sign-in → the picker is free with no clock
+    moved;
+  - a drawer closed and reopened mid-hang → still held, then freed at the
+    deadline;
+  - a version tie, where the PATCH answer is fulfilled with the props' own
+    `updated_at`.
+
+Break-the-fix checks, each restored by SHA-256 checksum:
+
+| What was broken | Tests that went red |
+| --- | --- |
+| No deadline | 3 hung-PATCH tests |
+| Release at the deadline without reading back | 2 tests |
+| No session reset | the sign-out test |
+| No uncertain mark | the failed-read-back test |
+| Tie favours props | the tie test |
+| Token check ignored | the unit token test |
+
+No org switch exists in the app (one organisation per instance), so
+`setStoreUser` is the only session boundary.
+
+**The full repo gate is still owed**; CHIEF runs it.
