@@ -2717,7 +2717,7 @@ credential is not an org credential with a project filter.
   | `stale_claim` | the generation is not the task's live claim's — older, newer, released or **expired** — or the live claim's lease has lapsed, or the holder's own agent sent none; the caller's own claim on the task **lapsed**, whether or not it sent a generation; a generation sent where no claim is live; also a session that has ended. `details.reclaim: true` when the caller's own claim expired and the explicit reclaim is the way back |
   | `claim_held` | another session holds the live claim — **another agent of the same person included**, which is fenced exactly as another person's is — or a token with no agent (a legacy token) tried to change or claim a task a registered agent's session holds (D-114 item 6), or the task's claim lapsed and is waiting for recovery (any token but the old holder's) |
   | `claim_paused` | the live claim is paused while a hand-off is open (LAI-546) |
-  | `selected_for_another_agent` | **D-119** (LAI-586): the task has a selected agent (§4.5) and the caller is a session of a different agent — *"once a task names its agent, only that agent can start it."* Answered by a claim (`POST /tasks/:id/claim`, `start_working`) and a reclaim; asked after the caller's own `task.claim`, and `details` names the selected agent (`selected_agent_id`, `selected_agent: { id, display_name, harness, device_label }`) only when the caller may read the task's project |
+  | `selected_for_another_agent` | **D-119** (LAI-586): the task has a selected agent (§4.5) and the caller is a session of a different agent — *"once a task names its agent, only that agent can start it."* Answered by a claim (`POST /tasks/:id/claim`, `start_working`) — **the holder's own session renewing included** — and a reclaim; asked after the caller's own `task.claim`, and `details` names the selected agent (`selected_agent_id`, `selected_agent: { id, display_name, harness, device_label }`) only when the caller may read the task's project. Also the fence's answer to any change made under a live claim the selection does not back (a claim taken before D-119, or before the selection) |
 
   **The rule, in order.** (1) The system (§3.4) and **a person signed in** are
   never fenced — people keep explicit control, and their change is recorded
@@ -2986,6 +2986,17 @@ holds for `POST /tasks/:id/claim`, `start_working` and both reclaims (§6.3);
 the selected agent's claim accepts its open work request, so a request can no
 longer stay open beside another agent's claim. A person and a legacy token
 claim by assignee as before, and reads and comments are never refused for it.
+**A live claim the selection does not back** — taken before D-119, or before
+the selection; the API cannot make one any more — is never renewed and never
+usable: the claim, the reclaim and the fence all answer it
+`selected_for_another_agent`. It ends at its holder's next heartbeat (reported
+in `lost`) or when its lease lapses, whichever is first, as **`released`**, not
+`expired` — an expired claim waits for its holder's reclaim or for recovery,
+and this holder may never reclaim, so `expired` would lock the selected agent
+out. The system records it as `task.updated`, `{ field: 'claim', from: {
+generation, session_id, agent_id }, to: null, reason:
+'selected_for_another_agent' }`. While it is live the selected agent hears
+`claim_held`; it is never taken over.
 `GET /agents/me/work-requests` is the calling
 agent's open requests, newest first, paged like any list, each `{ id, kind,
 state, task_id, task_key, task_title, project_id, agent_id, requested_by,
@@ -3019,8 +3030,12 @@ not_an_agent`; another agent's session is `404`. **The reclaim** reads
 everything again **inside its `BEGIN IMMEDIATE`**, from the database, not from
 the request's resolved actor — the agent's status (`403`, `reason:
 agent_revoked`), the token (`token_revoked`; `token_read_only` if it is not
-`full`), the owner (`owner_inactive`), the agent's grant (`agent_not_granted`,
-`agent_read_only`) and the owner's `task.claim` under today's role. A task no
+`full`), the owner (`owner_inactive`), then the task — **one the caller can no
+longer read is `404 not_found`, `No such task`, byte for byte what a task that
+does not exist answers** (LAI-586 review; a removed grant lands here) — the
+agent's grant (`agent_read_only`) and the owner's `task.claim` under today's
+role. `POST /tasks/:id/claim` and `start_working` answer a task the caller
+cannot read the same way, before `task.claim`. A task no
 longer in progress is `409`, `reason: task_not_claimable`; a live claim is `409
 claim_held`; a task whose newest claim is not this agent's expired one is
 `409`, `reason: nothing_to_reclaim`. The offer steps — refusing
