@@ -2,11 +2,12 @@
 id: LAI-569
 title: 'The List fits a 1440 screen with the Agent column: no sideways scroll in a space that uses agents'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-538]
 discovered-from: LAI-538
-status: backlog
+started: 2026-10-28T21:26:05Z
+status: in-progress
 ---
 
 Filed by SHELL (Belka, dispatched by CHIEF) from the Codex cross-review of
