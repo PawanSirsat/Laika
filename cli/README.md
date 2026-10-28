@@ -641,7 +641,7 @@ It is never in argv, a child's environment, a state file
 
 | Subprocess | Started by | Environment |
 | --- | --- | --- |
-| `readlink`, `find`, `head` | `plugin/scripts/laika-agent-hook`, locating the entry | the harness's, **minus `LAIKA_AGENT_TOKEN` and `LAIKA_TOKEN`**, unset before any of them runs; stdin is `/dev/null` |
+| `readlink`, `find`, `head` | `plugin/scripts/laika-agent-hook`, locating the entry | the harness's, **minus `LAIKA_AGENT_TOKEN` and `LAIKA_TOKEN`**, unset before any of them runs; stdin is `/dev/null`. The launcher's first command is `set +x +v +a`, so `sh -x`, an inherited `SHELLOPTS=xtrace` or `allexport` neither prints nor exports the token, and its scratch variables are unset before use, so a name already exported cannot carry it |
 | `node agent-main hook <event> <harness>` | the launcher: the one consumer | `LAIKA_AGENT_TOKEN` restored for it alone if the harness passed one, never `LAIKA_TOKEN`; the hook JSON on stdin |
 | `ps -o ppid=,stat=,lstart=,comm= -p <pid>` | the liveness check and the harness walk | a fixed `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, `LC_ALL=C`, `LANG=C`, and nothing of the caller's |
 | `node agent-main.(ts\|js) _watch <harness> <id>` | `SessionStart`, and a hook restarting a dead watcher | an allowlist: `HOME`, `PATH`, `TMPDIR`, `LANG`, `LC_ALL`, `LAIKA_AGENT_HEARTBEAT_SECONDS`; the credential on stdin |
@@ -658,8 +658,15 @@ is a positive integer, and its state is `paused`, `released`, `expired` or
 line that says they are board data rather than instructions, and a hook's whole
 context is capped at 1,200 characters. Lost claims are kept in the state file as
 data and checked again when shown; text an older helper kept there is dropped
-unread. A `ps` that hangs is killed after 5 s and counts as no answer, so
-nothing is renewed on a liveness check that did not complete.
+unread.
+
+**Alive, dead, or unknown.** The liveness check has three answers. *Dead*
+needs evidence: `ps` ran and found no such process, the start time differs
+(the PID was reused), or the state is a zombie, dead or exiting. *Unknown* —
+`ps` timed out (5 s), was killed, failed, or printed something unreadable —
+renews nothing that beat and abandons nothing: the session is kept and checked
+again at the next beat. A check that never comes back simply lets the lease
+expire.
 
 ### Harness capability matrix
 
