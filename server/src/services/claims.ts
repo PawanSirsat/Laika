@@ -1112,6 +1112,11 @@ export function reclaimTask(
         ? openSession(db, fresh, agent, {}, now)
         : requireOpenSession(db, agent.id, input.sessionId);
     const claim = insertClaim(db, taskId, session.id, agent.id, now);
+    // A reclaim is a claim (LAI-586 review round 2): the open work request
+    // addressed to this agent — re-issued if the selection moved away and
+    // back while the claim was expired — is accepted in the same transaction,
+    // exactly as a fresh claim accepts it.
+    acceptWorkRequest(db, taskId, agent.id, now);
 
     appendActivity(db, {
       orgId: project.orgId,
