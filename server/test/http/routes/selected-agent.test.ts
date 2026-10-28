@@ -552,6 +552,34 @@ describe('GET /agents/me/work-requests', () => {
     expect(new Set(seen).size).toBe(asked.length);
   });
 
+  it('answers a real-but-ungranted slug and a made-up one byte for byte alike: existence is not disclosed', async () => {
+    const { secret } = await register([{ project_id: alpha, scope: 'full' }]);
+    const ask = async (slug: string) => {
+      const res = await req(
+        `/api/v1/agents/me/work-requests?project=${slug}`,
+        {},
+        { bearer: secret },
+      );
+      return { status: res.status, body: await res.text() };
+    };
+
+    const real = await ask('beta');
+    const madeUp = await ask('no-such-project');
+
+    expect(real).toEqual(madeUp);
+    expect(real.status).toBe(403);
+    expect(JSON.parse(real.body)).toEqual({
+      error: {
+        code: 'forbidden',
+        message: 'This agent has no access to this project',
+        details: { action: 'project.read', reason: 'agent_not_granted' },
+      },
+    });
+    // The body names neither the slug asked for nor any project id.
+    expect(real.body).not.toContain('beta');
+    expect(real.body).not.toContain(beta);
+  });
+
   it('?project= narrows to one project; another the agent cannot read is refused, not empty', async () => {
     const { agent, secret } = await register([
       { project_id: alpha, scope: 'full' },
@@ -573,9 +601,12 @@ describe('GET /agents/me/work-requests', () => {
         await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: narrow.secret }),
       ),
     ).toMatchObject({ status: 403, code: 'forbidden', reason: 'agent_not_granted' });
+    // A slug nobody owns is the same refusal, never a 404 (no existence probe).
     expect(
-      (await req('/api/v1/agents/me/work-requests?project=nope', {}, { bearer: secret })).status,
-    ).toBe(404);
+      await refusal(
+        await req('/api/v1/agents/me/work-requests?project=nope', {}, { bearer: secret }),
+      ),
+    ).toMatchObject({ status: 403, code: 'forbidden', reason: 'agent_not_granted' });
   });
 
   it('is 403 not_an_agent for a session and for a legacy token', async () => {

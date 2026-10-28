@@ -383,6 +383,26 @@ describe('selecting an agent over MCP (LAI-535)', () => {
     await client.close();
   });
 
+  it('list_ready_tasks answers a real-but-ungranted project and a made-up one identically', async () => {
+    const { secret } = await register([{ project_id: alpha, scope: 'full' }]);
+    const client = await connect(secret);
+    const ask = async (project: string) => {
+      const result = await client.callTool({ name: 'list_ready_tasks', arguments: { project } });
+      expect(result.isError, JSON.stringify(result)).toBe(true);
+      return { content: result.content, structured: result.structuredContent };
+    };
+
+    const real = await ask('beta');
+    const madeUp = await ask('no-such-project');
+
+    expect(JSON.stringify(real)).toBe(JSON.stringify(madeUp));
+    expect((real.structured as ErrorBody).error).toMatchObject({
+      code: 'forbidden',
+      details: { reason: 'agent_not_granted' },
+    });
+    await client.close();
+  });
+
   it('get_task_context says who it is requested of, apart from the assignee', async () => {
     const worker = await register([{ project_id: alpha, scope: 'full' }]);
     const task = await newTask();
