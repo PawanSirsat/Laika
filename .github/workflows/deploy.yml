@@ -44,7 +44,8 @@ jobs:
   gate:
     name: Gate — test, lint, format
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # Private-repo runner is 2 CPU / 8 GB; the full gate takes ~36-40 min.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
