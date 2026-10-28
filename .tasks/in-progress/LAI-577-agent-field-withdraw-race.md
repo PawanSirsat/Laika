@@ -2,11 +2,12 @@
 id: LAI-577
 title: 'agent-field withdraw race test fails on master CI and blocks the deploy: decide product race or test timing, and fix it'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-538
-status: backlog
+status: in-progress
+started: 2026-10-28T18:29:03Z
 ---
 
 Filed by SHELL (Belka, dispatched by CHIEF), 2026-10-28. Board card LAIKA-830,
