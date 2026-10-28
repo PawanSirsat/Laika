@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { and } from 'drizzle-orm';
-import { handoffOffers, orgs, taskClaims, users } from '../../src/db/schema.ts';
+import { handoffOffers, orgs, taskClaims, tasks, users } from '../../src/db/schema.ts';
 import { DEFAULT_CLAIM_TIMINGS, expireClaims } from '../../src/services/claims.ts';
 import {
   type AuthHarness,
@@ -266,6 +266,91 @@ describe('start_working on a task with a selected agent (D-119)', () => {
 
     await succeeded(client, 'get_task_context', { task: task.key });
     await succeeded(client, 'add_comment', { task: task.key, body: 'for Polly' });
+    await client.close();
+  });
+});
+
+describe('start_working against a task the caller cannot see (LAI-586 review)', () => {
+  /** Everything the tool answered, as the agent receives it. */
+  async function answer(client: Client, args: Record<string, unknown>) {
+    const result = await client.callTool({ name: 'start_working', arguments: args });
+    expect(result.isError).toBe(true);
+    return JSON.stringify({ content: result.content, structured: result.structuredContent });
+  }
+
+  async function outsider() {
+    const beta = await must(
+      '/api/v1/projects',
+      { method: 'POST', body: JSON.stringify({ name: 'beta', slug: 'beta', prefix: 'BET' }) },
+      ownerCookie,
+    );
+    await must(
+      '/api/v1/projects/beta/members',
+      { method: 'POST', body: JSON.stringify({ user_id: bob.id, role: 'member' }) },
+      ownerCookie,
+    );
+    return (await must(
+      '/api/v1/agents',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          display_name: 'Codex · Strelka',
+          harness: 'codex',
+          grants: [{ project_id: beta.id as string, scope: 'full' }],
+        }),
+      },
+      bob.cookie,
+    )) as unknown as { agent: { id: string }; secret: string };
+  }
+
+  for (const reclaim of [false, true]) {
+    it(`${reclaim ? 'reclaim: true' : 'a claim'} — a hidden selected task answers byte for byte as a missing one, by key and by id`, async () => {
+      const polly = await register('Polly · Belka');
+      const task = await newTask();
+      await select(task.id, polly.agent.id);
+      const client = await connect((await outsider()).secret);
+      const extra = reclaim ? { reclaim: true } : {};
+
+      const byKey = await answer(client, { task: task.key, ...extra });
+      const missingKey = await answer(client, { task: 'ALP-999', ...extra });
+      const byId = await answer(client, { task: task.id, ...extra });
+      const missingId = await answer(client, { task: '01ZZZZZZZZZZZZZZZZZZZZZZZZ', ...extra });
+
+      expect(byKey).toEqual(missingKey);
+      expect(byId).toEqual(missingId);
+      expect(byKey).toEqual(byId);
+      expect(byKey).toContain('not_found');
+      for (const text of [byKey, byId]) {
+        expect(text).not.toContain(polly.agent.id);
+        expect(text).not.toContain('Polly');
+        expect(text).not.toContain(task.id);
+      }
+      await client.close();
+    });
+  }
+});
+
+describe('start_working by an agent holding a claim it is not selected for', () => {
+  it('cannot renew it with its own session: selected_for_another_agent, lease unchanged', async () => {
+    const polly = await register('Polly · Belka');
+    const direct = await register('Claude Code · Belka');
+    const task = await newTask();
+    const client = await connect(direct.secret);
+    const first = (await succeeded(client, 'start_working', { task: task.key })).claim as {
+      session_id: string;
+    };
+    h.db.update(tasks).set({ selectedAgentId: polly.agent.id }).where(eq(tasks.id, task.id)).run();
+    const before = h.db.select().from(taskClaims).where(eq(taskClaims.taskId, task.id)).all();
+
+    const r = await refused(client, 'start_working', {
+      task: task.key,
+      session_id: first.session_id,
+    });
+
+    expect([r.code, r.reason]).toEqual(['conflict', 'selected_for_another_agent']);
+    expect(h.db.select().from(taskClaims).where(eq(taskClaims.taskId, task.id)).all()).toEqual(
+      before,
+    );
     await client.close();
   });
 });
