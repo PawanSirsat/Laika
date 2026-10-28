@@ -339,15 +339,22 @@ void describe('the task panel', () => {
       assert.equal(m.avatar, 36);
 
       /*
-       * **`X's agent`, not `X`.** An agent comment was written by a tool
-       * running as somebody, and the possessive is the honest attribution.
+       * **`X via …`, not `X` and not `X's agent`** (LAI-538, D-114). An agent
+       * comment was written by a tool acting for somebody: the person, then
+       * the agent — by name where its activity row says which, *agent
+       * (unregistered token)* for a legacy token's, and only *an agent* here,
+       * where the fixture serves no activity row to say either.
        */
       assert.ok(
-        m.names.some((n) => n.endsWith("'s agent")),
+        m.names.some((n) => / via an agent$/.test(n)),
         `no agent attribution: ${m.names.join(', ')}`,
       );
       assert.ok(
-        m.names.some((n) => !n.endsWith("'s agent")),
+        m.names.every((n) => !/['’]s agent$/.test(n)),
+        `an agent comment invents whose agent it was: ${m.names.join(', ')}`,
+      );
+      assert.ok(
+        m.names.some((n) => !n.includes(' via ')),
         'every comment claims to be an agent',
       );
 

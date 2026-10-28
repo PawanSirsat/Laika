@@ -18,6 +18,7 @@ import {
   fakeStream,
   open,
   reply,
+  navigateInApp,
   until,
   type ApiStub,
   type Harness,
@@ -207,7 +208,47 @@ function world(options: { readonly role?: 'lead' | 'viewer' } = {}): World {
       payload: { changed: ['description_md'] },
     }),
     event({ actor_kind: 'agent', actor_token_id: 'tok-legacy', agent_id: null }),
+    // The reader's own agent, selected on no task: named from `GET /agents`.
+    event({ actor_kind: 'agent', actor_token_id: 'tok-ro', agent_id: 'ag-ro' }),
+    // Somebody's agent this reader can see nowhere: never given a name.
+    event({ actor_kind: 'agent', actor_token_id: 'tok-x', agent_id: 'ag-theirs' }),
+    // Who wrote each agent comment below — `CommentView` itself does not say.
+    event({
+      type: 'comment.added',
+      actor_kind: 'agent',
+      actor_token_id: 'tok-legacy',
+      agent_id: null,
+      payload: { action: 'created', comment_id: 'c-legacy' },
+    }),
+    event({
+      type: 'comment.added',
+      actor_kind: 'agent',
+      actor_token_id: 'tok-1',
+      agent_id: 'ag-laptop',
+      payload: { action: 'created', comment_id: 'c-reg' },
+    }),
   ];
+
+  const comment = (id: string, createdVia: string, body: string) => ({
+    id,
+    task_id: 't1',
+    author_id: 'u1',
+    body_md: body,
+    created_via: createdVia,
+    edited_at: null,
+    sent_back: false,
+    created_at: NOW - 2 * HOUR,
+    updated_at: NOW - 2 * HOUR,
+  });
+  const comments: Record<string, unknown[]> = {
+    t1: [
+      comment('c-legacy', 'mcp', 'Written with a legacy token'),
+      comment('c-reg', 'mcp', 'Written by a registered agent'),
+      // An agent comment whose activity row is not in the page read.
+      comment('c-orphan', 'mcp', 'Row not loaded'),
+      comment('c-human', 'web', 'Written by Ada herself'),
+    ],
+  };
 
   const editable = (current: Record<string, unknown>) => (call: StubCall) => {
     if (call.method !== 'PATCH') return current;
@@ -243,7 +284,7 @@ function world(options: { readonly role?: 'lead' | 'viewer' } = {}): World {
     const id = String(t.id);
     return {
       [`/api/v1/tasks/${id}`]: editable(t),
-      [`/api/v1/tasks/${id}/comments`]: { data: [], next_cursor: null },
+      [`/api/v1/tasks/${id}/comments`]: { data: comments[id] ?? [], next_cursor: null },
       [`/api/v1/tasks/${id}/watchers`]: { watchers: [] },
       [`/api/v1/tasks/${id}/usage`]: {
         task_id: id,
@@ -530,11 +571,9 @@ void describe('the drawer’s Agent row', () => {
       await until(async () => (await row.innerText()).includes('laptop-1'));
       assert.match(await row.innerText(), /Claude Code · laptop-1/);
       assert.equal(await row.getByRole('combobox').count(), 0);
-      assert.equal(
-        h.calls.filter((c) => c.path === '/api/v1/agents').length,
-        0,
-        'a Viewer’s drawer read the agents',
-      );
+      // A Viewer may still read their own agents (§3.1 `agent.read_own`,
+      // every role), which is what names them in the activity; no picker.
+      assert.equal(await row.getByRole('alert').count(), 0);
     } finally {
       await h.close();
     }
@@ -776,6 +815,145 @@ void describe('who an agent’s activity row says acted', () => {
         `no legacy-token line in ${JSON.stringify(who)}`,
       );
     } finally {
+      await h.close();
+    }
+  });
+
+  void test('an agent the reader may see is named, wherever it was selected or not; another is not', async () => {
+    const { stub } = world();
+    const h = await open('/board?project=laika-core&task=t1', stub);
+    try {
+      await agentRow(h);
+      await h.page.locator('#tab-history').click();
+      const history = h.page.locator('#panel-history');
+      await history.waitFor({ timeout: 10_000 });
+      const who = () => history.locator('.panel-event-who').allInnerTexts();
+      // `ag-ro` is selected on no task: only the reader's own `GET /agents` names it.
+      await until(async () => (await who()).includes('Ada Lovelace via Cursor · tablet'));
+      const lines = await who();
+      assert.ok(
+        lines.includes('Ada Lovelace via Cursor · tablet'),
+        `the reader's own agent was not named: ${JSON.stringify(lines)}`,
+      );
+      assert.ok(
+        lines.includes('Ada Lovelace via a registered agent'),
+        `an agent the reader cannot see was given a name: ${JSON.stringify(lines)}`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a comment names its agent, a legacy token’s says so, and none is anybody’s agent', async () => {
+    const { stub } = world();
+    const h = await open('/board?project=laika-core&task=t1', stub);
+    try {
+      await agentRow(h);
+      await h.page.locator('#tab-comments').click();
+      const list = h.page.locator('#panel-comments .cmt-who');
+      await until(async () => (await list.count()) === 4);
+      await until(async () =>
+        (await list.allInnerTexts()).includes('Ada Lovelace via Claude Code · laptop-1'),
+      );
+      assert.deepEqual(await list.allInnerTexts(), [
+        'Ada Lovelace via agent (unregistered token)',
+        'Ada Lovelace via Claude Code · laptop-1',
+        'Ada Lovelace via an agent',
+        'Ada Lovelace',
+      ]);
+      assert.doesNotMatch(
+        await h.page.locator('#panel-comments').innerText(),
+        /Ada Lovelace['’]s agent/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the Activity screen names the agent the same way', async () => {
+    const { stub } = world();
+    const h = await open('/activity?project=laika-core', stub);
+    try {
+      const feed = h.page.locator('.rail-feed-what');
+      await feed.first().waitFor({ timeout: 20_000 });
+      const text = async () => (await feed.allInnerTexts()).map((t) => t.replace(/\s+/g, ' '));
+      await until(async () => (await text()).some((t) => t.includes('via Cursor · tablet')));
+      const rows = await text();
+      for (const want of [
+        'Ada Lovelace via Claude Code · laptop-1',
+        'Ada Lovelace via agent (unregistered token)',
+        'Ada Lovelace via Cursor · tablet',
+        'Ada Lovelace via a registered agent',
+      ]) {
+        assert.ok(
+          rows.some((r) => r.startsWith(want)),
+          `no "${want}" on the Activity screen: ${JSON.stringify(rows)}`,
+        );
+      }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a selection still in flight when the drawer moves on', () => {
+  void test('stays with its own task: the next task shows its own agent and can be picked', async () => {
+    const { stub } = world();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let held = false;
+    const h = await open('/board?project=laika-core&task=t2', stub, {
+      before: async (page) => {
+        await page.route('**/api/v1/tasks/t2', async (route) => {
+          if (route.request().method() === 'PATCH') {
+            held = true;
+            await gate;
+          }
+          await route.continue();
+        });
+      },
+    });
+    try {
+      const box = await agentBox(h);
+      await until(async () => (await box.getAttribute('data-value')) === 'ag-laptop');
+      await pick(box, 'ag-desktop');
+      await until(() => held);
+      assert.ok(held, 'the PATCH on LC-2 was never sent — nothing was tested');
+
+      // The reader moves on before LC-2's answer comes back.
+      await navigateInApp(h.page, '/board?project=laika-core&task=t1');
+      await h.page
+        .getByRole('dialog')
+        .filter({ hasText: 'Wire the agent field' })
+        .waitFor({ timeout: 10_000 });
+      await until(async () => (await box.getAttribute('data-value')) === '');
+      assert.equal(await box.getAttribute('data-value'), '', 'LC-2’s pending agent shows on LC-1');
+      assert.equal(await box.isDisabled(), false);
+      const row = await agentRow(h);
+      assert.doesNotMatch(await row.innerText(), /Waiting for agent/);
+
+      // LC-1 can be picked while LC-2's write is still out.
+      await pick(box, 'ag-laptop');
+      await until(() => patches(h, 't1').length > 0);
+      assert.deepEqual(patches(h, 't1')[0]?.body, { selected_agent_id: 'ag-laptop' });
+      await until(async () => (await row.innerText()).includes('Waiting for agent'));
+
+      // LC-2's answer arrives late, and changes nothing here.
+      release();
+      await until(() => patches(h, 't2').length > 0);
+      assert.deepEqual(patches(h, 't2')[0]?.body, { selected_agent_id: 'ag-desktop' });
+      await h.page.waitForTimeout(400);
+      assert.equal(await box.getAttribute('data-value'), 'ag-laptop');
+      assert.equal(await row.getByRole('alert').count(), 0);
+      assert.match(
+        await row.innerText(),
+        /Waiting for agent · Ada Lovelace’s Claude Code · laptop-1/,
+      );
+    } finally {
+      release();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
   });
