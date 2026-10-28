@@ -2,11 +2,12 @@
 id: LAI-576
 title: 'web: setTheme clicks a theme control the session swap has just replaced, and the 390px dark pulse test times out'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p0
 depends-on: []
+started: 2026-10-28T17:26:40Z
 discovered-from: LAI-532
-status: backlog
+status: in-progress
 ---
 
 ## Goal
