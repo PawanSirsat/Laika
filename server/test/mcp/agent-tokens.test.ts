@@ -403,6 +403,48 @@ describe('selecting an agent over MCP (LAI-535)', () => {
     await client.close();
   });
 
+  async function refusalFor(secret: string, project: string) {
+    const client = await connect(secret);
+    try {
+      const result = await client.callTool({ name: 'list_ready_tasks', arguments: { project } });
+      expect(result.isError, JSON.stringify(result)).toBe(true);
+      return JSON.stringify({ content: result.content, structured: result.structuredContent });
+    } finally {
+      await client.close();
+    }
+  }
+
+  it('list_ready_tasks: the owner losing read access gives the made-up slug’s refusal', async () => {
+    const { secret } = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    const before = await connect(secret);
+    await succeeded(before, 'list_ready_tasks', { project: 'beta' });
+    await before.close();
+
+    await must(`/api/v1/projects/beta/members/${bob.id}`, { method: 'DELETE' }, ownerCookie, 200);
+
+    expect(await refusalFor(secret, 'beta')).toBe(await refusalFor(secret, 'no-such-project'));
+  });
+
+  it('list_ready_tasks: a token pinned narrower than the grants gives the same refusal outside the pin', async () => {
+    const { secret, token } = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    h.db
+      .update(tokens)
+      .set({ projectIdsJson: JSON.stringify([alpha]) })
+      .where(eq(tokens.id, token.id))
+      .run();
+
+    expect(await refusalFor(secret, 'beta')).toBe(await refusalFor(secret, 'no-such-project'));
+    const inside = await connect(secret);
+    await succeeded(inside, 'list_ready_tasks', { project: 'alpha' });
+    await inside.close();
+  });
+
   it('get_task_context says who it is requested of, apart from the assignee', async () => {
     const worker = await register([{ project_id: alpha, scope: 'full' }]);
     const task = await newTask();

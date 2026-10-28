@@ -7,6 +7,7 @@ import {
   orgs,
   projects,
   tasks,
+  tokens,
   users,
 } from '../../../src/db/schema.ts';
 import {
@@ -578,6 +579,62 @@ describe('GET /agents/me/work-requests', () => {
     // The body names neither the slug asked for nor any project id.
     expect(real.body).not.toContain('beta');
     expect(real.body).not.toContain(beta);
+  });
+
+  /** What a made-up slug answers this token: the one refusal everything below must equal. */
+  async function uniformRefusal(secret: string) {
+    const res = await req(
+      '/api/v1/agents/me/work-requests?project=no-such-project',
+      {},
+      { bearer: secret },
+    );
+    return { status: res.status, body: await res.text() };
+  }
+
+  it('the owner losing read access to a granted project gives the same refusal as a made-up slug', async () => {
+    const { agent, secret } = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    const taskId = await newTask('beta');
+    await ok(await patch(taskId, { selected_agent_id: agent.id }));
+    // Granted, and readable — so the refusal below is the owner's loss, nothing else.
+    await ok(await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: secret }));
+
+    await ok(
+      await req(
+        `/api/v1/projects/beta/members/${bob.id}`,
+        { method: 'DELETE' },
+        { cookie: ownerCookie },
+      ),
+    );
+
+    const res = await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: secret });
+    const lost = { status: res.status, body: await res.text() };
+    expect(lost).toEqual(await uniformRefusal(secret));
+    expect(lost.status).toBe(403);
+  });
+
+  it('a token pinned narrower than its agent’s grants gives the same refusal outside the pin', async () => {
+    const { agent, secret, token } = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    const taskId = await newTask('beta');
+    await ok(await patch(taskId, { selected_agent_id: agent.id }));
+    // The grant reaches beta; the token's own pin does not.
+    h.db
+      .update(tokens)
+      .set({ projectIdsJson: JSON.stringify([alpha]) })
+      .where(eq(tokens.id, token.id))
+      .run();
+
+    const res = await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: secret });
+    const pinned = { status: res.status, body: await res.text() };
+    expect(pinned).toEqual(await uniformRefusal(secret));
+    expect(pinned.status).toBe(403);
+    // Inside the pin it still answers.
+    await ok(await req('/api/v1/agents/me/work-requests?project=alpha', {}, { bearer: secret }));
   });
 
   it('?project= narrows to one project; another the agent cannot read is refused, not empty', async () => {
