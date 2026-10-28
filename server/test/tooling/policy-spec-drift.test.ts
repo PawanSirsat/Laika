@@ -51,6 +51,8 @@ import {
 
 const ORG_MATRIX = '3.1 Org-level permission matrix';
 const PROJECT_MATRIX = '3.2 Project-level permission matrix';
+/** §6.2 carries one prose rule of its own (audit H4); see `PROSE_RULES`. */
+const AUTHORISATION = '6.2 Authorisation';
 
 // --------------------------------------------------------- the declared link
 
@@ -165,6 +167,10 @@ const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
  * permission, and one nobody wrote down is one nobody checks. Each entry names
  * a phrase that must still be present, so deleting the prose fails this file
  * rather than silently emptying the exemption.
+ *
+ * **Not only §3.** §6.2's token paragraph (audit H4) narrows every org row
+ * for a pinned token, so it is listed here with the section it lives in; the
+ * loop below reads whichever `### ` heading the entry names.
  */
 const PROSE_RULES: readonly {
   readonly section: string;
@@ -185,6 +191,11 @@ const PROSE_RULES: readonly {
     section: PROJECT_MATRIX,
     phrase: 'unless the actor is org Owner/Admin',
     why: 'The implicit-lead rule. Not a cell: it changes which *role* §3.2 is read with, and `effectiveProjectRole` implements it. Asserted directly below.',
+  },
+  {
+    section: AUTHORISATION,
+    phrase: 'A token pinned to projects is refused org-wide admin actions',
+    why: "Audit H4. Not a cell: it narrows every §3.1 row for a token whose `project_ids_json` is set, as a `read_only` scope narrows the writes, and `tokenAllows` in `can()` implements it against `PINNED_TOKEN_ORG_ACTIONS`. `can.test.ts`'s H4 table holds it against every `ORG_ACTIONS` entry for a pinned owner and admin, pinned against unpinned; the plain-cell check in this file passes no token, so it is unaffected.",
   },
 ];
 

@@ -179,6 +179,48 @@ export function isReadAction(action: Action): boolean {
 }
 
 /**
+ * The org-scoped actions a token **pinned to projects** keeps (SPEC §6.2,
+ * audit H4): *"A token pinned to projects is refused org-wide admin actions.
+ * When `project_ids_json` is set, the token keeps only the org-level reads
+ * every member has and its own-record actions (its own tokens, heartbeats,
+ * unlisted work, activity sharing, time settings and drafts); every other
+ * org-scoped action — settings, projects, invites, members, other people's
+ * tokens, org-wide history and usage — is refused, whatever the user's role."*
+ *
+ * An allow-list in `READ_ACTIONS`' style, and for the same reason: an org
+ * action added without thought is refused to a pinned token, which is the safe
+ * direction to be wrong in. `tokenAllows` in `can.ts` consults it for every
+ * org action once the session-only check has run, so a session-only action
+ * never needs an entry here — it is refused to every token before this list
+ * is reached.
+ *
+ * **Three actions are deliberately not here.** `audit_log.export` and
+ * `usage.read_org` are org-wide — the whole organisation's history and
+ * figures, the opposite of a pin — and `project.join_public` changes a
+ * membership outside the pin. A pinned token reads its projects' usage with
+ * `usage.read_project` and their feeds through `project.read`, as a member
+ * who is not an admin does.
+ */
+export const PINNED_TOKEN_ORG_ACTIONS: ReadonlySet<OrgAction> = new Set<OrgAction>([
+  // The org-level reads every member holds (§3.1).
+  'org.read',
+  'presence.read',
+  'capacity.read',
+  'member_list.read',
+  // The token's own record: its own tokens, heartbeats, unlisted work,
+  // activity sharing, time settings and drafts.
+  'token.create_own',
+  'token.read_own',
+  'token.revoke_own',
+  'unlisted.log_own',
+  'heartbeat.send_own',
+  'activity_sharing.read_own',
+  'local_activity.send_own',
+  'time_settings.read_own',
+  'time_drafts.send_own',
+]);
+
+/**
  * Actions no personal access token may perform, whatever its scope or project
  * list — §3.1's `(session only)` cells (D-078, LAI-743).
  *
