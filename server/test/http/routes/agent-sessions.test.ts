@@ -897,4 +897,39 @@ describe('the census: every mounted mutating route is fenced or named', () => {
     expect((await beat(f.agentSecret, 'new', 2)).status).toBe(202);
     expect(branchOf()).toBe(`${f.key.toLowerCase()}-new`);
   });
+
+  // **Both checks on the one line** (integration of LAI-534 and LAI-541): the
+  // branch write needs the agent's grant (`can(task.write)`, #102) AND the
+  // live claim's fence (#107). Each case below passes one check and fails the
+  // other, so dropping either check turns exactly one of them red.
+  it(`${BRANCH_WRITE}: the live holder with its generation but a read_only grant writes nothing — the grant refuses`, async () => {
+    const { f, branchOf, beat } = await branchFixture();
+    const before = branchOf();
+    const holder = h.db.select().from(taskClaims).where(eq(taskClaims.taskId, f.taskId)).get()!;
+    await ok(
+      await req(
+        `/api/v1/agents/${holder.agentId}/grants`,
+        json('PUT', { grants: [{ project_id: alpha, scope: 'read_only' }] }),
+        { cookie: bob.cookie },
+      ),
+    );
+
+    // The claim fence passes: the live claim, its holder, its generation.
+    expect((await beat(f.agentSecret, 'read-only', holder.generation)).status).toBe(202);
+    expect(branchOf()).toBe(before);
+  });
+
+  it(`${BRANCH_WRITE}: a sibling with a full grant, outside the claim, writes nothing — the claim refuses`, async () => {
+    const { f, branchOf, beat } = await branchFixture();
+    const before = branchOf();
+    const holder = h.db.select().from(taskClaims).where(eq(taskClaims.taskId, f.taskId)).get()!;
+
+    // The grant passes: the sibling is granted `full` on alpha, as the holder
+    // is, and it even sends the live generation.
+    expect((await beat(f.siblingSecret, 'sibling', holder.generation)).status).toBe(202);
+    expect(branchOf()).toBe(before);
+    // And the holder, both checks passing, does write.
+    expect((await beat(f.agentSecret, 'holder', holder.generation)).status).toBe(202);
+    expect(branchOf()).toBe(`${f.key.toLowerCase()}-holder`);
+  });
 });
