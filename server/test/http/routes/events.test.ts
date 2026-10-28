@@ -1,17 +1,18 @@
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadActor } from '../../../src/auth/resolve-actor.ts';
+import { loadActor, resolveTokenActor } from '../../../src/auth/resolve-actor.ts';
 import { appendActivity } from '../../../src/db/activity.ts';
 import { type ActivityType } from '../../../src/db/enums.ts';
 import { newId } from '../../../src/db/ids.ts';
-import { orgs, users } from '../../../src/db/schema.ts';
+import { orgs, tokens, users } from '../../../src/db/schema.ts';
 import { type AppEnv } from '../../../src/http/context.ts';
 import { createErrorHandler } from '../../../src/http/error-handler.ts';
-import { eventRoutes, RECONNECT_MS } from '../../../src/http/routes/events.ts';
+import { eventRoutes, MAX_QUEUED_FRAMES, RECONNECT_MS } from '../../../src/http/routes/events.ts';
 import { ActivityFeed, type RepeatingTimer } from '../../../src/services/activity-feed.ts';
 import { MAX_REPLAY } from '../../../src/services/events.ts';
 import { addMember, createProject } from '../../../src/services/projects.ts';
+import { createToken, revokeOwnToken } from '../../../src/services/tokens.ts';
 import { captureLog } from '../../helpers/app.ts';
 import { authHarness, cookieFrom, jsonHeaders, type AuthHarness } from '../../helpers/auth.ts';
 import { freshDb, type TestDb } from '../../helpers/db.ts';
@@ -158,7 +159,13 @@ function write(projectId: string | null, type: ActivityType = 'task.created'): v
  */
 function bareApp(
   userId: string | null,
-  options: { shippedKeepalive?: boolean } = {},
+  options: {
+    shippedKeepalive?: boolean;
+    token?: string;
+    now?: () => number;
+    /** Runs after the actor is resolved and before the stream starts. */
+    afterAuth?: () => void;
+  } = {},
 ): Hono<AppEnv> {
   const log = captureLog();
   const app = new Hono<AppEnv>();
@@ -166,7 +173,15 @@ function bareApp(
   app.use('*', async (c, next) => {
     c.set('log', log.logger);
     c.set('requestId', 'test');
-    c.set('actor', userId === null ? null : actor(userId));
+    c.set(
+      'actor',
+      options.token === undefined
+        ? userId === null
+          ? null
+          : actor(userId)
+        : resolveTokenActor(t.db, options.token, options.now?.() ?? Date.now()),
+    );
+    options.afterAuth?.();
     await next();
   });
 
@@ -177,6 +192,7 @@ function bareApp(
     eventRoutes({
       db: t.db,
       feed,
+      ...(options.now === undefined ? {} : { now: options.now }),
       // Omitted entirely rather than passed as `undefined`: under
       // `exactOptionalPropertyTypes` those are different things, and only the
       // omission reaches the `?? KEEPALIVE_MS` default.
@@ -526,6 +542,475 @@ describe('a permission change reaches an open stream', () => {
 
     expect(await client.nextOrEnd()).toBeNull();
     expect(feed.subscriberCount()).toBe(0);
+  });
+});
+
+describe('open token streams re-check credentials (LAI-539)', () => {
+  async function open(
+    options: { projectIds?: string[]; expiresAt?: number; now?: () => number } = {},
+  ) {
+    const minted = createToken(t.sqlite, t.db, actor(ownerId), {
+      name: 'SSE regression',
+      scope: 'read_only',
+      ...options,
+      now: options.now?.() ?? Date.now(),
+    });
+    const res = await bareApp(ownerId, {
+      token: minted.secret,
+      ...(options.now === undefined ? {} : { now: options.now }),
+    }).request('/api/v1/events');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('text/event-stream');
+    const client = sseClient(res);
+    expect((await client.next()).event).toBe('ready');
+    // A positive delivery proves that authentication and the subscription work.
+    write(laikaId);
+    feed.poll();
+    expect((await client.next()).event).toBe('task.created');
+    return { minted, client };
+  }
+
+  async function unauthorized(client: ReturnType<typeof sseClient>) {
+    const frame = await client.next();
+    expect(frame.event).toBe('error');
+    expect(frame.id).toBeNull();
+    expect(JSON.parse(frame.data)).toEqual({
+      error: {
+        code: 'unauthorized',
+        message: 'That access token is not valid',
+        details: null,
+      },
+    });
+    expect(await client.nextOrEnd()).toBeNull();
+    expect(feed.subscriberCount()).toBe(0);
+    expect(timers.cleared).toBe(1);
+  }
+
+  it('closes a revoked token stream with unauthorized before the next event', async () => {
+    const { minted, client } = await open();
+    try {
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      write(laikaId);
+      feed.poll();
+      await unauthorized(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('closes an expired token stream with unauthorized at the injected expiry boundary', async () => {
+    let now = Date.now();
+    const expiresAt = now + 60_000;
+    const { client } = await open({ expiresAt, now: () => now });
+    try {
+      now = expiresAt - 1;
+      write(laikaId);
+      feed.poll();
+      expect((await client.next()).event).toBe('task.created');
+      now = expiresAt;
+      write(laikaId);
+      feed.poll();
+      await unauthorized(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('never delivers another project or org rows to a project-pinned token', async () => {
+    const { client } = await open({ projectIds: [laikaId] });
+    try {
+      write(otherId);
+      write(null, 'token.created');
+      write(laikaId);
+      feed.poll();
+      const frame = await client.next();
+      expect(frame.event).toBe('task.created');
+      expect(JSON.parse(frame.data)).toMatchObject({ project_id: laikaId });
+      timers.fire();
+      expect((await client.next()).comment).toBe('keepalive');
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('closes a deactivated token agent stream with unauthorized', async () => {
+    const { client } = await open();
+    try {
+      t.db.update(users).set({ isActive: 0 }).where(eq(users.id, ownerId)).run();
+      write(laikaId);
+      feed.poll();
+      await unauthorized(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('re-checks revocation before writing an already queued batch', async () => {
+    const { minted, client } = await open();
+    try {
+      write(laikaId);
+      feed.poll();
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      await unauthorized(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('closes an idle revoked token stream on the keepalive check', async () => {
+    const { minted, client } = await open();
+    try {
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      timers.fire();
+      await unauthorized(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('honours a narrowed project pin on the next batch', async () => {
+    const { minted, client } = await open();
+    try {
+      t.db
+        .update(tokens)
+        .set({ projectIdsJson: JSON.stringify([laikaId]) })
+        .where(eq(tokens.id, minted.token.id))
+        .run();
+      write(otherId);
+      write(laikaId);
+      feed.poll();
+      expect(JSON.parse((await client.next()).data)).toMatchObject({ project_id: laikaId });
+      timers.fire();
+      expect((await client.next()).comment).toBe('keepalive');
+    } finally {
+      await client.disconnect();
+    }
+  });
+});
+
+describe('every frame on a token stream is checked as it is written (LAI-539)', () => {
+  // ## How a write is held
+  //
+  // `streamSSE` writes through a `TransformStream` whose readable side has a
+  // high-water mark of 0: once one frame sits unread, the **next** write does not
+  // resolve until the client reads. So a frame the test leaves unread holds the
+  // write behind it, and the frames behind that are still queued — which is the
+  // window a credential can change in, made deterministic rather than raced.
+
+  function mint(options: { projectIds?: string[]; expiresAt?: number; now?: number } = {}) {
+    return createToken(t.sqlite, t.db, actor(ownerId), {
+      name: 'SSE per-frame regression',
+      scope: 'read_only',
+      ...options,
+      now: options.now ?? Date.now(),
+    });
+  }
+
+  async function connectToken(
+    secret: string,
+    options: { query?: string; now?: () => number; afterAuth?: () => void } = {},
+  ) {
+    const res = await bareApp(ownerId, {
+      token: secret,
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.afterAuth === undefined ? {} : { afterAuth: options.afterAuth }),
+    }).request(`/api/v1/events${options.query ?? ''}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('text/event-stream');
+    return sseClient(res);
+  }
+
+  /** The close a refused credential produces, and then nothing. */
+  async function expectRefusal(client: ReturnType<typeof sseClient>): Promise<void> {
+    const frame = await client.next();
+    expect(frame.event).toBe('error');
+    expect(frame.id).toBeNull();
+    expect(JSON.parse(frame.data)).toEqual({
+      error: { code: 'unauthorized', message: 'That access token is not valid', details: null },
+    });
+    expect(await client.nextOrEnd()).toBeNull();
+    expect(feed.subscriberCount()).toBe(0);
+  }
+
+  async function activity(client: ReturnType<typeof sseClient>, projectId: string) {
+    const frame = await client.next();
+    expect(frame.event).toBe('task.created');
+    expect(JSON.parse(frame.data)).toMatchObject({ project_id: projectId });
+    return Number(frame.id);
+  }
+
+  interface Change {
+    name: string;
+    /** Where the second row of the held batch is written. */
+    second: () => string;
+    change: (ctx: { tokenId: string; setNow: (n: number) => void; expiresAt: number }) => void;
+  }
+
+  const refusing: Change[] = [
+    {
+      name: 'revoked',
+      second: () => laikaId,
+      change: ({ tokenId }) => {
+        revokeOwnToken(t.sqlite, t.db, actor(ownerId), tokenId);
+      },
+    },
+    {
+      name: 'expired (injected clock)',
+      second: () => laikaId,
+      change: ({ setNow, expiresAt }) => {
+        setNow(expiresAt);
+      },
+    },
+    {
+      name: 'its holder deactivated',
+      second: () => laikaId,
+      change: () => {
+        t.db.update(users).set({ isActive: 0 }).where(eq(users.id, ownerId)).run();
+      },
+    },
+  ];
+
+  async function heldLive(change: Change) {
+    let clock = Date.now();
+    const expiresAt = clock + 60_000;
+    const minted = mint({ expiresAt, now: clock });
+    const client = await connectToken(minted.secret, { now: () => clock });
+    expect((await client.next()).event).toBe('ready');
+
+    write(laikaId); // X: written and left unread, so the next write is held
+    feed.poll();
+    await settle();
+    write(laikaId); // A: checked, then held in the write
+    write(change.second()); // B: still queued behind A
+    feed.poll();
+    await settle();
+
+    change.change({
+      tokenId: minted.token.id,
+      setNow: (n) => {
+        clock = n;
+      },
+      expiresAt,
+    });
+
+    const x = await activity(client, laikaId);
+    expect(await activity(client, laikaId)).toBe(x + 1);
+    // Let B's turn in the queue run before anything else refreshes the actor.
+    await settle();
+    return client;
+  }
+
+  for (const change of refusing) {
+    it(`a live batch: a token ${change.name} after the first write closes before row two`, async () => {
+      const client = await heldLive(change);
+      try {
+        await expectRefusal(client);
+      } finally {
+        await client.disconnect();
+      }
+    });
+  }
+
+  it('a live batch: a pin narrowed after the first write drops row two and stays open', async () => {
+    const client = await heldLive({
+      name: 'narrowed',
+      second: () => otherId,
+      change: ({ tokenId }) => {
+        t.db
+          .update(tokens)
+          .set({ projectIdsJson: JSON.stringify([laikaId]) })
+          .where(eq(tokens.id, tokenId))
+          .run();
+      },
+    });
+    try {
+      // B (the other project) never arrives; the next frame is the next row in.
+      write(laikaId);
+      feed.poll();
+      await activity(client, laikaId);
+      timers.fire();
+      expect((await client.next()).comment).toBe('keepalive');
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  for (const change of refusing) {
+    it(`a replay: a token ${change.name} after the first replayed write closes before row two`, async () => {
+      let clock = Date.now();
+      const expiresAt = clock + 60_000;
+      // Minted first: minting writes its own `token.created` row.
+      const minted = mint({ expiresAt, now: clock });
+
+      const { client: warm } = await connect(ownerId);
+      const ready = JSON.parse((await warm.next()).data) as { seq: number };
+      await warm.disconnect();
+
+      write(laikaId); // A
+      write(change.second()); // B
+
+      // `ready` is written and left unread, so A's write is held and B queued.
+      const client = await connectToken(minted.secret, {
+        query: `?last_event_id=${String(ready.seq)}`,
+        now: () => clock,
+      });
+      await settle();
+      change.change({
+        tokenId: minted.token.id,
+        setNow: (n) => {
+          clock = n;
+        },
+        expiresAt,
+      });
+
+      try {
+        expect((await client.next()).event).toBe('ready');
+        expect(await activity(client, laikaId)).toBe(ready.seq + 1);
+        await expectRefusal(client);
+      } finally {
+        await client.disconnect();
+      }
+    });
+  }
+
+  it('a queued keepalive is not written after the token is revoked', async () => {
+    const minted = mint();
+    const client = await connectToken(minted.secret);
+    expect((await client.next()).event).toBe('ready');
+    try {
+      write(laikaId); // X: unread
+      feed.poll();
+      await settle();
+      write(laikaId); // A: held
+      feed.poll();
+      await settle();
+      timers.fire(); // the keepalive passes its own check and is queued behind A
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+
+      const x = await activity(client, laikaId);
+      expect(await activity(client, laikaId)).toBe(x + 1);
+      await expectRefusal(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  /** Every frame to the end of the stream, so a test can count what arrived. */
+  async function rest(client: ReturnType<typeof sseClient>): Promise<Frame[]> {
+    const frames: Frame[] = [];
+    for (;;) {
+      const frame = await client.nextOrEnd();
+      if (frame === null) return frames;
+      frames.push(frame);
+    }
+  }
+
+  const UNAUTHORIZED = {
+    error: { code: 'unauthorized', message: 'That access token is not valid', details: null },
+  };
+
+  it('a refusal found while a shutdown drains the queue is still written, once, last', async () => {
+    const minted = mint();
+    const client = await connectToken(minted.secret);
+    expect((await client.next()).event).toBe('ready');
+    try {
+      write(laikaId); // X: unread
+      feed.poll();
+      await settle();
+      write(laikaId); // A: checked, then held
+      feed.poll();
+      await settle();
+      write(laikaId); // B: queued, not yet checked
+      feed.poll();
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      // The shutdown ends the stream first; B is checked only while it drains.
+      feed.closeAll();
+
+      const frames = await rest(client);
+      expect(frames.map((f) => f.event)).toEqual(['task.created', 'task.created', 'error']);
+      expect(frames[2]?.id).toBeNull();
+      expect(JSON.parse(frames[2]?.data ?? 'null')).toEqual(UNAUTHORIZED);
+      expect(feed.subscriberCount()).toBe(0);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('a refusal with the queue at its cap is still written, once, last', async () => {
+    const minted = mint();
+    const client = await connectToken(minted.secret);
+    try {
+      // Let `ready`'s write complete first: until it does, `ready` itself
+      // counts as queued. Then the first keepalive is checked and held in its
+      // write (nothing is read), and the rest queue behind it — exactly
+      // `MAX_QUEUED_FRAMES` frames, at the cap and not past it.
+      await settle();
+      for (let i = 0; i < MAX_QUEUED_FRAMES; i++) timers.fire();
+      await settle();
+      // Precondition: full, and still open.
+      expect(feed.subscriberCount()).toBe(1);
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      timers.fire(); // finds the revoke, with no room left in the queue
+
+      // The held keepalive passed its check before the revoke; every one
+      // queued behind it is checked after and dropped.
+      const frames = await rest(client);
+      expect(frames.map((f) => f.event ?? f.comment)).toEqual(['ready', 'keepalive', 'error']);
+      expect(JSON.parse(frames[2]?.data ?? 'null')).toEqual(UNAUTHORIZED);
+      expect(feed.subscriberCount()).toBe(0);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('a gap queued behind a written ready is refused by its own check', async () => {
+    for (let i = 0; i < MAX_REPLAY + 2; i++) write(laikaId);
+    const minted = mint();
+    // Each read of the clock is one credential check. The first is the test
+    // app's authentication, the second `ready`'s write-time check, the third
+    // `gap`'s: revoking inside the third lands after `ready` was written and
+    // before `gap` is. A backpressure hold cannot do this — `ready` is the
+    // first write, into an empty stream, so it never blocks the frame behind.
+    let reads = 0;
+    const client = await connectToken(minted.secret, {
+      query: '?last_event_id=1',
+      now: () => {
+        reads += 1;
+        if (reads === 3) revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+        return Date.now();
+      },
+    });
+    try {
+      expect((await client.next()).event).toBe('ready');
+      // Frame by frame, not `rest()`: a gap that slipped through would leave
+      // the stream open, and this must fail on the frame, not on a timeout.
+      const second = await client.next();
+      expect(second.event).toBe('error');
+      expect(JSON.parse(second.data)).toEqual(UNAUTHORIZED);
+      expect(await client.nextOrEnd()).toBeNull();
+      // The instrument ran as described: exactly the three checks above.
+      expect(reads).toBe(3);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('a queued gap is not written after the token is revoked', async () => {
+    for (let i = 0; i < MAX_REPLAY + 2; i++) write(laikaId);
+    const minted = mint();
+    // Revoked after authentication and before the stream's first write: `ready`
+    // and `gap` are both queued, and neither may reach the wire.
+    const client = await connectToken(minted.secret, {
+      query: '?last_event_id=1',
+      afterAuth: () => {
+        revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      },
+    });
+    try {
+      await expectRefusal(client);
+    } finally {
+      await client.disconnect();
+    }
   });
 });
 
