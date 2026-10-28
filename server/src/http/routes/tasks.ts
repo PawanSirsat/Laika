@@ -109,6 +109,23 @@ const UpdateBody = strictObject({
   selected_agent_id: z.string().min(1).max(64).nullable().optional(),
 });
 
+/** A task's strong validator: its exposed, monotonically advanced write stamp. */
+function taskEtag(updatedAt: number): string {
+  return `"${String(updatedAt)}"`;
+}
+
+function parseIfMatch(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const match = /^"(0|[1-9]\d*)"$/.exec(value);
+  const parsed = match === null ? Number.NaN : Number(match[1]);
+  if (!Number.isSafeInteger(parsed)) {
+    throw ApiError.badRequest('If-Match must be one quoted updated_at value', {
+      header: 'If-Match',
+    });
+  }
+  return parsed;
+}
+
 // `status` is a category — the project's first visible status of it — and
 // `status_id` one exact status, which is what a board drag sends (LAI-738).
 // Exactly one: two answers to "where does it go" would need a third rule.
@@ -362,13 +379,23 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     );
   });
 
-  app.get('/:id', (c) => c.json(getTask(db, requireActor(c), c.req.param('id'))));
+  app.get('/:id', (c) => {
+    const task = getTask(db, requireActor(c), c.req.param('id'));
+    c.header('ETag', taskEtag(task.updated_at));
+    return c.json(task);
+  });
 
   app.patch('/:id', async (c) => {
     const actor = requireActor(c);
     const body = parseBody(UpdateBody, await c.req.json().catch(() => null));
+    const expectedUpdatedAt = parseIfMatch(c.req.header('If-Match'));
 
-    return c.json(updateTask(db, actor, c.req.param('id'), body));
+    const task = updateTask(db, actor, c.req.param('id'), {
+      ...body,
+      expected_updated_at: expectedUpdatedAt,
+    });
+    c.header('ETag', taskEtag(task.updated_at));
+    return c.json(task);
   });
 
   app.post('/:id/claim', async (c) => {

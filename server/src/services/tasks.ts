@@ -1307,6 +1307,11 @@ export interface UpdateTaskInput {
    * a work request, `null` withdraws it. Never moves the assignee.
    */
   selected_agent_id?: string | null | undefined;
+  /**
+   * The `updated_at` named by PATCH's `If-Match` header. Absent keeps the
+   * unconditional update every existing caller uses (LAI-571).
+   */
+  expected_updated_at?: number | undefined;
   now?: number;
 }
 
@@ -1385,6 +1390,25 @@ export function updateTask(
       assertClaimFence(db, actor, taskId, now);
       if (selecting) assertSelectionChangeAllowed(db, task);
 
+      // A precondition is one atomic compare-and-swap, before tags, fields,
+      // selection, estimates or activity can move. Advancing beyond both the
+      // clock and the value read makes two writes in one millisecond distinct.
+      const updatedAt =
+        input.expected_updated_at === undefined ? now : Math.max(now, task.updatedAt + 1);
+      if (input.expected_updated_at !== undefined) {
+        const guarded = db
+          .update(tasks)
+          .set({ updatedAt })
+          .where(and(eq(tasks.id, taskId), eq(tasks.updatedAt, input.expected_updated_at)))
+          .run();
+        if (guarded.changes === 0) {
+          const current = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
+          throw new ApiError('conflict', 'The task changed after you read it', {
+            current: viewOne(db, current, project.prefix),
+          });
+        }
+      }
+
       // Under the write lock, so two writes cannot both find it free.
       if (typeof changes.externalRef === 'string') {
         assertOutsideIdFree(db, project.id, changes.externalRef, taskId);
@@ -1418,7 +1442,7 @@ export function updateTask(
 
       if (Object.keys(changes).length > 0) {
         db.update(tasks)
-          .set({ ...changes, updatedAt: now })
+          .set({ ...changes, updatedAt })
           .where(eq(tasks.id, taskId))
           .run();
 
@@ -1439,10 +1463,7 @@ export function updateTask(
 
       if (selecting) {
         const to = input.selected_agent_id ?? null;
-        db.update(tasks)
-          .set({ selectedAgentId: to, updatedAt: now })
-          .where(eq(tasks.id, taskId))
-          .run();
+        db.update(tasks).set({ selectedAgentId: to, updatedAt }).where(eq(tasks.id, taskId)).run();
         moveSelection(db, actor, taskId, to, now);
         appendActivity(db, {
           orgId: project.orgId,
