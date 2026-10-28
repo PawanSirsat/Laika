@@ -77,6 +77,8 @@ export interface TaskMetaProps {
   readonly agentsAllowed?: boolean | undefined;
   /** The reader's own agents, read once by the drawer (LAI-538). */
   readonly myAgents: MyAgents;
+  /** When the read behind `task` started, in the page's order (`read-order.ts`). */
+  readonly readOrder?: number | undefined;
 }
 
 /** `4m`, `6d` — the design's short form beside a field. */
@@ -153,6 +155,7 @@ export function TaskMeta({
   statusRef,
   agentsAllowed,
   myAgents,
+  readOrder = 0,
 }: TaskMetaProps) {
   const now = Date.now();
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
@@ -363,6 +366,7 @@ export function TaskMeta({
               mayEdit={mayEdit}
               agentsAllowed={agentsAllowed !== false}
               myAgents={myAgents}
+              readOrder={readOrder}
               onChanged={onTaskEdited}
             />
 

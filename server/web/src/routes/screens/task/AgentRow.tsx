@@ -11,6 +11,7 @@ import {
   type SelectedAgent,
 } from '../../../api/selected-agent.ts';
 import { getTask, type TaskSummary } from '../../../api/tasks.ts';
+import { nextReadOrder } from '../../../api/read-order.ts';
 import {
   abortReason,
   beginAgentWrite,
@@ -41,6 +42,12 @@ export interface AgentRowProps {
    * also names agents in its activity from them — rather than by this row.
    */
   readonly myAgents: MyAgents;
+  /**
+   * When the read behind `task` **started**, in the page's order
+   * (`read-order.ts`) — so a timestamp tie can be told apart: a read begun
+   * after the save completed is the truth.
+   */
+  readonly readOrder: number;
   /** The task changed on the server — the drawer reads it again. */
   readonly onChanged: () => void;
 }
@@ -62,6 +69,8 @@ interface Confirmed {
   readonly taskId: string;
   readonly agent: SelectedAgent | null;
   readonly version: number;
+  /** When the save completed, in the page's order (`read-order.ts`). */
+  readonly order: number;
 }
 
 /** What the row says when a write's outcome could not be checked. */
@@ -89,6 +98,7 @@ export function AgentRow({
   mayEdit,
   agentsAllowed,
   myAgents: load,
+  readOrder,
   onChanged,
 }: AgentRowProps) {
   const [pendingWrite, setPending] = useState<Pending | undefined>(undefined);
@@ -133,25 +143,24 @@ export function AgentRow({
    */
   const served = selectedAgentOf(task)?.id ?? null;
   /*
-   * Older props than the confirmed version are a read already on its way;
-   * newer ones are the truth. **On a tie the confirmed answer wins unless the
-   * props agree with it** — two writes in one millisecond share a version,
-   * and the one this reader just made is the one they are waiting to see.
+   * When the props are the truth again (LAI-538 review, rounds 4 and 5):
+   *  - a newer version always is;
+   *  - an older one never is — it is a read that was already on its way;
+   *  - **on a tie**, a read that *started after the save completed* is,
+   *    whatever agent it names. `updated_at` is a millisecond, not a
+   *    revision: another write in the same millisecond shares it, and a
+   *    later read of that write must not be ignored for good. A snapshot
+   *    taken before the save completed may still be — unless it agrees.
    */
   const yieldsTo = (c: Confirmed): boolean =>
     task.updated_at > c.version ||
-    (task.updated_at === c.version && served === (c.agent?.id ?? null));
+    (task.updated_at === c.version && (readOrder > c.order || served === (c.agent?.id ?? null)));
   const overlay = confirmed?.taskId === task.id && !yieldsTo(confirmed) ? confirmed : undefined;
   const current = overlay === undefined ? selectedAgentOf(task) : overlay.agent;
+  const retired = confirmed?.taskId === task.id && yieldsTo(confirmed);
   useEffect(() => {
-    if (confirmed?.taskId !== task.id) return;
-    if (
-      task.updated_at > confirmed.version ||
-      (task.updated_at === confirmed.version && served === (confirmed.agent?.id ?? null))
-    ) {
-      setConfirmed(undefined);
-    }
-  }, [confirmed, task.id, task.updated_at, served]);
+    if (retired) setConfirmed(undefined);
+  }, [retired]);
 
   const choices = useMemo(
     () =>
@@ -193,7 +202,12 @@ export function AgentRow({
       const written = await selectTaskAgent(taskId, to, ticket.signal);
       if (mine()) {
         // Settled by the server's own answer, whatever the follow-up read does.
-        setConfirmed({ taskId, agent: selectedAgentOf(written), version: written.updated_at });
+        setConfirmed({
+          taskId,
+          agent: selectedAgentOf(written),
+          version: written.updated_at,
+          order: nextReadOrder(),
+        });
       }
       settle();
       // On this visit or after the reader left: read the task again, so
@@ -213,7 +227,12 @@ export function AgentRow({
         try {
           const truth = await getTask(taskId, read.signal);
           if (mine()) {
-            setConfirmed({ taskId, agent: selectedAgentOf(truth), version: truth.updated_at });
+            setConfirmed({
+              taskId,
+              agent: selectedAgentOf(truth),
+              version: truth.updated_at,
+              order: nextReadOrder(),
+            });
           }
           settle();
           onChanged();

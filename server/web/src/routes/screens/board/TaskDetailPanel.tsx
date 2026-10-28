@@ -124,6 +124,8 @@ export interface TaskDetailPanelProps {
    * description is tried again at the next one (LAI-795 review, B1).
    */
   readonly listReadAt?: number | null | undefined;
+  /** When the read behind `task` started, in the page's order (LAI-538). */
+  readonly listReadOrder?: number | undefined;
 }
 
 /**
@@ -186,6 +188,7 @@ export function TaskDetailPanel({
   onAssigned,
   onOpen,
   listReadAt = null,
+  listReadOrder = 0,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
   /*
@@ -1200,6 +1203,7 @@ export function TaskDetailPanel({
             statusRef={statusRef}
             agentsAllowed={agentsAllowed}
             myAgents={myAgents}
+            readOrder={listReadOrder}
           />
 
           {DEMO_HANDOFF_ENABLED && (
