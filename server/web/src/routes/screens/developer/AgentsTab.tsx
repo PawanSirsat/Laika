@@ -95,6 +95,8 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
    * credential.
    */
   const [wizardAgent, setWizardAgent] = useState<string | undefined>(undefined);
+  /** An agent whose registration answered after its wizard closed. */
+  const [abandoned, setAbandoned] = useState<string | undefined>(undefined);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
   const registerButton = useRef<HTMLButtonElement | null>(null);
 
@@ -242,8 +244,21 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
             setWizardAgent(agent.id);
             put(agent);
           }}
+          onAbandoned={(agent) => {
+            // Created on the server after the wizard was gone: listed, never
+            // locked, and its secret was never kept (review round 2).
+            put(agent);
+            setAbandoned(agent.display_name);
+          }}
           onClose={closeWizard}
         />
+      )}
+
+      {abandoned !== undefined && (
+        <p className="agents-note" role="status">
+          “{abandoned}” was registered after you cancelled, so its credential was never shown and
+          nobody holds it. Rotate its token to get one, or revoke it.
+        </p>
       )}
 
       {actionError !== undefined && (
@@ -415,6 +430,8 @@ interface WizardProps {
   readonly onRetryProjects: () => void;
   readonly viewer: boolean;
   readonly onRegistered: (agent: RegisteredAgent) => void;
+  /** Registration answered after this wizard closed or unmounted. Never carries the secret. */
+  readonly onAbandoned: (agent: RegisteredAgent) => void;
   readonly onClose: () => void;
 }
 
@@ -426,6 +443,7 @@ function RegisterWizard({
   onRetryProjects,
   viewer,
   onRegistered,
+  onAbandoned,
   onClose,
 }: WizardProps) {
   const [step, setStep] = useState<AgentStep>(1);
@@ -463,9 +481,29 @@ function RegisterWizard({
    */
   const close = (): void => {
     if (closing) return;
+    live.current = false;
     forget();
     setClosing(true);
   };
+
+  /**
+   * Whether an answer may still land here (review round 2). *Cancel* stays
+   * available while registration is in flight, so the answer can arrive after
+   * Close or after the tab unmounted. Such an answer must not reach `hold` —
+   * which would put the secret back after the scrub — nor `onRegistered`,
+   * which would lock the agent's row for a wizard that no longer exists. It
+   * goes to `onAbandoned` with the agent alone; the secret is dropped with
+   * the response. Set again on mount, for React's development double mount.
+   */
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
+  const abandonedRef = useRef(onAbandoned);
+  abandonedRef.current = onAbandoned;
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
@@ -482,14 +520,18 @@ function RegisterWizard({
       grants,
     })
       .then((answer) => {
+        if (!live.current) {
+          abandonedRef.current(answer.agent);
+          return;
+        }
         hold(answer);
         onRegistered(answer.agent);
       })
       .catch((cause: unknown) => {
-        setError(errorText(cause, 'Could not register that agent.'));
+        if (live.current) setError(errorText(cause, 'Could not register that agent.'));
       })
       .finally(() => {
-        setPending(false);
+        if (live.current) setPending(false);
       });
   };
 

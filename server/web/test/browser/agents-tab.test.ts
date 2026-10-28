@@ -705,6 +705,60 @@ void describe('the Agents tab (LAI-537)', () => {
     }
   });
 
+  void test('Cancel while registering: the late answer keeps no secret and locks no row', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    let posted = false;
+    const api = agentsApi();
+    const h = await open('/developer?tab=agents', api.stub, {
+      before: async (p) => {
+        await p.route('**/api/v1/agents', async (route) => {
+          if (route.request().method() === 'POST') {
+            posted = true;
+            await gate;
+          }
+          await route.fallback();
+        });
+      },
+    });
+    const { page } = h;
+    try {
+      await page.getByRole('button', { name: '+ Register an agent' }).waitFor({ timeout: 20_000 });
+      await press(page, '+ Register an agent');
+      await press(page, 'Continue', '.agents-wizard');
+      await page.locator('.agents-grant').first().waitFor();
+      await press(page, 'Continue', '.agents-wizard');
+      await press(page, 'Register and create its credential');
+      await until(() => posted);
+      assert.ok(posted, 'the registration request was never sent');
+
+      // Cancel while the server has not answered.
+      await press(page, 'Cancel', '.agents-wizard');
+      await page.locator('.agents-wizard').waitFor({ state: 'detached' });
+
+      // The server answers now: the agent exists, with a secret nobody saw.
+      release();
+      const row = page.locator('.agents-row[data-agent="a1"]');
+      await row.waitFor({ timeout: 15_000 });
+      assert.equal(await page.locator('.agents-wizard').count(), 0, 'a wizard reopened');
+      assert.deepEqual(await secretSurvives(page, SECRET), [], 'the late secret reached the page');
+      assert.equal(await secretInReact(page, SECRET), 'clean', 'React holds the late secret');
+      // No wizard holds it, so its row is not locked.
+      assert.equal(await row.getByRole('button', { name: 'Rotate token' }).isDisabled(), false);
+      assert.equal(await row.getByRole('button', { name: 'Revoke' }).isDisabled(), false);
+      assert.doesNotMatch(await row.innerText(), /Finish or close its registration/);
+      // And the reader is told it exists with a credential nobody holds.
+      assert.match(
+        await page.locator('.agents [role="status"]').innerText(),
+        /never shown and nobody holds it/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('leaving the tab mid-wizard takes the secret off the page and out of React', async () => {
     const api = agentsApi();
     const h = await open('/developer?tab=agents', api.stub);
