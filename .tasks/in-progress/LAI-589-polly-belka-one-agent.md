@@ -2,11 +2,12 @@
 id: LAI-589
 title: Polly · Belka — the manager and its workers act as one agent
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-585
-status: backlog
+status: in-progress
+started: 2026-10-28T20:55:09Z
 ---
 
 ## Goal
