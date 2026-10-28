@@ -2,11 +2,12 @@
 id: LAI-587
 title: 'Agent line shows harness · device on cards and harness · device · vendor · model in drawer/activity, with Details'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-586]
 discovered-from: LAI-532
-status: backlog
+started: 2026-10-28T22:19:05Z
+status: in-progress
 ---
 
 The SHELL half of **D-118** (proposed), `docs/proposals/LAI-532-agent-identity-model.md`
@@ -33,3 +34,10 @@ behind an expandable Details. Colour is never the only signal."*
 ## Notes / context
 
 - Server fields (LAI-586): `agent_sessions.harness`, `harness_version`, `model`, `client_version`; activity rows carry `agent_session` `{ id, harness, harness_version, model }` or null.
+
+## Claim note (deviation, recorded per §2 step 1)
+
+Claimed with `depends-on: [LAI-586]` not yet in `.tasks/done/`: LAI-586 is in
+cross-review as PR #123 (head `963a2d68`). Built **stacked** on
+`LAI-586-selected-agent-owns-claim` per §4.4 on the manager's direction
+(belka dispatch, 2026-10-29); the PR targets that branch, not `master`.
