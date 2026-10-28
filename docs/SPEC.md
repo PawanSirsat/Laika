@@ -2817,7 +2817,12 @@ until then it is free to change. `GET /agents/me/work-requests` is the calling
 agent's open requests, newest first, paged like any list, each `{ id, kind,
 state, task_id, task_key, task_title, project_id, agent_id, requested_by,
 created_at }`, limited to the projects the agent may read now — and to one with
-`?project=<slug>`, refused as any read of that project is; a token that is
+`?project=<slug>`, which is looked up **only among those**: a slug the agent
+may not use, real or made up, gets one refusal, identical byte for byte — `403
+forbidden`, `reason: agent_not_granted`, no slug or id in the body — so the
+answer never discloses whether the project exists. MCP's `list_ready_tasks`
+`project` argument answers an agent's token the same way, before its task list
+is read; a token that is
 not a registered agent's — or a session — is `403` with `reason:
 not_an_agent`.
 

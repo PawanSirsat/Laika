@@ -199,6 +199,21 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
     },
     ({ project, limit }) => {
       try {
+        // The REST twin is `GET /agents/me/work-requests?project=&limit=`
+        // (LAI-535): the same `project` and the same `limit` as the ready list
+        // below, newest first. Only an agent's own token has requests; anyone
+        // else's answer is unchanged. **First**, so an agent naming a project
+        // it may not use gets the work-request refusal — one answer for a real
+        // and a made-up slug — before the task list's lookup can tell them apart.
+        const requests: WorkRequestView[] =
+          actor.token?.agent === null || actor.token?.agent === undefined
+            ? []
+            : listOwnWorkRequests(db, actor, {
+                limit: limit ?? 25,
+                cursor: null,
+                projectSlug: project ?? null,
+              }).slice(0, limit ?? 25);
+
         const slugs =
           project === undefined
             ? everyRow(
@@ -223,19 +238,6 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
 
         const ordered = found.sort(byPriorityThenAge).slice(0, limit ?? 25);
         const now = clock();
-
-        // The REST twin is `GET /agents/me/work-requests?project=&limit=`
-        // (LAI-535): the same `project` and the same `limit` as the ready list
-        // above, newest first. Only an agent's own token has requests; anyone
-        // else's answer is unchanged.
-        const requests: WorkRequestView[] =
-          actor.token?.agent === null || actor.token?.agent === undefined
-            ? []
-            : listOwnWorkRequests(db, actor, {
-                limit: limit ?? 25,
-                cursor: null,
-                projectSlug: project ?? null,
-              }).slice(0, limit ?? 25);
 
         const markdown = [
           `## Ready tasks (${String(ordered.length)})`,

@@ -5,7 +5,6 @@ import { newId } from '../db/ids.ts';
 import { agentProjectGrants, agents, handoffOffers, projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
-import { requireProjectBySlug } from './projects.ts';
 
 /**
  * A task's selected agent and the work request it opens (D-114 item 7,
@@ -213,6 +212,21 @@ export function selectedAgentViews(
   );
 }
 
+/**
+ * The one refusal for a `project` the agent cannot use — unknown, ungranted,
+ * or one its owner can no longer read. `403 forbidden` with `agent_not_granted`
+ * because that is how every other route answers an agent asking about a
+ * project outside its grants (`can()`, LAI-534), and it is true of a slug that
+ * names nothing: the agent holds no grant there either. Same message, same
+ * details — no slug, no id — whichever case it is.
+ */
+export function noSuchProjectForAgent(): ApiError {
+  return new ApiError('forbidden', 'This agent has no access to this project', {
+    action: 'project.read',
+    reason: 'agent_not_granted',
+  });
+}
+
 export interface ListWorkRequestsOptions {
   limit: number;
   /** Keyset position, `(created_at, id)`, matching the ORDER BY below. */
@@ -220,8 +234,9 @@ export interface ListWorkRequestsOptions {
   /**
    * One project only, by slug — `?project=` on REST, `project` on MCP's
    * `list_ready_tasks`, so a scoped call never answers with another
-   * project's requests. A project the agent may not read is refused as any
-   * read of it is, not answered empty.
+   * project's requests. Resolved **only among the projects the agent may
+   * read**, and refused with {@link noSuchProjectForAgent} otherwise — the
+   * same answer whether the slug is real or made up.
    */
   projectSlug?: string | null | undefined;
 }
@@ -256,12 +271,23 @@ export function listOwnWorkRequests(
   let readable = [...agent.grants.keys()].filter((projectId) =>
     can(withProject(actor, projectId), 'project.read', { projectId }),
   );
+  if (readable.length === 0 && (options.projectSlug ?? null) === null) return [];
   if (options.projectSlug !== undefined && options.projectSlug !== null) {
-    const project = requireProjectBySlug(db, options.projectSlug);
-    assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
-    readable = readable.filter((projectId) => projectId === project.id);
+    // **Authorisation before existence** (the #103 rule for a token's pin):
+    // the slug is looked up only inside what the agent may read, so a real
+    // project it has no grant on and a slug nobody owns get one refusal,
+    // byte for byte, and the answer discloses nothing about which it was.
+    const found =
+      readable.length === 0
+        ? undefined
+        : db
+            .select({ id: projects.id })
+            .from(projects)
+            .where(and(eq(projects.slug, options.projectSlug), inArray(projects.id, readable)))
+            .get();
+    if (found === undefined) throw noSuchProjectForAgent();
+    readable = [found.id];
   }
-  if (readable.length === 0) return [];
 
   const conditions: SQL[] = [
     eq(handoffOffers.toAgentId, agentId),
