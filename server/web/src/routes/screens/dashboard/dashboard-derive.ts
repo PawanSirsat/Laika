@@ -199,6 +199,9 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   'task.stale_flagged': 'flagged this task as stale',
   'invite.expired': 'expired an invite',
   'meeting_review.expired': 'expired a meeting review',
+  // A person picked the agent meant to do a task, or withdrew it (LAI-535,
+  // LAI-538). A work request, not work: "picked", never "assigned".
+  'task.agent_selected': 'picked an agent for a task',
 };
 
 /**

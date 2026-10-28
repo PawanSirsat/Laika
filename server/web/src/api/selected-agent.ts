@@ -1,0 +1,360 @@
+import { agentClientName, AGENT_CLIENTS, type AgentClient } from './agent-clients.ts';
+import type { RegisteredAgent } from './agents.ts';
+import { ApiError } from './errors.ts';
+import { request } from './client.ts';
+import type { Task, TaskEdit, TaskSummary } from './tasks.ts';
+
+/**
+ * A task's **selected agent** (proposal §3, D-114 item 7; API by LAI-535,
+ * screens by LAI-538).
+ *
+ * Four facts, kept apart, as the server keeps them: the **assignee** is the
+ * person accountable; the **selected agent** is the agent meant to do the
+ * work; the **claim** is who is doing it (LAI-541, not yet served); the
+ * **owner** is whose agent it is. Selecting one opens a work request and
+ * changes nothing else — so nothing here touches the assignee, and no screen
+ * counts an agent as a person.
+ *
+ * Plain data and functions, no JSX, so `node --test` can pin every rule.
+ */
+
+/** `SelectedAgentView` in `server/src/services/work-requests.ts`. Never a token, never a grant. */
+export interface SelectedAgent {
+  readonly id: string;
+  readonly display_name: string;
+  /** Self-reported; decides nothing. Read through {@link selectedHarness}. */
+  readonly harness: string;
+  /** Self-reported; decides nothing. */
+  readonly device_label: string | null;
+  readonly status: 'active' | 'revoked';
+  readonly owner: { readonly id: string; readonly name: string };
+}
+
+/** The harness as a known client, or `other` — a value the server did not send is not trusted. */
+export function selectedHarness(agent: Pick<SelectedAgent, 'harness'>): AgentClient {
+  return AGENT_CLIENTS.find((slug) => slug === agent.harness) ?? 'other';
+}
+
+/**
+ * The agent's product name: *Claude Code*. A harness Laika does not know reads
+ * as the name its owner gave it, never as *another agent*, which is a
+ * placeholder and not a name.
+ */
+export function agentProductName(agent: Pick<SelectedAgent, 'harness' | 'display_name'>): string {
+  const client = selectedHarness(agent);
+  return client === 'other' ? agent.display_name : agentClientName(client);
+}
+
+/** Where it runs: the device it reported, or its own name when it reported none. */
+export function agentDevice(agent: Pick<SelectedAgent, 'device_label' | 'display_name'>): string {
+  return agent.device_label === null || agent.device_label === ''
+    ? agent.display_name
+    : agent.device_label;
+}
+
+/** *Claude Code · laptop-1* — the chip's words, and the List's and the filter's. */
+export function agentLabel(
+  agent: Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>,
+): string {
+  return `${agentProductName(agent)} · ${agentDevice(agent)}`;
+}
+
+/** A task's selected agent; a view served before LAI-535 carries none. */
+export function selectedAgentOf(task: Pick<TaskSummary, 'selected_agent'>): SelectedAgent | null {
+  return task.selected_agent ?? null;
+}
+
+// ------------------------------------------------------------------ selecting
+
+/**
+ * `PATCH /tasks/:id { selected_agent_id }`. `null` withdraws; the same id
+ * twice is a no-op. `signal` ends a request that never answers
+ * (`agent-writes.ts`).
+ */
+export function selectTaskAgent(
+  taskId: string,
+  agentId: string | null,
+  signal?: AbortSignal,
+): Promise<Task> {
+  const edit: TaskEdit = { selected_agent_id: agentId };
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    body: edit,
+    ...(signal === undefined ? {} : { signal }),
+  });
+}
+
+/** The server's refusals, by `details.reason` (LAI-535). §6.3's codes are closed, so it is a reason. */
+export const SELECTED_AGENT_REFUSALS = [
+  'agent_not_found',
+  'agent_other_owner',
+  'agent_wrong_org',
+  'agent_revoked',
+  'agent_not_granted',
+  'agent_read_only',
+  'agents_off',
+] as const;
+export type SelectedAgentRefusal = (typeof SELECTED_AGENT_REFUSALS)[number];
+
+/**
+ * Each refusal as the drawer says it: **what is wrong and what fixes it**.
+ * The server's own message is shown for a reason this map does not know.
+ */
+export const REFUSAL_WORDS: Readonly<Record<SelectedAgentRefusal, string>> = {
+  agent_not_found: 'That agent no longer exists.',
+  agent_other_owner: 'Only your own agents can be picked for now.',
+  agent_wrong_org: 'That agent belongs to another organisation.',
+  agent_revoked: 'That agent is revoked. Register or pick another.',
+  agent_not_granted: 'That agent has no access to this space. Grant it under Developer → Agents.',
+  agent_read_only: 'That agent may only read in this space. Give it a full grant to do the work.',
+  agents_off: 'This space does not let agents make changes.',
+};
+
+function isRefusal(value: unknown): value is SelectedAgentRefusal {
+  return (SELECTED_AGENT_REFUSALS as readonly unknown[]).includes(value);
+}
+
+/** The refusal's reason, when the error is a `422` about `selected_agent_id`. */
+export function refusalOf(error: unknown): SelectedAgentRefusal | undefined {
+  if (!(error instanceof ApiError) || error.code !== 'unprocessable') return undefined;
+  const details = error.details as { field?: unknown; reason?: unknown } | null;
+  if (details?.field !== 'selected_agent_id') return undefined;
+  return isRefusal(details.reason) ? details.reason : undefined;
+}
+
+/** A failed selection, in words — the reason when there is one, the server's message else. */
+export function selectionErrorWords(error: unknown): string {
+  const reason = refusalOf(error);
+  if (reason !== undefined) return REFUSAL_WORDS[reason];
+  return error instanceof Error && error.message !== ''
+    ? error.message
+    : 'Could not change the agent. Try again.';
+}
+
+// ------------------------------------------------------------------ the picker's list
+
+/**
+ * `AgentAvailability` in `components/agent/agent-states.ts`, spelled here so
+ * the API layer imports nothing from the components; the two are one union,
+ * and the picker's typecheck fails if they part.
+ */
+export type AgentAvailability = 'available' | 'offline' | 'unavailable';
+
+/**
+ * How recently an agent must have been seen to read as **Available** — the
+ * server throttles `last_seen_at` to a minute, so this is fifteen of its
+ * ticks. Longer is **Offline**, which is still selectable: the work request
+ * waits for it (proposal §3).
+ */
+export const AVAILABLE_WITHIN_MS = 15 * 60_000;
+
+/** Why an agent cannot be picked here, from what the client can know — the server's own checks, in its order. */
+export function ineligibleReason(
+  agent: Pick<RegisteredAgent, 'status' | 'grants'>,
+  projectId: string,
+  agentsAllowed: boolean,
+): SelectedAgentRefusal | undefined {
+  if (agent.status !== 'active') return 'agent_revoked';
+  const grant = agent.grants.find((g) => g.project_id === projectId);
+  if (grant === undefined) return 'agent_not_granted';
+  if (grant.scope !== 'full') return 'agent_read_only';
+  if (!agentsAllowed) return 'agents_off';
+  return undefined;
+}
+
+/** Short words for a disabled row: the list has no room for the whole sentence. */
+export const INELIGIBLE_SHORT: Readonly<Record<SelectedAgentRefusal, string>> = {
+  agent_not_found: 'No longer exists',
+  agent_other_owner: 'Another member’s agent',
+  agent_wrong_org: 'Another organisation',
+  agent_revoked: 'Revoked',
+  agent_not_granted: 'Not granted on this space',
+  agent_read_only: 'Read-only on this space',
+  agents_off: 'Agents are off in this space',
+};
+
+export function availabilityOf(
+  agent: Pick<RegisteredAgent, 'last_seen_at'>,
+  now: number,
+): Exclude<AgentAvailability, 'unavailable'> {
+  return agent.last_seen_at !== null && now - agent.last_seen_at <= AVAILABLE_WITHIN_MS
+    ? 'available'
+    : 'offline';
+}
+
+/** One row of the picker: `AgentChoice`'s shape, built from a real `GET /agents`. */
+export interface PickerChoice {
+  readonly id: string;
+  readonly client: AgentClient;
+  readonly owner: string;
+  readonly device: string;
+  readonly availability: AgentAvailability;
+  readonly reason?: string | undefined;
+}
+
+/**
+ * The picker's rows: **the caller's own agents** (`GET /agents` answers only
+ * those — another member's agent is a `404`, so nothing here can list an agent
+ * the reader may not see), every one listed, an ineligible one disabled with
+ * its reason. Revoked agents are left out unless one is the current choice:
+ * a revoked agent can never come back, and a list of them is noise.
+ *
+ * The task's current agent is always a row, so the field can show it — even
+ * when it is another member's, which the caller may withdraw but not pick.
+ */
+export function pickerChoices(input: {
+  readonly agents: readonly RegisteredAgent[];
+  readonly ownerName: string;
+  readonly projectId: string;
+  readonly agentsAllowed: boolean;
+  readonly current: SelectedAgent | null;
+  readonly now: number;
+}): readonly PickerChoice[] {
+  const { agents, ownerName, projectId, agentsAllowed, current, now } = input;
+  const rows: PickerChoice[] = [];
+  for (const agent of agents) {
+    if (agent.status === 'revoked' && agent.id !== current?.id) continue;
+    const refusal = ineligibleReason(agent, projectId, agentsAllowed);
+    const view = { harness: agent.harness, display_name: agent.display_name };
+    rows.push({
+      id: agent.id,
+      client: selectedHarness(view),
+      owner: ownerName,
+      device: agentDevice(agent),
+      availability: refusal === undefined ? availabilityOf(agent, now) : 'unavailable',
+      ...(refusal === undefined ? {} : { reason: INELIGIBLE_SHORT[refusal] }),
+    });
+  }
+  // Available first, then offline, then the ones that cannot be picked.
+  const rank: Readonly<Record<AgentAvailability, number>> = {
+    available: 0,
+    offline: 1,
+    unavailable: 2,
+  };
+  rows.sort((a, b) => rank[a.availability] - rank[b.availability]);
+
+  if (current !== null && !rows.some((row) => row.id === current.id)) {
+    rows.push({
+      id: current.id,
+      client: selectedHarness(current),
+      owner: current.owner.name,
+      device: agentDevice(current),
+      availability: 'unavailable',
+      reason:
+        current.status === 'revoked' ? INELIGIBLE_SHORT.agent_revoked : 'Another member’s agent',
+    });
+  }
+  return rows;
+}
+
+// ------------------------------------------------------------------ the agent filter
+
+/** `?selected_agent=` — an agent id, or one of these two. */
+export const AGENT_FILTER_ANY = 'any';
+export const AGENT_FILTER_NONE = 'none';
+
+/** Whether a task passes `?selected_agent=`. No value passes everything. */
+export function matchesAgentFilter(
+  task: Pick<TaskSummary, 'selected_agent'>,
+  value: string | undefined,
+): boolean {
+  if (value === undefined || value === '') return true;
+  const agent = selectedAgentOf(task);
+  if (value === AGENT_FILTER_ANY) return agent !== null;
+  if (value === AGENT_FILTER_NONE) return agent === null;
+  return agent?.id === value;
+}
+
+/**
+ * The agents the filter offers: **the ones selected on a task the reader
+ * already holds**, by label. Read from the task set, so it fetches nothing and
+ * can name no agent the reader could not already see on a card.
+ */
+export function agentsOnTasks(
+  tasks: readonly Pick<TaskSummary, 'selected_agent'>[],
+): readonly SelectedAgent[] {
+  const seen = new Map<string, SelectedAgent>();
+  for (const task of tasks) {
+    const agent = selectedAgentOf(task);
+    if (agent !== null && !seen.has(agent.id)) seen.set(agent.id, agent);
+  }
+  return [...seen.values()].sort((a, b) => agentLabel(a).localeCompare(agentLabel(b)));
+}
+
+/** The filter's chip and the List's empty state: `Agent: Claude Code · laptop-1`. */
+export function agentFilterLabel(
+  value: string,
+  agents: ReadonlyMap<string, SelectedAgent>,
+  known: boolean,
+): string {
+  if (value === AGENT_FILTER_ANY) return 'Agent: Any agent';
+  if (value === AGENT_FILTER_NONE) return 'Agent: No agent';
+  const agent = agents.get(value);
+  if (agent !== undefined) return `Agent: ${agentLabel(agent)}`;
+  return known ? 'Agent: Unknown agent' : 'Agent: …';
+}
+
+// ------------------------------------------------------------------ who wrote a row
+
+/** What naming an agent takes: its harness, its own name and its device. */
+export type AgentNaming = Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>;
+
+/**
+ * Every agent **this reader may see**, by id: their own (`GET /agents`, which
+ * answers the caller's agents and nobody else's) and the agents selected on
+ * tasks they hold (`TaskView.selected_agent`, which the server sent them). A
+ * row by any other agent stays *a registered agent* — nothing here guesses.
+ */
+export function agentNamesFrom(
+  own: readonly Pick<RegisteredAgent, 'id' | 'harness' | 'display_name' | 'device_label'>[],
+  tasks: readonly Pick<TaskSummary, 'selected_agent'>[],
+): ReadonlyMap<string, AgentNaming> {
+  const names = new Map<string, AgentNaming>();
+  for (const agent of agentsOnTasks(tasks)) names.set(agent.id, agent);
+  for (const agent of own) names.set(agent.id, agent);
+  return names;
+}
+
+/** What an agent-written row says after the person: an agent we can name, or what we know. */
+export const UNREGISTERED_AGENT = 'agent (unregistered token)';
+export const UNNAMED_AGENT = 'a registered agent';
+
+/**
+ * *Claude Code · laptop-1*, *a registered agent* or *agent (unregistered
+ * token)* — the part after *via* on a row an agent wrote; `undefined` on a
+ * row a person or Laika wrote.
+ *
+ * `agent_id` is set on every row a **registered** agent's token wrote
+ * (LAI-535) and null on a legacy token's, which is how the two are told apart.
+ * An agent this reader cannot name — another member's, not on this task — is
+ * *a registered agent*: true, and never a guess.
+ */
+export function agentVia(
+  event: { readonly actor_kind: string; readonly agent_id?: string | null | undefined },
+  agents: ReadonlyMap<string, Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>>,
+): string | undefined {
+  if (event.actor_kind !== 'agent') return undefined;
+  const id = event.agent_id ?? null;
+  if (id === null) return UNREGISTERED_AGENT;
+  const agent = agents.get(id);
+  return agent === undefined ? UNNAMED_AGENT : agentLabel(agent);
+}
+
+/**
+ * `task.agent_selected`'s line, with the agent named where the reader can
+ * name it: *selected Claude Code · laptop-1*, *withdrew the agent*. The payload
+ * is `{ from, to }`, both agent ids or null.
+ */
+export function describeAgentSelected(
+  payload: unknown,
+  agents: ReadonlyMap<string, Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>>,
+): string | undefined {
+  const sent = payload as { from?: unknown; to?: unknown } | null | undefined;
+  if (sent === null || sent === undefined) return undefined;
+  if (sent.to === null) return 'withdrew the agent from this task';
+  if (typeof sent.to !== 'string') return undefined;
+  const agent = agents.get(sent.to);
+  return agent === undefined
+    ? 'selected an agent for this task'
+    : `selected ${agentLabel(agent)} for this task`;
+}

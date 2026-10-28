@@ -1,6 +1,8 @@
 import { useId, useState } from 'react';
 import { AssignControl } from '../board/AssignControl.tsx';
 import { TagPicker } from '../board/TagPicker.tsx';
+import { AgentRow } from './AgentRow.tsx';
+import type { MyAgents } from '../../../api/use-my-agents.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import { statusOptions } from '../board/status-options.ts';
@@ -68,6 +70,15 @@ export interface TaskMetaProps {
    * LAI-726 the control is `Dropdown`'s trigger, a `<button>`.
    */
   readonly statusRef: React.RefObject<HTMLElement | null>;
+  /**
+   * The space's `agents_allowed`, for the Agent row's reasons (LAI-538).
+   * Absent reads as allowed; the server refuses `agents_off` either way.
+   */
+  readonly agentsAllowed?: boolean | undefined;
+  /** The reader's own agents, read once by the drawer (LAI-538). */
+  readonly myAgents: MyAgents;
+  /** When the read behind `task` started, in the page's order (`read-order.ts`). */
+  readonly readOrder?: number | undefined;
 }
 
 /** `4m`, `6d` — the design's short form beside a field. */
@@ -142,6 +153,9 @@ export function TaskMeta({
   onTagsChanged,
   onOpen,
   statusRef,
+  agentsAllowed,
+  myAgents,
+  readOrder = 0,
 }: TaskMetaProps) {
   const now = Date.now();
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
@@ -342,6 +356,19 @@ export function TaskMeta({
                 </p>
               )}
             </div>
+
+            {/* The agent meant to do the work, under the person accountable
+                for it (LAI-538): two facts, two rows, neither replacing the
+                other. */}
+            <AgentRow
+              task={task}
+              meName={meId === undefined ? undefined : members.get(meId)?.name}
+              mayEdit={mayEdit}
+              agentsAllowed={agentsAllowed !== false}
+              myAgents={myAgents}
+              readOrder={readOrder}
+              onChanged={onTaskEdited}
+            />
 
             <div className="meta-row">
               <p className="meta-label">Priority</p>

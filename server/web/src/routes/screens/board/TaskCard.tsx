@@ -9,6 +9,8 @@ import { childrenOf, parentOf, subtaskProgress } from '../../../api/subtask-deri
 import type { Theme } from '../../../theme/theme.ts';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { SizeChip } from '../../../components/SizeChip.tsx';
+import { AgentChip } from '../../../components/agent/AgentChip.tsx';
+import { agentDevice, selectedAgentOf, selectedHarness } from '../../../api/selected-agent.ts';
 
 export interface TaskCardProps {
   readonly task: TaskSummary;
@@ -90,6 +92,7 @@ export function TaskCard({
   const sprint = task.sprint_id === null ? undefined : sprintLabels?.get(task.sprint_id);
   // `?? null`: a view served before LAI-771 has no `size`, and absent is unsized.
   const size = fields.size ? (task.size ?? null) : null;
+  const agent = fields.agent ? selectedAgentOf(task) : null;
 
   return (
     <article
@@ -301,6 +304,19 @@ export function TaskCard({
         )}
 
         <span className="card-spacer" />
+
+        {/* The agent the work is meant for (LAI-538), beside the person and
+            never instead of them. Neutral: the agent colour is the owner's
+            decision (D-020). */}
+        {agent !== null && (
+          <span className="card-agent card-above">
+            <AgentChip
+              client={selectedHarness(agent)}
+              device={agentDevice(agent)}
+              owner={agent.owner.name}
+            />
+          </span>
+        )}
 
         {/* The dashed "+" that stood here for an unassigned card is gone
             (LAI-606): it was display-only — claiming lives in the task
