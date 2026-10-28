@@ -1802,6 +1802,90 @@ void describe('two agents that share a harness and a device', () => {
     }
   });
 
+  /*
+   * **At 390 the picker still shows what differs** (LAI-583 review). Two agents
+   * on one long-named device: the label ellipsises inside the shared
+   * `Claude Code · build-server-eu-west-1` prefix, so the mark must be drawn
+   * where no ellipsis reaches. Measured on screen — what a reader sees, not
+   * the option's text.
+   */
+  void test('at 390 the picker shows each twin’s mark uncut, in both themes', async () => {
+    const long = (id: string, display_name: string) => ({
+      ...AGENTS[0],
+      id,
+      display_name,
+      device_label: 'build-server-eu-west-1-primary',
+      created_at: 5,
+    });
+    const w = world();
+    const stub: ApiStub = {
+      ...w.stub,
+      '/api/v1/agents': {
+        data: [...AGENTS, long('ag-long-1', 'alpha agent'), long('ag-long-2', 'bravo agent')],
+        next_cursor: null,
+      },
+    };
+    const h = await open('/board?project=laika-core&task=t1', stub);
+    try {
+      for (const theme of ['light', 'dark']) {
+        await h.page.setViewportSize({ width: 390, height: 844 });
+        await setTheme(h.page, theme);
+        await h.page.reload();
+        const box = await agentBox(h);
+        await box.click();
+        await until(async () => (await optionsOpen(h.page, box)).length >= 5);
+        const list = h.page.locator(`[id="${(await box.getAttribute('aria-controls')) ?? ''}"]`);
+        const seen = await list
+          .locator('[role="option"][data-value^="ag-long-"]')
+          .evaluateAll((els) =>
+            els.map((el) => {
+              const option = el.getBoundingClientRect();
+              const label = el.querySelector<HTMLElement>('.dd-label');
+              const badge = el.querySelector<HTMLElement>('.dd-badge');
+              const b = badge?.getBoundingClientRect();
+              return {
+                labelCut: label !== null && label.scrollWidth > label.clientWidth,
+                mark: badge?.textContent ?? null,
+                markWhole:
+                  badge !== null &&
+                  b !== undefined &&
+                  badge.scrollWidth <= badge.clientWidth &&
+                  b.left >= option.left &&
+                  b.right <= option.right &&
+                  b.right <= window.innerWidth,
+                name: el.getAttribute('title') ?? '',
+              };
+            }),
+          );
+        assert.equal(seen.length, 2, theme);
+        // The case is real: the shared label is cut at this width.
+        assert.ok(
+          seen.every((o) => o.labelCut),
+          `${theme}: the label is not cut — ${JSON.stringify(seen)}`,
+        );
+        assert.deepEqual(
+          seen.map((o) => o.mark).sort(),
+          ['alpha agent', 'bravo agent'],
+          `${theme}: ${JSON.stringify(seen)}`,
+        );
+        assert.ok(
+          seen.every((o) => o.markWhole),
+          `${theme}: a mark is cut or off screen — ${JSON.stringify(seen)}`,
+        );
+        // The whole name is still the option's: hover and the accessible name.
+        assert.ok(
+          seen.some((o) =>
+            o.name.startsWith('Claude Code · build-server-eu-west-1-primary (alpha agent)'),
+          ),
+          JSON.stringify(seen),
+        );
+        await h.page.keyboard.press('Escape');
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the List tells them apart, and says so on hover', async () => {
     const h = await open('/list?project=laika-core', twins());
     try {

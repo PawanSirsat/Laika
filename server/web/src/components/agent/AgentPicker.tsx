@@ -11,6 +11,12 @@ interface AgentChoiceBase {
   /** The agent's owner, by name. */
   readonly owner: string;
   readonly device: string;
+  /**
+   * What tells this agent from another here with its harness and device
+   * (LAI-583): drawn as the option's badge, which is never cut, so a narrow
+   * list cannot hide it.
+   */
+  readonly twin?: string | undefined;
 }
 
 /**
@@ -45,9 +51,9 @@ export interface AgentPickerProps {
 
 /**
  * *Claude Code · laptop-1 — Ada Lovelace*: the agent's name first (D-118), so
- * a narrow list cuts the owner, never the part that tells two agents apart
- * (LAI-583 — with the owner first, two Claude Code agents on one laptop both
- * read *Claude Code — Ada Lovelace · laptop-…*).
+ * a narrow list cuts the owner before the device. The label is the whole name
+ * and is what a screen reader hears; it can still be cut at any width, so
+ * what tells two agents apart is also drawn as the option's badge (LAI-583).
  */
 export function choiceLabel(agent: AgentChoice): string {
   return `${agentClientName(agent.client)} · ${agent.device} — ${agent.owner}`;
@@ -88,6 +94,7 @@ export function AgentPicker({ agents, value, onChange, disabled }: AgentPickerPr
       // Found by owner or device as well as by name (LAI-538).
       keywords: `${agent.owner} ${agent.device}`,
       icon: <AgentMark client={agent.client} size="sm" />,
+      badge: agent.twin,
       detail: choiceDetail(agent),
       disabled: agent.availability === 'unavailable',
       title:

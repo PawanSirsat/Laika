@@ -25,11 +25,13 @@ import {
   distinctDevices,
   ineligibleReason,
   matchesAgentFilter,
+  middleCut,
   pickerChoices,
   REFUSAL_WORDS,
   refusalOf,
   SELECTED_AGENT_REFUSALS,
   selectionErrorWords,
+  twinNames,
   twinsOnTasks,
   type SelectedAgent,
 } from '../../src/api/selected-agent.ts';
@@ -369,5 +371,81 @@ void describe('two agents that share a harness and a device', () => {
       agentVia({ actor_kind: 'agent', agent_id: 'ag-0002' }, names),
       'Claude Code · Belka (by hand)',
     );
+  });
+});
+
+/*
+ * **Every label among the agents given is different** (LAI-583 review). The
+ * first version appended the id's last four characters without checking the
+ * result: two agents named alike whose ids end alike read the same, and a
+ * fallback could equal another agent's registered name.
+ */
+void describe('the marks are checked, not hoped for', () => {
+  const at = (id: string, display_name: string, device_label = 'Belka') =>
+    registered({ id, display_name, device_label });
+  const labels = (agents: readonly ReturnType<typeof at>[]) => {
+    const devices = distinctDevices(agents);
+    return agents.map((a) => `${agentLabel(a).split(' · ')[0] ?? ''} · ${devices.get(a.id) ?? ''}`);
+  };
+  const allDifferent = (list: readonly string[]) => new Set(list).size === list.length;
+
+  void test('two named alike, ids ending alike: the id grows until they differ', () => {
+    const a = at('01AAAAAAAAAAAAAAAAAAAA1234', 'worker');
+    const b = at('01BBBBBBBBBBBBBBBBBBBB1234', 'worker');
+    const marks = twinNames([a, b]);
+    assert.equal(marks.get(a.id), 'A1234');
+    assert.equal(marks.get(b.id), 'B1234');
+    assert.ok(allDifferent(labels([a, b])), labels([a, b]).join(' | '));
+  });
+
+  void test('a fallback never equals another agent’s registered name', () => {
+    const named = at('01CCCCCCCCCCCCCCCCCCCC9999', '1234');
+    const plain = at('01DDDDDDDDDDDDDDDDDDDD1234', '');
+    const marks = twinNames([named, plain]);
+    assert.equal(marks.get(named.id), '1234');
+    assert.equal(marks.get(plain.id), 'D1234');
+    assert.ok(allDifferent(labels([named, plain])), labels([named, plain]).join(' | '));
+  });
+
+  void test('a device that already reads like a mark is caught by the final check', () => {
+    const a = at('01EEEEEEEEEEEEEEEEEEEEAAAA', 'worker');
+    const b = at('01FFFFFFFFFFFFFFFFFFFFBBBB', 'other');
+    const c = at('01GGGGGGGGGGGGGGGGGGGGCCCC', 'x', 'Belka (worker)');
+    const list = labels([a, b, c]);
+    assert.ok(allDifferent(list), list.join(' | '));
+  });
+
+  void test('the answer does not depend on the order given', () => {
+    const a = at('01HHHHHHHHHHHHHHHHHHHH1234', 'worker');
+    const b = at('01JJJJJJJJJJJJJJJJJJJJ1234', 'worker');
+    const c = at('01KKKKKKKKKKKKKKKKKKKK5678', 'worker');
+    assert.deepEqual([...twinNames([a, b, c])].sort(), [...twinNames([c, a, b])].sort());
+  });
+
+  void test('a long name is cut in the middle, and two that differ only there are told apart by id', () => {
+    assert.equal(middleCut('a-very-long-agent-name-number-one'), 'a-very-long-…-number-one');
+    assert.equal(middleCut('short'), 'short');
+    const a = at('01MMMMMMMMMMMMMMMMMMMM0001', 'a-very-long-agent-name-ALPHA-number-one');
+    const b = at('01NNNNNNNNNNNNNNNNNNNN0002', 'a-very-long-agent-name-BRAVO-number-one');
+    const marks = twinNames([a, b]);
+    assert.equal(marks.get(a.id), '0001');
+    assert.equal(marks.get(b.id), '0002');
+  });
+
+  void test('across many shapes, no two labels are ever the same', () => {
+    const names = ['', 'worker', 'Worker', '1234', 'A1234', 'Claude Code · Belka', 'Belka'];
+    const tails = ['1234', '1234', 'A1234', '5678'];
+    let checked = 0;
+    for (const n1 of names)
+      for (const n2 of names)
+        for (const n3 of names) {
+          const agents = [n1, n2, n3].map((name, i) =>
+            at(`01${String.fromCharCode(65 + i).repeat(18)}AB${tails[i] ?? ''}`, name),
+          );
+          const list = labels(agents);
+          assert.ok(allDifferent(list), list.join(' | '));
+          checked += 1;
+        }
+    assert.equal(checked, names.length ** 3);
   });
 });
