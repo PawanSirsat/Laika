@@ -235,3 +235,34 @@ generation drop for two crossing reads.
 
 **The full gate is owed at this head**; only the touched tests, typecheck,
 lint and format were run.
+
+## Review round 4 (Codex FAIL on e520d519; round-3 fixes confirmed)
+
+**Only half the outcomes passed the generation check.** Success and non-abort
+failure now pass one `settle` step: an outcome from a read older than one
+already applied is dropped, and applying either outcome advances the mark. An
+older failure no longer hides a newer list, and an older success no longer
+clears a newer failure.
+
+**How reads cross at all.** `api/client.ts` shares an identical GET still in
+flight, so two reads of the same first page are one request with one outcome.
+They can cross when the list pages: an older read on its second page and a
+reload's first page are different requests.
+
+*Proved:* two new browser tests, one per crossing order. In each, the older
+read is held on its second page and Cancel's reload on its first, and each is
+answered explicitly. Under the round-3 behaviour (failure unchecked) and with
+no generation check at all, both tests go red; the file was restored and its
+checksum matched.
+
+**Test discipline.**
+- The tab publishes `data-reads-settled`, the count of list reads handled,
+  applied or dropped. Tests wait for that count, never for a delay.
+- The round-3 test's 500 ms wait is gone, and its held read is counted only
+  once its snapshot has been captured.
+
+**Also done:** writes a newer applied read already includes are pruned from
+the overlay map.
+
+**The full gate is owed at this head**; only the touched tests, typecheck,
+lint and format were run.
