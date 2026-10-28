@@ -7,6 +7,7 @@ import {
   pruneExpired,
   remember,
 } from '../../src/http/idempotency.ts';
+import { idempotencyKeys } from '../../src/db/schema.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -159,6 +160,24 @@ describe('Idempotency-Key over HTTP', () => {
     await post(undefined, { title: 'a' });
 
     expect(calls).toBe(2);
+  });
+
+  it('never stores a better-auth answer, which carries a session token (LAI-534)', async () => {
+    // The positive control: the store is on for this person.
+    await post('control', { title: 'a' });
+    expect(h.db.select().from(idempotencyKeys).all()).toHaveLength(1);
+
+    const signedIn = await h.app.request('/api/v1/auth/sign-in/email', {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: cookie, 'Idempotency-Key': 'sign-in' }),
+      body: JSON.stringify({ email: 'ada@example.test', password: PASSWORD }),
+    });
+    expect(signedIn.status, await signedIn.clone().text()).toBe(200);
+    const sessionToken = ((await signedIn.json()) as { token?: string }).token;
+    expect(sessionToken?.length ?? 0).toBeGreaterThan(10);
+
+    expect(h.db.select().from(idempotencyKeys).all()).toHaveLength(1);
+    expect(JSON.stringify(h.db.select().from(idempotencyKeys).all())).not.toContain(sessionToken);
   });
 
   it('treats different keys as different requests', async () => {

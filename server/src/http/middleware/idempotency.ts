@@ -1,7 +1,8 @@
 import { createMiddleware } from 'hono/factory';
 import { type Db } from '../../db/client.ts';
 import { type AppEnv } from '../context.ts';
-import { conflictError, hashRequest, lookup, remember } from '../idempotency.ts';
+import { AUTH_BASE_PATH } from '../../auth/auth.ts';
+import { conflictError, hashRequest, idempotencyOwner, lookup, remember } from '../idempotency.ts';
 
 export const IDEMPOTENCY_HEADER = 'Idempotency-Key';
 
@@ -9,12 +10,11 @@ export const IDEMPOTENCY_HEADER = 'Idempotency-Key';
  * POSTs that keep their own key, so this store neither answers nor records them
  * (LAI-746).
  *
- * This middleware replays **before the route runs** — before `can()` — and its
- * key is the user, not the credential. That is fine for a route whose answer
- * any of the user's credentials may have; it is not for a session-only one
- * (§3.1 `profile.*`), where a token holding a session's key and body was handed
- * the session's `201` without being asked anything. And it stores the response
- * body, which for a rating is the private note.
+ * This middleware replays **before the route runs** — before `can()`. Its key
+ * was the user, not the credential, when this list was made; a token's is its
+ * own since LAI-534 (`idempotencyOwner`), but a session's is still the
+ * person's, and the store keeps the response body, which for a rating is the
+ * private note.
  *
  * So these routes take the header themselves and answer a retry from their own
  * row, after the permission: `POST /users/:id/ratings` keeps the key on the
@@ -35,9 +35,10 @@ export function keyedByTheRoute(path: string): boolean {
 const DECISION_ROUTES: readonly RegExp[] = [/^\/api\/v1\/tasks\/[^/]+\/(?:accept|send-back)$/];
 
 /**
- * Whether a stored answer may be replayed to a **token** (D-082). The store is
- * keyed by the person, not the credential (LAI-748), so a session's answer is
- * found by the same person's token. Two such answers would hand an agent a
+ * Whether a stored answer may be replayed to a **token** (D-082). The store was
+ * keyed by the person, not the credential (LAI-748), so a session's answer was
+ * found by the same person's token; since LAI-534 a token reads only its own
+ * rows, and this stays as the second lock. Two such answers would hand an agent a
  * success the gate refuses it: a review decision, and any task moved into a
  * done category — a stored task view saying `status: "done"` was a session's
  * move, because a token's is refused before anything is stored. For those, the
@@ -67,6 +68,14 @@ export function tokenMayReplay(path: string, storedBody: string): boolean {
  * Only successful responses are stored. Replaying a 500 would pin a transient
  * failure in place for 24 hours, so a retry after an error is allowed to
  * actually retry.
+ *
+ * **Never an answer that reveals a secret** (LAI-534): a route that returns a
+ * token, a link or a webhook secret once calls `markOneTimeSecret`, and the
+ * answer is not stored, so the plaintext is not persisted and cannot be
+ * replayed. **And a token's rows are its own** (`idempotencyOwner`): a
+ * registered agent's token, or any other token of the same person, never
+ * receives an answer another credential earned — the route runs and `can()`
+ * answers it. better-auth's routes under `/api/v1/auth/` are not touched.
  */
 export function idempotencyMiddleware(db: Db, now: () => number = Date.now) {
   return createMiddleware<AppEnv>(async (c, next) => {
@@ -80,7 +89,10 @@ export function idempotencyMiddleware(db: Db, now: () => number = Date.now) {
       key === undefined ||
       key === '' ||
       actor === null ||
-      keyedByTheRoute(c.req.path)
+      keyedByTheRoute(c.req.path) ||
+      // better-auth's own routes answer with session tokens in the body, and
+      // keep their own rules about retries: the store has no business there.
+      c.req.path.startsWith(`${AUTH_BASE_PATH}/`)
     ) {
       await next();
       return undefined;
@@ -88,7 +100,8 @@ export function idempotencyMiddleware(db: Db, now: () => number = Date.now) {
 
     const body = await c.req.raw.clone().text();
     const fingerprint = hashRequest(c.req.method, c.req.path, body);
-    const found = lookup(db, actor.userId, key, fingerprint, now());
+    const owner = idempotencyOwner(actor);
+    const found = lookup(db, owner, key, fingerprint, now());
 
     if (found.kind === 'conflict') throw conflictError(key);
 
@@ -114,9 +127,11 @@ export function idempotencyMiddleware(db: Db, now: () => number = Date.now) {
 
     await next();
 
-    if (c.res.status >= 200 && c.res.status < 300) {
+    // An answer that reveals a secret is never stored (LAI-534): not the
+    // secret, and not a row a retry could replay it from.
+    if (c.res.status >= 200 && c.res.status < 300 && c.get('oneTimeSecret') !== true) {
       const stored = await c.res.clone().text();
-      remember(db, actor.userId, key, fingerprint, { status: c.res.status, body: stored }, now());
+      remember(db, owner, key, fingerprint, { status: c.res.status, body: stored }, now());
     }
 
     return undefined;

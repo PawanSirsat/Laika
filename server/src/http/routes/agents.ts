@@ -15,6 +15,7 @@ import {
   updateAgent,
 } from '../../services/agents.ts';
 import { type AppEnv } from '../context.ts';
+import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -27,7 +28,7 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * `TokenView`s, which have no secret to carry (§4.9).
  *
  * **No body field names an agent.** Every body below is a `strictObject`, so
- * an `agent_id` a caller adds is a `400`, and the agent acted on is the one in
+ * an `agent_id` a caller adds is a `422`, and the agent acted on is the one in
  * the path, looked up among the caller's own.
  */
 
@@ -100,6 +101,7 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
       grants: grantsOf(body.grants),
       expiresAt: body.expires_at,
     });
+    markOneTimeSecret(c);
     return c.json<CreatedAgentToken>(created, 201);
   });
 
@@ -135,6 +137,7 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
       tokenId: body.token_id,
       expiresAt: body.expires_at,
     });
+    markOneTimeSecret(c);
     return c.json<CreatedAgentToken>(created, 201);
   });
 

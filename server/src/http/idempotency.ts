@@ -20,9 +20,11 @@
 
 import { createHash } from 'node:crypto';
 import { and, eq, lt } from 'drizzle-orm';
+import { type Context } from 'hono';
 import { type Db } from '../db/client.ts';
 import { idempotencyKeys } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
+import { type AppEnv } from './context.ts';
 
 /** §6.3: "replays within 24h return the original response". */
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -96,6 +98,35 @@ export function remember(
     })
     .onConflictDoNothing()
     .run();
+}
+
+/**
+ * Say this answer reveals a secret once (LAI-534), so the store keeps none of
+ * it. **Not storing is the whole fix**, not a redaction: a stored row is a
+ * plaintext copy of the secret sitting in the database for a day, and it is
+ * replayed before `can()` runs. The cost is that a retry with the same key
+ * runs the route again and mints a second secret — the first is still listed,
+ * and revocable, by the person who holds both.
+ */
+export function markOneTimeSecret(c: Context<AppEnv>): void {
+  c.set('oneTimeSecret', true);
+}
+
+/**
+ * Whose store a keyed request reads and writes (LAI-534). **A token's own**,
+ * by its id: a stored answer is the credential's that earned it, so another
+ * token of the same person — a registered agent's with narrower grants — or
+ * a web session's answer is never found by it. A web session stays keyed by
+ * its person, as it always was (LAI-748), so a retry from a second browser
+ * tab still replays.
+ */
+export function idempotencyOwner(actor: {
+  userId: string;
+  token?: { id: string } | null | undefined;
+}): string {
+  return actor.token === null || actor.token === undefined
+    ? actor.userId
+    : `token:${actor.token.id}`;
 }
 
 export function conflictError(key: string): ApiError {
