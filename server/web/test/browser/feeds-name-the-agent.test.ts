@@ -40,6 +40,33 @@ const MINE = {
 };
 
 const NAMED = 'Ada Lovelace via Claude Code · Belka';
+const HIDDEN_ID = 'ag-theirs';
+const HIDDEN_NAME = 'Hopper private bot';
+
+/**
+ * Every attribute value and text node under `root`, for a census: an agent
+ * the reader may not see must appear in none of them — not as text, not as a
+ * `title`, `aria-label` or `data-*` value.
+ */
+const everything = (page: Page, root: string) =>
+  page.locator(root).evaluate((el) => {
+    const out: string[] = [];
+    const walk = (node: Element): void => {
+      for (const attr of node.attributes) out.push(`${attr.name}=${attr.value}`);
+      for (const child of node.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) out.push(child.textContent ?? '');
+        else if (child instanceof Element) walk(child);
+      }
+    };
+    walk(el);
+    return out;
+  });
+
+/** What in `values` names the hidden agent, if anything does. */
+const leaks = (values: readonly string[]) =>
+  values.filter(
+    (v) => v.includes(HIDDEN_ID) || v.toLowerCase().includes(HIDDEN_NAME.toLowerCase()),
+  );
 const LEGACY = 'via agent (unregistered token)';
 const UNSEEN = 'via a registered agent';
 
@@ -68,7 +95,9 @@ const EVENT = (
 const EVENTS = [
   EVENT(1, 'u1', 'agent', 'ag-mine'),
   EVENT(2, 'u1', 'agent', null),
-  EVENT(3, 'u2', 'agent', 'ag-theirs'),
+  // Another member's agent. Its name rides in the payload, as a leak would:
+  // nothing the reader may not see is drawn from it (LAI-570 review).
+  EVENT(3, 'u2', 'agent', HIDDEN_ID, { payload: { agent_name: HIDDEN_NAME } }),
   EVENT(4, 'u1', 'user', null),
 ];
 
@@ -222,6 +251,13 @@ void describe('the Dashboard feed names the agent (LAI-570)', () => {
         await h.page.locator('.dash-event .visually-hidden', { hasText: '(by an agent)' }).count(),
         3,
       );
+      // The census reads something: the agent the reader may name is in it.
+      const page = await everything(h.page, 'body');
+      assert.ok(
+        page.some((v) => v.includes('Claude Code · Belka')),
+        'the census read nothing',
+      );
+      assert.deepEqual(leaks(page), [], 'a hidden agent leaked');
       await shoot(h.page, 'dashboard-feed', async () => {
         await h.page.locator('.dash-via').first().scrollIntoViewIfNeeded();
       });
@@ -266,6 +302,12 @@ void describe('Organisation → Activity names the agent (LAI-570)', () => {
         assert.ok(await h.page.locator('.oh-via').first().isVisible());
       }
       assert.equal(await h.page.locator('.oh-row .org-chip', { hasText: 'Agent' }).count(), 3);
+      const page = await everything(h.page, 'body');
+      assert.ok(
+        page.some((v) => v.includes('Claude Code · Belka')),
+        'the census read nothing',
+      );
+      assert.deepEqual(leaks(page), [], 'a hidden agent leaked');
       await shoot(h.page, 'organisation-activity', async () => {
         await h.page.locator('.oh-via').first().scrollIntoViewIfNeeded();
       });
