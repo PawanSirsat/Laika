@@ -5,11 +5,12 @@ import { loadActor, resolveTokenActor } from '../../../src/auth/resolve-actor.ts
 import { appendActivity } from '../../../src/db/activity.ts';
 import { type ActivityType } from '../../../src/db/enums.ts';
 import { newId } from '../../../src/db/ids.ts';
-import { orgs, tokens, users } from '../../../src/db/schema.ts';
+import { agents, orgs, tokens, users } from '../../../src/db/schema.ts';
 import { type AppEnv } from '../../../src/http/context.ts';
 import { createErrorHandler } from '../../../src/http/error-handler.ts';
 import { eventRoutes, MAX_QUEUED_FRAMES, RECONNECT_MS } from '../../../src/http/routes/events.ts';
 import { ActivityFeed, type RepeatingTimer } from '../../../src/services/activity-feed.ts';
+import { registerAgent, revokeAgent } from '../../../src/services/agents.ts';
 import { MAX_REPLAY } from '../../../src/services/events.ts';
 import { addMember, createProject } from '../../../src/services/projects.ts';
 import { createToken, revokeOwnToken } from '../../../src/services/tokens.ts';
@@ -685,6 +686,79 @@ describe('open token streams re-check credentials (LAI-539)', () => {
     } finally {
       await client.disconnect();
     }
+  });
+
+  // **A registered agent's stream re-reads the agent too** (integration of
+  // LAI-534 and LAI-539). The per-frame actor is rebuilt through
+  // `tokenContextFor`, so an agent token keeps its agent — its project grants
+  // and its revocation — for as long as the stream is open, not only at connect.
+  describe("an agent token's stream keeps the agent's grants and revocation", () => {
+    async function openAgent() {
+      const created = registerAgent(t.sqlite, t.db, actor(ownerId), {
+        displayName: 'Claude',
+        harness: 'claude-code',
+        // Granted Laika only. The owner reads Other; the agent may not.
+        grants: [{ projectId: laikaId, scope: 'full' }],
+      });
+      const res = await bareApp(ownerId, { token: created.secret }).request('/api/v1/events');
+      expect(res.status).toBe(200);
+      const client = sseClient(res);
+      expect((await client.next()).event).toBe('ready');
+      write(laikaId);
+      feed.poll();
+      expect((await client.next()).event).toBe('task.created');
+      return { created, client };
+    }
+
+    it("drops an ungranted project's events and stays open", async () => {
+      const { client } = await openAgent();
+      try {
+        write(otherId);
+        write(laikaId);
+        feed.poll();
+        const frame = await client.next();
+        expect(frame.event).toBe('task.created');
+        expect(JSON.parse(frame.data)).toMatchObject({ project_id: laikaId });
+        // Nothing else was queued: the next frame is the keepalive, not Other's row.
+        timers.fire();
+        expect((await client.next()).comment).toBe('keepalive');
+      } finally {
+        await client.disconnect();
+      }
+    });
+
+    it('closes with the one unauthorized frame once the agent row is revoked, its token untouched', async () => {
+      const { created, client } = await openAgent();
+      try {
+        // The second lock (`tokenContextFor`): the agent is revoked and its
+        // token row still is not, so only the agent check can refuse this.
+        t.db
+          .update(agents)
+          .set({ status: 'revoked', revokedAt: Date.now() })
+          .where(eq(agents.id, created.agent.id))
+          .run();
+        expect(
+          t.db.select().from(tokens).where(eq(tokens.id, created.token.id)).get()?.revokedAt,
+        ).toBeNull();
+        write(laikaId);
+        feed.poll();
+        await unauthorized(client);
+      } finally {
+        await client.disconnect();
+      }
+    });
+
+    it('closes with the one unauthorized frame when the owner revokes the agent', async () => {
+      const { created, client } = await openAgent();
+      try {
+        revokeAgent(t.sqlite, t.db, actor(ownerId), created.agent.id);
+        write(laikaId);
+        feed.poll();
+        await unauthorized(client);
+      } finally {
+        await client.disconnect();
+      }
+    });
   });
 });
 

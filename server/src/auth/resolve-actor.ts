@@ -328,11 +328,12 @@ export function reloadActor(
     // A token belongs to one person for life; a row naming somebody else is
     // not this credential, whatever its id.
     if (found.row.userId !== previous.userId) return { ok: false, reason: 'unknown' };
-    token = {
-      id: found.row.id,
-      scope: found.row.scope,
-      projectIds: tokenProjectIds(found.row),
-    };
+    // Through `tokenContextFor`, as `resolveTokenActor` does, so the stream
+    // keeps the token's registered agent — its grants and its revocation —
+    // and not only the pin (integration of LAI-534 and LAI-539).
+    const context = tokenContextFor(db, found.row);
+    if (!context.ok) return context;
+    token = context.token;
   }
 
   const fresh = loadActor(db, previous.userId);
