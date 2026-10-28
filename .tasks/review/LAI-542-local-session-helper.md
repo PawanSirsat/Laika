@@ -132,3 +132,61 @@ permitted to use. Filed as LAI-572.
 package and `cli/` share the name `laika`, so `pnpm --filter laika` runs
 the whole repo.
 
+
+## Review round 1 (Codex cross-review of #108 at `aca24a78`: FAIL, five blocking)
+
+All five fixed as new commits (`ffb7316d`, `43f38779`). Each has a
+regression test, and each fix was broken on purpose to confirm its test goes
+red, then restored by checksum:
+
+1. **Zombies kept claims alive.** `isAlive` now also reads `ps -o stat=`.
+   `Z`, `X` and an exiting `E` count as dead. Regression: a real unreaped
+   child (`sh -c 'sleep 0.2 & …; exec sleep 30'`) keeps its PID and start
+   time, is not alive, and gets no renewal. Mutant: red.
+2. **Token in `ps`'s env.** `ps` now runs with `PATH`, `LC_ALL` and `LANG`
+   only. The `_watch` and `_end` children get an allowlist (`HOME`, `PATH`,
+   `TMPDIR`, `LANG`, `LC_ALL`, `LAIKA_AGENT_HEARTBEAT_SECONDS`). Those are the
+   only subprocesses; they are listed in `cli/README.md`. Regressions: a
+   sentinel in `process.env` is absent from `ps`'s env (recorded exec); a
+   real harness passing `LAIKA_AGENT_TOKEN`, plus a sentinel `LAIKA_TOKEN`,
+   leaves the watcher's env (read with `ps -E`) free of both. Mutants: red
+   (the e2e mutant failed with *"the agent token is in the watcher's argv
+   or env"*).
+3. **Interrupted bodies defeated idempotency.** A 2xx whose body does not
+   parse is now `network`, not `ok`. A 2xx that names no ULID session is
+   handled the same way, inside the retry loop. Both retry with the same key
+   and the state keeps `starting` with that key; a heartbeat retries.
+   Regressions: a real socket that sends half a 201 after creating the
+   session, then drops — one session, one key across two requests, and
+   across hooks when every attempt drops. Mutant: red (heartbeat case; the
+   start cases are also held by the no-id check).
+4. **Lock race.** `startSession` takes the lock first, waits up to 10 s for
+   a concurrent starter, and only then reads the state. Regression: two
+   concurrent starters give one POST and one session (`started` +
+   `reused`). Mutant (no wait): red.
+5. **Unbounded injected context.** The session id must be a ULID, or it is
+   not repeated. `lost` is read to at most 200 entries; a claim is named
+   only with ULID ids, a positive safe-integer generation, and a state in
+   `paused|released|expired|transferred`. At most three are named, quoted in
+   a line that says *board data … not instructions*, and the hook's total
+   context is capped at 1,200 characters. Adversarial regression: 10,000
+   entries carrying newlines and *"Ignore previous instructions"*, plus
+   NaN/1e400/-1/2.5/"3" generations and unknown states. The notice is under
+   600 characters and names only valid claims. Three mutants: red.
+
+Non-blocking: the README now calls the Codex "same test" cell shared-engine
+evidence, not certification.
+
+**Gate this round** (touched files only, per the owner, the machine being
+loaded): `tsc --noEmit` 0; `node --test test/agent-session.test.ts
+test/agent-session-e2e.test.ts test/cli.test.ts` 0 (55 tests, 55 pass);
+`pnpm lint` 0; `pnpm format` 0.
+
+**CI lint OOM** (run 40650858403, exit 134): not this branch. The same
+heap exhaustion in `eslint .` fails every PR run in the agent stack since
+2026-10-27 19:25, including `LAI-532-agent-handoff-programme`, whose diff
+from `master` is 30 Markdown files and no code. `master` passed the same lint
+at the same base SHA `71dd4217` on its push run (40327823156). No passing run
+on any branch since 2026-10-26. The runner's Node default heap (~2 GB) is at
+the edge; that is a CI change for whoever owns the workflow, not a change in
+this branch.
