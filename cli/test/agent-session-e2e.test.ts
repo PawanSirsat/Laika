@@ -67,13 +67,14 @@ interface Harness {
   run(event: AgentHookEvent, sessionId: string): Promise<{ stdout: string; code: number }>;
 }
 
-function startHarness(): Harness {
+function startHarness(extra: Record<string, string> = {}): Harness {
   const child = spawn(join(bin, 'claude'), [FAKE], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: {
       PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ''}`,
       HOME: home,
       LAIKA_AGENT_HEARTBEAT_SECONDS: '1',
+      ...extra,
     },
   });
   harnesses.push(child);
@@ -378,6 +379,31 @@ void describe('laika agent, against a real board', () => {
     );
     assert.equal(seenStarts[0]?.id, seenStarts[1]?.id);
     assert.equal(readStateOf('hs-lost').session_id, seenStarts[0]?.id);
+  });
+
+  void test('a token the harness passes in LAIKA_AGENT_TOKEN never reaches the watcher’s environment', async () => {
+    const sentinel = 'lai_PERSONAL_SENTINEL_never_in_a_child';
+    const harness = startHarness({
+      LAIKA_AGENT_TOKEN: seeded.agentToken,
+      LAIKA_AGENT_URL: board.url,
+      LAIKA_TOKEN: sentinel,
+    });
+    await harness.run('session-start', 'hs-env');
+    const state = readStateOf('hs-env');
+    assert.equal(state.status, 'live');
+    const watcher = await until('a watcher', () => readStateOf('hs-env').watcher_pid);
+    await until('a heartbeat', () =>
+      beatsOf(state.session_id ?? '').length >= 1 ? true : undefined,
+    );
+    const text = processText(watcher);
+    assert.match(text, /_watch/, 'read the watcher itself');
+    assert.ok(!text.includes(seeded.agentToken), 'the agent token is in the watcher’s argv or env');
+    assert.ok(!text.includes(sentinel), 'the person’s token is in the watcher’s env');
+    await harness.run('session-end', 'hs-env');
+    await until('the end', () =>
+      readStateOf('hs-env').end_reason === undefined ? undefined : true,
+    );
+    harness.child.kill('SIGKILL');
   });
 
   void test('the token is in no hook output, state file, log or command line', () => {

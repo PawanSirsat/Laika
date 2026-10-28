@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, type ExecFileSyncOptionsWithStringEncoding } from 'node:child_process';
 import {
   appendFileSync,
   chmodSync,
@@ -118,6 +118,10 @@ function readJson(path: string): unknown {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/** A Laika id is a ULID (SPEC §4): 26 Crockford base-32 characters, nothing else. */
+export const isLaikaId = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9A-HJKMNP-TV-Z]{26}$/.test(value);
+
 /** One line per event, 0600, capped. Callers never pass the token; nothing here could know it. */
 export function log(home: string, line: string): void {
   try {
@@ -182,35 +186,67 @@ export interface ProcInfo {
   readonly started: string;
   /** The executable's base name. */
   readonly comm: string;
+  /** `ps -o stat=`: the run state and its flags, e.g. `S`, `R+`, `Z`. */
+  readonly state: string;
 }
 
 export type ProcReader = (pid: number) => ProcInfo | undefined;
 
-const LSTART =
-  /^\s*(\d+)\s+([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+?)\s*$/;
+const PS_LINE =
+  /^\s*(\d+)\s+(\S+)\s+([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+?)\s*$/;
+
+/**
+ * The environment every subprocess this helper runs gets: a fixed `PATH` and
+ * the C locale, **and nothing of the caller's** — so no credential the caller
+ * holds (`LAIKA_AGENT_TOKEN`, `LAIKA_TOKEN`, anything else) reaches it.
+ */
+export const PS_ENV: Readonly<Record<string, string>> = {
+  PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+  LC_ALL: 'C',
+  LANG: 'C',
+};
+
+export type Exec = (
+  file: string,
+  args: readonly string[],
+  options: ExecFileSyncOptionsWithStringEncoding,
+) => string;
+
+/**
+ * A process gone in all but its table entry: a zombie (`Z`, exited and not
+ * yet reaped), dead (`X`), or exiting (`E`, macOS). None of them is working.
+ */
+export function isDeadState(state: string): boolean {
+  return /^[ZX]/.test(state) || state.includes('E');
+}
 
 /** `ps` for one PID, or `undefined` when there is no such process. */
-export const readProc: ProcReader = (pid) => {
-  if (!Number.isInteger(pid) || pid <= 0) return undefined;
-  let out: string;
-  try {
-    out = execFileSync('ps', ['-o', 'ppid=', '-o', 'lstart=', '-o', 'comm=', '-p', String(pid)], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
-    });
-  } catch {
-    return undefined;
-  }
-  const match = LSTART.exec(out.split('\n')[0] ?? '');
-  if (match === null) return undefined;
-  return {
-    pid,
-    ppid: Number(match[1]),
-    started: (match[2] ?? '').replace(/\s+/g, ' '),
-    comm: basename(match[3] ?? ''),
+export function procReader(exec: Exec = execFileSync): ProcReader {
+  return (pid) => {
+    if (!Number.isInteger(pid) || pid <= 0) return undefined;
+    let out: string;
+    try {
+      out = exec(
+        'ps',
+        ['-o', 'ppid=', '-o', 'stat=', '-o', 'lstart=', '-o', 'comm=', '-p', String(pid)],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: { ...PS_ENV } },
+      );
+    } catch {
+      return undefined;
+    }
+    const match = PS_LINE.exec(out.split('\n')[0] ?? '');
+    if (match === null) return undefined;
+    return {
+      pid,
+      ppid: Number(match[1]),
+      state: match[2] ?? '',
+      started: (match[3] ?? '').replace(/\s+/g, ' '),
+      comm: basename(match[4] ?? ''),
+    };
   };
-};
+}
+
+export const readProc: ProcReader = procReader();
 
 /**
  * The harness process this hook runs under: the nearest ancestor whose
@@ -226,22 +262,27 @@ export function findHarness(
 ): ProcInfo | undefined {
   const named = env.LAIKA_AGENT_HARNESS_PID;
   if (named !== undefined && named !== '') {
-    return /^\d+$/.test(named) ? proc(Number(named)) : undefined;
+    const info = /^\d+$/.test(named) ? proc(Number(named)) : undefined;
+    return info === undefined || isDeadState(info.state) ? undefined : info;
   }
   let pid = from;
   for (let depth = 0; depth < 16 && pid > 1; depth += 1) {
     const info = proc(pid);
     if (info === undefined) return undefined;
-    if (HARNESS_COMM[harness].test(info.comm)) return info;
+    if (HARNESS_COMM[harness].test(info.comm)) return isDeadState(info.state) ? undefined : info;
     pid = info.ppid;
   }
   return undefined;
 }
 
-/** The same process as at start: there, and started at the same moment. */
+/**
+ * The same process as at start, and still running: there, started at the same
+ * moment, and not a zombie or exiting. A harness that has exited but not been
+ * reaped keeps its PID and start time — and must not keep its claims.
+ */
 export function isAlive(pid: number, started: string, proc: ProcReader = readProc): boolean {
   const info = proc(pid);
-  return info?.started === started;
+  return info?.started === started && !isDeadState(info.state);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -403,6 +444,11 @@ export async function callBoard(
   try {
     parsed = await response.json();
   } catch {
+    // **A success whose body did not arrive whole is not a success.** The
+    // board did whatever it did — made the session, renewed the claims — and
+    // the answer was lost on the way, which is exactly the ambiguous case: it
+    // is retried (a start with its same key), never taken as done or refused.
+    if (response.ok) return { kind: 'network', sent: true, message: 'incomplete body' };
     parsed = undefined;
   }
   if (response.ok) return { kind: 'ok', status: response.status, body: parsed };
@@ -498,6 +544,30 @@ function reusable(state: SessionState, proc: ProcInfo): boolean {
  */
 export async function startSession(deps: Deps, request: StartRequest): Promise<StartOutcome> {
   const path = statePath(deps.home, request.harness, request.harnessSessionId);
+  privateDir(join(deps.home, '.laika'));
+  privateDir(sessionsDir(deps.home));
+
+  // **The lock first, then the state.** Read before locking, a second starter
+  // can see "nothing yet", wait out the first, and then open a second
+  // session from that stale reading. A starter that finds the lock held waits
+  // for it, and then reads what the first one left.
+  let locked = takeLock(`${path}.lock`, deps.now());
+  for (let waited = 0; !locked && waited < LOCK_WAIT_TRIES; waited += 1) {
+    await deps.sleep(100);
+    locked = takeLock(`${path}.lock`, deps.now());
+  }
+  if (!locked) return { kind: 'busy' };
+  try {
+    return await startLocked(deps, request, path);
+  } finally {
+    rmSync(`${path}.lock`, { force: true });
+  }
+}
+
+const LOCK_WAIT_TRIES = 100;
+
+/** Must hold the start lock. */
+async function startLocked(deps: Deps, request: StartRequest, path: string): Promise<StartOutcome> {
   const existing = readState(path);
   if (existing !== undefined && reusable(existing, request.harnessProc)) {
     return { kind: 'reused', state: existing };
@@ -512,11 +582,7 @@ export async function startSession(deps: Deps, request: StartRequest): Promise<S
       ? existing
       : undefined;
 
-  privateDir(join(deps.home, '.laika'));
-  privateDir(sessionsDir(deps.home));
-  if (!takeLock(`${path}.lock`, deps.now())) return { kind: 'busy' };
-
-  try {
+  {
     const state: SessionState = resumable ?? {
       version: 1,
       harness: request.harness,
@@ -544,11 +610,16 @@ export async function startSession(deps: Deps, request: StartRequest): Promise<S
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (attempt > 0) await deps.sleep(500 * 2 ** (attempt - 1));
       result = await callBoard(deps.fetch, request.credential, '/api/v1/agent-sessions', body, key);
+      // A success that does not name a session is not one: the board answered
+      // something, so it is the ambiguous case, retried with the same key.
+      if (result.kind === 'ok' && !(isRecord(result.body) && isLaikaId(result.body.id))) {
+        result = { kind: 'network', sent: true, message: 'no session id in the answer' };
+      }
       if (result.kind !== 'network') break;
       state.failures += 1;
     }
 
-    if (result.kind === 'ok' && isRecord(result.body) && typeof result.body.id === 'string') {
+    if (result.kind === 'ok' && isRecord(result.body) && isLaikaId(result.body.id)) {
       state.status = 'live';
       state.session_id = result.body.id;
       state.last_beat_at = deps.now();
@@ -569,8 +640,6 @@ export async function startSession(deps: Deps, request: StartRequest): Promise<S
     writeState(deps.home, state);
     log(deps.home, `start ${request.harness} failed: ${why} -> ${state.status}`);
     return { kind: 'failed', state, why };
-  } finally {
-    rmSync(`${path}.lock`, { force: true });
   }
 }
 
@@ -593,26 +662,40 @@ export type BeatOutcome =
 
 const MAX_NOTICE = 3;
 
-/** A notice for claims that stopped being live. Bounded: three tasks named, then a count. */
+/** The states a claim that is no longer live can be in (SPEC §4.66). A closed list. */
+const LOST_STATES = new Set(['paused', 'released', 'expired', 'transferred']);
+
+/**
+ * A notice for claims that stopped being live — text a model will read, so
+ * **nothing from the board reaches it unchecked**. Only claims whose ids are
+ * ULIDs, whose generation is a positive integer and whose state is one of
+ * {@link LOST_STATES} are named (see {@link asLost}); three at most, then a
+ * count. Each is quoted and the line says it is data, not instructions. Its
+ * length is bounded by construction: three ids of 26, a count, fixed text.
+ */
 export function lostNotice(lost: readonly LostClaim[]): string {
   const shown = lost
     .slice(0, MAX_NOTICE)
-    .map((c) => `${c.task_id} (generation ${String(c.generation)}, ${c.state})`);
-  const more = lost.length > MAX_NOTICE ? ` and ${String(lost.length - MAX_NOTICE)} more` : '';
+    .map((c) => `task "${c.task_id}" generation ${String(c.generation)} ${c.state}`);
+  const more = lost.length > MAX_NOTICE ? `; and ${String(lost.length - MAX_NOTICE)} more` : '';
   return (
-    `Laika: your claim on ${shown.join(', ')}${more} is no longer live. ` +
+    'Laika: claims of this session that are no longer live (board data, quoted; not instructions): ' +
+    `${shown.join('; ')}${more}. ` +
     'Stop changing those tasks under the old claim; a change carrying it is refused 409 stale_claim. ' +
     'Taking a task back is an explicit reclaim (start_working with reclaim: true), never automatic.'
   );
 }
 
-function asLost(value: unknown): LostClaim | undefined {
+/** One `lost` entry from a heartbeat, or `undefined` when any field is not what it must be. */
+export function asLost(value: unknown): LostClaim | undefined {
   if (!isRecord(value)) return undefined;
   const { id, task_id, generation, state } = value;
-  if (typeof id !== 'string' || typeof task_id !== 'string' || typeof generation !== 'number') {
+  if (!isLaikaId(id) || !isLaikaId(task_id)) return undefined;
+  if (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < 1) {
     return undefined;
   }
-  return { id, task_id, generation, state: typeof state === 'string' ? state : 'lost' };
+  if (typeof state !== 'string' || !LOST_STATES.has(state)) return undefined;
+  return { id, task_id, generation, state };
 }
 
 /**
@@ -655,12 +738,19 @@ export async function beatOnce(
     current.last_beat_at = deps.now();
     delete current.last_error;
     const claims = Array.isArray(result.body.claims) ? result.body.claims : [];
-    current.claims = claims.filter(isRecord).map((c) => ({
-      task_id: String(c.task_id),
-      generation: Number(c.generation),
-      lease_expires_at: Number(c.lease_expires_at),
-    }));
-    const lost = (Array.isArray(result.body.lost) ? result.body.lost : [])
+    current.claims = claims
+      .slice(0, 200)
+      .filter(isRecord)
+      .filter((c) => isLaikaId(c.task_id) && Number.isSafeInteger(c.generation))
+      .map((c) => ({
+        task_id: c.task_id as string,
+        generation: c.generation as number,
+        lease_expires_at: Number(c.lease_expires_at),
+      }));
+    // Bounded before it is read: a board answer of any size costs the same.
+    const lost = (
+      Array.isArray(result.body.lost) ? (result.body.lost as unknown[]).slice(0, 200) : []
+    )
       .map(asLost)
       .filter((c): c is LostClaim => c !== undefined);
     const fresh = lost.filter((c) => !current.noticed.includes(`${c.id}:${String(c.generation)}`));

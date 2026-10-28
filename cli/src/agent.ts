@@ -15,6 +15,7 @@ import {
   heartbeatIntervalMs,
   isAlive,
   isHarness,
+  isLaikaId,
   listStates,
   log,
   readCredential,
@@ -115,13 +116,21 @@ export function deps(io: AgentIo): Deps {
 /* Background children                                                        */
 /* -------------------------------------------------------------------------- */
 
-/** The environment a child gets: everything but a token. */
-export function scrubbed(
+/**
+ * What a background child may see of its parent's environment: an allowlist,
+ * not a blocklist, so no credential of any name — the agent's, the person's,
+ * a cloud key — reaches it. The child needs a home, a path and the interval.
+ */
+const CHILD_ENV = ['HOME', 'PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'LAIKA_AGENT_HEARTBEAT_SECONDS'];
+
+export function childEnv(
   env: Readonly<Record<string, string | undefined>>,
-): Record<string, string | undefined> {
-  const next: Record<string, string | undefined> = { ...env };
-  delete next.LAIKA_AGENT_TOKEN;
-  delete next.LAIKA_TOKEN;
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const name of CHILD_ENV) {
+    const value = env[name];
+    if (value !== undefined) next[name] = value;
+  }
   return next;
 }
 
@@ -139,7 +148,7 @@ export function spawnChild(
   const child = spawn(process.execPath, [MAIN, mode, harness, harnessSessionId], {
     detached: true,
     stdio: ['pipe', 'ignore', 'ignore'],
-    env: scrubbed(io.env),
+    env: childEnv(io.env),
   });
   child.on('error', () => undefined);
   child.stdin.on('error', () => undefined);
@@ -178,7 +187,12 @@ type HookEvent = keyof typeof HOOK_EVENTS;
 
 const NAMES: Readonly<Record<Harness, string>> = { 'claude-code': 'Claude Code', codex: 'Codex' };
 
+/** The most a hook ever hands a model, all notes together. */
+export const MAX_CONTEXT = 1200;
+
+/** Nothing when the session id is not a Laika id: an answer of any other shape is not repeated. */
 export function sessionContext(state: SessionState): string {
+  if (!isLaikaId(state.session_id)) return '';
   return (
     `Laika: agent session ${state.session_id ?? ''} is open for this ${NAMES[state.harness]} ` +
     'session and is renewed only while this process runs. When you claim a Laika task ' +
@@ -186,10 +200,15 @@ export function sessionContext(state: SessionState): string {
   );
 }
 
-/** The documented output both harnesses read: `hookSpecificOutput.additionalContext`. */
+/**
+ * The documented output both harnesses read: `hookSpecificOutput.additionalContext`.
+ * Capped at {@link MAX_CONTEXT} whatever is passed — the notes are bounded
+ * already, and this is the backstop.
+ */
 export function contextOutput(event: HookEvent, text: string): string {
+  const capped = text.length > MAX_CONTEXT ? `${text.slice(0, MAX_CONTEXT - 1)}…` : text;
   return JSON.stringify({
-    hookSpecificOutput: { hookEventName: HOOK_EVENTS[event], additionalContext: text },
+    hookSpecificOutput: { hookEventName: HOOK_EVENTS[event], additionalContext: capped },
   });
 }
 
@@ -254,7 +273,8 @@ export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Pro
     const opened = await open(io, harness, harnessSessionId, credential);
     if (opened.state?.status === 'live') {
       state = opened.state;
-      notes.push(sessionContext(state));
+      const context = sessionContext(state);
+      if (context !== '') notes.push(context);
     }
   } else if (state.status === 'live') {
     ensureWatcher(io, state, credential);
