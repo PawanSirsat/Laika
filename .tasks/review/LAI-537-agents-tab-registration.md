@@ -171,3 +171,33 @@ Rotation was checked against a real server by an uncommitted scratch run
 `server/test/http/routes/agents.test.ts` asserts the 401 server-side. Neither
 is a committed web e2e, so the criterion is not ticked; it is CHIEF's to
 accept on that evidence or to file the harness work.
+
+## Review round 2 (Codex FAIL on ebb93cd8; round-1 fixes confirmed)
+
+**A registration answering after Cancel or unmount.** *Cancel* stays
+available while registration is in flight. The first version's success
+handler still ran `hold()` and `onRegistered()` afterwards: it put the secret
+back into the already-scrubbed ref and locked the new agent's row (rotate and
+revoke disabled) with no wizard open.
+
+Now a `live` ref is cleared on Close and on unmount (and set again on mount).
+A late answer goes to `onAbandoned` with the agent alone:
+
+- the agent is added to the list, unlocked;
+- the reader is told it was registered after they cancelled, so its
+  credential was never shown and nobody holds it — rotate or revoke it;
+- the secret is never stored.
+
+*Proved:* `agents-tab.test.ts` holds the register request on a gate, cancels,
+then releases it, and asserts:
+
+- no wizard;
+- the secret in neither the DOM nor anything React's root reaches;
+- Rotate and Revoke enabled;
+- the notice shown.
+
+With the guard removed, the test goes red on the row lock; the file was
+restored and its checksum matched.
+
+**The full gate is owed at this head**; only the touched tests, lint and
+format were run, because the machine is under heavy load.
