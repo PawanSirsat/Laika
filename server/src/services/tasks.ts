@@ -48,6 +48,7 @@ import {
   claimView,
   holdsLiveClaim,
   hasOpenWorkRequest,
+  liveClaim,
   registeredAgent,
   releaseLiveClaim,
   takeClaim,
@@ -1968,6 +1969,11 @@ export function changeStatus(
     .where(eq(tasks.id, taskId))
     .run();
 
+  // The session the holder finishes under, read before its claim is released
+  // so the row still says what ran (D-118, LAI-586); `appendActivity` keeps it
+  // only if it is the writing agent's own.
+  const underSession =
+    task.status === 'in_progress' ? (liveClaim(db, taskId)?.sessionId ?? null) : null;
   // Out of `in_progress`, nobody works it under the claim it had (§5,
   // LAI-541): released, and its generation refused from here on.
   if (task.status === 'in_progress') releaseLiveClaim(db, taskId, now);
@@ -1977,6 +1983,7 @@ export function changeStatus(
     projectId: project.id,
     taskId,
     ...activityActor(actor),
+    agentSessionId: underSession,
     type: 'task.status_changed',
     payload: { from: task.status, to, ...statusPayload(from, dest), ...(via ? { via } : {}) },
     now,

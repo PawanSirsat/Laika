@@ -15,9 +15,17 @@ import { type Db } from '../db/client.ts';
 import { LIVE_CLAIM_STATES, type TaskClaimState } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
-import { agentSessions, handoffOffers, projects, taskClaims, tasks, tokens } from '../db/schema.ts';
+import {
+  agents,
+  agentSessions,
+  handoffOffers,
+  projects,
+  taskClaims,
+  tasks,
+  tokens,
+} from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan, type AgentContext, systemPrincipal } from '../policy/can.ts';
+import { assertCan, can, type AgentContext, systemPrincipal } from '../policy/can.ts';
 
 /**
  * Agent sessions and exclusive task claims (proposal §4.2, SPEC §4.65, §4.66,
@@ -126,7 +134,14 @@ export interface AgentSessionView {
   end_reason: 'ended' | 'agent_revoked' | null;
   /** Self-reported (§4.65); decides nothing. */
   client_version: string | null;
-  /** Self-reported (§4.65); decides nothing. */
+  /**
+   * The underlying harness that ran, its version, and the model — **self-
+   * reported** (D-118, LAI-586), shown as such and decide nothing. A
+   * manager's session says which worker harness it started here.
+   */
+  harness: string | null;
+  harness_version: string | null;
+  /** Self-reported (§4.65); decides nothing. A heartbeat may change it. */
   model: string | null;
   /** `suspect` past §9.1's suspect interval without a heartbeat. Shown, decides nothing. */
   connection: 'live' | 'suspect' | 'ended';
@@ -161,6 +176,8 @@ function sessionView(row: SessionRow, now: number): AgentSessionView {
     ended_at: row.endedAt,
     end_reason: row.endReason,
     client_version: row.clientVersion,
+    harness: row.harness,
+    harness_version: row.harnessVersion,
     model: row.model,
     connection:
       row.endedAt !== null
@@ -185,11 +202,30 @@ export function claimView(row: ClaimRow): TaskClaimView {
   };
 }
 
+/** How many of an agent's sessions `GET /agents/:id` shows (D-118). */
+export const RECENT_SESSIONS = 20;
+
+/**
+ * An agent's most recent sessions, newest first — at most
+ * {@link RECENT_SESSIONS} — for its owner's `GET /agents/:id` (D-118,
+ * LAI-586). The caller has already established the agent is theirs.
+ */
+export function recentAgentSessions(db: Db, agentId: string, now: number): AgentSessionView[] {
+  return db
+    .select()
+    .from(agentSessions)
+    .where(eq(agentSessions.agentId, agentId))
+    .orderBy(desc(agentSessions.startedAt), desc(agentSessions.id))
+    .limit(RECENT_SESSIONS)
+    .all()
+    .map((row) => sessionView(row, now));
+}
+
 // ---------------------------------------------------------------- refusals
 
 /** `409 conflict` with the claim reason in `details` (D-079). */
 function claimConflict(
-  reason: 'stale_claim' | 'claim_held' | 'claim_paused',
+  reason: 'stale_claim' | 'claim_held' | 'claim_paused' | 'selected_for_another_agent',
   message: string,
   details: Record<string, unknown> = {},
 ): ApiError {
@@ -270,10 +306,24 @@ function nextGeneration(db: Db, taskId: string): number {
 
 // ---------------------------------------------------------------- sessions
 
+/**
+ * What a session says about itself (§4.65, D-118). Every field is
+ * self-reported and validated for shape only, by the route; none of them is
+ * ever read by `can()`, the fence or a claim.
+ */
 export interface StartSessionInput {
   client_version?: string | undefined;
+  harness?: string | undefined;
+  harness_version?: string | undefined;
   model?: string | undefined;
 }
+
+/**
+ * What a heartbeat may report again: the same fields, each changing only when
+ * it is sent — the model can change mid-session (D-118), and a heartbeat that
+ * omits a field leaves what the session last said.
+ */
+export type HeartbeatInput = StartSessionInput;
 
 function openSession(
   db: Db,
@@ -292,6 +342,8 @@ function openSession(
     endedAt: null,
     endReason: null,
     clientVersion: input.client_version ?? null,
+    harness: input.harness ?? null,
+    harnessVersion: input.harness_version ?? null,
     model: input.model ?? null,
     contextRevisionSeen: null,
   };
@@ -329,16 +381,19 @@ export function heartbeatAgentSession(
   actor: ResolvedActor,
   sessionId: string,
   now: number = Date.now(),
+  input: HeartbeatInput = {},
 ): HeartbeatView {
   assertCan(actor, 'heartbeat.send_own');
   const agent = requireAgent(actor);
 
   return immediateTransaction(sqlite, () => {
-    const session = requireOpenSession(db, agent.id, sessionId);
+    const found = requireOpenSession(db, agent.id, sessionId);
+    const reported = reportedChanges(input);
     db.update(agentSessions)
-      .set({ lastHeartbeatAt: now })
-      .where(eq(agentSessions.id, session.id))
+      .set({ lastHeartbeatAt: now, ...reported })
+      .where(eq(agentSessions.id, found.id))
       .run();
+    const session: SessionRow = { ...found, ...reported };
 
     const active = db
       .select()
@@ -362,6 +417,18 @@ export function heartbeatAgentSession(
       lost: mine.filter((c) => !isLive(c.state)).map(claimView),
     };
   });
+}
+
+/** Only the self-reported fields a heartbeat actually sent; absent keeps the old value. */
+function reportedChanges(
+  input: HeartbeatInput,
+): Partial<Pick<SessionRow, 'clientVersion' | 'harness' | 'harnessVersion' | 'model'>> {
+  return {
+    ...(input.client_version === undefined ? {} : { clientVersion: input.client_version }),
+    ...(input.harness === undefined ? {} : { harness: input.harness }),
+    ...(input.harness_version === undefined ? {} : { harnessVersion: input.harness_version }),
+    ...(input.model === undefined ? {} : { model: input.model }),
+  };
 }
 
 /**
@@ -620,6 +687,15 @@ export function takeClaim(
 ): TakenClaim {
   const agent = requireAgent(actor);
   const { now } = input;
+
+  // D-119, before a session is opened for the attempt: the holder's own
+  // session renewing its claim is not a new claim, and is left to the checks
+  // below — every other call is one.
+  const held = liveClaim(db, task.id);
+  const renewing =
+    held !== undefined && held.agentId === agent.id && held.sessionId === input.sessionId;
+  if (!renewing) assertSelectedAgentMayClaim(db, actor, task.id, agent.id);
+
   const session =
     input.sessionId === undefined
       ? openSession(db, actor, agent, {}, now)
@@ -731,6 +807,65 @@ function acceptWorkRequest(db: Db, taskId: string, agentId: string, now: number)
     .run();
 }
 
+// ---------------------------------------------------------- the selected agent
+
+/**
+ * **D-119: the selected agent owns the claim.** A task that names its agent
+ * (`tasks.selected_agent_id`, LAI-535) may be claimed — or reclaimed — only by
+ * a session of **that** agent; any other agent is `409 conflict`, `reason:
+ * selected_for_another_agent`. A task with no selected agent is anyone
+ * eligible's, as before. Only a registered agent's claim passes here: a person
+ * and a legacy token claim by assignee, unchanged.
+ *
+ * Asked **after** the caller's own `task.claim` — so a caller who may not
+ * claim hears that, and learns nothing about the selection — and the refusal
+ * names the selected agent only when the caller may read the task's project,
+ * where `TaskView.selected_agent` already shows it to them. Never more than
+ * that read would.
+ */
+export function assertSelectedAgentMayClaim(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  agentId: string,
+): void {
+  const task = db
+    .select({ projectId: tasks.projectId, selectedAgentId: tasks.selectedAgentId })
+    .from(tasks)
+    .where(eq(tasks.id, taskId))
+    .get();
+  if (task?.selectedAgentId === null || task?.selectedAgentId === undefined) return;
+  if (task.selectedAgentId === agentId) return;
+
+  const details: Record<string, unknown> = { task_id: taskId };
+  if (can(withProject(actor, task.projectId), 'project.read', { projectId: task.projectId })) {
+    const selected = db
+      .select({
+        id: agents.id,
+        displayName: agents.displayName,
+        harness: agents.harness,
+        deviceLabel: agents.deviceLabel,
+      })
+      .from(agents)
+      .where(eq(agents.id, task.selectedAgentId))
+      .get();
+    if (selected !== undefined) {
+      details.selected_agent_id = selected.id;
+      details.selected_agent = {
+        id: selected.id,
+        display_name: selected.displayName,
+        harness: selected.harness,
+        device_label: selected.deviceLabel,
+      };
+    }
+  }
+  throw claimConflict(
+    'selected_for_another_agent',
+    'This task is selected for another agent; only that agent can claim it',
+    details,
+  );
+}
+
 // ----------------------------------------------------------------- reclaim
 
 export interface ReclaimInput {
@@ -839,6 +974,9 @@ export function reclaimTask(
     // The owner's own permission, with the agent step and the space rules,
     // through `can()` as every claim asks it — on the reloaded actor.
     assertCan(withProject(fresh, project.id), 'task.claim', { projectId: project.id });
+    // D-119: the selection may have moved to another agent while the claim was
+    // expired (no live claim holds it then); taking it back would be a claim.
+    assertSelectedAgentMayClaim(db, fresh, taskId, agent.id);
 
     // A claim is held only on work in progress (§5): a task a person moved on
     // since the claim expired has nothing to take back.
