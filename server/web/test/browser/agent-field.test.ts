@@ -600,6 +600,64 @@ void describe('the drawer’s Agent row', () => {
     }
   });
 
+  // **Whoever has focus names the active agent, after any close** (Codex,
+  // integration round 2): a search left the search box "focused" in the
+  // picker's state when the list closed, so a reopened list named its active
+  // option from the unfocused search box and not from the trigger.
+  for (const close of ['a click outside', 'Escape'] as const) {
+    void test(`after a search closed by ${close}, a reopened list is named by the focused field`, async () => {
+      const { stub } = world();
+      const h = await open('/board?project=laika-core&task=t1', stub);
+      try {
+        const box = await agentBox(h);
+        await box.focus();
+        await h.page.keyboard.press('ArrowDown');
+        await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
+        await h.page.keyboard.type('laptop');
+        const search = h.page.getByRole('combobox', { name: 'Search agents' });
+        await until(async () => (await search.inputValue()) === 'laptop');
+
+        if (close === 'Escape') {
+          await h.page.keyboard.press('Escape');
+        } else {
+          await h.page.locator('.panel-meta p.meta-label', { hasText: 'Reporter' }).click();
+        }
+        await until(async () => (await box.getAttribute('aria-expanded')) === 'false');
+
+        // Reopen on End: the last agent, the disabled read-only one.
+        await box.focus();
+        await h.page.keyboard.press('End');
+        await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
+
+        const focused = await h.page.evaluate(() => {
+          const el = document.activeElement;
+          return {
+            role: el?.getAttribute('role') ?? null,
+            label: el?.getAttribute('aria-label') ?? null,
+            active: el?.getAttribute('aria-activedescendant') ?? null,
+          };
+        });
+        assert.equal(focused.label, null, `focus is on ${JSON.stringify(focused)}, not the field`);
+        assert.equal(focused.active, await box.getAttribute('aria-activedescendant'));
+        assert.ok(focused.active !== null, 'the focused field names no active agent');
+        // Exactly one element names an active option: the focused one.
+        const naming = await h.page.locator('[aria-activedescendant]').count();
+        assert.equal(naming, 1, 'an unfocused element also names the active option');
+
+        const option = h.page.locator(`[id="${focused.active}"]`);
+        assert.equal(await option.getAttribute('data-value'), 'ag-ro');
+        assert.equal(await option.getAttribute('aria-disabled'), 'true');
+        const listId = (await box.getAttribute('aria-controls')) ?? '';
+        const named = h.page
+          .locator(`[id="${listId}"]`)
+          .getByRole('option', { name: /Cursor .*Read-only on this space/ });
+        assert.equal(await named.getAttribute('id'), focused.active, 'the reason is not announced');
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
   void test('No agent withdraws it', async () => {
     const { stub } = world();
     const h = await open('/board?project=laika-core&task=t2', stub);
