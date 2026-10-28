@@ -114,3 +114,8 @@ withdraw case by chance.
 whole file: 35/35, exit 0, **45 times**: 1 timing run, 20 in a row, and 24
 under 6-way parallel load (load average to 25 on 10 CPUs).
 
+**Filed:** **LAI-581** (card LAIKA-834). The first full gate on this branch
+exited 1 on one unrelated test, `agents-tab.test.ts:558` (a rename read before
+the list re-rendered). Alone that file was 20/20 three times. LAI-580 was taken
+on the board, though not yet in git, so the id is LAI-581.
+
