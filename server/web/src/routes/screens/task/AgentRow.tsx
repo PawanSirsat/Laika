@@ -10,7 +10,16 @@ import {
   agentDevice,
   type SelectedAgent,
 } from '../../../api/selected-agent.ts';
-import type { TaskSummary } from '../../../api/tasks.ts';
+import { getTask, type TaskSummary } from '../../../api/tasks.ts';
+import {
+  abortReason,
+  beginAgentWrite,
+  endAgentWrite,
+  isAgentWriteOpen,
+  isAgentWriteUncertain,
+  readDeadline,
+  subscribeAgentWrites,
+} from '../../../api/agent-writes.ts';
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
 import { AgentPicker, NO_AGENT } from '../../../components/agent/AgentPicker.tsx';
 import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
@@ -55,29 +64,8 @@ interface Confirmed {
   readonly version: number;
 }
 
-/*
- * **One write per task at a time, across every visit** (LAI-538 review,
- * round 3). Request ids stop a stale *answer* from changing the screen, but
- * not a stale *write* from landing: a withdraw sent on one visit and a select
- * sent on the next both reach the server, and whichever lands last wins. So
- * the record of a write in flight lives here, outside the component, keyed
- * by task, and the next write on that task waits for it to settle.
- */
-const saving = new Set<string>();
-const savingListeners = new Set<() => void>();
-
-function subscribeSaving(listener: () => void): () => void {
-  savingListeners.add(listener);
-  return () => {
-    savingListeners.delete(listener);
-  };
-}
-
-function markSaving(taskId: string, on: boolean): void {
-  if (on) saving.add(taskId);
-  else saving.delete(taskId);
-  for (const listener of savingListeners) listener();
-}
+/** What the row says when a write's outcome could not be checked. */
+const UNCONFIRMED_WORDS = 'Couldn’t confirm the agent was saved — reload to check.';
 
 /**
  * The drawer's **Agent** row, directly under Assignee (LAI-538, proposal §6).
@@ -125,9 +113,17 @@ export function AgentRow({
   }, [task.id]);
 
   const pending = pendingWrite?.taskId === task.id ? pendingWrite.agentId : undefined;
-  const error = errorFor?.taskId === task.id ? errorFor.words : undefined;
-  /** A write on this task is in flight — this visit's, or one sent before it. */
-  const savingHere = useSyncExternalStore(subscribeSaving, () => saving.has(task.id));
+  /*
+   * **One write per task, across every visit, and every one ends**
+   * (`agent-writes.ts`): it settles, or its deadline aborts it and the task is
+   * read back, or the session ends.
+   */
+  const savingHere = useSyncExternalStore(subscribeAgentWrites, () => isAgentWriteOpen(task.id));
+  const unconfirmed = useSyncExternalStore(subscribeAgentWrites, () =>
+    isAgentWriteUncertain(task.id),
+  );
+  const error =
+    errorFor?.taskId === task.id ? errorFor.words : unconfirmed ? UNCONFIRMED_WORDS : undefined;
   /** In flight from an earlier visit: the field waits for it, and says so. */
   const savingElsewhere = savingHere && pending === undefined;
   /*
@@ -135,15 +131,27 @@ export function AgentRow({
    * than waiting on the drawer's next read — a read that fails would
    * otherwise leave the field showing the old agent for good.
    */
-  const overlay =
-    confirmed?.taskId === task.id && task.updated_at < confirmed.version ? confirmed : undefined;
+  const served = selectedAgentOf(task)?.id ?? null;
+  /*
+   * Older props than the confirmed version are a read already on its way;
+   * newer ones are the truth. **On a tie the confirmed answer wins unless the
+   * props agree with it** — two writes in one millisecond share a version,
+   * and the one this reader just made is the one they are waiting to see.
+   */
+  const yieldsTo = (c: Confirmed): boolean =>
+    task.updated_at > c.version ||
+    (task.updated_at === c.version && served === (c.agent?.id ?? null));
+  const overlay = confirmed?.taskId === task.id && !yieldsTo(confirmed) ? confirmed : undefined;
   const current = overlay === undefined ? selectedAgentOf(task) : overlay.agent;
-  // The props reached the confirmed version, or passed it: they are the truth.
   useEffect(() => {
-    if (confirmed?.taskId === task.id && task.updated_at >= confirmed.version) {
+    if (confirmed?.taskId !== task.id) return;
+    if (
+      task.updated_at > confirmed.version ||
+      (task.updated_at === confirmed.version && served === (confirmed.agent?.id ?? null))
+    ) {
       setConfirmed(undefined);
     }
-  }, [confirmed, task.id, task.updated_at]);
+  }, [confirmed, task.id, task.updated_at, served]);
 
   const choices = useMemo(
     () =>
@@ -167,37 +175,63 @@ export function AgentRow({
     // guarded without disabling the field — a disabled button drops focus to
     // <body> under the reader who just chose; a write from an earlier visit
     // disables it, with the reason in words (below).
-    if (saving.has(taskId) || to === (current?.id ?? null)) return;
+    if (to === (current?.id ?? null)) return;
+    const ticket = beginAgentWrite(taskId);
+    if (ticket === undefined) return;
     nextReq.current += 1;
     const req = nextReq.current;
     active.current = req;
     setError(undefined);
     setPending({ req, taskId, agentId: id });
-    markSaving(taskId, true);
     const mine = (): boolean => active.current === req;
-    try {
-      const written = await selectTaskAgent(taskId, to);
-      if (!mine()) {
-        // Settled after the reader left: read the task again, so whoever
-        // looks at it next sees what the server now holds.
-        onChanged();
-        return;
-      }
+    const settle = (): void => {
+      if (!mine()) return;
       active.current = null;
-      // Settled by the server's own answer, whatever the follow-up read does.
-      setConfirmed({ taskId, agent: selectedAgentOf(written), version: written.updated_at });
       setPending(undefined);
+    };
+    try {
+      const written = await selectTaskAgent(taskId, to, ticket.signal);
+      if (mine()) {
+        // Settled by the server's own answer, whatever the follow-up read does.
+        setConfirmed({ taskId, agent: selectedAgentOf(written), version: written.updated_at });
+      }
+      settle();
+      // On this visit or after the reader left: read the task again, so
+      // whoever looks at it next sees what the server now holds.
       onChanged();
     } catch (cause) {
-      if (!mine()) {
-        onChanged();
+      const aborted = abortReason(ticket.signal);
+      // The session ended: its records are gone, and nothing here is news.
+      if (aborted === 'reset') return;
+      if (aborted === 'deadline') {
+        /*
+         * **Unanswered, so uncertain** — the write may have landed. Read the
+         * task back and show what the server holds before the next write may
+         * go; if that read fails too, say so rather than hold the field.
+         */
+        const read = readDeadline();
+        try {
+          const truth = await getTask(taskId, read.signal);
+          if (mine()) {
+            setConfirmed({ taskId, agent: selectedAgentOf(truth), version: truth.updated_at });
+          }
+          settle();
+          onChanged();
+          endAgentWrite(taskId, ticket.token);
+        } catch {
+          settle();
+          endAgentWrite(taskId, ticket.token, true);
+        } finally {
+          read.cancel();
+        }
         return;
       }
-      active.current = null;
-      setPending(undefined);
-      setError({ taskId, words: selectionErrorWords(cause) });
+      if (mine()) setError({ taskId, words: selectionErrorWords(cause) });
+      settle();
+      if (!mine()) onChanged();
     } finally {
-      markSaving(taskId, false);
+      // Whatever happened above, this request's record ends — and only its own.
+      endAgentWrite(taskId, ticket.token);
     }
   };
 
