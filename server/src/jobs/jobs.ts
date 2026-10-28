@@ -2,7 +2,8 @@ import { and, eq, gt, isNotNull, isNull, lt, lte, sql } from 'drizzle-orm';
 import { appendActivity } from '../db/activity.ts';
 import { assertCan, systemPrincipal } from '../policy/can.ts';
 import { type Db } from '../db/client.ts';
-import { pruneExpired, purgeUnversioned } from '../http/idempotency.ts';
+import { purgeUnversionedIdempotencyKeys } from '../db/backfill.ts';
+import { pruneExpired } from '../http/idempotency.ts';
 import { AGENT_BUCKET_MS } from '../services/agent-time.ts';
 import {
   agentTimeBuckets,
@@ -465,12 +466,13 @@ export function expireMeetingReviews(db: Db, now: number): JobResult {
  * already treats an older row as unseen, but nothing deleted one, so the
  * table only grew — and kept every response body it was ever given.
  * **Rows from before LAI-534's owner format**, which may hold plaintext
- * secrets (`purgeUnversioned`). Hourly and once at boot, so a deploy deletes
- * them the moment it starts.
+ * secrets (`purgeUnversionedIdempotencyKeys`). Those are first deleted by
+ * `runMigrations`, before the port is bound (round 3); this runs it hourly as
+ * well, which finds nothing once the table is clean.
  */
 export function pruneIdempotencyKeys(db: Db, now: number): JobResult {
   assertCan(SYSTEM, 'system.idempotency.prune');
-  return { changed: pruneExpired(db, now) + purgeUnversioned(db) };
+  return { changed: pruneExpired(db, now) + purgeUnversionedIdempotencyKeys(db) };
 }
 
 /**
