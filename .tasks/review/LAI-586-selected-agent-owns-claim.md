@@ -122,3 +122,25 @@ back; heartbeat renewing; lease end expiring instead of releasing; fence
 letting it change the task; visibility check gone; hidden and missing worded
 differently; the release writing no record; plus D-119 off on claim and on
 reclaim, and the refusal never naming the agent.
+
+## Review round 2 — PR #123 at 1d128efd, two blockers (2026-10-28T23:43:17Z)
+
+**1. The assignee rule hid D-119.** `agentStartWorking` now asks
+`assertSelectedAgentMayClaim` before the assignee check — after visibility
+and `task.claim`, which `startWorking` asks first, so a hidden task still
+answers as a missing one. A non-selected agent on a task assigned to another
+person hears `selected_for_another_agent`; the selected agent meets the
+assignee rule as before (its open request lets it claim); with no selection the
+bare `assignee_id` conflict is unchanged. REST and MCP.
+
+**2. The reclaim left a re-issued request open.** `reclaimTask` accepts the
+agent's open work request in the same transaction as the new claim, exactly
+as a fresh claim does. Select A → A claims → expire → select B → select A → A
+reclaims: A's new request is `accepted`. REST and MCP.
+
+**Non-blocking:** one criterion added to LAI-588 (SHELL, still in backlog,
+unclaimed): the helper's lost-claim notice tells `released` (do not reclaim)
+from `expired`. `cli/` untouched.
+
+**Mutations:** D-119 removed from before the assignee rule; the reclaim's
+request acceptance removed — each red in REST and MCP, restored and checksummed.
