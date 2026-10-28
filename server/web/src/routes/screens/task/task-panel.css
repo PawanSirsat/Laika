@@ -1193,6 +1193,13 @@
   padding: 0.875rem;
 }
 
+/* The rail is narrower than the panel was drawn for, so each fact stacks —
+   label over value — and the agent's chip keeps its full name. */
+.panel-side-exec .exec-facts > div {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.125rem;
+}
+
 /* ------------------------------------------------- stacked, on a narrow window */
 
 @media (max-width: 900px) {
