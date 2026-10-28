@@ -182,15 +182,24 @@ export function availabilityOf(
     : 'offline';
 }
 
-/** One row of the picker: `AgentChoice`'s shape, built from a real `GET /agents`. */
-export interface PickerChoice {
+interface PickerChoiceBase {
   readonly id: string;
   readonly client: AgentClient;
   readonly owner: string;
   readonly device: string;
-  readonly availability: AgentAvailability;
-  readonly reason?: string | undefined;
 }
+
+/**
+ * One row of the picker: `AgentChoice`'s shape, built from a real `GET /agents`
+ * — including its rule that an `unavailable` row always carries its reason
+ * (LAI-536), so a disabled agent is never shown without one.
+ */
+export type PickerChoice =
+  | (PickerChoiceBase & {
+      readonly availability: Exclude<AgentAvailability, 'unavailable'>;
+      readonly reason?: undefined;
+    })
+  | (PickerChoiceBase & { readonly availability: 'unavailable'; readonly reason: string });
 
 /**
  * The picker's rows: **the caller's own agents** (`GET /agents` answers only
@@ -216,14 +225,17 @@ export function pickerChoices(input: {
     if (agent.status === 'revoked' && agent.id !== current?.id) continue;
     const refusal = ineligibleReason(agent, projectId, agentsAllowed);
     const view = { harness: agent.harness, display_name: agent.display_name };
-    rows.push({
+    const base = {
       id: agent.id,
       client: selectedHarness(view),
       owner: ownerName,
       device: agentDevice(agent),
-      availability: refusal === undefined ? availabilityOf(agent, now) : 'unavailable',
-      ...(refusal === undefined ? {} : { reason: INELIGIBLE_SHORT[refusal] }),
-    });
+    };
+    rows.push(
+      refusal === undefined
+        ? { ...base, availability: availabilityOf(agent, now) }
+        : { ...base, availability: 'unavailable', reason: INELIGIBLE_SHORT[refusal] },
+    );
   }
   // Available first, then offline, then the ones that cannot be picked.
   const rank: Readonly<Record<AgentAvailability, number>> = {
