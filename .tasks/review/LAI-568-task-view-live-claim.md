@@ -77,8 +77,33 @@ notice. It does not stub the missing fields (CLAUDE.md §5.1).
       clock, on the task read.
 - [x] An expired, released or transferred claim is not `claim` (history stays
       in activity).
-- [x] Repo-root gate: red only on the client mirror assertion, quoted
+- [ ] Repo-root gate: red only on the client mirror assertion, quoted
       verbatim, for SHELL's half.
+
+  **Not met as written — unticked after review (Codex on PR #112).** The only
+  red this branch adds is these two lines in
+  `server/web/test/api/view-type-drift.test.ts` (*"no server field is missing
+  from its client type"*):
+
+  ```
+  TaskView.claim is served and Task does not declare it — add it, or list it in clientOmits with a reason
+  TaskSummaryView.claim is served and TaskSummary does not declare it — add it, or list it in clientOmits with a reason
+  ```
+
+  The repo-root gate also fails five server/web tests that fail identically
+  without this branch: *activity wording covers the server’s vocabulary*,
+  *every served endpoint has a caller, or a named reason*, *the stream
+  subscribes to exactly what the server emits*, *every server field is visible
+  to the client* (its pre-existing `TaskView.selected_agent`,
+  `TaskSummaryView.selected_agent` and `EventView.agent_id` lines), and
+  *describeProjectEvent*. Measured: server/web `# pass 3365`, `# fail 5` at
+  this branch's head, and the same five `not ok` with `# pass 3365`, `# fail 5`
+  when `server/src/services/{claims,tasks}.ts` were put back to `7fcdfa81` —
+  the claim commit, which differs from base `01618534` only by this task
+  file. (Not a separate clean checkout: §4.2 forbids a builder creating a
+  worktree.) They are the missing client halves of LAI-534/535/541. **This
+  criterion is to be re-validated after merging
+  `origin/integration-agent-identities`, once Belka posts it ready.**
 
 ## Role / machine
 
@@ -113,12 +138,17 @@ itself. `connection` is still served, computed at the read, so a client that
 does not tick gets the right answer as of its last read.
 
 **Tests** — `server/test/services/claims.test.ts` *"the live claim on a task
-read (LAI-568)"* (injected clock; each case asserts `getTask` **and**
-`listTasks`): full shape on both reads; null unclaimed; `live` at
-`suspect − 1`, `suspect` at `suspect`, `live` again after a heartbeat; null
-once lapsed before and after the scan; null once released (finish, and ended
-session); null once transferred; paused served; revoked agent → suspect; a page
-of several tasks each gets its own. `server/test/http/routes/agent-sessions.test.ts`
+read (LAI-568)"*, injected clock. **On both `getTask` and `listTasks`**: full
+shape; null unclaimed; `suspect` at the interval; null once lapsed (before and
+after the scan), released (finish, and ended session) and transferred; paused
+served; revoked agent → suspect; after a reclaim under a new session, only
+generation 2's session and heartbeat, though the old session beat later.
+**On `getTask` only**: `live` at `suspect − 1`, and `live` again after a
+heartbeat. **On `listTasks` only**: a page of several claimed tasks each gets
+its own. **On `liveClaimViews` directly**: one prepared statement for one task
+and for five (the driver instrumented as LAI-091's test in `tasks.test.ts`
+does); a deliberate per-task loop turned it red with 5, and the file was
+restored and checksum-verified. `server/test/http/routes/agent-sessions.test.ts`
 *"the live claim on task reads (LAI-568)"*: `GET /tasks/:id`, the full list and
 `?fields=slim` all carry it, null on a free task, null after `POST
 /tasks/:id/finish`, null after the scan. Mutations run against the three
