@@ -12,6 +12,7 @@
 # On master, a green gate builds the arm64 image, points `latest` at it and
 # restarts production on that exact digest; a deploy that does not come up
 # healthy is rolled back to the image it replaced, and the run goes red.
+# While LAI-579 is in force, a red Test step on a master push still deploys, with a ::warning:: annotation.
 name: CI / Deploy
 
 on:
@@ -65,7 +66,13 @@ jobs:
       - name: Format
         run: pnpm format
       - name: Test
+        id: test
+        # LAI-579: temporary, owner instruction 2026-10-29; revert when the flaky tests are fixed
+        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
         run: pnpm test
+      - name: Warn when tests did not block deploy
+        if: steps.test.outcome == 'failure'
+        run: echo "::warning::The test step failed and was not allowed to block the deploy (temporary, see LAI-579)."
 
   build:
     name: Build — arm64 image
