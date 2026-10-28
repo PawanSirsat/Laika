@@ -342,6 +342,13 @@ async function lastWizardFrameHadSecret(page: Page): Promise<boolean | 'still op
   });
 }
 
+/** How many agent-list reads the tab has settled, applied or dropped. */
+async function readsSettled(page: Page): Promise<number> {
+  return Number(
+    (await page.locator('[data-testid="agents-tab"]').getAttribute('data-reads-settled')) ?? NaN,
+  );
+}
+
 const focusedText = (page: Page) =>
   page.evaluate(() => (document.activeElement as HTMLElement | null)?.innerText.trim() ?? '');
 
@@ -776,6 +783,9 @@ void describe('the Agents tab (LAI-537)', () => {
     const listGate = new Promise<void>((done) => {
       releaseList = done;
     });
+    // `heldLists` counts snapshots **already captured** — incremented only
+    // after `route.fetch()` has answered, so a test that waits on it knows the
+    // stale picture exists (review round 4).
     const state = { posts: 0, holdPosts: 1, holdList: false, heldLists: 0 };
     await page.route(
       (url) => url.pathname === '/api/v1/agents',
@@ -788,8 +798,8 @@ void describe('the Agents tab (LAI-537)', () => {
           return;
         }
         if (method === 'GET' && state.holdList) {
-          state.heldLists += 1;
           const answer = await route.fetch();
+          state.heldLists += 1;
           await listGate;
           await route.fulfill({ response: answer });
           return;
@@ -824,19 +834,22 @@ void describe('the Agents tab (LAI-537)', () => {
 
       // Cancel's reload is asked now — before the agent exists — and held.
       held.state.holdList = true;
+      const settledBefore = await readsSettled(page);
       await press(page, 'Cancel', '.agents-wizard');
       await page.locator('.agents-wizard').waitFor({ state: 'detached' });
       await until(() => held.state.heldLists >= 1);
-      assert.ok(held.state.heldLists >= 1, 'the Cancel reload was never asked');
+      assert.ok(held.state.heldLists >= 1, 'the Cancel reload was never captured');
 
       // The registration answers: the row appears, unlocked.
       held.releasePost();
       const row = page.locator('.agents-row[data-agent="a1"]');
       await row.waitFor({ timeout: 15_000 });
 
-      // Then the older read lands. It must not erase the newer row.
+      // Then the older read lands. It must not erase the newer row — read once
+      // the page has handled it, not after a guessed delay.
       held.releaseList();
-      await page.waitForTimeout(500);
+      await until(async () => (await readsSettled(page)) === settledBefore + 1, 15_000);
+      assert.equal(await readsSettled(page), settledBefore + 1, 'the stale read never settled');
       assert.equal(await row.count(), 1, 'the older list read erased the late row');
       assert.equal(await row.getByRole('button', { name: 'Rotate token' }).isDisabled(), false);
       assert.equal(await row.getByRole('button', { name: 'Revoke' }).isDisabled(), false);
@@ -849,6 +862,126 @@ void describe('the Agents tab (LAI-537)', () => {
       await page.locator('[data-confirm-ok] button').click();
       await page.locator('[data-testid="agent-secret"]').waitFor();
       assert.equal(await page.locator('.agents [role="status"]').count(), 0, 'the notice stayed');
+    } finally {
+      await h.close();
+    }
+  });
+
+  /**
+   * Every page of every list read held at the page, each answered when the
+   * test says and how (review round 4). Nothing reaches the stub.
+   *
+   * **Why two pages.** `api/client.ts` shares an identical GET still in flight
+   * (`sharedCache`), so two reads of the same first page are one request with
+   * one outcome — they cannot cross. They can when the list pages: an older
+   * read still on its second page and a reload's first page are different
+   * requests, which is the case a long list meets.
+   */
+  async function holdListReads(page: Page) {
+    type Answer = { readonly ok: true; readonly cursor: string | null } | { readonly ok: false };
+    const reads: { url: string; answer: (how: Answer) => Promise<void> }[] = [];
+    await page.route(
+      (url) => url.pathname === '/api/v1/agents',
+      async (route) => {
+        if (route.request().method() !== 'GET') {
+          await route.fallback();
+          return;
+        }
+        await new Promise<void>((asked) => {
+          reads.push({
+            url: route.request().url(),
+            answer: async (how) => {
+              await (how.ok
+                ? route.fulfill({ json: { data: [existing()], next_cursor: how.cursor } })
+                : route.fulfill({
+                    status: 500,
+                    json: { error: { code: 'internal', message: 'The board fell over' } },
+                  }));
+              asked();
+            },
+          });
+        });
+      },
+    );
+    return reads;
+  }
+
+  /**
+   * The older read on its second page, the newer (Cancel's) on its first,
+   * both unanswered. Each request is awaited by count, never by a delay.
+   */
+  async function twoReadsInFlight(
+    page: Page,
+    reads: Awaited<ReturnType<typeof holdListReads>>,
+  ): Promise<void> {
+    await until(() => reads.length === 1, 20_000);
+    assert.equal(reads.length, 1, 'the first list read was never asked');
+    await reads[0]?.answer({ ok: true, cursor: 'page-2' });
+    await until(() => reads.length === 2);
+    assert.match(reads[1]?.url ?? '', /cursor=page-2/, 'the older read did not page');
+
+    await page.getByRole('button', { name: '+ Register an agent' }).waitFor({ timeout: 20_000 });
+    await press(page, '+ Register an agent');
+    await page.locator('.agents-wizard').waitFor();
+    await press(page, 'Cancel', '.agents-wizard');
+    await page.locator('.agents-wizard').waitFor({ state: 'detached' });
+    await until(() => reads.length === 3);
+    assert.equal(reads.length, 3, 'Cancel asked no second list read');
+    assert.doesNotMatch(reads[2]?.url ?? '', /cursor=/, 'the reload did not start at page one');
+    assert.equal(await readsSettled(page), 0);
+  }
+
+  void test('an older failed read never hides a newer list', async () => {
+    let reads: Awaited<ReturnType<typeof holdListReads>> = [];
+    const api = agentsApi();
+    const h = await open('/developer?tab=agents', api.stub, {
+      before: async (p) => {
+        reads = await holdListReads(p);
+      },
+    });
+    const { page } = h;
+    try {
+      await twoReadsInFlight(page, reads);
+      // The newer read succeeds first …
+      await reads[2]?.answer({ ok: true, cursor: null });
+      await until(async () => (await readsSettled(page)) === 1);
+      await page.locator('.agents-row[data-agent="a1"]').waitFor();
+      // … then the older one fails on its second page. Handled, and inert.
+      await reads[1]?.answer({ ok: false });
+      await until(async () => (await readsSettled(page)) === 2);
+      assert.equal(await readsSettled(page), 2, 'the stale failure never settled');
+      assert.equal(await page.locator('.agents-row[data-agent="a1"]').count(), 1);
+      assert.equal(
+        await page.locator('.agents > .state').count(),
+        0,
+        'a stale failure hid the list',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an older successful read never clears a newer failure', async () => {
+    let reads: Awaited<ReturnType<typeof holdListReads>> = [];
+    const api = agentsApi();
+    const h = await open('/developer?tab=agents', api.stub, {
+      before: async (p) => {
+        reads = await holdListReads(p);
+      },
+    });
+    const { page } = h;
+    try {
+      await twoReadsInFlight(page, reads);
+      // The newer read fails first …
+      await reads[2]?.answer({ ok: false });
+      await until(async () => (await readsSettled(page)) === 1);
+      await page.locator('.agents > .state').waitFor();
+      // … then the older one completes. Its picture is stale: the failure stands.
+      await reads[1]?.answer({ ok: true, cursor: null });
+      await until(async () => (await readsSettled(page)) === 2);
+      assert.equal(await readsSettled(page), 2, 'the stale success never settled');
+      assert.equal(await page.locator('.agents > .state').count(), 1, 'a stale success cleared it');
+      assert.equal(await page.locator('.agents-row').count(), 0, 'a stale list was shown');
     } finally {
       await h.close();
     }

@@ -120,6 +120,12 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
    *   write made since it began over what it got (`overlayWrites`).
    */
   const readGen = useRef(0);
+  /**
+   * How many list reads have settled, applied or dropped — written to the
+   * card as `data-reads-settled`, so a test can wait for a stale answer to
+   * have been *handled* rather than for a fixed time (review round 4).
+   */
+  const [readsSettled, setReadsSettled] = useState(0);
   const appliedGen = useRef(0);
   const writeSeq = useRef(0);
   const writes = useRef(new Map<string, AgentWrite>());
@@ -128,19 +134,38 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
     readGen.current += 1;
     const gen = readGen.current;
     const since = writeSeq.current;
+    /**
+     * Success and failure alike pass one check (review round 4): an outcome
+     * from a read older than one already applied is dropped, and applying
+     * either outcome advances the mark. Otherwise an older failure could hide
+     * a newer list, and an older success could clear a newer failure.
+     */
+    const settle = (apply: () => void): void => {
+      if (gen >= appliedGen.current) {
+        appliedGen.current = gen;
+        apply();
+      }
+      setReadsSettled((n) => n + 1);
+    };
     everyPage((cursor) =>
       listAgents(signal, cursor === undefined ? { limit: 100 } : { limit: 100, cursor }),
     )
       .then(({ items }) => {
-        if (gen < appliedGen.current) return;
-        appliedGen.current = gen;
-        setAgents(overlayWrites(items, writes.current.values(), since));
-        setLoadError(null);
-        setNow(Date.now());
+        settle(() => {
+          setAgents(overlayWrites(items, writes.current.values(), since));
+          setLoadError(null);
+          setNow(Date.now());
+          // Writes this read already includes need no overlay any more.
+          for (const [id, write] of writes.current) {
+            if (write.seq <= since) writes.current.delete(id);
+          }
+        });
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
-        setLoadError(cause);
+        settle(() => {
+          setLoadError(cause);
+        });
       });
   }, []);
 
@@ -233,7 +258,7 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
   };
 
   return (
-    <div className="dev-card agents" data-testid="agents-tab">
+    <div className="dev-card agents" data-testid="agents-tab" data-reads-settled={readsSettled}>
       <div className="dev-card-head">
         <h2 className="dev-card-title" id="agents-title">
           Registered agents
