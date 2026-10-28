@@ -1,10 +1,10 @@
 ---
 id: LAI-580
 title: Restore the blocking Test step in deploy.yml
-area: chief/ops
+area: ops
 assignee: unclaimed
 priority: p0
-depends-on: [LAI-577, LAI-576]
+depends-on: [LAI-576, LAI-577, LAI-578]
 discovered-from: LAI-579
 status: backlog
 ---
@@ -17,7 +17,7 @@ on master pushes (LAI-579); this task tracks removing that exception.
 
 ## Acceptance criteria
 
-- [ ] LAI-577, the LAI-538 agent-field withdraw-race fix, and LAI-576, the setTheme session-swap follow-up, are accepted and integrated on master; verify stability before restoring the gate.
+- [ ] LAI-576 (the merged setTheme session-swap fix), LAI-577 (the LAI-538 agent-field withdraw-race fix), and LAI-578 (the setTheme follow-up, PR #117, discovered from LAI-576) are accepted and integrated on master; verify stability before restoring the gate.
 - [ ] Remove the Test step's conditional continue-on-error, the temporary owner-instruction comment and the final non-blocking-test warning from `.github/workflows/deploy.yml`.
 - [ ] The full pnpm test step still runs; a red Test step blocks master deploys, pull requests, integration-* pushes and workflow_dispatch.
 - [ ] Lint and Format remain blocking; triggers, timeouts, build, deploy needs/if and rollback stay unchanged.

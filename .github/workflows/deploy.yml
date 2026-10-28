@@ -12,6 +12,7 @@
 # On master, a green gate builds the arm64 image, points `latest` at it and
 # restarts production on that exact digest; a deploy that does not come up
 # healthy is rolled back to the image it replaced, and the run goes red.
+# While LAI-579 is in force, a red Test step on a master push still deploys, with a ::warning:: annotation.
 name: CI / Deploy
 
 on:

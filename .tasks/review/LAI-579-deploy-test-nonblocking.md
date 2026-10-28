@@ -1,7 +1,7 @@
 ---
 id: LAI-579
 title: Temporarily let a red Test step proceed to the master deploy
-area: chief/ops
+area: ops
 assignee: chief
 priority: p0
 depends-on: []
@@ -46,7 +46,7 @@ Board priority is p1 with tag p0 because the live schema has no p0 priority.
 
 Restore task: LAI-580 (`.tasks/backlog/LAI-580-restore-blocking-deploy-test.md`).
 Board cards created via MCP: LAIKA-832 (external_ref LAI-579) and LAIKA-833
-(external_ref LAI-580). The restore card has both blocker relationships.
+(external_ref LAI-580). The restore card tracks LAI-576, LAI-577 and LAI-578 as blockers.
 
 ## Verification / submission
 
