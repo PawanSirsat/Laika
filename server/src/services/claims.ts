@@ -401,7 +401,8 @@ export function heartbeatAgentSession(
       .where(and(eq(taskClaims.sessionId, session.id), eq(taskClaims.state, 'active')))
       .all();
     for (const claim of active) {
-      if (leaseLapsed(claim.leaseExpiresAt, now)) expireClaim(db, claim, now);
+      if (selectedForAnotherAgent(db, claim)) endClaimOfUnselectedAgent(db, claim, now);
+      else if (leaseLapsed(claim.leaseExpiresAt, now)) expireClaim(db, claim, now);
       else renewLease(db, claim, now);
     }
 
@@ -564,6 +565,15 @@ export function claimFenceRefusal(
         agent_id: live.agentId,
       });
     }
+    // D-119: a claim the selection does not back is never usable — it ends at
+    // the holder's next heartbeat or its lease ({@link endClaimOfUnselectedAgent}).
+    if (selectedForAnotherAgent(db, live)) {
+      return claimConflict(
+        'selected_for_another_agent',
+        'This task is selected for another agent; your claim on it is ending',
+        { task_id: taskId, claim_generation: live.generation },
+      );
+    }
     if (generation === undefined) {
       return claimConflict(
         'stale_claim',
@@ -688,12 +698,11 @@ export function takeClaim(
   const agent = requireAgent(actor);
   const { now } = input;
 
-  // D-119, before a session is opened for the attempt: the holder's own
-  // session renewing its claim is not a new claim, and is left to the checks
-  // below — every other call is one.
-  const held = liveClaim(db, task.id);
-  const renewing = held?.agentId === agent.id && held.sessionId === input.sessionId;
-  if (!renewing) assertSelectedAgentMayClaim(db, actor, task.id, agent.id);
+  // D-119, before a session is opened for the attempt — and with **no
+  // exemption for a holder renewing**: a claim held by an agent that is not
+  // the selected one (taken before the rule, or before the selection) is not
+  // renewed here, and ends as {@link endClaimOfUnselectedAgent} says.
+  assertSelectedAgentMayClaim(db, actor, task.id, agent.id);
 
   const session =
     input.sessionId === undefined
@@ -865,6 +874,100 @@ export function assertSelectedAgentMayClaim(
   );
 }
 
+/**
+ * The one refusal a claim gives for a task it cannot show the caller — **the
+ * same bytes whether the task does not exist or the caller may not read its
+ * project** (LAI-586 review). No id in it, so a board key resolved to a task
+ * the caller cannot see answers exactly as a key that names nothing.
+ */
+export function noSuchTaskToClaim(): ApiError {
+  return ApiError.notFound('No such task');
+}
+
+/**
+ * The task and its project for a claim or reclaim — or {@link
+ * noSuchTaskToClaim} when it does not exist **or** the caller may not read
+ * its project. Visibility first, then the caller's own `task.claim`, then
+ * D-119: each answer discloses no more than the one before it allowed.
+ */
+export function requireVisibleTaskToClaim(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+): { task: TaskRow; project: typeof projects.$inferSelect } {
+  const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+  const project =
+    task === undefined
+      ? undefined
+      : db.select().from(projects).where(eq(projects.id, task.projectId)).get();
+  if (
+    task === undefined ||
+    project === undefined ||
+    !can(withProject(actor, project.id), 'project.read', { projectId: project.id })
+  ) {
+    throw noSuchTaskToClaim();
+  }
+  return { task, project };
+}
+
+/** Whether the claim's task names a selected agent that is not the claim's (D-119). */
+function selectedForAnotherAgent(db: Db, claim: Pick<ClaimRow, 'taskId' | 'agentId'>): boolean {
+  const selected = db
+    .select({ id: tasks.selectedAgentId })
+    .from(tasks)
+    .where(eq(tasks.id, claim.taskId))
+    .get()?.id;
+  return selected !== null && selected !== undefined && selected !== claim.agentId;
+}
+
+/**
+ * **A claim held by an agent that is not the task's selected agent** (D-119,
+ * LAI-586 review). The API cannot make one any more — a claim needs the
+ * selection, and the selection cannot change under a live claim — but a claim
+ * taken before the rule, or before the selection, can still be live.
+ *
+ * It is **never renewed and never usable**: `start_working` and the reclaim
+ * refuse it `selected_for_another_agent`, and so does the fence for any change
+ * made under it. It ends at its holder's next heartbeat, or when its lease
+ * would have lapsed, whichever is first — **`released`, not `expired`**: an
+ * expired claim waits for its holder to reclaim or for recovery, and this
+ * holder may never reclaim, so `expired` would leave the selected agent locked
+ * out of its own task. Released, the selected agent can claim at once, and the
+ * old generation is refused for good. Recorded as the system (§3.4) — the rule
+ * ended it, not a person — as `task.updated`, `field: 'claim'`, the inverse of
+ * the row a claim on work under way writes.
+ */
+function endClaimOfUnselectedAgent(db: Db, claim: ClaimRow, now: number): void {
+  const changed = db
+    .update(taskClaims)
+    .set({ state: 'released', endedAt: now })
+    .where(and(eq(taskClaims.id, claim.id), eq(taskClaims.state, 'active')))
+    .run().changes;
+  if (changed === 0) return;
+
+  const where = db
+    .select({ projectId: tasks.projectId, orgId: projects.orgId })
+    .from(tasks)
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .where(eq(tasks.id, claim.taskId))
+    .get()!;
+  appendActivity(db, {
+    orgId: where.orgId,
+    projectId: where.projectId,
+    taskId: claim.taskId,
+    actorId: null,
+    actorKind: 'system',
+    type: 'task.updated',
+    payload: {
+      field: 'claim',
+      from: { generation: claim.generation, session_id: claim.sessionId, agent_id: claim.agentId },
+      to: null,
+      reason: 'selected_for_another_agent',
+    },
+    now,
+  });
+}
+
 // ----------------------------------------------------------------- reclaim
 
 export interface ReclaimInput {
@@ -954,15 +1057,15 @@ export function reclaimTask(
   const agent = requireAgent(actor);
 
   return immediateTransaction(sqlite, () => {
-    const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
-    if (task === undefined) throw ApiError.notFound(`No task with id "${taskId}"`);
-    const project = db.select().from(projects).where(eq(projects.id, task.projectId)).get()!;
-
     // **Everything as it is now, read inside this transaction** — not from
     // the actor the request resolved, which was loaded before the lock and
     // may describe a person deactivated, a token revoked or a grant narrowed
-    // since. The order is what the caller can fix least first.
+    // since. The order is what the caller can fix least first. The caller
+    // before the task: those refusals say nothing about which task was named.
     const fresh = reloadAgentActor(db, actor, now);
+    // A task the caller cannot read is answered exactly as one that does not
+    // exist (LAI-586 review), so the reclaim discloses nothing about either.
+    const { task, project } = requireVisibleTaskToClaim(db, fresh, taskId);
     const grant = fresh.token.agent.grants.get(project.id);
     if (grant !== 'full') {
       throw new ApiError('forbidden', 'This agent may not work in that project', {
@@ -1104,7 +1207,8 @@ export function expireClaims(db: Db, now: number): { changed: number } {
   for (const claim of overdue) {
     db.transaction(
       () => {
-        expireClaim(db, claim, now);
+        if (selectedForAnotherAgent(db, claim)) endClaimOfUnselectedAgent(db, claim, now);
+        else expireClaim(db, claim, now);
       },
       { behavior: 'immediate' },
     );

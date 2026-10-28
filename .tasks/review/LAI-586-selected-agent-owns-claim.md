@@ -85,3 +85,40 @@ LAI-587 brings their client types.
 - A person and a legacy token are not refused by D-119: they claim by assignee, as before (D-119 speaks of agents; D-114 item 6 already keeps a legacy token off a live claim).
 - MCP `start_working` opens a session with no self-reported fields; the helper (LAI-588) and `POST /agent-sessions` are where they are reported.
 - The `project.read` gate on naming the selected agent is defence in depth: every caller who reaches it has already passed `task.claim`, so a mutation of it alone is not observable through the claim routes; the ordering (D-119 asked after `task.claim`) is what the no-leak tests pin.
+
+## Review round 1 — cross-vendor review of PR #123 at 963a2d68, two blockers (2026-10-28T22:30:52Z)
+
+**1. A non-selected holder could renew.** Removed the exemption: `start_working`
+with the holder's own `session_id` is refused `selected_for_another_agent`.
+**What happens to that claim** (taken before D-119 or before the selection; the
+API cannot make one now): never renewed, never usable — the claim, the reclaim
+and the fence all refuse it — and it **ends as `released`** at the holder's next
+heartbeat (reported in `lost`) or when its lease lapses, whichever is first,
+recorded by the system as `task.updated` `{ field: 'claim', from, to: null,
+reason: 'selected_for_another_agent' }`. **Released, not expired**: an expired
+claim waits for its holder's reclaim or for recovery, and this holder may never
+reclaim, so `expired` would lock the selected agent out of its own task until a
+person moved it. While it is live the selected agent hears `claim_held`; it is
+never taken over (a takeover is a hand-off, LAI-546).
+
+**2. Hidden versus missing.** `POST /tasks/:id/claim`, the REST reclaim and MCP
+`start_working` (with and without `reclaim`) answer a task the caller cannot
+read **byte for byte** as one that does not exist: `404 not_found`, `No such
+task`, no id, no agent. Asked before `task.claim`; the reclaim checks the caller
+first, then visibility. Tested with an agent with no grant, a personal token
+pinned to another project, and over MCP by key and by id.
+**Changed contract:** a reclaim after the grant was removed is now that `404`,
+not `403 agent_not_granted` — `test/services/claims.test.ts` updated with the
+reason; SPEC §6.4 says so.
+
+**Bypass cases.** A status change to in progress takes no claim (the selected
+agent then claims normally); a heartbeat of a session holding nothing takes
+nothing; finishing into review by an agent holding nothing is already `403`
+under §5's review rule and takes no claim; finishing under a non-selected claim
+is refused by the fence.
+
+**Mutations** — each seen red, file restored and checksummed: renewal exemption
+back; heartbeat renewing; lease end expiring instead of releasing; fence
+letting it change the task; visibility check gone; hidden and missing worded
+differently; the release writing no record; plus D-119 off on claim and on
+reclaim, and the refusal never naming the agent.

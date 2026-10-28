@@ -300,22 +300,153 @@ describe('D-119: the selected agent owns the claim', () => {
     expect(again.generation).toBe(taken.generation);
   });
 
-  it('a claim taken before D-119 by an agent that is not selected still renews', async () => {
-    const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
-    const direct = await register('Claude Code · Belka', [{ project_id: alpha, scope: 'full' }]);
-    const taskId = await newTask();
-    const taken = await claim(taskId, direct.secret);
-    // The 2026-10-29 shape, written directly: another agent selected beside a
-    // live claim, which the API no longer lets happen.
-    h.db.update(tasks).set({ selectedAgentId: polly.agent.id }).where(eq(tasks.id, taskId)).run();
+  describe('a claim held by an agent that is not selected (taken before D-119, or before the selection)', () => {
+    /**
+     * The 2026-10-29 shape, written directly — the API no longer lets it
+     * happen: Polly selected with an open request, while Claude Code holds a
+     * live claim.
+     */
+    async function held() {
+      const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
+      const direct = await register('Claude Code · Belka', [{ project_id: alpha, scope: 'full' }]);
+      const taskId = await newTask();
+      const taken = await claim(taskId, direct.secret);
+      h.db.update(tasks).set({ selectedAgentId: polly.agent.id }).where(eq(tasks.id, taskId)).run();
+      h.db
+        .insert(handoffOffers)
+        .values({
+          id: `wr-${taskId}`,
+          taskId,
+          kind: 'work_request',
+          toAgentId: polly.agent.id,
+          state: 'open',
+          createdByUserId: bob.id,
+          createdAt: Date.now(),
+          closedAt: null,
+        })
+        .run();
+      return { polly, direct, taskId, taken };
+    }
 
-    const again = await claim(taskId, direct.secret, taken.session);
+    function lease(taskId: string) {
+      return claimsOf(taskId).map((c) => [c.state, c.leaseExpiresAt]);
+    }
 
-    expect(again.generation).toBe(taken.generation);
-    // A new session of the same agent is a new claim, and is refused.
-    expect((await refusal(await claimReq(taskId, direct.secret))).reason).toBe(
-      'selected_for_another_agent',
-    );
+    it('cannot renew it through the claim, with its own session: selected_for_another_agent', async () => {
+      const { polly, direct, taskId, taken } = await held();
+      const before = lease(taskId);
+
+      const r = await refusal(await claimReq(taskId, direct.secret, taken.session));
+
+      expect([r.status, r.code, r.reason]).toEqual([409, 'conflict', 'selected_for_another_agent']);
+      expect(r.details?.selected_agent_id).toBe(polly.agent.id);
+      // Not renewed: the lease is exactly what it was.
+      expect(lease(taskId)).toEqual(before);
+      // A new session of the same agent is refused too.
+      expect((await refusal(await claimReq(taskId, direct.secret))).reason).toBe(
+        'selected_for_another_agent',
+      );
+    });
+
+    it('cannot change the task under it: the fence refuses selected_for_another_agent', async () => {
+      const { direct, taskId, taken } = await held();
+
+      for (const res of [
+        await req(
+          `/api/v1/tasks/${taskId}`,
+          { method: 'PATCH', body: JSON.stringify({ title: 'mine' }) },
+          { bearer: direct.secret, generation: taken.generation },
+        ),
+        // Finishing it into review is a change like any other.
+        await req(
+          `/api/v1/tasks/${taskId}/status`,
+          { method: 'POST', body: JSON.stringify({ status: 'review' }) },
+          { bearer: direct.secret, generation: taken.generation },
+        ),
+      ]) {
+        const r = await refusal(res);
+        expect([r.status, r.code, r.reason]).toEqual([
+          409,
+          'conflict',
+          'selected_for_another_agent',
+        ]);
+      }
+      const task = h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
+      expect([task.title, task.status]).toEqual(['Work', 'in_progress']);
+    });
+
+    it('its heartbeat does not renew it: the claim ends released, recorded, and reported lost', async () => {
+      const { polly, direct, taskId, taken } = await held();
+
+      const beat = await ok(
+        await req(
+          `/api/v1/agent-sessions/${taken.session}/heartbeat`,
+          { method: 'POST', body: '' },
+          { bearer: direct.secret },
+        ),
+      );
+
+      expect(beat.claims).toEqual([]);
+      expect(
+        (beat.lost as { state: string; generation: number }[]).map((c) => [c.state, c.generation]),
+      ).toEqual([['released', taken.generation]]);
+      expect(claimsOf(taskId).map((c) => c.state)).toEqual(['released']);
+      const ended = h.db
+        .select()
+        .from(activity)
+        .where(and(eq(activity.taskId, taskId), eq(activity.actorKind, 'system')))
+        .all();
+      expect(ended.map((r) => [r.type, JSON.parse(r.payloadJson) as unknown])).toEqual([
+        [
+          'task.updated',
+          {
+            field: 'claim',
+            from: {
+              generation: taken.generation,
+              session_id: taken.session,
+              agent_id: direct.agent.id,
+            },
+            to: null,
+            reason: 'selected_for_another_agent',
+          },
+        ],
+      ]);
+
+      // The old holder cannot take it back by any route …
+      const reclaim = await refusal(
+        await req(
+          `/api/v1/tasks/${taskId}/claim/reclaim`,
+          { method: 'POST', body: '' },
+          {
+            bearer: direct.secret,
+          },
+        ),
+      );
+      expect([reclaim.status, reclaim.code, reclaim.reason]).toEqual([
+        409,
+        'conflict',
+        'selected_for_another_agent',
+      ]);
+      // … and the selected agent claims at once, accepting its request.
+      const next = await claim(taskId, polly.secret);
+      expect(next.generation).toBe(taken.generation + 1);
+      expect(requests(taskId)).toEqual([{ toAgentId: polly.agent.id, state: 'accepted' }]);
+    });
+
+    it('a holder that never heartbeats again: its lease ends it released, not expired, so the selected agent is not locked out', async () => {
+      const { polly, taskId, taken } = await held();
+
+      expireClaims(h.db, Date.now() + LEASE + 1);
+
+      expect(claimsOf(taskId).map((c) => c.state)).toEqual(['released']);
+      const next = await claim(taskId, polly.secret);
+      expect(next.generation).toBe(taken.generation + 1);
+    });
+
+    it('while it is live the selected agent hears claim_held — the claim is not taken over', async () => {
+      const { polly, taskId } = await held();
+      expect((await refusal(await claimReq(taskId, polly.secret))).reason).toBe('claim_held');
+    });
   });
 
   it('a caller who may not claim hears that, and nothing about the selection', async () => {
@@ -404,6 +535,180 @@ describe('D-119: the selected agent owns the claim', () => {
     );
 
     expect([view.status, view.assignee_id]).toEqual(['in_progress', bob.id]);
+  });
+});
+
+describe('a task the caller cannot see answers exactly as one that does not exist', () => {
+  /** The body with nothing but bytes: what a caller learns is exactly this. */
+  async function bytes(res: Response) {
+    return { status: res.status, body: await res.text() };
+  }
+
+  async function hiddenSelectedTask() {
+    // Polly is selected on an alpha task; the caller has no way to see alpha.
+    const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const taskId = await newTask();
+    await ok(await select(taskId, polly.agent.id));
+    return { polly, taskId };
+  }
+
+  async function betaProject(): Promise<string> {
+    const beta = await ok(
+      await req(
+        '/api/v1/projects',
+        { method: 'POST', body: JSON.stringify({ name: 'beta', slug: 'beta', prefix: 'BET' }) },
+        { cookie: ownerCookie },
+      ),
+      201,
+    );
+    await ok(
+      await req(
+        '/api/v1/projects/beta/members',
+        { method: 'POST', body: JSON.stringify({ user_id: bob.id, role: 'member' }) },
+        { cookie: ownerCookie },
+      ),
+      201,
+    );
+    return beta.id as string;
+  }
+
+  const missing = '01ZZZZZZZZZZZZZZZZZZZZZZZZ';
+
+  it('REST claim, an agent with no grant on the project', async () => {
+    const { polly, taskId } = await hiddenSelectedTask();
+    const outsider = await register('Codex · Strelka', [
+      { project_id: await betaProject(), scope: 'full' },
+    ]);
+
+    const hidden = await bytes(await claimReq(taskId, outsider.secret));
+    const none = await bytes(await claimReq(missing, outsider.secret));
+
+    expect(hidden.status).toBe(404);
+    expect(hidden).toEqual(none);
+    expect(hidden.body).not.toContain(polly.agent.id);
+    expect(hidden.body).not.toContain('Polly');
+    expect(hidden.body).not.toContain(taskId);
+  });
+
+  it('REST claim, a personal token pinned to another project', async () => {
+    const { polly, taskId } = await hiddenSelectedTask();
+    const beta = await betaProject();
+    const token = await ok(
+      await req(
+        '/api/v1/tokens',
+        {
+          method: 'POST',
+          body: JSON.stringify({ name: 'pinned', scope: 'full', project_ids: [beta] }),
+        },
+        { cookie: bob.cookie },
+      ),
+      201,
+    );
+
+    const hidden = await bytes(await claimReq(taskId, token.secret as string));
+    const none = await bytes(await claimReq(missing, token.secret as string));
+
+    expect(hidden.status).toBe(404);
+    expect(hidden).toEqual(none);
+    expect(hidden.body).not.toContain(polly.agent.id);
+  });
+
+  it('REST reclaim, an agent with no grant on the project', async () => {
+    const { polly, taskId } = await hiddenSelectedTask();
+    const outsider = await register('Codex · Strelka', [
+      { project_id: await betaProject(), scope: 'full' },
+    ]);
+    const reclaim = (id: string) =>
+      req(
+        `/api/v1/tasks/${id}/claim/reclaim`,
+        { method: 'POST', body: '' },
+        {
+          bearer: outsider.secret,
+        },
+      );
+
+    const hidden = await bytes(await reclaim(taskId));
+    const none = await bytes(await reclaim(missing));
+
+    expect(hidden.status).toBe(404);
+    expect(hidden).toEqual(none);
+    expect(hidden.body).not.toContain(polly.agent.id);
+    expect(hidden.body).not.toContain('Polly');
+  });
+});
+
+describe('no other route creates or renews a claim for an agent that is not selected', () => {
+  it('a status change to in progress moves the task and takes no claim; the selected agent still can', async () => {
+    const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const direct = await register('Claude Code · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const taskId = await newTask();
+    await ok(await select(taskId, polly.agent.id));
+
+    await ok(
+      await req(
+        `/api/v1/tasks/${taskId}/status`,
+        { method: 'POST', body: JSON.stringify({ status: 'in_progress' }) },
+        { bearer: direct.secret },
+      ),
+    );
+
+    expect(claimsOf(taskId)).toEqual([]);
+    expect(requests(taskId)).toEqual([{ toAgentId: polly.agent.id, state: 'open' }]);
+    const taken = await claim(taskId, polly.secret);
+    expect(claimsOf(taskId).map((c) => [c.agentId, c.generation])).toEqual([
+      [polly.agent.id, taken.generation],
+    ]);
+  });
+
+  it('a heartbeat of a session that holds nothing takes nothing', async () => {
+    const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const direct = await register('Claude Code · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const taskId = await newTask();
+    await ok(await select(taskId, polly.agent.id));
+    const session = await ok(
+      await req('/api/v1/agent-sessions', { method: 'POST', body: '' }, { bearer: direct.secret }),
+      201,
+    );
+
+    const beat = await ok(
+      await req(
+        `/api/v1/agent-sessions/${session.id as string}/heartbeat`,
+        { method: 'POST', body: '' },
+        { bearer: direct.secret },
+      ),
+    );
+
+    expect([beat.claims, beat.lost]).toEqual([[], []]);
+    expect(claimsOf(taskId)).toEqual([]);
+  });
+
+  it('finishing into review, held by nobody: the review rule refuses it, and no claim is taken', async () => {
+    const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const direct = await register('Claude Code · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const taskId = await newTask();
+    await ok(await select(taskId, polly.agent.id));
+    await ok(
+      await req(
+        `/api/v1/tasks/${taskId}/status`,
+        { method: 'POST', body: JSON.stringify({ status: 'in_progress' }) },
+        { cookie: bob.cookie },
+      ),
+    );
+
+    const r = await refusal(
+      await req(
+        `/api/v1/tasks/${taskId}/status`,
+        { method: 'POST', body: JSON.stringify({ status: 'review' }) },
+        { bearer: direct.secret },
+      ),
+    );
+
+    // §5's review rule: only the assignee, the claim's holder, a lead or an
+    // admin — an agent holding nothing is none of them.
+    expect([r.status, r.code]).toEqual([403, 'forbidden']);
+    expect(h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()?.status).toBe('in_progress');
+    expect(claimsOf(taskId)).toEqual([]);
+    expect(requests(taskId)).toEqual([{ toAgentId: polly.agent.id, state: 'open' }]);
   });
 });
 
