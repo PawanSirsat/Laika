@@ -624,7 +624,12 @@ attempt, and every retry of it — in the same hook or the next — sends the sa
 key, so a start whose answer was lost after the board made the session gets
 that session back (the board replays a keyed `POST` for 24 h, SPEC §6.3). **A
 success whose body did not arrive whole, or names no valid session, is the same
-ambiguous case**: retried with the key, never taken as done. Concurrent starts
+ambiguous case**: retried with the key, never taken as done. **The key lives
+as long as the logical start is unconfirmed.** A 5xx, a 408 or a 429 is retried;
+even a refusal, or any mix of drops and errors across hooks, leaves the same key
+for the next attempt, because an earlier attempt may have made the session. A
+new key is minted only for a new harness process, or after a confirmed session
+has ended. Concurrent starts
 take a lock *before* reading the state, so a second starter waits and then
 finds the first one's session.
 
@@ -636,6 +641,8 @@ It is never in argv, a child's environment, a state file
 
 | Subprocess | Started by | Environment |
 | --- | --- | --- |
+| `readlink`, `find`, `head` | `plugin/scripts/laika-agent-hook`, locating the entry | the harness's, **minus `LAIKA_AGENT_TOKEN` and `LAIKA_TOKEN`**, unset before any of them runs; stdin is `/dev/null` |
+| `node agent-main hook <event> <harness>` | the launcher: the one consumer | `LAIKA_AGENT_TOKEN` restored for it alone if the harness passed one, never `LAIKA_TOKEN`; the hook JSON on stdin |
 | `ps -o ppid=,stat=,lstart=,comm= -p <pid>` | the liveness check and the harness walk | a fixed `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, `LC_ALL=C`, `LANG=C`, and nothing of the caller's |
 | `node agent-main.(ts\|js) _watch <harness> <id>` | `SessionStart`, and a hook restarting a dead watcher | an allowlist: `HOME`, `PATH`, `TMPDIR`, `LANG`, `LC_ALL`, `LAIKA_AGENT_HEARTBEAT_SECONDS`; the credential on stdin |
 | `node agent-main.(ts\|js) _end <harness> <id>` | `SessionEnd` | the same allowlist; the credential on stdin |
@@ -649,7 +656,10 @@ not repeated. A lost claim is named only when its ids are ULIDs, its generation
 is a positive integer, and its state is `paused`, `released`, `expired` or
 `transferred`; anything else is dropped. At most three are named, quoted, in a
 line that says they are board data rather than instructions, and a hook's whole
-context is capped at 1,200 characters.
+context is capped at 1,200 characters. Lost claims are kept in the state file as
+data and checked again when shown; text an older helper kept there is dropped
+unread. A `ps` that hangs is killed after 5 s and counts as no answer, so
+nothing is renewed on a liveness check that did not complete.
 
 ### Harness capability matrix
 
