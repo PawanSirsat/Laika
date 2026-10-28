@@ -2982,9 +2982,13 @@ LAI-586): *"When a task has a selected agent, only sessions of that agent may
 claim it. Any other agent gets `409 conflict` with reason
 `selected_for_another_agent`, naming the selected agent if the caller may see
 it. With no selected agent, any eligible agent may claim, as today."* That
-holds for `POST /tasks/:id/claim`, `start_working` and both reclaims (§6.3);
-the selected agent's claim accepts its open work request, so a request can no
-longer stay open beside another agent's claim. A person and a legacy token
+holds for `POST /tasks/:id/claim`, `start_working` and both reclaims (§6.3),
+and it is asked **before the assignee rule**, so an agent that is not selected
+always hears `selected_for_another_agent`, never a bare *already claimed*; the
+selected agent meets the assignee rule as before. The selected agent's claim
+— **and its reclaim** — accepts its open work request in the same transaction,
+so a request can no longer stay open beside another agent's claim, or beside
+its own reclaimed one. A person and a legacy token
 claim by assignee as before, and reads and comments are never refused for it.
 **A live claim the selection does not back** — taken before D-119, or before
 the selection; the API cannot make one any more — is never renewed and never
