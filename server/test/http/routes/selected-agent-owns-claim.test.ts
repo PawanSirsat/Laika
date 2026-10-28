@@ -300,6 +300,24 @@ describe('D-119: the selected agent owns the claim', () => {
     expect(again.generation).toBe(taken.generation);
   });
 
+  it('a claim taken before D-119 by an agent that is not selected still renews', async () => {
+    const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const direct = await register('Claude Code · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const taskId = await newTask();
+    const taken = await claim(taskId, direct.secret);
+    // The 2026-10-29 shape, written directly: another agent selected beside a
+    // live claim, which the API no longer lets happen.
+    h.db.update(tasks).set({ selectedAgentId: polly.agent.id }).where(eq(tasks.id, taskId)).run();
+
+    const again = await claim(taskId, direct.secret, taken.session);
+
+    expect(again.generation).toBe(taken.generation);
+    // A new session of the same agent is a new claim, and is refused.
+    expect((await refusal(await claimReq(taskId, direct.secret))).reason).toBe(
+      'selected_for_another_agent',
+    );
+  });
+
   it('a caller who may not claim hears that, and nothing about the selection', async () => {
     const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
     const reader = await register('Reader', [{ project_id: alpha, scope: 'read_only' }]);
