@@ -7,7 +7,8 @@ priority: p2
 depends-on: [LAI-538]
 discovered-from: LAI-538
 started: 2026-10-28T21:26:05Z
-status: in-progress
+status: review
+finished: 2026-10-28T21:44:15Z
 ---
 
 Filed by SHELL (Belka, dispatched by CHIEF) from the Codex cross-review of
@@ -39,9 +40,33 @@ line) and the design's own widths. It is a layout decision, not a one-line fix.
 
 ## Acceptance criteria
 
-- [ ] At 1440×900, with a task that has a selected agent, `.list-scroll` has
+- [x] At 1440×900, with a task that has a selected agent, `.list-scroll` has
       `scrollWidth <= clientWidth` (browser test).
-- [ ] `list-view.test.ts` unchanged and green: SUMMARY over 200px, CREATED =
+- [x] `list-view.test.ts` unchanged and green: SUMMARY over 200px, CREATED =
       UPDATED, dates on one line.
-- [ ] The agent stays named for a screen reader and on hover.
-- [ ] Both themes; repo-root gate exits 0.
+- [x] The agent stays named for a screen reader and on hover.
+- [x] Both themes; repo-root gate exits 0.
+
+## Outcome (SHELL, Belka, 2026-10-29)
+
+Measured at 1440×900 beside the sidebar: `.list-scroll` is 1190px wide and
+the table's agent-mode minimum was 78.25rem = 1252px, so it scrolled **62px**
+sideways. The 78.25rem already counted the checkbox column, so SUMMARY would
+have been ~142px had the table been squeezed to fit.
+
+**Decision: tighter gutters in agent mode, not a lost column or a lost
+device.** Every cell had 14px of side padding (28px a column, 336px across
+the row). In a space with the Agent column only, each cell's side padding is
+10px and each fixed column gives up exactly those 8px, so every content box
+is the width it was: the dates (LAI-491), `EFFORT ↕` (LAI-794), the agent's
+mark and device. SUMMARY gets 80px back (~222px at 1440); the minimum is
+73.25rem. A space with no agents is untouched, so `list-view.test.ts`'s
+design widths still hold there.
+
+Not taken: a mark-only agent cell (two agents of one harness on different
+devices would look the same — the problem LAI-583 is about), hiding a column
+(a design call), or shrinking the date columns (LAI-491's floor).
+
+Test: `agent-field.test.ts` *at 1440 the List with the Agent column does not
+scroll sideways, in both themes* — red without the CSS (`light: the List
+scrolls 62px sideways at 1440`), green with it.
