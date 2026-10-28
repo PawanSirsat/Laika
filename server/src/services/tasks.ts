@@ -51,6 +51,7 @@ import {
   liveClaim,
   registeredAgent,
   releaseLiveClaim,
+  requireVisibleTaskToClaim,
   takeClaim,
   type TaskClaimView,
 } from './claims.ts';
@@ -1575,7 +1576,9 @@ export function startWorking(
 ): StartedWork {
   const now = options.now ?? Date.now();
   const { estimate } = options;
-  const { project } = requireTask(db, taskId);
+  // A task the caller cannot read is answered as one that does not exist
+  // (LAI-586 review) — before `task.claim`, which would say it does.
+  const { project } = requireVisibleTaskToClaim(db, actor, taskId);
   assertCan(withProject(actor, project.id), 'task.claim', { projectId: project.id });
   const onBranch = options.branch?.trim() === '' ? undefined : options.branch?.trim();
   const agent = registeredAgent(actor);
