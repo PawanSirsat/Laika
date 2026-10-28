@@ -879,7 +879,11 @@ void describe('the List’s Agent column and the agent filter', () => {
         assert.ok(left >= 0, `${theme}: the List scrolls ${String(-left)}px sideways at 1440`);
         const summary = await width('.list-summary');
         assert.ok(summary > 200, `${theme}: SUMMARY collapsed to ${String(summary)}px`);
-        assert.equal(await width('.list-updated'), await width('.list-created'), 'CREATED ≠ UPDATED');
+        assert.equal(
+          await width('.list-updated'),
+          await width('.list-created'),
+          'CREATED ≠ UPDATED',
+        );
       }
       // A phone is no worse: the table scrolls in its card, never the page.
       await h.page.setViewportSize({ width: 390, height: 844 });
