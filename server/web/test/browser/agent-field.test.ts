@@ -1372,19 +1372,116 @@ void describe('a selection still in flight when the drawer moves on', () => {
     }
   });
 
-  void test('on a version tie the confirmed answer shows, not props that disagree with it', async () => {
-    // The PATCH answers with the same `updated_at` the props already carry,
-    // and the server's copy (what every read returns) still says no agent.
+  void test('on a timestamp tie, a list snapshot taken before the save completed does not overturn it', async () => {
+    // The PATCH answers with the `updated_at` the props already carry. A list
+    // read that began before it answered lands after, still saying no agent:
+    // that is the past, and the confirmed agent stays.
     const { stub, tasks } = world();
     const t1 = tasks.find((t) => t.id === 't1');
+    if (t1 === undefined) throw new Error('no t1');
+    const tie = Number(t1.updated_at);
+    const patchGate = gate();
+    const snapshotGate = gate();
+    const laterGate = gate();
+    let patchArrived = false;
+    let snapshotTaken = false;
+    let lists: 'pass' | 'snapshot' | 'hold' = 'pass';
+    const h = await open('/board?project=laika-core&task=t1', stub, {
+      before: async (page) => {
+        await fakeStream(page);
+        await page.route('**/api/v1/tasks/t1', async (route) => {
+          if (route.request().method() !== 'PATCH') return route.continue();
+          patchArrived = true;
+          await patchGate.shut;
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ ...t1, selected_agent: viewOf('ag-laptop'), updated_at: tie }),
+          });
+        });
+        await page.route('**/api/v1/projects/laika-core/tasks**', async (route) => {
+          if (lists === 'pass') return route.continue();
+          if (lists === 'snapshot' && !snapshotTaken) {
+            snapshotTaken = true;
+            // Read from the server now — before the save completes — and hand it over later.
+            const response = await route.fetch();
+            await snapshotGate.shut;
+            return route.fulfill({ response });
+          }
+          await laterGate.shut;
+          return route.continue();
+        });
+      },
+    });
+    try {
+      const box = await agentBox(h);
+      await pick(box, 'ag-laptop');
+      await until(() => patchArrived);
+
+      // A live frame starts a list read while the PATCH is still out.
+      lists = 'snapshot';
+      await until(
+        async () =>
+          (await h.page.evaluate(() =>
+            (window as unknown as { __laikaStream: { count: () => number } }).__laikaStream.count(),
+          )) > 0,
+      );
+      await h.page.evaluate(
+        (body) => {
+          (
+            window as unknown as {
+              __laikaStream: { emit: (type: string, data: unknown, id: string) => void };
+            }
+          ).__laikaStream.emit('task.updated', body, '950');
+        },
+        event({ task_id: 't1', seq: 950, created_at: Date.now() }),
+      );
+      await until(() => snapshotTaken, 10_000);
+      assert.ok(
+        snapshotTaken,
+        'no list read started before the save completed — nothing was tested',
+      );
+
+      // The save lands on the server at the same millisecond, and is confirmed.
+      Object.assign(t1, { selected_agent: viewOf('ag-laptop') });
+      lists = 'hold';
+      const confirmed = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+      patchGate.open();
+      await confirmed;
+
+      // Now the old snapshot arrives: equal timestamp, no agent.
+      const old = nextResponse(h, 'GET', /\/api\/v1\/projects\/laika-core\/tasks$/, 200);
+      snapshotGate.open();
+      await old;
+      await settledRow(h, 'ag-laptop', LAPTOP_LINE);
+    } finally {
+      patchGate.open();
+      snapshotGate.open();
+      laterGate.open();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('on a timestamp tie, a read started after the save completed is the truth, whatever agent it names', async () => {
+    // Another write sets Codex in the same millisecond the save confirmed
+    // Claude Code. The read the save itself triggers starts after it
+    // completed, carries the same `updated_at`, and must not be ignored.
+    const { stub, tasks } = world();
+    const t1 = tasks.find((t) => t.id === 't1');
+    if (t1 === undefined) throw new Error('no t1');
+    const tie = Number(t1.updated_at);
     const h = await open('/board?project=laika-core&task=t1', stub, {
       before: async (page) => {
         await page.route('**/api/v1/tasks/t1', async (route) => {
           if (route.request().method() !== 'PATCH') return route.continue();
+          const answer = { ...t1, selected_agent: viewOf('ag-laptop'), updated_at: tie };
+          // The other write, same millisecond: what every later read returns.
+          Object.assign(t1, { selected_agent: viewOf('ag-desktop'), updated_at: tie });
           return route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({ ...t1, selected_agent: viewOf('ag-laptop') }),
+            body: JSON.stringify(answer),
           });
         });
       },
@@ -1392,11 +1489,11 @@ void describe('a selection still in flight when the drawer moves on', () => {
     try {
       const box = await agentBox(h);
       const confirmed = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
-      const tiedRead = nextResponse(h, 'GET', /\/api\/v1\/projects\/laika-core\/tasks$/, 200);
+      const fresh = nextResponse(h, 'GET', /\/api\/v1\/projects\/laika-core\/tasks$/, 200);
       await pick(box, 'ag-laptop');
       await confirmed;
-      await tiedRead;
-      await settledRow(h, 'ag-laptop', LAPTOP_LINE);
+      await fresh;
+      await settledRow(h, 'ag-desktop', DESKTOP_LINE);
     } finally {
       await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
