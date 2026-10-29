@@ -2,11 +2,12 @@
 id: LAI-544
 title: 'SPEC + decisions: checkpoints, hand-off offers, approvals, policy, MCP tools agent_sync/checkpoint_task/offer_handoff/respond_handoff'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-540]
 discovered-from:
-status: backlog
+started: 2026-10-29T13:42:55Z
+status: in-progress
 ---
 
 Implements **proposal §4.3, §4.4, §4.5** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
