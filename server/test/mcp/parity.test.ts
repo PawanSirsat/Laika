@@ -225,6 +225,34 @@ interface Pair {
 
 const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
   [
+    'checkpoint_task',
+    {
+      note: 'Its twin is `POST /tasks/:id/checkpoints` (§6.4, LAI-545). **Both halves are the registered agent**, not the person: §3.2 makes saving an agent’s act, so a person’s REST call is `not_an_agent` and there is no human half to mirror. The pair still proves the one thing it exists for — the route and the tool are one write path — and the attribution check below is about the pairs a person can make.',
+      rest: async (s) => {
+        const held = await agentHolding(s);
+        const res = await s.h.app.request(`/api/v1/tasks/${held.task}/checkpoints`, {
+          method: 'POST',
+          headers: jsonHeaders({
+            Authorization: `Bearer ${held.secret}`,
+            'X-Laika-Claim-Generation': String(held.generation),
+          }),
+          body: JSON.stringify(CHECKPOINT),
+        });
+        expect(res.status, await res.clone().text()).toBe(201);
+      },
+      mcp: async (s) => {
+        const held = await agentHolding(s);
+        const agent = await connectAs(s, held.secret);
+        await callTool(agent, 'checkpoint_task', {
+          task: 'COR-1',
+          ...CHECKPOINT,
+          claim_generation: held.generation,
+        });
+        await agent.close();
+      },
+    },
+  ],
+  [
     'create_task',
     {
       rest: async (s) => {
@@ -503,6 +531,69 @@ async function seedTask(side: Side): Promise<string> {
     body: JSON.stringify({ title: 'A task', priority: 'p1' }),
   });
   return ((await res.json()) as { id: string }).id;
+}
+
+/** One save, the same on both sides (§4.68): names and counts only. */
+const CHECKPOINT = {
+  id: '01JCPAR1TYSAVE0000000000XX',
+  idempotency_key: 'parity-save',
+  repo: 'kvelld/laika',
+  branch: 'COR-1-work',
+  commit_sha: 'c'.repeat(40),
+  manifest: [{ path: 'src/a.ts', added: 3, removed: 1 }],
+  summary: { work_done: 'Half of it', next_step: 'The rest', failing: 'a.test.ts' },
+  summary_commit_sha: 'c'.repeat(40),
+};
+
+/**
+ * A registered agent of the side's person, holding COR-1's live claim in a
+ * project whose configured repo is the save's — what a save needs (§4.68).
+ * Every step asserts its status, so a broken setup fails here and not as a
+ * parity difference.
+ */
+async function agentHolding(
+  side: Side,
+): Promise<{ secret: string; task: string; generation: number }> {
+  await must(
+    side,
+    '/api/v1/projects/core',
+    { method: 'PATCH', body: JSON.stringify({ repo: 'kvelld/laika' }) },
+    200,
+  );
+  const project = (await (
+    await must(side, '/api/v1/projects/core', { method: 'GET' }, 200)
+  ).json()) as {
+    id: string;
+  };
+  const registered = (await (
+    await must(side, '/api/v1/agents', {
+      method: 'POST',
+      body: JSON.stringify({
+        display_name: 'Parity agent',
+        harness: 'codex',
+        grants: [{ project_id: project.id, scope: 'full' }],
+      }),
+    })
+  ).json()) as { secret: string };
+  const task = await seedTask(side);
+  const claimed = await side.h.app.request(`/api/v1/tasks/${task}/claim`, {
+    method: 'POST',
+    headers: jsonHeaders({ Authorization: `Bearer ${registered.secret}` }),
+  });
+  expect(claimed.status, await claimed.clone().text()).toBe(200);
+  const generation = Number(claimed.headers.get('X-Laika-Claim-Generation'));
+  expect(generation).toBe(1);
+  return { secret: registered.secret, task, generation };
+}
+
+/** An MCP client on a credential other than the side's own token. */
+async function connectAs(side: Side, secret: string): Promise<Client> {
+  const client = new Client({ name: 'parity-agent', version: '0.0.0' });
+  const transport = new StreamableHTTPClientTransport(new URL('/mcp', side.baseUrl), {
+    requestInit: { headers: { Authorization: `Bearer ${secret}` } },
+  });
+  await client.connect(transport as Parameters<Client['connect']>[0]);
+  return client;
 }
 
 /** Both of time's switches on for the side's person (LAI-787). */
