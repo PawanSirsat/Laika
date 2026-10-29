@@ -53,6 +53,125 @@ export function updateProjectContext(
   });
 }
 
+/**
+ * One revision without its text — the history list (SPEC §4.68, §6.4,
+ * LAI-555). `author_id` is null on a revision 1 that existed before revisions
+ * did; `agent_id` names the registered agent whose token wrote it, or null.
+ */
+export interface ContextRevisionSummary {
+  readonly revision: number;
+  readonly length: number;
+  readonly author_id: string | null;
+  readonly agent_id: string | null;
+  readonly created_at: number;
+}
+
+/** One revision with its whole text. */
+export interface ContextRevision extends ContextRevisionSummary {
+  readonly body: string;
+}
+
+/**
+ * What changed between two revisions, as the server's unified line diff.
+ *
+ * Past 2,000 changed lines the server sends **no diff**: `truncated` is true,
+ * `diff` is empty and both counts are null. A screen says so and offers the
+ * revision whole — it never shows an empty diff as "nothing changed".
+ */
+export interface ContextDiff {
+  readonly from_revision: number;
+  readonly to_revision: number;
+  readonly current_revision: number;
+  readonly diff: string;
+  readonly added: number | null;
+  readonly removed: number | null;
+  readonly truncated: boolean;
+  readonly hint: string | null;
+}
+
+/** `GET .../context/revisions` — newest first, no text. */
+export function listContextRevisions(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<readonly ContextRevisionSummary[]> {
+  return request<readonly ContextRevisionSummary[]>(
+    `/projects/${encodeURIComponent(slug)}/context/revisions`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/** `GET .../context/revisions/:revision` — one revision with its text. */
+export function getContextRevision(
+  slug: string,
+  revision: number,
+  signal?: AbortSignal,
+): Promise<ContextRevision> {
+  return request<ContextRevision>(
+    `/projects/${encodeURIComponent(slug)}/context/revisions/${String(revision)}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/** `GET .../context/diff?from=&to=` — `from` may be 0, the empty document. */
+export function getContextDiff(
+  slug: string,
+  from: number,
+  to: number,
+  signal?: AbortSignal,
+): Promise<ContextDiff> {
+  return request<ContextDiff>(
+    `/projects/${encodeURIComponent(slug)}/context/diff?from=${String(from)}&to=${String(to)}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/** One line of a unified diff, as a screen draws it. */
+export interface DiffLine {
+  readonly kind: 'hunk' | 'added' | 'removed' | 'same';
+  readonly text: string;
+}
+
+/**
+ * The server's unified diff, line by line. The first character is the
+ * marker (`+`, `-`, a space) and the rest is the document's line verbatim;
+ * `@@` lines head each hunk. An empty diff is no lines.
+ */
+export function diffLinesOf(diff: string): readonly DiffLine[] {
+  if (diff === '') return [];
+  return diff.split('\n').map((line): DiffLine => {
+    if (line.startsWith('@@')) return { kind: 'hunk', text: line };
+    const text = line.slice(1);
+    if (line.startsWith('+')) return { kind: 'added', text };
+    if (line.startsWith('-')) return { kind: 'removed', text };
+    return { kind: 'same', text };
+  });
+}
+
+/** What a stale save was refused with: the revision now current. */
+export interface StaleContext {
+  readonly base_revision: number;
+  readonly current_revision: number;
+}
+
+/**
+ * The `409 stale_context_revision` refusal (§6.4, LAI-555), or null for any
+ * other failure. Somebody saved since this text was opened; nothing was
+ * written.
+ */
+export function staleContextOf(cause: unknown): StaleContext | null {
+  if (!(cause instanceof ApiError)) return null;
+  const details = cause.details as {
+    readonly reason?: unknown;
+    readonly base_revision?: unknown;
+    readonly current_revision?: unknown;
+  } | null;
+  if (details?.reason !== 'stale_context_revision') return null;
+  const { base_revision: base, current_revision: current } = details;
+  return typeof base === 'number' && typeof current === 'number'
+    ? { base_revision: base, current_revision: current }
+    : null;
+}
+
 /** How close the document is to the cap, and how loudly to say so. */
 export type BudgetTone = 'ok' | 'near' | 'over';
 
@@ -116,11 +235,14 @@ export function readableContextError(cause: unknown, actualLength?: number): str
   if (!(cause instanceof ApiError)) return 'Could not save the context document.';
 
   // Somebody saved since this was opened (LAI-555). The text typed here is
-  // kept; LAI-556 builds the history and the merge.
+  // kept, and the panel offers the comparison beside this (LAI-556).
   if (
     (cause.details as { readonly reason?: unknown } | null)?.reason === 'stale_context_revision'
   ) {
-    return 'Somebody saved a newer version while you were editing. Your text is still here: copy it, reopen the document, and apply your change again.';
+    const stale = staleContextOf(cause);
+    return stale === null
+      ? 'Not saved: somebody saved a newer version while you were editing. Your text is still here.'
+      : `Not saved: somebody saved a newer version (r${String(stale.current_revision)}) while you were editing r${String(stale.base_revision)}. Your text is still here.`;
   }
 
   const details = cause.details as {

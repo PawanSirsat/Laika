@@ -10,6 +10,9 @@
   right: 0;
   bottom: 0;
   z-index: 40;
+  /* The padding inside the width: at 390 px the panel was 32 px wider than
+     the screen, its left edge off it (LAI-556). */
+  box-sizing: border-box;
   width: min(46rem, 100vw);
   display: flex;
   flex-direction: column;
@@ -208,4 +211,334 @@
   background: var(--blocked-bg);
   border: 1px solid var(--overdue-border);
   border-radius: var(--radius-chip);
+}
+
+/* ------------------------------------------------ history (LAI-556)
+
+   The revision history, a revision opened whole, and the changes between two.
+   Existing tokens only (D-020): added and removed reuse the green and the
+   "wrong" palette the app already gives to fine and overdue, and each line
+   also carries a +/− mark and a spoken label, so colour is never the only
+   difference. */
+
+.ctx-history,
+.ctx-conflict {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ctx-history {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ctx-history-title {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ctx-history-empty,
+.ctx-diff-none {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.ctx-revisions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.ctx-revision {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.125rem var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ctx-revision:first-child {
+  border-top: 0;
+}
+
+.ctx-revision[aria-current='true'] {
+  background: var(--bg-column);
+}
+
+.ctx-revision-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem var(--space-2);
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--text-body);
+}
+
+.ctx-revision-number {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+}
+
+.ctx-revision-current {
+  padding: 0 0.375rem;
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-pill);
+  background: var(--chip-neutral-bg);
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.ctx-revision-agent-anon {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.ctx-revision-meta {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.ctx-revision-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ctx-link {
+  font-family: inherit;
+  padding: var(--space-1) 0.375rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+.ctx-link:hover {
+  text-decoration: underline;
+}
+
+.ctx-secondary {
+  font-family: inherit;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+.ctx-secondary:hover:not(:disabled) {
+  border-color: var(--border-default);
+}
+
+.ctx-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ctx-danger {
+  color: var(--overdue);
+  border-color: var(--overdue-border);
+}
+
+.ctx-link:focus-visible,
+.ctx-secondary:focus-visible,
+.ctx-viewer-title:focus-visible,
+.ctx-revision-body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ctx-compare {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.ctx-compare-label {
+  font-weight: var(--weight-semibold);
+}
+
+.ctx-compare .ctx-compare-field {
+  flex: 0 1 8rem;
+  width: auto;
+  min-width: 5.5rem;
+}
+
+.ctx-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ctx-viewer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ctx-viewer-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.ctx-revision-body,
+.ctx-diff {
+  margin: 0;
+  max-height: 24rem;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.ctx-revision-body {
+  padding: var(--space-3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ctx-diff {
+  list-style: none;
+  padding: var(--space-1) 0;
+}
+
+.ctx-diff-line {
+  display: flex;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+}
+
+.ctx-diff-mark {
+  flex: none;
+  width: 0.75rem;
+  font-weight: var(--weight-bold);
+}
+
+.ctx-diff-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ctx-diff-added {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+}
+
+.ctx-diff-removed {
+  color: var(--overdue);
+  background: var(--blocked-bg);
+}
+
+.ctx-diff-hunk {
+  color: var(--text-muted);
+}
+
+.ctx-diff-count {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.ctx-diff-count-added {
+  color: var(--chip-green);
+}
+
+.ctx-diff-count-removed {
+  color: var(--overdue);
+}
+
+.ctx-diff-truncated {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-chip);
+}
+
+.ctx-diff-truncated p {
+  margin: 0 0 var(--space-1);
+}
+
+/* A newer revision than the one in the editor. Attention, not alarm: the text
+   is safe and nothing was lost. */
+.ctx-conflict {
+  padding: var(--space-2) var(--space-3);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-chip);
+}
+
+.ctx-conflict-text,
+.ctx-conflict-hint {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.ctx-conflict-hint {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.ctx-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ctx-conflict-diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .ctx-revision {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ctx-revision-actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
 }
