@@ -74,6 +74,8 @@ describe('migrations', () => {
     'activity',
     // LAI-534, D-114: what each registered agent may reach.
     'agent_project_grants',
+    // LAI-555: the context revision last delivered to a session, per project.
+    'agent_session_context_deliveries',
     // LAI-541: an agent's running processes, and the claims they hold.
     'agent_sessions',
     // LAI-833: when the agent worked, by session and five minutes.
@@ -109,6 +111,8 @@ describe('migrations', () => {
     'password_resets',
     // LAI-773, D-087: a developer's own plan limit.
     'plan_limits',
+    // LAI-555: every revision of a project's context document.
+    'project_context_revisions',
     'project_memberships',
     'project_statuses',
     'projects',

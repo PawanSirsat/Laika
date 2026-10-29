@@ -210,7 +210,10 @@ describe('list_projects', () => {
     await project('core', 'COR');
     await must(
       '/api/v1/projects/core/context',
-      { method: 'PATCH', body: JSON.stringify({ context_md: 'SECRET-BRIEF-MARKER' }) },
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ context_md: 'SECRET-BRIEF-MARKER', base_revision: 0 }),
+      },
       200,
     );
 
@@ -486,7 +489,7 @@ describe('get_project_context', () => {
     const raw = '  # Architecture\n\n\ttabbed\n';
     await must(
       '/api/v1/projects/core/context',
-      { method: 'PATCH', body: JSON.stringify({ context_md: raw }) },
+      { method: 'PATCH', body: JSON.stringify({ context_md: raw, base_revision: 0 }) },
       200,
     );
 
@@ -591,7 +594,7 @@ describe('read tools never mutate (AC3)', () => {
     await task('core', { title: 'Something' });
     await must(
       '/api/v1/projects/core/context',
-      { method: 'PATCH', body: JSON.stringify({ context_md: 'brief' }) },
+      { method: 'PATCH', body: JSON.stringify({ context_md: 'brief', base_revision: 0 }) },
       200,
     );
 

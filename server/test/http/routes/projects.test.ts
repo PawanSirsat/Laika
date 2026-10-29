@@ -1,6 +1,15 @@
+import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { users } from '../../../src/db/schema.ts';
 import { CONTEXT_MD_LIMIT, REPO_MAX_LENGTH } from '../../../src/services/projects.ts';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  seedInvite,
+  signUp,
+} from '../../helpers/auth.ts';
 
 let h: AuthHarness;
 let ownerCookie: string;
@@ -395,7 +404,7 @@ describe('GET/PATCH /api/v1/projects/:slug/context (§6.4, LAI-404)', () => {
     const raw = '  # Architecture\n\n\ttabbed\n\n';
     const patched = await req('/api/v1/projects/laika/context', {
       method: 'PATCH',
-      body: JSON.stringify({ context_md: raw }),
+      body: JSON.stringify({ context_md: raw, base_revision: 0 }),
     });
 
     expect(patched.status).toBe(200);
@@ -444,7 +453,7 @@ describe('GET/PATCH /api/v1/projects/:slug/context (§6.4, LAI-404)', () => {
     const length = CONTEXT_MD_LIMIT + 400;
     const res = await req('/api/v1/projects/laika/context', {
       method: 'PATCH',
-      body: JSON.stringify({ context_md: 'x'.repeat(length) }),
+      body: JSON.stringify({ context_md: 'x'.repeat(length), base_revision: 0 }),
     });
 
     expect(res.status).toBe(422);
@@ -464,7 +473,7 @@ describe('GET/PATCH /api/v1/projects/:slug/context (§6.4, LAI-404)', () => {
     // refused at `>= limit` would satisfy every assertion above.
     const res = await req('/api/v1/projects/laika/context', {
       method: 'PATCH',
-      body: JSON.stringify({ context_md: 'x'.repeat(CONTEXT_MD_LIMIT) }),
+      body: JSON.stringify({ context_md: 'x'.repeat(CONTEXT_MD_LIMIT), base_revision: 0 }),
     });
 
     expect(res.status, await res.clone().text()).toBe(200);
@@ -516,5 +525,141 @@ describe('GET/PATCH /api/v1/projects/:slug/context (§6.4, LAI-404)', () => {
       ((await (await req('/api/v1/projects/laika/context')).json()) as { context_md: string })
         .context_md,
     ).toBe('');
+  });
+});
+
+describe('context revisions over REST (§6.4, §4.68, LAI-555)', () => {
+  beforeEach(async () => {
+    expect((await createProject({ name: 'Laika', slug: 'laika', prefix: 'LAI' })).status).toBe(201);
+  });
+
+  async function write(contextMd: string, baseRevision: number): Promise<Response> {
+    return req('/api/v1/projects/laika/context', {
+      method: 'PATCH',
+      body: JSON.stringify({ context_md: contextMd, base_revision: baseRevision }),
+    });
+  }
+
+  it('a write must name its base revision', async () => {
+    const res = await req('/api/v1/projects/laika/context', {
+      method: 'PATCH',
+      body: JSON.stringify({ context_md: 'no base' }),
+    });
+    expect(res.status).toBe(422);
+    expect(
+      (await req('/api/v1/projects/laika/context').then((r) => r.json())) as object,
+    ).toMatchObject({ context_md: '', revision: 0 });
+  });
+
+  it('a stale write is 409 stale_context_revision and the current one is unchanged', async () => {
+    expect((await write('one', 0)).status).toBe(200);
+    expect((await write('two', 1)).status).toBe(200);
+
+    const stale = await write('clobber', 1);
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as { error: unknown }).error).toMatchObject({
+      code: 'conflict',
+      details: { reason: 'stale_context_revision', base_revision: 1, current_revision: 2 },
+    });
+
+    const now = (await (await req('/api/v1/projects/laika/context')).json()) as {
+      context_md: string;
+      revision: number;
+    };
+    expect(now).toMatchObject({ context_md: 'two', revision: 2 });
+  });
+
+  it('lists revisions, serves one in full, and diffs two', async () => {
+    expect((await write('a\nb', 0)).status).toBe(200);
+    expect((await write('a\nc', 1)).status).toBe(200);
+
+    const list = await req('/api/v1/projects/laika/context/revisions');
+    expect(list.status).toBe(200);
+    expect(((await list.json()) as { revision: number }[]).map((r) => r.revision)).toEqual([2, 1]);
+
+    const one = await req('/api/v1/projects/laika/context/revisions/1');
+    expect(one.status).toBe(200);
+    expect(await one.json()).toMatchObject({ revision: 1, body: 'a\nb', length: 3 });
+
+    const diff = await req('/api/v1/projects/laika/context/diff?from=1');
+    expect(diff.status).toBe(200);
+    expect(await diff.json()).toMatchObject({
+      from_revision: 1,
+      to_revision: 2,
+      current_revision: 2,
+      diff: '@@ -1,2 +1,2 @@\n a\n-b\n+c',
+      added: 1,
+      removed: 1,
+    });
+
+    expect((await req('/api/v1/projects/laika/context/revisions/9')).status).toBe(404);
+    expect((await req('/api/v1/projects/laika/context/revisions/x')).status).toBe(422);
+    expect((await req('/api/v1/projects/laika/context/diff')).status).toBe(422);
+  });
+
+  it('a diff past 2,000 changed lines is truncated, with the way to read it whole', async () => {
+    const doc = (prefix: string) =>
+      Array.from({ length: 1001 }, (_, i) => `${prefix} ${String(i)}`).join('\n');
+    expect((await write(doc('old'), 0)).status).toBe(200);
+    expect((await write(doc('new'), 1)).status).toBe(200);
+
+    const res = await req('/api/v1/projects/laika/context/diff?from=1');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { hint: string };
+    expect(body).toMatchObject({
+      from_revision: 1,
+      to_revision: 2,
+      diff: '',
+      added: null,
+      removed: null,
+      truncated: true,
+    });
+    expect(body.hint).toContain('GET /api/v1/projects/laika/context/revisions/2');
+    expect(body.hint).toContain('get_project_context without since_revision');
+
+    const small = (await (
+      await req('/api/v1/projects/laika/context/diff?from=2')
+    ).json()) as object;
+    expect(small).toMatchObject({ truncated: false, hint: null });
+  });
+
+  it('a project the caller cannot see answers exactly as a missing one', async () => {
+    expect(
+      (
+        await createProject({
+          name: 'Hidden',
+          slug: 'hidden',
+          prefix: 'HID',
+          visibility: 'private',
+        })
+      ).status,
+    ).toBe(201);
+    const owner = h.db.select().from(users).get()!;
+    const orgId = h.db.all<{ id: string }>(sql`SELECT id FROM orgs`)[0]!.id;
+    const email = 'outsider@example.test';
+    const token = seedInvite(h.db, { orgId, createdBy: owner.id, email, orgRole: 'member' });
+    const joined = await signUp(h.app, { email, password: PASSWORD, inviteToken: token });
+    expect(joined.status, await joined.clone().text()).toBe(200);
+    const outsider = cookieFrom(joined);
+
+    for (const [method, tail, body] of [
+      ['GET', '/context', undefined],
+      ['PATCH', '/context', { context_md: 'x', base_revision: 0 }],
+      ['GET', '/context/revisions', undefined],
+      ['GET', '/context/revisions/1', undefined],
+      ['GET', '/context/diff?from=0', undefined],
+    ] as const) {
+      const init = {
+        method,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      };
+      const hidden = await req(`/api/v1/projects/hidden${tail}`, init, outsider);
+      const missing = await req(`/api/v1/projects/nope${tail}`, init, outsider);
+      expect(hidden.status, `${method} ${tail}`).toBe(404);
+      expect(missing.status, `${method} ${tail}`).toBe(404);
+      expect(((await hidden.json()) as { error: { code: string } }).error.code).toBe(
+        ((await missing.json()) as { error: { code: string } }).error.code,
+      );
+    }
   });
 });

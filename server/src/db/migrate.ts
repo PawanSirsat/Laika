@@ -11,6 +11,7 @@ import {
 } from './backfill.ts';
 import { type Db } from './client.ts';
 import { deviceLabelKey } from './device-label.ts';
+import { newId } from './ids.ts';
 import { type Logger } from '../log.ts';
 
 /**
@@ -205,6 +206,43 @@ BEGIN
   SELECT RAISE(ABORT, 'time_entry_revisions is append-only: INSERT OR REPLACE is not permitted (SPEC 4.49)');
 END`,
   },
+  // §4.68's context revisions are a project brief's history (LAI-555): the
+  // same three as §4.49's — a revision goes with its project, so the delete
+  // is refused only while the project still exists.
+  {
+    name: 'project_context_revisions_is_append_only_no_update',
+    table: 'project_context_revisions',
+    create: `CREATE TRIGGER IF NOT EXISTS \`project_context_revisions_is_append_only_no_update\`
+BEFORE UPDATE ON \`project_context_revisions\`
+BEGIN
+  SELECT RAISE(ABORT, 'project_context_revisions is append-only: UPDATE is not permitted (SPEC 4.68)');
+END`,
+  },
+  {
+    name: 'project_context_revisions_is_append_only_no_delete',
+    table: 'project_context_revisions',
+    create: `CREATE TRIGGER IF NOT EXISTS \`project_context_revisions_is_append_only_no_delete\`
+BEFORE DELETE ON \`project_context_revisions\`
+WHEN EXISTS (SELECT 1 FROM \`projects\` WHERE \`id\` = OLD.\`project_id\`)
+BEGIN
+  SELECT RAISE(ABORT, 'project_context_revisions is append-only: DELETE is not permitted while its project exists (SPEC 4.68)');
+END`,
+  },
+  // **Both unique keys, not only `id`** (LAI-555 review). `(project_id,
+  // revision)` is unique too, and `INSERT OR REPLACE` with a fresh id and an
+  // existing revision would otherwise delete the original — the delete
+  // trigger does not fire for a REPLACE while `recursive_triggers` is off.
+  // Any insert landing on either key is refused, so nothing can replace a row.
+  {
+    name: 'project_context_revisions_is_append_only_no_replace',
+    table: 'project_context_revisions',
+    create: `CREATE TRIGGER IF NOT EXISTS \`project_context_revisions_is_append_only_no_replace\`
+BEFORE INSERT ON \`project_context_revisions\`
+WHEN EXISTS (SELECT 1 FROM \`project_context_revisions\` WHERE \`id\` = NEW.\`id\` OR (\`project_id\` = NEW.\`project_id\` AND \`revision\` = NEW.\`revision\`))
+BEGIN
+  SELECT RAISE(ABORT, 'project_context_revisions is append-only: an insert over an existing id or revision is not permitted (SPEC 4.68)');
+END`,
+  },
   // §4.48's entries are kept three years (D-088 item 11, BCEA s31): nothing
   // deletes one younger — a person's delete is `deleted_at` and a revision —
   // and only §11.6's retention removes an older one, its revisions with it.
@@ -297,7 +335,7 @@ export function ensureActivityTriggers(db: Db): void {
   const bodies = new Map(
     db
       .all<{ name: string; sql: string | null }>(
-        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings', 'task_estimates', 'task_claim_estimates', 'time_entry_revisions', 'time_entries')`,
+        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings', 'task_estimates', 'task_claim_estimates', 'time_entry_revisions', 'time_entries', 'project_context_revisions')`,
       )
       .map((row) => [row.name, row.sql ?? '']),
   );
@@ -315,7 +353,7 @@ export function ensureActivityTriggers(db: Db): void {
 
   if (broken.length > 0) {
     throw new Error(
-      `activity (SPEC §4.8), member_ratings (§4.21), task_estimates (§4.32), task_claim_estimates (§4.34) and time_entry_revisions (§4.49) are append-only, and time_entries (§4.48) are kept three years and never replaced; their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
+      `activity (SPEC §4.8), member_ratings (§4.21), task_estimates (§4.32), task_claim_estimates (§4.34) and time_entry_revisions (§4.49) and project_context_revisions (§4.68) are append-only, and time_entries (§4.48) are kept three years and never replaced; their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
     );
   }
 }
@@ -527,6 +565,8 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
       db.$client.function('laika_device_label_key', { deterministic: true }, (label) =>
         deviceLabelKey(typeof label === 'string' ? label : null),
       );
+      // LAI-555's revision 1 rows take the id a request would mint.
+      db.$client.function('laika_new_id', { deterministic: false }, () => newId());
       migrate(db, { migrationsFolder });
     } finally {
       db.run(sql`PRAGMA foreign_keys = ON`);

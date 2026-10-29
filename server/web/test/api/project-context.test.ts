@@ -100,6 +100,15 @@ void describe('a refusal names both numbers', () => {
     assert.equal(readableContextError(cause), 'That context document is too long');
   });
 
+  void test('a save over a newer one says so and keeps the text (LAI-555)', () => {
+    const cause = new ApiError('conflict', 'The context document is at revision 2, not 1', 409, {
+      reason: 'stale_context_revision',
+      base_revision: 1,
+      current_revision: 2,
+    });
+    assert.match(readableContextError(cause), /newer version.*Your text is still here/);
+  });
+
   void test('a non-API failure does not pretend to be one', () => {
     assert.equal(
       readableContextError(new Error('offline')),

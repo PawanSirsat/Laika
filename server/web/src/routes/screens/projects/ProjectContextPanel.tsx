@@ -113,7 +113,7 @@ export function ProjectContextPanel({
   const save = (): void => {
     setSaving(true);
     setSaveError(undefined);
-    updateProjectContext(slug, draft)
+    updateProjectContext(slug, draft, loaded?.revision ?? 0)
       .then((doc) => {
         setLoaded(doc);
         setDraft(doc.context_md);
