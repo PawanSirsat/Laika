@@ -2,11 +2,12 @@
 id: LAI-1000
 title: 'The server refuses a second active agent on one harness and device: 409 agent_exists_for_device'
 area: server
-assignee: unclaimed
+assignee: CORE
 priority: p1
 depends-on: []
 discovered-from: LAI-532
-status: backlog
+status: in-progress
+started: 2026-10-29T15:45:36Z
 ---
 
 D-120 (owner decision in chat, 2026-10-29): an agent's identity is exactly
