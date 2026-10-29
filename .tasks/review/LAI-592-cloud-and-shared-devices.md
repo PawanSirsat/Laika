@@ -32,8 +32,9 @@ the colleague to register their own.
 
 ## Scope
 
-- **docs:** a proposed decision (numbered by Belka when recorded; D-120 if
-  free) covering: cloud agents carry a token with a mandatory short expiry
+- **docs:** a proposed decision (numbered by Belka when recorded: D-121,
+  amending D-120) covering: cloud agents carry a token with a mandatory
+  short expiry
   (proposed default ≤ 24 h, the builder proposes the number with a reason);
   the owner is the person who registered it and is shown on every line that
   names it; a laptop that is not the owner's carries the laptop owner's own
@@ -228,12 +229,12 @@ LAI-320, then push as one state.
 
 ## Proposed docs half (for Belka)
 
-Belka's half; Strelka edits nothing in `docs/`. Number at recording (D-120 if
-free). Approval from Pawan's own account, as D-118/D-119.
+Belka's half; Strelka edits nothing in `docs/`. Number at recording: D-121,
+amending D-120. Approval from Pawan's own account, as D-118/D-119.
 
 ### Proposed decision
 
-> **D-120 — A cloud agent holds only short-lived tokens, and every agent is
+> **D-121 — A cloud agent holds only short-lived tokens, and every agent is
 > its registering person's (LAI-592)**
 >
 > 1. **A cloud agent is one whose device label is `Cloud`**, compared as
@@ -265,18 +266,18 @@ free). Approval from Pawan's own account, as D-118/D-119.
 
 ### Phase index link (`docs/proposals/LAI-532-phase-index.md`, Phase 2.5)
 
-The *Cloud and shared devices* row: append `— D-120 (proposed), LAI-592` to
+The *Cloud and shared devices* row: append `— D-121 (proposed), LAI-592` to
 its Slice cell and set Status to `Review (CORE #<PR>)`.
 
 ### SPEC §4.63 — exact wording
 
 In the field table, replace the `device_label` row with:
 
-> | `device_label` | nullable, at most 80 characters, **self-reported**. Decides one thing: a label whose normalised key (trimmed, lower-cased) is `cloud` marks a **cloud agent**, whose tokens must expire within 24 hours (§4.9, D-120). Otherwise decides nothing |
+> | `device_label` | nullable, at most 80 characters, **self-reported**. Decides one thing: a label whose normalised key (trimmed, lower-cased) is `cloud` marks a **cloud agent**, whose tokens must expire within 24 hours (§4.9, D-121). Otherwise decides nothing |
 
 After the paragraph that begins **Revoking an agent**, add:
 
-> **A cloud agent's tokens are short-lived** (D-120, LAI-592). Registering a
+> **A cloud agent's tokens are short-lived** (D-121, LAI-592). Registering a
 > cloud agent, rotating one of its tokens, or relabelling an agent into
 > `Cloud` while any live token it holds breaks the rule is `422` with
 > `reason` `cloud_token_expiry_required` (no `expires_at`, or one not in
@@ -294,7 +295,7 @@ After the paragraph that begins **Revoking an agent**, add:
 Append to the `agent_id` row's notes:
 
 > A token whose agent is a cloud agent (§4.63) always has an `expires_at` at
-> most 24 hours after it was minted (D-120); once past it, it is refused like
+> most 24 hours after it was minted (D-121); once past it, it is refused like
 > any expired token — same status, same body.
 
 ### SPEC §6.4 (not authorised by this task; flag only)
@@ -319,10 +320,11 @@ Criteria unchanged (frozen in review).
 Strelka was idle; Pawan told Belka to finish the CORE half and proceed on the
 decision himself.
 
-**What the draft waited on.** Only the decision: the proposed D-120 (*Proposed
-docs half* above) needed approval from Pawan's own account before merge
+**What the draft waited on.** Only the decision: the proposed decision
+(*Proposed docs half* above; numbered D-120 then, D-121 now) needed approval
+from Pawan's own account before merge
 (*Dependencies*, and the PR body's "Draft until the decision is approved from
-Pawan's account"). D-120 was not recorded anywhere — no `docs/DECISIONS.md`
+Pawan's account"). It was not recorded anywhere — no `docs/DECISIONS.md`
 entry, no proposal section, on any branch. LAI-320 (the web half) was also
 open, and is what keeps the gate red.
 
@@ -373,15 +375,24 @@ changed, restored, SHA-256 compared, `git status` clean after):
 M1–M7 re-run on the merged tree: each still red on the same tests as the table
 above.
 
-**Proposed decision, superseding the draft above** (number D-120; approval
-from Pawan's account still required; the same text is in PR #141's body):
+**Proposed decision, superseding the draft above** (number D-121, amending
+D-120; approval from Pawan's account still required; the same text is in PR
+#141's body):
 
-> **D-120 — An agent is one harness on one device, at most one active per owner; a cloud runner is the device `Cloud`, whose tokens live at most a day; every agent is its registering person's (LAI-592)**
+**Renumbered D-121 (Belka, 2026-10-30, owner-delegated).** D-120 is recorded
+in `docs/DECISIONS.md` by #152 (LAI-1000): an agent is exactly
+`<harness> · <device>`, one active agent per harness per device. This
+decision amends it: item 1 restates D-120 for reading, and items 2–8 are what
+D-121 adds (the `Cloud` device, cloud tokens at most 24 h, no token mints a
+longer-lived one, the owner is the registrant, another person's agents are
+missing). The text below is otherwise unchanged.
+
+> **D-121 (amends D-120) — An agent is one harness on one device, at most one active per owner; a cloud runner is the device `Cloud`, whose tokens live at most a day; every agent is its registering person's (LAI-592)**
 >
-> 1. **An agent is exactly `<harness> · <device>`** (D-118), and **an owner
->    holds at most one active agent for each pair.** The device is compared
->    by its normalised key (§4.63: trimmed, lower-cased); an agent with no
->    device label is on one unnamed device. Registering a second, or renaming
+> 1. **An agent is exactly `<harness> · <device>`** (D-118; restates D-120),
+>    and **an owner holds at most one active agent for each pair.** The
+>    device is compared by its normalised key (§4.63: trimmed,
+>    lower-cased); an agent with no device label is on one unnamed device. Registering a second, or renaming
 >    the harness or relabelling onto a pair another active agent of yours
 >    holds, is `409 conflict` with `reason` `agent_exists_for_harness_device`
 >    and `agent_id` naming yours. A revoked agent frees its pair. Only your
