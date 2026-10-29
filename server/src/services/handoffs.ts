@@ -44,7 +44,6 @@ import {
   tasks,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { RateLimiter } from '../http/rate-limit.ts';
 import { assertCan, can, systemPrincipal, type AgentContext } from '../policy/can.ts';
 import {
   type AgentSessionView,
@@ -256,23 +255,36 @@ export function putHandoffPolicy(
  */
 export const HANDOFF_RATE = { perMinute: 1, burst: 10 } as const;
 
-let rateNow = 0;
-let limiter = new RateLimiter(() => rateNow);
+/**
+ * One bucket per agent, refilled continuously — the same token bucket
+ * `http/rate-limit.ts` keeps for §6.3's general budget, kept here because the
+ * key is the agent, which only the service knows, and both transports pass
+ * through it. Services import nothing from `http/` (CONVENTIONS §2).
+ */
+const buckets = new Map<string, { tokens: number; at: number }>();
 
 /** A test starts each case with full buckets. */
 export function resetHandoffRateLimits(): void {
-  limiter = new RateLimiter(() => rateNow);
+  buckets.clear();
 }
 
 function spendOfferToken(agentId: string, now: number): void {
-  rateNow = now;
-  const decision = limiter.take(`handoff:${agentId}`, HANDOFF_RATE);
-  if (!decision.allowed) {
+  const perMs = HANDOFF_RATE.perMinute / 60_000;
+  const bucket = buckets.get(agentId) ?? { tokens: HANDOFF_RATE.burst, at: now };
+  bucket.tokens = Math.min(
+    HANDOFF_RATE.burst,
+    bucket.tokens + Math.max(0, now - bucket.at) * perMs,
+  );
+  bucket.at = now;
+  buckets.set(agentId, bucket);
+  if (bucket.tokens < 1) {
     throw new ApiError('rate_limited', 'Too many hand-off requests from this agent', {
       reason: 'handoff_rate',
-      retry_after_seconds: decision.retryAfterSeconds,
+      // Never below a second (§6.3): `Retry-After: 0` invites a retry that fails.
+      retry_after_seconds: Math.max(1, Math.ceil((1 - bucket.tokens) / perMs / 1000)),
     });
   }
+  bucket.tokens -= 1;
 }
 
 // ------------------------------------------------------------------- views
@@ -530,7 +542,7 @@ function receiverEligibility(
     );
 
   const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
-  if (agent === undefined || agent.orgId !== project.orgId || agent.status !== 'active') {
+  if (agent?.orgId !== project.orgId || agent.status !== 'active') {
     throw refuse();
   }
   const grant = db
@@ -1016,11 +1028,7 @@ export function offerHandoff(
       .from(taskCheckpoints)
       .where(eq(taskCheckpoints.id, checkpointId))
       .get();
-    if (
-      checkpoint === undefined ||
-      checkpoint.taskId !== taskId ||
-      checkpoint.claimGeneration !== live.generation
-    ) {
+    if (checkpoint?.taskId !== taskId || checkpoint.claimGeneration !== live.generation) {
       throw unprocessable(
         'checkpoint_id',
         'checkpoint_not_this_claim',
