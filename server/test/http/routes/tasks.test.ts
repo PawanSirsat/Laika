@@ -4,7 +4,7 @@ import { newId } from '../../../src/db/ids.ts';
 import { activity, tasks, users } from '../../../src/db/schema.ts';
 import { flagStaleTasks, STALE_AFTER_MS } from '../../../src/jobs/jobs.ts';
 import { MAX_TAGS_PER_TASK } from '../../../src/services/tags.ts';
-import { taskVersion, type TaskView } from '../../../src/services/tasks.ts';
+import { CLAIM_PULSE, taskVersion, type TaskView } from '../../../src/services/tasks.ts';
 import { backfillTaskPositions } from '../../../src/db/backfill.ts';
 import {
   type AuthHarness,
@@ -687,7 +687,10 @@ describe('patch', () => {
      * move the version. A new table pointing at `tasks` fails here until
      * someone decides.
      */
-    const REFERENCING: Record<string, { shown: string[] } | { not_shown: string }> = {
+    const REFERENCING: Record<
+      string,
+      { shown: string[] } | { not_shown: string } | { shown_by_test: string }
+    > = {
       'task_tags.task_id': {
         shown: [
           'PATCH: tags only',
@@ -719,9 +722,10 @@ describe('patch', () => {
         not_shown:
           'a read shows only the creating row (`created_by_client`), written once at create',
       },
+      // Shown as `claim` (LAI-568). Who holds it moves the version; its pulse
+      // does not, and that is the test below.
       'task_claims.task_id': {
-        not_shown:
-          'the live claim is `get_task_context`’s and the claim routes’, not the task view',
+        shown_by_test: 'moves the version when the claim changes hands, not when it beats',
       },
       'task_claim_estimates.task_id': {
         not_shown: 'the claimant’s own estimate, read by the estimate endpoint only',
@@ -756,6 +760,44 @@ describe('patch', () => {
       for (const entry of Object.values(REFERENCING)) {
         if ('shown' in entry)
           for (const s of entry.shown) expect(Object.keys(SCENARIOS)).toContain(s);
+        if ('shown_by_test' in entry) expect(OWN_TESTS).toContain(entry.shown_by_test);
+      }
+    });
+
+    const OWN_TESTS = ['moves the version when the claim changes hands, not when it beats'];
+
+    it(OWN_TESTS[0]!, async () => {
+      const task = await newTask('Original');
+      const view = (await (await req(`/api/v1/tasks/${task.id}`)).json()) as TaskView;
+      const claim: NonNullable<TaskView['claim']> = {
+        generation: 1,
+        state: 'active',
+        agent_id: 'agent-1',
+        session_id: 'session-1',
+        lease_expires_at: 1_000,
+        last_heartbeat_at: 500,
+        connection: 'live',
+        suspect_after_ms: 90_000,
+        device_label: 'laptop-1',
+      };
+      const held = taskVersion({ ...view, claim });
+      expect(held).not.toBe(taskVersion(view));
+
+      // The pulse: a heartbeat renews the lease, and the clock makes it suspect.
+      const beat = { last_heartbeat_at: 9_000, lease_expires_at: 99_000, connection: 'suspect' };
+      expect([...CLAIM_PULSE].sort()).toEqual(Object.keys(beat).sort());
+      expect(taskVersion({ ...view, claim: { ...claim, ...beat } as typeof claim })).toBe(held);
+
+      // Who holds it, and how.
+      for (const change of [
+        { generation: 2 },
+        { state: 'paused' },
+        { agent_id: 'agent-2' },
+        { session_id: 'session-2' },
+        { device_label: 'laptop-2' },
+      ]) {
+        const moved = taskVersion({ ...view, claim: { ...claim, ...change } as typeof claim });
+        expect(moved, JSON.stringify(change)).not.toBe(held);
       }
     });
 

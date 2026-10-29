@@ -1062,6 +1062,7 @@ describe('started_at and completed_at', () => {
         'acceptance_md',
         'assignee_id',
         'blocks',
+        'claim',
         'comment_count',
         'completed_at',
         'created_at',

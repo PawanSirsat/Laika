@@ -177,8 +177,15 @@ the first 128 bits of SHA-256 over `JSON.stringify` of the `TaskView`, and
   (`ready`, `blocks`, `comment_count`, `size`, tag names), whichever code path
   made the change. A writer added later cannot be missed.
 - **Why it is deterministic.** `toView` has a fixed key order and sorted lists,
-  and reads nothing about the caller or the clock. A task read has no
-  self-changing fields.
+  and reads nothing about the caller.
+- **The live claim's pulse is left out.** LAI-568 added `claim` to the view,
+  mid-review. `CLAIM_PULSE` (`last_heartbeat_at`, `lease_expires_at`,
+  `connection`) moves on every heartbeat and with the clock, with no write to
+  the task. Hashing it would make every token stale while an agent works, which
+  is exactly when the LAI-538 selection needs one. Who holds the claim
+  (generation, state, session, agent, device) stays in, so a claim taken,
+  paused, released or transferred is a new version. The holder's own writes are
+  ordered by the claim fence.
 - **Why not a `version` column with triggers.** That needs a trigger per
   referencing table, plus hand-written rules for each derived field (a
   dependent's `ready`, a parent's rollup), and those rules are exactly what
@@ -221,7 +228,10 @@ ending *"…and pages with `cursor` like any other filter (D-066)."*):
 > a digest of the task exactly as that response returns it, so any change a
 > read of the task would show — its fields, tags and tag names, size,
 > dependencies in either direction and their readiness, sprint, comments
-> count, send-back — gives it a new version, whatever wrote it. A `PATCH` that
+> count, send-back, who holds its live claim — gives it a new version, whatever
+> wrote it. The live claim's `last_heartbeat_at`, `lease_expires_at` and
+> `connection` are left out: they move with heartbeats and the clock, not with
+> a write. A `PATCH` that
 > sends `If-Match` with that value is applied only if the task's version still
 > equals it, checked and written in one transaction; otherwise it is
 > `409 conflict` with `details: { current, etag }`, the task as
