@@ -37,7 +37,7 @@ receiver's behalf.
 - [x] All three checkpoint messages render from API fields (fixtures per case).
 - [x] All eight verbs are mirrored; drift check green against LAI-545 and LAI-546.
 - [x] Both themes, keyboard, 390 px.
-- [ ] Repo-root gate exits 0.
+- [x] Repo-root gate exits 0.
 - [x] The drawer shows "Verification pending" for a pending checkpoint and, after 10 minutes, "Verification pending — no push notice from GitHub yet" with the webhook / Redeliver hint for owners and admins; a newer pending checkpoint is shown beside the latest verified one as unverified.
 
 ## Tests and UI evidence required
@@ -159,3 +159,14 @@ TaskDetailPanel ownAgents → bare id set ⇒ *Approve waits…* red; TaskDetail
 read status dropped ⇒ *a failed read…* red; `recoveryOf`'s read guard
 disabled ⇒ *a read in flight or failed…* red; polling disabled ⇒ *a quiet
 drawer picks up…* red.
+
+### Gate on 968d9014 — green
+
+`gh workflow run deploy.yml --ref LAI-549-handoff-ui`, run 40955673893 on
+`968d9014` (the CHIEF-authorised crossing plus the Codex round 1 fixes):
+**Lint success, Format success, Test success.** `server` 4460 collected, 4450
+passed, 10 skipped, 0 failed. `server/web` 3706 collected, 3706 passed, 0
+failed. `cli` 647 collected, 634 passed, 13 skipped, 0 failed. The run for
+`dd1b6a4b` (40953324305) was cancelled by the workflow's concurrency group
+when this one was dispatched. It never finished, and none of its results are
+used here.
