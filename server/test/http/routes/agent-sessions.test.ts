@@ -769,6 +769,129 @@ describe('the live claim on task reads (LAI-568)', () => {
     expect(expireClaims(h.db, Date.now() + LEASE + 1).changed).toBe(1);
     expect(await claimOnReads(taskId)).toEqual([null, null, null]);
   });
+
+  describe('never reaches a caller who cannot read the task', () => {
+    /** A second project Bob is a member of, so a restriction is the only thing in the way. */
+    async function beta(): Promise<string> {
+      const created = await ok(
+        await req(
+          '/api/v1/projects',
+          { method: 'POST', body: JSON.stringify({ name: 'beta', slug: 'beta', prefix: 'BET' }) },
+          { cookie: ownerCookie },
+        ),
+        201,
+      );
+      await ok(
+        await req(
+          '/api/v1/projects/beta/members',
+          { method: 'POST', body: JSON.stringify({ user_id: bob.id, role: 'member' }) },
+          { cookie: ownerCookie },
+        ),
+        201,
+      );
+      return created.id as string;
+    }
+
+    /** Bob's token pinned to `projectIds`; `null` is his unpinned one. */
+    async function bobToken(projectIds: string[] | null): Promise<string> {
+      return (
+        await ok(
+          await req(
+            '/api/v1/tokens',
+            json('POST', { name: 'reader', scope: 'full', project_ids: projectIds }),
+            { cookie: bob.cookie },
+          ),
+          201,
+        )
+      ).secret as string;
+    }
+
+    /** Bob's agent granted only `projectIds`. */
+    async function agentOn(projectIds: string[]): Promise<string> {
+      return (
+        await ok(
+          await req(
+            '/api/v1/agents',
+            json('POST', {
+              display_name: 'Elsewhere',
+              harness: 'claude-code',
+              grants: projectIds.map((project_id) => ({ project_id, scope: 'full' })),
+            }),
+            { cookie: bob.cookie },
+          ),
+          201,
+        )
+      ).secret as string;
+    }
+
+    /**
+     * Every task read as `secret`: the single read and the alpha list refuse
+     * `403` on `project.read` with `reason`, and the cross-project list
+     * succeeds without the task. No answer carries the holder's session id.
+     */
+    async function readsAs(secret: string, taskId: string, session: string, reason?: string) {
+      const refusedAs = async (res: Response) => {
+        const text = await res.clone().text();
+        const body = JSON.parse(text) as {
+          error: { code: string; details: { action?: string; reason?: string } };
+        };
+        expect([res.status, body.error.code, body.error.details]).toEqual([
+          403,
+          'forbidden',
+          { action: 'project.read', ...(reason === undefined ? {} : { reason }) },
+        ]);
+        return text;
+      };
+      const singleText = await refusedAs(
+        await req(`/api/v1/tasks/${taskId}`, {}, { bearer: secret }),
+      );
+      const listedText = await refusedAs(
+        await req('/api/v1/projects/alpha/tasks', {}, { bearer: secret }),
+      );
+
+      const all = await req('/api/v1/tasks', {}, { bearer: secret });
+      const allText = await all.clone().text();
+      const page = (await ok(all)) as unknown as { data: { id: string }[] };
+      expect(page.data.map((v) => v.id)).not.toContain(taskId);
+
+      for (const text of [singleText, listedText, allText]) expect(text).not.toContain(session);
+    }
+
+    /** The control: `secret` reads the claim on the single read and the cross-project list. */
+    async function readsClaim(secret: string, taskId: string, session: string) {
+      const single = await ok(await req(`/api/v1/tasks/${taskId}`, {}, { bearer: secret }));
+      expect(single.claim).toMatchObject({ session_id: session });
+      const page = (await ok(await req('/api/v1/tasks', {}, { bearer: secret }))) as unknown as {
+        data: { id: string; claim: unknown }[];
+      };
+      expect(page.data.find((v) => v.id === taskId)?.claim).toMatchObject({ session_id: session });
+    }
+
+    it('a token pinned to another project', async () => {
+      const betaId = await beta();
+      const { secret } = await register();
+      const taskId = await newTask();
+      const taken = await claim(taskId, secret);
+
+      // Positive control: Bob's unpinned token reads the claim, so the refusal
+      // below is the pin and nothing else.
+      await readsClaim(await bobToken(null), taskId, taken.session);
+
+      await readsAs(await bobToken([betaId]), taskId, taken.session);
+    });
+
+    it('an agent with no grant on the task’s project', async () => {
+      const betaId = await beta();
+      const { secret } = await register();
+      const taskId = await newTask();
+      const taken = await claim(taskId, secret);
+
+      // Positive control: an agent granted alpha reads it.
+      await readsClaim(await agentOn([alpha]), taskId, taken.session);
+
+      await readsAs(await agentOn([betaId]), taskId, taken.session, 'agent_not_granted');
+    });
+  });
 });
 
 async function bearerSecret(cookie: string, name: string): Promise<string> {

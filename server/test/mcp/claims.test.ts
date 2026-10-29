@@ -264,6 +264,108 @@ const EXEMPT: Record<string, string> = {
   update_project_context: 'the project brief, not a task',
 };
 
+describe('the live claim never reaches a caller who cannot read the task (LAI-568)', () => {
+  /** A second project Bob is a member of, so a restriction is the only thing in the way. */
+  async function beta(): Promise<string> {
+    const created = await must(
+      '/api/v1/projects',
+      { method: 'POST', body: JSON.stringify({ name: 'beta', slug: 'beta', prefix: 'BET' }) },
+      ownerCookie,
+    );
+    await must(
+      '/api/v1/projects/beta/members',
+      { method: 'POST', body: JSON.stringify({ user_id: bob.id, role: 'member' }) },
+      ownerCookie,
+    );
+    return created.id as string;
+  }
+
+  async function agentOn(projectIds: string[]): Promise<string> {
+    return (
+      await must(
+        '/api/v1/agents',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            display_name: 'Elsewhere',
+            harness: 'codex',
+            grants: projectIds.map((project_id) => ({ project_id, scope: 'full' })),
+          }),
+        },
+        bob.cookie,
+      )
+    ).secret as string;
+  }
+
+  async function bobToken(projectIds: string[] | null): Promise<string> {
+    return (
+      await must(
+        '/api/v1/tokens',
+        {
+          method: 'POST',
+          body: JSON.stringify({ name: 'reader', scope: 'full', project_ids: projectIds }),
+        },
+        bob.cookie,
+      )
+    ).secret as string;
+  }
+
+  /** A task held by Bob's agent, and the holder's session id. */
+  async function held(): Promise<{ key: string; session: string }> {
+    const { secret } = await register();
+    const task = await newTask();
+    const holder = await connect(secret);
+    const out = await succeeded(holder, 'start_working', { task: task.key });
+    await holder.close();
+    return { key: task.key, session: (out.claim as ClaimOut).session_id };
+  }
+
+  /** `get_task_context` as `secret`: the claim when readable, else the refusal and its text. */
+  async function context(secret: string, key: string) {
+    const client = await connect(secret);
+    const result = await client.callTool({ name: 'get_task_context', arguments: { task: key } });
+    await client.close();
+    return { result, text: JSON.stringify(result) };
+  }
+
+  it('a granted agent reads it; an agent with no grant on the project is refused without it', async () => {
+    const betaId = await beta();
+    const { key, session } = await held();
+
+    // Positive control: the same read on an agent granted alpha carries the claim.
+    const granted = await context(await agentOn([alpha]), key);
+    expect(granted.result.isError, granted.text).not.toBe(true);
+    const task = (granted.result.structuredContent as { task: { claim: unknown } }).task;
+    expect(task.claim).toMatchObject({ session_id: session, state: 'active' });
+
+    const ungranted = await context(await agentOn([betaId]), key);
+    expect(ungranted.result.isError, ungranted.text).toBe(true);
+    expect((ungranted.result.structuredContent as ErrorBody).error).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'project.read', reason: 'agent_not_granted' },
+    });
+    expect(ungranted.text).not.toContain(session);
+  });
+
+  it('an unpinned token reads it; one pinned to another project is refused without it', async () => {
+    const betaId = await beta();
+    const { key, session } = await held();
+
+    const unpinned = await context(await bobToken(null), key);
+    expect(unpinned.result.isError, unpinned.text).not.toBe(true);
+    const task = (unpinned.result.structuredContent as { task: { claim: unknown } }).task;
+    expect(task.claim).toMatchObject({ session_id: session, state: 'active' });
+
+    const pinned = await context(await bobToken([betaId]), key);
+    expect(pinned.result.isError, pinned.text).toBe(true);
+    expect((pinned.result.structuredContent as ErrorBody).error).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'project.read' },
+    });
+    expect(pinned.text).not.toContain(session);
+  });
+});
+
 describe('the census: every tool is fenced or named', () => {
   it('the tools the server registers are exactly FENCED and EXEMPT', async () => {
     const { secret } = await register();
