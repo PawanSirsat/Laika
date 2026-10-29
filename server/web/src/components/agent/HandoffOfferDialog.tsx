@@ -4,7 +4,12 @@ import { clockTime } from '../../api/time-label.ts';
 import { Button } from '../forms/Button.tsx';
 import { useDialogFocus } from '../use-dialog-focus.ts';
 import { NOTE_WORDS, RECEIVER_MUST_ACCEPT, type NoteState } from './agent-states.ts';
-import { offerExpiryWords, offerStatusWords, isLiveOffer } from './handoff-derive.ts';
+import {
+  offerExpiryWords,
+  offerStatusWords,
+  isLiveOffer,
+  type ApproveGate,
+} from './handoff-derive.ts';
 import type { AgentNaming } from '../../api/selected-agent.ts';
 import './agent.css';
 
@@ -20,8 +25,11 @@ export interface HandoffOfferDialogProps {
   /** The note the offer carries, and what it says about the save. */
   readonly note: CheckpointSummary | null;
   readonly noteState: NoteState;
-  /** The reader may approve this offer (§3.2: the assignee or a lead, never the receiver's owner). */
-  readonly mayApprove: boolean;
+  /**
+   * Whether *Approve* is shown (§3.2: the assignee or a lead, never the
+   * receiver's owner), and why it is disabled while ownership is unknown.
+   */
+  readonly approve: ApproveGate;
   /** The reader may withdraw it (the assignee, a lead, or the sender's owner). */
   readonly mayCancel: boolean;
   readonly busy: 'approve' | 'cancel' | null;
@@ -68,7 +76,7 @@ export function HandoffOfferDialog({
   checkpoint,
   note,
   noteState,
-  mayApprove,
+  approve,
   mayCancel,
   busy,
   error,
@@ -177,7 +185,7 @@ export function HandoffOfferDialog({
             <dt>Approval</dt>
             <dd data-handoff-approval={offer.requires_approval ? 'required' : 'none'}>
               {!offer.requires_approval
-                ? 'Not needed — the same person owns both agents'
+                ? 'Not required for this offer'
                 : offer.approved_at !== null
                   ? `Approved ${clockTime(offer.approved_at)}`
                   : 'Required — from the task’s assignee or a project lead, never the receiving agent’s owner'}
@@ -216,6 +224,11 @@ export function HandoffOfferDialog({
             {error}
           </p>
         )}
+        {offer.state === 'pending_approval' && approve.kind === 'disabled' && (
+          <p className="handoff-saved" data-approve-reason>
+            {approve.reason}
+          </p>
+        )}
         <div className="handoff-actions">
           <Button variant="secondary" onClick={onClose}>
             Close
@@ -230,8 +243,12 @@ export function HandoffOfferDialog({
               Withdraw offer
             </Button>
           )}
-          {offer.state === 'pending_approval' && mayApprove && (
-            <Button busy={busy === 'approve'} disabled={busy !== null} onClick={onApprove}>
+          {offer.state === 'pending_approval' && approve.kind !== 'hidden' && (
+            <Button
+              busy={busy === 'approve'}
+              disabled={busy !== null || approve.kind === 'disabled'}
+              onClick={onApprove}
+            >
               Approve
             </Button>
           )}

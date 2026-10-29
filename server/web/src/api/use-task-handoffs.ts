@@ -27,7 +27,16 @@ const EMPTY: Pick<TaskHandoffs, 'checkpoints' | 'offers'> = { checkpoints: [], o
  * blanks the panel: a live frame changes a line in place, so the reader's
  * place and focus stay where they were.
  */
-export function useTaskHandoffs(taskId: string, enabled: boolean): TaskHandoffs {
+export function useTaskHandoffs(
+  taskId: string,
+  enabled: boolean,
+  /**
+   * Re-read every `pollMs` while set — a save waiting for its push notice, so
+   * the server's `pending_notice` and `verified` reach a drawer nobody
+   * touches. Skipped while the page is hidden; quiet, so nothing moves.
+   */
+  pollMs?: number,
+): TaskHandoffs {
   const [state, setState] = useState<{
     status: TaskHandoffs['status'];
     checkpoints: readonly Checkpoint[];
@@ -52,10 +61,11 @@ export function useTaskHandoffs(taskId: string, enabled: boolean): TaskHandoffs 
       .then(([checkpoints, offers]) => {
         setState({ status: 'ready', checkpoints: checkpoints.data, offers: offers.data });
       })
-      .catch((cause: unknown) => {
+      .catch(() => {
         if (controller.signal.aborted) return;
-        void cause;
         // Keep whatever was drawn: a failed re-read is not news about the task.
+        // A first read that failed is `error`, never an empty `ready` — the
+        // drawer must not read it as "no saves" (LAI-549 review).
         setState((s) => (s.status === 'ready' ? s : { status: 'error', ...EMPTY }));
       });
     return () => {
@@ -66,6 +76,16 @@ export function useTaskHandoffs(taskId: string, enabled: boolean): TaskHandoffs 
   const refresh = useCallback(() => {
     setAttempt((n) => n + 1);
   }, []);
+
+  useEffect(() => {
+    if (!enabled || pollMs === undefined) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') setAttempt((n) => n + 1);
+    }, pollMs);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [enabled, pollMs]);
   const replaceOffer = useCallback((offer: HandoffOffer) => {
     setState((s) => ({
       ...s,

@@ -24,6 +24,7 @@ import {
   closeBrowser,
   fakeStream,
   open,
+  refuse,
   setTheme,
   until,
   type ApiStub,
@@ -248,6 +249,8 @@ interface World {
   readonly stub: ApiStub;
   /** `t1`'s offers, as `GET /tasks/t1/handoff-offers` answers them now. */
   offers: Record<string, unknown>[];
+  /** The newer save's `pending_notice`, as the server answers it now. */
+  notice: boolean;
 }
 
 function world(): World {
@@ -272,7 +275,7 @@ function world(): World {
   const recoverable = task({ id: 't2', key: 'LC-2', number: 2, title: 'Lapsed with a save' });
   const stranded = task({ id: 't3', key: 'LC-3', number: 3, title: 'Lapsed with no save' });
   const tasks = [handedOff, recoverable, stranded];
-  const w: World = { stub: {}, offers: [offer({})] };
+  const w: World = { stub: {}, offers: [offer({})], notice: true };
 
   const perTask = (t: Record<string, unknown>) => {
     const id = String(t.id);
@@ -341,7 +344,7 @@ function world(): World {
       data: lapsed('t3', 1),
       next_cursor: null,
     },
-    '/api/v1/tasks/t1/checkpoints': {
+    '/api/v1/tasks/t1/checkpoints': () => ({
       data: [
         checkpoint({
           id: '01CKPTNEWER',
@@ -352,12 +355,12 @@ function world(): World {
           verification: 'pending',
           verified_at: null,
           pending_since: NOW - 14 * MIN,
-          pending_notice: true,
+          pending_notice: w.notice,
           refs: [{ ref: 'refs/tags/laika-ckpt/LC-1/01CKPTNEWER', revision: 0, state: 'pending' }],
         }),
         checkpoint({}),
       ],
-    },
+    }),
     '/api/v1/tasks/t1/handoff-offers': () => ({ data: w.offers }),
     '/api/v1/handoff-offers/01OFFER/approve': (call: StubCall) => {
       assert.equal(call.method, 'POST');
@@ -659,6 +662,127 @@ void describe('recovery after an expired claim', () => {
       assert.equal(await box.getByRole('button', { name: 'Release to backlog' }).count(), 1);
       assert.equal(await found.locator('[data-open-handoff]').count(), 0);
       await shoot(h.page, 'recovery-unavailable', '.drawer [data-exec-panel]');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('review fixes (LAI-549, Codex round 1)', () => {
+  void test('a quiet drawer picks up the server’s pending notice, without moving the focus', async () => {
+    const w = world();
+    w.notice = false;
+    const h = await open('/board?project=laika-core&task=t1', w.stub, {
+      before: async (page) => {
+        await fakeStream(page);
+        await page.clock.install();
+      },
+    });
+    try {
+      const found = await panel(h);
+      const newer = found.locator('[data-newer-save] [data-checkpoint="pending"]');
+      await newer.waitFor({ timeout: 10_000 });
+      assert.equal(
+        (await newer.locator('[data-verification]').innerText()).trim(),
+        'Verification pending',
+      );
+      assert.equal(await newer.locator('[data-pending-hint]').count(), 0);
+
+      const toggle = found.getByRole('button', { name: 'Details' });
+      await toggle.focus();
+      const reads = () =>
+        h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/tasks/t1/checkpoints')
+          .length;
+      const before = reads();
+
+      // The server now says the notice is late. Nothing on the page changes
+      // until the drawer asks again — no frame is written for it.
+      w.notice = true;
+      await h.page.clock.fastForward(30_000);
+      assert.equal(reads(), before, 're-read before the interval');
+      await h.page.clock.fastForward(31_000);
+      await until(() => reads() > before, 10_000);
+      assert.ok(reads() > before, 'the drawer never re-read its saves');
+      await until(
+        async () =>
+          (await newer.locator('[data-verification]').innerText()).trim() !==
+          'Verification pending',
+        10_000,
+      );
+      assert.equal(
+        (await newer.locator('[data-verification]').innerText()).trim(),
+        'Verification pending — no push notice from GitHub yet',
+      );
+      assert.equal(await newer.locator('[data-pending-hint]').count(), 1);
+      assert.equal(
+        await toggle.evaluate((el) => el === document.activeElement),
+        true,
+        'the re-read moved the focus',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('no pending save: the drawer does not poll', async () => {
+    const w = world();
+    const h = await open('/board?project=laika-core&task=t2', w.stub, {
+      before: async (page) => {
+        await fakeStream(page);
+        await page.clock.install();
+      },
+    });
+    try {
+      const found = await panel(h);
+      await found.locator('[data-checkpoint="verified"]').waitFor({ timeout: 10_000 });
+      const reads = () =>
+        h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/tasks/t2/checkpoints')
+          .length;
+      const before = reads();
+      await h.page.clock.fastForward(130_000);
+      assert.equal(reads(), before, 'a drawer with nothing pending re-read its saves');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a failed read of the saves is not "no saved checkpoint", and offers no Release', async () => {
+    const w = world();
+    const stub = {
+      ...w.stub,
+      '/api/v1/tasks/t3/checkpoints': refuse(500, 'internal', 'Something broke.'),
+    };
+    const h = await open('/board?project=laika-core&task=t3', stub, { before: fakeStream });
+    try {
+      const found = await panel(h);
+      const unknown = found.locator('[data-recovery="unknown"]');
+      await unknown.waitFor({ timeout: 10_000 });
+      assert.match(await unknown.innerText(), /Could not read this task’s saves/);
+      assert.equal(await found.locator('[data-recovery="unavailable"]').count(), 0);
+      assert.doesNotMatch(await found.innerText(), /Automatic recovery unavailable/);
+      assert.equal(await found.getByRole('button', { name: 'Release to backlog' }).count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Approve waits for the reader’s own agents; disabled with a reason while they fail', async () => {
+    const w = world();
+    const stub = { ...w.stub, '/api/v1/agents': refuse(500, 'internal', 'Something broke.') };
+    const h = await open('/board?project=laika-core&task=t1', stub, { before: fakeStream });
+    try {
+      const found = await panel(h);
+      await found.locator('[data-open-handoff]').click();
+      const dialog = h.page.locator('[data-handoff-offer-dialog]');
+      await dialog.waitFor({ timeout: 10_000 });
+      const approve = dialog.getByRole('button', { name: 'Approve' });
+      await until(async () => (await dialog.locator('[data-approve-reason]').count()) > 0, 10_000);
+      assert.equal(await approve.isDisabled(), true, 'Approve enabled on an unknown owner');
+      assert.equal(
+        (await dialog.locator('[data-approve-reason]').innerText()).trim(),
+        'Could not check whether you own the receiving agent.',
+      );
+      assert.equal(h.calls.filter((c) => c.method === 'POST').length, 0);
     } finally {
       await h.close();
     }

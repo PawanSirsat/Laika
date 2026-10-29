@@ -18,6 +18,9 @@ import {
 } from '../../../src/components/agent/agent-states.ts';
 import { changesExecution } from '../../../src/components/agent/execution-derive.ts';
 import {
+  APPROVE_CHECKING,
+  APPROVE_UNREAD,
+  approveGate,
   asSummary,
   checkpointTitle,
   currentOffer,
@@ -25,6 +28,9 @@ import {
   offerStatusWords,
   panelCheckpointOf,
   panelState,
+  pollsForNotice,
+  RECOVERY_CHECKING,
+  RECOVERY_UNREAD,
   recoveryOf,
   saveRows,
 } from '../../../src/components/agent/handoff-derive.ts';
@@ -304,5 +310,68 @@ void describe('live frames that re-read the drawer', () => {
       assert.equal(changesExecution({ type, payload: {} }), true, type);
     }
     assert.equal(changesExecution({ type: 'comment.added', payload: {} }), false);
+  });
+});
+
+void describe('review fixes (LAI-549, Codex round 1)', () => {
+  const pending = offer({
+    state: 'pending_approval',
+    requires_approval: true,
+    to_agent_id: 'ag-desk',
+  });
+  const reader = (ownAgents: ReadonlySet<string> | 'loading' | 'error') => ({
+    holdsApprove: true,
+    leadsOrAssignee: true,
+    ownAgents,
+  });
+
+  void test('Approve is never enabled before the reader’s own agents are known', () => {
+    assert.deepEqual(approveGate(pending, reader('loading')), {
+      kind: 'disabled',
+      reason: APPROVE_CHECKING,
+    });
+    assert.deepEqual(approveGate(pending, reader('error')), {
+      kind: 'disabled',
+      reason: APPROVE_UNREAD,
+    });
+    // Known: the receiver's owner gets no Approve; anyone else may.
+    assert.deepEqual(approveGate(pending, reader(new Set(['ag-desk']))), { kind: 'hidden' });
+    assert.deepEqual(approveGate(pending, reader(new Set(['ag-laptop']))), { kind: 'enabled' });
+  });
+
+  void test('Approve is hidden without the grant or the role, and on an offer not waiting', () => {
+    const known = new Set<string>();
+    assert.equal(approveGate(pending, { ...reader(known), holdsApprove: false }).kind, 'hidden');
+    assert.equal(approveGate(pending, { ...reader(known), leadsOrAssignee: false }).kind, 'hidden');
+    assert.equal(approveGate(offer({ state: 'open' }), reader(known)).kind, 'hidden');
+  });
+
+  void test('a read in flight or failed is unknown — never "no saved checkpoint"', () => {
+    const none = saveRows([]);
+    assert.deepEqual(recoveryOf({ kind: 'expired' }, null, none, [], 'loading'), {
+      kind: 'unknown',
+      words: RECOVERY_CHECKING,
+    });
+    assert.deepEqual(recoveryOf({ kind: 'expired' }, null, none, [], 'idle'), {
+      kind: 'unknown',
+      words: RECOVERY_CHECKING,
+    });
+    assert.deepEqual(recoveryOf({ kind: 'expired' }, null, none, [], 'error'), {
+      kind: 'unknown',
+      words: RECOVERY_UNREAD,
+    });
+    // Only a read that succeeded confirms the absence.
+    assert.equal(recoveryOf({ kind: 'expired' }, null, none, [], 'ready').kind, 'unavailable');
+  });
+
+  void test('the drawer re-reads while a save waits for its notice, and only then', () => {
+    assert.equal(pollsForNotice([checkpoint({ verification: 'pending' })]), true);
+    assert.equal(
+      pollsForNotice([checkpoint({ verification: 'pending', pending_notice: true })]),
+      true,
+    );
+    assert.equal(pollsForNotice([checkpoint()]), false);
+    assert.equal(pollsForNotice([checkpoint({ verification: 'uncertain' })]), false);
+    assert.equal(pollsForNotice([]), false);
   });
 });

@@ -153,21 +153,38 @@ export function offerExpiryWords(offer: HandoffOffer): string | undefined {
 /** Recovery after an expired claim (§4.71): available, or not, and why. */
 export type Recovery =
   | { readonly kind: 'none' }
+  /** The saves and offers have not been read, or the read failed: nothing is known yet. */
+  | { readonly kind: 'unknown'; readonly words: string }
   | { readonly kind: 'available'; readonly offer: HandoffOffer | undefined }
   | { readonly kind: 'unavailable'; readonly words: string };
+
+/** The state of the drawer's read of saves and offers (`useTaskHandoffs`). */
+export type ReadStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+export const RECOVERY_CHECKING = 'Checking this task’s saves…';
+export const RECOVERY_UNREAD =
+  'Could not read this task’s saves, so whether it can be recovered is not known.';
 
 /**
  * Only when the task's last claim **expired** and no live claim holds it. A
  * verified save makes recovery available — the server opens the offer
  * (`task.recovered`); none means a person has to act.
+ *
+ * **Absence is only confirmed by a read that succeeded** (LAI-549 review): a
+ * read still in flight, or one that failed, is *unknown* — never *no saved
+ * checkpoint*, and never a reason to offer *Release to backlog*.
  */
 export function recoveryOf(
   history: Pick<ClaimHistory, 'kind'>,
   liveClaim: unknown,
   rows: SaveRows,
   offers: readonly HandoffOffer[],
+  read: ReadStatus = 'ready',
 ): Recovery {
   if (history.kind !== 'expired' || (liveClaim ?? null) !== null) return { kind: 'none' };
+  if (read !== 'ready') {
+    return { kind: 'unknown', words: read === 'error' ? RECOVERY_UNREAD : RECOVERY_CHECKING };
+  }
   const offer = offers.find((o) => o.kind === 'recovery' && isLiveOffer(o));
   if (offer !== undefined || rows.verified !== null) return { kind: 'available', offer };
   return { kind: 'unavailable', words: rows.count === 0 ? NO_CHECKPOINT : NO_VERIFIED_CHECKPOINT };
@@ -209,4 +226,51 @@ export function asSummary(value: unknown): CheckpointSummary | null {
   return SUMMARY_FIELDS.every((field) => typeof record[field] === 'string')
     ? (record as unknown as CheckpointSummary)
     : null;
+}
+
+/**
+ * Whether *Approve* is offered, and how (§3.2, §4.71): the task's assignee or
+ * a lead, holding `task.handoff.approve`, and **never the receiving agent's
+ * owner**.
+ *
+ * Who owns the receiver is known only from the reader's own agents. Until
+ * that read has succeeded the answer is not "nobody" — so the button is
+ * disabled with a reason, never enabled on a guess (LAI-549 review).
+ */
+export type ApproveGate =
+  | { readonly kind: 'hidden' }
+  | { readonly kind: 'disabled'; readonly reason: string }
+  | { readonly kind: 'enabled' };
+
+export const APPROVE_CHECKING = 'Checking whether you own the receiving agent…';
+export const APPROVE_UNREAD = 'Could not check whether you own the receiving agent.';
+
+export function approveGate(
+  offer: Pick<HandoffOffer, 'state' | 'to_agent_id'>,
+  reader: {
+    readonly holdsApprove: boolean;
+    readonly leadsOrAssignee: boolean;
+    /** The reader's own agents' ids, or the state of that read when it has not succeeded. */
+    readonly ownAgents: ReadonlySet<string> | 'loading' | 'error';
+  },
+): ApproveGate {
+  if (offer.state !== 'pending_approval') return { kind: 'hidden' };
+  if (!reader.holdsApprove || !reader.leadsOrAssignee) return { kind: 'hidden' };
+  // An unnamed recovery is named by the approver, which this screen does not do.
+  if (offer.to_agent_id === null) return { kind: 'hidden' };
+  if (reader.ownAgents === 'loading') return { kind: 'disabled', reason: APPROVE_CHECKING };
+  if (reader.ownAgents === 'error') return { kind: 'disabled', reason: APPROVE_UNREAD };
+  return reader.ownAgents.has(offer.to_agent_id) ? { kind: 'hidden' } : { kind: 'enabled' };
+}
+
+/** How often a quiet drawer re-reads its saves while one waits for its notice. */
+export const PENDING_POLL_MS = 60_000;
+
+/**
+ * Re-read the saves while any is `pending`: the ten-minute notice
+ * (`pending_notice`) and `verified` are the server's to say, and nothing else
+ * re-reads a drawer nobody touches — verification writes no activity row.
+ */
+export function pollsForNotice(checkpoints: readonly Pick<Checkpoint, 'verification'>[]): boolean {
+  return checkpoints.some((c) => c.verification === 'pending');
 }

@@ -47,7 +47,11 @@ import { ExecutionPanel } from '../../../components/agent/ExecutionPanel.tsx';
 import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
 import { executionView, hasExecution } from '../../../components/agent/execution-derive.ts';
 import {
+  approveGate,
   currentOffer,
+  PENDING_POLL_MS,
+  pollsForNotice,
+  type ApproveGate,
   offerStatusWords,
   panelCheckpointOf,
   panelState,
@@ -452,8 +456,14 @@ export function TaskDetailPanel({
    * activity when a live frame moves them, so a line changes in place and the
    * focus stays where the reader left it.
    */
-  const handoffs = useTaskHandoffs(task.id, hasExecution(execution));
+  const [pollMs, setPollMs] = useState<number | undefined>(undefined);
+  const handoffs = useTaskHandoffs(task.id, hasExecution(execution), pollMs);
   const { refresh: refreshHandoffs } = handoffs;
+  // Poll only while a save waits for its notice; the server decides when it is late.
+  const polling = pollsForNotice(handoffs.checkpoints);
+  useEffect(() => {
+    setPollMs(polling ? PENDING_POLL_MS : undefined);
+  }, [polling]);
   const seenHandoffSignal = useRef(executionSignal);
   useEffect(() => {
     if (executionSignal === seenHandoffSignal.current) return;
@@ -469,8 +479,9 @@ export function TaskDetailPanel({
         task.claim,
         saves,
         handoffs.offers,
+        handoffs.status,
       ),
-    [execution.claimExpired, task.claim, saves, handoffs.offers],
+    [execution.claimExpired, task.claim, saves, handoffs.offers, handoffs.status],
   );
   /*
    * Who may approve or withdraw (§3.2, §4.71): the server's grants first, then
@@ -487,10 +498,19 @@ export function TaskDetailPanel({
     permissions?.me.projects.find((p) => p.project_id === task.project_id)?.role ?? null;
   const leads = projectRole === 'lead' || implicitlyLeads(permissions, task.project_id);
   const isAssignee = meId !== undefined && task.assignee_id === meId;
-  const mayApprove = (o: HandoffOffer): boolean =>
-    holdsProjectAction(permissions, task.project_id, 'task.handoff.approve') &&
-    (leads || isAssignee) &&
-    (o.to_agent_id === null || !myAgentIds.has(o.to_agent_id));
+  /*
+   * The receiver's owner is known only from the reader's own agents: until
+   * that read succeeds, *Approve* is disabled with a reason, never enabled on
+   * an empty list (LAI-549 review).
+   */
+  const ownAgents: ReadonlySet<string> | 'loading' | 'error' =
+    myAgents.kind === 'ready' ? myAgentIds : myAgents.kind;
+  const approveFor = (o: HandoffOffer): ApproveGate =>
+    approveGate(o, {
+      holdsApprove: holdsProjectAction(permissions, task.project_id, 'task.handoff.approve'),
+      leadsOrAssignee: leads || isAssignee,
+      ownAgents,
+    });
   const mayCancel = (o: HandoffOffer): boolean =>
     holdsProjectAction(permissions, task.project_id, 'task.handoff.cancel') &&
     (leads || isAssignee || (o.from_agent_id !== null && myAgentIds.has(o.from_agent_id)));
@@ -1319,7 +1339,7 @@ export function TaskDetailPanel({
                 checkpoint={
                   saves.verified !== null
                     ? panelCheckpointOf(saves.verified, Date.now())
-                    : saves.count > 0
+                    : saves.count > 0 && handoffs.status === 'ready'
                       ? null
                       : undefined
                 }
@@ -1336,7 +1356,7 @@ export function TaskDetailPanel({
                   recovery={recovery}
                   checkpoints={handoffs.checkpoints}
                   agents={agentNames}
-                  mayApprove={mayApprove}
+                  approveFor={approveFor}
                   mayCancel={mayCancel}
                   onRelease={
                     mayEdit && backlog !== undefined && task.status !== 'backlog'

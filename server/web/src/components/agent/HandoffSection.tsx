@@ -14,6 +14,7 @@ import {
   isLiveOffer,
   noteStateOf,
   offerAgentName,
+  type ApproveGate,
   type Recovery,
 } from './handoff-derive.ts';
 import { ageWords } from './execution-derive.ts';
@@ -27,7 +28,8 @@ export interface HandoffSectionProps {
   readonly recovery: Recovery;
   readonly checkpoints: readonly Checkpoint[];
   readonly agents: ReadonlyMap<string, AgentNaming>;
-  readonly mayApprove: (offer: HandoffOffer) => boolean;
+  /** Whether *Approve* is offered for this offer, and why not when disabled (`approveGate`). */
+  readonly approveFor: (offer: HandoffOffer) => ApproveGate;
   readonly mayCancel: (offer: HandoffOffer) => boolean;
   /** Releasing to the backlog, when the reader may move the task; absent otherwise. */
   readonly onRelease?: (() => void) | undefined;
@@ -55,7 +57,7 @@ export function HandoffSection({
   recovery,
   checkpoints,
   agents,
-  mayApprove,
+  approveFor,
   mayCancel,
   onRelease,
   onOffer,
@@ -97,6 +99,11 @@ export function HandoffSection({
   return (
     <>
       {/* *Recovery available* is the panel's state line (`panelState`), said once. */}
+      {recovery.kind === 'unknown' && (
+        <p className="exec-recovery exec-recovery-path" role="status" data-recovery="unknown">
+          {recovery.words}
+        </p>
+      )}
       {recovery.kind === 'unavailable' && (
         <div className="exec-recovery" role="status" data-recovery="unavailable">
           <p className="exec-recovery-words">
@@ -162,7 +169,7 @@ export function HandoffSection({
                   commit_sha: offer.checkpoint.commit_sha,
                 })
           }
-          mayApprove={mayApprove(offer)}
+          approve={approveFor(offer)}
           mayCancel={mayCancel(offer)}
           busy={busy}
           error={error}
