@@ -249,7 +249,7 @@ has delegated product calls to Belka, so each choice below is Belka's.
 
 **Reds after round 1.** Same kinds as before:
 - §3.2 now has 8 unmapped rows;
-- §4 now has 16 missing `handoff_offers` columns plus `tasks.handoff_count`;
+- §4 now has 15 missing `handoff_offers` columns plus `tasks.handoff_count`;
 - the nullability check now lists 19 ghosts;
 - the 8 verbs, the stale `TABLES_NOT_IN_SPEC` entry and the four tools are
   unchanged.
