@@ -21,3 +21,4 @@ the underlying harness (e.g. Codex), its version, and the model."* LAI-586 makes
 - [ ] It sends `model` again on heartbeat when it changes mid-session
 - [ ] Nothing it cannot tell is guessed — an unknown field is omitted, not sent empty
 - [ ] Tests for what the helper sends, asserting the request body
+- [ ] The lost-claim notice (`cli/src/agent-session.ts`, around line 787) tells a `released` claim (do not reclaim — since LAI-586 a claim the selection does not back ends `released`, and its holder may never reclaim it) from an `expired` one (reclaim with `start_working` `reclaim: true`); today it suggests reclaim for both

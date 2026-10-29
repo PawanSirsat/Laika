@@ -538,6 +538,90 @@ describe('D-119: the selected agent owns the claim', () => {
   });
 });
 
+describe('review round 2', () => {
+  function adaId(): string {
+    return h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()!.id;
+  }
+
+  function assign(taskId: string, userId: string) {
+    return req(
+      `/api/v1/tasks/${taskId}`,
+      { method: 'PATCH', body: JSON.stringify({ assignee_id: userId }) },
+      { cookie: bob.cookie },
+    );
+  }
+
+  it('a task assigned to another person: a non-selected agent hears selected_for_another_agent, not the assignee', async () => {
+    const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const direct = await register('Claude Code · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const taskId = await newTask();
+    await ok(await assign(taskId, adaId()));
+    await ok(await select(taskId, polly.agent.id));
+
+    const r = await refusal(await claimReq(taskId, direct.secret));
+
+    expect([r.status, r.code, r.reason]).toEqual([409, 'conflict', 'selected_for_another_agent']);
+    expect(r.details?.selected_agent_id).toBe(polly.agent.id);
+    expect(claimsOf(taskId)).toEqual([]);
+    expect(requests(taskId)).toEqual([{ toAgentId: polly.agent.id, state: 'open' }]);
+  });
+
+  it('the selected agent keeps the assignee rule as before: its open request lets it claim', async () => {
+    const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const taskId = await newTask();
+    await ok(await assign(taskId, adaId()));
+    await ok(await select(taskId, polly.agent.id));
+
+    await claim(taskId, polly.secret);
+
+    expect(requests(taskId)).toEqual([{ toAgentId: polly.agent.id, state: 'accepted' }]);
+    // A claim does not assign (D-114 item 7): Ada stays accountable.
+    expect(h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()?.assigneeId).toBe(adaId());
+  });
+
+  it('with no selection the assignee rule answers as before', async () => {
+    const direct = await register('Claude Code · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const taskId = await newTask();
+    await ok(await assign(taskId, adaId()));
+
+    const r = await refusal(await claimReq(taskId, direct.secret));
+
+    expect([r.status, r.code, r.details?.assignee_id]).toEqual([409, 'conflict', adaId()]);
+    expect(r.reason).toBeUndefined();
+  });
+
+  it('a reclaim accepts the work request re-issued while the claim was expired', async () => {
+    const polly = await register('Polly · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const direct = await register('Claude Code · Belka', [{ project_id: alpha, scope: 'full' }]);
+    const taskId = await newTask();
+    await ok(await select(taskId, polly.agent.id));
+    const taken = await claim(taskId, polly.secret);
+    expireClaims(h.db, Date.now() + LEASE + 1);
+    await ok(await select(taskId, direct.agent.id));
+    await ok(await select(taskId, polly.agent.id));
+    expect(requests(taskId).filter((r) => r.state === 'open')).toEqual([
+      { toAgentId: polly.agent.id, state: 'open' },
+    ]);
+
+    const back = await ok(
+      await req(
+        `/api/v1/tasks/${taskId}/claim/reclaim`,
+        { method: 'POST', body: '' },
+        {
+          bearer: polly.secret,
+        },
+      ),
+    );
+
+    expect((back.claim as { generation: number }).generation).toBe(taken.generation + 1);
+    expect(requests(taskId)).toEqual([
+      { toAgentId: polly.agent.id, state: 'accepted' },
+      { toAgentId: direct.agent.id, state: 'cancelled' },
+      { toAgentId: polly.agent.id, state: 'accepted' },
+    ]);
+  });
+});
+
 describe('a task the caller cannot see answers exactly as one that does not exist', () => {
   /** The body with nothing but bytes: what a caller learns is exactly this. */
   async function bytes(res: Response) {

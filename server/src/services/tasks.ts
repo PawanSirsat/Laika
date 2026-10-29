@@ -48,6 +48,7 @@ import {
   claimView,
   holdsLiveClaim,
   hasOpenWorkRequest,
+  assertSelectedAgentMayClaim,
   liveClaim,
   registeredAgent,
   releaseLiveClaim,
@@ -1745,6 +1746,13 @@ function agentStartWorking(
   const taskId = before.id;
   const onBranch = options.branch?.trim() === '' ? undefined : options.branch?.trim();
   const agent = registeredAgent(actor)!;
+
+  // D-119 first (LAI-586 review round 2): an agent that is not the selected
+  // one hears that reason whatever else is true of the task — the assignee
+  // rule below would otherwise answer it with a bare "already claimed".
+  // Visibility and `task.claim` were asked before this function was reached,
+  // so a hidden task still answers as a missing one.
+  assertSelectedAgentMayClaim(db, actor, taskId, agent.id);
 
   const requested = hasOpenWorkRequest(db, taskId, agent.id);
   if (before.assigneeId !== null && before.assigneeId !== actor.userId && !requested) {
