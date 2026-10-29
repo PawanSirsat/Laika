@@ -201,6 +201,21 @@ const LABELS: Readonly<Record<string, string>> = {
     'expired an agent’s claim — the agent must reclaim explicitly; nothing was restored automatically',
   // The same agent took the task back on purpose, at the next generation.
   'task.claim_reclaimed': 'reclaimed this task after its claim expired',
+  // A save registered on purpose (LAI-545). Registered, not proved: GitHub's
+  // push notice verifies it later, and that writes no row.
+  'task.checkpoint_saved': 'saved a checkpoint',
+  // The hand-off's seven verbs (LAI-546, LAI-549). An offer is not a move:
+  // only the receiver's accept moves the claim, and the words never say
+  // "handed over" for an offer.
+  'task.handoff_offered': 'offered this task to another agent',
+  'task.handoff_approved': 'approved a hand-off',
+  'task.handoff_accepted': 'accepted a hand-off of this task',
+  'task.handoff_declined': 'declined a hand-off of this task',
+  'task.handoff_cancelled': 'withdrew a hand-off of this task',
+  'task.handoff_expired': 'expired a hand-off nobody accepted',
+  // Written by the system when a claim expired with a verified save: an
+  // offer, never an assignment (§4.71).
+  'task.recovered': 'offered this task for recovery from its last verified save',
 
   'comment.added': 'commented',
   'comment.edited': 'edited a comment',

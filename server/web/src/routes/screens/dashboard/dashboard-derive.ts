@@ -207,6 +207,16 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   // person asks, and the expiry is its answer.
   'task.claim_expired': 'expired an agent’s claim on a task',
   'task.claim_reclaimed': 'reclaimed a task after its claim expired',
+  // A save and the hand-off's seven verbs (LAI-545, LAI-546, LAI-549). An
+  // offer is not a move: only an accept says the work changed hands.
+  'task.checkpoint_saved': 'saved a checkpoint on a task',
+  'task.handoff_offered': 'offered a task to another agent',
+  'task.handoff_approved': 'approved a hand-off',
+  'task.handoff_accepted': 'accepted a hand-off',
+  'task.handoff_declined': 'declined a hand-off',
+  'task.handoff_cancelled': 'withdrew a hand-off',
+  'task.handoff_expired': 'expired a hand-off nobody accepted',
+  'task.recovered': 'offered a task for recovery',
 };
 
 /**
