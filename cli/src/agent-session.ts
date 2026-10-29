@@ -4,6 +4,8 @@ import {
   appendFileSync,
   chmodSync,
   closeSync,
+  constants,
+  fstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -499,17 +501,27 @@ const asModel = (value: unknown): string | undefined => {
 /** How much of a transcript is read, from each end. A transcript of any size costs the same. */
 export const TRANSCRIPT_WINDOW = 256 * 1024;
 
-/** The first and last {@link TRANSCRIPT_WINDOW} bytes of a regular file, or nothing. */
-function transcriptEnds(path: unknown): { head: string; tail: string } | undefined {
+/**
+ * The first and last {@link TRANSCRIPT_WINDOW} bytes of a regular file, or
+ * nothing. **Opened first, then checked**: the descriptor is what is
+ * `fstat`ed, so a FIFO or device swapped in for the path after any check is
+ * still refused, and `O_NONBLOCK` keeps the open itself from waiting on a
+ * FIFO with no writer. `open` is a parameter only so a test can swap the path
+ * at the moment it is opened.
+ */
+export function transcriptEnds(
+  path: unknown,
+  open: (path: string, flags: number) => number = openSync,
+): { head: string; tail: string } | undefined {
   if (typeof path !== 'string' || !path.startsWith('/')) return undefined;
   let fd: number | undefined;
   try {
+    const handle = open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    fd = handle;
     // A FIFO or a device would block or never end: only a regular file is read.
-    const stat = statSync(path);
+    const stat = fstatSync(handle);
     const size = stat.isFile() ? stat.size : -1;
     if (size <= 0) return undefined;
-    const handle = openSync(path, 'r');
-    fd = handle;
     const read = (at: number, length: number): string => {
       const buffer = Buffer.alloc(length);
       return buffer.toString('utf8', 0, readSync(handle, buffer, 0, length, at));
@@ -1045,8 +1057,9 @@ export async function beatOnce(
   if (current.status !== 'live') return current.status === 'ended' ? 'ended' : 'idle';
 
   if (result.kind === 'ok' && isRecord(result.body)) {
-    // Told only now that the board has answered: a beat that failed sends it again.
-    current.reported = { ...current.reported, ...changed };
+    // Told only by a `200`, the heartbeat's own answer (SPEC §6.4): any other
+    // answer, or a beat that failed, leaves the fields to be sent again.
+    if (result.status === 200) current.reported = { ...current.reported, ...changed };
     current.beats += 1;
     current.failures = 0;
     current.last_beat_at = deps.now();

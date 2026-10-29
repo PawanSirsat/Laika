@@ -13,6 +13,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
@@ -64,6 +65,7 @@ import {
   startSession,
   statePath,
   TRANSCRIPT_WINDOW,
+  transcriptEnds,
   writeCredential,
   UNKNOWN,
   writeState,
@@ -1578,6 +1580,26 @@ void describe('what a session says about itself (LAI-588, D-118)', () => {
     ]);
   });
 
+  void test('only a 200 marks a field told: a 201 with a body leaves it to be sent again', async () => {
+    const home = temp();
+    const created = () =>
+      new Response(JSON.stringify({ session: {}, claims: [], lost: [] }), { status: 201 });
+    const w = world(home, { beat: [created(), 'ok', 'ok'] });
+    await startSession(w.deps, { ...request(), self: { model: 'claude-opus-5-5' } });
+    const path = statePath(home, 'claude-code', 'hs-1');
+    noteSelfReport(home, path, { model: 'claude-sonnet-5-5' });
+    assert.equal(await beatOnce(w.deps, path, CRED), 'renewed');
+    assert.deepEqual(readState(path)?.reported, { model: 'claude-opus-5-5' });
+    await beatOnce(w.deps, path, CRED);
+    assert.deepEqual(readState(path)?.reported, { model: 'claude-sonnet-5-5' });
+    await beatOnce(w.deps, path, CRED);
+    assert.deepEqual(sent(w, 'beat'), [
+      '{"model":"claude-sonnet-5-5"}',
+      '{"model":"claude-sonnet-5-5"}',
+      '',
+    ]);
+  });
+
   void test('a version first read after the start goes on the next heartbeat', async () => {
     const home = temp();
     const w = world(home);
@@ -1659,13 +1681,11 @@ void describe('reading the harness’s own record (LAI-588)', () => {
 
   void test('nothing found is nothing: no file, not a file, not absolute, or not the board’s shape', () => {
     const home = temp();
-    const fifo = join(home, 'fifo');
-    execFileSync('mkfifo', [fifo]);
+    // A FIFO is the next test's: run in a child, so a blocking open cannot hang this one.
     for (const transcript_path of [
       undefined,
       join(home, 'absent.jsonl'),
       home,
-      fifo, // would block for ever if it were opened
       'relative.jsonl',
       file(home, 'empty.jsonl', ''),
     ]) {
@@ -1690,6 +1710,49 @@ void describe('reading the harness’s own record (LAI-588)', () => {
       {},
     );
     assert.deepEqual(readSelfReport('claude-code', { transcript_path: bad, model: '' }), {});
+  });
+
+  void test('the opened descriptor is checked, not the path: a FIFO, or one swapped in at open, is refused at once', () => {
+    // A regular file passes any check made on the path; the FIFO replaces it
+    // in the instant it is opened. Run in a child with a timeout, because an
+    // open that waits on a FIFO with no writer would hang this process.
+    const home = temp();
+    const path = file(home, 'swapped.jsonl', claudeTranscript('2.1.312', 'claude-opus-5-5'));
+    const fifo = join(home, 'fifo');
+    const plainFifo = join(home, 'plain-fifo');
+    execFileSync('mkfifo', [fifo]);
+    execFileSync('mkfifo', [plainFifo]);
+    const module = new URL('../src/agent-session.ts', import.meta.url).href;
+    const code = [
+      `import { openSync, renameSync } from 'node:fs';`,
+      `import { transcriptEnds } from ${JSON.stringify(module)};`,
+      `const [path, fifo, plainFifo] = process.argv.slice(1);`,
+      `const swapped = transcriptEnds(path, (p, flags) => { renameSync(fifo, p); return openSync(p, flags); });`,
+      `const plain = transcriptEnds(plainFifo);`,
+      `process.stdout.write(JSON.stringify([swapped ?? null, plain ?? null]));`,
+    ].join('\n');
+    const started = Date.now();
+    const run = spawnSync(
+      process.execPath,
+      ['--input-type=module', '-e', code, path, fifo, plainFifo],
+      {
+        encoding: 'utf8',
+        timeout: 10_000,
+        killSignal: 'SIGKILL',
+      },
+    );
+    assert.equal(
+      run.signal,
+      null,
+      `the open blocked: killed after ${String(Date.now() - started)} ms`,
+    );
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout, '[null,null]');
+    // The swap really happened: what was opened was the FIFO.
+    assert.ok(statSync(path).isFIFO());
+    // And the same file, not swapped, is read.
+    const plain = file(home, 'plain.jsonl', 'x\n');
+    assert.deepEqual(transcriptEnds(plain), { head: 'x\n', tail: 'x\n' });
   });
 
   void test('a transcript of any size is read at its ends only', () => {
