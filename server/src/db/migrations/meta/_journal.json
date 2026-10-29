@@ -449,6 +449,13 @@
       "when": 1793221012206,
       "tag": "0064_agent_session_harness_model",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "6",
+      "when": 1793259883441,
+      "tag": "0065_recognised_agent_devices",
+      "breakpoints": true
     }
   ]
 }
