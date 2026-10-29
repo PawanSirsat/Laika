@@ -16,6 +16,12 @@ import { ApiError } from './errors.ts';
 export interface ProjectContext {
   readonly context_md: string;
   /**
+   * The revision this text is (SPEC §4.68, LAI-555). A save names it as
+   * `base_revision`, so one made over somebody else's newer save is refused
+   * rather than silently overwriting it.
+   */
+  readonly revision: number;
+  /**
    * Length and limit come **from the server**, not from a constant here.
    *
    * The bound is enforced in the service so REST and MCP share one rule; a
@@ -36,10 +42,14 @@ export function getProjectContext(slug: string, signal?: AbortSignal): Promise<P
   );
 }
 
-export function updateProjectContext(slug: string, contextMd: string): Promise<ProjectContext> {
+export function updateProjectContext(
+  slug: string,
+  contextMd: string,
+  baseRevision: number,
+): Promise<ProjectContext> {
   return request<ProjectContext>(`/projects/${encodeURIComponent(slug)}/context`, {
     method: 'PATCH',
-    body: { context_md: contextMd },
+    body: { context_md: contextMd, base_revision: baseRevision },
   });
 }
 
@@ -104,6 +114,12 @@ export function contextBudget(used: number, limit: number): ContextBudget {
  */
 export function readableContextError(cause: unknown, actualLength?: number): string {
   if (!(cause instanceof ApiError)) return 'Could not save the context document.';
+
+  // Somebody saved since this was opened (LAI-555). The text typed here is
+  // kept; LAI-556 builds the history and the merge.
+  if ((cause.details as { readonly reason?: unknown } | null)?.reason === 'stale_context_revision') {
+    return 'Somebody saved a newer version while you were editing. Your text is still here: copy it, reopen the document, and apply your change again.';
+  }
 
   const details = cause.details as {
     readonly limit?: unknown;
