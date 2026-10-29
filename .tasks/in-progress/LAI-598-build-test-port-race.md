@@ -2,12 +2,13 @@
 id: LAI-598
 title: 'server: build.test.ts boots the built server on a port another process can take first (EADDRINUSE)'
 area: core
-assignee: unclaimed
+assignee: chief
 priority: p1
 parent: LAIKA-785
 depends-on: []
 discovered-from: LAI-534
-status: backlog
+status: in-progress
+started: 2026-10-29T08:49:50Z
 ---
 
 ## Goal
