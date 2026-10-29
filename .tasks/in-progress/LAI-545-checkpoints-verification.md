@@ -232,7 +232,11 @@ LAI-545's own are all green. Remaining:
   *every type the server emits has wording*;
   `server/web/test/routes/screens/dashboard/dashboard-derive.test.ts` ›
   *covers every verb the server can write* — each for `task.checkpoint_saved`.
-- `cli/test/plugin-mcp.test.ts` (SHELL) mirrors the tool list; not run here.
+- **SHELL (cli), verbatim:** `cli/test/plugin-mcp.test.ts` › *the tool surface,
+  from both sides* › *and they are exactly these* — `+ 'checkpoint_task'` (its
+  hard-coded list needs the tool); and › *§7.1 and the registry name exactly
+  the same tools* — `agent_sync`, `offer_handoff`, `respond_handoff` (LAI-546).
+  Run with `node --test test/plugin-mcp.test.ts`: exit 1, 5 pass, 2 fail.
 
 ### Verification (touched files only, one at a time, `uptime` first — the owner's rule)
 
