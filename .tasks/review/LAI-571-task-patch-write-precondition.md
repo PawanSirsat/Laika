@@ -218,6 +218,37 @@ the first 128 bits of SHA-256 over `JSON.stringify` of the `TaskView`, and
 LAI-317 (writes without `If-Match` stamp `now`) is moot for the precondition
 now. It stays open only if `updated_at` itself should be strictly increasing.
 
+**Round 3 (Codex at `8c4881c1`).** The digest design was accepted. Two gaps
+were blocking, and both are now fixed:
+
+- **The view is read entirely under the lock.** `updateTask` hashed
+  `project.prefix` from `requireTask`, which runs before `BEGIN IMMEDIATE`. A
+  prefix rename committed in between let a `LAI-1` token pass on a task that was
+  by then `NEW-1`. The prefix and the row are now read again inside the
+  transaction, for the check and for the returned view.
+  - Regression: a spy on `db.transaction` commits the rename at exactly that
+    point, and the PATCH must get `409` with `current.key` `NEW-n`.
+  - Mutation check: using the stale prefix again reddens the regression.
+- **List rows carry `etag`.** `GET /projects/:slug/tasks` and `GET /tasks`
+  give each row `etag`, the same quoted value a `GET /tasks/:id` of that task
+  sends. It is computed from the full view, so `?fields=slim` rows carry it
+  too, although a slim row cannot be hashed back to it. The rows are served as
+  `ListedTaskView` and `ListedTaskSummaryView`, which are `TaskView` and
+  `TaskSummaryView` plus `etag`.
+  - `TaskView` itself is unchanged, so single reads, MCP and the client's
+    `Task` / `TaskSummary` pairs need nothing.
+  - The two new types are in `UNPAIRED` until SHELL's follow-on mirrors them.
+  - Tests: for both lists, full and slim, each row's `etag` equals its GET's.
+    A slim row's `etag` guards a PATCH: `200`, and then stale is `409`.
+  - LAI-795's "a row is the GET body" test now reads "the GET body plus that
+    GET's ETag".
+  - Mutation check: hashing the slim row reddens the slim tests.
+- **Non-blocking, done.**
+  - The offboarding, heartbeat, webhook, timestamps-backfill and
+    estimate-recompute scenarios now call the real service or route. Before,
+    they wrote the column directly.
+  - The census classifies `task_rounds` as shown, through `send_back`.
+
 ## Proposed SPEC §6.4 wording (for polly to apply)
 
 This is a new paragraph after the `PATCH /tasks/:id` body paragraph (the one
@@ -241,5 +272,12 @@ ending *"…and pages with `cursor` like any other filter (D-066)."*):
 > `400 bad_request` with `details: { header: 'If-Match' }`. Without `If-Match`
 > a `PATCH` is unconditional, as before. `updated_at` is the time of the last
 > edit and is not the version. MCP's `update_task` takes no precondition.
+>
+> **Every row of a task list carries its own `etag`.** On `GET
+> /projects/:slug/tasks` and `GET /tasks`, each row has `etag`, the same quoted
+> value a `GET /tasks/:id` of that task would send as `ETag`, so a client can
+> make a guarded `PATCH` straight from a list. It is the version of the full
+> task, so a `?fields=slim` row carries it too. A single task's body does not
+> repeat it: the header is its `etag`.
 
 No `TaskView` field was added, so §4.5 and the client types need nothing.
