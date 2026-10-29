@@ -2,11 +2,12 @@
 id: LAI-547
 title: 'Checkpoint helper: isolated worktree, safe staging, no concurrent git, push then register with retry'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-542, LAI-545]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-30T04:50:00Z
 ---
 
 Implements **proposal §4.3.1, §4.7** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
