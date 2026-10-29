@@ -3025,7 +3025,14 @@ twenty most recent, newest first, and every activity row (§4.8) carries
 taken when it was written. A session's `connection` is one of `live`, `suspect`
 (silent past §9.1's suspect interval) or `ended`; a claim is `{ id, task_id,
 session_id, agent_id, generation, state, lease_expires_at, created_at, ended_at
-}`. A heartbeat answers `{ session, claims, lost }`: the live claims it renewed,
+}`. A task read — `GET /tasks/:id` and the task lists — carries `claim`, the
+task's live claim (`active` or `paused`) or `null` (LAI-568): `{ generation,
+state, agent_id, session_id, lease_expires_at, last_heartbeat_at, connection,
+suspect_after_ms, device_label, harness, harness_version, model }`, with
+`connection` `live` or `suspect` as of the read, and the last three the holding
+session's self-reported fields as it last sent them — `null` where it sent
+none, and deciding nothing (LAI-593). A heartbeat answers `{ session, claims,
+lost }`: the live claims it renewed,
 and the session's claims that are no longer live — **an expired one stays in
 `lost`; a heartbeat never brings it back**. A heartbeat to an ended session is
 `409`, `reason: stale_claim`. All three `/agent-sessions` routes are under
