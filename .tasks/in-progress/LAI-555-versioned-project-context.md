@@ -2,11 +2,12 @@
 id: LAI-555
 title: 'Versioned project context: immutable revisions, optimistic write, per-session seen revision, context_revision on MCP responses'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-541]
 discovered-from:
-status: backlog
+started: 2026-10-29T15:38:35Z
+status: in-progress
 ---
 
 Implements **proposal §4.6 (Context revisions)** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
