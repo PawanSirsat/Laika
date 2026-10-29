@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type { AgentClient } from '../../api/agent-clients.ts';
 import { dateTime } from '../../api/time-label.ts';
 import { AgentChip, type AgentChipProps } from './AgentChip.tsx';
@@ -7,6 +7,8 @@ import {
   CLAIM_EXPIRED_WORDS,
   NO_CHECKPOINT,
   NOTE_WORDS,
+  PENDING_NOTICE_HINT,
+  PENDING_NOTICE_WORDS,
   VERIFICATION_WORDS,
   type CheckpointVerification,
   type ExecutionState,
@@ -25,10 +27,19 @@ export interface PanelCheckpoint {
   readonly summary: string;
   /** How long ago it was saved, already worded: "12 min ago". */
   readonly age: string;
+  /** When it was saved, as a time: the full date on hover. Absent on a gallery fixture. */
+  readonly savedAt?: number | undefined;
   readonly verification: CheckpointVerification;
+  /**
+   * `pending` past §9.1.1's ten minutes, as the server decided it
+   * (`pending_notice`): *Verification pending — no push notice from GitHub yet*.
+   */
+  readonly pendingNotice?: boolean | undefined;
   readonly note: NoteState;
   /** The full commit SHA. Shown short, in full under Details. */
   readonly sha: string;
+  /** The note's `failing`, as written: a save with failing tests is still a save (D-115 item 8). */
+  readonly failing?: string | undefined;
 }
 
 /** The latest claim the task's activity records (LAI-543): a history, not a heartbeat. */
@@ -92,8 +103,17 @@ export interface ExecutionPanelProps {
   readonly claimExpired?: boolean | undefined;
   /** The latest **verified** checkpoint. `undefined` leaves the row out (Phase 3, LAI-549). */
   readonly checkpoint?: PanelCheckpoint | null | undefined;
+  /** What the save row says when `checkpoint` is null. */
+  readonly noCheckpointWords?: string | undefined;
+  /**
+   * Owners and admins also get §4.68's pointer — the webhook's *Recent
+   * Deliveries* and *Redeliver* — beside a save whose notice never came.
+   */
+  readonly showPendingHint?: boolean | undefined;
   /** A newer checkpoint not yet verified, drawn beside the verified one. */
   readonly pendingCheckpoint?: PanelCheckpoint | undefined;
+  /** The recovery and hand-off sections, between the facts and **Details** (LAI-549). */
+  readonly children?: ReactNode;
   /** The hand-off in flight, in words — never "accepted" on the receiver's behalf. */
   readonly handoff?: string | undefined;
   /** `task_claims.generation`. */
@@ -117,11 +137,14 @@ export function ExecutionPanel({
   sessionHarnessVersion,
   sessionModel,
   checkpoint,
+  noCheckpointWords = NO_CHECKPOINT,
+  showPendingHint = false,
   pendingCheckpoint,
   handoff,
   generation,
   claim,
   claimExpired = false,
+  children,
 }: ExecutionPanelProps) {
   return (
     <section className="exec-panel" aria-label="Agent execution" data-exec-panel>
@@ -198,28 +221,29 @@ export function ExecutionPanel({
             <dt>Latest verified save</dt>
             <dd>
               {checkpoint === null ? (
-                <span data-no-checkpoint>{NO_CHECKPOINT}</span>
+                <span data-no-checkpoint>{noCheckpointWords}</span>
               ) : (
-                <CheckpointLine checkpoint={checkpoint} />
+                <CheckpointLine checkpoint={checkpoint} showHint={showPendingHint} />
               )}
             </dd>
           </div>
         )}
         {pendingCheckpoint !== undefined && (
           <div>
-            <dt>Newer save</dt>
-            <dd>
-              <CheckpointLine checkpoint={pendingCheckpoint} />
+            <dt>Newer save, unverified</dt>
+            <dd data-newer-save>
+              <CheckpointLine checkpoint={pendingCheckpoint} showHint={showPendingHint} />
             </dd>
           </div>
         )}
         {handoff !== undefined && (
           <div>
             <dt>Hand-off</dt>
-            <dd>{handoff}</dd>
+            <dd data-handoff-status>{handoff}</dd>
           </div>
         )}
       </dl>
+      {children}
       <ExecutionDetails
         generation={generation}
         liveSessionId={liveSessionId}
@@ -262,17 +286,56 @@ function ClaimExpiredLine() {
   );
 }
 
-function CheckpointLine({ checkpoint }: { readonly checkpoint: PanelCheckpoint }) {
+/**
+ * One save: its name, short SHA, age and proof, then what its note says.
+ * Every state is words (SPEC §4.68 *What the UI says*); the note's text is the
+ * agent's and is drawn as text, never as markup (D-115 item 7).
+ */
+function CheckpointLine({
+  checkpoint,
+  showHint = false,
+}: {
+  readonly checkpoint: PanelCheckpoint;
+  readonly showHint?: boolean;
+}) {
+  const notice = checkpoint.verification === 'pending' && checkpoint.pendingNotice === true;
   return (
-    <span className="exec-checkpoint" data-checkpoint={checkpoint.verification}>
+    <span
+      className="exec-checkpoint"
+      data-checkpoint={checkpoint.verification}
+      data-pending-notice={notice ? '' : undefined}
+    >
       <span className="exec-checkpoint-summary">{checkpoint.summary}</span>
       <span className="exec-checkpoint-meta">
-        <code>{checkpoint.sha.slice(0, 7)}</code> · saved {checkpoint.age} ·{' '}
-        <b>{VERIFICATION_WORDS[checkpoint.verification]}</b>
+        <code>{checkpoint.sha.slice(0, 7)}</code> · saved{' '}
+        {checkpoint.savedAt === undefined ? (
+          checkpoint.age
+        ) : (
+          <time
+            dateTime={new Date(checkpoint.savedAt).toISOString()}
+            title={dateTime(checkpoint.savedAt, Date.now())}
+          >
+            {checkpoint.age}
+          </time>
+        )}{' '}
+        ·{' '}
+        <b data-verification>
+          {notice ? PENDING_NOTICE_WORDS : VERIFICATION_WORDS[checkpoint.verification]}
+        </b>
       </span>
+      {notice && showHint && (
+        <span className="exec-checkpoint-hint" data-pending-hint>
+          {PENDING_NOTICE_HINT}
+        </span>
+      )}
       <span className="exec-checkpoint-note" data-note={checkpoint.note}>
         {NOTE_WORDS[checkpoint.note]}
       </span>
+      {checkpoint.failing !== undefined && (
+        <span className="exec-checkpoint-failing" data-failing>
+          Known failing: {checkpoint.failing}
+        </span>
+      )}
     </span>
   );
 }

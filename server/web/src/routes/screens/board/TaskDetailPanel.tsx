@@ -46,6 +46,18 @@ import { TokensSection } from '../task/TokensSection.tsx';
 import { ExecutionPanel } from '../../../components/agent/ExecutionPanel.tsx';
 import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
 import { executionView, hasExecution } from '../../../components/agent/execution-derive.ts';
+import {
+  currentOffer,
+  offerStatusWords,
+  panelCheckpointOf,
+  panelState,
+  recoveryOf,
+  saveRows,
+} from '../../../components/agent/handoff-derive.ts';
+import { HandoffSection } from '../../../components/agent/HandoffSection.tsx';
+import type { HandoffOffer } from '../../../api/handoffs.ts';
+import { useTaskHandoffs } from '../../../api/use-task-handoffs.ts';
+import { usePermissions, holdsProjectAction, implicitlyLeads } from '../../../api/permissions.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { avatarColorSolid } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -434,6 +446,56 @@ export function TaskDetailPanel({
       executionView(task, detail.status === 'ready' ? detail.activity : [], agentNames, claimNow),
     [task, detail, agentNames, claimNow],
   );
+  /*
+   * **Saves and hand-offs** (LAI-549): read only for a task an agent has
+   * claimed — nothing else can have either — and re-read quietly with the
+   * activity when a live frame moves them, so a line changes in place and the
+   * focus stays where the reader left it.
+   */
+  const handoffs = useTaskHandoffs(task.id, hasExecution(execution));
+  const { refresh: refreshHandoffs } = handoffs;
+  const seenHandoffSignal = useRef(executionSignal);
+  useEffect(() => {
+    if (executionSignal === seenHandoffSignal.current) return;
+    seenHandoffSignal.current = executionSignal;
+    refreshHandoffs();
+  }, [executionSignal, refreshHandoffs]);
+  const saves = useMemo(() => saveRows(handoffs.checkpoints), [handoffs.checkpoints]);
+  const offer = useMemo(() => currentOffer(handoffs.offers), [handoffs.offers]);
+  const recovery = useMemo(
+    () =>
+      recoveryOf(
+        { kind: execution.claimExpired ? 'expired' : 'none' },
+        task.claim,
+        saves,
+        handoffs.offers,
+      ),
+    [execution.claimExpired, task.claim, saves, handoffs.offers],
+  );
+  /*
+   * Who may approve or withdraw (§3.2, §4.71): the server's grants first, then
+   * the row's own condition — the task's assignee or a lead, and never the
+   * owner of the receiving agent. The server refuses anything else anyway;
+   * this only keeps a control from being offered to someone it would refuse.
+   */
+  const { permissions } = usePermissions();
+  const myAgentIds = useMemo(
+    () => new Set(agentsOf(myAgents).map((agent) => agent.id)),
+    [myAgents],
+  );
+  const projectRole =
+    permissions?.me.projects.find((p) => p.project_id === task.project_id)?.role ?? null;
+  const leads = projectRole === 'lead' || implicitlyLeads(permissions, task.project_id);
+  const isAssignee = meId !== undefined && task.assignee_id === meId;
+  const mayApprove = (o: HandoffOffer): boolean =>
+    holdsProjectAction(permissions, task.project_id, 'task.handoff.approve') &&
+    (leads || isAssignee) &&
+    (o.to_agent_id === null || !myAgentIds.has(o.to_agent_id));
+  const mayCancel = (o: HandoffOffer): boolean =>
+    holdsProjectAction(permissions, task.project_id, 'task.handoff.cancel') &&
+    (leads || isAssignee || (o.from_agent_id !== null && myAgentIds.has(o.from_agent_id)));
+  const orgRole = permissions?.me.org_role;
+  const backlog = statuses.find((s) => s.category === 'backlog' && !s.hidden);
   /**
    * Which tab is showing.
    *
@@ -1238,7 +1300,11 @@ export function TaskDetailPanel({
             <div className="panel-side-exec">
               <ExecutionPanel
                 /* The Agent row above carries *Waiting for agent*. */
-                state={execution.state === 'waiting_for_agent' ? null : execution.state}
+                state={panelState(
+                  execution.state === 'waiting_for_agent' ? null : execution.state,
+                  recovery,
+                  saves,
+                )}
                 intended={execution.intended}
                 session={execution.session}
                 lastSeen={execution.lastSeen}
@@ -1250,7 +1316,42 @@ export function TaskDetailPanel({
                 claim={execution.claim}
                 claimExpired={execution.claimExpired}
                 generation={execution.generation}
-              />
+                checkpoint={
+                  saves.verified !== null
+                    ? panelCheckpointOf(saves.verified, Date.now())
+                    : saves.count > 0
+                      ? null
+                      : undefined
+                }
+                noCheckpointWords="None verified yet"
+                pendingCheckpoint={
+                  saves.newer === undefined ? undefined : panelCheckpointOf(saves.newer, Date.now())
+                }
+                showPendingHint={orgRole === 'owner' || orgRole === 'admin'}
+                handoff={offer === undefined ? undefined : offerStatusWords(offer, agentNames)}
+              >
+                <HandoffSection
+                  taskKey={task.key}
+                  offer={offer}
+                  recovery={recovery}
+                  checkpoints={handoffs.checkpoints}
+                  agents={agentNames}
+                  mayApprove={mayApprove}
+                  mayCancel={mayCancel}
+                  onRelease={
+                    mayEdit && backlog !== undefined && task.status !== 'backlog'
+                      ? () => {
+                          onMove(task.id, backlog.id);
+                        }
+                      : undefined
+                  }
+                  onOffer={(answer) => {
+                    handoffs.replaceOffer(answer);
+                    refreshHandoffs();
+                  }}
+                  now={Date.now()}
+                />
+              </ExecutionPanel>
             </div>
           )}
         </div>
