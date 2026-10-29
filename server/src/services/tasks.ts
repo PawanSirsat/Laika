@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   and,
   asc,
@@ -40,7 +41,6 @@ import { backfillTaskPositions, lastPosition } from '../db/backfill.ts';
 import { keyAfter, keyBetween } from '../db/order-key.ts';
 import { CATEGORY_LABELS, statusForCategory, type StatusRef } from '../db/project-statuses.ts';
 import { projects, projectStatuses, taskDependencies, tasks, users } from '../db/schema.ts';
-import { nextTaskVersion, touchTask } from '../db/task-version.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, effectiveProjectRole } from '../policy/can.ts';
 import {
@@ -1322,11 +1322,30 @@ export interface UpdateTaskInput {
    */
   selected_agent_id?: string | null | undefined;
   /**
-   * The `updated_at` named by PATCH's `If-Match` header. Absent keeps the
-   * unconditional update every existing caller uses (LAI-571).
+   * The ETag named by PATCH's `If-Match` header ({@link taskVersion}). Absent
+   * keeps the unconditional update every existing caller uses (LAI-571).
    */
-  expected_updated_at?: number | undefined;
+  expected_version?: string | undefined;
   now?: number;
+}
+
+/**
+ * **A task's version is a digest of the task as a read returns it** (LAI-571),
+ * and `GET /tasks/:id` and `PATCH` send it as `ETag`.
+ *
+ * Derived from what is shown, not stamped by the writers, so no writer can be
+ * forgotten. Two reviews found writers that left a stamped version alone: tags
+ * kept in their own table, a tag renamed or merged, a sprint deleted out from
+ * under its tasks, a blocker whose status moved a dependent's `ready`, a
+ * comment, a recomputed size. Each one changes the view, so each one changes
+ * this. `updated_at` stays what it was, the time of the task's last edit.
+ *
+ * Deterministic because `toView` is. Its keys are in a fixed order, its lists
+ * are sorted, and it reads nothing about the caller or the clock. 128 bits of
+ * SHA-256, so two different views share a version with negligible odds.
+ */
+export function taskVersion(view: TaskView): string {
+  return createHash('sha256').update(JSON.stringify(view)).digest('hex').slice(0, 32);
 }
 
 /**
@@ -1404,27 +1423,21 @@ export function updateTask(
       assertClaimFence(db, actor, taskId, now);
       if (selecting) assertSelectionChangeAllowed(db, task);
 
-      // The version this write stamps, past both the clock and the value now
-      // in the row, so a token read in this millisecond still goes stale
-      // (LAI-571). Read under the write lock: `task` was read before it.
-      const expected = input.expected_updated_at;
-      const updatedAt = Math.max(
-        now,
-        (expected ??
-          db.select({ v: tasks.updatedAt }).from(tasks).where(eq(tasks.id, taskId)).get()!.v) + 1,
-      );
-      // A precondition is one atomic compare-and-swap, before tags, fields,
-      // selection, estimates or activity can move.
-      if (expected !== undefined) {
-        const guarded = db
-          .update(tasks)
-          .set({ updatedAt })
-          .where(and(eq(tasks.id, taskId), eq(tasks.updatedAt, expected)))
-          .run();
-        if (guarded.changes === 0) {
-          const current = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
+      // The precondition, under the write lock and before anything moves: the
+      // task as a read would show it now must be the task the caller read.
+      // `immediate` holds every other writer off until this commits, so the
+      // check and the write are one step.
+      if (input.expected_version !== undefined) {
+        const current = viewOne(
+          db,
+          db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+          project.prefix,
+        );
+        const version = taskVersion(current);
+        if (version !== input.expected_version) {
           throw new ApiError('conflict', 'The task changed after you read it', {
-            current: viewOne(db, current, project.prefix),
+            current,
+            etag: `"${version}"`,
           });
         }
       }
@@ -1462,7 +1475,7 @@ export function updateTask(
 
       if (Object.keys(changes).length > 0) {
         db.update(tasks)
-          .set({ ...changes, updatedAt })
+          .set({ ...changes, updatedAt: now })
           .where(eq(tasks.id, taskId))
           .run();
 
@@ -1483,7 +1496,10 @@ export function updateTask(
 
       if (selecting) {
         const to = input.selected_agent_id ?? null;
-        db.update(tasks).set({ selectedAgentId: to, updatedAt }).where(eq(tasks.id, taskId)).run();
+        db.update(tasks)
+          .set({ selectedAgentId: to, updatedAt: now })
+          .where(eq(tasks.id, taskId))
+          .run();
         moveSelection(db, actor, taskId, to, now);
         appendActivity(db, {
           orgId: project.orgId,
@@ -1531,20 +1547,6 @@ export function updateTask(
           payload: { field: 'size', from: sizeChange.from, to: sizeChange.to },
           now,
         });
-      }
-
-      // **Every change moves the version, including the ones that are not a
-      // column** (LAI-571 review): tags live in `task_tags`, so a tags-only
-      // PATCH used to leave `updated_at` — and every `If-Match` taken before
-      // it — exactly as it was. One stamp for the whole write; the size
-      // override's own advance is folded back into it.
-      if (
-        tagChange !== null ||
-        Object.keys(changes).length > 0 ||
-        selecting ||
-        sizeChange !== null
-      ) {
-        db.update(tasks).set({ updatedAt }).where(eq(tasks.id, taskId)).run();
       }
 
       return viewOne(
@@ -1647,7 +1649,7 @@ export function startWorking(
     if (before.assigneeId === actor.userId && before.status === 'in_progress') {
       if (onBranch !== undefined && onBranch !== before.branch) {
         db.update(tasks)
-          .set({ branch: onBranch, updatedAt: nextTaskVersion(now) })
+          .set({ branch: onBranch, updatedAt: now })
           .where(eq(tasks.id, taskId))
           .run();
       }
@@ -1692,7 +1694,7 @@ export function startWorking(
         // `before` is read inside this transaction, so nothing moved it since.
         startedAt: before.startedAt ?? now,
         ...(onBranch === undefined ? {} : { branch: onBranch }),
-        updatedAt: nextTaskVersion(now),
+        updatedAt: now,
       })
       .where(and(eq(tasks.id, taskId), isNull(tasks.assigneeId)))
       .run();
@@ -1810,10 +1812,7 @@ function agentStartWorking(
 
   if (before.status === 'in_progress') {
     if (onBranch !== undefined && onBranch !== before.branch) {
-      db.update(tasks)
-        .set({ branch: onBranch, updatedAt: nextTaskVersion(now) })
-        .where(eq(tasks.id, taskId))
-        .run();
+      db.update(tasks).set({ branch: onBranch, updatedAt: now }).where(eq(tasks.id, taskId)).run();
     }
     if (!taken.resumed) {
       appendActivity(db, {
@@ -1838,7 +1837,7 @@ function agentStartWorking(
         statusId: to.id,
         startedAt: before.startedAt ?? now,
         ...(onBranch === undefined ? {} : { branch: onBranch }),
-        updatedAt: nextTaskVersion(now),
+        updatedAt: now,
       })
       .where(eq(tasks.id, taskId))
       .run();
@@ -1945,10 +1944,7 @@ export function changeStatus(
   // is written as the same verb with the same `from`/`to` — equal, which is
   // what tells a reader the category did not move.
   if (to === task.status) {
-    db.update(tasks)
-      .set({ statusId: dest.id, updatedAt: nextTaskVersion(now) })
-      .where(eq(tasks.id, taskId))
-      .run();
+    db.update(tasks).set({ statusId: dest.id, updatedAt: now }).where(eq(tasks.id, taskId)).run();
 
     appendActivity(db, {
       orgId: project.orgId,
@@ -1997,7 +1993,7 @@ export function changeStatus(
     .set({
       status: to,
       statusId: dest.id,
-      updatedAt: nextTaskVersion(now),
+      updatedAt: now,
       // `claimTask` already stamps this, but claiming is not the only way into
       // `in_progress` — a lead moving somebody else's task gets here instead,
       // and before LAI-126 that task started work with `started_at` still null.
@@ -2172,9 +2168,6 @@ export function addTaskDependency(
     }
     throw err;
   }
-  // `blocked_by` is part of the task a read shows, so the edge moves its
-  // version as a column would (LAI-571).
-  touchTask(db, taskId, now);
 
   appendActivity(db, {
     orgId: project.orgId,
@@ -2221,7 +2214,6 @@ export function removeTaskDependency(
     .run();
 
   if (removed.changes === 0) throw ApiError.notFound('That dependency does not exist');
-  touchTask(db, taskId, now);
 
   appendActivity(db, {
     orgId: project.orgId,
@@ -2348,10 +2340,7 @@ export function reorderTask(
     if (alreadyThere) return viewOne(db, task, project.prefix);
 
     const position = keyBetween(lower, upper);
-    db.update(tasks)
-      .set({ position, updatedAt: nextTaskVersion(now) })
-      .where(eq(tasks.id, taskId))
-      .run();
+    db.update(tasks).set({ position, updatedAt: now }).where(eq(tasks.id, taskId)).run();
 
     appendActivity(db, {
       orgId: project.orgId,

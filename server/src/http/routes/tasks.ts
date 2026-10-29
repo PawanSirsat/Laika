@@ -23,6 +23,7 @@ import {
   TASK_STATUSES,
   updateTask,
   type TaskSummaryView,
+  taskVersion,
   type TaskView,
 } from '../../services/tasks.ts';
 import { reclaimTask, type ReclaimView } from '../../services/claims.ts';
@@ -109,21 +110,21 @@ const UpdateBody = strictObject({
   selected_agent_id: z.string().min(1).max(64).nullable().optional(),
 });
 
-/** A task's strong validator: its exposed, monotonically advanced write stamp. */
-function taskEtag(updatedAt: number): string {
-  return `"${String(updatedAt)}"`;
+/** A task's strong validator: the digest of the task as this read returns it (LAI-571). */
+function taskEtag(task: TaskView): string {
+  return `"${taskVersion(task)}"`;
 }
 
-function parseIfMatch(value: string | undefined): number | undefined {
+/** One strong ETag exactly as a read sent it. `*`, a weak `W/` tag or a list is not one. */
+function parseIfMatch(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  const match = /^"(0|[1-9]\d*)"$/.exec(value);
-  const parsed = match === null ? Number.NaN : Number(match[1]);
-  if (!Number.isSafeInteger(parsed)) {
-    throw ApiError.badRequest('If-Match must be one quoted updated_at value', {
+  const match = /^"([0-9a-f]{32})"$/.exec(value);
+  if (match === null) {
+    throw ApiError.badRequest('If-Match must be one ETag from a read of this task', {
       header: 'If-Match',
     });
   }
-  return parsed;
+  return match[1];
 }
 
 // `status` is a category — the project's first visible status of it — and
@@ -381,20 +382,20 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
 
   app.get('/:id', (c) => {
     const task = getTask(db, requireActor(c), c.req.param('id'));
-    c.header('ETag', taskEtag(task.updated_at));
+    c.header('ETag', taskEtag(task));
     return c.json(task);
   });
 
   app.patch('/:id', async (c) => {
     const actor = requireActor(c);
     const body = parseBody(UpdateBody, await c.req.json().catch(() => null));
-    const expectedUpdatedAt = parseIfMatch(c.req.header('If-Match'));
+    const expectedVersion = parseIfMatch(c.req.header('If-Match'));
 
     const task = updateTask(db, actor, c.req.param('id'), {
       ...body,
-      expected_updated_at: expectedUpdatedAt,
+      expected_version: expectedVersion,
     });
-    c.header('ETag', taskEtag(task.updated_at));
+    c.header('ETag', taskEtag(task));
     return c.json(task);
   });
 

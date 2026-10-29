@@ -7,7 +7,6 @@ import { type SprintStatus, TASK_STATUSES, type TaskStatus } from '../db/enums.t
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { projects, sprints, tasks } from '../db/schema.ts';
-import { nextTaskVersion } from '../db/task-version.ts';
 import { ApiError } from '../errors.ts';
 import { assertClaimFence, assertClaimFenceAll } from './claims.ts';
 import { assertCan } from '../policy/can.ts';
@@ -576,10 +575,7 @@ export function addTasksToSprint(
     for (const row of rows) {
       if (row.sprintId === sprintId) continue;
 
-      db.update(tasks)
-        .set({ sprintId, updatedAt: nextTaskVersion(now) })
-        .where(eq(tasks.id, row.id))
-        .run();
+      db.update(tasks).set({ sprintId, updatedAt: now }).where(eq(tasks.id, row.id)).run();
 
       recordTaskMove(db, project, actor, row.id, row.sprintId, sprintId, now);
     }
@@ -614,10 +610,7 @@ export function removeTaskFromSprint(
     }
 
     assertClaimFence(db, actor, taskId, now);
-    db.update(tasks)
-      .set({ sprintId: null, updatedAt: nextTaskVersion(now) })
-      .where(eq(tasks.id, taskId))
-      .run();
+    db.update(tasks).set({ sprintId: null, updatedAt: now }).where(eq(tasks.id, taskId)).run();
 
     recordTaskMove(db, project, actor, taskId, sprintId, null, now);
   });

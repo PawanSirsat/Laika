@@ -39,7 +39,6 @@ import {
   tokens,
   tokenUsageDays,
 } from '../db/schema.ts';
-import { nextTaskVersion } from '../db/task-version.ts';
 import { ApiError } from '../errors.ts';
 import { createLogger, type Logger } from '../log.ts';
 import { assertCan, can, systemPrincipal } from '../policy/can.ts';
@@ -1320,7 +1319,7 @@ export function setSizeOverride(
     .values({ id, taskId, source: 'person', level, setBy: userId, createdAt: now })
     .run();
   db.update(tasks)
-    .set({ sizeOverrideId: level === null ? null : id, updatedAt: nextTaskVersion(now) })
+    .set({ sizeOverrideId: level === null ? null : id, updatedAt: now })
     .where(eq(tasks.id, taskId))
     .run();
   return { from, to: level };

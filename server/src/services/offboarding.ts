@@ -3,7 +3,6 @@ import { activityActor, type ResolvedActor, withProject } from '../auth/resolve-
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { projects, tasks, users } from '../db/schema.ts';
-import { nextTaskVersion } from '../db/task-version.ts';
 import { ApiError } from '../errors.ts';
 import { assertAgentsMay, can } from '../policy/can.ts';
 import { assertClaimFenceAll } from './claims.ts';
@@ -184,10 +183,7 @@ export function applyOffboardingChoice(
   );
 
   for (const t of open) {
-    db.update(tasks)
-      .set({ assigneeId: to, updatedAt: nextTaskVersion(now) })
-      .where(eq(tasks.id, t.id))
-      .run();
+    db.update(tasks).set({ assigneeId: to, updatedAt: now }).where(eq(tasks.id, t.id)).run();
 
     appendActivity(db, {
       orgId: t.orgId,

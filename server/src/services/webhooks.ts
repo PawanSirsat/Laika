@@ -10,7 +10,6 @@ import { eq } from 'drizzle-orm';
 import { type ServiceCaller } from '../auth/resolve-actor.ts';
 import { type TaskStatus } from '../db/enums.ts';
 import { tasks } from '../db/schema.ts';
-import { nextTaskVersion } from '../db/task-version.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { resolveBranchTask, resolveRepoProjects } from './heartbeats.ts';
 import { addComment } from './comments.ts';
@@ -412,7 +411,7 @@ export function handlePullRequest(
   // nothing, or over an earlier pull request's ref, it writes.
   if (typeof number === 'number' && (held === null || !isOutsideId(held))) {
     db.update(tasks)
-      .set({ externalRef: `${repo}#${String(number)}`, updatedAt: nextTaskVersion(now) })
+      .set({ externalRef: `${repo}#${String(number)}`, updatedAt: now })
       .where(eq(tasks.id, resolved.taskId))
       .run();
   }
