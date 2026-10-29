@@ -735,6 +735,44 @@ describe('each tool writes what its REST twin writes', () => {
   }
 });
 
+describe('checkpoint_task and its twin read an explicit null alike (LAI-545)', () => {
+  it(
+    'both accept summary and summary_commit_sha as null, and write the same row',
+    { timeout: SIDE_BUDGET_MS },
+    async () => {
+      const save = { ...CHECKPOINT, summary: null, summary_commit_sha: null };
+      const viaRest = await makeSide();
+      const viaMcp = await makeSide();
+
+      const restHeld = await agentHolding(viaRest);
+      const res = await viaRest.h.app.request(`/api/v1/tasks/${restHeld.task}/checkpoints`, {
+        method: 'POST',
+        headers: jsonHeaders({
+          Authorization: `Bearer ${restHeld.secret}`,
+          'X-Laika-Claim-Generation': String(restHeld.generation),
+        }),
+        body: JSON.stringify(save),
+      });
+      expect(res.status, await res.clone().text()).toBe(201);
+      expect(((await res.json()) as { summary: unknown }).summary).toBeNull();
+
+      const mcpHeld = await agentHolding(viaMcp);
+      const agent = await connectAs(viaMcp, mcpHeld.secret);
+      const result = await agent.callTool({
+        name: 'checkpoint_task',
+        arguments: { task: 'COR-1', ...save, claim_generation: mcpHeld.generation },
+      });
+      await agent.close();
+      expect(result.isError, JSON.stringify(result.content)).toBeFalsy();
+      expect(
+        (result.structuredContent as { checkpoint: { summary: unknown } }).checkpoint.summary,
+      ).toBeNull();
+
+      expect(await events(viaMcp)).toEqual(await events(viaRest));
+    },
+  );
+});
+
 describe('attribution is the only thing that differs', () => {
   it('the agent’s rows say agent, the human’s say user', { timeout: SIDE_BUDGET_MS }, async () => {
     // The counterpart to `normalise` stripping those fields: having removed
