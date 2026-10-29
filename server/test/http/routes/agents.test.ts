@@ -2,6 +2,9 @@ import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   activity,
+  agentSessions,
+  recognisedAgentDevices,
+  taskClaims,
   agents,
   heartbeats,
   idempotencyKeys,
@@ -10,6 +13,10 @@ import {
   tokens,
   users,
 } from '../../../src/db/schema.ts';
+import { loadActor } from '../../../src/auth/resolve-actor.ts';
+import { insertToken } from '../../../src/services/tokens.ts';
+import { expireClaims } from '../../../src/services/claims.ts';
+import { sql } from 'drizzle-orm';
 import { RateLimiter } from '../../../src/http/rate-limit.ts';
 import {
   type AuthHarness,
@@ -106,6 +113,7 @@ interface Registered {
 async function register(
   grants: { project_id: string; scope: 'full' | 'read_only' }[],
   cookie = bob.cookie,
+  overrides: Record<string, unknown> = {},
 ): Promise<Registered> {
   return (await ok(
     await req(
@@ -117,6 +125,7 @@ async function register(
           harness: 'claude-code',
           device_label: 'Belka',
           grants,
+          ...overrides,
         }),
       },
       { cookie },
@@ -938,5 +947,317 @@ describe('heartbeats respect the grant, the role and the pin', () => {
     // Pinned to another project: the pin refuses this one.
     const pinned = await mint(bob.cookie, { name: 'pinned', scope: 'full', project_ids: [beta] });
     expect(await beat(pinned)).toEqual({ branch: 'unchanged', matched: null });
+  });
+});
+
+describe('devices (LAI-590)', () => {
+  interface Device {
+    device_label: string | null;
+    display_name: string;
+    recognised: boolean;
+    last_seen_at: number | null;
+    active_count: number;
+    revoked_count: number;
+    agents: { id: string; harness: string; status: string }[];
+  }
+
+  async function devices(auth: Auth = { cookie: bob.cookie }): Promise<Device[]> {
+    const body = await ok(await req('/api/v1/agents/devices', {}, auth));
+    return body.data as Device[];
+  }
+
+  function devicePost(
+    action: 'confirm' | 'revoke',
+    label: string | null,
+    auth: Auth = { cookie: bob.cookie },
+  ) {
+    return req(
+      `/api/v1/agents/devices/${action}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ device_label: label }),
+      },
+      auth,
+    );
+  }
+
+  it('groups normalised own labels with harness/status, counts and the newest last_seen_at', async () => {
+    const first = await register([], bob.cookie, { device_label: '  BÉLKA  ' });
+    const second = await register([], bob.cookie, { device_label: 'bélka', harness: 'codex' });
+    const revoked = await register([], bob.cookie, { device_label: 'BÉLKA' });
+    await ok(
+      await req(
+        `/api/v1/agents/${revoked.agent.id}/revoke`,
+        { method: 'POST' },
+        { cookie: bob.cookie },
+      ),
+    );
+    h.db.update(agents).set({ lastSeenAt: 120 }).where(eq(agents.id, first.agent.id)).run();
+    h.db.update(agents).set({ lastSeenAt: 450 }).where(eq(agents.id, revoked.agent.id)).run();
+    const nullLabel = await register([], bob.cookie, { device_label: null });
+    const blank = await register([], bob.cookie, { device_label: '\t ' });
+    await register([], bob.cookie, { device_label: 'Unnamed device' });
+    const list = await devices();
+    expect(list).toHaveLength(3);
+    const belka = list.find((d) => d.device_label === 'bélka')!;
+    expect(belka).toMatchObject({
+      recognised: false,
+      last_seen_at: 450,
+      active_count: 2,
+      revoked_count: 1,
+    });
+    expect(belka.agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: first.agent.id, harness: 'claude-code', status: 'active' }),
+        expect.objectContaining({ id: second.agent.id, harness: 'codex', status: 'active' }),
+        expect.objectContaining({ id: revoked.agent.id, status: 'revoked' }),
+      ]),
+    );
+    const unnamed = list.find((d) => d.device_label === null);
+    expect(unnamed).toMatchObject({
+      display_name: 'Unnamed device',
+      last_seen_at: null,
+      active_count: 2,
+      revoked_count: 0,
+    });
+    expect(unnamed?.agents.map((a) => a.id).sort()).toEqual(
+      [nullLabel.agent.id, blank.agent.id].sort(),
+    );
+    expect(JSON.stringify(list)).not.toContain(first.secret);
+  });
+
+  it('never lists or changes another owner’s agents, even on a shared label; foreign and unknown are identical 404s', async () => {
+    const own = await register([]);
+    const foreignShared = await register([], ownerCookie);
+    const foreign = await register([], ownerCookie, { device_label: 'Secret laptop' });
+    expect((await devices()).flatMap((d) => d.agents.map((a) => a.id))).toEqual([own.agent.id]);
+    for (const action of ['confirm', 'revoke'] as const) {
+      const unknown = await devicePost(action, 'made up');
+      const hidden = await devicePost(action, 'Secret laptop');
+      expect(hidden.status).toBe(404);
+      expect(await hidden.json()).toEqual(await unknown.json());
+    }
+    expect(await ok(await devicePost('revoke', ' BELKA '))).toEqual({
+      revoked_agent_ids: [own.agent.id],
+    });
+    for (const id of [foreignShared.agent.id, foreign.agent.id]) {
+      expect(h.db.select().from(agents).where(eq(agents.id, id)).get()?.status).toBe('active');
+    }
+    expect(h.db.select().from(recognisedAgentDevices).all()).toEqual([]);
+    // An org owner cannot see a member's device either.
+    const onlyForeign = await register([], bob.cookie, { device_label: 'member only' });
+    const ownerList = await devices({ cookie: ownerCookie });
+    expect(JSON.stringify(ownerList)).not.toContain('member only');
+    expect(JSON.stringify(ownerList)).not.toContain(onlyForeign.agent.id);
+  });
+
+  it('recognition belongs to an owner and label, persists, and never follows an agent to a new label', async () => {
+    const a = await register([]);
+    await register([], ownerCookie);
+    expect((await devices())[0]?.recognised).toBe(false);
+    expect(await ok(await devicePost('confirm', ' BELKA '))).toEqual({
+      device_label: 'belka',
+      recognised: true,
+    });
+    await ok(await devicePost('confirm', 'belka'));
+    expect(h.db.select().from(recognisedAgentDevices).all()).toHaveLength(1);
+    expect((await devices())[0]?.recognised).toBe(true);
+    expect((await devices({ cookie: ownerCookie }))[0]?.recognised).toBe(false);
+    await ok(
+      await req(
+        `/api/v1/agents/${a.agent.id}`,
+        { method: 'PATCH', body: '{"device_label":"Cloud"}' },
+        { cookie: bob.cookie },
+      ),
+    );
+    expect((await devices())[0]).toMatchObject({ device_label: 'cloud', recognised: false });
+    await register([]); // the owner's confirmation survives the old agent moving away
+    expect((await devices()).find((d) => d.device_label === 'belka')?.recognised).toBe(true);
+    await register([], bob.cookie, { device_label: null });
+    await ok(await devicePost('confirm', null));
+    expect((await devices()).find((d) => d.device_label === null)?.recognised).toBe(true);
+  });
+
+  it('allows every role to list and confirm only their own devices', async () => {
+    await register([]);
+    for (const role of ['admin', 'member', 'viewer'] as const) {
+      const person = await join(`device-${role}@example.test`, role);
+      const created = await register([], person.cookie, { device_label: role });
+      expect(
+        (await devices({ cookie: person.cookie })).flatMap((d) => d.agents.map((a) => a.id)),
+      ).toEqual([created.agent.id]);
+      await ok(await devicePost('confirm', role, { cookie: person.cookie }));
+      expect((await devices({ cookie: person.cookie }))[0]?.recognised).toBe(true);
+      await ok(await devicePost('revoke', role, { cookie: person.cookie }));
+      expect((await devices({ cookie: person.cookie }))[0]?.revoked_count).toBe(1);
+    }
+  });
+
+  it('requires authentication on every path and refuses management to every token, including its own agent', async () => {
+    const agent = await register([]);
+    const secrets = [agent.secret];
+    for (const scope of ['full', 'read_only']) {
+      const minted = await ok(
+        await req(
+          '/api/v1/tokens',
+          { method: 'POST', body: JSON.stringify({ name: scope, scope }) },
+          { cookie: bob.cookie },
+        ),
+        201,
+      );
+      secrets.push(minted.secret as string);
+    }
+    expect((await error(await req('/api/v1/agents/devices'))).code).toBe('unauthorized');
+    for (const action of ['confirm', 'revoke'] as const) {
+      expect((await error(await devicePost(action, 'Belka', {}))).code).toBe('unauthorized');
+      for (const bearer of secrets) {
+        expect((await devices({ bearer }))[0]?.agents[0]?.id).toBe(agent.agent.id);
+        const refusal = await error(await devicePost(action, 'Belka', { bearer }));
+        expect(refusal).toEqual({ status: 403, code: 'forbidden', reason: 'session_required' });
+      }
+    }
+    expect(h.db.select().from(recognisedAgentDevices).all()).toEqual([]);
+    expect(h.db.select().from(agents).where(eq(agents.id, agent.agent.id)).get()?.status).toBe(
+      'active',
+    );
+  });
+
+  it('rejects malformed labels and unknown body fields', async () => {
+    await register([]);
+    for (const action of ['confirm', 'revoke']) {
+      for (const body of [
+        {},
+        { device_label: 42 },
+        { device_label: 'x'.repeat(81) },
+        { device_label: 'Belka', owner_user_id: ownerId },
+      ]) {
+        const res = await req(
+          `/api/v1/agents/devices/${action}`,
+          { method: 'POST', body: JSON.stringify(body) },
+          { cookie: bob.cookie },
+        );
+        expect((await error(res)).code).toBe('unprocessable');
+      }
+    }
+  });
+
+  async function claimedAgent(deviceLabel: string | null) {
+    const created = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, {
+      device_label: deviceLabel,
+    });
+    const task = await ok(await createTask('alpha', created.secret), 201);
+    const claimed = await req(
+      `/api/v1/tasks/${task.id as string}/claim`,
+      { method: 'POST' },
+      { bearer: created.secret },
+    );
+    await ok(claimed);
+    const sessionId = claimed.headers.get('X-Laika-Agent-Session');
+    expect(sessionId).toBeTruthy();
+    return { ...created, taskId: task.id as string, sessionId };
+  }
+
+  it('revokes all active device agents and live tokens; ends sessions/claims, preserves other devices and personal tokens, and retries write nothing', async () => {
+    const a = await claimedAgent('Belka');
+    const b = await claimedAgent(' BELKA ');
+    const other = await claimedAgent('Strelka');
+    const extra = insertToken(h.db, loadActor(h.db, bob.id)!, {
+      name: 'extra',
+      scope: 'full',
+      projectIds: null,
+      expiresAt: null,
+      agentId: a.agent.id,
+      now: Date.now(),
+    });
+    const personal = await ok(
+      await req(
+        '/api/v1/tokens',
+        { method: 'POST', body: '{"name":"personal","scope":"full"}' },
+        { cookie: bob.cookie },
+      ),
+      201,
+    );
+    const beforeEvents = h.db
+      .select()
+      .from(activity)
+      .all()
+      .filter((r) => r.type === 'token.revoked').length;
+    // Single-agent revoke leaves the claim row to lapse with its session ended
+    // (§4.66, claims.test.ts); the device path must do exactly the same.
+    const claimsBefore = h.db.select().from(taskClaims).all();
+    const result = await ok(await devicePost('revoke', 'belka'));
+    expect(result.revoked_agent_ids).toEqual(expect.arrayContaining([a.agent.id, b.agent.id]));
+    expect(result.revoked_agent_ids).toHaveLength(2);
+    for (const revoked of [a, b]) {
+      expect(h.db.select().from(agents).where(eq(agents.id, revoked.agent.id)).get()?.status).toBe(
+        'revoked',
+      );
+      expect(
+        h.db
+          .select()
+          .from(tokens)
+          .where(eq(tokens.agentId, revoked.agent.id))
+          .all()
+          .every((t) => t.revokedAt !== null),
+      ).toBe(true);
+      const session = h.db
+        .select()
+        .from(agentSessions)
+        .where(eq(agentSessions.id, revoked.sessionId!))
+        .get();
+      expect(session?.endReason).toBe('agent_revoked');
+      expect(session?.endedAt).not.toBeNull();
+      expect((await req('/api/v1/me', {}, { bearer: revoked.secret })).status).toBe(401);
+    }
+    expect((await req('/api/v1/me', {}, { bearer: extra.secret })).status).toBe(401);
+    expect((await req('/api/v1/me', {}, { bearer: personal.secret as string })).status).toBe(200);
+    expect((await req('/api/v1/me', {}, { bearer: other.secret })).status).toBe(200);
+    expect(
+      h.db.select().from(agentSessions).where(eq(agentSessions.id, other.sessionId!)).get()
+        ?.endedAt,
+    ).toBeNull();
+    expect(h.db.select().from(taskClaims).all()).toEqual(claimsBefore);
+    expect(
+      h.db
+        .select()
+        .from(activity)
+        .all()
+        .filter((r) => r.type === 'token.revoked'),
+    ).toHaveLength(beforeEvents + 3);
+    const before = h.db.select().from(activity).all();
+    expect(await ok(await devicePost('revoke', 'BELKA'))).toEqual({ revoked_agent_ids: [] });
+    expect(h.db.select().from(activity).all()).toEqual(before);
+    // As with one agent: the claim is held until its lease runs out, then
+    // lapses like any other (claims.test.ts, 'revoking the agent ends its sessions').
+    const held = await req(
+      `/api/v1/tasks/${a.taskId}/claim`,
+      { method: 'POST' },
+      { bearer: other.secret },
+    );
+    expect((await error(held)).reason).toBe('claim_held');
+    const lease = Math.max(...claimsBefore.map((c) => c.leaseExpiresAt));
+    expireClaims(h.db, lease);
+    for (const revoked of [a, b]) {
+      expect(
+        h.db.select().from(taskClaims).where(eq(taskClaims.agentId, revoked.agent.id)).get()?.state,
+      ).toBe('expired');
+    }
+  });
+
+  it('rolls back every agent, token, session, claim and audit row if a later agent fails revocation', async () => {
+    await claimedAgent('Belka');
+    const second = await claimedAgent('Belka');
+    const tables = [agents, tokens, agentSessions, taskClaims, activity] as const;
+    const before = tables.map((table) => h.db.select().from(table).all());
+    // Newest sorts first; fail on the oldest, after the newest was revoked.
+    const oldest = h.db.select().from(agents).orderBy(agents.createdAt, agents.id).all()[0]!;
+    expect(oldest.id).not.toBe(second.agent.id);
+    h.db.run(
+      sql`CREATE TRIGGER fail_device_revoke BEFORE UPDATE OF revoked_at ON tokens WHEN OLD.agent_id = '${sql.raw(oldest.id)}' BEGIN SELECT RAISE(ABORT, 'device test refusal'); END`,
+    );
+    const res = await devicePost('revoke', 'Belka');
+    expect(res.status).toBe(500);
+    expect((await error(res)).code).toBe('internal');
+    expect(tables.map((table) => h.db.select().from(table).all())).toEqual(before);
   });
 });
