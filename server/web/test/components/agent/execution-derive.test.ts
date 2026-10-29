@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 import type { ActivityEvent } from '../../../src/api/activity.ts';
 import type { SelectedAgent } from '../../../src/api/selected-agent.ts';
+import { stampClaims } from '../../../src/api/claim-receipt.ts';
 import type { TaskLiveClaim, TaskStatus } from '../../../src/api/tasks.ts';
 import {
   cardExecutionState,
@@ -171,10 +172,15 @@ void describe('the live claim (LAI-597)', () => {
     selected_agent: LAPTOP,
     claim: claim(over),
   });
+  /** A task whose claim arrived in a response at `at`, as the request client stamps it. */
+  const arrived = (over: Partial<TaskLiveClaim> = {}, at = P0) => {
+    const task = held(over);
+    stampClaims({ data: [task] }, at);
+    return task;
+  };
 
   void test('a claim checking in is Working until suspect_after_ms has elapsed here', () => {
-    const task = held();
-    // First sight stamps the copy at P0.
+    const task = arrived();
     assert.equal(cardExecutionState(task, P0), 'working');
     assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER - 1), 'working');
     // A paused claim is still held, and still checking in.
@@ -182,14 +188,14 @@ void describe('the live claim (LAI-597)', () => {
   });
 
   void test('a heartbeat exactly suspect_after_ms old is Connection lost — the server’s boundary', () => {
-    const task = held();
+    const task = arrived();
     assert.equal(cardExecutionState(task, P0), 'working');
     assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER), 'connection_lost');
     assert.equal(cardExecutionState(task, P0 + 10 * SUSPECT_AFTER), 'connection_lost');
   });
 
   void test('the server’s age at the read counts: 60 s old leaves 30 s here', () => {
-    const task = held({ heartbeat_age_ms: 60_000 });
+    const task = arrived({ heartbeat_age_ms: 60_000 });
     assert.equal(cardExecutionState(task, P0), 'working');
     assert.equal(msUntilSuspect(task.claim, P0), 30_000);
     assert.equal(cardExecutionState(task, P0 + 29_999), 'working');
@@ -202,7 +208,7 @@ void describe('the live claim (LAI-597)', () => {
   });
 
   void test('a claim the server already served suspect is Connection lost, with nothing to wait for', () => {
-    const task = held({ connection: 'suspect' });
+    const task = arrived({ connection: 'suspect' });
     assert.equal(cardExecutionState(task, P0), 'connection_lost');
     assert.equal(msUntilSuspect(task.claim, P0), undefined);
     assert.equal(liveConnection(task.claim, P0), 'suspect');
@@ -212,7 +218,7 @@ void describe('the live claim (LAI-597)', () => {
     const now = Date.now();
     for (const skew of [5 * 60_000, -5 * 60_000, 365 * 86_400_000]) {
       // The server stamped the heartbeat on its clock; this browser's differs by `skew`.
-      const task = held({ last_heartbeat_at: now - skew, heartbeat_age_ms: 0 });
+      const task = arrived({ last_heartbeat_at: now - skew, heartbeat_age_ms: 0 });
       assert.equal(cardExecutionState(task, P0), 'working', `skew ${String(skew)}`);
       assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER - 1), 'working');
       assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER), 'connection_lost');
@@ -222,8 +228,22 @@ void describe('the live claim (LAI-597)', () => {
   void test('a view served before heartbeat_age_ms reads as age 0 at receipt, never a wall-clock guess', () => {
     const { heartbeat_age_ms: _dropped, ...older } = claim({ last_heartbeat_at: 1 });
     const task = { status: 'in_progress' as const, selected_agent: LAPTOP, claim: older };
+    stampClaims(task, P0);
     assert.equal(cardExecutionState(task, P0), 'working');
     assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER), 'connection_lost');
+  });
+
+  void test('drawing a claim never stamps it: its age runs from the response, shown or hidden', () => {
+    // Arrived at P0 and drawn for the first time 95 s later (an Agent field
+    // that was hidden): already lost, not freshly Working.
+    const shownLate = arrived();
+    assert.equal(cardExecutionState(shownLate, P0 + 95_000), 'connection_lost');
+    // A copy that never came through the request client ages by the server's
+    // figure alone — drawing it twice, far apart, does not start a clock.
+    const unstamped = held({ heartbeat_age_ms: 10_000 });
+    assert.equal(cardExecutionState(unstamped, P0), 'working');
+    assert.equal(cardExecutionState(unstamped, P0 + 10 * SUSPECT_AFTER), 'working');
+    assert.equal(msUntilSuspect(unstamped.claim, P0 + 10 * SUSPECT_AFTER), 80_000);
   });
 
   void test('the live claim decides before the pick: a claim on a task still in To do is Working', () => {
@@ -251,9 +271,7 @@ void describe('the live claim (LAI-597)', () => {
   });
 
   void test('the drawer: the holding session, its last heartbeat and its generation', () => {
-    const task = held({ heartbeat_age_ms: 30_000 });
-    // The copy reaches the page at P0, 30 s old by the server.
-    assert.equal(cardExecutionState(task, P0), 'working');
+    const task = arrived({ heartbeat_age_ms: 30_000 });
     const view = executionView(task, [taken(3, 10)], AGENTS, P0 + 30_000);
     assert.equal(view.state, 'working');
     assert.deepEqual(view.session, {

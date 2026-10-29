@@ -8,6 +8,7 @@ import {
   type AgentNaming,
   type SelectedAgent,
 } from '../../api/selected-agent.ts';
+import { pageClock, receivedAt } from '../../api/claim-receipt.ts';
 import type { TaskLiveClaim, TaskSummary } from '../../api/tasks.ts';
 import { clockTime } from '../../api/time-label.ts';
 import type { ExecutionState } from './agent-states.ts';
@@ -59,28 +60,18 @@ const NOT_STARTED: ReadonlySet<string> = new Set(['backlog', 'todo']);
  * - the time elapsed **on this page's monotonic clock** (`performance.now()`)
  *   since this copy of the claim reached it.
  *
- * Each claim object is stamped the first time it is seen; a re-read brings a
- * new object, a new server age and a new stamp. A view from before the server
- * sent its age reads as age 0 at receipt — never a guess from the wall clock.
+ * Each claim copy is stamped **when its response arrives**, by the request
+ * client (`stampClaims` in `api/claim-receipt.ts`) — shown or hidden, drawn or not — never when a
+ * screen first draws it. A re-read brings a new object, a new server age and
+ * a new stamp. A copy that never came through the client (a fixture) has no
+ * stamp and ages by the server's figure alone. A view from before the server
+ * sent its age reads as 0 at receipt — never a guess from the wall clock.
  */
-const RECEIVED = new WeakMap<TaskLiveClaim, number>();
 
-/** The page's monotonic clock — never the wall clock. */
-export function pageClock(): number {
-  return performance.now();
-}
-
-/** When this copy of the claim reached the page, on {@link pageClock}; stamped at first sight. */
-function receivedAt(claim: TaskLiveClaim, now: number): number {
-  const at = RECEIVED.get(claim);
-  if (at !== undefined) return at;
-  RECEIVED.set(claim, now);
-  return now;
-}
-
-/** The heartbeat's age at `now` ({@link pageClock}): the server's age plus what elapsed here. */
+/** The heartbeat's age at `now` ({@link pageClock}): the server's age plus what elapsed here since it arrived. */
 export function heartbeatAge(claim: TaskLiveClaim, now: number): number {
-  return (claim.heartbeat_age_ms ?? 0) + Math.max(0, now - receivedAt(claim, now));
+  const arrived = receivedAt(claim);
+  return (claim.heartbeat_age_ms ?? 0) + (arrived === undefined ? 0 : Math.max(0, now - arrived));
 }
 
 /**
