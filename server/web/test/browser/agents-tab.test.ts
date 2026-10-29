@@ -570,8 +570,14 @@ void describe('the Agents tab (LAI-537)', () => {
       assert.deepEqual(h.calls.find((c) => c.method === 'PATCH')?.body, {
         display_name: 'codex builder',
       });
-      await until(async () => (await focusedText(page)) === 'Rename');
-      assert.match(await page.locator('.agents-row-name').innerText(), /codex builder/);
+      // Wait on the name itself, with the row's own 20 s budget (LAI-581).
+      // `until` gives up quietly: a PATCH answered after its default 5 s left
+      // the old name on screen and failed the read below under a full gate.
+      // Focus comes back in the same answer, so it is asserted after.
+      const rowName = page.locator('.agents-row-name');
+      await until(async () => (await rowName.innerText()).includes('codex builder'), 20_000);
+      assert.match(await rowName.innerText(), /codex builder/);
+      assert.equal(await focusedText(page), 'Rename');
 
       await press(page, 'Manage access', '.agents-row');
       await page.locator('.agents-panel input[name="grant-p2"]').first().waitFor();
