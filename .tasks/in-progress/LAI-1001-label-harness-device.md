@@ -2,11 +2,12 @@
 id: LAI-1001
 title: 'Every agent label reads <harness> · <device>; the wizard asks harness and device; the 409 links the existing agent'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-1000]
 discovered-from: LAI-532
-status: backlog
+status: in-progress
+started: 2026-10-30T05:10:00Z
 ---
 
 D-120 (owner decision in chat, 2026-10-29). Web half; the server half is
@@ -48,3 +49,10 @@ its credential instead.
 - [ ] Two legacy duplicates on one pair stay distinguishable (LAI-583 fallback)
 - [ ] Both themes, 390 px and desktop, keyboard reachable
 - [ ] Mutation-checked; touched tests, lint and format exit 0
+
+## Claim note (SHELL, 2026-10-30)
+
+`depends-on: [LAI-1000]` is not in `done/`. Claimed on CHIEF's dispatch: the
+server rule LAI-1000 named (`409 agent_exists_for_harness_device`,
+`owner_display_name` on agent reads) shipped on `origin/master` with #141
+(LAI-592), which this branch is cut from.
