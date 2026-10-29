@@ -94,7 +94,10 @@ export interface AgentView {
   display_name: string;
   /** Self-reported by whoever registered it; decides nothing. */
   harness: string;
-  /** Self-reported; decides nothing. */
+  /**
+   * Self-reported. Decides one thing: a label that normalises to `cloud`
+   * marks a cloud agent, whose tokens must be short-lived (LAI-592).
+   */
   device_label: string | null;
   status: AgentStatus;
   grants: AgentGrantView[];
@@ -151,8 +154,10 @@ export function registerAgent(
   const harness = cleanHarness(input.harness);
   const deviceLabel = cleanDeviceLabel(input.deviceLabel ?? null);
   const grants = cleanGrants(db, actor, input.grants);
-  const expiresAt = futureExpiry(input.expiresAt ?? null, now);
-  if (isCloudLabel(deviceLabel)) assertCloudExpiry(expiresAt, now);
+  const requested = input.expiresAt ?? null;
+  // The cloud rule first, so a cloud agent's refusal always names it.
+  if (isCloudLabel(deviceLabel)) assertCloudExpiry(requested, now);
+  const expiresAt = futureExpiry(requested, now);
 
   const row: AgentRow = {
     id: newId(),
@@ -250,6 +255,7 @@ export function updateAgent(
   actor: ResolvedActor,
   agentId: string,
   input: UpdateAgentInput,
+  now: number = Date.now(),
 ): AgentView {
   assertCan(actor, 'agent.manage_own');
   const row = requireActiveAgent(db, actor, agentId);
@@ -261,7 +267,6 @@ export function updateAgent(
   // Relabelling into Cloud is a third way a token comes to be a cloud
   // agent's: every live one must already meet the rule.
   if (set.deviceLabel !== undefined && isCloudLabel(set.deviceLabel)) {
-    const now = Date.now();
     for (const token of liveTokens(db, row.id, now)) assertCloudExpiry(token.expiresAt, now);
   }
 
@@ -345,9 +350,10 @@ export function rotateAgentToken(
   }
 
   const carried = old.expiresAt !== null && old.expiresAt > now ? old.expiresAt : null;
-  const expiresAt =
-    input.expiresAt === undefined ? carried : futureExpiry(input.expiresAt ?? null, now);
-  if (isCloudLabel(row.deviceLabel)) assertCloudExpiry(expiresAt, now);
+  const requested = input.expiresAt === undefined ? carried : (input.expiresAt ?? null);
+  // The cloud rule first, so a cloud agent's refusal always names it.
+  if (isCloudLabel(row.deviceLabel)) assertCloudExpiry(requested, now);
+  const expiresAt = input.expiresAt === undefined ? carried : futureExpiry(requested, now);
 
   const created = immediateTransaction(sqlite, () => {
     const minted = insertToken(db, actor, {
@@ -647,11 +653,14 @@ function isCloudLabel(label: string | null): boolean {
 /**
  * A cloud agent's token must expire, and within the limit (LAI-592). Both
  * refusals are `unprocessable`; the `reason` names which rule was broken.
+ * An expiry already past gives the token no life at all, so it breaks the
+ * same rule as none: `cloud_token_expiry_required`.
  */
 function assertCloudExpiry(expiresAt: number | null, now: number): void {
-  if (expiresAt === null) {
-    throw new ApiError('unprocessable', 'A cloud agent’s token must have an expiry', {
+  if (expiresAt === null || expiresAt <= now) {
+    throw new ApiError('unprocessable', 'A cloud agent’s token must have a future expiry', {
       reason: 'cloud_token_expiry_required',
+      expires_at: expiresAt,
       max_ttl_ms: CLOUD_TOKEN_MAX_TTL_MS,
     });
   }

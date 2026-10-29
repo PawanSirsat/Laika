@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   activity,
   agentSessions,
@@ -1421,6 +1421,111 @@ describe('cloud agents hold short-lived tokens (LAI-592)', () => {
       ),
     );
     expect(moved.device_label).toBe('Cloud');
+  });
+
+  it('a past or present expires_at for a cloud agent is cloud_token_expiry_required, on register and rotate', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const T = Date.now();
+      vi.setSystemTime(T);
+      for (const expiresAt of [T - MINUTE, T]) {
+        expect(await error(await registerRaw({ expires_at: expiresAt }))).toEqual({
+          status: 422,
+          code: 'unprocessable',
+          reason: 'cloud_token_expiry_required',
+        });
+      }
+      expect(h.db.select().from(agents).all()).toEqual([]);
+      // Not a cloud agent: the general refusal, unchanged, with no cloud reason.
+      const plain = await registerRaw({ device_label: 'Belka', expires_at: T - MINUTE });
+      expect(await error(plain)).toEqual({ status: 422, code: 'unprocessable', reason: undefined });
+
+      const created = (await ok(
+        await registerRaw({ expires_at: T + 50 * MINUTE }),
+        201,
+      )) as unknown as Registered;
+      for (const expiresAt of [T - MINUTE, T]) {
+        expect(
+          await error(
+            await rotate(created.agent.id, { token_id: created.token.id, expires_at: expiresAt }),
+          ),
+        ).toEqual({ status: 422, code: 'unprocessable', reason: 'cloud_token_expiry_required' });
+      }
+      const live = h.db.select().from(tokens).where(eq(tokens.agentId, created.agent.id)).all();
+      expect(live.map((t) => [t.id, t.revokedAt])).toEqual([[created.token.id, null]]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('exactly now + the limit succeeds and one millisecond more is too long, on register, rotate and relabel', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const T = Date.now();
+      vi.setSystemTime(T);
+      const edge = T + CLOUD_TOKEN_MAX_TTL_MS;
+
+      expect(await error(await registerRaw({ expires_at: edge + 1 }))).toEqual({
+        status: 422,
+        code: 'unprocessable',
+        reason: 'cloud_token_expiry_too_long',
+      });
+      const created = (await ok(
+        await registerRaw({ expires_at: edge }),
+        201,
+      )) as unknown as Registered;
+
+      expect(
+        await error(
+          await rotate(created.agent.id, { token_id: created.token.id, expires_at: edge + 1 }),
+        ),
+      ).toEqual({ status: 422, code: 'unprocessable', reason: 'cloud_token_expiry_too_long' });
+      await ok(
+        await rotate(created.agent.id, { token_id: created.token.id, expires_at: edge }),
+        201,
+      );
+
+      const relabel = (id: string) =>
+        req(
+          `/api/v1/agents/${id}`,
+          { method: 'PATCH', body: JSON.stringify({ device_label: 'Cloud' }) },
+          { cookie: bob.cookie },
+        );
+      const over = await register([], bob.cookie, { expires_at: edge + 1 });
+      expect(await error(await relabel(over.agent.id))).toEqual({
+        status: 422,
+        code: 'unprocessable',
+        reason: 'cloud_token_expiry_too_long',
+      });
+      const at = await register([], bob.cookie, { expires_at: edge });
+      await ok(await relabel(at.agent.id));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('normalises as trim().toLowerCase() does: Unicode spaces around Cloud count, look-alikes do not', async () => {
+    // String.prototype.trim strips NBSP, em space and ideographic space.
+    expect(' Cloud 　'.trim().toLowerCase()).toBe('cloud');
+    for (const label of [' Cloud ', ' CLOUD　']) {
+      expect(await error(await registerRaw({ device_label: label }))).toEqual({
+        status: 422,
+        code: 'unprocessable',
+        reason: 'cloud_token_expiry_required',
+      });
+    }
+    expect(h.db.select().from(agents).all()).toEqual([]);
+
+    // Fullwidth (a compatibility form), Cyrillic С, and a zero-width space
+    // inside are other labels: no expiry needed.
+    for (const label of ['Ｃｌｏｕｄ', 'Сloud', 'Cl​oud']) {
+      const created = (await ok(await registerRaw({ device_label: label }), 201)) as unknown as {
+        agent: { device_label: string };
+        token: { expires_at: number | null };
+      };
+      expect(created.agent.device_label).toBe(label);
+      expect(created.token.expires_at).toBeNull();
+    }
   });
 
   it('an expired cloud token is refused exactly as an expired personal token; other devices are untouched', async () => {
