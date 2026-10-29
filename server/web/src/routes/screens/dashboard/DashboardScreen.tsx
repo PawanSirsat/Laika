@@ -31,6 +31,8 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { withProjectParam } from '../../nav-url.ts';
 import { useRoute } from '../../use-route.ts';
 import { ActivityFeed } from './ActivityFeed.tsx';
+import { agentNamesFrom } from '../../../api/selected-agent.ts';
+import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import { Contributors } from './Contributors.tsx';
 import { contributors } from './contributors-derive.ts';
 import {
@@ -102,6 +104,12 @@ export function DashboardScreen() {
    * copies back the moment the reader leaves.
    */
   useClaimSpaceFilters();
+  /*
+   * Which agent wrote a feed row, where this reader may name it (LAI-570):
+   * their own agents and those selected on the space's tasks. Above the
+   * early returns, as every hook must be.
+   */
+  const myAgents = useMyAgents();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
   /** The organisation has no project to show — not "loading" for ever. */
@@ -257,6 +265,7 @@ export function DashboardScreen() {
   const nameOf = (id: string): string => names.get(id) ?? id;
   const actorName = (id: string | null): string => (id === null ? 'Laika' : nameOf(id));
   const tasksById = new Map(tasks.map((t) => [t.id, t]));
+  const agentNames = agentNamesFrom(agentsOf(myAgents), tasks);
 
   const window = range.ms === null ? 'all time' : `in the ${range.label.toLowerCase()}`;
   /*
@@ -526,6 +535,7 @@ export function DashboardScreen() {
           now={clock}
           rangeLabel={range.label}
           theme={theme}
+          agentNames={agentNames}
         />
         <NeedsAttention
           blocked={blocked.committed}

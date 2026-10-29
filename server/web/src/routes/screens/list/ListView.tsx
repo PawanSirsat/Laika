@@ -547,7 +547,18 @@ export function ListView({
                               <span className="visually-hidden">
                                 {agentProductName(row.agent)} ·{' '}
                               </span>
-                              {agentDevice(row.agent)}
+                              {row.agentTwin === undefined ? (
+                                agentDevice(row.agent)
+                              ) : (
+                                // Two here share a harness and a device: the
+                                // cell shows what differs, which an
+                                // ellipsis would cut from the end (LAI-583).
+                                <>
+                                  <span className="visually-hidden">{row.agentPlace} (</span>
+                                  {row.agentTwin}
+                                  <span className="visually-hidden">)</span>
+                                </>
+                              )}
                             </span>
                           </span>
                         )}
