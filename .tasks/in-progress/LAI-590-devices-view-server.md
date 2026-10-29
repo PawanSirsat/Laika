@@ -2,11 +2,12 @@
 id: LAI-590
 title: 'Devices view — server half: agents grouped by device, last seen per device, revoke a whole device, unrecognised device flagged'
 area: server
-assignee: unclaimed
+assignee: CORE
 priority: p1
 depends-on: [LAI-586]
 discovered-from: LAI-532
-status: backlog
+status: in-progress
+started: 2026-10-29T07:42:31+00:00
 ---
 
 Phase 2.5 slice from `docs/proposals/LAI-532-phase-index.md` (PR #121,
@@ -108,3 +109,12 @@ reads *Not recognised*.
 Additive and behind no flag: the new endpoints are unused until LAI-591 ships.
 Existing devices start recognised, so nothing reads *Not recognised* on day
 one. Rollback is a revert; a new table can stay empty.
+
+## Implementation context
+
+Owner-directed CORE implementation on Belka, in `.polly/wt-590`, branch
+`LAI-590-devices-server`. Per the owner's explicit instruction, starts against
+`origin/LAI-586-selected-agent-owns-claim` (PR #123), while LAI-586 is in review,
+rather than waiting for its merge. No merge or decision approval is implied.
+The owner authorised touched tests, lint and format locally; the full test
+gate runs in PR CI because Belka is overloaded.
