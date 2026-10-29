@@ -51,3 +51,28 @@ LAI-536's files across branches.
 - `AGENT_STEP_NAMES` and `AGENT_STATE_LABELS` were deleted with their tests;
   `agent-readiness.ts` (new, tested) maps an agent to the three facts.
 - Filed LAI-318: *No token yet.* reads wrong for an agent whose tokens expired.
+
+## Review round 1 (Strelka, 2026-10-29) — Belka's Codex review at 099e75e5
+
+Criteria are frozen and unchanged; this records what changed.
+
+- **Blocking, fixed:** `agent-readiness.ts` sent every expired- or
+  revoked-token agent to an empty set, so an agent Laika had seen read both
+  *No token yet* and *has not seen a request*. Now *connected* comes from
+  `last_seen_at` alone, whatever the credential does, and the row also says
+  whether a credential existed and lapsed (`credentialLapsed`).
+  `AgentReadiness` takes that as an optional prop and reads *Credential
+  created — none live* with `CREDENTIAL_LAPSED` from `agent-states.ts`; an
+  agent never given a token still reads *not yet* / *No token yet.* No new
+  design tokens.
+- Tests: `agent-readiness.test.ts`'s old *no credential, even once seen* case
+  is corrected (seen stays connected, and it is lapsed), with new cases for
+  never-issued and rotated agents. `agents-tab.test.ts` adds a rendered case: a
+  seen agent with an expired token shows *none live* and neither *No token
+  yet* nor *has not seen a request*. Mutation-checked: four mutations, each
+  red.
+- **This covers LAI-318**, which stays in `backlog/` with a note saying so.
+- Merge of `origin/master`: master's `DevicesSection` (LAI-591) still draws
+  the state pill, so `AGENT_STATE_LABELS`, its test and the `.agents-state`
+  rules are restored as master has them. The Build notes above say they were
+  deleted; that no longer holds. The Agents tab itself still draws no pill.

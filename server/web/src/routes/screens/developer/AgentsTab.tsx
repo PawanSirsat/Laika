@@ -1181,7 +1181,7 @@ function AgentRow({
       {readiness === undefined ? (
         <p className="agents-revoked">Revoked — its credentials no longer work.</p>
       ) : (
-        <AgentReadiness reached={readiness} />
+        <AgentReadiness reached={readiness.reached} credentialLapsed={readiness.credentialLapsed} />
       )}
 
       <dl className="agents-row-facts">

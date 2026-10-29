@@ -315,6 +315,38 @@
   color: var(--text-secondary);
 }
 
+/* State in words, never colour alone (proposal §6). The Agents tab now says
+   it through AgentReadiness (LAI-565); Your devices still draws this pill. */
+.agents-state {
+  flex: none;
+  padding: 0.125rem var(--space-2);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--chip-neutral);
+  background: var(--chip-neutral-bg);
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-pill);
+}
+
+.agents-state[data-state='connected'] {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+
+.agents-state[data-state='credential-created'] {
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+}
+
+.agents-state[data-state='revoked'],
+.agents-state[data-state='no-credential'] {
+  color: var(--overdue);
+  background: transparent;
+  border-color: var(--overdue-border);
+}
+
 .agents-row-facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));

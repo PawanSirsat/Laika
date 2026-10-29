@@ -156,6 +156,16 @@ export const READINESS_WORDS: Readonly<
   },
 };
 
+/**
+ * *Credential created*, said of an agent that had a token and has none live:
+ * every one expired or was revoked. *No token yet* would be false of it, and
+ * *yet* would say it is on its way to one (LAI-318).
+ */
+export const CREDENTIAL_LAPSED = {
+  verdict: 'none live',
+  why: 'Every token for this agent has expired or been revoked. It cannot reach Laika until it is given a new one.',
+} as const;
+
 /** The last step's three outcomes: the proof is a request **from this agent's own token**. */
 export const VERIFY_STATES = ['waiting', 'verified', 'failed'] as const;
 export type VerifyState = (typeof VERIFY_STATES)[number];

@@ -36,3 +36,9 @@ way to one. The pill it replaced said *No live credential*. The row's
 - [ ] An agent never given a token still reads as not yet created.
 - [ ] Both are asserted, each against the other's fixture.
 - [ ] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+
+## Note (Strelka, 2026-10-29)
+
+Covered by LAI-565's review round 1 (PR #133): an agent whose every token
+expired or was revoked reads *Credential created — none live*, and one never
+given a token still reads *No token yet.* Close as done with LAI-565.

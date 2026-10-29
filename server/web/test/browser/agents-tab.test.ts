@@ -637,6 +637,33 @@ void describe('the Agents tab (LAI-537)', () => {
     }
   });
 
+  void test('a seen agent whose token expired says none live, and still connected', async () => {
+    const lapsed = { ...tokenRow('t-a1', 'codex on Linux', 1_000), expires_at: 2_000 };
+    const api = agentsApi([existing({ tokens: [lapsed], last_seen_at: 1_500 })]);
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      await page.locator('.agents-row').waitFor({ timeout: 20_000 });
+      // LAI-318: a credential that stopped working is not one never created,
+      // and the token lapsing does not unsay that Laika saw the agent.
+      assert.deepEqual(await readiness(page), {
+        credential_created: 'false',
+        connected: 'true',
+        ready_for_recovery: 'false',
+      });
+      const credential = await page
+        .locator('.agents-row [data-fact="credential_created"]')
+        .innerText();
+      assert.match(credential, /Credential created — none live/);
+      assert.match(credential, /expired or been revoked/);
+      const row = await page.locator('.agents-row [data-readiness]').innerText();
+      assert.doesNotMatch(row, /No token yet/);
+      assert.doesNotMatch(row, /has not seen a request/);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('rename and manage access send exactly what was changed', async () => {
     const api = agentsApi([existing()]);
     const h = await open('/developer?tab=agents', api.stub);

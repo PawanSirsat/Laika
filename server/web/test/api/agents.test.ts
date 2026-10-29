@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  AGENT_STATE_LABELS,
   agentHarness,
   agentState,
   liveToken,
@@ -119,6 +120,15 @@ void describe('agentState keeps the states apart', () => {
     assert.equal(agentState(agent({ status: 'revoked', revoked_at: now }), now), 'revoked');
     const expired = agent({ tokens: [token({ expires_at: now - 1 })] });
     assert.equal(agentState(expired, now), 'no-credential');
+  });
+
+  void test('ready-for-recovery is never claimed: no API reports it before Phase 3', () => {
+    assert.deepEqual(Object.keys(AGENT_STATE_LABELS).sort(), [
+      'connected',
+      'credential-created',
+      'no-credential',
+      'revoked',
+    ]);
   });
 });
 

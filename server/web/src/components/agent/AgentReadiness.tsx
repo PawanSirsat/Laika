@@ -1,9 +1,14 @@
-import { READINESS, READINESS_WORDS, type Readiness } from './agent-states.ts';
+import { CREDENTIAL_LAPSED, READINESS, READINESS_WORDS, type Readiness } from './agent-states.ts';
 import './agent.css';
 
 export interface AgentReadinessProps {
   /** Which of the three facts are true. Each is shown on its own line. */
   readonly reached: ReadonlySet<Readiness>;
+  /**
+   * It had a credential and none is live now, so *credential created* says
+   * *none live* rather than *not yet* (LAI-318). Ignored once one is live.
+   */
+  readonly credentialLapsed?: boolean;
 }
 
 /**
@@ -12,11 +17,12 @@ export interface AgentReadinessProps {
  * in words, so an agent with a token that has never called in is never read
  * as one that can take over work.
  */
-export function AgentReadiness({ reached }: AgentReadinessProps) {
+export function AgentReadiness({ reached, credentialLapsed = false }: AgentReadinessProps) {
   return (
     <ul className="readiness" data-readiness>
       {READINESS.map((fact) => {
         const yes = reached.has(fact);
+        const lapsed = !yes && credentialLapsed && fact === 'credential_created';
         const words = READINESS_WORDS[fact];
         return (
           <li key={fact} className="readiness-row" data-fact={fact} data-reached={yes}>
@@ -33,8 +39,12 @@ export function AgentReadiness({ reached }: AgentReadinessProps) {
             </svg>
             <span>
               <b>{words.label}</b>
-              <span className="readiness-verdict">{yes ? ' — yes' : ' — not yet'}</span>
-              <span className="readiness-why">{yes ? words.done : words.notYet}</span>
+              <span className="readiness-verdict">
+                {yes ? ' — yes' : lapsed ? ` — ${CREDENTIAL_LAPSED.verdict}` : ' — not yet'}
+              </span>
+              <span className="readiness-why">
+                {yes ? words.done : lapsed ? CREDENTIAL_LAPSED.why : words.notYet}
+              </span>
             </span>
           </li>
         );
