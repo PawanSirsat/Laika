@@ -1281,6 +1281,8 @@ export const agentSessionContextDeliveries = sqliteTable(
     primaryKey({ columns: [t.sessionId, t.projectId] }),
     index('agent_session_context_deliveries_project_id_idx').on(t.projectId),
   ],
+);
+
 // ------------------------------------------------- §4.70 task_checkpoints
 
 /** A manifest entry (§4.70): a path and its line counts — **names only**. */
