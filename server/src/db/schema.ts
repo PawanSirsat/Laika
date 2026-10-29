@@ -933,6 +933,22 @@ export const agents = sqliteTable(
   ],
 );
 
+// --------------------------------------------- §4.67 recognised_agent_devices
+
+/** The owner's confirmed labels; no row means unrecognised (LAI-590). */
+export const recognisedAgentDevices = sqliteTable(
+  'recognised_agent_devices',
+  {
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Trimmed, lower case; the empty key groups null/blank labels. */
+    labelKey: text('label_key').notNull(),
+    createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.ownerUserId, t.labelKey] })],
+);
+
 // ---------------------------------------------- §4.64 agent_project_grants
 
 /**

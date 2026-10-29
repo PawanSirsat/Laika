@@ -3,11 +3,12 @@ import { and, desc, eq, isNull, lt, or, type SQL } from 'drizzle-orm';
 import { AGENT_CLIENTS } from '../auth/agent-clients.ts';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
+import { deviceLabelKey } from '../db/device-label.ts';
 import { type AgentGrantScope, type AgentStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { agentProjectGrants, agents, tokens } from '../db/schema.ts';
+import { agentProjectGrants, agents, recognisedAgentDevices, tokens } from '../db/schema.ts';
 import { type AgentSessionView, endSessionsOfRevokedAgent, recentAgentSessions } from './claims.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, forcedTokenScope } from '../policy/can.ts';
@@ -362,6 +363,115 @@ export function revokeAgent(
   });
 
   return agentView(db, { ...row, status: 'revoked', revokedAt: now });
+}
+
+/** A derived device, scoped to exactly one owner (LAI-590, §4.63). */
+export interface AgentDevice {
+  /** Normalised label used by confirm/revoke; null is the unnamed group. */
+  device_label: string | null;
+  display_name: string;
+  recognised: boolean;
+  last_seen_at: number | null;
+  active_count: number;
+  revoked_count: number;
+  agents: AgentView[];
+}
+
+/** All own agents, without pagination: a device must never be split across pages. */
+export function listOwnAgentDevices(db: Db, actor: ResolvedActor): AgentDevice[] {
+  assertCan(actor, 'agent.read_own');
+  const recognised = new Set(
+    db
+      .select()
+      .from(recognisedAgentDevices)
+      .where(eq(recognisedAgentDevices.ownerUserId, actor.userId))
+      .all()
+      .map((row) => row.labelKey),
+  );
+  const grouped = new Map<string, AgentDevice>();
+  for (const row of ownDeviceAgents(db, actor)) {
+    const key = deviceLabelKey(row.deviceLabel);
+    let device = grouped.get(key);
+    if (device === undefined) {
+      device = {
+        device_label: key === '' ? null : key,
+        display_name: key === '' ? 'Unnamed device' : (row.deviceLabel ?? '').trim(),
+        recognised: recognised.has(key),
+        last_seen_at: null,
+        active_count: 0,
+        revoked_count: 0,
+        agents: [],
+      };
+      grouped.set(key, device);
+    }
+    if (row.lastSeenAt !== null) {
+      device.last_seen_at = Math.max(device.last_seen_at ?? row.lastSeenAt, row.lastSeenAt);
+    }
+    if (row.status === 'active') device.active_count += 1;
+    else device.revoked_count += 1;
+    device.agents.push(agentView(db, row));
+  }
+  return [...grouped.values()].sort((a, b) =>
+    (a.device_label ?? '').localeCompare(b.device_label ?? ''),
+  );
+}
+
+/** A confirmation is the owner's statement about a label, not a fingerprint. */
+export function confirmOwnAgentDevice(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  deviceLabel: string | null,
+  now: number = Date.now(),
+): { device_label: string | null; recognised: true } {
+  assertCan(actor, 'agent.manage_own');
+  // The caller sends back the key the list served, which lower-casing may
+  // have made longer than a stored label may be ('İ' is two code units
+  // lower-cased): look it up, never re-apply the stored label's limit.
+  const key = deviceLabelKey(deviceLabel);
+  immediateTransaction(sqlite, () => {
+    requireOwnDeviceAgents(db, actor, key);
+    db.insert(recognisedAgentDevices)
+      .values({ ownerUserId: actor.userId, labelKey: key, createdAt: now })
+      .onConflictDoNothing()
+      .run();
+  });
+  return { device_label: key === '' ? null : key, recognised: true };
+}
+
+/** Reuse single-agent revocation under one outer write lock/transaction. */
+export function revokeOwnAgentDevice(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  deviceLabel: string | null,
+  now: number = Date.now(),
+): { revoked_agent_ids: string[] } {
+  assertCan(actor, 'agent.manage_own');
+  // The caller sends back the key the list served, which lower-casing may
+  // have made longer than a stored label may be ('İ' is two code units
+  // lower-cased): look it up, never re-apply the stored label's limit.
+  const key = deviceLabelKey(deviceLabel);
+  return immediateTransaction(sqlite, () => {
+    const active = requireOwnDeviceAgents(db, actor, key).filter((row) => row.status === 'active');
+    for (const row of active) revokeAgent(sqlite, db, actor, row.id, now);
+    return { revoked_agent_ids: active.map((row) => row.id) };
+  });
+}
+
+function ownDeviceAgents(db: Db, actor: ResolvedActor): AgentRow[] {
+  return db
+    .select()
+    .from(agents)
+    .where(eq(agents.ownerUserId, actor.userId))
+    .orderBy(desc(agents.createdAt), desc(agents.id))
+    .all();
+}
+
+function requireOwnDeviceAgents(db: Db, actor: ResolvedActor, key: string): AgentRow[] {
+  const rows = ownDeviceAgents(db, actor).filter((row) => deviceLabelKey(row.deviceLabel) === key);
+  if (rows.length === 0) throw ApiError.notFound('Unknown device');
+  return rows;
 }
 
 // ------------------------------------------------------------------ helpers
