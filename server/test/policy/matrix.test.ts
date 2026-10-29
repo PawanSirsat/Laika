@@ -257,6 +257,8 @@ const PROJECT_MATRIX: ProjectRow[] = [
   ['task.write', true, true, false],
   // | Claim a task (start_working) | ✓ | ✓ | — |
   ['task.claim', true, true, false],
+  // | Save a checkpoint on a task your agent holds | ✓ | ✓ | — |
+  ['task.checkpoint.create', true, true, false],
   // | Assign a task to someone else | ✓ | ✓ | — |
   ['task.assign_other', true, true, false],
   // | Add comment | ✓ | ✓ | — |
@@ -358,8 +360,10 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.time.prune', {}],
     ['system.idempotency.prune', {}],
     ['system.claim.expire', {}],
+    ['system.checkpoint.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
+    ['system.checkpoint.verify', { projectId: PROJECT }],
   ];
 
   it('holds each of §3.4’s actions', () => {

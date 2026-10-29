@@ -245,15 +245,18 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.time.prune',
   'system.idempotency.prune',
   'system.claim.expire',
+  'system.checkpoint.prune',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
+  'system.checkpoint.verify',
 ]);
 
 /** Which of §3.4's grants need a project, and therefore a resolved delivery. */
 const SYSTEM_PROJECT_SCOPED: ReadonlySet<Action> = new Set<Action>([
   'task.write',
   'comment.create',
+  'system.checkpoint.verify',
 ]);
 
 function canSystem(principal: SystemPrincipal, action: Action, resource: Resource): boolean {
@@ -691,6 +694,15 @@ function canProjectAction(
 
     // | Claim a task (`start_working`) | ✓ | ✓ | — |
     case 'task.claim':
+      return isMemberUp;
+
+    // | Save a checkpoint on a task your agent holds | ✓ | ✓ | — |
+    //
+    // Asked of the owner's role; the agent's grant and token narrow it, and
+    // the service requires a registered agent holding the live claim (§3.2,
+    // §4.68, LAI-545) — facts about other rows, which a pure function is not
+    // given.
+    case 'task.checkpoint.create':
       return isMemberUp;
 
     // | Assign a task to someone else | ✓ | ✓ | — |

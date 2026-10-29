@@ -95,6 +95,7 @@ export const PROJECT_ACTIONS = [
   'task.create',
   'task.write',
   'task.claim',
+  'task.checkpoint.create',
   'task.assign_other',
   'comment.create',
   'comment.edit',
@@ -143,6 +144,8 @@ export const SYSTEM_ACTIONS = [
   // §11.6: a claim whose lease lapsed is marked `expired` (proposal §4.2,
   // LAI-541) — nobody did it, so nobody is the actor.
   'system.claim.expire',
+  'system.checkpoint.verify',
+  'system.checkpoint.prune',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];

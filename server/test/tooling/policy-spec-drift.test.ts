@@ -134,6 +134,7 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Create tasks', ['task.create']],
   ['Edit / move any task', ['task.write']],
   ['Claim a task (start_working)', ['task.claim']],
+  ['Save a checkpoint on a task your agent holds', ['task.checkpoint.create']],
   ['Assign a task to someone else', ['task.assign_other']],
   ['Add comment', ['comment.create']],
   ['Edit / delete comment', ['comment.edit', 'comment.delete']],
