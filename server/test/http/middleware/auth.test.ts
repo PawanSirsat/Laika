@@ -732,6 +732,73 @@ describe('a project whitelist narrows which projects', () => {
   });
 });
 
+describe('a token that expires cannot mint one that outlives it (LAI-563, LAI-592)', () => {
+  /**
+   * Expiry was the one way left for a token to widen itself: a token with an
+   * `expires_at` could mint one with none. Refused with a named reason, as the
+   * pin is; asserted against the same body from a session and from a token
+   * that never expires, so the `403` is the expiry's and nothing else's.
+   */
+  it('refuses no expiry or a later one with token_expiry_bounded, and allows its own or earlier', async () => {
+    const own = Date.now() + 60 * 60_000;
+    const shortLived = await mint({ name: 'short', expires_at: own });
+    const forever = await mint({ name: 'forever' });
+
+    const asks = [
+      { name: 'unbounded', scope: 'full' },
+      { name: 'explicit-null', scope: 'full', expires_at: null },
+      { name: 'one-ms-later', scope: 'full', expires_at: own + 1 },
+      { name: 'a-year', scope: 'read_only', expires_at: own + 365 * 24 * 60 * 60_000 },
+    ];
+    for (const body of asks) {
+      const res = await withToken('/api/v1/tokens', shortLived, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      expect(res.status, body.name).toBe(403);
+      const { error } = (await res.json()) as {
+        error: { code: string; details: Record<string, unknown> };
+      };
+      expect(error.code, body.name).toBe('forbidden');
+      expect(error.details, body.name).toEqual({
+        action: 'token.create_own',
+        reason: 'token_expiry_bounded',
+        expires_at: body.expires_at ?? null,
+        max_expires_at: own,
+      });
+
+      // The same body from a token with no expiry, and from the session: minted.
+      for (const [label, send] of [
+        [
+          'forever',
+          (b: string) => withToken('/api/v1/tokens', forever, { method: 'POST', body: b }),
+        ],
+        [
+          'session',
+          (b: string) => withCookie('/api/v1/tokens', ownerCookie, { method: 'POST', body: b }),
+        ],
+      ] as const) {
+        const allowed = await send(JSON.stringify(body));
+        expect(allowed.status, `${body.name} ${label}`).toBe(201);
+      }
+    }
+    // Nothing the refusals asked for was minted: 2 setup tokens + 4 × 2 allowed.
+    expect(h.db.select().from(tokens).all()).toHaveLength(2 + asks.length * 2);
+
+    // Exactly its own expiry, and an earlier one, are the token's to mint.
+    for (const expires_at of [own, own - 30 * 60_000]) {
+      const res = await withToken('/api/v1/tokens', shortLived, {
+        method: 'POST',
+        body: JSON.stringify({ name: `within-${expires_at}`, scope: 'full', expires_at }),
+      });
+      expect(res.status, await res.clone().text()).toBe(201);
+      expect(((await res.json()) as { token: { expires_at: number } }).token.expires_at).toBe(
+        expires_at,
+      );
+    }
+  });
+});
+
 describe('last_used_at (§7.2)', () => {
   it('is stamped on first use and not rewritten on the next call', async () => {
     const secret = await mint({});

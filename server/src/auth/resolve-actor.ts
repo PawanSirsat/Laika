@@ -244,7 +244,13 @@ export function tokenContextFor(
   }
   return {
     ok: true,
-    token: { id: row.id, scope: row.scope, projectIds: tokenProjectIds(row), agent },
+    token: {
+      id: row.id,
+      scope: row.scope,
+      projectIds: tokenProjectIds(row),
+      expiresAt: row.expiresAt,
+      agent,
+    },
   };
 }
 
