@@ -609,6 +609,7 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       const receiving = registerAgent(t.sqlite, t.db, owner(), {
         displayName: 'Receiving sweep agent',
         harness: 'claude-code',
+        deviceLabel: 'receiving-sweep',
         grants: [{ projectId: claimed.project_id, scope: 'full' }],
       });
       const asReceiver = resolveTokenActor(t.db, receiving.secret, Date.now());

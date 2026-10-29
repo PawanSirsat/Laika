@@ -192,6 +192,9 @@ async function errorOf(res: Response, status: number): Promise<ErrorBody['error'
   return ((await res.json()) as ErrorBody).error;
 }
 
+/** A device per fixture agent: D-120 allows one active agent per harness per device. */
+let fixtureDevices = 0;
+
 async function registerAgent(): Promise<string> {
   const res = await h.app.request('/api/v1/agents', {
     method: 'POST',
@@ -199,6 +202,7 @@ async function registerAgent(): Promise<string> {
     body: JSON.stringify({
       display_name: 'Ada’s Claude',
       harness: 'claude-code',
+      device_label: `device-${++fixtureDevices}`,
       grants: [{ project_id: projectId, scope: 'full' }],
     }),
   });
