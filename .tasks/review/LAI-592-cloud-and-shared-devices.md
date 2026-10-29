@@ -313,3 +313,113 @@ Non-blocking: exact boundary with a fixed clock and an injectable `now` on
 `updateAgent()` (M12, M13); Unicode-space and look-alike labels (M14, M15);
 the `device_label` comment in `AgentView` no longer says it decides nothing.
 Criteria unchanged (frozen in review).
+
+## Belka takes over (2026-10-30) — what was waiting, and what was added
+
+Strelka was idle; Pawan told Belka to finish the CORE half and proceed on the
+decision himself.
+
+**What the draft waited on.** Only the decision: the proposed D-120 (*Proposed
+docs half* above) needed approval from Pawan's own account before merge
+(*Dependencies*, and the PR body's "Draft until the decision is approved from
+Pawan's account"). D-120 was not recorded anywhere — no `docs/DECISIONS.md`
+entry, no proposal section, on any branch. LAI-320 (the web half) was also
+open, and is what keeps the gate red.
+
+**Owner direction applied (Pawan, 2026-10-29, through polly):** an agent is
+exactly harness · device; one active agent per harness per device per owner; a
+cloud runner is a device like `Cloud`. The one product choice still open was
+how strict "one active agent" is; the more restrictive reading was taken:
+per owner, an unnamed device counts as a device, and both register and
+rename/relabel are refused (`409`, not a silent revoke of the old one).
+
+**Added in this branch (CORE):**
+
+- `server/src/services/agents.ts` — `assertHarnessDeviceFree()`, called inside
+  the write transaction of `registerAgent()` and `updateAgent()` (harness or
+  label change). `409 conflict`, `reason` `agent_exists_for_harness_device`.
+- `server/src/services/tokens.ts`, `server/src/auth/resolve-actor.ts`,
+  `server/src/policy/can.ts` — `TokenContext.expiresAt`, and
+  `assertWithinOwnExpiry()` in `createToken()`: a token that expires cannot
+  mint one with no expiry or a later one, `403` `token_expiry_bounded`. This is
+  LAI-563's criterion (CHIEF's block, backlog, unclaimed); CHIEF can close
+  LAI-563 against this branch.
+- Tests: `agents.test.ts` — D-120 (normalised device, unnamed device, revoked
+  frees, rename/relabel, never names another owner's) and *missing, not
+  hidden* (every agent route, a foreign Cloud agent vs an unknown id, bodies
+  compared with the id substituted; neither list mentions it);
+  `middleware/auth.test.ts` — the mint bound against the same bodies from a
+  session and a never-expiring token. Twelve fixture files gave each fixture
+  agent its own device (or, in `agents.test.ts`, the next known harness),
+  the first one unchanged so existing assertions hold.
+
+**Mutations M16–M26**, same harness discipline (anchor matched once, file
+changed, restored, SHA-256 compared, `git status` clean after):
+
+| # | mutation | red test(s) |
+| --- | --- | --- |
+| M16 | register skips the pair check | 4: same pair; unnamed device; another owner's; idempotency retry count |
+| M17 | update skips it | rename/relabel onto a held pair |
+| M18 | compares every owner's agents | never compares against, or names, another owner's |
+| M19 | device compared raw, not by key | same pair normalised; rename/relabel |
+| M20 | revoked agents still hold the pair | a revoked agent frees its pair |
+| M21 | an agent clashes with itself | rename/relabel (keeping its own pair) |
+| M22 | a foreign agent is `403`, not `404` | another person's agent is a 404; missing, not hidden |
+| M23 | `createToken` skips the expiry bound | token_expiry_bounded |
+| M24 | an unbounded mint allowed | token_expiry_bounded |
+| M25 | the bound is exclusive | token_expiry_bounded (own expiry allowed) |
+| M26 | token context drops `expiresAt` | token_expiry_bounded |
+
+M1–M7 re-run on the merged tree: each still red on the same tests as the table
+above.
+
+**Proposed decision, superseding the draft above** (number D-120; approval
+from Pawan's account still required; the same text is in PR #141's body):
+
+> **D-120 — An agent is one harness on one device, at most one active per owner; a cloud runner is the device `Cloud`, whose tokens live at most a day; every agent is its registering person's (LAI-592)**
+>
+> 1. **An agent is exactly `<harness> · <device>`** (D-118), and **an owner
+>    holds at most one active agent for each pair.** The device is compared
+>    by its normalised key (§4.63: trimmed, lower-cased); an agent with no
+>    device label is on one unnamed device. Registering a second, or renaming
+>    the harness or relabelling onto a pair another active agent of yours
+>    holds, is `409 conflict` with `reason` `agent_exists_for_harness_device`
+>    and `agent_id` naming yours. A revoked agent frees its pair. Only your
+>    own agents are compared: another person's agent on the same label and
+>    harness is no conflict and is never named. Agents that already share a
+>    pair before this ships keep working; the rule bites on the next register,
+>    rename or relabel.
+> 2. **A cloud runner is a device like any other, labelled `Cloud`** (the
+>    same normalisation; look-alike and compatibility forms — fullwidth,
+>    Cyrillic, zero-width — are other labels). No new field.
+> 3. **A cloud agent's tokens must expire, within 24 hours of minting**
+>    (`CLOUD_TOKEN_MAX_TTL_MS`; exactly 24 h is allowed). Registering one,
+>    rotating one of its tokens, or relabelling an agent into `Cloud` while a
+>    live token breaks the rule is `422 unprocessable` with `reason`
+>    `cloud_token_expiry_required` (none, or not in the future) or
+>    `cloud_token_expiry_too_long`. A rotation with no `expires_at` carries
+>    the old expiry, which must itself pass. Why 24 h: a runner's longest job
+>    and a daily schedule both fit, a secret leaked from a runner is dead
+>    within a day, and minting is session-only, so a shorter limit would cut
+>    long jobs off mid-run.
+> 4. **No token mints a token that outlives it.** A token with an expiry
+>    asking `POST /tokens` for no expiry or a later one is `403 forbidden`,
+>    `reason` `token_expiry_bounded` — refused, never clamped, as LAI-562's
+>    project pin is. An agent's token, a cloud one included, cannot mint at
+>    all (`agent_token`), and registering or rotating is session-only, so a
+>    short-lived credential can never produce a longer-lived one.
+> 5. **An expired cloud token is refused as any expired token is** — `401`,
+>    byte-identical body; the agent and the owner's other devices are
+>    untouched.
+> 6. **The owner is the person who registered it**, always the session user;
+>    no route, body field or tool registers an agent for anyone else. Every
+>    agent read and the device list name them (`owner_display_name`, live
+>    `users.name`).
+> 7. **Another person's agents and devices are missing, not hidden**: every
+>    agent route answers a foreign agent — a cloud one included — exactly as
+>    an id that does not exist (`404`, same body), and neither list mentions
+>    it. Another person's laptop carries that person's own agent, registered
+>    by them (D-114).
+> 8. `device_label` now decides two things — the one-per-pair rule and the
+>    cloud rule — both of which only constrain the owner's own credentials and
+>    grant no access.
