@@ -34,7 +34,7 @@ import {
   type Harness,
   type StubCall,
 } from './harness.ts';
-import { confirmSettled } from './confirm.ts';
+import { answerConfirm, confirmSettled } from './confirm.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -189,6 +189,14 @@ function devicesApi(
     },
     ...over,
   };
+  for (const a of agents) {
+    stub[`/api/v1/agents/${a.id}/revoke`] ??= () => {
+      a.status = 'revoked';
+      a.revoked_at = Date.now();
+      for (const t of a.tokens) t.revoked_at ??= a.revoked_at;
+      return a;
+    };
+  }
   return stub as ApiStub;
 }
 
@@ -206,6 +214,58 @@ async function openAt(stub: ApiStub, width = 1440): Promise<Harness> {
 
 const section = (page: Page) => page.locator('[data-testid="devices-section"]');
 const group = (page: Page, label: string) => page.locator(`.devices-group[data-device="${label}"]`);
+
+/**
+ * Hold `count` requests to `url` matching `method` from the `nth` (1-based),
+ * until the test releases it — through to the stub, or answered with a
+ * refusal. Routes are removed before the page closes (a held route left open
+ * fails the run with every assertion green).
+ */
+async function hold(
+  page: Page,
+  url: string,
+  method: string,
+  nth = 1,
+  count = Infinity,
+  /** `'response'`: the request reaches the stub now, and only its answer is held. */
+  at: 'request' | 'response' = 'request',
+) {
+  let seen = 0;
+  const held: { release: (refusal?: { status: number; message: string }) => void }[] = [];
+  const arrived: (() => void)[] = [];
+  await page.route(url, async (route) => {
+    if (route.request().method() !== method) {
+      await route.fallback();
+      return;
+    }
+    seen += 1;
+    if (seen < nth || seen >= nth + count) {
+      await route.fallback();
+      return;
+    }
+    const early = at === 'response' ? await route.fetch() : undefined;
+    const answer = await new Promise<{ status: number; message: string } | undefined>((go) => {
+      held.push({ release: go });
+      for (const done of arrived.splice(0)) done();
+    });
+    if (early !== undefined) await route.fulfill({ response: early });
+    else if (answer === undefined) await route.fallback();
+    else
+      await route.fulfill({
+        status: answer.status,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'internal', message: answer.message } }),
+      });
+  });
+  return {
+    /** Resolves once the nth request is being held. */
+    arrived: () =>
+      held.length > 0 ? Promise.resolve() : new Promise<void>((done) => arrived.push(done)),
+    release: (refusal?: { status: number; message: string }) => {
+      held.shift()?.release(refusal);
+    },
+  };
+}
 
 function posts(h: Harness, path: string): StubCall[] {
   return h.calls.filter((c) => c.method === 'POST' && c.path === path);
@@ -524,6 +584,140 @@ void describe('Your devices', () => {
         0,
       );
     } finally {
+      await h.close();
+    }
+  });
+
+  void test('revoke pending: focus stays in the dialog; after a failure Escape closes and focus returns', async () => {
+    const h = await openAt(devicesApi(seed(Date.now()), new Set(['kestrel-mk2'])));
+    const { page } = h;
+    try {
+      const gate = await hold(page, '**/api/v1/agents/devices/revoke', 'POST');
+      const button = group(page, 'kestrel-mk2').getByRole('button', {
+        name: 'Revoke device: Kestrel-Mk2',
+      });
+      await button.waitFor({ timeout: 20_000 });
+      await button.focus();
+      await page.keyboard.press('Enter');
+      await confirmSettled(page);
+      const dialog = page.locator('[data-confirm-dialog]');
+      await dialog.locator('[data-confirm-ok] button').focus();
+      await page.keyboard.press('Enter');
+      await gate.arrived();
+
+      const inside = () =>
+        page.evaluate(() =>
+          Boolean(
+            document.querySelector('[data-confirm-dialog]')?.contains(document.activeElement),
+          ),
+        );
+      await until(inside);
+      assert.equal(await inside(), true, 'focus left the dialog while the revoke was pending');
+      for (let i = 0; i < 4; i += 1) {
+        await page.keyboard.press('Tab');
+        assert.equal(await inside(), true, `pending: Tab ${String(i + 1)} left the dialog`);
+      }
+
+      gate.release({ status: 500, message: 'The database is busy' });
+      await dialog.locator('[data-confirm-error]').waitFor();
+      assert.equal(await inside(), true, 'focus left the dialog after the failure');
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await button.evaluate((el) => el === document.activeElement), true);
+      assert.match(
+        await group(page, 'kestrel-mk2').locator('.devices-facts').innerText(),
+        /2 active/,
+      );
+    } finally {
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('a confirm answering mid-refresh never leaves an older device list on screen', async () => {
+    /*
+     * The devices GET a revoke in the Agents list starts is the second one
+     * (the first is the page's own load). It reaches the server at once —
+     * after the revoke, before the confirm — and its **answer** is held and
+     * delivered last. Shown, it would undo the confirm on screen; dropped
+     * without a newer read (27f646e3), it left the list from before the
+     * revoke. Only a read asked after the confirm is right.
+     */
+    const agents = seed(Date.now());
+    const h = await openAt(devicesApi(agents, new Set(['kestrel-mk2'])));
+    const { page } = h;
+    try {
+      const confirmGate = await hold(page, '**/api/v1/agents/devices/confirm', 'POST');
+      const readGate = await hold(page, '**/api/v1/agents/devices', 'GET', 2, 1, 'response');
+      const settled = async () => Number(await section(page).getAttribute('data-reads-settled'));
+      const quokka = group(page, 'quokka box');
+      await quokka.getByRole('button', { name: /This is mine/ }).click({ timeout: 20_000 });
+      await confirmGate.arrived();
+
+      // Revoke one agent on another device from the Agents list itself.
+      const row = page.locator('.agents-row[data-agent="k1"]');
+      await row.getByRole('button', { name: 'Revoke', exact: true }).click();
+      await answerConfirm(page, true);
+      await until(async () => (await row.getAttribute('data-state')) === 'revoked');
+      await readGate.arrived();
+
+      confirmGate.release();
+      await quokka.locator('[data-unrecognised]').waitFor({ state: 'detached' });
+      const before = await settled();
+      readGate.release();
+      // The late answer has been handled, applied or dropped.
+      await until(async () => (await settled()) > before);
+
+      const kestrel = group(page, 'kestrel-mk2');
+      await until(async () =>
+        (await kestrel.locator('.devices-facts').innerText()).includes('1 active · 2 revoked'),
+      );
+      assert.equal(await row.getAttribute('data-state'), 'revoked');
+      assert.match(await kestrel.locator('.devices-facts').innerText(), /1 active · 2 revoked/);
+      assert.equal(
+        await kestrel.locator('.devices-agent[data-agent="k1"]').getAttribute('data-state'),
+        'revoked',
+      );
+      assert.equal(await quokka.locator('[data-unrecognised]').count(), 0);
+    } finally {
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('two confirms in flight: each device keeps its own pending state', async () => {
+    const agents = [
+      ...seed(Date.now()),
+      agentRow('w1', 'codex', 'Wombat', { last_seen_at: Date.now() - MIN }),
+    ];
+    const h = await openAt(devicesApi(agents, new Set(['kestrel-mk2'])));
+    const { page } = h;
+    try {
+      const gate = await hold(page, '**/api/v1/agents/devices/confirm', 'POST');
+      const quokka = group(page, 'quokka box').getByRole('button', { name: /This is mine/ });
+      const wombat = group(page, 'wombat').getByRole('button', { name: /This is mine/ });
+      await quokka.click({ timeout: 20_000 });
+      await gate.arrived();
+      await wombat.click();
+      await until(async () => (await wombat.getAttribute('aria-busy')) === 'true');
+      assert.equal(
+        await quokka.getAttribute('aria-busy'),
+        'true',
+        'the second confirm cleared the first',
+      );
+      assert.equal(await wombat.getAttribute('aria-busy'), 'true');
+
+      gate.release();
+      await group(page, 'quokka box').locator('[data-unrecognised]').waitFor({ state: 'detached' });
+      assert.equal(
+        await wombat.getAttribute('aria-busy'),
+        'true',
+        'the first answer cleared the second',
+      );
+      gate.release();
+      await group(page, 'wombat').locator('[data-unrecognised]').waitFor({ state: 'detached' });
+    } finally {
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
   });
