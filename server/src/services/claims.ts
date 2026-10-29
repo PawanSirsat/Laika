@@ -688,6 +688,18 @@ export function claimFenceRefusal(
       );
     }
     if (live.agentId !== agent.id) {
+      // **The caller's own claim lapsed** — handed on (`transferred`) or
+      // expired and recovered by another agent (§4.71, LAI-546): §6.3 answers
+      // `stale_claim`, generation or not. Its generation is invalid for good;
+      // the task being held by somebody else is the consequence, not the news.
+      const own = newestClaimOfAgent(db, taskId, agent.id);
+      if (own?.state === 'transferred' || own?.state === 'expired') {
+        return claimConflict('stale_claim', 'Your claim on this task was handed on or lapsed', {
+          task_id: taskId,
+          claim_generation: own.generation,
+          claim_state: own.state,
+        });
+      }
       return claimConflict('claim_held', 'Another agent session holds this task', {
         task_id: taskId,
         agent_id: live.agentId,
@@ -754,6 +766,17 @@ export function claimFenceRefusal(
     });
   }
   return null;
+}
+
+/** This agent's newest claim on the task, of any state. */
+function newestClaimOfAgent(db: Db, taskId: string, agentId: string): ClaimRow | undefined {
+  return db
+    .select()
+    .from(taskClaims)
+    .where(and(eq(taskClaims.taskId, taskId), eq(taskClaims.agentId, agentId)))
+    .orderBy(desc(taskClaims.generation))
+    .limit(1)
+    .get();
 }
 
 /**
@@ -1212,13 +1235,7 @@ export function reclaimTask(
     // LAI-546): the task is somebody else's now — `offer_taken`, asked before
     // D-119 and the live claim: an accept moves the selection and the claim,
     // and the old holder should hear why rather than a bare refusal.
-    const mine = db
-      .select()
-      .from(taskClaims)
-      .where(and(eq(taskClaims.taskId, taskId), eq(taskClaims.agentId, agent.id)))
-      .orderBy(desc(taskClaims.generation))
-      .limit(1)
-      .get();
+    const mine = newestClaimOfAgent(db, taskId, agent.id);
     if (mine?.state === 'expired') assertNoAcceptedOfferFrom(db, taskId, mine.generation);
 
     // D-119: the selection may have moved to another agent while the claim was

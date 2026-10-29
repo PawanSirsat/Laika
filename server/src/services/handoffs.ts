@@ -1292,8 +1292,10 @@ export function acceptHandoff(
         };
       }
     }
-    if (!addressedTo(offer, agent.id)) throw notTheReceiver(offer);
+    // Closed before addressed: an unnamed recovery names its receiver when it
+    // is accepted, and the agent that lost the race must hear `offer_taken`.
     assertOfferLive(offer, now);
+    if (!addressedTo(offer, agent.id)) throw notTheReceiver(offer);
     if (offer.state === 'pending_approval') {
       throw conflict('approval_pending', 'This offer is waiting for a person to approve it', {
         offer_id: offer.id,
