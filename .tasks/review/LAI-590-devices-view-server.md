@@ -84,7 +84,7 @@ reads *Not recognised*.
       §6, and the §3.1 actions used — only what the guards force
 - [x] Tests: REST for list, revoke, confirm, the no-leak case and the token
       refusal; each rule broken on purpose and the matching test seen red
-- [x] Gate: repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0
+- [ ] Gate: repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0
 
 ## Dependencies
 
