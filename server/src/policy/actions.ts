@@ -97,6 +97,14 @@ export const PROJECT_ACTIONS = [
   'task.claim',
   'task.checkpoint.create',
   'task.checkpoint.retag',
+  // §4.71, §4.72 (LAI-546): offering, approving, accepting, declining and
+  // cancelling a hand-off, and the project's hand-off policy.
+  'task.handoff.offer',
+  'task.handoff.approve',
+  'task.handoff.accept',
+  'task.handoff.decline',
+  'task.handoff.cancel',
+  'project.handoff_policy.edit',
   'task.assign_other',
   'comment.create',
   'comment.edit',
@@ -145,6 +153,10 @@ export const SYSTEM_ACTIONS = [
   // §11.6: a claim whose lease lapsed is marked `expired` (proposal §4.2,
   // LAI-541) — nobody did it, so nobody is the actor.
   'system.claim.expire',
+  // §11.6 (LAI-546): an expired claim with a verified checkpoint is offered
+  // for recovery — never assigned — and a live offer past its time expires.
+  'system.handoff.recover',
+  'system.handoff.expire',
   'system.checkpoint.verify',
   'system.checkpoint.prune',
 ] as const;
@@ -324,6 +336,9 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // (D-114, LAI-534): a token that could register an agent, widen a grant or
   // rotate a credential could mint itself — or a sibling — more access.
   'agent.manage_own',
+  // **Approving a transfer is a person's, signed in** (§3.2, §4.71, LAI-546):
+  // an agent that could approve could hand its own work across owners.
+  'task.handoff.approve',
 ]);
 
 /**
