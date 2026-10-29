@@ -48,8 +48,11 @@ import {
   claimView,
   holdsLiveClaim,
   hasOpenWorkRequest,
+  assertSelectedAgentMayClaim,
+  liveClaim,
   registeredAgent,
   releaseLiveClaim,
+  requireVisibleTaskToClaim,
   takeClaim,
   type TaskClaimView,
 } from './claims.ts';
@@ -1574,7 +1577,9 @@ export function startWorking(
 ): StartedWork {
   const now = options.now ?? Date.now();
   const { estimate } = options;
-  const { project } = requireTask(db, taskId);
+  // A task the caller cannot read is answered as one that does not exist
+  // (LAI-586 review) — before `task.claim`, which would say it does.
+  const { project } = requireVisibleTaskToClaim(db, actor, taskId);
   assertCan(withProject(actor, project.id), 'task.claim', { projectId: project.id });
   const onBranch = options.branch?.trim() === '' ? undefined : options.branch?.trim();
   const agent = registeredAgent(actor);
@@ -1741,6 +1746,13 @@ function agentStartWorking(
   const taskId = before.id;
   const onBranch = options.branch?.trim() === '' ? undefined : options.branch?.trim();
   const agent = registeredAgent(actor)!;
+
+  // D-119 first (LAI-586 review round 2): an agent that is not the selected
+  // one hears that reason whatever else is true of the task — the assignee
+  // rule below would otherwise answer it with a bare "already claimed".
+  // Visibility and `task.claim` were asked before this function was reached,
+  // so a hidden task still answers as a missing one.
+  assertSelectedAgentMayClaim(db, actor, taskId, agent.id);
 
   const requested = hasOpenWorkRequest(db, taskId, agent.id);
   if (before.assigneeId !== null && before.assigneeId !== actor.userId && !requested) {
@@ -1968,6 +1980,11 @@ export function changeStatus(
     .where(eq(tasks.id, taskId))
     .run();
 
+  // The session the holder finishes under, read before its claim is released
+  // so the row still says what ran (D-118, LAI-586); `appendActivity` keeps it
+  // only if it is the writing agent's own.
+  const underSession =
+    task.status === 'in_progress' ? (liveClaim(db, taskId)?.sessionId ?? null) : null;
   // Out of `in_progress`, nobody works it under the claim it had (§5,
   // LAI-541): released, and its generation refused from here on.
   if (task.status === 'in_progress') releaseLiveClaim(db, taskId, now);
@@ -1977,6 +1994,7 @@ export function changeStatus(
     projectId: project.id,
     taskId,
     ...activityActor(actor),
+    agentSessionId: underSession,
     type: 'task.status_changed',
     payload: { from: task.status, to, ...statusPayload(from, dest), ...(via ? { via } : {}) },
     now,

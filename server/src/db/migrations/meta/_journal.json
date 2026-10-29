@@ -442,6 +442,13 @@
       "when": 1793140820600,
       "tag": "0063_agent_sessions_task_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "6",
+      "when": 1793221012206,
+      "tag": "0064_agent_session_harness_model",
+      "breakpoints": true
     }
   ]
 }

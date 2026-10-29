@@ -138,9 +138,10 @@ void describe('agent states on /design/states (LAI-536)', () => {
       );
 
       // Details: the generation and the full SHA, folded away until asked.
-      const details = specimen(h.page, 'panel-working').locator('details');
-      assert.equal(await details.getAttribute('open'), null);
-      await details.locator('summary').click();
+      const details = specimen(h.page, 'panel-working').locator('[data-exec-details]');
+      const toggle = details.getByRole('button', { name: 'Details' });
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      await toggle.click();
       const shown = await details.innerText();
       assert.match(shown, /Claim generation\s+4/);
       assert.match(shown, /[0-9a-f]{40}/);

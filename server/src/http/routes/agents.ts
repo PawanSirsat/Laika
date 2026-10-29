@@ -6,6 +6,7 @@ import {
   AGENT_GRANT_SCOPES,
   type AgentView,
   type CreatedAgentToken,
+  type AgentDetailView,
   getOwnAgent,
   listOwnAgents,
   registerAgent,
@@ -122,7 +123,7 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
 
   app.get('/:id', (c) => {
     const actor = requireActor(c);
-    return c.json(getOwnAgent(db, actor, c.req.param('id')));
+    return c.json<AgentDetailView>(getOwnAgent(db, actor, c.req.param('id')));
   });
 
   app.patch('/:id', async (c) => {

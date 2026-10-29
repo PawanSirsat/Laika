@@ -37,8 +37,26 @@ export interface ActivityEvent {
    * row served before LAI-535 has none (`agentVia` reads both as null).
    */
   readonly agent_id?: string | null;
+  /**
+   * The agent session the row was written under, and what it said ran **then**
+   * (D-118, LAI-586) — self-reported, a snapshot a later heartbeat does not
+   * change. Null for a row no agent session wrote and every row older than the
+   * columns, never back-filled; optional because a row served before LAI-586
+   * has no key at all. Read through `agentLine` (`agent-session.ts`).
+   */
+  readonly agent_session?: ActivitySession | null;
   readonly payload: unknown;
   readonly created_at: number;
+}
+
+/** `ActivitySessionView` in `server/src/services/events.ts`. Self-reported; decides nothing. */
+export interface ActivitySession {
+  readonly id: string;
+  /** The underlying harness's slug, as the session sent it: `codex`, `claude-code`. */
+  readonly harness: string | null;
+  readonly harness_version: string | null;
+  /** `gpt-5.5`, `claude-opus-5-5`. */
+  readonly model: string | null;
 }
 
 export function listTaskActivity(
