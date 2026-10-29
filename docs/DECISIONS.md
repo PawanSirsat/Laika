@@ -6405,11 +6405,16 @@ whatever order they arrived in:
    `verified` again.
 4. **Anything else** — a second creation, an update, a ref at a different
    SHA, a deletion with no creation seen, an annotated tag's object SHA →
-   `uncertain`. Final.
+   `uncertain`. Final: it never becomes `verified` again.
 
-Because the state is a function of the set and a set only grows, neither
-`ref_deleted` nor `uncertain` can return to `verified`; a `ref_deleted` ref
-that later sees a foreign transition becomes `uncertain`. Re-tagging (D-116
+**"Final" means never `verified` again, and that is all it means.** The set
+only grows, and every set containing a deletion or a foreign transition maps
+to `ref_deleted` or `uncertain`, so no later delivery can make the ref usable.
+Between those two unusable states the set decides: a deletion seen before its
+creation reads `uncertain` until the creation arrives and then `ref_deleted`,
+and a `ref_deleted` ref that later sees a foreign transition becomes
+`uncertain`. Either way the checkpoint cannot be offered or accepted from
+that ref. Re-tagging (D-116
 item 7) remains the only way back, through a new ref. Registering a ref is
 the one change to a checkpoint's state no delivery makes: it makes the new ref
 the newest, so the checkpoint takes that ref's state at that moment, normally

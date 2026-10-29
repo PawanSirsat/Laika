@@ -2666,11 +2666,12 @@ its newest ref's**, and the receiver fetches that ref.
 - Anything else — a second creation, an update, a ref at a different SHA, a
   deletion with no creation seen, an annotated tag's object SHA → `uncertain`
 
-**Neither `ref_deleted` nor `uncertain` ever becomes `verified` again**: no
-transition can be removed from the set, and every state the rule gives a set
-containing a deletion or a foreign transition is one of those two. A
-`ref_deleted` ref that later sees a foreign transition becomes `uncertain`,
-because the rule is a function of the set and nothing else. Only a re-tag —
+**Neither `ref_deleted` nor `uncertain` ever becomes `verified` again** — that
+is what *final* means (D-116a): no transition can be removed from the set, and
+every set containing a deletion or a foreign transition maps to one of those
+two. Between them the set decides: a deletion seen before its creation reads
+`uncertain` until the creation arrives, then `ref_deleted`; a `ref_deleted`
+ref that later sees a foreign transition becomes `uncertain`. Only a re-tag —
 a **new** ref, starting from absent — gives the checkpoint a way back.
 
 **Registering a re-tag** (`POST /checkpoints/:id/refs`, §6.4) happens before
