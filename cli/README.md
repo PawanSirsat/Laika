@@ -822,7 +822,7 @@ the harness rows are about the harness itself.
 
 | Capability | Claude Code 2.1.280 | Codex 0.162.1 |
 | --- | --- | --- |
-| Manual `checkpoint save` / `status` / `reverify` (the CLI, any harness) | Verified-and-tested | Documented-not-tested: the CLI is the same for both, but the tests used a `claude-code` credential, not a Codex one |
+| Manual `checkpoint save` / `status` / `reverify` (the CLI, any harness) | Verified-and-tested (the CLI run by the test with a `claude-code` credential, as an agent's Bash tool runs it) | Documented-not-tested: the CLI is the same for both, but the tests used a `claude-code` credential, not a Codex one |
 | Push, then one tag alone, then register; retry with the same key | Verified-and-tested (the remote's `pre-receive` log shows one ref per push) | Documented-not-tested (the same engine; no Codex run) |
 | Consent read before every automatic save | Verified-and-tested | Documented-not-tested (the same engine; no Codex run) |
 | `PreToolUse` / `PostToolUse` drive the trigger and the in-flight check | Documented-not-tested: the hook entry was run with Claude Code's documented payloads by the test, not fired by a real `claude` process | Documented-not-tested. Codex runs a new hook only after you trust it in `/hooks`, which this run could not do |
