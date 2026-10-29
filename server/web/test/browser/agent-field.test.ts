@@ -1879,6 +1879,16 @@ void describe('two agents that share a harness and a device', () => {
           ),
           JSON.stringify(seen),
         );
+        // And the computed accessible name of each option — what a screen
+        // reader announces — carries the whole label with its own mark.
+        for (const mark of ['alpha agent', 'bravo agent']) {
+          const named = list.getByRole('option', {
+            name: new RegExp(
+              `^Claude Code · build-server-eu-west-1-primary \\(${mark}\\) — Ada Lovelace\\b`,
+            ),
+          });
+          assert.equal(await named.count(), 1, `${theme}: no option is named for ${mark}`);
+        }
         await h.page.keyboard.press('Escape');
       }
     } finally {
