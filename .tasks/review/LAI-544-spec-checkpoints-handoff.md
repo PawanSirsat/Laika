@@ -167,3 +167,89 @@ sections as the table checks do.
 - `ACTIONS_WITHOUT_A_ROW` still holds `system.idempotency.prune`, waiting for a
   §3.4 row from CHIEF (LAI-534); not in this task's scope.
 
+
+## Review round 1 (Codex at `4e086526`): 9 blocking SPEC issues, fixed
+
+DECISIONS copy: PASS. SPEC consistency: FAIL, nine blocking issues. The owner
+has delegated product calls to Belka, so each choice below is Belka's.
+**Decisions made:**
+
+1. **Accept follows D-119.** Accepting a hand-off or recovery sets
+   `tasks.selected_agent_id` to the receiving agent in the same transaction.
+   It writes `task.agent_selected` and closes an open work request with
+   `selection_changed`. The receiver's new claim is then backed by the
+   selection, so §6.4's unbacked-claim rule cannot release it.
+2. **Reclaim scope.** `offer_taken` applies only to an accepted **hand-off or
+   recovery** whose new `from_claim_generation` is the generation being
+   reclaimed; a work request never counts. Reclaiming invalidates every
+   outstanding offer: live hand-off and recovery offers close as
+   `cancelled`/`reclaimed`, and the work request is accepted (D-119).
+3. **Delivery before registration.** `checkpoint_ref_transitions` is keyed by
+   `repo` + `ref` name, not by a §4.69 row id. Registration reads the rows
+   already stored, in its own transaction. Names that are never registered
+   are pruned after 90 days.
+4. **Recovery accept.** The expired claim stays `expired`. `transferred` is
+   only for a paused sender at its own offer's accept. The new claim is linked
+   through `handoff_offers.accepted_claim_id`, at the task's newest
+   generation + 1.
+5. **Every expiry path.** A recovery offer is created in the same
+   transaction that expires the claim, whether by scan or by late heartbeat.
+   When a live hand-off exists it waits, and is created when that offer
+   closes unaccepted. A `paused` claim is renewed and expired exactly like an
+   `active` one (§4.66, §9.1.1, §11.6).
+6. **Re-tag.** Registering a ref sets the checkpoint to that ref's state at
+   that moment, normally `pending`, and restarts `pending_since` (the newest
+   ref's `created_at`). This is the one non-delivery change, and it can only
+   withdraw a `verified`.
+7. **Retry order.** A retried offer or checkpoint registration with the same
+   key and body is matched after the caller's own auth and action checks, and
+   **before** the claim fence. It returns the existing row with `200`. A
+   different body is `409`.
+8. **Retention.** `handoff_offers.checkpoint_id` is `ON DELETE SET NULL`. The
+   new `checkpoint_commit_sha` is copied at offer time and never changes.
+   Pruning only reaches tasks that are done or cancelled, which have no live
+   offers.
+9. **D-116a** is appended to `DECISIONS.md` as an amendment; D-116's text is
+   unchanged. The state is a function of the set: {create} gives `verified`,
+   {create + deletions} gives `ref_deleted`, and anything else gives
+   `uncertain`. "Final" means *never `verified` again*. Between the two
+   unusable states the set decides: delete-then-create reads `uncertain` and
+   then `ref_deleted`.
+
+**Non-blocking, done:**
+
+- **Unnamed recovery.** An agent of the expired claim's owner accepts without
+  approval. Any other owner's agent needs a person to name and approve it in
+  one step: `approve` with `to_agent_id`. That person is never the receiver's
+  owner; when the assignee owns the receiver, a lead approves. Recovery
+  offers are always unnamed.
+- **Checkpoint must be this task's, this claim's.** Otherwise
+  `422 checkpoint_not_this_claim`. A recovery uses the task's latest verified
+  checkpoint.
+- **Consent.** `GET/PUT/DELETE /agents/:id/checkpoint-consent`. The new §3.2
+  row *Re-tag a checkpoint one of your agents saved* maps to
+  `task.checkpoint.retag`: any `full`-granted agent of the saving agent's
+  owner may use it, and no claim is needed.
+- **Wire names.** The offer body uses the column names `approved_by_user_id`
+  and `created_by_user_id`.
+- **`closed_reason`.** `superseded` was dropped, because nothing wrote it.
+
+**LAI-545's task file** is rewritten to revised D-116 and D-116a:
+- no branch verification and no arrival-dependent restoration;
+- delivery-before-registration, re-tag reset, retry order and consent
+  criteria added.
+
+**Names changed since *Delivered*:**
+- new action `task.checkpoint.retag`;
+- new columns `handoff_offers.from_claim_generation`, `checkpoint_commit_sha`
+  and `accepted_claim_id`;
+- `checkpoint_refs` gains `repo`;
+- `checkpoint_ref_transitions` swaps `checkpoint_ref_id` for `repo` + `ref`;
+- new reason `checkpoint_not_this_claim`.
+
+**Reds after round 1.** Same kinds as before:
+- §3.2 now has 8 unmapped rows;
+- §4 now has 16 missing `handoff_offers` columns plus `tasks.handoff_count`;
+- the nullability check now lists 19 ghosts;
+- the 8 verbs, the stale `TABLES_NOT_IN_SPEC` entry and the four tools are
+  unchanged.
