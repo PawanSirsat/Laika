@@ -6,8 +6,9 @@ assignee: SHELL
 priority: p1
 depends-on: [LAI-590, LAI-586]
 discovered-from: LAI-532
-status: in-progress
+status: review
 started: 2026-10-29T08:50:13+00:00
+finished: 2026-10-29T09:12:25+00:00
 ---
 
 Phase 2.5 slice from `docs/proposals/LAI-532-phase-index.md` (PR #121). The
@@ -47,20 +48,20 @@ reading *Not recognised* with *This is mine* and *Revoke device* beside it.
 
 ## Acceptance criteria
 
-- [ ] Agents are grouped by device from the API response; no device name,
+- [x] Agents are grouped by device from the API response; no device name,
       count or time is hardcoded (§5.1)
-- [ ] Each device shows its last seen time (relative, exact on hover and
+- [x] Each device shows its last seen time (relative, exact on hover and
       keyboard focus) and its active agent count
-- [ ] An unrecognised device carries a *Not recognised* text badge and a
+- [x] An unrecognised device carries a *Not recognised* text badge and a
       *This is mine* action that clears it after the API confirms
-- [ ] *Revoke device* confirms first, naming every agent it will revoke; on
+- [x] *Revoke device* confirms first, naming every agent it will revoke; on
       confirm the agents show revoked; cancel changes nothing; a failed call
       shows an error and changes nothing
-- [ ] Keyboard reachable, visible focus, the dialog traps and returns focus
-- [ ] Both themes; no horizontal scroll at 390 px and at 1440 px
-- [ ] Tests: component tests for grouping, last seen, the badge, revoke
+- [x] Keyboard reachable, visible focus, the dialog traps and returns focus
+- [x] Both themes; no horizontal scroll at 390 px and at 1440 px
+- [x] Tests: component tests for grouping, last seen, the badge, revoke
       confirm/cancel/error; one Playwright flow revoking a seeded device
-- [ ] Gate: repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0
+- [x] Gate: repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0
 
 ## Dependencies
 
@@ -83,3 +84,36 @@ reading *Not recognised* with *This is mine* and *Revoke device* beside it.
 
 Ships after LAI-590 is live. No flag: the tab is the owner's own view. Rollback
 is a revert; the server endpoints are harmless unused.
+
+## Submission notes (SHELL, Claude Code on Belka)
+
+**Deviation, recorded.** `depends-on` names LAI-590 and LAI-586, both still in
+`.tasks/review/`, not `done/`. Claimed on the owner's direct instruction
+(polly, Phase 2.5) to build against PR #132 (`LAI-590-devices-server`) and
+merge with it as one §4.4 two-owner change. Branch `LAI-591-devices-view`,
+worktree `.polly/wt-591`, PR #135, which carries #132's commits up to
+`a67b8e63`.
+
+Built as a **Your devices** section inside Developer access › Agents, above
+the registered-agents list. Files: `server/web/src/api/agent-devices.ts`,
+`server/web/src/routes/screens/developer/DevicesSection.tsx`, `devices.css`,
+and three lines in `AgentsTab.tsx` to mount it. Tests:
+`test/api/agent-devices.test.ts` and `test/browser/devices-tab.test.ts`.
+
+This branch turns #132's one red check green:
+`server/web/test/api/endpoint-coverage.test.ts`, "no endpoint is served,
+uncalled and unexplained". Checked locally both ways. It exits 1 naming the
+three device endpoints without `agent-devices.ts`, and exits 0 with it.
+
+**Gate criterion.** Locally, on Belka as the owner authorised:
+- web typecheck: exit 0
+- every non-browser web suite: exit 0, 2359 cases
+- the four browser suites this touches: exit 0, 42 cases
+- the server tooling guards that read `server/web`: exit 0
+- repo-root `pnpm lint` and `pnpm format`: exit 0
+
+The full repo-root `pnpm test` runs in PR #135 CI.
+
+Screenshots, light and dark at 1440 and 390, of a recognised device, an
+unrecognised one and the revoke confirmation: `.polly/evidence/LAI-591/` on
+Belka.
