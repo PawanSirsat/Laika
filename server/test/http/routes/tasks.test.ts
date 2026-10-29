@@ -400,7 +400,7 @@ describe('patch', () => {
     }
   });
 
-  it('keeps the same-millisecond update behaviour without If-Match', async () => {
+  it('advances updated_at past a same-millisecond read without If-Match', async () => {
     const task = await newTask('Original');
     const clock = vi.spyOn(Date, 'now').mockReturnValue(task.updated_at);
 
@@ -410,13 +410,125 @@ describe('patch', () => {
         body: JSON.stringify({ title: 'Unguarded' }),
       });
       expect(patched.status).toBe(200);
+      // Not `task.updated_at`: an unguarded write in the millisecond a token
+      // was read must still make that token stale (LAI-571 review).
       expect(await patched.json()).toMatchObject({
         title: 'Unguarded',
-        updated_at: task.updated_at,
+        updated_at: task.updated_at + 1,
       });
     } finally {
       clock.mockRestore();
     }
+  });
+
+  /** The ETag a read hands out now, asserted so a failed read cannot pass as one. */
+  async function tokenOf(id: string): Promise<string> {
+    const read = await req(`/api/v1/tasks/${id}`);
+    expect(read.status).toBe(200);
+    const etag = read.headers.get('etag');
+    expect(etag).toMatch(/^"\d+"$/);
+    return etag!;
+  }
+
+  /** A guarded PATCH that must be refused, leaving the title as it was. */
+  async function expectStale(id: string, token: string): Promise<void> {
+    const refused = await req(`/api/v1/tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'If-Match': token },
+      body: JSON.stringify({ title: 'Late write', tags: ['late'] }),
+    });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe('conflict');
+  }
+
+  // The review's reproduction, exactly: read T, a tags-only update, then a
+  // conditional PATCH with T. Tags live in `task_tags`, not on the row, so
+  // before the fix `updated_at` never moved and this PATCH overwrote them.
+  it('refuses an If-Match read before a tags-only update', async () => {
+    const task = await newTask('Original');
+    const token = await tokenOf(task.id);
+
+    const tagged = await req(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ tags: ['kept'] }),
+    });
+    expect(tagged.status).toBe(200);
+    expect(((await tagged.json()) as { tags: string[] }).tags).toEqual(['kept']);
+
+    await expectStale(task.id, token);
+    const after = (await (await req(`/api/v1/tasks/${task.id}`)).json()) as {
+      title: string;
+      tags: string[];
+    };
+    expect(after).toMatchObject({ title: 'Original', tags: ['kept'] });
+  });
+
+  // Every other path that changes what a read of the task shows, each in the
+  // **same millisecond** as the read, so a writer that stamps a bare `now`
+  // fails here as surely as one that stamps nothing.
+  describe('every write moves the version, even in the millisecond it was read', () => {
+    const writes: Record<string, (id: string, other: string) => Promise<Response>> = {
+      'a tags-only PATCH': (id) =>
+        req(`/api/v1/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ tags: ['x'] }) }),
+      'a size-only PATCH': (id) =>
+        req(`/api/v1/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ size: 'XL' }) }),
+      'a field PATCH': (id) =>
+        req(`/api/v1/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ priority: 'p1' }) }),
+      'adding a dependency': (id, other) =>
+        post(`/api/v1/tasks/${id}/dependencies`, { blocked_by_task_id: other }),
+      'a status change': (id) => post(`/api/v1/tasks/${id}/status`, { status: 'todo' }),
+      'a claim': (id) => post(`/api/v1/tasks/${id}/claim`, {}),
+      'a reorder': (id, other) => post(`/api/v1/tasks/${id}/reorder`, { before_task_id: other }),
+      'joining a sprint': async (id) => {
+        const sprint = await post('/api/v1/projects/laika/sprints', {
+          name: 'S1',
+          starts_on: Date.UTC(2027, 0, 1),
+          ends_on: Date.UTC(2027, 0, 14),
+        });
+        expect(sprint.status).toBe(201);
+        const { id: sprintId } = (await sprint.json()) as { id: string };
+        return post(`/api/v1/sprints/${sprintId}/tasks`, { task_ids: [id] });
+      },
+    };
+
+    for (const [name, write] of Object.entries(writes)) {
+      it(name, async () => {
+        const other = await newTask('Other');
+        const task = await newTask('Original');
+        const token = await tokenOf(task.id);
+        const clock = vi.spyOn(Date, 'now').mockReturnValue(task.updated_at);
+        try {
+          const res = await write(task.id, other.id);
+          expect(res.status, await res.clone().text()).toBeLessThan(300);
+          await expectStale(task.id, token);
+        } finally {
+          clock.mockRestore();
+        }
+      });
+    }
+
+    it('removing a dependency', async () => {
+      const other = await newTask('Other');
+      const task = await newTask('Original');
+      const added = await post(`/api/v1/tasks/${task.id}/dependencies`, {
+        blocked_by_task_id: other.id,
+      });
+      expect(added.status).toBe(201);
+      const token = await tokenOf(task.id);
+      const { updated_at: at } = (await (await req(`/api/v1/tasks/${task.id}`)).json()) as {
+        updated_at: number;
+      };
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(at);
+      try {
+        const removed = await req(`/api/v1/tasks/${task.id}/dependencies/${other.id}`, {
+          method: 'DELETE',
+        });
+        expect(removed.status).toBe(200);
+        await expectStale(task.id, token);
+      } finally {
+        clock.mockRestore();
+      }
+    });
   });
 });
 
