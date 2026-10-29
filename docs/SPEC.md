@@ -2394,6 +2394,35 @@ other owners and personal tokens are untouched. Confirm and revoke use
 `agent.manage_own`, session only; list uses `agent.read_own`. A label absent
 from the caller's own agents is `404`, including another owner's label.
 
+**One agent per harness per device** (D-120, LAI-1000). An agent's identity
+is its `harness` and its device, and an owner has **at most one active agent
+for each pair**. The device is compared by §4.63's device key above
+(`trim().toLowerCase()`, null and blank sharing the empty key), the harness by
+its slug. `POST /agents`, and a `PATCH /agents/:id` whose `harness` or
+`device_label` moves the agent to a different pair, are refused with **`409
+conflict`**, `details.reason: agent_exists_for_device`, while the same owner
+has another `active` agent on that pair; `details.agent` names it as `{ id,
+display_name, harness, device_label }` — only ever the caller's own agent,
+since the check reads no one else's rows. A `PATCH` that leaves the pair
+unchanged (a rename, a change of case in the label) is never refused.
+**Revoked agents do not count**, so revoking the old one and registering again
+is always possible; rotating a token touches neither field and is never
+refused. The check runs inside the write transaction, so two concurrent
+registrations cannot both pass it. Agents that already shared a pair when the
+rule arrived are **neither revoked, renamed nor merged**: they keep working,
+and `GET /agents/devices` shows them on their device as it shows any agent, so
+the owner sees two active agents of one harness and chooses which to revoke.
+No index enforces the rule, precisely because those rows must survive.
+
+**The label is `<harness> · <device>`** (D-120, amending D-118's display
+rule): *Omnigent · Belka*, *Claude Code · Belka*, *Claude Code · Strelka*.
+Every place an agent is named — card chip, picker, list column and filter,
+drawer, activity, dashboard, Agents tab, Devices view — shows that pair and
+not `display_name`. `display_name` stays in the table and on its tokens as the
+owner's private note; it is a label only for a legacy duplicate that would
+otherwise read the same as its twin (LAI-583's fallback). The session line
+appends what ran: *Omnigent · Belka · Claude Code · claude-opus-5-5*.
+
 ### 4.64 `agent_project_grants`
 
 What one agent may do in one project (D-114, LAI-534). **No row is no access.**
@@ -2957,11 +2986,11 @@ GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until
                                              ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
-GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only)
+GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only); 409 agent_exists_for_device (D-120)
 GET    /api/v1/agents/devices                own agents grouped by device → { data: [{ device_label, display_name, recognised, last_seen_at, active_count, revoked_count, agents }] } (§4.63, agent.read_own)
 POST   /api/v1/agents/devices/confirm        body { device_label: string | null } → { device_label, recognised: true } (agent.manage_own, session only)
 POST   /api/v1/agents/devices/revoke         body { device_label: string | null } → { revoked_agent_ids: string[] } (agent.manage_own, session only)
-GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
+GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? } — 409 agent_exists_for_device when it moves onto another active agent's harness and device (D-120)
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
 POST   /api/v1/agents/:id/revoke             the agent and every live token it holds; idempotent

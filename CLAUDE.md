@@ -380,7 +380,7 @@ one:
 
 | Session | Range | Second block (D-036) | Third block (D-068) |
 | --- | --- | --- | --- |
-| CHIEF | `LAI-001` – `LAI-099` — **full** | `LAI-400` – `LAI-499` — **full** | `LAI-700` – `LAI-799` — **full**; then `LAI-800` – `LAI-899` (D-089) — **full**; then `LAI-950` – `LAI-999` (D-100) — **full**; then `LAI-500` – `LAI-599` (D-109) |
+| CHIEF | `LAI-001` – `LAI-099` — **full** | `LAI-400` – `LAI-499` — **full** | `LAI-700` – `LAI-799` — **full**; then `LAI-800` – `LAI-899` (D-089) — **full**; then `LAI-950` – `LAI-999` (D-100) — **full**; then `LAI-500` – `LAI-599` (D-109) — **full**; then `LAI-1000` – `LAI-1099` (D-120) |
 | CORE | `LAI-100` – `LAI-199` | — (given to CHIEF, D-109: CORE never filed from it) | — (given to CHIEF, D-089) |
 | SHELL | `LAI-200` – `LAI-299` | `LAI-600` – `LAI-699` | `LAI-900` – `LAI-949` (D-100 gave `950`–`999` to CHIEF) |
 
@@ -389,8 +389,8 @@ it to Strelka**, the second machine (see *Two machines* at the end of this
 file); nobody else takes from it. Move to your second block only when your first has no free
 number left, and to the third when the second has none (D-068). CHIEF's
 first three are full, and so are `LAI-800` – `LAI-899` (D-089) and `LAI-950` –
-`LAI-999` (D-100), so CHIEF files from `LAI-500` (D-109). A builder CHIEF
-dispatches files from CHIEF's block.
+`LAI-999` (D-100) and `LAI-500` – `LAI-599` (D-109), so CHIEF files from
+`LAI-1000` (D-120). A builder CHIEF dispatches files from CHIEF's block.
 
 Use the lowest unused number **in your own range**, checked across every branch:
 
@@ -399,7 +399,7 @@ Use the lowest unused number **in your own range**, checked across every branch:
     git ls-tree -r --name-only "$ref" .tasks/
   done
   git log --all --name-only --format= -- .tasks/
-  git log --all --format='%s'; } | grep -o 'LAI-[0-9]\{3\}' | sort -u
+  git log --all --format='%s'; } | grep -o 'LAI-[0-9]\{3,\}' | sort -u
 ```
 
 **The `git log` half alone is blind, and it is the same blindness §2 already

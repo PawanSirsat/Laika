@@ -6061,3 +6061,62 @@ the refusal itself is the issue.
    minutes, so a day's confirmed total may exceed the hours its clock covers,
    and the collector's draft of a session a timer already recorded is no
    longer refused at confirm — the person sees both and decides.
+
+## D-120 — An agent is exactly `<harness> · <device>`: one active agent per harness per device, labelled by that pair; CHIEF files from LAI-1000 – LAI-1099 (LAI-1000, LAI-1001)
+
+**Date:** 2026-10-29 · **By:** CHIEF (Belka), recording the owner's decision
+given in chat on 2026-10-29 (Pawan, via the polly manager session)
+
+The owner's words, as relayed:
+
+> An agent's identity and label is exactly HARNESS · DEVICE, e.g. "Omnigent ·
+> Belka", "Claude Code · Belka", "Claude Code · Strelka". One agent per harness
+> per device. Another device gets its own agents. No separate free-text agent
+> name in labels (the agent registered as "Polly" must read "Omnigent · Belka"
+> everywhere). Model/version stays on the session line.
+
+1. **Identity.** A registered agent is one harness on one device, and an owner
+   has **at most one active agent per (harness, device)**. The device is
+   compared exactly as the Devices view groups it (SPEC §4.63:
+   `trim().toLowerCase()`, null and blank together). Another device is
+   another agent; another harness on the same device is another agent.
+2. **The server refuses the second one** (LAI-1000): registering, or editing
+   an agent's harness or device onto a pair another of the owner's active
+   agents already has, is `409 conflict`, `reason: agent_exists_for_device`,
+   naming the existing agent — to its owner, the only person who can see it.
+   Revoked agents do not count. Rotating a token is never refused.
+3. **Existing duplicates are kept.** No migration revokes, renames or merges
+   an agent; agents that already share a pair keep working and are reported
+   (the Devices view shows them; the owner revokes the one they do not want).
+4. **The label is the pair** (LAI-1001): `<harness> · <device>` everywhere an
+   agent is named. The free-text name is no longer a label — it is at most an
+   optional private note. The model and version stay on the **session** line:
+   *Omnigent · Belka · Claude Code · claude-opus-5-5*.
+
+**What this amends.** D-118 (proposed, `docs/proposals/LAI-532-agent-identity-
+model.md`) already said *one harness on one device* and named its example
+`Polly · Belka`. The owner's display rule replaces that: a manager is labelled
+by its **harness**, so polly reads *Omnigent · Belka*. **LAI-583's
+disambiguation** — adding the registered name where two agents share a harness
+and device — is superseded for new agents, which can no longer collide; it
+stays only as the fallback that keeps a legacy duplicate distinguishable until
+its owner revokes one.
+
+**Ids.** D-109 gave CHIEF `LAI-500` – `LAI-599`; the §3 sweep finds it full on
+2026-10-29. **CHIEF and Belka file from `LAI-1000` – `LAI-1099`.** D-109's
+reason against four digits was the tooling guards; measured today:
+
+- every runtime parser (`TASK_KEY`, `BRANCH_REF`, `TASK_KEY_PATTERN`, the
+  CLI's `TASK_KEY`) takes `\d+` or up to nine digits — four digits parse;
+- `task-file-state.test.ts` keys on the frontmatter `id` and accepts them;
+- the "names a task" checks (`/LAI-\d{3}/.test(reason)`) are unanchored, so
+  `LAI-1000` passes them;
+- **two anchored parsers truncate**: `schema-spec-drift.test.ts`'s
+  `closedTaskIds` (`/^(LAI-\d{3})/`) reads `LAI-1000-….md` in `done/` as
+  `LAI-100`, and its `PLANNED_MARK` would read a *Planned — LAI-1000* mark as
+  `LAI-100`. Harmless for this block today — `LAI-100` – `LAI-109` are all in
+  `done/` already and no §4 section carries a four-digit Planned mark — and
+  filed as LAI-1002 rather than changed silently;
+- **the §3 sweep itself** greps `LAI-[0-9]\{3\}`, which reads `LAI-1000` as
+  `LAI-100` and so cannot see a four-digit id is taken. CLAUDE.md §3 and the
+  `laika-workflow` skill now grep `LAI-[0-9]\{3,\}`.
