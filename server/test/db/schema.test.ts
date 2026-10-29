@@ -72,6 +72,8 @@ describe('migrations', () => {
   const EXPECTED_TABLES = [
     'accounts',
     'activity',
+    // LAI-545, D-115 item 2: an owner's consent to automatic saves.
+    'agent_checkpoint_consents',
     // LAI-534, D-114: what each registered agent may reach.
     'agent_project_grants',
     // LAI-541: an agent's running processes, and the claims they hold.
@@ -85,6 +87,9 @@ describe('migrations', () => {
     // LAI-957, D-102: who looked at a person's analytics.
     'analytics_views',
     'board_activity_days',
+    // LAI-545, D-116: every ref a checkpoint has, and every push that moved one.
+    'checkpoint_ref_transitions',
+    'checkpoint_refs',
     'comment_mentions',
     'comments',
     // LAI-766, D-083: what GitHub's deliveries said, kept 30 days.
@@ -122,6 +127,8 @@ describe('migrations', () => {
     'solidtime_projects',
     'sprints',
     'tags',
+    // LAI-545, D-115: a save an agent registered on purpose.
+    'task_checkpoints',
     // LAI-772, D-085: what a claimant said at claim, as append-only history.
     'task_claim_estimates',
     'task_claims',
