@@ -7,7 +7,10 @@ import {
   type AgentView,
   type CreatedAgentToken,
   type AgentDetailView,
+  confirmOwnAgentDevice,
   getOwnAgent,
+  listOwnAgentDevices,
+  revokeOwnAgentDevice,
   listOwnAgents,
   registerAgent,
   revokeAgent,
@@ -54,6 +57,10 @@ const UpdateBody = strictObject({
   harness: z.string().min(1).max(64).optional(),
   device_label: z.string().max(200).nullable().optional(),
 });
+
+// A stored label is at most 80 code units and lower-casing at most doubles
+// one ('İ' → 'i̇'), so 200 admits every key the device list serves.
+const DeviceBody = strictObject({ device_label: z.string().max(200).nullable() });
 
 const GrantsBody = strictObject({ grants: Grants });
 
@@ -119,6 +126,23 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
       projectSlug: query.project ?? null,
     });
     return c.json(buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id })));
+  });
+
+  // Static device routes precede /:id so 'devices' is never an agent id.
+  app.get('/devices', (c) => {
+    return c.json({ data: listOwnAgentDevices(db, requireActor(c)) });
+  });
+
+  app.post('/devices/confirm', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(DeviceBody, await c.req.json().catch(() => null));
+    return c.json(confirmOwnAgentDevice(sqlite, db, actor, body.device_label));
+  });
+
+  app.post('/devices/revoke', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(DeviceBody, await c.req.json().catch(() => null));
+    return c.json(revokeOwnAgentDevice(sqlite, db, actor, body.device_label));
   });
 
   app.get('/:id', (c) => {

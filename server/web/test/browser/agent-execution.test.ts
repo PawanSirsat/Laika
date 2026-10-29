@@ -8,9 +8,12 @@
  * `services/tasks.ts` and `services/claims.ts` write them
  * (`execution-derive.test.ts` reads those files to keep the shapes honest).
  *
- * **Working and Connection lost are absent here on purpose.** They need the
- * live claim and its session's heartbeat, which no task read returns yet
- * (LAI-568), so the last block asserts the board never draws them.
+ * **Working and Connection lost** come from the live claim every task read
+ * carries since LAI-568 (LAI-597): `t4` is held by a session checking in, `t5`
+ * by one the server already served `suspect`. Heartbeats write no activity, so
+ * the flip from one to the other is the reader's clock — asserted with
+ * Playwright's, and with no request. A task with no live claim still draws
+ * neither.
  */
 
 import assert from 'node:assert/strict';
@@ -175,9 +178,29 @@ interface World {
   readonly activity: Record<string, unknown>[];
 }
 
+/** `TaskLiveClaimView`, as `services/claims.ts` serves it; the heartbeat is now. */
+const SUSPECT_AFTER_MS = 90_000;
+const liveClaim = (over: Record<string, unknown> = {}) => {
+  const beat = Date.now();
+  return {
+    generation: 4,
+    state: 'active',
+    agent_id: 'ag-laptop',
+    session_id: '01SESSIONBELKA',
+    lease_expires_at: beat + 300_000,
+    last_heartbeat_at: beat,
+    heartbeat_age_ms: 0,
+    connection: 'live',
+    suspect_after_ms: SUSPECT_AFTER_MS,
+    device_label: 'Belka',
+    ...over,
+  };
+};
+
 /**
- * Three tasks: `t1` picked for an agent and not started; `t2` taken by that
- * agent's session (in progress, a claim on record); `t3` with no agent.
+ * Five tasks: `t1` picked for an agent and not started; `t2` taken by that
+ * agent's session (in progress, a claim on record, no live claim served); `t3`
+ * with no agent; `t4` held by a live session; `t5` by one served `suspect`.
  * Activity is `t2`'s alone, so the drawer's claim rows are its own.
  */
 function world(): World {
@@ -198,7 +221,32 @@ function world(): World {
     started_at: NOW - 2 * HOUR,
   });
   const plain = task({ id: 't3', key: 'LC-3', number: 3, title: 'Nobody’s agent' });
-  const tasks = [waiting, taken, plain];
+  const working = task({
+    id: 't4',
+    key: 'LC-4',
+    number: 4,
+    title: 'Held by a session checking in',
+    status: 'in_progress',
+    selected_agent: LAPTOP,
+    started_at: NOW - HOUR,
+    claim: liveClaim(),
+  });
+  const quiet = task({
+    id: 't5',
+    key: 'LC-5',
+    number: 5,
+    title: 'Held by a session gone quiet',
+    status: 'in_progress',
+    selected_agent: LAPTOP,
+    started_at: NOW - HOUR,
+    claim: liveClaim({
+      session_id: '01SESSIONQUIET',
+      last_heartbeat_at: Date.now() - 4 * 60_000,
+      heartbeat_age_ms: 4 * 60_000,
+      connection: 'suspect',
+    }),
+  });
+  const tasks = [waiting, taken, plain, working, quiet];
   const activity: Record<string, unknown>[] = [claimTaken(3, NOW - 2 * HOUR)];
 
   const perTask = (t: Record<string, unknown>) => {
@@ -272,6 +320,8 @@ function world(): World {
     }),
     '/api/v1/projects/laika-core/activity?task_id=t1': { data: [], next_cursor: null },
     '/api/v1/projects/laika-core/activity?task_id=t3': { data: [], next_cursor: null },
+    '/api/v1/projects/laika-core/activity?task_id=t4': { data: [], next_cursor: null },
+    '/api/v1/projects/laika-core/activity?task_id=t5': { data: [], next_cursor: null },
     '/api/v1/projects/laika-core/tags': { tags: [] },
     '/api/v1/projects/laika-core/estimates/accuracy': {
       project_id: 'laika-core',
@@ -286,6 +336,8 @@ function world(): World {
     ...perTask(waiting),
     ...perTask(taken),
     ...perTask(plain),
+    ...perTask(working),
+    ...perTask(quiet),
     '/api/v1/org': {
       id: 'o',
       name: 'Borealis Labs',
@@ -538,21 +590,297 @@ void describe('both themes, a phone', () => {
   }
 });
 
-void describe('what is not served is not drawn', () => {
-  void test('no card or drawer says Working or Connection lost, and no demo hand-off survives', async () => {
+/** Task reads after the board drew: the list and each task, by GET. */
+const taskReads = (h: Harness) =>
+  h.calls.filter(
+    (c) =>
+      c.method === 'GET' &&
+      (c.path === '/api/v1/projects/laika-core/tasks' || c.path.startsWith('/api/v1/tasks/')),
+  ).length;
+
+void describe('the live claim (LAI-597)', () => {
+  void test('cards say Working and Connection lost, in words and a shape, naming the agent and its device', async () => {
+    const { stub } = world();
+    const h = await open('/board?project=laika-core', stub);
+    try {
+      await boardReady(h);
+      const working = card(h.page, 't4').locator('[data-exec-state]');
+      await working.waitFor({ timeout: 10_000 });
+      assert.equal(await working.getAttribute('data-exec-state'), 'working');
+      assert.equal((await working.innerText()).trim(), 'Working · Claude Code · Belka');
+      assert.equal(await working.locator('svg[data-shape="working"]').count(), 1);
+
+      const quiet = card(h.page, 't5').locator('[data-exec-state]');
+      assert.equal(await quiet.getAttribute('data-exec-state'), 'connection_lost');
+      assert.equal((await quiet.innerText()).trim(), 'Connection lost · Claude Code · Belka');
+      assert.equal(await quiet.locator('svg[data-shape="connection_lost"]').count(), 1);
+
+      // No live claim: what LAI-543 drew, unchanged.
+      assert.equal(await card(h.page, 't2').locator('[data-exec-state]').count(), 0);
+      assert.equal(
+        await card(h.page, 't1').locator('[data-exec-state]').getAttribute('data-exec-state'),
+        'waiting_for_agent',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a card held open past suspect_after_ms goes from Working to Connection lost with no request', async () => {
+    const { stub } = world();
+    const h = await open('/board?project=laika-core', stub, {
+      before: async (page) => {
+        await page.clock.install();
+      },
+    });
+    try {
+      await boardReady(h);
+      const line = card(h.page, 't4').locator('[data-exec-state]');
+      await line.waitFor({ timeout: 10_000 });
+      assert.equal(await line.getAttribute('data-exec-state'), 'working');
+      const before = taskReads(h);
+
+      // Just short of the boundary: still Working.
+      await h.page.clock.fastForward(SUSPECT_AFTER_MS - 5_000);
+      assert.equal(await line.getAttribute('data-exec-state'), 'working');
+
+      await h.page.clock.fastForward(10_000);
+      await until(async () => (await line.getAttribute('data-exec-state')) === 'connection_lost');
+      assert.equal(await line.getAttribute('data-exec-state'), 'connection_lost');
+      assert.match(await line.innerText(), /Connection lost · Claude Code · Belka/);
+      assert.equal(taskReads(h), before, 'the flip re-read a task');
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * LAI-597 review: the browser's clock is never compared with the server's.
+   * The served claim is fresh by the server (`heartbeat_age_ms: 0`), and this
+   * browser's clock is five minutes off either way. Both must say Working, and
+   * turn only after `suspect_after_ms` has really elapsed on the page.
+   */
+  for (const [skew, words] of [
+    [5 * 60_000, 'five minutes ahead'],
+    [-5 * 60_000, 'five minutes behind'],
+  ] as const) {
+    void test(`a browser ${words}: a fresh claim is Working, and turns only after suspect_after_ms here`, async () => {
+      const { stub } = world();
+      const h = await open('/board?project=laika-core', stub, {
+        before: async (page) => {
+          await page.clock.install({ time: Date.now() + skew });
+        },
+      });
+      try {
+        await boardReady(h);
+        const line = card(h.page, 't4').locator('[data-exec-state]');
+        await line.waitFor({ timeout: 10_000 });
+        assert.equal(await line.getAttribute('data-exec-state'), 'working');
+
+        await h.page.clock.fastForward(SUSPECT_AFTER_MS - 5_000);
+        assert.equal(await line.getAttribute('data-exec-state'), 'working');
+
+        await h.page.clock.fastForward(10_000);
+        await until(async () => (await line.getAttribute('data-exec-state')) === 'connection_lost');
+        assert.equal(await line.getAttribute('data-exec-state'), 'connection_lost');
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  /*
+   * LAI-597 review, round 2: the claim's age runs from its response's
+   * arrival, not from the first time a card draws it. With the Agent field
+   * hidden the card draws no state at all; shown 95 s later it must already
+   * say Connection lost — and from the one read the board made, not a new one.
+   */
+  void test('a card whose Agent field was hidden for 95 s says Connection lost the moment it is shown', async () => {
+    const { stub } = world();
+    const h = await open('/board?project=laika-core', stub, {
+      before: async (page) => {
+        await page.clock.install();
+        await page.addInitScript(() => {
+          localStorage.setItem(
+            'laika.board-view',
+            JSON.stringify({ 'laika-core': { fields: { agent: false } } }),
+          );
+        });
+      },
+    });
+    try {
+      await boardReady(h);
+      assert.match(await card(h.page, 't4').innerText(), /Held by a session checking in/);
+      assert.equal(await card(h.page, 't4').locator('[data-exec-state]').count(), 0);
+      const before = taskReads(h);
+
+      await h.page.clock.fastForward(95_000);
+
+      await h.page.locator('.bt-icon[title="View settings"]').click();
+      await h.page.waitForSelector('.view-settings');
+      await h.page.locator('.vs-search').fill('Agent');
+      await h.page.locator('.vs-add').first().click();
+
+      const line = card(h.page, 't4').locator('[data-exec-state]');
+      await line.waitFor({ timeout: 10_000 });
+      assert.equal(await line.getAttribute('data-exec-state'), 'connection_lost');
+      assert.equal(taskReads(h), before, 'showing the field re-read the tasks');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the drawer shows the holding session and its last heartbeat, and flips live without moving the focus', async () => {
+    const { stub } = world();
+    const h = await open('/board?project=laika-core&task=t4', stub, {
+      before: async (page) => {
+        await page.clock.install();
+      },
+    });
+    try {
+      const found = await panel(h);
+      const text = await found.innerText();
+      assert.match(text, /Working\s*An agent session holds the task and is checking in\./);
+      assert.match(text, /Working session\s*Claude Code · Belka/);
+      assert.match(text, /Last seen\s*just now/);
+      const seen = found.locator('[data-last-seen] time');
+      assert.ok((await seen.getAttribute('datetime')) !== null);
+
+      const details = found.locator('[data-exec-details]');
+      const toggle = details.getByRole('button', { name: 'Details' });
+      await toggle.click();
+      assert.match(await details.innerText(), /Claim generation\s*4/);
+      assert.match(await details.innerText(), /Working session\s*01SESSIONBELKA/);
+
+      // The reader is on the Details toggle when the session goes quiet.
+      await toggle.focus();
+      const before = taskReads(h);
+      await h.page.clock.fastForward(SUSPECT_AFTER_MS + 5_000);
+      const state = found.locator('[data-exec-state]');
+      await until(async () => (await state.getAttribute('data-exec-state')) === 'connection_lost');
+      assert.equal(await state.getAttribute('role'), 'status');
+      assert.match(await found.innerText(), /Connection lost\s*The agent stopped checking in/);
+      assert.match(await found.innerText(), /Last seen\s*1 min ago/);
+      assert.equal(taskReads(h), before, 'the flip re-read the task');
+      assert.equal(
+        await toggle.evaluate((el) => el === document.activeElement),
+        true,
+        'the live update moved the focus',
+      );
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the working session’s line says what ran; its version and model wait under Details (LAI-593)', async () => {
+    const { stub, tasks } = world();
+    const held = tasks.find((t) => t.id === 't4')!;
+    held.claim = {
+      ...(held.claim as Record<string, unknown>),
+      harness: 'codex',
+      harness_version: '0.9.1',
+      model: 'gpt-5.5',
+    };
+    const h = await open('/board?project=laika-core&task=t4', stub);
+    try {
+      const found = await panel(h);
+      const line = found.locator('[data-session-line]');
+      await line.waitFor({ timeout: 10_000 });
+      assert.equal((await line.innerText()).trim(), 'Claude Code · Belka · Codex · gpt-5.5');
+      // The chip still names the agent; the line is beneath it, not instead.
+      assert.match(
+        await found.locator('[data-working-session]').innerText(),
+        /^Claude Code · Belka\s+Claude Code · Belka · Codex · gpt-5\.5$/,
+      );
+      // The card stays the agent alone (D-118): no session words on it.
+      assert.doesNotMatch(await card(h.page, 't4').innerText(), /gpt-5\.5|Codex/);
+
+      const details = found.locator('[data-exec-details]');
+      await details.getByRole('button', { name: 'Details' }).click();
+      const text = await details.innerText();
+      assert.match(text, /Working session harness version\s*0\.9\.1/);
+      assert.match(text, /Working session model\s*gpt-5\.5/);
+      assert.match(text, /self-reported by the session; they decide nothing/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a session that reported nothing draws no line — the chip alone', async () => {
+    const { stub } = world();
+    const h = await open('/board?project=laika-core&task=t4', stub);
+    try {
+      const found = await panel(h);
+      assert.match(await found.innerText(), /Working session\s*Claude Code · Belka/);
+      assert.equal(await found.locator('[data-session-line]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [1440, 390] as const) {
+      void test(`${theme}, ${String(width)} px: Working and Connection lost are legible, with no sideways scroll`, async () => {
+        const { stub } = world();
+        const h = await open('/board?project=laika-core', stub);
+        try {
+          await h.page.setViewportSize({ width, height: 900 });
+          await boardReady(h);
+          await setTheme(h.page, theme);
+          for (const id of ['t4', 't5']) {
+            const line = card(h.page, id).locator('[data-exec-state]');
+            await line.waitFor({ timeout: 10_000 });
+            const [ink, ground] = await Promise.all([
+              line.evaluate((el) => {
+                const label = el.querySelector('.exec-state-label');
+                return label === null ? '' : getComputedStyle(label).color;
+              }),
+              card(h.page, id).evaluate((el) => getComputedStyle(el).backgroundColor),
+            ]);
+            assert.notEqual(ink, ground, `${id}: the words are the colour of the card`);
+            const box = await line.boundingBox();
+            const cardBox = await card(h.page, id).boundingBox();
+            assert.ok(
+              box !== null &&
+                cardBox !== null &&
+                box.x + box.width <= cardBox.x + cardBox.width + 1,
+              `${id}: the line overflows its card`,
+            );
+          }
+          assert.equal(
+            await h.page.evaluate(
+              () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+            ),
+            true,
+            `the board scrolls sideways at ${String(width)} px`,
+          );
+        } finally {
+          await h.close();
+        }
+      });
+    }
+  }
+});
+
+void describe('without a live claim', () => {
+  void test('a task the read serves no claim for says neither Working nor Connection lost, and no demo hand-off survives', async () => {
     const { stub } = world();
     const h = await open('/board?project=laika-core&task=t2', stub);
     try {
-      await panel(h);
-      const states = await h.page
-        .locator('[data-exec-state]')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('data-exec-state')));
-      assert.ok(
-        states.every((s) => s === 'waiting_for_agent'),
-        `drew ${JSON.stringify(states)}`,
-      );
+      const found = await panel(h);
+      assert.doesNotMatch(await found.innerText(), /\bWorking\b|Connection lost|Last seen/);
+      for (const id of ['t1', 't2', 't3']) {
+        const states = await card(h.page, id)
+          .locator('[data-exec-state]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('data-exec-state')));
+        assert.ok(
+          states.every((s) => s === 'waiting_for_agent'),
+          `${id} drew ${JSON.stringify(states)}`,
+        );
+      }
       const page = await h.page.locator('body').innerText();
-      assert.doesNotMatch(page, /Connection lost|Hand to my agent|claim lock until/i);
+      assert.doesNotMatch(page, /Hand to my agent|claim lock until/i);
     } finally {
       await h.close();
     }

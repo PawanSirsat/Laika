@@ -643,6 +643,10 @@ const NOT_FENCED: Record<string, string> = {
   'PUT /api/v1/agents/:id/grants': 'session only (agent.manage_own)',
   'POST /api/v1/agents/:id/rotate-token': 'session only (agent.manage_own)',
   'POST /api/v1/agents/:id/revoke': 'session only (agent.manage_own); its claims lapse, never move',
+  'POST /api/v1/agents/devices/confirm':
+    'session only (agent.manage_own); records the owner’s statement about a label, touches no task',
+  'POST /api/v1/agents/devices/revoke':
+    'session only (agent.manage_own); revokes each agent as /agents/:id/revoke does, its claims lapse',
   'POST /api/v1/tokens': 'a credential, not a task',
   'DELETE /api/v1/tokens/:id': 'a credential, not a task',
   'DELETE /api/v1/users/:id/tokens/:tokenId': 'a credential, not a task',
@@ -736,14 +740,57 @@ describe('the live claim on task reads (LAI-568)', () => {
         session_id: taken.session,
         lease_expires_at: expect.any(Number) as number,
         last_heartbeat_at: expect.any(Number) as number,
+        heartbeat_age_ms: expect.any(Number) as number,
         connection: 'live',
         suspect_after_ms: DEFAULT_CLAIM_TIMINGS.suspectMs,
         device_label: null,
+        // The session the claim opened reported nothing (LAI-593).
+        harness: null,
+        harness_version: null,
+        model: null,
       });
     }
     // The claim response itself carries it too: the same view.
     expect(taken.task.claim).toMatchObject({ session_id: taken.session, generation: 1 });
     expect(await claimOnReads(free)).toEqual([null, null, null]);
+  });
+
+  it('carries what the holding session reported, and a heartbeat’s new model on the next read (LAI-593)', async () => {
+    const { secret } = await register();
+    const taskId = await newTask();
+    const session = await ok(
+      await req(
+        '/api/v1/agent-sessions',
+        json('POST', {
+          harness: 'claude-code',
+          harness_version: '2.1.0',
+          model: 'claude-opus-5-5',
+        }),
+        { bearer: secret },
+      ),
+      201,
+    );
+    await claim(taskId, secret, session.id as string);
+
+    for (const read of await claimOnReads(taskId)) {
+      expect(read).toMatchObject({
+        session_id: session.id,
+        harness: 'claude-code',
+        harness_version: '2.1.0',
+        model: 'claude-opus-5-5',
+      });
+    }
+
+    await ok(
+      await req(
+        `/api/v1/agent-sessions/${String(session.id)}/heartbeat`,
+        json('POST', { model: 'claude-sonnet-5' }),
+        { bearer: secret },
+      ),
+    );
+    for (const read of await claimOnReads(taskId)) {
+      expect(read).toMatchObject({ harness: 'claude-code', model: 'claude-sonnet-5' });
+    }
   });
 
   it('is null on every read once the holder finishes: the claim is released', async () => {
@@ -878,6 +925,25 @@ describe('the live claim on task reads (LAI-568)', () => {
       await readsClaim(await bobToken(null), taskId, taken.session);
 
       await readsAs(await bobToken([betaId]), taskId, taken.session);
+    });
+
+    it('nor what the holding session reported (LAI-593)', async () => {
+      const betaId = await beta();
+      const { secret } = await register();
+      const taskId = await newTask();
+      const canary = 'model-canary-lai-593';
+      const session = await ok(
+        await req('/api/v1/agent-sessions', json('POST', { model: canary }), { bearer: secret }),
+        201,
+      );
+      await claim(taskId, secret, session.id as string);
+
+      // Positive control: Bob's unpinned token reads the model on the claim.
+      const unpinned = await bobToken(null);
+      const single = await ok(await req(`/api/v1/tasks/${taskId}`, {}, { bearer: unpinned }));
+      expect(single.claim).toMatchObject({ model: canary });
+
+      await readsAs(await bobToken([betaId]), taskId, canary);
     });
 
     it('an agent with no grant on the task’s project', async () => {

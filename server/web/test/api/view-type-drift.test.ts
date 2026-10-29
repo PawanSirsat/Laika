@@ -252,6 +252,15 @@ const PAIRS: readonly Pair[] = [
     client: 'TaskSummary',
     clientFile: 'tasks.ts',
   },
+  // LAI-593: the live claim nested in both task views (LAI-568). The task
+  // pairs above see `claim` and nothing inside it, so a field added to the
+  // claim — the session's harness, version and model — was served unseen.
+  {
+    server: 'TaskLiveClaimView',
+    serverFile: 'services/claims.ts',
+    client: 'TaskLiveClaim',
+    clientFile: 'tasks.ts',
+  },
   // LAI-975: `GET /tasks/summary`'s figures (LAI-974), which the Work page's
   // strip draws.
   {

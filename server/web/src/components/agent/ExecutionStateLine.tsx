@@ -20,7 +20,14 @@ export interface ExecutionStateLineProps {
 export function ExecutionStateLine({ state, detail, variant = 'card' }: ExecutionStateLineProps) {
   const words = EXECUTION_STATE_WORDS[state];
   return (
-    <p className={`exec-state exec-state-${variant}`} data-exec-state={state}>
+    <p
+      className={`exec-state exec-state-${variant}`}
+      data-exec-state={state}
+      // The drawer's line can change while it is open — Working to Connection
+      // lost on the reader's clock (LAI-597). A status is read out without
+      // taking the focus from whatever the reader is doing.
+      role={variant === 'panel' ? 'status' : undefined}
+    >
       <StateShape state={state} />
       <span className="exec-state-text">
         <b className="exec-state-label">{words.label}</b>

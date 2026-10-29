@@ -2379,6 +2379,21 @@ revoking an agent's token write `token.created` and `token.revoked`, the rows
 here are the record of the rest, and historic activity is never back-filled
 with an agent. No retention: an agent row lives as long as its owner.
 
+**Devices** (LAI-590) are derived from the owner's agents sharing a
+normalised device label: ECMAScript `trim().toLowerCase()`, with null and
+blank labels sharing the empty key and displayed as *Unnamed device*.
+The label remains self-reported and grants no permission. The device list
+includes active and revoked agents, their harness and status, counts of each,
+and the newest non-null agent last-seen time (null if none was seen).
+Recognition is the owner's statement per label (§4.67). A new label starts
+unrecognised; agents on labels already present at upgrade start recognised.
+Revoking a device uses single-agent revocation for every active agent on that
+label in one transaction, ending their sessions with `agent_revoked` so their
+claims cease to be live exactly as with single-agent revocation. Other devices,
+other owners and personal tokens are untouched. Confirm and revoke use
+`agent.manage_own`, session only; list uses `agent.read_own`. A label absent
+from the caller's own agents is `404`, including another owner's label.
+
 ### 4.64 `agent_project_grants`
 
 What one agent may do in one project (D-114, LAI-534). **No row is no access.**
@@ -2463,6 +2478,23 @@ it, writing `task.claim_expired`; `paused` and `transferred` are the hand-off's
 (LAI-546) and are written by nothing yet. **Nothing moves a claim out of
 `expired`**: reclaiming inserts a new row at the next generation (§5, §9.1).
 Rows are never deleted; they are the task's claim history.
+
+### 4.67 `recognised_agent_devices`
+
+The owner's confirmed device labels (LAI-590). No row means unrecognised.
+Labels group agents; they are not device identities or fingerprints.
+
+| field | notes |
+| --- | --- |
+| `owner_user_id` | FK `users`, cascade — with the label key, the primary key |
+| `label_key` | normalised as §4.63; empty string for null/blank labels |
+| `created_at` | first confirmed; upgrade uses the oldest agent registration on that label |
+
+Primary key `(owner_user_id, label_key)`. Confirmation is idempotent and
+requires an existing device among the caller's own agents. A confirmation
+persists if agents move away or are revoked; moving an agent to another label
+does not confirm that label. No retention beyond the owner and no activity
+verb: these rows record the statement, as agent registration does (§4.63).
 
 ## 5. Task lifecycle
 
@@ -2926,6 +2958,9 @@ GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
 GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only)
+GET    /api/v1/agents/devices                own agents grouped by device → { data: [{ device_label, display_name, recognised, last_seen_at, active_count, revoked_count, agents }] } (§4.63, agent.read_own)
+POST   /api/v1/agents/devices/confirm        body { device_label: string | null } → { device_label, recognised: true } (agent.manage_own, session only)
+POST   /api/v1/agents/devices/revoke         body { device_label: string | null } → { revoked_agent_ids: string[] } (agent.manage_own, session only)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
@@ -3014,6 +3049,14 @@ is read; a token that is
 not a registered agent's — or a session — is `403` with `reason:
 not_an_agent`.
 
+`GET /agents/devices` returns the complete derived groups (no pagination,
+so a device is never split). `device_label` is the normalised label, or null
+for the unnamed group; `display_name` uses the newest agent's trimmed label,
+or *Unnamed device*. `agents` contains the same shapes as `GET /agents`.
+Confirm and revoke normalise the supplied label in the same way. A known
+device with no active agents revokes successfully with an empty id list.
+§7.1 has no agent-list tool, so no device MCP read or management tool is added.
+
 **Agent sessions and claims** (§4.65, §4.66, §9.1, LAI-541). A session is `{
 id, agent_id, started_at, last_heartbeat_at, ended_at, end_reason,
 client_version, harness, harness_version, model, connection }` — the four
@@ -3025,7 +3068,17 @@ twenty most recent, newest first, and every activity row (§4.8) carries
 taken when it was written. A session's `connection` is one of `live`, `suspect`
 (silent past §9.1's suspect interval) or `ended`; a claim is `{ id, task_id,
 session_id, agent_id, generation, state, lease_expires_at, created_at, ended_at
-}`. A heartbeat answers `{ session, claims, lost }`: the live claims it renewed,
+}`. A task read — `GET /tasks/:id` and the task lists — carries `claim`, the
+task's live claim (`active` or `paused`) or `null` (LAI-568): `{ generation,
+state, agent_id, session_id, lease_expires_at, last_heartbeat_at,
+heartbeat_age_ms, connection, suspect_after_ms, device_label, harness,
+harness_version, model }`, with `heartbeat_age_ms` and `connection` (`live`
+or `suspect`) as of the read by the server's clock — a client ages the claim
+from `heartbeat_age_ms` on its own elapsed time and never compares
+`last_heartbeat_at` with its own clock (LAI-597) — and the last three the
+holding session's self-reported fields as it last sent them — `null` where it
+sent none, and deciding nothing (LAI-593). A heartbeat answers `{ session,
+claims, lost }`: the live claims it renewed,
 and the session's claims that are no longer live — **an expired one stays in
 `lost`; a heartbeat never brings it back**. A heartbeat to an ended session is
 `409`, `reason: stale_claim`. All three `/agent-sessions` routes are under
