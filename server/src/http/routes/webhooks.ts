@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type Database from 'better-sqlite3';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { systemPrincipal } from '../../policy/can.ts';
@@ -19,6 +20,7 @@ import {
   verifySignature,
 } from '../../services/webhooks.ts';
 import { pruneGithubRecords } from '../../services/github-proof.ts';
+import { applyCheckpointDelivery, isCheckpointRef } from '../../services/checkpoints.ts';
 import { type AppEnv } from '../context.ts';
 
 /**
@@ -32,6 +34,8 @@ import { type AppEnv } from '../context.ts';
 
 export interface WebhookRouteOptions {
   db: Db;
+  /** For checkpoint deliveries' `BEGIN IMMEDIATE` (§4.70); the db's own handle by default. */
+  sqlite?: Database.Database;
   serverSecret: string;
   /** Injectable so a test can drive the 24h window without waiting a day. */
   deliveries?: DeliveryLog;
@@ -56,6 +60,7 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
   const { db, serverSecret } = options;
   const deliveries = options.deliveries ?? new DeliveryLog();
   const clock = options.now ?? Date.now;
+  const sqlite = options.sqlite ?? db.$client;
 
   app.post('/github', async (c) => {
     // ## The body is read as text, and nothing parses it until the signature holds
@@ -89,6 +94,39 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
     // Everything below here is a delivery that proved it holds the org's secret.
     const delivery = c.req.header('x-github-delivery') ?? '';
     const now = clock();
+    const event = c.req.header('x-github-event') ?? '';
+    const payload: unknown = JSON.parse(raw || 'null');
+
+    // ## A checkpoint tag is judged before the 24h log, and outside it
+    //
+    // §10.1, D-116 item 5: a checkpoint delivery's id is recorded **in the
+    // transaction that applies it** (§4.70). The log below records an id
+    // before its handler runs, so a delivery whose handler failed would be
+    // refused as a repeat when GitHub's *Redeliver* sends it again with the
+    // same id — and the checkpoint would never verify. So these never touch
+    // the log: their repeat check is the unique `delivery_id`, and a handler
+    // that throws leaves nothing behind.
+    const pushed = asRecord(payload) as {
+      ref?: unknown;
+      before?: unknown;
+      after?: unknown;
+      repository?: { full_name?: unknown };
+    };
+    if (event === 'push' && isCheckpointRef(pushed.ref)) {
+      const outcome = applyCheckpointDelivery(
+        sqlite,
+        db,
+        {
+          deliveryId: delivery,
+          repo: typeof pushed.repository?.full_name === 'string' ? pushed.repository.full_name : '',
+          ref: pushed.ref,
+          before: typeof pushed.before === 'string' ? pushed.before : '',
+          after: typeof pushed.after === 'string' ? pushed.after : '',
+        },
+        now,
+      );
+      return c.json({ ok: true, ...outcome });
+    }
 
     if (delivery !== '' && !deliveries.accept(delivery, now)) {
       // §10.1's 24h window. **GitHub does not retry on its own** (LAI-753): a
@@ -97,9 +135,6 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
       // had in fact arrived.
       return c.json({ ok: true, deduplicated: true });
     }
-
-    const event = c.req.header('x-github-event') ?? '';
-    const payload: unknown = JSON.parse(raw || 'null');
 
     // §4.28–§4.30's 30 days, kept by the deliveries themselves: one indexed
     // delete per table, and nothing for a cron job to remember.

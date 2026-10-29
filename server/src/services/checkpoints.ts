@@ -331,7 +331,7 @@ export interface RegisterCheckpointInput {
   branch: string;
   commitSha: string;
   manifest: readonly CheckpointManifestEntry[];
-  summary?: Partial<CheckpointSummary> | null | undefined;
+  summary?: { [K in keyof CheckpointSummary]?: string | undefined } | null | undefined;
   summaryCommitSha?: string | null | undefined;
   now?: number;
 }
