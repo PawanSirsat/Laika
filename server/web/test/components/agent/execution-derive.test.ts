@@ -25,8 +25,9 @@ import {
   executionView,
   hasExecution,
   liveClaimDetail,
+  ageWords,
   liveConnection,
-  suspectAt,
+  msUntilSuspect,
 } from '../../../src/components/agent/execution-derive.ts';
 import {
   CLAIM_EXPIRED_WORDS,
@@ -151,11 +152,18 @@ const claim = (over: Partial<TaskLiveClaim> = {}): TaskLiveClaim => ({
   session_id: '01SESSIONLAPTOP',
   lease_expires_at: BEAT + 300_000,
   last_heartbeat_at: BEAT,
+  heartbeat_age_ms: 0,
   connection: 'live',
   suspect_after_ms: SUSPECT_AFTER,
   device_label: 'Belka',
   ...over,
 });
+
+/**
+ * Page-clock instants (`performance.now()`), deliberately nowhere near the
+ * wall-clock `last_heartbeat_at` above: the derive must never compare them.
+ */
+const P0 = 5_000;
 
 void describe('the live claim (LAI-597)', () => {
   const held = (over: Partial<TaskLiveClaim> = {}) => ({
@@ -164,33 +172,72 @@ void describe('the live claim (LAI-597)', () => {
     claim: claim(over),
   });
 
-  void test('a claim checking in is Working', () => {
-    assert.equal(cardExecutionState(held(), BEAT), 'working');
-    assert.equal(cardExecutionState(held(), BEAT + SUSPECT_AFTER - 1), 'working');
+  void test('a claim checking in is Working until suspect_after_ms has elapsed here', () => {
+    const task = held();
+    // First sight stamps the copy at P0.
+    assert.equal(cardExecutionState(task, P0), 'working');
+    assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER - 1), 'working');
     // A paused claim is still held, and still checking in.
-    assert.equal(cardExecutionState(held({ state: 'paused' }), BEAT + 10), 'working');
+    assert.equal(cardExecutionState(held({ state: 'paused' }), P0), 'working');
   });
 
   void test('a heartbeat exactly suspect_after_ms old is Connection lost — the server’s boundary', () => {
-    assert.equal(cardExecutionState(held(), BEAT + SUSPECT_AFTER), 'connection_lost');
-    assert.equal(cardExecutionState(held(), BEAT + 10 * SUSPECT_AFTER), 'connection_lost');
+    const task = held();
+    assert.equal(cardExecutionState(task, P0), 'working');
+    assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER), 'connection_lost');
+    assert.equal(cardExecutionState(task, P0 + 10 * SUSPECT_AFTER), 'connection_lost');
   });
 
-  void test('a claim the server already served suspect is Connection lost, whatever the clock', () => {
-    assert.equal(cardExecutionState(held({ connection: 'suspect' }), BEAT), 'connection_lost');
-    assert.equal(suspectAt(claim({ connection: 'suspect' })), undefined);
+  void test('the server’s age at the read counts: 60 s old leaves 30 s here', () => {
+    const task = held({ heartbeat_age_ms: 60_000 });
+    assert.equal(cardExecutionState(task, P0), 'working');
+    assert.equal(msUntilSuspect(task.claim, P0), 30_000);
+    assert.equal(cardExecutionState(task, P0 + 29_999), 'working');
+    assert.equal(cardExecutionState(task, P0 + 30_000), 'connection_lost');
+    // Already past it when served: lost at once.
+    assert.equal(
+      cardExecutionState(held({ heartbeat_age_ms: SUSPECT_AFTER }), P0),
+      'connection_lost',
+    );
   });
 
-  void test('the moment it turns is the heartbeat plus suspect_after_ms', () => {
-    assert.equal(suspectAt(claim()), BEAT + SUSPECT_AFTER);
-    assert.equal(liveConnection(claim(), BEAT + SUSPECT_AFTER - 1), 'live');
-    assert.equal(liveConnection(claim(), BEAT + SUSPECT_AFTER), 'suspect');
+  void test('a claim the server already served suspect is Connection lost, with nothing to wait for', () => {
+    const task = held({ connection: 'suspect' });
+    assert.equal(cardExecutionState(task, P0), 'connection_lost');
+    assert.equal(msUntilSuspect(task.claim, P0), undefined);
+    assert.equal(liveConnection(task.claim, P0), 'suspect');
+  });
+
+  void test('the browser’s wall clock is never read: ahead or behind, a fresh claim is Working and turns on elapsed time', () => {
+    const now = Date.now();
+    for (const skew of [5 * 60_000, -5 * 60_000, 365 * 86_400_000]) {
+      // The server stamped the heartbeat on its clock; this browser's differs by `skew`.
+      const task = held({ last_heartbeat_at: now - skew, heartbeat_age_ms: 0 });
+      assert.equal(cardExecutionState(task, P0), 'working', `skew ${String(skew)}`);
+      assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER - 1), 'working');
+      assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER), 'connection_lost');
+    }
+  });
+
+  void test('a view served before heartbeat_age_ms reads as age 0 at receipt, never a wall-clock guess', () => {
+    const { heartbeat_age_ms: _dropped, ...older } = claim({ last_heartbeat_at: 1 });
+    const task = { status: 'in_progress' as const, selected_agent: LAPTOP, claim: older };
+    assert.equal(cardExecutionState(task, P0), 'working');
+    assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER), 'connection_lost');
   });
 
   void test('the live claim decides before the pick: a claim on a task still in To do is Working', () => {
-    assert.equal(cardExecutionState({ ...held(), status: 'todo' }, BEAT), 'working');
+    assert.equal(cardExecutionState({ ...held(), status: 'todo' }, P0), 'working');
     // And it needs no picked agent: the claim is the fact.
-    assert.equal(cardExecutionState({ ...held(), selected_agent: null }, BEAT), 'working');
+    assert.equal(cardExecutionState({ ...held(), selected_agent: null }, P0), 'working');
+  });
+
+  void test('Last seen is worded from the age, not from a date', () => {
+    assert.equal(ageWords(0), 'just now');
+    assert.equal(ageWords(59_999), 'just now');
+    assert.equal(ageWords(4 * 60_000), '4 min ago');
+    assert.equal(ageWords(3 * 3_600_000), '3 h ago');
+    assert.equal(ageWords(2 * 86_400_000), 'over a day ago');
   });
 
   void test('the card names the holder as the task’s agent on the session’s device', () => {
@@ -204,13 +251,17 @@ void describe('the live claim (LAI-597)', () => {
   });
 
   void test('the drawer: the holding session, its last heartbeat and its generation', () => {
-    const view = executionView(held(), [taken(3, 10)], AGENTS, BEAT + 60_000);
+    const task = held({ heartbeat_age_ms: 30_000 });
+    // The copy reaches the page at P0, 30 s old by the server.
+    assert.equal(cardExecutionState(task, P0), 'working');
+    const view = executionView(task, [taken(3, 10)], AGENTS, P0 + 30_000);
     assert.equal(view.state, 'working');
     assert.deepEqual(view.session, {
       client: 'claude-code',
       device: 'Belka',
       owner: 'Ada Lovelace',
     });
+    // 30 s by the server, 30 s here.
     assert.equal(view.lastSeen, '1 min ago');
     assert.equal(view.lastSeenAt, BEAT);
     assert.equal(view.liveSessionId, '01SESSIONLAPTOP');
@@ -218,14 +269,14 @@ void describe('the live claim (LAI-597)', () => {
     assert.equal(view.generation, 4);
     assert.equal(hasExecution(view), true);
 
-    // Four minutes on, the same read: Connection lost, and Last seen says when.
-    const later = executionView(held(), [taken(3, 10)], AGENTS, BEAT + 4 * 60_000);
+    // Four minutes on, the same copy: Connection lost, and Last seen says when.
+    const later = executionView(task, [taken(3, 10)], AGENTS, P0 + 30_000 + 3.5 * 60_000);
     assert.equal(later.state, 'connection_lost');
     assert.equal(later.lastSeen, '4 min ago');
   });
 
   void test('a live claim alone opens the panel; an agent nobody named reads as words', () => {
-    const view = executionView({ ...held(), claim: claim({ agent_id: 'ag-x' }) }, [], AGENTS, BEAT);
+    const view = executionView({ ...held(), claim: claim({ agent_id: 'ag-x' }) }, [], AGENTS, P0);
     assert.equal(view.claim, undefined);
     assert.equal(view.session, 'a registered agent');
     assert.equal(view.lastSeen, 'just now');
@@ -237,7 +288,7 @@ void describe('the live claim (LAI-597)', () => {
       { status: 'in_progress' as const, selected_agent: LAPTOP, claim: null },
       { status: 'in_progress' as const, selected_agent: LAPTOP },
     ]) {
-      const view = executionView(task, [taken(3, 10)], AGENTS, BEAT);
+      const view = executionView(task, [taken(3, 10)], AGENTS, P0);
       assert.equal(view.session, undefined);
       assert.equal(view.lastSeen, undefined);
       assert.equal(view.liveSessionId, undefined);

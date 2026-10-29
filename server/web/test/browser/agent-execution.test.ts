@@ -189,6 +189,7 @@ const liveClaim = (over: Record<string, unknown> = {}) => {
     session_id: '01SESSIONBELKA',
     lease_expires_at: beat + 300_000,
     last_heartbeat_at: beat,
+    heartbeat_age_ms: 0,
     connection: 'live',
     suspect_after_ms: SUSPECT_AFTER_MS,
     device_label: 'Belka',
@@ -241,6 +242,7 @@ function world(): World {
     claim: liveClaim({
       session_id: '01SESSIONQUIET',
       last_heartbeat_at: Date.now() - 4 * 60_000,
+      heartbeat_age_ms: 4 * 60_000,
       connection: 'suspect',
     }),
   });
@@ -651,6 +653,41 @@ void describe('the live claim (LAI-597)', () => {
       await h.close();
     }
   });
+
+  /*
+   * LAI-597 review: the browser's clock is never compared with the server's.
+   * The served claim is fresh by the server (`heartbeat_age_ms: 0`), and this
+   * browser's clock is five minutes off either way. Both must say Working, and
+   * turn only after `suspect_after_ms` has really elapsed on the page.
+   */
+  for (const [skew, words] of [
+    [5 * 60_000, 'five minutes ahead'],
+    [-5 * 60_000, 'five minutes behind'],
+  ] as const) {
+    void test(`a browser ${words}: a fresh claim is Working, and turns only after suspect_after_ms here`, async () => {
+      const { stub } = world();
+      const h = await open('/board?project=laika-core', stub, {
+        before: async (page) => {
+          await page.clock.install({ time: Date.now() + skew });
+        },
+      });
+      try {
+        await boardReady(h);
+        const line = card(h.page, 't4').locator('[data-exec-state]');
+        await line.waitFor({ timeout: 10_000 });
+        assert.equal(await line.getAttribute('data-exec-state'), 'working');
+
+        await h.page.clock.fastForward(SUSPECT_AFTER_MS - 5_000);
+        assert.equal(await line.getAttribute('data-exec-state'), 'working');
+
+        await h.page.clock.fastForward(10_000);
+        await until(async () => (await line.getAttribute('data-exec-state')) === 'connection_lost');
+        assert.equal(await line.getAttribute('data-exec-state'), 'connection_lost');
+      } finally {
+        await h.close();
+      }
+    });
+  }
 
   void test('the drawer shows the holding session and its last heartbeat, and flips live without moving the focus', async () => {
     const { stub } = world();

@@ -9,7 +9,7 @@ import {
   type SelectedAgent,
 } from '../../api/selected-agent.ts';
 import type { TaskLiveClaim, TaskSummary } from '../../api/tasks.ts';
-import { clockTime, timeLabel } from '../../api/time-label.ts';
+import { clockTime } from '../../api/time-label.ts';
 import type { ExecutionState } from './agent-states.ts';
 import type { AgentChipProps } from './AgentChip.tsx';
 import type { PanelAgent, PanelClaim } from './ExecutionPanel.tsx';
@@ -36,9 +36,10 @@ import type { PanelAgent, PanelClaim } from './ExecutionPanel.tsx';
  *    and `suspect_after_ms` — or null. A claim checking in is *Working*; one
  *    whose heartbeat is `suspect_after_ms` old, or that the server already
  *    served `suspect`, is *Connection lost*. **Heartbeats write no activity**,
- *    so nothing re-reads the task when a session goes quiet: the answer is
- *    taken on the reader's own clock ({@link suspectAt}), and a card left open
- *    moves from one to the other without a request.
+ *    so nothing re-reads the task when a session goes quiet: the claim is
+ *    aged from the server's own age of it plus the time elapsed on this page
+ *    ({@link heartbeatAge}), and a card left open moves from one to the other
+ *    without a request.
  *
  * A claim null or absent — a view served before LAI-568 — is the answer from
  * the first two sources, unchanged.
@@ -48,35 +49,82 @@ import type { PanelAgent, PanelClaim } from './ExecutionPanel.tsx';
 const NOT_STARTED: ReadonlySet<string> = new Set(['backlog', 'todo']);
 
 /**
- * The moment this claim stops counting as checking in, on the reader's clock —
- * its last heartbeat plus `suspect_after_ms`. `undefined` when the server
- * already served it `suspect`: there is nothing left to wait for.
+ * **The browser's clock is never compared with the server's** (LAI-597
+ * review). A browser five minutes ahead would call every fresh claim lost, one
+ * behind would keep a dead one *Working* for five minutes too long. So a claim
+ * is aged by two numbers that each come from one clock:
+ *
+ * - `heartbeat_age_ms` — the heartbeat's age **by the server's clock** when it
+ *   served the read;
+ * - the time elapsed **on this page's monotonic clock** (`performance.now()`)
+ *   since this copy of the claim reached it.
+ *
+ * Each claim object is stamped the first time it is seen; a re-read brings a
+ * new object, a new server age and a new stamp. A view from before the server
+ * sent its age reads as age 0 at receipt — never a guess from the wall clock.
  */
-export function suspectAt(claim: TaskLiveClaim): number | undefined {
-  return claim.connection === 'suspect'
-    ? undefined
-    : claim.last_heartbeat_at + claim.suspect_after_ms;
+const RECEIVED = new WeakMap<TaskLiveClaim, number>();
+
+/** The page's monotonic clock — never the wall clock. */
+export function pageClock(): number {
+  return performance.now();
+}
+
+/** When this copy of the claim reached the page, on {@link pageClock}; stamped at first sight. */
+function receivedAt(claim: TaskLiveClaim, now: number): number {
+  const at = RECEIVED.get(claim);
+  if (at !== undefined) return at;
+  RECEIVED.set(claim, now);
+  return now;
+}
+
+/** The heartbeat's age at `now` ({@link pageClock}): the server's age plus what elapsed here. */
+export function heartbeatAge(claim: TaskLiveClaim, now: number): number {
+  return (claim.heartbeat_age_ms ?? 0) + Math.max(0, now - receivedAt(claim, now));
 }
 
 /**
- * Whether the live claim is checking in **as of `now`**. A heartbeat exactly
- * `suspect_after_ms` old is already suspect — the server's own boundary
- * (`services/claims.ts`), so the two never disagree on the same instant.
+ * How long from `now` until this claim stops counting as checking in, or
+ * `undefined` when the server already served it `suspect` — nothing left to
+ * wait for. Zero once it has passed.
+ */
+export function msUntilSuspect(claim: TaskLiveClaim, now: number): number | undefined {
+  if (claim.connection === 'suspect') return undefined;
+  return Math.max(0, claim.suspect_after_ms - heartbeatAge(claim, now));
+}
+
+/**
+ * Whether the live claim is checking in at `now` ({@link pageClock}). A
+ * heartbeat exactly `suspect_after_ms` old is already suspect — the server's
+ * own boundary (`services/claims.ts`), so the two never disagree.
  */
 export function liveConnection(claim: TaskLiveClaim, now: number): 'live' | 'suspect' {
-  const at = suspectAt(claim);
-  return at !== undefined && now < at ? 'live' : 'suspect';
+  const left = msUntilSuspect(claim, now);
+  return left !== undefined && left > 0 ? 'live' : 'suspect';
+}
+
+/**
+ * An age in words, as `timeLabel` words its first day — *just now*, *4 min
+ * ago*, *3 h ago* — and *over a day ago* past that, because an age carries no
+ * date to print.
+ */
+export function ageWords(ms: number): string {
+  if (ms < 60_000) return 'just now';
+  if (ms < 3_600_000) return `${String(Math.floor(ms / 60_000))} min ago`;
+  if (ms < 86_400_000) return `${String(Math.floor(ms / 3_600_000))} h ago`;
+  return 'over a day ago';
 }
 
 /**
  * The card's one state, or `null` for none.
  *
- * A live claim decides first: *Working* or *Connection lost*, as of `now`.
- * Without one, an agent picked for a task not started is *Waiting for agent*.
+ * A live claim decides first: *Working* or *Connection lost*, at `now` on
+ * {@link pageClock}. Without one, an agent picked for a task not started is
+ * *Waiting for agent*.
  */
 export function cardExecutionState(
   task: Pick<TaskSummary, 'status' | 'selected_agent' | 'claim'>,
-  now: number = Date.now(),
+  now: number = pageClock(),
 ): ExecutionState | null {
   const claim = task.claim ?? null;
   if (claim !== null) {
@@ -306,7 +354,7 @@ export function executionView(
   task: Pick<TaskSummary, 'status' | 'selected_agent' | 'claim'>,
   activity: readonly ActivityEvent[],
   agents: ReadonlyMap<string, AgentNaming>,
-  now: number = Date.now(),
+  now: number = pageClock(),
 ): ExecutionView {
   const selected = task.selected_agent ?? null;
   const live = task.claim ?? null;
@@ -316,7 +364,8 @@ export function executionView(
   return {
     state: cardExecutionState(task, now),
     session: live === null ? undefined : liveSessionOf(live, selected, agents),
-    lastSeen: live === null ? undefined : timeLabel(live.last_heartbeat_at, now).text,
+    // Worded from its age, never from `last_heartbeat_at` against this clock.
+    lastSeen: live === null ? undefined : ageWords(heartbeatAge(live, now)),
     lastSeenAt: live?.last_heartbeat_at,
     liveSessionId: live?.session_id,
     intended: selected === null ? null : panelAgentOf(selected),
