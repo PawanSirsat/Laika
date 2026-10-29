@@ -425,6 +425,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Edit / move any task | ✓ | ✓ | — |
 | Claim a task (`start_working`) | ✓ | ✓ | — |
 | Save a checkpoint on a task your agent holds | ✓ | ✓ | — |
+| Re-tag a checkpoint one of your agents saved | ✓ | ✓ | — |
 | Offer a task your agent holds to another agent | ✓ | ✓ | — |
 | Approve a cross-owner hand-off | ✓ | task's assignee | — |
 | Accept a hand-off or recovery offer | ✓ | ✓ | — |
@@ -458,8 +459,8 @@ refuses the last lead `409 conflict` with `details.reason: last_lead` — hand
 over first.
 
 **Checkpoints and hand-offs** (§4.68 – §4.72, D-114 – D-116, LAI-544). The
-seven rows are `task.checkpoint.create`, `task.handoff.offer`,
-`task.handoff.approve`, `task.handoff.accept`, `task.handoff.decline`,
+eight rows are `task.checkpoint.create`, `task.checkpoint.retag`,
+`task.handoff.offer`, `task.handoff.approve`, `task.handoff.accept`, `task.handoff.decline`,
 `task.handoff.cancel` and `project.handoff_policy.edit`, in that order. Each
 is asked of the **owner's** role; the agent's grant and token then narrow it
 as every row is narrowed (§4.64, §6.2), and the project's hand-off policy
@@ -468,7 +469,10 @@ narrows the four `task.handoff.*` actions that delegate or transfer —
 *Decline* are a **registered agent's** acts: a session or a legacy token is
 `403`, `reason: not_an_agent`; saving and offering also need the task's live
 claim (§6.3's fence), and accepting or declining needs the offer to be
-addressed to the calling agent, or to any eligible agent. **Approve is a
+addressed to the calling agent, or to any eligible agent. *Re-tag* is also an
+agent's: any registered agent **of the saving agent's owner** with a `full`
+grant, so a replacement agent can re-verify a dead one's save; it needs no
+claim, because it changes no task, only which ref is the checkpoint's newest. **Approve is a
 person's, signed in** (session only): the task's assignee, or a lead (an org
 Owner or Admin is an implicit lead), and **never the owner of the receiving
 agent** — `403`, `reason: approver_is_receiver` — so nobody approves a
@@ -858,12 +862,12 @@ a reader filtering on `type` should not open a payload to learn it.
 
 - `task.checkpoint_saved` — enum **LAI-545**, mirror **LAI-549**. Written when a checkpoint is registered (§4.68) — once per checkpoint; a repeated key writes nothing. **Verification writes no row**: the state is on the checkpoint. Actor: the saving agent. Payload `{ checkpoint_id, commit_sha, branch, claim_generation, session_id }`.
 - `task.handoff_offered` — enum **LAI-546**, mirror **LAI-549**. Written when a hand-off offer is made, `open` or `pending_approval` (§4.71). Actor: the sending agent. Payload `{ offer_id, kind, to_agent_id, checkpoint_id, commit_sha, requires_approval, expires_at, from_generation }`.
-- `task.handoff_approved` — enum **LAI-546**, mirror **LAI-549**. Written when a person approves a cross-owner offer. Actor: that person. Payload `{ offer_id, to_agent_id }`.
-- `task.handoff_accepted` — enum **LAI-546**, mirror **LAI-549**. Written when a receiver accepts — the claim moves. Actor: the receiving agent. Payload `{ offer_id, kind, checkpoint_id, receiver_commit_sha, from_generation, generation, session_id, agent_id, handoff_count }`.
+- `task.handoff_approved` — enum **LAI-546**, mirror **LAI-549**. Written when a person approves a cross-owner offer, or names and approves the receiver of an unnamed recovery. Actor: that person. Payload `{ offer_id, to_agent_id, named }`.
+- `task.handoff_accepted` — enum **LAI-546**, mirror **LAI-549**. Written when a receiver accepts — the claim moves. Actor: the receiving agent. Payload `{ offer_id, kind, checkpoint_id, receiver_commit_sha, from_generation, from_claim_state, generation, claim_id, session_id, agent_id, handoff_count }` — `from_claim_state` `transferred` for a hand-off, `expired` for a recovery or a lapsed sender. The selection change it makes writes its own `task.agent_selected`.
 - `task.handoff_declined` — enum **LAI-546**, mirror **LAI-549**. Written when the receiver declines. Actor: the receiving agent. Payload `{ offer_id, reason }`.
 - `task.handoff_cancelled` — enum **LAI-546**, mirror **LAI-549**. Written when a live offer is closed by anyone but its receiver or the clock — `closed_reason` `withdrawn`, `reclaimed`, `task_closed` or `agent_revoked` (§4.71). Actor: whoever closed it; the system for `task_closed` and `agent_revoked`. Payload `{ offer_id, closed_reason }`.
 - `task.handoff_expired` — enum **LAI-546**, mirror **LAI-549**. Written when §11.6's scan expires a live offer. Actor: the **system** (§3.4). Payload `{ offer_id, expires_at }`.
-- `task.recovered` — enum **LAI-546**, mirror **LAI-549**. Written when the system opens a **recovery** offer for a task whose claim expired with a verified checkpoint (§3.4 `system.handoff.recover`) — not when it is accepted, which is `task.handoff_accepted`. Actor: the **system**. Payload `{ offer_id, checkpoint_id, commit_sha, from_generation, to_agent_id }`.
+- `task.recovered` — enum **LAI-546**, mirror **LAI-549**. Written when the system opens a **recovery** offer for a task whose claim expired with a verified checkpoint (§3.4 `system.handoff.recover`) — by **any** expiry path: the scan, a late heartbeat, or a live hand-off closing unaccepted after its sender's claim lapsed (§11.6) — not when it is accepted, which is `task.handoff_accepted`. Actor: the **system**. Payload `{ offer_id, checkpoint_id, commit_sha, from_generation }`.
 
 A work request's opening and withdrawal stay `task.agent_selected` (LAI-535),
 and its acceptance by the selected agent's claim writes no hand-off verb: no
@@ -2739,7 +2743,7 @@ on), and a **recovery** (the system offers a task whose claim expired; §3.4).
 | `accepted_session_id` | nullable FK `agent_sessions`, `restrict` — the receiver's session, set on `accepted` |
 | `accepted_claim_id` | nullable FK `task_claims` (§4.66), `restrict` — **the claim the accept created**, so the claim history names the offer it came from |
 | `receiver_commit_sha` | nullable — the `verified_commit_sha` the receiver sent with its accept (D-116 item 8): **the receiver's acknowledgement, not proof**. The UI labels it *"Receiver confirmed commit …"* |
-| `closed_reason` | nullable — why a live offer closed other than by its receiver or the clock: `withdrawn` (the sender or a person cancelled it), `reclaimed` (the old holder reclaimed, §9.1.1), `selection_changed` (a work request's selection was cleared or changed), `task_closed` (the task left `in_progress`), `agent_revoked`, `superseded` (a newer recovery replaced it) |
+| `closed_reason` | nullable — why a live offer closed other than by its receiver or the clock: `withdrawn` (the sender or a person cancelled it), `reclaimed` (the old holder reclaimed, §9.1.1), `selection_changed` (a work request's selection was cleared or changed), `task_closed` (the task left `in_progress`), `agent_revoked` |
 | `created_by_user_id` | FK `users`, cascade — the person behind it: the selector of a work request, the owner of the sending agent for a hand-off, the task's assignee for a recovery (or the project's first lead when it has none) |
 | `created_at` | |
 | `closed_at` | nullable — when it left a live state |
@@ -3149,15 +3153,16 @@ credential is not an org credential with a project filter.
 
   | status · code | `reason` | when |
   | --- | --- | --- |
-  | `409 conflict` | `offer_taken` | another receiver accepted first; or a reclaim found an offer for the task already accepted (§9.1.1) |
+  | `409 conflict` | `offer_taken` | another receiver accepted first; or a reclaim found a hand-off or recovery offer accepted **from the generation it reclaims** (§9.1.1) |
   | `409 conflict` | `offer_closed` | the offer is no longer live — accepted, declined, cancelled or expired. `details.state` says which |
-  | `409 conflict` | `approval_pending` | an accept on an offer still `pending_approval` |
+  | `409 conflict` | `approval_pending` | an accept on an offer still `pending_approval`, or on an unnamed recovery by an agent of another owner where approval is required (§4.71) |
   | `409 conflict` | `checkpoint_unverified` | the checkpoint named, or the offer's, is `pending`, `uncertain` or `ref_deleted` — **neither offered nor accepted** (D-116 item 6). `details.verification` says which |
   | `409 conflict` | `handoff_limit` | the task has `max_handoffs` completed hand-offs (§4.72) |
   | `409 conflict` | `offer_live` | an offer while the task already has a live hand-off or recovery offer |
   | `422 unprocessable` | `checkpoint_mismatch` | the accept's `verified_commit_sha` differs from the checkpoint's `commit_sha` (D-116 item 8) |
   | `422 unprocessable` | `repo_not_configured` | a checkpoint's `repo` is not the project's configured repo, or the project has none (D-116, limitation 4) |
   | `422 unprocessable` | `checkpoint_required` | a hand-off with no `checkpoint_id` |
+  | `422 unprocessable` | `checkpoint_not_this_claim` | the checkpoint belongs to another task, or — for a hand-off — was saved under a generation other than the sender's live claim's |
   | `422 unprocessable` | `receiver_not_eligible` | the named agent is revoked, has no `full` grant on the project, or has a different owner where the policy does not allow it |
   | `403 forbidden` | `approver_is_receiver` | the approver owns the receiving agent |
   | `403 forbidden` | `not_an_agent` | a session or a legacy token saving, offering, accepting or declining |
@@ -3337,13 +3342,16 @@ POST   /api/v1/tasks/:id/checkpoints         body { id, idempotency_key, repo, b
                                              → 201 checkpoint; the same key again → 200 that checkpoint (§4.68, LAI-545).
                                              The live claim's holder only, with X-Laika-Claim-Generation
 GET    /api/v1/tasks/:id/checkpoints         newest first, each with its refs, `verification`, `pending_since`, `superseded`
-POST   /api/v1/checkpoints/:id/refs          → 201 { ref, revision } — registers the next re-tag before it is pushed
-                                             (`laika agent checkpoint reverify`, D-116 item 7); the saving agent or its owner
+POST   /api/v1/checkpoints/:id/refs          → 201 { ref, revision, verification } — registers the next re-tag before it is
+                                             pushed (`laika agent checkpoint reverify`, D-116 item 7); task.checkpoint.retag
+GET    /api/v1/agents/:id/checkpoint-consent → { given, given_by_user_id, given_at, withdrawn_at } (§4.73; the owner, or the agent's own token)
+PUT    /api/v1/agents/:id/checkpoint-consent DELETE .../checkpoint-consent — give / withdraw (agent.manage_own, session only)
 POST   /api/v1/tasks/:id/handoff-offers      body { idempotency_key, to_agent_id, checkpoint_id, reason } → 201 offer;
                                              pauses the caller's live claim (§4.71, LAI-546)
 GET    /api/v1/tasks/:id/handoff-offers      every offer on the task, newest first, work requests included
 GET    /api/v1/agents/me/inbox               the calling agent's live work requests and offers, newest first (agent_sync's twin)
-POST   /api/v1/handoff-offers/:id/approve    → offer, `open`   (session only; the task's assignee or a lead, never the receiver's owner)
+POST   /api/v1/handoff-offers/:id/approve    body { to_agent_id? } → offer, `open` (session only; the task's assignee or a lead,
+                                             never the receiver's owner); to_agent_id names an unnamed recovery's receiver
 POST   /api/v1/handoff-offers/:id/accept     body { verified_commit_sha, session_id? } → { offer, claim, session }
                                              and X-Laika-Claim-Generation: the receiver's new claim at generation + 1
 POST   /api/v1/handoff-offers/:id/decline    body { reason? } → offer; the sender's claim resumes
@@ -3541,10 +3549,15 @@ cannot read the same way, before `task.claim`. A task no
 longer in progress is `409`, `reason: task_not_claimable`; a live claim is `409
 claim_held`; a task whose newest claim is not this agent's expired one is
 `409`, `reason: nothing_to_reclaim`. **With the offers** (§4.71, LAI-546), the
-same transaction refuses `409 conflict`, `reason: offer_taken`, when any offer
-for the task has been accepted, and otherwise closes every live hand-off and
-recovery offer for it — `cancelled`, `closed_reason: reclaimed`, one
-`task.handoff_cancelled` row each — before inserting the new claim.
+same transaction refuses `409 conflict`, `reason: offer_taken`, when a
+**hand-off or recovery** offer whose `from_claim_generation` is the generation
+being reclaimed has been accepted — a work request never counts, and an older
+generation's accepted hand-off is history, not a rival. Otherwise it
+**invalidates every outstanding offer on the task** before inserting the new
+claim: each live hand-off and recovery offer becomes `cancelled`,
+`closed_reason: reclaimed`, one `task.handoff_cancelled` row each; the open
+work request, if any, is accepted by the reclaim as the D-119 paragraph above
+says.
 
 **Checkpoints** (§4.68 – §4.70, D-115, D-116, LAI-545). A checkpoint is `{ id,
 task_id, session_id, agent_id, claim_generation, repo, branch, remote_ref,
@@ -3560,20 +3573,35 @@ server builds `remote_ref` from it — `refs/tags/laika-ckpt/<task>/<id>`,
 `<task>` the task's `external_ref` when it has one (`LAI-NNN` in this repo,
 §4.5) and its key otherwise. An `id` that is not a ULID, or that another
 checkpoint already has under a different `idempotency_key`, is `422` with
-`field: 'id'`. A registration answers at once with `verification: 'pending'` unless a delivery
-for the ref arrived first (§10.1), and **the server never fetches the ref, a
-URL or GitHub to check it** (D-083). `summary` is the five-field note of §4.68;
+`field: 'id'`. **A retry with the same `idempotency_key` and the same body**
+answers the checkpoint already registered, `200`, matched after the caller's
+own checks (token, agent status and grant, `task.checkpoint.create`) and
+**before** the claim fence — so a save whose answer was lost still finds it
+after its session offered the task. A registration answers at once with `verification: 'pending'` unless a delivery
+for the ref arrived first (§4.70), and **the server never fetches the ref, a
+URL or GitHub to check it** (D-083). **A re-tag** (`POST /checkpoints/:id/refs`)
+registers `…-r<n>` before the helper pushes it, and sets the checkpoint back to
+its new ref's state at that moment — normally `pending`, with `pending_since`
+restarting — which is the one change to `verification` that no delivery makes
+(§4.69). `summary` is the five-field note of §4.68;
 a body field outside it is `422`. Saving needs the task's live claim, so the
 fence (§6.3) refuses a paused, stale or other session's save; **automatic**
 saves are the helper's and need §4.73's consent, which the server does not
 see — it records what is registered.
 
 **Hand-off offers** (§4.71, §4.72, LAI-546). An offer is `{ id, task_id, kind,
-state, from_session_id, from_agent_id, to_agent_id, checkpoint_id,
-checkpoint: { commit_sha, verification, summary, summary_commit_sha }, reason,
-note_hash, requires_approval, approved_by, approved_at, expires_at,
-accepted_session_id, receiver_commit_sha, closed_reason, created_by,
-created_at, closed_at }`. Every write route is one `BEGIN IMMEDIATE`
+state, from_session_id, from_agent_id, from_claim_generation, to_agent_id,
+checkpoint_id, checkpoint_commit_sha, checkpoint: { commit_sha, verification,
+summary, summary_commit_sha } | null, reason, note_hash, requires_approval,
+approved_by_user_id, approved_at, expires_at, accepted_session_id,
+accepted_claim_id, receiver_commit_sha, closed_reason, created_by_user_id,
+created_at, closed_at }` — the column names, unchanged on the wire;
+`checkpoint` is null once retention removed it. An offer retry is matched as
+§4.71 says, before the fence. **Consent** (§4.73): `PUT` gives it, `DELETE`
+withdraws it, both the owner's, signed in; `GET` answers the owner and the
+agent's own token, so the helper knows whether it may save on its own. Giving
+or withdrawing writes no `activity` row — it is a setting of the agent, as its
+grants are (§4.64). Every write route is one `BEGIN IMMEDIATE`
 transaction with §4.71's rules and §6.3's reasons. **The accept is the
 receiver's acknowledgement, not proof** (D-116 item 8): the supported helper
 (`laika agent accept`, LAI-548) fetches the checkpoint's newest ref, refuses
@@ -4978,12 +5006,15 @@ true` — gives the agent whose claim expired a **new** claim, at `generation +
 the agent's status and grant and the token's scope, and appends
 `task.claim_reclaimed`. The helper then carries the new generation; the old one
 never becomes valid again. Any other agent is refused and waits for recovery
-(LAI-546).
+(LAI-546). **A `paused` claim** — its holder offered the task (§4.71) — is
+renewed by heartbeats and expires on a lapsed lease exactly as an `active` one
+is; only the fence treats it differently (`claim_paused`).
 
 **Recovery speed versus disconnects.** A short expiry recovers abandoned work
 quickly, but it also turns a laptop lid closed for six minutes into an expired
-claim. Nothing is lost when that happens: expiry opens a recovery offer
-(LAI-546) — **never a silent reassignment** — and the task stays in progress,
+claim. Nothing is lost when that happens: **every** expiry — the scan's or a
+late heartbeat's — opens a recovery offer when the task has a verified
+checkpoint (LAI-546) — **never a silent reassignment** — and the task stays in progress,
 assigned as it was. The laptop's owner reclaims explicitly for as long as
 nobody has accepted that offer. A deployment whose agents sleep often lengthens
 `LAIKA_CLAIM_EXPIRE_SECONDS`; one that wants abandoned work back fast shortens
@@ -5162,13 +5193,16 @@ to a Laika user. A deleted branch or a tag is acknowledged and stores nothing
 **Checkpoint tags verify checkpoints, and nothing else does** (D-116, §4.68 –
 §4.70, LAI-545). A signed `push` delivery whose `ref` is
 `refs/tags/laika-ckpt/…` and whose repository is **the project's configured
-repo** is recorded as one transition `before → after` on that §4.69 ref, under
-§3.4's `system.checkpoint.verify`, in one transaction that also stores the
-`X-GitHub-Delivery` id (§4.70) and re-derives the ref's state from **every**
-transition seen for it — never from which arrived last. Deliveries for the
-same ref are applied one at a time. A delivery for a ref no checkpoint has
-registered yet is kept against that ref name and applied when the checkpoint
-registers, so a notice that beats its registration is not lost. A delivery
+repo** is stored as one §4.70 transition `before → after` **keyed by the
+repository and the ref's name**, under §3.4's `system.checkpoint.verify`, in
+one transaction that also stores the `X-GitHub-Delivery` id and, when a §4.69
+ref of that name is registered, re-derives its state from **every**
+transition seen for the name — never from which arrived last (D-116a).
+Deliveries for the same ref are applied one at a time. **A delivery that
+arrives before its checkpoint is registered** — the normal race, since the
+helper pushes first — is stored the same way, and registration derives the
+new ref's state from the rows already there, in its own transaction; it is
+never held in memory and never lost. A delivery
 from any other repository verifies nothing. **The server never calls GitHub
 and never fetches a URL** (D-083, §13.4): a checkpoint is `verified` only by
 what a signed delivery said, and never because an agent says so. What this
@@ -6017,7 +6051,7 @@ One interval-driven scheduler in the same process:
   amber Updated cell calls `isStale` itself
 - invite expiry, meeting-review expiry (7 days)
 - **claim expiry** (§4.66, §9.1.1, LAI-541) — every `LAIKA_CLAIM_SCAN_SECONDS`
-  (30 s by default), each `active` claim whose lease has lapsed becomes
+  (30 s by default), each **live** claim — `active` or `paused` — whose lease has lapsed becomes
   `expired`, with one `task.claim_expired` row per claim — each is a different
   task's history — under §3.4's `system.claim.expire`. **Each claim's state
   and its row are one transaction**: both land or neither does. **Nothing lapses during
@@ -6026,15 +6060,22 @@ One interval-driven scheduler in the same process:
 - **offer expiry and recovery** (§4.71, LAI-546) — on the claim-expiry scan's
   schedule: each live hand-off or recovery offer past `expires_at` becomes
   `expired` and a claim it paused resumes, one `task.handoff_expired` row each,
-  under `system.handoff.expire`; and each claim the scan has just expired whose
-  task has a `verified` checkpoint gets one **recovery** offer from the latest
-  verified one (`to_agent_id` null — any eligible agent — unless the task has a
-  selected agent), one `task.recovered` row, under `system.handoff.recover`.
-  The old holder may still reclaim until somebody accepts (§9.1.1). **Offered,
+  under `system.handoff.expire`. **Recovery is part of every expiry, not of
+  this scan alone**: in the same transaction that marks a claim `expired` —
+  the scan's or a late heartbeat's (§9.1.1) — a task with a `verified`
+  checkpoint and **no live hand-off or recovery offer** gets one **recovery**
+  offer from the latest verified one, unnamed (`to_agent_id` null), one
+  `task.recovered` row, under `system.handoff.recover`. A task whose expired
+  claim had a live hand-off gets its recovery when that offer closes
+  unaccepted, in the transaction that closes it; an expired recovery is
+  replaced the same way while the task's newest claim is still `expired`. The
+  old holder may still reclaim until somebody accepts (§9.1.1). **Offered,
   never assigned**; a task with no verified checkpoint gets no offer
 - **checkpoint retention** (§4.68, D-115 item 9, LAI-545) — daily: checkpoints,
-  their refs and transitions, of tasks `done` or `cancelled` more than 90 days,
-  under `system.checkpoint.prune`. It writes no `activity` row: the
+  their refs and those refs' transitions, of tasks `done` or `cancelled` more
+  than 90 days — closed offers that named them keep `checkpoint_commit_sha`
+  and lose the link (§4.71) — and transitions for a ref name **never
+  registered**, 90 days after they arrived; under `system.checkpoint.prune`. It writes no `activity` row: the
   `task.checkpoint_saved` rows naming them stay, and they are the history
 - **estimate refit** (D-085) — every live project's size model fitted again
   from its history and every open task recomputed against it, daily **and once
