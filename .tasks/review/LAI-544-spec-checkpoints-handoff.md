@@ -112,9 +112,10 @@ Board LAIKA-796, claimed by session `01M63Y83PQBGJB19YM88W1V370`.
   existed.
 - Tools: `agent_sync`, `checkpoint_task`, `offer_handoff`, `respond_handoff`.
 
-**Gate, after the last SPEC edit** (`pnpm test` / `pnpm lint` / `pnpm format`
-from the repo root): **TEST 1 · LINT 0 · FMT 0**. server 6 failed, 4276
-passed, 10 skipped (4292); cli 1 failed, 664 passed, 2 skipped (667);
+**Gate, after the last edit and after merging `origin/master` at `d65cfcb3`**
+(`pnpm test` / `pnpm lint` / `pnpm format` from the repo root): **TEST 1 ·
+LINT 0 · FMT 0**. server 6 failed, 4276 passed, 10 skipped (4292); cli 1
+failed, 685 passed, 2 skipped (688);
 server/web 3663 passed, 0 failed. Every red is the spec ahead of the code:
 
 1. `test/mcp/parity.test.ts` › *names exactly the registered tools* — missing
