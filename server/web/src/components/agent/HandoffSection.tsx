@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
-import { ApiError } from '../../api/errors.ts';
 import {
   approveHandoff,
   cancelHandoff,
+  handoffRefusal,
   type Checkpoint,
   type HandoffOffer,
 } from '../../api/handoffs.ts';
@@ -78,7 +78,7 @@ export function HandoffSection({
         onOffer(answer);
       })
       .catch((cause: unknown) => {
-        setError(cause instanceof ApiError ? cause.message : 'The request did not reach Laika.');
+        setError(handoffRefusal(cause));
       })
       .finally(() => {
         setBusy(null);
