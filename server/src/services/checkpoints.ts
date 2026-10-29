@@ -1034,7 +1034,7 @@ function consentView(db: Db, agentId: string): CheckpointConsentView {
     .where(eq(agentCheckpointConsents.agentId, agentId))
     .get();
   return {
-    given: row !== undefined && row.withdrawnAt === null,
+    given: row?.withdrawnAt === null,
     given_by_user_id: row?.givenByUserId ?? null,
     given_at: row?.givenAt ?? null,
     withdrawn_at: row?.withdrawnAt ?? null,
@@ -1101,7 +1101,7 @@ export function setCheckpointConsent(
         .where(eq(agentCheckpointConsents.id, existing.id))
         .run();
     }
-  } else if (existing !== undefined && existing.withdrawnAt === null) {
+  } else if (existing?.withdrawnAt === null) {
     db.update(agentCheckpointConsents)
       .set({ withdrawnAt: now })
       .where(eq(agentCheckpointConsents.id, existing.id))
