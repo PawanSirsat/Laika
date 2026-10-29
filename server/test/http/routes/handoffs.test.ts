@@ -345,6 +345,37 @@ describe('REST (§6.4)', () => {
     ).toMatchObject({ reason: 'checkpoint_unverified', verification: 'ref_deleted' });
   });
 
+  it('an accept on a checkpoint re-tagged since the offer (pending) is 409 checkpoint_unverified, on REST and MCP', async () => {
+    const cp = await verifiedSave();
+    const made = await ok(await restOffer(cp.id), 201);
+    expect(
+      await ok(await post(`/api/v1/checkpoints/${cp.id}/refs`, bearer(receiver.secret)), 201),
+    ).toMatchObject({ verification: 'pending' });
+    expect(
+      (
+        await errorOf(
+          await post(
+            `/api/v1/handoff-offers/${made.id as string}/accept`,
+            bearer(receiver.secret),
+            {
+              verified_commit_sha: cp.commit,
+            },
+          ),
+          409,
+        )
+      ).details,
+    ).toMatchObject({ reason: 'checkpoint_unverified', verification: 'pending' });
+    const b = await connect(receiver.secret);
+    expect(
+      await refused(b, 'respond_handoff', {
+        offer: made.id,
+        action: 'accept',
+        verified_commit_sha: cp.commit,
+      }),
+    ).toEqual({ code: 'conflict', reason: 'checkpoint_unverified' });
+    await b.close();
+  });
+
   it('an offer of a pending checkpoint is 409 checkpoint_unverified', async () => {
     const saved = await ok(
       await post(`/api/v1/tasks/${taskId}/checkpoints`, bearer(sender.secret, 1), {

@@ -20,6 +20,7 @@ import {
   applyCheckpointDelivery,
   pruneCheckpoints,
   registerCheckpoint,
+  registerCheckpointRef,
 } from '../../src/services/checkpoints.ts';
 import {
   configureClaims,
@@ -549,6 +550,27 @@ describe('accepting', () => {
       ),
     ).toEqual({ code: 'conflict', reason: 'checkpoint_unverified' });
     expect(claimsOf(id)).toEqual([[1, 'paused']]);
+  });
+
+  it('an accept on a checkpoint re-tagged since the offer — pending again — is checkpoint_unverified', () => {
+    const a = agentOf(owner, 'A');
+    const b = agentOf(owner, 'B');
+    const id = task();
+    const held = claim(a, id);
+    const cp = save(a, id, held.generation);
+    const { offer: made } = offer(a, id, 1, b.id, cp.id);
+    // A re-tag registers a new ref, and the checkpoint takes its state: pending (§4.69).
+    expect(registerCheckpointRef(t.sqlite, t.db, b.actor, cp.id, T0 + 1).verification).toBe(
+      'pending',
+    );
+    expect(
+      refusal(() =>
+        acceptHandoff(t.sqlite, t.db, b.actor, made.id, {
+          verifiedCommitSha: cp.commit,
+          now: T0 + 2,
+        }),
+      ),
+    ).toEqual({ code: 'conflict', reason: 'checkpoint_unverified' });
   });
 
   it('refuses an offer past its time even before the scan writes it', () => {
