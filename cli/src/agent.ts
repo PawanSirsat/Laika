@@ -21,10 +21,13 @@ import {
   log,
   type LostClaim,
   lostNotice,
+  noteSelfReport,
   readCredential,
   readProc,
+  readSelfReport,
   readState,
   runWatcher,
+  type SelfReport,
   type SessionState,
   startSession,
   UNKNOWN,
@@ -216,15 +219,21 @@ export function contextOutput(event: HookEvent, text: string): string {
   });
 }
 
-function hookSessionId(raw: string): string | undefined {
+/** The hook's input, as the harness documents it: a JSON object on stdin. */
+function hookInput(raw: string): Record<string, unknown> | undefined {
   let input: unknown;
   try {
     input = JSON.parse(raw.slice(0, 64 * 1024));
   } catch {
     return undefined;
   }
-  if (typeof input !== 'object' || input === null) return undefined;
-  const id = (input as Record<string, unknown>).session_id;
+  return typeof input === 'object' && input !== null && !Array.isArray(input)
+    ? (input as Record<string, unknown>)
+    : undefined;
+}
+
+function hookSessionId(input: Readonly<Record<string, unknown>>): string | undefined {
+  const id = input.session_id;
   return typeof id === 'string' && id !== '' && id.length <= 512 ? id : undefined;
 }
 
@@ -234,6 +243,7 @@ async function open(
   harnessSessionId: string,
   credential: AgentCredential,
   pid?: number,
+  self?: SelfReport,
 ): Promise<{ state?: SessionState; why?: string }> {
   const named = pid === undefined ? undefined : readProc(pid);
   const proc =
@@ -252,6 +262,7 @@ async function open(
     harnessProc: proc,
     credential,
     clientVersion: `laika-agent/${harness}`,
+    ...(self === undefined ? {} : { self }),
   });
   if (outcome.kind === 'busy') return { why: 'another start for this session is in progress' };
   if (outcome.kind === 'failed') return { state: outcome.state, why: outcome.why };
@@ -265,8 +276,9 @@ async function open(
  * the helper's log, which `laika agent session status` points at.
  */
 export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Promise<string> {
-  const harnessSessionId = hookSessionId(io.stdin());
-  if (harnessSessionId === undefined) return '';
+  const input = hookInput(io.stdin());
+  const harnessSessionId = input === undefined ? undefined : hookSessionId(input);
+  if (input === undefined || harnessSessionId === undefined) return '';
   const credential = readCredential(io.home, harness, io.env);
   if (credential === undefined) return '';
   const path = statePath(io.home, harness, harnessSessionId);
@@ -279,8 +291,11 @@ export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Pro
 
   let state = readState(path);
   const notes: string[] = [];
+  // Read at every hook, so a model switched mid-session reaches the next
+  // heartbeat (LAI-588). A file read, bounded; no network.
+  const self = readSelfReport(harness, input);
   if (event === 'session-start' || state === undefined || state.status === 'starting') {
-    const opened = await open(io, harness, harnessSessionId, credential);
+    const opened = await open(io, harness, harnessSessionId, credential, undefined, self);
     if (opened.state?.status === 'live') {
       state = opened.state;
       const context = sessionContext(state);
@@ -289,6 +304,9 @@ export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Pro
   } else if (state.status === 'live') {
     ensureWatcher(io, state, credential);
   }
+  // A start that found its session already open (resume, compact) sent
+  // nothing: what this hook read reaches the board on the next beat instead.
+  noteSelfReport(io.home, path, self);
 
   state = readState(path);
   if (
