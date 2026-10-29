@@ -2,7 +2,7 @@
 id: LAI-545
 title: 'Checkpoints: idempotent registration, verification from signed push deliveries only (D-083), ref_deleted, retention'
 area: server
-assignee: core (belka, claude code)
+assignee: core
 priority: p1
 depends-on: [LAI-541, LAI-544]
 discovered-from:
