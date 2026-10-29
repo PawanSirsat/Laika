@@ -232,11 +232,24 @@ LAI-545's own are all green. Remaining:
   *every type the server emits has wording*;
   `server/web/test/routes/screens/dashboard/dashboard-derive.test.ts` ›
   *covers every verb the server can write* — each for `task.checkpoint_saved`.
+  And *every served endpoint has a caller, or a named reason* › *no endpoint
+  is served, uncalled and unexplained* — `+ 'api/v1/agents/*/checkpoint-consent'`,
+  `+ 'api/v1/checkpoints/*/refs'`, `+ 'api/v1/tasks/*/checkpoints'` (seen in
+  CI run 40915874568; the client's exemption list is SHELL's, §4.4).
 - **SHELL (cli), verbatim:** `cli/test/plugin-mcp.test.ts` › *the tool surface,
   from both sides* › *and they are exactly these* — `+ 'checkpoint_task'` (its
   hard-coded list needs the tool); and › *§7.1 and the registry name exactly
   the same tools* — `agent_sync`, `offer_handoff`, `respond_handoff` (LAI-546).
   Run with `node --test test/plugin-mcp.test.ts`: exit 1, 5 pass, 2 fail.
+
+### CI
+
+`workflow_dispatch` gate run 40915874568 on `abda02f4`: **exit 1**. Besides the
+reds above it found three census tests in files this task had not touched,
+all CORE's and all fixed after it: `agent-sessions.test.ts` › *the app's route
+table is exactly FENCED and NOT_FENCED*; `tasks.test.ts` › *classifies every
+table that references a task*; `response-type-coverage.test.ts` (three cases).
+Re-run below.
 
 ### Verification (touched files only, one at a time, `uptime` first — the owner's rule)
 

@@ -497,6 +497,23 @@ const FENCED: Record<string, { probe: Probe; reason: 'stale_claim' | 'claim_held
     probe: (f) => patch(f.taskId, { title: 'Stale' }, asHolder(f)),
     reason: 'stale_claim',
   },
+  // §4.68 (LAI-545): a save passes the fence before anything about it is read.
+  'POST /api/v1/tasks/:id/checkpoints': {
+    probe: (f) =>
+      req(
+        `/api/v1/tasks/${f.taskId}/checkpoints`,
+        json('POST', {
+          id: '01JFENCEXXXXXXXXXXXXXXXXXX',
+          idempotency_key: 'fence-probe',
+          repo: 'kvelld/laika',
+          branch: 'fenced',
+          commit_sha: 'f'.repeat(40),
+          manifest: [],
+        }),
+        asHolder(f),
+      ),
+    reason: 'stale_claim',
+  },
   'POST /api/v1/tasks/:id/finish': {
     probe: (f) =>
       req(`/api/v1/tasks/${f.taskId}/finish`, json('POST', { summary: 'x' }), asHolder(f)),
@@ -641,6 +658,12 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/agents': 'session only (agent.manage_own)',
   'PATCH /api/v1/agents/:id': 'session only (agent.manage_own)',
   'PUT /api/v1/agents/:id/grants': 'session only (agent.manage_own)',
+  'PUT /api/v1/agents/:id/checkpoint-consent':
+    'session only (agent.manage_own), a setting of the agent',
+  'DELETE /api/v1/agents/:id/checkpoint-consent':
+    'session only (agent.manage_own), a setting of the agent',
+  'POST /api/v1/checkpoints/:id/refs':
+    'a re-tag changes no task, only which ref is the checkpoint’s newest (§3.2) — it needs no claim',
   'POST /api/v1/agents/:id/rotate-token': 'session only (agent.manage_own)',
   'POST /api/v1/agents/:id/revoke': 'session only (agent.manage_own); its claims lapse, never move',
   'POST /api/v1/agents/devices/confirm':

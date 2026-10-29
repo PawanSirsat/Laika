@@ -197,6 +197,12 @@ const UNPAIRED = new Map<string, string>([
   // `web/src/api/org.ts` — and the staleness guard below is what noticed, by
   // firing on a *reason* going false rather than on an entry going unnecessary.
   ['AvatarView', 'no client type exists'],
+  // LAI-545: checkpoints and consent are served ahead of their screens —
+  // LAI-549 mirrors them on the client, and the drawer reads them there.
+  ['CheckpointConsentView', 'no client type exists'],
+  ['CheckpointRefRegistered', 'no client type exists'],
+  ['CheckpointRefView', 'no client type exists'],
+  ['CheckpointView', 'no client type exists'],
   // The meeting-review screen is SHELL's and unbuilt; §11.4.2 lists it. These
   // three leave this group the same way `CapacityView` and `PresenceView` did —
   // when the screen exists, and therefore the mirror.
@@ -264,6 +270,10 @@ const UNPAIRED = new Map<string, string>([
 const RESPONSE_SHAPED = ['Summary', 'Detail', 'Response', 'Payload', 'Result', 'Body'] as const;
 
 const NOT_SERVED = new Map<string, string>([
+  [
+    'CheckpointSummary',
+    'the five-field continuation note (§4.68): a JSON column’s type, served only inside CheckpointView',
+  ],
   ['BackfillResult', 'what a backfill did, returned to the migration runner and never to a client'],
   ['JobResult', '§11.6 cron bookkeeping — counts the sweep touched, logged rather than served'],
   ['LookupResult', 'the idempotency middleware asking whether it has seen this key'],
