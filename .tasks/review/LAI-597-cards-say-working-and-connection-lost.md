@@ -87,3 +87,16 @@ repo-root `pnpm test`, `pnpm lint`, `pnpm format` on the PR.
 - Replaced LAI-543's block asserting Working / Connection lost never appear.
 - One crossing inside SHELL's own map: a `WEB_NO_MIRROR_REQUIRED` entry in
   `server/test/tooling/structure.test.ts` for `use-claim-clock.ts` (D-026).
+
+## Rework after review (Belka, 2026-10-29)
+
+Codex review, P1: the client compared the server's `last_heartbeat_at` with
+the browser's `Date.now()`, so a skewed browser clock drew a fresh claim as
+*Connection lost* (ahead) or kept a dead one *Working* (behind). Fixed by
+never comparing the two clocks: the server adds `heartbeat_age_ms` to the
+existing claim projection (a server change in a web task, made at the
+reviewer's direction, with tests on both reads), and the client ages it by
+`performance.now()` elapsed since that copy reached the page. Regression
+tests: a browser five minutes ahead and five minutes behind both show
+*Working* for a fresh claim and turn only after `suspect_after_ms` on the
+page; restoring the wall-clock comparison turns both red.
