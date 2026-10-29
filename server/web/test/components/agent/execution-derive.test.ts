@@ -232,6 +232,47 @@ void describe('the live claim (LAI-597)', () => {
     assert.equal(hasExecution(view), true);
   });
 
+  void test('the session line: the holder, then what its session said ran (LAI-593)', () => {
+    const view = executionView(
+      held({ harness: 'codex', harness_version: '0.9.1', model: 'gpt-5.5' }),
+      [],
+      AGENTS,
+      BEAT,
+    );
+    assert.equal(view.sessionLine, 'Claude Code · Belka · Codex · gpt-5.5');
+    assert.equal(view.sessionHarnessVersion, '0.9.1');
+    assert.equal(view.sessionModel, 'gpt-5.5');
+
+    // Only what was sent: a model alone, a harness Laika does not know as sent.
+    assert.equal(
+      executionView(held({ model: 'claude-opus-5-5' }), [], AGENTS, BEAT).sessionLine,
+      'Claude Code · Belka · claude-opus-5-5',
+    );
+    assert.equal(
+      executionView(held({ harness: 'pi-agent' }), [], AGENTS, BEAT).sessionLine,
+      'Claude Code · Belka · pi-agent',
+    );
+    // An agent this reader cannot name stays unnamed; the session's words still show.
+    assert.equal(
+      executionView(held({ agent_id: 'ag-x', model: 'gpt-5.5' }), [], AGENTS, BEAT).sessionLine,
+      'a registered agent · gpt-5.5',
+    );
+  });
+
+  void test('the session line is absent when the session reported nothing, or the view predates LAI-593', () => {
+    for (const over of [
+      { harness: null, harness_version: null, model: null },
+      {},
+      { harness: '  ', model: '' },
+    ]) {
+      const view = executionView(held(over), [], AGENTS, BEAT);
+      assert.equal(view.sessionLine, undefined, JSON.stringify(over));
+    }
+    const bare = executionView(held(), [], AGENTS, BEAT);
+    assert.equal(bare.sessionHarnessVersion, null);
+    assert.equal(bare.sessionModel, null);
+  });
+
   void test('no live claim: no session, no last seen — the rows stay out', () => {
     for (const task of [
       { status: 'in_progress' as const, selected_agent: LAPTOP, claim: null },
@@ -241,6 +282,7 @@ void describe('the live claim (LAI-597)', () => {
       assert.equal(view.session, undefined);
       assert.equal(view.lastSeen, undefined);
       assert.equal(view.liveSessionId, undefined);
+      assert.equal(view.sessionLine, undefined);
       assert.equal(view.generation, 3);
     }
   });
