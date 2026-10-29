@@ -139,6 +139,24 @@ Files: `server/src/services/agents.ts`, `server/test/http/routes/agents.test.ts`
   another unbounded token); and `PATCH /agents/:id` relabelling into Cloud,
   refused while any live (unrevoked, unexpired) token is outside the rule.
   `POST /tokens` cannot mint an agent token at all, so it needs nothing.
+- **A past or present `expires_at` on a cloud agent is
+  `cloud_token_expiry_required`** (review round 1, Codex). The cloud check
+  now runs *before* the general `futureExpiry()` on register and rotate, so a
+  cloud agent's refusal always names its rule. Why `required` and not a third
+  reason: an expiry already past gives the token no life at all, which breaks
+  the same rule as no expiry — "a cloud token must carry a usable expiry" —
+  while `too_long` is the ceiling. Non-cloud agents keep the general `422`
+  with no `reason`, unchanged (asserted).
+- **The boundary is inclusive**: exactly `now + 24 h` succeeds and one
+  millisecond more is `too_long`, pinned with a fixed clock on register,
+  rotate and relabel. `updateAgent()` takes an injectable `now`, as register
+  and rotate do.
+- **Normalisation is `trim().toLowerCase()`**, the same as LAI-590's device
+  key: `String.prototype.trim` strips Unicode white space, so NBSP, em space
+  and ideographic space around `Cloud` count as cloud. Compatibility and
+  confusable forms — fullwidth `Ｃｌｏｕｄ`, Cyrillic `Сloud`, a zero-width
+  space inside — are other labels and stay non-cloud, as the proposed
+  decision says.
 - **The `code` naming the rule.** §6.3's codes are a closed set of ten, so a
   new code is not available; following the existing convention
   (`agent_revoked`, `session_required`, `claim_held`) the code is
@@ -170,18 +188,26 @@ Files: `server/src/services/agents.ts`, `server/test/http/routes/agents.test.ts`
 Run on `server/test/http/routes/agents.test.ts` with
 `npx vitest run test/http/routes/agents.test.ts`; the harness asserted the
 anchor matched exactly once and the file changed before running, and
-restored the file and compared its SHA-256 after. Baseline: 45/45 pass.
+restored the file and compared its SHA-256 after. **Re-run in full after
+review round 1** on `bae80dd3`; baseline 48/48 pass. Every mutation exits 1.
 
 | # | mutation | result | red test(s) |
 | --- | --- | --- | --- |
-| M1 | register skips the cloud check | exit 1, 2 failed | no expiry → `cloud_token_expiry_required`; past the limit → `cloud_token_expiry_too_long` |
-| M2 | the limit is never enforced (`false &&`) | exit 1, 2 failed | register past the limit; rotate past the limit |
-| M3 | rotate skips the cloud check | exit 1, 2 failed | rotate needs an expiry within the limit; pre-rule cloud agent cannot rotate unbounded |
-| M4 | relabel into Cloud skips the check | exit 1, 1 failed | relabelling into Cloud is refused |
-| M5 | `lapsed()` ignores expiry for agent tokens | exit 1, 1 failed | expired cloud token refused exactly as an expired personal token |
-| M6 | `owner_display_name` always `''` | exit 1, 1 failed | agent reads and the device list carry the owner's name |
-| M7 | `RegisterBody` is `z.object` (strips unknown) | exit 1, 2 failed | a body naming an owner is refused; (existing) body naming an agent id |
-| M8 | `mcp/write-tools.ts` imports `registerAgent` | exit 1, 1 failed | no route or MCP tool reaches registration except `POST /agents` |
+| M1 | register skips the cloud check | 5 failed | no expiry; past the limit; past/present expiry; exact boundary; Unicode spaces |
+| M2 | the limit is never enforced (`false &&`) | 3 failed | register past the limit; rotate past the limit; exact boundary |
+| M3 | rotate skips the cloud check | 4 failed | rotate within the limit; pre-rule cloud agent; past/present expiry; exact boundary |
+| M4 | relabel into Cloud skips the check | 2 failed | relabelling is refused; exact boundary (relabel) |
+| M5 | `lapsed()` ignores expiry for agent tokens | 1 failed | expired cloud token refused exactly as an expired personal token |
+| M6 | `owner_display_name` always `''` | 1 failed | agent reads and the device list carry the owner's name |
+| M7 | `RegisterBody` is `z.object` (strips unknown) | 2 failed | a body naming an owner is refused; (existing) body naming an agent id |
+| M8 | `mcp/write-tools.ts` imports `registerAgent` | 1 failed | no route or MCP tool reaches registration except `POST /agents` |
+| M9 | a past expiry is not the cloud rule (`<= now` dropped) | 1 failed | past/present expiry is `cloud_token_expiry_required` |
+| M10 | register: `futureExpiry()` before the cloud check | 1 failed | past/present expiry (register) |
+| M11 | rotate: `futureExpiry()` before the cloud check | 1 failed | past/present expiry (rotate) |
+| M12 | boundary off by one (`>=`) | 1 failed | exactly now + limit succeeds |
+| M13 | relabel checks against `now − 1 ms` | 1 failed | exact boundary (relabel) |
+| M14 | ASCII-only trim in `cleanDeviceLabel` and `deviceLabelKey` | 2 failed | Unicode spaces around Cloud count; (existing) LAI-590 grouping |
+| M15 | cloud match folds compatibility forms (NFKC) | 1 failed | look-alikes stay non-cloud |
 
 ### §4.4: the client half is red, and is LAI-320
 
@@ -273,3 +299,13 @@ The `POST /api/v1/agents` and `rotate-token` lines could name the two
 `reason`s, and the `devices` line's `agents` now carry `owner_display_name`.
 This task's D-033 grant names §4.63 and §4.9 only, so these are for Belka to
 take or file.
+
+## Review round 1 (Codex, PR #141) — addressed
+
+Blocking: a cloud agent's past `expires_at` was refused by `futureExpiry()`
+with no `reason`. Fixed in `bae80dd3` as described under *Design choices*;
+REST tests for a past and a present expiry on register and rotate (M9–M11).
+Non-blocking: exact boundary with a fixed clock and an injectable `now` on
+`updateAgent()` (M12, M13); Unicode-space and look-alike labels (M14, M15);
+the `device_label` comment in `AgentView` no longer says it decides nothing.
+Criteria unchanged (frozen in review).
