@@ -330,7 +330,7 @@ export function ensureActivityTriggers(db: Db): void {
   const bodies = new Map(
     db
       .all<{ name: string; sql: string | null }>(
-        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings', 'task_estimates', 'task_claim_estimates', 'time_entry_revisions', 'time_entries')`,
+        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings', 'task_estimates', 'task_claim_estimates', 'time_entry_revisions', 'time_entries', 'project_context_revisions')`,
       )
       .map((row) => [row.name, row.sql ?? '']),
   );
@@ -348,7 +348,7 @@ export function ensureActivityTriggers(db: Db): void {
 
   if (broken.length > 0) {
     throw new Error(
-      `activity (SPEC §4.8), member_ratings (§4.21), task_estimates (§4.32), task_claim_estimates (§4.34) and time_entry_revisions (§4.49) are append-only, and time_entries (§4.48) are kept three years and never replaced; their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
+      `activity (SPEC §4.8), member_ratings (§4.21), task_estimates (§4.32), task_claim_estimates (§4.34) and time_entry_revisions (§4.49) and project_context_revisions (§4.68) are append-only, and time_entries (§4.48) are kept three years and never replaced; their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
     );
   }
 }
