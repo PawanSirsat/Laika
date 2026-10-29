@@ -233,6 +233,32 @@ after(async () => {
   await closeBrowser();
 });
 
+/** The registration rail, one `"<done|current|todo> <name>"` per step. */
+async function railSteps(page: Page): Promise<string[]> {
+  return page
+    .locator('.agents-wizard [data-reg-steps] li')
+    .evaluateAll((els) =>
+      els.map(
+        (el) =>
+          `${el.getAttribute('data-step') ?? '?'} ${el.querySelector('.reg-step-name')?.textContent ?? ''}`,
+      ),
+    );
+}
+
+/** The first row's readiness facts: fact → `data-reached`. */
+async function readiness(page: Page): Promise<Record<string, string>> {
+  return page
+    .locator('.agents-row [data-readiness] [data-fact]')
+    .evaluateAll((els) =>
+      Object.fromEntries(
+        els.map((el) => [
+          el.getAttribute('data-fact') ?? '?',
+          el.getAttribute('data-reached') ?? '?',
+        ]),
+      ),
+    );
+}
+
 /** Press a button by its name, from the keyboard. */
 async function press(page: Page, name: string | RegExp, scope = 'body'): Promise<void> {
   const button = page.locator(scope).getByRole('button', { name, exact: typeof name === 'string' });
@@ -377,6 +403,16 @@ void describe('the Agents tab (LAI-537)', () => {
       // Step 1 — focus lands on the step's title, inside the wizard.
       await until(async () => (await focusedText(page)) === 'Name, harness and device');
       assert.equal(await focusedText(page), 'Name, harness and device');
+      // The rail is LAI-536's RegistrationSteps (LAI-565), and the tab draws
+      // no rail of its own beside it.
+      assert.deepEqual(await railSteps(page), [
+        'current Name, harness and device',
+        'todo Projects and permissions',
+        'todo Credential',
+        'todo Harness instructions',
+        'todo Verify a request from this agent',
+      ]);
+      assert.equal(await page.locator('.agents-wizard .agents-rail, .agents-rail-step').count(), 0);
       // The Name's hint says what the board shows (LAI-583): cards and
       // history name an agent by harness and device, not by this name.
       assert.match(
@@ -417,8 +453,17 @@ void describe('the Agents tab (LAI-537)', () => {
         [],
         'the secret reached the address or storage',
       );
-      // Steps 1 and 2 are closed now: the agent exists.
-      assert.equal(await page.locator('.agents-rail-step').nth(0).isDisabled(), true);
+      // Steps 1 and 2 are closed now: the agent exists. The rail says they
+      // are done, and Back, the only way to them, is gone.
+      assert.deepEqual((await railSteps(page)).slice(0, 3), [
+        'done Name, harness and device',
+        'done Projects and permissions',
+        'current Credential',
+      ]);
+      assert.equal(
+        await page.locator('.agents-wizard').getByRole('button', { name: 'Back' }).count(),
+        0,
+      );
 
       // Step 4 — the harness blocks carry the agent's token.
       await press(page, 'Continue', '.agents-wizard');
@@ -443,6 +488,12 @@ void describe('the Agents tab (LAI-537)', () => {
 
       // Step 5 — the owner is active, the agent is not: still waiting.
       await press(page, 'Continue', '.agents-wizard');
+      // The card's title is the rail's current step, from the same list.
+      await until(async () => (await focusedText(page)) === 'Verify a request from this agent');
+      assert.equal(
+        (await railSteps(page)).at(-1),
+        `current ${await page.locator('#agents-step-title').innerText()}`,
+      );
       const polls = () =>
         h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/agents/a1');
       await until(() => polls().length >= 1);
@@ -493,7 +544,11 @@ void describe('the Agents tab (LAI-537)', () => {
       );
       assert.equal(await focusedText(page), '+ Register an agent');
       assert.match(await page.locator('.agents-row').innerText(), /reviewer bot/);
-      assert.match(await page.locator('.agents-row .agents-state').innerText(), /Connected/);
+      assert.deepEqual(await readiness(page), {
+        credential_created: 'true',
+        connected: 'true',
+        ready_for_recovery: 'false',
+      });
     } finally {
       await h.close();
     }
@@ -505,10 +560,22 @@ void describe('the Agents tab (LAI-537)', () => {
     const { page } = h;
     try {
       await page.locator('.agents-row').waitFor({ timeout: 20_000 });
+      // Readiness is LAI-536's AgentReadiness (LAI-565): a token, never used.
+      assert.deepEqual(await readiness(page), {
+        credential_created: 'true',
+        connected: 'false',
+        ready_for_recovery: 'false',
+      });
       assert.match(
-        await page.locator('.agents-row .agents-state').innerText(),
-        /Credential created/,
+        await page.locator('.agents-row [data-fact="connected"]').innerText(),
+        /Connected — not yet/,
       );
+      assert.equal(await page.locator('.agents-state').count(), 0, 'the tab drew its own pill');
+      // Harness and device are LAI-536's AgentChip, and its mark is the row's only one.
+      const chip = page.locator('.agents-row .agents-row-meta [data-agent-chip="codex"]');
+      assert.equal(await chip.count(), 1);
+      assert.equal((await chip.innerText()).trim(), 'Codex · build box');
+      assert.equal(await page.locator('.agents-row .agent-mark').count(), 1);
       assert.match(await page.locator('.agents-row').innerText(), /self-reported/);
 
       await press(page, 'Rotate token', '.agents-row');
@@ -560,9 +627,41 @@ void describe('the Agents tab (LAI-537)', () => {
       await until(
         async () => (await page.locator('.agents-row').getAttribute('data-state')) === 'revoked',
       );
-      assert.match(await page.locator('.agents-row .agents-state').innerText(), /Revoked/);
+      // Revoked is said in words, and no readiness claims anything of it.
+      assert.match(await page.locator('.agents-row .agents-revoked').innerText(), /^Revoked/);
+      assert.equal(await page.locator('.agents-row [data-readiness]').count(), 0);
       // A revoked agent offers nothing more to do.
       assert.equal(await page.locator('.agents-row-actions').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a seen agent whose token expired says none live, and still connected', async () => {
+    const lapsed = { ...tokenRow('t-a1', 'codex on Linux', 1_000), expires_at: 2_000 };
+    const api = agentsApi([existing({ tokens: [lapsed], last_seen_at: 1_500 })]);
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      await page.locator('.agents-row').waitFor({ timeout: 20_000 });
+      // LAI-318: a credential that stopped working is not one never created,
+      // and the token lapsing does not unsay that Laika saw the agent.
+      assert.deepEqual(await readiness(page), {
+        credential_created: 'false',
+        connected: 'true',
+        ready_for_recovery: 'false',
+      });
+      const credential = await page
+        .locator('.agents-row [data-fact="credential_created"]')
+        .innerText();
+      assert.match(credential, /Credential created — none live/);
+      assert.match(
+        credential,
+        /No live credential: every token for this agent has expired or been revoked/,
+      );
+      const row = await page.locator('.agents-row [data-readiness]').innerText();
+      assert.doesNotMatch(row, /No token yet/);
+      assert.doesNotMatch(row, /has not seen a request/);
     } finally {
       await h.close();
     }

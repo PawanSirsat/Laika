@@ -166,6 +166,7 @@ export function agentState(agent: RegisteredAgent, now: number): AgentState {
   return agent.last_seen_at === null ? 'credential-created' : 'connected';
 }
 
+/** The state pill's words, as Your devices draws it (LAI-591). */
 export const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>> = {
   revoked: 'Revoked',
   'no-credential': 'No live credential',
