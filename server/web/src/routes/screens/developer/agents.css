@@ -42,66 +42,6 @@
   margin: var(--space-4) 1.25rem 0;
 }
 
-.agents-steps {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.agents-rail-step {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-2);
-  font: inherit;
-  font-size: var(--text-body);
-  text-align: left;
-  color: var(--text-secondary);
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  cursor: pointer;
-}
-
-.agents-rail-step:disabled {
-  color: var(--text-muted);
-  cursor: not-allowed;
-}
-
-.agents-rail-step[aria-current='step'] {
-  color: var(--text-primary);
-  font-weight: var(--weight-semibold);
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
-}
-
-.agents-rail-step:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.agents-step-n {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 1.5rem;
-  height: 1.5rem;
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-pill);
-}
-
-.agents-rail-step[aria-current='step'] .agents-step-n {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
 .agents-card {
   display: flex;
   flex-direction: column;
@@ -341,15 +281,8 @@
 
 .agents-row-main {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.agents-row-text {
-  display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -363,7 +296,9 @@
 .agents-row-meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   font-size: var(--text-small);
   color: var(--text-secondary);
 }
@@ -373,35 +308,11 @@
   font-style: italic;
 }
 
-/* State in words, never colour alone (proposal §6). */
-.agents-state {
-  flex: none;
-  padding: 0.125rem var(--space-2);
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  color: var(--chip-neutral);
-  background: var(--chip-neutral-bg);
-  border: 1px solid var(--chip-neutral-border);
-  border-radius: var(--radius-pill);
-}
-
-.agents-state[data-state='connected'] {
-  color: var(--chip-green);
-  background: var(--chip-green-bg);
-  border-color: var(--chip-green-border);
-}
-
-.agents-state[data-state='credential-created'] {
-  color: var(--chip-orange);
-  background: var(--chip-orange-bg);
-  border-color: var(--chip-orange-border);
-}
-
-.agents-state[data-state='revoked'],
-.agents-state[data-state='no-credential'] {
-  color: var(--overdue);
-  background: transparent;
-  border-color: var(--overdue-border);
+/* A revoked agent has no readiness: said in words, as the readiness is. */
+.agents-revoked {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
 }
 
 .agents-row-facts {
@@ -446,29 +357,11 @@
   outline-offset: 2px;
 }
 
-/* Narrow: the rail becomes a row of numbered steps above the card. */
+/* Narrow: the step rail stacks above the card. */
 @media (max-width: 760px) {
   .agents-wizard {
     grid-template-columns: minmax(0, 1fr);
     margin-inline: var(--space-3);
-  }
-
-  .agents-steps {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-
-  .agents-rail-step {
-    width: auto;
-  }
-
-  .agents-rail-step:not([aria-current='step']) .agents-rail-name {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 
   .agents-row,

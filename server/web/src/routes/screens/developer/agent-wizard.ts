@@ -17,15 +17,8 @@ import { LIVE_BUDGET_MS, LIVE_POLL_MS } from '../connect/connect-live.ts';
 
 export type AgentStep = 1 | 2 | 3 | 4 | 5;
 
+/** Step `n` is named by `REGISTRATION_STEPS[n - 1]`, LAI-536's list (LAI-565). */
 export const AGENT_STEPS: readonly AgentStep[] = [1, 2, 3, 4, 5];
-
-export const AGENT_STEP_NAMES: Readonly<Record<AgentStep, string>> = {
-  1: 'Name, harness and device',
-  2: 'Projects and permissions',
-  3: 'Credential',
-  4: 'Harness instructions',
-  5: 'Verify this agent',
-};
 
 /**
  * Steps 1 to 3 are open from the start; 4 and 5 need the agent to exist.
