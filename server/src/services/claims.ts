@@ -182,6 +182,13 @@ export interface TaskLiveClaimView {
   /** The holding session's. */
   last_heartbeat_at: number;
   /**
+   * How old that heartbeat is **by the server's clock, as of this read**
+   * (LAI-597 review). A client must not subtract `last_heartbeat_at` from its
+   * own clock — a browser five minutes ahead would call every fresh claim
+   * lost — so it ages this by its own elapsed time instead.
+   */
+  heartbeat_age_ms: number;
+  /**
    * `suspect` once `last_heartbeat_at` is `suspect_after_ms` old, as
    * {@link AgentSessionView} computes it — and for a session that ended while
    * the claim stayed live (a revoked agent's, left to lapse), which nothing
@@ -380,6 +387,7 @@ export function liveClaimViews(
       session_id: claim.sessionId,
       lease_expires_at: claim.leaseExpiresAt,
       last_heartbeat_at: lastHeartbeatAt,
+      heartbeat_age_ms: Math.max(0, now - lastHeartbeatAt),
       connection: sessionEndedAt !== null || isSuspect(lastHeartbeatAt, now) ? 'suspect' : 'live',
       suspect_after_ms: settings.timings.suspectMs,
       device_label: deviceLabel,

@@ -630,6 +630,8 @@ describe('the live claim on a task read (LAI-568)', () => {
       session_id: claim.session_id,
       lease_expires_at: T0 + LEASE,
       last_heartbeat_at: T0,
+      // The server's own age of it, as of the read (LAI-597 review).
+      heartbeat_age_ms: MIN,
       connection: 'live',
       suspect_after_ms: SUSPECT,
       device_label: 'laptop-1',
@@ -712,10 +714,14 @@ describe('the live claim on a task read (LAI-568)', () => {
     // Still the live claim: suspect decides nothing, the lease has not lapsed.
     expect(late.single).toMatchObject({ generation: 1, state: 'active' });
 
+    expect(late.single?.heartbeat_age_ms).toBe(SUSPECT);
+    expect(late.listed?.heartbeat_age_ms).toBe(SUSPECT);
+
     heartbeatAgentSession(t.sqlite, t.db, a.actor, claim.session_id, T0 + SUSPECT + MIN);
     expect(reads(id, T0 + SUSPECT + MIN).single).toMatchObject({
       connection: 'live',
       last_heartbeat_at: T0 + SUSPECT + MIN,
+      heartbeat_age_ms: 0,
     });
   });
 
