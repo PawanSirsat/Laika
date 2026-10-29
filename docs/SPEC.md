@@ -3165,7 +3165,7 @@ credential is not an org credential with a project filter.
   | `403 forbidden` | `approver_is_receiver` | the approver owns the receiving agent |
   | `403 forbidden` | `not_an_agent` | a session or a legacy token saving, offering, accepting or declining |
   | `403 forbidden` | `agent_revoked` | a revoked agent's offer, accept, decline or save |
-  | `403 forbidden` | `not_the_receiver` | an accept or decline by an agent the offer is not addressed to — a named offer's other agents, or an unnamed recovery's ineligible ones (§4.71) |
+  | `403 forbidden` | `not_the_receiver` | an accept or decline of a **named** offer by any agent but the one it names (§4.71). An unnamed recovery has no such refusal: an ineligible agent's accept is `422 receiver_not_eligible`, and any decline is `422 recovery_unnamed` |
   | `403 forbidden` | `user_inactive` | a person deactivated after the request was resolved: approve, cancel and the policy read the person again inside their transaction (§4.71) |
   | `422 unprocessable` | `recovery_unnamed` | a decline of an unnamed recovery — an agent that does not want it does not accept it (§4.71) |
   | `422 unprocessable` | `work_request` | an approve, accept, decline or cancel naming a work request: it is accepted by claiming the task and withdrawn by changing its agent (§4.5) |
