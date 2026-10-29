@@ -117,3 +117,34 @@ The full repo-root `pnpm test` runs in PR #135 CI.
 Screenshots, light and dark at 1440 and 390, of a recognised device, an
 unrecognised one and the revoke confirmation: `.polly/evidence/LAI-591/` on
 Belka.
+
+## Review round 1 (Codex, #135 at 27f646e3: FAIL), fixed in 02eb9940 and 8001b457
+
+1. **Focus left a pending revoke** (`DevicesSection.tsx`). Both dialog
+   buttons are disabled while busy, so focus fell to the page and Escape
+   stopped working after a failure. Now a status line inside the dialog takes
+   focus and is its only Tab stop while the call is out. On failure, focus
+   moves to Cancel, so Escape closes the dialog and focus returns to *Revoke
+   device*. Covered by a new browser test that holds the revoke, tabs, fails
+   it, then presses Escape.
+2. **A confirm dropped an in-flight refresh without asking again.** Every
+   write now starts a fresh devices read, and only the newest read lands. A
+   write invalidates the shared GET cache, so that read is always a new
+   request. Covered by a new browser test of the exact repro. It holds the
+   *answer* of the devices GET that a single-agent revoke started, and waits
+   on `data-reads-settled`. It fails on 27f646e3 (stale "2 active · 1
+   revoked"). It also fails on a mutant that drops the reload, because the
+   late answer brings *Not recognised* back.
+3. (non-blocking) *This is mine* now pends per device, and errors are kept
+   per device. A new test runs two confirms in flight.
+
+Each new test was seen red on 27f646e3 first.
+
+Local, after the last edit:
+- web typecheck: exit 0
+- every non-browser web suite: exit 0, 2359 cases
+- devices-tab, agents-tab, developer-tabs and confirm-dialog browser suites:
+  exit 0, 45 cases
+- repo-root `pnpm lint` and `pnpm format`: exit 0
+
+Screenshots regenerated in `.polly/evidence/LAI-591/`.
