@@ -100,3 +100,13 @@ reviewer's direction, with tests on both reads), and the client ages it by
 tests: a browser five minutes ahead and five minutes behind both show
 *Working* for a fresh claim and turn only after `suspect_after_ms` on the
 page; restoring the wall-clock comparison turns both red.
+
+## Rework after re-review (Belka, 2026-10-29)
+
+Codex re-review, P2: the claim's arrival was stamped on first display, so a
+card whose Agent field was hidden aged from when it was shown. The request
+client now stamps every live claim as its response is parsed
+(`server/web/src/api/claim-receipt.ts`, from `send()` in `api/client.ts`),
+whatever is shown. Regression in `test/browser/agent-execution.test.ts`:
+Agent field hidden, 95 s, field shown → *Connection lost*, no task re-read;
+it fails on `af2430f4` with `actual: 'working'`.
