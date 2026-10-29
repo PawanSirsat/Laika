@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   and,
   asc,
@@ -48,10 +49,15 @@ import {
   claimView,
   holdsLiveClaim,
   hasOpenWorkRequest,
+  assertSelectedAgentMayClaim,
+  liveClaim,
+  liveClaimViews,
   registeredAgent,
   releaseLiveClaim,
+  requireVisibleTaskToClaim,
   takeClaim,
   type TaskClaimView,
+  type TaskLiveClaimView,
 } from './claims.ts';
 import { addComment, commentCounts } from './comments.ts';
 import {
@@ -261,6 +267,13 @@ export interface TaskSummaryView {
    * needs a second read.
    */
   selected_agent: SelectedAgentView | null;
+  /**
+   * The session holding the task now, or null (§4.5, §4.66, LAI-568): its
+   * live claim — `active` or `paused` — with the holder's last heartbeat and
+   * whether it is still checking in. An expired, released or transferred
+   * claim is never this; the task's activity is where those are told.
+   */
+  claim: TaskLiveClaimView | null;
   created_at: number;
   updated_at: number;
 }
@@ -314,9 +327,15 @@ interface ViewContext {
   readonly sizes: ReadonlyMap<string, SizeView>;
   /** The selected agent per agent id (LAI-535) — one query whatever the page. */
   readonly selectedAgents: ReadonlyMap<string, SelectedAgentView>;
+  /** The live claim per task (LAI-568) — one query whatever the page. */
+  readonly claims: ReadonlyMap<string, TaskLiveClaimView>;
 }
 
-function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
+/**
+ * `now` is the read's clock: a claim's `connection` and whether its lease has
+ * lapsed are answers about a moment (LAI-568), so a test can ask about one.
+ */
+function loadViewContext(db: Db, rows: readonly TaskRow[], now: number): ViewContext {
   const edges = dependencyEdges(
     db,
     rows.map((row) => row.id),
@@ -361,6 +380,7 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
     sendBacks: activeSendBacks(db, rows),
     sizes: sizeViews(db, rows),
     selectedAgents: selectedAgentViews(db, rows),
+    claims: liveClaimViews(db, ids, now),
   };
 }
 
@@ -412,6 +432,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
       row.selectedAgentId === null
         ? null
         : (context.selectedAgents.get(row.selectedAgentId) ?? null),
+    claim: context.claims.get(row.id) ?? null,
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],
     started_at: row.startedAt,
@@ -440,8 +461,9 @@ export function viewTasks(
   db: Db,
   rows: readonly TaskRow[],
   prefixes: ReadonlyMap<string, string>,
+  now: number = Date.now(),
 ): TaskView[] {
-  const context = loadViewContext(db, rows);
+  const context = loadViewContext(db, rows, now);
   return rows.map((row) => toView(row, prefixes.get(row.projectId) ?? '', context));
 }
 
@@ -512,8 +534,8 @@ export function assertMayCloseReview(
 }
 
 /** One task's view, loading only what that task needs. */
-function viewOne(db: Db, row: TaskRow, prefix: string): TaskView {
-  return toView(row, prefix, loadViewContext(db, [row]));
+function viewOne(db: Db, row: TaskRow, prefix: string, now: number): TaskView {
+  return toView(row, prefix, loadViewContext(db, [row], now));
 }
 
 /** Load a task and the project it belongs to, or 404. */
@@ -768,11 +790,16 @@ function resolveStatus(db: Db, projectId: string, target: StatusTarget): StatusR
   return { ...match, hidden: match.hidden === 1 };
 }
 
-export function getTask(db: Db, actor: ResolvedActor, taskId: string): TaskView {
+export function getTask(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  now: number = Date.now(),
+): TaskView {
   const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
-  return viewOne(db, task, project.prefix);
+  return viewOne(db, task, project.prefix, now);
 }
 
 export interface CreateTaskInput {
@@ -919,7 +946,7 @@ export function createTask(
       now,
     });
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, id)).get()!, project.prefix);
+    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, id)).get()!, project.prefix, now);
   });
 }
 
@@ -941,6 +968,8 @@ export interface ListTasksFilter {
   updatedSince?: number | null;
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
+  /** The read's clock, for each task's `claim` (LAI-568). Defaults to now. */
+  now?: number | undefined;
 }
 
 export function listTasks(
@@ -1013,8 +1042,9 @@ function readTaskPage(
   db: Db,
   conditions: readonly SQL[],
   prefixOf: (projectId: string) => string,
-  filter: Pick<ListTasksFilter, 'ready' | 'limit' | 'cursor'>,
+  filter: Pick<ListTasksFilter, 'ready' | 'limit' | 'cursor' | 'now'>,
 ): TaskView[] {
+  const now = filter.now ?? Date.now();
   // One over the limit, so the route can tell whether another page exists.
   const wanted = filter.limit + 1;
 
@@ -1046,7 +1076,7 @@ function readTaskPage(
       .limit(size)
       .all();
 
-    const context = loadViewContext(db, rows);
+    const context = loadViewContext(db, rows, now);
     return rows.map((row) => toView(row, prefixOf(row.projectId), context));
   };
 
@@ -1085,6 +1115,8 @@ export interface ListAllTasksFilter {
   updatedSince?: number | null;
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
+  /** The read's clock, for each task's `claim` (LAI-568). Defaults to now. */
+  now?: number | undefined;
 }
 
 /**
@@ -1106,6 +1138,7 @@ export function listAllTasks(db: Db, actor: ResolvedActor, filter: ListAllTasksF
   return readTaskPage(db, scope.conditions, (id) => scope.prefixes.get(id) ?? '', {
     limit: filter.limit,
     cursor: filter.cursor,
+    now: filter.now,
   });
 }
 
@@ -1317,7 +1350,94 @@ export interface UpdateTaskInput {
    * a work request, `null` withdraws it. Never moves the assignee.
    */
   selected_agent_id?: string | null | undefined;
+  /**
+   * The ETag named by PATCH's `If-Match` header ({@link taskVersion}). Absent
+   * keeps the unconditional update every existing caller uses (LAI-571).
+   */
+  expected_version?: string | undefined;
   now?: number;
+}
+
+/**
+ * **A task's version is a digest of the task as a read returns it** (LAI-571),
+ * and `GET /tasks/:id` and `PATCH` send it as `ETag`.
+ *
+ * Derived from what is shown, not stamped by the writers, so no writer can be
+ * forgotten. Two reviews found writers that left a stamped version alone: tags
+ * kept in their own table, a tag renamed or merged, a sprint deleted out from
+ * under its tasks, a blocker whose status moved a dependent's `ready`, a
+ * comment, a recomputed size. Each one changes the view, so each one changes
+ * this. `updated_at` stays what it was, the time of the task's last edit.
+ *
+ * Deterministic because `toView` is. Its keys are in a fixed order, its lists
+ * are sorted, and it reads nothing about the caller. 128 bits of SHA-256, so two
+ * different views share a version with negligible odds.
+ *
+ * **Except the live claim's pulse** (LAI-568): {@link CLAIM_PULSE} moves on
+ * every heartbeat and with the clock, and no write to the task moves it. Left
+ * in, it would make every token stale while an agent works, and that is exactly
+ * when a selection needs one. Who holds the claim, by generation, state,
+ * session, agent and device, stays in, so a claim taken, paused, released or
+ * transferred is a new version. The holder's own writes are the claim fence's
+ * to order (LAI-541), not this.
+ */
+export function taskVersion(view: TaskView): string {
+  const claim = view.claim === null ? null : withoutPulse(view.claim);
+  return createHash('sha256')
+    .update(JSON.stringify({ ...view, claim }))
+    .digest('hex')
+    .slice(0, 32);
+}
+
+/** The version as a strong ETag: what a read sends and `If-Match` takes back. */
+export function taskEtag(view: TaskView): string {
+  return `"${taskVersion(view)}"`;
+}
+
+/**
+ * A row of a task list, carrying the ETag a read of that one task would send
+ * (LAI-571 review, round 3), so a client can make a guarded `PATCH` from a
+ * list without reading each task first. Computed from the full view, so a
+ * slim row's ETag is the full task's, even though the slim row cannot be
+ * hashed back to it.
+ */
+export interface ListedTaskView extends TaskView {
+  etag: string;
+}
+
+/** {@link ListedTaskView}'s slim form (`?fields=slim`, LAI-795). */
+export interface ListedTaskSummaryView extends TaskSummaryView {
+  etag: string;
+}
+
+export function listedTask(view: TaskView): ListedTaskView {
+  return { ...view, etag: taskEtag(view) };
+}
+
+export function listedTaskSummary(view: TaskView): ListedTaskSummaryView {
+  return { ...summaryOf(view), etag: taskEtag(view) };
+}
+
+/**
+ * The live claim's fields that move without a write (LAI-568): the heartbeat,
+ * the lease, the clock — the heartbeat's age, which moves on every read
+ * (LAI-597 review) — and what the session says ran, which any heartbeat may
+ * change (D-118, LAI-593).
+ */
+export const CLAIM_PULSE = [
+  'last_heartbeat_at',
+  'heartbeat_age_ms',
+  'lease_expires_at',
+  'connection',
+  'harness',
+  'harness_version',
+  'model',
+] as const;
+
+function withoutPulse(claim: TaskLiveClaimView): Partial<TaskLiveClaimView> {
+  const kept: Partial<TaskLiveClaimView> = { ...claim };
+  for (const field of CLAIM_PULSE) delete kept[field];
+  return kept;
 }
 
 /**
@@ -1394,6 +1514,37 @@ export function updateTask(
       // is written, so a stale holder changes nothing at all.
       assertClaimFence(db, actor, taskId, now);
       if (selecting) assertSelectionChangeAllowed(db, task);
+
+      // **Every input of the view is read again here**, under the lock, and not
+      // taken from `requireTask` above, which ran before it. The project's
+      // prefix makes the key, and a rename that commits between the two reads
+      // would otherwise let a token for `LAI-1` pass on a task now `NEW-1`
+      // (LAI-571 review, round 3). The row is read here for the same reason.
+      const prefix = db
+        .select({ prefix: projects.prefix })
+        .from(projects)
+        .where(eq(projects.id, project.id))
+        .get()!.prefix;
+
+      // The precondition, under the write lock and before anything moves: the
+      // task as a read would show it now must be the task the caller read.
+      // `immediate` holds every other writer off until this commits, so the
+      // check and the write are one step.
+      if (input.expected_version !== undefined) {
+        const current = viewOne(
+          db,
+          db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+          prefix,
+          now,
+        );
+        const version = taskVersion(current);
+        if (version !== input.expected_version) {
+          throw new ApiError('conflict', 'The task changed after you read it', {
+            current,
+            etag: taskEtag(current),
+          });
+        }
+      }
 
       // Under the write lock, so two writes cannot both find it free.
       if (typeof changes.externalRef === 'string') {
@@ -1502,11 +1653,7 @@ export function updateTask(
         });
       }
 
-      return viewOne(
-        db,
-        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
-        project.prefix,
-      );
+      return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, prefix, now);
     },
     { behavior: 'immediate' },
   );
@@ -1574,7 +1721,9 @@ export function startWorking(
 ): StartedWork {
   const now = options.now ?? Date.now();
   const { estimate } = options;
-  const { project } = requireTask(db, taskId);
+  // A task the caller cannot read is answered as one that does not exist
+  // (LAI-586 review) — before `task.claim`, which would say it does.
+  const { project } = requireVisibleTaskToClaim(db, actor, taskId);
   assertCan(withProject(actor, project.id), 'task.claim', { projectId: project.id });
   const onBranch = options.branch?.trim() === '' ? undefined : options.branch?.trim();
   const agent = registeredAgent(actor);
@@ -1609,6 +1758,7 @@ export function startWorking(
           db,
           db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
           project.prefix,
+          now,
         ),
         claim: null,
       };
@@ -1681,7 +1831,12 @@ export function startWorking(
     afterStart(db, actor, taskId, before.startedAt, estimate, now);
 
     return {
-      task: viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix),
+      task: viewOne(
+        db,
+        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+        project.prefix,
+        now,
+      ),
       claim: null,
     };
   });
@@ -1741,6 +1896,13 @@ function agentStartWorking(
   const taskId = before.id;
   const onBranch = options.branch?.trim() === '' ? undefined : options.branch?.trim();
   const agent = registeredAgent(actor)!;
+
+  // D-119 first (LAI-586 review round 2): an agent that is not the selected
+  // one hears that reason whatever else is true of the task — the assignee
+  // rule below would otherwise answer it with a bare "already claimed".
+  // Visibility and `task.claim` were asked before this function was reached,
+  // so a hidden task still answers as a missing one.
+  assertSelectedAgentMayClaim(db, actor, taskId, agent.id);
 
   const requested = hasOpenWorkRequest(db, taskId, agent.id);
   if (before.assigneeId !== null && before.assigneeId !== actor.userId && !requested) {
@@ -1805,7 +1967,12 @@ function agentStartWorking(
   }
 
   return {
-    task: viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix),
+    task: viewOne(
+      db,
+      db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+      project.prefix,
+      now,
+    ),
     claim: claimView(taken.claim),
   };
 }
@@ -1900,7 +2067,12 @@ export function changeStatus(
       now,
     });
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+    return viewOne(
+      db,
+      db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+      project.prefix,
+      now,
+    );
   }
 
   // §5's table, widened for a person and unchanged for a program (LAI-266).
@@ -1968,6 +2140,11 @@ export function changeStatus(
     .where(eq(tasks.id, taskId))
     .run();
 
+  // The session the holder finishes under, read before its claim is released
+  // so the row still says what ran (D-118, LAI-586); `appendActivity` keeps it
+  // only if it is the writing agent's own.
+  const underSession =
+    task.status === 'in_progress' ? (liveClaim(db, taskId)?.sessionId ?? null) : null;
   // Out of `in_progress`, nobody works it under the claim it had (§5,
   // LAI-541): released, and its generation refused from here on.
   if (task.status === 'in_progress') releaseLiveClaim(db, taskId, now);
@@ -1977,6 +2154,7 @@ export function changeStatus(
     projectId: project.id,
     taskId,
     ...activityActor(actor),
+    agentSessionId: underSession,
     type: 'task.status_changed',
     payload: { from: task.status, to, ...statusPayload(from, dest), ...(via ? { via } : {}) },
     now,
@@ -1992,7 +2170,12 @@ export function changeStatus(
     refreshEstimate(db, task.parentTaskId, now);
   }
 
-  return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+  return viewOne(
+    db,
+    db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+    project.prefix,
+    now,
+  );
 }
 
 /**
@@ -2275,7 +2458,7 @@ export function reorderTask(
 
     const current = task.position!;
     const alreadyThere = (lower === null || lower < current) && (upper === null || current < upper);
-    if (alreadyThere) return viewOne(db, task, project.prefix);
+    if (alreadyThere) return viewOne(db, task, project.prefix, now);
 
     const position = keyBetween(lower, upper);
     db.update(tasks).set({ position, updatedAt: now }).where(eq(tasks.id, taskId)).run();
@@ -2293,6 +2476,11 @@ export function reorderTask(
       now,
     });
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+    return viewOne(
+      db,
+      db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+      project.prefix,
+      now,
+    );
   });
 }

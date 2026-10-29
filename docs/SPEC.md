@@ -751,6 +751,10 @@ gave for sending the task back from review (D-082).
 | `actor_kind` | `user` (cookie) \| `agent` (token) \| `system` (no human — cron or webhook) |
 | `actor_token_id` | nullable — *which* token, for audit |
 | `agent_id` | nullable FK `agents` (§4.63), `restrict` — *which* registered agent wrote the row (D-114 item 4, LAI-535), read by the activity writer from the token's `agent_id` and from nothing else. Null for a session, a legacy token, the system and **every row written before the column existed: never back-filled** |
+| `agent_session_id` | nullable, no FK — the agent session (§4.65) the row was written under (D-118, LAI-586): the session a claim was just taken or finished under, else the one holding the writing agent's live claim on the task, else null. Read by the activity writer from the database, never from a request; only ever the writing agent's own session |
+| `session_harness` | nullable — that session's self-reported `harness` **when the row was written** (D-118) |
+| `session_harness_version` | nullable — likewise its `harness_version` |
+| `session_model` | nullable — likewise its `model`. The three are a **snapshot**: a later heartbeat that changes the session's model does not change what this row says ran. All four are null for a row not written by an agent session and **every row written before the columns existed: never back-filled** |
 | `type` | closed vocabulary, below |
 | `payload_json` | the before/after diff or details |
 | `created_at` | |
@@ -2375,6 +2379,21 @@ revoking an agent's token write `token.created` and `token.revoked`, the rows
 here are the record of the rest, and historic activity is never back-filled
 with an agent. No retention: an agent row lives as long as its owner.
 
+**Devices** (LAI-590) are derived from the owner's agents sharing a
+normalised device label: ECMAScript `trim().toLowerCase()`, with null and
+blank labels sharing the empty key and displayed as *Unnamed device*.
+The label remains self-reported and grants no permission. The device list
+includes active and revoked agents, their harness and status, counts of each,
+and the newest non-null agent last-seen time (null if none was seen).
+Recognition is the owner's statement per label (§4.67). A new label starts
+unrecognised; agents on labels already present at upgrade start recognised.
+Revoking a device uses single-agent revocation for every active agent on that
+label in one transaction, ending their sessions with `agent_revoked` so their
+claims cease to be live exactly as with single-agent revocation. Other devices,
+other owners and personal tokens are untouched. Confirm and revoke use
+`agent.manage_own`, session only; list uses `agent.read_own`. A label absent
+from the caller's own agents is `404`, including another owner's label.
+
 ### 4.64 `agent_project_grants`
 
 What one agent may do in one project (D-114, LAI-534). **No row is no access.**
@@ -2419,7 +2438,9 @@ claims (§4.66); it never holds a task by itself.
 | `ended_at` | nullable — set with `end_reason`; both or neither (CHECK) |
 | `end_reason` | nullable — `ended` (the agent said so) \| `agent_revoked` (D-114 item 2) (CHECK) |
 | `client_version` | nullable, **self-reported**, at most 64 characters. Decides nothing |
-| `model` | nullable, **self-reported**, at most 120 characters. Decides nothing |
+| `harness` | nullable, **self-reported** (D-118, LAI-586) — the underlying harness that ran, a lowercase slug of at most 64 characters (`codex`, `claude-code`). A manager's agent (`Polly · Belka`) runs workers of other harnesses as its sessions, so this is the session's, not the agent's §4.63 `harness`. Decides nothing |
+| `harness_version` | nullable, **self-reported** (D-118) — that harness's version, at most 64 printable characters, no spaces. Decides nothing |
+| `model` | nullable, **self-reported**, at most 120 printable characters. Decides nothing. A heartbeat may change it (D-118: *"Changing a model never creates a new agent"*) |
 | `context_revision_seen` | nullable — the project brief's revision the session last read, for the delivery work (proposal §4.6); written by nothing yet |
 
 Indexes: `(agent_id)`, `(token_id)`. **No activity row**: a session is presence,
@@ -2457,6 +2478,23 @@ it, writing `task.claim_expired`; `paused` and `transferred` are the hand-off's
 (LAI-546) and are written by nothing yet. **Nothing moves a claim out of
 `expired`**: reclaiming inserts a new row at the next generation (§5, §9.1).
 Rows are never deleted; they are the task's claim history.
+
+### 4.67 `recognised_agent_devices`
+
+The owner's confirmed device labels (LAI-590). No row means unrecognised.
+Labels group agents; they are not device identities or fingerprints.
+
+| field | notes |
+| --- | --- |
+| `owner_user_id` | FK `users`, cascade — with the label key, the primary key |
+| `label_key` | normalised as §4.63; empty string for null/blank labels |
+| `created_at` | first confirmed; upgrade uses the oldest agent registration on that label |
+
+Primary key `(owner_user_id, label_key)`. Confirmation is idempotent and
+requires an existing device among the caller's own agents. A confirmation
+persists if agents move away or are revoked; moving an agent to another label
+does not confirm that label. No retention beyond the owner and no activity
+verb: these rows record the statement, as agent registration does (§4.63).
 
 ## 5. Task lifecycle
 
@@ -2711,6 +2749,7 @@ credential is not an org credential with a project filter.
   | `stale_claim` | the generation is not the task's live claim's — older, newer, released or **expired** — or the live claim's lease has lapsed, or the holder's own agent sent none; the caller's own claim on the task **lapsed**, whether or not it sent a generation; a generation sent where no claim is live; also a session that has ended. `details.reclaim: true` when the caller's own claim expired and the explicit reclaim is the way back |
   | `claim_held` | another session holds the live claim — **another agent of the same person included**, which is fenced exactly as another person's is — or a token with no agent (a legacy token) tried to change or claim a task a registered agent's session holds (D-114 item 6), or the task's claim lapsed and is waiting for recovery (any token but the old holder's) |
   | `claim_paused` | the live claim is paused while a hand-off is open (LAI-546) |
+  | `selected_for_another_agent` | **D-119** (LAI-586): the task has a selected agent (§4.5) and the caller is a session of a different agent — *"once a task names its agent, only that agent can start it."* Answered by a claim (`POST /tasks/:id/claim`, `start_working`) — **the holder's own session renewing included** — and a reclaim; asked after the caller's own `task.claim`, and `details` names the selected agent (`selected_agent_id`, `selected_agent: { id, display_name, harness, device_label }`) only when the caller may read the task's project. Also the fence's answer to any change made under a live claim the selection does not back (a claim taken before D-119, or before the selection) |
 
   **The rule, in order.** (1) The system (§3.4) and **a person signed in** are
   never fenced — people keep explicit control, and their change is recorded
@@ -2919,14 +2958,17 @@ GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
 GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only)
+GET    /api/v1/agents/devices                own agents grouped by device → { data: [{ device_label, display_name, recognised, last_seen_at, active_count, revoked_count, agents }] } (§4.63, agent.read_own)
+POST   /api/v1/agents/devices/confirm        body { device_label: string | null } → { device_label, recognised: true } (agent.manage_own, session only)
+POST   /api/v1/agents/devices/revoke         body { device_label: string | null } → { revoked_agent_ids: string[] } (agent.manage_own, session only)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
 POST   /api/v1/agents/:id/revoke             the agent and every live token it holds; idempotent
 GET    /api/v1/agents/me/work-requests       ?project= optional — the calling agent's open work requests (LAI-535); an agent's token only
 POST   /api/v1/heartbeats                    202, token auth only
-POST   /api/v1/agent-sessions                body { client_version?, model? } → 201 session (§4.65); an agent's token only (LAI-541)
-POST   /api/v1/agent-sessions/:id/heartbeat  → { session, claims, lost } — renews the session's active claims (§9.1)
+POST   /api/v1/agent-sessions                body { client_version?, harness?, harness_version?, model? } → 201 session (§4.65); an agent's token only (LAI-541, D-118)
+POST   /api/v1/agent-sessions/:id/heartbeat  body { client_version?, harness?, harness_version?, model? } optional → { session, claims, lost } — renews the session's active claims (§9.1); a field sent replaces what the session said, one omitted is kept
 POST   /api/v1/agent-sessions/:id/end        → session; its live claims are released
 GET    /api/v1/presence                      GET /api/v1/capacity
 GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885) — answered under the organisation's grants (LAI-958)
@@ -2970,7 +3012,31 @@ field: 'selected_agent_id', reason, selected_agent_id }`, `reason` one of
 `agent_not_granted`, `agent_read_only` or `agents_off`. **Changing it while
 an agent session holds the task's live claim is `409 conflict`, `reason:
 claim_held`** — that change is a hand-off (LAI-546); with no live claim it is
-free to change (LAI-541). `GET /agents/me/work-requests` is the calling
+free to change (LAI-541). **The selected agent owns the claim** (D-119,
+LAI-586): *"When a task has a selected agent, only sessions of that agent may
+claim it. Any other agent gets `409 conflict` with reason
+`selected_for_another_agent`, naming the selected agent if the caller may see
+it. With no selected agent, any eligible agent may claim, as today."* That
+holds for `POST /tasks/:id/claim`, `start_working` and both reclaims (§6.3),
+and it is asked **before the assignee rule**, so an agent that is not selected
+always hears `selected_for_another_agent`, never a bare *already claimed*; the
+selected agent meets the assignee rule as before. The selected agent's claim
+— **and its reclaim** — accepts its open work request in the same transaction,
+so a request can no longer stay open beside another agent's claim, or beside
+its own reclaimed one. A person and a legacy token
+claim by assignee as before, and reads and comments are never refused for it.
+**A live claim the selection does not back** — taken before D-119, or before
+the selection; the API cannot make one any more — is never renewed and never
+usable: the claim, the reclaim and the fence all answer it
+`selected_for_another_agent`. It ends at its holder's next heartbeat (reported
+in `lost`) or when its lease lapses, whichever is first, as **`released`**, not
+`expired` — an expired claim waits for its holder's reclaim or for recovery,
+and this holder may never reclaim, so `expired` would lock the selected agent
+out. The system records it as `task.updated`, `{ field: 'claim', from: {
+generation, session_id, agent_id }, to: null, reason:
+'selected_for_another_agent' }`. While it is live the selected agent hears
+`claim_held`; it is never taken over.
+`GET /agents/me/work-requests` is the calling
 agent's open requests, newest first, paged like any list, each `{ id, kind,
 state, task_id, task_key, task_title, project_id, agent_id, requested_by,
 created_at }`, limited to the projects the agent may read now — and to one with
@@ -2983,12 +3049,36 @@ is read; a token that is
 not a registered agent's — or a session — is `403` with `reason:
 not_an_agent`.
 
+`GET /agents/devices` returns the complete derived groups (no pagination,
+so a device is never split). `device_label` is the normalised label, or null
+for the unnamed group; `display_name` uses the newest agent's trimmed label,
+or *Unnamed device*. `agents` contains the same shapes as `GET /agents`.
+Confirm and revoke normalise the supplied label in the same way. A known
+device with no active agents revokes successfully with an empty id list.
+§7.1 has no agent-list tool, so no device MCP read or management tool is added.
+
 **Agent sessions and claims** (§4.65, §4.66, §9.1, LAI-541). A session is `{
 id, agent_id, started_at, last_heartbeat_at, ended_at, end_reason,
-client_version, model, connection }`, `connection` one of `live`, `suspect`
+client_version, harness, harness_version, model, connection }` — the four
+self-reported fields labelled as such and never read by `can()`, the fence or
+a claim (D-118: *"Each session records what actually ran, self-reported and
+labelled as such"*); `GET /agents/:id` answers the agent with `sessions`, its
+twenty most recent, newest first, and every activity row (§4.8) carries
+`agent_session: { id, harness, harness_version, model } | null`, the snapshot
+taken when it was written. A session's `connection` is one of `live`, `suspect`
 (silent past §9.1's suspect interval) or `ended`; a claim is `{ id, task_id,
 session_id, agent_id, generation, state, lease_expires_at, created_at, ended_at
-}`. A heartbeat answers `{ session, claims, lost }`: the live claims it renewed,
+}`. A task read — `GET /tasks/:id` and the task lists — carries `claim`, the
+task's live claim (`active` or `paused`) or `null` (LAI-568): `{ generation,
+state, agent_id, session_id, lease_expires_at, last_heartbeat_at,
+heartbeat_age_ms, connection, suspect_after_ms, device_label, harness,
+harness_version, model }`, with `heartbeat_age_ms` and `connection` (`live`
+or `suspect`) as of the read by the server's clock — a client ages the claim
+from `heartbeat_age_ms` on its own elapsed time and never compares
+`last_heartbeat_at` with its own clock (LAI-597) — and the last three the
+holding session's self-reported fields as it last sent them — `null` where it
+sent none, and deciding nothing (LAI-593). A heartbeat answers `{ session,
+claims, lost }`: the live claims it renewed,
 and the session's claims that are no longer live — **an expired one stays in
 `lost`; a heartbeat never brings it back**. A heartbeat to an ended session is
 `409`, `reason: stale_claim`. All three `/agent-sessions` routes are under
@@ -2997,8 +3087,12 @@ not_an_agent`; another agent's session is `404`. **The reclaim** reads
 everything again **inside its `BEGIN IMMEDIATE`**, from the database, not from
 the request's resolved actor — the agent's status (`403`, `reason:
 agent_revoked`), the token (`token_revoked`; `token_read_only` if it is not
-`full`), the owner (`owner_inactive`), the agent's grant (`agent_not_granted`,
-`agent_read_only`) and the owner's `task.claim` under today's role. A task no
+`full`), the owner (`owner_inactive`), then the task — **one the caller can no
+longer read is `404 not_found`, `No such task`, byte for byte what a task that
+does not exist answers** (LAI-586 review; a removed grant lands here) — the
+agent's grant (`agent_read_only`) and the owner's `task.claim` under today's
+role. `POST /tasks/:id/claim` and `start_working` answer a task the caller
+cannot read the same way, before `task.claim`. A task no
 longer in progress is `409`, `reason: task_not_claimable`; a live claim is `409
 claim_held`; a task whose newest claim is not this agent's expired one is
 `409`, `reason: nothing_to_reclaim`. The offer steps — refusing
@@ -4082,7 +4176,7 @@ matched.
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
 | `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
 | `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, claim_generation? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date, `size`, `external_ref` or `agent` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085). `agent` is a registered agent's id and is `PATCH`'s `selected_agent_id` (§6.4): a work request, never an assignment (LAI-535) |
-| `start_working` | `{ task, branch?, estimate?, session_id?, reclaim? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409`. **On a registered agent's token** it also takes the task's exclusive claim (§5, §4.66) and answers `claim` — `{ session_id, generation, lease_expires_at, … }` — beside the task, and **never writes the assignee** (§5); `session_id?` names the session to claim under (absent opens one), and the holder's session calling again renews the lease. A second session — the same agent's, or another agent of the same person — is `409`, `reason: claim_held`. **`reclaim: true`** is the explicit reclaim, `POST /tasks/:id/claim/reclaim`'s twin (§9.1, LAI-541): only it gives an agent whose claim expired a claim again, at `generation + 1` |
+| `start_working` | `{ task, branch?, estimate?, session_id?, reclaim? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409`. **On a registered agent's token** it also takes the task's exclusive claim (§5, §4.66) and answers `claim` — `{ session_id, generation, lease_expires_at, … }` — beside the task, and **never writes the assignee** (§5); `session_id?` names the session to claim under (absent opens one), and the holder's session calling again renews the lease. A second session — the same agent's, or another agent of the same person — is `409`, `reason: claim_held`. **A task with a selected agent** (§4.5) is claimed only by that agent's sessions — another agent is `409`, `reason: selected_for_another_agent`, with or without `reclaim` (D-119, §6.3). **`reclaim: true`** is the explicit reclaim, `POST /tasks/:id/claim/reclaim`'s twin (§9.1, LAI-541): only it gives an agent whose claim expired a claim again, at `generation + 1` |
 | `update_status` | `{ task, status, note?, claim_generation? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint, claim_generation? }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body }` | comment |

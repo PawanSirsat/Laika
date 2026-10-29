@@ -18,8 +18,9 @@ import { useTaskDetail } from '../../../api/use-task-detail.ts';
 import { useTaskText } from '../../../api/use-task-text.ts';
 import { useDelayed } from '../../../components/use-delayed.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
-import { actorLine, describeActor } from './actor-presentation.ts';
-import { agentNamesFrom, agentVia } from '../../../api/selected-agent.ts';
+import { actorLine, describeActor, viaLine } from './actor-presentation.ts';
+import { threadOrder, type ThreadItem } from './thread-order.ts';
+import { agentNamesFrom } from '../../../api/selected-agent.ts';
 import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import {
   getTask,
@@ -43,6 +44,7 @@ import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { ForecastSection } from '../task/ForecastSection.tsx';
 import { TokensSection } from '../task/TokensSection.tsx';
 import { ExecutionPanel } from '../../../components/agent/ExecutionPanel.tsx';
+import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
 import { executionView, hasExecution } from '../../../components/agent/execution-derive.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { avatarColorSolid } from '../../../theme/avatar-color.ts';
@@ -155,6 +157,9 @@ function personName(id: string | null, members: ReadonlyMap<string, Member>): st
   if (id === null) return 'someone';
   return members.get(id)?.name ?? id;
 }
+
+/** How often the execution panel's *Last seen* re-words itself (LAI-597). */
+const LAST_SEEN_TICK_MS = 30_000;
 
 /**
  * The panel a card opens into (SPEC §11.4.2.1).
@@ -412,15 +417,22 @@ export function TaskDetailPanel({
     for (const event of detail.activity) {
       if (event.type !== 'comment.added') continue;
       const id = (event.payload as { comment_id?: unknown } | null)?.comment_id;
-      const via = agentVia(event, agentNames);
+      const via = viaLine(event, agentNames);
       if (typeof id === 'string' && via !== undefined) found.set(id, via);
     }
     return found;
   }, [detail, agentNames]);
-  /** The execution panel's facts: the task view, and its claim rows (LAI-543). */
+  /**
+   * The execution panel's facts: the task view, its live claim (LAI-597) and
+   * its claim rows (LAI-543). The live claim is read on this reader's clock,
+   * which re-renders the panel when its heartbeat goes stale and every half
+   * minute for *Last seen* — no request either way.
+   */
+  const claimNow = useClaimClock(task.claim, LAST_SEEN_TICK_MS);
   const execution = useMemo(
-    () => executionView(task, detail.status === 'ready' ? detail.activity : [], agentNames),
-    [task, detail, agentNames],
+    () =>
+      executionView(task, detail.status === 'ready' ? detail.activity : [], agentNames, claimNow),
+    [task, detail, agentNames, claimNow],
   );
   /**
    * Which tab is showing.
@@ -438,12 +450,10 @@ export function TaskDetailPanel({
    * **All** is the thread and the history in one timeline, oldest first — a
    * conversation's order, with what happened between the messages. Neither
    * list is re-sorted on its own tab; this merge is the only place the two
-   * meet, and it is by `created_at` with the comment first on a tie.
+   * meet, and it is by `created_at` with the comment first on a tie and two
+   * events by `seq` ({@link threadOrder}, LAI-575).
    */
-  const everything: readonly (
-    | { readonly kind: 'comment'; readonly at: number; readonly comment: Comment }
-    | { readonly kind: 'event'; readonly at: number; readonly event: ActivityEvent }
-  )[] =
+  const everything: readonly ThreadItem[] =
     detail.status === 'ready'
       ? [
           ...detail.comments.map((comment) => ({
@@ -456,7 +466,7 @@ export function TaskDetailPanel({
             at: event.created_at,
             event,
           })),
-        ].sort((a, b) => a.at - b.at || (a.kind === 'comment' ? -1 : 1))
+        ].sort(threadOrder)
       : [];
 
   /**
@@ -1217,18 +1227,26 @@ export function TaskDetailPanel({
           />
 
           {/*
-            **Execution, from real data only** (LAI-543): the agent picked
-            beside the one that last took the work, and that claim as the
-            task's activity records it — an expired one in words. Whether a session is
-            checking in *now* is not served yet (LAI-568), so neither
-            *Working* nor *Connection lost* is drawn from a guess.
+            **Execution, from real data only** (LAI-543, LAI-597): the agent
+            picked beside the one that last took the work, and that claim as
+            the task's activity records it — an expired one in words. The live
+            claim the read serves says who holds it now and when it last
+            checked in, and *Working* or *Connection lost* on this reader's
+            clock.
           */}
           {hasExecution(execution) && (
             <div className="panel-side-exec">
               <ExecutionPanel
                 /* The Agent row above carries *Waiting for agent*. */
-                state={null}
+                state={execution.state === 'waiting_for_agent' ? null : execution.state}
                 intended={execution.intended}
+                session={execution.session}
+                lastSeen={execution.lastSeen}
+                lastSeenAt={execution.lastSeenAt}
+                liveSessionId={execution.liveSessionId}
+                sessionLine={execution.sessionLine}
+                sessionHarnessVersion={execution.sessionHarnessVersion}
+                sessionModel={execution.sessionModel}
                 claim={execution.claim}
                 claimExpired={execution.claimExpired}
                 generation={execution.generation}

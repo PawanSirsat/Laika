@@ -2,11 +2,13 @@
 id: LAI-564
 title: 'Pair the agent response types: PAIRS for RegisteredAgent, AgentGrant, CreatedAgentToken, and drop their three UNPAIRED entries'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: [LAI-534, LAI-537]
 discovered-from: LAI-537
-status: backlog
+status: review
+started: 2026-10-28T14:07:13Z
+finished: 2026-10-28T14:19:29Z
 ---
 
 Filed by SHELL (Belka, dispatched by CHIEF) from CHIEF's block, 2026-10-28.
@@ -36,6 +38,6 @@ reach across.
 
 ## Acceptance criteria
 
-- [ ] The three pairs are asserted by the drift check, and green.
-- [ ] `UNPAIRED` no longer names `AgentView`, `AgentGrantView`, `CreatedAgentToken`.
-- [ ] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+- [x] The three pairs are asserted by the drift check, and green.
+- [x] `UNPAIRED` no longer names `AgentView`, `AgentGrantView`, `CreatedAgentToken`.
+- [x] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.

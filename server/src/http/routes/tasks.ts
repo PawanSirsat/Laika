@@ -17,12 +17,15 @@ import {
   startWorking,
   SIZE_LEVELS,
   summariseAllTasks,
-  summaryOf,
   TASK_LIST_FIELDS,
   TASK_PRIORITIES,
   TASK_STATUSES,
   updateTask,
-  type TaskSummaryView,
+  taskEtag,
+  listedTask,
+  listedTaskSummary,
+  type ListedTaskSummaryView,
+  type ListedTaskView,
   type TaskView,
 } from '../../services/tasks.ts';
 import { reclaimTask, type ReclaimView } from '../../services/claims.ts';
@@ -108,6 +111,18 @@ const UpdateBody = strictObject({
   // Eligibility is the service's, and answers `422` with the reason.
   selected_agent_id: z.string().min(1).max(64).nullable().optional(),
 });
+
+/** One strong ETag exactly as a read sent it. `*`, a weak `W/` tag or a list is not one. */
+function parseIfMatch(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const match = /^"([0-9a-f]{32})"$/.exec(value);
+  if (match === null) {
+    throw ApiError.badRequest('If-Match must be one ETag from a read of this task', {
+      header: 'If-Match',
+    });
+  }
+  return match[1];
+}
 
 // `status` is a category — the project's first visible status of it — and
 // `status_id` one exact status, which is what a board drag sends (LAI-738).
@@ -292,10 +307,14 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       id: row.id,
     }));
 
+    // Each row carries its own ETag (LAI-571), from the full view either way.
     if (fields === 'slim') {
-      return c.json({ ...page, data: page.data.map(summaryOf) } satisfies Page<TaskSummaryView>);
+      return c.json({
+        ...page,
+        data: page.data.map(listedTaskSummary),
+      } satisfies Page<ListedTaskSummaryView>);
     }
-    return c.json(page);
+    return c.json({ ...page, data: page.data.map(listedTask) } satisfies Page<ListedTaskView>);
   });
 
   app.post('/:slug/tasks', async (c) => {
@@ -337,10 +356,14 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       id: row.id,
     }));
 
+    // Each row carries its own ETag (LAI-571), from the full view either way.
     if (fields === 'slim') {
-      return c.json({ ...page, data: page.data.map(summaryOf) } satisfies Page<TaskSummaryView>);
+      return c.json({
+        ...page,
+        data: page.data.map(listedTaskSummary),
+      } satisfies Page<ListedTaskSummaryView>);
     }
-    return c.json(page);
+    return c.json({ ...page, data: page.data.map(listedTask) } satisfies Page<ListedTaskView>);
   });
 
   // The figures for exactly what `GET /` pages through, with the same filters
@@ -362,13 +385,23 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     );
   });
 
-  app.get('/:id', (c) => c.json(getTask(db, requireActor(c), c.req.param('id'))));
+  app.get('/:id', (c) => {
+    const task = getTask(db, requireActor(c), c.req.param('id'));
+    c.header('ETag', taskEtag(task));
+    return c.json(task);
+  });
 
   app.patch('/:id', async (c) => {
     const actor = requireActor(c);
     const body = parseBody(UpdateBody, await c.req.json().catch(() => null));
+    const expectedVersion = parseIfMatch(c.req.header('If-Match'));
 
-    return c.json(updateTask(db, actor, c.req.param('id'), body));
+    const task = updateTask(db, actor, c.req.param('id'), {
+      ...body,
+      expected_version: expectedVersion,
+    });
+    c.header('ETag', taskEtag(task));
+    return c.json(task);
   });
 
   app.post('/:id/claim', async (c) => {

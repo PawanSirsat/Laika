@@ -35,6 +35,36 @@ export interface TaskSendBack {
  * store's set does not compile, so a new reader cannot quietly draw an empty
  * description from a list that never carried it.
  */
+/** `TaskLiveClaimView` in `server/src/services/claims.ts`. Shown, decides nothing. */
+export interface TaskLiveClaim {
+  readonly generation: number;
+  readonly state: 'active' | 'paused';
+  readonly agent_id: string;
+  readonly session_id: string;
+  readonly lease_expires_at: number;
+  /** The holding session's. */
+  readonly last_heartbeat_at: number;
+  /**
+   * Its age by the **server's** clock as of the read (LAI-597 review). Aged on
+   * the page's own monotonic clock; never `last_heartbeat_at` against
+   * `Date.now()`. Optional: a view served before it has none, read as 0.
+   */
+  readonly heartbeat_age_ms?: number;
+  /** As of the read; `suspect_after_ms` moves it on the client's own clock. */
+  readonly connection: 'live' | 'suspect';
+  /** Heartbeats write no activity, so no event re-reads the task when this passes. */
+  readonly suspect_after_ms: number;
+  readonly device_label: string | null;
+  /**
+   * What the holding session said ran (D-118, LAI-593) — self-reported, null
+   * where it reported nothing. Optional because a view served before LAI-593
+   * has none, which reads as null.
+   */
+  readonly harness?: string | null;
+  readonly harness_version?: string | null;
+  readonly model?: string | null;
+}
+
 export interface TaskSummary {
   readonly id: string;
   /** The display key humans and agents both use — `LAI-42` (§4.5). */
@@ -194,6 +224,13 @@ export interface TaskSummary {
    * (`selectedAgentOf`).
    */
   readonly selected_agent?: SelectedAgent | null;
+  /**
+   * The task's live agent claim — `active` or `paused` — or null (§6.4,
+   * LAI-568). An expired, released or transferred claim is never here; its
+   * history is the task's activity. Optional because a view served before
+   * LAI-568 has none, which reads as null.
+   */
+  readonly claim?: TaskLiveClaim | null;
   readonly created_at: number;
   readonly updated_at: number;
 }

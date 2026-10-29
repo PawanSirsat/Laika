@@ -2331,3 +2331,188 @@ describe('0063 adds agent sessions and task claims on a populated database (LAI-
     },
   );
 });
+
+describe('0064 adds the session line on a populated database (LAI-586, D-118)', () => {
+  it(
+    'keeps every activity and agent_sessions row as it was; the new columns start null and are never back-filled',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) =>
+        /^\d{4}_agent_session_harness_model$/.test(e.tag),
+      );
+      expect(at, 'the LAI-586 migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at).slice(0, 1);
+      expect(dropped.map((e) => e.tag)).toEqual([
+        expect.stringMatching(/_agent_session_harness_model$/),
+      ]);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        migrate(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const agentId = newId();
+        const tokenId = newId();
+        const taskId = newId();
+        const sessionId = newId();
+        const statusId = db.get<{ id: string }>(
+          sql`SELECT id FROM project_statuses WHERE project_id = ${s.projectId} AND category = 'in_progress' LIMIT 1`,
+        ).id;
+
+        // As the 0063 schema has them: an agent with a session that reported a
+        // model, a claim, and history — including a row the agent wrote.
+        db.run(sql`
+          INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, status, created_at)
+          VALUES (${agentId}, ${s.orgId}, ${s.userId}, 'Polly · Belka', 'other', 'active', ${now})
+        `);
+        db.run(sql`
+          INSERT INTO tokens (id, user_id, name, prefix, token_hash, scope, project_ids_json, created_at, agent_id)
+          VALUES (${tokenId}, ${s.userId}, 'a', 'lai_abcd', ${newId()}, 'full', NULL, ${now}, ${agentId})
+        `);
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+          VALUES (${taskId}, ${s.projectId}, 1, 'Held', 'in_progress', ${statusId}, 'p2', ${s.userId}, 'api', ${now}, ${now})
+        `);
+        db.run(sql`
+          INSERT INTO agent_sessions (id, agent_id, token_id, started_at, last_heartbeat_at, client_version, model)
+          VALUES (${sessionId}, ${agentId}, ${tokenId}, ${now}, ${now}, '1.2.0', 'gpt-5.5')
+        `);
+        db.run(sql`
+          INSERT INTO task_claims (id, task_id, session_id, agent_id, generation, lease_expires_at, state, created_at)
+          VALUES (${newId()}, ${taskId}, ${sessionId}, ${agentId}, 1, ${now}, 'active', ${now})
+        `);
+        for (const kind of ['user', 'agent'] as const) {
+          db.run(sql`
+            INSERT INTO activity (id, org_id, project_id, task_id, actor_id, actor_kind, actor_token_id, agent_id, type, payload_json, created_at)
+            VALUES (${newId()}, ${s.orgId}, ${s.projectId}, ${taskId}, ${s.userId}, ${kind},
+                    ${kind === 'agent' ? tokenId : null}, ${kind === 'agent' ? agentId : null},
+                    'task.updated', '{}', ${now})
+          `);
+        }
+        const before = {
+          activity: db.all<Record<string, unknown>>(
+            sql`SELECT rowid AS seq, * FROM activity ORDER BY rowid`,
+          ),
+          sessions: db.all<Record<string, unknown>>(sql`SELECT * FROM agent_sessions`),
+          claims: db.all<Record<string, unknown>>(sql`SELECT * FROM task_claims`),
+        };
+        expect(before.activity).toHaveLength(2);
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        const blank = {
+          agent_session_id: null,
+          session_harness: null,
+          session_harness_version: null,
+          session_model: null,
+        };
+        // Every row, rowid and value kept — the agent's own row included,
+        // which gets no session guessed for it.
+        expect(db.all(sql`SELECT rowid AS seq, * FROM activity ORDER BY rowid`)).toEqual(
+          before.activity.map((row) => ({ ...row, ...blank })),
+        );
+        expect(db.all(sql`SELECT * FROM agent_sessions`)).toEqual(
+          before.sessions.map((row) => ({ ...row, harness: null, harness_version: null })),
+        );
+        expect(db.all(sql`SELECT * FROM task_claims`)).toEqual(before.claims);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        // Still append-only.
+        expect(() => sqlite.prepare(`UPDATE activity SET session_model = 'x'`).run()).toThrow(
+          /append-only/,
+        );
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0065 adds recognised devices on a populated database (LAI-590)', () => {
+  it(
+    'keeps every agent row; every label already in use starts recognised, keyed as requests key it',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_recognised_agent_devices$/.test(e.tag));
+      expect(at, 'the LAI-590 migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at).slice(0, 1);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        migrate(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const other = newId();
+        db.run(sql`
+          INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+          VALUES (${other}, 'other@example.test', 'Other', 'member', 1, ${now}, ${now})
+        `);
+        // Unicode case, padding, null and blank: the key must be the one
+        // `deviceLabelKey` gives a request, not SQLite's ASCII-only lower().
+        const rows: [string, string | null, number][] = [
+          [s.userId, '  BÉLKA ', now + 3],
+          [s.userId, 'bélka', now + 1],
+          [s.userId, null, now + 5],
+          [s.userId, '', now + 4],
+          [other, 'Strelka', now + 2],
+        ];
+        for (const [owner, label, at] of rows) {
+          db.run(sql`
+            INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, device_label, status, created_at)
+            VALUES (${newId()}, ${s.orgId}, ${owner}, 'a', 'other', ${label}, 'active', ${at})
+          `);
+        }
+        const before = db.all(sql`SELECT * FROM agents ORDER BY id`);
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        expect(db.all(sql`SELECT * FROM agents ORDER BY id`)).toEqual(before);
+        expect(
+          db.all(
+            sql`SELECT owner_user_id, label_key, created_at FROM recognised_agent_devices ORDER BY owner_user_id, label_key`,
+          ),
+        ).toEqual(
+          [
+            { owner_user_id: s.userId, label_key: '', created_at: now + 4 },
+            { owner_user_id: s.userId, label_key: 'bélka', created_at: now + 1 },
+            { owner_user_id: other, label_key: 'strelka', created_at: now + 2 },
+          ].sort((x, y) =>
+            x.owner_user_id === y.owner_user_id
+              ? x.label_key < y.label_key
+                ? -1
+                : 1
+              : x.owner_user_id < y.owner_user_id
+                ? -1
+                : 1,
+          ),
+        );
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});

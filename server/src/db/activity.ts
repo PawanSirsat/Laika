@@ -13,10 +13,17 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { type Db } from './client.ts';
-import { type ActivityType, type ActorKind } from './enums.ts';
+import { type ActivityType, type ActorKind, LIVE_CLAIM_STATES } from './enums.ts';
 import { newId } from './ids.ts';
 import * as schema from './schema.ts';
-import { activity, boardActivityDays, tokens, type Activity } from './schema.ts';
+import {
+  activity,
+  agentSessions,
+  boardActivityDays,
+  taskClaims,
+  tokens,
+  type Activity,
+} from './schema.ts';
 
 /**
  * The only way into `activity` (SPEC §4.8).
@@ -38,6 +45,12 @@ export interface AppendActivity {
   actorId?: string | null;
   actorKind: ActorKind;
   actorTokenId?: string | null;
+  /**
+   * The agent session the change was made under, when the writer knows it —
+   * a claim just taken, a reclaim. Absent, the session holding the writing
+   * agent's live claim on the task is used, or none (D-118, LAI-586).
+   */
+  agentSessionId?: string | null;
   type: ActivityType;
   payload?: unknown;
   /** Injectable so tests are not at the mercy of clock resolution. */
@@ -59,6 +72,11 @@ export interface AppendActivity {
  * logged, whoever calls this and however.
  */
 export function appendActivity(db: Db, entry: AppendActivity): Activity {
+  const agentId = agentOfToken(db, entry.actorTokenId ?? null);
+  const session =
+    agentId === null
+      ? null
+      : sessionOfAgent(db, agentId, entry.taskId ?? null, entry.agentSessionId ?? null);
   const row = {
     id: newId(),
     orgId: entry.orgId,
@@ -67,7 +85,11 @@ export function appendActivity(db: Db, entry: AppendActivity): Activity {
     actorId: entry.actorId ?? null,
     actorKind: entry.actorKind,
     actorTokenId: entry.actorTokenId ?? null,
-    agentId: agentOfToken(db, entry.actorTokenId ?? null),
+    agentId,
+    agentSessionId: session?.id ?? null,
+    sessionHarness: session?.harness ?? null,
+    sessionHarnessVersion: session?.harnessVersion ?? null,
+    sessionModel: session?.model ?? null,
     type: entry.type,
     payloadJson: JSON.stringify(entry.payload ?? {}),
     createdAt: entry.now ?? Date.now(),
@@ -96,6 +118,56 @@ function agentOfToken(db: Db, tokenId: string | null): string | null {
     .where(eq(tokens.id, tokenId))
     .get();
   return row?.agentId ?? null;
+}
+
+/**
+ * The session an agent's row is written under, with what it reported about
+ * itself **at that moment** (D-118, LAI-586): the row keeps the snapshot, so
+ * a model changed by a later heartbeat does not rewrite what this row says
+ * ran. The session named by the writer — it must be this agent's — else the
+ * one holding this agent's live claim on the task, else none: a change made
+ * under no claim was made by no session we can name, and none is guessed.
+ * Like `agentOfToken`, read from the database, never from a request.
+ */
+function sessionOfAgent(
+  db: Db,
+  agentId: string,
+  taskId: string | null,
+  sessionId: string | null,
+): {
+  id: string;
+  harness: string | null;
+  harnessVersion: string | null;
+  model: string | null;
+} | null {
+  let id = sessionId;
+  if (id === null && taskId !== null) {
+    id =
+      db
+        .select({ sessionId: taskClaims.sessionId })
+        .from(taskClaims)
+        .where(
+          and(
+            eq(taskClaims.taskId, taskId),
+            eq(taskClaims.agentId, agentId),
+            inArray(taskClaims.state, [...LIVE_CLAIM_STATES]),
+          ),
+        )
+        .get()?.sessionId ?? null;
+  }
+  if (id === null) return null;
+  return (
+    db
+      .select({
+        id: agentSessions.id,
+        harness: agentSessions.harness,
+        harnessVersion: agentSessions.harnessVersion,
+        model: agentSessions.model,
+      })
+      .from(agentSessions)
+      .where(and(eq(agentSessions.id, id), eq(agentSessions.agentId, agentId)))
+      .get() ?? null
+  );
 }
 
 /**

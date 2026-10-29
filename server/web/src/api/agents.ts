@@ -14,10 +14,8 @@ import type { TokenScope, TokenView } from './tokens.ts';
  * revoke) is §3.1 `agent.manage_own`, which the server grants to a **signed-in
  * web session only** — a token, an agent's own included, is refused.
  *
- * The shapes mirror `server/src/services/agents.ts`. They are not yet in
- * `view-type-drift.test.ts`'s `PAIRS`: pairing them retires three entries in
- * the server's `UNPAIRED` list, which is CORE's file, so the pairing is a
- * two-owner change (CLAUDE.md §4.4) and is filed rather than reached across.
+ * The shapes mirror `server/src/services/agents.ts`, and
+ * `view-type-drift.test.ts`'s `PAIRS` holds all three to it (LAI-564).
  */
 
 /** A grant reads with a token's two scope words, because it narrows the same way. */

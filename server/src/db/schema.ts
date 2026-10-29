@@ -800,6 +800,21 @@ export const activity = sqliteTable(
     agentId: text('agent_id').references((): AnySQLiteColumn => agents.id, {
       onDelete: 'restrict',
     }),
+    /**
+     * The agent session the row was written under, and what that session
+     * reported about itself **at that moment** (D-118, LAI-586) — a snapshot,
+     * because a heartbeat may change the session's model afterwards and this
+     * row must keep saying what ran when it was written. Read by the activity
+     * writer from the session holding the agent's live claim on the task, or
+     * from the session a claim was just taken under — never from a request.
+     * Null for anything not written by an agent session, and **every row
+     * written before the columns existed: never back-filled**. No foreign key:
+     * the snapshot is the record, and an append-only row cannot be nulled.
+     */
+    agentSessionId: text('agent_session_id'),
+    sessionHarness: text('session_harness'),
+    sessionHarnessVersion: text('session_harness_version'),
+    sessionModel: text('session_model'),
     type: text('type', { enum: ACTIVITY_TYPES }).notNull(),
     payloadJson: text('payload_json').notNull().default('{}'),
     createdAt,
@@ -918,6 +933,22 @@ export const agents = sqliteTable(
   ],
 );
 
+// --------------------------------------------- §4.67 recognised_agent_devices
+
+/** The owner's confirmed labels; no row means unrecognised (LAI-590). */
+export const recognisedAgentDevices = sqliteTable(
+  'recognised_agent_devices',
+  {
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Trimmed, lower case; the empty key groups null/blank labels. */
+    labelKey: text('label_key').notNull(),
+    createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.ownerUserId, t.labelKey] })],
+);
+
 // ---------------------------------------------- §4.64 agent_project_grants
 
 /**
@@ -1017,6 +1048,14 @@ export const agentSessions = sqliteTable(
     endedAt: integer('ended_at'),
     endReason: text('end_reason', { enum: AGENT_SESSION_END_REASONS }),
     clientVersion: text('client_version'),
+    /**
+     * What actually ran, **self-reported** (D-118, LAI-586): the underlying
+     * harness — `codex` under a manager that registered as `omnigent` — its
+     * version, and the model, which a heartbeat may change. Shown, labelled as
+     * self-reported, and never read by `can()`, the fence or a claim.
+     */
+    harness: text('harness'),
+    harnessVersion: text('harness_version'),
     model: text('model'),
     /** Nullable until the delivery work reads it (proposal §4.6). */
     contextRevisionSeen: integer('context_revision_seen'),

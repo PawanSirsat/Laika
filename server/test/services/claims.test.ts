@@ -22,6 +22,7 @@ import {
   expireClaims,
   heartbeatAgentSession,
   leaseLapsed,
+  liveClaimViews,
   reclaimTask,
   startAgentSession,
 } from '../../src/services/claims.ts';
@@ -32,6 +33,7 @@ import {
   createTask,
   finishTask,
   getTask,
+  listTasks,
   startWorking,
   updateTask,
 } from '../../src/services/tasks.ts';
@@ -497,12 +499,15 @@ describe('the explicit reclaim', () => {
     });
   });
 
-  it('refuses an agent whose grant was taken away since: agent_not_granted', () => {
+  it('answers an agent whose grant was taken away since as if the task did not exist', () => {
+    // With no grant it cannot read the project, and a reclaim answers a task
+    // the caller cannot see exactly as one that does not exist (LAI-586
+    // review) — it was `403 agent_not_granted` until then.
     const { a, id } = expired();
     setAgentGrants(t.sqlite, t.db, owner, a.id, [], T0 + LEASE);
     expect(refusal(() => reclaimTask(t.sqlite, t.db, a.actor, id, { now: T0 + LEASE }))).toEqual({
-      code: 'forbidden',
-      reason: 'agent_not_granted',
+      code: 'not_found',
+      reason: undefined,
     });
   });
 
@@ -588,6 +593,268 @@ describe('sessions', () => {
       code: 'not_found',
       reason: undefined,
     });
+  });
+});
+
+describe('the live claim on a task read (LAI-568)', () => {
+  const SUSPECT = DEFAULT_CLAIM_TIMINGS.suspectMs;
+
+  /** The task as a list read and a single read both serve it, at `now`. */
+  function reads(id: string, now: number) {
+    const listed = listTasks(t.db, owner, 'laika', { limit: 50, cursor: null, now }).find(
+      (v) => v.id === id,
+    );
+    expect(listed, 'the task is on the list').toBeDefined();
+    return { single: getTask(t.db, owner, id, now).claim, listed: listed!.claim };
+  }
+
+  function claimedOnDevice() {
+    const created = registerAgent(t.sqlite, t.db, owner, {
+      displayName: 'Claude',
+      harness: 'claude-code',
+      deviceLabel: 'laptop-1',
+      grants: [{ projectId: s.projectId, scope: 'full' }],
+    });
+    const a = { id: created.agent.id, actor: resolveTokenActor(t.db, created.secret, T0) };
+    const id = task();
+    const claim = startWorking(t.sqlite, t.db, a.actor, id, { now: T0 }).claim!;
+    return { a, id, claim };
+  }
+
+  it('serves the holder’s session, heartbeat, connection and generation on both reads', () => {
+    const { a, id, claim } = claimedOnDevice();
+    const expected = {
+      generation: 1,
+      state: 'active',
+      agent_id: a.id,
+      session_id: claim.session_id,
+      lease_expires_at: T0 + LEASE,
+      last_heartbeat_at: T0,
+      // The server's own age of it, as of the read (LAI-597 review).
+      heartbeat_age_ms: MIN,
+      connection: 'live',
+      suspect_after_ms: SUSPECT,
+      device_label: 'laptop-1',
+      // The session `startWorking` opened reported nothing (LAI-593).
+      harness: null,
+      harness_version: null,
+      model: null,
+    };
+
+    const { single, listed } = reads(id, T0 + MIN);
+    expect(single).toEqual(expected);
+    expect(listed).toEqual(expected);
+  });
+
+  it('serves what the holding session said ran, on both reads (LAI-593)', () => {
+    const a = agent();
+    const id = task();
+    const session = startAgentSession(
+      t.db,
+      a.actor,
+      { harness: 'claude-code', harness_version: '2.1.0', model: 'claude-opus-5-5' },
+      T0,
+    );
+    startWorking(t.sqlite, t.db, a.actor, id, { sessionId: session.id, now: T0 });
+
+    const { single, listed } = reads(id, T0 + MIN);
+    expect(single).toMatchObject({
+      session_id: session.id,
+      harness: 'claude-code',
+      harness_version: '2.1.0',
+      model: 'claude-opus-5-5',
+    });
+    expect(listed).toEqual(single);
+  });
+
+  it('a heartbeat that changes the model shows on the next read; one that omits it keeps it', () => {
+    const a = agent();
+    const id = task();
+    const session = startAgentSession(t.db, a.actor, { model: 'gpt-5.5' }, T0);
+    startWorking(t.sqlite, t.db, a.actor, id, { sessionId: session.id, now: T0 });
+    expect(reads(id, T0 + MIN).single?.model).toBe('gpt-5.5');
+
+    heartbeatAgentSession(t.sqlite, t.db, a.actor, session.id, T0 + MIN, { model: 'gpt-5.6' });
+    const after = reads(id, T0 + 2 * MIN);
+    expect(after.single?.model).toBe('gpt-5.6');
+    expect(after.listed?.model).toBe('gpt-5.6');
+
+    heartbeatAgentSession(t.sqlite, t.db, a.actor, session.id, T0 + 2 * MIN);
+    expect(reads(id, T0 + 3 * MIN).single?.model).toBe('gpt-5.6');
+  });
+
+  it('null where the session reported nothing — never the agent’s registered harness', () => {
+    // `agent()` registers harness `claude-code`; the session says nothing.
+    const a = agent();
+    const id = task();
+    const session = startAgentSession(t.db, a.actor, { model: 'claude-opus-5-5' }, T0);
+    startWorking(t.sqlite, t.db, a.actor, id, { sessionId: session.id, now: T0 });
+
+    const { single, listed } = reads(id, T0 + MIN);
+    expect(single).toMatchObject({
+      harness: null,
+      harness_version: null,
+      model: 'claude-opus-5-5',
+    });
+    expect(listed).toEqual(single);
+  });
+
+  it('is null on a task nothing has claimed, on both reads', () => {
+    const id = task();
+    expect(reads(id, T0)).toEqual({ single: null, listed: null });
+  });
+
+  it('turns suspect at the suspect interval with no heartbeat, and live again after one', () => {
+    const { a, id, claim } = claimedOnDevice();
+
+    expect(reads(id, T0 + SUSPECT - 1).single?.connection).toBe('live');
+    const late = reads(id, T0 + SUSPECT);
+    expect(late.single?.connection).toBe('suspect');
+    expect(late.listed?.connection).toBe('suspect');
+    // Still the live claim: suspect decides nothing, the lease has not lapsed.
+    expect(late.single).toMatchObject({ generation: 1, state: 'active' });
+
+    expect(late.single?.heartbeat_age_ms).toBe(SUSPECT);
+    expect(late.listed?.heartbeat_age_ms).toBe(SUSPECT);
+
+    heartbeatAgentSession(t.sqlite, t.db, a.actor, claim.session_id, T0 + SUSPECT + MIN);
+    expect(reads(id, T0 + SUSPECT + MIN).single).toMatchObject({
+      connection: 'live',
+      last_heartbeat_at: T0 + SUSPECT + MIN,
+      heartbeat_age_ms: 0,
+    });
+  });
+
+  it('is null once the lease has lapsed, before the scan and after it', () => {
+    const { id } = claimedOnDevice();
+
+    expect(reads(id, T0 + LEASE - 1).single?.generation).toBe(1);
+    expect(reads(id, T0 + LEASE)).toEqual({ single: null, listed: null });
+
+    expect(expireClaims(t.db, T0 + LEASE).changed).toBe(1);
+    expect(claimsOf(id)[0]?.state).toBe('expired');
+    expect(reads(id, T0 + LEASE)).toEqual({ single: null, listed: null });
+    expect(rows(id, 'task.claim_expired')).toHaveLength(1);
+  });
+
+  it('is null once the claim is released — the holder finished, or ended its session', () => {
+    const finished = claimedOnDevice();
+    finishTask(t.sqlite, t.db, at(finished.a.actor, 1), finished.id, {
+      summary: 'Done',
+      now: T0 + MIN,
+    });
+    expect(claimsOf(finished.id)[0]?.state).toBe('released');
+    expect(reads(finished.id, T0 + MIN)).toEqual({ single: null, listed: null });
+
+    const ended = claimedOnDevice();
+    endAgentSession(t.sqlite, t.db, ended.a.actor, ended.claim.session_id, T0 + MIN);
+    expect(claimsOf(ended.id)[0]?.state).toBe('released');
+    expect(reads(ended.id, T0 + MIN)).toEqual({ single: null, listed: null });
+  });
+
+  it('is null once the claim is transferred', () => {
+    const { id } = claimedOnDevice();
+    // No service writes `transferred` yet (LAI-546); the row is what a read sees.
+    t.db
+      .update(taskClaims)
+      .set({ state: 'transferred', endedAt: T0 + MIN })
+      .where(eq(taskClaims.taskId, id))
+      .run();
+    expect(reads(id, T0 + MIN)).toEqual({ single: null, listed: null });
+  });
+
+  it('serves a paused claim, which still holds the task', () => {
+    const { id } = claimedOnDevice();
+    t.db.update(taskClaims).set({ state: 'paused' }).where(eq(taskClaims.taskId, id)).run();
+    // A paused claim is not lapsed by its lease: the scan expires only `active`.
+    const { single, listed } = reads(id, T0 + LEASE + MIN);
+    expect(single).toMatchObject({ state: 'paused', generation: 1 });
+    expect(listed).toEqual(single);
+  });
+
+  it('is suspect while a revoked agent’s claim waits to lapse: its session has ended', () => {
+    const { a, id } = claimedOnDevice();
+    revokeAgent(t.sqlite, t.db, owner, a.id, T0 + MIN);
+    const { single, listed } = reads(id, T0 + 2 * MIN);
+    expect(single).toMatchObject({ generation: 1, state: 'active', connection: 'suspect' });
+    expect(listed).toEqual(single);
+  });
+
+  it('after a reclaim, serves only the live generation’s session and heartbeat', () => {
+    const { a, id, claim: old } = claimedOnDevice();
+    expect(expireClaims(t.db, T0 + LEASE).changed).toBe(1);
+
+    const fresh = startAgentSession(t.db, a.actor, {}, T0 + LEASE + MIN);
+    const taken = reclaimTask(t.sqlite, t.db, a.actor, id, {
+      sessionId: fresh.id,
+      now: T0 + LEASE + MIN,
+    });
+    expect(taken.claim).toMatchObject({ generation: 2, session_id: fresh.id });
+    // The old session keeps beating, later than the new one: its heartbeat is
+    // the newest on the task, and still not the claim's.
+    heartbeatAgentSession(t.sqlite, t.db, a.actor, old.session_id, T0 + LEASE + 2 * MIN);
+    expect(fresh.id).not.toBe(old.session_id);
+
+    const { single, listed } = reads(id, T0 + LEASE + 2 * MIN);
+    expect(single).toMatchObject({
+      generation: 2,
+      state: 'active',
+      session_id: fresh.id,
+      last_heartbeat_at: T0 + LEASE + MIN,
+      lease_expires_at: T0 + LEASE + MIN + LEASE,
+      connection: 'live',
+    });
+    expect(listed).toEqual(single);
+    expect(claimsOf(id).map((c) => [c.generation, c.state])).toEqual([
+      [1, 'expired'],
+      [2, 'active'],
+    ]);
+  });
+
+  it('reads the claims of a page in one statement, however many tasks it holds', () => {
+    /** The statements prepared during `run` — the driver instrumented as LAI-091's test does. */
+    function statementsDuring(run: () => void): string[] {
+      const recorded: string[] = [];
+      const real = t.sqlite.prepare.bind(t.sqlite);
+      (t.sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
+        recorded.push(source);
+        return real(source);
+      };
+      try {
+        run();
+      } finally {
+        (t.sqlite as unknown as { prepare: typeof real }).prepare = real;
+      }
+      return recorded;
+    }
+
+    const one = [claimedOnDevice().id];
+    const five = [...one, ...[1, 2, 3, 4].map(() => claimedOnDevice().id)];
+
+    let small = new Map<string, unknown>();
+    let large = new Map<string, unknown>();
+    const forOne = statementsDuring(() => (small = liveClaimViews(t.db, one, T0 + MIN)));
+    const forFive = statementsDuring(() => (large = liveClaimViews(t.db, five, T0 + MIN)));
+
+    // The census is real: every task came back with its claim.
+    expect(small.size).toBe(1);
+    expect(large.size).toBe(5);
+    expect(forOne).toHaveLength(1);
+    expect(forFive).toHaveLength(1);
+    expect(forFive[0]).toMatch(/from "task_claims"/);
+  });
+
+  it('reads every claim on a page together: each task gets its own', () => {
+    const first = claimedOnDevice();
+    const second = claimedOnDevice();
+    const free = task('Free');
+
+    const page = listTasks(t.db, owner, 'laika', { limit: 50, cursor: null, now: T0 + MIN });
+    const byId = new Map(page.map((v) => [v.id, v.claim]));
+    expect(byId.get(first.id)?.session_id).toBe(first.claim.session_id);
+    expect(byId.get(second.id)?.session_id).toBe(second.claim.session_id);
+    expect(first.claim.session_id).not.toBe(second.claim.session_id);
+    expect(byId.get(free)).toBeNull();
   });
 });
 
