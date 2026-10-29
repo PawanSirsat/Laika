@@ -1050,16 +1050,25 @@ function AgentTile({
  * One copyable block, with its file, its warning and its note. The line that
  * holds the real token is highlighted; the text itself is untouched, so what
  * the reader sees, selects and copies are the same characters.
+ *
+ * Exported for Developer access → Agents (LAI-537), whose step 4 shows the
+ * same blocks carrying the agent's own token rather than the reader's.
  */
-function SetupBlockView({
+export function SetupBlockView({
   block,
   secret,
   main = false,
   onCopied,
+  tokenTag = 'carries your token',
 }: {
   readonly block: SetupBlock;
   readonly secret: string | undefined;
   readonly main?: boolean;
+  /**
+   * The badge on a block that holds a token. Yours on Connect; the Agents
+   * wizard's blocks hold the agent's own token, and say so (LAI-583).
+   */
+  readonly tokenTag?: string;
   /** Called when this block's copy *succeeded* — not on a click, not on *Press ⌘C*. */
   readonly onCopied?: (() => void) | undefined;
 }) {
@@ -1094,7 +1103,7 @@ function SetupBlockView({
           <span className="conn-block-label" id={labelId}>
             <PathLabel text={block.label} />
           </span>
-          {holdsToken && <span className="conn-block-tag">carries your token</span>}
+          {holdsToken && <span className="conn-block-tag">{tokenTag}</span>}
           <CopyButton
             text={block.text}
             selects={ref}

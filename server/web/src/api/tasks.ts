@@ -1,3 +1,4 @@
+import type { SelectedAgent } from './selected-agent.ts';
 import { type TaskSize } from './estimates.ts';
 import { request } from './client.ts';
 import { ApiError } from './errors.ts';
@@ -185,6 +186,14 @@ export interface TaskSummary {
    * `owner/repo#N` (LAI-286).
    */
   readonly external_ref: string | null;
+  /**
+   * The agent meant to do the work, or null (§4.5, D-114 item 7, LAI-535) —
+   * **not** the assignee and not a claim: selecting one opens a work request
+   * and changes nothing else. Its owner rides with it. Optional because a view
+   * served before LAI-535 has none, which reads as null
+   * (`selectedAgentOf`).
+   */
+  readonly selected_agent?: SelectedAgent | null;
   readonly created_at: number;
   readonly updated_at: number;
 }
@@ -574,6 +583,12 @@ export interface TaskEdit {
   readonly planned_start?: number | null;
   /** An outside id (LAI-780); the server upper-cases it. `null` clears it. */
   readonly external_ref?: string | null;
+  /**
+   * The agent to send a work request to (LAI-535); `null` withdraws it. Only
+   * the caller's own, active agent granted `full` here is accepted — anything
+   * else is `422` with `details.reason` (`selected-agent.ts`).
+   */
+  readonly selected_agent_id?: string | null;
 }
 
 /**
