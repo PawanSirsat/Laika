@@ -6,8 +6,9 @@ assignee: core
 priority: p1
 depends-on: [LAI-541, LAI-544]
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-29T15:47:30Z
+finished: 2026-10-29T17:45:00Z
 ---
 
 Implements **proposal §4.3, §4.3.1** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -51,23 +52,23 @@ match the approved D-116 and D-116a. The text to build against is SPEC §4.68 �
 
 ## Acceptance criteria
 
-- [ ] Registering twice with one key returns the same row and writes one `checkpoint_saved` (asserted).
-- [ ] No code path makes an outbound HTTP request (asserted by a test that fails on any network call).
-- [ ] The manifest names files and counts only; no file content, diff or prompt text is stored (asserted by schema and a test).
-- [ ] A checkpoint with failing tests is valid and stores the status as given.
+- [x] Registering twice with one key returns the same row and writes one `checkpoint_saved` (asserted).
+- [x] No code path makes an outbound HTTP request (asserted by a test that fails on any network call).
+- [x] The manifest names files and counts only; no file content, diff or prompt text is stored (asserted by schema and a test).
+- [x] A checkpoint with failing tests is valid and stores the status as given.
 - [ ] Repo-root gate exits 0, or red only on the client mirror assertion quoted verbatim, retired by LAI-549.
-- [ ] Without a matching signed delivery a checkpoint stays `pending`; one creation delivery putting the tag `laika-ckpt/<LAI-NNN>/<checkpoint-id>` at exactly the SHA makes it `verified`; a deletion of that tag makes it `ref_deleted`. **A delivery for the work branch at the same SHA changes nothing** (asserted). `superseded` is derived on read when a newer verified checkpoint exists on the same claim, and is never stored.
-- [ ] Processing the same `X-GitHub-Delivery` twice changes the state once (asserted).
-- [ ] **D-116a — the state is a function of the set, never of arrival order** (each asserted in both orders): {creation} → `verified`; {creation, deletion} → `ref_deleted`; {creation, deletion, deletion (second id)} → `ref_deleted`; {deletion} → `uncertain`; {creation, update} → `uncertain`. **No sequence returns a ref to `verified`** once its set holds a deletion or a foreign transition.
-- [ ] A checkpoint is never `verified` on the agent's word: no API field or MCP argument can set it (asserted).
-- [ ] A checkpoint in a repo other than the project's configured one is refused `422 repo_not_configured`.
-- [ ] After 10 minutes (configurable, injected clock) still `pending`, the checkpoint read reports it so the UI shows "Verification pending — no push notice from GitHub yet".
-- [ ] The service exposes the accept-time check LAI-546 calls: a differing `verified_commit_sha` is `422 checkpoint_mismatch`; a non-`verified` checkpoint is `409 checkpoint_unverified`.
+- [x] Without a matching signed delivery a checkpoint stays `pending`; one creation delivery putting the tag `laika-ckpt/<LAI-NNN>/<checkpoint-id>` at exactly the SHA makes it `verified`; a deletion of that tag makes it `ref_deleted`. **A delivery for the work branch at the same SHA changes nothing** (asserted). `superseded` is derived on read when a newer verified checkpoint exists on the same claim, and is never stored.
+- [x] Processing the same `X-GitHub-Delivery` twice changes the state once (asserted).
+- [x] **D-116a — the state is a function of the set, never of arrival order** (each asserted in both orders): {creation} → `verified`; {creation, deletion} → `ref_deleted`; {creation, deletion, deletion (second id)} → `ref_deleted`; {deletion} → `uncertain`; {creation, update} → `uncertain`. **No sequence returns a ref to `verified`** once its set holds a deletion or a foreign transition.
+- [x] A checkpoint is never `verified` on the agent's word: no API field or MCP argument can set it (asserted).
+- [x] A checkpoint in a repo other than the project's configured one is refused `422 repo_not_configured`.
+- [x] After 10 minutes (configurable, injected clock) still `pending`, the checkpoint read reports it so the UI shows "Verification pending — no push notice from GitHub yet".
+- [x] The service exposes the accept-time check LAI-546 calls: a differing `verified_commit_sha` is `422 checkpoint_mismatch`; a non-`verified` checkpoint is `409 checkpoint_unverified`.
 - [ ] Retention (injected clock): checkpoints, their refs and those refs' transitions are kept 90 days after Done/Cancelled and then deleted; transitions for a ref name never registered are deleted 90 days after arrival. A closed `handoff_offers` row naming a pruned checkpoint survives with `checkpoint_id` null and its `checkpoint_commit_sha` intact (LAI-546 builds the column; assert once both land).
-- [ ] **A delivery that arrives before its checkpoint is registered** is stored, and the registration that follows derives `verified` from it in its own transaction (asserted both ways round, including concurrently).
-- [ ] **Registering a re-tag** sets the checkpoint to its new ref's state at that moment — `pending` with `pending_since` restarted when nothing arrived — and is the only change to `verification` no delivery makes (asserted).
-- [ ] A registration retry with the same `idempotency_key` and body answers the existing checkpoint `200` even after the session's claim was paused by an offer; a different body is `409` (asserted).
-- [ ] Consent: `PUT` / `DELETE` are the owner's, session only; `GET` answers the owner and the agent's own token; no other caller (asserted).
+- [x] **A delivery that arrives before its checkpoint is registered** is stored, and the registration that follows derives `verified` from it in its own transaction (asserted both ways round, including concurrently).
+- [x] **Registering a re-tag** sets the checkpoint to its new ref's state at that moment — `pending` with `pending_since` restarted when nothing arrived — and is the only change to `verification` no delivery makes (asserted).
+- [x] A registration retry with the same `idempotency_key` and body answers the existing checkpoint `200` even after the session's claim was paused by an offer; a different body is `409` (asserted).
+- [x] Consent: `PUT` / `DELETE` are the owner's, session only; `GET` answers the owner and the agent's own token; no other caller (asserted).
 - [ ] **Live test recorded in this file:** whether GitHub sends a `push` delivery for creating and for deleting a `laika-ckpt/*` tag, checked against the real webhook (proposal §4.3.1 marks it Documented-not-tested). If it does not, stop and report before building on it.
 
 
@@ -249,7 +250,17 @@ reds above it found three census tests in files this task had not touched,
 all CORE's and all fixed after it: `agent-sessions.test.ts` › *the app's route
 table is exactly FENCED and NOT_FENCED*; `tasks.test.ts` › *classifies every
 table that references a task*; `response-type-coverage.test.ts` (three cases).
-Re-run below.
+Re-run: gate run **40919980157** on `baba4502` — **Lint success, Format success,
+Test failure**, and the test failures are exactly the cross-owner reds quoted
+above (server 13 failed / 4346 passed / 10 skipped; cli 2 failed; server/web 4
+failed). Nothing of CORE's is red.
+
+**Left unticked, on purpose:** the repo-root gate (red only on other owners'
+halves, quoted); retention's closed-offer half (LAI-546's column); the live
+GitHub test and (a) – (g) against a real repository — (a), (b), (c), (e), (g)
+and the ordering rule are asserted on signed fixture deliveries in
+`test/http/routes/checkpoints.test.ts`, but the criteria ask for the real
+webhook, which could not be reached (above); (d) and (f) are not tested at all.
 
 ### Verification (touched files only, one at a time, `uptime` first — the owner's rule)
 
