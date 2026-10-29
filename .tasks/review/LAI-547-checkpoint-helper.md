@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: [LAI-542, LAI-545]
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-30T04:50:00Z
+finished: 2026-10-30T05:22:00Z
 ---
 
 Implements **proposal §4.3.1, §4.7** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -35,14 +36,14 @@ retrying registration with the same key if it fails.
 
 ## Acceptance criteria
 
-- [ ] A file matching a secrets pattern is refused and named (asserted).
-- [ ] With `index.lock` present the command refuses with a clear message and does nothing.
-- [ ] A `master` branch or a non-fast-forward push is refused without `--force` being reachable.
-- [ ] Push succeeds + registration fails → next run registers with the same key and the server shows one checkpoint.
-- [ ] Repo-root gate exits 0.
-- [ ] After a checkpoint the remote has the tag `laika-ckpt/<LAI-NNN>/<checkpoint-id>` pointing at exactly the registered SHA (asserted against a bare remote).
-- [ ] After registering, the helper prints "Verification pending" until the server reports `verified`, and after 10 minutes "Verification pending — no push notice from GitHub yet" with the hint to check the webhook's recent deliveries and use Redeliver.
-- [ ] `prune --dry-run` lists exactly the due tags and deletes nothing (asserted by `git ls-remote` before and after); there is no non-dry-run mode in this task.
+- [x] A file matching a secrets pattern is refused and named (asserted).
+- [x] With `index.lock` present the command refuses with a clear message and does nothing.
+- [x] A `master` branch or a non-fast-forward push is refused without `--force` being reachable.
+- [x] Push succeeds + registration fails → next run registers with the same key and the server shows one checkpoint.
+- [x] Repo-root gate exits 0.
+- [x] After a checkpoint the remote has the tag `laika-ckpt/<LAI-NNN>/<checkpoint-id>` pointing at exactly the registered SHA (asserted against a bare remote).
+- [x] After registering, the helper prints "Verification pending" until the server reports `verified`, and after 10 minutes "Verification pending — no push notice from GitHub yet" with the hint to check the webhook's recent deliveries and use Redeliver.
+- [x] `prune --dry-run` lists exactly the due tags and deletes nothing (asserted by `git ls-remote` before and after); there is no non-dry-run mode in this task.
 
 ## Tests and UI evidence required
 
@@ -73,3 +74,17 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 None.
+
+## Builder notes (SHELL, Belka, 2026-10-30)
+
+- D-115 and D-116 were approved on 2026-10-29 (DECISIONS.md, PR #99), and
+  Phase 3 (#153) is on `master`, so the "blocked on decision" line above no
+  longer holds; the task was dispatched by polly on that basis.
+- The dispatch widened the scope inside `cli/`: `checkpoint status`, `note`
+  and `consent`, and the hook trigger (PreToolUse / PostToolUse / Stop /
+  SessionEnd). All in `cli/` plus the comment line of
+  `plugin/scripts/laika-agent-hook` (SHELL's).
+- "after 10 minutes" is measured by the board's clock and is configurable
+  (`LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS`, SPEC §4.70 "configurable"); the
+  e2e test sets it to 0 against the real board, the unit test asserts the
+  ten-minute boundary.
