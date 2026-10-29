@@ -2654,11 +2654,12 @@ describe('0068 widens handoff_offers on a populated 0067 database (LAI-546)', ()
       const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
       const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
       try {
-        // 0065's step calls the function `runMigrations` registers; drizzle's
-        // own migrator for the cut-back needs it too.
+        // 0065's and 0066's steps call the functions `runMigrations`
+        // registers; drizzle's own migrator for the cut-back needs them too.
         sqlite.function('laika_device_label_key', { deterministic: true }, (label) =>
           deviceLabelKey(typeof label === 'string' ? label : null),
         );
+        sqlite.function('laika_new_id', { deterministic: false }, () => newId());
         migrate(db, { migrationsFolder: dir });
         const s = seed(db);
         const now = Date.now();
