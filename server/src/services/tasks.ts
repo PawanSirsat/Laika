@@ -1418,8 +1418,17 @@ export function listedTaskSummary(view: TaskView): ListedTaskSummaryView {
   return { ...summaryOf(view), etag: taskEtag(view) };
 }
 
-/** The live claim's fields that move without a write (LAI-568): the heartbeat, the lease, the clock. */
-export const CLAIM_PULSE = ['last_heartbeat_at', 'lease_expires_at', 'connection'] as const;
+/**
+ * The live claim's fields that move without a write (LAI-568): the heartbeat,
+ * the lease, the clock — and the heartbeat's age, which moves on every read
+ * (LAI-597 review).
+ */
+export const CLAIM_PULSE = [
+  'last_heartbeat_at',
+  'heartbeat_age_ms',
+  'lease_expires_at',
+  'connection',
+] as const;
 
 function withoutPulse(claim: TaskLiveClaimView): Partial<TaskLiveClaimView> {
   const kept: Partial<TaskLiveClaimView> = { ...claim };
