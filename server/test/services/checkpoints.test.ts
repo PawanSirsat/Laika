@@ -368,6 +368,49 @@ describe('retention (D-115 item 9, §11.6)', () => {
     expect(pruneCheckpoints(h.db, cancelledOn + 90 * DAY + 1).checkpoints).toBe(1);
   });
 
+  it('a move between two cancelled statuses does not restart the clock', async () => {
+    await saveOn(taskId);
+    const created = await h.app.request('/api/v1/projects/laika/statuses', {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify({ name: 'Won’t do', category: 'cancelled' }),
+    });
+    expect(created.status, await created.clone().text()).toBe(201);
+    const cancelledStatuses = (
+      (await created.json()) as { data: { id: string; category: string }[] }
+    ).data.filter((status) => status.category === 'cancelled');
+    expect(cancelledStatuses, 'two cancelled statuses').toHaveLength(2);
+    const day0 = Date.UTC(2026, 0, 1);
+    async function move(status: Record<string, string>, at: number) {
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(at);
+      try {
+        const res = await h.app.request(`/api/v1/tasks/${taskId}/status`, {
+          method: 'POST',
+          headers: jsonHeaders({ Cookie: cookie }),
+          body: JSON.stringify(status),
+        });
+        expect(res.status, await res.clone().text()).toBe(200);
+      } finally {
+        clock.mockRestore();
+      }
+    }
+    await move({ status: 'cancelled' }, day0);
+    const now = h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()!.statusId;
+    const other = cancelledStatuses.find((status) => status.id !== now)!.id;
+    await move({ status_id: other }, day0 + 89 * DAY);
+    // Positive control: the second move was written, as a cancelled → cancelled row.
+    const moves = h.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.taskId, taskId), eq(activity.type, 'task.status_changed')))
+      .all()
+      .map((r) => JSON.parse(r.payloadJson) as { from: string; to: string });
+    expect(moves).toContainEqual(expect.objectContaining({ from: 'cancelled', to: 'cancelled' }));
+
+    expect(pruneCheckpoints(h.db, day0 + 90 * DAY).checkpoints).toBe(0);
+    expect(pruneCheckpoints(h.db, day0 + 90 * DAY + 1).checkpoints).toBe(1);
+  });
+
   it('counts a task cancelled twice from its latest cancellation', async () => {
     await saveOn(taskId);
     const day0 = Date.UTC(2026, 0, 1);

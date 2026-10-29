@@ -950,7 +950,7 @@ export function onCheckpointPruneStep(hook: (() => void) | null): void {
 
 /**
  * When each `cancelled` task was cancelled: its latest `task.status_changed`
- * row into `cancelled` (§4.8) — the status-change record, not `updated_at`,
+ * row **into** `cancelled` from another category (§4.8) — the status-change record, not `updated_at`,
  * which any later edit moves. A task with no such row (created cancelled, or
  * older than the record) falls back to `updated_at`, which is never earlier
  * than the cancel, so it is only ever kept longer.
@@ -968,8 +968,11 @@ function cancelledAt(db: Db, cancelled: readonly { id: string; updatedAt: number
       .from(activity)
       .where(and(eq(activity.type, 'task.status_changed'), inArray(activity.taskId, batch)))
       .all()) {
-      const to = (JSON.parse(row.payloadJson) as { to?: unknown }).to;
-      if (to !== 'cancelled' || row.taskId === null) continue;
+      const { from, to } = JSON.parse(row.payloadJson) as { from?: unknown; to?: unknown };
+      // A move between two cancelled statuses is not a §5 transition (LAI-738,
+      // D-077): it is written with `from` equal to `to`, and the task was
+      // cancelled before it. Only entering the category counts.
+      if (to !== 'cancelled' || from === 'cancelled' || row.taskId === null) continue;
       const seen = at.get(row.taskId);
       if (seen === undefined) continue;
       if (seen === null || row.createdAt > seen) at.set(row.taskId, row.createdAt);
