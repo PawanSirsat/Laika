@@ -2,11 +2,12 @@
 id: LAI-546
 title: 'Hand-off offers, approvals, acceptance, orphan recovery offers, project hand-off policy, limits, rate limits, verbs'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-545]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-29T23:30:00+02:00
 ---
 
 Implements **proposal §4.3.1, §4.4, §4.5** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -81,3 +82,9 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 Additive. Policy defaults (proposal §4.5) apply to existing projects with no row.
+
+## Claim note (2026-10-29, core on Belka)
+
+`depends-on: [LAI-545]` is not yet in `.tasks/done/` on `master`: LAI-545 is in
+review (draft PR #147). Started on the orchestrator's direction, stacked on
+`origin/LAI-545-checkpoints` — a deviation from §2 step 1, recorded here.
