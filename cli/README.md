@@ -600,7 +600,7 @@ it in `/hooks`.
 | Event | What the hook does |
 | --- | --- |
 | `SessionStart` | finds the harness process (the nearest ancestor named `claude` / `codex`; `LAIKA_AGENT_HARNESS_PID` overrides), records its PID **and start time**, opens the session (or reuses the one already open for this harness session), starts a detached watcher, and tells the model the `session_id` to pass to `start_working` |
-| `UserPromptSubmit`, `PostToolUse` | no network: opens the session if `SessionStart` never did, restarts a dead watcher while the harness lives, and shows a pending lost-claim notice once |
+| `UserPromptSubmit`, `PostToolUse` | no network: opens the session if `SessionStart` never did, restarts a dead watcher while the harness lives, notes a model or version that changed for the watcher's next beat, and shows a pending lost-claim notice once |
 | `SessionEnd` | hands `end` to a background process (the harness gives a hook 1–3 s); the board records `end_reason: ended` |
 
 **Why a watcher and not `PostToolUse` beats.** Hooks fire only at a prompt or a
@@ -615,8 +615,23 @@ sends nothing more and exits; the session is marked `abandoned`, not ended, so
 its claims **lapse and expire** (the recovery path) rather than being released
 as finished. A PID the OS later reuses is not mistaken for the harness: the
 start time must match too. Nothing reclaims automatically; a lost claim is
-shown to the model once, bounded to three tasks, and taking it back is an
-explicit reclaim.
+shown to the model once, bounded to three tasks. **Only an `expired` claim may
+be taken back**, by an explicit reclaim (`start_working` with `reclaim: true`);
+a `released` one — which is also how a claim the task's selected agent does not
+back ends (LAI-586) — or a `transferred` one is over, and the notice says not to
+reclaim it: the board would refuse.
+
+**What the session says about itself** (D-118, LAI-588) — self-reported, and
+deciding nothing on the board. The start sends `harness` (`claude-code` or
+`codex`, from the hook) and, when they can be told, `harness_version` and
+`model`; a heartbeat sends either again only when it changed (a `/model`
+switch, or a version first read after the start), and no body otherwise. Both
+are read from what the harness itself wrote: the hook input's `model`, and its
+transcript (`transcript_path`) — Claude Code's `version` and last reply's
+`message.model`; Codex's `session_meta` `cli_version` and last `turn_context`
+`model` — reading at most 256 KB from each end of the file, and only a regular
+file. **Nothing found is nothing sent**: a field is left out, never sent empty
+or guessed, and one the board's shape would refuse is left out too.
 
 **Network failures** retry the same session and never open another. A start
 carries an `Idempotency-Key` written to the state file before the first

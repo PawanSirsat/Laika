@@ -65,13 +65,27 @@ export interface ExecutionPanelProps {
   /** `tasks.selected_agent_id`, resolved. */
   readonly intended: PanelAgent | null;
   /**
-   * The session holding the claim now, if any. **`undefined` leaves the row
-   * out**: the live drawer cannot say yet, because no task read serves the
-   * live claim (LAI-568), and "No session holds this task" would be a claim.
+   * The session holding the live claim (LAI-568, LAI-597): a chip when its
+   * agent can be named, else words. **`undefined` leaves the row out** — a
+   * read with no live claim says nothing here, because "No session holds this
+   * task" is for a screen that knows it.
    */
-  readonly session?: PanelAgent | null | undefined;
-  /** When the session last checked in, worded: "40 s ago". `undefined` leaves the row out, as above. */
+  readonly session?: AgentChipProps | string | null | undefined;
+  /** When the session last checked in, worded: "3 min ago". `undefined` leaves the row out, as above. */
   readonly lastSeen?: string | null | undefined;
+  /** That heartbeat as a time, for `<time>` and the full date on hover. */
+  readonly lastSeenAt?: number | undefined;
+  /** The live claim's `session_id`, under Details. */
+  readonly liveSessionId?: string | undefined;
+  /**
+   * The working session's line (D-118, LAI-593): *Claude Code · Belka · Codex ·
+   * gpt-5.5*, under its chip. `undefined` when it reported neither.
+   */
+  readonly sessionLine?: string | undefined;
+  /** The working session's self-reported harness version, under Details. */
+  readonly sessionHarnessVersion?: string | null | undefined;
+  /** The working session's self-reported model, under Details. */
+  readonly sessionModel?: string | null | undefined;
   /** The latest claim the activity records. */
   readonly claim?: PanelClaim | undefined;
   /** The latest claim was marked `expired`: the notice, with its sentence verbatim. */
@@ -97,6 +111,11 @@ export function ExecutionPanel({
   intended,
   session,
   lastSeen,
+  lastSeenAt,
+  liveSessionId,
+  sessionLine,
+  sessionHarnessVersion,
+  sessionModel,
   checkpoint,
   pendingCheckpoint,
   handoff,
@@ -116,13 +135,39 @@ export function ExecutionPanel({
         {session !== undefined && (
           <div>
             <dt>Working session</dt>
-            <dd>{session === null ? 'No session holds this task' : <AgentChip {...session} />}</dd>
+            <dd data-working-session>
+              {session === null ? (
+                'No session holds this task'
+              ) : typeof session === 'string' ? (
+                session
+              ) : (
+                <AgentChip {...session} />
+              )}
+              {session !== null && sessionLine !== undefined && (
+                <span className="exec-line exec-session-line" data-session-line>
+                  {sessionLine}
+                </span>
+              )}
+            </dd>
           </div>
         )}
         {lastSeen !== undefined && (
           <div>
             <dt>Last seen</dt>
-            <dd>{lastSeen ?? 'Never'}</dd>
+            <dd data-last-seen>
+              {lastSeen === null ? (
+                'Never'
+              ) : lastSeenAt === undefined ? (
+                lastSeen
+              ) : (
+                <time
+                  dateTime={new Date(lastSeenAt).toISOString()}
+                  title={dateTime(lastSeenAt, Date.now())}
+                >
+                  {lastSeen}
+                </time>
+              )}
+            </dd>
           </div>
         )}
         {claim !== undefined && (
@@ -177,6 +222,9 @@ export function ExecutionPanel({
       </dl>
       <ExecutionDetails
         generation={generation}
+        liveSessionId={liveSessionId}
+        sessionHarnessVersion={sessionHarnessVersion}
+        sessionModel={sessionModel}
         claim={claim}
         checkpoint={checkpoint}
         pendingCheckpoint={pendingCheckpoint}
@@ -241,17 +289,30 @@ function CheckpointLine({ checkpoint }: { readonly checkpoint: PanelCheckpoint }
  */
 function ExecutionDetails({
   generation,
+  liveSessionId,
+  sessionHarnessVersion,
+  sessionModel,
   claim,
   checkpoint,
   pendingCheckpoint,
-}: Pick<ExecutionPanelProps, 'generation' | 'claim' | 'checkpoint' | 'pendingCheckpoint'>) {
+}: Pick<
+  ExecutionPanelProps,
+  | 'generation'
+  | 'liveSessionId'
+  | 'sessionHarnessVersion'
+  | 'sessionModel'
+  | 'claim'
+  | 'checkpoint'
+  | 'pendingCheckpoint'
+>) {
   const [open, setOpen] = useState(false);
   const region = useId();
   // Any self-reported field the panel shows — the harness in *Ran as*
   // included — carries the label.
   const reported =
-    claim !== undefined &&
-    [claim.harness, claim.harnessVersion, claim.model].some((field) => (field ?? null) !== null);
+    [sessionHarnessVersion, sessionModel].some((field) => (field ?? null) !== null) ||
+    (claim !== undefined &&
+      [claim.harness, claim.harnessVersion, claim.model].some((field) => (field ?? null) !== null));
   return (
     <div className="exec-details" data-exec-details>
       <button
@@ -273,6 +334,26 @@ function ExecutionDetails({
               <dt>Claim generation</dt>
               <dd>{generation === null ? 'No claim' : String(generation)}</dd>
             </div>
+            {liveSessionId !== undefined && (
+              <div>
+                <dt>Working session</dt>
+                <dd className="exec-sha" data-live-session-id>
+                  {liveSessionId}
+                </dd>
+              </div>
+            )}
+            {(sessionHarnessVersion ?? null) !== null && (
+              <div>
+                <dt>Working session harness version</dt>
+                <dd className="exec-sha">{sessionHarnessVersion}</dd>
+              </div>
+            )}
+            {(sessionModel ?? null) !== null && (
+              <div>
+                <dt>Working session model</dt>
+                <dd className="exec-sha">{sessionModel}</dd>
+              </div>
+            )}
             {(claim?.sessionId ?? null) !== null && (
               <div>
                 <dt>Session</dt>
