@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -54,13 +54,29 @@ export function DevicesSection({ canManage, generation, onRevoked }: DevicesSect
   const [asking, setAsking] = useState<AgentDevice | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [revokeError, setRevokeError] = useState<string | undefined>(undefined);
-  const [confirming, setConfirming] = useState<string | undefined>(undefined);
-  const [rowError, setRowError] = useState<{ key: string; text: string } | undefined>(undefined);
+  /** Devices with a *This is mine* in flight, each its own: one answer never clears another. */
+  const [confirming, setConfirming] = useState<ReadonlySet<string>>(() => new Set());
+  const [rowErrors, setRowErrors] = useState<ReadonlyMap<string, string>>(() => new Map());
   /** A device whose revoke button went away with the revoke: its heading takes focus. */
   const [refocus, setRefocus] = useState<string | undefined>(undefined);
   const headings = useRef(new Map<string, HTMLElement>());
-  // An older read never overwrites a newer one, nor a write made since it began.
+  /**
+   * **The newest read wins** (LAI-591 review round 1). Every read is numbered
+   * and only the latest one asked may land; an older answer is dropped. Every
+   * write here starts a fresh read once it answers — a write invalidates the
+   * shared GET cache, so that read is a new request, never one already in
+   * flight — and the Agents tab's own writes start one through `generation`.
+   * So whatever lands last was asked after the last change the screen knows
+   * of. (Dropping a read without asking again is the defect this replaced: a
+   * confirm that answered mid-refresh left the list from before a revoke.)
+   */
   const readGen = useRef(0);
+  /**
+   * Reads settled, applied or dropped — on the section as
+   * `data-reads-settled`, so a test waits for a late answer to have been
+   * *handled* rather than for a fixed time (the Agents tab's instrument).
+   */
+  const [readsSettled, setReadsSettled] = useState(0);
 
   const reload = useCallback((signal?: AbortSignal): void => {
     readGen.current += 1;
@@ -76,6 +92,9 @@ export function DevicesSection({ canManage, generation, onRevoked }: DevicesSect
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         if (gen !== readGen.current) return;
         setLoadError(cause);
+      })
+      .finally(() => {
+        setReadsSettled((n) => n + 1);
       });
   }, []);
 
@@ -95,21 +114,26 @@ export function DevicesSection({ canManage, generation, onRevoked }: DevicesSect
 
   const recognise = (device: AgentDevice): void => {
     const key = deviceKey(device);
-    setConfirming(key);
-    setRowError(undefined);
+    setConfirming((current) => new Set(current).add(key));
+    setRowErrors((current) => without(current, key));
     confirmAgentDevice(device.device_label)
       .then(() => {
-        // A write invalidates any read still in flight, which predates it.
-        readGen.current += 1;
         setDevices((current) =>
           current === undefined ? current : withRecognised(current, device.device_label),
         );
+        reload();
       })
       .catch((cause: unknown) => {
-        setRowError({ key, text: errorText(cause, 'Could not confirm that device.') });
+        setRowErrors((current) =>
+          new Map(current).set(key, errorText(cause, 'Could not confirm that device.')),
+        );
       })
       .finally(() => {
-        setConfirming(undefined);
+        setConfirming((current) => {
+          const next = new Set(current);
+          next.delete(key);
+          return next;
+        });
       });
   };
 
@@ -118,10 +142,10 @@ export function DevicesSection({ canManage, generation, onRevoked }: DevicesSect
     setRevokeError(undefined);
     revokeAgentDevice(device.device_label)
       .then(({ revoked_agent_ids }) => {
-        readGen.current += 1;
         setDevices((current) =>
           current === undefined ? current : withRevoked(current, revoked_agent_ids, Date.now()),
         );
+        reload();
         setNow(Date.now());
         setAsking(undefined);
         setRefocus(deviceKey(device));
@@ -141,6 +165,7 @@ export function DevicesSection({ canManage, generation, onRevoked }: DevicesSect
       aria-labelledby="devices-title"
       data-testid="devices-section"
       data-loaded={devices !== undefined}
+      data-reads-settled={readsSettled}
     >
       <div className="devices-head">
         <h3 className="devices-title" id="devices-title">
@@ -184,8 +209,8 @@ export function DevicesSection({ canManage, generation, onRevoked }: DevicesSect
                 device={device}
                 now={now}
                 canManage={canManage}
-                confirming={confirming === key}
-                error={rowError?.key === key ? rowError.text : undefined}
+                confirming={confirming.has(key)}
+                error={rowErrors.get(key)}
                 headingRef={(el) => {
                   if (el === null) headings.current.delete(key);
                   else headings.current.set(key, el);
@@ -381,6 +406,28 @@ function RevokeDeviceDialog({
 }) {
   const targets = revokeTargets(device);
   const count = targets.length;
+  /**
+   * **Focus never leaves a pending revoke** (review round 1, APG modal
+   * dialog). While the call is out the dialog disables both its buttons, which
+   * drops focus out of the modal — Tab then reached the page behind it, and
+   * after a failure Escape did nothing because nothing inside had focus. So
+   * while busy this status line takes focus and is the dialog's one Tab stop;
+   * when a failure ends the wait, focus goes to Cancel, from which Escape or
+   * Cancel closes the dialog and the dialog returns focus to *Revoke device*.
+   */
+  const holder = useRef<HTMLParagraphElement | null>(null);
+  const wasBusy = useRef(false);
+  useLayoutEffect(() => {
+    if (busy) {
+      holder.current?.focus();
+    } else if (wasBusy.current) {
+      holder.current
+        ?.closest('[data-confirm-dialog]')
+        ?.querySelector<HTMLElement>('[data-confirm-cancel] button')
+        ?.focus();
+    }
+    wasBusy.current = busy;
+  }, [busy]);
   return (
     <ConfirmDialog
       title={`Revoke every agent on ${device.display_name}?`}
@@ -390,11 +437,27 @@ function RevokeDeviceDialog({
       busy={busy}
       error={error}
       detail={
-        <ul className="devices-dialog-list" data-revoke-targets>
-          {targets.map((agent) => (
-            <li key={agent.id}>{agentLabel(agent)}</li>
-          ))}
-        </ul>
+        <>
+          <ul className="devices-dialog-list" data-revoke-targets>
+            {targets.map((agent) => (
+              <li key={agent.id}>{agentLabel(agent)}</li>
+            ))}
+          </ul>
+          <p
+            ref={holder}
+            className="devices-dialog-pending"
+            role="status"
+            tabIndex={busy ? 0 : -1}
+            data-revoke-pending
+          >
+            {busy && (
+              <>
+                <Spinner size="sm" />
+                Revoking {count === 1 ? 'this agent' : `these ${String(count)} agents`}
+              </>
+            )}
+          </p>
+        </>
       }
       onConfirm={onConfirm}
       onClose={onClose}
@@ -404,6 +467,13 @@ function RevokeDeviceDialog({
       other devices and your own tokens are not touched.
     </ConfirmDialog>
   );
+}
+
+function without(errors: ReadonlyMap<string, string>, key: string): ReadonlyMap<string, string> {
+  if (!errors.has(key)) return errors;
+  const next = new Map(errors);
+  next.delete(key);
+  return next;
 }
 
 function errorText(cause: unknown, fallback: string): string {
