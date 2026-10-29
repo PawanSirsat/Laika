@@ -11,7 +11,14 @@ import {
 } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
-import { activity, projectMemberships, projects, tasks, users } from '../db/schema.ts';
+import {
+  activity,
+  projectContextRevisions,
+  projectMemberships,
+  projects,
+  tasks,
+  users,
+} from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { assertCan, can, projectRoleOnJoin } from '../policy/can.ts';
@@ -735,6 +742,12 @@ export function updateProject(
 export interface ProjectContextView {
   context_md: string;
   /**
+   * The revision `context_md` is (§4.68, LAI-555): `0` for a document never
+   * written, then one more on every write. A write names it as
+   * `base_revision`, and a stale one is refused `409`.
+   */
+  revision: number;
+  /**
    * How long it is, so a client can show the budget before it truncates an
    * agent's context window rather than after (§7.3).
    */
@@ -774,6 +787,12 @@ export function getProjectContext(db: Db, actor: ResolvedActor, slug: string): P
 
 export interface UpdateProjectContextInput {
   context_md: string;
+  /**
+   * The revision this write replaces (proposal §4.6, LAI-555). Not the
+   * current one is `409 conflict`, `reason: stale_context_revision`, and
+   * nothing is written.
+   */
+  base_revision: number;
   now?: number;
 }
 
@@ -783,58 +802,117 @@ export function updateProjectContext(
   slug: string,
   input: UpdateProjectContextInput,
 ): ProjectContextView {
-  const row = requireProjectBySlug(db, slug);
-  assertCan(withProject(actor, row.id), 'project.settings.edit', { projectId: row.id });
+  return reviseProjectContext(db, actor, slug, {
+    baseRevision: input.base_revision,
+    next: () => input.context_md,
+    ...(input.now === undefined ? {} : { now: input.now }),
+  });
+}
 
-  // Enforced here rather than only in the route's schema: an MCP tool reaches
-  // this function without passing through zod, and a bound that only one entry
-  // point applies is not a bound.
-  if (input.context_md.length > CONTEXT_MD_LIMIT) {
-    throw new ApiError('unprocessable', 'That context document is too long', {
-      limit: CONTEXT_MD_LIMIT,
-      length: input.context_md.length,
-    });
-  }
+export interface ReviseProjectContextInput {
+  /**
+   * The revision the caller read, or `null` for a write computed from the
+   * current document **inside** the write — an append (LAI-555), which
+   * cannot lose a simultaneous one because nothing runs between its read and
+   * its write.
+   */
+  baseRevision: number | null;
+  next: (current: string) => string;
+  now?: number;
+}
 
+/**
+ * Every write to the context document (§7.3, §4.68): one new immutable
+ * revision, `projects.context_md` and `context_revision` moved to it, and one
+ * `project.context_updated` row — or, on a stale `baseRevision`, a `409` and
+ * no change at all.
+ *
+ * The check and the insert are one transaction, and the unique
+ * `(project_id, revision)` index is the backstop: two writers that both read
+ * revision N cannot both create N + 1.
+ */
+export function reviseProjectContext(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+  input: ReviseProjectContextInput,
+): ProjectContextView {
+  const found = requireProjectBySlug(db, slug);
+  assertCan(withProject(actor, found.id), 'project.settings.edit', { projectId: found.id });
   const now = input.now ?? Date.now();
-  const previous = row.contextMd;
 
-  db.update(projects)
-    .set({ contextMd: input.context_md, updatedAt: now })
-    .where(eq(projects.id, row.id))
-    .run();
+  db.transaction(() => {
+    const row = db.select().from(projects).where(eq(projects.id, found.id)).get()!;
+    if (input.baseRevision !== null && input.baseRevision !== row.contextRevision) {
+      throw new ApiError(
+        'conflict',
+        `The context document is at revision ${String(row.contextRevision)}, not ${String(input.baseRevision)}; read it again before you write`,
+        {
+          reason: 'stale_context_revision',
+          base_revision: input.baseRevision,
+          current_revision: row.contextRevision,
+        },
+      );
+    }
 
-  appendActivity(db, {
-    orgId: row.orgId,
-    projectId: row.id,
-    ...activityActor(actor),
-    // `project.updated`, not a verb of its own: §4.8's vocabulary is closed and
-    // growing it is a change to `docs/SPEC.md`, which is not this session's to
-    // make (`schema-spec-drift.test.ts` enforces the pair in both directions).
-    // Same reason `services/sprints.ts` rides under this verb.
-    // Not `project.updated` (LAI-113): the context document is the project's
-    // shared brief, and an edit to it is not a settings change. It was
-    // distinguishable only by `changed: ['context_md']`, which a `type` filter
-    // never sees.
-    type: 'project.context_updated',
-    // **The `entity` / `action` payload stays, and that is not redundancy.**
-    // `activity` is append-only in both directions, so every row written before
-    // LAI-113 carries the old verb and is distinguishable *only* by those two
-    // fields. Migrating them is not an option and not a shortcut declined — it
-    // is the property the table exists to have. New rows carry both, which costs
-    // a few bytes and means one payload shape across the whole table.
-    // The lengths are what make this a *history* rather than a bare marker:
-    // §7.3 wants a reviewer to see what changed between two agent sessions, and
-    // "grew from 4k to 40k" is the version of that which costs no extra storage.
-    payload: {
-      changed: ['context_md'],
-      length: input.context_md.length,
-      previous_length: previous.length,
-    },
-    now,
+    const document = input.next(row.contextMd);
+    // Enforced here rather than only in the route's schema: an MCP tool reaches
+    // this function without passing through zod, and a bound that only one entry
+    // point applies is not a bound.
+    if (document.length > CONTEXT_MD_LIMIT) {
+      throw new ApiError('unprocessable', 'That context document is too long', {
+        limit: CONTEXT_MD_LIMIT,
+        length: document.length,
+      });
+    }
+
+    const revision = row.contextRevision + 1;
+    db.insert(projectContextRevisions)
+      .values({
+        id: newId(),
+        projectId: row.id,
+        revision,
+        body: document,
+        authorId: actor.userId,
+        agentId: actor.token?.agent?.id ?? null,
+        createdAt: now,
+      })
+      .run();
+    db.update(projects)
+      .set({ contextMd: document, contextRevision: revision, updatedAt: now })
+      .where(eq(projects.id, row.id))
+      .run();
+
+    appendActivity(db, {
+      orgId: row.orgId,
+      projectId: row.id,
+      ...activityActor(actor),
+      // Not `project.updated` (LAI-113): the context document is the project's
+      // shared brief, and an edit to it is not a settings change. It was
+      // distinguishable only by `changed: ['context_md']`, which a `type` filter
+      // never sees.
+      type: 'project.context_updated',
+      // **The `entity` / `action` payload stays, and that is not redundancy.**
+      // `activity` is append-only in both directions, so every row written before
+      // LAI-113 carries the old verb and is distinguishable *only* by those two
+      // fields. Migrating them is not an option and not a shortcut declined — it
+      // is the property the table exists to have. New rows carry both, which costs
+      // a few bytes and means one payload shape across the whole table.
+      // The lengths are what make this a *history* rather than a bare marker:
+      // §7.3 wants a reviewer to see what changed between two agent sessions, and
+      // "grew from 4k to 40k" is the version of that which costs no extra storage.
+      // `revision` names the §4.68 row that holds the text itself (LAI-555).
+      payload: {
+        changed: ['context_md'],
+        length: document.length,
+        previous_length: row.contextMd.length,
+        revision,
+      },
+      now,
+    });
   });
 
-  return contextView(db, db.select().from(projects).where(eq(projects.id, row.id)).get()!);
+  return contextView(db, db.select().from(projects).where(eq(projects.id, found.id)).get()!);
 }
 
 function contextView(db: Db, row: typeof projects.$inferSelect): ProjectContextView {
@@ -842,6 +920,7 @@ function contextView(db: Db, row: typeof projects.$inferSelect): ProjectContextV
 
   return {
     context_md: row.contextMd,
+    revision: row.contextRevision,
     length: row.contextMd.length,
     limit: CONTEXT_MD_LIMIT,
     updated_at: edit?.createdAt ?? null,
