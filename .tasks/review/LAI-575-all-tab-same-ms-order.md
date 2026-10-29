@@ -44,7 +44,7 @@ review.
 - [x] Two activity rows with one `created_at` show in `seq` order (oldest
       first) in the All tab, whatever order the feed handed them in.
 - [x] A comment still sorts before an event on a tie.
-- [ ] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+- [x] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
 
 ## Role / machine
 
@@ -72,17 +72,9 @@ Claimed by Strelka (D-097) on a branch cut from `origin/LAI-542-agent-session-he
   events, which keep seq order"*. Restored; `shasum` identical before and
   after (`e937de42…`), file green again.
 
-**Third criterion left unticked — inherited, not added.** Gate on this
-branch after the last edit: `TEST 1`, `LINT 0`, `FMT 0`. The only failures
-are the five `server/web` suites that already fail at base `01618534`
-(missing client halves of LAI-534/535/541):
-
-1. activity wording covers the server's vocabulary
-2. every served endpoint has a caller, or a named reason
-3. the stream subscribes to exactly what the server emits
-4. every server field is visible to the client
-5. describeProjectEvent
-
-Totals: `server/web` # tests 3375, pass 3370, fail 5; `server` 4067 passed,
-10 skipped (4077); `cli` # tests 667, pass 665, skipped 2. `pnpm -r
---no-bail`, so every workspace ran.
+**Third criterion ticked after merging `origin/master` (2026-10-29).** The
+five inherited `server/web` failures came from missing client halves, and
+`origin/master` has since supplied them. Gate on the merged head, under
+`/tmp/strelka-gate.lock`, each command to its own file, nothing piped:
+`INSTALL 0`, `TEST 0`, `LINT 0`, `FMT 0`. Totals: `server/web` pass 3583,
+fail 0; `server` 4158 passed, 10 skipped (4168); `cli` pass 665, fail 0.
