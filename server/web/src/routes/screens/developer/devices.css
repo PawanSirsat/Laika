@@ -1,0 +1,255 @@
+/* Developer access → Agents → Your devices (LAI-591). Existing tokens only
+   (D-020): every colour is a theme variable, so dark and light come from one
+   place. The agent rows reuse `.agents-state` from agents.css. */
+
+.devices {
+  margin: var(--space-4) 0 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.devices-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) 1.25rem 0;
+}
+
+.devices-title {
+  margin: 0;
+  flex: 1;
+  font-size: var(--text-body);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.devices-intro {
+  margin: var(--space-2) 1.25rem 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.devices > .state {
+  margin: var(--space-4) 1.25rem;
+}
+
+.devices-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-3) 1.25rem var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.devices-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.devices-group[data-recognised='false'] {
+  border-color: var(--chip-orange-border);
+}
+
+.devices-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.devices-name {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.devices-name:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A word, never only a colour (§5.1). */
+.devices-unrecognised {
+  flex: none;
+  padding: 0.125rem var(--space-2);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-pill);
+}
+
+.devices-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-left: auto;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.devices-seen {
+  position: relative;
+}
+
+.devices-seen-time {
+  color: var(--text-primary);
+  border-radius: var(--radius-control);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+.devices-seen-time:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The exact time, shown to the keyboard as the `title` is to the mouse. */
+.devices-seen-exact {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 2;
+  display: none;
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+}
+
+.devices-seen-time:focus-visible + .devices-seen-exact,
+.devices-seen-time:hover + .devices-seen-exact {
+  display: block;
+}
+
+.devices-agents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.devices-agent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.devices-agent-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.devices-agent[data-state='revoked'] .devices-agent-name {
+  color: var(--text-muted);
+}
+
+.devices-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.devices-error {
+  margin: 0;
+}
+
+/* Nothing left running: one muted row, its agents a click away. */
+.devices-group-muted {
+  background: transparent;
+}
+
+.devices-group-muted .devices-name {
+  color: var(--text-secondary);
+}
+
+.devices-collapsed > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  list-style: none;
+  cursor: pointer;
+  border-radius: var(--radius-control);
+}
+
+.devices-collapsed > summary::-webkit-details-marker {
+  display: none;
+}
+
+.devices-collapsed > summary::before {
+  content: '▸';
+  flex: none;
+  color: var(--text-muted);
+}
+
+.devices-collapsed[open] > summary::before {
+  content: '▾';
+}
+
+.devices-collapsed > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.devices-collapsed > summary .devices-group-head {
+  flex: 1;
+}
+
+.devices-collapsed[open] > .devices-agents {
+  margin-top: var(--space-3);
+}
+
+.devices-dialog-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+@media (max-width: 760px) {
+  .devices-head,
+  .devices-intro {
+    padding-inline: 0;
+    margin-inline: var(--space-3);
+  }
+
+  .devices-head {
+    padding-inline: 0;
+  }
+
+  .devices-list {
+    margin-inline: var(--space-3);
+  }
+
+  .devices-group {
+    padding-inline: var(--space-3);
+  }
+
+  .devices-facts {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .devices-seen-exact {
+    right: auto;
+    left: 0;
+  }
+}
