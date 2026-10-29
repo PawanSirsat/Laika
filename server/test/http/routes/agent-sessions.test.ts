@@ -65,6 +65,15 @@ async function refusal(res: Response) {
   return { status: res.status, code: body.error.code, reason: body.error.details?.reason };
 }
 
+/**
+ * D-120 allows one active agent per harness per device, so each fixture agent
+ * after a test's first is on a device of its own; the first keeps the label
+ * the assertions name.
+ */
+let fixtureAgents = 0;
+const fixtureDevice = (first: string | null): string | null =>
+  fixtureAgents++ === 0 ? first : `device-${fixtureAgents}`;
+
 async function register(name = 'Bob’s Claude') {
   return (await ok(
     await req(
@@ -74,6 +83,7 @@ async function register(name = 'Bob’s Claude') {
         body: JSON.stringify({
           display_name: name,
           harness: 'claude-code',
+          device_label: fixtureDevice(null),
           grants: [{ project_id: alpha, scope: 'full' }],
         }),
       },
@@ -130,6 +140,7 @@ function patch(taskId: string, body: unknown, auth: Auth) {
 }
 
 beforeEach(async () => {
+  fixtureAgents = 0;
   h = authHarness();
   const setup = await h.app.request('/api/v1/setup', {
     method: 'POST',
@@ -862,6 +873,7 @@ describe('the live claim on task reads (LAI-568)', () => {
             json('POST', {
               display_name: 'Elsewhere',
               harness: 'claude-code',
+              device_label: fixtureDevice(null),
               grants: projectIds.map((project_id) => ({ project_id, scope: 'full' })),
             }),
             { cookie: bob.cookie },

@@ -65,6 +65,9 @@ async function succeeded(client: Client, name: string, args: Record<string, unkn
   return result.structuredContent as Record<string, unknown>;
 }
 
+/** A device per fixture agent: D-120 allows one active agent per harness per device. */
+let fixtureDevices = 0;
+
 async function register(name = 'Bob’s Codex') {
   return (await must(
     '/api/v1/agents',
@@ -73,6 +76,7 @@ async function register(name = 'Bob’s Codex') {
       body: JSON.stringify({
         display_name: name,
         harness: 'codex',
+        device_label: `device-${++fixtureDevices}`,
         grants: [{ project_id: alpha, scope: 'full' }],
       }),
     },
@@ -289,6 +293,7 @@ describe('the live claim never reaches a caller who cannot read the task (LAI-56
           body: JSON.stringify({
             display_name: 'Elsewhere',
             harness: 'codex',
+            device_label: `device-${++fixtureDevices}`,
             grants: projectIds.map((project_id) => ({ project_id, scope: 'full' })),
           }),
         },

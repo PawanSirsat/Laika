@@ -66,12 +66,20 @@ async function succeeded(client: Client, name: string, args: Record<string, unkn
   return result;
 }
 
+/** A device per fixture agent: D-120 allows one active agent per harness per device. */
+let fixtureDevices = 0;
+
 async function register(grants: { project_id: string; scope: 'full' | 'read_only' }[]) {
   return (await must(
     '/api/v1/agents',
     {
       method: 'POST',
-      body: JSON.stringify({ display_name: 'Bob’s Codex', harness: 'codex', grants }),
+      body: JSON.stringify({
+        display_name: 'Bob’s Codex',
+        harness: 'codex',
+        device_label: `device-${++fixtureDevices}`,
+        grants,
+      }),
     },
     bob.cookie,
   )) as unknown as { agent: { id: string }; token: { id: string }; secret: string };
@@ -243,7 +251,7 @@ describe('laika_whoami', () => {
       id: created.agent.id,
       display_name: 'Bob’s Codex',
       harness: 'codex',
-      device_label: null,
+      device_label: expect.stringMatching(/^device-\d+$/) as unknown,
       status: 'active',
     });
     await client.close();

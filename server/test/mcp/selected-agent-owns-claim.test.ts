@@ -71,6 +71,9 @@ async function succeeded(client: Client, name: string, args: Record<string, unkn
   return result.structuredContent as Record<string, unknown>;
 }
 
+/** A device per fixture agent: D-120 allows one active agent per harness per device. */
+let fixtureDevices = 0;
+
 async function register(name: string, scope: 'full' | 'read_only' = 'full') {
   return (await must(
     '/api/v1/agents',
@@ -79,6 +82,7 @@ async function register(name: string, scope: 'full' | 'read_only' = 'full') {
       body: JSON.stringify({
         display_name: name,
         harness: 'codex',
+        device_label: `device-${++fixtureDevices}`,
         grants: [{ project_id: alpha, scope }],
       }),
     },

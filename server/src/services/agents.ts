@@ -64,6 +64,18 @@ import {
  * `owner_user_id` is `actor.userId` and no input can name another: no body
  * field carries an owner, and every body is strict. An agent on a
  * colleague's laptop is theirs to register (D-114).
+ *
+ * ## One active agent per harness per device, per owner (D-120)
+ *
+ * An agent *is* `<harness> · <device>` (D-118), so an owner holds at most one
+ * active agent for each pair, the device compared by the key LAI-590 groups
+ * by (an unnamed device is one device too). Registering a second, or renaming
+ * or relabelling one onto a pair another active agent of yours holds, is
+ * `409` with `reason` `agent_exists_for_harness_device` naming yours. Only
+ * your own agents are compared: another owner's on the same label and
+ * harness is no conflict and is never mentioned. A revoked agent frees its
+ * pair. Checked inside the write transaction, so two racing registrations
+ * cannot both land.
  */
 
 /**
@@ -173,6 +185,7 @@ export function registerAgent(
   };
 
   const created = immediateTransaction(sqlite, () => {
+    assertHarnessDeviceFree(db, actor, harness, deviceLabel, null);
     db.insert(agents).values(row).run();
     writeGrants(db, row.id, grants, now);
     return insertToken(db, actor, {
@@ -272,6 +285,15 @@ export function updateAgent(
 
   if (Object.keys(set).length > 0) {
     immediateTransaction(sqlite, () => {
+      if (set.harness !== undefined || set.deviceLabel !== undefined) {
+        assertHarnessDeviceFree(
+          db,
+          actor,
+          set.harness ?? row.harness,
+          set.deviceLabel === undefined ? row.deviceLabel : set.deviceLabel,
+          row.id,
+        );
+      }
       db.update(agents).set(set).where(eq(agents.id, row.id)).run();
       if (set.displayName !== undefined) {
         db.update(tokens).set({ name: set.displayName }).where(eq(tokens.agentId, row.id)).run();
@@ -676,6 +698,43 @@ function assertCloudExpiry(expiresAt: number | null, now: number): void {
 }
 
 /** The agent's tokens still able to act: not revoked, not expired. */
+/**
+ * D-120: the owner's other active agent on this harness and device, if any,
+ * is a `409`. `except` is the agent being changed, which may keep its own pair.
+ */
+function assertHarnessDeviceFree(
+  db: Db,
+  actor: ResolvedActor,
+  harness: string,
+  deviceLabel: string | null,
+  except: string | null,
+): void {
+  const key = deviceLabelKey(deviceLabel);
+  const holder = db
+    .select()
+    .from(agents)
+    .where(
+      and(
+        eq(agents.ownerUserId, actor.userId),
+        eq(agents.status, 'active'),
+        eq(agents.harness, harness),
+      ),
+    )
+    .all()
+    .find((row) => row.id !== except && deviceLabelKey(row.deviceLabel) === key);
+  if (holder === undefined) return;
+  throw new ApiError(
+    'conflict',
+    `You already have an active ${harness} agent on this device ("${holder.displayName}"); rotate its token or revoke it first`,
+    {
+      reason: 'agent_exists_for_harness_device',
+      agent_id: holder.id,
+      harness,
+      device_label: key === '' ? null : key,
+    },
+  );
+}
+
 function liveTokens(db: Db, agentId: string, now: number): (typeof tokens.$inferSelect)[] {
   return db
     .select()

@@ -70,11 +70,15 @@ afterEach(() => {
   t.close();
 });
 
+/** A device per fixture agent: D-120 allows one active agent per harness per device. */
+let fixtureDevices = 0;
+
 /** A registered agent of the owner, fully granted, acting through its own token. */
 function agent(name = 'Claude', scope: 'full' | 'read_only' = 'full') {
   const created = registerAgent(t.sqlite, t.db, owner, {
     displayName: name,
     harness: 'claude-code',
+    deviceLabel: `device-${++fixtureDevices}`,
     grants: [{ projectId: s.projectId, scope }],
   });
   return {
@@ -598,6 +602,11 @@ describe('sessions', () => {
 
 describe('the live claim on a task read (LAI-568)', () => {
   const SUSPECT = DEFAULT_CLAIM_TIMINGS.suspectMs;
+  /** Each agent its own laptop (D-120); the first in a test is `laptop-1`. */
+  let laptops = 0;
+  beforeEach(() => {
+    laptops = 0;
+  });
 
   /** The task as a list read and a single read both serve it, at `now`. */
   function reads(id: string, now: number) {
@@ -612,7 +621,7 @@ describe('the live claim on a task read (LAI-568)', () => {
     const created = registerAgent(t.sqlite, t.db, owner, {
       displayName: 'Claude',
       harness: 'claude-code',
-      deviceLabel: 'laptop-1',
+      deviceLabel: `laptop-${++laptops}`,
       grants: [{ projectId: s.projectId, scope: 'full' }],
     });
     const a = { id: created.agent.id, actor: resolveTokenActor(t.db, created.secret, T0) };
@@ -1036,6 +1045,7 @@ describe('LAI-541 review round 2: an agent is never more than its owner on the r
     const created = registerAgent(t.sqlite, t.db, member, {
       displayName: 'Member’s agent',
       harness: 'claude-code',
+      deviceLabel: `device-${++fixtureDevices}`,
       grants: [{ projectId: s.projectId, scope: 'full' }],
     });
     return {

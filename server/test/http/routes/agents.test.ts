@@ -18,7 +18,7 @@ import { insertToken } from '../../../src/services/tokens.ts';
 import { expireClaims } from '../../../src/services/claims.ts';
 import { sql } from 'drizzle-orm';
 import { RateLimiter } from '../../../src/http/rate-limit.ts';
-import { CLOUD_TOKEN_MAX_TTL_MS } from '../../../src/services/agents.ts';
+import { AGENT_HARNESSES, CLOUD_TOKEN_MAX_TTL_MS } from '../../../src/services/agents.ts';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join as joinPath, relative } from 'node:path';
 import {
@@ -113,11 +113,20 @@ interface Registered {
   secret: string;
 }
 
+/**
+ * Each registration in a test takes the next known harness unless it names
+ * one, so a test that registers several agents on one device does not trip
+ * D-120's one-per-harness-per-device rule by accident; the first is always
+ * `claude-code`. A test about that rule names its harness.
+ */
+let registrations = 0;
+
 async function register(
   grants: { project_id: string; scope: 'full' | 'read_only' }[],
   cookie = bob.cookie,
   overrides: Record<string, unknown> = {},
 ): Promise<Registered> {
+  const harness = AGENT_HARNESSES[registrations++ % AGENT_HARNESSES.length];
   return (await ok(
     await req(
       '/api/v1/agents',
@@ -125,7 +134,7 @@ async function register(
         method: 'POST',
         body: JSON.stringify({
           display_name: 'Bob’s Claude',
-          harness: 'claude-code',
+          harness,
           device_label: 'Belka',
           grants,
           ...overrides,
@@ -156,6 +165,7 @@ let frozen: number | null = null;
 
 beforeEach(async () => {
   frozen = null;
+  registrations = 0;
   h = authHarness({ rateLimiter: new RateLimiter(() => frozen ?? Date.now()) });
   const setup = await h.app.request('/api/v1/setup', {
     method: 'POST',
@@ -568,6 +578,171 @@ describe('only the owner’s own agents', () => {
   });
 });
 
+describe('one active agent per harness per device, per owner (D-120)', () => {
+  const held = (agentId: string, harness: string, device_label: string | null) => ({
+    error: {
+      code: 'conflict',
+      message: expect.any(String) as unknown,
+      details: {
+        reason: 'agent_exists_for_harness_device',
+        agent_id: agentId,
+        harness,
+        device_label,
+      },
+    },
+  });
+
+  it('refuses a second on the same harness and device, normalised, and inserts nothing', async () => {
+    const first = await register([], bob.cookie, { harness: 'codex', device_label: 'Belka' });
+    for (const label of ['Belka', '  BELKA ', 'belka']) {
+      const res = await req(
+        '/api/v1/agents',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            display_name: 'again',
+            harness: 'codex',
+            device_label: label,
+            grants: [],
+          }),
+        },
+        { cookie: bob.cookie },
+      );
+      expect(res.status, label).toBe(409);
+      expect(await res.json(), label).toEqual(held(first.agent.id, 'codex', 'belka'));
+    }
+    expect(h.db.select().from(agents).all()).toHaveLength(1);
+    expect(h.db.select().from(tokens).all()).toHaveLength(1);
+
+    // Another harness on that device, and that harness on another device, are other agents.
+    await register([], bob.cookie, { harness: 'claude-code', device_label: 'Belka' });
+    await register([], bob.cookie, { harness: 'codex', device_label: 'Strelka' });
+    // A cloud runner is a device like any other.
+    const cloud = { harness: 'codex', device_label: 'Cloud', expires_at: Date.now() + 60 * 60_000 };
+    const runner = await register([], bob.cookie, cloud);
+    const again = await req(
+      '/api/v1/agents',
+      { method: 'POST', body: JSON.stringify({ display_name: 'x', grants: [], ...cloud }) },
+      { cookie: bob.cookie },
+    );
+    expect(await again.json()).toEqual(held(runner.agent.id, 'codex', 'cloud'));
+  });
+
+  it('counts an unnamed device as one device', async () => {
+    const first = await register([], bob.cookie, { harness: 'zed', device_label: null });
+    for (const device_label of [null, '', '   ']) {
+      const res = await req(
+        '/api/v1/agents',
+        {
+          method: 'POST',
+          body: JSON.stringify({ display_name: 'x', harness: 'zed', device_label, grants: [] }),
+        },
+        { cookie: bob.cookie },
+      );
+      expect(await res.json(), JSON.stringify(device_label)).toEqual(
+        held(first.agent.id, 'zed', null),
+      );
+    }
+  });
+
+  it('a revoked agent frees its pair', async () => {
+    const first = await register([], bob.cookie, { harness: 'codex' });
+    await ok(
+      await req(
+        `/api/v1/agents/${first.agent.id}/revoke`,
+        { method: 'POST' },
+        { cookie: bob.cookie },
+      ),
+    );
+    await register([], bob.cookie, { harness: 'codex' });
+  });
+
+  it('refuses renaming the harness or relabelling onto a pair another of yours holds', async () => {
+    const codex = await register([], bob.cookie, { harness: 'codex', device_label: 'Belka' });
+    const cursor = await register([], bob.cookie, { harness: 'cursor', device_label: 'Strelka' });
+    const patch = (body: unknown) =>
+      req(
+        `/api/v1/agents/${cursor.agent.id}`,
+        { method: 'PATCH', body: JSON.stringify(body) },
+        { cookie: bob.cookie },
+      );
+
+    expect(await (await patch({ harness: 'codex', device_label: 'belka' })).json()).toEqual(
+      held(codex.agent.id, 'codex', 'belka'),
+    );
+    await ok(await patch({ device_label: 'Belka' })); // cursor · Belka is free
+    expect(await (await patch({ harness: 'codex' })).json()).toEqual(
+      held(codex.agent.id, 'codex', 'belka'),
+    );
+    const row = h.db.select().from(agents).where(eq(agents.id, cursor.agent.id)).get();
+    expect([row?.harness, row?.deviceLabel]).toEqual(['cursor', 'Belka']);
+    // Keeping its own pair, or a case-only relabel of it, is not a clash with itself.
+    await ok(await patch({ display_name: 'renamed', harness: 'cursor', device_label: ' BELKA ' }));
+  });
+
+  it('never compares against, or names, another owner’s agent', async () => {
+    const theirs = await register([], ownerCookie, { harness: 'codex', device_label: 'Belka' });
+    const mine = await register([], bob.cookie, { harness: 'codex', device_label: 'Belka' });
+    const clash = await req(
+      '/api/v1/agents',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          display_name: 'x',
+          harness: 'codex',
+          device_label: 'Belka',
+          grants: [],
+        }),
+      },
+      { cookie: bob.cookie },
+    );
+    const body = JSON.stringify(await clash.json());
+    expect(body).toContain(mine.agent.id);
+    expect(body).not.toContain(theirs.agent.id);
+  });
+});
+
+describe('another owner’s agents and devices are missing, not hidden (LAI-592)', () => {
+  it('answers each route for a foreign agent, a cloud one included, exactly as for an id that does not exist', async () => {
+    const carol = await join('carol@example.test', 'admin');
+    const foreign = await register([], bob.cookie, {
+      harness: 'codex',
+      device_label: 'Cloud',
+      expires_at: Date.now() + 60 * 60_000,
+    });
+    const unknownId = '01M00000000000000000000000';
+    const routes = (id: string, tokenId: string): [string, RequestInit][] => [
+      [`/api/v1/agents/${id}`, {}],
+      [`/api/v1/agents/${id}`, { method: 'PATCH', body: '{"display_name":"x"}' }],
+      [`/api/v1/agents/${id}/grants`, { method: 'PUT', body: '{"grants":[]}' }],
+      [
+        `/api/v1/agents/${id}/rotate-token`,
+        { method: 'POST', body: JSON.stringify({ token_id: tokenId }) },
+      ],
+      [`/api/v1/agents/${id}/revoke`, { method: 'POST' }],
+    ];
+    const seen = routes(foreign.agent.id, foreign.token.id);
+    const missing = routes(unknownId, foreign.token.id);
+    for (const [i, [path, init]] of seen.entries()) {
+      const hidden = await req(path, init, { cookie: carol.cookie });
+      const absent = await req(missing[i]![0], missing[i]![1], { cookie: carol.cookie });
+      expect(hidden.status, path).toBe(absent.status);
+      expect(JSON.stringify(await hidden.json()).replaceAll(foreign.agent.id, '<id>'), path).toBe(
+        JSON.stringify(await absent.json()).replaceAll(unknownId, '<id>'),
+      );
+    }
+    // Neither the list nor the device list mentions it, nor its Cloud device.
+    for (const path of ['/api/v1/agents', '/api/v1/agents/devices']) {
+      const text = await (await req(path, {}, { cookie: carol.cookie })).text();
+      expect(text, path).not.toContain(foreign.agent.id);
+      expect(text.toLowerCase(), path).not.toContain('cloud');
+    }
+    // And the owner's agent is untouched by every refused call.
+    const row = h.db.select().from(agents).where(eq(agents.id, foreign.agent.id)).get();
+    expect([row?.status, row?.displayName]).toEqual(['active', 'Bob’s Claude']);
+  });
+});
+
 describe('grants and renames', () => {
   it('PUT /grants replaces the set and takes effect on the next request', async () => {
     const created = await register([{ project_id: alpha, scope: 'full' }]);
@@ -727,6 +902,9 @@ describe('idempotency never keeps a secret, and replays only to its own credenti
       { display_name: 'a', harness: 'other', grants: [] },
       bob.cookie,
       (b) => b.secret as string,
+      // The retry is a second `other` agent on the same unnamed device, which
+      // D-120 refuses: the route answering, never a stored copy.
+      409,
     );
     const agentId = (agent.agent as { id: string }).id;
     const tokenId = (agent.token as { id: string }).id;
@@ -769,7 +947,8 @@ describe('idempotency never keeps a secret, and replays only to its own credenti
     // Still only the control row, and no secret anywhere in the table.
     expect(h.db.select().from(idempotencyKeys).all()).toHaveLength(1);
     const dump = storedBodies();
-    expect(secrets.length).toBe(11);
+    // Ten: the agent registration's retry is a D-120 409 and mints none.
+    expect(secrets.length).toBe(10);
     for (const secret of secrets) {
       expect(secret.length).toBeGreaterThan(20);
       expect(dump).not.toContain(secret);
@@ -1339,7 +1518,13 @@ describe('cloud agents hold short-lived tokens (LAI-592)', () => {
       token: { expires_at: number };
     };
     expect(created.token.expires_at).toBe(expiresAt);
-    await ok(await registerRaw({ expires_at: Date.now() + CLOUD_TOKEN_MAX_TTL_MS - MINUTE }), 201);
+    await ok(
+      await registerRaw({
+        harness: 'cursor',
+        expires_at: Date.now() + CLOUD_TOKEN_MAX_TTL_MS - MINUTE,
+      }),
+      201,
+    );
     // Any other label is not a cloud agent, and keeps an unbounded token.
     await ok(await registerRaw({ device_label: 'Cloudy laptop' }), 201);
   });
@@ -1497,7 +1682,8 @@ describe('cloud agents hold short-lived tokens (LAI-592)', () => {
         code: 'unprocessable',
         reason: 'cloud_token_expiry_too_long',
       });
-      const at = await register([], bob.cookie, { expires_at: edge });
+      // Not codex: the cloud agents above already hold codex · Cloud (D-120).
+      const at = await register([], bob.cookie, { harness: 'cursor', expires_at: edge });
       await ok(await relabel(at.agent.id));
     } finally {
       vi.useRealTimers();

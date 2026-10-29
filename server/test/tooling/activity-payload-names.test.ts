@@ -547,6 +547,8 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       const claimer = registerAgent(t.sqlite, t.db, owner(), {
         displayName: 'Claim sweep agent',
         harness: 'claude-code',
+        // Not the sweep agent's device: one agent per harness per device (D-120).
+        deviceLabel: 'claim-sweep',
         grants: [{ projectId: task.project_id, scope: 'full' }],
       });
       const asAgent = resolveTokenActor(t.db, claimer.secret, Date.now());
