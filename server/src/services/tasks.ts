@@ -1420,14 +1420,18 @@ export function listedTaskSummary(view: TaskView): ListedTaskSummaryView {
 
 /**
  * The live claim's fields that move without a write (LAI-568): the heartbeat,
- * the lease, the clock — and the heartbeat's age, which moves on every read
- * (LAI-597 review).
+ * the lease, the clock — the heartbeat's age, which moves on every read
+ * (LAI-597 review) — and what the session says ran, which any heartbeat may
+ * change (D-118, LAI-593).
  */
 export const CLAIM_PULSE = [
   'last_heartbeat_at',
   'heartbeat_age_ms',
   'lease_expires_at',
   'connection',
+  'harness',
+  'harness_version',
+  'model',
 ] as const;
 
 function withoutPulse(claim: TaskLiveClaimView): Partial<TaskLiveClaimView> {
