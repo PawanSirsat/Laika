@@ -127,6 +127,19 @@ files and with base's, sorted and with temp paths stripped, is identical — no
 new line in any of the five. "Repo-root gate exits 0" stays unticked for that
 reason.
 
+**Gate after merging `origin/master` (2026-10-29, Strelka).** The five
+inherited failures above are gone: master carries the client halves. Two gates
+on the merged head gave `TEST 1`, `LINT 0`, `FMT 0`, each failing on a
+different test that this branch's diff does not touch:
+*390px, dark: the user menu is off-canvas until the navigation opens*
+(`server/web/test/browser/harness-theme.test.ts`, from master; it fails
+1 run in 5 with that file run alone, `x=-81` mid-transition), and
+*answers identically for a real account and an unknown one*
+(`server/test/http/sign-in-throttle.test.ts`, a 5000 ms timeout during a
+289 s run shared with another gate; green alone). A third failure, the LAI-581
+two-copy collision master brought in, master has since fixed in #131.
+"Repo-root gate exits 0" stays unticked until a gate with no flakes.
+
 ## Notes for Belka (SPEC half)
 
 Proposed for SPEC §6.4, a new paragraph after the `PATCH /tasks/:id` body
