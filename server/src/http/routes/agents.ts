@@ -58,6 +58,8 @@ const UpdateBody = strictObject({
   device_label: z.string().max(200).nullable().optional(),
 });
 
+// A stored label is at most 80 code units and lower-casing at most doubles
+// one ('İ' → 'i̇'), so 200 admits every key the device list serves.
 const DeviceBody = strictObject({ device_label: z.string().max(200).nullable() });
 
 const GrantsBody = strictObject({ grants: Grants });

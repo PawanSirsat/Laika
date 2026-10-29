@@ -425,7 +425,10 @@ export function confirmOwnAgentDevice(
   now: number = Date.now(),
 ): { device_label: string | null; recognised: true } {
   assertCan(actor, 'agent.manage_own');
-  const key = deviceLabelKey(cleanDeviceLabel(deviceLabel));
+  // The caller sends back the key the list served, which lower-casing may
+  // have made longer than a stored label may be ('İ' is two code units
+  // lower-cased): look it up, never re-apply the stored label's limit.
+  const key = deviceLabelKey(deviceLabel);
   immediateTransaction(sqlite, () => {
     requireOwnDeviceAgents(db, actor, key);
     db.insert(recognisedAgentDevices)
@@ -445,7 +448,10 @@ export function revokeOwnAgentDevice(
   now: number = Date.now(),
 ): { revoked_agent_ids: string[] } {
   assertCan(actor, 'agent.manage_own');
-  const key = deviceLabelKey(cleanDeviceLabel(deviceLabel));
+  // The caller sends back the key the list served, which lower-casing may
+  // have made longer than a stored label may be ('İ' is two code units
+  // lower-cased): look it up, never re-apply the stored label's limit.
+  const key = deviceLabelKey(deviceLabel);
   return immediateTransaction(sqlite, () => {
     const active = requireOwnDeviceAgents(db, actor, key).filter((row) => row.status === 'active');
     for (const row of active) revokeAgent(sqlite, db, actor, row.id, now);

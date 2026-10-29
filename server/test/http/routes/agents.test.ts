@@ -1128,7 +1128,7 @@ describe('devices (LAI-590)', () => {
       for (const body of [
         {},
         { device_label: 42 },
-        { device_label: 'x'.repeat(81) },
+        { device_label: 'x'.repeat(201) },
         { device_label: 'Belka', owner_user_id: ownerId },
       ]) {
         const res = await req(
@@ -1139,6 +1139,22 @@ describe('devices (LAI-590)', () => {
         expect((await error(res)).code).toBe('unprocessable');
       }
     }
+  });
+
+  it('confirms and revokes a device by the key the list served, even when lower-casing lengthened it', async () => {
+    // 'İ' lower-cases to two code units: an 80-character label lists as a
+    // 160-character key, past the limit a stored label has.
+    const created = await register([], bob.cookie, { device_label: 'İ'.repeat(80) });
+    const [device] = await devices();
+    expect(device?.device_label?.length).toBe(160);
+    expect(await ok(await devicePost('confirm', device!.device_label))).toEqual({
+      device_label: device!.device_label,
+      recognised: true,
+    });
+    expect((await devices())[0]?.recognised).toBe(true);
+    expect(await ok(await devicePost('revoke', device!.device_label))).toEqual({
+      revoked_agent_ids: [created.agent.id],
+    });
   });
 
   async function claimedAgent(deviceLabel: string | null) {
