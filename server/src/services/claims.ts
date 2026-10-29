@@ -16,8 +16,8 @@ import { LIVE_CLAIM_STATES, type TaskClaimState } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import {
-  agentSessions,
   agents,
+  agentSessions,
   handoffOffers,
   projects,
   taskClaims,
@@ -25,7 +25,7 @@ import {
   tokens,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan, type AgentContext, systemPrincipal } from '../policy/can.ts';
+import { assertCan, can, type AgentContext, systemPrincipal } from '../policy/can.ts';
 
 /**
  * Agent sessions and exclusive task claims (proposal §4.2, SPEC §4.65, §4.66,
@@ -134,7 +134,14 @@ export interface AgentSessionView {
   end_reason: 'ended' | 'agent_revoked' | null;
   /** Self-reported (§4.65); decides nothing. */
   client_version: string | null;
-  /** Self-reported (§4.65); decides nothing. */
+  /**
+   * The underlying harness that ran, its version, and the model — **self-
+   * reported** (D-118, LAI-586), shown as such and decide nothing. A
+   * manager's session says which worker harness it started here.
+   */
+  harness: string | null;
+  harness_version: string | null;
+  /** Self-reported (§4.65); decides nothing. A heartbeat may change it. */
   model: string | null;
   /** `suspect` past §9.1's suspect interval without a heartbeat. Shown, decides nothing. */
   connection: 'live' | 'suspect' | 'ended';
@@ -204,6 +211,8 @@ function sessionView(row: SessionRow, now: number): AgentSessionView {
     ended_at: row.endedAt,
     end_reason: row.endReason,
     client_version: row.clientVersion,
+    harness: row.harness,
+    harness_version: row.harnessVersion,
     model: row.model,
     connection:
       row.endedAt !== null ? 'ended' : isSuspect(row.lastHeartbeatAt, now) ? 'suspect' : 'live',
@@ -224,11 +233,30 @@ export function claimView(row: ClaimRow): TaskClaimView {
   };
 }
 
+/** How many of an agent's sessions `GET /agents/:id` shows (D-118). */
+export const RECENT_SESSIONS = 20;
+
+/**
+ * An agent's most recent sessions, newest first — at most
+ * {@link RECENT_SESSIONS} — for its owner's `GET /agents/:id` (D-118,
+ * LAI-586). The caller has already established the agent is theirs.
+ */
+export function recentAgentSessions(db: Db, agentId: string, now: number): AgentSessionView[] {
+  return db
+    .select()
+    .from(agentSessions)
+    .where(eq(agentSessions.agentId, agentId))
+    .orderBy(desc(agentSessions.startedAt), desc(agentSessions.id))
+    .limit(RECENT_SESSIONS)
+    .all()
+    .map((row) => sessionView(row, now));
+}
+
 // ---------------------------------------------------------------- refusals
 
 /** `409 conflict` with the claim reason in `details` (D-079). */
 function claimConflict(
-  reason: 'stale_claim' | 'claim_held' | 'claim_paused',
+  reason: 'stale_claim' | 'claim_held' | 'claim_paused' | 'selected_for_another_agent',
   message: string,
   details: Record<string, unknown> = {},
 ): ApiError {
@@ -362,10 +390,24 @@ function nextGeneration(db: Db, taskId: string): number {
 
 // ---------------------------------------------------------------- sessions
 
+/**
+ * What a session says about itself (§4.65, D-118). Every field is
+ * self-reported and validated for shape only, by the route; none of them is
+ * ever read by `can()`, the fence or a claim.
+ */
 export interface StartSessionInput {
   client_version?: string | undefined;
+  harness?: string | undefined;
+  harness_version?: string | undefined;
   model?: string | undefined;
 }
+
+/**
+ * What a heartbeat may report again: the same fields, each changing only when
+ * it is sent — the model can change mid-session (D-118), and a heartbeat that
+ * omits a field leaves what the session last said.
+ */
+export type HeartbeatInput = StartSessionInput;
 
 function openSession(
   db: Db,
@@ -384,6 +426,8 @@ function openSession(
     endedAt: null,
     endReason: null,
     clientVersion: input.client_version ?? null,
+    harness: input.harness ?? null,
+    harnessVersion: input.harness_version ?? null,
     model: input.model ?? null,
     contextRevisionSeen: null,
   };
@@ -421,16 +465,19 @@ export function heartbeatAgentSession(
   actor: ResolvedActor,
   sessionId: string,
   now: number = Date.now(),
+  input: HeartbeatInput = {},
 ): HeartbeatView {
   assertCan(actor, 'heartbeat.send_own');
   const agent = requireAgent(actor);
 
   return immediateTransaction(sqlite, () => {
-    const session = requireOpenSession(db, agent.id, sessionId);
+    const found = requireOpenSession(db, agent.id, sessionId);
+    const reported = reportedChanges(input);
     db.update(agentSessions)
-      .set({ lastHeartbeatAt: now })
-      .where(eq(agentSessions.id, session.id))
+      .set({ lastHeartbeatAt: now, ...reported })
+      .where(eq(agentSessions.id, found.id))
       .run();
+    const session: SessionRow = { ...found, ...reported };
 
     const active = db
       .select()
@@ -438,7 +485,8 @@ export function heartbeatAgentSession(
       .where(and(eq(taskClaims.sessionId, session.id), eq(taskClaims.state, 'active')))
       .all();
     for (const claim of active) {
-      if (leaseLapsed(claim.leaseExpiresAt, now)) expireClaim(db, claim, now);
+      if (selectedForAnotherAgent(db, claim)) endClaimOfUnselectedAgent(db, claim, now);
+      else if (leaseLapsed(claim.leaseExpiresAt, now)) expireClaim(db, claim, now);
       else renewLease(db, claim, now);
     }
 
@@ -454,6 +502,18 @@ export function heartbeatAgentSession(
       lost: mine.filter((c) => !isLive(c.state)).map(claimView),
     };
   });
+}
+
+/** Only the self-reported fields a heartbeat actually sent; absent keeps the old value. */
+function reportedChanges(
+  input: HeartbeatInput,
+): Partial<Pick<SessionRow, 'clientVersion' | 'harness' | 'harnessVersion' | 'model'>> {
+  return {
+    ...(input.client_version === undefined ? {} : { clientVersion: input.client_version }),
+    ...(input.harness === undefined ? {} : { harness: input.harness }),
+    ...(input.harness_version === undefined ? {} : { harnessVersion: input.harness_version }),
+    ...(input.model === undefined ? {} : { model: input.model }),
+  };
 }
 
 /**
@@ -589,6 +649,15 @@ export function claimFenceRefusal(
         agent_id: live.agentId,
       });
     }
+    // D-119: a claim the selection does not back is never usable — it ends at
+    // the holder's next heartbeat or its lease ({@link endClaimOfUnselectedAgent}).
+    if (selectedForAnotherAgent(db, live)) {
+      return claimConflict(
+        'selected_for_another_agent',
+        'This task is selected for another agent; your claim on it is ending',
+        { task_id: taskId, claim_generation: live.generation },
+      );
+    }
     if (generation === undefined) {
       return claimConflict(
         'stale_claim',
@@ -712,6 +781,13 @@ export function takeClaim(
 ): TakenClaim {
   const agent = requireAgent(actor);
   const { now } = input;
+
+  // D-119, before a session is opened for the attempt — and with **no
+  // exemption for a holder renewing**: a claim held by an agent that is not
+  // the selected one (taken before the rule, or before the selection) is not
+  // renewed here, and ends as {@link endClaimOfUnselectedAgent} says.
+  assertSelectedAgentMayClaim(db, actor, task.id, agent.id);
+
   const session =
     input.sessionId === undefined
       ? openSession(db, actor, agent, {}, now)
@@ -823,6 +899,159 @@ function acceptWorkRequest(db: Db, taskId: string, agentId: string, now: number)
     .run();
 }
 
+// ---------------------------------------------------------- the selected agent
+
+/**
+ * **D-119: the selected agent owns the claim.** A task that names its agent
+ * (`tasks.selected_agent_id`, LAI-535) may be claimed — or reclaimed — only by
+ * a session of **that** agent; any other agent is `409 conflict`, `reason:
+ * selected_for_another_agent`. A task with no selected agent is anyone
+ * eligible's, as before. Only a registered agent's claim passes here: a person
+ * and a legacy token claim by assignee, unchanged.
+ *
+ * Asked **after** the caller's own `task.claim` — so a caller who may not
+ * claim hears that, and learns nothing about the selection — and the refusal
+ * names the selected agent only when the caller may read the task's project,
+ * where `TaskView.selected_agent` already shows it to them. Never more than
+ * that read would.
+ */
+export function assertSelectedAgentMayClaim(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  agentId: string,
+): void {
+  const task = db
+    .select({ projectId: tasks.projectId, selectedAgentId: tasks.selectedAgentId })
+    .from(tasks)
+    .where(eq(tasks.id, taskId))
+    .get();
+  if (task?.selectedAgentId === null || task?.selectedAgentId === undefined) return;
+  if (task.selectedAgentId === agentId) return;
+
+  const details: Record<string, unknown> = { task_id: taskId };
+  if (can(withProject(actor, task.projectId), 'project.read', { projectId: task.projectId })) {
+    const selected = db
+      .select({
+        id: agents.id,
+        displayName: agents.displayName,
+        harness: agents.harness,
+        deviceLabel: agents.deviceLabel,
+      })
+      .from(agents)
+      .where(eq(agents.id, task.selectedAgentId))
+      .get();
+    if (selected !== undefined) {
+      details.selected_agent_id = selected.id;
+      details.selected_agent = {
+        id: selected.id,
+        display_name: selected.displayName,
+        harness: selected.harness,
+        device_label: selected.deviceLabel,
+      };
+    }
+  }
+  throw claimConflict(
+    'selected_for_another_agent',
+    'This task is selected for another agent; only that agent can claim it',
+    details,
+  );
+}
+
+/**
+ * The one refusal a claim gives for a task it cannot show the caller — **the
+ * same bytes whether the task does not exist or the caller may not read its
+ * project** (LAI-586 review). No id in it, so a board key resolved to a task
+ * the caller cannot see answers exactly as a key that names nothing.
+ */
+export function noSuchTaskToClaim(): ApiError {
+  return ApiError.notFound('No such task');
+}
+
+/**
+ * The task and its project for a claim or reclaim — or {@link
+ * noSuchTaskToClaim} when it does not exist **or** the caller may not read
+ * its project. Visibility first, then the caller's own `task.claim`, then
+ * D-119: each answer discloses no more than the one before it allowed.
+ */
+export function requireVisibleTaskToClaim(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+): { task: TaskRow; project: typeof projects.$inferSelect } {
+  const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+  const project =
+    task === undefined
+      ? undefined
+      : db.select().from(projects).where(eq(projects.id, task.projectId)).get();
+  if (
+    task === undefined ||
+    project === undefined ||
+    !can(withProject(actor, project.id), 'project.read', { projectId: project.id })
+  ) {
+    throw noSuchTaskToClaim();
+  }
+  return { task, project };
+}
+
+/** Whether the claim's task names a selected agent that is not the claim's (D-119). */
+function selectedForAnotherAgent(db: Db, claim: Pick<ClaimRow, 'taskId' | 'agentId'>): boolean {
+  const selected = db
+    .select({ id: tasks.selectedAgentId })
+    .from(tasks)
+    .where(eq(tasks.id, claim.taskId))
+    .get()?.id;
+  return selected !== null && selected !== undefined && selected !== claim.agentId;
+}
+
+/**
+ * **A claim held by an agent that is not the task's selected agent** (D-119,
+ * LAI-586 review). The API cannot make one any more — a claim needs the
+ * selection, and the selection cannot change under a live claim — but a claim
+ * taken before the rule, or before the selection, can still be live.
+ *
+ * It is **never renewed and never usable**: `start_working` and the reclaim
+ * refuse it `selected_for_another_agent`, and so does the fence for any change
+ * made under it. It ends at its holder's next heartbeat, or when its lease
+ * would have lapsed, whichever is first — **`released`, not `expired`**: an
+ * expired claim waits for its holder to reclaim or for recovery, and this
+ * holder may never reclaim, so `expired` would leave the selected agent locked
+ * out of its own task. Released, the selected agent can claim at once, and the
+ * old generation is refused for good. Recorded as the system (§3.4) — the rule
+ * ended it, not a person — as `task.updated`, `field: 'claim'`, the inverse of
+ * the row a claim on work under way writes.
+ */
+function endClaimOfUnselectedAgent(db: Db, claim: ClaimRow, now: number): void {
+  const changed = db
+    .update(taskClaims)
+    .set({ state: 'released', endedAt: now })
+    .where(and(eq(taskClaims.id, claim.id), eq(taskClaims.state, 'active')))
+    .run().changes;
+  if (changed === 0) return;
+
+  const where = db
+    .select({ projectId: tasks.projectId, orgId: projects.orgId })
+    .from(tasks)
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .where(eq(tasks.id, claim.taskId))
+    .get()!;
+  appendActivity(db, {
+    orgId: where.orgId,
+    projectId: where.projectId,
+    taskId: claim.taskId,
+    actorId: null,
+    actorKind: 'system',
+    type: 'task.updated',
+    payload: {
+      field: 'claim',
+      from: { generation: claim.generation, session_id: claim.sessionId, agent_id: claim.agentId },
+      to: null,
+      reason: 'selected_for_another_agent',
+    },
+    now,
+  });
+}
+
 // ----------------------------------------------------------------- reclaim
 
 export interface ReclaimInput {
@@ -912,15 +1141,15 @@ export function reclaimTask(
   const agent = requireAgent(actor);
 
   return immediateTransaction(sqlite, () => {
-    const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
-    if (task === undefined) throw ApiError.notFound(`No task with id "${taskId}"`);
-    const project = db.select().from(projects).where(eq(projects.id, task.projectId)).get()!;
-
     // **Everything as it is now, read inside this transaction** — not from
     // the actor the request resolved, which was loaded before the lock and
     // may describe a person deactivated, a token revoked or a grant narrowed
-    // since. The order is what the caller can fix least first.
+    // since. The order is what the caller can fix least first. The caller
+    // before the task: those refusals say nothing about which task was named.
     const fresh = reloadAgentActor(db, actor, now);
+    // A task the caller cannot read is answered exactly as one that does not
+    // exist (LAI-586 review), so the reclaim discloses nothing about either.
+    const { task, project } = requireVisibleTaskToClaim(db, fresh, taskId);
     const grant = fresh.token.agent.grants.get(project.id);
     if (grant !== 'full') {
       throw new ApiError('forbidden', 'This agent may not work in that project', {
@@ -931,6 +1160,9 @@ export function reclaimTask(
     // The owner's own permission, with the agent step and the space rules,
     // through `can()` as every claim asks it — on the reloaded actor.
     assertCan(withProject(fresh, project.id), 'task.claim', { projectId: project.id });
+    // D-119: the selection may have moved to another agent while the claim was
+    // expired (no live claim holds it then); taking it back would be a claim.
+    assertSelectedAgentMayClaim(db, fresh, taskId, agent.id);
 
     // A claim is held only on work in progress (§5): a task a person moved on
     // since the claim expired has nothing to take back.
@@ -964,6 +1196,11 @@ export function reclaimTask(
         ? openSession(db, fresh, agent, {}, now)
         : requireOpenSession(db, agent.id, input.sessionId);
     const claim = insertClaim(db, taskId, session.id, agent.id, now);
+    // A reclaim is a claim (LAI-586 review round 2): the open work request
+    // addressed to this agent — re-issued if the selection moved away and
+    // back while the claim was expired — is accepted in the same transaction,
+    // exactly as a fresh claim accepts it.
+    acceptWorkRequest(db, taskId, agent.id, now);
 
     appendActivity(db, {
       orgId: project.orgId,
@@ -1059,7 +1296,8 @@ export function expireClaims(db: Db, now: number): { changed: number } {
   for (const claim of overdue) {
     db.transaction(
       () => {
-        expireClaim(db, claim, now);
+        if (selectedForAnotherAgent(db, claim)) endClaimOfUnselectedAgent(db, claim, now);
+        else expireClaim(db, claim, now);
       },
       { behavior: 'immediate' },
     );

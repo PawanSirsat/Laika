@@ -220,11 +220,6 @@ const UNPAIRED = new Map<string, string>([
   // LAI-976's leave answer; the Space settings screen (LAI-977) brings the
   // mirror, and this entry leaves the way the rest do.
   ['LeaveProjectView', 'no client type exists'],
-  // LAI-534's registered agents (D-114); the Agents tab (LAI-537) brings the
-  // mirror, and these leave the way the rest do.
-  ['AgentView', 'no client type exists'],
-  ['AgentGrantView', 'no client type exists'],
-  ['CreatedAgentToken', 'no client type exists'],
   // LAI-535's selected agent on `TaskView` and the agent's work requests; the
   // task drawer's Agent field (LAI-538) brings the mirror.
   ['SelectedAgentView', 'no client type exists'],
@@ -238,6 +233,11 @@ const UNPAIRED = new Map<string, string>([
   // (LAI-543's Working / Connection lost) pairs it, and this entry leaves the
   // way the rest do.
   ['TaskLiveClaimView', 'no client type exists'],
+  // LAI-586's session line (D-118): `GET /agents/:id` with its sessions, and
+  // the session snapshot on an activity row. The agent line in the drawer and
+  // activity (LAI-587) brings the mirror, and these leave the way the rest do.
+  ['AgentDetailView', 'no client type exists'],
+  ['ActivitySessionView', 'no client type exists'],
 ]);
 
 /**

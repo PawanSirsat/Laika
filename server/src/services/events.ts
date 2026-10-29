@@ -40,8 +40,23 @@ export interface EventView {
    * every row older than the column — never back-filled.
    */
   agent_id: string | null;
+  /**
+   * The agent session the row was written under and what it reported about
+   * itself **then** — self-reported (D-118, LAI-586), a snapshot a later
+   * heartbeat does not change. Null for a row not written by an agent session
+   * and every row older than the columns — never back-filled.
+   */
+  agent_session: ActivitySessionView | null;
   payload: unknown;
   created_at: number;
+}
+
+/** An activity row's session snapshot (D-118). Self-reported; decides nothing. */
+export interface ActivitySessionView {
+  id: string;
+  harness: string | null;
+  harness_version: string | null;
+  model: string | null;
 }
 
 export function eventView(row: ActivityEvent): EventView {
@@ -55,6 +70,15 @@ export function eventView(row: ActivityEvent): EventView {
     actor_kind: row.actorKind,
     actor_token_id: row.actorTokenId,
     agent_id: row.agentId,
+    agent_session:
+      row.agentSessionId === null
+        ? null
+        : {
+            id: row.agentSessionId,
+            harness: row.sessionHarness,
+            harness_version: row.sessionHarnessVersion,
+            model: row.sessionModel,
+          },
     // `apiPayload`, not `readPayload`: rows written before LAI-045 name Drizzle
     // properties, and this is the one boundary every client passes through.
     payload: apiPayload(row),

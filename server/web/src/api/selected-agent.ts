@@ -261,8 +261,42 @@ export function refusalOf(error: unknown): SelectedAgentRefusal | undefined {
   return isRefusal(details.reason) ? details.reason : undefined;
 }
 
+/** The selected agent, as a `selected_for_another_agent` refusal names it — when the caller may see it. */
+type NamedAgent = Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>;
+
+function namedAgentOf(details: unknown): NamedAgent | undefined {
+  const agent = (details as { selected_agent?: unknown } | null)?.selected_agent;
+  if (typeof agent !== 'object' || agent === null) return undefined;
+  const a = agent as Record<string, unknown>;
+  if (typeof a.display_name !== 'string' || typeof a.harness !== 'string') return undefined;
+  return {
+    display_name: a.display_name,
+    harness: a.harness,
+    device_label: typeof a.device_label === 'string' ? a.device_label : null,
+  };
+}
+
+/**
+ * D-119's refusal in words (LAI-586): *"once a task names its agent, only that
+ * agent can start it."* `409 conflict` with `reason:
+ * selected_for_another_agent`; the agent is named only when the server named
+ * it, which it does only to a caller who may read the project. `undefined` for
+ * any other error.
+ */
+export function selectedForAnotherAgentWords(error: unknown): string | undefined {
+  if (!(error instanceof ApiError) || error.code !== 'conflict') return undefined;
+  const details = error.details as { reason?: unknown } | null;
+  if (details?.reason !== 'selected_for_another_agent') return undefined;
+  const agent = namedAgentOf(details);
+  return agent === undefined
+    ? 'Selected for another agent — only that agent can start it.'
+    : `Selected for ${agentLabel(agent)} — only that agent can start it.`;
+}
+
 /** A failed selection, in words — the reason when there is one, the server's message else. */
 export function selectionErrorWords(error: unknown): string {
+  const another = selectedForAnotherAgentWords(error);
+  if (another !== undefined) return another;
   const reason = refusalOf(error);
   if (reason !== undefined) return REFUSAL_WORDS[reason];
   return error instanceof Error && error.message !== ''

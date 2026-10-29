@@ -22,11 +22,53 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * the path that is not the token's agent's is a `404`.
  */
 
-const StartBody = strictObject({
-  // Self-reported (§4.65), and shown as such.
+/**
+ * What a session says about itself (§4.65, D-118) — **self-reported**, shown
+ * as such, and never read by `can()`, the fence or a claim. Checked for shape
+ * only, so a label cannot carry a control character or a line break into the
+ * board: `harness` is a lowercase slug (`codex`, `claude-code`), a version has
+ * no spaces, and a model is printable text.
+ */
+const SELF_REPORTED = {
   client_version: z.string().trim().min(1).max(64).optional(),
-  model: z.string().trim().min(1).max(120).optional(),
-});
+  harness: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9][a-z0-9._-]*$/, 'a lowercase slug: letters, digits, ".", "_" or "-"')
+    .optional(),
+  harness_version: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[\x21-\x7e]+$/, 'printable characters, no spaces')
+    .optional(),
+  model: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .regex(/^[\x20-\x7e]+$/, 'printable characters')
+    .optional(),
+};
+
+const StartBody = strictObject(SELF_REPORTED);
+
+/** A heartbeat may report again; a field it omits keeps what the session last said. */
+const HeartbeatBody = strictObject(SELF_REPORTED);
+
+/** An optional JSON body: none at all is `{}`; unreadable JSON is refused by the schema. */
+async function optionalBody(c: { req: { text: () => Promise<string> } }): Promise<unknown> {
+  const text = await c.req.text();
+  if (text.trim() === '') return {};
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
 
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
   const actor = c.get('actor');
@@ -45,23 +87,18 @@ export function agentSessionRoutes(options: AgentSessionRouteOptions): Hono<AppE
 
   app.post('/', async (c) => {
     const actor = requireActor(c);
-    const text = await c.req.text();
-    let json: unknown = {};
-    if (text.trim() !== '') {
-      try {
-        json = JSON.parse(text);
-      } catch {
-        json = null;
-      }
-    }
-    const body = parseBody(StartBody, json);
+    const body = parseBody(StartBody, await optionalBody(c));
 
     return c.json<AgentSessionView>(startAgentSession(db, actor, body), 201);
   });
 
-  app.post('/:id/heartbeat', (c) =>
-    c.json<HeartbeatView>(heartbeatAgentSession(sqlite, db, requireActor(c), c.req.param('id'))),
-  );
+  app.post('/:id/heartbeat', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(HeartbeatBody, await optionalBody(c));
+    return c.json<HeartbeatView>(
+      heartbeatAgentSession(sqlite, db, actor, c.req.param('id'), Date.now(), body),
+    );
+  });
 
   app.post('/:id/end', (c) =>
     c.json<AgentSessionView>(endAgentSession(sqlite, db, requireActor(c), c.req.param('id'))),
