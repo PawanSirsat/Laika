@@ -413,9 +413,11 @@ void describe('the drawer', () => {
       assert.doesNotMatch(text, /Working session|Last seen|No session holds/);
       assert.equal(await found.locator('[data-claim-expired]').count(), 0);
 
-      const details = found.locator('details.exec-details');
-      assert.equal(await details.evaluate((el) => (el as HTMLDetailsElement).open), false);
-      await details.locator('summary').click();
+      const details = found.locator('[data-exec-details]');
+      const toggle = details.getByRole('button', { name: 'Details' });
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      await toggle.click();
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert.match(await details.innerText(), /Claim generation\s*3/);
     } finally {
       await h.close();
@@ -464,7 +466,7 @@ void describe('the drawer', () => {
       assert.equal(await found.locator('[data-claim-expired]').count(), 0);
 
       // The reader is on the Details toggle when the claim lapses.
-      const summary = found.locator('details.exec-details summary');
+      const summary = found.locator('.exec-details-toggle');
       await summary.focus();
       assert.equal(await summary.evaluate((el) => el === document.activeElement), true);
 
@@ -484,7 +486,7 @@ void describe('the drawer', () => {
       assert.ok(reads() > before, 'the drawer did not re-read its activity');
       assert.equal(
         await h.page
-          .locator('.drawer details.exec-details summary')
+          .locator('.drawer .exec-details-toggle')
           .evaluate((el) => el === document.activeElement),
         true,
         'the live update moved the focus',
