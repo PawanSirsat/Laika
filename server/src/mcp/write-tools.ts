@@ -5,6 +5,7 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
 import { reclaimTask } from '../services/claims.ts';
+import { CHECKPOINT_LIMITS, registerCheckpoint } from '../services/checkpoints.ts';
 import { addComment } from '../services/comments.ts';
 import {
   getProjectContext,
@@ -535,6 +536,86 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       }
     },
   );
+  // -------------------------------------------------------- checkpoint_task
+
+  const NOTE_FIELD = z.string().max(CHECKPOINT_LIMITS.summaryField).optional();
+  const COMMIT = z
+    .string()
+    .trim()
+    .regex(/^[0-9a-fA-F]{40}$/, 'a full 40-character commit SHA');
+
+  server.registerTool(
+    'checkpoint_task',
+    {
+      title: 'Register a checkpoint you pushed',
+      description:
+        'Register a save of the task your session holds, **after** you pushed it: first the work branch, then the one lightweight tag `refs/tags/laika-ckpt/<task>/<id>` at the commit, alone in its own `git push` — never an annotated tag, never several tags in one push. `id` is a ULID you mint before the push; the tag ends in it. Send `idempotency_key`, and the same key again if a registration failed after the push: it answers the checkpoint already saved. `manifest` names the files you changed with their line counts — never contents, a diff or a prompt. `summary` is your note for whoever continues (work done, next step, decisions, open questions, known failing tests or builds); failing tests do not invalidate a save. The checkpoint is `pending` until a signed push notice from GitHub verifies it: Laika never fetches anything to check, and nothing you send can mark it verified.',
+      inputSchema: z.strictObject({
+        task: TASK_REF,
+        id: z.string().trim().min(1).max(64).describe('The ULID you minted; the tag ends in it.'),
+        idempotency_key: z.string().trim().min(1).max(CHECKPOINT_LIMITS.idempotencyKey),
+        repo: z
+          .string()
+          .trim()
+          .min(1)
+          .max(CHECKPOINT_LIMITS.repo)
+          .describe('`owner/name` — the project’s configured repository, and no other.'),
+        branch: z.string().trim().min(1).max(CHECKPOINT_LIMITS.branch),
+        commit_sha: COMMIT,
+        manifest: z
+          .array(
+            z.strictObject({
+              path: z.string().min(1).max(CHECKPOINT_LIMITS.path),
+              added: z.number().int().min(0).max(CHECKPOINT_LIMITS.lines),
+              removed: z.number().int().min(0).max(CHECKPOINT_LIMITS.lines),
+            }),
+          )
+          .max(CHECKPOINT_LIMITS.manifestEntries),
+        summary: z
+          .strictObject({
+            work_done: NOTE_FIELD,
+            next_step: NOTE_FIELD,
+            decisions: NOTE_FIELD,
+            open_questions: NOTE_FIELD,
+            failing: NOTE_FIELD,
+          })
+          .optional(),
+        summary_commit_sha: COMMIT.optional().describe(
+          'The commit your note describes — required with `summary`.',
+        ),
+        claim_generation: CLAIM_GENERATION,
+      }),
+    },
+    (args) => {
+      try {
+        const claimed = underClaim(actor, args.claim_generation);
+        const { checkpoint, created } = registerCheckpoint(
+          sqlite,
+          db,
+          claimed,
+          resolveTaskRef(db, args.task, actor),
+          {
+            id: args.id,
+            idempotencyKey: args.idempotency_key,
+            repo: args.repo,
+            branch: args.branch,
+            commitSha: args.commit_sha,
+            manifest: args.manifest,
+            summary: args.summary ?? null,
+            summaryCommitSha: args.summary_commit_sha ?? null,
+            now: clock(),
+          },
+        );
+        return answer(
+          `${created ? 'Saved' : 'Already saved'} checkpoint \`${checkpoint.id}\` at \`${checkpoint.commit_sha.slice(0, 12)}\` — **${checkpoint.verification}**. It is verified only when GitHub's signed notice for \`${checkpoint.remote_ref}\` arrives; if none comes, the webhook's *Redeliver* or a re-tag recovers it.`,
+          { checkpoint },
+        );
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
   // ----------------------------------------------------- log_unlisted_work
 
   server.registerTool(

@@ -243,6 +243,17 @@ const FENCED: Record<string, (f: Fixture) => Record<string, unknown>> = {
   update_status: (f) => ({ task: f.key, status: 'review' }),
   finish_task: (f) => ({ task: f.key, summary: 'Stale' }),
   set_task_sprint: (f) => ({ task: f.key, sprint: f.sprint }),
+  // §4.68 (LAI-545): a save is a change the fence refuses to a stale claim,
+  // before the repo or anything else about it is looked at.
+  checkpoint_task: (f) => ({
+    task: f.key,
+    id: '01JCXXXXXXXXXXXXXXXXXXXXXX',
+    idempotency_key: 'stale-save',
+    repo: 'kvelld/laika',
+    branch: `${f.key}-work`,
+    commit_sha: 'a'.repeat(40),
+    manifest: [],
+  }),
 };
 
 /** Every other tool, and why it is not fenced. */
