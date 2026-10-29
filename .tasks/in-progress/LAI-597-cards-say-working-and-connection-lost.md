@@ -2,11 +2,12 @@
 id: LAI-597
 title: 'Cards and the drawer say Working and Connection lost, from the task read’s live claim'
 area: web
-assignee: unclaimed
+assignee: shell (polly, Belka)
 priority: p1
 depends-on: [LAI-568]
 discovered-from: LAI-568
-status: backlog
+status: in-progress
+started: 2026-10-29T08:53:51Z
 ---
 
 Filed by Belka (polly dispatch, CHIEF's block) while taking LAI-568 over from
@@ -58,3 +59,10 @@ yet. This task is the screens.
       Connection lost with no request (browser test, injected clock).
 - [ ] The drawer shows the holding session and its last heartbeat from `claim`.
 - [ ] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+
+## Claim note (Belka, 2026-10-29)
+
+`depends-on: [LAI-568]` is merged on `master` (PR #112) and sits in
+`.tasks/review/`, not `done/`. Claimed on the polly orchestrator's direction
+("#112 (LAI-568) is now merged on master") — a recorded deviation from §2
+step 1, not a loose reading of it.
