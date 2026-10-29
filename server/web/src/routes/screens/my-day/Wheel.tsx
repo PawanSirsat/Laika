@@ -48,12 +48,23 @@ function Column({ label, items, index, onPick, unit }: WheelColumn) {
     if (next !== index) onPick(next);
   };
 
+  // The settle timer picks against the render that is current when it fires,
+  // not the one whose scroll armed it (LAI-599). Typing moves the column from
+  // outside; if that lands in the frame before the timer is due, the timer
+  // fires before the move's own scroll, and with the old `index` and `onPick`
+  // it took the new position for a pick and wrote it over what was typed —
+  // `1h 30m` became `1 h 45 min`, the new hour with the old minutes.
+  const latestPick = useRef(pickAt);
+  useLayoutEffect(() => {
+    latestPick.current = pickAt;
+  });
+
   const onScroll = (): void => {
     window.clearTimeout(settle.current);
     settle.current = window.setTimeout(() => {
       const el = ref.current;
       if (el === null || drag.current !== null) return;
-      pickAt(Math.round(el.scrollTop / row()));
+      latestPick.current(Math.round(el.scrollTop / row()));
     }, SETTLE_MS);
   };
 

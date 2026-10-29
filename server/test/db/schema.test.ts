@@ -113,6 +113,8 @@ describe('migrations', () => {
     'project_statuses',
     'projects',
     'pushed_commit_keys',
+    // LAI-590: the owner's confirmed device labels.
+    'recognised_agent_devices',
     'sessions',
     // LAI-788: the Solidtime bridge's map, people and entries.
     'solidtime_entries',

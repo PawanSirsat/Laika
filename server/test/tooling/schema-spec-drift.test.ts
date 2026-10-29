@@ -583,6 +583,8 @@ describe('the parser itself', () => {
     // is keyed by its person: one per person, and the row *is* the timer.
     // LAI-501's note is keyed by the person's day: one note per day.
     // LAI-534's grant is keyed by its pair: one per agent per project.
+    // LAI-590's recognised device is keyed by its owner and label: the row is
+    // the owner's statement about that label, nothing more.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
@@ -602,6 +604,7 @@ describe('the parser itself', () => {
       'org_time_settings',
       'plan_limits',
       'pushed_commit_keys',
+      'recognised_agent_devices',
       'solidtime_entries',
       'solidtime_people',
       'solidtime_projects',

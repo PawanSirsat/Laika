@@ -2438,3 +2438,81 @@ describe('0064 adds the session line on a populated database (LAI-586, D-118)', 
     },
   );
 });
+
+describe('0065 adds recognised devices on a populated database (LAI-590)', () => {
+  it(
+    'keeps every agent row; every label already in use starts recognised, keyed as requests key it',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_recognised_agent_devices$/.test(e.tag));
+      expect(at, 'the LAI-590 migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at).slice(0, 1);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        migrate(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const other = newId();
+        db.run(sql`
+          INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+          VALUES (${other}, 'other@example.test', 'Other', 'member', 1, ${now}, ${now})
+        `);
+        // Unicode case, padding, null and blank: the key must be the one
+        // `deviceLabelKey` gives a request, not SQLite's ASCII-only lower().
+        const rows: [string, string | null, number][] = [
+          [s.userId, '  BÉLKA ', now + 3],
+          [s.userId, 'bélka', now + 1],
+          [s.userId, null, now + 5],
+          [s.userId, '', now + 4],
+          [other, 'Strelka', now + 2],
+        ];
+        for (const [owner, label, at] of rows) {
+          db.run(sql`
+            INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, device_label, status, created_at)
+            VALUES (${newId()}, ${s.orgId}, ${owner}, 'a', 'other', ${label}, 'active', ${at})
+          `);
+        }
+        const before = db.all(sql`SELECT * FROM agents ORDER BY id`);
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        expect(db.all(sql`SELECT * FROM agents ORDER BY id`)).toEqual(before);
+        expect(
+          db.all(
+            sql`SELECT owner_user_id, label_key, created_at FROM recognised_agent_devices ORDER BY owner_user_id, label_key`,
+          ),
+        ).toEqual(
+          [
+            { owner_user_id: s.userId, label_key: '', created_at: now + 4 },
+            { owner_user_id: s.userId, label_key: 'bélka', created_at: now + 1 },
+            { owner_user_id: other, label_key: 'strelka', created_at: now + 2 },
+          ].sort((x, y) =>
+            x.owner_user_id === y.owner_user_id
+              ? x.label_key < y.label_key
+                ? -1
+                : 1
+              : x.owner_user_id < y.owner_user_id
+                ? -1
+                : 1,
+          ),
+        );
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});

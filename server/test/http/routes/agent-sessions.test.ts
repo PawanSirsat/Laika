@@ -643,6 +643,10 @@ const NOT_FENCED: Record<string, string> = {
   'PUT /api/v1/agents/:id/grants': 'session only (agent.manage_own)',
   'POST /api/v1/agents/:id/rotate-token': 'session only (agent.manage_own)',
   'POST /api/v1/agents/:id/revoke': 'session only (agent.manage_own); its claims lapse, never move',
+  'POST /api/v1/agents/devices/confirm':
+    'session only (agent.manage_own); records the owner’s statement about a label, touches no task',
+  'POST /api/v1/agents/devices/revoke':
+    'session only (agent.manage_own); revokes each agent as /agents/:id/revoke does, its claims lapse',
   'POST /api/v1/tokens': 'a credential, not a task',
   'DELETE /api/v1/tokens/:id': 'a credential, not a task',
   'DELETE /api/v1/users/:id/tokens/:tokenId': 'a credential, not a task',

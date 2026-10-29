@@ -10,6 +10,7 @@ import {
   purgeUnversionedIdempotencyKeys,
 } from './backfill.ts';
 import { type Db } from './client.ts';
+import { deviceLabelKey } from './device-label.ts';
 import { type Logger } from '../log.ts';
 
 /**
@@ -520,6 +521,12 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
     // rebuild's `PRAGMA foreign_keys=ON` was meant to be followed by.
     db.run(sql`PRAGMA foreign_keys = OFF`);
     try {
+      // SQLite lower()/trim() are ASCII-only. The devices migration uses the
+      // same Unicode normalisation as requests, inside the migration's own
+      // transaction, so only labels present at upgrade start recognised.
+      db.$client.function('laika_device_label_key', { deterministic: true }, (label) =>
+        deviceLabelKey(typeof label === 'string' ? label : null),
+      );
       migrate(db, { migrationsFolder });
     } finally {
       db.run(sql`PRAGMA foreign_keys = ON`);
