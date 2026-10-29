@@ -11,6 +11,7 @@ import {
 } from './backfill.ts';
 import { type Db } from './client.ts';
 import { deviceLabelKey } from './device-label.ts';
+import { newId } from './ids.ts';
 import { type Logger } from '../log.ts';
 
 /**
@@ -203,6 +204,38 @@ BEFORE INSERT ON \`time_entry_revisions\`
 WHEN EXISTS (SELECT 1 FROM \`time_entry_revisions\` WHERE \`id\` = NEW.\`id\`)
 BEGIN
   SELECT RAISE(ABORT, 'time_entry_revisions is append-only: INSERT OR REPLACE is not permitted (SPEC 4.49)');
+END`,
+  },
+  // §4.68's context revisions are a project brief's history (LAI-555): the
+  // same three as §4.49's — a revision goes with its project, so the delete
+  // is refused only while the project still exists.
+  {
+    name: 'project_context_revisions_is_append_only_no_update',
+    table: 'project_context_revisions',
+    create: `CREATE TRIGGER IF NOT EXISTS \`project_context_revisions_is_append_only_no_update\`
+BEFORE UPDATE ON \`project_context_revisions\`
+BEGIN
+  SELECT RAISE(ABORT, 'project_context_revisions is append-only: UPDATE is not permitted (SPEC 4.68)');
+END`,
+  },
+  {
+    name: 'project_context_revisions_is_append_only_no_delete',
+    table: 'project_context_revisions',
+    create: `CREATE TRIGGER IF NOT EXISTS \`project_context_revisions_is_append_only_no_delete\`
+BEFORE DELETE ON \`project_context_revisions\`
+WHEN EXISTS (SELECT 1 FROM \`projects\` WHERE \`id\` = OLD.\`project_id\`)
+BEGIN
+  SELECT RAISE(ABORT, 'project_context_revisions is append-only: DELETE is not permitted while its project exists (SPEC 4.68)');
+END`,
+  },
+  {
+    name: 'project_context_revisions_is_append_only_no_replace',
+    table: 'project_context_revisions',
+    create: `CREATE TRIGGER IF NOT EXISTS \`project_context_revisions_is_append_only_no_replace\`
+BEFORE INSERT ON \`project_context_revisions\`
+WHEN EXISTS (SELECT 1 FROM \`project_context_revisions\` WHERE \`id\` = NEW.\`id\`)
+BEGIN
+  SELECT RAISE(ABORT, 'project_context_revisions is append-only: INSERT OR REPLACE is not permitted (SPEC 4.68)');
 END`,
   },
   // §4.48's entries are kept three years (D-088 item 11, BCEA s31): nothing
@@ -527,6 +560,8 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
       db.$client.function('laika_device_label_key', { deterministic: true }, (label) =>
         deviceLabelKey(typeof label === 'string' ? label : null),
       );
+      // LAI-555's revision 1 rows take the id a request would mint.
+      db.$client.function('laika_new_id', { deterministic: false }, () => newId());
       migrate(db, { migrationsFolder });
     } finally {
       db.run(sql`PRAGMA foreign_keys = ON`);

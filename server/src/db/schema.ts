@@ -285,6 +285,13 @@ export const projects = sqliteTable(
     /** The shared brief served to agents by `get_project_context` (§7.1). */
     contextMd: text('context_md').notNull().default(''),
     /**
+     * The current revision of `context_md` (§4.68, proposal §4.6, LAI-555):
+     * `0` until the first write, then the `revision` of the newest
+     * `project_context_revisions` row, whose `body` is `context_md`. A write
+     * names the revision it replaces, and a stale one is `409`.
+     */
+    contextRevision: integer('context_revision').notNull().default(0),
+    /**
      * Hide finished work from the board once it is this many days old
      * (LAI-266). `null` means never, and is the default.
      *
@@ -1057,7 +1064,10 @@ export const agentSessions = sqliteTable(
     harness: text('harness'),
     harnessVersion: text('harness_version'),
     model: text('model'),
-    /** Nullable until the delivery work reads it (proposal §4.6). */
+    /**
+     * Unwritten (LAI-555): a revision is per project and a session is not, so
+     * delivery is kept per session **and project** in §4.69 instead.
+     */
     contextRevisionSeen: integer('context_revision_seen'),
   },
   (t) => [
@@ -1111,6 +1121,68 @@ export const taskClaims = sqliteTable(
     index('task_claims_state_lease_idx').on(t.state, t.leaseExpiresAt),
     check('task_claims_state_check', oneOf('state', TASK_CLAIM_STATES)),
     check('task_claims_generation_check', sql`generation >= 1`),
+  ],
+);
+
+// ------------------------------------------ §4.68 project_context_revisions
+
+/**
+ * Every revision of a project's context document (§4.68, proposal §4.6,
+ * LAI-555). **Immutable**: triggers refuse `UPDATE`, an `INSERT OR REPLACE`
+ * over an existing id, and `DELETE` while the project exists. The newest row's
+ * `body` is `projects.context_md`, and its `revision` is
+ * `projects.context_revision`.
+ *
+ * `author_id` and `agent_id` are **copies, no FK**: history says who wrote it,
+ * and a later change to a person or an agent must not rewrite it. Both are
+ * null on revision 1 of a document that existed before revisions did.
+ */
+export const projectContextRevisions = sqliteTable(
+  'project_context_revisions',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    body: text('body').notNull(),
+    authorId: text('author_id'),
+    agentId: text('agent_id'),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('project_context_revisions_project_revision_unique').on(t.projectId, t.revision),
+    check('project_context_revisions_revision_check', sql`revision >= 1`),
+  ],
+);
+
+// ------------------------------------------ §4.69 agent_session_context_deliveries
+
+/**
+ * The context revision Laika last **delivered** to an agent session, per
+ * project (§4.69, proposal §4.6, LAI-555). Delivered means the server sent
+ * that revision — the whole document or a diff ending at it — in answer to a
+ * call naming the session. It never means the agent read or understood it.
+ *
+ * Per project because a session may work in more than one, and a revision
+ * number means nothing without its project — which is why
+ * `agent_sessions.context_revision_seen` stays unwritten.
+ */
+export const agentSessionContextDeliveries = sqliteTable(
+  'agent_session_context_deliveries',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    deliveredAt: integer('delivered_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.projectId] }),
+    index('agent_session_context_deliveries_project_id_idx').on(t.projectId),
   ],
 );
 
