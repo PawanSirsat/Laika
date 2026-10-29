@@ -213,19 +213,39 @@ export function ProjectContextPanel({
     });
   };
 
-  /** Save this text as the next revision after the newest — an explicit overwrite. */
+  /**
+   * Save this text over the newest revision — an explicit overwrite.
+   *
+   * The newest is **read first**, not taken from what this screen last heard:
+   * a stream frame can be missed, and the revision the reader agrees to
+   * replace must be the one the save names. The confirmation names it, and the
+   * save sends exactly that `base_revision`. If yet another save lands between
+   * the read and the write, the server refuses it as stale and the conflict
+   * box says so again — this never retries on its own.
+   */
   const saveOver = (): void => {
-    if (behind === undefined) return;
-    void confirm({
-      title: `Replace r${String(behind)} with your text?`,
-      body: `Your text becomes r${String(behind + 1)}. Whatever r${String(behind)} added and yours does not have is gone from the current document; it stays in the history.`,
-      confirmLabel: 'Save mine',
-      cancelLabel: 'Cancel',
-      danger: true,
-      icon: 'warning',
-    }).then((yes) => {
-      if (yes) save(behind);
-    });
+    setSaving(true);
+    setSaveError(undefined);
+    getProjectContext(slug)
+      .then((doc) => {
+        const target = doc.revision;
+        setNewest((was) => Math.max(was ?? 0, target));
+        setSaving(false);
+        return confirm({
+          title: `Replace r${String(target)} with your text?`,
+          body: `Your text becomes r${String(target + 1)}. Whatever r${String(target)} has that yours does not is gone from the current document; it stays in the history.`,
+          confirmLabel: `Save mine over r${String(target)}`,
+          cancelLabel: 'Cancel',
+          danger: true,
+          icon: 'warning',
+        }).then((yes) => {
+          if (yes) save(target);
+        });
+      })
+      .catch((cause: unknown) => {
+        setSaving(false);
+        setSaveError(readableContextError(cause));
+      });
   };
 
   const budget = loaded === undefined ? undefined : contextBudget(draft.length, loaded.limit);

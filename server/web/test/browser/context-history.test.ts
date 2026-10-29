@@ -221,6 +221,27 @@ void describe('the revision history', () => {
     }
   });
 
+  void test('Hide hands focus back to the control that opened the viewer', async () => {
+    const h = await openPanel(world());
+    try {
+      const changes = h.page.getByRole('button', { name: 'Changes in r3' });
+      await changes.waitFor({ timeout: 10_000 });
+      await changes.focus();
+      await h.page.keyboard.press('Enter');
+      await h.page.locator('[data-diff-line="added"]').first().waitFor({ timeout: 10_000 });
+
+      await h.page.locator('[data-context-viewer]').getByRole('button', { name: 'Hide' }).click();
+      await h.page.locator('[data-context-viewer]').waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(
+        await h.page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
+        'Changes in r3',
+        'focus fell to the page when Hide removed itself',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('“Changes” draws the bounded diff, marked added and removed', async () => {
     const h = await openPanel(world());
     try {
@@ -291,42 +312,69 @@ void describe('the revision history', () => {
   });
 });
 
+/**
+ * The context endpoint as a tiny server: a current revision, `PATCH` refused
+ * as stale unless it names it, and a log of every read and write in order.
+ * `raceAfterRead` makes somebody else save straight after the next read.
+ */
+function contextServer(start: { revision: number; body: string }) {
+  const state = { ...start, raceAfterRead: false };
+  const log: string[] = [];
+  const route = (call: StubCall) => {
+    if (call.method !== 'PATCH') {
+      log.push(`GET r${String(state.revision)}`);
+      const answer = doc(state.revision, state.body);
+      if (state.raceAfterRead) {
+        state.raceAfterRead = false;
+        state.revision += 1;
+        state.body = `${state.body}\nSomebody else, again.`;
+      }
+      return answer;
+    }
+    const { base_revision: base, context_md: text } = call.body as {
+      base_revision: number;
+      context_md: string;
+    };
+    log.push(`PATCH base ${String(base)}`);
+    if (base !== state.revision) {
+      return reply(409, {
+        error: {
+          code: 'conflict',
+          message: `The context document is at revision ${String(state.revision)}, not ${String(base)}`,
+          details: {
+            reason: 'stale_context_revision',
+            base_revision: base,
+            current_revision: state.revision,
+          },
+        },
+      });
+    }
+    state.revision += 1;
+    state.body = text;
+    return doc(state.revision, text);
+  };
+  return { state, log, route };
+}
+
+/** Open at r2, then somebody saves r3, then the reader saves: refused. */
+async function refusedSave(server: ReturnType<typeof contextServer>) {
+  const h = await openPanel(world({ [`/api/v1/projects/${SLUG}/context`]: server.route }));
+  const editor = h.page.locator('.ctx-editor');
+  const mine = `${R2}\nMy change.`;
+  await editor.fill(mine);
+  server.state.revision = 3;
+  server.state.body = R3;
+  await h.page.locator('.ctx-save').click();
+  const conflict = h.page.locator('[data-context-conflict="stale"]');
+  await conflict.waitFor({ timeout: 10_000 });
+  return { h, editor, mine, conflict };
+}
+
 void describe('a stale save', () => {
   void test('keeps the text, offers the comparison, and saves over only when asked', async () => {
-    const patches: unknown[] = [];
-    const stub = world({
-      [`/api/v1/projects/${SLUG}/context`]: (call: StubCall) => {
-        if (call.method !== 'PATCH') return doc(2, R2);
-        patches.push(call.body);
-        const { base_revision: base, context_md: text } = call.body as {
-          base_revision: number;
-          context_md: string;
-        };
-        if (base !== 3) {
-          return reply(409, {
-            error: {
-              code: 'conflict',
-              message: 'The context document is at revision 3, not 2',
-              details: {
-                reason: 'stale_context_revision',
-                base_revision: base,
-                current_revision: 3,
-              },
-            },
-          });
-        }
-        return doc(4, text);
-      },
-    });
-    const h = await openPanel(stub);
+    const server = contextServer({ revision: 2, body: R2 });
+    const { h, editor, mine, conflict } = await refusedSave(server);
     try {
-      const editor = h.page.locator('.ctx-editor');
-      const mine = `${R2}\nMy change.`;
-      await editor.fill(mine);
-      await h.page.locator('.ctx-save').click();
-
-      const conflict = h.page.locator('[data-context-conflict="stale"]');
-      await conflict.waitFor({ timeout: 10_000 });
       assert.match(
         await conflict.getByRole('alert').innerText(),
         /Not saved: somebody saved a newer version \(r3\) while you were editing r2\. Your text is still here\./,
@@ -340,17 +388,59 @@ void describe('a stale save', () => {
       await conflict.scrollIntoViewIfNeeded();
       await shot(h, 'stale-save-compare');
 
+      // Read the newest, then ask, then write exactly what was asked about.
+      const before = server.log.length;
       await conflict.getByRole('button', { name: 'Save mine over r3' }).click();
+      const dialog = h.page.locator('[data-confirm-dialog]');
+      await dialog.waitFor({ timeout: 10_000 });
+      assert.deepEqual(
+        server.log.slice(before),
+        ['GET r3'],
+        'the confirmation was shown before the newest revision was read, or after a write',
+      );
       const said = await answerConfirm(h.page, true);
       assert.match(said, /Replace r3 with your text\?/);
 
-      await until(() => patches.length === 2);
-      assert.deepEqual(patches, [
-        { context_md: mine, base_revision: 2 },
-        { context_md: mine, base_revision: 3 },
-      ]);
+      await until(() => server.log.length === before + 2);
+      assert.deepEqual(server.log.slice(before), ['GET r3', 'PATCH base 3']);
       await conflict.waitFor({ state: 'detached', timeout: 10_000 });
       assert.equal(await editor.inputValue(), mine);
+      assert.equal(server.state.revision, 4);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a save that lands between the read and the write is refused again, not retried', async () => {
+    const server = contextServer({ revision: 2, body: R2 });
+    const { h, editor, mine, conflict } = await refusedSave(server);
+    try {
+      const before = server.log.length;
+      server.state.raceAfterRead = true;
+      await conflict.getByRole('button', { name: 'Save mine over r3' }).click();
+      const said = await answerConfirm(h.page, true);
+      assert.match(
+        said,
+        /Replace r3 with your text\?/,
+        'the confirmation named the wrong revision',
+      );
+
+      const again = h.page.locator('[data-context-conflict="stale"]');
+      await until(async () => {
+        const text = await again
+          .getByRole('alert')
+          .innerText()
+          .catch(() => '');
+        return text.includes('(r4)');
+      });
+      assert.match(
+        await again.getByRole('alert').innerText(),
+        /somebody saved a newer version \(r4\)/,
+      );
+      // Give a retry loop the chance to show itself, then count the writes.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      assert.deepEqual(server.log.slice(before), ['GET r3', 'PATCH base 3']);
+      assert.equal(await editor.inputValue(), mine, 'the refused text was not kept');
     } finally {
       await h.close();
     }

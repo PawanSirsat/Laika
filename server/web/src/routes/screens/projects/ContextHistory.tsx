@@ -263,7 +263,11 @@ export function ContextHistory({ slug, refreshKey, members, agents }: ContextHis
     viewerRef.current?.focus();
   }, [view]);
 
+  /** The control that opened the viewer, so Hide can hand focus back to it. */
+  const opener = useRef<HTMLElement | null>(null);
+
   const show = (next: ContextView): void => {
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     moveFocus.current = true;
     setView(next);
   };
@@ -445,6 +449,9 @@ export function ContextHistory({ slug, refreshKey, members, agents }: ContextHis
               className="ctx-link"
               onClick={() => {
                 setView(undefined);
+                // Hide removes itself; focus goes back to what opened the
+                // viewer rather than falling to the page.
+                opener.current?.focus();
               }}
             >
               Hide
