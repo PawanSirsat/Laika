@@ -254,6 +254,15 @@ const FENCED: Record<string, (f: Fixture) => Record<string, unknown>> = {
     commit_sha: 'a'.repeat(40),
     manifest: [],
   }),
+  // §4.71 (LAI-546): an offer is a change the fence refuses to a stale claim,
+  // before the checkpoint or the receiver is looked at.
+  offer_handoff: (f) => ({
+    task: f.key,
+    to_agent: '01JRECEIVERXXXXXXXXXXXXXXX',
+    checkpoint: '01JCXXXXXXXXXXXXXXXXXXXXXX',
+    reason: 'Stale',
+    idempotency_key: 'stale-offer',
+  }),
 };
 
 /** Every other tool, and why it is not fenced. */
@@ -270,6 +279,9 @@ const EXEMPT: Record<string, string> = {
   get_project_context: 'a read',
   list_sprints: 'a read',
   list_members: 'a read',
+  agent_sync: 'a read',
+  respond_handoff:
+    'answers an offer by id, not a task: the accept moves the claim itself, in one transaction (test/services/handoffs.test.ts)',
   create_sprint: 'a sprint, not a task',
   update_sprint: 'a sprint, not a task — its tasks are untouched',
   update_project_context: 'the project brief, not a task',

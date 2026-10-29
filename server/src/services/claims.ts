@@ -26,6 +26,7 @@ import {
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can, type AgentContext, systemPrincipal } from '../policy/can.ts';
+import { assertNoAcceptedOfferFrom, closeLiveOffersOfTask, openRecoveryIfDue } from './handoffs.ts';
 
 /**
  * Agent sessions and exclusive task claims (proposal §4.2, SPEC §4.65, §4.66,
@@ -218,7 +219,7 @@ function isSuspect(lastHeartbeatAt: number, now: number): boolean {
   return now - lastHeartbeatAt >= settings.timings.suspectMs;
 }
 
-function sessionView(row: SessionRow, now: number): AgentSessionView {
+export function sessionView(row: SessionRow, now: number): AgentSessionView {
   return {
     id: row.id,
     agent_id: row.agentId,
@@ -308,7 +309,7 @@ function requireOwnSession(db: Db, agentId: string, sessionId: string): SessionR
   return row;
 }
 
-function requireOpenSession(db: Db, agentId: string, sessionId: string): SessionRow {
+export function requireOpenSession(db: Db, agentId: string, sessionId: string): SessionRow {
   const row = requireOwnSession(db, agentId, sessionId);
   if (row.endedAt !== null) {
     throw claimConflict('stale_claim', 'That session has ended; start a new one', {
@@ -400,7 +401,7 @@ export function liveClaimViews(
 }
 
 /** The task's newest claim of any state — the highest generation. */
-function latestClaim(db: Db, taskId: string): ClaimRow | undefined {
+export function latestClaim(db: Db, taskId: string): ClaimRow | undefined {
   return db
     .select()
     .from(taskClaims)
@@ -440,7 +441,7 @@ export interface StartSessionInput {
  */
 export type HeartbeatInput = StartSessionInput;
 
-function openSession(
+export function openSession(
   db: Db,
   actor: ResolvedActor,
   agent: AgentContext,
@@ -518,6 +519,18 @@ export function heartbeatAgentSession(
     for (const claim of active) {
       if (selectedForAnotherAgent(db, claim)) endClaimOfUnselectedAgent(db, claim, now);
       else if (leaseLapsed(claim.leaseExpiresAt, now)) expireClaim(db, claim, now);
+      else renewLease(db, claim, now);
+    }
+    // **A paused claim is leased exactly like an active one** (§4.66,
+    // LAI-546): its holder's offer is live, and the heartbeat keeps it — or,
+    // too late, expires it by the same rule.
+    const paused = db
+      .select()
+      .from(taskClaims)
+      .where(and(eq(taskClaims.sessionId, session.id), eq(taskClaims.state, 'paused')))
+      .all();
+    for (const claim of paused) {
+      if (leaseLapsed(claim.leaseExpiresAt, now)) expireClaim(db, claim, now);
       else renewLease(db, claim, now);
     }
 
@@ -769,6 +782,9 @@ export function holdsLiveClaim(db: Db, actor: ServiceCaller, taskId: string): bo
  * generation is refused from here on.
  */
 export function releaseLiveClaim(db: Db, taskId: string, now: number): void {
+  // A task that leaves progress has no live offer (§4.71 `task_closed`): the
+  // system closes each, before the claim it paused is released.
+  closeLiveOffersOfTask(db, taskId, 'task_closed', systemPrincipal(), now);
   db.update(taskClaims)
     .set({ state: 'released', endedAt: now })
     .where(and(eq(taskClaims.taskId, taskId), inArray(taskClaims.state, [...LIVE_CLAIM_STATES])))
@@ -875,7 +891,7 @@ export function takeClaim(
   return { claim, resumed: false };
 }
 
-function insertClaim(
+export function insertClaim(
   db: Db,
   taskId: string,
   sessionId: string,
@@ -1097,17 +1113,6 @@ export interface ReclaimView {
   from_generation: number;
 }
 
-/**
- * **The seam for LAI-546.** Reclaiming must refuse `409` (`offer_taken`) when
- * a recovery or hand-off offer for the task was already accepted, and cancel
- * every open or pending-approval one with reason `reclaimed`. Those offers do
- * not exist yet — LAI-535 writes only work requests, which reclaiming leaves
- * alone — so this returns. A test pins it and names LAI-546.
- */
-export function reclaimOfferSteps(_db: Db, _taskId: string, _now: number): void {
-  // TODO(LAI-546): refuse `offer_taken`; cancel open and pending-approval offers.
-}
-
 export type FreshAgentActor = ResolvedActor & {
   token: NonNullable<ResolvedActor['token']> & { agent: AgentContext };
 };
@@ -1122,7 +1127,14 @@ export function reloadAgentActor(
   db: Db,
   actor: ResolvedActor,
   now: number,
-  action: 'task.claim' | 'task.checkpoint.create' | 'task.checkpoint.retag' = 'task.claim',
+  action:
+    | 'task.claim'
+    | 'task.checkpoint.create'
+    | 'task.checkpoint.retag'
+    | 'task.handoff.offer'
+    | 'task.handoff.accept'
+    | 'task.handoff.decline'
+    | 'task.handoff.cancel' = 'task.claim',
 ): FreshAgentActor {
   const refuse = (reason: string, message: string) =>
     new ApiError('forbidden', message, { action, reason });
@@ -1196,6 +1208,19 @@ export function reclaimTask(
     // The owner's own permission, with the agent step and the space rules,
     // through `can()` as every claim asks it — on the reloaded actor.
     assertCan(withProject(fresh, project.id), 'task.claim', { projectId: project.id });
+    // **An accepted offer from the generation being reclaimed** (§9.1.1,
+    // LAI-546): the task is somebody else's now — `offer_taken`, asked before
+    // D-119 and the live claim: an accept moves the selection and the claim,
+    // and the old holder should hear why rather than a bare refusal.
+    const mine = db
+      .select()
+      .from(taskClaims)
+      .where(and(eq(taskClaims.taskId, taskId), eq(taskClaims.agentId, agent.id)))
+      .orderBy(desc(taskClaims.generation))
+      .limit(1)
+      .get();
+    if (mine?.state === 'expired') assertNoAcceptedOfferFrom(db, taskId, mine.generation);
+
     // D-119: the selection may have moved to another agent while the claim was
     // expired (no live claim holds it then); taking it back would be a claim.
     assertSelectedAgentMayClaim(db, fresh, taskId, agent.id);
@@ -1225,7 +1250,9 @@ export function reclaimTask(
       });
     }
 
-    reclaimOfferSteps(db, taskId, now);
+    // Every outstanding hand-off and recovery offer is invalidated, before
+    // the new claim (§9.1.1): `cancelled`, `reclaimed`, a row each.
+    closeLiveOffersOfTask(db, taskId, 'reclaimed', fresh, now);
 
     const session =
       input.sessionId === undefined
@@ -1264,13 +1291,13 @@ export function reclaimTask(
 // ------------------------------------------------------------------ expiry
 
 /**
- * **The seam for LAI-546.** A claim that lapsed opens a recovery offer —
- * never a silent reassignment (proposal §4.2). Offers of that kind do not
- * exist yet, so this returns; the scan and the heartbeat both call it, so
- * the day it does something, every expiry gets it.
+ * A claim that lapsed opens a recovery offer — never a silent reassignment
+ * (§11.6, proposal §4.2) — in the transaction that expired it. The scan and
+ * the heartbeat both come here, so every expiry gets it; a task whose claim
+ * had a live hand-off gets its recovery when that offer closes unaccepted.
  */
-export function afterClaimExpired(_db: Db, _claim: ClaimRow, _now: number): void {
-  // TODO(LAI-546): open a `recovery` offer for the task.
+export function afterClaimExpired(db: Db, claim: ClaimRow, now: number): void {
+  openRecoveryIfDue(db, claim.taskId, now);
 }
 
 /** Mark one claim `expired` and write `task.claim_expired` as the system (§3.4). */
@@ -1278,7 +1305,7 @@ function expireClaim(db: Db, claim: ClaimRow, now: number): void {
   const changed = db
     .update(taskClaims)
     .set({ state: 'expired', endedAt: now })
-    .where(and(eq(taskClaims.id, claim.id), eq(taskClaims.state, 'active')))
+    .where(and(eq(taskClaims.id, claim.id), inArray(taskClaims.state, [...LIVE_CLAIM_STATES])))
     .run().changes;
   if (changed === 0) return;
 
@@ -1309,7 +1336,7 @@ function expireClaim(db: Db, claim: ClaimRow, now: number): void {
 const SYSTEM = systemPrincipal();
 
 /**
- * §11.6's expiry scan: every `active` claim whose lease has lapsed becomes
+ * §11.6's expiry scan: every live claim — `active` or `paused` — whose lease has lapsed becomes
  * `expired`, one `task.claim_expired` row each — each is a different task's
  * history, unlike retention's one row a run. Nothing lapses during the boot
  * grace ({@link leaseLapsed}); after it, the first scan catches everything
@@ -1321,7 +1348,9 @@ export function expireClaims(db: Db, now: number): { changed: number } {
   const overdue = db
     .select()
     .from(taskClaims)
-    .where(and(eq(taskClaims.state, 'active'), lte(taskClaims.leaseExpiresAt, now)))
+    .where(
+      and(inArray(taskClaims.state, [...LIVE_CLAIM_STATES]), lte(taskClaims.leaseExpiresAt, now)),
+    )
     .all()
     .filter((claim) => leaseLapsed(claim.leaseExpiresAt, now));
 
@@ -1332,8 +1361,9 @@ export function expireClaims(db: Db, now: number): { changed: number } {
   for (const claim of overdue) {
     db.transaction(
       () => {
-        if (selectedForAnotherAgent(db, claim)) endClaimOfUnselectedAgent(db, claim, now);
-        else expireClaim(db, claim, now);
+        if (claim.state === 'active' && selectedForAnotherAgent(db, claim)) {
+          endClaimOfUnselectedAgent(db, claim, now);
+        } else expireClaim(db, claim, now);
       },
       { behavior: 'immediate' },
     );

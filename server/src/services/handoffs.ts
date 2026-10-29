@@ -1,0 +1,1750 @@
+import { createHash } from 'node:crypto';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
+import type Database from 'better-sqlite3';
+import {
+  activityActor,
+  isSystemPrincipal,
+  loadActor,
+  type ResolvedActor,
+  withProject,
+} from '../auth/resolve-actor.ts';
+import { appendActivity } from '../db/activity.ts';
+import { type Db } from '../db/client.ts';
+import {
+  type HandoffClosedReason,
+  type HandoffOfferKind,
+  type HandoffOfferState,
+  LIVE_OFFER_STATES,
+} from '../db/enums.ts';
+import { newId } from '../db/ids.ts';
+import { immediateTransaction } from '../db/numbering.ts';
+import {
+  agentProjectGrants,
+  agents,
+  agentSessions,
+  handoffOffers,
+  projectHandoffPolicies,
+  projectMemberships,
+  projects,
+  taskCheckpoints,
+  taskClaims,
+  tasks,
+} from '../db/schema.ts';
+import { ApiError } from '../errors.ts';
+import { RateLimiter } from '../http/rate-limit.ts';
+import { assertCan, can, systemPrincipal, type AgentContext } from '../policy/can.ts';
+import {
+  type AgentSessionView,
+  claimFenceRefusal,
+  claimView,
+  insertClaim,
+  latestClaim,
+  liveClaim,
+  openSession,
+  registeredAgent,
+  reloadAgentActor,
+  requireOpenSession,
+  requireVisibleTaskToClaim,
+  sessionView,
+  type TaskClaimView,
+} from './claims.ts';
+import { assertCheckpointAcceptable } from './checkpoints.ts';
+import { requireProjectBySlug } from './projects.ts';
+import { noSuchProjectForAgent, type WorkRequestView } from './work-requests.ts';
+
+/**
+ * Hand-off offers, approvals, acceptance and recovery (SPEC §4.71, §4.72,
+ * §6.3, §6.4, §11.6, proposal §4.4, §4.5, D-114 – D-116, LAI-546).
+ *
+ * ## The one rule everything here serves
+ *
+ * **Acceptance moves the claim atomically**: in one `BEGIN IMMEDIATE`
+ * transaction the claim the work moves from ends — a paused sender's becomes
+ * `transferred`, an expired one stays `expired` — and the receiver's session
+ * gets a new claim at the next generation. From that commit on the old
+ * session's generation is refused by the fence (§6.3), on REST and MCP alike,
+ * because both ask the same service.
+ *
+ * ## Reading everything again
+ *
+ * Every write re-reads, inside its transaction, the caller's token, agent and
+ * owner ({@link reloadAgentActor}), the owner's permission narrowed by the
+ * agent's grant, the policy, the offer's state and expiry and the checkpoint's
+ * `verification`. Nothing a request resolved before the lock is trusted.
+ *
+ * ## Untrusted data
+ *
+ * A sender's `reason` and the checkpoint's note are stored and served as data
+ * — never executed, never read as instructions (D-115 item 7). `note_hash` lets
+ * the receiver see whether the note it reads is the note that was offered.
+ *
+ * ## Hidden is missing
+ *
+ * An offer on a task the caller cannot read is answered exactly as an offer
+ * that does not exist (`404`, the same bytes), as a task is (LAI-586).
+ */
+
+// ------------------------------------------------------------------ policy
+
+/** §4.72's defaults: what a project that never set a policy reads as. */
+export const DEFAULT_HANDOFF_POLICY = {
+  allow_other_owners: false,
+  cross_owner_requires_approval: true,
+  max_handoffs: 3,
+  offer_ttl_minutes: 30,
+} as const;
+
+/** §4.72's bounds, shared by the route and the service. */
+export const HANDOFF_POLICY_LIMITS = {
+  maxHandoffs: { min: 0, max: 20 },
+  offerTtlMinutes: { min: 5, max: 1440 },
+} as const;
+
+/** §4.71's bounds. */
+export const HANDOFF_LIMITS = {
+  reason: 500,
+  idempotencyKey: 200,
+  declineReason: 500,
+} as const;
+
+/** A project's hand-off policy as `GET /projects/:slug/handoff-policy` answers it. */
+export interface HandoffPolicyView {
+  project_id: string;
+  allow_other_owners: boolean;
+  cross_owner_requires_approval: boolean;
+  max_handoffs: number;
+  offer_ttl_minutes: number;
+  updated_by: string | null;
+  /** `false` when no row exists and these are the defaults (§4.72). */
+  is_set: boolean;
+}
+
+function readPolicy(db: Db, projectId: string): HandoffPolicyView {
+  const row = db
+    .select()
+    .from(projectHandoffPolicies)
+    .where(eq(projectHandoffPolicies.projectId, projectId))
+    .get();
+  if (row === undefined) {
+    return { project_id: projectId, ...DEFAULT_HANDOFF_POLICY, updated_by: null, is_set: false };
+  }
+  return {
+    project_id: projectId,
+    allow_other_owners: row.allowOtherOwners,
+    cross_owner_requires_approval: row.crossOwnerRequiresApproval,
+    max_handoffs: row.maxHandoffs,
+    offer_ttl_minutes: row.offerTtlMinutes,
+    updated_by: row.updatedBy,
+    is_set: true,
+  };
+}
+
+/** `GET /projects/:slug/handoff-policy` (§6.4): under *Read tasks*. */
+export function getHandoffPolicy(db: Db, actor: ResolvedActor, slug: string): HandoffPolicyView {
+  const project = requireProjectBySlug(db, slug);
+  assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
+  return readPolicy(db, project.id);
+}
+
+export interface HandoffPolicyInput {
+  allow_other_owners?: boolean | undefined;
+  cross_owner_requires_approval?: boolean | undefined;
+  max_handoffs?: number | undefined;
+  offer_ttl_minutes?: number | undefined;
+}
+
+function bounded(field: string, value: number, min: number, max: number): number {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new ApiError('unprocessable', `${field} is an integer from ${min} to ${max}`, { field });
+  }
+  return value;
+}
+
+/**
+ * `PUT /projects/:slug/handoff-policy` (§6.4, §4.72): a lead's. Writes **the
+ * whole row** from the defaults plus what it was sent — not from the row
+ * before it — and `project.updated` with `{ field: 'handoff_policy', from, to
+ * }`, a settings change as every other is. A body that changes nothing writes
+ * nothing.
+ */
+export function putHandoffPolicy(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+  input: HandoffPolicyInput,
+  now = Date.now(),
+): HandoffPolicyView {
+  const next = {
+    allow_other_owners: input.allow_other_owners ?? DEFAULT_HANDOFF_POLICY.allow_other_owners,
+    cross_owner_requires_approval:
+      input.cross_owner_requires_approval ?? DEFAULT_HANDOFF_POLICY.cross_owner_requires_approval,
+    max_handoffs: bounded(
+      'max_handoffs',
+      input.max_handoffs ?? DEFAULT_HANDOFF_POLICY.max_handoffs,
+      HANDOFF_POLICY_LIMITS.maxHandoffs.min,
+      HANDOFF_POLICY_LIMITS.maxHandoffs.max,
+    ),
+    offer_ttl_minutes: bounded(
+      'offer_ttl_minutes',
+      input.offer_ttl_minutes ?? DEFAULT_HANDOFF_POLICY.offer_ttl_minutes,
+      HANDOFF_POLICY_LIMITS.offerTtlMinutes.min,
+      HANDOFF_POLICY_LIMITS.offerTtlMinutes.max,
+    ),
+  };
+
+  return immediateTransaction(sqlite, () => {
+    const project = requireProjectBySlug(db, slug);
+    assertCan(withProject(actor, project.id), 'project.handoff_policy.edit', {
+      projectId: project.id,
+    });
+    const before = readPolicy(db, project.id);
+    const from = {
+      allow_other_owners: before.allow_other_owners,
+      cross_owner_requires_approval: before.cross_owner_requires_approval,
+      max_handoffs: before.max_handoffs,
+      offer_ttl_minutes: before.offer_ttl_minutes,
+    };
+    if (before.is_set && JSON.stringify(from) === JSON.stringify(next)) return before;
+
+    const values = {
+      allowOtherOwners: next.allow_other_owners,
+      crossOwnerRequiresApproval: next.cross_owner_requires_approval,
+      maxHandoffs: next.max_handoffs,
+      offerTtlMinutes: next.offer_ttl_minutes,
+      updatedBy: actor.userId,
+    };
+    db.insert(projectHandoffPolicies)
+      .values({ id: newId(), projectId: project.id, ...values })
+      .onConflictDoUpdate({ target: projectHandoffPolicies.projectId, set: values })
+      .run();
+
+    if (JSON.stringify(from) !== JSON.stringify(next)) {
+      appendActivity(db, {
+        orgId: project.orgId,
+        projectId: project.id,
+        ...activityActor(actor),
+        type: 'project.updated',
+        payload: { field: 'handoff_policy', from, to: next },
+        now,
+      });
+    }
+    return readPolicy(db, project.id);
+  });
+}
+
+// -------------------------------------------------------------- rate limit
+
+/**
+ * §6.3's offer bucket: **10 a burst, refilled one a minute, per agent across
+ * its tokens**, beside the general budget — making, accepting, declining or
+ * cancelling an offer. A repeated idempotency key still spends a token, so a
+ * retry loop cannot spam. Approving is a person's and is not counted here.
+ */
+export const HANDOFF_RATE = { perMinute: 1, burst: 10 } as const;
+
+let rateNow = 0;
+let limiter = new RateLimiter(() => rateNow);
+
+/** A test starts each case with full buckets. */
+export function resetHandoffRateLimits(): void {
+  limiter = new RateLimiter(() => rateNow);
+}
+
+function spendOfferToken(agentId: string, now: number): void {
+  rateNow = now;
+  const decision = limiter.take(`handoff:${agentId}`, HANDOFF_RATE);
+  if (!decision.allowed) {
+    throw new ApiError('rate_limited', 'Too many hand-off requests from this agent', {
+      reason: 'handoff_rate',
+      retry_after_seconds: decision.retryAfterSeconds,
+    });
+  }
+}
+
+// ------------------------------------------------------------------- views
+
+type OfferRow = typeof handoffOffers.$inferSelect;
+type TaskRow = typeof tasks.$inferSelect;
+type ProjectRow = typeof projects.$inferSelect;
+
+/** One offer on the wire (§6.4): the column names, unchanged, and a few derived. */
+export interface HandoffOfferView {
+  id: string;
+  task_id: string;
+  kind: HandoffOfferKind;
+  state: HandoffOfferState;
+  from_session_id: string | null;
+  /** The sending session's agent; null when nobody sent it. */
+  from_agent_id: string | null;
+  from_claim_generation: number | null;
+  to_agent_id: string | null;
+  checkpoint_id: string | null;
+  checkpoint_commit_sha: string | null;
+  /** The checkpoint as it is now — untrusted data — or null once retention removed it. */
+  checkpoint: {
+    commit_sha: string;
+    verification: string;
+    summary: unknown;
+    summary_commit_sha: string | null;
+  } | null;
+  /** The sender's reason. Untrusted data (D-115 item 7). */
+  reason: string | null;
+  note_hash: string | null;
+  requires_approval: boolean;
+  approved_by_user_id: string | null;
+  approved_at: number | null;
+  expires_at: number | null;
+  accepted_session_id: string | null;
+  accepted_claim_id: string | null;
+  /** The receiver's acknowledgement, not proof (D-116 item 8). */
+  receiver_commit_sha: string | null;
+  closed_reason: HandoffClosedReason | null;
+  created_by_user_id: string;
+  created_at: number;
+  closed_at: number | null;
+}
+
+function offerViews(db: Db, rows: readonly OfferRow[]): HandoffOfferView[] {
+  if (rows.length === 0) return [];
+  const sessionIds = [
+    ...new Set(rows.map((r) => r.fromSessionId).filter((id): id is string => id !== null)),
+  ];
+  const agentOfSession = new Map(
+    sessionIds.length === 0
+      ? []
+      : db
+          .select({ id: agentSessions.id, agentId: agentSessions.agentId })
+          .from(agentSessions)
+          .where(inArray(agentSessions.id, sessionIds))
+          .all()
+          .map((s) => [s.id, s.agentId]),
+  );
+  const checkpointIds = [
+    ...new Set(rows.map((r) => r.checkpointId).filter((id): id is string => id !== null)),
+  ];
+  const checkpoints = new Map(
+    checkpointIds.length === 0
+      ? []
+      : db
+          .select()
+          .from(taskCheckpoints)
+          .where(inArray(taskCheckpoints.id, checkpointIds))
+          .all()
+          .map((c) => [c.id, c]),
+  );
+
+  return rows.map((row) => {
+    const checkpoint = row.checkpointId === null ? undefined : checkpoints.get(row.checkpointId);
+    return {
+      id: row.id,
+      task_id: row.taskId,
+      kind: row.kind,
+      state: row.state,
+      from_session_id: row.fromSessionId,
+      from_agent_id:
+        row.fromSessionId === null ? null : (agentOfSession.get(row.fromSessionId) ?? null),
+      from_claim_generation: row.fromClaimGeneration,
+      to_agent_id: row.toAgentId,
+      checkpoint_id: row.checkpointId,
+      checkpoint_commit_sha: row.checkpointCommitSha,
+      checkpoint:
+        checkpoint === undefined
+          ? null
+          : {
+              commit_sha: checkpoint.commitSha,
+              verification: checkpoint.verification,
+              summary: checkpoint.summary ?? null,
+              summary_commit_sha: checkpoint.summaryCommitSha,
+            },
+      reason: row.reason,
+      note_hash: row.noteHash,
+      requires_approval: row.requiresApproval,
+      approved_by_user_id: row.approvedByUserId,
+      approved_at: row.approvedAt,
+      expires_at: row.expiresAt,
+      accepted_session_id: row.acceptedSessionId,
+      accepted_claim_id: row.acceptedClaimId,
+      receiver_commit_sha: row.receiverCommitSha,
+      closed_reason: row.closedReason,
+      created_by_user_id: row.createdByUserId,
+      created_at: row.createdAt,
+      closed_at: row.closedAt,
+    };
+  });
+}
+
+function offerView(db: Db, row: OfferRow): HandoffOfferView {
+  return offerViews(db, [row])[0]!;
+}
+
+function reloadOffer(db: Db, id: string): OfferRow {
+  return db.select().from(handoffOffers).where(eq(handoffOffers.id, id)).get()!;
+}
+
+// ---------------------------------------------------------------- refusals
+
+function notAnAgent(action: string): ApiError {
+  return new ApiError('forbidden', 'Only a registered agent does this', {
+    action,
+    reason: 'not_an_agent',
+  });
+}
+
+/** One answer for an offer that does not exist and one the caller cannot see. */
+function noSuchOffer(): ApiError {
+  return ApiError.notFound('No such offer');
+}
+
+function conflict(reason: string, message: string, details: Record<string, unknown> = {}) {
+  return new ApiError('conflict', message, { reason, ...details });
+}
+
+function unprocessable(
+  field: string,
+  reason: string,
+  message: string,
+  details: Record<string, unknown> = {},
+) {
+  return new ApiError('unprocessable', message, { field, reason, ...details });
+}
+
+function isLive(state: HandoffOfferState): boolean {
+  return (LIVE_OFFER_STATES as readonly string[]).includes(state);
+}
+
+/** `409 offer_taken` for an accepted offer, `409 offer_closed` for any other closed one. */
+function closedRefusal(offer: OfferRow): ApiError {
+  if (offer.state === 'accepted') {
+    return conflict('offer_taken', 'Another receiver accepted this offer first', {
+      offer_id: offer.id,
+    });
+  }
+  return conflict('offer_closed', 'This offer is no longer live', {
+    offer_id: offer.id,
+    state: offer.state,
+  });
+}
+
+/**
+ * Refuse an offer that is not live **now**: closed, or live but past its
+ * `expires_at` while the scan has not caught it yet — it answers as
+ * `expired`, and the scan writes it (§11.6).
+ */
+function assertOfferLive(offer: OfferRow, now: number): void {
+  if (!isLive(offer.state)) throw closedRefusal(offer);
+  if (offer.expiresAt !== null && offer.expiresAt <= now) {
+    throw conflict('offer_closed', 'This offer has expired', {
+      offer_id: offer.id,
+      state: 'expired',
+    });
+  }
+}
+
+/** The offer and its task and project, when the caller may read the task — else {@link noSuchOffer}. */
+function requireVisibleOffer(
+  db: Db,
+  actor: ResolvedActor,
+  offerId: string,
+): { offer: OfferRow; task: TaskRow; project: ProjectRow } {
+  const offer = db.select().from(handoffOffers).where(eq(handoffOffers.id, offerId)).get();
+  const task =
+    offer === undefined
+      ? undefined
+      : db.select().from(tasks).where(eq(tasks.id, offer.taskId)).get();
+  const project =
+    task === undefined
+      ? undefined
+      : db.select().from(projects).where(eq(projects.id, task.projectId)).get();
+  if (
+    offer === undefined ||
+    task === undefined ||
+    project === undefined ||
+    !can(withProject(actor, project.id), 'project.read', { projectId: project.id })
+  ) {
+    throw noSuchOffer();
+  }
+  return { offer, task, project };
+}
+
+// -------------------------------------------------------------- eligibility
+
+/** The owner of the agent the work moves from: the sender's, or the expired claim's. */
+function ownerOfGeneration(db: Db, taskId: string, generation: number | null): string | null {
+  if (generation === null) return null;
+  return (
+    db
+      .select({ ownerUserId: agents.ownerUserId })
+      .from(taskClaims)
+      .innerJoin(agents, eq(agents.id, taskClaims.agentId))
+      .where(and(eq(taskClaims.taskId, taskId), eq(taskClaims.generation, generation)))
+      .get()?.ownerUserId ?? null
+  );
+}
+
+function ownerOfAgent(db: Db, agentId: string | null): string | null {
+  if (agentId === null) return null;
+  return (
+    db.select({ owner: agents.ownerUserId }).from(agents).where(eq(agents.id, agentId)).get()
+      ?.owner ?? null
+  );
+}
+
+/**
+ * **Who may receive** (§4.71): an active agent of this organisation with a
+ * `full` grant on the project, whose owner is active and may accept there,
+ * in a space that lets agents write — and, unless the policy has
+ * `allow_other_owners`, an agent of **the same owner** as the agent the work
+ * moves from. Answers whether the transfer then waits for an approver.
+ *
+ * Every refusal is the one `422 receiver_not_eligible`, whichever check
+ * failed — an agent id that names nothing included — so the answer names no
+ * more than the caller sent.
+ */
+function receiverEligibility(
+  db: Db,
+  project: ProjectRow,
+  policy: HandoffPolicyView,
+  agentId: string,
+  fromOwnerId: string | null,
+): { ownerUserId: string; requiresApproval: boolean } {
+  const refuse = () =>
+    unprocessable(
+      'to_agent_id',
+      'receiver_not_eligible',
+      'That agent may not receive this task: it must be active, granted full access here, and — unless the space allows other owners — the same owner’s',
+      { to_agent_id: agentId },
+    );
+
+  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
+  if (agent === undefined || agent.orgId !== project.orgId || agent.status !== 'active') {
+    throw refuse();
+  }
+  const grant = db
+    .select({ scope: agentProjectGrants.scope })
+    .from(agentProjectGrants)
+    .where(
+      and(eq(agentProjectGrants.agentId, agentId), eq(agentProjectGrants.projectId, project.id)),
+    )
+    .get();
+  if (grant?.scope !== 'full' || !project.agentsAllowed) throw refuse();
+
+  const owner = loadActor(db, agent.ownerUserId);
+  if (
+    owner?.isActive !== true ||
+    !can(withProject(owner, project.id), 'task.handoff.accept', { projectId: project.id })
+  ) {
+    throw refuse();
+  }
+
+  const otherOwner = fromOwnerId !== null && fromOwnerId !== agent.ownerUserId;
+  if (otherOwner && !policy.allow_other_owners) throw refuse();
+  return {
+    ownerUserId: agent.ownerUserId,
+    requiresApproval: otherOwner && policy.cross_owner_requires_approval,
+  };
+}
+
+/** SHA-256 of the note as offered, so a receiver can tell it is the same note. */
+function noteHash(summary: unknown): string | null {
+  if (summary === null || summary === undefined) return null;
+  return createHash('sha256').update(JSON.stringify(summary)).digest('hex');
+}
+
+// ------------------------------------------------------------ the sender
+
+/**
+ * A live offer closed **unaccepted** — declined, cancelled, expired, or closed
+ * by a reclaim, a revoke or the task closing. The sender's claim, if it is
+ * still `paused`, is `active` again (§4.71); a claim that lapsed meanwhile
+ * stays `expired`, and the task then gets its recovery offer as any expiry
+ * does (§11.6) — in this same transaction.
+ */
+function afterOfferClosedUnaccepted(db: Db, offer: OfferRow, now: number): void {
+  if (offer.kind === 'handoff' && offer.fromClaimGeneration !== null) {
+    db.update(taskClaims)
+      .set({ state: 'active' })
+      .where(
+        and(
+          eq(taskClaims.taskId, offer.taskId),
+          eq(taskClaims.generation, offer.fromClaimGeneration),
+          eq(taskClaims.state, 'paused'),
+        ),
+      )
+      .run();
+  }
+  openRecoveryIfDue(db, offer.taskId, now);
+}
+
+/** Close one live offer: the state, `closed_at`, and the reason when it is not the receiver's or the clock's. */
+function closeOffer(
+  db: Db,
+  offer: OfferRow,
+  state: 'declined' | 'cancelled' | 'expired',
+  closedReason: HandoffClosedReason | null,
+  now: number,
+): boolean {
+  const changed = db
+    .update(handoffOffers)
+    .set({ state, closedReason, closedAt: now })
+    .where(
+      and(eq(handoffOffers.id, offer.id), inArray(handoffOffers.state, [...LIVE_OFFER_STATES])),
+    )
+    .run().changes;
+  return changed > 0;
+}
+
+type Principal = ResolvedActor | ReturnType<typeof systemPrincipal>;
+
+function orgOfTask(db: Db, taskId: string): { orgId: string; projectId: string } {
+  return db
+    .select({ orgId: projects.orgId, projectId: tasks.projectId })
+    .from(tasks)
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .where(eq(tasks.id, taskId))
+    .get()!;
+}
+
+/**
+ * Close every live hand-off and recovery offer on a task with `closedReason`,
+ * one `task.handoff_cancelled` row each — a reclaim (§9.1.1), the task
+ * leaving progress (`task_closed`). The caller replaces the claim itself —
+ * the reclaim inserts a new one, the task closing releases it — so neither
+ * the paused claim nor a recovery is touched here.
+ */
+export function closeLiveOffersOfTask(
+  db: Db,
+  taskId: string,
+  closedReason: 'reclaimed' | 'task_closed',
+  by: Principal,
+  now: number,
+): number {
+  const live = db
+    .select()
+    .from(handoffOffers)
+    .where(
+      and(
+        eq(handoffOffers.taskId, taskId),
+        inArray(handoffOffers.kind, ['handoff', 'recovery']),
+        inArray(handoffOffers.state, [...LIVE_OFFER_STATES]),
+      ),
+    )
+    .all();
+  if (live.length === 0) return 0;
+  const where = orgOfTask(db, taskId);
+  for (const offer of live) {
+    if (!closeOffer(db, offer, 'cancelled', closedReason, now)) continue;
+    appendActivity(db, {
+      orgId: where.orgId,
+      projectId: where.projectId,
+      taskId,
+      ...activityActor(by),
+      type: 'task.handoff_cancelled',
+      payload: { offer_id: offer.id, closed_reason: closedReason },
+      now,
+    });
+  }
+  return live.length;
+}
+
+/**
+ * Revoking an agent closes its live offers `agent_revoked` (§4.71) — the ones
+ * offered **to** it and the ones its sessions **sent** — as the system, in
+ * the revoke's transaction. The sender's paused claim resumes, so it lapses
+ * and recovers like any other claim of a revoked agent (LAI-541).
+ */
+export function closeOffersOfRevokedAgent(db: Db, agentId: string, now: number): void {
+  const sentBy = db
+    .select({ id: agentSessions.id })
+    .from(agentSessions)
+    .where(eq(agentSessions.agentId, agentId));
+  const live = db
+    .select()
+    .from(handoffOffers)
+    .where(
+      and(
+        inArray(handoffOffers.kind, ['handoff', 'recovery']),
+        inArray(handoffOffers.state, [...LIVE_OFFER_STATES]),
+        or(eq(handoffOffers.toAgentId, agentId), inArray(handoffOffers.fromSessionId, sentBy)),
+      ),
+    )
+    .all();
+  const system = systemPrincipal();
+  for (const offer of live) {
+    if (!closeOffer(db, offer, 'cancelled', 'agent_revoked', now)) continue;
+    const where = orgOfTask(db, offer.taskId);
+    appendActivity(db, {
+      orgId: where.orgId,
+      projectId: where.projectId,
+      taskId: offer.taskId,
+      ...activityActor(system),
+      type: 'task.handoff_cancelled',
+      payload: { offer_id: offer.id, closed_reason: 'agent_revoked' },
+      now,
+    });
+    afterOfferClosedUnaccepted(db, offer, now);
+  }
+}
+
+// ---------------------------------------------------------------- recovery
+
+/** The task's latest `verified` checkpoint, newest by `created_at`. */
+function latestVerifiedCheckpoint(db: Db, taskId: string) {
+  return db
+    .select()
+    .from(taskCheckpoints)
+    .where(and(eq(taskCheckpoints.taskId, taskId), eq(taskCheckpoints.verification, 'verified')))
+    .orderBy(desc(taskCheckpoints.createdAt), desc(taskCheckpoints.id))
+    .limit(1)
+    .get();
+}
+
+/** The person behind a recovery (§4.71): the task's assignee, else the project's first lead. */
+function recoveryCreator(db: Db, task: TaskRow, expiredAgentId: string): string {
+  if (task.assigneeId !== null) return task.assigneeId;
+  const lead = db
+    .select({ userId: projectMemberships.userId })
+    .from(projectMemberships)
+    .where(
+      and(eq(projectMemberships.projectId, task.projectId), eq(projectMemberships.role, 'lead')),
+    )
+    .orderBy(asc(projectMemberships.createdAt))
+    .limit(1)
+    .get();
+  if (lead !== undefined) return lead.userId;
+  // A space with no lead at all: the person whose agent's claim expired.
+  return ownerOfAgent(db, expiredAgentId)!;
+}
+
+/**
+ * **Recovery is part of every expiry** (§11.6, §3.4 `system.handoff.recover`):
+ * called in the transaction that marks a claim `expired` — the scan's or a
+ * late heartbeat's — and in the one that closes a live offer unaccepted. A
+ * task still in progress whose newest claim is `expired`, with a `verified`
+ * checkpoint and **no live hand-off or recovery offer**, gets one recovery
+ * offer, unnamed, from the **latest verified** checkpoint — a newer one still
+ * `pending` is passed over — and one `task.recovered` row. **Offered, never
+ * assigned.** No verified checkpoint, no offer: the task shows *Automatic
+ * recovery unavailable* and a person decides.
+ */
+export function openRecoveryIfDue(db: Db, taskId: string, now: number): HandoffOfferView | null {
+  const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+  if (task?.status !== 'in_progress') return null;
+  const newest = latestClaim(db, taskId);
+  if (newest?.state !== 'expired') return null;
+  const live = db
+    .select({ id: handoffOffers.id })
+    .from(handoffOffers)
+    .where(
+      and(
+        eq(handoffOffers.taskId, taskId),
+        inArray(handoffOffers.kind, ['handoff', 'recovery']),
+        inArray(handoffOffers.state, [...LIVE_OFFER_STATES]),
+      ),
+    )
+    .get();
+  if (live !== undefined) return null;
+  const checkpoint = latestVerifiedCheckpoint(db, taskId);
+  if (checkpoint === undefined) return null;
+
+  const system = systemPrincipal(task.projectId);
+  assertCan(system, 'system.handoff.recover');
+  const policy = readPolicy(db, task.projectId);
+  const row: OfferRow = {
+    id: newId(),
+    taskId,
+    kind: 'recovery',
+    idempotencyKey: null,
+    fromSessionId: null,
+    fromClaimGeneration: newest.generation,
+    toAgentId: null,
+    checkpointId: checkpoint.id,
+    checkpointCommitSha: checkpoint.commitSha,
+    reason: null,
+    noteHash: noteHash(checkpoint.summary),
+    requiresApproval: false,
+    approvedByUserId: null,
+    approvedAt: null,
+    state: 'open',
+    expiresAt: now + policy.offer_ttl_minutes * 60_000,
+    acceptedSessionId: null,
+    acceptedClaimId: null,
+    receiverCommitSha: null,
+    closedReason: null,
+    createdByUserId: recoveryCreator(db, task, newest.agentId),
+    createdAt: now,
+    closedAt: null,
+  };
+  db.insert(handoffOffers).values(row).run();
+  const where = orgOfTask(db, taskId);
+  appendActivity(db, {
+    orgId: where.orgId,
+    projectId: where.projectId,
+    taskId,
+    ...activityActor(system),
+    type: 'task.recovered',
+    payload: {
+      offer_id: row.id,
+      checkpoint_id: checkpoint.id,
+      commit_sha: checkpoint.commitSha,
+      from_generation: newest.generation,
+    },
+    now,
+  });
+  return offerView(db, row);
+}
+
+/**
+ * §11.6's offer expiry, on the claim scan's schedule, under
+ * `system.handoff.expire`: each live hand-off or recovery past `expires_at`
+ * becomes `expired`, one `task.handoff_expired` row each, a claim it paused
+ * resumes — and, where the task's newest claim is still `expired`, a fresh
+ * recovery replaces it. One transaction an offer: its state, its row and the
+ * recovery land together or not at all.
+ */
+export function expireOffers(db: Db, now: number): { changed: number } {
+  assertCan(systemPrincipal(), 'system.handoff.expire');
+  const overdue = db
+    .select()
+    .from(handoffOffers)
+    .where(
+      and(
+        inArray(handoffOffers.kind, ['handoff', 'recovery']),
+        inArray(handoffOffers.state, [...LIVE_OFFER_STATES]),
+        lte(handoffOffers.expiresAt, now),
+      ),
+    )
+    .all();
+
+  let changed = 0;
+  for (const offer of overdue) {
+    db.transaction(
+      () => {
+        if (!closeOffer(db, offer, 'expired', null, now)) return;
+        changed += 1;
+        const where = orgOfTask(db, offer.taskId);
+        appendActivity(db, {
+          orgId: where.orgId,
+          projectId: where.projectId,
+          taskId: offer.taskId,
+          ...activityActor(systemPrincipal()),
+          type: 'task.handoff_expired',
+          payload: { offer_id: offer.id, expires_at: offer.expiresAt },
+          now,
+        });
+        afterOfferClosedUnaccepted(db, offer, now);
+      },
+      { behavior: 'immediate' },
+    );
+  }
+  return { changed };
+}
+
+/**
+ * The reclaim's offer steps (§9.1.1), inside its transaction, **before** the
+ * new claim: refuse `409 offer_taken` when a hand-off or recovery offer moving
+ * on from **the generation being reclaimed** was accepted — a work request
+ * never counts, and an older generation's accepted hand-off is history —
+ * and otherwise cancel every live hand-off and recovery offer, `reclaimed`.
+ */
+export function assertNoAcceptedOfferFrom(db: Db, taskId: string, generation: number): void {
+  const taken = db
+    .select({ id: handoffOffers.id })
+    .from(handoffOffers)
+    .where(
+      and(
+        eq(handoffOffers.taskId, taskId),
+        inArray(handoffOffers.kind, ['handoff', 'recovery']),
+        eq(handoffOffers.state, 'accepted'),
+        eq(handoffOffers.fromClaimGeneration, generation),
+      ),
+    )
+    .get();
+  if (taken !== undefined) {
+    throw conflict('offer_taken', 'Somebody accepted this task’s offer; it is theirs now', {
+      task_id: taskId,
+      offer_id: taken.id,
+      from_generation: generation,
+    });
+  }
+}
+
+// ------------------------------------------------------------------ offer
+
+export interface OfferHandoffInput {
+  idempotencyKey: string;
+  toAgentId: string;
+  checkpointId?: string | null | undefined;
+  reason: string;
+  now?: number;
+}
+
+export interface OfferedHandoff {
+  offer: HandoffOfferView;
+  /** `false` when the key was offered already and this is that offer. */
+  created: boolean;
+}
+
+/** Whether a retried offer carries the body the first one did (§4.71). */
+function sameOffer(
+  row: OfferRow,
+  taskId: string,
+  agentId: string,
+  db: Db,
+  input: OfferHandoffInput,
+) {
+  const fromAgent =
+    row.fromSessionId === null
+      ? null
+      : db
+          .select({ agentId: agentSessions.agentId })
+          .from(agentSessions)
+          .where(eq(agentSessions.id, row.fromSessionId))
+          .get()?.agentId;
+  return (
+    row.kind === 'handoff' &&
+    row.taskId === taskId &&
+    fromAgent === agentId &&
+    row.toAgentId === input.toAgentId &&
+    row.checkpointId === (input.checkpointId ?? null) &&
+    row.reason === input.reason.trim()
+  );
+}
+
+/**
+ * `POST /tasks/:id/handoff-offers`, `offer_handoff` (§4.71, §6.4): the
+ * session holding the task's **live, `active`** claim offers it to a named
+ * agent, from a `verified` checkpoint of this task saved under that claim's
+ * generation, with a reason. Its claim is **paused** in the same transaction.
+ *
+ * A retry with the same `idempotency_key` and the same body answers the offer
+ * already made (`created: false`) — matched after the caller's own checks and
+ * **before** the fence, which the first attempt has just paused.
+ */
+export function offerHandoff(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  input: OfferHandoffInput,
+): OfferedHandoff {
+  const now = input.now ?? Date.now();
+  const agent = registeredAgent(actor);
+  if (agent === null) throw notAnAgent('task.handoff.offer');
+
+  const key = input.idempotencyKey.trim();
+  if (key === '' || key.length > HANDOFF_LIMITS.idempotencyKey) {
+    throw new ApiError('unprocessable', 'An idempotency key is 1–200 characters', {
+      field: 'idempotency_key',
+    });
+  }
+  const reason = input.reason.trim();
+  if (reason === '' || reason.length > HANDOFF_LIMITS.reason) {
+    throw new ApiError('unprocessable', 'A hand-off needs a reason of at most 500 characters', {
+      field: 'reason',
+    });
+  }
+  spendOfferToken(agent.id, now);
+
+  return immediateTransaction(sqlite, () => {
+    const fresh = {
+      ...reloadAgentActor(db, actor, now, 'task.handoff.offer'),
+      claimGeneration: actor.claimGeneration,
+    };
+    const { task, project } = requireVisibleTaskToClaim(db, fresh, taskId);
+    assertCan(withProject(fresh, project.id), 'task.handoff.offer', { projectId: project.id });
+
+    const seen = db.select().from(handoffOffers).where(eq(handoffOffers.idempotencyKey, key)).get();
+    if (seen !== undefined) {
+      if (!sameOffer(seen, taskId, agent.id, db, { ...input, reason })) {
+        throw new ApiError('conflict', 'That idempotency key was used with a different body', {
+          reason: 'idempotency_key_reused',
+          field: 'idempotency_key',
+        });
+      }
+      return { offer: offerView(db, seen), created: false };
+    }
+
+    // The fence (§6.3): a paused, stale or other session's offer is refused.
+    const refusal = claimFenceRefusal(db, fresh, taskId, now);
+    if (refusal !== null) throw refusal;
+    const live = liveClaim(db, taskId);
+    if (live?.agentId !== agent.id || live.state !== 'active') {
+      throw conflict('stale_claim', 'Offering a task needs its live claim', {
+        task_id: taskId,
+        claim_generation: fresh.claimGeneration ?? null,
+      });
+    }
+
+    const existing = db
+      .select({ id: handoffOffers.id })
+      .from(handoffOffers)
+      .where(
+        and(
+          eq(handoffOffers.taskId, taskId),
+          inArray(handoffOffers.kind, ['handoff', 'recovery']),
+          inArray(handoffOffers.state, [...LIVE_OFFER_STATES]),
+        ),
+      )
+      .get();
+    if (existing !== undefined) {
+      throw conflict('offer_live', 'This task already has a live hand-off offer', {
+        task_id: taskId,
+        offer_id: existing.id,
+      });
+    }
+
+    const checkpointId = input.checkpointId?.trim() ?? '';
+    if (checkpointId === '') {
+      throw unprocessable('checkpoint_id', 'checkpoint_required', 'A hand-off needs a checkpoint');
+    }
+    const checkpoint = db
+      .select()
+      .from(taskCheckpoints)
+      .where(eq(taskCheckpoints.id, checkpointId))
+      .get();
+    if (
+      checkpoint === undefined ||
+      checkpoint.taskId !== taskId ||
+      checkpoint.claimGeneration !== live.generation
+    ) {
+      throw unprocessable(
+        'checkpoint_id',
+        'checkpoint_not_this_claim',
+        'Offer a checkpoint of this task saved under your live claim',
+        { checkpoint_id: checkpointId },
+      );
+    }
+    if (checkpoint.verification !== 'verified') {
+      throw conflict('checkpoint_unverified', 'That checkpoint is not verified', {
+        checkpoint_id: checkpoint.id,
+        verification: checkpoint.verification,
+      });
+    }
+
+    const policy = readPolicy(db, project.id);
+    const receiver = receiverEligibility(db, project, policy, input.toAgentId, fresh.userId);
+    // Refused at the offer as well as at the accept: an offer that can never
+    // be accepted would only pause the sender for nothing.
+    if (task.handoffCount >= policy.max_handoffs) {
+      throw conflict('handoff_limit', 'This task has had as many hand-offs as the space allows', {
+        task_id: taskId,
+        handoff_count: task.handoffCount,
+        max_handoffs: policy.max_handoffs,
+      });
+    }
+
+    const row: OfferRow = {
+      id: newId(),
+      taskId,
+      kind: 'handoff',
+      idempotencyKey: key,
+      fromSessionId: live.sessionId,
+      fromClaimGeneration: live.generation,
+      toAgentId: input.toAgentId,
+      checkpointId: checkpoint.id,
+      checkpointCommitSha: checkpoint.commitSha,
+      reason,
+      noteHash: noteHash(checkpoint.summary),
+      requiresApproval: receiver.requiresApproval,
+      approvedByUserId: null,
+      approvedAt: null,
+      state: receiver.requiresApproval ? 'pending_approval' : 'open',
+      expiresAt: now + policy.offer_ttl_minutes * 60_000,
+      acceptedSessionId: null,
+      acceptedClaimId: null,
+      receiverCommitSha: null,
+      closedReason: null,
+      createdByUserId: fresh.userId,
+      createdAt: now,
+      closedAt: null,
+    };
+    db.insert(handoffOffers).values(row).run();
+    db.update(taskClaims).set({ state: 'paused' }).where(eq(taskClaims.id, live.id)).run();
+
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId,
+      ...activityActor(fresh),
+      agentSessionId: live.sessionId,
+      type: 'task.handoff_offered',
+      payload: {
+        offer_id: row.id,
+        kind: 'handoff',
+        to_agent_id: row.toAgentId,
+        checkpoint_id: checkpoint.id,
+        commit_sha: checkpoint.commitSha,
+        requires_approval: row.requiresApproval,
+        expires_at: row.expiresAt,
+        from_generation: live.generation,
+      },
+      now,
+    });
+    return { offer: offerView(db, row), created: true };
+  });
+}
+
+// ---------------------------------------------------------------- approve
+
+/**
+ * `POST /handoff-offers/:id/approve` (§4.71, §6.4): a person, signed in —
+ * the task's assignee or a lead, **never the owner of the receiving agent**
+ * (`403 approver_is_receiver`). A named offer `pending_approval` becomes
+ * `open`. An unnamed recovery is named and approved in one step with
+ * `to_agent_id`, which the approver may not own either. Approving writes
+ * `task.handoff_approved`; approving an open named offer again changes
+ * nothing.
+ */
+export function approveHandoff(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  offerId: string,
+  input: { toAgentId?: string | null | undefined; now?: number } = {},
+): HandoffOfferView {
+  const now = input.now ?? Date.now();
+  return immediateTransaction(sqlite, () => {
+    const { offer, task, project } = requireVisibleOffer(db, actor, offerId);
+    assertCan(withProject(actor, project.id), 'task.handoff.approve', {
+      projectId: project.id,
+      ownerId: task.assigneeId,
+    });
+    if (offer.kind === 'work_request') throw workRequestRefusal(offer);
+    assertOfferLive(offer, now);
+
+    const toAgentId = input.toAgentId ?? null;
+    if (offer.toAgentId === null) {
+      if (toAgentId === null) {
+        throw unprocessable(
+          'to_agent_id',
+          'receiver_not_eligible',
+          'An unnamed recovery is approved by naming its receiver',
+        );
+      }
+      const policy = readPolicy(db, project.id);
+      const fromOwner = ownerOfGeneration(db, task.id, offer.fromClaimGeneration);
+      const receiver = receiverEligibility(db, project, policy, toAgentId, fromOwner);
+      if (receiver.ownerUserId === actor.userId) throw approverIsReceiver(offer);
+      db.update(handoffOffers)
+        .set({
+          toAgentId,
+          requiresApproval: receiver.requiresApproval,
+          approvedByUserId: actor.userId,
+          approvedAt: now,
+          state: 'open',
+        })
+        .where(eq(handoffOffers.id, offer.id))
+        .run();
+      appendApproved(db, actor, project, task.id, offer.id, toAgentId, true, now);
+      return offerView(db, reloadOffer(db, offer.id));
+    }
+
+    if (toAgentId !== null && toAgentId !== offer.toAgentId) {
+      throw unprocessable(
+        'to_agent_id',
+        'receiver_not_eligible',
+        'This offer already names its receiver',
+        { to_agent_id: toAgentId },
+      );
+    }
+    if (ownerOfAgent(db, offer.toAgentId) === actor.userId) throw approverIsReceiver(offer);
+    if (offer.state !== 'pending_approval') return offerView(db, offer);
+
+    db.update(handoffOffers)
+      .set({ approvedByUserId: actor.userId, approvedAt: now, state: 'open' })
+      .where(eq(handoffOffers.id, offer.id))
+      .run();
+    appendApproved(db, actor, project, task.id, offer.id, offer.toAgentId, false, now);
+    return offerView(db, reloadOffer(db, offer.id));
+  });
+}
+
+function approverIsReceiver(offer: OfferRow): ApiError {
+  return new ApiError('forbidden', 'You own the receiving agent; another person approves', {
+    action: 'task.handoff.approve',
+    reason: 'approver_is_receiver',
+    offer_id: offer.id,
+  });
+}
+
+function appendApproved(
+  db: Db,
+  actor: ResolvedActor,
+  project: ProjectRow,
+  taskId: string,
+  offerId: string,
+  toAgentId: string,
+  named: boolean,
+  now: number,
+): void {
+  appendActivity(db, {
+    orgId: project.orgId,
+    projectId: project.id,
+    taskId,
+    ...activityActor(actor),
+    type: 'task.handoff_approved',
+    payload: { offer_id: offerId, to_agent_id: toAgentId, named },
+    now,
+  });
+}
+
+/** A work request is answered by claiming it (`start_working`) and withdrawn by the selection, not here. */
+function workRequestRefusal(offer: OfferRow): ApiError {
+  return unprocessable(
+    'offer',
+    'work_request',
+    'A work request is accepted by claiming the task and withdrawn by changing its agent',
+    { offer_id: offer.id },
+  );
+}
+
+// ----------------------------------------------------------------- accept
+
+export interface AcceptHandoffInput {
+  verifiedCommitSha: string;
+  sessionId?: string | undefined;
+  now?: number;
+}
+
+export interface AcceptedHandoff {
+  offer: HandoffOfferView;
+  claim: TaskClaimView;
+  session: AgentSessionView;
+}
+
+/** Whether the calling agent is the offer's receiver, or may take an unnamed recovery. */
+function addressedTo(offer: OfferRow, agentId: string): boolean {
+  return offer.toAgentId === agentId || (offer.toAgentId === null && offer.kind === 'recovery');
+}
+
+/**
+ * `POST /handoff-offers/:id/accept`, `respond_handoff` `accept` (§4.71): the
+ * receiving agent's session, with `verified_commit_sha`. Everything is asked
+ * again inside the transaction — the receiver's token, agent and owner, the
+ * owner's permission and the agent's grant, the approval, the expiry, the
+ * policy's `max_handoffs`, that the checkpoint is **still `verified`** and
+ * that the SHA is its commit — and then the claim moves:
+ *
+ * - a hand-off's sender claim, still `paused`, becomes `transferred`; an
+ *   expired one stays `expired`;
+ * - a new claim for the receiver's session at the next generation;
+ * - `tasks.selected_agent_id` becomes the receiver (D-119), with its own
+ *   `task.agent_selected`, and the old selection's open work request closes;
+ * - `tasks.handoff_count` + 1, the offer `accepted`, `task.handoff_accepted`.
+ *
+ * **Two receivers: the first commit wins**, the second is `409 offer_taken`.
+ * The same agent asking again after its accept answers that accept — a lost
+ * answer is found, not refused. `assignee_id` never moves.
+ */
+export function acceptHandoff(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  offerId: string,
+  input: AcceptHandoffInput,
+): AcceptedHandoff {
+  const now = input.now ?? Date.now();
+  const agent = registeredAgent(actor);
+  if (agent === null) throw notAnAgent('task.handoff.accept');
+  spendOfferToken(agent.id, now);
+
+  return immediateTransaction(sqlite, () => {
+    const fresh = reloadAgentActor(db, actor, now, 'task.handoff.accept');
+    const { offer, task, project } = requireVisibleOffer(db, fresh, offerId);
+    assertCan(withProject(fresh, project.id), 'task.handoff.accept', { projectId: project.id });
+    if (offer.kind === 'work_request') throw workRequestRefusal(offer);
+
+    // A replay of this agent's own accept, before any other check: the
+    // answer it lost, not a refusal.
+    if (offer.state === 'accepted' && offer.acceptedClaimId !== null) {
+      const claim = db
+        .select()
+        .from(taskClaims)
+        .where(eq(taskClaims.id, offer.acceptedClaimId))
+        .get();
+      if (
+        claim?.agentId === agent.id &&
+        offer.receiverCommitSha === input.verifiedCommitSha.trim().toLowerCase()
+      ) {
+        const session = db
+          .select()
+          .from(agentSessions)
+          .where(eq(agentSessions.id, claim.sessionId))
+          .get()!;
+        return {
+          offer: offerView(db, offer),
+          claim: claimView(claim),
+          session: sessionView(session, now),
+        };
+      }
+    }
+    if (!addressedTo(offer, agent.id)) throw notTheReceiver(offer);
+    assertOfferLive(offer, now);
+    if (offer.state === 'pending_approval') {
+      throw conflict('approval_pending', 'This offer is waiting for a person to approve it', {
+        offer_id: offer.id,
+      });
+    }
+
+    const policy = readPolicy(db, project.id);
+    const fromOwner = ownerOfGeneration(db, task.id, offer.fromClaimGeneration);
+    const receiver = receiverEligibility(db, project, policy, agent.id, fromOwner);
+    if (offer.toAgentId === null && receiver.requiresApproval) {
+      throw conflict(
+        'approval_pending',
+        'Another owner’s agent takes this recovery only when a person names and approves it',
+        { offer_id: offer.id },
+      );
+    }
+    if (task.status !== 'in_progress') {
+      throw conflict('offer_closed', 'This task is no longer in progress', {
+        offer_id: offer.id,
+        state: offer.state,
+      });
+    }
+    if (task.handoffCount >= policy.max_handoffs) {
+      throw conflict('handoff_limit', 'This task has had as many hand-offs as the space allows', {
+        task_id: task.id,
+        handoff_count: task.handoffCount,
+        max_handoffs: policy.max_handoffs,
+      });
+    }
+    if (offer.checkpointId === null) {
+      throw conflict('checkpoint_unverified', 'This offer’s checkpoint no longer exists', {
+        offer_id: offer.id,
+        verification: null,
+      });
+    }
+    assertCheckpointAcceptable(db, offer.checkpointId, input.verifiedCommitSha);
+
+    // The claim the work moves from. A paused sender's is transferred; an
+    // expired one — a recovery's, or a sender that lapsed — stays expired.
+    const from =
+      offer.fromClaimGeneration === null
+        ? undefined
+        : db
+            .select()
+            .from(taskClaims)
+            .where(
+              and(
+                eq(taskClaims.taskId, task.id),
+                eq(taskClaims.generation, offer.fromClaimGeneration),
+              ),
+            )
+            .get();
+    let fromState = from?.state ?? 'expired';
+    if (from?.state === 'paused') {
+      db.update(taskClaims)
+        .set({ state: 'transferred', endedAt: now })
+        .where(eq(taskClaims.id, from.id))
+        .run();
+      fromState = 'transferred';
+    }
+    const other = liveClaim(db, task.id);
+    if (other !== undefined) {
+      // Nothing makes this — a reclaim cancels live offers — but a second
+      // live claim is the one state the partial index forbids; say so.
+      throw conflict('claim_held', 'Another session holds this task', {
+        task_id: task.id,
+        agent_id: other.agentId,
+      });
+    }
+
+    const session =
+      input.sessionId === undefined
+        ? openSession(db, fresh, fresh.token.agent, {}, now)
+        : requireOpenSession(db, agent.id, input.sessionId);
+    const claim = insertClaim(db, task.id, session.id, agent.id, now);
+
+    const sha = input.verifiedCommitSha.trim().toLowerCase();
+    db.update(handoffOffers)
+      .set({
+        state: 'accepted',
+        acceptedSessionId: session.id,
+        acceptedClaimId: claim.id,
+        receiverCommitSha: sha,
+        toAgentId: offer.toAgentId ?? agent.id,
+        closedAt: now,
+      })
+      .where(eq(handoffOffers.id, offer.id))
+      .run();
+
+    const handoffCount = task.handoffCount + 1;
+    db.update(tasks)
+      .set({ handoffCount, selectedAgentId: agent.id, updatedAt: now })
+      .where(eq(tasks.id, task.id))
+      .run();
+    // D-119: the receiver's claim is backed by the selection. The old
+    // selection's open work request closes; the receiver's own, if any, is
+    // answered by this claim.
+    db.update(handoffOffers)
+      .set({ state: 'cancelled', closedReason: 'selection_changed', closedAt: now })
+      .where(
+        and(
+          eq(handoffOffers.taskId, task.id),
+          eq(handoffOffers.kind, 'work_request'),
+          eq(handoffOffers.state, 'open'),
+          sql`${handoffOffers.toAgentId} IS NOT ${agent.id}`,
+        ),
+      )
+      .run();
+    db.update(handoffOffers)
+      .set({ state: 'accepted', closedAt: now })
+      .where(
+        and(
+          eq(handoffOffers.taskId, task.id),
+          eq(handoffOffers.kind, 'work_request'),
+          eq(handoffOffers.state, 'open'),
+          eq(handoffOffers.toAgentId, agent.id),
+        ),
+      )
+      .run();
+
+    if (task.selectedAgentId !== agent.id) {
+      appendActivity(db, {
+        orgId: project.orgId,
+        projectId: project.id,
+        taskId: task.id,
+        ...activityActor(fresh),
+        agentSessionId: session.id,
+        type: 'task.agent_selected',
+        payload: { from: task.selectedAgentId, to: agent.id },
+        now,
+      });
+    }
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId: task.id,
+      ...activityActor(fresh),
+      agentSessionId: session.id,
+      type: 'task.handoff_accepted',
+      payload: {
+        offer_id: offer.id,
+        kind: offer.kind,
+        checkpoint_id: offer.checkpointId,
+        receiver_commit_sha: sha,
+        from_generation: offer.fromClaimGeneration,
+        from_claim_state: fromState,
+        generation: claim.generation,
+        claim_id: claim.id,
+        session_id: session.id,
+        agent_id: agent.id,
+        handoff_count: handoffCount,
+      },
+      now,
+    });
+
+    return {
+      offer: offerView(db, reloadOffer(db, offer.id)),
+      claim: claimView(claim),
+      session: sessionView(session, now),
+    };
+  });
+}
+
+function notTheReceiver(offer: OfferRow): ApiError {
+  return new ApiError('forbidden', 'This offer is addressed to another agent', {
+    action: 'task.handoff.accept',
+    reason: 'not_the_receiver',
+    offer_id: offer.id,
+  });
+}
+
+// ---------------------------------------------------------------- decline
+
+/**
+ * `POST /handoff-offers/:id/decline`, `respond_handoff` `decline` (§4.71):
+ * the named receiver says no. The sender's claim resumes if it is still
+ * paused; a claim that lapsed meanwhile stays expired and the task gets its
+ * recovery offer here. **An unnamed recovery cannot be declined** — an agent
+ * that does not want it simply does not accept.
+ */
+export function declineHandoff(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  offerId: string,
+  input: { reason?: string | null | undefined; now?: number } = {},
+): HandoffOfferView {
+  const now = input.now ?? Date.now();
+  const agent = registeredAgent(actor);
+  if (agent === null) throw notAnAgent('task.handoff.decline');
+  const reason = input.reason?.trim() ?? '';
+  if (reason.length > HANDOFF_LIMITS.declineReason) {
+    throw new ApiError('unprocessable', 'A reason is at most 500 characters', { field: 'reason' });
+  }
+  spendOfferToken(agent.id, now);
+
+  return immediateTransaction(sqlite, () => {
+    const fresh = reloadAgentActor(db, actor, now, 'task.handoff.decline');
+    const { offer, task, project } = requireVisibleOffer(db, fresh, offerId);
+    assertCan(withProject(fresh, project.id), 'task.handoff.decline', { projectId: project.id });
+    if (offer.kind === 'work_request') throw workRequestRefusal(offer);
+    if (offer.toAgentId === null) {
+      throw unprocessable(
+        'offer',
+        'recovery_unnamed',
+        'An unnamed recovery is not declined; an agent that does not want it does not accept it',
+        { offer_id: offer.id },
+      );
+    }
+    if (offer.toAgentId !== agent.id) throw notTheReceiver(offer);
+    assertOfferLive(offer, now);
+
+    closeOffer(db, offer, 'declined', null, now);
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId: task.id,
+      ...activityActor(fresh),
+      type: 'task.handoff_declined',
+      payload: { offer_id: offer.id, reason: reason === '' ? null : reason },
+      now,
+    });
+    afterOfferClosedUnaccepted(db, offer, now);
+    return offerView(db, reloadOffer(db, offer.id));
+  });
+}
+
+// ----------------------------------------------------------------- cancel
+
+/**
+ * `POST /handoff-offers/:id/cancel`, `respond_handoff` `cancel` (§3.2,
+ * §4.71): the sender — any of its owner's credentials — the task's assignee,
+ * or a lead closes a live offer, `withdrawn`. The sender's claim resumes if
+ * it is still paused; a lapsed one stays expired and the task gets its
+ * recovery offer here.
+ */
+export function cancelHandoff(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  offerId: string,
+  now = Date.now(),
+): HandoffOfferView {
+  const agent = registeredAgent(actor);
+  if (agent !== null) spendOfferToken(agent.id, now);
+
+  return immediateTransaction(sqlite, () => {
+    // An agent's credentials are read again, as every hand-off write's are.
+    const caller = agent === null ? actor : reloadAgentActor(db, actor, now, 'task.handoff.cancel');
+    const { offer, task, project } = requireVisibleOffer(db, caller, offerId);
+    if (offer.kind === 'work_request') throw workRequestRefusal(offer);
+
+    // `ownerId` is the sending agent's owner (§3.2 *own agent's*). §4.71 also
+    // lets the task's assignee cancel, so for them the row is asked as theirs.
+    const senderOwner = ownerOfGeneration(db, task.id, offer.fromClaimGeneration);
+    const ownerId =
+      offer.kind === 'handoff' && senderOwner === caller.userId
+        ? senderOwner
+        : task.assigneeId === caller.userId
+          ? caller.userId
+          : (senderOwner ?? undefined);
+    assertCan(withProject(caller, project.id), 'task.handoff.cancel', {
+      projectId: project.id,
+      ownerId,
+    });
+    assertOfferLive(offer, now);
+
+    closeOffer(db, offer, 'cancelled', 'withdrawn', now);
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId: task.id,
+      ...activityActor(caller),
+      type: 'task.handoff_cancelled',
+      payload: { offer_id: offer.id, closed_reason: 'withdrawn' },
+      now,
+    });
+    afterOfferClosedUnaccepted(db, offer, now);
+    return offerView(db, reloadOffer(db, offer.id));
+  });
+}
+
+// ---------------------------------------------------------------- reading
+
+/** `GET /tasks/:id/handoff-offers` (§6.4): every offer on the task, newest first, under *Read tasks*. */
+export function listTaskOffers(db: Db, actor: ResolvedActor, taskId: string): HandoffOfferView[] {
+  const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+  if (
+    task === undefined ||
+    !can(withProject(actor, task.projectId), 'project.read', { projectId: task.projectId })
+  ) {
+    throw ApiError.notFound(`No task with id "${taskId}"`);
+  }
+  return offerViews(
+    db,
+    db
+      .select()
+      .from(handoffOffers)
+      .where(eq(handoffOffers.taskId, taskId))
+      .orderBy(desc(handoffOffers.createdAt), desc(handoffOffers.id))
+      .all(),
+  );
+}
+
+export type InboxItem =
+  | WorkRequestView
+  | (HandoffOfferView & { task_key: string; task_title: string; project_id: string });
+
+export interface InboxOptions {
+  limit: number;
+  cursor: { sortKey: string | number; id: string } | null;
+  projectSlug?: string | null | undefined;
+}
+
+/**
+ * `GET /agents/me/inbox`, `agent_sync` (§6.4, §7.1): the calling agent's
+ * **live** work requests and the hand-off and recovery offers it may accept,
+ * newest first, paged — limited to the projects it may read now. An unnamed
+ * recovery is on it where the agent could take it: its owner's expired
+ * claim, or a space that lets other owners' agents receive. Reads, and
+ * records nothing; Phase 4's delivery states are not here yet.
+ */
+export function listInbox(db: Db, actor: ResolvedActor, options: InboxOptions): InboxItem[] {
+  assertCan(actor, 'agent.read_own');
+  const agent: AgentContext | null = isSystemPrincipal(actor) ? null : (actor.token?.agent ?? null);
+  if (agent === null) {
+    throw new ApiError('forbidden', 'Only a registered agent’s token has an inbox', {
+      reason: 'not_an_agent',
+    });
+  }
+
+  let readable = [...agent.grants.keys()].filter((projectId) =>
+    can(withProject(actor, projectId), 'project.read', { projectId }),
+  );
+  if (options.projectSlug !== undefined && options.projectSlug !== null) {
+    const found =
+      readable.length === 0
+        ? undefined
+        : db
+            .select({ id: projects.id })
+            .from(projects)
+            .where(and(eq(projects.slug, options.projectSlug), inArray(projects.id, readable)))
+            .get();
+    if (found === undefined) throw noSuchProjectForAgent();
+    readable = [found.id];
+  }
+  if (readable.length === 0) return [];
+  const full = readable.filter((p) => agent.grants.get(p) === 'full');
+
+  const sameOwnerExpired = exists(
+    db
+      .select({ id: taskClaims.id })
+      .from(taskClaims)
+      .innerJoin(agents, eq(agents.id, taskClaims.agentId))
+      .where(
+        and(
+          eq(taskClaims.taskId, handoffOffers.taskId),
+          eq(taskClaims.generation, handoffOffers.fromClaimGeneration),
+          eq(agents.ownerUserId, actor.userId),
+        ),
+      ),
+  );
+  const otherOwnersAllowed = exists(
+    db
+      .select({ id: projectHandoffPolicies.id })
+      .from(projectHandoffPolicies)
+      .where(
+        and(
+          eq(projectHandoffPolicies.projectId, tasks.projectId),
+          eq(projectHandoffPolicies.allowOtherOwners, true),
+        ),
+      ),
+  );
+
+  const conditions: SQL[] = [
+    inArray(tasks.projectId, readable),
+    or(
+      and(
+        eq(handoffOffers.kind, 'work_request'),
+        eq(handoffOffers.state, 'open'),
+        eq(handoffOffers.toAgentId, agent.id),
+      ),
+      and(
+        inArray(handoffOffers.kind, ['handoff', 'recovery']),
+        inArray(handoffOffers.state, [...LIVE_OFFER_STATES]),
+        eq(handoffOffers.toAgentId, agent.id),
+      ),
+      full.length === 0
+        ? sql`0`
+        : and(
+            eq(handoffOffers.kind, 'recovery'),
+            eq(handoffOffers.state, 'open'),
+            isNull(handoffOffers.toAgentId),
+            inArray(tasks.projectId, full),
+            or(sameOwnerExpired, otherOwnersAllowed),
+          ),
+    )!,
+  ];
+  if (options.cursor !== null) {
+    const key = Number(options.cursor.sortKey);
+    conditions.push(
+      or(
+        lt(handoffOffers.createdAt, key),
+        and(eq(handoffOffers.createdAt, key), lt(handoffOffers.id, options.cursor.id)),
+      )!,
+    );
+  }
+
+  const found = db
+    .select({
+      offer: handoffOffers,
+      number: tasks.number,
+      title: tasks.title,
+      projectId: tasks.projectId,
+      prefix: projects.prefix,
+    })
+    .from(handoffOffers)
+    .innerJoin(tasks, eq(tasks.id, handoffOffers.taskId))
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .where(and(...conditions))
+    .orderBy(desc(handoffOffers.createdAt), desc(handoffOffers.id))
+    .limit(options.limit + 1)
+    .all();
+
+  const views = new Map(
+    offerViews(
+      db,
+      found.filter((f) => f.offer.kind !== 'work_request').map((f) => f.offer),
+    ).map((v) => [v.id, v]),
+  );
+  return found.map((f): InboxItem => {
+    const taskKey = `${f.prefix}-${String(f.number)}`;
+    if (f.offer.kind === 'work_request') {
+      return {
+        id: f.offer.id,
+        kind: 'work_request',
+        state: 'open',
+        task_id: f.offer.taskId,
+        task_key: taskKey,
+        task_title: f.title,
+        project_id: f.projectId,
+        agent_id: agent.id,
+        requested_by: f.offer.createdByUserId,
+        created_at: f.offer.createdAt,
+      };
+    }
+    return {
+      ...views.get(f.offer.id)!,
+      task_key: taskKey,
+      task_title: f.title,
+      project_id: f.projectId,
+    };
+  });
+}

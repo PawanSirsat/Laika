@@ -10,6 +10,7 @@ import { immediateTransaction } from '../db/numbering.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { agentProjectGrants, agents, recognisedAgentDevices, tokens } from '../db/schema.ts';
 import { type AgentSessionView, endSessionsOfRevokedAgent, recentAgentSessions } from './claims.ts';
+import { closeOffersOfRevokedAgent } from './handoffs.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, forcedTokenScope } from '../policy/can.ts';
 import {
@@ -360,6 +361,8 @@ export function revokeAgent(
     for (const token of live) revokeTokenRow(db, actor, token, now);
     // D-114 item 2: its sessions end with it (LAI-541); its claims lapse.
     endSessionsOfRevokedAgent(db, row.id, now);
+    // §4.71: its live offers — to it and from it — close `agent_revoked`.
+    closeOffersOfRevokedAgent(db, row.id, now);
   });
 
   return agentView(db, { ...row, status: 'revoked', revokedAt: now });

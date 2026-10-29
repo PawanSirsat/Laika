@@ -19,6 +19,7 @@ import {
   updateAgent,
 } from '../../services/agents.ts';
 import { listOwnWorkRequests } from '../../services/work-requests.ts';
+import { type InboxItem, listInbox } from '../../services/handoffs.ts';
 import {
   type CheckpointConsentView,
   readCheckpointConsent,
@@ -131,6 +132,18 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
       projectSlug: query.project ?? null,
     });
     return c.json(buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id })));
+  });
+
+  // The calling agent's inbox (§6.4, LAI-546): live work requests and the
+  // hand-off and recovery offers it may accept — `agent_sync`'s twin.
+  app.get('/me/inbox', (c) => {
+    const actor = requireActor(c);
+    const query = c.req.query();
+    const { limit, cursor } = parsePageQuery(query);
+    const rows = listInbox(db, actor, { limit, cursor, projectSlug: query.project ?? null });
+    return c.json<Page<InboxItem>>(
+      buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id })),
+    );
   });
 
   // Static device routes precede /:id so 'devices' is never an agent id.
