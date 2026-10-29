@@ -463,6 +463,13 @@
       "when": 1793291825067,
       "tag": "0066_checkpoints",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "6",
+      "when": 1793296471835,
+      "tag": "0067_handoff_offers",
+      "breakpoints": true
     }
   ]
 }

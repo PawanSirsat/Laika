@@ -114,6 +114,8 @@ describe('migrations', () => {
     'password_resets',
     // LAI-773, D-087: a developer's own plan limit.
     'plan_limits',
+    // LAI-546, §4.72: a project's hand-off settings; no row is the defaults.
+    'project_handoff_policies',
     'project_memberships',
     'project_statuses',
     'projects',
