@@ -6,8 +6,9 @@ assignee: strelka
 priority: p2
 depends-on: [LAI-590]
 discovered-from: LAI-532
-status: in-progress
+status: review
 started: 2026-10-29T10:29:42Z
+finished: 2026-10-29T10:37:12Z
 ---
 
 Phase 2.5 slice from `docs/proposals/LAI-532-phase-index.md` (PR #121). Two
@@ -58,16 +59,19 @@ the colleague to register their own.
 
 - [ ] docs: the proposed decision is written and linked from the phase index;
       SPEC §4.63 and §4.9 record the cloud expiry rule; nothing else in
-      `docs/` is touched
-- [ ] Minting a token for a cloud agent with no expiry, or past the limit, is
+      `docs/` is touched — **Belka's docs half**; the text is below under
+      *Proposed docs half (for Belka)*
+- [x] Minting a token for a cloud agent with no expiry, or past the limit, is
       `422` with a `code` naming the rule; within the limit it succeeds
-- [ ] A cloud agent's expired token is refused exactly as an expired personal
+- [x] A cloud agent's expired token is refused exactly as an expired personal
       token is; the agent's other devices are untouched
-- [ ] Agent reads and the device list carry the owner's display name
-- [ ] No route or tool registers an agent whose owner is not the calling
+- [x] Agent reads and the device list carry the owner's display name
+- [x] No route or tool registers an agent whose owner is not the calling
       session user; a test asserts the refusal
-- [ ] Tests: REST for each rule, each broken on purpose and seen red
-- [ ] Gate: repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0
+- [x] Tests: REST for each rule, each broken on purpose and seen red
+- [ ] Gate: repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 —
+      red only on the §4.4 client half (LAI-320's quoted assertion below);
+      exit codes in the log and the PR
 
 ## Dependencies
 
