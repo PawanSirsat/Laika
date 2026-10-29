@@ -723,6 +723,18 @@ describe('re-tagging (D-116 item 7)', () => {
     expect(now.refs[0]!.state).toBe('uncertain');
   });
 
+  it('a delivery for an older ref after a re-tag moves that ref, not the checkpoint', async () => {
+    const checkpoint = await saved();
+    await retag(checkpoint.id);
+    await delivered(checkpoint.remote_ref, ZERO, COMMIT);
+    const now = await read(checkpoint.id);
+    expect(now.refs.map((r) => [r.revision, r.state])).toEqual([
+      [0, 'verified'],
+      [1, 'pending'],
+    ]);
+    expect(now.verification).toBe('pending');
+  });
+
   it('the state follows the newest ref, even when an older one is verified', async () => {
     const checkpoint = await saved();
     await delivered(checkpoint.remote_ref, ZERO, COMMIT);
