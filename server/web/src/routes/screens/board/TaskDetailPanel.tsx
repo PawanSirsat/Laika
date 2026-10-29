@@ -19,6 +19,7 @@ import { useTaskText } from '../../../api/use-task-text.ts';
 import { useDelayed } from '../../../components/use-delayed.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { actorLine, describeActor, viaLine } from './actor-presentation.ts';
+import { threadOrder, type ThreadItem } from './thread-order.ts';
 import { agentNamesFrom } from '../../../api/selected-agent.ts';
 import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import {
@@ -438,12 +439,10 @@ export function TaskDetailPanel({
    * **All** is the thread and the history in one timeline, oldest first — a
    * conversation's order, with what happened between the messages. Neither
    * list is re-sorted on its own tab; this merge is the only place the two
-   * meet, and it is by `created_at` with the comment first on a tie.
+   * meet, and it is by `created_at` with the comment first on a tie and two
+   * events by `seq` ({@link threadOrder}, LAI-575).
    */
-  const everything: readonly (
-    | { readonly kind: 'comment'; readonly at: number; readonly comment: Comment }
-    | { readonly kind: 'event'; readonly at: number; readonly event: ActivityEvent }
-  )[] =
+  const everything: readonly ThreadItem[] =
     detail.status === 'ready'
       ? [
           ...detail.comments.map((comment) => ({
@@ -456,7 +455,7 @@ export function TaskDetailPanel({
             at: event.created_at,
             event,
           })),
-        ].sort((a, b) => a.at - b.at || (a.kind === 'comment' ? -1 : 1))
+        ].sort(threadOrder)
       : [];
 
   /**
