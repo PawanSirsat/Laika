@@ -6,8 +6,9 @@ assignee: CORE
 priority: p1
 depends-on: [LAI-586]
 discovered-from: LAI-532
-status: in-progress
+status: review
 started: 2026-10-29T07:42:31+00:00
+finished: 2026-10-29T08:07:49+00:00
 ---
 
 Phase 2.5 slice from `docs/proposals/LAI-532-phase-index.md` (PR #121,
@@ -62,28 +63,28 @@ reads *Not recognised*.
 
 ## Acceptance criteria
 
-- [ ] The device list groups the caller's own agents by normalised
+- [x] The device list groups the caller's own agents by normalised
       `device_label`, with `last_seen_at` = the newest agent `last_seen_at` on
       the device, active/revoked counts and each agent's harness and status
-- [ ] Another person's agents never appear, and their device label is never
+- [x] Another person's agents never appear, and their device label is never
       revealed; a revoke naming a label only another person uses changes
       nothing and answers as an unknown device (`404`)
-- [ ] Revoke-device revokes every active agent on that device and every live
+- [x] Revoke-device revokes every active agent on that device and every live
       token they hold in one transaction; their sessions end `agent_revoked`;
       their claims drop as single-agent revoke does today; agents on other
       devices and the owner's personal tokens are untouched
-- [ ] Revoke-device and confirm-device refuse any token (`403`), an agent's own
+- [x] Revoke-device and confirm-device refuse any token (`403`), an agent's own
       included — session only, `agent.manage_own`
-- [ ] A label the owner has not confirmed reads `recognised: false`;
+- [x] A label the owner has not confirmed reads `recognised: false`;
       confirming flips it; a new agent on a new label reads unrecognised
-- [ ] Additive migration (if a table or column is added): every existing row
+- [x] Additive migration (if a table or column is added): every existing row
       kept, tested on a populated database; existing agents' devices start
       **recognised** (they were registered by the owner from a session)
-- [ ] SPEC: §4.63 (and a new §4.x if a table is added), the endpoint rows in
+- [x] SPEC: §4.63 (and a new §4.x if a table is added), the endpoint rows in
       §6, and the §3.1 actions used — only what the guards force
-- [ ] Tests: REST for list, revoke, confirm, the no-leak case and the token
+- [x] Tests: REST for list, revoke, confirm, the no-leak case and the token
       refusal; each rule broken on purpose and the matching test seen red
-- [ ] Gate: repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0
+- [x] Gate: repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0
 
 ## Dependencies
 
@@ -118,3 +119,28 @@ Owner-directed CORE implementation on Belka, in `.polly/wt-590`, branch
 rather than waiting for its merge. No merge or decision approval is implied.
 The owner authorised touched tests, lint and format locally; the full test
 gate runs in PR CI because Belka is overloaded.
+
+## Submission notes (CORE, Claude Code on Belka)
+
+Took over Codex's uncommitted draft and reviewed it. Kept: the table, the
+Unicode key function used by the migration, the outer-transaction revoke and
+the route order. Fixed: two tests that were wrong. One read a `claim` field
+that `GET /tasks/:id` does not return. The other bound a variable inside a
+trigger. Claims now assert today's single-agent behaviour: the row is
+unchanged, it is held until the lease ends, then it expires. Reverted the
+draft's §3.1 row rewording, which broke `policy-spec-drift`. Added the 0065
+populated-db test, `test/db/device-label.test.ts`, and the new table in the
+schema guards.
+
+Recognised lives in a new table, `recognised_agent_devices` (§4.67). No MCP
+tool was added, because §7.1 has no tool that reads agents.
+
+**Gate criterion, submitted red per §4.4.** The full gate runs in PR #132 CI.
+One assertion is expected to fail, in SHELL's area:
+`server/web/test/api/endpoint-coverage.test.ts` "no endpoint is served,
+uncalled and unexplained" lists `api/v1/agents/devices`, `…/confirm` and
+`…/revoke`. LAI-591 adds the callers and turns it green.
+`NO_BROWSER_CALLER` is not touched from here.
+
+Board: `start_working` answered `409 claim_held`, because the stopped Codex
+session still holds the claim. The card was not moved to Review.
