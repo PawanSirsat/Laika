@@ -105,6 +105,16 @@ notice. It does not stub the missing fields (CLAUDE.md §5.1).
   criterion is to be re-validated after merging
   `origin/integration-agent-identities`, once Belka posts it ready.**
 
+  **Re-measured 2026-10-29 after merging `origin/master` (`52069e4b`):**
+  `pnpm test` **1** · `pnpm lint` **0** · `pnpm format` **0**. server
+  `4172 passed | 10 skipped`, cli `# pass 665` `# fail 0`, server/web
+  `# pass 3577` `# fail 1`. **The five inherited failures are gone.** The one
+  `not ok` is *"every server field is visible to the client"* /
+  *"no server field is missing from its client type"*, and its only lines are
+  the two `.claim` lines quoted above. That is exactly this criterion's
+  wording. It is left unticked because the gate is not 0 and the criteria are
+  frozen; ticking it is Belka's call.
+
 ## Role / machine
 
 CORE on Belka. Owner area: `server`.
