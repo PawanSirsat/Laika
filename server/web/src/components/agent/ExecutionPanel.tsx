@@ -1,4 +1,6 @@
+import { useId, useState } from 'react';
 import type { AgentClient } from '../../api/agent-clients.ts';
+import { dateTime } from '../../api/time-label.ts';
 import { AgentChip, type AgentChipProps } from './AgentChip.tsx';
 import { ExecutionStateLine } from './ExecutionStateLine.tsx';
 import {
@@ -40,8 +42,22 @@ export interface PanelClaim {
   readonly verb: string;
   /** When, worded: "14:02". */
   readonly when: string;
+  /** When, as a time: the full date under Details. Absent on a gallery fixture. */
+  readonly at?: number | undefined;
   /** `task_claims.session_id`, when the row named it. Shown under Details. */
   readonly sessionId: string | null;
+  /**
+   * The agent and what its session said ran, in one line (D-118, LAI-587):
+   * *Claude Code · Belka · Codex · gpt-5.5*. `undefined` when the row kept no
+   * snapshot, or the session reported neither — the chip alone then.
+   */
+  readonly line?: string | undefined;
+  /** The session's self-reported harness slug, as it sent it. Shown in {@link line}. */
+  readonly harness?: string | null | undefined;
+  /** The session's self-reported harness version, under Details. */
+  readonly harnessVersion?: string | null | undefined;
+  /** The session's self-reported model, under Details beside its version. */
+  readonly model?: string | null | undefined;
 }
 
 export interface ExecutionPanelProps {
@@ -124,6 +140,14 @@ export function ExecutionPanel({
             </dd>
           </div>
         )}
+        {claim?.line !== undefined && (
+          <div>
+            <dt>Ran as</dt>
+            <dd className="exec-line" data-agent-line>
+              {claim.line}
+            </dd>
+          </div>
+        )}
         {checkpoint !== undefined && (
           <div>
             <dt>Latest verified save</dt>
@@ -151,33 +175,12 @@ export function ExecutionPanel({
           </div>
         )}
       </dl>
-      <details className="exec-details">
-        <summary>Details</summary>
-        <dl className="exec-facts exec-facts-mono">
-          <div>
-            <dt>Claim generation</dt>
-            <dd>{generation === null ? 'No claim' : String(generation)}</dd>
-          </div>
-          {(claim?.sessionId ?? null) !== null && (
-            <div>
-              <dt>Session</dt>
-              <dd className="exec-sha">{claim?.sessionId}</dd>
-            </div>
-          )}
-          {checkpoint !== undefined && checkpoint !== null && (
-            <div>
-              <dt>Verified commit</dt>
-              <dd className="exec-sha">{checkpoint.sha}</dd>
-            </div>
-          )}
-          {pendingCheckpoint !== undefined && (
-            <div>
-              <dt>Unverified commit</dt>
-              <dd className="exec-sha">{pendingCheckpoint.sha}</dd>
-            </div>
-          )}
-        </dl>
-      </details>
+      <ExecutionDetails
+        generation={generation}
+        claim={claim}
+        checkpoint={checkpoint}
+        pendingCheckpoint={pendingCheckpoint}
+      />
     </section>
   );
 }
@@ -223,5 +226,101 @@ function CheckpointLine({ checkpoint }: { readonly checkpoint: PanelCheckpoint }
         {NOTE_WORDS[checkpoint.note]}
       </span>
     </span>
+  );
+}
+
+/**
+ * **Details**, closed until asked (D-118): the claim generation, the session
+ * and what it said about itself, and the full SHAs — for the person debugging
+ * a hand-off, not for everyone reading the task.
+ *
+ * A button with `aria-expanded`, the drawer's own fold pattern, so Enter and
+ * Space open it and a screen reader hears whether it is open. A live update
+ * re-renders the panel without remounting this, so it keeps both its state
+ * and the focus (LAI-543).
+ */
+function ExecutionDetails({
+  generation,
+  claim,
+  checkpoint,
+  pendingCheckpoint,
+}: Pick<ExecutionPanelProps, 'generation' | 'claim' | 'checkpoint' | 'pendingCheckpoint'>) {
+  const [open, setOpen] = useState(false);
+  const region = useId();
+  // Any self-reported field the panel shows — the harness in *Ran as*
+  // included — carries the label.
+  const reported =
+    claim !== undefined &&
+    [claim.harness, claim.harnessVersion, claim.model].some((field) => (field ?? null) !== null);
+  return (
+    <div className="exec-details" data-exec-details>
+      <button
+        type="button"
+        className="exec-details-toggle"
+        aria-expanded={open}
+        aria-controls={region}
+        onClick={() => {
+          setOpen((was) => !was);
+        }}
+      >
+        <span className={open ? 'meta-chevron meta-chevron-open' : 'meta-chevron'} />
+        Details
+      </button>
+      {open && (
+        <div className="exec-details-body" id={region}>
+          <dl className="exec-facts exec-facts-mono">
+            <div>
+              <dt>Claim generation</dt>
+              <dd>{generation === null ? 'No claim' : String(generation)}</dd>
+            </div>
+            {(claim?.sessionId ?? null) !== null && (
+              <div>
+                <dt>Session</dt>
+                <dd className="exec-sha">{claim?.sessionId}</dd>
+              </div>
+            )}
+            {claim?.at !== undefined && (
+              <div>
+                <dt>Claimed</dt>
+                <dd>
+                  <time dateTime={new Date(claim.at).toISOString()}>
+                    {dateTime(claim.at, Date.now())}
+                  </time>
+                </dd>
+              </div>
+            )}
+            {(claim?.harnessVersion ?? null) !== null && (
+              <div>
+                <dt>Harness version</dt>
+                <dd className="exec-sha">{claim?.harnessVersion}</dd>
+              </div>
+            )}
+            {(claim?.model ?? null) !== null && (
+              <div>
+                <dt>Model</dt>
+                <dd className="exec-sha">{claim?.model}</dd>
+              </div>
+            )}
+            {checkpoint !== undefined && checkpoint !== null && (
+              <div>
+                <dt>Verified commit</dt>
+                <dd className="exec-sha">{checkpoint.sha}</dd>
+              </div>
+            )}
+            {pendingCheckpoint !== undefined && (
+              <div>
+                <dt>Unverified commit</dt>
+                <dd className="exec-sha">{pendingCheckpoint.sha}</dd>
+              </div>
+            )}
+          </dl>
+          {reported && (
+            <p className="exec-reported" data-self-reported>
+              Harness, version and model are self-reported by the session; they decide nothing.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

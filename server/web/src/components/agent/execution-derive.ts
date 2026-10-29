@@ -1,6 +1,8 @@
-import type { ActivityEvent } from '../../api/activity.ts';
+import type { ActivityEvent, ActivitySession } from '../../api/activity.ts';
+import { agentLine, sessionWords } from '../../api/agent-session.ts';
 import {
   agentDevice,
+  agentLabel,
   selectedHarness,
   UNNAMED_AGENT,
   type AgentNaming,
@@ -57,6 +59,12 @@ export interface ClaimFact {
   readonly sessionId: string | null;
   readonly agentId: string | null;
   readonly at: number;
+  /**
+   * What the claiming session said ran (D-118, LAI-586): the row's own
+   * snapshot, or — on an expiry, which the system writes — the snapshot of
+   * the take it ended. Null on a row older than the snapshot.
+   */
+  readonly session: ActivitySession | null;
 }
 
 /** The latest claim a task's activity records, or what ended it. */
@@ -83,6 +91,7 @@ function str(value: unknown): string | null {
 export function claimFactOf(event: ActivityEvent): ClaimFact | undefined {
   const p = record(event.payload);
   const agentId = event.agent_id ?? null;
+  const session = event.agent_session ?? null;
 
   if (event.type === 'task.claim_expired' && typeof p.generation === 'number') {
     return {
@@ -91,6 +100,7 @@ export function claimFactOf(event: ActivityEvent): ClaimFact | undefined {
       sessionId: str(p.session_id),
       agentId: str(p.agent_id) ?? agentId,
       at: event.created_at,
+      session,
     };
   }
   if (event.type === 'task.claim_reclaimed' && typeof p.generation === 'number') {
@@ -100,6 +110,7 @@ export function claimFactOf(event: ActivityEvent): ClaimFact | undefined {
       sessionId: str(p.session_id),
       agentId: str(p.agent_id) ?? agentId,
       at: event.created_at,
+      session,
     };
   }
   if (
@@ -110,9 +121,10 @@ export function claimFactOf(event: ActivityEvent): ClaimFact | undefined {
     return {
       kind: 'taken',
       generation: p.claim_generation,
-      sessionId: null,
+      sessionId: session?.id ?? null,
       agentId,
       at: event.created_at,
+      session,
     };
   }
   if (event.type === 'task.updated' && p.field === 'claim') {
@@ -121,9 +133,10 @@ export function claimFactOf(event: ActivityEvent): ClaimFact | undefined {
     return {
       kind: 'taken',
       generation: to.generation,
-      sessionId: str(to.session_id),
+      sessionId: str(to.session_id) ?? session?.id ?? null,
       agentId,
       at: event.created_at,
+      session,
     };
   }
   return undefined;
@@ -153,13 +166,27 @@ function inWriteOrder(events: readonly ActivityEvent[]): ActivityEvent[] {
   return [...events].sort(bySeq ? (a, b) => a.seq - b.seq : (a, b) => a.created_at - b.created_at);
 }
 
+/**
+ * A row with no snapshot of its own keeps the one of the claim it follows,
+ * **when it is that claim** — the same generation. An expiry is the system's
+ * row and carries no session; what ran is still the take's.
+ */
+function inheritSession(fact: ClaimFact, before: ClaimHistory): ClaimFact {
+  if (fact.session !== null || before.kind === 'none') return fact;
+  const prior = before.fact;
+  if (prior.generation !== fact.generation || prior.session === null) return fact;
+  if (fact.sessionId !== null && fact.sessionId !== prior.session.id) return fact;
+  return { ...fact, session: prior.session, sessionId: fact.sessionId ?? prior.session.id };
+}
+
 /** The task's claim history, replayed in write order ({@link inWriteOrder}). */
 export function claimHistory(events: readonly ActivityEvent[]): ClaimHistory {
   const ordered = inWriteOrder(events);
   let state: ClaimHistory = { kind: 'none' };
   for (const event of ordered) {
-    const fact = claimFactOf(event);
-    if (fact !== undefined) {
+    const read = claimFactOf(event);
+    if (read !== undefined) {
+      const fact = inheritSession(read, state);
       state = fact.kind === 'expired' ? { kind: 'expired', fact } : { kind: 'recorded', fact };
       continue;
     }
@@ -237,7 +264,16 @@ export function executionView(
                   ),
             verb: CLAIM_VERBS[history.kind][fact.kind],
             when: clockTime(fact.at),
+            at: fact.at,
             sessionId: fact.sessionId,
+            // Drawn only when the session said what ran; never a guess (D-118).
+            line:
+              sessionWords(fact.session) === undefined
+                ? undefined
+                : agentLine(named === undefined ? UNNAMED_AGENT : agentLabel(named), fact.session),
+            harness: fact.session?.harness ?? null,
+            harnessVersion: fact.session?.harness_version ?? null,
+            model: fact.session?.model ?? null,
           },
     claimExpired: history.kind === 'expired',
     generation: fact?.generation ?? null,
