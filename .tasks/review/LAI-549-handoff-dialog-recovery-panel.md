@@ -125,3 +125,12 @@ LAI-545 and LAI-546 is green, plus `structure.test.ts`'s WEB_* mirror check.
 `server/test/tooling/structure.test.ts` — all exit 0. Web typecheck 0;
 prettier and eslint on every changed code file 0. Screenshots light/dark ×
 1440/390 in `.polly/evidence/LAI-549/` on Belka.
+
+### Named crossing authorised by CHIEF (2026-10-29)
+
+CHIEF authorised one named cross-area edit (CLAUDE.md §1, D-033/D-034):
+`server/test/tooling/response-type-coverage.test.ts` — exactly the three
+`UNPAIRED` entries `CheckpointView`, `CheckpointRefView` and
+`HandoffOfferView` removed, nothing else changed. This retires the two server
+reds quoted above. `pnpm exec vitest run test/tooling/response-type-coverage.test.ts`:
+exit 0, 10 passed.
