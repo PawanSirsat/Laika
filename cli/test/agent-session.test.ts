@@ -12,6 +12,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -66,6 +67,7 @@ import {
   statePath,
   TRANSCRIPT_WINDOW,
   transcriptEnds,
+  type TranscriptFs,
   writeCredential,
   UNKNOWN,
   writeState,
@@ -1712,10 +1714,11 @@ void describe('reading the harness’s own record (LAI-588)', () => {
     assert.deepEqual(readSelfReport('claude-code', { transcript_path: bad, model: '' }), {});
   });
 
-  void test('the opened descriptor is checked, not the path: a FIFO, or one swapped in at open, is refused at once', () => {
-    // A regular file passes any check made on the path; the FIFO replaces it
-    // in the instant it is opened. Run in a child with a timeout, because an
-    // open that waits on a FIFO with no writer would hang this process.
+  void test('a FIFO, or one swapped in for the path at the moment of opening, gives nothing and does not block', () => {
+    // A regular file passes any check made on the path before the open; the
+    // FIFO replaces it in the instant it is opened. Run in a child with a
+    // timeout, because an open that waits on a FIFO with no writer would hang
+    // this process.
     const home = temp();
     const path = file(home, 'swapped.jsonl', claudeTranscript('2.1.312', 'claude-opus-5-5'));
     const fifo = join(home, 'fifo');
@@ -1727,7 +1730,7 @@ void describe('reading the harness’s own record (LAI-588)', () => {
       `import { openSync, renameSync } from 'node:fs';`,
       `import { transcriptEnds } from ${JSON.stringify(module)};`,
       `const [path, fifo, plainFifo] = process.argv.slice(1);`,
-      `const swapped = transcriptEnds(path, (p, flags) => { renameSync(fifo, p); return openSync(p, flags); });`,
+      `const swapped = transcriptEnds(path, { open: (p, flags) => { renameSync(fifo, p); return openSync(p, flags); } });`,
       `const plain = transcriptEnds(plainFifo);`,
       `process.stdout.write(JSON.stringify([swapped ?? null, plain ?? null]));`,
     ].join('\n');
@@ -1750,9 +1753,27 @@ void describe('reading the harness’s own record (LAI-588)', () => {
     assert.equal(run.stdout, '[null,null]');
     // The swap really happened: what was opened was the FIFO.
     assert.ok(statSync(path).isFIFO());
-    // And the same file, not swapped, is read.
+    // A regular file, opened the same way, is read.
     const plain = file(home, 'plain.jsonl', 'x\n');
     assert.deepEqual(transcriptEnds(plain), { head: 'x\n', tail: 'x\n' });
+  });
+
+  void test('a descriptor that is not a regular file is never read, whatever size it reports', () => {
+    // The file opened is real, so the descriptor is valid and closed as usual;
+    // what `fstat` says of it is the test's, and every read is counted.
+    const home = temp();
+    const path = file(home, 'device.jsonl', claudeTranscript('2.1.312', 'claude-opus-5-5'));
+    let reads = 0;
+    const read: TranscriptFs['read'] = (...args) => {
+      reads += 1;
+      return readSync(...args);
+    };
+    const notAFile = () => ({ isFile: () => false, size: 4096 });
+    assert.equal(transcriptEnds(path, { fstat: notAFile, read }), undefined);
+    assert.equal(reads, 0, 'a descriptor that is not a regular file was read');
+    // The same seams on a regular file do read it: the counter counts.
+    assert.ok(transcriptEnds(path, { read }) !== undefined);
+    assert.ok(reads > 0);
   });
 
   void test('a transcript of any size is read at its ends only', () => {

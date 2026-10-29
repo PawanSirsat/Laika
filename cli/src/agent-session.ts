@@ -501,30 +501,46 @@ const asModel = (value: unknown): string | undefined => {
 /** How much of a transcript is read, from each end. A transcript of any size costs the same. */
 export const TRANSCRIPT_WINDOW = 256 * 1024;
 
+/** The filesystem calls {@link transcriptEnds} makes. */
+export interface TranscriptFs {
+  readonly open: (path: string, flags: number) => number;
+  readonly fstat: (fd: number) => { isFile(): boolean; size: number };
+  readonly read: (
+    fd: number,
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number,
+  ) => number;
+}
+
+const TRANSCRIPT_FS: TranscriptFs = { open: openSync, fstat: fstatSync, read: readSync };
+
 /**
  * The first and last {@link TRANSCRIPT_WINDOW} bytes of a regular file, or
  * nothing. **Opened first, then checked**: the descriptor is what is
  * `fstat`ed, so a FIFO or device swapped in for the path after any check is
  * still refused, and `O_NONBLOCK` keeps the open itself from waiting on a
- * FIFO with no writer. `open` is a parameter only so a test can swap the path
- * at the moment it is opened.
+ * FIFO with no writer. The calls are parameters only so a test can swap the
+ * path at the moment it is opened, or say what the descriptor is.
  */
 export function transcriptEnds(
   path: unknown,
-  open: (path: string, flags: number) => number = openSync,
+  fs: Partial<TranscriptFs> = {},
 ): { head: string; tail: string } | undefined {
   if (typeof path !== 'string' || !path.startsWith('/')) return undefined;
+  const { open, fstat, read: readAt } = { ...TRANSCRIPT_FS, ...fs };
   let fd: number | undefined;
   try {
     const handle = open(path, constants.O_RDONLY | constants.O_NONBLOCK);
     fd = handle;
     // A FIFO or a device would block or never end: only a regular file is read.
-    const stat = fstatSync(handle);
+    const stat = fstat(handle);
     const size = stat.isFile() ? stat.size : -1;
     if (size <= 0) return undefined;
     const read = (at: number, length: number): string => {
       const buffer = Buffer.alloc(length);
-      return buffer.toString('utf8', 0, readSync(handle, buffer, 0, length, at));
+      return buffer.toString('utf8', 0, readAt(handle, buffer, 0, length, at));
     };
     const length = Math.min(size, TRANSCRIPT_WINDOW);
     return { head: read(0, length), tail: read(size - length, length) };
