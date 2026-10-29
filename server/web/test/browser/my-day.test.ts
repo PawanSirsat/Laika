@@ -614,4 +614,85 @@ void describe('times and durations say their units (LAI-830)', () => {
       await h.close();
     }
   });
+
+  void test('a length typed while the wheel waits to settle is kept as typed (LAI-599)', async () => {
+    // The case above failed on CI reading `1 h 45 min` for `1h 30m`. Typing
+    // `45` scrolls the wheel's columns, and each scroll arms a settle timer
+    // (`SETTLE_MS` in Wheel.tsx). `1h 30m` typed in the frame before that timer
+    // is due moves the Hours column, and the timer can fire before the move's
+    // own scroll is delivered: it then picked the new hour against the old
+    // minutes and wrote that over the field. On a real clock the window is
+    // about a millisecond wide, so this holds the settle timers and fires them
+    // at exactly that moment — after the typed change has moved the column,
+    // before any frame can deliver its scroll.
+    const h = await open('/my-day', { ...STUB, '/api/v1/me/time': OWNER_DAY });
+    try {
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('[data-select="d1"]').click();
+      const panel = h.page.locator('[data-inspector-for="d1"]');
+      await panel.waitFor({ timeout: 10_000 });
+      const howLong = panel.getByLabel('Length, typed');
+      await howLong.fill('1h 35m');
+      await panel.locator('[data-wheel-col="Hours"]').waitFor({ timeout: 5_000 });
+      const seen = await h.page.evaluate(async () => {
+        const input = document.querySelector<HTMLInputElement>('[aria-label="Length, typed"]');
+        const hours = document.querySelector<HTMLElement>('[data-wheel-col="Hours"]');
+        if (input === null || hours === null) return { setup: 'no field or wheel' };
+        // Typed as a person types, over what is there: the field keeps the focus.
+        const type = (text: string): void => {
+          input.select();
+          document.execCommand('insertText', false, text);
+        };
+        const frame = (): Promise<void> =>
+          new Promise((r) => {
+            requestAnimationFrame(() => {
+              setTimeout(r, 0);
+            });
+          });
+        // Hold every settle timer (the wheel's only 90 ms one) instead of running it.
+        const held = new Map<number, () => void>();
+        const realSet = window.setTimeout.bind(window);
+        const realClear = window.clearTimeout.bind(window);
+        let next = 1_000_000;
+        window.setTimeout = ((fn: () => void, ms?: number, ...rest: unknown[]) => {
+          if (ms !== 90) return realSet(fn, ms, ...rest);
+          held.set(++next, fn);
+          return next;
+        }) as typeof window.setTimeout;
+        window.clearTimeout = ((id?: number) => {
+          if (id !== undefined && held.delete(id)) return;
+          realClear(id);
+        }) as typeof window.clearTimeout;
+        try {
+          // Its own scroll, delivered: React's handler, attached first, has armed the timer.
+          const scrolled = new Promise<boolean>((r) => {
+            hours.addEventListener('scroll', () => r(true), { once: true });
+            realSet(() => r(false), 5_000);
+          });
+          type('45');
+          if (!(await scrolled) || held.size === 0) {
+            return { setup: `45 did not scroll Hours and arm its settle (${String(held.size)})` };
+          }
+          const at45 = hours.scrollTop;
+          type('1h 30m');
+          // React commits a typed change in a microtask; no frame runs in between.
+          for (let i = 0; i < 10 && hours.scrollTop === at45; i++) await Promise.resolve();
+          if (hours.scrollTop === at45) return { setup: '1h 30m did not move Hours' };
+          for (const fire of [...held.values()]) fire();
+          held.clear();
+        } finally {
+          window.setTimeout = realSet;
+          window.clearTimeout = realClear;
+        }
+        await frame();
+        await new Promise((r) => setTimeout(r, 250));
+        return { value: input.value };
+      });
+      assert.deepEqual(seen, { value: '1h 30m' }, 'the typed length was overwritten');
+      assert.equal(await panel.locator('[data-understood]').innerText(), 'Reads as 1 h 30 min');
+    } finally {
+      await h.close();
+    }
+  });
 });
