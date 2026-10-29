@@ -205,11 +205,6 @@ const UNPAIRED = new Map<string, string>([
   // LAI-549 and LAI-550 mirror them on the client.
   ['AcceptedHandoff', 'no client type exists'],
   ['HandoffPolicyView', 'no client type exists'],
-  // LAI-555's context history (§4.68). The history and diff screen is
-  // LAI-556's, unbuilt, and its client types arrive with it.
-  ['ContextDiffView', 'no client type exists'],
-  ['ContextRevisionSummaryView', 'no client type exists'],
-  ['ContextRevisionView', 'no client type exists'],
   // The meeting-review screen is SHELL's and unbuilt; §11.4.2 lists it. These
   // three leave this group the same way `CapacityView` and `PresenceView` did —
   // when the screen exists, and therefore the mirror.

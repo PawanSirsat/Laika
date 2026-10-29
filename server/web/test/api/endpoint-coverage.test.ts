@@ -56,10 +56,6 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
    * built, and there is nowhere in the app to put it yet.
    */
   'api/v1/me/watching': 'LAI-458 — a "tasks I watch" screen does not exist',
-  // LAI-555's context history; the screen that reads it is LAI-556.
-  'api/v1/projects/*/context/revisions': 'LAI-556 — the context history screen does not exist',
-  'api/v1/projects/*/context/revisions/*': 'LAI-556 — the context history screen does not exist',
-  'api/v1/projects/*/context/diff': 'LAI-556 — the context history screen does not exist',
   // Called by something that is not the SPA.
   'webhooks/github': 'GitHub posts here (§9.2); no browser is involved',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
