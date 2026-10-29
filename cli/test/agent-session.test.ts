@@ -1630,6 +1630,31 @@ void describe('what a session says about itself (LAI-588, D-118)', () => {
     await beatOnce(w.deps, path, CRED);
     assert.deepEqual(sent(w, 'beat'), ['{"harness_version":"2.1.312","model":"claude-opus-5-5"}']);
   });
+
+  void test('a version is sent at 64 characters and a model at 120; one more is omitted, never cut', async () => {
+    // The board's `SELF_REPORTED` caps: `.max(64)` and `.max(120)`.
+    const version64 = `1.2.3-${'a'.repeat(58)}`;
+    const model120 = `claude ${'m'.repeat(113)}`;
+    assert.equal(version64.length, 64);
+    assert.equal(model120.length, 120);
+    const home = temp();
+    const w = world(home);
+    for (const [id, version, model] of [
+      ['hs-fit', version64, model120],
+      ['hs-long', `${version64}a`, `${model120}m`],
+      ['hs-synthetic', version64, '<synthetic>'],
+    ] as const) {
+      const path = join(home, `${id}.jsonl`);
+      writeFileSync(path, claudeTranscript(version, model));
+      const self = readSelfReport('claude-code', { transcript_path: path });
+      await startSession(w.deps, { ...request(id), self });
+    }
+    assert.deepEqual(sent(w, 'start'), [
+      JSON.stringify({ harness: 'claude-code', harness_version: version64, model: model120 }),
+      '{"harness":"claude-code"}',
+      JSON.stringify({ harness: 'claude-code', harness_version: version64 }),
+    ]);
+  });
 });
 
 void describe('reading the harness’s own record (LAI-588)', () => {
