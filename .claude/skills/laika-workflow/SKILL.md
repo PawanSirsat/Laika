@@ -112,7 +112,7 @@ id: LAI-0NN                 # lowest unused number IN YOUR OWN RANGE (D-017):
                             #       git ls-tree -r --name-only "$r" .tasks/
                             #     done
                             #     git log --all --name-only --format= -- .tasks/
-                            #   } | grep -o 'LAI-[0-9]\{3\}' | sort -u
+                            #   } | grep -o 'LAI-[0-9]\{3,\}' | sort -u
 area: server                # where the work actually belongs, not where you found it
 assignee: unclaimed
 discovered-from: LAI-00X    # the task you are on right now

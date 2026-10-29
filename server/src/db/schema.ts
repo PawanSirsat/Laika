@@ -38,9 +38,11 @@ import {
   CHECK_OUTCOMES,
   ESTIMATE_SOURCES,
   EVIDENCE_KINDS,
+  HANDOFF_CLOSED_REASONS,
   HANDOFF_OFFER_KINDS,
   HANDOFF_OFFER_STATES,
   TASK_CLAIM_STATES,
+  CHECKPOINT_VERIFICATIONS,
   EVIDENCE_STATES,
   GITHUB_CHECK_KINDS,
   GRANTABLE_ROLES,
@@ -610,6 +612,12 @@ export const tasks = sqliteTable(
     selectedAgentId: text('selected_agent_id').references((): AnySQLiteColumn => agents.id, {
       onDelete: 'set null',
     }),
+    /**
+     * Completed hand-offs (§4.5, §4.73, LAI-546): an accepted `handoff` or
+     * `recovery` adds one in the accept's transaction; a work request does
+     * not. Compared with the policy's `max_handoffs`. Never decremented.
+     */
+    handoffCount: integer('handoff_count').notNull().default(0),
     createdAt,
     updatedAt,
   },
@@ -982,21 +990,21 @@ export const agentProjectGrants = sqliteTable(
   ],
 );
 
-// ---------------------------------------------------- handoff_offers
+// ---------------------------------------------------- §4.73 handoff_offers
 
 /**
- * Work offered to an agent (proposal §4.4, D-114 item 7, LAI-535).
+ * Work offered to an agent (§4.73, proposal §4.4, D-114 item 7). Three kinds:
+ * a **work request** (selecting an agent opens one; LAI-535), a **hand-off**
+ * (the session holding the live claim offers the task on) and a **recovery**
+ * (the system offers a task whose claim expired; LAI-546). An orphan is
+ * offered, never assigned.
  *
- * **Only work requests exist yet.** Selecting an agent on a task opens one
- * (`kind = 'work_request'`, `state = 'open'`) addressed to that agent; clearing
- * or changing the selection cancels it. It claims nothing, starts nothing and
- * never touches `tasks.assignee_id`.
+ * The checkpoint is a link (`ON DELETE SET NULL`) and a snapshot
+ * (`checkpoint_commit_sha`, `note_hash`), so a closed offer still says what
+ * it carried after retention removed the checkpoint (§4.70).
  *
- * The §4.4 shape, cut to what a work request needs, so that LAI-546 adds
- * columns — `from_session_id`, `checkpoint_id`, `reason`, `note_hash`,
- * approval and expiry — rather than migrating rows out of a narrower table.
- * The partial unique index is the rule a work request has: at most one open
- * per task.
+ * The two partial unique indexes are the rules: at most one open work request
+ * per task, and **one live hand-off or recovery per task**.
  */
 export const handoffOffers = sqliteTable(
   'handoff_offers',
@@ -1006,26 +1014,115 @@ export const handoffOffers = sqliteTable(
       .notNull()
       .references(() => tasks.id, { onDelete: 'cascade' }),
     kind: text('kind', { enum: HANDOFF_OFFER_KINDS }).notNull(),
-    /** Null means any eligible agent — recovery's case (§4.4); a work request always names one. */
+    /** The sender's key; null for what the server makes (a work request, a recovery). */
+    idempotencyKey: text('idempotency_key'),
+    /** The sending session, which held the live claim. Null unless a hand-off. */
+    fromSessionId: text('from_session_id').references((): AnySQLiteColumn => agentSessions.id, {
+      onDelete: 'restrict',
+    }),
+    /** The claim the offer moves on from: the sender's live one, or the expired one. */
+    fromClaimGeneration: integer('from_claim_generation'),
+    /** Null means any eligible agent — only an unnamed recovery's case (§4.73). */
     toAgentId: text('to_agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+    checkpointId: text('checkpoint_id').references((): AnySQLiteColumn => taskCheckpoints.id, {
+      onDelete: 'set null',
+    }),
+    /** Copied when the offer is made and never changed; survives retention. */
+    checkpointCommitSha: text('checkpoint_commit_sha'),
+    /** The sender's reason, at most 500 characters. Untrusted data (D-115 item 7). */
+    reason: text('reason'),
+    /** SHA-256 of the checkpoint's `summary` as offered. */
+    noteHash: text('note_hash'),
+    requiresApproval: integer('requires_approval', { mode: 'boolean' }).notNull().default(false),
+    approvedByUserId: text('approved_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    approvedAt: integer('approved_at'),
     state: text('state', { enum: HANDOFF_OFFER_STATES }).notNull(),
-    /** The person who asked — the selector, whatever credential they used. */
+    /** Now + the policy's `offer_ttl_minutes`; null for a work request, which never expires. */
+    expiresAt: integer('expires_at'),
+    acceptedSessionId: text('accepted_session_id').references(
+      (): AnySQLiteColumn => agentSessions.id,
+      { onDelete: 'restrict' },
+    ),
+    /** The claim the accept created — so the claim history names its offer. */
+    acceptedClaimId: text('accepted_claim_id').references((): AnySQLiteColumn => taskClaims.id, {
+      onDelete: 'restrict',
+    }),
+    /** The receiver's acknowledgement (D-116 item 8), not proof. */
+    receiverCommitSha: text('receiver_commit_sha'),
+    closedReason: text('closed_reason', { enum: HANDOFF_CLOSED_REASONS }),
+    /** The person behind it: the selector, the sender's owner, or the task's assignee. */
     createdByUserId: text('created_by_user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     createdAt,
-    /** When it left `open` (or the approval state); null while it is live. */
+    /** When it left a live state; null while it is live. */
     closedAt: integer('closed_at'),
   },
   (t) => [
     index('handoff_offers_task_id_idx').on(t.taskId),
     index('handoff_offers_to_agent_state_idx').on(t.toAgentId, t.state),
     index('handoff_offers_created_by_user_id_idx').on(t.createdByUserId),
+    // Every foreign key is indexed (§4 preamble).
+    index('handoff_offers_from_session_id_idx').on(t.fromSessionId),
+    index('handoff_offers_checkpoint_id_idx').on(t.checkpointId),
+    index('handoff_offers_approved_by_user_id_idx').on(t.approvedByUserId),
+    index('handoff_offers_accepted_session_id_idx').on(t.acceptedSessionId),
+    index('handoff_offers_accepted_claim_id_idx').on(t.acceptedClaimId),
+    // The expiry scan's read.
+    index('handoff_offers_state_expires_idx').on(t.state, t.expiresAt),
+    uniqueIndex('handoff_offers_idempotency_key_idx')
+      .on(t.idempotencyKey)
+      .where(sql`idempotency_key IS NOT NULL`),
     uniqueIndex('handoff_offers_one_open_work_request')
       .on(t.taskId)
       .where(sql`kind = 'work_request' AND state = 'open'`),
+    uniqueIndex('handoff_offers_one_live_handoff')
+      .on(t.taskId)
+      .where(sql`kind IN ('handoff', 'recovery') AND state IN ('pending_approval', 'open')`),
     check('handoff_offers_kind_check', oneOf('kind', HANDOFF_OFFER_KINDS)),
     check('handoff_offers_state_check', oneOf('state', HANDOFF_OFFER_STATES)),
+    check(
+      'handoff_offers_closed_reason_check',
+      oneOfOrNull('closed_reason', HANDOFF_CLOSED_REASONS),
+    ),
+    check(
+      'handoff_offers_approval_check',
+      sql`(approved_by_user_id IS NULL) = (approved_at IS NULL)`,
+    ),
+    check('handoff_offers_reason_check', sql`reason IS NULL OR length(reason) <= 500`),
+  ],
+);
+
+// ----------------------------------------- §4.74 project_handoff_policies
+
+/**
+ * A project's hand-off settings (§4.74, proposal §4.5). **No row means the
+ * defaults** — the column defaults below — so an existing project needs no
+ * backfill. It governs who may be offered work or accept a transfer, and
+ * never narrows a read or a comment (D-114 item 3).
+ */
+export const projectHandoffPolicies = sqliteTable(
+  'project_handoff_policies',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    allowOtherOwners: integer('allow_other_owners', { mode: 'boolean' }).notNull().default(false),
+    crossOwnerRequiresApproval: integer('cross_owner_requires_approval', { mode: 'boolean' })
+      .notNull()
+      .default(true),
+    maxHandoffs: integer('max_handoffs').notNull().default(3),
+    offerTtlMinutes: integer('offer_ttl_minutes').notNull().default(30),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    uniqueIndex('project_handoff_policies_project_id_idx').on(t.projectId),
+    index('project_handoff_policies_updated_by_idx').on(t.updatedBy),
+    check('project_handoff_policies_max_handoffs_check', sql`max_handoffs BETWEEN 0 AND 20`),
+    check('project_handoff_policies_offer_ttl_check', sql`offer_ttl_minutes BETWEEN 5 AND 1440`),
   ],
 );
 
@@ -1184,6 +1281,161 @@ export const agentSessionContextDeliveries = sqliteTable(
     primaryKey({ columns: [t.sessionId, t.projectId] }),
     index('agent_session_context_deliveries_project_id_idx').on(t.projectId),
   ],
+);
+
+// ------------------------------------------------- §4.70 task_checkpoints
+
+/** A manifest entry (§4.70): a path and its line counts — **names only**. */
+export interface CheckpointManifestEntry {
+  path: string;
+  added: number;
+  removed: number;
+}
+
+/** The structured continuation note (§4.70, D-115 item 3): five strings. */
+export interface CheckpointSummary {
+  work_done: string;
+  next_step: string;
+  decisions: string;
+  open_questions: string;
+  failing: string;
+}
+
+/**
+ * A save an agent registers **on purpose** inside a task its session holds
+ * (§4.70, D-115, LAI-545). Not a heartbeat and not telemetry (D-005).
+ *
+ * **The saved fields are never changed**: only `verification` and
+ * `verified_at` move, and only from a signed push delivery (§10.1, D-116
+ * item 3) — no API field or tool argument reaches them. There is **no
+ * column** for file contents, a diff, a prompt or a transcript (D-115 item
+ * 4): `manifest` is paths and line counts, `summary` the five-field note.
+ */
+export const taskCheckpoints = sqliteTable(
+  'task_checkpoints',
+  {
+    /** Minted by the helper before its push: the last segment of the tag. */
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'restrict' }),
+    claimGeneration: integer('claim_generation').notNull(),
+    /** `owner/name`, lowercased — the project's configured repo, and no other. */
+    repo: text('repo').notNull(),
+    branch: text('branch').notNull(),
+    /** The first tag, `refs/tags/laika-ckpt/<task>/<id>`. Never changes. */
+    remoteRef: text('remote_ref').notNull(),
+    commitSha: text('commit_sha').notNull(),
+    manifest: text('manifest', { mode: 'json' }).$type<CheckpointManifestEntry[]>().notNull(),
+    summary: text('summary', { mode: 'json' }).$type<CheckpointSummary>(),
+    summaryCommitSha: text('summary_commit_sha'),
+    /** Written by nothing until Phase 4 (proposal §4.6). */
+    contextRevision: integer('context_revision'),
+    createdAt,
+    verifiedAt: integer('verified_at'),
+    /** The newest ref's state (§4.71), copied in the transaction that changes it. */
+    verification: text('verification', { enum: CHECKPOINT_VERIFICATIONS }).notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+  },
+  (t) => [
+    index('task_checkpoints_task_created_idx').on(t.taskId, t.createdAt),
+    index('task_checkpoints_session_id_idx').on(t.sessionId),
+    uniqueIndex('task_checkpoints_idempotency_key_idx').on(t.idempotencyKey),
+    check('task_checkpoints_verification_check', oneOf('verification', CHECKPOINT_VERIFICATIONS)),
+    check('task_checkpoints_generation_check', sql`claim_generation >= 1`),
+    check('task_checkpoints_commit_sha_check', sql`length(commit_sha) = 40`),
+    // A note and the commit it describes come together, or neither does.
+    check('task_checkpoints_summary_check', sql`(summary IS NULL) = (summary_commit_sha IS NULL)`),
+  ],
+);
+
+// -------------------------------------------------- §4.71 checkpoint_refs
+
+/**
+ * Every Git ref a checkpoint has (§4.71, D-116 items 4 and 7): the first tag
+ * at revision 0, and each re-tag `…-r<n>`. **Each ref is judged on its own**,
+ * from its §4.72 transitions; a checkpoint's state is its newest ref's.
+ */
+export const checkpointRefs = sqliteTable(
+  'checkpoint_refs',
+  {
+    id: text('id').primaryKey(),
+    checkpointId: text('checkpoint_id')
+      .notNull()
+      .references(() => taskCheckpoints.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    /** The checkpoint's repo — with `ref`, the name §4.72's deliveries are matched by. */
+    repo: text('repo').notNull(),
+    /** The full ref, `refs/tags/laika-ckpt/<task>/<id>` or `…-r<n>`. */
+    ref: text('ref').notNull(),
+    state: text('state', { enum: CHECKPOINT_VERIFICATIONS }).notNull(),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('checkpoint_refs_checkpoint_revision_idx').on(t.checkpointId, t.revision),
+    uniqueIndex('checkpoint_refs_repo_ref_idx').on(t.repo, t.ref),
+    check('checkpoint_refs_state_check', oneOf('state', CHECKPOINT_VERIFICATIONS)),
+    check('checkpoint_refs_revision_check', sql`revision >= 0`),
+  ],
+);
+
+// --------------------------------------- §4.72 checkpoint_ref_transitions
+
+/**
+ * One row per signed `push` delivery that moved a `laika-ckpt/` ref in a
+ * configured repo (§4.72, D-116 items 4 and 5, D-116a). Append-only.
+ *
+ * **Keyed by the ref's name — `repo` and `ref` — not by a §4.71 row**, so a
+ * delivery that beats its checkpoint's registration (push, then register:
+ * the normal race) is stored durably and counted the moment the ref is
+ * registered. `delivery_id` is unique and written **in the transaction that
+ * applies the transition**, so a delivery that was applied is ignored when it
+ * repeats and one that failed before it was applied is processed when
+ * redelivered.
+ */
+export const checkpointRefTransitions = sqliteTable(
+  'checkpoint_ref_transitions',
+  {
+    id: text('id').primaryKey(),
+    /** `owner/name`, lowercased, as the delivery named it. */
+    repo: text('repo').notNull(),
+    ref: text('ref').notNull(),
+    deliveryId: text('delivery_id').notNull(),
+    beforeSha: text('before_sha').notNull(),
+    afterSha: text('after_sha').notNull(),
+    /** Receipt time, which decides nothing. */
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('checkpoint_ref_transitions_delivery_id_idx').on(t.deliveryId),
+    index('checkpoint_ref_transitions_repo_ref_idx').on(t.repo, t.ref),
+  ],
+);
+
+// ----------------------------------------- §4.75 agent_checkpoint_consents
+
+/**
+ * The owner's consent to **automatic** checkpoints for one agent (§4.75,
+ * D-115 item 2). Manual saves never need it; the server records what is
+ * registered and does not see which kind a save was (§6.4).
+ */
+export const agentCheckpointConsents = sqliteTable(
+  'agent_checkpoint_consents',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    givenByUserId: text('given_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    givenAt: integer('given_at').notNull(),
+    withdrawnAt: integer('withdrawn_at'),
+  },
+  (t) => [uniqueIndex('agent_checkpoint_consents_agent_id_idx').on(t.agentId)],
 );
 
 // ----------------------------------------------------------- §4.10 heartbeats

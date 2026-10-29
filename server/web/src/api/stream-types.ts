@@ -61,4 +61,15 @@ export const STREAM_TYPES: readonly string[] = [
   // Both reach the board live, so a card's state changes without a reload.
   'task.claim_expired',
   'task.claim_reclaimed',
+  // A save registered on purpose (LAI-545), and the hand-off's seven verbs
+  // (LAI-546). All reach the board live, so the drawer's checkpoint and
+  // hand-off rows follow them without a reload (LAI-549).
+  'task.checkpoint_saved',
+  'task.handoff_offered',
+  'task.handoff_approved',
+  'task.handoff_accepted',
+  'task.handoff_declined',
+  'task.handoff_cancelled',
+  'task.handoff_expired',
+  'task.recovered',
 ];

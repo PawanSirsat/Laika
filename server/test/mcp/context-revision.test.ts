@@ -4,6 +4,8 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { agentSessionContextDeliveries, orgs, users } from '../../src/db/schema.ts';
+import { newId } from '../../src/db/ids.ts';
+import { applyCheckpointDelivery } from '../../src/services/checkpoints.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -196,6 +198,18 @@ afterEach(async () => {
   h.close();
 });
 
+/**
+ * The tools only a registered agent holding a claim can answer (§4.70 – §4.73,
+ * LAI-545, LAI-546). A person's token is refused them, so the census calls
+ * them as agents, in the order a hand-off takes.
+ */
+const AGENT_ONLY_TOOLS = new Set([
+  'agent_sync',
+  'checkpoint_task',
+  'offer_handoff',
+  'respond_handoff',
+]);
+
 describe('context_revision on every answer (census over the registry)', () => {
   /**
    * Every registered tool, called once in an order that lets each succeed.
@@ -245,7 +259,9 @@ describe('context_revision on every answer (census over the registry)', () => {
     const refusedHere = new Set(['propose_time_entry']);
 
     const registry = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect([...steps.map(([name]) => name), ...refusedHere].sort()).toEqual(registry);
+    expect([...steps.map(([name]) => name), ...refusedHere, ...AGENT_ONLY_TOOLS].sort()).toEqual(
+      registry,
+    );
 
     for (const [name, args, project] of steps) {
       const result = await succeeded(client, name, args());
@@ -267,6 +283,108 @@ describe('context_revision on every answer (census over the registry)', () => {
     expect(payload(refused)).not.toHaveProperty('context_revision');
 
     await client.close();
+  });
+
+  it('the agent-only tools carry it too: save, offer, inbox, accept (§4.70 – §4.73)', async () => {
+    await writeBrief('The brief', 0);
+    await must(
+      '/api/v1/projects/alpha',
+      { method: 'PATCH', body: JSON.stringify({ repo: 'kvelld/laika' }) },
+      ownerCookie,
+      200,
+    );
+    const sender = await registerAgent('Sender');
+    const receiver = (await must(
+      '/api/v1/agents',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          display_name: 'Receiver',
+          harness: 'claude-code',
+          grants: [{ project_id: alpha, scope: 'full' }],
+        }),
+      },
+      bob.cookie,
+    )) as unknown as { agent: { id: string }; secret: string };
+    const key = await newTask();
+    const from = await connect(sender.secret);
+    const to = await connect(receiver.secret);
+    const sha = 'c'.repeat(40);
+    // The stamp is for the project the call names (§7.1): `respond_handoff`
+    // names only an offer, so its stamp is null, as `log_unlisted_work`'s is.
+    const stamped = (name: string, out: Record<string, unknown>, project: 'alpha' | null) => {
+      expect(out, name).toHaveProperty('context_revision');
+      if (project === null) expect(out.context_revision, name).toBeNull();
+      else expect(out.context_revision, name).toMatchObject({ project });
+    };
+    const seen: string[] = [];
+
+    const started = payload(await succeeded(from, 'start_working', { task: key }));
+    const generation = (started.claim as { generation: number }).generation;
+
+    const checkpointId = newId();
+    const saved = payload(
+      await succeeded(from, 'checkpoint_task', {
+        task: key,
+        id: checkpointId,
+        idempotency_key: 'census-save',
+        repo: 'kvelld/laika',
+        branch: `${key}-work`,
+        commit_sha: sha,
+        manifest: [{ path: 'src/a.ts', added: 1, removed: 0 }],
+        claim_generation: generation,
+      }),
+    );
+    stamped('checkpoint_task', saved, 'alpha');
+    seen.push('checkpoint_task');
+    const remoteRef = (saved.checkpoint as { remote_ref: string }).remote_ref;
+    // Verified as the signed webhook would (§10.1): what is under test here
+    // is the answer's stamp, not the signature.
+    expect(
+      applyCheckpointDelivery(
+        h.t.sqlite,
+        h.db,
+        {
+          deliveryId: 'census-delivery',
+          repo: 'kvelld/laika',
+          ref: remoteRef,
+          before: '0'.repeat(40),
+          after: sha,
+        },
+        Date.now(),
+      ).state,
+    ).toBe('verified');
+
+    const offered = payload(
+      await succeeded(from, 'offer_handoff', {
+        task: key,
+        to_agent: receiver.agent.id,
+        checkpoint: checkpointId,
+        reason: 'Out of time',
+        idempotency_key: 'census-offer',
+        claim_generation: generation,
+      }),
+    );
+    stamped('offer_handoff', offered, 'alpha');
+    seen.push('offer_handoff');
+
+    const inbox = payload(await succeeded(to, 'agent_sync', { project: 'alpha' }));
+    stamped('agent_sync', inbox, 'alpha');
+    seen.push('agent_sync');
+
+    const accepted = payload(
+      await succeeded(to, 'respond_handoff', {
+        offer: (offered.offer as { id: string }).id,
+        action: 'accept',
+        verified_commit_sha: sha,
+      }),
+    );
+    stamped('respond_handoff', accepted, null);
+    seen.push('respond_handoff');
+
+    expect(seen.sort()).toEqual([...AGENT_ONLY_TOOLS].sort());
+    await from.close();
+    await to.close();
   });
 
   it('laika_whoami keeps its text and gains the same payload', async () => {

@@ -48,6 +48,16 @@ import {
   updateTask,
 } from '../../src/services/tasks.ts';
 import { expireClaims, reclaimTask } from '../../src/services/claims.ts';
+import { applyCheckpointDelivery, registerCheckpoint } from '../../src/services/checkpoints.ts';
+import {
+  acceptHandoff,
+  approveHandoff,
+  cancelHandoff,
+  declineHandoff,
+  expireOffers,
+  offerHandoff,
+  putHandoffPolicy,
+} from '../../src/services/handoffs.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
 import { registerAgent } from '../../src/services/agents.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
@@ -555,7 +565,83 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       const claimed = createTask(t.sqlite, t.db, owner(), 'core', { title: 'Claimed by an agent' });
       startWorking(t.sqlite, t.db, asAgent, claimed.id);
       expireClaims(t.db, Date.now() + 60 * 60 * 1000);
-      reclaimTask(t.sqlite, t.db, asAgent, claimed.id);
+      const reclaimed = reclaimTask(t.sqlite, t.db, asAgent, claimed.id);
+
+      // --- checkpoints.ts: task.checkpoint_saved (LAI-545) -----------------
+      // Saved under the reclaimed claim, in the project's configured repo.
+      t.db
+        .update(schema.projects)
+        .set({ repo: 'kvell/core' })
+        .where(eq(schema.projects.id, claimed.project_id))
+        .run();
+      const saved = registerCheckpoint(
+        t.sqlite,
+        t.db,
+        { ...asAgent, claimGeneration: reclaimed.claim.generation },
+        claimed.id,
+        {
+          id: newId(),
+          idempotencyKey: 'payload-sweep',
+          repo: 'kvell/core',
+          branch: 'COR-2-work',
+          commitSha: 'c'.repeat(40),
+          manifest: [],
+        },
+      ).checkpoint;
+
+      // --- handoffs.ts: the seven hand-off verbs (LAI-546) -----------------
+      // The checkpoint verified by its delivery, offered to a second agent of
+      // the owner and declined, cancelled, then accepted; the receiver's claim
+      // lapses into a recovery a person names and approves, and the scan
+      // expires it.
+      applyCheckpointDelivery(
+        t.sqlite,
+        t.db,
+        {
+          deliveryId: 'payload-sweep',
+          repo: 'kvell/core',
+          ref: saved.remote_ref,
+          before: '0'.repeat(40),
+          after: 'c'.repeat(40),
+        },
+        Date.now(),
+      );
+      const receiving = registerAgent(t.sqlite, t.db, owner(), {
+        displayName: 'Receiving sweep agent',
+        harness: 'claude-code',
+        grants: [{ projectId: claimed.project_id, scope: 'full' }],
+      });
+      const asReceiver = resolveTokenActor(t.db, receiving.secret, Date.now());
+      const holder = { ...asAgent, claimGeneration: reclaimed.claim.generation };
+      const offerOf = (key: string) =>
+        offerHandoff(t.sqlite, t.db, holder, claimed.id, {
+          idempotencyKey: key,
+          toAgentId: receiving.agent.id,
+          checkpointId: saved.id,
+          reason: 'Sweep',
+        }).offer.id;
+      declineHandoff(t.sqlite, t.db, asReceiver, offerOf('sweep-1'), { reason: 'No' });
+      cancelHandoff(t.sqlite, t.db, asAgent, offerOf('sweep-2'));
+      acceptHandoff(t.sqlite, t.db, asReceiver, offerOf('sweep-3'), {
+        verifiedCommitSha: 'c'.repeat(40),
+      });
+      expireClaims(t.db, Date.now() + 2 * 60 * 60 * 1000);
+      const recovery = t.db
+        .select()
+        .from(schema.handoffOffers)
+        .where(eq(schema.handoffOffers.kind, 'recovery'))
+        .get()!;
+      putHandoffPolicy(t.sqlite, t.db, owner(), 'core', { allow_other_owners: true });
+      const membersAgent = registerAgent(t.sqlite, t.db, actorFor(t, memberId), {
+        displayName: 'Member sweep agent',
+        harness: 'codex',
+        grants: [{ projectId: claimed.project_id, scope: 'full' }],
+      });
+      approveHandoff(t.sqlite, t.db, owner(), recovery.id, {
+        toAgentId: membersAgent.agent.id,
+        now: Date.now() + 2 * 60 * 60 * 1000,
+      });
+      expireOffers(t.db, Date.now() + 4 * 60 * 60 * 1000);
 
       addTaskDependency(t.sqlite, t.db, owner(), task.id, other.id);
       removeTaskDependency(t.db, owner(), task.id, other.id);

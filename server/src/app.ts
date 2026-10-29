@@ -39,6 +39,12 @@ import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
+import { checkpointRoutes, taskCheckpointRoutes } from './http/routes/checkpoints.ts';
+import {
+  handoffOfferRoutes,
+  projectHandoffPolicyRoutes,
+  taskHandoffRoutes,
+} from './http/routes/handoffs.ts';
 import { userRoutes } from './http/routes/users.ts';
 import { profileRoutes } from './http/routes/profiles.ts';
 import { inviteRoutes } from './http/routes/invites.ts';
@@ -362,7 +368,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // through the middleware chain: `/webhooks/` is a reserved path, so §6.3's
     // limiter bounds it, and `authMiddleware` resolves nothing and leaves
     // `actor: null`, which is correct — the signature is the authentication.
-    app.route('/webhooks', githubWebhookRoutes({ db, serverSecret: options.serverSecret ?? '' }));
+    app.route(
+      '/webhooks',
+      githubWebhookRoutes({ db, sqlite: options.sqlite, serverSecret: options.serverSecret ?? '' }),
+    );
     app.route(`${API_BASE}/tokens`, tokenRoutes({ db, sqlite: options.sqlite }));
     // D-114 (LAI-534): a person's registered agents and their credentials.
     app.route(`${API_BASE}/agents`, agentRoutes({ db, sqlite: options.sqlite }));
@@ -383,6 +392,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/projects`, projectRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/tasks`, taskCommentRoutes({ db }));
     app.route(`${API_BASE}/tasks`, taskRoutes({ db, sqlite: options.sqlite }));
+    // §4.70 – §4.72 (LAI-545): saving a checkpoint, reading them, re-tagging one.
+    app.route(`${API_BASE}/tasks`, taskCheckpointRoutes({ db, sqlite: options.sqlite }));
+    app.route(`${API_BASE}/checkpoints`, checkpointRoutes({ db, sqlite: options.sqlite }));
+    // §4.73, §4.74 (LAI-546): hand-off offers, their answers, and the policy.
+    app.route(`${API_BASE}/tasks`, taskHandoffRoutes({ db, sqlite: options.sqlite }));
+    app.route(`${API_BASE}/handoff-offers`, handoffOfferRoutes({ db, sqlite: options.sqlite }));
+    app.route(`${API_BASE}/projects`, projectHandoffPolicyRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/comments`, commentRoutes({ db }));
     app.route(`${API_BASE}/sprints`, sprintRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/unlisted`, unlistedRoutes({ db, sqlite: options.sqlite }));

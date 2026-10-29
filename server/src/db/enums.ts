@@ -221,6 +221,19 @@ export const ACTIVITY_TYPES = [
   // explicitly, at `generation + 1`. Its own verb, not a quiet new claim:
   // "who took it back, after what gap" is the question. Three owners as above.
   'task.claim_reclaimed',
+  // §4.70 (LAI-545): a checkpoint registered on purpose — once per checkpoint.
+  // Verification writes no row; the state is on the checkpoint.
+  'task.checkpoint_saved',
+  // §4.73 (LAI-546): the hand-off's seven verbs — three owners each (LAI-544
+  // the rows, this the enum, LAI-549 the client mirror). Each is its own verb
+  // because "who handed this over, to whom, and when" is the question.
+  'task.handoff_offered',
+  'task.handoff_approved',
+  'task.handoff_accepted',
+  'task.handoff_declined',
+  'task.handoff_cancelled',
+  'task.handoff_expired',
+  'task.recovered',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -242,18 +255,17 @@ export const AGENT_GRANT_SCOPES = TOKEN_SCOPES;
 export type AgentGrantScope = TokenScope;
 
 /**
- * What a `handoff_offers` row offers (proposal §4.4, LAI-535). Only
- * `work_request` is written today — selecting an agent asks it to take a task
- * that nobody has worked yet. `handoff` and `recovery` are LAI-546's, listed
- * now so that adding them is not a rebuild of a table with rows in it.
+ * What a `handoff_offers` row offers (§4.73): a `work_request` (selecting an
+ * agent, LAI-535), a `handoff` (the live claim's holder offers the task on)
+ * or a `recovery` (the system offers a task whose claim expired; LAI-546).
  */
 export const HANDOFF_OFFER_KINDS = ['work_request', 'handoff', 'recovery'] as const;
 export type HandoffOfferKind = (typeof HANDOFF_OFFER_KINDS)[number];
 
 /**
- * An offer's life cycle (proposal §4.4). A work request is written `open` and
- * leaves it only as `cancelled` — the selection was cleared or changed —
- * today; acceptance, approval and expiry arrive with LAI-541 and LAI-546.
+ * An offer's life cycle (§4.73). An offer needing approval starts
+ * `pending_approval`, every other `open`; those two are **live**, the other
+ * four terminal.
  */
 export const HANDOFF_OFFER_STATES = [
   'pending_approval',
@@ -264,6 +276,25 @@ export const HANDOFF_OFFER_STATES = [
   'expired',
 ] as const;
 export type HandoffOfferState = (typeof HANDOFF_OFFER_STATES)[number];
+
+/** The live offer states (§4.73): the partial unique index's predicate. */
+export const LIVE_OFFER_STATES = [
+  'pending_approval',
+  'open',
+] as const satisfies readonly HandoffOfferState[];
+
+/**
+ * Why a live offer closed other than by its receiver or the clock (§4.73
+ * `closed_reason`, LAI-546).
+ */
+export const HANDOFF_CLOSED_REASONS = [
+  'withdrawn',
+  'reclaimed',
+  'selection_changed',
+  'task_closed',
+  'agent_revoked',
+] as const;
+export type HandoffClosedReason = (typeof HANDOFF_CLOSED_REASONS)[number];
 
 /**
  * A claim's life (proposal §4.2, §4.66, LAI-541). `active` and `paused` are
@@ -282,6 +313,21 @@ export const TASK_CLAIM_STATES = [
   'transferred',
 ] as const;
 export type TaskClaimState = (typeof TASK_CLAIM_STATES)[number];
+
+/**
+ * A checkpoint ref's state, and the checkpoint's — its newest ref's (§4.70,
+ * §4.71, D-116 item 4, LAI-545). Derived from the **set** of signed push
+ * transitions seen for the ref, never from their arrival order; `uncertain`
+ * and `ref_deleted` never become `verified` again. Only `verified` may be
+ * offered or accepted (D-116 item 6).
+ */
+export const CHECKPOINT_VERIFICATIONS = [
+  'pending',
+  'verified',
+  'ref_deleted',
+  'uncertain',
+] as const;
+export type CheckpointVerification = (typeof CHECKPOINT_VERIFICATIONS)[number];
 
 /** The states that hold a task (§4.66): the partial unique index's predicate. */
 export const LIVE_CLAIM_STATES = ['active', 'paused'] as const satisfies readonly TaskClaimState[];

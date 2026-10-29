@@ -120,6 +120,14 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'task.create': 'Create tasks',
   'task.write': 'Edit / move any task',
   'task.claim': 'Claim a task (start_working)',
+  'task.checkpoint.create': 'Save a checkpoint on a task your agent holds',
+  'task.checkpoint.retag': 'Re-tag a checkpoint one of your agents saved',
+  'task.handoff.offer': 'Offer a task your agent holds to another agent',
+  'task.handoff.approve': 'Approve a cross-owner hand-off',
+  'task.handoff.accept': 'Accept a hand-off or recovery offer',
+  'task.handoff.decline': 'Decline a hand-off or recovery offer',
+  'task.handoff.cancel': 'Cancel a hand-off offer',
+  'project.handoff_policy.edit': "Edit the project's hand-off policy",
   'task.assign_other': 'Assign a task to someone else',
   'comment.create': 'Add comment',
   'comment.edit': 'Edit / delete comment',
@@ -163,6 +171,8 @@ const SOMEONE_ELSE = 'someone-else';
  *    (LAI-957).
  *  - `comment.edit`, `comment.delete` — a Lead any comment, a Member their own.
  *  - `task.delete` — a Lead any task, a Member one they created.
+ *  - `task.handoff.approve` — a Lead any, a Member a task assigned to them.
+ *  - `task.handoff.cancel` — a Lead any offer, a Member one their agent sent.
  */
 export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionCondition>>> = {
   'user.invite': {
@@ -219,6 +229,16 @@ export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionC
     text: 'Tasks they created only',
     holds: (userId) => ({ createdBy: userId }),
     fails: () => ({ createdBy: SOMEONE_ELSE }),
+  },
+  'task.handoff.approve': {
+    text: 'Tasks assigned to them only',
+    holds: (userId) => ({ ownerId: userId }),
+    fails: () => ({ ownerId: SOMEONE_ELSE }),
+  },
+  'task.handoff.cancel': {
+    text: 'Offers their own agents sent only',
+    holds: (userId) => ({ ownerId: userId }),
+    fails: () => ({ ownerId: SOMEONE_ELSE }),
   },
 };
 

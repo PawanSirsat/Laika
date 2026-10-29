@@ -473,10 +473,6 @@ const TABLES_NOT_IN_SPEC = new Map<string, string>([
     'idempotency_keys',
     'transport bookkeeping for the `Idempotency-Key` header (§6.3, LAI-006), not product data — no endpoint reads it and a cron sweep empties it',
   ],
-  [
-    'handoff_offers',
-    "LAI-535 writes only its work requests (proposal §4.4's shape, cut down); §4's section for the table is LAI-544's (CHIEF), which documents it whole with LAI-546's columns — the staleness guard below drops this entry the day §4 describes it. §4.5's `selected_agent_id` row and §6.4 already say what a work request is",
-  ],
 ]);
 
 /**

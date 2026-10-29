@@ -10,6 +10,7 @@ import { ensureActivityTriggers, MIGRATIONS_FOLDER, runMigrations } from '../../
 import { expectSqliteError, freshDb, seed, type TestDb } from '../helpers/db.ts';
 import { eq } from 'drizzle-orm';
 import { newId } from '../../src/db/ids.ts';
+import { deviceLabelKey } from '../../src/db/device-label.ts';
 import { comments, idempotencyKeys, taskDependencies, tasks } from '../../src/db/schema.ts';
 import { createLogger } from '../../src/log.ts';
 import { statusForCategory } from '../../src/db/project-statuses.ts';
@@ -2622,6 +2623,271 @@ describe('0066 adds context revisions to a populated database (LAI-555)', () => 
         expectSqliteError(
           () => db.run(sql`UPDATE project_context_revisions SET body = 'rewritten'`),
           /append-only: UPDATE/,
+        );
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0068 widens handoff_offers on a populated 0067 database (LAI-546)', () => {
+  it(
+    'keeps every work request, task and activity row; cancelled requests read selection_changed',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_handoff_offers$/.test(e.tag));
+      expect(at, 'the LAI-546 migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at).slice(0, 1);
+      // The guard on this guard: the cut is exactly this migration.
+      expect(dropped.map((e) => e.tag)).toEqual([expect.stringMatching(/_handoff_offers$/)]);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        // 0065's and 0066's steps call the functions `runMigrations`
+        // registers; drizzle's own migrator for the cut-back needs them too.
+        sqlite.function('laika_device_label_key', { deterministic: true }, (label) =>
+          deviceLabelKey(typeof label === 'string' ? label : null),
+        );
+        sqlite.function('laika_new_id', { deterministic: false }, () => newId());
+        migrate(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const agentId = newId();
+        const taskId = newId();
+        const statusId = db.get<{ id: string }>(
+          sql`SELECT id FROM project_statuses WHERE project_id = ${s.projectId} AND category = 'backlog' LIMIT 1`,
+        ).id;
+
+        // Written as the 0066 schema has them: raw SQL, because the current
+        // schema names columns this database does not have yet.
+        db.run(sql`
+          INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, status, created_at)
+          VALUES (${agentId}, ${s.orgId}, ${s.userId}, 'a', 'other', 'active', ${now})
+        `);
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at, selected_agent_id)
+          VALUES (${taskId}, ${s.projectId}, 1, 'Old', 'backlog', ${statusId}, 'p2', ${s.userId}, 'api', ${now}, ${now}, ${agentId})
+        `);
+        const offers = [
+          ['open', null],
+          ['cancelled', now + 1],
+          ['accepted', now + 2],
+        ] as const;
+        for (const [state, closedAt] of offers) {
+          db.run(sql`
+            INSERT INTO handoff_offers (id, task_id, kind, to_agent_id, state, created_by_user_id, created_at, closed_at)
+            VALUES (${newId()}, ${taskId}, 'work_request', ${agentId}, ${state}, ${s.userId}, ${now}, ${closedAt})
+          `);
+        }
+        db.run(sql`
+          INSERT INTO activity (id, org_id, project_id, task_id, actor_id, actor_kind, type, payload_json, created_at)
+          VALUES (${newId()}, ${s.orgId}, ${s.projectId}, ${taskId}, ${s.userId}, 'user', 'task.agent_selected', '{}', ${now})
+        `);
+
+        const offersBefore = db.all<Record<string, unknown>>(
+          sql`SELECT * FROM handoff_offers ORDER BY created_at, closed_at`,
+        );
+        const tasksBefore = db.all<Record<string, unknown>>(sql`SELECT * FROM tasks`);
+        const activityBefore = db.all<Record<string, unknown>>(
+          sql`SELECT rowid AS seq, * FROM activity ORDER BY rowid`,
+        );
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        expect(db.all(sql`SELECT * FROM handoff_offers ORDER BY created_at, closed_at`)).toEqual(
+          offersBefore.map((row) => ({
+            ...row,
+            idempotency_key: null,
+            from_session_id: null,
+            from_claim_generation: null,
+            checkpoint_id: null,
+            checkpoint_commit_sha: null,
+            reason: null,
+            note_hash: null,
+            requires_approval: 0,
+            approved_by_user_id: null,
+            approved_at: null,
+            expires_at: null,
+            accepted_session_id: null,
+            accepted_claim_id: null,
+            receiver_commit_sha: null,
+            closed_reason: row.state === 'cancelled' ? 'selection_changed' : null,
+          })),
+        );
+        expect(db.all(sql`SELECT * FROM tasks`)).toEqual(
+          tasksBefore.map((row) => ({
+            ...row,
+            handoff_count: 0,
+            position: expect.any(String) as unknown,
+          })),
+        );
+        expect(db.all(sql`SELECT rowid AS seq, * FROM activity ORDER BY rowid`)).toEqual(
+          activityBefore,
+        );
+        expect(db.all(sql`SELECT * FROM project_handoff_policies`)).toEqual([]);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        // The rebuilt activity table is still append-only, and takes the new verbs.
+        expect(() => sqlite.prepare(`UPDATE activity SET payload_json = '{"x":1}'`).run()).toThrow(
+          /append-only/,
+        );
+        db.run(sql`
+          INSERT INTO activity (id, org_id, project_id, task_id, actor_id, actor_kind, type, payload_json, created_at)
+          VALUES (${newId()}, ${s.orgId}, ${s.projectId}, ${taskId}, NULL, 'system', 'task.recovered', '{}', ${now})
+        `);
+        // One live hand-off or recovery per task, by the new partial index.
+        const live = () =>
+          sqlite
+            .prepare(
+              `INSERT INTO handoff_offers (id, task_id, kind, state, created_by_user_id, created_at)
+               VALUES (?, ?, 'recovery', 'open', ?, ?)`,
+            )
+            .run(newId(), taskId, s.userId, now);
+        live();
+        expect(live).toThrow(/UNIQUE/);
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0067 and 0068 keep context revisions on a populated 0066 database (Phase 3 integration)', () => {
+  it(
+    'a database at 0066 — revisions, deliveries, activity — upgrades with every row kept',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_checkpoints$/.test(e.tag));
+      expect(at, 'the checkpoints migration is in the journal').toBeGreaterThan(0);
+      // Production stands at the context revisions; everything after it is cut.
+      expect(journal.entries[at - 1]?.tag).toMatch(/_project_context_revisions$/);
+      const dropped = journal.entries.splice(at);
+      // The guard on this guard: the cut is exactly the two Phase 3 migrations.
+      expect(dropped.map((e) => e.tag)).toEqual([
+        expect.stringMatching(/_checkpoints$/),
+        expect.stringMatching(/_handoff_offers$/),
+      ]);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const agentId = newId();
+        const tokenId = newId();
+        const sessionId = newId();
+        const taskId = newId();
+        const statusId = db.get<{ id: string }>(
+          sql`SELECT id FROM project_statuses WHERE project_id = ${s.projectId} AND category = 'backlog' LIMIT 1`,
+        ).id;
+
+        // Written as the 0066 schema has them: raw SQL, because the current
+        // schema names columns this database does not have yet.
+        db.run(sql`
+          INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, status, created_at)
+          VALUES (${agentId}, ${s.orgId}, ${s.userId}, 'a', 'other', 'active', ${now})
+        `);
+        db.run(sql`
+          INSERT INTO tokens (id, user_id, name, prefix, token_hash, scope, project_ids_json, created_at, agent_id)
+          VALUES (${tokenId}, ${s.userId}, 'a', 'lai_abcd', ${newId()}, 'full', NULL, ${now}, ${agentId})
+        `);
+        db.run(sql`
+          INSERT INTO agent_sessions (id, agent_id, token_id, started_at, last_heartbeat_at)
+          VALUES (${sessionId}, ${agentId}, ${tokenId}, ${now}, ${now})
+        `);
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+          VALUES (${taskId}, ${s.projectId}, 1, 'Old', 'backlog', ${statusId}, 'p2', ${s.userId}, 'api', ${now}, ${now})
+        `);
+        db.run(sql`
+          UPDATE projects SET context_md = 'second', context_revision = 2 WHERE id = ${s.projectId}
+        `);
+        for (const [revision, body] of [
+          [1, 'first'],
+          [2, 'second'],
+        ] as const) {
+          db.run(sql`
+            INSERT INTO project_context_revisions (id, project_id, revision, body, author_id, agent_id, created_at)
+            VALUES (${newId()}, ${s.projectId}, ${revision}, ${body}, ${s.userId},
+                    ${revision === 2 ? agentId : null}, ${now + revision})
+          `);
+          db.run(sql`
+            INSERT INTO activity (id, org_id, project_id, actor_id, actor_kind, type, payload_json, created_at)
+            VALUES (${newId()}, ${s.orgId}, ${s.projectId}, ${s.userId}, 'user', 'project.context_updated',
+                    ${`{"changed":["context_md"],"revision":${String(revision)}}`}, ${now + revision})
+          `);
+        }
+        db.run(sql`
+          INSERT INTO agent_session_context_deliveries (session_id, project_id, revision, delivered_at)
+          VALUES (${sessionId}, ${s.projectId}, 2, ${now + 3})
+        `);
+
+        const read = () => ({
+          projects: db.all<Record<string, unknown>>(sql`SELECT * FROM projects ORDER BY id`),
+          revisions: db.all<Record<string, unknown>>(
+            sql`SELECT * FROM project_context_revisions ORDER BY project_id, revision`,
+          ),
+          deliveries: db.all<Record<string, unknown>>(
+            sql`SELECT * FROM agent_session_context_deliveries`,
+          ),
+          sessions: db.all<Record<string, unknown>>(sql`SELECT * FROM agent_sessions`),
+          activity: db.all<Record<string, unknown>>(
+            sql`SELECT rowid AS seq, * FROM activity ORDER BY rowid`,
+          ),
+        });
+        const before = read();
+        expect(before.revisions).toHaveLength(2);
+        expect(before.deliveries).toHaveLength(1);
+        const tasksBefore = db.all<Record<string, unknown>>(sql`SELECT * FROM tasks`);
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        // 0067 and 0068 rebuild `activity`; nothing of LAI-555's is touched.
+        expect(read()).toEqual(before);
+        expect(db.all(sql`SELECT * FROM tasks`)).toEqual(
+          tasksBefore.map((row) => ({
+            ...row,
+            handoff_count: 0,
+            position: expect.any(String) as unknown,
+          })),
+        );
+        expect(db.all(sql`SELECT * FROM task_checkpoints`)).toEqual([]);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        // Every journal entry is applied, once.
+        expect(db.get<{ n: number }>(sql`SELECT count(*) AS n FROM __drizzle_migrations`).n).toBe(
+          journal.entries.length,
+        );
+        // The revisions are still immutable, and the rebuilt activity still append-only.
+        expectSqliteError(
+          () => db.run(sql`UPDATE project_context_revisions SET body = 'rewritten'`),
+          /append-only: UPDATE/,
+        );
+        expect(() => sqlite.prepare(`UPDATE activity SET payload_json = '{"x":1}'`).run()).toThrow(
+          /append-only/,
         );
       } finally {
         sqlite.close();
