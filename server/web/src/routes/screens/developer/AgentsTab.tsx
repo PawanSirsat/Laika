@@ -758,7 +758,8 @@ function RegisterWizard({
                   }}
                 />
                 <span className="agents-hint">
-                  {nameError ?? 'How it is named on cards, history and Capacity.'}
+                  {nameError ??
+                    'Your name for it, shown here. Cards and history name it by harness and device, and add this name where two of your agents share both.'}
                 </span>
               </label>
               <div className="agents-field">
@@ -873,7 +874,12 @@ function RegisterWizard({
                 them on the machine the agent works from.
               </p>
               {blocks.map((block) => (
-                <SetupBlockView key={block.key} block={block} secret={secret} />
+                <SetupBlockView
+                  key={block.key}
+                  block={block}
+                  secret={secret}
+                  tokenTag="carries the agent’s token"
+                />
               ))}
             </div>
           )}

@@ -8,6 +8,9 @@ import {
   selectionErrorWords,
   selectTaskAgent,
   agentDevice,
+  distinctDevices,
+  shownAs,
+  twinNames,
   type SelectedAgent,
 } from '../../../api/selected-agent.ts';
 import { getTask, type TaskSummary } from '../../../api/tasks.ts';
@@ -160,10 +163,35 @@ export function AgentRow({
     (task.updated_at === c.version && (readOrder > c.order || served === (c.agent?.id ?? null)));
   const overlay = confirmed?.taskId === task.id && !yieldsTo(confirmed) ? confirmed : undefined;
   const current = overlay === undefined ? selectedAgentOf(task) : overlay.agent;
-  const retired = confirmed?.taskId === task.id && yieldsTo(confirmed);
+  /*
+   * **Retire the confirmation that was judged, and only that one** (LAI-577).
+   * React runs this effect after paint, and flushes it before the next update
+   * is processed — so a save answered in between has already queued its own
+   * confirmation, and an unconditional clear landed after it and threw it
+   * away: the drawer then showed the old agent, and only a later successful
+   * read could correct it. Clearing by identity leaves a newer one in place.
+   */
+  const stale = confirmed?.taskId === task.id && yieldsTo(confirmed) ? confirmed : undefined;
   useEffect(() => {
-    if (retired) setConfirmed(undefined);
-  }, [retired]);
+    if (stale === undefined) return;
+    setConfirmed((now) => (now === stale ? undefined : now));
+  }, [stale]);
+
+  /** The current agent as the picker names it: told apart from another of the reader's (LAI-583). */
+  const peers = useMemo(
+    () =>
+      current === null
+        ? []
+        : load.kind === 'ready'
+          ? [...load.agents.filter((a) => a.status !== 'revoked'), current]
+          : [current],
+    [current, load],
+  );
+  const shown = useMemo(
+    () => (current === null ? null : shownAs(current, distinctDevices(peers))),
+    [current, peers],
+  );
+  const twin = current === null ? undefined : twinNames(peers).get(current.id);
 
   const choices = useMemo(
     () =>
@@ -278,13 +306,14 @@ export function AgentRow({
               <span className="meta-muted" role="status">
                 Loading your agents…
               </span>
-            ) : current === null ? (
+            ) : shown === null ? (
               <span className="meta-muted">No agent</span>
             ) : (
               <AgentChip
-                client={selectedHarness(current)}
-                device={agentDevice(current)}
-                owner={current.owner.name}
+                client={selectedHarness(shown)}
+                device={agentDevice(current ?? shown)}
+                twin={twin}
+                owner={shown.owner.name}
               />
             )}
           </div>
@@ -311,7 +340,7 @@ export function AgentRow({
         cardExecutionState({ status: task.status, selected_agent: current }) !== null && (
           <ExecutionStateLine
             state="waiting_for_agent"
-            detail={`${current.owner.name}’s ${agentLabel(current)}`}
+            detail={`${current.owner.name}’s ${agentLabel(shown ?? current)}`}
           />
         )}
 
