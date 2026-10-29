@@ -2,11 +2,12 @@
 id: LAI-545
 title: 'Checkpoints: idempotent registration, verification from signed push deliveries only (D-083), ref_deleted, retention'
 area: server
-assignee: unclaimed
+assignee: core (belka, claude code)
 priority: p1
 depends-on: [LAI-541, LAI-544]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-29T15:47:30Z
 ---
 
 Implements **proposal §4.3, §4.3.1** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
