@@ -6386,12 +6386,12 @@ Approving this decision approves the design. The claim that recovery is
 product calls to Belka for the agent hand-off work · **Amends:** D-116 item
 4, whose text is unchanged
 
-**Why.** Codex's review of #143 found D-116 item 4 saying two things at once:
-the state *"depends only on which transitions have been seen, never on the
-order they arrived in"*, yet its table gives `ref_deleted` for *"exactly one
-deletion"* and leaves a second deletion, or a deletion seen before its
-creation, to read as order-dependent. LAI-545 builds against one rule, so the
-rule is stated here.
+**Why.** Codex's review of #143 (round 1, item 9) asked for the rule to be
+stated as a function of the set, so it cannot be read as depending on arrival.
+D-116 item 4 already says order never matters, but its table counts *exactly
+one* deletion, so a deletion notice GitHub sent twice under two delivery ids
+would read as `uncertain`, and it does not say which states are final. LAI-545
+builds against one rule, so the rule is stated here.
 
 **Decision.** For one ref (`repo` and full ref name), with the all-zero SHA
 meaning absent, the state is computed from the **set** of transitions seen,
