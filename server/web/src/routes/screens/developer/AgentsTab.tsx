@@ -53,6 +53,7 @@ import {
   type GrantChoice,
   type VerifyState,
 } from './agent-wizard.ts';
+import { DevicesSection } from './DevicesSection.tsx';
 import '../tokens/tokens.css';
 import './agents.css';
 
@@ -129,6 +130,8 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
   const appliedGen = useRef(0);
   const writeSeq = useRef(0);
   const writes = useRef(new Map<string, AgentWrite>());
+  /** Bumped by every write here, so *Your devices* reads its groups again (LAI-591). */
+  const [devicesGen, setDevicesGen] = useState(0);
 
   const reload = useCallback((signal?: AbortSignal): void => {
     readGen.current += 1;
@@ -212,6 +215,7 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
       return at === -1 ? [agent, ...current] : current.map((a) => (a.id === agent.id ? agent : a));
     });
     setNow(Date.now());
+    setDevicesGen((n) => n + 1);
   };
 
   // Focus goes back to *Register an agent* when the wizard closes — after the
@@ -329,6 +333,14 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
           {actionError}
         </p>
       )}
+
+      <DevicesSection
+        canManage={canManage}
+        generation={devicesGen}
+        onRevoked={() => {
+          reload();
+        }}
+      />
 
       {loadError !== null ? (
         <ApiErrorState

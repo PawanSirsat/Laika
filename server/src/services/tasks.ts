@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   and,
   asc,
@@ -1349,7 +1350,90 @@ export interface UpdateTaskInput {
    * a work request, `null` withdraws it. Never moves the assignee.
    */
   selected_agent_id?: string | null | undefined;
+  /**
+   * The ETag named by PATCH's `If-Match` header ({@link taskVersion}). Absent
+   * keeps the unconditional update every existing caller uses (LAI-571).
+   */
+  expected_version?: string | undefined;
   now?: number;
+}
+
+/**
+ * **A task's version is a digest of the task as a read returns it** (LAI-571),
+ * and `GET /tasks/:id` and `PATCH` send it as `ETag`.
+ *
+ * Derived from what is shown, not stamped by the writers, so no writer can be
+ * forgotten. Two reviews found writers that left a stamped version alone: tags
+ * kept in their own table, a tag renamed or merged, a sprint deleted out from
+ * under its tasks, a blocker whose status moved a dependent's `ready`, a
+ * comment, a recomputed size. Each one changes the view, so each one changes
+ * this. `updated_at` stays what it was, the time of the task's last edit.
+ *
+ * Deterministic because `toView` is. Its keys are in a fixed order, its lists
+ * are sorted, and it reads nothing about the caller. 128 bits of SHA-256, so two
+ * different views share a version with negligible odds.
+ *
+ * **Except the live claim's pulse** (LAI-568): {@link CLAIM_PULSE} moves on
+ * every heartbeat and with the clock, and no write to the task moves it. Left
+ * in, it would make every token stale while an agent works, and that is exactly
+ * when a selection needs one. Who holds the claim, by generation, state,
+ * session, agent and device, stays in, so a claim taken, paused, released or
+ * transferred is a new version. The holder's own writes are the claim fence's
+ * to order (LAI-541), not this.
+ */
+export function taskVersion(view: TaskView): string {
+  const claim = view.claim === null ? null : withoutPulse(view.claim);
+  return createHash('sha256')
+    .update(JSON.stringify({ ...view, claim }))
+    .digest('hex')
+    .slice(0, 32);
+}
+
+/** The version as a strong ETag: what a read sends and `If-Match` takes back. */
+export function taskEtag(view: TaskView): string {
+  return `"${taskVersion(view)}"`;
+}
+
+/**
+ * A row of a task list, carrying the ETag a read of that one task would send
+ * (LAI-571 review, round 3), so a client can make a guarded `PATCH` from a
+ * list without reading each task first. Computed from the full view, so a
+ * slim row's ETag is the full task's, even though the slim row cannot be
+ * hashed back to it.
+ */
+export interface ListedTaskView extends TaskView {
+  etag: string;
+}
+
+/** {@link ListedTaskView}'s slim form (`?fields=slim`, LAI-795). */
+export interface ListedTaskSummaryView extends TaskSummaryView {
+  etag: string;
+}
+
+export function listedTask(view: TaskView): ListedTaskView {
+  return { ...view, etag: taskEtag(view) };
+}
+
+export function listedTaskSummary(view: TaskView): ListedTaskSummaryView {
+  return { ...summaryOf(view), etag: taskEtag(view) };
+}
+
+/**
+ * The live claim's fields that move without a write (LAI-568): the heartbeat,
+ * the lease, the clock — and the heartbeat's age, which moves on every read
+ * (LAI-597 review).
+ */
+export const CLAIM_PULSE = [
+  'last_heartbeat_at',
+  'heartbeat_age_ms',
+  'lease_expires_at',
+  'connection',
+] as const;
+
+function withoutPulse(claim: TaskLiveClaimView): Partial<TaskLiveClaimView> {
+  const kept: Partial<TaskLiveClaimView> = { ...claim };
+  for (const field of CLAIM_PULSE) delete kept[field];
+  return kept;
 }
 
 /**
@@ -1426,6 +1510,37 @@ export function updateTask(
       // is written, so a stale holder changes nothing at all.
       assertClaimFence(db, actor, taskId, now);
       if (selecting) assertSelectionChangeAllowed(db, task);
+
+      // **Every input of the view is read again here**, under the lock, and not
+      // taken from `requireTask` above, which ran before it. The project's
+      // prefix makes the key, and a rename that commits between the two reads
+      // would otherwise let a token for `LAI-1` pass on a task now `NEW-1`
+      // (LAI-571 review, round 3). The row is read here for the same reason.
+      const prefix = db
+        .select({ prefix: projects.prefix })
+        .from(projects)
+        .where(eq(projects.id, project.id))
+        .get()!.prefix;
+
+      // The precondition, under the write lock and before anything moves: the
+      // task as a read would show it now must be the task the caller read.
+      // `immediate` holds every other writer off until this commits, so the
+      // check and the write are one step.
+      if (input.expected_version !== undefined) {
+        const current = viewOne(
+          db,
+          db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+          prefix,
+          now,
+        );
+        const version = taskVersion(current);
+        if (version !== input.expected_version) {
+          throw new ApiError('conflict', 'The task changed after you read it', {
+            current,
+            etag: taskEtag(current),
+          });
+        }
+      }
 
       // Under the write lock, so two writes cannot both find it free.
       if (typeof changes.externalRef === 'string') {
@@ -1534,12 +1649,7 @@ export function updateTask(
         });
       }
 
-      return viewOne(
-        db,
-        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
-        project.prefix,
-        now,
-      );
+      return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, prefix, now);
     },
     { behavior: 'immediate' },
   );

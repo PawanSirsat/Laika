@@ -234,6 +234,13 @@ const UNPAIRED = new Map<string, string>([
   // activity (LAI-587) brings the mirror, and these leave the way the rest do.
   ['AgentDetailView', 'no client type exists'],
   ['ActivitySessionView', 'no client type exists'],
+  // LAI-571's list rows: `TaskView` and `TaskSummaryView` with each row's
+  // `etag`. The base views stay paired, so every other field is still
+  // compared. The client reads lists as `Task` / `TaskSummary` and ignores the
+  // extra field; SHELL's follow-on (the drawer's agent selection sends
+  // `If-Match`) brings the mirror, and these leave the way the rest do.
+  ['ListedTaskView', 'no client type exists'],
+  ['ListedTaskSummaryView', 'no client type exists'],
 ]);
 
 /**
