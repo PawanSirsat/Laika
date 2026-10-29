@@ -662,6 +662,25 @@ const PAIRS: readonly Pair[] = [
     client: 'TimeBreak',
     clientFile: 'time.ts',
   },
+  // LAI-564: the registered agents LAI-537's Agents tab mirrors (D-114).
+  {
+    server: 'AgentView',
+    serverFile: 'services/agents.ts',
+    client: 'RegisteredAgent',
+    clientFile: 'agents.ts',
+  },
+  {
+    server: 'AgentGrantView',
+    serverFile: 'services/agents.ts',
+    client: 'AgentGrant',
+    clientFile: 'agents.ts',
+  },
+  {
+    server: 'CreatedAgentToken',
+    serverFile: 'services/agents.ts',
+    client: 'CreatedAgentToken',
+    clientFile: 'agents.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [

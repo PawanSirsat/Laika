@@ -499,12 +499,15 @@ describe('the explicit reclaim', () => {
     });
   });
 
-  it('refuses an agent whose grant was taken away since: agent_not_granted', () => {
+  it('answers an agent whose grant was taken away since as if the task did not exist', () => {
+    // With no grant it cannot read the project, and a reclaim answers a task
+    // the caller cannot see exactly as one that does not exist (LAI-586
+    // review) — it was `403 agent_not_granted` until then.
     const { a, id } = expired();
     setAgentGrants(t.sqlite, t.db, owner, a.id, [], T0 + LEASE);
     expect(refusal(() => reclaimTask(t.sqlite, t.db, a.actor, id, { now: T0 + LEASE }))).toEqual({
-      code: 'forbidden',
-      reason: 'agent_not_granted',
+      code: 'not_found',
+      reason: undefined,
     });
   });
 

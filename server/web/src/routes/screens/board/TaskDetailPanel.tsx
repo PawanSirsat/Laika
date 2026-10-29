@@ -18,8 +18,8 @@ import { useTaskDetail } from '../../../api/use-task-detail.ts';
 import { useTaskText } from '../../../api/use-task-text.ts';
 import { useDelayed } from '../../../components/use-delayed.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
-import { actorLine, describeActor } from './actor-presentation.ts';
-import { agentNamesFrom, agentVia } from '../../../api/selected-agent.ts';
+import { actorLine, describeActor, viaLine } from './actor-presentation.ts';
+import { agentNamesFrom } from '../../../api/selected-agent.ts';
 import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import {
   getTask,
@@ -412,7 +412,7 @@ export function TaskDetailPanel({
     for (const event of detail.activity) {
       if (event.type !== 'comment.added') continue;
       const id = (event.payload as { comment_id?: unknown } | null)?.comment_id;
-      const via = agentVia(event, agentNames);
+      const via = viaLine(event, agentNames);
       if (typeof id === 'string' && via !== undefined) found.set(id, via);
     }
     return found;

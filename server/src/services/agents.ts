@@ -8,7 +8,7 @@ import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { agentProjectGrants, agents, tokens } from '../db/schema.ts';
-import { endSessionsOfRevokedAgent } from './claims.ts';
+import { type AgentSessionView, endSessionsOfRevokedAgent, recentAgentSessions } from './claims.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, forcedTokenScope } from '../policy/can.ts';
 import {
@@ -73,6 +73,14 @@ export interface AgentView {
   created_at: number;
   revoked_at: number | null;
   last_seen_at: number | null;
+}
+
+/**
+ * One agent as `GET /agents/:id` answers it: {@link AgentView} and its most
+ * recent sessions, newest first — what each one said ran (D-118, LAI-586).
+ */
+export interface AgentDetailView extends AgentView {
+  sessions: AgentSessionView[];
 }
 
 export interface CreatedAgentToken {
@@ -181,9 +189,15 @@ export function listOwnAgents(
     .map((row) => agentView(db, row));
 }
 
-export function getOwnAgent(db: Db, actor: ResolvedActor, agentId: string): AgentView {
+export function getOwnAgent(
+  db: Db,
+  actor: ResolvedActor,
+  agentId: string,
+  now: number = Date.now(),
+): AgentDetailView {
   assertCan(actor, 'agent.read_own');
-  return agentView(db, requireOwnAgent(db, actor, agentId));
+  const row = requireOwnAgent(db, actor, agentId);
+  return { ...agentView(db, row), sessions: recentAgentSessions(db, row.id, now) };
 }
 
 export interface UpdateAgentInput {
