@@ -20,6 +20,7 @@ import {
   reply,
   navigateInApp,
   refuse,
+  setTheme,
   until,
   type ApiStub,
   type Harness,
@@ -845,6 +846,59 @@ void describe('the List’s Agent column and the agent filter', () => {
       await header.getByRole('button').click();
       await until(async () => (await header.getAttribute('aria-sort')) === 'descending');
       assert.deepEqual(await keys(h), ['LC-3', 'LC-2', 'LC-1']);
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **The Agent column fits a 1440 screen beside the sidebar** (LAI-569).
+   * LAI-538 added its width to the table's minimum, so in a space that uses
+   * agents the table scrolled sideways inside its card. The floors that made
+   * that a layout decision hold here too: SUMMARY over 200px, the two date
+   * columns one width. Both themes, since a theme that draws a wider glyph
+   * would be the one to tip it.
+   */
+  void test('at 1440 the List with the Agent column does not scroll sideways, in both themes', async () => {
+    const { stub } = world();
+    const h = await open('/list?project=laika-core', stub);
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      const cell = h.page.locator('tbody tr[data-task-id="t2"] .list-agent-cell');
+      await cell.waitFor({ timeout: 20_000 });
+      const width = async (selector: string) =>
+        Math.round((await h.page.locator(selector).first().boundingBox())?.width ?? -1);
+      const sideways = () =>
+        h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      for (const theme of ['light', 'dark']) {
+        await h.page.setViewportSize({ width: 1440, height: 900 });
+        await setTheme(h.page, theme);
+        const spare = () =>
+          h.page
+            .locator('.list-scroll')
+            .evaluate((el) => (el as HTMLElement).clientWidth - (el as HTMLElement).scrollWidth);
+        await until(async () => (await spare()) >= 0);
+        const left = await spare();
+        assert.ok(left >= 0, `${theme}: the List scrolls ${String(-left)}px sideways at 1440`);
+        const summary = await width('.list-summary');
+        assert.ok(summary > 200, `${theme}: SUMMARY collapsed to ${String(summary)}px`);
+        assert.equal(
+          await width('.list-updated'),
+          await width('.list-created'),
+          'CREATED ≠ UPDATED',
+        );
+        // A phone is no worse, in this theme too: the table scrolls in its
+        // card, never the page.
+        await h.page.setViewportSize({ width: 390, height: 844 });
+        await until(async () => (await sideways()) === 0);
+        assert.equal(await sideways(), 0, `${theme}: the page scrolls sideways at 390`);
+      }
+      // Still named: on hover, and read aloud with its product and device.
+      assert.match((await cell.getAttribute('title')) ?? '', /^Claude Code · laptop-1 — /);
+      assert.equal(
+        ((await cell.textContent()) ?? '').replace(/\s+/g, ' ').trim(),
+        'Claude Code · laptop-1',
+      );
     } finally {
       await h.close();
     }
