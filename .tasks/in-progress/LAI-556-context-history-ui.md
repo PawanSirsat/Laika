@@ -2,11 +2,12 @@
 id: LAI-556
 title: 'Context revision history + delivery UI'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-555]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-30T01:30:00+02:00
 ---
 
 Implements **proposal §6 (Project context)** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
