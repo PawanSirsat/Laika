@@ -20,6 +20,7 @@ import {
   getContextRevision,
   listContextRevisions,
 } from '../../src/services/context-revisions.ts';
+import { ensureActivityTriggers } from '../../src/db/migrate.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -432,6 +433,59 @@ describe('revisions (§4.68, proposal §4.6, LAI-555)', () => {
     ).toThrowError(/append-only: UPDATE/);
     expect(() => t.db.delete(projectContextRevisions).run()).toThrowError(/append-only: DELETE/);
     expect(getContextRevision(t.db, actor(ownerId), 'laika', 1).body).toBe('one');
+  });
+
+  it('INSERT OR REPLACE with a fresh id over an existing revision is refused; the original survives', () => {
+    updateProjectContext(t.db, actor(ownerId), 'laika', {
+      context_md: 'original',
+      base_revision: 0,
+    });
+    const projectId = t.db.select().from(projects).where(eq(projects.slug, 'laika')).get()!.id;
+
+    // The review's case: a new id, the same (project_id, revision). The
+    // unique index alone would make REPLACE delete the original.
+    expect(() =>
+      t.sqlite
+        .prepare(
+          `INSERT OR REPLACE INTO project_context_revisions
+             (id, project_id, revision, body, author_id, agent_id, created_at)
+           VALUES (?, ?, 1, 'rewritten', NULL, NULL, 1)`,
+        )
+        .run(newId(), projectId),
+    ).toThrowError(/append-only: an insert over an existing id or revision/);
+    // And over an existing id, as before.
+    const existingId = t.db.select().from(projectContextRevisions).get()!.id;
+    expect(() =>
+      t.sqlite
+        .prepare(
+          `INSERT OR REPLACE INTO project_context_revisions
+             (id, project_id, revision, body, author_id, agent_id, created_at)
+           VALUES (?, ?, 9, 'rewritten', NULL, NULL, 1)`,
+        )
+        .run(existingId, projectId),
+    ).toThrowError(/append-only: an insert over an existing id or revision/);
+
+    const rows = t.db.select().from(projectContextRevisions).all();
+    expect(rows.map((r) => [r.revision, r.body])).toEqual([[1, 'original']]);
+    expect(getContextRevision(t.db, actor(ownerId), 'laika', 1).body).toBe('original');
+  });
+
+  it('boot refuses a replace guard that checks the id alone', () => {
+    // The definition the review found: it keeps the name and the message and
+    // misses the second unique key. Boot compares the whole definition.
+    t.sqlite.exec('DROP TRIGGER project_context_revisions_is_append_only_no_replace');
+    t.sqlite.exec(`CREATE TRIGGER project_context_revisions_is_append_only_no_replace
+BEFORE INSERT ON project_context_revisions
+WHEN EXISTS (SELECT 1 FROM project_context_revisions WHERE id = NEW.id)
+BEGIN
+  SELECT RAISE(ABORT, 'project_context_revisions is append-only: an insert over an existing id or revision is not permitted (SPEC 4.68)');
+END`);
+
+    expect(() => {
+      ensureActivityTriggers(t.db);
+    }).toThrowError(
+      /project_context_revisions_is_append_only_no_replace \(present, but its stored definition differs/,
+    );
   });
 
   it('diffs two revisions, and from 0, without sending the whole document', () => {

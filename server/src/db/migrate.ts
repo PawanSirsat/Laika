@@ -228,14 +228,19 @@ BEGIN
   SELECT RAISE(ABORT, 'project_context_revisions is append-only: DELETE is not permitted while its project exists (SPEC 4.68)');
 END`,
   },
+  // **Both unique keys, not only `id`** (LAI-555 review). `(project_id,
+  // revision)` is unique too, and `INSERT OR REPLACE` with a fresh id and an
+  // existing revision would otherwise delete the original — the delete
+  // trigger does not fire for a REPLACE while `recursive_triggers` is off.
+  // Any insert landing on either key is refused, so nothing can replace a row.
   {
     name: 'project_context_revisions_is_append_only_no_replace',
     table: 'project_context_revisions',
     create: `CREATE TRIGGER IF NOT EXISTS \`project_context_revisions_is_append_only_no_replace\`
 BEFORE INSERT ON \`project_context_revisions\`
-WHEN EXISTS (SELECT 1 FROM \`project_context_revisions\` WHERE \`id\` = NEW.\`id\`)
+WHEN EXISTS (SELECT 1 FROM \`project_context_revisions\` WHERE \`id\` = NEW.\`id\` OR (\`project_id\` = NEW.\`project_id\` AND \`revision\` = NEW.\`revision\`))
 BEGIN
-  SELECT RAISE(ABORT, 'project_context_revisions is append-only: INSERT OR REPLACE is not permitted (SPEC 4.68)');
+  SELECT RAISE(ABORT, 'project_context_revisions is append-only: an insert over an existing id or revision is not permitted (SPEC 4.68)');
 END`,
   },
   // §4.48's entries are kept three years (D-088 item 11, BCEA s31): nothing
