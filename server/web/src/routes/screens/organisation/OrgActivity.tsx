@@ -16,6 +16,8 @@ import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx'
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { agentNamesFrom, agentVia } from '../../../api/selected-agent.ts';
+import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import { plainClick, taskHref } from '../my-day/task-link.ts';
 import {
   filtersFrom,
@@ -88,6 +90,13 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
 
   const names = useMemo(() => new Map(people.map((p) => [p.id, p.name])), [people]);
   const spaces = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  /*
+   * Which agent wrote a row (LAI-570). This history spans every space and
+   * holds no task set, so the names are the reader's own agents only;
+   * anyone else's stays *a registered agent* — never a guess.
+   */
+  const myAgents = useMyAgents();
+  const agentNames = useMemo(() => agentNamesFrom(agentsOf(myAgents), []), [myAgents]);
 
   const set = (name: HistoryFilter, value: string): void => {
     setParams(withFilter(params, name, value));
@@ -237,6 +246,7 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
                     : event.actor_id === null
                       ? 'Someone'
                       : (names.get(event.actor_id) ?? 'Someone');
+                const via = agentVia(event, agentNames);
                 return (
                   <li key={event.id} className="oh-row">
                     <time
@@ -259,6 +269,7 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
                           {who}
                         </PersonLink>
                       )}
+                      {via !== undefined && <span className="oh-via">via {via}</span>}
                       {event.actor_kind === 'agent' && <span className="org-chip">Agent</span>}
                     </span>
                     <span className="oh-what">{pushSummary(event) ?? describeEvent(event)}</span>

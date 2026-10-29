@@ -694,6 +694,11 @@ thead .dash-contrib-n {
   font-weight: var(--weight-bold);
 }
 
+/* *via Claude Code · Belka* after the person (LAI-570): the agent acted for them. */
+.dash-event .dash-via {
+  color: var(--text-secondary);
+}
+
 .dash-move {
   font-family: var(--font-mono);
   font-size: var(--text-small);
