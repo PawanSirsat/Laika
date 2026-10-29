@@ -774,3 +774,9 @@
   align-items: center;
   gap: 0.25rem 0.375rem;
 }
+
+/* The working session's line sits under its chip (LAI-593). */
+.exec-session-line {
+  display: block;
+  margin-top: 0.25rem;
+}

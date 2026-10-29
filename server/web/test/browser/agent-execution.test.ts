@@ -773,6 +773,52 @@ void describe('the live claim (LAI-597)', () => {
     }
   });
 
+  void test('the working session’s line says what ran; its version and model wait under Details (LAI-593)', async () => {
+    const { stub, tasks } = world();
+    const held = tasks.find((t) => t.id === 't4')!;
+    held.claim = {
+      ...(held.claim as Record<string, unknown>),
+      harness: 'codex',
+      harness_version: '0.9.1',
+      model: 'gpt-5.5',
+    };
+    const h = await open('/board?project=laika-core&task=t4', stub);
+    try {
+      const found = await panel(h);
+      const line = found.locator('[data-session-line]');
+      await line.waitFor({ timeout: 10_000 });
+      assert.equal((await line.innerText()).trim(), 'Claude Code · Belka · Codex · gpt-5.5');
+      // The chip still names the agent; the line is beneath it, not instead.
+      assert.match(
+        await found.locator('[data-working-session]').innerText(),
+        /^Claude Code · Belka\s+Claude Code · Belka · Codex · gpt-5\.5$/,
+      );
+      // The card stays the agent alone (D-118): no session words on it.
+      assert.doesNotMatch(await card(h.page, 't4').innerText(), /gpt-5\.5|Codex/);
+
+      const details = found.locator('[data-exec-details]');
+      await details.getByRole('button', { name: 'Details' }).click();
+      const text = await details.innerText();
+      assert.match(text, /Working session harness version\s*0\.9\.1/);
+      assert.match(text, /Working session model\s*gpt-5\.5/);
+      assert.match(text, /self-reported by the session; they decide nothing/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a session that reported nothing draws no line — the chip alone', async () => {
+    const { stub } = world();
+    const h = await open('/board?project=laika-core&task=t4', stub);
+    try {
+      const found = await panel(h);
+      assert.match(await found.innerText(), /Working session\s*Claude Code · Belka/);
+      assert.equal(await found.locator('[data-session-line]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
   for (const theme of ['light', 'dark'] as const) {
     for (const width of [1440, 390] as const) {
       void test(`${theme}, ${String(width)} px: Working and Connection lost are legible, with no sideways scroll`, async () => {

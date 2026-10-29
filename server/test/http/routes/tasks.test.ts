@@ -927,6 +927,9 @@ describe('patch', () => {
         connection: 'live',
         suspect_after_ms: 90_000,
         device_label: 'laptop-1',
+        harness: 'claude-code',
+        harness_version: '2.1.0',
+        model: 'claude-opus-5-5',
       };
       const held = taskVersion({ ...view, claim });
       expect(held).not.toBe(taskVersion(view));
@@ -938,6 +941,10 @@ describe('patch', () => {
         heartbeat_age_ms: 120_000,
         lease_expires_at: 99_000,
         connection: 'suspect',
+        // A heartbeat may say a different model ran (D-118, LAI-593).
+        harness: 'codex',
+        harness_version: '0.9.1',
+        model: 'gpt-5.5',
       };
       expect([...CLAIM_PULSE].sort()).toEqual(Object.keys(beat).sort());
       expect(taskVersion({ ...view, claim: { ...claim, ...beat } as typeof claim })).toBe(held);

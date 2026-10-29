@@ -1244,6 +1244,9 @@ export function TaskDetailPanel({
                 lastSeen={execution.lastSeen}
                 lastSeenAt={execution.lastSeenAt}
                 liveSessionId={execution.liveSessionId}
+                sessionLine={execution.sessionLine}
+                sessionHarnessVersion={execution.sessionHarnessVersion}
+                sessionModel={execution.sessionModel}
                 claim={execution.claim}
                 claimExpired={execution.claimExpired}
                 generation={execution.generation}

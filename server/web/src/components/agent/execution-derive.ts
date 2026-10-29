@@ -321,6 +321,42 @@ export interface ExecutionView {
   readonly lastSeenAt: number | undefined;
   /** `claim.session_id`, under Details. */
   readonly liveSessionId: string | undefined;
+  /**
+   * The holding agent and what its session said ran, in one line (D-118,
+   * LAI-593): *Claude Code · Belka · Codex · gpt-5.5*. `undefined` when the
+   * session reported neither harness nor model — the chip alone then.
+   */
+  readonly sessionLine: string | undefined;
+  /** The holding session's self-reported harness version, under Details. */
+  readonly sessionHarnessVersion: string | null;
+  /** The holding session's self-reported model, under Details. */
+  readonly sessionModel: string | null;
+}
+
+/** What the live claim's session said about itself, as an activity row's snapshot is read. */
+function liveSnapshot(claim: TaskLiveClaim): ActivitySession {
+  return {
+    id: claim.session_id,
+    harness: claim.harness ?? null,
+    harness_version: claim.harness_version ?? null,
+    model: claim.model ?? null,
+  };
+}
+
+/** *Claude Code · Belka · Codex · gpt-5.5* for the live session, or `undefined`. */
+function liveSessionLine(
+  claim: TaskLiveClaim,
+  agents: ReadonlyMap<string, AgentNaming>,
+): string | undefined {
+  const snapshot = liveSnapshot(claim);
+  if (sessionWords(snapshot) === undefined) return undefined;
+  const named = agents.get(claim.agent_id);
+  const device = claim.device_label ?? null;
+  const name =
+    named === undefined
+      ? UNNAMED_AGENT
+      : agentLabel(device === null || device === '' ? named : { ...named, device_label: device });
+  return agentLine(name, snapshot);
 }
 
 /**
@@ -359,6 +395,9 @@ export function executionView(
     lastSeen: live === null ? undefined : ageWords(heartbeatAge(live, now)),
     lastSeenAt: live?.last_heartbeat_at,
     liveSessionId: live?.session_id,
+    sessionLine: live === null ? undefined : liveSessionLine(live, agents),
+    sessionHarnessVersion: live?.harness_version ?? null,
+    sessionModel: live?.model ?? null,
     intended: selected === null ? null : panelAgentOf(selected),
     claim:
       fact === undefined || history.kind === 'none'

@@ -55,6 +55,14 @@ export interface TaskLiveClaim {
   /** Heartbeats write no activity, so no event re-reads the task when this passes. */
   readonly suspect_after_ms: number;
   readonly device_label: string | null;
+  /**
+   * What the holding session said ran (D-118, LAI-593) — self-reported, null
+   * where it reported nothing. Optional because a view served before LAI-593
+   * has none, which reads as null.
+   */
+  readonly harness?: string | null;
+  readonly harness_version?: string | null;
+  readonly model?: string | null;
 }
 
 export interface TaskSummary {

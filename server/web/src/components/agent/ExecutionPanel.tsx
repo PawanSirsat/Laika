@@ -77,6 +77,15 @@ export interface ExecutionPanelProps {
   readonly lastSeenAt?: number | undefined;
   /** The live claim's `session_id`, under Details. */
   readonly liveSessionId?: string | undefined;
+  /**
+   * The working session's line (D-118, LAI-593): *Claude Code · Belka · Codex ·
+   * gpt-5.5*, under its chip. `undefined` when it reported neither.
+   */
+  readonly sessionLine?: string | undefined;
+  /** The working session's self-reported harness version, under Details. */
+  readonly sessionHarnessVersion?: string | null | undefined;
+  /** The working session's self-reported model, under Details. */
+  readonly sessionModel?: string | null | undefined;
   /** The latest claim the activity records. */
   readonly claim?: PanelClaim | undefined;
   /** The latest claim was marked `expired`: the notice, with its sentence verbatim. */
@@ -104,6 +113,9 @@ export function ExecutionPanel({
   lastSeen,
   lastSeenAt,
   liveSessionId,
+  sessionLine,
+  sessionHarnessVersion,
+  sessionModel,
   checkpoint,
   pendingCheckpoint,
   handoff,
@@ -130,6 +142,11 @@ export function ExecutionPanel({
                 session
               ) : (
                 <AgentChip {...session} />
+              )}
+              {session !== null && sessionLine !== undefined && (
+                <span className="exec-line exec-session-line" data-session-line>
+                  {sessionLine}
+                </span>
               )}
             </dd>
           </div>
@@ -206,6 +223,8 @@ export function ExecutionPanel({
       <ExecutionDetails
         generation={generation}
         liveSessionId={liveSessionId}
+        sessionHarnessVersion={sessionHarnessVersion}
+        sessionModel={sessionModel}
         claim={claim}
         checkpoint={checkpoint}
         pendingCheckpoint={pendingCheckpoint}
@@ -271,20 +290,29 @@ function CheckpointLine({ checkpoint }: { readonly checkpoint: PanelCheckpoint }
 function ExecutionDetails({
   generation,
   liveSessionId,
+  sessionHarnessVersion,
+  sessionModel,
   claim,
   checkpoint,
   pendingCheckpoint,
 }: Pick<
   ExecutionPanelProps,
-  'generation' | 'liveSessionId' | 'claim' | 'checkpoint' | 'pendingCheckpoint'
+  | 'generation'
+  | 'liveSessionId'
+  | 'sessionHarnessVersion'
+  | 'sessionModel'
+  | 'claim'
+  | 'checkpoint'
+  | 'pendingCheckpoint'
 >) {
   const [open, setOpen] = useState(false);
   const region = useId();
   // Any self-reported field the panel shows — the harness in *Ran as*
   // included — carries the label.
   const reported =
-    claim !== undefined &&
-    [claim.harness, claim.harnessVersion, claim.model].some((field) => (field ?? null) !== null);
+    [sessionHarnessVersion, sessionModel].some((field) => (field ?? null) !== null) ||
+    (claim !== undefined &&
+      [claim.harness, claim.harnessVersion, claim.model].some((field) => (field ?? null) !== null));
   return (
     <div className="exec-details" data-exec-details>
       <button
@@ -312,6 +340,18 @@ function ExecutionDetails({
                 <dd className="exec-sha" data-live-session-id>
                   {liveSessionId}
                 </dd>
+              </div>
+            )}
+            {(sessionHarnessVersion ?? null) !== null && (
+              <div>
+                <dt>Working session harness version</dt>
+                <dd className="exec-sha">{sessionHarnessVersion}</dd>
+              </div>
+            )}
+            {(sessionModel ?? null) !== null && (
+              <div>
+                <dt>Working session model</dt>
+                <dd className="exec-sha">{sessionModel}</dd>
               </div>
             )}
             {(claim?.sessionId ?? null) !== null && (
