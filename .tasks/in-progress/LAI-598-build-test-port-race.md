@@ -7,8 +7,7 @@ priority: p1
 parent: LAIKA-785
 depends-on: []
 discovered-from: LAI-534
-status: review
-finished: 2026-10-29T09:21:22Z
+status: in-progress
 started: 2026-10-29T08:49:50Z
 ---
 
@@ -112,3 +111,14 @@ nothing and was discarded. `migrate.ts` was restored and checked by `shasum`.
   (4209)`, web `# pass 3602, # fail 0`, cli `# pass 665, # fail 0`.
 - `pnpm lint`: **EXIT 0**.
 - `pnpm format`: **EXIT 0**.
+
+## Review round 1 — Codex, PR #136: FAIL (blocking)
+
+`build.test.ts:390` can return success from **another** server's health: the
+uptime check (`:815`) accepts any foreign server started within the last
+second. Codex reproduced it with the real built child — the helper returned
+after one attempt, the child then exited 1 `EADDRINUSE`, and the retry never
+ran. Asked for: accept health only with evidence that **this** child bound the
+port; treat a child exit at any point before success as a failed attempt
+(retried only on `EADDRINUSE`); and a test with a fresh foreign server already
+listening on the chosen port that proves the helper retries.
