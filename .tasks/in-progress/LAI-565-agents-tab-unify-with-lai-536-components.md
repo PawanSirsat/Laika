@@ -2,11 +2,12 @@
 id: LAI-565
 title: 'Agents tab: use LAI-536''s AgentChip, AgentReadiness and RegistrationSteps once both have landed'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: [LAI-536, LAI-537]
 discovered-from: LAI-537
-status: backlog
+status: in-progress
+started: 2026-10-29T07:25:47Z
 ---
 
 Filed by SHELL (Belka, dispatched by CHIEF) from CHIEF's block, 2026-10-28.
