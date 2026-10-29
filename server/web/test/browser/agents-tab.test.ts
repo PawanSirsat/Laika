@@ -655,7 +655,10 @@ void describe('the Agents tab (LAI-537)', () => {
         .locator('.agents-row [data-fact="credential_created"]')
         .innerText();
       assert.match(credential, /Credential created — none live/);
-      assert.match(credential, /expired or been revoked/);
+      assert.match(
+        credential,
+        /No live credential: every token for this agent has expired or been revoked/,
+      );
       const row = await page.locator('.agents-row [data-readiness]').innerText();
       assert.doesNotMatch(row, /No token yet/);
       assert.doesNotMatch(row, /has not seen a request/);

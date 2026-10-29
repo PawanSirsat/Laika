@@ -163,7 +163,7 @@ export const READINESS_WORDS: Readonly<
  */
 export const CREDENTIAL_LAPSED = {
   verdict: 'none live',
-  why: 'Every token for this agent has expired or been revoked. It cannot reach Laika until it is given a new one.',
+  why: 'No live credential: every token for this agent has expired or been revoked. It cannot reach Laika until it is given a new one.',
 } as const;
 
 /** The last step's three outcomes: the proof is a request **from this agent's own token**. */
