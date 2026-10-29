@@ -7,7 +7,8 @@ priority: p1
 depends-on: [LAI-592]
 discovered-from: LAI-592
 started: 2026-10-29T18:59:55Z
-status: in-progress
+status: review
+finished: 2026-10-29T19:01:14Z
 ---
 
 The client half of LAI-592, under CLAUDE.md §4.4. LAI-592's CORE half adds
@@ -37,8 +38,8 @@ server/web/test/api/view-type-drift.test.ts
 
 ## Acceptance criteria
 
-- [ ] `RegisteredAgent` declares `owner_display_name: string`
-- [ ] `view-type-drift.test.ts` is green against LAI-592's server half
+- [x] `RegisteredAgent` declares `owner_display_name: string`
+- [x] `view-type-drift.test.ts` is green against LAI-592's server half
 - [ ] Gate: repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0
 
 ## Merge
@@ -46,3 +47,18 @@ server/web/test/api/view-type-drift.test.ts
 §4.4: Belka merges LAI-592's CORE half into local `master` without pushing;
 this half merges that `master`, lands green, and both are pushed as one
 state.
+
+## Built (Belka, 2026-10-30, stacked on LAI-592 as `LAI-592-web`)
+
+- `server/web/src/api/agents.ts`: `readonly owner_display_name: string;` on
+  `RegisteredAgent`, beside `owner_user_id`.
+- `server/web/test/api/{agent-devices,agents,selected-agent}.test.ts`,
+  `server/web/test/routes/screens/developer/agent-readiness.test.ts`: their
+  `RegisteredAgent` fixtures carry the field (web `tsc` refused them without).
+- Verified: `node --test test/api/view-type-drift.test.ts` 4 pass, 0 fail;
+  the four fixture files pass; web `tsc --noEmit` exit 0 (it includes the
+  browser tests). Mutation: the field removed, `view-type-drift` is red on
+  exactly the quoted assertion (exit 1); restored, SHA checked.
+- Gate criterion left unticked here: the local run was limited to touched
+  tests (no browser tests on Belka); PR CI runs the full root gate.
+- No owner shown in the Devices view: optional, not done.
