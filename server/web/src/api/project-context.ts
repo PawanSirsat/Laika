@@ -117,7 +117,9 @@ export function readableContextError(cause: unknown, actualLength?: number): str
 
   // Somebody saved since this was opened (LAI-555). The text typed here is
   // kept; LAI-556 builds the history and the merge.
-  if ((cause.details as { readonly reason?: unknown } | null)?.reason === 'stale_context_revision') {
+  if (
+    (cause.details as { readonly reason?: unknown } | null)?.reason === 'stale_context_revision'
+  ) {
     return 'Somebody saved a newer version while you were editing. Your text is still here: copy it, reopen the document, and apply your change again.';
   }
 
