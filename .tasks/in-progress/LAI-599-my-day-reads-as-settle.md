@@ -2,12 +2,13 @@
 id: LAI-599
 title: 'web: my-day "a typed length says what it understood" read 1 h 45 min for 1h 30m on CI'
 area: shell
-assignee: unclaimed
+assignee: chief
 priority: p1
 parent: LAIKA-785
 depends-on: []
 discovered-from: LAI-830
-status: backlog
+status: in-progress
+started: 2026-10-29T08:49:50Z
 ---
 
 ## Goal
