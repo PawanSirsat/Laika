@@ -1328,6 +1328,155 @@ void describe('a selection still in flight when the drawer moves on', () => {
     });
   }
 
+  /*
+   * **The save answers inside the read's own render** (LAI-577). The two tests
+   * above let the read land and *then* release the save, from Node — which
+   * cannot see when the page applies anything, so the sharp case arrived only
+   * by chance, and on a loaded CI runner it did: the read's render judged the
+   * earlier confirmation stale, the save's answer queued a new one before
+   * React ran that render's effect, and the effect then cleared the new one.
+   *
+   * Here the order is pinned inside the page. Both answers are held after
+   * they really reached the server, so each carries real data; the read is
+   * released, and the save's answer is released from a MutationObserver the
+   * moment the read's render reaches the DOM — the card gaining its chip,
+   * which only the read can cause. An observer runs at the end of that
+   * render's task, before React's effects task: the window, every time.
+   */
+  for (const [what, second, value, line] of [
+    ['a newer select', 'ag-desktop', 'ag-desktop', DESKTOP_LINE],
+    ['a withdraw', '', '', null],
+  ] as const) {
+    void test(`${what} answered inside the read’s render still shows`, async () => {
+      const { stub } = world();
+      let failReads = false;
+      const fail = {
+        status: 500,
+        contentType: 'application/json',
+        body: '{"error":{"code":"internal","message":"down"}}',
+      };
+      const h = await open('/board?project=laika-core&task=t1', stub, {
+        before: async (page) => {
+          await page.addInitScript(() => {
+            const held: { kind: 'read' | 'patch'; release: () => void }[] = [];
+            const control = { holdReads: false, holdPatch: false, held };
+            (window as unknown as { __lai577: typeof control }).__lai577 = control;
+            const real = window.fetch.bind(window);
+            window.fetch = async (input, init) => {
+              const url = new URL(
+                typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+                location.href,
+              );
+              const method = (init?.method ?? 'GET').toUpperCase();
+              const response = await real(input, init);
+              const kind =
+                method === 'PATCH' && url.pathname === '/api/v1/tasks/t1'
+                  ? control.holdPatch
+                    ? 'patch'
+                    : undefined
+                  : method === 'GET' && url.pathname === '/api/v1/projects/laika-core/tasks'
+                    ? control.holdReads
+                      ? 'read'
+                      : undefined
+                    : undefined;
+              if (kind === undefined) return response;
+              // Read the body now, so releasing is a promise resolving and nothing more.
+              const body = await response.text();
+              await new Promise<void>((resolve) => {
+                held.push({ kind, release: resolve });
+              });
+              return new Response(body, { status: response.status, headers: response.headers });
+            };
+          });
+          await page.route('**/api/v1/projects/laika-core/tasks**', (route) =>
+            failReads ? route.fulfill(fail) : route.continue(),
+          );
+          await page.route('**/api/v1/tasks/t1', (route) =>
+            failReads && route.request().method() === 'GET'
+              ? route.fulfill(fail)
+              : route.continue(),
+          );
+        },
+      });
+      const heldKinds = () =>
+        h.page.evaluate(() =>
+          (window as unknown as { __lai577: { held: { kind: string }[] } }).__lai577.held.map(
+            (x) => x.kind,
+          ),
+        );
+      try {
+        const box = await agentBox(h);
+        // The read the first save triggers is held: it will carry X.
+        await h.page.evaluate(() => {
+          (window as unknown as { __lai577: { holdReads: boolean } }).__lai577.holdReads = true;
+        });
+        const first = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+        await pick(box, 'ag-laptop');
+        await first;
+        await until(async () => (await heldKinds()).includes('read'));
+        assert.ok((await heldKinds()).includes('read'), 'no read was held — nothing was tested');
+        await settledRow(h, 'ag-laptop', LAPTOP_LINE);
+        // X is the overlay alone: the board has not seen it yet.
+        const chip = 'article.card[data-task-id="t1"] .agent-chip';
+        assert.equal(await h.page.locator(chip).count(), 0, 'the read reached the board early');
+
+        // Y goes to the server and its answer is held; every read after it fails.
+        failReads = true;
+        await h.page.evaluate(() => {
+          const c = (window as unknown as { __lai577: { holdReads: boolean; holdPatch: boolean } })
+            .__lai577;
+          c.holdReads = false;
+          c.holdPatch = true;
+        });
+        const sent = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+        await pick(box, second);
+        await sent;
+        await until(async () => (await heldKinds()).includes('patch'));
+        assert.ok(
+          (await heldKinds()).includes('patch'),
+          'the save was not held — nothing was tested',
+        );
+
+        // Release the read; release Y's answer the instant the read's render commits.
+        const order = await h.page.evaluate(
+          (selector) =>
+            new Promise<string[]>((done) => {
+              const c = (
+                window as unknown as {
+                  __lai577: { held: { kind: string; release: () => void }[] };
+                }
+              ).__lai577;
+              const seen: string[] = [];
+              const observer = new MutationObserver(() => {
+                if (document.querySelector(selector) === null) return;
+                observer.disconnect();
+                seen.push('read committed');
+                for (const x of c.held.filter((y) => y.kind === 'patch')) x.release();
+                seen.push('save answered');
+                setTimeout(() => {
+                  done(seen);
+                }, 0);
+              });
+              observer.observe(document.body, { subtree: true, childList: true });
+              for (const x of c.held.filter((y) => y.kind === 'read')) x.release();
+              seen.push('read released');
+            }),
+          chip,
+        );
+        assert.deepEqual(order, ['read released', 'read committed', 'save answered']);
+        await settledRow(h, value, line);
+      } finally {
+        await h.page.evaluate(() => {
+          const c = (window as unknown as { __lai577?: { held: { release: () => void }[] } })
+            .__lai577;
+          for (const x of c?.held ?? []) x.release();
+        });
+        await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+        await h.close();
+      }
+    });
+  }
+
   /** Move the stub's copy of a task to what the server now holds, one version on. */
   const serverHolds = (tasks: Record<string, unknown>[], id: string, agent: string | null) => {
     const task = tasks.find((t) => t.id === id);
