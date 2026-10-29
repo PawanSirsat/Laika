@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffLines } from '../../src/services/text-diff.ts';
+import { diffLines, MAX_EDIT_DISTANCE } from '../../src/services/text-diff.ts';
 
 /**
  * The context document's line diff (§4.68, LAI-555). Unified format, three
@@ -12,11 +12,19 @@ describe('diffLines', () => {
   });
 
   it('from the empty document, every line is an addition', () => {
-    expect(diffLines('', 'a\nb')).toEqual({ diff: '@@ -0,0 +1,2 @@\n+a\n+b', added: 2, removed: 0 });
+    expect(diffLines('', 'a\nb')).toEqual({
+      diff: '@@ -0,0 +1,2 @@\n+a\n+b',
+      added: 2,
+      removed: 0,
+    });
   });
 
   it('to the empty document, every line is a removal', () => {
-    expect(diffLines('a\nb', '')).toEqual({ diff: '@@ -1,2 +0,0 @@\n-a\n-b', added: 0, removed: 2 });
+    expect(diffLines('a\nb', '')).toEqual({
+      diff: '@@ -1,2 +0,0 @@\n-a\n-b',
+      added: 0,
+      removed: 2,
+    });
   });
 
   it('a changed line in the middle keeps three lines of context either side', () => {
@@ -51,5 +59,29 @@ describe('diffLines', () => {
       added: 2,
       removed: 0,
     });
+  });
+});
+
+describe('the edit bound', () => {
+  it('past MAX_EDIT_DISTANCE, answers all out then all in — still a correct diff, quickly', () => {
+    const n = 30_000;
+    const before = Array.from({ length: n }, (_, i) => `old ${String(i)}`).join('\n');
+    const after = Array.from({ length: n }, (_, i) => `new ${String(i)}`).join('\n');
+    const started = Date.now();
+    const { diff, added, removed } = diffLines(before, after);
+
+    expect([added, removed]).toEqual([n, n]);
+    expect(diff.split('\n')[0]).toBe(`@@ -1,${String(n)} +1,${String(n)} @@`);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it('just inside the bound, still finds the shortest edit', () => {
+    const lines = Array.from({ length: MAX_EDIT_DISTANCE }, (_, i) => `l${String(i)}`);
+    const before = lines.join('\n');
+    // Every other line changed: within the bound, and the shortest edit keeps
+    // the unchanged half as context.
+    const after = lines.map((l, i) => (i % 2 === 0 ? l : `${l}!`)).join('\n');
+    const { added, removed } = diffLines(before, after);
+    expect([added, removed]).toEqual([MAX_EDIT_DISTANCE / 2, MAX_EDIT_DISTANCE / 2]);
   });
 });

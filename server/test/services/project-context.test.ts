@@ -87,7 +87,9 @@ describe('who may read and write it (§3.1, §7.3)', () => {
   it('a project viewer can read it', () => {
     const viewerId = projectMember('viewer', 'viewer');
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: '# Architecture' });
+      base_revision: currentRevision(),
+      context_md: '# Architecture',
+    });
 
     expect(getProjectContext(t.db, actor(viewerId), 'laika').context_md).toBe('# Architecture');
   });
@@ -97,7 +99,9 @@ describe('who may read and write it (§3.1, §7.3)', () => {
 
     try {
       updateProjectContext(t.db, actor(memberId), 'laika', {
-      base_revision: currentRevision(), context_md: 'nope' });
+        base_revision: currentRevision(),
+        context_md: 'nope',
+      });
       expect.unreachable('a member is not lead+');
     } catch (error) {
       expect((error as ApiError).code).toBe('forbidden');
@@ -107,7 +111,9 @@ describe('who may read and write it (§3.1, §7.3)', () => {
   it('a project lead can write it', () => {
     const leadId = projectMember('lead', 'lead');
     const view = updateProjectContext(t.db, actor(leadId), 'laika', {
-      base_revision: currentRevision(), context_md: '# Lead wrote' });
+      base_revision: currentRevision(),
+      context_md: '# Lead wrote',
+    });
 
     expect(view.context_md).toBe('# Lead wrote');
   });
@@ -117,7 +123,9 @@ describe('who may read and write it (§3.1, §7.3)', () => {
     // check would wrongly refuse.
     const adminId = makeUser('admin', 'admin');
     const view = updateProjectContext(t.db, actor(adminId), 'laika', {
-      base_revision: currentRevision(), context_md: '# Admin' });
+      base_revision: currentRevision(),
+      context_md: '# Admin',
+    });
 
     expect(view.context_md).toBe('# Admin');
   });
@@ -144,14 +152,18 @@ describe('the document is returned verbatim (§7.3)', () => {
     // an agent receives HTML where the spec promised markdown.
     const raw = '  # Heading\n\n\n\tindented\n\n';
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: raw });
+      base_revision: currentRevision(),
+      context_md: raw,
+    });
 
     expect(getProjectContext(t.db, actor(ownerId), 'laika').context_md).toBe(raw);
   });
 
   it('reports its length and the limit, so a client can show the budget', () => {
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: 'abcde' });
+      base_revision: currentRevision(),
+      context_md: 'abcde',
+    });
     const view = getProjectContext(t.db, actor(ownerId), 'laika');
 
     expect(view.length).toBe(5);
@@ -185,7 +197,7 @@ describe('the size bound (§7.3, §14 q7)', () => {
     // guess how much to cut.
     try {
       updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(),
+        base_revision: currentRevision(),
         context_md: 'x'.repeat(CONTEXT_MD_LIMIT + 1),
       });
       expect.unreachable('should have thrown');
@@ -198,12 +210,14 @@ describe('the size bound (§7.3, §14 q7)', () => {
 
   it('writes nothing when it refuses', () => {
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: 'kept' });
+      base_revision: currentRevision(),
+      context_md: 'kept',
+    });
     const before = t.db.select().from(activity).all().length;
 
     expect(() =>
       updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(),
+        base_revision: currentRevision(),
         context_md: 'x'.repeat(CONTEXT_MD_LIMIT + 1),
       }),
     ).toThrowError(ApiError);
@@ -216,9 +230,13 @@ describe('the size bound (§7.3, §14 q7)', () => {
 describe('every edit has a history (§7.3)', () => {
   it('writes exactly one activity row per edit', () => {
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: 'one' });
+      base_revision: currentRevision(),
+      context_md: 'one',
+    });
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: 'two' });
+      base_revision: currentRevision(),
+      context_md: 'two',
+    });
 
     const rows = t.db
       .select()
@@ -231,9 +249,13 @@ describe('every edit has a history (§7.3)', () => {
 
   it('records what changed, in lengths a reviewer can read', () => {
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: 'abcd' });
+      base_revision: currentRevision(),
+      context_md: 'abcd',
+    });
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: 'abcdefghij' });
+      base_revision: currentRevision(),
+      context_md: 'abcdefghij',
+    });
 
     const payloads = t.db
       .select()
@@ -259,9 +281,15 @@ describe('every edit has a history (§7.3)', () => {
   it('reports who last edited it, and when', () => {
     const leadId = projectMember('lead', 'lead');
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: 'first', now: 1000 });
+      base_revision: currentRevision(),
+      context_md: 'first',
+      now: 1000,
+    });
     updateProjectContext(t.db, actor(leadId), 'laika', {
-      base_revision: currentRevision(), context_md: 'second', now: 2000 });
+      base_revision: currentRevision(),
+      context_md: 'second',
+      now: 2000,
+    });
 
     const view = getProjectContext(t.db, actor(ownerId), 'laika');
 
@@ -274,7 +302,10 @@ describe('every edit has a history (§7.3)', () => {
     // view reads the activity row instead. Renaming must leave the document's
     // history alone.
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: 'c', now: 1000 });
+      base_revision: currentRevision(),
+      context_md: 'c',
+      now: 1000,
+    });
     updateProject(t.db, actor(ownerId), 'laika', { name: 'Renamed', now: 5000 });
 
     expect(getProjectContext(t.db, actor(ownerId), 'laika').updated_at).toBe(1000);
@@ -284,7 +315,9 @@ describe('every edit has a history (§7.3)', () => {
 describe('there is exactly one writer of the column (LAI-404 AC6)', () => {
   it('the general project update no longer touches it', () => {
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: 'kept by its own path' });
+      base_revision: currentRevision(),
+      context_md: 'kept by its own path',
+    });
 
     // A rename must not clear or rewrite the document. Before LAI-404 both
     // paths wrote the column; leaving both would have meant two places
@@ -301,7 +334,9 @@ describe('there is exactly one writer of the column (LAI-404 AC6)', () => {
     // `UpdateProjectInput`: the project row's column must equal what the
     // context endpoint last set.
     updateProjectContext(t.db, actor(ownerId), 'laika', {
-      base_revision: currentRevision(), context_md: 'canonical' });
+      base_revision: currentRevision(),
+      context_md: 'canonical',
+    });
 
     const row = t.db.select().from(projects).where(eq(projects.slug, 'laika')).get();
     expect(row?.contextMd).toBe('canonical');

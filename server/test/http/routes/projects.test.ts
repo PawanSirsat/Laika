@@ -546,9 +546,9 @@ describe('context revisions over REST (§6.4, §4.68, LAI-555)', () => {
       body: JSON.stringify({ context_md: 'no base' }),
     });
     expect(res.status).toBe(422);
-    expect((await req('/api/v1/projects/laika/context').then((r) => r.json())) as object).toMatchObject(
-      { context_md: '', revision: 0 },
-    );
+    expect(
+      (await req('/api/v1/projects/laika/context').then((r) => r.json())) as object,
+    ).toMatchObject({ context_md: '', revision: 0 });
   });
 
   it('a stale write is 409 stale_context_revision and the current one is unchanged', async () => {
@@ -599,8 +599,14 @@ describe('context revisions over REST (§6.4, §4.68, LAI-555)', () => {
 
   it('a project the caller cannot see answers exactly as a missing one', async () => {
     expect(
-      (await createProject({ name: 'Hidden', slug: 'hidden', prefix: 'HID', visibility: 'private' }))
-        .status,
+      (
+        await createProject({
+          name: 'Hidden',
+          slug: 'hidden',
+          prefix: 'HID',
+          visibility: 'private',
+        })
+      ).status,
     ).toBe(201);
     const owner = h.db.select().from(users).get()!;
     const orgId = h.db.all<{ id: string }>(sql`SELECT id FROM orgs`)[0]!.id;

@@ -14,24 +14,39 @@ export interface LineDiff {
   removed: number;
 }
 
-type Op = { kind: ' ' | '-' | '+'; line: string };
+interface Op {
+  kind: ' ' | '-' | '+';
+  line: string;
+}
 
 function splitLines(text: string): string[] {
   return text === '' ? [] : text.split('\n');
 }
 
-/** Myers' O(ND) shortest edit script over two line arrays. */
-function editScript(a: readonly string[], b: readonly string[]): Op[] {
+/**
+ * Past this many inserted or removed lines, the shortest edit is not looked
+ * for: the changed middle is answered as removed whole and added whole, which
+ * is still a correct diff, only not the smallest. Myers keeps one frontier per
+ * step, so without a bound two unrelated 100,000-character documents would
+ * cost memory in the gigabytes — and any reader of the project may ask.
+ */
+export const MAX_EDIT_DISTANCE = 2000;
+
+/** Myers' O(ND) shortest edit script over two line arrays, or null past the bound. */
+function editScript(a: readonly string[], b: readonly string[]): Op[] | null {
   const n = a.length;
   const m = b.length;
-  const max = n + m;
+  const max = Math.min(n + m, MAX_EDIT_DISTANCE);
   const offset = max + 1;
   const v = new Int32Array(2 * max + 3);
+  // `trace[d]` is the frontier before step d, kept only for k in [-d-1, d+1]:
+  // all the walk back reads, and O(d) rather than O(n + m) per step.
   const trace: Int32Array[] = [];
+  const at = (d: number, k: number): number => trace[d]![k + d + 1]!;
 
   let found = false;
   for (let d = 0; d <= max && !found; d++) {
-    trace.push(v.slice());
+    trace.push(v.slice(offset - d - 1, offset + d + 2));
     for (let k = -d; k <= d; k += 2) {
       let x =
         k === -d || (k !== d && v[offset + k - 1]! < v[offset + k + 1]!)
@@ -49,20 +64,16 @@ function editScript(a: readonly string[], b: readonly string[]): Op[] {
       }
     }
   }
-  trace.push(v.slice());
+  if (!found) return null;
 
   // Walk back from the end through the saved frontiers.
   const ops: Op[] = [];
   let x = n;
   let y = m;
-  for (let d = trace.length - 2; d >= 0; d--) {
-    const frontier = trace[d]!;
+  for (let d = trace.length - 1; d >= 0; d--) {
     const k = x - y;
-    const prevK =
-      k === -d || (k !== d && frontier[offset + k - 1]! < frontier[offset + k + 1]!)
-        ? k + 1
-        : k - 1;
-    const prevX = d === 0 ? 0 : frontier[offset + prevK]!;
+    const prevK = k === -d || (k !== d && at(d, k - 1) < at(d, k + 1)) ? k + 1 : k - 1;
+    const prevX = d === 0 ? 0 : at(d, prevK);
     const prevY = prevX - prevK;
     while (x > prevX && y > prevY) {
       ops.push({ kind: ' ', line: a[--x]! });
@@ -98,7 +109,7 @@ export function diffLines(before: string, after: string): LineDiff {
 
   const ops: Op[] = [
     ...a.slice(0, head).map((line) => ({ kind: ' ' as const, line })),
-    ...editScript(a.slice(head, a.length - tail), b.slice(head, b.length - tail)),
+    ...middle(a.slice(head, a.length - tail), b.slice(head, b.length - tail)),
     ...a.slice(a.length - tail).map((line) => ({ kind: ' ' as const, line })),
   ];
 
@@ -145,4 +156,14 @@ export function diffLines(before: string, after: string): LineDiff {
   }
 
   return { diff: out.join('\n'), added, removed };
+}
+
+/** The changed middle: the shortest edit, or past the bound, all out then all in. */
+function middle(a: readonly string[], b: readonly string[]): Op[] {
+  return (
+    editScript(a, b) ?? [
+      ...a.map((line) => ({ kind: '-' as const, line })),
+      ...b.map((line) => ({ kind: '+' as const, line })),
+    ]
+  );
 }

@@ -219,7 +219,7 @@ function stampContextRevision(server: McpServer, context: McpRequestContext): vo
       if (result.isError === true) return result;
 
       const input = typeof args === 'object' && args !== null ? (args as ContextStampArgs) : {};
-      const claim = result.structuredContent?.['claim'] as { session_id?: unknown } | undefined;
+      const claim = result.structuredContent?.claim as { session_id?: unknown } | undefined;
       const sessionId =
         typeof input.session_id === 'string'
           ? input.session_id

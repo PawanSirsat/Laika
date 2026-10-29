@@ -166,7 +166,12 @@ beforeEach(async () => {
     '/api/v1/projects',
     {
       method: 'POST',
-      body: JSON.stringify({ name: 'secret', slug: 'secret', prefix: 'SEC', visibility: 'private' }),
+      body: JSON.stringify({
+        name: 'secret',
+        slug: 'secret',
+        prefix: 'SEC',
+        visibility: 'private',
+      }),
     },
     ownerCookie,
   );
@@ -295,6 +300,14 @@ describe('delivery to a session (§4.69)', () => {
     expect(h.db.select().from(agentSessionContextDeliveries).all()).toEqual([
       expect.objectContaining({ sessionId: session, projectId: alpha, revision: 1 }),
     ]);
+
+    // Current, so no notice: the answer is the tool's own text and nothing else.
+    const renewed = await succeeded(client, 'start_working', { task: key, session_id: session });
+    expect(text(renewed)).not.toContain('Project context changed');
+    expect(payload(renewed).context_revision).toMatchObject({
+      revision: 1,
+      delivered_revision: 1,
+    });
 
     await client.close();
   });

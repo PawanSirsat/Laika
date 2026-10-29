@@ -210,7 +210,10 @@ describe('list_projects', () => {
     await project('core', 'COR');
     await must(
       '/api/v1/projects/core/context',
-      { method: 'PATCH', body: JSON.stringify({ context_md: 'SECRET-BRIEF-MARKER', base_revision: 0 }) },
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ context_md: 'SECRET-BRIEF-MARKER', base_revision: 0 }),
+      },
       200,
     );
 
