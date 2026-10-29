@@ -1,7 +1,10 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
+import { createInterface } from 'node:readline';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, resolveTokenActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
-import { openDb } from '../../src/db/client.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
   activity,
@@ -61,6 +64,8 @@ const LEASE = DEFAULT_CLAIM_TIMINGS.expireMs;
 const TTL = 30 * MIN;
 const REPO = 'kvell/laika';
 const ZERO = '0'.repeat(40);
+const SERVER_DIR = fileURLToPath(new URL('../../', import.meta.url));
+const RACER = fileURLToPath(new URL('../helpers/accept-racer.ts', import.meta.url));
 
 let t: TestDb;
 let s: Seed;
@@ -83,6 +88,7 @@ afterEach(() => {
 interface AgentHandle {
   id: string;
   actor: ResolvedActor;
+  secret: string;
 }
 
 function agentOf(person: ResolvedActor, name: string): AgentHandle {
@@ -91,7 +97,11 @@ function agentOf(person: ResolvedActor, name: string): AgentHandle {
     harness: 'claude-code',
     grants: [{ projectId: s.projectId, scope: 'full' }],
   });
-  return { id: created.agent.id, actor: resolveTokenActor(t.db, created.secret, T0) };
+  return {
+    id: created.agent.id,
+    actor: resolveTokenActor(t.db, created.secret, T0),
+    secret: created.secret,
+  };
 }
 
 /** A Member of the project, with an agent of their own. */
@@ -639,7 +649,7 @@ describe('accepting', () => {
     ).toEqual({ code: 'conflict', reason: 'handoff_limit' });
   });
 
-  it('two receivers on two connections: exactly one wins, the other is offer_taken', () => {
+  it('two receivers in two processes, released together: exactly one wins, the other is offer_taken', async () => {
     const a = agentOf(owner, 'A');
     const b = agentOf(owner, 'B');
     const c = agentOf(owner, 'C');
@@ -650,31 +660,58 @@ describe('accepting', () => {
     const [recovery] = offersOf(id);
     expect(recovery).toMatchObject({ kind: 'recovery', state: 'open', toAgentId: null });
 
-    const second = openDb({ path: t.path });
-    try {
-      const results = [
-        { conn: t, who: b },
-        { conn: second, who: c },
-      ].map(({ conn, who }) => {
-        try {
-          return acceptHandoff(conn.sqlite, conn.db, who.actor, recovery!.id, {
-            verifiedCommitSha: cp.commit,
-            now: T0 + LEASE + 1,
-          }).claim.agent_id;
-        } catch (err) {
-          return (err as ApiError).details as { reason: string };
-        }
+    // Each racer is its own process with its own connection to the same file.
+    const racers = [b, c].map((who) =>
+      spawn(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          RACER,
+          t.path,
+          who.secret,
+          recovery!.id,
+          cp.commit,
+          String(T0 + LEASE + 1),
+        ],
+        { cwd: SERVER_DIR, stdio: ['pipe', 'pipe', 'inherit'] },
+      ),
+    );
+    const outputs = racers.map((child) => {
+      const lines = createInterface({ input: child.stdout });
+      const ready = new Promise<void>((resolve) => {
+        lines.once('line', (line) => {
+          expect(line).toBe('ready');
+          resolve();
+        });
       });
-      expect(results).toEqual([b.id, expect.objectContaining({ reason: 'offer_taken' })]);
-    } finally {
-      second.sqlite.close();
-    }
+      const answer = ready.then(
+        () =>
+          new Promise<Record<string, unknown>>((resolve) => {
+            lines.once('line', (line) => {
+              resolve(JSON.parse(line) as Record<string, unknown>);
+            });
+          }),
+      );
+      return { ready, answer, exited: once(child, 'exit') };
+    });
+    await Promise.all(outputs.map((o) => o.ready));
+    // Both connections are open; release them in the same tick.
+    for (const child of racers) child.stdin.end('go\n');
+    const answers = await Promise.all(outputs.map((o) => o.answer));
+    await Promise.all(outputs.map((o) => o.exited));
+
+    const winners = answers.filter((x) => 'won' in x);
+    const losers = answers.filter((x) => !('won' in x));
+    expect(winners, JSON.stringify(answers)).toHaveLength(1);
+    expect(losers).toEqual([{ code: 'conflict', reason: 'offer_taken' }]);
+    expect([b.id, c.id]).toContain(winners[0]!.won);
     expect(claimsOf(id)).toEqual([
       [1, 'expired'],
       [2, 'active'],
     ]);
     expect(rowsOf(id, 'task.handoff_accepted')).toHaveLength(1);
-  });
+  }, 30_000);
 });
 
 // ------------------------------------------------------- decline and cancel
