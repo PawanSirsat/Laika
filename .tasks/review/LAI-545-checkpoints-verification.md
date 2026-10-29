@@ -324,3 +324,19 @@ parity test red. A no-op control is refused by the harness.
 `npx vitest run test/mcp/parity.test.ts` 1 (27 passed, 3 failed — the three
 docs/LAI-546 reds already quoted, nothing new); `pnpm run typecheck` 0; eslint
 and prettier on the four changed files 0.
+
+## Review round 2 (Codex, at `e8d71b61`) — fixed as a new commit
+
+P1 prune atomicity and P3 null parity passed. One blocker: `cancelledAt`
+counted every `task.status_changed` row with `to: cancelled`, including a move
+between two cancelled statuses (`from` equal to `to`, which §5 does not treat
+as a transition), so a move on day 89 postponed pruning to about day 179. Now
+only a row whose `from` is another category counts.
+
+Test: a second cancelled status is created; the task is cancelled on day 0,
+moved to the other cancelled status on day 89 (asserted written as
+`cancelled → cancelled`); kept at day 90, pruned after it. Mutation: dropping
+the `from` condition turns exactly that test red.
+
+`npx vitest run test/services/checkpoints.test.ts` exit 0 (27 tests);
+`pnpm run typecheck` 0; eslint and prettier on the two changed files 0.
