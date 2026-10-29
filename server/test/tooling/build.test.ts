@@ -45,6 +45,13 @@ const DIST = join(SERVER_ROOT, 'dist');
  *
  * Two defences: a port the OS says is free, and a health check that proves the
  * server answering is the one this test started.
+ *
+ * **Free is a moment, not a reservation** (LAI-598). The probe closes before
+ * the child binds, and a CI runner has other test files and outgoing
+ * connections taking ports in between: master run 40837715398 died on
+ * `listen EADDRINUSE 0.0.0.0:44249`. The server refuses `PORT=0`, so
+ * {@link startBuiltServer} asks again on a new port instead — see
+ * {@link BOOT_ATTEMPTS}.
  */
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -313,12 +320,37 @@ function builtServerEnv(port: number, publicDir: string, dbPath: string): NodeJS
   };
 }
 
-/** `dbPath` names a database the caller prepared and removes; absent, a fresh one. */
-async function startBuiltServer(
-  port: number,
-  publicDir: string,
-  dbPath?: string,
-): Promise<BuiltServer> {
+/**
+ * How many ports a boot tries before it reports the boot as failed (LAI-598).
+ * Only a lost port is retried — a child that exits `EADDRINUSE`, or a port
+ * already answered by another server; any other failure is reported at once.
+ */
+const BOOT_ATTEMPTS = 3;
+
+/** A boot that lost its port to another process, as opposed to one that failed. */
+class PortTaken extends Error {}
+
+/**
+ * Boot the built server on a port of its own, asking again on a new one when
+ * another process took the port first (LAI-598).
+ *
+ * `database`, when given, prepares a database the caller removes and returns
+ * its path. It is called **once per attempt**: a child that lost its port has
+ * already migrated and purged it before `listen`, so a retry must boot against
+ * the state the case prepared, not what the lost attempt left behind.
+ */
+async function startBuiltServer(publicDir: string, database?: () => string): Promise<BuiltServer> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await bootOnce(await freePort(), publicDir, database?.());
+    } catch (error) {
+      if (!(error instanceof PortTaken) || attempt >= BOOT_ATTEMPTS) throw error;
+    }
+  }
+}
+
+/** One boot on `port`; `dbPath` names a database the caller removes, absent a fresh one. */
+async function bootOnce(port: number, publicDir: string, dbPath?: string): Promise<BuiltServer> {
   const dbDir = dbPath === undefined ? mkdtempSync(join(tmpdir(), 'laika-built-run-')) : null;
 
   // For the identity check in `waitForHealth`: our child's age.
@@ -358,6 +390,10 @@ async function startBuiltServer(
     await waitForHealth(port, spawnedAt, exited, () => output);
   } catch (error) {
     await dispose();
+    const message = error instanceof Error ? error.message : String(error);
+    if (output.includes('EADDRINUSE') || message.includes('answered by another server')) {
+      throw new PortTaken(message);
+    }
     throw error;
   }
 
@@ -375,11 +411,10 @@ async function startBuiltServer(
 
 /** A server of its own for one case: boot it, run `fn` against it, remove it. */
 async function withBuiltServer<T>(
-  port: number,
   publicDir: string,
   fn: (baseUrl: string) => Promise<T>,
 ): Promise<T> {
-  const server = await startBuiltServer(port, publicDir);
+  const server = await startBuiltServer(publicDir);
   try {
     return await fn(server.baseUrl);
   } finally {
@@ -412,7 +447,7 @@ describe('the built server, run the way the container runs it', () => {
       // is the asset `tsc` does not copy.
       emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
       try {
-        server = await startBuiltServer(await freePort(), emptyPublic);
+        server = await startBuiltServer(emptyPublic);
       } catch (error) {
         bootError = error instanceof Error ? error.message : String(error);
       }
@@ -514,7 +549,7 @@ describe('the built server, run the way the container runs it', () => {
     // The assertion is a **number**, not "it exited" — it exits either way.
     const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-shutdown-'));
 
-    const { elapsed, serverLog } = await timeShutdownWithOpenStream(await freePort(), emptyPublic);
+    const { elapsed, serverLog } = await timeShutdownWithOpenStream(emptyPublic);
 
     // **Measured, four ways** (LAI-142, on this machine):
     //
@@ -553,7 +588,7 @@ describe('the built server, run the way the container runs it', () => {
       'utf8',
     );
 
-    const result = await withBuiltServer(await freePort(), builtPublic, async (baseUrl) => {
+    const result = await withBuiltServer(builtPublic, async (baseUrl) => {
       const spa = await fetch(`${baseUrl}/board/LAI-1`);
       return { status: spa.status, text: await spa.text() };
     });
@@ -586,9 +621,13 @@ describe('the built server, run the way the container runs it', () => {
  * starts after the port is bound and swallows a failing job.
  */
 describe('the built server purges pre-LAI-534 idempotency rows before it serves', () => {
-  /** A migrated database holding one old-format row and one current one. */
+  /**
+   * A migrated database holding one old-format row and one current one —
+   * made anew each call, over whatever an earlier boot left at the path.
+   */
   function seeded(dir: string, refusePurge: boolean): string {
     const path = join(dir, 'laika.db');
+    for (const file of [path, `${path}-wal`, `${path}-shm`]) rmSync(file, { force: true });
     const { db, sqlite } = openDb({ path });
     try {
       runMigrations(db);
@@ -624,8 +663,8 @@ describe('the built server purges pre-LAI-534 idempotency rows before it serves'
       const dir = mkdtempSync(join(tmpdir(), 'laika-built-purge-'));
       const publicDir = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
       try {
-        const path = seeded(dir, false);
-        const server = await startBuiltServer(await freePort(), publicDir, path);
+        const path = join(dir, 'laika.db');
+        const server = await startBuiltServer(publicDir, () => seeded(dir, false));
         try {
           const out = server.stdout();
           const purged = out.indexOf('"db.idempotency_purged"');
@@ -660,6 +699,9 @@ describe('the built server purges pre-LAI-534 idempotency rows before it serves'
       const publicDir = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
       try {
         const path = seeded(dir, true);
+        // No retry here (LAI-598): this child must exit at the purge, before
+        // `listen`, so the port is never bound. If it ever got as far as
+        // binding, the case is red whether or not the port was free.
         const child = spawn('node', [join(DIST, 'index.js')], {
           cwd: SERVER_ROOT,
           env: builtServerEnv(await freePort(), publicDir, path),
@@ -689,10 +731,9 @@ describe('the built server purges pre-LAI-534 idempotency rows before it serves'
 });
 
 async function timeShutdownWithOpenStream(
-  port: number,
   publicDir: string,
 ): Promise<{ elapsed: number; serverLog: string }> {
-  const server = await startBuiltServer(port, publicDir);
+  const server = await startBuiltServer(publicDir);
   let elapsed = Number.NaN;
 
   try {
