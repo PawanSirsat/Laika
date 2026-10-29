@@ -20,7 +20,16 @@
 
 import assert from 'node:assert/strict';
 import { type ChildProcessWithoutNullStreams, execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -64,7 +73,11 @@ function cli(args: readonly string[], input = ''): { code: number; out: string }
 
 interface Harness {
   readonly child: ChildProcessWithoutNullStreams;
-  run(event: AgentHookEvent, sessionId: string): Promise<{ stdout: string; code: number }>;
+  run(
+    event: AgentHookEvent,
+    sessionId: string,
+    extra?: Record<string, unknown>,
+  ): Promise<{ stdout: string; code: number }>;
 }
 
 function startHarness(extra: Record<string, string> = {}): Harness {
@@ -83,7 +96,7 @@ function startHarness(extra: Record<string, string> = {}): Harness {
   answers.on('line', (line) => queue.shift()?.(line));
   return {
     child,
-    run: (event, sessionId) =>
+    run: (event, sessionId, extra = {}) =>
       new Promise((resolve) => {
         queue.push((line) => {
           const answer = JSON.parse(line) as { stdout: string; stderr: string; code: number };
@@ -101,6 +114,7 @@ function startHarness(extra: Record<string, string> = {}): Harness {
           hook_event_name: names[event],
           cwd: home,
           ...(event === 'session-start' ? { source: 'startup' } : {}),
+          ...extra,
         });
         child.stdin.write(
           `${JSON.stringify({ command: agentHookCommand(HOOK, event, 'claude-code'), payload })}\n`,
@@ -336,6 +350,56 @@ void describe('laika agent, against a real board', () => {
     assert.equal(again.status, 409);
     assert.equal(body.error.details.reason, 'stale_claim');
     assert.equal(body.error.details.end_reason, 'ended');
+    harness.child.kill('SIGKILL');
+  });
+
+  void test('the board records the harness, its version and model; a switched model on a heartbeat (LAI-588)', async () => {
+    // A transcript in Claude Code's shape: `version` on each line, the model on replies.
+    const transcript = join(home, 'hs-self.jsonl');
+    const line = (model: string) =>
+      `${JSON.stringify({ type: 'user', version: '2.1.312' })}\n` +
+      `${JSON.stringify({ type: 'assistant', version: '2.1.312', message: { model } })}\n`;
+    writeFileSync(transcript, line('claude-opus-5-5'));
+    const harness = startHarness();
+    await harness.run('session-start', 'hs-self', { transcript_path: transcript });
+    const sessionId = readStateOf('hs-self').session_id ?? '';
+
+    // What the board holds, read back through its own answer.
+    const session = async () => {
+      const beat = await must(
+        await api(`/api/v1/agent-sessions/${sessionId}/heartbeat`, { method: 'POST' }),
+        200,
+      );
+      const s = beat.session as Record<string, unknown>;
+      return {
+        client_version: s.client_version,
+        harness: s.harness,
+        harness_version: s.harness_version,
+        model: s.model,
+      };
+    };
+    assert.deepEqual(await session(), {
+      client_version: 'laika-agent/claude-code',
+      harness: 'claude-code',
+      harness_version: '2.1.312',
+      model: 'claude-opus-5-5',
+    });
+
+    // The model is switched; the next prompt's hook reads it, the watcher sends it.
+    appendFileSync(transcript, line('claude-sonnet-5-5'));
+    assert.equal(
+      (await harness.run('prompt', 'hs-self', { transcript_path: transcript })).stdout,
+      '',
+    );
+    await until('the switch to reach the board', () =>
+      readStateOf('hs-self').reported?.model === 'claude-sonnet-5-5' ? true : undefined,
+    );
+    assert.deepEqual(await session(), {
+      client_version: 'laika-agent/claude-code',
+      harness: 'claude-code',
+      harness_version: '2.1.312',
+      model: 'claude-sonnet-5-5',
+    });
     harness.child.kill('SIGKILL');
   });
 
