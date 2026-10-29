@@ -251,6 +251,8 @@ export function Dropdown<V extends string = string>({
       if (disabled) return;
       setQuery('');
       setSearchWanted(false);
+      // Whatever closed the last session, this one starts on the trigger.
+      setInSearchBox(false);
       reveal.current = true;
       setActive(openingOption(ordered, value, start, reachDisabled)?.value);
       setOpen(true);
@@ -263,6 +265,9 @@ export function Dropdown<V extends string = string>({
     setOpen(false);
     setQuery('');
     setSearchWanted(false);
+    // The search box is gone with the panel, and a removed element sends no
+    // blur: without this, a reopened list would be named from it.
+    setInSearchBox(false);
     // A new session types from scratch (LAI-726 round 1).
     typed.current = { buffer: '', at: 0 };
     if (refocus) trigger.current?.focus();
@@ -560,6 +565,8 @@ export function Dropdown<V extends string = string>({
          */
         setOpen(false);
         setQuery('');
+        setSearchWanted(false);
+        setInSearchBox(false);
         typed.current = { buffer: '', at: 0 };
         if (inSearch) trigger.current?.focus();
         return;
@@ -617,7 +624,9 @@ export function Dropdown<V extends string = string>({
             placeholder={`Search ${noun}`}
             aria-label={`Search ${noun}`}
             aria-controls={listId}
-            aria-activedescendant={activeId}
+            // With `searchOnType`, only while it has focus: one element, the
+            // focused one, names the active option.
+            aria-activedescendant={!searchOnType || inSearchBox ? activeId : undefined}
             autoComplete="off"
             spellCheck={false}
             value={query}
@@ -765,6 +774,8 @@ export function Dropdown<V extends string = string>({
           const to = event.relatedTarget as Node | null;
           if (to !== null && panel.current?.contains(to) === true) return;
           setOpen(false);
+          setSearchWanted(false);
+          setInSearchBox(false);
         }}
       >
         {display ?? (

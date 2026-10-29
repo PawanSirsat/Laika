@@ -8,6 +8,13 @@ export interface AgentChipProps {
   readonly device: string;
   /** Who owns the agent, for the tooltip. The chip itself stays short. */
   readonly owner?: string | undefined;
+  /**
+   * What tells this agent from another with its harness and device — the
+   * name its owner registered (LAI-583). The chip then shows it in place of
+   * the device, which an ellipsis would cut; the device is still read aloud
+   * and on hover.
+   */
+  readonly twin?: string | undefined;
 }
 
 /**
@@ -24,17 +31,27 @@ export interface AgentChipProps {
  * keeps its own meaning — *written through an agent* — which is not the same
  * fact as *an agent is selected to do it*.
  */
-export function AgentChip({ client, device, owner }: AgentChipProps) {
+export function AgentChip({ client, device, owner, twin }: AgentChipProps) {
   const name = agentClientName(client);
+  const where = twin === undefined ? device : `${device} (${twin})`;
   return (
     <span
       className="agent-chip"
       data-agent-chip={client}
-      title={owner === undefined ? `${name} on ${device}` : `${owner}’s ${name} on ${device}`}
+      title={owner === undefined ? `${name} on ${where}` : `${owner}’s ${name} on ${where}`}
     >
       <AgentMark client={client} size="sm" />
       <span className="agent-chip-text">
-        {name} · {device}
+        {name} ·{' '}
+        {twin === undefined ? (
+          device
+        ) : (
+          <>
+            <span className="visually-hidden">{device} (</span>
+            {twin}
+            <span className="visually-hidden">)</span>
+          </>
+        )}
       </span>
     </span>
   );

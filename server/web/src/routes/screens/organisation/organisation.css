@@ -2121,6 +2121,26 @@
   font-weight: var(--weight-semibold);
 }
 
+/*
+ * *via Claude Code · Belka* (LAI-570) takes a line of its own under the
+ * person and the chip: in an 11rem column beside them it broke both the name
+ * and *AGENT* mid-word.
+ */
+.oh-who:has(.oh-via) {
+  flex-wrap: wrap;
+}
+.oh-who .org-chip {
+  flex: none;
+  white-space: nowrap;
+}
+.oh-via {
+  order: 1;
+  flex-basis: 100%;
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+
 .oh-what {
   grid-area: what;
   min-width: 0;

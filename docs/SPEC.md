@@ -2737,11 +2737,12 @@ credential is not an org credential with a project filter.
   and if refused the route runs instead. A token replays only its own answers,
   and an answer carrying a one-time secret is never stored. Same key with a
   different body is `conflict`. **One route keeps its own key** (LAI-746):
-  `POST /users/:id/ratings`, which is session-only (§3.1). The shared store
-  answers before the route runs, keyed by user rather than credential, and keeps
-  the response body — which there is a private note — so that route stores the
-  key on the rating and answers a retry from it after `can()`. Its keys are per
-  rater and do not expire.
+  `POST /users/:id/ratings`, which is session-only (§3.1). Requests made with a
+  token are keyed by that token, so one credential never replays another's
+  answer; requests made with a browser session are keyed by the user. The shared
+  store answers before the route runs and keeps the response body — which there
+  is a private note — so that route stores the key on the rating and answers a
+  retry from it after `can()`. Its keys are per rater and do not expire.
 - **Rate limits**: in-process token bucket — 120 req/min per token, 600/min per
   session, 30/min for heartbeats, and for local-activity reports (`PUT
   /me/local-activity`, D-079) a bucket of **30, refilled one every 120
@@ -4001,10 +4002,10 @@ a new activity verb: each writes `task.status_changed` with `via: "accept"` or
 `comment.added`.
 
 **A token never replays a session's answer it could not have had** (§6.3).
-Idempotency keys are the person's, not the credential's (LAI-748), so a
-stored answer to the same key and body is found by the same person's token.
-For a review decision, and for any stored task in a done category, the route
-runs instead and answers the token itself.
+Requests made with a token are keyed by that token, so a session's stored answer
+is never found by a token (LAI-534). As a second lock, for a review decision,
+and for any stored task in a done category, the route runs instead and answers
+the token itself.
 
 **Project statuses (§4.20)** are served as
 `{ id, project_id, name, category, position, hidden, created_at, task_count }`,
