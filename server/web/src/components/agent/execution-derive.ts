@@ -8,8 +8,8 @@ import {
   type AgentNaming,
   type SelectedAgent,
 } from '../../api/selected-agent.ts';
-import type { TaskSummary } from '../../api/tasks.ts';
-import { clockTime } from '../../api/time-label.ts';
+import type { TaskLiveClaim, TaskSummary } from '../../api/tasks.ts';
+import { clockTime, timeLabel } from '../../api/time-label.ts';
 import type { ExecutionState } from './agent-states.ts';
 import type { AgentChipProps } from './AgentChip.tsx';
 import type { PanelAgent, PanelClaim } from './ExecutionPanel.tsx';
@@ -31,22 +31,57 @@ import type { PanelAgent, PanelClaim } from './ExecutionPanel.tsx';
  *    `task.updated` with `field: 'claim'`), and LAI-541's two verbs record it
  *    lapsing and being taken back. That is a **history**, not a heartbeat.
  *
- * **What is not here, and why.** *Working* means a session holds the claim
- * **and is checking in**; *Connection lost* means it stopped. Both need the
- * live claim and its session's `last_heartbeat_at` / `connection`, which no
- * task read returns yet — `TaskView` carries no claim, and heartbeats write no
- * activity. LAI-568 asks CORE to serve them. Until then neither is derived:
- * a "Working" read off an old activity row would say an agent is checking in
- * when nothing says so.
+ * 3. **The live claim** (LAI-568, LAI-597). Every task read carries `claim` —
+ *    the task's `active` or `paused` claim, its session's `last_heartbeat_at`,
+ *    and `suspect_after_ms` — or null. A claim checking in is *Working*; one
+ *    whose heartbeat is `suspect_after_ms` old, or that the server already
+ *    served `suspect`, is *Connection lost*. **Heartbeats write no activity**,
+ *    so nothing re-reads the task when a session goes quiet: the answer is
+ *    taken on the reader's own clock ({@link suspectAt}), and a card left open
+ *    moves from one to the other without a request.
+ *
+ * A claim null or absent — a view served before LAI-568 — is the answer from
+ * the first two sources, unchanged.
  */
 
 /** Statuses an agent's claim has not reached yet. */
 const NOT_STARTED: ReadonlySet<string> = new Set(['backlog', 'todo']);
 
-/** The card's one state, or `null` for none. */
+/**
+ * The moment this claim stops counting as checking in, on the reader's clock —
+ * its last heartbeat plus `suspect_after_ms`. `undefined` when the server
+ * already served it `suspect`: there is nothing left to wait for.
+ */
+export function suspectAt(claim: TaskLiveClaim): number | undefined {
+  return claim.connection === 'suspect'
+    ? undefined
+    : claim.last_heartbeat_at + claim.suspect_after_ms;
+}
+
+/**
+ * Whether the live claim is checking in **as of `now`**. A heartbeat exactly
+ * `suspect_after_ms` old is already suspect — the server's own boundary
+ * (`services/claims.ts`), so the two never disagree on the same instant.
+ */
+export function liveConnection(claim: TaskLiveClaim, now: number): 'live' | 'suspect' {
+  const at = suspectAt(claim);
+  return at !== undefined && now < at ? 'live' : 'suspect';
+}
+
+/**
+ * The card's one state, or `null` for none.
+ *
+ * A live claim decides first: *Working* or *Connection lost*, as of `now`.
+ * Without one, an agent picked for a task not started is *Waiting for agent*.
+ */
 export function cardExecutionState(
-  task: Pick<TaskSummary, 'status' | 'selected_agent'>,
+  task: Pick<TaskSummary, 'status' | 'selected_agent' | 'claim'>,
+  now: number = Date.now(),
 ): ExecutionState | null {
+  const claim = task.claim ?? null;
+  if (claim !== null) {
+    return liveConnection(claim, now) === 'live' ? 'working' : 'connection_lost';
+  }
   if (task.selected_agent?.status !== 'active') return null;
   return NOT_STARTED.has(task.status) ? 'waiting_for_agent' : null;
 }
@@ -235,19 +270,55 @@ export interface ExecutionView {
   readonly claim: PanelClaim | undefined;
   readonly claimExpired: boolean;
   readonly generation: number | null;
+  /**
+   * The session holding the live claim (LAI-597): a chip when its agent can be
+   * named, else words. `undefined` when the read carried no live claim — the
+   * panel then leaves the row out rather than say *No session*.
+   */
+  readonly session: AgentChipProps | string | undefined;
+  /** Its last heartbeat, worded as of `now`: *just now*, *3 min ago*. */
+  readonly lastSeen: string | undefined;
+  /** Its last heartbeat, as a time, for the full date. */
+  readonly lastSeenAt: number | undefined;
+  /** `claim.session_id`, under Details. */
+  readonly liveSessionId: string | undefined;
+}
+
+/**
+ * The live claim's session, as a chip: its agent named by this reader, on the
+ * device the session reported — the agent's own when it reported none.
+ */
+function liveSessionOf(
+  claim: TaskLiveClaim,
+  selected: SelectedAgent | null,
+  agents: ReadonlyMap<string, AgentNaming>,
+): AgentChipProps | string {
+  const named = agents.get(claim.agent_id);
+  if (named === undefined) return UNNAMED_AGENT;
+  const device = claim.device_label ?? null;
+  return chipOf(
+    device === null || device === '' ? named : { ...named, device_label: device },
+    selected !== null && selected.id === claim.agent_id ? selected.owner.name : undefined,
+  );
 }
 
 export function executionView(
-  task: Pick<TaskSummary, 'status' | 'selected_agent'>,
+  task: Pick<TaskSummary, 'status' | 'selected_agent' | 'claim'>,
   activity: readonly ActivityEvent[],
   agents: ReadonlyMap<string, AgentNaming>,
+  now: number = Date.now(),
 ): ExecutionView {
   const selected = task.selected_agent ?? null;
+  const live = task.claim ?? null;
   const history = claimHistory(activity);
   const fact = history.kind === 'none' ? undefined : history.fact;
   const named = fact?.agentId == null ? undefined : agents.get(fact.agentId);
   return {
-    state: cardExecutionState(task),
+    state: cardExecutionState(task, now),
+    session: live === null ? undefined : liveSessionOf(live, selected, agents),
+    lastSeen: live === null ? undefined : timeLabel(live.last_heartbeat_at, now).text,
+    lastSeenAt: live?.last_heartbeat_at,
+    liveSessionId: live?.session_id,
     intended: selected === null ? null : panelAgentOf(selected),
     claim:
       fact === undefined || history.kind === 'none'
@@ -276,18 +347,40 @@ export function executionView(
             model: fact.session?.model ?? null,
           },
     claimExpired: history.kind === 'expired',
-    generation: fact?.generation ?? null,
+    // The live claim's own, when there is one: the history may trail it.
+    generation: live?.generation ?? fact?.generation ?? null,
   };
 }
 
 /**
- * Whether the drawer's panel has anything to add: a claim on record. An agent
- * picked and not yet taken is the Agent row's to say (LAI-538), with its
- * *Waiting for agent* line; the panel draws the intended agent only beside the
- * one that actually took the work.
+ * Whether the drawer's panel has anything to add: a live claim, or a claim on
+ * record. An agent picked and not yet taken is the Agent row's to say
+ * (LAI-538), with its *Waiting for agent* line; the panel draws the intended
+ * agent only beside the one that actually took the work.
  */
 export function hasExecution(view: ExecutionView): boolean {
-  return view.claim !== undefined;
+  return view.claim !== undefined || view.session !== undefined;
+}
+
+/**
+ * The card's words after *Working* or *Connection lost*: the holding agent and
+ * the device its session reported — *Claude Code · Belka* (D-118). Named only
+ * from the task's selected agent, the one agent the card can name; a claim by
+ * any other agent says its device alone, or nothing.
+ */
+export function liveClaimDetail(
+  task: Pick<TaskSummary, 'selected_agent' | 'claim'>,
+): string | undefined {
+  const claim = task.claim ?? null;
+  if (claim === null) return undefined;
+  const device = claim.device_label ?? null;
+  const selected = task.selected_agent ?? null;
+  if (selected !== null && selected.id === claim.agent_id) {
+    return agentLabel(
+      device === null || device === '' ? selected : { ...selected, device_label: device },
+    );
+  }
+  return device === null || device === '' ? undefined : device;
 }
 
 /**

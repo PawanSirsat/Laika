@@ -17,7 +17,8 @@ import {
   twinsOnTasks,
 } from '../../../api/selected-agent.ts';
 import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
-import { cardExecutionState } from '../../../components/agent/execution-derive.ts';
+import { cardExecutionState, liveClaimDetail } from '../../../components/agent/execution-derive.ts';
+import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
 
 export interface TaskCardProps {
   readonly task: TaskSummary;
@@ -102,7 +103,12 @@ export function TaskCard({
   const agent = fields.agent ? selectedAgentOf(task) : null;
   // What the agent's work is doing, in words (LAI-543). Rides the `agent`
   // field: a reader who hid the chip hid the agent, and its state with it.
-  const execution = fields.agent ? cardExecutionState(task) : null;
+  // A live claim is read on this reader's clock, which re-renders the card the
+  // moment its heartbeat goes stale (LAI-597).
+  const now = useClaimClock(fields.agent ? task.claim : null);
+  const execution = fields.agent ? cardExecutionState(task, now) : null;
+  const executionDetail =
+    execution === 'working' || execution === 'connection_lost' ? liveClaimDetail(task) : undefined;
 
   return (
     <article
@@ -184,9 +190,9 @@ export function TaskCard({
       )}
 
       {/* One quiet line, words beside a shape — never a colour alone. Only
-          what the task view serves: *Working* and *Connection lost* wait on
-          the live claim (LAI-568). */}
-      {execution !== null && <ExecutionStateLine state={execution} />}
+          what the task view serves: *Working* and *Connection lost* from its
+          live claim (LAI-568, LAI-597), *Waiting for agent* from its pick. */}
+      {execution !== null && <ExecutionStateLine state={execution} detail={executionDetail} />}
 
       <div className="card-foot">
         {/* Jira's priority icons (LAI-705): an up chevron, an equals sign, a

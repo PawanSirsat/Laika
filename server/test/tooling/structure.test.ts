@@ -120,6 +120,13 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ],
   ['api/use-task-detail.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   [
+    'components/agent/use-claim-clock.ts',
+    // LAI-597. The moment it waits for, suspectAt, is mirrored in
+    // test/components/agent/execution-derive.test.ts; the flip it causes is
+    // asserted with an injected clock in test/browser/agent-execution.test.ts.
+    'a React hook — no renderer in this package (CONVENTIONS §4). Its pure half, suspectAt, is tested in test/components/agent/execution-derive.test.ts and the card flipping to Connection lost in test/browser/agent-execution.test.ts.',
+  ],
+  [
     'api/use-review-count.ts',
     // LAI-758. The count is the queue's length; the queue's pure half is
     // mirrored in test/api/review.test.ts and the badge is asserted in a browser.
