@@ -243,6 +243,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.local_activity.prune',
   'system.estimate.refit',
   'system.time.prune',
+  'system.idempotency.prune',
   'system.claim.expire',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',

@@ -1,9 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { appendActivity } from '../../src/db/activity.ts';
-import { backfillTaskPositions, backfillTaskTimestamps } from '../../src/db/backfill.ts';
+import {
+  backfillTaskPositions,
+  backfillTaskTimestamps,
+  purgeUnversionedIdempotencyKeys,
+} from '../../src/db/backfill.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, projects, tasks } from '../../src/db/schema.ts';
+import { activity, idempotencyKeys, projects, tasks } from '../../src/db/schema.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 import { createDefaultProjectStatuses, statusForCategory } from '../../src/db/project-statuses.ts';
 
@@ -375,5 +379,49 @@ describe('backfillTaskPositions (LAI-472, D-070)', () => {
 
     expect(backfillTaskPositions(t.db, s.projectId)).toBe(1);
     expect(t.db.select().from(tasks).where(eq(tasks.id, elsewhere)).get()!.position).toBeNull();
+  });
+});
+
+describe('purgeUnversionedIdempotencyKeys (LAI-534 round 3)', () => {
+  let db: TestDb;
+  beforeEach(() => {
+    db = freshDb();
+  });
+  afterEach(() => {
+    db.close();
+  });
+
+  function row(actorId: string, body: string) {
+    db.db
+      .insert(idempotencyKeys)
+      .values({
+        actorId,
+        key: 'k',
+        requestHash: 'h',
+        responseStatus: 201,
+        responseBody: body,
+        createdAt: 1,
+        expiresAt: Date.now() + 60_000,
+      })
+      .run();
+  }
+
+  it('deletes every row without the owner version, and only those', () => {
+    row('01USERID', '{"secret":"lai_old"}');
+    row('token:01TOKEN', '{"secret":"lai_round1"}');
+    row('v2:user:01USERID', '{"id":"kept"}');
+    row('v2:token:01TOKEN', '{"id":"kept too"}');
+
+    expect(purgeUnversionedIdempotencyKeys(db.db)).toBe(2);
+    expect(
+      db.db
+        .select({ actorId: idempotencyKeys.actorId })
+        .from(idempotencyKeys)
+        .all()
+        .map((r) => r.actorId)
+        .sort(),
+    ).toEqual(['v2:token:01TOKEN', 'v2:user:01USERID']);
+    // And idempotent: nothing more the second time.
+    expect(purgeUnversionedIdempotencyKeys(db.db)).toBe(0);
   });
 });

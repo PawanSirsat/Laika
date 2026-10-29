@@ -5,6 +5,7 @@ import { type Db } from '../db/client.ts';
 import { projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertAgentsMay, can } from '../policy/can.ts';
+import { assertClaimFenceAll } from './claims.ts';
 import { canBeMentioned } from './mentions.ts';
 import { OPEN_STATUSES } from './tasks.ts';
 
@@ -172,6 +173,14 @@ export function applyOffboardingChoice(
   for (const t of open) {
     assertAgentsMay(withProject(actor, t.projectId), 'task.write', { projectId: t.projectId });
   }
+  // And the claim fence, for every task before the first moves (LAI-541): a
+  // token may not reassign work an agent session holds. A person may.
+  assertClaimFenceAll(
+    db,
+    actor,
+    open.map((t) => t.id),
+    now,
+  );
 
   for (const t of open) {
     db.update(tasks).set({ assigneeId: to, updatedAt: now }).where(eq(tasks.id, t.id)).run();

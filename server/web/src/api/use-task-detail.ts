@@ -1,5 +1,5 @@
 import { everyPage } from './every-page.ts';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { listTaskActivity, shownInFeed, type ActivityEvent } from './activity.ts';
 import { addComment, isComment, listComments, type Comment } from './comments.ts';
 
@@ -17,6 +17,12 @@ export interface UseTaskDetail extends TaskDetail {
   /** Rejects with the cause when the post fails, so a composer can keep the draft. */
   readonly post: (bodyMd: string) => Promise<void>;
   readonly reload: () => void;
+  /**
+   * Re-read **without** the loading state (LAI-543): for a live frame, where
+   * the panel already shows the task and blanking it would move the reader's
+   * place. A failure keeps what is on screen.
+   */
+  readonly refresh: () => void;
 }
 
 /**
@@ -39,12 +45,15 @@ export function useTaskDetail(slug: string | undefined, taskId: string | undefin
   const [attempt, setAttempt] = useState(0);
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<unknown>(null);
+  const quiet = useRef(false);
 
   useEffect(() => {
     if (slug === undefined || taskId === undefined) return;
 
     const controller = new AbortController();
-    setState((s) => ({ ...s, status: 'loading' }));
+    const isQuiet = quiet.current;
+    quiet.current = false;
+    if (!isQuiet) setState((s) => ({ ...s, status: 'loading' }));
 
     Promise.all([
       // Every page of each (LAI-703): a task's 101st comment is its newest, and
@@ -80,6 +89,7 @@ export function useTaskDetail(slug: string | undefined, taskId: string | undefin
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
+        if (isQuiet) return;
         setState({ status: 'error', comments: [], activity: [], error: cause });
       });
 
@@ -89,6 +99,11 @@ export function useTaskDetail(slug: string | undefined, taskId: string | undefin
   }, [slug, taskId, attempt]);
 
   const reload = useCallback((): void => {
+    setAttempt((n) => n + 1);
+  }, []);
+
+  const refresh = useCallback((): void => {
+    quiet.current = true;
     setAttempt((n) => n + 1);
   }, []);
 
@@ -117,5 +132,5 @@ export function useTaskDetail(slug: string | undefined, taskId: string | undefin
     [taskId],
   );
 
-  return { ...state, posting, postError, post, reload };
+  return { ...state, posting, postError, post, reload, refresh };
 }

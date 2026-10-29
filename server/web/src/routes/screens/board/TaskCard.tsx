@@ -9,6 +9,15 @@ import { childrenOf, parentOf, subtaskProgress } from '../../../api/subtask-deri
 import type { Theme } from '../../../theme/theme.ts';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { SizeChip } from '../../../components/SizeChip.tsx';
+import { AgentChip } from '../../../components/agent/AgentChip.tsx';
+import {
+  agentDevice,
+  selectedAgentOf,
+  selectedHarness,
+  twinsOnTasks,
+} from '../../../api/selected-agent.ts';
+import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
+import { cardExecutionState } from '../../../components/agent/execution-derive.ts';
 
 export interface TaskCardProps {
   readonly task: TaskSummary;
@@ -90,6 +99,10 @@ export function TaskCard({
   const sprint = task.sprint_id === null ? undefined : sprintLabels?.get(task.sprint_id);
   // `?? null`: a view served before LAI-771 has no `size`, and absent is unsized.
   const size = fields.size ? (task.size ?? null) : null;
+  const agent = fields.agent ? selectedAgentOf(task) : null;
+  // What the agent's work is doing, in words (LAI-543). Rides the `agent`
+  // field: a reader who hid the chip hid the agent, and its state with it.
+  const execution = fields.agent ? cardExecutionState(task) : null;
 
   return (
     <article
@@ -169,6 +182,11 @@ export function TaskCard({
           )}
         </p>
       )}
+
+      {/* One quiet line, words beside a shape — never a colour alone. Only
+          what the task view serves: *Working* and *Connection lost* wait on
+          the live claim (LAI-568). */}
+      {execution !== null && <ExecutionStateLine state={execution} />}
 
       <div className="card-foot">
         {/* Jira's priority icons (LAI-705): an up chevron, an equals sign, a
@@ -301,6 +319,21 @@ export function TaskCard({
         )}
 
         <span className="card-spacer" />
+
+        {/* The agent the work is meant for (LAI-538), beside the person and
+            never instead of them. Neutral: the agent colour is the owner's
+            decision (D-020). */}
+        {agent !== null && (
+          <span className="card-agent card-above">
+            <AgentChip
+              client={selectedHarness(agent)}
+              device={agentDevice(agent)}
+              // Told apart from another on this board that shares both (LAI-583).
+              twin={twinsOnTasks(byId).get(agent.id)}
+              owner={agent.owner.name}
+            />
+          </span>
+        )}
 
         {/* The dashed "+" that stood here for an unassigned card is gone
             (LAI-606): it was display-only — claiming lives in the task

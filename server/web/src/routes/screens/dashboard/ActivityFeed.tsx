@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ActivityEvent } from '../../../api/activity.ts';
+import { agentVia, type AgentNaming } from '../../../api/selected-agent.ts';
 import type { TaskSummary } from '../../../api/tasks.ts';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
@@ -44,6 +45,7 @@ export function ActivityFeed({
   now,
   rangeLabel,
   theme,
+  agentNames,
 }: {
   readonly events: readonly ActivityEvent[];
   readonly tasksById: ReadonlyMap<string, TaskSummary>;
@@ -52,6 +54,11 @@ export function ActivityFeed({
   readonly now: number;
   readonly rangeLabel: string;
   readonly theme: Theme;
+  /**
+   * The agents this reader may name (LAI-570): their own and those selected
+   * on the space's tasks, from `agentNamesFrom` — the drawer's rule.
+   */
+  readonly agentNames: ReadonlyMap<string, AgentNaming>;
 }) {
   /**
    * Which actors the feed shows. Local, not a URL parameter: it is a way of
@@ -130,6 +137,8 @@ export function ActivityFeed({
                     ];
               lastDay = day;
               const task = event.task_id === null ? undefined : tasksById.get(event.task_id);
+              // *Pawan via Claude Code · Belka*, as the drawer says it (LAI-570).
+              const via = agentVia(event, agentNames);
 
               return [
                 ...heading,
@@ -150,7 +159,8 @@ export function ActivityFeed({
                   </span>
 
                   <span className="dash-what">
-                    <span className="dash-actor">{nameOf(event.actor_id)}</span>{' '}
+                    <span className="dash-actor">{nameOf(event.actor_id)}</span>
+                    {via !== undefined && <span className="dash-via"> via {via}</span>}{' '}
                     {describeProjectEvent(event)}
                     {moved !== undefined && (
                       <span className="dash-move">

@@ -64,6 +64,13 @@ export interface CardFields {
    * set it. No hours on the card — those are the task panel's.
    */
   readonly size: boolean;
+  /**
+   * The selected agent's chip, *Claude Code · laptop-1* (LAI-538), beside the
+   * avatar. **Not** the agent badge on the avatar's corner: that one says an
+   * agent *wrote* the card (`created_via === 'mcp'`) and stays with
+   * `assignee`; this says which agent the work is *meant for*.
+   */
+  readonly agent: boolean;
 }
 
 /** Everything on, so a board with no stored preference looks exactly as before. */
@@ -77,6 +84,7 @@ export const ALL_FIELDS: CardFields = Object.freeze({
   subtasks: true,
   due: true,
   size: true,
+  agent: true,
 });
 
 /** The panel's rows, in the order it lists them. */
@@ -91,6 +99,7 @@ export const FIELD_LABELS: Readonly<Record<keyof CardFields, string>> = {
   due: 'Due date',
   // Called effort on screen (LAI-785); the stored key stays `size`.
   size: 'Effort',
+  agent: 'Agent',
 };
 
 export const FIELD_KEYS = Object.keys(FIELD_LABELS) as (keyof CardFields)[];
@@ -112,6 +121,7 @@ export const FIELD_ICONS: Readonly<Record<keyof CardFields, string>> = {
   subtasks: '\u21b3',
   due: '\u25a6',
   size: '\u25a3',
+  agent: '\u25c8',
 };
 
 /**

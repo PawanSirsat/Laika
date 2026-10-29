@@ -6,6 +6,10 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
+import { openDb } from '../../src/db/client.ts';
+import { runMigrations } from '../../src/db/migrate.ts';
+import { idempotencyKeys } from '../../src/db/schema.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 import { DEFAULT_GRACE_MS } from '../../src/shutdown.ts';
 
@@ -297,22 +301,31 @@ interface BuiltServer {
  * **The one place this file spawns the server** (LAI-768): the health wait has
  * to know when the child has died, so it needs the child.
  */
-async function startBuiltServer(port: number, publicDir: string): Promise<BuiltServer> {
-  const dbDir = mkdtempSync(join(tmpdir(), 'laika-built-run-'));
+function builtServerEnv(port: number, publicDir: string, dbPath: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PORT: String(port),
+    NODE_ENV: 'development',
+    LAIKA_PUBLIC_URL: `http://127.0.0.1:${String(port)}`,
+    LAIKA_SECRET: 'a-test-secret-that-is-long-enough-to-be-accepted',
+    LAIKA_DB_PATH: dbPath,
+    LAIKA_PUBLIC_DIR: publicDir,
+  };
+}
+
+/** `dbPath` names a database the caller prepared and removes; absent, a fresh one. */
+async function startBuiltServer(
+  port: number,
+  publicDir: string,
+  dbPath?: string,
+): Promise<BuiltServer> {
+  const dbDir = dbPath === undefined ? mkdtempSync(join(tmpdir(), 'laika-built-run-')) : null;
 
   // For the identity check in `waitForHealth`: our child's age.
   const spawnedAt = Date.now();
   const child = spawn('node', [join(DIST, 'index.js')], {
     cwd: SERVER_ROOT,
-    env: {
-      ...process.env,
-      PORT: String(port),
-      NODE_ENV: 'development',
-      LAIKA_PUBLIC_URL: `http://127.0.0.1:${String(port)}`,
-      LAIKA_SECRET: 'a-test-secret-that-is-long-enough-to-be-accepted',
-      LAIKA_DB_PATH: join(dbDir, 'laika.db'),
-      LAIKA_PUBLIC_DIR: publicDir,
-    },
+    env: builtServerEnv(port, publicDir, dbPath ?? join(dbDir ?? '', 'laika.db')),
     stdio: 'pipe',
   });
 
@@ -338,7 +351,7 @@ async function startBuiltServer(port: number, publicDir: string): Promise<BuiltS
   const dispose = async (): Promise<void> => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     await exited;
-    rmSync(dbDir, { recursive: true, force: true });
+    if (dbDir !== null) rmSync(dbDir, { recursive: true, force: true });
   };
 
   try {
@@ -565,6 +578,116 @@ describe('the built server, run the way the container runs it', () => {
  * `shutdown.complete` say whether the delay was inside the server or in getting
  * the signal to it, which is the first question anyone will ask.
  */
+/**
+ * The upgrade purge is a boot barrier (LAI-534 round 3, Codex review of PR
+ * #102): idempotency rows written before LAI-534 may hold plaintext secrets,
+ * and the server must delete them **before it accepts a request**, and must
+ * not start at all if it cannot. The hourly job is not that: the scheduler
+ * starts after the port is bound and swallows a failing job.
+ */
+describe('the built server purges pre-LAI-534 idempotency rows before it serves', () => {
+  /** A migrated database holding one old-format row and one current one. */
+  function seeded(dir: string, refusePurge: boolean): string {
+    const path = join(dir, 'laika.db');
+    const { db, sqlite } = openDb({ path });
+    try {
+      runMigrations(db);
+      for (const actorId of ['01OLDUSER', 'v2:user:01NEWUSER']) {
+        db.insert(idempotencyKeys)
+          .values({
+            actorId,
+            key: 'k',
+            requestHash: 'h',
+            responseStatus: 201,
+            responseBody: actorId === '01OLDUSER' ? '{"secret":"lai_plaintext_on_disk"}' : '{}',
+            createdAt: 1,
+            expiresAt: Date.now() + 86_400_000,
+          })
+          .run();
+      }
+      if (refusePurge) {
+        db.run(sql`
+          CREATE TRIGGER refuse_purge BEFORE DELETE ON idempotency_keys
+          BEGIN SELECT RAISE(ABORT, 'purge refused for the test'); END
+        `);
+      }
+    } finally {
+      sqlite.close();
+    }
+    return path;
+  }
+
+  it(
+    'deletes them, and logs it, before it logs that it is listening',
+    async (ctx) => {
+      skipIfBuildFailed(ctx);
+      const dir = mkdtempSync(join(tmpdir(), 'laika-built-purge-'));
+      const publicDir = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
+      try {
+        const path = seeded(dir, false);
+        const server = await startBuiltServer(await freePort(), publicDir, path);
+        try {
+          const out = server.stdout();
+          const purged = out.indexOf('"db.idempotency_purged"');
+          const listening = out.indexOf('"server.listening"');
+          expect(purged, out).toBeGreaterThan(-1);
+          expect(listening, out).toBeGreaterThan(-1);
+          expect(purged, 'purged before the port was bound').toBeLessThan(listening);
+        } finally {
+          await server.dispose();
+        }
+        const { db, sqlite } = openDb({ path });
+        try {
+          const left = db.select().from(idempotencyKeys).all();
+          expect(left.map((r) => r.actorId)).toEqual(['v2:user:01NEWUSER']);
+          expect(JSON.stringify(left)).not.toContain('lai_plaintext_on_disk');
+        } finally {
+          sqlite.close();
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+        rmSync(publicDir, { recursive: true, force: true });
+      }
+    },
+    HEALTH_BUDGET_MS + 20_000,
+  );
+
+  it(
+    'does not start at all when the purge fails',
+    async (ctx) => {
+      skipIfBuildFailed(ctx);
+      const dir = mkdtempSync(join(tmpdir(), 'laika-built-purge-'));
+      const publicDir = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
+      try {
+        const path = seeded(dir, true);
+        const child = spawn('node', [join(DIST, 'index.js')], {
+          cwd: SERVER_ROOT,
+          env: builtServerEnv(await freePort(), publicDir, path),
+          stdio: 'pipe',
+        });
+        let output = '';
+        child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
+        child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()));
+        const timer = setTimeout(() => child.kill('SIGKILL'), HEALTH_BUDGET_MS);
+        const code = await new Promise<number | null>((resolve) => {
+          child.on('exit', (exit) => {
+            clearTimeout(timer);
+            resolve(exit);
+          });
+        });
+
+        expect(code, output).toBe(1);
+        expect(output).toContain('purge refused for the test');
+        expect(output, 'it never bound the port').not.toContain('"server.listening"');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+        rmSync(publicDir, { recursive: true, force: true });
+      }
+    },
+    HEALTH_BUDGET_MS + 20_000,
+  );
+});
+
 async function timeShutdownWithOpenStream(
   port: number,
   publicDir: string,

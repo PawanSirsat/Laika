@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type Browser, type ElementHandle, type Page } from 'playwright';
 
 /**
  * A real browser against the real built SPA (LAI-227).
@@ -154,6 +154,10 @@ const EVERY_ROLE_ORG = [
   // Everyone may sign themselves out everywhere (LAI-981): conditional, and
   // `/permissions` lists a conditional action the caller holds about themselves.
   'user.sign_out',
+  // A person's own registered agents (D-114, LAI-534): every role's, and
+  // managing them is a signed-in session's, which a browser always is.
+  'agent.read_own',
+  'agent.manage_own',
 ] as const;
 const ADMIN_UP_ORG = [
   'org.settings.edit',
@@ -718,6 +722,34 @@ export async function closeBrowser(): Promise<void> {
 }
 
 /**
+ * How long one attempt at the theme control may take (LAI-578). A control
+ * still in the document after this has refused, and `setTheme` fails with
+ * the refusal rather than trying again.
+ */
+export const THEME_CLICK_MS = 10_000;
+
+/**
+ * Run `act` on `control`. `true` if it failed because `control` left the
+ * document — the signed-in shell replaced it — so the caller chooses again;
+ * every other failure is rethrown unchanged (LAI-578).
+ */
+async function replacedDuring(control: ElementHandle, act: () => Promise<void>): Promise<boolean> {
+  try {
+    await act();
+    return false;
+  } catch (error) {
+    let connected = true;
+    try {
+      connected = await control.evaluate((el) => el.isConnected);
+    } catch {
+      // The page itself went away; that is not the replacement this allows.
+    }
+    if (connected) throw error;
+    return true;
+  }
+}
+
+/**
  * Put the page in a theme **through the real control** (LAI-249).
  *
  * The control became the design's two-state `ThemeSwitch`, so "select Dark"
@@ -739,27 +771,56 @@ export async function setTheme(page: Page, theme: string) {
   const wantDark = theme.toLowerCase() === 'dark';
   const reads = () => document.documentElement.getAttribute('data-theme') !== 'light';
 
-  const isDark = await page.evaluate(reads);
-  if (wantDark !== isDark) {
-    /*
-     * **Two real controls since LAI-796.** Signed in, the theme is an item in
-     * the user menu at the foot of the sidebar; before a session there is no
-     * sidebar and the header carries `ThemeSwitch`. Both write the one store.
-     *
-     * The menu's clicks are dispatched rather than pointed: on a phone the
-     * sidebar is off-canvas, so its button is outside the viewport, and the
-     * question here is the theme, not whether the off-canvas menu is open.
-     */
-    const control = page.locator('.theme-switch, .user-menu-trigger').first();
-    await control.waitFor({ state: 'attached', timeout: 10_000 });
-    if ((await control.getAttribute('class'))?.includes('theme-switch') === true) {
-      await control.click();
-    } else {
-      await control.dispatchEvent('click');
-      const item = page.locator('.user-menu-theme');
-      await item.waitFor({ state: 'attached', timeout: 5_000 });
-      await item.dispatchEvent('click');
+  /*
+   * **Two real controls since LAI-796.** Signed in, the theme is an item in
+   * the user menu at the foot of the sidebar; before a session there is no
+   * sidebar and the header carries `ThemeSwitch`. Both write the one store.
+   *
+   * The menu's clicks are dispatched rather than pointed: on a phone the
+   * sidebar is off-canvas, so its button is outside the viewport, and the
+   * question here is the theme, not whether the off-canvas menu is open.
+   *
+   * **Each control is chosen afresh only when the session replaced the last
+   * one** (LAI-576, narrowed by LAI-578). A test calls this straight after
+   * `open`, while `/me` may still be in flight, so the header's switch can be
+   * detached by the signed-in shell between being chosen and being clicked.
+   * One locator for both then re-resolved to the user menu and *pointed* at
+   * it, which on a phone waited thirty seconds for a button that is
+   * off-canvas by design.
+   *
+   * So the control is held as an element, not a selector, and a failure is
+   * retried only if that element has left the document. Anything else — a
+   * click refused while the switch stays mounted, a menu that never shows its
+   * item — is the failure, and is thrown as it was. #116 retried every error
+   * and would have passed a switch that refused its first click.
+   */
+  const deadline = Date.now() + 20_000;
+  while ((await page.evaluate(reads)) !== wantDark) {
+    if (Date.now() > deadline) {
+      throw new Error('setTheme: the session replaced the theme control on every try for 20s');
     }
+    await page
+      .locator('.theme-switch, .user-menu-trigger')
+      .first()
+      .waitFor({ state: 'attached', timeout: 10_000 });
+    const menu = await page.$('.user-menu-trigger');
+    const control = menu ?? (await page.$('.theme-switch'));
+    // One was attached a moment ago and neither is now: the swap is mid-way.
+    if (control === null) continue;
+
+    const replaced = await replacedDuring(control, async () => {
+      if (menu === null) {
+        await control.click({ timeout: THEME_CLICK_MS });
+        return;
+      }
+      if ((await page.$('.user-menu-theme')) === null) await menu.dispatchEvent('click');
+      const item = await page.waitForSelector('.user-menu-theme', {
+        state: 'attached',
+        timeout: THEME_CLICK_MS,
+      });
+      await item.dispatchEvent('click');
+    });
+    if (!replaced) break;
   }
 
   await page.waitForFunction(

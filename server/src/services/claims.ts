@@ -3,23 +3,26 @@ import type Database from 'better-sqlite3';
 import {
   activityActor,
   isSystemPrincipal,
+  loadActor,
+  loadAgent,
   type ResolvedActor,
   type ServiceCaller,
   withProject,
 } from '../auth/resolve-actor.ts';
+import { tokenProjectIds } from '../auth/tokens.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { LIVE_CLAIM_STATES, type TaskClaimState } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import {
-  agentProjectGrants,
-  agentSessions,
   agents,
+  agentSessions,
   handoffOffers,
   projects,
   taskClaims,
   tasks,
+  tokens,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, type AgentContext, systemPrincipal } from '../policy/can.ts';
@@ -517,74 +520,146 @@ function renewLease(db: Db, claim: ClaimRow, now: number): void {
 // ------------------------------------------------------------------ fence
 
 /**
- * The fence (proposal §4.2): may this caller change this task now?
+ * The fence (proposal §4.2, SPEC §6.3): may this caller change this task now?
  *
  * Called by every task-mutating service **inside its write**, before it
- * writes. See the module comment for who is fenced and why. `now` is the
- * write's own clock, so a test that injects one fences against it.
+ * writes — directly or, for a change that reaches tasks indirectly (a sprint
+ * deleted, a status deleted, a tag removed, work handed on when someone
+ * leaves, a heartbeat's branch), once for every task it would change. `now` is
+ * the write's own clock, so a test that injects one fences against it.
+ *
+ * ## The rule, in order
+ *
+ * 1. The system and **a person signed in** pass: people keep explicit control.
+ * 2. A task with a **live** claim may be changed by its holder's agent with
+ *    the live generation and an unlapsed lease, and by nobody else with a
+ *    token: another agent — the same person's included — or a legacy token
+ *    is `claim_held`; the holder's agent with no, or the wrong, generation is
+ *    `stale_claim`.
+ * 3. A task whose **newest claim lapsed** — `expired` or `transferred` while
+ *    the task stayed in progress — is refused to every token, generation or
+ *    not: the agent that held it is `stale_claim` with `reclaim: true`, and
+ *    the explicit reclaim is its only way back; anyone else is `claim_held`,
+ *    waiting for recovery (LAI-546). **Omitting the generation is not a way
+ *    round a lapsed claim.**
+ * 4. A task nobody holds (never claimed, or its claim released) may be
+ *    changed by a token without a generation; a generation sent there names
+ *    no live claim and is `stale_claim`.
  */
 export function assertClaimFence(db: Db, actor: ServiceCaller, taskId: string, now: number): void {
-  if (isSystemPrincipal(actor)) return;
+  const refusal = claimFenceRefusal(db, actor, taskId, now);
+  if (refusal !== null) throw refusal;
+}
+
+/** {@link assertClaimFence} for every task a change would touch, before any is touched. */
+export function assertClaimFenceAll(
+  db: Db,
+  actor: ServiceCaller,
+  taskIds: readonly string[],
+  now: number,
+): void {
+  for (const id of taskIds) assertClaimFence(db, actor, id, now);
+}
+
+/** The fence's answer without throwing: the refusal, or null when the change may go ahead. */
+export function claimFenceRefusal(
+  db: Db,
+  actor: ServiceCaller,
+  taskId: string,
+  now: number,
+): ApiError | null {
+  if (isSystemPrincipal(actor)) return null;
+  if (actor.token === null || actor.token === undefined) return null;
 
   const agent = registeredAgent(actor);
   const generation = actor.claimGeneration;
   const live = liveClaim(db, taskId);
 
-  if (agent === null) {
-    // A person signed in keeps explicit control; a legacy token does not.
-    if (actor.token === null || actor.token === undefined) return;
-    if (live !== undefined) {
-      throw claimConflict(
+  if (live !== undefined) {
+    if (agent === null) {
+      return claimConflict(
         'claim_held',
         'A registered agent holds this task; a token with no agent cannot change it',
         { task_id: taskId, agent_id: live.agentId },
       );
     }
-    return;
-  }
-
-  if (generation === undefined) {
-    if (live === undefined) return;
-    if (live.agentId === agent.id) {
-      throw claimConflict(
+    if (live.agentId !== agent.id) {
+      return claimConflict('claim_held', 'Another agent session holds this task', {
+        task_id: taskId,
+        agent_id: live.agentId,
+      });
+    }
+    if (generation === undefined) {
+      return claimConflict(
         'stale_claim',
         'This task is claimed; send the claim generation with every change',
         { task_id: taskId, claim_generation: null },
       );
     }
-    throw claimConflict('claim_held', 'Another agent session holds this task', {
+    if (live.generation !== generation) {
+      return claimConflict('stale_claim', 'That claim generation is no longer valid', {
+        task_id: taskId,
+        claim_generation: generation,
+      });
+    }
+    if (live.state === 'paused') {
+      return claimConflict('claim_paused', 'This claim is paused while a hand-off is open', {
+        task_id: taskId,
+        claim_generation: generation,
+      });
+    }
+    if (leaseLapsed(live.leaseExpiresAt, now)) {
+      return claimConflict('stale_claim', 'That claim’s lease has lapsed', {
+        task_id: taskId,
+        claim_generation: generation,
+        lease_expires_at: live.leaseExpiresAt,
+      });
+    }
+    return null;
+  }
+
+  const lapsed = lapsedClaim(db, taskId);
+  if (lapsed !== undefined) {
+    if (agent !== null && lapsed.agentId === agent.id) {
+      return claimConflict(
+        'stale_claim',
+        'Your claim on this task lapsed; reclaim it before changing the task',
+        { task_id: taskId, claim_generation: lapsed.generation, reclaim: true },
+      );
+    }
+    return claimConflict('claim_held', 'This task’s claim lapsed and is waiting for recovery', {
       task_id: taskId,
-      agent_id: live.agentId,
+      agent_id: lapsed.agentId,
+      claim_state: lapsed.state,
     });
   }
 
-  // A generation was sent: it must be the live claim's, held by this agent.
-  const stale = () =>
-    claimConflict('stale_claim', 'That claim generation is no longer valid', {
-      task_id: taskId,
-      claim_generation: generation,
-    });
-  if (live === undefined) throw stale();
-  if (live.agentId !== agent.id) {
-    throw claimConflict('claim_held', 'Another agent session holds this task', {
-      task_id: taskId,
-      agent_id: live.agentId,
-    });
-  }
-  if (live.generation !== generation) throw stale();
-  if (live.state === 'paused') {
-    throw claimConflict('claim_paused', 'This claim is paused while a hand-off is open', {
+  if (generation !== undefined && agent !== null) {
+    return claimConflict('stale_claim', 'That claim generation is no longer valid', {
       task_id: taskId,
       claim_generation: generation,
     });
   }
-  if (leaseLapsed(live.leaseExpiresAt, now)) {
-    throw claimConflict('stale_claim', 'That claim’s lease has lapsed', {
-      task_id: taskId,
-      claim_generation: generation,
-      lease_expires_at: live.leaseExpiresAt,
-    });
-  }
+  return null;
+}
+
+/**
+ * The task's newest claim when it **lapsed** — `expired` or `transferred` —
+ * while the task stayed in progress, and no claim is live. A person moving the
+ * task out of progress ends that state; a release never starts it.
+ */
+function lapsedClaim(db: Db, taskId: string): ClaimRow | undefined {
+  const latest = latestClaim(db, taskId);
+  if (latest?.state !== 'expired' && latest?.state !== 'transferred') return undefined;
+  const task = db.select({ status: tasks.status }).from(tasks).where(eq(tasks.id, taskId)).get();
+  return task?.status === 'in_progress' ? latest : undefined;
+}
+
+/** Whether this actor's agent holds the task's live claim — the review rule's holder (§5). */
+export function holdsLiveClaim(db: Db, actor: ServiceCaller, taskId: string): boolean {
+  const agent = registeredAgent(actor);
+  if (agent === null) return false;
+  return liveClaim(db, taskId)?.agentId === agent.id;
 }
 
 /**
@@ -632,7 +707,7 @@ export interface TakenClaim {
 export function takeClaim(
   db: Db,
   actor: ResolvedActor,
-  task: Pick<TaskRow, 'id' | 'status'>,
+  task: Pick<TaskRow, 'id'>,
   input: TakeClaimInput,
 ): TakenClaim {
   const agent = requireAgent(actor);
@@ -672,19 +747,19 @@ export function takeClaim(
     return { claim: { ...live, leaseExpiresAt: now + settings.timings.expireMs }, resumed: true };
   }
 
-  const latest = latestClaim(db, task.id);
-  if (latest?.state === 'expired' && task.status === 'in_progress') {
-    if (latest.agentId === agent.id) {
+  const lapsed = lapsedClaim(db, task.id);
+  if (lapsed !== undefined) {
+    if (lapsed.agentId === agent.id) {
       throw claimConflict('stale_claim', 'Your claim on this task expired; reclaim it explicitly', {
         task_id: task.id,
-        claim_generation: latest.generation,
+        claim_generation: lapsed.generation,
         reclaim: true,
       });
     }
-    throw claimConflict('claim_held', 'This task’s claim expired and is waiting for recovery', {
+    throw claimConflict('claim_held', 'This task’s claim lapsed and is waiting for recovery', {
       task_id: task.id,
-      agent_id: latest.agentId,
-      claim_state: 'expired',
+      agent_id: lapsed.agentId,
+      claim_state: lapsed.state,
     });
   }
 
@@ -773,6 +848,48 @@ export function reclaimOfferSteps(_db: Db, _taskId: string, _now: number): void 
   // TODO(LAI-546): refuse `offer_taken`; cancel open and pending-approval offers.
 }
 
+type FreshAgentActor = ResolvedActor & {
+  token: NonNullable<ResolvedActor['token']> & { agent: AgentContext };
+};
+
+/**
+ * The reclaiming actor, read again from the database (LAI-541 review): the
+ * owner — active, with today's role and memberships — the token — live and
+ * `full` — and the agent — active, with today's grants. Each refusal is
+ * `403 forbidden` with the reason that names it.
+ */
+function reloadAgentActor(db: Db, actor: ResolvedActor, now: number): FreshAgentActor {
+  const refuse = (reason: string, message: string) =>
+    new ApiError('forbidden', message, { action: 'task.claim', reason });
+
+  const tokenId = actor.token?.id;
+  const token =
+    tokenId === undefined
+      ? undefined
+      : db.select().from(tokens).where(eq(tokens.id, tokenId)).get();
+  if (token === undefined) throw refuse('token_revoked', 'That token is no longer valid');
+  // The agent before the token: revoking an agent revokes its tokens too, and
+  // "your agent was revoked" is the answer that says why.
+  const agent = token.agentId === null ? null : loadAgent(db, token.agentId);
+  if (agent?.status !== 'active') throw refuse('agent_revoked', 'That agent is revoked');
+  if (token.revokedAt !== null || (token.expiresAt !== null && token.expiresAt <= now)) {
+    throw refuse('token_revoked', 'That token is no longer valid');
+  }
+  if (token.scope !== 'full') {
+    throw refuse('token_read_only', 'Reclaiming needs a token with full scope');
+  }
+
+  const owner = loadActor(db, token.userId);
+  if (owner?.isActive !== true) {
+    throw refuse('owner_inactive', 'The person this agent acts for is deactivated');
+  }
+
+  return {
+    ...owner,
+    token: { id: token.id, scope: token.scope, projectIds: tokenProjectIds(token), agent },
+  };
+}
+
 /**
  * The explicit reclaim (`POST /tasks/:id/claim/reclaim`, `start_working`
  * with `reclaim: true`; proposal §4.2). One `BEGIN IMMEDIATE` operation that
@@ -799,43 +916,31 @@ export function reclaimTask(
     if (task === undefined) throw ApiError.notFound(`No task with id "${taskId}"`);
     const project = db.select().from(projects).where(eq(projects.id, task.projectId)).get()!;
 
-    // The token's scope first: a read-only credential is told so, whatever
-    // the grant says.
-    if (actor.token?.scope !== 'full') {
-      throw new ApiError('forbidden', 'Reclaiming needs a token with full scope', {
-        action: 'task.claim',
-        reason: 'token_read_only',
-      });
-    }
-    // The agent's row and grant as they are **now**, not as the request's
-    // token context loaded them.
-    const row = db
-      .select({ status: agents.status })
-      .from(agents)
-      .where(eq(agents.id, agent.id))
-      .get();
-    if (row?.status !== 'active') {
-      throw new ApiError('forbidden', 'That agent is revoked', {
-        action: 'task.claim',
-        reason: 'agent_revoked',
-      });
-    }
-    const grant = db
-      .select({ scope: agentProjectGrants.scope })
-      .from(agentProjectGrants)
-      .where(
-        and(eq(agentProjectGrants.agentId, agent.id), eq(agentProjectGrants.projectId, project.id)),
-      )
-      .get();
-    if (grant?.scope !== 'full') {
+    // **Everything as it is now, read inside this transaction** — not from
+    // the actor the request resolved, which was loaded before the lock and
+    // may describe a person deactivated, a token revoked or a grant narrowed
+    // since. The order is what the caller can fix least first.
+    const fresh = reloadAgentActor(db, actor, now);
+    const grant = fresh.token.agent.grants.get(project.id);
+    if (grant !== 'full') {
       throw new ApiError('forbidden', 'This agent may not work in that project', {
         action: 'task.claim',
         reason: grant === undefined ? 'agent_not_granted' : 'agent_read_only',
       });
     }
     // The owner's own permission, with the agent step and the space rules,
-    // through `can()` as every claim asks it.
-    assertCan(withProject(actor, project.id), 'task.claim', { projectId: project.id });
+    // through `can()` as every claim asks it — on the reloaded actor.
+    assertCan(withProject(fresh, project.id), 'task.claim', { projectId: project.id });
+
+    // A claim is held only on work in progress (§5): a task a person moved on
+    // since the claim expired has nothing to take back.
+    if (task.status !== 'in_progress') {
+      throw new ApiError('conflict', 'Only a task still in progress can be reclaimed', {
+        reason: 'task_not_claimable',
+        task_id: taskId,
+        status: task.status,
+      });
+    }
 
     const live = liveClaim(db, taskId);
     if (live !== undefined) {
@@ -856,7 +961,7 @@ export function reclaimTask(
 
     const session =
       input.sessionId === undefined
-        ? openSession(db, actor, agent, {}, now)
+        ? openSession(db, fresh, agent, {}, now)
         : requireOpenSession(db, agent.id, input.sessionId);
     const claim = insertClaim(db, taskId, session.id, agent.id, now);
 
@@ -864,7 +969,7 @@ export function reclaimTask(
       orgId: project.orgId,
       projectId: project.id,
       taskId,
-      ...activityActor(actor),
+      ...activityActor(fresh),
       type: 'task.claim_reclaimed',
       payload: {
         from_generation: latest.generation,
@@ -947,6 +1052,17 @@ export function expireClaims(db: Db, now: number): { changed: number } {
     .all()
     .filter((claim) => leaseLapsed(claim.leaseExpiresAt, now));
 
-  for (const claim of overdue) expireClaim(db, claim, now);
+  // One transaction a claim: the state and its `task.claim_expired` row land
+  // together or not at all, so a crash between them cannot leave a claim
+  // expired with no record, or a record of an expiry that did not happen.
+  // `immediate` for the write lock before the read inside `expireClaim`.
+  for (const claim of overdue) {
+    db.transaction(
+      () => {
+        expireClaim(db, claim, now);
+      },
+      { behavior: 'immediate' },
+    );
+  }
   return { changed: overdue.length };
 }

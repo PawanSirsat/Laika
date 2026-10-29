@@ -1,10 +1,17 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { ConnectionBanner } from './ConnectionBanner.tsx';
 import { EmptyState } from './EmptyState.tsx';
 import { ErrorState } from './ErrorState.tsx';
 import { LoadingState } from './LoadingState.tsx';
 import { PermissionDenied } from './PermissionDenied.tsx';
 import './state-gallery.css';
+
+/**
+ * The proposed agent states (LAI-536), **their own chunk**: the example data
+ * they show reaches the browser only when this page asks for it, never with
+ * a live screen. `agent-gallery-bundle.test.ts` builds the SPA and proves it.
+ */
+const AgentStateGallery = lazy(() => import('./agent-states/AgentStateGallery.tsx'));
 
 /**
  * Every state on one page (LAI-020 AC7), so they can be reviewed — and their
@@ -150,6 +157,10 @@ export function StateGallery() {
           </article>
         ))}
       </div>
+
+      <Suspense fallback={<LoadingState shape="card" count={2} label="Loading agent states" />}>
+        <AgentStateGallery />
+      </Suspense>
     </section>
   );
 }

@@ -16,6 +16,7 @@ import {
 } from '../../services/agents.ts';
 import { listOwnWorkRequests } from '../../services/work-requests.ts';
 import { type AppEnv } from '../context.ts';
+import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -28,7 +29,7 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * `TokenView`s, which have no secret to carry (§4.9).
  *
  * **No body field names an agent.** Every body below is a `strictObject`, so
- * an `agent_id` a caller adds is a `400`, and the agent acted on is the one in
+ * an `agent_id` a caller adds is a `422`, and the agent acted on is the one in
  * the path, looked up among the caller's own.
  */
 
@@ -101,6 +102,7 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
       grants: grantsOf(body.grants),
       expiresAt: body.expires_at,
     });
+    markOneTimeSecret(c);
     return c.json<CreatedAgentToken>(created, 201);
   });
 
@@ -108,8 +110,13 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
   // `/:id` so `me` is never read as an agent id.
   app.get('/me/work-requests', (c) => {
     const actor = requireActor(c);
-    const { limit, cursor } = parsePageQuery(c.req.query());
-    const rows = listOwnWorkRequests(db, actor, { limit, cursor });
+    const query = c.req.query();
+    const { limit, cursor } = parsePageQuery(query);
+    const rows = listOwnWorkRequests(db, actor, {
+      limit,
+      cursor,
+      projectSlug: query.project ?? null,
+    });
     return c.json(buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id })));
   });
 
@@ -145,6 +152,7 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
       tokenId: body.token_id,
       expiresAt: body.expires_at,
     });
+    markOneTimeSecret(c);
     return c.json<CreatedAgentToken>(created, 201);
   });
 

@@ -12,6 +12,7 @@ import {
   type TokenView,
 } from '../../services/tokens.ts';
 import { type AppEnv } from '../context.ts';
+import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -80,6 +81,7 @@ export function tokenRoutes(options: TokenRouteOptions): Hono<AppEnv> {
       expiresAt: body.expires_at,
     });
 
+    markOneTimeSecret(c);
     return c.json<CreatedTokenBody>({ token: created.token, secret: created.secret }, 201);
   });
 

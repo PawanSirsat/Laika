@@ -6,6 +6,15 @@ import { dateLabel, isOverdue } from '../../../api/date-only.ts';
 import { parentOf } from '../../../api/subtask-derive.ts';
 import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import { sizeRank } from '../../../api/estimates.ts';
+import {
+  agentLabel,
+  agentDevice,
+  distinctDevices,
+  selectedAgentOf,
+  shownAs,
+  twinNames,
+  type SelectedAgent,
+} from '../../../api/selected-agent.ts';
 
 /**
  * One row of the List view, decided (prototype lines 166–203, `listRows` at
@@ -43,6 +52,21 @@ export interface ListRow {
    */
   readonly assigneeId: string;
   readonly initials: string;
+  /**
+   * The agent the work is meant for (LAI-538), or null — **a column of its
+   * own**, never folded into *who*: an agent is not a person, and the
+   * assignee column counts people.
+   */
+  readonly agent: SelectedAgent | null;
+  /** *Claude Code · laptop-1*, or empty: the sort reads this. */
+  readonly agentLabel: string;
+  /** The device the agent reported, before any telling-apart: *laptop-1*. */
+  readonly agentPlace: string;
+  /**
+   * What tells this agent from another here with its harness and device —
+   * *polly workers* — or undefined when nothing collides (LAI-583).
+   */
+  readonly agentTwin: string | undefined;
   /** `S2`, or empty when the task is in no sprint. */
   readonly sprintTag: string;
   /** The task's tags, joined as the design joins them. */
@@ -149,6 +173,17 @@ export function listRows({
   statuses = [],
 }: ListRowInput): readonly ListRow[] {
   const byStatusId = new Map(statuses.map((s) => [s.id, s]));
+  // Two agents on these tasks that share a harness and a device are told apart (LAI-583).
+  const selected = tasks.flatMap((task) => {
+    const agent = selectedAgentOf(task);
+    return agent === null ? [] : [agent];
+  });
+  const devices = distinctDevices(selected);
+  const twins = twinNames(selected);
+  const agentOf = (task: TaskSummary): SelectedAgent | null => {
+    const agent = selectedAgentOf(task);
+    return agent === null ? null : shownAs(agent, devices);
+  };
   return tasks.map((task) => {
     const member = task.assignee_id === null ? undefined : members.get(task.assignee_id);
     const blocked = blockedState(task, byId) === true;
@@ -181,6 +216,19 @@ export function listRows({
       assigned: member !== undefined,
       assigneeId: task.assignee_id ?? '',
       initials: member === undefined ? '—' : initialsOf(member.name),
+      agent: agentOf(task),
+      agentLabel: (() => {
+        const agent = agentOf(task);
+        return agent === null ? '' : agentLabel(agent);
+      })(),
+      agentPlace: (() => {
+        const agent = selectedAgentOf(task);
+        return agent === null ? '' : agentDevice(agent);
+      })(),
+      agentTwin: (() => {
+        const agent = selectedAgentOf(task);
+        return agent === null ? undefined : twins.get(agent.id);
+      })(),
       sprintTag: task.sprint_id === null ? '' : (sprintLabels.get(task.sprint_id)?.label ?? ''),
       labels: task.tags.join(', '),
       blocked,
@@ -210,6 +258,7 @@ export type SortKey =
   | 'priority'
   | 'size'
   | 'assignee'
+  | 'agent'
   | 'sprint'
   | 'due'
   | 'created'
@@ -228,6 +277,9 @@ export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: str
    */
   { key: 'size', label: 'Effort' },
   { key: 'assignee', label: 'Assignee' },
+  /* The agent the work is meant for (LAI-538), beside the person, never in
+     their column. */
+  { key: 'agent', label: 'Agent' },
   { key: 'sprint', label: 'Spr' },
   /*
    * **Both dates, in the same form** (LAI-621). The List answered "when was
@@ -283,6 +335,9 @@ function compareBy(key: SortKey, a: TaskSummary, b: TaskSummary, ra: ListRow, rb
     case 'assignee':
       if (ra.assigned !== rb.assigned) return ra.assigned ? -1 : 1;
       return ra.who.toLowerCase().localeCompare(rb.who.toLowerCase());
+    case 'agent':
+      // Rows with no agent are kept last by `sortRows`, outside the direction flip.
+      return ra.agentLabel.toLowerCase().localeCompare(rb.agentLabel.toLowerCase());
     case 'sprint': {
       const x = sprintNumber(ra.sprintTag);
       const y = sprintNumber(rb.sprintTag);
@@ -334,6 +389,12 @@ export function sortRows(
       const yNone = (y.task.size ?? null) === null;
       if (xNone !== yNone) return xNone ? 1 : -1;
       if (xNone) return x.task.number - y.task.number;
+    }
+    // And for a task with no agent (LAI-538): none is not an agent sorted first.
+    if (key === 'agent') {
+      const xNone = x.row.agent === null;
+      const yNone = y.row.agent === null;
+      if (xNone !== yNone) return xNone ? 1 : -1;
     }
     const primary = compareBy(key, x.task, y.task, x.row, y.row);
     if (primary !== 0) return ascending ? primary : -primary;
