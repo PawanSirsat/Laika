@@ -7,7 +7,8 @@ priority: p1
 parent: LAIKA-785
 depends-on: []
 discovered-from: LAI-534
-status: in-progress
+status: review
+finished: 2026-10-29T10:27:19Z
 started: 2026-10-29T08:49:50Z
 ---
 
@@ -122,3 +123,78 @@ ran. Asked for: accept health only with evidence that **this** child bound the
 port; treat a child exit at any point before success as a failed attempt
 (retried only on `EADDRINUSE`); and a test with a fresh foreign server already
 listening on the chosen port that proves the helper retries.
+
+## Round 2 — what changed and the evidence (Belka, 2026-10-29)
+
+**Accepted, and wider than reported.** Before `listen`, any young server
+answering the port passed `waitForHealth`. There was also a second hole:
+measured on macOS with plain Node listeners, binding `0.0.0.0:<p>` **succeeds**
+while another process holds `127.0.0.1:<p>`, and then `127.0.0.1` reaches the
+other process.
+
+| other process on | child binds | child's bind | `127.0.0.1` reaches |
+| --- | --- | --- | --- |
+| `127.0.0.1` | `0.0.0.0` | ok | **the other process** |
+| `0.0.0.0` | `0.0.0.0` | `EADDRINUSE` | — |
+| `0.0.0.0` | `127.0.0.1` | ok | the child |
+| `127.0.0.1` | `127.0.0.1` | `EADDRINUSE` | — |
+
+So the child's own "listening" record is not, by itself, proof that the probe
+reaches it.
+
+**Fix** (`server/test/tooling/build.test.ts`):
+- `waitForHealth` probes nothing until **this child's** `server.listening`
+  record is on its stdout, carrying the port asked for and `child.pid`.
+- The child binds `HOST=127.0.0.1`, the address the probe asks. Rows 3–4: it
+  then either fails `EADDRINUSE` or is the one `127.0.0.1` reaches. This is the
+  one way the test's boot now differs from the container's `0.0.0.0`; nothing
+  in the file asserted the wildcard.
+- A child that exits at any point before success fails the attempt, and only
+  an `EADDRINUSE` exit is retried. The uptime check stays as a third line.
+- `startBuiltServer` takes an optional port source, so a case can hand it a
+  taken port.
+
+**New case:** *"retries on a new port instead of taking a fresh foreign health
+answer for its child"*. A foreign HTTP server already listens on the chosen
+port and answers `/api/v1/health` with `200` and `uptime_ms: 0`. The case
+asserts:
+- the first attempt got that port;
+- exactly one more port was asked for;
+- `baseUrl` is the second port;
+- health there is not the foreign one.
+
+**It fails without each defence** (mutations of the round-2 file, restored and
+checked by `shasum`; run with `pnpm exec vitest run test/tooling/build.test.ts`
+in `server/`):
+
+| mutation | result |
+| --- | --- |
+| listening gate off **and** `HOST` removed (round 1) | **EXIT 1**, `1 failed \| 18 passed`: `it asked for exactly one more port: expected [ 59930 ] to have a length of 2 but got 1` |
+| listening gate off only | **EXIT 1**, same assertion (`[ 60034 ]`) |
+| `HOST` removed only | **EXIT 1**, same assertion (`[ 60120 ]`) |
+| none | **EXIT 0**, `Tests 19 passed (19)` |
+
+The `HOST`-only row is macOS behaviour (row 1 above). On Linux the kernel
+refuses that bind, and the listening gate alone covers it.
+
+**The round-1 race harness against the round-2 helper.** Every odd
+`freePort()` port was taken, now on `127.0.0.1`. Result: `1 failed | 18
+passed`. All 18 other cases booted through retries. The one failure is the new
+case, whose own second port the harness also took: the helper correctly used a
+third (`[ 60244, 60247, 60248 ]`, against an expected two). That is the
+harness, not a defect.
+
+**Gate, round 2** (in `.polly/wt-598`, after the last edit):
+- `pnpm lint` **EXIT 0**, `pnpm format` **EXIT 0**, server `typecheck`
+  **EXIT 0**. `build.test.ts` alone: **EXIT 0**, 19/19.
+- `pnpm test` ran twice, **EXIT 1** both times, each with a **different
+  untouched test** hitting vitest's 5 s timeout:
+  - first run: `test/tooling/response-type-coverage.test.ts`;
+  - second run: `test/db/migrate.test.ts`.
+
+  Each passes alone 2/2 (10/10 in ~90 ms; 38/38). In both runs everything
+  else passed: server 4199, web 3602, cli 665, and `build.test.ts`'s 19 among
+  them. Belka's load average was about 20 at the time (Defender scanning,
+  other sessions running). The `response-type-coverage` flake was logged with
+  `log_unlisted_work`, because CHIEF's id block is full. PR CI is the gate of
+  record for this round.
