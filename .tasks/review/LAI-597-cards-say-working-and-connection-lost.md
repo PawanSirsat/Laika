@@ -6,7 +6,8 @@ assignee: shell (polly, Belka)
 priority: p1
 depends-on: [LAI-568]
 discovered-from: LAI-568
-status: in-progress
+status: review
+finished: 2026-10-29T09:32:49Z
 started: 2026-10-29T08:53:51Z
 ---
 
@@ -51,14 +52,14 @@ yet. This task is the screens.
 
 ## Acceptance criteria
 
-- [ ] `execution-derive` unit tests: live claim → Working; heartbeat at
+- [x] `execution-derive` unit tests: live claim → Working; heartbeat at
       exactly `suspect_after_ms` → Connection lost; served `suspect` →
       Connection lost; `claim: null` and a view without `claim` → the
       pre-LAI-568 answer.
-- [ ] A card held open past `suspect_after_ms` changes from Working to
+- [x] A card held open past `suspect_after_ms` changes from Working to
       Connection lost with no request (browser test, injected clock).
-- [ ] The drawer shows the holding session and its last heartbeat from `claim`.
-- [ ] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+- [x] The drawer shows the holding session and its last heartbeat from `claim`.
+- [x] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
 
 ## Claim note (Belka, 2026-10-29)
 
@@ -66,3 +67,23 @@ yet. This task is the screens.
 `.tasks/review/`, not `done/`. Claimed on the polly orchestrator's direction
 ("#112 (LAI-568) is now merged on master") — a recorded deviation from §2
 step 1, not a loose reading of it.
+
+## Submission (Belka, 2026-10-29)
+
+PR #134, branch `LAI-597-cards-working-connection-lost`, head `10d6c884`.
+CI *Gate — test, lint, format* passed (run 40847419317, 22m56s) — the
+repo-root `pnpm test`, `pnpm lint`, `pnpm format` on the PR.
+
+- Unit: `test/components/agent/execution-derive.test.ts` — live → Working;
+  heartbeat at exactly `suspect_after_ms` → Connection lost; served `suspect`
+  → Connection lost; `claim: null` and absent → the pre-LAI-568 answer.
+- Browser: `test/browser/agent-execution.test.ts` — Playwright clock
+  installed, card flips Working → Connection lost after `fastForward` with no
+  task GET; mutating the hook's timer to a no-op turns it red. The drawer
+  shows Working session (Claude Code · Belka), Last seen, and under Details
+  the live session id and generation; the flip keeps the focus on Details.
+- Both themes at 1440 and 390, no sideways scroll; screenshots in
+  `.polly/evidence/LAI-597/` on Belka.
+- Replaced LAI-543's block asserting Working / Connection lost never appear.
+- One crossing inside SHELL's own map: a `WEB_NO_MIRROR_REQUIRED` entry in
+  `server/test/tooling/structure.test.ts` for `use-claim-clock.ts` (D-026).
