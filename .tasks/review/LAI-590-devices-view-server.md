@@ -142,5 +142,9 @@ uncalled and unexplained" lists `api/v1/agents/devices`, `…/confirm` and
 `…/revoke`. LAI-591 adds the callers and turns it green.
 `NO_BROWSER_CALLER` is not touched from here.
 
-Board: `start_working` answered `409 claim_held`, because the stopped Codex
-session still holds the claim. The card was not moved to Review.
+First CI run (40839976310) also failed `agent-sessions.test.ts`'s fence
+census. That is CORE's file, and the two POST routes are now named in
+`NOT_FENCED`. Locally `npx vitest run test/http` exits 0 (1141 tests).
+
+Board: polly released the Codex claim, and the card is claimed again under
+this session.
