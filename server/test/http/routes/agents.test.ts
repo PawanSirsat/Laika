@@ -18,6 +18,9 @@ import { insertToken } from '../../../src/services/tokens.ts';
 import { expireClaims } from '../../../src/services/claims.ts';
 import { sql } from 'drizzle-orm';
 import { RateLimiter } from '../../../src/http/rate-limit.ts';
+import { CLOUD_TOKEN_MAX_TTL_MS } from '../../../src/services/agents.ts';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join as joinPath, relative } from 'node:path';
 import {
   type AuthHarness,
   authHarness,
@@ -1052,7 +1055,8 @@ describe('devices (LAI-590)', () => {
   });
 
   it('recognition belongs to an owner and label, persists, and never follows an agent to a new label', async () => {
-    const a = await register([]);
+    // Bounded, because the label it moves to is Cloud (LAI-592).
+    const a = await register([], bob.cookie, { expires_at: Date.now() + 60 * 60_000 });
     await register([], ownerCookie);
     expect((await devices())[0]?.recognised).toBe(false);
     expect(await ok(await devicePost('confirm', ' BELKA '))).toEqual({
@@ -1275,5 +1279,271 @@ describe('devices (LAI-590)', () => {
     expect(res.status).toBe(500);
     expect((await error(res)).code).toBe('internal');
     expect(tables.map((table) => h.db.select().from(table).all())).toEqual(before);
+  });
+});
+
+describe('cloud agents hold short-lived tokens (LAI-592)', () => {
+  const MINUTE = 60_000;
+
+  function registerRaw(overrides: Record<string, unknown>, cookie = bob.cookie): Promise<Response> {
+    return req(
+      '/api/v1/agents',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          display_name: 'Bob’s Codex',
+          harness: 'codex',
+          device_label: 'Cloud',
+          grants: [{ project_id: alpha, scope: 'full' }],
+          ...overrides,
+        }),
+      },
+      { cookie },
+    );
+  }
+
+  function rotate(agentId: string, body: Record<string, unknown>): Promise<Response> {
+    return req(
+      `/api/v1/agents/${agentId}/rotate-token`,
+      { method: 'POST', body: JSON.stringify(body) },
+      { cookie: bob.cookie },
+    );
+  }
+
+  it('registering one with no expiry, in any case of the label, is 422 cloud_token_expiry_required', async () => {
+    for (const label of ['Cloud', 'CLOUD', '  cloud ']) {
+      expect(await error(await registerRaw({ device_label: label }))).toEqual({
+        status: 422,
+        code: 'unprocessable',
+        reason: 'cloud_token_expiry_required',
+      });
+      expect(
+        await error(await registerRaw({ device_label: label, expires_at: null })),
+      ).toMatchObject({ status: 422, reason: 'cloud_token_expiry_required' });
+    }
+    expect(h.db.select().from(agents).all()).toEqual([]);
+    expect(h.db.select().from(tokens).all()).toEqual([]);
+  });
+
+  it('registering one past the limit is 422 cloud_token_expiry_too_long; within it succeeds', async () => {
+    const tooLong = await registerRaw({ expires_at: Date.now() + CLOUD_TOKEN_MAX_TTL_MS + MINUTE });
+    expect(await error(tooLong)).toEqual({
+      status: 422,
+      code: 'unprocessable',
+      reason: 'cloud_token_expiry_too_long',
+    });
+    expect(h.db.select().from(agents).all()).toEqual([]);
+
+    const expiresAt = Date.now() + 50 * MINUTE;
+    const created = (await ok(await registerRaw({ expires_at: expiresAt }), 201)) as unknown as {
+      token: { expires_at: number };
+    };
+    expect(created.token.expires_at).toBe(expiresAt);
+    await ok(await registerRaw({ expires_at: Date.now() + CLOUD_TOKEN_MAX_TTL_MS - MINUTE }), 201);
+    // Any other label is not a cloud agent, and keeps an unbounded token.
+    await ok(await registerRaw({ device_label: 'Cloudy laptop' }), 201);
+  });
+
+  it('rotating a cloud agent’s token needs an expiry within the limit', async () => {
+    const created = (await ok(
+      await registerRaw({ expires_at: Date.now() + 50 * MINUTE }),
+      201,
+    )) as unknown as Registered;
+
+    expect(
+      await error(await rotate(created.agent.id, { token_id: created.token.id, expires_at: null })),
+    ).toEqual({
+      status: 422,
+      code: 'unprocessable',
+      reason: 'cloud_token_expiry_required',
+    });
+    expect(
+      await error(
+        await rotate(created.agent.id, {
+          token_id: created.token.id,
+          expires_at: Date.now() + CLOUD_TOKEN_MAX_TTL_MS + MINUTE,
+        }),
+      ),
+    ).toEqual({ status: 422, code: 'unprocessable', reason: 'cloud_token_expiry_too_long' });
+    // Nothing minted, nothing revoked by a refusal.
+    const live = h.db.select().from(tokens).where(eq(tokens.agentId, created.agent.id)).all();
+    expect(live.map((t) => [t.id, t.revokedAt])).toEqual([[created.token.id, null]]);
+
+    // Absent carries the old bounded expiry over; within the limit is fine.
+    const carried = (await ok(
+      await rotate(created.agent.id, { token_id: created.token.id }),
+      201,
+    )) as unknown as Registered;
+    await ok(
+      await rotate(created.agent.id, {
+        token_id: carried.token.id,
+        expires_at: Date.now() + 60 * MINUTE,
+      }),
+      201,
+    );
+  });
+
+  it('a cloud agent registered before the rule cannot rotate into another unbounded token', async () => {
+    const legacy = await register([{ project_id: alpha, scope: 'full' }]);
+    h.db.update(agents).set({ deviceLabel: 'Cloud' }).where(eq(agents.id, legacy.agent.id)).run();
+    // Its existing token keeps working until it is rotated (task Rollout).
+    expect((await req('/api/v1/me', {}, { bearer: legacy.secret })).status).toBe(200);
+
+    expect(await error(await rotate(legacy.agent.id, { token_id: legacy.token.id }))).toEqual({
+      status: 422,
+      code: 'unprocessable',
+      reason: 'cloud_token_expiry_required',
+    });
+  });
+
+  it('relabelling an agent into Cloud is refused while it holds a token outside the rule', async () => {
+    const unbounded = await register([]);
+    const res = await req(
+      `/api/v1/agents/${unbounded.agent.id}`,
+      { method: 'PATCH', body: JSON.stringify({ device_label: 'cloud' }) },
+      { cookie: bob.cookie },
+    );
+    expect(await error(res)).toEqual({
+      status: 422,
+      code: 'unprocessable',
+      reason: 'cloud_token_expiry_required',
+    });
+    expect(
+      h.db.select().from(agents).where(eq(agents.id, unbounded.agent.id)).get()?.deviceLabel,
+    ).toBe('Belka');
+
+    const bounded = await register([], bob.cookie, { expires_at: Date.now() + 60 * MINUTE });
+    const moved = await ok(
+      await req(
+        `/api/v1/agents/${bounded.agent.id}`,
+        { method: 'PATCH', body: JSON.stringify({ device_label: 'Cloud' }) },
+        { cookie: bob.cookie },
+      ),
+    );
+    expect(moved.device_label).toBe('Cloud');
+  });
+
+  it('an expired cloud token is refused exactly as an expired personal token; other devices are untouched', async () => {
+    const cloud = (await ok(
+      await registerRaw({ expires_at: Date.now() + 50 * MINUTE }),
+      201,
+    )) as unknown as Registered;
+    const laptop = await register([{ project_id: alpha, scope: 'full' }]);
+    const personal = (await ok(
+      await req(
+        '/api/v1/tokens',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            name: 'cli',
+            scope: 'full',
+            expires_at: Date.now() + 50 * MINUTE,
+          }),
+        },
+        { cookie: bob.cookie },
+      ),
+      201,
+    )) as { secret: string; token: { id: string } };
+
+    expect((await req('/api/v1/me', {}, { bearer: cloud.secret })).status).toBe(200);
+    // Both run out.
+    const past = Date.now() - 1_000;
+    for (const id of [cloud.token.id, personal.token.id]) {
+      h.db.update(tokens).set({ expiresAt: past }).where(eq(tokens.id, id)).run();
+    }
+
+    const cloudRes = await req('/api/v1/me', {}, { bearer: cloud.secret });
+    const personalRes = await req('/api/v1/me', {}, { bearer: personal.secret });
+    expect(cloudRes.status).toBe(401);
+    const cloudBody = await cloudRes.json();
+    expect(cloudBody).toEqual(await personalRes.json());
+    expect(personalRes.status).toBe(401);
+    expect((cloudBody as { error: { code: string } }).error.code).toBe('unauthorized');
+
+    // The owner's agent on another device, and the cloud agent itself, are as they were.
+    expect((await createTask('alpha', laptop.secret)).status).toBe(201);
+    expect(h.db.select().from(agents).where(eq(agents.id, cloud.agent.id)).get()?.status).toBe(
+      'active',
+    );
+    expect(
+      h.db.select().from(tokens).where(eq(tokens.id, laptop.token.id)).get()?.revokedAt,
+    ).toBeNull();
+  });
+});
+
+describe('the owner is named, and is always the session user (LAI-592)', () => {
+  it('agent reads and the device list carry the owner’s current display name', async () => {
+    const created = await register([]);
+    h.db.update(users).set({ name: 'Bob Builder' }).where(eq(users.id, bob.id)).run();
+
+    const list = await ok(await req('/api/v1/agents', {}, { cookie: bob.cookie }));
+    const one = await ok(
+      await req(`/api/v1/agents/${created.agent.id}`, {}, { cookie: bob.cookie }),
+    );
+    const devices = await ok(await req('/api/v1/agents/devices', {}, { cookie: bob.cookie }));
+
+    expect((list.data as { owner_display_name: string }[])[0]?.owner_display_name).toBe(
+      'Bob Builder',
+    );
+    expect(one.owner_display_name).toBe('Bob Builder');
+    const device = (devices.data as { agents: { owner_display_name: string }[] }[])[0];
+    expect(device?.agents[0]?.owner_display_name).toBe('Bob Builder');
+  });
+
+  it('a body naming an owner is refused, for a member and for the org owner alike', async () => {
+    for (const cookie of [bob.cookie, ownerCookie]) {
+      for (const field of ['owner_user_id', 'user_id', 'owner_id']) {
+        const target = cookie === bob.cookie ? ownerId : bob.id;
+        const res = await req(
+          '/api/v1/agents',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              display_name: 'Someone else’s',
+              harness: 'other',
+              grants: [],
+              [field]: target,
+            }),
+          },
+          { cookie },
+        );
+        expect(res.status, field).toBe(422);
+        expect((await error(res)).code).toBe('unprocessable');
+      }
+    }
+    expect(h.db.select().from(agents).all()).toEqual([]);
+
+    // What does register: the caller, whoever they are.
+    const own = await register([], ownerCookie);
+    expect(h.db.select().from(agents).where(eq(agents.id, own.agent.id)).get()?.ownerUserId).toBe(
+      ownerId,
+    );
+  });
+
+  it('no route or MCP tool reaches agent registration except POST /api/v1/agents', () => {
+    const root = joinPath(import.meta.dirname, '../../../src');
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = joinPath(dir, name);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (name.endsWith('.ts')) files.push(path);
+      }
+    };
+    walk(root);
+    expect(files.length).toBeGreaterThan(50);
+
+    const sites = (pattern: RegExp) =>
+      files
+        .filter((file) => pattern.test(readFileSync(file, 'utf8')))
+        .map((file) => relative(root, file))
+        .sort();
+    // The one insert into `agents`, and the one caller of it.
+    expect(sites(/\.insert\(\s*agents\s*\)/)).toEqual(['services/agents.ts']);
+    expect(sites(/\bregisterAgent\s*\(/)).toEqual(['http/routes/agents.ts', 'services/agents.ts']);
+    // No MCP tool imports the agents service at all.
+    expect(sites(/from '\.\.\/services\/agents\.ts'/).filter((f) => f.startsWith('mcp/'))).toEqual(
+      [],
+    );
   });
 });
