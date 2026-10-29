@@ -243,7 +243,10 @@ free). Approval from Pawan's own account, as D-118/D-119.
 >    (`CLOUD_TOKEN_MAX_TTL_MS`). Registering one, rotating one of its
 >    tokens, or relabelling an agent into `Cloud` while it holds a token
 >    outside the rule is `422 unprocessable` with `details.reason`
->    `cloud_token_expiry_required` or `cloud_token_expiry_too_long`.
+>    `cloud_token_expiry_required` (none, or one already past) or
+>    `cloud_token_expiry_too_long` (more than 24 hours; exactly 24 is allowed).
+>    A label is cloud when `trim().toLowerCase()` gives `cloud`; look-alike
+>    and compatibility forms (fullwidth, Cyrillic, zero-width) are not.
 >    Why 24 h: a runner's longest job and a daily schedule both fit, and a
 >    secret leaked from a runner is dead within a day; minting is session
 >    only, so a shorter limit would cut long jobs off mid-run.
@@ -276,8 +279,9 @@ After the paragraph that begins **Revoking an agent**, add:
 > **A cloud agent's tokens are short-lived** (D-120, LAI-592). Registering a
 > cloud agent, rotating one of its tokens, or relabelling an agent into
 > `Cloud` while any live token it holds breaks the rule is `422` with
-> `reason` `cloud_token_expiry_required` (no `expires_at`) or
-> `cloud_token_expiry_too_long` (more than 24 hours ahead,
+> `reason` `cloud_token_expiry_required` (no `expires_at`, or one not in
+> the future) or `cloud_token_expiry_too_long` (more than 24 hours ahead;
+> exactly 24 hours is allowed;
 > `CLOUD_TOKEN_MAX_TTL_MS`). A rotation with no `expires_at` carries the old
 > expiry, which must itself pass. **The owner is always the session user who
 > registered it**: no body field names an owner, and nothing registers an
