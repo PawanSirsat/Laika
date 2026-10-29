@@ -261,6 +261,27 @@ const PAIRS: readonly Pair[] = [
     client: 'TaskLiveClaim',
     clientFile: 'tasks.ts',
   },
+  // LAI-549: a task's saves and hand-off offers, as the drawer reads them
+  // (LAI-545, LAI-546). The ref is paired on its own because the checkpoint
+  // pair sees `refs` and nothing inside it.
+  {
+    server: 'CheckpointView',
+    serverFile: 'services/checkpoints.ts',
+    client: 'Checkpoint',
+    clientFile: 'handoffs.ts',
+  },
+  {
+    server: 'CheckpointRefView',
+    serverFile: 'services/checkpoints.ts',
+    client: 'CheckpointRef',
+    clientFile: 'handoffs.ts',
+  },
+  {
+    server: 'HandoffOfferView',
+    serverFile: 'services/handoffs.ts',
+    client: 'HandoffOffer',
+    clientFile: 'handoffs.ts',
+  },
   // LAI-975: `GET /tasks/summary`'s figures (LAI-974), which the Work page's
   // strip draws.
   {
