@@ -7,8 +7,8 @@ import { diffLines, MAX_EDIT_DISTANCE } from '../../src/services/text-diff.ts';
  */
 describe('diffLines', () => {
   it('is empty when nothing changed', () => {
-    expect(diffLines('a\nb', 'a\nb')).toEqual({ diff: '', added: 0, removed: 0 });
-    expect(diffLines('', '')).toEqual({ diff: '', added: 0, removed: 0 });
+    expect(diffLines('a\nb', 'a\nb')).toEqual({ diff: '', added: 0, removed: 0, truncated: false });
+    expect(diffLines('', '')).toEqual({ diff: '', added: 0, removed: 0, truncated: false });
   });
 
   it('from the empty document, every line is an addition', () => {
@@ -16,6 +16,7 @@ describe('diffLines', () => {
       diff: '@@ -0,0 +1,2 @@\n+a\n+b',
       added: 2,
       removed: 0,
+      truncated: false,
     });
   });
 
@@ -24,6 +25,7 @@ describe('diffLines', () => {
       diff: '@@ -1,2 +0,0 @@\n-a\n-b',
       added: 0,
       removed: 2,
+      truncated: false,
     });
   });
 
@@ -58,30 +60,54 @@ describe('diffLines', () => {
       diff: '@@ -1,2 +1,4 @@\n one\n two\n+\n+three',
       added: 2,
       removed: 0,
+      truncated: false,
     });
   });
 });
 
-describe('the edit bound', () => {
-  it('past MAX_EDIT_DISTANCE, answers all out then all in — still a correct diff, quickly', () => {
-    const n = 30_000;
-    const before = Array.from({ length: n }, (_, i) => `old ${String(i)}`).join('\n');
-    const after = Array.from({ length: n }, (_, i) => `new ${String(i)}`).join('\n');
-    const started = Date.now();
-    const { diff, added, removed } = diffLines(before, after);
+describe('the bound is on the response (LAI-555 review)', () => {
+  const doc = (prefix: string, n: number): string =>
+    Array.from({ length: n }, (_, i) => `${prefix} ${String(i)}`).join('\n');
 
-    expect([added, removed]).toEqual([n, n]);
-    expect(diff.split('\n')[0]).toBe(`@@ -1,${String(n)} +1,${String(n)} @@`);
+  it('exactly MAX_EDIT_DISTANCE changed lines is answered in full', () => {
+    // 1,000 out and 1,000 in: 2,000 changed lines, the bound itself.
+    const { diff, added, removed, truncated } = diffLines(doc('old', 1000), doc('new', 1000));
+    expect(MAX_EDIT_DISTANCE).toBe(2000);
+    expect(truncated).toBe(false);
+    expect([added, removed]).toEqual([1000, 1000]);
+    expect(diff.split('\n').filter((l) => /^[-+]/.test(l))).toHaveLength(2000);
+  });
+
+  it('one more changed line is truncated: no diff, no counts', () => {
+    expect(diffLines(doc('old', 1001), doc('new', 1000))).toEqual({
+      diff: '',
+      added: null,
+      removed: null,
+      truncated: true,
+    });
+  });
+
+  it('the review’s case — two unrelated 1,001-line documents — is truncated, not 2,002 lines', () => {
+    expect(diffLines(doc('old', 1001), doc('new', 1001)).truncated).toBe(true);
+  });
+
+  it('a large rewrite is truncated quickly', () => {
+    const started = Date.now();
+    expect(diffLines(doc('old', 30_000), doc('new', 30_000)).truncated).toBe(true);
     expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it('a small change inside a large document is still answered', () => {
+    const before = doc('line', 30_000);
+    const after = before.replace(/^line 15000$/m, 'changed');
+    expect(diffLines(before, after)).toMatchObject({ added: 1, removed: 1, truncated: false });
   });
 
   it('just inside the bound, still finds the shortest edit', () => {
     const lines = Array.from({ length: MAX_EDIT_DISTANCE }, (_, i) => `l${String(i)}`);
-    const before = lines.join('\n');
-    // Every other line changed: within the bound, and the shortest edit keeps
-    // the unchanged half as context.
     const after = lines.map((l, i) => (i % 2 === 0 ? l : `${l}!`)).join('\n');
-    const { added, removed } = diffLines(before, after);
+    const { added, removed, truncated } = diffLines(lines.join('\n'), after);
+    expect(truncated).toBe(false);
     expect([added, removed]).toEqual([MAX_EDIT_DISTANCE / 2, MAX_EDIT_DISTANCE / 2]);
   });
 });

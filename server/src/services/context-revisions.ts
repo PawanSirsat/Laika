@@ -14,7 +14,7 @@ import { can } from '../policy/can.ts';
 import { requireOwnOpenSession } from './claims.ts';
 import { requireReadableProjectBySlug } from './projects.ts';
 import { resolveTaskRef } from './tasks.ts';
-import { diffLines } from './text-diff.ts';
+import { diffLines, MAX_EDIT_DISTANCE } from './text-diff.ts';
 
 /**
  * The context document's history and its delivery to agent sessions (SPEC
@@ -52,9 +52,19 @@ export interface ContextDiffView {
   to_revision: number;
   /** The project's current revision, so a caller sees whether `to` is it. */
   current_revision: number;
+  /** Empty when nothing changed, and when `truncated`. */
   diff: string;
-  added: number;
-  removed: number;
+  /** Null when `truncated`. */
+  added: number | null;
+  removed: number | null;
+  /**
+   * More than {@link MAX_EDIT_DISTANCE} lines changed, so no diff is sent
+   * (LAI-555 review): REST and MCP answer the same, with `hint` saying how
+   * to read the revision whole.
+   */
+  truncated: boolean;
+  /** Null unless `truncated`. */
+  hint: string | null;
 }
 
 function readableProject(db: Db, actor: ResolvedActor, slug: string) {
@@ -165,11 +175,15 @@ export function diffProjectContext(
 
   const before = revisionBody(db, project.id, from);
   const after = revisionBody(db, project.id, target);
+  const lines = diffLines(before, after);
   return {
     from_revision: from,
     to_revision: target,
     current_revision: project.contextRevision,
-    ...diffLines(before, after),
+    ...lines,
+    hint: lines.truncated
+      ? `More than ${MAX_EDIT_DISTANCE.toLocaleString('en')} lines changed between revision ${String(from)} and ${String(target)}, so no diff is sent. Read revision ${String(target)} whole: GET /api/v1/projects/${slug}/context/revisions/${String(target)}, or get_project_context without since_revision.`
+      : null,
   };
 }
 

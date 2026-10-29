@@ -367,6 +367,35 @@ describe('delivery to a session (§4.69)', () => {
     await client.close();
   });
 
+  it('a truncated diff sends no text, says how to read it whole, and delivers nothing', async () => {
+    const doc = (prefix: string) =>
+      Array.from({ length: 1001 }, (_, i) => `${prefix} ${String(i)}`).join('\n');
+    await writeBrief(doc('old'), 0);
+    await writeBrief(doc('new'), 1);
+    const { secret } = await registerAgent();
+    const key = await newTask();
+    const client = await connect(secret);
+    const started = payload(await succeeded(client, 'start_working', { task: key }));
+    const session = (started.claim as { session_id: string }).session_id;
+
+    const result = await succeeded(client, 'get_project_context', {
+      project: 'alpha',
+      since_revision: 1,
+      session_id: session,
+    });
+    const out = payload(result);
+
+    expect(out.context).not.toHaveProperty('context_md');
+    expect(out.context_diff).toMatchObject({ truncated: true, diff: '', added: null });
+    expect(text(result)).toContain('get_project_context without since_revision');
+    expect(text(result)).not.toContain('new 500');
+    // Nothing of revision 2 was sent, so it was not delivered.
+    expect(h.db.select().from(agentSessionContextDeliveries).all()).toEqual([]);
+    expect(out.context_revision).toMatchObject({ revision: 2, delivered_revision: null });
+
+    await client.close();
+  });
+
   it('another agent’s session is 404 and nothing is recorded', async () => {
     await writeBrief('one', 0);
     const first = await registerAgent('First');

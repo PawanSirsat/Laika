@@ -597,6 +597,32 @@ describe('context revisions over REST (§6.4, §4.68, LAI-555)', () => {
     expect((await req('/api/v1/projects/laika/context/diff')).status).toBe(422);
   });
 
+  it('a diff past 2,000 changed lines is truncated, with the way to read it whole', async () => {
+    const doc = (prefix: string) =>
+      Array.from({ length: 1001 }, (_, i) => `${prefix} ${String(i)}`).join('\n');
+    expect((await write(doc('old'), 0)).status).toBe(200);
+    expect((await write(doc('new'), 1)).status).toBe(200);
+
+    const res = await req('/api/v1/projects/laika/context/diff?from=1');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { hint: string };
+    expect(body).toMatchObject({
+      from_revision: 1,
+      to_revision: 2,
+      diff: '',
+      added: null,
+      removed: null,
+      truncated: true,
+    });
+    expect(body.hint).toContain('GET /api/v1/projects/laika/context/revisions/2');
+    expect(body.hint).toContain('get_project_context without since_revision');
+
+    const small = (await (
+      await req('/api/v1/projects/laika/context/diff?from=2')
+    ).json()) as object;
+    expect(small).toMatchObject({ truncated: false, hint: null });
+  });
+
   it('a project the caller cannot see answers exactly as a missing one', async () => {
     expect(
       (

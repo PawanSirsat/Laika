@@ -2500,9 +2500,11 @@ verb: these rows record the statement, as agent registration does (§4.63).
 ### 4.68 `project_context_revisions`
 
 Every revision of a project's context document (§7.3, proposal §4.6, LAI-555).
-**Immutable**: triggers refuse `UPDATE`, an `INSERT OR REPLACE` over an
-existing id, and `DELETE` while the project exists, and boot refuses to start
-without them, as §4.49's. The newest row's `body` is `projects.context_md` and
+**Immutable**: triggers refuse `UPDATE`, any insert that lands on an existing
+row by **either** unique key — its `id`, or its `(project_id, revision)` — so
+`INSERT OR REPLACE` cannot replace a revision whichever key it collides on, and
+`DELETE` while the project exists. Boot refuses to start without them, or with
+a definition that differs from the one it creates, as §4.49's. The newest row's `body` is `projects.context_md` and
 its `revision` is `projects.context_revision` (§4.3).
 
 | field | notes |
@@ -2950,7 +2952,8 @@ GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
        └ GET answers the document with its `revision`; PATCH takes { context_md, base_revision } — base_revision required, the revision the write replaces; another is 409 `stale_context_revision` with { base_revision, current_revision } and nothing is written (§4.68, LAI-555)
 GET    /api/v1/projects/:slug/context/revisions          newest first, no text: [{ revision, length, author_id, agent_id, created_at }]
 GET    /api/v1/projects/:slug/context/revisions/:revision    one revision with its `body`; one the project has not reached is 404
-GET    /api/v1/projects/:slug/context/diff   ?from=&to= → { from_revision, to_revision, current_revision, diff, added, removed }; `to` defaults to current, `from` may be 0 (the empty document), from > to is 422
+GET    /api/v1/projects/:slug/context/diff   ?from=&to= → { from_revision, to_revision, current_revision, diff, added, removed, truncated, hint }; `to` defaults to current, `from` may be 0 (the empty document), from > to is 422
+       └ at most 2,000 changed lines (added + removed) are answered; past that `truncated: true`, `diff: ''`, `added` and `removed` null, and `hint` names how to read the revision whole (`.../context/revisions/:to`, or `get_project_context` without `since_revision`). MCP answers the same `context_diff`
        └ all four context reads follow project read; a project the caller cannot see is answered **exactly as a missing one** — 404 to a person, and to an agent's token the 403 `agent_not_granted` it gets for any slug it may not use (LAI-555)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
@@ -4223,7 +4226,7 @@ matched.
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age. On a registered agent's token, also `work_requests`: its open work requests, ready or not, newest first, under the same `project` and `limit`, as `GET /agents/me/work-requests?project=&limit=` answers (LAI-535) — a request, not a claim |
 | `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name |
-| `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) |
+| `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
 | `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |

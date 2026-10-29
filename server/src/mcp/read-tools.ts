@@ -565,9 +565,11 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           '',
           `### Context document (revision ${String(full.revision)})`,
           diff !== null
-            ? diff.diff === ''
-              ? `_Unchanged since revision ${String(diff.from_revision)}._`
-              : `Changes since revision ${String(diff.from_revision)} (+${String(diff.added)} −${String(diff.removed)} lines):\n\n\`\`\`diff\n${diff.diff}\n\`\`\``
+            ? diff.truncated
+              ? `_${diff.hint ?? ''}_`
+              : diff.diff === ''
+                ? `_Unchanged since revision ${String(diff.from_revision)}._`
+                : `Changes since revision ${String(diff.from_revision)} (+${String(diff.added)} −${String(diff.removed)} lines):\n\n\`\`\`diff\n${diff.diff}\n\`\`\``
             : full.context_md === ''
               ? '_Empty. Nobody has written the project brief yet._'
               : full.context_md,
@@ -602,8 +604,9 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         ].join('\n');
 
         // Recorded last, once everything above has answered: a call that
-        // failed delivered nothing.
-        if (session_id !== undefined) {
+        // failed delivered nothing — and neither did a truncated diff, which
+        // sent no text of the revision at all.
+        if (session_id !== undefined && diff?.truncated !== true) {
           recordContextDelivery(
             db,
             actor,
