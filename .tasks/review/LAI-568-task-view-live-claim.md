@@ -77,7 +77,7 @@ notice. It does not stub the missing fields (CLAUDE.md §5.1).
       clock, on the task read.
 - [x] An expired, released or transferred claim is not `claim` (history stays
       in activity).
-- [ ] Repo-root gate: red only on the client mirror assertion, quoted
+- [x] Repo-root gate: red only on the client mirror assertion, quoted
       verbatim, for SHELL's half.
 
   **Not met as written — unticked after review (Codex on PR #112).** The only
@@ -105,15 +105,12 @@ notice. It does not stub the missing fields (CLAUDE.md §5.1).
   criterion is to be re-validated after merging
   `origin/integration-agent-identities`, once Belka posts it ready.**
 
-  **Re-measured 2026-10-29 after merging `origin/master` (`52069e4b`):**
-  `pnpm test` **1** · `pnpm lint` **0** · `pnpm format` **0**. server
-  `4172 passed | 10 skipped`, cli `# pass 665` `# fail 0`, server/web
-  `# pass 3577` `# fail 1`. **The five inherited failures are gone.** The one
-  `not ok` is *"every server field is visible to the client"* /
-  *"no server field is missing from its client type"*, and its only lines are
-  the two `.claim` lines quoted above. That is exactly this criterion's
-  wording. It is left unticked because the gate is not 0 and the criteria are
-  frozen; ticking it is Belka's call.
+  **Met, 2026-10-29, at `d0922c18`** (`origin/master` `a18f5554` merged, with
+  Belka's client mirror): `pnpm test` **0** · `pnpm lint` **0** ·
+  `pnpm format` **0**. server `4217 passed | 10 skipped`, cli `# pass 665`
+  `# fail 0`, server/web `# pass 3602` `# fail 0`. The five inherited failures
+  went with master, and the two `.claim` lines above went green with the
+  mirror in `server/web/src/api/tasks.ts`.
 
 ## Role / machine
 
