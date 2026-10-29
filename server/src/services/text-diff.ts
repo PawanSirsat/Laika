@@ -8,10 +8,19 @@
  */
 
 export interface LineDiff {
-  /** Unified diff text, `@@ -a,b +c,d @@` hunks; empty when nothing changed. */
+  /**
+   * Unified diff text, `@@ -a,b +c,d @@` hunks; empty when nothing changed,
+   * and empty when `truncated`.
+   */
   diff: string;
-  added: number;
-  removed: number;
+  /** Lines added and removed; null when `truncated`, since nobody counted. */
+  added: number | null;
+  removed: number | null;
+  /**
+   * More than {@link MAX_EDIT_DISTANCE} lines changed, so no diff is sent:
+   * the caller reads the revision whole instead (§6.4).
+   */
+  truncated: boolean;
 }
 
 interface Op {
@@ -24,11 +33,12 @@ function splitLines(text: string): string[] {
 }
 
 /**
- * Past this many inserted or removed lines, the shortest edit is not looked
- * for: the changed middle is answered as removed whole and added whole, which
- * is still a correct diff, only not the smallest. Myers keeps one frontier per
- * step, so without a bound two unrelated 100,000-character documents would
- * cost memory in the gigabytes — and any reader of the project may ask.
+ * The most changed lines — added plus removed — a diff answers (LAI-555
+ * review). Past it the answer is `truncated` and carries no diff: the bound
+ * is on the **response**, not only on the search, so a reader asking for a
+ * diff never gets more than this many changed lines. It also bounds Myers'
+ * search, which keeps one frontier per step: unbounded, two unrelated
+ * 100,000-character documents would cost memory in the gigabytes.
  */
 export const MAX_EDIT_DISTANCE = 2000;
 
@@ -107,9 +117,13 @@ export function diffLines(before: string, after: string): LineDiff {
     tail++;
   }
 
+  const middleOps = editScript(a.slice(head, a.length - tail), b.slice(head, b.length - tail));
+  // A shortest edit longer than the bound: say so rather than send it.
+  if (middleOps === null) return { diff: '', added: null, removed: null, truncated: true };
+
   const ops: Op[] = [
     ...a.slice(0, head).map((line) => ({ kind: ' ' as const, line })),
-    ...middle(a.slice(head, a.length - tail), b.slice(head, b.length - tail)),
+    ...middleOps,
     ...a.slice(a.length - tail).map((line) => ({ kind: ' ' as const, line })),
   ];
 
@@ -119,7 +133,7 @@ export function diffLines(before: string, after: string): LineDiff {
     if (op.kind === '+') added++;
     else if (op.kind === '-') removed++;
   }
-  if (added === 0 && removed === 0) return { diff: '', added, removed };
+  if (added === 0 && removed === 0) return { diff: '', added, removed, truncated: false };
 
   // Group changes into hunks with up to three unchanged lines either side.
   const changed = ops.flatMap((op, i) => (op.kind === ' ' ? [] : [i]));
@@ -155,15 +169,5 @@ export function diffLines(before: string, after: string): LineDiff {
     for (const op of slice) out.push(`${op.kind}${op.line}`);
   }
 
-  return { diff: out.join('\n'), added, removed };
-}
-
-/** The changed middle: the shortest edit, or past the bound, all out then all in. */
-function middle(a: readonly string[], b: readonly string[]): Op[] {
-  return (
-    editScript(a, b) ?? [
-      ...a.map((line) => ({ kind: '-' as const, line })),
-      ...b.map((line) => ({ kind: '+' as const, line })),
-    ]
-  );
+  return { diff: out.join('\n'), added, removed, truncated: false };
 }
