@@ -48,6 +48,7 @@ import {
   updateTask,
 } from '../../src/services/tasks.ts';
 import { expireClaims, reclaimTask } from '../../src/services/claims.ts';
+import { registerCheckpoint } from '../../src/services/checkpoints.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
 import { registerAgent } from '../../src/services/agents.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
@@ -553,7 +554,29 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       const claimed = createTask(t.sqlite, t.db, owner(), 'core', { title: 'Claimed by an agent' });
       startWorking(t.sqlite, t.db, asAgent, claimed.id);
       expireClaims(t.db, Date.now() + 60 * 60 * 1000);
-      reclaimTask(t.sqlite, t.db, asAgent, claimed.id);
+      const reclaimed = reclaimTask(t.sqlite, t.db, asAgent, claimed.id);
+
+      // --- checkpoints.ts: task.checkpoint_saved (LAI-545) -----------------
+      // Saved under the reclaimed claim, in the project's configured repo.
+      t.db
+        .update(schema.projects)
+        .set({ repo: 'kvell/core' })
+        .where(eq(schema.projects.id, claimed.project_id))
+        .run();
+      registerCheckpoint(
+        t.sqlite,
+        t.db,
+        { ...asAgent, claimGeneration: reclaimed.claim.generation },
+        claimed.id,
+        {
+          id: newId(),
+          idempotencyKey: 'payload-sweep',
+          repo: 'kvell/core',
+          branch: 'COR-2-work',
+          commitSha: 'c'.repeat(40),
+          manifest: [],
+        },
+      );
 
       addTaskDependency(t.sqlite, t.db, owner(), task.id, other.id);
       removeTaskDependency(t.db, owner(), task.id, other.id);
