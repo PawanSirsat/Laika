@@ -2,11 +2,12 @@
 id: LAI-588
 title: 'The agent session helper sends harness, harness_version and model on session start and heartbeat'
 area: cli
-assignee: unclaimed
+assignee: strelka
 priority: p1
 depends-on: [LAI-586]
 discovered-from: LAI-532
-status: backlog
+status: in-progress
+started: 2026-10-29T09:46:40Z
 ---
 
 D-118 (proposed, `docs/proposals/LAI-532-agent-identity-model.md`, PR #121):
