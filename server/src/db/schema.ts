@@ -41,6 +41,7 @@ import {
   HANDOFF_OFFER_KINDS,
   HANDOFF_OFFER_STATES,
   TASK_CLAIM_STATES,
+  CHECKPOINT_VERIFICATIONS,
   EVIDENCE_STATES,
   GITHUB_CHECK_KINDS,
   GRANTABLE_ROLES,
@@ -1112,6 +1113,163 @@ export const taskClaims = sqliteTable(
     check('task_claims_state_check', oneOf('state', TASK_CLAIM_STATES)),
     check('task_claims_generation_check', sql`generation >= 1`),
   ],
+);
+
+// ------------------------------------------------- §4.68 task_checkpoints
+
+/** A manifest entry (§4.68): a path and its line counts — **names only**. */
+export interface CheckpointManifestEntry {
+  path: string;
+  added: number;
+  removed: number;
+}
+
+/** The structured continuation note (§4.68, D-115 item 3): five strings. */
+export interface CheckpointSummary {
+  work_done: string;
+  next_step: string;
+  decisions: string;
+  open_questions: string;
+  failing: string;
+}
+
+/**
+ * A save an agent registers **on purpose** inside a task its session holds
+ * (§4.68, D-115, LAI-545). Not a heartbeat and not telemetry (D-005).
+ *
+ * **The saved fields are never changed**: only `verification` and
+ * `verified_at` move, and only from a signed push delivery (§10.1, D-116
+ * item 3) — no API field or tool argument reaches them. There is **no
+ * column** for file contents, a diff, a prompt or a transcript (D-115 item
+ * 4): `manifest` is paths and line counts, `summary` the five-field note.
+ */
+export const taskCheckpoints = sqliteTable(
+  'task_checkpoints',
+  {
+    /** Minted by the helper before its push: the last segment of the tag. */
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'restrict' }),
+    claimGeneration: integer('claim_generation').notNull(),
+    /** `owner/name`, lowercased — the project's configured repo, and no other. */
+    repo: text('repo').notNull(),
+    branch: text('branch').notNull(),
+    /** The first tag, `refs/tags/laika-ckpt/<task>/<id>`. Never changes. */
+    remoteRef: text('remote_ref').notNull(),
+    commitSha: text('commit_sha').notNull(),
+    manifest: text('manifest', { mode: 'json' }).$type<CheckpointManifestEntry[]>().notNull(),
+    summary: text('summary', { mode: 'json' }).$type<CheckpointSummary>(),
+    summaryCommitSha: text('summary_commit_sha'),
+    /** Written by nothing until Phase 4 (proposal §4.6). */
+    contextRevision: integer('context_revision'),
+    createdAt,
+    verifiedAt: integer('verified_at'),
+    /** The newest ref's state (§4.69), copied in the transaction that changes it. */
+    verification: text('verification', { enum: CHECKPOINT_VERIFICATIONS }).notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+  },
+  (t) => [
+    index('task_checkpoints_task_created_idx').on(t.taskId, t.createdAt),
+    index('task_checkpoints_session_id_idx').on(t.sessionId),
+    uniqueIndex('task_checkpoints_idempotency_key_idx').on(t.idempotencyKey),
+    check('task_checkpoints_verification_check', oneOf('verification', CHECKPOINT_VERIFICATIONS)),
+    check('task_checkpoints_generation_check', sql`claim_generation >= 1`),
+    check('task_checkpoints_commit_sha_check', sql`length(commit_sha) = 40`),
+    // A note and the commit it describes come together, or neither does.
+    check('task_checkpoints_summary_check', sql`(summary IS NULL) = (summary_commit_sha IS NULL)`),
+  ],
+);
+
+// -------------------------------------------------- §4.69 checkpoint_refs
+
+/**
+ * Every Git ref a checkpoint has (§4.69, D-116 items 4 and 7): the first tag
+ * at revision 0, and each re-tag `…-r<n>`. **Each ref is judged on its own**,
+ * from its §4.70 transitions; a checkpoint's state is its newest ref's.
+ */
+export const checkpointRefs = sqliteTable(
+  'checkpoint_refs',
+  {
+    id: text('id').primaryKey(),
+    checkpointId: text('checkpoint_id')
+      .notNull()
+      .references(() => taskCheckpoints.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    /** The full ref. The checkpoint's ULID is in it, so it is unique outright. */
+    ref: text('ref').notNull(),
+    state: text('state', { enum: CHECKPOINT_VERIFICATIONS }).notNull(),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('checkpoint_refs_checkpoint_revision_idx').on(t.checkpointId, t.revision),
+    uniqueIndex('checkpoint_refs_ref_idx').on(t.ref),
+    check('checkpoint_refs_state_check', oneOf('state', CHECKPOINT_VERIFICATIONS)),
+    check('checkpoint_refs_revision_check', sql`revision >= 0`),
+  ],
+);
+
+// --------------------------------------- §4.70 checkpoint_ref_transitions
+
+/**
+ * One row per signed `push` delivery that moved a `laika-ckpt/` ref (§4.70,
+ * D-116 items 4 and 5). Append-only.
+ *
+ * **Kept by repository and ref name**, and attached to its §4.69 row when
+ * there is one: a delivery that beats its checkpoint's registration is stored
+ * durably here with `checkpoint_ref_id` null and attached when the checkpoint
+ * registers (§10.1), so a notice that arrives first is not lost.
+ * `delivery_id` is unique and written **in the transaction that applies the
+ * transition**, so a delivery that was applied is ignored when it repeats and
+ * one that failed before it was applied is processed when redelivered.
+ */
+export const checkpointRefTransitions = sqliteTable(
+  'checkpoint_ref_transitions',
+  {
+    id: text('id').primaryKey(),
+    checkpointRefId: text('checkpoint_ref_id').references(() => checkpointRefs.id, {
+      onDelete: 'cascade',
+    }),
+    /** `owner/name`, lowercased, as the delivery named it. */
+    repo: text('repo').notNull(),
+    ref: text('ref').notNull(),
+    deliveryId: text('delivery_id').notNull(),
+    beforeSha: text('before_sha').notNull(),
+    afterSha: text('after_sha').notNull(),
+    /** Receipt time, which decides nothing. */
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('checkpoint_ref_transitions_delivery_id_idx').on(t.deliveryId),
+    index('checkpoint_ref_transitions_ref_id_idx').on(t.checkpointRefId),
+    index('checkpoint_ref_transitions_repo_ref_idx').on(t.repo, t.ref),
+  ],
+);
+
+// ----------------------------------------- §4.73 agent_checkpoint_consents
+
+/**
+ * The owner's consent to **automatic** checkpoints for one agent (§4.73,
+ * D-115 item 2). Manual saves never need it; the server records what is
+ * registered and does not see which kind a save was (§6.4).
+ */
+export const agentCheckpointConsents = sqliteTable(
+  'agent_checkpoint_consents',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    givenByUserId: text('given_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    givenAt: integer('given_at').notNull(),
+    withdrawnAt: integer('withdrawn_at'),
+  },
+  (t) => [uniqueIndex('agent_checkpoint_consents_agent_id_idx').on(t.agentId)],
 );
 
 // ----------------------------------------------------------- §4.10 heartbeats

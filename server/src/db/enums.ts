@@ -221,6 +221,9 @@ export const ACTIVITY_TYPES = [
   // explicitly, at `generation + 1`. Its own verb, not a quiet new claim:
   // "who took it back, after what gap" is the question. Three owners as above.
   'task.claim_reclaimed',
+  // §4.68 (LAI-545): a checkpoint registered on purpose — once per checkpoint.
+  // Verification writes no row; the state is on the checkpoint.
+  'task.checkpoint_saved',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -282,6 +285,21 @@ export const TASK_CLAIM_STATES = [
   'transferred',
 ] as const;
 export type TaskClaimState = (typeof TASK_CLAIM_STATES)[number];
+
+/**
+ * A checkpoint ref's state, and the checkpoint's — its newest ref's (§4.68,
+ * §4.69, D-116 item 4, LAI-545). Derived from the **set** of signed push
+ * transitions seen for the ref, never from their arrival order; `uncertain`
+ * and `ref_deleted` never become `verified` again. Only `verified` may be
+ * offered or accepted (D-116 item 6).
+ */
+export const CHECKPOINT_VERIFICATIONS = [
+  'pending',
+  'verified',
+  'ref_deleted',
+  'uncertain',
+] as const;
+export type CheckpointVerification = (typeof CHECKPOINT_VERIFICATIONS)[number];
 
 /** The states that hold a task (§4.66): the partial unique index's predicate. */
 export const LIVE_CLAIM_STATES = ['active', 'paused'] as const satisfies readonly TaskClaimState[];
