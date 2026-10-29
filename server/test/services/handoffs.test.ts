@@ -7,6 +7,7 @@ import {
   activity,
   handoffOffers,
   agentProjectGrants,
+  projectMemberships,
   projects,
   projectStatuses,
   taskCheckpoints,
@@ -94,7 +95,10 @@ function agentOf(person: ResolvedActor, name: string): AgentHandle {
 }
 
 /** A Member of the project, with an agent of their own. */
-function member(name = 'Mira'): { person: ResolvedActor; agent: AgentHandle } {
+function member(
+  name = 'Mira',
+  role: 'member' | 'lead' = 'member',
+): { person: ResolvedActor; agent: AgentHandle } {
   const id = newId();
   t.db
     .insert(users)
@@ -107,7 +111,7 @@ function member(name = 'Mira'): { person: ResolvedActor; agent: AgentHandle } {
       updatedAt: new Date(T0),
     })
     .run();
-  addMember(t.db, owner, 'laika', id, 'member', T0);
+  addMember(t.db, owner, 'laika', id, role, T0);
   const person = loadActor(t.db, id)!;
   return { person, agent: agentOf(person, `${name}’s agent`) };
 }
@@ -1160,5 +1164,124 @@ describe('the policy (§4.72)', () => {
     expect(
       refusal(() => putHandoffPolicy(t.sqlite, t.db, owner, 'laika', { max_handoffs: 21 }, T0)),
     ).toMatchObject({ code: 'unprocessable' });
+  });
+});
+
+// ------------------------------------------- LAI-546 review round 1 (Codex)
+
+describe('closing an offer settles an elapsed sender lease in the same transaction', () => {
+  function pausedAndLapsed() {
+    const a = agentOf(owner, 'A');
+    const b = agentOf(owner, 'B');
+    const id = task();
+    const held = claim(a, id);
+    const cp = save(a, id, held.generation);
+    const { offer: made } = offer(a, id, 1, b.id, cp.id);
+    // No heartbeat, and no scan yet: the paused lease is past, the row still says paused.
+    expect(claimsOf(id)).toEqual([[1, 'paused']]);
+    return { a, b, id, cp, made, late: T0 + LEASE + 1 };
+  }
+
+  for (const how of ['decline', 'cancel'] as const) {
+    it(`a ${how} does not resume it: the claim expires, its row is written, and the recovery opens`, () => {
+      const { a, b, id, cp, made, late } = pausedAndLapsed();
+      if (how === 'decline') declineHandoff(t.sqlite, t.db, b.actor, made.id, { now: late });
+      else cancelHandoff(t.sqlite, t.db, a.actor, made.id, late);
+
+      expect(claimsOf(id)).toEqual([[1, 'expired']]);
+      expect(rowsOf(id, 'task.claim_expired')).toHaveLength(1);
+      expect(
+        offersOf(id)
+          .filter((o) => o.kind === 'recovery')
+          .map((o) => [o.state, o.checkpointId]),
+      ).toEqual([['open', cp.id]]);
+      expect(
+        refusal(() => updateTask(t.db, at(a.actor, 1), id, { title: 'x', now: late + 1 })),
+      ).toEqual({ code: 'conflict', reason: 'stale_claim' });
+    });
+  }
+
+  it('an accept records the expiry first, then takes the task from an expired claim', () => {
+    const { b, id, cp, made, late } = pausedAndLapsed();
+    acceptHandoff(t.sqlite, t.db, b.actor, made.id, { verifiedCommitSha: cp.commit, now: late });
+
+    expect(claimsOf(id)).toEqual([
+      [1, 'expired'],
+      [2, 'active'],
+    ]);
+    const types = t.db
+      .select()
+      .from(activity)
+      .where(eq(activity.taskId, id))
+      .all()
+      .map((r) => r.type);
+    expect(types.indexOf('task.claim_expired')).toBeGreaterThan(-1);
+    expect(types.indexOf('task.claim_expired')).toBeLessThan(
+      types.indexOf('task.handoff_accepted'),
+    );
+    expect(rowsOf(id, 'task.handoff_accepted')[0]).toMatchObject({ from_claim_state: 'expired' });
+    // No recovery beside the accepted offer.
+    expect(offersOf(id).filter((o) => o.kind === 'recovery')).toEqual([]);
+  });
+});
+
+describe('a person is read again inside the write (§4.71)', () => {
+  function crossOwnerPending() {
+    const a = agentOf(owner, 'A');
+    const { agent: theirs } = member('Theo');
+    putHandoffPolicy(t.sqlite, t.db, owner, 'laika', { allow_other_owners: true }, T0);
+    const id = task();
+    const held = claim(a, id);
+    const { offer: made } = offer(a, id, 1, theirs.id, save(a, id, held.generation).id);
+    expect(made.state).toBe('pending_approval');
+    return { a, id, made };
+  }
+
+  it('a lead demoted after the request resolved may not approve', () => {
+    const { made } = crossOwnerPending();
+    const { person: lead } = member('Lena', 'lead');
+    t.db
+      .update(projectMemberships)
+      .set({ role: 'member' })
+      .where(eq(projectMemberships.userId, lead.userId))
+      .run();
+    expect(refusal(() => approveHandoff(t.sqlite, t.db, lead, made.id, { now: T0 + 1 })).code).toBe(
+      'forbidden',
+    );
+  });
+
+  it('a deactivated lead may not approve, set the policy or cancel', () => {
+    const { made } = crossOwnerPending();
+    const { person: lead } = member('Lena', 'lead');
+    t.db.update(users).set({ isActive: 0 }).where(eq(users.id, lead.userId)).run();
+    expect(refusal(() => approveHandoff(t.sqlite, t.db, lead, made.id, { now: T0 + 1 }))).toEqual({
+      code: 'forbidden',
+      reason: 'user_inactive',
+    });
+    expect(
+      refusal(() => putHandoffPolicy(t.sqlite, t.db, lead, 'laika', { max_handoffs: 5 }, T0 + 1)),
+    ).toEqual({ code: 'forbidden', reason: 'user_inactive' });
+    expect(refusal(() => cancelHandoff(t.sqlite, t.db, lead, made.id, T0 + 1))).toEqual({
+      code: 'forbidden',
+      reason: 'user_inactive',
+    });
+    expect(offersOf(made.task_id).find((o) => o.id === made.id)?.state).toBe('pending_approval');
+  });
+
+  it('a lead demoted mid-request may not set the policy or cancel another agent’s offer', () => {
+    const { made } = crossOwnerPending();
+    const { person: lead } = member('Lena', 'lead');
+    t.db
+      .update(projectMemberships)
+      .set({ role: 'member' })
+      .where(eq(projectMemberships.userId, lead.userId))
+      .run();
+    expect(
+      refusal(() => putHandoffPolicy(t.sqlite, t.db, lead, 'laika', { max_handoffs: 5 }, T0 + 1))
+        .code,
+    ).toBe('forbidden');
+    expect(refusal(() => cancelHandoff(t.sqlite, t.db, lead, made.id, T0 + 1)).code).toBe(
+      'forbidden',
+    );
   });
 });
