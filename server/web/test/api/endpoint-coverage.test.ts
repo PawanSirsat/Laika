@@ -56,10 +56,6 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
    * built, and there is nowhere in the app to put it yet.
    */
   'api/v1/me/watching': 'LAI-458 — a "tasks I watch" screen does not exist',
-  // LAI-555's context history; the screen that reads it is LAI-556.
-  'api/v1/projects/*/context/revisions': 'LAI-556 — the context history screen does not exist',
-  'api/v1/projects/*/context/revisions/*': 'LAI-556 — the context history screen does not exist',
-  'api/v1/projects/*/context/diff': 'LAI-556 — the context history screen does not exist',
   // Called by something that is not the SPA.
   'webhooks/github': 'GitHub posts here (§9.2); no browser is involved',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
@@ -99,11 +95,34 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     'agent-token only, a session is `403 not_an_agent`; the local helper (LAI-542) and MCP `start_working` call it',
   'api/v1/tasks/*/claim/reclaim':
     'agent-token only, a session is `403 not_an_agent`; the local helper (LAI-542) and MCP `start_working` call it',
+  // LAI-545 and LAI-546 serve them, LAI-549 names them. Permanent for the same
+  // reason: re-tagging a save, reading an agent's inbox, and accepting or
+  // declining an offer are a registered agent's acts (§3.2), and the SPA holds
+  // a person's session. A person reads the saves and offers on the task
+  // (`GET /tasks/:id/checkpoints`, `/handoff-offers`) and approves or
+  // withdraws an offer — both called from the task drawer.
+  'api/v1/checkpoints/*/refs':
+    'agent-token only (`task.checkpoint.retag`); `laika agent checkpoint reverify` (D-116 item 7) calls it',
+  'api/v1/agents/me/inbox':
+    'agent-token only, a session is `403 not_an_agent`; MCP `agent_sync` is its twin',
+  'api/v1/handoff-offers/*/accept':
+    'agent-token only, a session is `403 not_an_agent`; `laika agent accept` (LAI-548) and MCP `respond_handoff` call it',
+  'api/v1/handoff-offers/*/decline':
+    'agent-token only, a session is `403 not_an_agent`; MCP `respond_handoff` calls it',
+  /*
+   * §4.75's consent: `GET` answers the agent's own token, which the helper
+   * (LAI-547) reads before an automatic save. `PUT` and `DELETE` are the
+   * owner's, signed in, and have no screen yet: no task builds the setup
+   * toggle, and LAI-549's report names the gap for CHIEF to file.
+   */
+  'api/v1/agents/*/checkpoint-consent':
+    'LAI-547 — the helper reads it with the agent’s token; the owner’s toggle has no screen or task yet (raised by LAI-549)',
 
   // Built, served, and waiting on a screen. Each names the task, not a reason.
   'api/v1/comments/*': 'LAI-234 — a comment cannot be edited or deleted from the UI',
   'api/v1/projects/*/tags/*': 'LAI-235 — a tag cannot be removed from a project',
   'api/v1/activity': 'LAI-237 — the org-wide feed; only the per-project one is read',
+  'api/v1/projects/*/handoff-policy': 'LAI-550 — the Access tab’s hand-off policy controls',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */

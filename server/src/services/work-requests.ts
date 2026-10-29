@@ -154,7 +154,7 @@ export function moveSelection(
   now: number,
 ): void {
   db.update(handoffOffers)
-    .set({ state: 'cancelled', closedAt: now })
+    .set({ state: 'cancelled', closedReason: 'selection_changed', closedAt: now })
     .where(
       and(
         eq(handoffOffers.taskId, taskId),

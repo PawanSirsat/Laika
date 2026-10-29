@@ -250,15 +250,20 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.time.prune',
   'system.idempotency.prune',
   'system.claim.expire',
+  'system.handoff.recover',
+  'system.handoff.expire',
+  'system.checkpoint.prune',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
+  'system.checkpoint.verify',
 ]);
 
 /** Which of §3.4's grants need a project, and therefore a resolved delivery. */
 const SYSTEM_PROJECT_SCOPED: ReadonlySet<Action> = new Set<Action>([
   'task.write',
   'comment.create',
+  'system.checkpoint.verify',
 ]);
 
 function canSystem(principal: SystemPrincipal, action: Action, resource: Resource): boolean {
@@ -697,6 +702,57 @@ function canProjectAction(
     // | Claim a task (`start_working`) | ✓ | ✓ | — |
     case 'task.claim':
       return isMemberUp;
+
+    // | Save a checkpoint on a task your agent holds | ✓ | ✓ | — |
+    //
+    // Asked of the owner's role; the agent's grant and token narrow it, and
+    // the service requires a registered agent holding the live claim (§3.2,
+    // §4.70, LAI-545) — facts about other rows, which a pure function is not
+    // given.
+    case 'task.checkpoint.create':
+      return isMemberUp;
+
+    // | Re-tag a checkpoint one of your agents saved | ✓ | ✓ | — |
+    //
+    // Also an agent's act, and it needs no claim: it changes no task, only
+    // which ref is the checkpoint's newest (§3.2, D-116 item 7). That the
+    // caller is an agent of the saving agent's owner is the service's to ask.
+    case 'task.checkpoint.retag':
+      return isMemberUp;
+
+    // | Offer a task your agent holds to another agent | ✓ | ✓ | — |
+    // | Accept a hand-off or recovery offer | ✓ | ✓ | — |
+    // | Decline a hand-off or recovery offer | ✓ | ✓ | — |
+    //
+    // Asked of the owner's role, narrowed by the agent's grant and token.
+    // That the caller is a registered agent, holds the live claim (offer) or
+    // is the offer's receiver (accept, decline) is the service's to ask, with
+    // the project's hand-off policy (§3.2, §4.73).
+    case 'task.handoff.offer':
+    case 'task.handoff.accept':
+    case 'task.handoff.decline':
+      return isMemberUp;
+
+    // | Approve a cross-owner hand-off | ✓ | task's assignee | — |
+    //
+    // `ownerId` is the task's assignee. **Never the receiving agent's owner**
+    // (`approver_is_receiver`) is a fact about another row: the service's.
+    case 'task.handoff.approve':
+      if (isLead) return true;
+      if (role === 'member') return resource.ownerId != null && resource.ownerId === actor.userId;
+      return false;
+
+    // | Cancel a hand-off offer | ✓ | own agent's | — |
+    //
+    // `ownerId` is the owner of the agent whose session sent the offer.
+    case 'task.handoff.cancel':
+      if (isLead) return true;
+      if (role === 'member') return resource.ownerId != null && resource.ownerId === actor.userId;
+      return false;
+
+    // | Edit the project's hand-off policy | ✓ | — | — |
+    case 'project.handoff_policy.edit':
+      return isLead;
 
     // | Assign a task to someone else | ✓ | ✓ | — |
     case 'task.assign_other':

@@ -9,7 +9,12 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { contextBudget, readableContextError } from '../../src/api/project-context.ts';
+import {
+  contextBudget,
+  diffLinesOf,
+  readableContextError,
+  staleContextOf,
+} from '../../src/api/project-context.ts';
 import { ApiError } from '../../src/api/errors.ts';
 
 const LIMIT = 100_000;
@@ -114,5 +119,40 @@ void describe('a refusal names both numbers', () => {
       readableContextError(new Error('offline')),
       'Could not save the context document.',
     );
+  });
+});
+
+void describe('the stale-save refusal is read, not guessed (LAI-556)', () => {
+  void test('the 409 names both revisions', () => {
+    const cause = new ApiError('conflict', 'stale', 409, {
+      reason: 'stale_context_revision',
+      base_revision: 3,
+      current_revision: 5,
+    });
+    assert.deepEqual(staleContextOf(cause), { base_revision: 3, current_revision: 5 });
+    assert.match(readableContextError(cause), /\(r5\) while you were editing r3/);
+  });
+
+  void test('any other conflict is not a stale save', () => {
+    const cause = new ApiError('conflict', 'taken', 409, { reason: 'something_else' });
+    assert.equal(staleContextOf(cause), null);
+    assert.equal(staleContextOf(new Error('offline')), null);
+  });
+});
+
+void describe('the server diff is drawn line by line', () => {
+  void test('markers become kinds and the line keeps its text verbatim', () => {
+    const lines = diffLinesOf('@@ -1,2 +1,2 @@\n same\n-old\n+new\n+-starts with a dash');
+    assert.deepEqual(lines, [
+      { kind: 'hunk', text: '@@ -1,2 +1,2 @@' },
+      { kind: 'same', text: 'same' },
+      { kind: 'removed', text: 'old' },
+      { kind: 'added', text: 'new' },
+      { kind: 'added', text: '-starts with a dash' },
+    ]);
+  });
+
+  void test('an empty diff is no lines, not one blank line', () => {
+    assert.deepEqual(diffLinesOf(''), []);
   });
 });

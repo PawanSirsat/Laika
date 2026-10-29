@@ -257,6 +257,18 @@ const PROJECT_MATRIX: ProjectRow[] = [
   ['task.write', true, true, false],
   // | Claim a task (start_working) | ✓ | ✓ | — |
   ['task.claim', true, true, false],
+  // | Save a checkpoint on a task your agent holds | ✓ | ✓ | — |
+  ['task.checkpoint.create', true, true, false],
+  // | Re-tag a checkpoint one of your agents saved | ✓ | ✓ | — |
+  ['task.checkpoint.retag', true, true, false],
+  // | Offer a task your agent holds to another agent | ✓ | ✓ | — |
+  ['task.handoff.offer', true, true, false],
+  // | Accept a hand-off or recovery offer | ✓ | ✓ | — |
+  ['task.handoff.accept', true, true, false],
+  // | Decline a hand-off or recovery offer | ✓ | ✓ | — |
+  ['task.handoff.decline', true, true, false],
+  // | Edit the project's hand-off policy | ✓ | — | — |
+  ['project.handoff_policy.edit', true, false, false],
   // | Assign a task to someone else | ✓ | ✓ | — |
   ['task.assign_other', true, true, false],
   // | Add comment | ✓ | ✓ | — |
@@ -325,6 +337,18 @@ describe('SPEC §3.2 — the `own` cells', () => {
     expect(can(projectActor('viewer'), 'task.delete', OWN)).toBe(false);
   });
 
+  it('| Approve a cross-owner hand-off | ✓ | task’s assignee | — | and | Cancel a hand-off offer | ✓ | own agent’s | — |', () => {
+    // `ownerId` is the task's assignee for approve, the sending agent's owner
+    // for cancel (§3.2, LAI-546).
+    for (const action of ['task.handoff.approve', 'task.handoff.cancel'] as const) {
+      expect(can(projectActor('lead'), action, THEIRS), `lead ${action}`).toBe(true);
+      expect(can(projectActor('member'), action, OWN), `member own ${action}`).toBe(true);
+      expect(can(projectActor('member'), action, THEIRS), `member other ${action}`).toBe(false);
+      expect(can(projectActor('viewer'), action, OWN), `viewer ${action}`).toBe(false);
+      expect(can(projectActor('member'), action, { projectId: 'p1' }), `member none`).toBe(false);
+    }
+  });
+
   it('treats a missing owner id as not-yours rather than as a match', () => {
     // Both undefined must not compare equal — that would make every ownerless
     // resource everyone's.
@@ -358,8 +382,12 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.time.prune', {}],
     ['system.idempotency.prune', {}],
     ['system.claim.expire', {}],
+    ['system.handoff.recover', {}],
+    ['system.handoff.expire', {}],
+    ['system.checkpoint.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
+    ['system.checkpoint.verify', { projectId: PROJECT }],
   ];
 
   it('holds each of §3.4’s actions', () => {
@@ -428,6 +456,8 @@ describe('completeness', () => {
       'comment.edit',
       'comment.delete',
       'task.delete',
+      'task.handoff.approve',
+      'task.handoff.cancel',
       'profile.rate',
       'people.analytics.read',
       // §3.4's own, asserted in full by the describe above.

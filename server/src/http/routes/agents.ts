@@ -19,6 +19,12 @@ import {
   updateAgent,
 } from '../../services/agents.ts';
 import { listOwnWorkRequests } from '../../services/work-requests.ts';
+import { listInbox } from '../../services/handoffs.ts';
+import {
+  type CheckpointConsentView,
+  readCheckpointConsent,
+  setCheckpointConsent,
+} from '../../services/checkpoints.ts';
 import { type AppEnv } from '../context.ts';
 import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
@@ -128,6 +134,16 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
     return c.json(buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id })));
   });
 
+  // The calling agent's inbox (§6.4, LAI-546): live work requests and the
+  // hand-off and recovery offers it may accept — `agent_sync`'s twin.
+  app.get('/me/inbox', (c) => {
+    const actor = requireActor(c);
+    const query = c.req.query();
+    const { limit, cursor } = parsePageQuery(query);
+    const rows = listInbox(db, actor, { limit, cursor, projectSlug: query.project ?? null });
+    return c.json(buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id })));
+  });
+
   // Static device routes precede /:id so 'devices' is never an agent id.
   app.get('/devices', (c) => {
     return c.json({ data: listOwnAgentDevices(db, requireActor(c)) });
@@ -185,6 +201,25 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
     const actor = requireActor(c);
     return c.json(revokeAgent(sqlite, db, actor, c.req.param('id')));
   });
+
+  /**
+   * Consent to automatic checkpoints (§6.4, §4.75, D-115 item 2): `GET` for
+   * the owner or the agent's own token, so the helper knows whether a hook
+   * may save; `PUT` gives it and `DELETE` withdraws it, the owner's, signed in.
+   */
+  app.get('/:id/checkpoint-consent', (c) =>
+    c.json<CheckpointConsentView>(readCheckpointConsent(db, requireActor(c), c.req.param('id'))),
+  );
+  app.put('/:id/checkpoint-consent', (c) =>
+    c.json<CheckpointConsentView>(
+      setCheckpointConsent(db, requireActor(c), c.req.param('id'), true),
+    ),
+  );
+  app.delete('/:id/checkpoint-consent', (c) =>
+    c.json<CheckpointConsentView>(
+      setCheckpointConsent(db, requireActor(c), c.req.param('id'), false),
+    ),
+  );
 
   return app;
 }

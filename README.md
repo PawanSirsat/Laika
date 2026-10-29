@@ -170,7 +170,8 @@ claude mcp add --transport http laika https://your-board.example.com/mcp \
 | `list_sprints` · `list_members` | `log_unlisted_work` |
 | | `update_project_context` |
 | | `create_sprint` · `update_sprint` · `set_task_sprint` |
-| | `propose_time_entry` |
+| `agent_sync` | `propose_time_entry` |
+| | `checkpoint_task` · `offer_handoff` · `respond_handoff` |
 
 ---
 
