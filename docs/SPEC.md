@@ -2563,8 +2563,6 @@ verb: these rows record the statement, as agent registration does (§4.63).
 
 ### 4.68 `task_checkpoints`
 
-**Planned — LAI-545.**
-
 A save an agent registers **on purpose** inside a task its session holds
 (proposal §4.3, D-115) — not a heartbeat, and not telemetry: D-005 stands
 unchanged. It is what a receiver continues from (§4.71). Proved only by signed
@@ -2641,8 +2639,6 @@ saves need no consent.
 
 ### 4.69 `checkpoint_refs`
 
-**Planned — LAI-545.**
-
 Every Git ref a checkpoint has (D-116 items 4 and 7): its first tag, and each
 re-tag `laika-ckpt/<LAI-NNN>/<checkpoint-id>-r<n>` pushed by `laika agent
 checkpoint reverify`. **Each ref is judged on its own; a checkpoint's state is
@@ -2684,8 +2680,6 @@ derives the new ref's state from whatever §4.70 already holds for its name
 verification` — the non-delivery change §4.68 names.
 
 ### 4.70 `checkpoint_ref_transitions`
-
-**Planned — LAI-545.**
 
 One row per signed `push` delivery that moved a `laika-ckpt/` ref in the
 project's configured repo (D-116 items 4 and 5). Append-only. **Keyed by the
@@ -2844,8 +2838,6 @@ checkpoint's `verification`:
 
 ### 4.72 `project_handoff_policies`
 
-**Planned — LAI-546.**
-
 A project's hand-off settings (proposal §4.5), edited on the space settings'
 Access tab by a lead. **No row means the defaults.** It governs who may be
 selected, offered work or accept a transfer, and **never narrows a read or a
@@ -2865,8 +2857,6 @@ Editing it writes `project.updated` with `{ field: 'handoff_policy', from, to
 }`: a settings change, as every other project setting is.
 
 ### 4.73 `agent_checkpoint_consents`
-
-**Planned — LAI-545.**
 
 The owner's consent to **automatic** checkpoints for one agent (D-115 item 2):
 given once at setup, after which hooks save after tool activity or at a session
@@ -4802,13 +4792,12 @@ and each disagreed:
   board would file a task instead — so there is no human write path to mirror.
   Humans read it (`GET /api/v1/unlisted`) and act on it
   (`POST /api/v1/unlisted/:id/promote`). The parity tests of §13.3 therefore
-  cover the eighteen tools that have twins; this one is exempt, and **the
-  exemption is named**, so the missing pair reads as intended rather than as a
-  gap. *(This
-  sentence deliberately carries **one** number and not two: it said "nine … a
-  missing tenth" until LAI-433, and the guard pins only the first, so moving one
-  and not the other would have left the sentence contradicting itself with
-  nothing to catch it.)*
+  cover every other tool in §7.1, each against the route it wraps; this one is
+  exempt, and **the exemption is named**, so the missing pair reads as intended
+  rather than as a gap. *(This sentence carries no number: it said "nine … a
+  missing tenth" until LAI-433 and "eighteen" until LAI-546, and each count went
+  stale the day the surface changed. The guard holds the one exempt tool's name
+  against its list instead.)*
 - **`laika_whoami` has no twin of its own and is paired with `GET /api/v1/me`**,
   which answers the same question with more of it. It exists so an operator whose
   token is misbehaving can establish *who the board thinks they are* before

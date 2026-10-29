@@ -7,6 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { activity, timeDrafts, timeEntries, users } from '../../src/db/schema.ts';
+import { applyCheckpointDelivery } from '../../src/services/checkpoints.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpers/auth.ts';
 
 /**
@@ -176,7 +177,9 @@ function normalise(event: unknown): unknown {
 
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(event)) {
-    if (['id', 'seq', 'created_at', 'actor_kind', 'actor_token_id'].includes(key)) continue;
+    // `expires_at` is a clock time like `created_at`: an offer's (LAI-546).
+    if (['id', 'seq', 'created_at', 'expires_at', 'actor_kind', 'actor_token_id'].includes(key))
+      continue;
     out[key] = normalise(value);
   }
   return out;
@@ -224,6 +227,76 @@ interface Pair {
 }
 
 const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
+  [
+    'agent_sync',
+    {
+      note: 'Its twin is `GET /agents/me/inbox` (§6.4, LAI-546). A read on both sides: the setup writes, the read writes nothing.',
+      rest: async (s) => {
+        const ready = await handoffReady(s);
+        await offerOverRest(s, ready);
+        const res = await s.h.app.request('/api/v1/agents/me/inbox', {
+          headers: jsonHeaders({ Authorization: `Bearer ${ready.receiver}` }),
+        });
+        expect(res.status, await res.clone().text()).toBe(200);
+      },
+      mcp: async (s) => {
+        const ready = await handoffReady(s);
+        await offerOverRest(s, ready);
+        const agent = await connectAs(s, ready.receiver);
+        await callTool(agent, 'agent_sync', {});
+        await agent.close();
+      },
+    },
+  ],
+  [
+    'offer_handoff',
+    {
+      note: 'Its twin is `POST /tasks/:id/handoff-offers` (§6.4, LAI-546). Both halves are the registered agent holding the claim, as `checkpoint_task`’s are.',
+      rest: async (s) => {
+        await offerOverRest(s, await handoffReady(s));
+      },
+      mcp: async (s) => {
+        const ready = await handoffReady(s);
+        const agent = await connectAs(s, ready.secret);
+        await callTool(agent, 'offer_handoff', {
+          task: 'COR-1',
+          to_agent: ready.receiverId,
+          checkpoint: CHECKPOINT.id,
+          reason: 'Out of context',
+          idempotency_key: 'parity-offer',
+          claim_generation: ready.generation,
+        });
+        await agent.close();
+      },
+    },
+  ],
+  [
+    'respond_handoff',
+    {
+      note: 'Its twins are `POST /handoff-offers/:id/accept`, `/decline` and `/cancel` (§6.4, LAI-546); the pair is the accept, the receiving agent on both sides.',
+      rest: async (s) => {
+        const ready = await handoffReady(s);
+        const offer = await offerOverRest(s, ready);
+        const res = await s.h.app.request(`/api/v1/handoff-offers/${offer}/accept`, {
+          method: 'POST',
+          headers: jsonHeaders({ Authorization: `Bearer ${ready.receiver}` }),
+          body: JSON.stringify({ verified_commit_sha: CHECKPOINT.commit_sha }),
+        });
+        expect(res.status, await res.clone().text()).toBe(200);
+      },
+      mcp: async (s) => {
+        const ready = await handoffReady(s);
+        const offer = await offerOverRest(s, ready);
+        const agent = await connectAs(s, ready.receiver);
+        await callTool(agent, 'respond_handoff', {
+          offer,
+          action: 'accept',
+          verified_commit_sha: CHECKPOINT.commit_sha,
+        });
+        await agent.close();
+      },
+    },
+  ],
   [
     'checkpoint_task',
     {
@@ -586,6 +659,81 @@ async function agentHolding(
   return { secret: registered.secret, task, generation };
 }
 
+/**
+ * The holder of COR-1 with a **verified** checkpoint and a second agent of
+ * the same person to receive it (§4.71). The delivery is applied through the
+ * service, as the signed webhook would (§10.1) — what is under test here is
+ * the offer, not the signature.
+ */
+async function handoffReady(side: Side): Promise<{
+  secret: string;
+  task: string;
+  generation: number;
+  receiver: string;
+  receiverId: string;
+}> {
+  const held = await agentHolding(side);
+  const saved = await side.h.app.request(`/api/v1/tasks/${held.task}/checkpoints`, {
+    method: 'POST',
+    headers: jsonHeaders({
+      Authorization: `Bearer ${held.secret}`,
+      'X-Laika-Claim-Generation': String(held.generation),
+    }),
+    body: JSON.stringify(CHECKPOINT),
+  });
+  expect(saved.status, await saved.clone().text()).toBe(201);
+  const { remote_ref } = (await saved.json()) as { remote_ref: string };
+  const outcome = applyCheckpointDelivery(
+    side.h.t.sqlite,
+    side.h.db,
+    {
+      deliveryId: 'parity-delivery',
+      repo: 'kvelld/laika',
+      ref: remote_ref,
+      before: '0'.repeat(40),
+      after: CHECKPOINT.commit_sha,
+    },
+    Date.now(),
+  );
+  expect(outcome.state).toBe('verified');
+  const project = (await (
+    await must(side, '/api/v1/projects/core', { method: 'GET' }, 200)
+  ).json()) as { id: string };
+  const receiver = (await (
+    await must(side, '/api/v1/agents', {
+      method: 'POST',
+      body: JSON.stringify({
+        display_name: 'Parity receiver',
+        harness: 'claude-code',
+        grants: [{ project_id: project.id, scope: 'full' }],
+      }),
+    })
+  ).json()) as { secret: string; agent: { id: string } };
+  return { ...held, receiver: receiver.secret, receiverId: receiver.agent.id };
+}
+
+/** The holder offers COR-1 to the receiver over REST; the offer's id. */
+async function offerOverRest(
+  side: Side,
+  ready: Awaited<ReturnType<typeof handoffReady>>,
+): Promise<string> {
+  const res = await side.h.app.request(`/api/v1/tasks/${ready.task}/handoff-offers`, {
+    method: 'POST',
+    headers: jsonHeaders({
+      Authorization: `Bearer ${ready.secret}`,
+      'X-Laika-Claim-Generation': String(ready.generation),
+    }),
+    body: JSON.stringify({
+      idempotency_key: 'parity-offer',
+      to_agent_id: ready.receiverId,
+      checkpoint_id: CHECKPOINT.id,
+      reason: 'Out of context',
+    }),
+  });
+  expect(res.status, await res.clone().text()).toBe(201);
+  return ((await res.json()) as { id: string }).id;
+}
+
 /** An MCP client on a credential other than the side's own token. */
 async function connectAs(side: Side, secret: string): Promise<Client> {
   const client = new Client({ name: 'parity-agent', version: '0.0.0' });
@@ -832,53 +980,21 @@ describe('§7.1 lists the tools the server actually serves', () => {
     },
   );
 
-  it('agrees with §7.2 about how many have REST twins', { timeout: SIDE_BUDGET_MS }, async () => {
-    const side = await makeSide();
-    const client = await connect(side);
-    const registered = (await client.listTools()).tools.map((t) => t.name);
-    await client.close();
-
-    const twinned = registered.filter((name) => !EXEMPT.has(name)).length;
+  it('agrees with §7.2 about which tool has no REST twin', () => {
+    // §7.2 names the exempt tool and counts nothing (LAI-546): a count of the
+    // twinned tools — "nine", then "eighteen" — went stale every time the
+    // surface grew. Every other registered tool is held to a pair above.
     const spec = readFileSync(join(SPEC_DIR, 'SPEC.md'), 'utf8');
+    const section = spec.slice(spec.indexOf('### 7.2 Tool contract'), spec.indexOf('### 7.3'));
+    const named = [...section.matchAll(/\*\*`([a-z_]+)` is the one tool with no REST twin/g)].map(
+      (m) => m[1]!,
+    );
 
-    // §7.2's exact sentence: "cover the nine tools that have twins". Matched
-    // rather than paraphrased — I first wrote this against "nine of them have
-    // REST twins", which is how the task described it and is not what the spec
-    // says, so the assertion could only ever have failed.
-    const claimed = /cover the ([a-z]+) tools that have twins/.exec(spec);
-    expect(
-      claimed,
-      '§7.2 no longer states how many tools have twins in the expected words',
-    ).not.toBeNull();
-
-    const words = [
-      'zero',
-      'one',
-      'two',
-      'three',
-      'four',
-      'five',
-      'six',
-      'seven',
-      'eight',
-      'nine',
-      'ten',
-      'eleven',
-      'twelve',
-      'thirteen',
-      'fourteen',
-      'fifteen',
-      'sixteen',
-      'seventeen',
-      'eighteen',
-      'nineteen',
-      'twenty',
-    ];
-
-    expect(
-      claimed?.[1],
-      `§7.2 says "${claimed?.[1] ?? '?'}" tools have twins; the server has ${twinned}`,
-    ).toBe(words[twinned]);
+    expect(named, '§7.2 no longer names the tool with no REST twin').not.toEqual([]);
+    expect(named).toEqual([...EXEMPT.keys()]);
+    expect(section, '§7.2 states a count of twinned tools again').not.toMatch(
+      /cover the [a-z]+ tools that have twins/,
+    );
   });
 });
 

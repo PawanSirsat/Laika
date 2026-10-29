@@ -203,6 +203,11 @@ const UNPAIRED = new Map<string, string>([
   ['CheckpointRefRegistered', 'no client type exists'],
   ['CheckpointRefView', 'no client type exists'],
   ['CheckpointView', 'no client type exists'],
+  // LAI-546: hand-offs and the policy are served ahead of their screens —
+  // LAI-549 and LAI-550 mirror them on the client.
+  ['AcceptedHandoff', 'no client type exists'],
+  ['HandoffOfferView', 'no client type exists'],
+  ['HandoffPolicyView', 'no client type exists'],
   // The meeting-review screen is SHELL's and unbuilt; §11.4.2 lists it. These
   // three leave this group the same way `CapacityView` and `PresenceView` did —
   // when the screen exists, and therefore the mirror.

@@ -19,7 +19,7 @@ import {
   updateAgent,
 } from '../../services/agents.ts';
 import { listOwnWorkRequests } from '../../services/work-requests.ts';
-import { type InboxItem, listInbox } from '../../services/handoffs.ts';
+import { listInbox } from '../../services/handoffs.ts';
 import {
   type CheckpointConsentView,
   readCheckpointConsent,
@@ -141,9 +141,7 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
     const query = c.req.query();
     const { limit, cursor } = parsePageQuery(query);
     const rows = listInbox(db, actor, { limit, cursor, projectSlug: query.project ?? null });
-    return c.json<Page<InboxItem>>(
-      buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id })),
-    );
+    return c.json(buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id })));
   });
 
   // Static device routes precede /:id so 'devices' is never an agent id.
