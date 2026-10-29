@@ -2,11 +2,12 @@
 id: LAI-592
 title: 'Cloud and shared devices: <harness> · Cloud agents with short-lived credentials and a stated owner; another person''s laptop is their agent'
 area: server
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: [LAI-590]
 discovered-from: LAI-532
-status: backlog
+status: in-progress
+started: 2026-10-29T10:29:42Z
 ---
 
 Phase 2.5 slice from `docs/proposals/LAI-532-phase-index.md` (PR #121). Two
