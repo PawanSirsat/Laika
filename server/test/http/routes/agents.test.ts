@@ -720,16 +720,22 @@ describe('another owner’s agents and devices are missing, not hidden (LAI-592)
         { method: 'POST', body: JSON.stringify({ token_id: tokenId }) },
       ],
       [`/api/v1/agents/${id}/revoke`, { method: 'POST' }],
+      [`/api/v1/agents/${id}/checkpoint-consent`, {}],
+      [`/api/v1/agents/${id}/checkpoint-consent`, { method: 'PUT' }],
+      [`/api/v1/agents/${id}/checkpoint-consent`, { method: 'DELETE' }],
     ];
     const seen = routes(foreign.agent.id, foreign.token.id);
     const missing = routes(unknownId, foreign.token.id);
     for (const [i, [path, init]] of seen.entries()) {
       const hidden = await req(path, init, { cookie: carol.cookie });
       const absent = await req(missing[i]![0], missing[i]![1], { cookie: carol.cookie });
-      expect(hidden.status, path).toBe(absent.status);
-      expect(JSON.stringify(await hidden.json()).replaceAll(foreign.agent.id, '<id>'), path).toBe(
-        JSON.stringify(await absent.json()).replaceAll(unknownId, '<id>'),
-      );
+      expect(hidden.status, path).toBe(404);
+      expect(absent.status, path).toBe(404);
+      // The raw bytes, nothing substituted: an answer that echoed the requested
+      // id would differ here, and would carry the foreign id back to its asker.
+      const hiddenText = await hidden.text();
+      expect(hiddenText, path).toBe(await absent.text());
+      expect(hiddenText, path).not.toContain(foreign.agent.id);
     }
     // Neither the list nor the device list mentions it, nor its Cloud device.
     for (const path of ['/api/v1/agents', '/api/v1/agents/devices']) {

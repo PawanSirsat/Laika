@@ -1107,7 +1107,7 @@ function consentView(db: Db, agentId: string): CheckpointConsentView {
 /** The agent, when the caller is its owner — anything else is a `404`, as another person's agent is (§4.63). */
 function ownAgent(db: Db, actor: ResolvedActor, agentId: string) {
   const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
-  if (agent?.ownerUserId !== actor.userId) throw ApiError.notFound(`No agent with id "${agentId}"`);
+  if (agent?.ownerUserId !== actor.userId) throw ApiError.agentNotFound();
   return agent;
 }
 
@@ -1124,7 +1124,7 @@ export function readCheckpointConsent(
   assertCan(actor, 'agent.read_own');
   const caller = registeredAgent(actor);
   if (caller !== null && caller.id !== agentId) {
-    throw ApiError.notFound(`No agent with id "${agentId}"`);
+    throw ApiError.agentNotFound();
   }
   ownAgent(db, actor, agentId);
   return consentView(db, agentId);

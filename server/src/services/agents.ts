@@ -588,7 +588,7 @@ function requireOwnAgent(db: Db, actor: ResolvedActor, agentId: string): AgentRo
     .from(agents)
     .where(and(eq(agents.id, agentId), eq(agents.ownerUserId, actor.userId)))
     .get();
-  if (row === undefined) throw ApiError.notFound(`No agent with id "${agentId}"`);
+  if (row === undefined) throw ApiError.agentNotFound();
   return row;
 }
 
