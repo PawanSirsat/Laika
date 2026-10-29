@@ -2,12 +2,13 @@
 id: LAI-595
 title: 'web: column-reorder "the keyboard reaches them with no pointer at all" flakes on GitHub runners'
 area: shell
-assignee: unclaimed
+assignee: strelka
 priority: p2
 parent: LAIKA-785
 depends-on: []
 discovered-from: LAI-583
-status: backlog
+status: in-progress
+started: 2026-10-29T09:26:58Z
 ---
 
 ## Goal
