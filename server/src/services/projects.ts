@@ -26,6 +26,7 @@ import { CAPABILITY_LABELS, implicitProjectRole } from '../policy/grants.ts';
 // From `db/`, not `services/project-statuses.ts`: that module reads projects
 // through this one, and the seed is all this needs.
 import { createDefaultProjectStatuses } from '../db/project-statuses.ts';
+import { noSuchProjectForAgent } from './work-requests.ts';
 import {
   applyOffboardingChoice,
   assertOffboardingChoice,
@@ -179,21 +180,31 @@ export function requireProjectBySlug(db: Db, slug: string): typeof projects.$inf
 }
 
 /**
- * A project this actor may read, or the **same `404`** a slug that names
+ * A project this actor may read, or the **same refusal** a slug that names
  * nothing gets (LAI-555): the context document and its history must not tell
- * an outsider that a private project exists. Byte for byte, so a client cannot
- * tell the two apart by status, code or message.
+ * a caller that a project it cannot see exists. Byte for byte, so the two
+ * cannot be told apart by status, code or message:
+ *
+ * - a person — a session or a personal token — gets the missing slug's `404`;
+ * - a registered agent's token gets `403 agent_not_granted`, which is what
+ *   §6.4 already answers an agent for a slug it may not use, real or made up
+ *   ({@link noSuchProjectForAgent}).
  */
 export function requireReadableProjectBySlug(
   db: Db,
   actor: ResolvedActor,
   slug: string,
 ): typeof projects.$inferSelect {
-  const row = requireProjectBySlug(db, slug);
-  if (!can(withProject(actor, row.id), 'project.read', { projectId: row.id })) {
-    throw ApiError.notFound(`No project with slug "${slug}"`);
+  const row = db.select().from(projects).where(eq(projects.slug, slug)).get();
+  if (
+    row !== undefined &&
+    can(withProject(actor, row.id), 'project.read', { projectId: row.id })
+  ) {
+    return row;
   }
-  return row;
+  const agent = actor.token?.agent;
+  if (agent !== undefined && agent !== null) throw noSuchProjectForAgent();
+  throw ApiError.notFound(`No project with slug "${slug}"`);
 }
 
 /**

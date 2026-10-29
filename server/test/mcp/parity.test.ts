@@ -460,7 +460,7 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
         await must(
           s,
           '/api/v1/projects/core/context',
-          { method: 'PATCH', body: JSON.stringify({ context_md: 'A brief' }) },
+          { method: 'PATCH', body: JSON.stringify({ context_md: 'A brief', base_revision: 0 }) },
           200,
         );
       },
@@ -469,6 +469,7 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
           project: 'core',
           context_md: 'A brief',
           mode: 'replace',
+          base_revision: 0,
         });
       },
     },
