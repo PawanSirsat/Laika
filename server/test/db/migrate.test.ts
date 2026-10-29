@@ -2516,3 +2516,118 @@ describe('0065 adds recognised devices on a populated database (LAI-590)', () =>
     },
   );
 });
+
+describe('0066 adds context revisions to a populated database (LAI-555)', () => {
+  it(
+    'makes each non-empty context_md revision 1, keeps context_md, rebuilds nothing',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_project_context_revisions$/.test(e.tag));
+      expect(at, 'the revisions migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at).slice(0, 1);
+      // The guard on this guard: the cut is exactly this migration.
+      expect(dropped.map((e) => e.tag)).toEqual([
+        expect.stringMatching(/_project_context_revisions$/),
+      ]);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: dir });
+        const s = seed(db);
+        // Written as the pre-0066 schema has it, raw: no context_revision.
+        const edited = newId();
+        const unedited = newId();
+        db.run(sql`
+          INSERT INTO projects (id, org_id, name, slug, prefix, created_at, updated_at)
+          VALUES (${edited}, ${s.orgId}, 'Edited', 'edited', 'EDT', 1000, 5000),
+                 (${unedited}, ${s.orgId}, 'Unedited', 'unedited', 'UNE', 1000, 7000)
+        `);
+        db.run(sql`UPDATE projects SET context_md = 'old brief' WHERE id = ${unedited}`);
+        db.run(sql`UPDATE projects SET context_md = '# The brief' WHERE id = ${edited}`);
+        // Two edits, the later one by the person who wrote what is there now;
+        // and an unrelated project update that must not count.
+        for (const [at, payload] of [
+          [2000, '{"changed":["context_md"],"length":3,"previous_length":0}'],
+          [3000, '{"changed":["context_md"],"length":11,"previous_length":3}'],
+          [4000, '{"changed":["name"]}'],
+        ] as const) {
+          db.run(sql`
+            INSERT INTO activity (id, org_id, project_id, actor_id, actor_kind, type, payload_json, created_at)
+            VALUES (${newId()}, ${s.orgId}, ${edited}, ${s.userId}, 'user',
+              ${payload.includes('context_md') ? 'project.context_updated' : 'project.updated'},
+              ${payload}, ${at})
+          `);
+        }
+
+        const rootpage = (name: string) =>
+          db.get<{ rootpage: number }>(
+            sql`SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ${name}`,
+          )?.rootpage;
+        const projectsBefore = db.all<Record<string, unknown>>(
+          sql`SELECT * FROM projects ORDER BY id`,
+        );
+        const activityBefore = db.all<Record<string, unknown>>(sql`SELECT * FROM activity`);
+        const projectsPage = rootpage('projects');
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        // Additive: the same table, every row kept, `context_md` untouched —
+        // so a rollback still has the document — and the revision set.
+        expect(rootpage('projects')).toBe(projectsPage);
+        expect(db.all(sql`SELECT * FROM projects ORDER BY id`)).toEqual(
+          projectsBefore.map((row) => ({
+            ...row,
+            context_revision: row.context_md === '' ? 0 : 1,
+          })),
+        );
+        expect(db.all(sql`SELECT * FROM activity`)).toEqual(activityBefore);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+
+        const revisions = db.all<Record<string, unknown>>(
+          sql`SELECT project_id, revision, body, author_id, agent_id, created_at
+              FROM project_context_revisions ORDER BY body`,
+        );
+        expect(revisions).toEqual([
+          {
+            project_id: edited,
+            revision: 1,
+            body: '# The brief',
+            author_id: s.userId,
+            agent_id: null,
+            created_at: 3000,
+          },
+          {
+            project_id: unedited,
+            revision: 1,
+            body: 'old brief',
+            author_id: null,
+            agent_id: null,
+            created_at: 7000,
+          },
+        ]);
+        const ids = db.all<{ id: string }>(sql`SELECT id FROM project_context_revisions`);
+        expect(ids.every((r) => /^[0-9A-HJKMNP-TV-Z]{26}$/.test(r.id))).toBe(true);
+
+        // And the rows are immutable from the first boot.
+        expectSqliteError(
+          () => db.run(sql`UPDATE project_context_revisions SET body = 'rewritten'`),
+          /append-only: UPDATE/,
+        );
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
