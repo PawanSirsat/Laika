@@ -81,8 +81,9 @@ and record the evidence on LAIKA-797.
 - [ ] (b) A checkpoint whose delivery never arrived becomes `verified` after
       `laika agent checkpoint reverify <id>` pushes `…-r1`. The checkpoint's
       state then follows its newest ref.
-- [ ] (c) An `uncertain` ref stays `uncertain` whatever later deliveries
-      arrive. A re-tag clears it.
+- [ ] (c) An `uncertain` or `ref_deleted` ref is never `verified` again,
+      whatever later deliveries arrive (D-116a); between those two states the
+      set decides. A re-tag, through a new ref, is the only way back.
 - [ ] (d) The helper pushes exactly one tag per `git push`. A test documents
       that pushing four tags at once produces no push delivery, which is
       GitHub's three-tag limit.
