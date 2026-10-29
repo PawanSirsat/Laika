@@ -242,6 +242,40 @@ void describe('the revision history', () => {
     }
   });
 
+  void test('Hide after “Open in full” returns focus to Compare, not the gone button', async () => {
+    const h = await openPanel(world());
+    try {
+      const form = h.page.locator('.ctx-compare');
+      await form.waitFor({ timeout: 10_000 });
+      await pick(form.getByRole('combobox', { name: 'From revision' }), '1');
+      await pick(form.getByRole('combobox', { name: 'To revision' }), '3');
+      const compare = form.getByRole('button', { name: 'Compare' });
+      await compare.focus();
+      await h.page.keyboard.press('Enter');
+
+      const open = h.page.getByRole('button', { name: 'Open r3 in full' });
+      await open.waitFor({ timeout: 10_000 });
+      await open.focus();
+      await h.page.keyboard.press('Enter');
+      await h.page.locator('.ctx-revision-body').waitFor({ timeout: 10_000 });
+
+      await h.page.locator('[data-context-viewer]').getByRole('button', { name: 'Hide' }).click();
+      await h.page.locator('[data-context-viewer]').waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(
+        await h.page.evaluate(() => {
+          const el = document.activeElement;
+          return el instanceof HTMLButtonElement && el.closest('.ctx-compare') !== null
+            ? el.textContent
+            : (el?.tagName ?? null);
+        }),
+        'Compare',
+        'focus was lost: Hide returned it to the unmounted “Open r3 in full” button',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('“Changes” draws the bounded diff, marked added and removed', async () => {
     const h = await openPanel(world());
     try {

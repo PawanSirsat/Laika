@@ -263,11 +263,18 @@ export function ContextHistory({ slug, refreshKey, members, agents }: ContextHis
     viewerRef.current?.focus();
   }, [view]);
 
-  /** The control that opened the viewer, so Hide can hand focus back to it. */
+  /**
+   * The control **outside** the viewer that opened it, so Hide can hand focus
+   * back to it. Navigating inside the viewer — "Open r3 in full" from a
+   * truncated comparison — keeps it: that button is gone once it is used.
+   */
   const opener = useRef<HTMLElement | null>(null);
 
   const show = (next: ContextView): void => {
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.closest('[data-context-viewer]') === null) {
+      opener.current = active;
+    }
     moveFocus.current = true;
     setView(next);
   };
