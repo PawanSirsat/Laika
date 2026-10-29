@@ -308,6 +308,45 @@ void describe('the Timeline is one row per sprint (LAI-721)', () => {
     }
   });
 
+  /*
+   * **A bar filter in the URL reaches no task request** (LAI-725). The
+   * Timeline reads `project`, `zoom` and `sprint`; `q`, `priority`, `tag`,
+   * `assignee` and `ready` are the space bar's, and the Timeline hides those
+   * controls because it never read them. The guard that it stays that way:
+   * arrive with all five set, open a sprint, and every task request the page
+   * makes names `sprint=s2` and carries none of the five. What else the
+   * request carries — `fields`, `limit` — is the client's and is not asserted.
+   */
+  void test('the bar’s filters in the URL change no task request', async () => {
+    const h = await open(
+      '/timeline?project=laika-core&q=up&priority=p1&tag=infra&assignee=u1&ready=true',
+      STUB,
+    );
+    const asked = taskRequests(h);
+    try {
+      await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(500);
+      assert.equal(taskCalls(h), 0, 'tasks were fetched up front');
+
+      await group(h, 's2').locator('.tlx-chevron').click();
+      await taskRows(h, 's2').first().waitFor({ timeout: 10_000 });
+      assert.ok(asked.length > 0, 'positive control: opening S2 made a task request');
+      for (const q of asked) {
+        const params = new URLSearchParams(q);
+        assert.equal(params.get('sprint'), 's2', `a task request named ${q}`);
+        assert.deepEqual(
+          ['q', 'priority', 'tag', 'assignee', 'ready'].filter((k) => params.has(k)),
+          [],
+          `a bar filter reached the request: ${q}`,
+        );
+      }
+      assert.deepEqual(h.unmatched, [], 'a task request the stub refused');
+      assert.equal(await taskRows(h, 's2').count(), IN_NOW.length, 'S2 listed a narrowed set');
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('loads the sprints and no tasks until a sprint is opened', async () => {
     const h = await open('/timeline?project=laika-core', STUB);
     const asked = taskRequests(h);
