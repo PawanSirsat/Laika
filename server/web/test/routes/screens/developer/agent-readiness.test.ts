@@ -39,6 +39,7 @@ function agent(over: Partial<RegisteredAgent> = {}): RegisteredAgent {
   return {
     id: 'a1',
     owner_user_id: 'u1',
+    owner_display_name: 'Ada',
     display_name: 'codex on Linux',
     harness: 'codex',
     device_label: 'build box',

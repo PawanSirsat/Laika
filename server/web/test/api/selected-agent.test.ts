@@ -41,6 +41,7 @@ const NOW = 1_800_000_000_000;
 
 const registered = (over: Partial<RegisteredAgent> & { id: string }): RegisteredAgent => ({
   owner_user_id: 'u1',
+  owner_display_name: 'Ada',
   display_name: 'Laptop agent',
   harness: 'claude-code',
   device_label: 'laptop-1',

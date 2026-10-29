@@ -230,7 +230,13 @@ describe('tokenContextFor — the token as can() narrows it, read again', () => 
     });
     expect(tokenContextFor(t.db, rowOf(legacy.token.id))).toEqual({
       ok: true,
-      token: { id: legacy.token.id, scope: 'read_only', projectIds: [s.projectId], agent: null },
+      token: {
+        id: legacy.token.id,
+        scope: 'read_only',
+        projectIds: [s.projectId],
+        expiresAt: null,
+        agent: null,
+      },
     });
   });
 

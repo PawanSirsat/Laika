@@ -70,6 +70,9 @@ function post(path: string, headers: Record<string, string>, body?: unknown) {
   });
 }
 
+/** A device per fixture agent: D-120 allows one active agent per harness per device. */
+let fixtureDevices = 0;
+
 async function agent(name: string, ownerCookie = cookie) {
   const body = await ok(
     await h.app.request('/api/v1/agents', {
@@ -78,6 +81,7 @@ async function agent(name: string, ownerCookie = cookie) {
       body: JSON.stringify({
         display_name: name,
         harness: 'claude-code',
+        device_label: `device-${++fixtureDevices}`,
         grants: [{ project_id: projectId, scope: 'full' }],
       }),
     }),

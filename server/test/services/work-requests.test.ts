@@ -37,10 +37,14 @@ function project() {
   return t.db.select().from(projects).where(eq(projects.id, s.projectId)).get()!;
 }
 
+/** A device per fixture agent: D-120 allows one active agent per harness per device. */
+let fixtureDevices = 0;
+
 function register(scope: 'full' | 'read_only' | null = 'full') {
   return registerAgent(t.sqlite, t.db, owner, {
     displayName: 'Claude',
     harness: 'claude-code',
+    deviceLabel: `device-${++fixtureDevices}`,
     grants: scope === null ? [] : [{ projectId: s.projectId, scope }],
   }).agent;
 }

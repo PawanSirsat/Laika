@@ -86,6 +86,9 @@ async function writeBrief(contextMd: string, baseRevision: number) {
   );
 }
 
+/** A device per fixture agent: D-120 allows one active agent per harness per device. */
+let fixtureDevices = 0;
+
 async function registerAgent(name = 'Bob’s Codex') {
   return (await must(
     '/api/v1/agents',
@@ -94,6 +97,7 @@ async function registerAgent(name = 'Bob’s Codex') {
       body: JSON.stringify({
         display_name: name,
         harness: 'codex',
+        device_label: `device-${++fixtureDevices}`,
         grants: [{ project_id: alpha, scope: 'full' }],
       }),
     },

@@ -6448,9 +6448,9 @@ The owner's words, as relayed:
    agents already has, is `409 conflict`, `reason:
    agent_exists_for_harness_device`, naming the existing agent — to its
    owner, the only person who can see it. Revoked agents do not count.
-   Rotating a token is never refused. (The reason is the name the server
-   ships in #141, LAI-592; this entry said `agent_exists_for_device` until it
-   landed.)
+   Rotating a token is never refused. (The server rule lands with #141,
+   LAI-592, under this reason; this entry first named it
+   `agent_exists_for_device`.)
 3. **Existing duplicates are kept.** No migration revokes, renames or merges
    an agent; agents that already share a pair keep working and are reported
    (the Devices view shows them; the owner revokes the one they do not want).

@@ -8,7 +8,7 @@ import { type AgentGrantScope, type AgentStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { agentProjectGrants, agents, recognisedAgentDevices, tokens } from '../db/schema.ts';
+import { agentProjectGrants, agents, recognisedAgentDevices, tokens, users } from '../db/schema.ts';
 import { type AgentSessionView, endSessionsOfRevokedAgent, recentAgentSessions } from './claims.ts';
 import { closeOffersOfRevokedAgent } from './handoffs.ts';
 import { ApiError } from '../errors.ts';
@@ -49,7 +49,46 @@ import {
  * `token.revoked` every token writes; the agent's own rows are the record of
  * its registration and revocation, as `password_resets` is (§4.60). A verb of
  * its own is three owners (CLAUDE.md §4.4) and is LAI-535's to add.
+ *
+ * ## Cloud agents hold short-lived tokens (LAI-592)
+ *
+ * An agent whose device label is `Cloud`, in any case, runs somewhere its
+ * owner does not sit — a hosted runner — so every token it holds must expire
+ * within {@link CLOUD_TOKEN_MAX_TTL_MS}. Registering, rotating and relabelling
+ * are the only ways a token comes to belong to a cloud agent, and each
+ * refuses one with no expiry or a longer one, `422` with a `reason` naming
+ * the rule. Its expired token is refused by `findTokenBySecret` exactly as
+ * any expired token is; nothing here touches that path.
+ *
+ * ## The owner is the session user, always
+ *
+ * `owner_user_id` is `actor.userId` and no input can name another: no body
+ * field carries an owner, and every body is strict. An agent on a
+ * colleague's laptop is theirs to register (D-114).
+ *
+ * ## One active agent per harness per device, per owner (D-120)
+ *
+ * An agent *is* `<harness> · <device>` (D-118), so an owner holds at most one
+ * active agent for each pair, the device compared by the key LAI-590 groups
+ * by (an unnamed device is one device too). Registering a second, or renaming
+ * or relabelling one onto a pair another active agent of yours holds, is
+ * `409` with `reason` `agent_exists_for_harness_device` naming yours. Only
+ * your own agents are compared: another owner's on the same label and
+ * harness is no conflict and is never mentioned. A revoked agent frees its
+ * pair. Checked inside the write transaction, so two racing registrations
+ * cannot both land.
  */
+
+/**
+ * The longest a cloud agent's token may live: one day. Long enough for a
+ * runner's longest job and a daily schedule that mints afresh each run;
+ * short enough that a credential copied out of a runner's environment is dead
+ * by the next day. One constant, so the decision moves it in one place.
+ */
+export const CLOUD_TOKEN_MAX_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** The device label that marks an agent as a cloud runner, compared normalised. */
+export const CLOUD_DEVICE_LABEL = 'Cloud';
 
 export { AGENT_CLIENTS as AGENT_HARNESSES } from '../auth/agent-clients.ts';
 export { AGENT_GRANT_SCOPES } from '../db/enums.ts';
@@ -63,10 +102,15 @@ export interface AgentGrantView {
 export interface AgentView {
   id: string;
   owner_user_id: string;
+  /** The owner's name, shown on every line that names the agent (LAI-592). */
+  owner_display_name: string;
   display_name: string;
   /** Self-reported by whoever registered it; decides nothing. */
   harness: string;
-  /** Self-reported; decides nothing. */
+  /**
+   * Self-reported. Decides one thing: a label that normalises to `cloud`
+   * marks a cloud agent, whose tokens must be short-lived (LAI-592).
+   */
   device_label: string | null;
   status: AgentStatus;
   grants: AgentGrantView[];
@@ -123,7 +167,10 @@ export function registerAgent(
   const harness = cleanHarness(input.harness);
   const deviceLabel = cleanDeviceLabel(input.deviceLabel ?? null);
   const grants = cleanGrants(db, actor, input.grants);
-  const expiresAt = futureExpiry(input.expiresAt ?? null, now);
+  const requested = input.expiresAt ?? null;
+  // The cloud rule first, so a cloud agent's refusal always names it.
+  if (isCloudLabel(deviceLabel)) assertCloudExpiry(requested, now);
+  const expiresAt = futureExpiry(requested, now);
 
   const row: AgentRow = {
     id: newId(),
@@ -139,6 +186,7 @@ export function registerAgent(
   };
 
   const created = immediateTransaction(sqlite, () => {
+    assertHarnessDeviceFree(db, actor, harness, deviceLabel, null);
     db.insert(agents).values(row).run();
     writeGrants(db, row.id, grants, now);
     return insertToken(db, actor, {
@@ -221,6 +269,7 @@ export function updateAgent(
   actor: ResolvedActor,
   agentId: string,
   input: UpdateAgentInput,
+  now: number = Date.now(),
 ): AgentView {
   assertCan(actor, 'agent.manage_own');
   const row = requireActiveAgent(db, actor, agentId);
@@ -229,9 +278,23 @@ export function updateAgent(
   if (input.displayName !== undefined) set.displayName = cleanName(input.displayName);
   if (input.harness !== undefined) set.harness = cleanHarness(input.harness);
   if (input.deviceLabel !== undefined) set.deviceLabel = cleanDeviceLabel(input.deviceLabel);
+  // Relabelling into Cloud is a third way a token comes to be a cloud
+  // agent's: every live one must already meet the rule.
+  if (set.deviceLabel !== undefined && isCloudLabel(set.deviceLabel)) {
+    for (const token of liveTokens(db, row.id, now)) assertCloudExpiry(token.expiresAt, now);
+  }
 
   if (Object.keys(set).length > 0) {
     immediateTransaction(sqlite, () => {
+      if (set.harness !== undefined || set.deviceLabel !== undefined) {
+        assertHarnessDeviceFree(
+          db,
+          actor,
+          set.harness ?? row.harness,
+          set.deviceLabel === undefined ? row.deviceLabel : set.deviceLabel,
+          row.id,
+        );
+      }
       db.update(agents).set(set).where(eq(agents.id, row.id)).run();
       if (set.displayName !== undefined) {
         db.update(tokens).set({ name: set.displayName }).where(eq(tokens.agentId, row.id)).run();
@@ -310,8 +373,10 @@ export function rotateAgentToken(
   }
 
   const carried = old.expiresAt !== null && old.expiresAt > now ? old.expiresAt : null;
-  const expiresAt =
-    input.expiresAt === undefined ? carried : futureExpiry(input.expiresAt ?? null, now);
+  const requested = input.expiresAt === undefined ? carried : (input.expiresAt ?? null);
+  // The cloud rule first, so a cloud agent's refusal always names it.
+  if (isCloudLabel(row.deviceLabel)) assertCloudExpiry(requested, now);
+  const expiresAt = input.expiresAt === undefined ? carried : futureExpiry(requested, now);
 
   const created = immediateTransaction(sqlite, () => {
     const minted = insertToken(db, actor, {
@@ -494,9 +559,16 @@ function agentView(db: Db, row: AgentRow): AgentView {
     .orderBy(desc(tokens.createdAt), desc(tokens.id))
     .all();
 
+  const owner = db
+    .select({ name: users.name })
+    .from(users)
+    .where(eq(users.id, row.ownerUserId))
+    .get();
+
   return {
     id: row.id,
     owner_user_id: row.ownerUserId,
+    owner_display_name: owner?.name ?? '',
     display_name: row.displayName,
     harness: row.harness,
     device_label: row.deviceLabel,
@@ -516,7 +588,7 @@ function requireOwnAgent(db: Db, actor: ResolvedActor, agentId: string): AgentRo
     .from(agents)
     .where(and(eq(agents.id, agentId), eq(agents.ownerUserId, actor.userId)))
     .get();
-  if (row === undefined) throw ApiError.notFound(`No agent with id "${agentId}"`);
+  if (row === undefined) throw ApiError.agentNotFound();
   return row;
 }
 
@@ -597,6 +669,82 @@ function futureExpiry(expiresAt: number | null, now: number): number | null {
     });
   }
   return expiresAt;
+}
+
+function isCloudLabel(label: string | null): boolean {
+  return deviceLabelKey(label) === deviceLabelKey(CLOUD_DEVICE_LABEL);
+}
+
+/**
+ * A cloud agent's token must expire, and within the limit (LAI-592). Both
+ * refusals are `unprocessable`; the `reason` names which rule was broken.
+ * An expiry already past gives the token no life at all, so it breaks the
+ * same rule as none: `cloud_token_expiry_required`.
+ */
+function assertCloudExpiry(expiresAt: number | null, now: number): void {
+  if (expiresAt === null || expiresAt <= now) {
+    throw new ApiError('unprocessable', 'A cloud agent’s token must have a future expiry', {
+      reason: 'cloud_token_expiry_required',
+      expires_at: expiresAt,
+      max_ttl_ms: CLOUD_TOKEN_MAX_TTL_MS,
+    });
+  }
+  if (expiresAt > now + CLOUD_TOKEN_MAX_TTL_MS) {
+    const hours = CLOUD_TOKEN_MAX_TTL_MS / 3_600_000;
+    throw new ApiError('unprocessable', `A cloud agent’s token may live at most ${hours} hours`, {
+      reason: 'cloud_token_expiry_too_long',
+      expires_at: expiresAt,
+      max_expires_at: now + CLOUD_TOKEN_MAX_TTL_MS,
+      max_ttl_ms: CLOUD_TOKEN_MAX_TTL_MS,
+    });
+  }
+}
+
+/** The agent's tokens still able to act: not revoked, not expired. */
+/**
+ * D-120: the owner's other active agent on this harness and device, if any,
+ * is a `409`. `except` is the agent being changed, which may keep its own pair.
+ */
+function assertHarnessDeviceFree(
+  db: Db,
+  actor: ResolvedActor,
+  harness: string,
+  deviceLabel: string | null,
+  except: string | null,
+): void {
+  const key = deviceLabelKey(deviceLabel);
+  const holder = db
+    .select()
+    .from(agents)
+    .where(
+      and(
+        eq(agents.ownerUserId, actor.userId),
+        eq(agents.status, 'active'),
+        eq(agents.harness, harness),
+      ),
+    )
+    .all()
+    .find((row) => row.id !== except && deviceLabelKey(row.deviceLabel) === key);
+  if (holder === undefined) return;
+  throw new ApiError(
+    'conflict',
+    `You already have an active ${harness} agent on this device ("${holder.displayName}"); rotate its token or revoke it first`,
+    {
+      reason: 'agent_exists_for_harness_device',
+      agent_id: holder.id,
+      harness,
+      device_label: key === '' ? null : key,
+    },
+  );
+}
+
+function liveTokens(db: Db, agentId: string, now: number): (typeof tokens.$inferSelect)[] {
+  return db
+    .select()
+    .from(tokens)
+    .where(and(eq(tokens.agentId, agentId), isNull(tokens.revokedAt)))
+    .all()
+    .filter((token) => token.expiresAt === null || token.expiresAt > now);
 }
 
 function parseIds(raw: string | null): string[] | null {

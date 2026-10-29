@@ -46,6 +46,9 @@ export interface ErrorBody {
   };
 }
 
+/** The message of every agent-not-found answer; see `ApiError.agentNotFound`. */
+export const AGENT_NOT_FOUND = 'No agent with that id';
+
 export class ApiError extends Error {
   readonly code: ErrorCode;
   readonly status: ErrorStatus;
@@ -61,6 +64,15 @@ export class ApiError extends Error {
 
   static notFound(message = 'Not found', details: unknown = null): ApiError {
     return new ApiError('not_found', message, details);
+  }
+
+  /**
+   * The one answer for an agent the caller may not see, whether it is another
+   * person's or does not exist (§4.63): no id in it, so the two are the same
+   * bytes and the requested id is never echoed back (LAI-592).
+   */
+  static agentNotFound(): ApiError {
+    return new ApiError('not_found', AGENT_NOT_FOUND, null);
   }
 
   static badRequest(message = 'Bad request', details: unknown = null): ApiError {
