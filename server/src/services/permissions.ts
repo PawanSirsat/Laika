@@ -121,6 +121,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'task.write': 'Edit / move any task',
   'task.claim': 'Claim a task (start_working)',
   'task.checkpoint.create': 'Save a checkpoint on a task your agent holds',
+  'task.checkpoint.retag': 'Re-tag a checkpoint one of your agents saved',
   'task.assign_other': 'Assign a task to someone else',
   'comment.create': 'Add comment',
   'comment.edit': 'Edit / delete comment',

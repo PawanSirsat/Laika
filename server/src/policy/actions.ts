@@ -96,6 +96,7 @@ export const PROJECT_ACTIONS = [
   'task.write',
   'task.claim',
   'task.checkpoint.create',
+  'task.checkpoint.retag',
   'task.assign_other',
   'comment.create',
   'comment.edit',

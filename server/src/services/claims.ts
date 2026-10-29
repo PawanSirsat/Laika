@@ -1122,7 +1122,7 @@ export function reloadAgentActor(
   db: Db,
   actor: ResolvedActor,
   now: number,
-  action: 'task.claim' | 'task.checkpoint.create' = 'task.claim',
+  action: 'task.claim' | 'task.checkpoint.create' | 'task.checkpoint.retag' = 'task.claim',
 ): FreshAgentActor {
   const refuse = (reason: string, message: string) =>
     new ApiError('forbidden', message, { action, reason });

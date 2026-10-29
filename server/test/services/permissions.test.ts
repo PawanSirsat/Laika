@@ -169,6 +169,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'task.write': 'YYN',
   'task.claim': 'YYN',
   'task.checkpoint.create': 'YYN',
+  'task.checkpoint.retag': 'YYN',
   'task.assign_other': 'YYN',
   'comment.create': 'YYN',
   'comment.edit': 'YCN',

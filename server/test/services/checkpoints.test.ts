@@ -12,7 +12,7 @@ import {
 } from '../../src/db/schema.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
-  checkpointConsent,
+  readCheckpointConsent,
   configureCheckpoints,
   DEFAULT_CHECKPOINT_SETTINGS,
   deriveRefState,
@@ -57,7 +57,13 @@ describe('deriveRefState — the set, never the order (D-116 item 4)', () => {
     ['one creation at the commit', [create()], 'verified'],
     ['the commit’s SHA in capitals', [create(C.toUpperCase())], 'verified'],
     ['creation and deletion', [create(), remove()], 'ref_deleted'],
-    ['a deletion with no creation seen', [remove()], 'ref_deleted'],
+    [
+      'creation and two deletions (two delivery ids)',
+      [create(), remove(), remove()],
+      'ref_deleted',
+    ],
+    ['a deletion with no creation seen', [remove()], 'uncertain'],
+    ['a deletion from another SHA', [create(), remove(D)], 'uncertain'],
     ['an annotated tag: after is the tag object', [create(T)], 'uncertain'],
     ['a creation at another commit', [create(D)], 'uncertain'],
     ['a second creation', [create(), create()], 'uncertain'],
@@ -75,29 +81,30 @@ describe('deriveRefState — the set, never the order (D-116 item 4)', () => {
     });
   }
 
-  it('is monotone: once uncertain or ref_deleted, no further delivery brings back verified', () => {
-    const alphabet = [create(), create(D), create(T), remove(), update()];
-    // Every sequence of up to four deliveries from the alphabet.
+  it('never returns to verified once the set holds a deletion or a foreign transition (D-116a)', () => {
+    const alphabet = [create(), create(D), create(T), remove(), remove(D), update()];
+    // Every sequence of up to four deliveries from the alphabet: the set only
+    // grows, so each prefix is a moment in one ref's life.
     const sequences: Transition[][] = [[]];
     for (let length = 1; length <= 4; length += 1) {
-      for (const prefix of sequences.filter((s) => s.length === length - 1)) {
+      for (const prefix of sequences.filter((q) => q.length === length - 1)) {
         for (const next of alphabet) sequences.push([...prefix, next]);
       }
     }
-    const rank = { pending: 0, verified: 1, ref_deleted: 2, uncertain: 2 } as const;
+    const clean = (t: Transition) => t.beforeSha === ZERO && t.afterSha === C;
 
+    let checked = 0;
     for (const sequence of sequences) {
-      let before = deriveRefState([], C);
       for (let i = 1; i <= sequence.length; i += 1) {
-        const after = deriveRefState(sequence.slice(0, i), C);
-        expect(rank[after], JSON.stringify(sequence.slice(0, i))).toBeGreaterThanOrEqual(
-          rank[before],
-        );
-        if (before === 'uncertain') expect(after).toBe('uncertain');
-        if (before === 'ref_deleted') expect(['ref_deleted', 'uncertain']).toContain(after);
-        before = after;
+        const seen = sequence.slice(0, i);
+        const state = deriveRefState(seen, C);
+        if (!seen.every(clean)) {
+          expect(['ref_deleted', 'uncertain'], JSON.stringify(seen)).toContain(state);
+          checked += 1;
+        }
       }
     }
+    expect(checked).toBeGreaterThan(1000);
   });
 });
 
@@ -280,7 +287,6 @@ describe('retention (D-115 item 9, §11.6)', () => {
       .insert(checkpointRefTransitions)
       .values({
         id: newId(),
-        checkpointRefId: ref.id,
         repo: REPO,
         ref: ref.ref,
         deliveryId: 'd-1',
@@ -329,7 +335,6 @@ describe('retention (D-115 item 9, §11.6)', () => {
       .insert(checkpointRefTransitions)
       .values({
         id: newId(),
-        checkpointRefId: null,
         repo: REPO,
         ref: 'refs/tags/laika-ckpt/LAI-9/01JZZZZZZZZZZZZZZZZZZZZZZZ',
         deliveryId: 'd-orphan',
@@ -348,32 +353,38 @@ describe('retention (D-115 item 9, §11.6)', () => {
 describe('consent to automatic saves (§4.73, D-115 item 2)', () => {
   it('the owner gives it, withdraws it, and giving again clears the withdrawal', () => {
     const owner = loadActor(h.db, ownerId)!;
-    expect(checkpointConsent(h.db, agentId)).toBeNull();
+    expect(readCheckpointConsent(h.db, owner, agentId)).toEqual({
+      given: false,
+      given_by_user_id: null,
+      given_at: null,
+      withdrawn_at: null,
+    });
 
-    const given = setCheckpointConsent(h.db, owner, agentId, true, 1000);
-    expect(given).toMatchObject({ given_by_user_id: ownerId, given_at: 1000, active: true });
-
-    const withdrawn = setCheckpointConsent(h.db, owner, agentId, false, 2000);
-    expect(withdrawn).toMatchObject({ given_at: 1000, withdrawn_at: 2000, active: false });
-
-    const again = setCheckpointConsent(h.db, owner, agentId, true, 3000);
-    expect(again).toMatchObject({ given_at: 3000, withdrawn_at: null, active: true });
+    expect(setCheckpointConsent(h.db, owner, agentId, true, 1000)).toEqual({
+      given: true,
+      given_by_user_id: ownerId,
+      given_at: 1000,
+      withdrawn_at: null,
+    });
+    expect(setCheckpointConsent(h.db, owner, agentId, false, 2000)).toMatchObject({
+      given: false,
+      given_at: 1000,
+      withdrawn_at: 2000,
+    });
+    expect(setCheckpointConsent(h.db, owner, agentId, true, 3000)).toMatchObject({
+      given: true,
+      given_at: 3000,
+      withdrawn_at: null,
+    });
   });
 
-  it('is the owner’s, signed in: a token is refused, another person’s agent is a 404', () => {
+  it('another person’s agent, or none, is a 404', () => {
     const owner = loadActor(h.db, ownerId)!;
-    expect(() =>
-      setCheckpointConsent(
-        h.db,
-        { ...owner, token: { id: 'tok', scope: 'full', projectIds: null, agent: null } },
-        agentId,
-        true,
-      ),
-    ).toThrow(expect.objectContaining({ code: 'forbidden' }));
-
     expect(() => setCheckpointConsent(h.db, owner, newId(), true)).toThrow(
       expect.objectContaining({ code: 'not_found' }),
     );
-    expect(checkpointConsent(h.db, agentId)).toBeNull();
+    expect(() => readCheckpointConsent(h.db, owner, newId())).toThrow(
+      expect.objectContaining({ code: 'not_found' }),
+    );
   });
 });

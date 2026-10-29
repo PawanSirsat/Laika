@@ -1199,14 +1199,16 @@ export const checkpointRefs = sqliteTable(
       .notNull()
       .references(() => taskCheckpoints.id, { onDelete: 'cascade' }),
     revision: integer('revision').notNull(),
-    /** The full ref. The checkpoint's ULID is in it, so it is unique outright. */
+    /** The checkpoint's repo — with `ref`, the name §4.70's deliveries are matched by. */
+    repo: text('repo').notNull(),
+    /** The full ref, `refs/tags/laika-ckpt/<task>/<id>` or `…-r<n>`. */
     ref: text('ref').notNull(),
     state: text('state', { enum: CHECKPOINT_VERIFICATIONS }).notNull(),
     createdAt,
   },
   (t) => [
     uniqueIndex('checkpoint_refs_checkpoint_revision_idx').on(t.checkpointId, t.revision),
-    uniqueIndex('checkpoint_refs_ref_idx').on(t.ref),
+    uniqueIndex('checkpoint_refs_repo_ref_idx').on(t.repo, t.ref),
     check('checkpoint_refs_state_check', oneOf('state', CHECKPOINT_VERIFICATIONS)),
     check('checkpoint_refs_revision_check', sql`revision >= 0`),
   ],
@@ -1215,24 +1217,21 @@ export const checkpointRefs = sqliteTable(
 // --------------------------------------- §4.70 checkpoint_ref_transitions
 
 /**
- * One row per signed `push` delivery that moved a `laika-ckpt/` ref (§4.70,
- * D-116 items 4 and 5). Append-only.
+ * One row per signed `push` delivery that moved a `laika-ckpt/` ref in a
+ * configured repo (§4.70, D-116 items 4 and 5, D-116a). Append-only.
  *
- * **Kept by repository and ref name**, and attached to its §4.69 row when
- * there is one: a delivery that beats its checkpoint's registration is stored
- * durably here with `checkpoint_ref_id` null and attached when the checkpoint
- * registers (§10.1), so a notice that arrives first is not lost.
- * `delivery_id` is unique and written **in the transaction that applies the
- * transition**, so a delivery that was applied is ignored when it repeats and
- * one that failed before it was applied is processed when redelivered.
+ * **Keyed by the ref's name — `repo` and `ref` — not by a §4.69 row**, so a
+ * delivery that beats its checkpoint's registration (push, then register:
+ * the normal race) is stored durably and counted the moment the ref is
+ * registered. `delivery_id` is unique and written **in the transaction that
+ * applies the transition**, so a delivery that was applied is ignored when it
+ * repeats and one that failed before it was applied is processed when
+ * redelivered.
  */
 export const checkpointRefTransitions = sqliteTable(
   'checkpoint_ref_transitions',
   {
     id: text('id').primaryKey(),
-    checkpointRefId: text('checkpoint_ref_id').references(() => checkpointRefs.id, {
-      onDelete: 'cascade',
-    }),
     /** `owner/name`, lowercased, as the delivery named it. */
     repo: text('repo').notNull(),
     ref: text('ref').notNull(),
@@ -1244,7 +1243,6 @@ export const checkpointRefTransitions = sqliteTable(
   },
   (t) => [
     uniqueIndex('checkpoint_ref_transitions_delivery_id_idx').on(t.deliveryId),
-    index('checkpoint_ref_transitions_ref_id_idx').on(t.checkpointRefId),
     index('checkpoint_ref_transitions_repo_ref_idx').on(t.repo, t.ref),
   ],
 );

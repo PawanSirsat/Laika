@@ -11,23 +11,21 @@ CREATE TABLE `agent_checkpoint_consents` (
 CREATE UNIQUE INDEX `agent_checkpoint_consents_agent_id_idx` ON `agent_checkpoint_consents` (`agent_id`);--> statement-breakpoint
 CREATE TABLE `checkpoint_ref_transitions` (
 	`id` text PRIMARY KEY NOT NULL,
-	`checkpoint_ref_id` text,
 	`repo` text NOT NULL,
 	`ref` text NOT NULL,
 	`delivery_id` text NOT NULL,
 	`before_sha` text NOT NULL,
 	`after_sha` text NOT NULL,
-	`created_at` integer NOT NULL,
-	FOREIGN KEY (`checkpoint_ref_id`) REFERENCES `checkpoint_refs`(`id`) ON UPDATE no action ON DELETE cascade
+	`created_at` integer NOT NULL
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `checkpoint_ref_transitions_delivery_id_idx` ON `checkpoint_ref_transitions` (`delivery_id`);--> statement-breakpoint
-CREATE INDEX `checkpoint_ref_transitions_ref_id_idx` ON `checkpoint_ref_transitions` (`checkpoint_ref_id`);--> statement-breakpoint
 CREATE INDEX `checkpoint_ref_transitions_repo_ref_idx` ON `checkpoint_ref_transitions` (`repo`,`ref`);--> statement-breakpoint
 CREATE TABLE `checkpoint_refs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`checkpoint_id` text NOT NULL,
 	`revision` integer NOT NULL,
+	`repo` text NOT NULL,
 	`ref` text NOT NULL,
 	`state` text NOT NULL,
 	`created_at` integer NOT NULL,
@@ -37,7 +35,7 @@ CREATE TABLE `checkpoint_refs` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `checkpoint_refs_checkpoint_revision_idx` ON `checkpoint_refs` (`checkpoint_id`,`revision`);--> statement-breakpoint
-CREATE UNIQUE INDEX `checkpoint_refs_ref_idx` ON `checkpoint_refs` (`ref`);--> statement-breakpoint
+CREATE UNIQUE INDEX `checkpoint_refs_repo_ref_idx` ON `checkpoint_refs` (`repo`,`ref`);--> statement-breakpoint
 CREATE TABLE `task_checkpoints` (
 	`id` text PRIMARY KEY NOT NULL,
 	`task_id` text NOT NULL,

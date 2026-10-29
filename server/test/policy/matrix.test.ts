@@ -259,6 +259,8 @@ const PROJECT_MATRIX: ProjectRow[] = [
   ['task.claim', true, true, false],
   // | Save a checkpoint on a task your agent holds | ✓ | ✓ | — |
   ['task.checkpoint.create', true, true, false],
+  // | Re-tag a checkpoint one of your agents saved | ✓ | ✓ | — |
+  ['task.checkpoint.retag', true, true, false],
   // | Assign a task to someone else | ✓ | ✓ | — |
   ['task.assign_other', true, true, false],
   // | Add comment | ✓ | ✓ | — |

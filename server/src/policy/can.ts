@@ -705,6 +705,14 @@ function canProjectAction(
     case 'task.checkpoint.create':
       return isMemberUp;
 
+    // | Re-tag a checkpoint one of your agents saved | ✓ | ✓ | — |
+    //
+    // Also an agent's act, and it needs no claim: it changes no task, only
+    // which ref is the checkpoint's newest (§3.2, D-116 item 7). That the
+    // caller is an agent of the saving agent's owner is the service's to ask.
+    case 'task.checkpoint.retag':
+      return isMemberUp;
+
     // | Assign a task to someone else | ✓ | ✓ | — |
     case 'task.assign_other':
       return isMemberUp;

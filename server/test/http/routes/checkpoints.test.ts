@@ -9,6 +9,8 @@ import {
   orgs,
   projects,
   taskCheckpoints,
+  taskClaims,
+  users,
 } from '../../../src/db/schema.ts';
 import { newId } from '../../../src/db/ids.ts';
 import { encryptSecret } from '../../../src/secrets.ts';
@@ -16,7 +18,14 @@ import {
   assertCheckpointAcceptable,
   onCheckpointTransitionWritten,
 } from '../../../src/services/checkpoints.ts';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  seedInvite,
+  signUp,
+} from '../../helpers/auth.ts';
 
 /**
  * Checkpoints over the real routes and real signed deliveries (SPEC §4.68 –
@@ -44,6 +53,8 @@ let projectId: string;
 let taskId: string;
 let agentSecret: string;
 let generation: number;
+/** Each registered agent's id, by its secret. */
+const agentIds = new Map<string, string>();
 
 interface ErrorBody {
   error: { code: string; details: Record<string, unknown> | null };
@@ -192,6 +203,45 @@ async function registerAgent(): Promise<string> {
     }),
   });
   expect(res.status, await res.clone().text()).toBe(201);
+  const { secret, agent } = (await res.json()) as { secret: string; agent: { id: string } };
+  agentIds.set(secret, agent.id);
+  return secret;
+}
+
+/** A second member of the project, Bob, with an agent of his own; its secret. */
+async function otherOwnersAgent(): Promise<string> {
+  const orgId = h.db.select().from(orgs).get()!.id;
+  const ownerId = h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()!.id;
+  const invite = seedInvite(h.db, {
+    orgId,
+    createdBy: ownerId,
+    email: 'bob@example.test',
+    orgRole: 'member',
+  });
+  const signed = await signUp(h.app, {
+    email: 'bob@example.test',
+    password: PASSWORD,
+    inviteToken: invite,
+  });
+  expect(signed.status).toBe(200);
+  const bob = cookieFrom(signed);
+  const bobId = h.db.select().from(users).where(eq(users.email, 'bob@example.test')).get()!.id;
+  const added = await h.app.request('/api/v1/projects/laika/members', {
+    method: 'POST',
+    headers: jsonHeaders({ Cookie: cookie }),
+    body: JSON.stringify({ user_id: bobId, role: 'member' }),
+  });
+  expect(added.status, await added.clone().text()).toBe(201);
+  const res = await h.app.request('/api/v1/agents', {
+    method: 'POST',
+    headers: jsonHeaders({ Cookie: bob }),
+    body: JSON.stringify({
+      display_name: 'Bob’s Codex',
+      harness: 'codex',
+      grants: [{ project_id: projectId, scope: 'full' }],
+    }),
+  });
+  expect(res.status, await res.clone().text()).toBe(201);
   return ((await res.json()) as { secret: string }).secret;
 }
 
@@ -295,6 +345,10 @@ describe('registering a checkpoint (§4.68, §6.4)', () => {
     const body = saveBody();
     await saved(body);
 
+    expect(await errorOf(await save({ ...body, branch: 'another' }), 409)).toMatchObject({
+      code: 'conflict',
+      details: { reason: 'idempotency_key_reused' },
+    });
     expect(await errorOf(await save({ ...body, id: newId() }), 409)).toMatchObject({
       code: 'conflict',
       details: { reason: 'idempotency_key_reused' },
@@ -302,6 +356,26 @@ describe('registering a checkpoint (§4.68, §6.4)', () => {
     expect(await errorOf(await save({ ...body, idempotency_key: newId() }), 422)).toMatchObject({
       code: 'unprocessable',
       details: { field: 'id' },
+    });
+    expect(savedRows()).toBe(1);
+  });
+
+  it('a retry with the same key and body still answers 200 after the claim was paused by an offer', async () => {
+    const body = saveBody();
+    await saved(body);
+    // LAI-546 pauses a claim when its holder offers the task; the state is all
+    // that matters here, so it is set as that transaction would leave it.
+    h.db.update(taskClaims).set({ state: 'paused' }).where(eq(taskClaims.taskId, taskId)).run();
+
+    const retry = await save(body);
+    expect(retry.status, await retry.clone().text()).toBe(200);
+    expect(((await retry.json()) as Checkpoint).id).toBe(body.id);
+    // A new save is refused by the fence: the claim is paused.
+    expect(await errorOf(await save(saveBody()), 409)).toMatchObject({
+      details: { reason: 'claim_paused' },
+    });
+    expect(await errorOf(await save({ ...body, branch: 'changed' }), 409)).toMatchObject({
+      details: { reason: 'idempotency_key_reused' },
     });
     expect(savedRows()).toBe(1);
   });
@@ -395,6 +469,13 @@ describe('verified only by a signed push delivery (D-116 item 3)', () => {
     expect(now.pending_since).toBeNull();
   });
 
+  it('a push of the work branch at the same SHA changes nothing', async () => {
+    const checkpoint = await saved();
+    const res = await push('refs/heads/LAI-1-do-the-thing', ZERO, COMMIT);
+    expect(res.status).toBe(200);
+    expect((await read(checkpoint.id)).verification).toBe('pending');
+  });
+
   it('a delivery from another repository verifies nothing', async () => {
     const checkpoint = await saved();
     const res = await push(checkpoint.remote_ref, ZERO, COMMIT, newId(), 'someone/else');
@@ -446,12 +527,28 @@ describe('state from the set of deliveries, never their order (D-116 item 4)', (
     expect((await read(checkpoint.id)).verification).toBe('ref_deleted');
   });
 
-  it('delete received before its create is ref_deleted too, and the create never verifies it', async () => {
+  it('a delete received before its create is uncertain, and the create makes it ref_deleted, never verified', async () => {
     const checkpoint = await saved();
     await delivered(checkpoint.remote_ref, COMMIT, ZERO);
-    expect((await read(checkpoint.id)).verification).toBe('ref_deleted');
+    expect((await read(checkpoint.id)).verification).toBe('uncertain');
     await delivered(checkpoint.remote_ref, ZERO, COMMIT);
     expect((await read(checkpoint.id)).verification).toBe('ref_deleted');
+  });
+
+  it('a deletion notice sent twice, under two ids, is still ref_deleted', async () => {
+    const checkpoint = await saved();
+    await delivered(checkpoint.remote_ref, ZERO, COMMIT);
+    await delivered(checkpoint.remote_ref, COMMIT, ZERO);
+    await delivered(checkpoint.remote_ref, COMMIT, ZERO);
+    expect((await read(checkpoint.id)).verification).toBe('ref_deleted');
+  });
+
+  it('a ref_deleted ref that later sees a foreign transition is uncertain, and neither is verified again', async () => {
+    const checkpoint = await saved();
+    await delivered(checkpoint.remote_ref, ZERO, COMMIT);
+    await delivered(checkpoint.remote_ref, COMMIT, ZERO);
+    await delivered(checkpoint.remote_ref, ZERO, OTHER);
+    expect((await read(checkpoint.id)).verification).toBe('uncertain');
   });
 
   it('uncertain is final for its ref: a clean create after it does not verify (c)', async () => {
@@ -521,6 +618,32 @@ describe('repeats and redelivery (D-116 item 5)', () => {
     expect(res.status).toBe(201);
     expect(((await res.json()) as Checkpoint).verification).toBe('verified');
   });
+
+  it('a delivery and its registration racing end verified, whichever commits second', async () => {
+    for (const deliveryFirst of [true, false]) {
+      const body = saveBody();
+      const ref = `refs/tags/laika-ckpt/LAI-1/${body.id}`;
+      const deliver = () => delivered(ref, ZERO, COMMIT);
+      const register = () => save(body);
+      const [a, b] = deliveryFirst
+        ? await Promise.all([deliver(), register()])
+        : await Promise.all([register(), deliver()]);
+      expect([a, b].some((r) => r instanceof Response && r.status === 201)).toBe(true);
+      expect((await read(body.id)).verification).toBe('verified');
+    }
+  });
+
+  it('a delivery for a name no project tracks is dropped, not stored', async () => {
+    const res = await push(
+      'refs/tags/laika-ckpt/LAI-1/01JXXXXXXXXXXXXXXXXXXXXXXX',
+      ZERO,
+      COMMIT,
+      newId(),
+      'stranger/repo',
+    );
+    expect(res.status).toBe(200);
+    expect(h.db.select().from(checkpointRefTransitions).all()).toEqual([]);
+  });
 });
 
 // ------------------------------------------------------- one at a time (g)
@@ -567,8 +690,12 @@ describe('re-tagging (D-116 item 7)', () => {
     const checkpoint = await saved();
     const res = await retag(checkpoint.id);
     expect(res.status, await res.clone().text()).toBe(201);
-    const { ref, revision } = (await res.json()) as { ref: string; revision: number };
-    expect({ ref, revision }).toEqual({ ref: `${checkpoint.remote_ref}-r1`, revision: 1 });
+    expect(await res.json()).toEqual({
+      ref: `${checkpoint.remote_ref}-r1`,
+      revision: 1,
+      verification: 'pending',
+    });
+    const ref = `${checkpoint.remote_ref}-r1`;
 
     await delivered(ref, ZERO, COMMIT);
     const now = await read(checkpoint.id);
@@ -603,16 +730,32 @@ describe('re-tagging (D-116 item 7)', () => {
     expect((await read(checkpoint.id)).verification).toBe('pending');
   });
 
-  it('its owner may re-tag signed in; a person who is neither is refused', async () => {
+  it('another agent of the same owner may re-tag; a person signed in is not_an_agent', async () => {
     const checkpoint = await saved();
-    const res = await retag(checkpoint.id, { Cookie: cookie });
+    const replacement = await registerAgent();
+    const res = await retag(checkpoint.id, { Authorization: `Bearer ${replacement}` });
     expect(res.status, await res.clone().text()).toBe(201);
     expect(((await res.json()) as { revision: number }).revision).toBe(1);
 
-    const stranger = await registerAgent();
+    expect(await errorOf(await retag(checkpoint.id, { Cookie: cookie }), 403)).toMatchObject({
+      details: { reason: 'not_an_agent' },
+    });
+  });
+
+  it('an agent of another owner is refused, and the checkpoint keeps its refs', async () => {
+    const checkpoint = await saved();
+    const other = await otherOwnersAgent();
     expect(
-      await errorOf(await retag(checkpoint.id, { Authorization: `Bearer ${stranger}` }), 403),
-    ).toMatchObject({ details: { reason: 'not_the_saver' } });
+      await errorOf(await retag(checkpoint.id, { Authorization: `Bearer ${other}` }), 403),
+    ).toMatchObject({ details: { reason: 'not_the_owners_agent' } });
+    expect((await read(checkpoint.id)).refs).toHaveLength(1);
+  });
+
+  it('a registered re-tag whose delivery already arrived takes that state at once', async () => {
+    const checkpoint = await saved();
+    await delivered(`${checkpoint.remote_ref}-r1`, ZERO, COMMIT);
+    const res = await retag(checkpoint.id);
+    expect(((await res.json()) as { verification: string }).verification).toBe('verified');
   });
 });
 
@@ -689,5 +832,54 @@ describe('no code path calls out (D-083)', () => {
     expect(fetch).not.toHaveBeenCalled();
     // Positive control: the trap is armed, so a call would have been seen.
     expect(() => new Socket().connect(1, '127.0.0.1')).toThrow('opened a network connection');
+  });
+});
+
+// ------------------------------------------------------------- consent
+
+describe('consent to automatic saves over /agents/:id/checkpoint-consent (§4.73, §6.4)', () => {
+  function agentIdOf(secret: string): string {
+    const id = agentIds.get(secret);
+    expect(id, 'the agent was registered by this file').toBeDefined();
+    return id!;
+  }
+
+  function consent(id: string, method: string, auth: Record<string, string>) {
+    return h.app.request(`/api/v1/agents/${id}/checkpoint-consent`, {
+      method,
+      headers: jsonHeaders(auth),
+    });
+  }
+
+  it('the owner gives and withdraws it signed in; the agent’s own token reads it', async () => {
+    const id = agentIdOf(agentSecret);
+    const own = { Authorization: `Bearer ${agentSecret}` };
+
+    expect(await (await consent(id, 'GET', own)).json()).toMatchObject({ given: false });
+
+    const given = await consent(id, 'PUT', { Cookie: cookie });
+    expect(given.status, await given.clone().text()).toBe(200);
+    expect(await given.json()).toMatchObject({ given: true, withdrawn_at: null });
+    expect(await (await consent(id, 'GET', own)).json()).toMatchObject({ given: true });
+
+    const withdrawn = await consent(id, 'DELETE', { Cookie: cookie });
+    expect(await withdrawn.json()).toMatchObject({ given: false });
+    expect((await consent(id, 'GET', { Cookie: cookie })).status).toBe(200);
+  });
+
+  it('no other caller: a token may not give it, and another agent may not read it', async () => {
+    const id = agentIdOf(agentSecret);
+    expect(
+      await errorOf(await consent(id, 'PUT', { Authorization: `Bearer ${agentSecret}` }), 403),
+    ).toMatchObject({ code: 'forbidden' });
+
+    const sibling = await registerAgent();
+    expect((await consent(id, 'GET', { Authorization: `Bearer ${sibling}` })).status).toBe(404);
+
+    const other = await otherOwnersAgent();
+    expect((await consent(id, 'GET', { Authorization: `Bearer ${other}` })).status).toBe(404);
+    expect(await (await consent(id, 'GET', { Cookie: cookie })).json()).toMatchObject({
+      given: false,
+    });
   });
 });

@@ -19,6 +19,11 @@ import {
   updateAgent,
 } from '../../services/agents.ts';
 import { listOwnWorkRequests } from '../../services/work-requests.ts';
+import {
+  type CheckpointConsentView,
+  readCheckpointConsent,
+  setCheckpointConsent,
+} from '../../services/checkpoints.ts';
 import { type AppEnv } from '../context.ts';
 import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
@@ -185,6 +190,25 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
     const actor = requireActor(c);
     return c.json(revokeAgent(sqlite, db, actor, c.req.param('id')));
   });
+
+  /**
+   * Consent to automatic checkpoints (§6.4, §4.73, D-115 item 2): `GET` for
+   * the owner or the agent's own token, so the helper knows whether a hook
+   * may save; `PUT` gives it and `DELETE` withdraws it, the owner's, signed in.
+   */
+  app.get('/:id/checkpoint-consent', (c) =>
+    c.json<CheckpointConsentView>(readCheckpointConsent(db, requireActor(c), c.req.param('id'))),
+  );
+  app.put('/:id/checkpoint-consent', (c) =>
+    c.json<CheckpointConsentView>(
+      setCheckpointConsent(db, requireActor(c), c.req.param('id'), true),
+    ),
+  );
+  app.delete('/:id/checkpoint-consent', (c) =>
+    c.json<CheckpointConsentView>(
+      setCheckpointConsent(db, requireActor(c), c.req.param('id'), false),
+    ),
+  );
 
   return app;
 }

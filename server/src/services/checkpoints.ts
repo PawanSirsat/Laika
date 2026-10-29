@@ -1,11 +1,6 @@
-import { and, asc, desc, eq, inArray, isNull, lt, max, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, max, notExists, or } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
-import {
-  type ResolvedActor,
-  type ServiceCaller,
-  isSystemPrincipal,
-  withProject,
-} from '../auth/resolve-actor.ts';
+import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type CheckpointVerification } from '../db/enums.ts';
@@ -145,23 +140,22 @@ export interface Transition {
 
 /**
  * A ref's state from **the set of transitions seen for it** (§4.69, D-116
- * item 4, LAI-544 review rule (a)) — the order they arrived in is not an
- * argument, so it cannot decide anything.
+ * item 4 as D-116a states it) — the order they arrived in is not an
+ * argument, so it cannot decide anything. The all-zero SHA means absent.
  *
- * - none → `pending`;
- * - anything that is not a clean save — an update from one SHA to another, a
- *   creation at any SHA but the checkpoint's (an annotated tag's object, a
- *   different commit), a second creation → `uncertain`;
- * - otherwise any deletion, before or after the creation → `ref_deleted`;
- * - otherwise exactly one creation at the checkpoint's commit → `verified`.
+ * 1. none → `pending`;
+ * 2. exactly one creation `0000…→commit`, and nothing else → `verified`;
+ * 3. that creation plus one or more deletions `commit→0000…`, and nothing
+ *    else → `ref_deleted` (a deletion notice sent twice cannot flip it);
+ * 4. anything else — a second creation, an update, a ref at another SHA (an
+ *    annotated tag's object among them), a deletion with no creation seen →
+ *    `uncertain`.
  *
- * **Monotone, which is what makes `uncertain` and `ref_deleted` final**: a
- * further transition never removes the evidence that put a ref there, so no
- * later delivery returns it to `verified`. A deletion seen before its
- * creation is `ref_deleted` and not `uncertain` for exactly this reason — the
- * creation that arrives next must land on `ref_deleted` (the rule's "create
- * and any delete, in any order"), and an `uncertain` it then left would not
- * be final.
+ * **Neither `ref_deleted` nor `uncertain` is ever `verified` again** (D-116a's
+ * *final*): the set only grows, and every set holding a deletion or a foreign
+ * transition maps to one of the two. Between them the set decides — a
+ * deletion seen before its creation is `uncertain` until the creation
+ * arrives, then `ref_deleted`.
  */
 export function deriveRefState(
   transitions: readonly Transition[],
@@ -175,19 +169,12 @@ export function deriveRefState(
   for (const { beforeSha, afterSha } of transitions) {
     const before = beforeSha.toLowerCase();
     const after = afterSha.toLowerCase();
-    if (before === ZERO_SHA && after === ZERO_SHA) return 'uncertain';
-    if (before === ZERO_SHA) {
-      if (after !== commit) return 'uncertain';
-      creations += 1;
-    } else if (after === ZERO_SHA) {
-      deletions += 1;
-    } else {
-      return 'uncertain';
-    }
+    if (before === ZERO_SHA && after === commit) creations += 1;
+    else if (before === commit && after === ZERO_SHA) deletions += 1;
+    else return 'uncertain';
   }
-  if (creations > 1) return 'uncertain';
-  if (deletions > 0) return 'ref_deleted';
-  return 'verified';
+  if (creations !== 1) return 'uncertain';
+  return deletions > 0 ? 'ref_deleted' : 'verified';
 }
 
 // --------------------------------------------------------------------- views
@@ -449,19 +436,36 @@ function taskSegment(task: { externalRef: string | null; number: number }, prefi
   return REF_SEGMENT.test(outside) ? outside : `${prefix}-${String(task.number)}`;
 }
 
+/** Whether a retried registration carries the body the first one did (§6.4). */
+function sameSave(row: CheckpointRow, taskId: string, clean: CleanInput): boolean {
+  return (
+    row.taskId === taskId &&
+    row.id === clean.id &&
+    row.repo === clean.repo &&
+    row.branch === clean.branch &&
+    row.commitSha === clean.commitSha &&
+    row.summaryCommitSha === clean.summaryCommitSha &&
+    JSON.stringify(row.manifest) === JSON.stringify(clean.manifest) &&
+    JSON.stringify(row.summary ?? null) === JSON.stringify(clean.summary)
+  );
+}
+
 /**
  * `POST /tasks/:id/checkpoints`, `checkpoint_task` (§6.4, §7.1, LAI-545).
  *
  * One `BEGIN IMMEDIATE` transaction that asks everything again — the agent,
- * its token and owner, the owner's permission narrowed by the agent's grant,
- * and the claim fence — then answers the key's checkpoint if the key was
- * seen (`created: false`: no second row, no second `task.checkpoint_saved`),
- * or writes the checkpoint `pending` with its first ref and attaches any
- * delivery for that ref that arrived first.
+ * its token and owner, the owner's permission narrowed by the agent's grant —
+ * then:
  *
- * **A repeated key re-asks the permission and the fence first** (§6.3's
- * idempotency rule): a retry from a session that has since lost the claim is
- * refused as a fresh save would be.
+ * - **a retry** — the same `idempotency_key` and the same body — answers the
+ *   checkpoint already registered (`created: false`: no second row, no second
+ *   `task.checkpoint_saved`). It is matched **before** the claim fence, so a
+ *   save whose answer was lost still finds it after its session offered the
+ *   task and the claim paused. The same key with another body is `409`;
+ * - otherwise the claim fence, the one configured repo, and the checkpoint
+ *   with its first ref, whose state is projected from the §4.70 deliveries
+ *   already stored for that `repo` + `ref` — `verified` only when such a
+ *   delivery arrived first, `pending` when none has.
  */
 export function registerCheckpoint(
   sqlite: Database.Database,
@@ -485,9 +489,24 @@ export function registerCheckpoint(
       projectId: project.id,
     });
 
-    // The fence (§6.3): a paused, stale or other session's save is refused
-    // before anything is read for it. A task nobody holds passes the fence —
-    // and is refused below, because a save needs the live claim.
+    const seen = db
+      .select()
+      .from(taskCheckpoints)
+      .where(eq(taskCheckpoints.idempotencyKey, clean.idempotencyKey))
+      .get();
+    if (seen !== undefined) {
+      if (!sameSave(seen, taskId, clean)) {
+        throw new ApiError('conflict', 'That idempotency key was used with a different body', {
+          reason: 'idempotency_key_reused',
+          field: 'idempotency_key',
+        });
+      }
+      return { checkpoint: viewOf(db, seen, now), created: false };
+    }
+
+    // The fence (§6.3): a paused, stale or other session's save is refused. A
+    // task nobody holds passes the fence — and is refused below, because a
+    // save needs the live claim.
     const refusal = claimFenceRefusal(db, fresh, taskId, now);
     if (refusal !== null) throw refusal;
     const live = liveClaim(db, taskId);
@@ -499,20 +518,6 @@ export function registerCheckpoint(
       });
     }
 
-    const seen = db
-      .select()
-      .from(taskCheckpoints)
-      .where(eq(taskCheckpoints.idempotencyKey, clean.idempotencyKey))
-      .get();
-    if (seen !== undefined) {
-      if (seen.taskId !== taskId || seen.id !== clean.id) {
-        throw new ApiError('conflict', 'That idempotency key was used for another checkpoint', {
-          reason: 'idempotency_key_reused',
-          field: 'idempotency_key',
-        });
-      }
-      return { checkpoint: viewOf(db, seen, now), created: false };
-    }
     if (db.select().from(taskCheckpoints).where(eq(taskCheckpoints.id, clean.id)).get()) {
       throw unprocessable('id', 'Another checkpoint already has that id');
     }
@@ -549,9 +554,7 @@ export function registerCheckpoint(
         idempotencyKey: clean.idempotencyKey,
       })
       .run();
-    const refId = insertRef(db, clean.id, 0, remoteRef, now);
-    attachEarlierDeliveries(db, clean.repo, remoteRef, refId);
-    rederive(db, refId, now);
+    rederive(db, insertRef(db, clean.id, 0, clean.repo, remoteRef, now), now);
 
     appendActivity(db, {
       orgId: project.orgId,
@@ -577,32 +580,28 @@ export function registerCheckpoint(
   });
 }
 
-function insertRef(db: Db, checkpointId: string, revision: number, ref: string, now: number) {
+function insertRef(
+  db: Db,
+  checkpointId: string,
+  revision: number,
+  repo: string,
+  ref: string,
+  now: number,
+): string {
   const id = newId();
   db.insert(checkpointRefs)
-    .values({ id, checkpointId, revision, ref, state: 'pending', createdAt: now })
+    .values({ id, checkpointId, revision, repo, ref, state: 'pending', createdAt: now })
     .run();
   return id;
 }
 
-/** A delivery that beat its registration (§10.1), kept by repo and ref, joins its ref. */
-function attachEarlierDeliveries(db: Db, repo: string, ref: string, refId: string): void {
-  db.update(checkpointRefTransitions)
-    .set({ checkpointRefId: refId })
-    .where(
-      and(
-        eq(checkpointRefTransitions.repo, repo),
-        eq(checkpointRefTransitions.ref, ref),
-        isNull(checkpointRefTransitions.checkpointRefId),
-      ),
-    )
-    .run();
-}
-
 /**
- * The ref's state again from **every** transition it has, and the
- * checkpoint's from its newest ref — in the caller's transaction (§4.70).
- * `verified_at` is the first time the checkpoint was verified, and stays.
+ * The ref's state again from **every** §4.70 row for its name — whenever they
+ * arrived, before its registration included — and, when it is its
+ * checkpoint's newest ref, the checkpoint's. In the caller's transaction, so
+ * a registration and a delivery for one name cannot interleave: whichever
+ * commits second sees the other (§4.70). `verified_at` is when the checkpoint
+ * last became `verified`.
  */
 function rederive(db: Db, refId: string, now: number): void {
   const ref = db.select().from(checkpointRefs).where(eq(checkpointRefs.id, refId)).get()!;
@@ -617,7 +616,9 @@ function rederive(db: Db, refId: string, now: number): void {
       afterSha: checkpointRefTransitions.afterSha,
     })
     .from(checkpointRefTransitions)
-    .where(eq(checkpointRefTransitions.checkpointRefId, refId))
+    .where(
+      and(eq(checkpointRefTransitions.repo, ref.repo), eq(checkpointRefTransitions.ref, ref.ref)),
+    )
     .all();
   const state = deriveRefState(seen, checkpoint.commitSha);
   if (state !== ref.state) {
@@ -625,23 +626,17 @@ function rederive(db: Db, refId: string, now: number): void {
   }
 
   const newest = db
-    .select({ state: checkpointRefs.state })
+    .select({ id: checkpointRefs.id })
     .from(checkpointRefs)
     .where(eq(checkpointRefs.checkpointId, checkpoint.id))
     .orderBy(desc(checkpointRefs.revision))
     .limit(1)
     .get()!;
-  if (newest.state !== checkpoint.verification) {
-    db.update(taskCheckpoints)
-      .set({
-        verification: newest.state,
-        ...(newest.state === 'verified' && checkpoint.verifiedAt === null
-          ? { verifiedAt: now }
-          : {}),
-      })
-      .where(eq(taskCheckpoints.id, checkpoint.id))
-      .run();
-  }
+  if (newest.id !== refId || state === checkpoint.verification) return;
+  db.update(taskCheckpoints)
+    .set({ verification: state, ...(state === 'verified' ? { verifiedAt: now } : {}) })
+    .where(eq(taskCheckpoints.id, checkpoint.id))
+    .run();
 }
 
 // --------------------------------------------------------------- re-tagging
@@ -649,15 +644,20 @@ function rederive(db: Db, refId: string, now: number): void {
 export interface CheckpointRefRegistered {
   ref: string;
   revision: number;
+  verification: CheckpointVerification;
 }
 
 /**
- * `POST /checkpoints/:id/refs` (§6.4, D-116 item 7): the next re-tag
- * `…-r<n>`, registered **before** the helper pushes it. The saving agent or
- * its owner, signed in. The new ref starts from absent, so its own delivery
- * can verify the checkpoint; the checkpoint becomes `pending` at once and its
- * pending notice counts from now (LAI-544 review rule (c)). The server calls
- * nothing to do this.
+ * `POST /checkpoints/:id/refs` (§6.4, D-116 item 7, `task.checkpoint.retag`):
+ * the next re-tag `…-r<n>`, registered **before** the helper pushes it.
+ *
+ * **Any registered agent of the saving agent's owner** with a `full` grant
+ * (§3.2), so a replacement agent can re-verify a dead one's save; it needs no
+ * claim, because it changes no task, only which ref is the checkpoint's
+ * newest. The new ref starts from absent; the checkpoint takes its state at
+ * once — `pending`, timed from now, unless its deliveries arrived first —
+ * which is the one change to `verification` no delivery makes (§4.69). The
+ * server calls nothing to do this.
  */
 export function registerCheckpointRef(
   sqlite: Database.Database,
@@ -666,7 +666,16 @@ export function registerCheckpointRef(
   checkpointId: string,
   now = Date.now(),
 ): CheckpointRefRegistered {
+  const agent = registeredAgent(actor);
+  if (agent === null) {
+    throw new ApiError('forbidden', 'Only a registered agent re-tags a checkpoint', {
+      action: 'task.checkpoint.retag',
+      reason: 'not_an_agent',
+    });
+  }
+
   return immediateTransaction(sqlite, () => {
+    const fresh = reloadAgentActor(db, actor, now, 'task.checkpoint.retag');
     const checkpoint = db
       .select()
       .from(taskCheckpoints)
@@ -679,29 +688,24 @@ export function registerCheckpointRef(
     if (
       checkpoint === undefined ||
       task === undefined ||
-      !can(withProject(actor, task.projectId), 'project.read', { projectId: task.projectId })
+      !can(withProject(fresh, task.projectId), 'project.read', { projectId: task.projectId })
     ) {
       throw ApiError.notFound(`No checkpoint with id "${checkpointId}"`);
     }
 
     const savedBy = db
-      .select({ agentId: agentSessions.agentId, ownerUserId: agents.ownerUserId })
+      .select({ ownerUserId: agents.ownerUserId })
       .from(agentSessions)
       .innerJoin(agents, eq(agents.id, agentSessions.agentId))
       .where(eq(agentSessions.id, checkpoint.sessionId))
       .get()!;
-    const agent = registeredAgent(actor);
-    const hasToken = actor.token !== null && actor.token !== undefined;
-    if (hasToken && agent === null) throw notAnAgent();
-    const mayRetag =
-      agent === null ? actor.userId === savedBy.ownerUserId : agent.id === savedBy.agentId;
-    if (!mayRetag) {
-      throw new ApiError('forbidden', 'Only the agent that saved it, or its owner, re-tags it', {
-        action: 'task.checkpoint.create',
-        reason: 'not_the_saver',
+    if (savedBy.ownerUserId !== fresh.userId) {
+      throw new ApiError('forbidden', 'Only an agent of the saving agent’s owner re-tags it', {
+        action: 'task.checkpoint.retag',
+        reason: 'not_the_owners_agent',
       });
     }
-    assertCan(withProject(actor, task.projectId), 'task.checkpoint.create', {
+    assertCan(withProject(fresh, task.projectId), 'task.checkpoint.retag', {
       projectId: task.projectId,
     });
 
@@ -712,10 +716,13 @@ export function registerCheckpointRef(
       .get();
     const revision = (top?.revision ?? 0) + 1;
     const ref = `${checkpoint.remoteRef}-r${String(revision)}`;
-    const refId = insertRef(db, checkpointId, revision, ref, now);
-    attachEarlierDeliveries(db, checkpoint.repo, ref, refId);
-    rederive(db, refId, now);
-    return { ref, revision };
+    rederive(db, insertRef(db, checkpointId, revision, checkpoint.repo, ref, now), now);
+    const verification = db
+      .select({ verification: taskCheckpoints.verification })
+      .from(taskCheckpoints)
+      .where(eq(taskCheckpoints.id, checkpointId))
+      .get()!.verification;
+    return { ref, revision, verification };
   });
 }
 
@@ -820,17 +827,19 @@ export function onCheckpointTransitionWritten(hook: (() => void) | null): void {
 }
 
 /**
- * A signed `push` for `refs/tags/laika-ckpt/…` (§10.1, §3.4's
+ * A signed `push` for `refs/tags/laika-ckpt/…` (§10.1, §4.70, §3.4's
  * `system.checkpoint.verify`). One `BEGIN IMMEDIATE` transaction per
  * delivery — so deliveries for one ref are applied one at a time — that
- * writes the delivery's id and transition and re-derives the ref from every
- * transition it has.
+ * stores the transition **by repo and ref name** with the delivery's id, and,
+ * when a §4.69 ref of that name is registered, re-derives its state from
+ * every row for the name.
  *
- * - **Seen before** (its id is written): ignored, `deduplicated`.
- * - **Not the project's configured repo**: verifies nothing, stores nothing.
- * - **No checkpoint has the ref yet**: kept by repo and ref, attached at
- *   registration — if the repo is one some project tracks; a delivery from a
- *   repository no project is configured for is acknowledged and dropped.
+ * - **Seen before** (its id is stored): ignored, `deduplicated`.
+ * - **Not a configured repo**: a registered ref whose project's repo is not
+ *   this one, or a name no project's repo tracks — verifies nothing, stores
+ *   nothing.
+ * - **No ref of that name registered yet** — the normal race, since the
+ *   helper pushes first: stored, and counted by the registration that follows.
  *
  * A throw anywhere rolls the whole delivery back, id included, so GitHub's
  * *Redeliver* — same id — processes it.
@@ -859,7 +868,11 @@ export function applyCheckpointDelivery(
       .get();
     if (repeat !== undefined) return { handled: true, deduplicated: true };
 
-    const ref = db.select().from(checkpointRefs).where(eq(checkpointRefs.ref, delivery.ref)).get();
+    const ref = db
+      .select()
+      .from(checkpointRefs)
+      .where(and(eq(checkpointRefs.repo, repo), eq(checkpointRefs.ref, delivery.ref)))
+      .get();
 
     if (ref === undefined) {
       const { projectIds } = resolveRepoProjects(db, repo, '');
@@ -868,8 +881,8 @@ export function applyCheckpointDelivery(
         return { handled: false, reason: 'repository is tracked by no project' };
       }
       assertCan(systemPrincipal(projectId), 'system.checkpoint.verify', { projectId });
-      writeTransition(db, null, repo, delivery, before, after, now);
-      return { handled: true, reason: 'kept until its checkpoint registers' };
+      writeTransition(db, repo, delivery, before, after, now);
+      return { handled: true, reason: 'stored until its ref registers' };
     }
 
     const checkpoint = db
@@ -884,12 +897,12 @@ export function applyCheckpointDelivery(
       .where(eq(tasks.id, checkpoint.taskId))
       .get()!;
     const configured = project.repo === null ? null : foldRepo(project.repo);
-    if (repo !== checkpoint.repo || repo !== configured) {
+    if (repo !== configured) {
       return { handled: false, reason: 'not the project’s configured repo' };
     }
 
     assertCan(systemPrincipal(project.id), 'system.checkpoint.verify', { projectId: project.id });
-    writeTransition(db, ref.id, repo, delivery, before, after, now);
+    writeTransition(db, repo, delivery, before, after, now);
     rederive(db, ref.id, now);
     const state = db
       .select({ verification: taskCheckpoints.verification })
@@ -902,7 +915,6 @@ export function applyCheckpointDelivery(
 
 function writeTransition(
   db: Db,
-  refId: string | null,
   repo: string,
   delivery: CheckpointDelivery,
   before: string,
@@ -912,7 +924,6 @@ function writeTransition(
   db.insert(checkpointRefTransitions)
     .values({
       id: newId(),
-      checkpointRefId: refId,
       repo,
       ref: delivery.ref,
       deliveryId: delivery.deliveryId,
@@ -928,16 +939,20 @@ function writeTransition(
 
 /**
  * §11.6's checkpoint retention (D-115 item 9), daily, under
- * `system.checkpoint.prune`: checkpoints of tasks `done` or `cancelled` for
- * longer than the retention, with their refs and transitions (cascade); and
- * deliveries kept for a ref no checkpoint ever registered, once as old.
+ * `system.checkpoint.prune`:
+ *
+ * - checkpoints of tasks `done` or `cancelled` for longer than the retention,
+ *   with their refs (cascade) and the §4.70 rows for those refs' names;
+ * - §4.70 rows for a name **never registered** — a tag pushed by hand, or a
+ *   helper that pushed and never registered — once as old as the retention.
  *
  * **When a task closed**: `completed_at` for `done`; `updated_at` for
  * `cancelled`, which has no timestamp of its own (§4.5). Both are at or after
  * the moment the task closed, so a row is only ever kept longer, never pruned
- * early. Writes no `activity` row: the `task.checkpoint_saved` rows naming
- * the checkpoints stay, and they are the history. **Laika never deletes a
- * Git tag.**
+ * early. Closed offers that named a pruned checkpoint keep their own snapshot
+ * and lose the link (§4.71, `ON DELETE SET NULL` — LAI-546's column). Writes
+ * no `activity` row: the `task.checkpoint_saved` rows naming the checkpoints
+ * stay, and they are the history. **Laika never deletes a Git tag.**
  */
 export function pruneCheckpoints(db: Db, now: number): { checkpoints: number; orphans: number } {
   assertCan(systemPrincipal(), 'system.checkpoint.prune');
@@ -957,17 +972,45 @@ export function pruneCheckpoints(db: Db, now: number): { checkpoints: number; or
 
   let checkpoints = 0;
   for (let i = 0; i < closed.length; i += 500) {
+    const batch = closed.slice(i, i + 500);
+    const names = db
+      .select({ repo: checkpointRefs.repo, ref: checkpointRefs.ref })
+      .from(checkpointRefs)
+      .innerJoin(taskCheckpoints, eq(taskCheckpoints.id, checkpointRefs.checkpointId))
+      .where(inArray(taskCheckpoints.taskId, batch))
+      .all();
+    for (const name of names) {
+      db.delete(checkpointRefTransitions)
+        .where(
+          and(
+            eq(checkpointRefTransitions.repo, name.repo),
+            eq(checkpointRefTransitions.ref, name.ref),
+          ),
+        )
+        .run();
+    }
     checkpoints += db
       .delete(taskCheckpoints)
-      .where(inArray(taskCheckpoints.taskId, closed.slice(i, i + 500)))
+      .where(inArray(taskCheckpoints.taskId, batch))
       .run().changes;
   }
+
   const orphans = db
     .delete(checkpointRefTransitions)
     .where(
       and(
-        isNull(checkpointRefTransitions.checkpointRefId),
         lt(checkpointRefTransitions.createdAt, cutoff),
+        notExists(
+          db
+            .select({ id: checkpointRefs.id })
+            .from(checkpointRefs)
+            .where(
+              and(
+                eq(checkpointRefs.repo, checkpointRefTransitions.repo),
+                eq(checkpointRefs.ref, checkpointRefTransitions.ref),
+              ),
+            ),
+        ),
       ),
     )
     .run().changes;
@@ -976,32 +1019,71 @@ export function pruneCheckpoints(db: Db, now: number): { checkpoints: number; or
 
 // ------------------------------------------------------------------- consent
 
+/** §6.4's consent shape: whether hooks may save without asking (D-115 item 2). */
 export interface CheckpointConsentView {
-  agent_id: string;
-  given_by_user_id: string;
-  given_at: number;
+  given: boolean;
+  given_by_user_id: string | null;
+  given_at: number | null;
   withdrawn_at: number | null;
-  /** Given and not withdrawn: hooks may save without asking (D-115 item 2). */
-  active: boolean;
+}
+
+function consentView(db: Db, agentId: string): CheckpointConsentView {
+  const row = db
+    .select()
+    .from(agentCheckpointConsents)
+    .where(eq(agentCheckpointConsents.agentId, agentId))
+    .get();
+  return {
+    given: row !== undefined && row.withdrawnAt === null,
+    given_by_user_id: row?.givenByUserId ?? null,
+    given_at: row?.givenAt ?? null,
+    withdrawn_at: row?.withdrawnAt ?? null,
+  };
+}
+
+/** The agent, when the caller is its owner — anything else is a `404`, as another person's agent is (§4.63). */
+function ownAgent(db: Db, actor: ResolvedActor, agentId: string) {
+  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
+  if (agent?.ownerUserId !== actor.userId) throw ApiError.notFound(`No agent with id "${agentId}"`);
+  return agent;
 }
 
 /**
- * §4.73: the owner's consent to **automatic** checkpoints for one of their
- * own agents, signed in (`agent.manage_own` is session-only). Giving it again
- * clears a withdrawal and stamps `given_at` afresh. The server does not see
- * whether a save was automatic; the helper reads this before a hook saves.
+ * `GET /agents/:id/checkpoint-consent` (§6.4, §4.73): the owner, or **the
+ * agent's own token** — so the helper knows whether it may save on its own.
+ * Another agent's token, even the same owner's, is answered as no agent.
+ */
+export function readCheckpointConsent(
+  db: Db,
+  actor: ResolvedActor,
+  agentId: string,
+): CheckpointConsentView {
+  assertCan(actor, 'agent.read_own');
+  const caller = registeredAgent(actor);
+  if (caller !== null && caller.id !== agentId) {
+    throw ApiError.notFound(`No agent with id "${agentId}"`);
+  }
+  ownAgent(db, actor, agentId);
+  return consentView(db, agentId);
+}
+
+/**
+ * `PUT` / `DELETE /agents/:id/checkpoint-consent` (§6.4, §4.73): the owner's,
+ * signed in — `agent.manage_own` is session-only. Giving it again clears a
+ * withdrawal and stamps `given_at` afresh; withdrawing stops automatic saves
+ * and leaves manual ones working. **No `activity` row**: it is a setting of
+ * the agent, as its grants are (§4.64). The server never sees whether a save
+ * was automatic; the helper reads this before a hook saves.
  */
 export function setCheckpointConsent(
   db: Db,
-  actor: ServiceCaller,
+  actor: ResolvedActor,
   agentId: string,
   given: boolean,
   now = Date.now(),
 ): CheckpointConsentView {
-  if (isSystemPrincipal(actor)) throw ApiError.notFound(`No agent with id "${agentId}"`);
   assertCan(actor, 'agent.manage_own');
-  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
-  if (agent?.ownerUserId !== actor.userId) throw ApiError.notFound(`No agent with id "${agentId}"`);
+  ownAgent(db, actor, agentId);
 
   const existing = db
     .select()
@@ -1025,22 +1107,5 @@ export function setCheckpointConsent(
       .where(eq(agentCheckpointConsents.id, existing.id))
       .run();
   }
-  return checkpointConsent(db, agentId)!;
-}
-
-/** The consent on record for an agent, or null when none was ever given. */
-export function checkpointConsent(db: Db, agentId: string): CheckpointConsentView | null {
-  const row = db
-    .select()
-    .from(agentCheckpointConsents)
-    .where(eq(agentCheckpointConsents.agentId, agentId))
-    .get();
-  if (row === undefined) return null;
-  return {
-    agent_id: row.agentId,
-    given_by_user_id: row.givenByUserId,
-    given_at: row.givenAt,
-    withdrawn_at: row.withdrawnAt,
-    active: row.withdrawnAt === null,
-  };
+  return consentView(db, agentId);
 }
