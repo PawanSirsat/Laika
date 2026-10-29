@@ -91,3 +91,181 @@ the colleague to register their own.
 The decision first, then the server rule. Existing agents are not cloud agents,
 so nothing changes for them. A cloud agent registered before the rule ships
 keeps working until its tokens are rotated; rollback is a revert.
+
+## Depends-on deviation (§2 step 1)
+
+`depends-on: [LAI-590]`, and LAI-590's task file is still in `.tasks/review/`,
+not `.tasks/done/`, when this was claimed. Its server half — the device list
+this task extends — is merged to `master` as PR #132 (`92997d7a`,
+2026-10-29T15:53:14+05:30), and Belka's hand-off on LAIKA-846 says to start
+after #132 merges. Strelka claimed on that direction, against `92997d7a`, and
+records the deviation here rather than reading the rule loosely.
+
+## CORE half — what was built (Strelka)
+
+Files: `server/src/services/agents.ts`, `server/test/http/routes/agents.test.ts`.
+
+### Design choices
+
+- **The cloud marker is the device label, compared normalised**: an agent whose
+  `device_label` key (`deviceLabelKey`, trim + lower-case — the one LAI-590
+  groups by) is `cloud` is a cloud agent. `Cloud`, `CLOUD` and ` cloud ` all
+  are; `Cloudy laptop` is not. Why: it is the smallest change the server can
+  enforce — no column, no migration, no new client field — and LAI-591's
+  Devices view already renders it, because it groups by that label and shows
+  the agent as `<harness> · <device>`, which is exactly the `Codex · Cloud`
+  the task names. A dedicated field would need a migration, a SPEC §4.63 row,
+  a client mirror and UI to set it, for no rule the label cannot carry. The
+  cost: `device_label` stops "deciding nothing" (§4.63) — it now decides this
+  one thing. That is safe because the rule only protects **the owner's own
+  credential**: an owner who leaves a runner unlabelled loses the protection
+  for their own token and gains no access, and every mint is still capped by
+  their role and the agent's grants (D-114).
+- **The limit is 24 hours**, in one constant, `CLOUD_TOKEN_MAX_TTL_MS`
+  (`server/src/services/agents.ts`). Why: it is the task's proposed ceiling;
+  it covers a runner's longest single job and lets a daily schedule mint a
+  fresh token per run, while a secret copied out of a runner's environment or
+  logs is dead within a day. Anything shorter (e.g. 1 h) breaks long agent
+  jobs that cannot re-mint mid-run, since minting is session only.
+- **Where the rule bites — every way a token comes to be a cloud agent's:**
+  `POST /agents` with a Cloud label; `POST /agents/:id/rotate-token` on a
+  Cloud agent (an absent `expires_at` carries the old expiry, which then must
+  itself pass — so a cloud agent registered before the rule keeps working
+  until it is rotated, as the Rollout section says, and cannot rotate into
+  another unbounded token); and `PATCH /agents/:id` relabelling into Cloud,
+  refused while any live (unrevoked, unexpired) token is outside the rule.
+  `POST /tokens` cannot mint an agent token at all, so it needs nothing.
+- **The `code` naming the rule.** §6.3's codes are a closed set of ten, so a
+  new code is not available; following the existing convention
+  (`agent_revoked`, `session_required`, `claim_held`) the code is
+  `unprocessable` (`422`) and `details.reason` names the rule:
+  `cloud_token_expiry_required` (no expiry) or `cloud_token_expiry_too_long`
+  (past the limit; `details` also carries `max_expires_at` and `max_ttl_ms`).
+- **Expired cloud tokens**: no new code. `findTokenBySecret` already refuses
+  any expired token; the test proves the cloud token's `401` body is
+  byte-identical to an expired personal token's, and that the owner's agent on
+  another device keeps working and the cloud agent is not revoked.
+- **The owner's display name**: `AgentView.owner_display_name`, read live from
+  `users.name` (a rename shows at once). It is on `GET /agents`,
+  `GET /agents/:id`, each device's `agents` in `GET /agents/devices`, and the
+  register/rotate `201`s.
+- **The stated owner** is enforced by what exists: `owner_user_id` is
+  `actor.userId`, `RegisterBody` is strict, and registration is session only.
+  Tests: a body naming `owner_user_id`, `user_id` or `owner_id` is `422` for a
+  member and for the org owner, and inserts nothing; the org owner registering
+  owns the agent; and a source scan proves the only `insert(agents)` is in
+  `services/agents.ts`, the only caller of `registerAgent` is
+  `http/routes/agents.ts`, and no `server/src/mcp/` file imports the agents
+  service. No new way to register for another user was added.
+- One existing LAI-590 test (`recognition belongs to an owner and label…`)
+  relabelled an unbounded agent to `Cloud` as an arbitrary label; its agent
+  now registers with a 1 h expiry so it still tests the label move.
+
+### Mutations (each broken on purpose, seen red, restored)
+
+Run on `server/test/http/routes/agents.test.ts` with
+`npx vitest run test/http/routes/agents.test.ts`; the harness asserted the
+anchor matched exactly once and the file changed before running, and
+restored the file and compared its SHA-256 after. Baseline: 45/45 pass.
+
+| # | mutation | result | red test(s) |
+| --- | --- | --- | --- |
+| M1 | register skips the cloud check | exit 1, 2 failed | no expiry → `cloud_token_expiry_required`; past the limit → `cloud_token_expiry_too_long` |
+| M2 | the limit is never enforced (`false &&`) | exit 1, 2 failed | register past the limit; rotate past the limit |
+| M3 | rotate skips the cloud check | exit 1, 2 failed | rotate needs an expiry within the limit; pre-rule cloud agent cannot rotate unbounded |
+| M4 | relabel into Cloud skips the check | exit 1, 1 failed | relabelling into Cloud is refused |
+| M5 | `lapsed()` ignores expiry for agent tokens | exit 1, 1 failed | expired cloud token refused exactly as an expired personal token |
+| M6 | `owner_display_name` always `''` | exit 1, 1 failed | agent reads and the device list carry the owner's name |
+| M7 | `RegisterBody` is `z.object` (strips unknown) | exit 1, 2 failed | a body naming an owner is refused; (existing) body naming an agent id |
+| M8 | `mcp/write-tools.ts` imports `registerAgent` | exit 1, 1 failed | no route or MCP tool reaches registration except `POST /agents` |
+
+### §4.4: the client half is red, and is LAI-320
+
+`AgentView` is mirrored by `RegisteredAgent` in `server/web/`, and
+`clientOmits` lives there (SHELL's), so CORE could take no exemption. This
+branch is red on exactly one assertion:
+
+```
+server/web/test/api/view-type-drift.test.ts
+  not ok 2 - no server field is missing from its client type
+    AgentView.owner_display_name is served and RegisteredAgent does not declare
+    it — add it, or list it in clientOmits with a reason
+```
+
+**LAI-320** (`area: shell`, filed from Strelka's block) declares the field and
+turns it green. Merge per §4.4: this half into local `master` unpushed, then
+LAI-320, then push as one state.
+
+## Proposed docs half (for Belka)
+
+Belka's half; Strelka edits nothing in `docs/`. Number at recording (D-120 if
+free). Approval from Pawan's own account, as D-118/D-119.
+
+### Proposed decision
+
+> **D-120 — A cloud agent holds only short-lived tokens, and every agent is
+> its registering person's (LAI-592)**
+>
+> 1. **A cloud agent is one whose device label is `Cloud`**, compared as
+>    §4.63 normalises labels (trimmed, lower-cased): no new field. The
+>    Devices view already shows it as `<harness> · Cloud`.
+> 2. **Its tokens must expire, within 24 hours** of being minted
+>    (`CLOUD_TOKEN_MAX_TTL_MS`). Registering one, rotating one of its
+>    tokens, or relabelling an agent into `Cloud` while it holds a token
+>    outside the rule is `422 unprocessable` with `details.reason`
+>    `cloud_token_expiry_required` or `cloud_token_expiry_too_long`.
+>    Why 24 h: a runner's longest job and a daily schedule both fit, and a
+>    secret leaked from a runner is dead within a day; minting is session
+>    only, so a shorter limit would cut long jobs off mid-run.
+> 3. **An expired cloud token is refused as any expired token is** — `401`,
+>    the same body; the agent and the owner's other devices are untouched.
+> 4. **The owner is the person who registered it**, always the session user;
+>    no route, body field or tool registers an agent for anyone else. Every
+>    agent read names them (`owner_display_name`).
+> 5. **Another person's laptop carries that person's own agent**, registered
+>    by them under their own owner (D-114); you never leave a credential of
+>    yours on their machine. Laika enforces the half it can — nobody can
+>    register an agent for someone else.
+> 6. A cloud agent registered before this keeps its token until rotated;
+>    `device_label` now decides this one thing, which protects only the
+>    owner's own credential and grants no access.
+
+### Phase index link (`docs/proposals/LAI-532-phase-index.md`, Phase 2.5)
+
+The *Cloud and shared devices* row: append `— D-120 (proposed), LAI-592` to
+its Slice cell and set Status to `Review (CORE #<PR>)`.
+
+### SPEC §4.63 — exact wording
+
+In the field table, replace the `device_label` row with:
+
+> | `device_label` | nullable, at most 80 characters, **self-reported**. Decides one thing: a label whose normalised key (trimmed, lower-cased) is `cloud` marks a **cloud agent**, whose tokens must expire within 24 hours (§4.9, D-120). Otherwise decides nothing |
+
+After the paragraph that begins **Revoking an agent**, add:
+
+> **A cloud agent's tokens are short-lived** (D-120, LAI-592). Registering a
+> cloud agent, rotating one of its tokens, or relabelling an agent into
+> `Cloud` while any live token it holds breaks the rule is `422` with
+> `reason` `cloud_token_expiry_required` (no `expires_at`) or
+> `cloud_token_expiry_too_long` (more than 24 hours ahead,
+> `CLOUD_TOKEN_MAX_TTL_MS`). A rotation with no `expires_at` carries the old
+> expiry, which must itself pass. **The owner is always the session user who
+> registered it**: no body field names an owner, and nothing registers an
+> agent for another person — an agent on someone else's laptop is theirs to
+> register (D-114). Every agent read carries `owner_display_name`, the
+> owner's current `users.name`.
+
+### SPEC §4.9 — exact wording
+
+Append to the `agent_id` row's notes:
+
+> A token whose agent is a cloud agent (§4.63) always has an `expires_at` at
+> most 24 hours after it was minted (D-120); once past it, it is refused like
+> any expired token — same status, same body.
+
+### SPEC §6.4 (not authorised by this task; flag only)
+
+The `POST /api/v1/agents` and `rotate-token` lines could name the two
+`reason`s, and the `devices` line's `agents` now carry `owner_display_name`.
+This task's D-033 grant names §4.63 and §4.9 only, so these are for Belka to
+take or file.
