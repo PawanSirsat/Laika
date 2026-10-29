@@ -196,10 +196,7 @@ export function requireReadableProjectBySlug(
   slug: string,
 ): typeof projects.$inferSelect {
   const row = db.select().from(projects).where(eq(projects.slug, slug)).get();
-  if (
-    row !== undefined &&
-    can(withProject(actor, row.id), 'project.read', { projectId: row.id })
-  ) {
+  if (row !== undefined && can(withProject(actor, row.id), 'project.read', { projectId: row.id })) {
     return row;
   }
   const agent = actor.token?.agent;

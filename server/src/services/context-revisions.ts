@@ -251,17 +251,12 @@ function projectIdOfCall(db: Db, actor: ResolvedActor, args: ContextStampArgs): 
   }
   if (typeof args.task === 'string') {
     const id = resolveTaskRef(db, args.task, actor);
-    return (
-      db.select({ id: tasks.projectId }).from(tasks).where(eq(tasks.id, id)).get()?.id ?? null
-    );
+    return db.select({ id: tasks.projectId }).from(tasks).where(eq(tasks.id, id)).get()?.id ?? null;
   }
   if (typeof args.sprint === 'string') {
     return (
-      db
-        .select({ id: sprints.projectId })
-        .from(sprints)
-        .where(eq(sprints.id, args.sprint))
-        .get()?.id ?? null
+      db.select({ id: sprints.projectId }).from(sprints).where(eq(sprints.id, args.sprint)).get()
+        ?.id ?? null
     );
   }
   return null;
@@ -305,8 +300,7 @@ export function contextRevisionStamp(
   return {
     project: row.slug,
     revision: row.contextRevision,
-    delivered_revision:
-      own && sessionId !== null ? deliveredRevision(db, sessionId, row.id) : null,
+    delivered_revision: own && sessionId !== null ? deliveredRevision(db, sessionId, row.id) : null,
   };
 }
 
@@ -316,10 +310,10 @@ export function contextRevisionStamp(
  * only ever sent when asked for.
  */
 export function contextNotice(stamp: ContextRevisionStamp | null): string | null {
-  if (stamp === null || stamp.delivered_revision === null) return null;
-  if (stamp.delivered_revision >= stamp.revision) return null;
+  const delivered = stamp?.delivered_revision ?? null;
+  if (stamp === null || delivered === null || delivered >= stamp.revision) return null;
   return (
-    `Project context changed: r${String(stamp.delivered_revision)} → r${String(stamp.revision)}. ` +
-    `Call get_project_context with since_revision: ${String(stamp.delivered_revision)} for the diff.`
+    `Project context changed: r${String(delivered)} → r${String(stamp.revision)}. ` +
+    `Call get_project_context with since_revision: ${String(delivered)} for the diff.`
   );
 }
