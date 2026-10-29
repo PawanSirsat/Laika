@@ -6379,3 +6379,43 @@ Approving this decision approves the design. The claim that recovery is
    - Anyone with bypass rights can still delete a tag early.
    - Laika cannot see a missing ruleset. LAI-560's operator checklist checks
      for one, and step 8 catches the consequence.
+
+## D-116a — A checkpoint ref's state is a function of the set of deliveries seen (clarifies D-116 item 4)
+
+**Date:** 2026-10-29 · **By:** CHIEF (Belka), on the owner's delegation of
+product calls to Belka for the agent hand-off work · **Amends:** D-116 item
+4, whose text is unchanged
+
+**Why.** Codex's review of #143 found D-116 item 4 saying two things at once:
+the state *"depends only on which transitions have been seen, never on the
+order they arrived in"*, yet its table gives `ref_deleted` for *"exactly one
+deletion"* and leaves a second deletion, or a deletion seen before its
+creation, to read as order-dependent. LAI-545 builds against one rule, so the
+rule is stated here.
+
+**Decision.** For one ref (`repo` and full ref name), with the all-zero SHA
+meaning absent, the state is computed from the **set** of transitions seen,
+whatever order they arrived in:
+
+1. **No transition** → `pending`.
+2. **Exactly one creation `0000…→<checkpoint SHA>`, and nothing else** →
+   `verified`.
+3. **That creation plus one or more deletions `<checkpoint SHA>→0000…`, in
+   any order, and nothing else** → `ref_deleted`. Final: it never becomes
+   `verified` again.
+4. **Anything else** — a second creation, an update, a ref at a different
+   SHA, a deletion with no creation seen, an annotated tag's object SHA →
+   `uncertain`. Final.
+
+Because the state is a function of the set and a set only grows, neither
+`ref_deleted` nor `uncertain` can return to `verified`; a `ref_deleted` ref
+that later sees a foreign transition becomes `uncertain`. Re-tagging (D-116
+item 7) remains the only way back, through a new ref. Registering a ref is
+the one change to a checkpoint's state no delivery makes: it makes the new ref
+the newest, so the checkpoint takes that ref's state at that moment, normally
+`pending` (SPEC §4.68, §4.69).
+
+**Consequence.** A redelivered deletion, or two deletion notices, cannot flip
+a ref; nothing a delivery's arrival time says is read. SPEC §4.69 states the
+rule and §4.70 keys deliveries by ref name, so one that arrives before its
+checkpoint is registered still counts.

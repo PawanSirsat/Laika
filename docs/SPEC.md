@@ -3464,8 +3464,9 @@ field: 'selected_agent_id', reason, selected_agent_id }`, `reason` one of
 `agent_not_found`, `agent_other_owner`, `agent_wrong_org`, `agent_revoked`,
 `agent_not_granted`, `agent_read_only` or `agents_off`. **Changing it while
 an agent session holds the task's live claim is `409 conflict`, `reason:
-claim_held`** — that change is a hand-off (LAI-546); with no live claim it is
-free to change (LAI-541). **The selected agent owns the claim** (D-119,
+claim_held`** — that change is a hand-off (LAI-546): accepting one sets
+`selected_agent_id` to the receiver in the accept's own transaction (§4.71);
+with no live claim it is free to change (LAI-541). **The selected agent owns the claim** (D-119,
 LAI-586): *"When a task has a selected agent, only sessions of that agent may
 claim it. Any other agent gets `409 conflict` with reason
 `selected_for_another_agent`, naming the selected agent if the caller may see
