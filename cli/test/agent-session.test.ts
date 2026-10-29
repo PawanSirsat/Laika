@@ -149,7 +149,9 @@ function world(
           ? 'beat'
           : 'end';
       calls.push(kind);
-      bodies.push({ kind, body: typeof init.body === 'string' ? init.body : String(init.body) });
+      // `callBoard` always sends text: `''` for no body.
+      assert.equal(typeof init.body, 'string');
+      bodies.push({ kind, body: init.body as string });
       const key = new Headers(init.headers).get('idempotency-key');
       // The network fails first, replay or not.
       const step = take(kind);

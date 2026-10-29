@@ -508,10 +508,11 @@ function transcriptEnds(path: unknown): { head: string; tail: string } | undefin
     const stat = statSync(path);
     const size = stat.isFile() ? stat.size : -1;
     if (size <= 0) return undefined;
-    fd = openSync(path, 'r');
+    const handle = openSync(path, 'r');
+    fd = handle;
     const read = (at: number, length: number): string => {
       const buffer = Buffer.alloc(length);
-      return buffer.toString('utf8', 0, readSync(fd as number, buffer, 0, length, at));
+      return buffer.toString('utf8', 0, readSync(handle, buffer, 0, length, at));
     };
     const length = Math.min(size, TRANSCRIPT_WINDOW);
     return { head: read(0, length), tail: read(size - length, length) };
