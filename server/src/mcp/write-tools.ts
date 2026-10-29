@@ -6,12 +6,7 @@ import { type Db } from '../db/client.ts';
 import { ApiError } from '../errors.ts';
 import { reclaimTask } from '../services/claims.ts';
 import { addComment } from '../services/comments.ts';
-import {
-  getProjectContext,
-  listMembers,
-  projectSlugById,
-  updateProjectContext,
-} from '../services/projects.ts';
+import { listMembers, projectSlugById, reviseProjectContext } from '../services/projects.ts';
 import {
   addTasksToSprint,
   createSprint,
@@ -852,7 +847,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Write the project brief',
       description:
-        'Edit the shared context document every agent on this project starts from. `append` adds to the end and is what you want after a session; `replace` overwrites the whole document, which is a decision rather than an update. Read it first with `get_project_context`.',
+        'Edit the shared context document every agent on this project starts from. `append` adds to the end and is what you want after a session; `replace` overwrites the whole document, which is a decision rather than an update, and must name the `base_revision` you read from `get_project_context` — if somebody wrote since, it is refused `conflict` with `reason: stale_context_revision` and nothing changes. Every write makes a new revision.',
       inputSchema: z.strictObject({
         project: PROJECT_REF,
         context_md: z.string().max(100_000),
@@ -861,28 +856,38 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .describe(
             'Required, deliberately: there is no safe default between adding a paragraph and discarding the document.',
           ),
+        base_revision: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            'The `revision` of the document you read. Required for `replace`; on `append` it is checked when given.',
+          ),
       }),
     },
-    ({ project, context_md, mode }) => {
+    ({ project, context_md, mode, base_revision }) => {
       try {
-        // `append` is read-then-write rather than a service-level concatenation,
-        // because `updateProjectContext` takes a document and the document is
-        // what `activity` records the length of. Two agents appending in the
-        // same instant can lose one of the additions — the table is a single
-        // markdown field with no merge, and pretending otherwise would need a
-        // revision column §4.3 does not have.
-        const document =
-          mode === 'replace'
-            ? context_md
-            : append(getProjectContext(db, actor, project).context_md, context_md);
+        // `replace` names the revision it replaces (proposal §4.6, LAI-555).
+        // `append` is computed from the current document **inside** the write,
+        // so two agents appending at once both land, in order, as two
+        // revisions — the read-then-write that could lose one is gone.
+        if (mode === 'replace' && base_revision === undefined) {
+          throw new ApiError(
+            'unprocessable',
+            '`replace` must name the `base_revision` it replaces; read it with `get_project_context`',
+            { field: 'base_revision' },
+          );
+        }
 
-        const updated = updateProjectContext(db, actor, project, {
-          context_md: document,
+        const updated = reviseProjectContext(db, actor, project, {
+          baseRevision: base_revision ?? null,
+          next: (current) => (mode === 'replace' ? context_md : append(current, context_md)),
           now: clock(),
         });
 
         return answer(
-          `The brief for ${project} is now ${String(updated.length)} characters of ${String(updated.limit)}.`,
+          `The brief for ${project} is now revision ${String(updated.revision)}, ${String(updated.length)} characters of ${String(updated.limit)}.`,
           { context: updated },
         );
       } catch (error) {

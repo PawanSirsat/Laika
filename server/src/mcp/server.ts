@@ -5,6 +5,11 @@ import { recordMcpUse } from '../auth/tokens.ts';
 import { type Logger } from '../log.ts';
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
+import {
+  type ContextStampArgs,
+  contextNotice,
+  contextRevisionStamp,
+} from '../services/context-revisions.ts';
 import { registerReadTools } from './read-tools.ts';
 import { registerWriteTools } from './write-tools.ts';
 
@@ -135,6 +140,8 @@ export function createMcpServer(context: McpRequestContext): McpServer {
     { capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS },
   );
 
+  stampContextRevision(server, context);
+
   // `laika_whoami` stays: it is the cheapest way for an operator to confirm a
   // token acts as the person they expect, and it reads nothing.
   server.registerTool(
@@ -178,6 +185,75 @@ export function createMcpServer(context: McpRequestContext): McpServer {
   });
 
   return server;
+}
+
+type ToolCallback = (args: unknown, extra: unknown) => unknown;
+type RegisterTool = (name: string, config: unknown, callback: ToolCallback) => unknown;
+
+interface ToolResult {
+  isError?: boolean;
+  content?: { type: string; text?: string }[];
+  structuredContent?: Record<string, unknown>;
+}
+
+/**
+ * `context_revision` on **every** tool response (proposal §4.6, LAI-555).
+ *
+ * Done once, here, by wrapping `registerTool` before any tool is registered,
+ * so a tool added later carries it without remembering to — and the census
+ * test over the registry (`context-revision.test.ts`) proves it.
+ *
+ * The stamp names the project the call was about, its current revision and,
+ * when the call names the agent's own session, the revision last delivered to
+ * it. When that session is behind, one line of at most 300 characters is added
+ * to the markdown: a notice that the context changed, **never the document**.
+ *
+ * A refusal is left exactly as §6.3 shapes it: the stamp is only added to an
+ * answer, so it cannot say anything about a project the call was refused.
+ */
+function stampContextRevision(server: McpServer, context: McpRequestContext): void {
+  const register = server.registerTool.bind(server) as unknown as RegisterTool;
+  const stamped: RegisterTool = (name, config, callback) =>
+    register(name, config, async (args, extra) => {
+      const result = (await callback(args, extra)) as ToolResult;
+      if (result.isError === true) return result;
+
+      const input = typeof args === 'object' && args !== null ? (args as ContextStampArgs) : {};
+      const claim = result.structuredContent?.['claim'] as { session_id?: unknown } | undefined;
+      const sessionId =
+        typeof input.session_id === 'string'
+          ? input.session_id
+          : typeof claim?.session_id === 'string'
+            ? claim.session_id
+            : null;
+      const stamp = contextRevisionStamp(context.db, context.actor, input, sessionId);
+
+      // `laika_whoami` answers text alone; its JSON becomes the payload too.
+      const payload = result.structuredContent ?? parsedText(result) ?? {};
+      const notice = contextNotice(stamp);
+      return {
+        ...result,
+        content:
+          notice === null
+            ? result.content
+            : [...(result.content ?? []), { type: 'text' as const, text: notice }],
+        structuredContent: { ...payload, context_revision: stamp },
+      };
+    });
+  (server as unknown as { registerTool: RegisterTool }).registerTool = stamped;
+}
+
+function parsedText(result: ToolResult): Record<string, unknown> | null {
+  const text = result.content?.[0]?.text;
+  if (text === undefined) return null;
+  try {
+    const value = JSON.parse(text) as unknown;
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
