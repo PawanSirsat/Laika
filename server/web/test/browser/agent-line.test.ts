@@ -458,6 +458,30 @@ void describe('the drawer', () => {
     }
   });
 
+  void test('a snapshot with only a harness still labels what is shown self-reported', async () => {
+    const { stub, activity } = world();
+    activity.splice(
+      0,
+      activity.length,
+      claimTaken(3, NOW - 2 * HOUR, { ...SESSION, harness_version: null, model: null }),
+    );
+    const h = await open('/board?project=laika-core&task=t2', stub);
+    try {
+      const found = await panel(h);
+      const line = found.locator('[data-agent-line]');
+      await line.waitFor({ timeout: 10_000 });
+      assert.equal(squash(await line.innerText()), 'Claude Code · Belka · Codex');
+      await found.getByRole('button', { name: 'Details' }).click();
+      const details = squash(await found.locator('[data-exec-details]').innerText());
+      // Positive control: Details opened.
+      assert.match(details, /Claim generation 3/);
+      assert.doesNotMatch(details, /Harness version|Model/);
+      assert.equal(await found.locator('[data-self-reported]').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('History: an agent row names what ran; an older row is the agent alone', async () => {
     const { stub } = world();
     const h = await open('/board?project=laika-core&task=t2', stub);

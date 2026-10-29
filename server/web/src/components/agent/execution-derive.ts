@@ -271,6 +271,7 @@ export function executionView(
               sessionWords(fact.session) === undefined
                 ? undefined
                 : agentLine(named === undefined ? UNNAMED_AGENT : agentLabel(named), fact.session),
+            harness: fact.session?.harness ?? null,
             harnessVersion: fact.session?.harness_version ?? null,
             model: fact.session?.model ?? null,
           },

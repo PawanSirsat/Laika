@@ -52,6 +52,8 @@ export interface PanelClaim {
    * snapshot, or the session reported neither — the chip alone then.
    */
   readonly line?: string | undefined;
+  /** The session's self-reported harness slug, as it sent it. Shown in {@link line}. */
+  readonly harness?: string | null | undefined;
   /** The session's self-reported harness version, under Details. */
   readonly harnessVersion?: string | null | undefined;
   /** The session's self-reported model, under Details beside its version. */
@@ -245,9 +247,11 @@ function ExecutionDetails({
 }: Pick<ExecutionPanelProps, 'generation' | 'claim' | 'checkpoint' | 'pendingCheckpoint'>) {
   const [open, setOpen] = useState(false);
   const region = useId();
+  // Any self-reported field the panel shows — the harness in *Ran as*
+  // included — carries the label.
   const reported =
     claim !== undefined &&
-    ((claim.harnessVersion ?? null) !== null || (claim.model ?? null) !== null);
+    [claim.harness, claim.harnessVersion, claim.model].some((field) => (field ?? null) !== null);
   return (
     <div className="exec-details" data-exec-details>
       <button
