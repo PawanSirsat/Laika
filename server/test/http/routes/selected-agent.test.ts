@@ -74,6 +74,15 @@ interface Registered {
   secret: string;
 }
 
+/**
+ * D-120 allows one active agent per harness per device, so each fixture agent
+ * after a test's first is on a device of its own; the first keeps the label
+ * the assertions name.
+ */
+let fixtureAgents = 0;
+const fixtureDevice = (first: string | null): string | null =>
+  fixtureAgents++ === 0 ? first : `device-${fixtureAgents}`;
+
 async function register(
   grants: { project_id: string; scope: 'full' | 'read_only' }[],
   cookie = bob.cookie,
@@ -87,7 +96,7 @@ async function register(
         body: JSON.stringify({
           display_name: name,
           harness: 'claude-code',
-          device_label: 'Belka',
+          device_label: fixtureDevice('Belka'),
           grants,
         }),
       },
@@ -126,6 +135,7 @@ function selections(taskId: string) {
 }
 
 beforeEach(async () => {
+  fixtureAgents = 0;
   h = authHarness();
   const setup = await h.app.request('/api/v1/setup', {
     method: 'POST',

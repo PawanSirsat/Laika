@@ -33,6 +33,8 @@ export interface AgentGrant {
 export interface RegisteredAgent {
   readonly id: string;
   readonly owner_user_id: string;
+  /** The owner's current name, on every line that names the agent (LAI-592, D-120). */
+  readonly owner_display_name: string;
   readonly display_name: string;
   /** Self-reported by whoever registered it; decides nothing. Read through `agentHarness`. */
   readonly harness: string;

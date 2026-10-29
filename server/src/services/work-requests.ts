@@ -3,7 +3,7 @@ import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import { agentProjectGrants, agents, handoffOffers, projects, tasks, users } from '../db/schema.ts';
-import { ApiError } from '../errors.ts';
+import { AGENT_NOT_FOUND, ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { liveClaim } from './claims.ts';
 
@@ -72,7 +72,7 @@ export interface WorkRequestView {
 }
 
 const MESSAGES: Record<SelectedAgentRefusal, string> = {
-  agent_not_found: 'No agent with that id',
+  agent_not_found: AGENT_NOT_FOUND,
   agent_other_owner:
     "Only your own agents can be selected; another member's agent needs the project's hand-off policy (LAI-546)",
   agent_wrong_org: 'That agent belongs to another organisation',

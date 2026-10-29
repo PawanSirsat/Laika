@@ -379,6 +379,8 @@ describe('offer.expiry (§11.6, §4.73, LAI-546)', () => {
       registerAgent(t.sqlite, t.db, owner, {
         displayName: name,
         harness: 'claude-code',
+        // Sender and receiver are two devices: one agent per harness per device (D-120).
+        deviceLabel: name,
         grants: [{ projectId: s.projectId, scope: 'full' }],
       });
     const sender = register('Sender');

@@ -91,10 +91,14 @@ interface AgentHandle {
   secret: string;
 }
 
+/** A device per fixture agent: D-120 allows one active agent per harness per device. */
+let fixtureDevices = 0;
+
 function agentOf(person: ResolvedActor, name: string): AgentHandle {
   const created = registerAgent(t.sqlite, t.db, person, {
     displayName: name,
     harness: 'claude-code',
+    deviceLabel: `device-${++fixtureDevices}`,
     grants: [{ projectId: s.projectId, scope: 'full' }],
   });
   return {

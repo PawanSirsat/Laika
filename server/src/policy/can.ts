@@ -52,6 +52,11 @@ export interface TokenContext {
   /** `null` = every project the user can reach. Otherwise a whitelist. */
   projectIds: readonly string[] | null;
   /**
+   * When this token stops working, or `null` / absent for never. A token
+   * cannot mint one that outlives it (LAI-563, `services/tokens.ts`).
+   */
+  expiresAt?: number | null | undefined;
+  /**
    * The registered agent this token is the credential of (D-114, LAI-534), or
    * absent / `null` for a legacy token. Loaded from `tokens.agent_id` and
    * nothing else: no header, parameter or body field can put one here.

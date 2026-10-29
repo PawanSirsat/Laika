@@ -172,6 +172,7 @@ export function createToken(
   }
 
   assertWithinOwnPin(actor, input.projectIds ?? null);
+  assertWithinOwnExpiry(actor, expiresAt);
   const projectIds = assertReadableProjects(db, actor, input.projectIds ?? null);
   const scope = forcedTokenScope(actor.orgRole, input.scope);
 
@@ -416,6 +417,31 @@ function assertWithinOwnPin(actor: ResolvedActor, requested: readonly string[] |
       action: 'token.create_own',
       reason: 'project_pinned',
       project_ids: outside === null ? null : [...new Set(outside)],
+    },
+  );
+}
+
+/**
+ * A token cannot mint a token that outlives it (LAI-563). The pin above stops
+ * a token widening *where* it reaches and `can()` stops it widening *what* it
+ * may do; this stops it widening *how long*. Refused, never clamped, as the
+ * pin is: a token quietly shorter than asked for stops working later for a
+ * reason nothing recorded. A session, and a token with no expiry, mint as
+ * before.
+ */
+function assertWithinOwnExpiry(actor: ResolvedActor, requested: number | null): void {
+  const own = actor.token?.expiresAt ?? null;
+  if (own === null) return;
+  if (requested !== null && requested <= own) return;
+
+  throw new ApiError(
+    'forbidden',
+    'This token expires, and can only mint a token that expires no later',
+    {
+      action: 'token.create_own',
+      reason: 'token_expiry_bounded',
+      expires_at: requested,
+      max_expires_at: own,
     },
   );
 }
