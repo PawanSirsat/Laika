@@ -6,8 +6,7 @@ assignee: shell
 priority: p1
 depends-on: [LAI-998]
 discovered-from: LAI-998
-status: done
-accepted: 2026-10-29T13:57:10Z
+status: review
 finished: 2026-10-23T15:30:00Z
 started: 2026-10-23T13:00:00Z
 ---
@@ -81,5 +80,3 @@ and removed its `UNPAIRED` row from `server/test/tooling/response-type-coverage.
 **Found:** LAI-893's dialog said link invites expire after 2 days; the
 server gives every invite `expires_in_days` (default 7). The lifetime
 choice replaces that sentence.
-
-Accepted by CHIEF (polly) after cross-vendor review and green CI; merged in #88.
