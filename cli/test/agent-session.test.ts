@@ -65,7 +65,6 @@ import {
   runWatcher,
   startSession,
   statePath,
-  TRANSCRIPT_WINDOW,
   transcriptEnds,
   type TranscriptFs,
   writeCredential,
@@ -1655,6 +1654,22 @@ void describe('what a session says about itself (LAI-588, D-118)', () => {
       JSON.stringify({ harness: 'claude-code', harness_version: version64 }),
     ]);
   });
+
+  void test('a version the board would refuse is left out of the start, and the model still goes', async () => {
+    // `2.1 beta` has a space: the board's version shape refuses it, and the
+    // whole start with it.
+    const home = temp();
+    const w = world(home);
+    const path = join(home, 'malformed.jsonl');
+    writeFileSync(path, claudeTranscript('2.1 beta', 'claude-opus-5-5'));
+    await startSession(w.deps, {
+      ...request('hs-malformed'),
+      self: readSelfReport('claude-code', { transcript_path: path }),
+    });
+    assert.deepEqual(sent(w, 'start'), [
+      JSON.stringify({ harness: 'claude-code', model: 'claude-opus-5-5' }),
+    ]);
+  });
 });
 
 void describe('reading the harness’s own record (LAI-588)', () => {
@@ -1803,7 +1818,9 @@ void describe('reading the harness’s own record (LAI-588)', () => {
 
   void test('a transcript of any size is read at its ends only', () => {
     const home = temp();
-    const filler = jsonl({ type: 'progress' }).repeat(Math.ceil((2 * TRANSCRIPT_WINDOW) / 20));
+    // A fixed 1 MiB, not a multiple of the constant: the window's size is the
+    // next test's to pin.
+    const filler = jsonl({ type: 'progress' }).repeat((1024 * 1024) / 20);
     const path = file(
       home,
       'long.jsonl',
@@ -1815,6 +1832,34 @@ void describe('reading the harness’s own record (LAI-588)', () => {
     assert.deepEqual(readSelfReport('claude-code', { transcript_path: path }), {
       model: 'claude-opus-5-5',
     });
+  });
+
+  void test('the window is 256 KiB exactly: a first line ending the 256 KiB is read, one byte more is not', () => {
+    // Written as a number, not from the constant, so a wider or narrower
+    // window turns this red. The version is on the first line only and Claude
+    // Code's is read from the tail: it is read only if the tail reaches byte 0.
+    const KIB_256 = 262_144;
+    const home = temp();
+    const head = jsonl({ type: 'user', version: '2.1.1' });
+    const last = jsonl({ type: 'assistant', message: { model: 'claude-opus-5-5' } });
+    const sized = (name: string, size: number): string => {
+      // A line of spaces is no record: it pads without being read as one.
+      const pad = size - head.length - last.length - 1;
+      const path = file(home, name, `${head}${' '.repeat(pad)}\n${last}`);
+      assert.equal(statSync(path).size, size);
+      return path;
+    };
+    assert.deepEqual(
+      readSelfReport('claude-code', { transcript_path: sized('fits.jsonl', KIB_256) }),
+      {
+        harness_version: '2.1.1',
+        model: 'claude-opus-5-5',
+      },
+    );
+    assert.deepEqual(
+      readSelfReport('claude-code', { transcript_path: sized('over.jsonl', KIB_256 + 1) }),
+      { model: 'claude-opus-5-5' },
+    );
   });
 
   void test('a later hook notes a switched model for the watcher, and the start’s hook sent the first', async () => {
