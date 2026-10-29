@@ -689,6 +689,47 @@ void describe('the live claim (LAI-597)', () => {
     });
   }
 
+  /*
+   * LAI-597 review, round 2: the claim's age runs from its response's
+   * arrival, not from the first time a card draws it. With the Agent field
+   * hidden the card draws no state at all; shown 95 s later it must already
+   * say Connection lost — and from the one read the board made, not a new one.
+   */
+  void test('a card whose Agent field was hidden for 95 s says Connection lost the moment it is shown', async () => {
+    const { stub } = world();
+    const h = await open('/board?project=laika-core', stub, {
+      before: async (page) => {
+        await page.clock.install();
+        await page.addInitScript(() => {
+          localStorage.setItem(
+            'laika.board-view',
+            JSON.stringify({ 'laika-core': { fields: { agent: false } } }),
+          );
+        });
+      },
+    });
+    try {
+      await boardReady(h);
+      assert.match(await card(h.page, 't4').innerText(), /Held by a session checking in/);
+      assert.equal(await card(h.page, 't4').locator('[data-exec-state]').count(), 0);
+      const before = taskReads(h);
+
+      await h.page.clock.fastForward(95_000);
+
+      await h.page.locator('.bt-icon[title="View settings"]').click();
+      await h.page.waitForSelector('.view-settings');
+      await h.page.locator('.vs-search').fill('Agent');
+      await h.page.locator('.vs-add').first().click();
+
+      const line = card(h.page, 't4').locator('[data-exec-state]');
+      await line.waitFor({ timeout: 10_000 });
+      assert.equal(await line.getAttribute('data-exec-state'), 'connection_lost');
+      assert.equal(taskReads(h), before, 'showing the field re-read the tasks');
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the drawer shows the holding session and its last heartbeat, and flips live without moving the focus', async () => {
     const { stub } = world();
     const h = await open('/board?project=laika-core&task=t4', stub, {

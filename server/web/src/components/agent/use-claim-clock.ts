@@ -1,7 +1,8 @@
 import { useEffect, useReducer } from 'react';
 import type { TaskLiveClaim } from '../../api/tasks.ts';
 import { startTicker } from '../../api/time-label.ts';
-import { msUntilSuspect, pageClock } from './execution-derive.ts';
+import { pageClock } from '../../api/claim-receipt.ts';
+import { msUntilSuspect } from './execution-derive.ts';
 
 /**
  * The page's clock, for a screen that draws a live claim (LAI-597).
