@@ -2598,8 +2598,11 @@ and **registering a ref** — the first tag at the checkpoint's registration,
 or a re-tag (§4.69) — which makes the new ref the newest and sets
 `verification` to that ref's state as derived at that moment: `pending` unless
 its deliveries arrived first. **Registering a ref is the one change not caused
-by a delivery**, and it can only ever *withdraw* a `verified`, never grant
-one. Never from what an agent says (D-116 item 3). **`verification` is
+by a delivery.** It cannot establish `verified` without signed delivery
+evidence: it projects the state from the §4.70 deliveries already stored for
+that `repo` + `ref`, which is `verified` only when a delivery that arrived
+before the registration says so, and `pending` when none has. Never from what
+an agent says (D-116 item 3). **`verification` is
 D-116's set, not the proposal's**: proposal §4.3 named `missing`, which D-116
 does not have — a checkpoint whose notice never came is `pending`, labelled
 after ten minutes (below). **`superseded` is not stored**: a reader derives
@@ -2788,11 +2791,13 @@ checkpoint's `verification`:
   receiving agent** — `403 forbidden`, `reason: approver_is_receiver`. When the
   assignee owns the receiving agent, a lead approves. Moves the offer to
   `open`. **An unnamed recovery** (`to_agent_id` null) is accepted without
-  approval by an agent of the expired claim's owner; for any other owner's
-  agent it needs a person to **name and approve it in one step** — approve
-  with `to_agent_id`, which sets the receiver and is refused for an agent the
-  approver owns, as above. An agent of another owner accepting an unnamed
-  recovery that needs approval is `409`, `reason: approval_pending`.
+  approval by an agent of the expired claim's owner, and — where the policy
+  allows other owners and `cross_owner_requires_approval` is off — by an
+  eligible agent of another owner. Where `cross_owner_requires_approval` is
+  on, another owner's agent needs a person to **name and approve it in one
+  step** — approve with `to_agent_id`, which sets the receiver and is refused
+  for an agent the approver owns, as above; that agent accepting it unnamed is
+  `409`, `reason: approval_pending`.
 - **Accept.** The receiving agent's session, with `verified_commit_sha`. The
   server checks again: permission, approval, expiry, the policy's
   `max_handoffs` against `tasks.handoff_count`, and that the checkpoint is
