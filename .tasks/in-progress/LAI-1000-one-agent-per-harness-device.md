@@ -1,6 +1,6 @@
 ---
 id: LAI-1000
-title: 'The server refuses a second active agent on one harness and device: 409 agent_exists_for_device'
+title: 'The server refuses a second active agent on one harness and device: 409 agent_exists_for_harness_device'
 area: server
 assignee: CORE
 priority: p1
@@ -24,7 +24,7 @@ every agent already registered working.
 
 - `POST /agents`, and `PATCH /agents/:id` when it changes `harness` or
   `device_label` so the agent moves to a different pair, answer **`409
-  conflict`**, `details.reason: agent_exists_for_device`, when the same owner
+  conflict`**, `details.reason: agent_exists_for_harness_device`, when the same owner
   has another **active** agent with the same harness slug and the same device
   key (SPEC §4.63's `trim().toLowerCase()`, null and blank together — the
   Devices view's normalisation, `deviceLabelKey`).
@@ -49,7 +49,7 @@ every agent already registered working.
 
 - [ ] A second active agent with the same owner, harness and normalised device
       (`" Belka "` vs `"belka"`, null vs `""`) is `409 conflict`, `reason:
-      agent_exists_for_device`, naming the existing agent; nothing is written
+      agent_exists_for_harness_device`, naming the existing agent; nothing is written
       (no agent row, no token)
 - [ ] The same pair is accepted for another owner, another harness, another
       device, or once the first agent is revoked

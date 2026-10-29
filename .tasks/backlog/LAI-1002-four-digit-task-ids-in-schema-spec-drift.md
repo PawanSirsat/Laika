@@ -23,6 +23,13 @@ Harmless today (no four-digit Planned mark exists, `LAI-100` – `LAI-109` are
 all done). Not changed in LAI-1000 because the guard is CORE's and the
 dispatch said to report rather than change a guard silently.
 
+**Until this lands, no `**Planned — LAI-10xx …**` mark may be written into
+SPEC §4** (Belka, 2026-10-30). Such a mark is read as `LAI-100`, which is in
+`done/`, so `schema-spec-drift` › *has no planned mark that has outlived its
+reason* goes red the moment it is written. An unmarked §4 section with no
+table is red too, so a §4 table that a four-digit task will build is not
+written into SPEC until this lands.
+
 ## Acceptance criteria
 
 - [ ] Both read `LAI-\d{3,}` with a boundary (`(?!\d)` / `-` after), so

@@ -28,7 +28,7 @@ its credential instead.
 - The registration wizard asks harness and device, both required; no
   free-text name as a label (it may survive only as an optional private note
   that is never shown as the label). The name sent to the server is derived.
-- On `409 agent_exists_for_device`: an inline message naming the existing
+- On `409 agent_exists_for_harness_device`: an inline message naming the existing
   agent, a link to it in the Agents tab and its Rotate action.
 - Devices view: one row per harness under each device; a legacy duplicate is
   flagged (two active agents of one harness on that device).
@@ -41,7 +41,7 @@ its credential instead.
       reads `Omnigent · Belka` on every surface above
 - [ ] The wizard has no free-text name field shown as the label; harness and
       device are required
-- [ ] A `409 agent_exists_for_device` shows an inline message with a link to
+- [ ] A `409 agent_exists_for_harness_device` shows an inline message with a link to
       the existing agent and its Rotate action
 - [ ] Devices view lists one row per harness under each device and flags a
       legacy duplicate
