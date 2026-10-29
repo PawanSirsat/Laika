@@ -377,6 +377,13 @@ void describe('the Agents tab (LAI-537)', () => {
       // Step 1 — focus lands on the step's title, inside the wizard.
       await until(async () => (await focusedText(page)) === 'Name, harness and device');
       assert.equal(await focusedText(page), 'Name, harness and device');
+      // The Name's hint says what the board shows (LAI-583): cards and
+      // history name an agent by harness and device, not by this name.
+      assert.match(
+        (await page.locator('.agents-wizard .agents-field .agents-hint').first().textContent()) ??
+          '',
+        /^Your name for it, shown here\. Cards and history name it by harness and device/,
+      );
       const name = page.locator('.agents-wizard input').first();
       await name.focus();
       await page.keyboard.press('ControlOrMeta+A');
@@ -417,6 +424,12 @@ void describe('the Agents tab (LAI-537)', () => {
       await press(page, 'Continue', '.agents-wizard');
       await page.locator('.agents-setup .conn-setup').first().waitFor();
       assert.match(await page.locator('.agents-setup').innerText(), new RegExp(SECRET));
+      // Its badge says whose token: the agent's, not the reader's (LAI-583).
+      const tags = await page
+        .locator('.agents-setup .conn-block-tag')
+        .evaluateAll((els) => els.map((el) => el.textContent ?? ''));
+      assert.ok(tags.length > 0, 'no block is marked as carrying a token');
+      assert.deepEqual(new Set(tags), new Set(['carries the agent’s token']));
       // The walker's positive control: while it shows, React holds it.
       assert.equal(await secretInReact(page, SECRET), 'found');
 

@@ -8,6 +8,9 @@ import {
   selectionErrorWords,
   selectTaskAgent,
   agentDevice,
+  distinctDevices,
+  shownAs,
+  twinNames,
   type SelectedAgent,
 } from '../../../api/selected-agent.ts';
 import { getTask, type TaskSummary } from '../../../api/tasks.ts';
@@ -174,6 +177,22 @@ export function AgentRow({
     setConfirmed((now) => (now === stale ? undefined : now));
   }, [stale]);
 
+  /** The current agent as the picker names it: told apart from another of the reader's (LAI-583). */
+  const peers = useMemo(
+    () =>
+      current === null
+        ? []
+        : load.kind === 'ready'
+          ? [...load.agents.filter((a) => a.status !== 'revoked'), current]
+          : [current],
+    [current, load],
+  );
+  const shown = useMemo(
+    () => (current === null ? null : shownAs(current, distinctDevices(peers))),
+    [current, peers],
+  );
+  const twin = current === null ? undefined : twinNames(peers).get(current.id);
+
   const choices = useMemo(
     () =>
       load.kind === 'ready'
@@ -287,13 +306,14 @@ export function AgentRow({
               <span className="meta-muted" role="status">
                 Loading your agents…
               </span>
-            ) : current === null ? (
+            ) : shown === null ? (
               <span className="meta-muted">No agent</span>
             ) : (
               <AgentChip
-                client={selectedHarness(current)}
-                device={agentDevice(current)}
-                owner={current.owner.name}
+                client={selectedHarness(shown)}
+                device={agentDevice(current ?? shown)}
+                twin={twin}
+                owner={shown.owner.name}
               />
             )}
           </div>
@@ -320,7 +340,7 @@ export function AgentRow({
         cardExecutionState({ status: task.status, selected_agent: current }) !== null && (
           <ExecutionStateLine
             state="waiting_for_agent"
-            detail={`${current.owner.name}’s ${agentLabel(current)}`}
+            detail={`${current.owner.name}’s ${agentLabel(shown ?? current)}`}
           />
         )}
 

@@ -10,7 +10,12 @@ import type { Theme } from '../../../theme/theme.ts';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { SizeChip } from '../../../components/SizeChip.tsx';
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
-import { agentDevice, selectedAgentOf, selectedHarness } from '../../../api/selected-agent.ts';
+import {
+  agentDevice,
+  selectedAgentOf,
+  selectedHarness,
+  twinsOnTasks,
+} from '../../../api/selected-agent.ts';
 import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
 import { cardExecutionState } from '../../../components/agent/execution-derive.ts';
 
@@ -323,6 +328,8 @@ export function TaskCard({
             <AgentChip
               client={selectedHarness(agent)}
               device={agentDevice(agent)}
+              // Told apart from another on this board that shares both (LAI-583).
+              twin={twinsOnTasks(byId).get(agent.id)}
               owner={agent.owner.name}
             />
           </span>

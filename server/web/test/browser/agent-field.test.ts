@@ -438,13 +438,13 @@ void describe('the drawer’s Agent row', () => {
         { value: '', text: 'No agent Human only', disabled: false },
         {
           value: 'ag-laptop',
-          text: 'Claude Code — Ada Lovelace · laptop-1 Available',
+          text: 'Claude Code · laptop-1 — Ada Lovelace Available',
           disabled: false,
         },
-        { value: 'ag-desktop', text: 'Codex — Ada Lovelace · desktop-2 Offline', disabled: false },
+        { value: 'ag-desktop', text: 'Codex · desktop-2 — Ada Lovelace Offline', disabled: false },
         {
           value: 'ag-ro',
-          text: 'Cursor — Ada Lovelace · tablet Read-only on this space',
+          text: 'Cursor · tablet — Ada Lovelace Read-only on this space',
           disabled: true,
         },
       ]);
@@ -1913,6 +1913,213 @@ void describe('a Viewer whose own agents cannot be read', () => {
         await h.page.getByRole('dialog').first().innerText(),
         /Could not load your agents|forbidden|You may not read agents/i,
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/*
+ * **Two of the reader's agents with one harness on one device** (LAI-583).
+ * Measured live in LAI-582: the label is `harness · device` (D-118), so two
+ * Claude Code agents on one laptop read the same on the card, in the picker,
+ * in History and in the List. Each now carries the name its owner gave it, in
+ * brackets, and only because the two collide; `ag-desktop` stays
+ * `Codex · desktop-2`.
+ */
+void describe('two agents that share a harness and a device', () => {
+  const twin = {
+    ...AGENTS[0],
+    id: 'ag-twin',
+    display_name: 'Second laptop agent',
+    created_at: 4,
+  };
+  const twinView = { ...viewOf('ag-laptop'), id: twin.id, display_name: twin.display_name };
+  const twins = () => {
+    const w = world();
+    // t1 gets the twin; t2 keeps `ag-laptop`; an agent row on t1 is the twin's.
+    Object.assign(w.tasks[0] ?? {}, { selected_agent: twinView });
+    w.activity.unshift(
+      event({ actor_kind: 'agent', actor_token_id: 'tok-t', agent_id: 'ag-twin', created_at: NOW }),
+    );
+    const stub: ApiStub = {
+      ...w.stub,
+      '/api/v1/agents': { data: [...AGENTS, twin], next_cursor: null },
+    };
+    return stub;
+  };
+  const FIRST = 'Claude Code · laptop-1 (Laptop agent)';
+  const SECOND = 'Claude Code · laptop-1 (Second laptop agent)';
+  const folded = (text: string | null) => (text ?? '').replace(/\s+/g, ' ').trim();
+
+  void test('the cards, the picker and History tell them apart, in both themes', async () => {
+    const h = await open('/board?project=laika-core&task=t1', twins());
+    try {
+      const chip = (id: string) => h.page.locator(`article.card[data-task-id="${id}"] .agent-chip`);
+      await chip('t2').waitFor({ timeout: 20_000 });
+      for (const theme of ['light', 'dark']) {
+        await setTheme(h.page, theme);
+        // Read aloud in full; on screen, the name that differs (LAI-583).
+        assert.equal(folded(await chip('t2').textContent()), FIRST, theme);
+        assert.equal(folded(await chip('t1').textContent()), SECOND, theme);
+        const shown = (id: string) =>
+          chip(id).evaluate((el) => {
+            const copy = el.cloneNode(true) as HTMLElement;
+            for (const hidden of copy.querySelectorAll('.visually-hidden')) hidden.remove();
+            return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
+          });
+        assert.equal(await shown('t1'), 'Claude Code · Second laptop agent', theme);
+        assert.equal(await shown('t2'), 'Claude Code · Laptop agent', theme);
+        assert.match(
+          (await chip('t1').getAttribute('title')) ?? '',
+          /on laptop-1 \(Second laptop agent\)$/,
+        );
+        assert.equal(folded(await chip('t3').textContent()), 'Codex · desktop-2', theme);
+      }
+
+      const box = await agentBox(h);
+      await box.click();
+      await until(async () => (await optionsOpen(h.page, box)).length >= 3);
+      const offered = (await optionsOpen(h.page, box)).map((o) => o.text);
+      assert.ok(
+        offered.some((t) => t.includes('laptop-1 (Laptop agent)')),
+        `picker: ${offered.join(' | ')}`,
+      );
+      assert.ok(
+        offered.some((t) => t.includes('laptop-1 (Second laptop agent)')),
+        `picker: ${offered.join(' | ')}`,
+      );
+      await h.page.keyboard.press('Escape');
+
+      await h.page.locator('#tab-history').click();
+      const history = h.page.locator('#panel-history');
+      await history.waitFor({ timeout: 10_000 });
+      const who = () => history.locator('.panel-event-who').allInnerTexts();
+      await until(async () => (await who()).includes(`Ada Lovelace via ${SECOND}`));
+      const rows = await who();
+      assert.ok(rows.includes(`Ada Lovelace via ${SECOND}`), rows.join(' | '));
+      assert.ok(rows.includes(`Ada Lovelace via ${FIRST}`), rows.join(' | '));
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **At 390 the picker still shows what differs** (LAI-583 review). Two agents
+   * on one long-named device: the label ellipsises inside the shared
+   * `Claude Code · build-server-eu-west-1` prefix, so the mark must be drawn
+   * where no ellipsis reaches. Measured on screen — what a reader sees, not
+   * the option's text.
+   */
+  void test('at 390 the picker shows each twin’s mark uncut, in both themes', async () => {
+    const long = (id: string, display_name: string) => ({
+      ...AGENTS[0],
+      id,
+      display_name,
+      device_label: 'build-server-eu-west-1-primary',
+      created_at: 5,
+    });
+    const w = world();
+    const stub: ApiStub = {
+      ...w.stub,
+      '/api/v1/agents': {
+        data: [...AGENTS, long('ag-long-1', 'alpha agent'), long('ag-long-2', 'bravo agent')],
+        next_cursor: null,
+      },
+    };
+    const h = await open('/board?project=laika-core&task=t1', stub);
+    try {
+      for (const theme of ['light', 'dark']) {
+        await h.page.setViewportSize({ width: 390, height: 844 });
+        await setTheme(h.page, theme);
+        await h.page.reload();
+        const box = await agentBox(h);
+        await box.click();
+        await until(async () => (await optionsOpen(h.page, box)).length >= 5);
+        const list = h.page.locator(`[id="${(await box.getAttribute('aria-controls')) ?? ''}"]`);
+        const seen = await list
+          .locator('[role="option"][data-value^="ag-long-"]')
+          .evaluateAll((els) =>
+            els.map((el) => {
+              const option = el.getBoundingClientRect();
+              const label = el.querySelector<HTMLElement>('.dd-label');
+              const badge = el.querySelector<HTMLElement>('.dd-badge');
+              const b = badge?.getBoundingClientRect();
+              return {
+                labelCut: label !== null && label.scrollWidth > label.clientWidth,
+                mark: badge?.textContent ?? null,
+                markWhole:
+                  badge !== null &&
+                  b !== undefined &&
+                  badge.scrollWidth <= badge.clientWidth &&
+                  b.left >= option.left &&
+                  b.right <= option.right &&
+                  b.right <= window.innerWidth,
+                name: el.getAttribute('title') ?? '',
+              };
+            }),
+          );
+        assert.equal(seen.length, 2, theme);
+        // The case is real: the shared label is cut at this width.
+        assert.ok(
+          seen.every((o) => o.labelCut),
+          `${theme}: the label is not cut — ${JSON.stringify(seen)}`,
+        );
+        assert.deepEqual(
+          seen.map((o) => o.mark).sort(),
+          ['alpha agent', 'bravo agent'],
+          `${theme}: ${JSON.stringify(seen)}`,
+        );
+        assert.ok(
+          seen.every((o) => o.markWhole),
+          `${theme}: a mark is cut or off screen — ${JSON.stringify(seen)}`,
+        );
+        // The whole name is still the option's: hover and the accessible name.
+        assert.ok(
+          seen.some((o) =>
+            o.name.startsWith('Claude Code · build-server-eu-west-1-primary (alpha agent)'),
+          ),
+          JSON.stringify(seen),
+        );
+        // And the computed accessible name of each option — what a screen
+        // reader announces — carries the whole label with its own mark.
+        for (const mark of ['alpha agent', 'bravo agent']) {
+          const named = list.getByRole('option', {
+            name: new RegExp(
+              `^Claude Code · build-server-eu-west-1-primary \\(${mark}\\) — Ada Lovelace\\b`,
+            ),
+          });
+          assert.equal(await named.count(), 1, `${theme}: no option is named for ${mark}`);
+        }
+        await h.page.keyboard.press('Escape');
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the List tells them apart, and says so on hover', async () => {
+    const h = await open('/list?project=laika-core', twins());
+    try {
+      const cell = (id: string) =>
+        h.page.locator(`tbody tr[data-task-id="${id}"] .list-agent-cell`);
+      await cell('t1').waitFor({ timeout: 20_000 });
+      assert.equal(folded(await cell('t2').textContent()), FIRST);
+      assert.equal(folded(await cell('t1').textContent()), SECOND);
+      assert.match(
+        (await cell('t1').getAttribute('title')) ?? '',
+        /^Claude Code · laptop-1 \(Second laptop agent\) — /,
+      );
+      // On screen, the narrow cell shows what differs, not two `laptop…`.
+      const visible = (id: string) =>
+        cell(id).evaluate((el) => {
+          const copy = el.cloneNode(true) as HTMLElement;
+          for (const hidden of copy.querySelectorAll('.visually-hidden')) hidden.remove();
+          return (copy.textContent ?? '').trim();
+        });
+      assert.equal(await visible('t1'), 'Second laptop agent');
+      assert.equal(await visible('t2'), 'Laptop agent');
+      assert.equal(await visible('t3'), 'desktop-2', 'an agent with no twin keeps its device');
     } finally {
       await h.close();
     }
