@@ -702,7 +702,7 @@ function canProjectAction(
     //
     // Asked of the owner's role; the agent's grant and token narrow it, and
     // the service requires a registered agent holding the live claim (§3.2,
-    // §4.68, LAI-545) — facts about other rows, which a pure function is not
+    // §4.70, LAI-545) — facts about other rows, which a pure function is not
     // given.
     case 'task.checkpoint.create':
       return isMemberUp;
@@ -722,7 +722,7 @@ function canProjectAction(
     // Asked of the owner's role, narrowed by the agent's grant and token.
     // That the caller is a registered agent, holds the live claim (offer) or
     // is the offer's receiver (accept, decline) is the service's to ask, with
-    // the project's hand-off policy (§3.2, §4.71).
+    // the project's hand-off policy (§3.2, §4.73).
     case 'task.handoff.offer':
     case 'task.handoff.accept':
     case 'task.handoff.decline':

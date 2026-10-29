@@ -2,7 +2,7 @@ import { request } from './client.ts';
 import { ApiError } from './errors.ts';
 
 /**
- * A task's checkpoints and hand-off offers (SPEC §4.68 – §4.71, §6.4; the
+ * A task's checkpoints and hand-off offers (SPEC §4.70 – §4.73, §6.4; the
  * server is LAI-545 and LAI-546, the screens LAI-549).
  *
  * **Saving, offering, accepting and declining are a registered agent's acts**
@@ -24,14 +24,14 @@ export interface CheckpointRef {
   readonly state: CheckpointVerification;
 }
 
-/** One changed file in a save: names and line counts only (§4.68). */
+/** One changed file in a save: names and line counts only (§4.70). */
 export interface CheckpointManifestEntry {
   readonly path: string;
   readonly added: number;
   readonly removed: number;
 }
 
-/** The structured continuation note (§4.68, D-115 item 3). */
+/** The structured continuation note (§4.70, D-115 item 3). */
 export interface CheckpointSummary {
   readonly work_done: string;
   readonly next_step: string;

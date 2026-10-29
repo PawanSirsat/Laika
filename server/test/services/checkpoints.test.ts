@@ -27,8 +27,8 @@ import {
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpers/auth.ts';
 
 /**
- * The checkpoint service's rules that need no route to state (§4.68 – §4.70,
- * §4.73, D-115, D-116, LAI-545): the set rule, the pending notice and
+ * The checkpoint service's rules that need no route to state (§4.70 – §4.72,
+ * §4.75, D-115, D-116, LAI-545): the set rule, the pending notice and
  * retention on an injected clock, and consent. The routes and the signed
  * deliveries are `test/http/routes/checkpoints.test.ts`.
  */
@@ -519,7 +519,7 @@ describe('retention (D-115 item 9, §11.6)', () => {
 
 // ---------------------------------------------------------------- consent
 
-describe('consent to automatic saves (§4.73, D-115 item 2)', () => {
+describe('consent to automatic saves (§4.75, D-115 item 2)', () => {
   it('the owner gives it, withdraws it, and giving again clears the withdrawal', () => {
     const owner = loadActor(h.db, ownerId)!;
     expect(readCheckpointConsent(h.db, owner, agentId)).toEqual({

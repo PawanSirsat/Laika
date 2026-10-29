@@ -1923,7 +1923,7 @@ function agentStartWorking(
 
   if (before.status === 'in_progress') {
     // A paused claim's renewal writes nothing, its branch included: every
-    // change is refused while the offer is live (§4.71).
+    // change is refused while the offer is live (§4.73).
     if (onBranch !== undefined && onBranch !== before.branch && taken.claim.state !== 'paused') {
       db.update(tasks).set({ branch: onBranch, updatedAt: now }).where(eq(tasks.id, taskId)).run();
     }

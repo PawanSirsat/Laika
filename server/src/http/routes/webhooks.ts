@@ -34,7 +34,7 @@ import { type AppEnv } from '../context.ts';
 
 export interface WebhookRouteOptions {
   db: Db;
-  /** For checkpoint deliveries' `BEGIN IMMEDIATE` (§4.70); the db's own handle by default. */
+  /** For checkpoint deliveries' `BEGIN IMMEDIATE` (§4.72); the db's own handle by default. */
   sqlite?: Database.Database;
   serverSecret: string;
   /** Injectable so a test can drive the 24h window without waiting a day. */
@@ -100,7 +100,7 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
     // ## A checkpoint tag is judged before the 24h log, and outside it
     //
     // §10.1, D-116 item 5: a checkpoint delivery's id is recorded **in the
-    // transaction that applies it** (§4.70). The log below records an id
+    // transaction that applies it** (§4.72). The log below records an id
     // before its handler runs, so a delivery whose handler failed would be
     // refused as a repeat when GitHub's *Redeliver* sends it again with the
     // same id — and the checkpoint would never verify. So these never touch

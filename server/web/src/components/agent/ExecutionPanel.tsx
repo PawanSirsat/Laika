@@ -106,7 +106,7 @@ export interface ExecutionPanelProps {
   /** What the save row says when `checkpoint` is null. */
   readonly noCheckpointWords?: string | undefined;
   /**
-   * Owners and admins also get §4.68's pointer — the webhook's *Recent
+   * Owners and admins also get §4.70's pointer — the webhook's *Recent
    * Deliveries* and *Redeliver* — beside a save whose notice never came.
    */
   readonly showPendingHint?: boolean | undefined;
@@ -288,7 +288,7 @@ function ClaimExpiredLine() {
 
 /**
  * One save: its name, short SHA, age and proof, then what its note says.
- * Every state is words (SPEC §4.68 *What the UI says*); the note's text is the
+ * Every state is words (SPEC §4.70 *What the UI says*); the note's text is the
  * agent's and is drawn as text, never as markup (D-115 item 7).
  */
 function CheckpointLine({

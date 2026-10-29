@@ -522,7 +522,7 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       updateProject(t.db, owner(), 'core', { description: 'A board' });
       // Its own writer since LAI-404, and still a `project.updated` row — so the
       // sweep must reach it here rather than through the general update path.
-      updateProjectContext(t.db, owner(), 'core', { context_md: 'Some context' });
+      updateProjectContext(t.db, owner(), 'core', { context_md: 'Some context', base_revision: 0 });
       addMember(t.db, owner(), 'core', memberId, 'member');
       changeMemberRole(t.db, owner(), 'core', memberId, 'lead');
 

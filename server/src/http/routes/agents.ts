@@ -203,7 +203,7 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
   });
 
   /**
-   * Consent to automatic checkpoints (§6.4, §4.73, D-115 item 2): `GET` for
+   * Consent to automatic checkpoints (§6.4, §4.75, D-115 item 2): `GET` for
    * the owner or the agent's own token, so the helper knows whether a hook
    * may save; `PUT` gives it and `DELETE` withdraws it, the owner's, signed in.
    */

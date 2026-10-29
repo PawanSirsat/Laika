@@ -56,6 +56,10 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
    * built, and there is nowhere in the app to put it yet.
    */
   'api/v1/me/watching': 'LAI-458 — a "tasks I watch" screen does not exist',
+  // LAI-555's context history; the screen that reads it is LAI-556.
+  'api/v1/projects/*/context/revisions': 'LAI-556 — the context history screen does not exist',
+  'api/v1/projects/*/context/revisions/*': 'LAI-556 — the context history screen does not exist',
+  'api/v1/projects/*/context/diff': 'LAI-556 — the context history screen does not exist',
   // Called by something that is not the SPA.
   'webhooks/github': 'GitHub posts here (§9.2); no browser is involved',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
@@ -110,7 +114,7 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/handoff-offers/*/decline':
     'agent-token only, a session is `403 not_an_agent`; MCP `respond_handoff` calls it',
   /*
-   * §4.73's consent: `GET` answers the agent's own token, which the helper
+   * §4.75's consent: `GET` answers the agent's own token, which the helper
    * (LAI-547) reads before an automatic save. `PUT` and `DELETE` are the
    * owner's, signed in, and have no screen yet: no task builds the setup
    * toggle, and LAI-549's report names the gap for CHIEF to file.

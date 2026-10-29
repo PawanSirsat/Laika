@@ -41,7 +41,7 @@ export interface HandoffSectionProps {
 
 /**
  * The recovery panel and the hand-off control, inside the drawer's execution
- * panel (LAI-549, proposal §6, SPEC §4.71).
+ * panel (LAI-549, proposal §6, SPEC §4.73).
  *
  * - **Recovery unavailable** shows only when the task's last claim expired
  *   with no verified save, with the person's path — reassign it, or release

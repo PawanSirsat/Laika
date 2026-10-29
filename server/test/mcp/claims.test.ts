@@ -243,7 +243,7 @@ const FENCED: Record<string, (f: Fixture) => Record<string, unknown>> = {
   update_status: (f) => ({ task: f.key, status: 'review' }),
   finish_task: (f) => ({ task: f.key, summary: 'Stale' }),
   set_task_sprint: (f) => ({ task: f.key, sprint: f.sprint }),
-  // §4.68 (LAI-545): a save is a change the fence refuses to a stale claim,
+  // §4.70 (LAI-545): a save is a change the fence refuses to a stale claim,
   // before the repo or anything else about it is looked at.
   checkpoint_task: (f) => ({
     task: f.key,
@@ -254,7 +254,7 @@ const FENCED: Record<string, (f: Fixture) => Record<string, unknown>> = {
     commit_sha: 'a'.repeat(40),
     manifest: [],
   }),
-  // §4.71 (LAI-546): an offer is a change the fence refuses to a stale claim,
+  // §4.73 (LAI-546): an offer is a change the fence refuses to a stale claim,
   // before the checkpoint or the receiver is looked at.
   offer_handoff: (f) => ({
     task: f.key,

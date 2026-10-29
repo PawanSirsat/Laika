@@ -23,14 +23,14 @@ import type { PanelCheckpoint } from './ExecutionPanel.tsx';
  * Plain functions, no JSX, so `node --test` pins every rule.
  */
 
-/** Live offer states (§4.71). */
+/** Live offer states (§4.73). */
 const LIVE: ReadonlySet<string> = new Set(['pending_approval', 'open']);
 
 export function isLiveOffer(offer: Pick<HandoffOffer, 'state'>): boolean {
   return LIVE.has(offer.state);
 }
 
-/** What the note says about the save it travels with (§4.68). */
+/** What the note says about the save it travels with (§4.70). */
 export function noteStateOf(
   checkpoint: Pick<Checkpoint, 'summary' | 'summary_commit_sha' | 'commit_sha'>,
 ): NoteState {
@@ -75,7 +75,7 @@ export interface SaveRows {
 /**
  * From the server's list, newest first. *"Automatic recovery uses the latest
  * verified checkpoint and shows any newer one beside it as unverified"*
- * (§4.71, D-116 item 6).
+ * (§4.73, D-116 item 6).
  */
 export function saveRows(checkpoints: readonly Checkpoint[]): SaveRows {
   const newest = [...checkpoints].sort((a, b) => b.created_at - a.created_at);
@@ -150,7 +150,7 @@ export function offerExpiryWords(offer: HandoffOffer): string | undefined {
   return `Offer expires ${clockTime(offer.expires_at)}`;
 }
 
-/** Recovery after an expired claim (§4.71): available, or not, and why. */
+/** Recovery after an expired claim (§4.73): available, or not, and why. */
 export type Recovery =
   | { readonly kind: 'none' }
   /** The saves and offers have not been read, or the read failed: nothing is known yet. */
@@ -229,7 +229,7 @@ export function asSummary(value: unknown): CheckpointSummary | null {
 }
 
 /**
- * Whether *Approve* is offered, and how (§3.2, §4.71): the task's assignee or
+ * Whether *Approve* is offered, and how (§3.2, §4.73): the task's assignee or
  * a lead, holding `task.handoff.approve`, and **never the receiving agent's
  * owner**.
  *

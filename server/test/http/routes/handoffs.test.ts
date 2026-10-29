@@ -18,8 +18,8 @@ import {
 } from '../../helpers/auth.ts';
 
 /**
- * Hand-offs over the real routes and the real MCP endpoint (SPEC §4.71,
- * §4.72, §6.3, §6.4, §7.1, LAI-546). The checkpoints are verified by
+ * Hand-offs over the real routes and the real MCP endpoint (SPEC §4.73,
+ * §4.74, §6.3, §6.4, §7.1, LAI-546). The checkpoints are verified by
  * HMAC-signed `push` deliveries, as nothing else can verify them (D-116).
  * Both transports call the one service; these show they answer alike. The
  * rules on an injected clock are `test/services/handoffs.test.ts`.

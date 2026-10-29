@@ -50,7 +50,7 @@ import { changeStatus, createTask, startWorking, updateTask } from '../../src/se
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
- * `services/handoffs.ts` (SPEC §4.71, §4.72, §6.3, §9.1.1, §11.6, LAI-546),
+ * `services/handoffs.ts` (SPEC §4.73, §4.74, §6.3, §9.1.1, §11.6, LAI-546),
  * on an injected clock: every call is given `now`. The REST and MCP surfaces
  * are `test/http/routes/handoffs.test.ts`.
  *
@@ -573,7 +573,7 @@ describe('accepting', () => {
     const held = claim(a, id);
     const cp = save(a, id, held.generation);
     const { offer: made } = offer(a, id, 1, b.id, cp.id);
-    // A re-tag registers a new ref, and the checkpoint takes its state: pending (§4.69).
+    // A re-tag registers a new ref, and the checkpoint takes its state: pending (§4.71).
     expect(registerCheckpointRef(t.sqlite, t.db, b.actor, cp.id, T0 + 1).verification).toBe(
       'pending',
     );
@@ -753,7 +753,7 @@ describe('declining and cancelling', () => {
     });
   });
 
-  it('the task’s assignee may cancel an offer another person’s agent sent (§4.71)', () => {
+  it('the task’s assignee may cancel an offer another person’s agent sent (§4.73)', () => {
     const a = agentOf(owner, 'A');
     const b = agentOf(owner, 'B');
     const { person } = member();
@@ -1110,7 +1110,7 @@ describe('offers close with what they were about', () => {
     expect(claimsOf(id)).toEqual([[1, 'released']]);
   });
 
-  it('retention removes the checkpoint and the closed offer keeps its snapshot (§4.68)', () => {
+  it('retention removes the checkpoint and the closed offer keeps its snapshot (§4.70)', () => {
     const a = agentOf(owner, 'A');
     const b = agentOf(owner, 'B');
     const id = task();
@@ -1175,7 +1175,7 @@ describe('hidden is missing', () => {
   });
 });
 
-describe('the policy (§4.72)', () => {
+describe('the policy (§4.74)', () => {
   it('reads as the defaults with no row; a lead sets it, writing project.updated; a member may not', () => {
     expect(getHandoffPolicy(t.db, owner, 'laika')).toMatchObject({
       allow_other_owners: false,
@@ -1277,7 +1277,7 @@ describe('closing an offer settles an elapsed sender lease in the same transacti
   });
 });
 
-describe('a person is read again inside the write (§4.71)', () => {
+describe('a person is read again inside the write (§4.73)', () => {
   function crossOwnerPending() {
     const a = agentOf(owner, 'A');
     const { agent: theirs } = member('Theo');

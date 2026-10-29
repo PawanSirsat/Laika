@@ -484,7 +484,7 @@ export function TaskDetailPanel({
     [execution.claimExpired, task.claim, saves, handoffs.offers, handoffs.status],
   );
   /*
-   * Who may approve or withdraw (§3.2, §4.71): the server's grants first, then
+   * Who may approve or withdraw (§3.2, §4.73): the server's grants first, then
    * the row's own condition — the task's assignee or a lead, and never the
    * owner of the receiving agent. The server refuses anything else anyway;
    * this only keeps a control from being offered to someone it would refuse.

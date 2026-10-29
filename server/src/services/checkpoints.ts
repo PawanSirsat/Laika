@@ -32,7 +32,7 @@ import { foldRepo } from './github-proof.ts';
 import { resolveRepoProjects } from './heartbeats.ts';
 
 /**
- * Checkpoints (SPEC §4.68 – §4.70, §4.73, §6.4, §10.1, D-115, D-116, LAI-545).
+ * Checkpoints (SPEC §4.70 – §4.72, §4.75, §6.4, §10.1, D-115, D-116, LAI-545).
  *
  * ## What a checkpoint is
  *
@@ -55,7 +55,7 @@ import { resolveRepoProjects } from './heartbeats.ts';
  *
  * ## How a ref is judged
  *
- * Every delivered transition `before → after` for a ref is kept (§4.70), and
+ * Every delivered transition `before → after` for a ref is kept (§4.72), and
  * the ref's state is a function of **that set alone** — never of the order
  * the deliveries arrived in ({@link deriveRefState}). The function is
  * monotone: a delivery can only move a ref up `pending → verified →
@@ -66,7 +66,7 @@ import { resolveRepoProjects } from './heartbeats.ts';
  * ## Deliveries that arrive first
  *
  * A notice can beat its registration. It is kept by repository and ref name
- * with no §4.69 row, and attached when the checkpoint — or the re-tag — that
+ * with no §4.71 row, and attached when the checkpoint — or the re-tag — that
  * owns the ref registers. Each delivery's id is written **in the transaction
  * that applies it**, so a repeat is ignored and a delivery whose handler
  * failed before it was applied leaves nothing behind and is processed when
@@ -103,7 +103,7 @@ export function checkpointSettings(): Readonly<CheckpointSettings> {
 
 // -------------------------------------------------------------------- limits
 
-/** §4.68's bounds, shared by the route and the tool so neither is looser. */
+/** §4.70's bounds, shared by the route and the tool so neither is looser. */
 export const CHECKPOINT_LIMITS = {
   manifestEntries: 1000,
   path: 1024,
@@ -140,7 +140,7 @@ export interface Transition {
 }
 
 /**
- * A ref's state from **the set of transitions seen for it** (§4.69, D-116
+ * A ref's state from **the set of transitions seen for it** (§4.71, D-116
  * item 4 as D-116a states it) — the order they arrived in is not an
  * argument, so it cannot decide anything. The all-zero SHA means absent.
  *
@@ -241,7 +241,7 @@ function views(db: Db, rows: readonly CheckpointRow[], now: number): CheckpointV
       .map((s) => [s.id, s.agentId]),
   );
 
-  // `superseded` (§4.68): a newer verified checkpoint on the same claim — the
+  // `superseded` (§4.70): a newer verified checkpoint on the same claim — the
   // same task and generation. Asked of every checkpoint of those tasks, not
   // only the page's, so a page boundary cannot hide the newer one.
   const taskIds = [...new Set(rows.map((r) => r.taskId))];
@@ -343,7 +343,7 @@ interface CleanInput {
 
 /**
  * Every bound here as well as in the route's and the tool's schemas: a
- * service reached without zod still refuses what §4.68 does not allow
+ * service reached without zod still refuses what §4.70 does not allow
  * (LAI-404's rule for heartbeats). **Only the five note fields and the
  * manifest's three** are kept — the schemas refuse any other key, and this
  * copies by name, so nothing else reaches a column.
@@ -464,7 +464,7 @@ function sameSave(row: CheckpointRow, taskId: string, clean: CleanInput): boolea
  *   save whose answer was lost still finds it after its session offered the
  *   task and the claim paused. The same key with another body is `409`;
  * - otherwise the claim fence, the one configured repo, and the checkpoint
- *   with its first ref, whose state is projected from the §4.70 deliveries
+ *   with its first ref, whose state is projected from the §4.72 deliveries
  *   already stored for that `repo` + `ref` — `verified` only when such a
  *   delivery arrived first, `pending` when none has.
  */
@@ -597,11 +597,11 @@ function insertRef(
 }
 
 /**
- * The ref's state again from **every** §4.70 row for its name — whenever they
+ * The ref's state again from **every** §4.72 row for its name — whenever they
  * arrived, before its registration included — and, when it is its
  * checkpoint's newest ref, the checkpoint's. In the caller's transaction, so
  * a registration and a delivery for one name cannot interleave: whichever
- * commits second sees the other (§4.70). `verified_at` is when the checkpoint
+ * commits second sees the other (§4.72). `verified_at` is when the checkpoint
  * last became `verified`.
  */
 function rederive(db: Db, refId: string, now: number): void {
@@ -657,7 +657,7 @@ export interface CheckpointRefRegistered {
  * claim, because it changes no task, only which ref is the checkpoint's
  * newest. The new ref starts from absent; the checkpoint takes its state at
  * once — `pending`, timed from now, unless its deliveries arrived first —
- * which is the one change to `verification` no delivery makes (§4.69). The
+ * which is the one change to `verification` no delivery makes (§4.71). The
  * server calls nothing to do this.
  */
 export function registerCheckpointRef(
@@ -754,7 +754,7 @@ export function listCheckpoints(
 }
 
 /**
- * The accept-time check LAI-546 calls (§4.71, D-116 items 6 and 8), inside
+ * The accept-time check LAI-546 calls (§4.73, D-116 items 6 and 8), inside
  * its own transaction: the checkpoint must be `verified` **now** — `409
  * checkpoint_unverified` otherwise, with `details.verification` — and the
  * receiver's SHA must be the checkpoint's — `422 checkpoint_mismatch`. The
@@ -828,11 +828,11 @@ export function onCheckpointTransitionWritten(hook: (() => void) | null): void {
 }
 
 /**
- * A signed `push` for `refs/tags/laika-ckpt/…` (§10.1, §4.70, §3.4's
+ * A signed `push` for `refs/tags/laika-ckpt/…` (§10.1, §4.72, §3.4's
  * `system.checkpoint.verify`). One `BEGIN IMMEDIATE` transaction per
  * delivery — so deliveries for one ref are applied one at a time — that
  * stores the transition **by repo and ref name** with the delivery's id, and,
- * when a §4.69 ref of that name is registered, re-derives its state from
+ * when a §4.71 ref of that name is registered, re-derives its state from
  * every row for the name.
  *
  * - **Seen before** (its id is stored): ignored, `deduplicated`.
@@ -987,16 +987,16 @@ function cancelledAt(db: Db, cancelled: readonly { id: string; updatedAt: number
  *
  * - checkpoints of tasks `done` or `cancelled` for longer than the retention,
  *   **each in one transaction with all its evidence** — its refs (cascade)
- *   and every §4.70 row for those refs' names, delivery ids included. Never
+ *   and every §4.72 row for those refs' names, delivery ids included. Never
  *   the evidence without the checkpoint: a surviving ref whose deliveries
  *   were gone would forget its deletion, and replaying the original creation
  *   would make a `ref_deleted` or `uncertain` ref `verified` again;
- * - §4.70 rows for a name **never registered** — a tag pushed by hand, or a
+ * - §4.72 rows for a name **never registered** — a tag pushed by hand, or a
  *   helper that pushed and never registered — once as old as the retention.
  *
  * **When a task closed**: `completed_at` for `done`; for `cancelled`, the
  * status change into it ({@link cancelledAt}). Closed offers that named a
- * pruned checkpoint keep their own snapshot and lose the link (§4.71, `ON
+ * pruned checkpoint keep their own snapshot and lose the link (§4.73, `ON
  * DELETE SET NULL` — LAI-546's column). Writes no `activity` row: the
  * `task.checkpoint_saved` rows naming the checkpoints stay, and they are the
  * history. **Laika never deletes a Git tag.**
@@ -1112,7 +1112,7 @@ function ownAgent(db: Db, actor: ResolvedActor, agentId: string) {
 }
 
 /**
- * `GET /agents/:id/checkpoint-consent` (§6.4, §4.73): the owner, or **the
+ * `GET /agents/:id/checkpoint-consent` (§6.4, §4.75): the owner, or **the
  * agent's own token** — so the helper knows whether it may save on its own.
  * Another agent's token, even the same owner's, is answered as no agent.
  */
@@ -1131,7 +1131,7 @@ export function readCheckpointConsent(
 }
 
 /**
- * `PUT` / `DELETE /agents/:id/checkpoint-consent` (§6.4, §4.73): the owner's,
+ * `PUT` / `DELETE /agents/:id/checkpoint-consent` (§6.4, §4.75): the owner's,
  * signed in — `agent.manage_own` is session-only. Giving it again clears a
  * withdrawal and stamps `given_at` afresh; withdrawing stops automatic saves
  * and leaves manual ones working. **No `activity` row**: it is a setting of

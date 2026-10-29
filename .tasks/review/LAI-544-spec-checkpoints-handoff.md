@@ -83,7 +83,7 @@ Board LAIKA-796, claimed by session `01M63Y83PQBGJB19YM88W1V370`.
   D-117 – D-119 are not in `DECISIONS.md`; D-118 / D-119 live in
   `docs/proposals/LAI-532-agent-identity-model.md` (#121). Nothing renumbered.
 - `docs/SPEC.md`: §3.2 seven rows; §3.4 four system actions; §4.5
-  `handoff_count`; §4.8 eight verbs; §4.66 paused/transferred; §4.68 – §4.73
+  `handoff_count`; §4.8 eight verbs; §4.66 paused/transferred; §4.70 – §4.75
   new; §6.3 reasons and rate buckets; §6.4 endpoints and prose; §7.1 four
   tools, §7.2 `claim_generation`; §9.1.1 timings; §10.1 checkpoint tags;
   §11.6 two jobs. Also LAI-571's §6.4 `If-Match` / `ETag` / list `etag` text
@@ -91,10 +91,10 @@ Board LAIKA-796, claimed by session `01M63Y83PQBGJB19YM88W1V370`.
 
 **Names for LAI-545 – LAI-549.**
 
-- Tables: `task_checkpoints` (§4.68, Planned — LAI-545), `checkpoint_refs`
-  (§4.69, LAI-545), `checkpoint_ref_transitions` (§4.70, LAI-545),
-  `handoff_offers` (§4.71, built in part), `project_handoff_policies` (§4.72,
-  Planned — LAI-546), `agent_checkpoint_consents` (§4.73, Planned — LAI-545);
+- Tables: `task_checkpoints` (§4.70, Planned — LAI-545), `checkpoint_refs`
+  (§4.71, LAI-545), `checkpoint_ref_transitions` (§4.72, LAI-545),
+  `handoff_offers` (§4.73, built in part), `project_handoff_policies` (§4.74,
+  Planned — LAI-546), `agent_checkpoint_consents` (§4.75, Planned — LAI-545);
   column `tasks.handoff_count`.
 - Verbs: `task.checkpoint_saved` (LAI-545), `task.handoff_offered`,
   `task.handoff_approved`, `task.handoff_accepted`, `task.handoff_declined`,
@@ -159,9 +159,9 @@ sections as the table checks do.
 
 - LAI-545's task file predates D-116: it still says a *branch* at the SHA can
   verify, `superseded` is a state, and nothing about `uncertain`, re-tags or
-  consent. §4.68 – §4.70 and §4.73 are now the text; its criteria want
+  consent. §4.70 – §4.72 and §4.75 are now the text; its criteria want
   updating before it is claimed.
-- D-115 item 2's consent had no owner task. §4.73 marks it *Planned — LAI-545*;
+- D-115 item 2's consent had no owner task. §4.75 marks it *Planned — LAI-545*;
   CHIEF has no free id to file it separately (LAI-500 – LAI-599 are all used).
 - LAI-571's SPEC criterion can now be ticked in review.
 - `ACTIONS_WITHOUT_A_ROW` still holds `system.idempotency.prune`, waiting for a
@@ -185,7 +185,7 @@ has delegated product calls to Belka, so each choice below is Belka's.
    outstanding offer: live hand-off and recovery offers close as
    `cancelled`/`reclaimed`, and the work request is accepted (D-119).
 3. **Delivery before registration.** `checkpoint_ref_transitions` is keyed by
-   `repo` + `ref` name, not by a §4.69 row id. Registration reads the rows
+   `repo` + `ref` name, not by a §4.71 row id. Registration reads the rows
    already stored, in its own transaction. Names that are never registered
    are pruned after 90 days.
 4. **Recovery accept.** The expired claim stays `expired`. `transferred` is

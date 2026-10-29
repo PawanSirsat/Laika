@@ -5,10 +5,11 @@ import { CopyButton } from '../../../components/CopyButton.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
-import { agentClientName } from '../../../api/agent-clients.ts';
+import { AgentChip } from '../../../components/agent/AgentChip.tsx';
+import { AgentReadiness } from '../../../components/agent/AgentReadiness.tsx';
+import { RegistrationSteps } from '../../../components/agent/RegistrationSteps.tsx';
+import { REGISTRATION_STEPS } from '../../../components/agent/agent-states.ts';
 import {
-  AGENT_STATE_LABELS,
   agentHarness,
   agentState,
   getAgent,
@@ -30,14 +31,14 @@ import { everyPage } from '../../../api/every-page.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import { useGates } from '../../../api/permissions.ts';
 import { isTombstone, listProjects, type Project } from '../../../api/projects.ts';
+import { agentDevice } from '../../../api/selected-agent.ts';
 import { lastUsedLabel } from '../../../api/tokens.ts';
 import { AGENT_GUIDES, guideFor, setupBlocks } from '../connect/connect-agents.ts';
 import { suggestTokenName } from '../connect/connect-token-name.ts';
 import { SetupBlockView } from '../connect/ConnectScreen.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { agentReadiness } from './agent-readiness.ts';
 import {
-  AGENT_STEP_NAMES,
-  AGENT_STEPS,
   agentFooterHint,
   agentStepOpen,
   choicesFrom,
@@ -716,41 +717,15 @@ function RegisterWizard({
 
   return (
     <section className="agents-wizard" aria-labelledby="agents-step-title" data-step={step}>
-      <nav className="agents-rail" aria-label="Registration steps">
-        <ol className="agents-steps">
-          {AGENT_STEPS.map((n) => {
-            const open = agentStepOpen(n, registered);
-            const here = n === step;
-            return (
-              <li key={n} className="agents-step" data-state={here ? 'current' : 'todo'}>
-                <button
-                  type="button"
-                  className="agents-rail-step"
-                  disabled={!open}
-                  {...(here ? { 'aria-current': 'step' as const } : {})}
-                  onClick={() => {
-                    go(n);
-                  }}
-                >
-                  <span className="agents-step-n" aria-hidden="true">
-                    {n}
-                  </span>
-                  <span className="agents-rail-name">
-                    <span className="visually-hidden">Step {n}: </span>
-                    {AGENT_STEP_NAMES[n]}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      </nav>
+      {/* LAI-536's step rail. Moving between steps is Back and Continue: the
+          rail says where the reader is, in words, and is not a control. */}
+      <RegistrationSteps current={step - 1} />
 
       <div className="agents-card">
         <header className="agents-card-head">
           <p className="conn-eyebrow">Step {String(step)} of 5</p>
           <h3 className="agents-card-title" id="agents-step-title" tabIndex={-1} ref={titleRef}>
-            {AGENT_STEP_NAMES[step]}
+            {REGISTRATION_STEPS[step - 1]}
           </h3>
         </header>
 
@@ -1147,7 +1122,7 @@ function AgentRow({
   confirmRotate,
 }: RowProps) {
   const state = agentState(agent, now);
-  const harness = agentHarness(agent);
+  const readiness = agentReadiness(agent, now);
   const active = agent.status === 'active';
   const [panel, setPanel] = useState<Panel>('none');
   const [error, setError] = useState<string | undefined>(undefined);
@@ -1195,21 +1170,19 @@ function AgentRow({
   return (
     <li className="agents-row" data-state={state} data-agent={agent.id}>
       <div className="agents-row-main">
-        <AgentMark client={harness} />
-        <div className="agents-row-text">
-          <span className="agents-row-name">{agent.display_name}</span>
-          <span className="agents-row-meta">
-            <span>
-              {agentClientName(harness)}
-              {agent.device_label !== null && ` · ${agent.device_label}`}
-            </span>
-            <span className="agents-self">self-reported</span>
-          </span>
-        </div>
-        <span className="agents-state" data-state={state}>
-          {AGENT_STATE_LABELS[state]}
+        <span className="agents-row-name">{agent.display_name}</span>
+        <span className="agents-row-meta">
+          {/* Named as cards and history name it (LAI-536): harness and device. */}
+          <AgentChip client={agentHarness(agent)} device={agentDevice(agent)} />
+          <span className="agents-self">self-reported</span>
         </span>
       </div>
+
+      {readiness === undefined ? (
+        <p className="agents-revoked">Revoked — its credentials no longer work.</p>
+      ) : (
+        <AgentReadiness reached={readiness.reached} credentialLapsed={readiness.credentialLapsed} />
+      )}
 
       <dl className="agents-row-facts">
         <div>

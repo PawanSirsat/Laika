@@ -561,7 +561,7 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
         await must(
           s,
           '/api/v1/projects/core/context',
-          { method: 'PATCH', body: JSON.stringify({ context_md: 'A brief' }) },
+          { method: 'PATCH', body: JSON.stringify({ context_md: 'A brief', base_revision: 0 }) },
           200,
         );
       },
@@ -570,6 +570,7 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
           project: 'core',
           context_md: 'A brief',
           mode: 'replace',
+          base_revision: 0,
         });
       },
     },
@@ -606,7 +607,7 @@ async function seedTask(side: Side): Promise<string> {
   return ((await res.json()) as { id: string }).id;
 }
 
-/** One save, the same on both sides (§4.68): names and counts only. */
+/** One save, the same on both sides (§4.70): names and counts only. */
 const CHECKPOINT = {
   id: '01JCPAR1TYSAVE0000000000XX',
   idempotency_key: 'parity-save',
@@ -620,7 +621,7 @@ const CHECKPOINT = {
 
 /**
  * A registered agent of the side's person, holding COR-1's live claim in a
- * project whose configured repo is the save's — what a save needs (§4.68).
+ * project whose configured repo is the save's — what a save needs (§4.70).
  * Every step asserts its status, so a broken setup fails here and not as a
  * parity difference.
  */
@@ -661,7 +662,7 @@ async function agentHolding(
 
 /**
  * The holder of COR-1 with a **verified** checkpoint and a second agent of
- * the same person to receive it (§4.71). The delivery is applied through the
+ * the same person to receive it (§4.73). The delivery is applied through the
  * service, as the signed webhook would (§10.1) — what is under test here is
  * the offer, not the signature.
  */

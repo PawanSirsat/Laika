@@ -86,7 +86,7 @@ export const NOTE_WORDS: Readonly<Record<NoteState, string>> = {
 
 /**
  * What a checkpoint's proof is — D-116's four states, `task_checkpoints.
- * verification` (SPEC §4.68), each worded as §4.68's *What the UI says*.
+ * verification` (SPEC §4.70), each worded as §4.70's *What the UI says*.
  */
 export type CheckpointVerification = 'verified' | 'pending' | 'ref_deleted' | 'uncertain';
 
@@ -99,21 +99,21 @@ export const VERIFICATION_WORDS: Readonly<Record<CheckpointVerification, string>
 
 /**
  * `pending` past §9.1.1's ten-minute notice — `pending_notice`, which the
- * server decides on its own clock, never this page's (SPEC §4.68).
+ * server decides on its own clock, never this page's (SPEC §4.70).
  */
 export const PENDING_NOTICE_WORDS = 'Verification pending — no push notice from GitHub yet';
 
-/** The pointer §4.68 gives owners and admins beside {@link PENDING_NOTICE_WORDS}. */
+/** The pointer §4.70 gives owners and admins beside {@link PENDING_NOTICE_WORDS}. */
 export const PENDING_NOTICE_HINT =
   'Open the repository webhook’s Recent Deliveries on GitHub, find the push for this save and choose Redeliver.';
 
-/** No checkpoint at all: never an automatic path (SPEC §4.71, proposal §4.4). */
+/** No checkpoint at all: never an automatic path (SPEC §4.73, proposal §4.4). */
 export const NO_CHECKPOINT = 'Automatic recovery unavailable — no saved checkpoint';
 
-/** Saves exist, and none is verified: still no automatic path (§4.71). */
+/** Saves exist, and none is verified: still no automatic path (§4.73). */
 export const NO_VERIFIED_CHECKPOINT = 'Automatic recovery unavailable — no verified checkpoint';
 
-/** What a person does instead (§4.71): reassign it, or release it to the backlog. */
+/** What a person does instead (§4.73): reassign it, or release it to the backlog. */
 export const RECOVERY_BY_HAND = 'A person reassigns this task or releases it to the backlog.';
 
 /** The dialog's promise, verbatim from proposal §6. */
@@ -176,6 +176,16 @@ export const READINESS_WORDS: Readonly<
     notYet: 'The helper has not checked in, so this agent cannot take over work yet.',
   },
 };
+
+/**
+ * *Credential created*, said of an agent that had a token and has none live:
+ * every one expired or was revoked. *No token yet* would be false of it, and
+ * *yet* would say it is on its way to one (LAI-318).
+ */
+export const CREDENTIAL_LAPSED = {
+  verdict: 'none live',
+  why: 'No live credential: every token for this agent has expired or been revoked. It cannot reach Laika until it is given a new one.',
+} as const;
 
 /** The last step's three outcomes: the proof is a request **from this agent's own token**. */
 export const VERIFY_STATES = ['waiting', 'verified', 'failed'] as const;

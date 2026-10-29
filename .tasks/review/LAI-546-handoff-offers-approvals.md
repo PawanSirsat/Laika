@@ -129,7 +129,7 @@ the `cli` one is not LAI-549's.
 
 ### Where this differs from the task file (SPEC followed)
 
-- `handoff_offers` already existed (LAI-535); 0067 widens it to §4.71.
+- `handoff_offers` already existed (LAI-535); 0067 widens it to §4.73.
 - The reclaim refuses `offer_taken` only for an accepted hand-off or recovery
   **from the generation it reclaims** (§9.1.1), not "any accepted offer".
 - The verb is `task.recovered` (§4.8), not `task_recovered`.
@@ -141,7 +141,7 @@ the `cli` one is not LAI-549's.
 - The fence answers `stale_claim` (with `claim_state`) to an agent whose own
   claim was transferred or expired while another agent holds the task (§6.3).
   LAI-541 said `claim_held` there.
-- `cancel` also lets the task's assignee withdraw (§4.71); §3.2's cell says
+- `cancel` also lets the task's assignee withdraw (§4.73); §3.2's cell says
   *own agent's*.
 - Reasons §6.3 does not list: `403 not_the_receiver`, `422
   recovery_unnamed`, `422 work_request` (an approve/accept/decline/cancel
@@ -156,7 +156,7 @@ the `cli` one is not LAI-549's.
 - Selecting another member's agent under the policy (§4.5) is not built.
 - `start_working` on a paused claim still answers `claim_paused`, so an
   MCP-only sender renews a paused claim only by heartbeat.
-- `accepted_claim_id` is `restrict`, as §4.71 says. No code path
+- `accepted_claim_id` is `restrict`, as §4.73 says. No code path
   hard-deletes a task, so the cascade order is latent.
 
 ## Review round 1 (Codex, failed at 4ca5c3dd) — fixed as new commits
@@ -186,7 +186,7 @@ Merged `origin/LAI-545-checkpoints` at `96ea686c` first (clean).
 
 Also: §6.3 lists `not_the_receiver`, `user_inactive`, `recovery_unnamed`,
 `work_request` and `handoff_rate`. §3.2's Cancel cell reads *own agent's or
-task's assignee*, matching §4.71, with its qualifier registered and an
+task's assignee*, matching §4.73, with its qualifier registered and an
 assignee-cancel test. `migrate.test.ts` upgrades a populated 0066 database.
 
 Mutation check of 1–4: seven mutants (no-op job, paused refusal restored,

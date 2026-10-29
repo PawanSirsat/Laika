@@ -497,7 +497,7 @@ const FENCED: Record<string, { probe: Probe; reason: 'stale_claim' | 'claim_held
     probe: (f) => patch(f.taskId, { title: 'Stale' }, asHolder(f)),
     reason: 'stale_claim',
   },
-  // §4.68 (LAI-545): a save passes the fence before anything about it is read.
+  // §4.70 (LAI-545): a save passes the fence before anything about it is read.
   'POST /api/v1/tasks/:id/checkpoints': {
     probe: (f) =>
       req(
@@ -514,7 +514,7 @@ const FENCED: Record<string, { probe: Probe; reason: 'stale_claim' | 'claim_held
       ),
     reason: 'stale_claim',
   },
-  // §4.71 (LAI-546): an offer passes the fence before the checkpoint or the
+  // §4.73 (LAI-546): an offer passes the fence before the checkpoint or the
   // receiver is read.
   'POST /api/v1/tasks/:id/handoff-offers': {
     probe: (f) =>
@@ -681,7 +681,7 @@ const NOT_FENCED: Record<string, string> = {
   'POST /api/v1/handoff-offers/:id/approve':
     'session only (task.handoff.approve); a person is never fenced (§6.3)',
   'POST /api/v1/handoff-offers/:id/accept':
-    'the receiver takes a new claim in the accept’s own transaction; the sender’s claim is the one it ends (§4.71)',
+    'the receiver takes a new claim in the accept’s own transaction; the sender’s claim is the one it ends (§4.73)',
   'POST /api/v1/handoff-offers/:id/decline':
     'the receiver answers an offer it does not hold a claim for; the sender’s paused claim resumes',
   'POST /api/v1/handoff-offers/:id/cancel':

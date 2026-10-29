@@ -22,8 +22,8 @@ configured repo contains that SHA on that ref — never by calling GitHub.
 ## Scope
 
 **Revised 2026-10-29 by LAI-544 review round 1** (task still in backlog), to
-match the approved D-116 and D-116a. The text to build against is SPEC §4.68 –
-§4.70, §4.73, §6.4 *Checkpoints*, §10.1 and §11.6.
+match the approved D-116 and D-116a. The text to build against is SPEC §4.70 –
+§4.72, §4.75, §6.4 *Checkpoints*, §10.1 and §11.6.
 
 - Migrations: `task_checkpoints` (saved fields never change; only
   `verification` / `verified_at` move), `checkpoint_refs`,
@@ -43,7 +43,7 @@ match the approved D-116 and D-116a. The text to build against is SPEC §4.68 �
 - `checkpoint_saved` enum + CHECK.
 - `pending_since` exposed (newest ref's `created_at` while pending) so the UI
   can show the 10-minute no-notice message.
-- Retention per SPEC §4.68 / §11.6. Laika never deletes tags.
+- Retention per SPEC §4.70 / §11.6. Laika never deletes tags.
 
 ## Out of scope
 
@@ -138,8 +138,8 @@ CORE (Claude Code, dispatched by polly) on Belka, session
 `01M641HX1CDPXDNWYF4BTF2FA2`, board claim generation 1. Branch
 `LAI-545-checkpoints`, worktree `.polly/wt-545`, cut from
 `origin/LAI-544-phase3-spec` at `4e086526` and merged again at `b4193e95` (the
-SPEC Codex passed). Built to D-115, D-116, D-116a and SPEC §4.68 – §4.70,
-§4.73, §6.4, §10.1, §11.6 as merged.
+SPEC Codex passed). Built to D-115, D-116, D-116a and SPEC §4.70 – §4.72,
+§4.75, §6.4, §10.1, §11.6 as merged.
 
 **What exists.** Migration `0066_checkpoints` (four tables, the activity
 CHECK with `task.checkpoint_saved`); `services/checkpoints.ts`;
@@ -209,14 +209,14 @@ been refused as a repeat — criterion (a) depends on it.
    `checkpoint_commit_sha` do not exist yet. The prune deletes checkpoints
    with nothing referencing them; the assertion lands with LAI-546.
 8. **Deliveries for a name no project's repo tracks are dropped, not
-   stored** — §4.70 stores rows only for the configured repo.
+   stored** — §4.72 stores rows only for the configured repo.
 
 ### Reds left on this branch, and whose
 
 LAI-545's own are all green. Remaining:
 
 - **CHIEF (docs):** `schema-spec-drift.test.ts` › *has no planned mark that has
-  outlived its reason* and its four *§4.68/§4.69/§4.70/§4.73 — planned,
+  outlived its reason* and its four *§4.70/§4.71/§4.72/§4.75 — planned,
   LAI-545* cases, plus *works on the real document* (expects one planned
   section, finds five): remove the four `**Planned — LAI-545.**` lines.
   `parity.test.ts` › *agrees with §7.2 about how many have REST twins* —
@@ -298,7 +298,7 @@ the delivery-log bypass. Failed, and fixed:
    crash between them left surviving refs with no delivery ids, and a replayed
    creation made a `ref_deleted` or `uncertain` ref `verified` again. Now each
    checkpoint is deleted **with all its evidence** — refs (cascade) and every
-   §4.70 row for their names — in one `BEGIN IMMEDIATE`. Test: a seam fails the
+   §4.72 row for their names — in one `BEGIN IMMEDIATE`. Test: a seam fails the
    prune between the evidence and the checkpoint; the checkpoint, its ref and
    every delivery id survive; redelivering the original creation is
    `deduplicated` and the state stays `ref_deleted` / `uncertain`; the next

@@ -321,6 +321,20 @@ export function requireOpenSession(db: Db, agentId: string, sessionId: string): 
   return row;
 }
 
+/**
+ * The calling agent's own open session (LAI-555): what a context delivery is
+ * recorded against. Not an agent's token is `403 not_an_agent`, another
+ * agent's session `404`, an ended one `409`, exactly as a heartbeat answers.
+ */
+export function requireOwnOpenSession(
+  db: Db,
+  actor: ResolvedActor,
+  sessionId: string,
+): { id: string; agentId: string } {
+  const row = requireOpenSession(db, requireAgent(actor).id, sessionId);
+  return { id: row.id, agentId: row.agentId };
+}
+
 // ---------------------------------------------------------------- reading
 
 /** The task's live claim — `active` or `paused` — or undefined. */
@@ -689,7 +703,7 @@ export function claimFenceRefusal(
     }
     if (live.agentId !== agent.id) {
       // **The caller's own claim lapsed** — handed on (`transferred`) or
-      // expired and recovered by another agent (§4.71, LAI-546): §6.3 answers
+      // expired and recovered by another agent (§4.73, LAI-546): §6.3 answers
       // `stale_claim`, generation or not. Its generation is invalid for good;
       // the task being held by somebody else is the consequence, not the news.
       const own = newestClaimOfAgent(db, taskId, agent.id);
@@ -805,7 +819,7 @@ export function holdsLiveClaim(db: Db, actor: ServiceCaller, taskId: string): bo
  * generation is refused from here on.
  */
 export function releaseLiveClaim(db: Db, taskId: string, now: number): void {
-  // A task that leaves progress has no live offer (§4.71 `task_closed`): the
+  // A task that leaves progress has no live offer (§4.73 `task_closed`): the
   // system closes each, before the claim it paused is released.
   closeLiveOffersOfTask(db, taskId, 'task_closed', systemPrincipal(), now);
   db.update(taskClaims)

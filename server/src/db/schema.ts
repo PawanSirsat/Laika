@@ -287,6 +287,13 @@ export const projects = sqliteTable(
     /** The shared brief served to agents by `get_project_context` (§7.1). */
     contextMd: text('context_md').notNull().default(''),
     /**
+     * The current revision of `context_md` (§4.68, proposal §4.6, LAI-555):
+     * `0` until the first write, then the `revision` of the newest
+     * `project_context_revisions` row, whose `body` is `context_md`. A write
+     * names the revision it replaces, and a stale one is `409`.
+     */
+    contextRevision: integer('context_revision').notNull().default(0),
+    /**
      * Hide finished work from the board once it is this many days old
      * (LAI-266). `null` means never, and is the default.
      *
@@ -606,7 +613,7 @@ export const tasks = sqliteTable(
       onDelete: 'set null',
     }),
     /**
-     * Completed hand-offs (§4.5, §4.71, LAI-546): an accepted `handoff` or
+     * Completed hand-offs (§4.5, §4.73, LAI-546): an accepted `handoff` or
      * `recovery` adds one in the accept's transaction; a work request does
      * not. Compared with the policy's `max_handoffs`. Never decremented.
      */
@@ -983,10 +990,10 @@ export const agentProjectGrants = sqliteTable(
   ],
 );
 
-// ---------------------------------------------------- §4.71 handoff_offers
+// ---------------------------------------------------- §4.73 handoff_offers
 
 /**
- * Work offered to an agent (§4.71, proposal §4.4, D-114 item 7). Three kinds:
+ * Work offered to an agent (§4.73, proposal §4.4, D-114 item 7). Three kinds:
  * a **work request** (selecting an agent opens one; LAI-535), a **hand-off**
  * (the session holding the live claim offers the task on) and a **recovery**
  * (the system offers a task whose claim expired; LAI-546). An orphan is
@@ -994,7 +1001,7 @@ export const agentProjectGrants = sqliteTable(
  *
  * The checkpoint is a link (`ON DELETE SET NULL`) and a snapshot
  * (`checkpoint_commit_sha`, `note_hash`), so a closed offer still says what
- * it carried after retention removed the checkpoint (§4.68).
+ * it carried after retention removed the checkpoint (§4.70).
  *
  * The two partial unique indexes are the rules: at most one open work request
  * per task, and **one live hand-off or recovery per task**.
@@ -1015,7 +1022,7 @@ export const handoffOffers = sqliteTable(
     }),
     /** The claim the offer moves on from: the sender's live one, or the expired one. */
     fromClaimGeneration: integer('from_claim_generation'),
-    /** Null means any eligible agent — only an unnamed recovery's case (§4.71). */
+    /** Null means any eligible agent — only an unnamed recovery's case (§4.73). */
     toAgentId: text('to_agent_id').references(() => agents.id, { onDelete: 'cascade' }),
     checkpointId: text('checkpoint_id').references((): AnySQLiteColumn => taskCheckpoints.id, {
       onDelete: 'set null',
@@ -1088,10 +1095,10 @@ export const handoffOffers = sqliteTable(
   ],
 );
 
-// ----------------------------------------- §4.72 project_handoff_policies
+// ----------------------------------------- §4.74 project_handoff_policies
 
 /**
- * A project's hand-off settings (§4.72, proposal §4.5). **No row means the
+ * A project's hand-off settings (§4.74, proposal §4.5). **No row means the
  * defaults** — the column defaults below — so an existing project needs no
  * backfill. It governs who may be offered work or accept a transfer, and
  * never narrows a read or a comment (D-114 item 3).
@@ -1154,7 +1161,10 @@ export const agentSessions = sqliteTable(
     harness: text('harness'),
     harnessVersion: text('harness_version'),
     model: text('model'),
-    /** Nullable until the delivery work reads it (proposal §4.6). */
+    /**
+     * Unwritten (LAI-555): a revision is per project and a session is not, so
+     * delivery is kept per session **and project** in §4.69 instead.
+     */
     contextRevisionSeen: integer('context_revision_seen'),
   },
   (t) => [
@@ -1211,16 +1221,76 @@ export const taskClaims = sqliteTable(
   ],
 );
 
-// ------------------------------------------------- §4.68 task_checkpoints
+// ------------------------------------------ §4.68 project_context_revisions
 
-/** A manifest entry (§4.68): a path and its line counts — **names only**. */
+/**
+ * Every revision of a project's context document (§4.68, proposal §4.6,
+ * LAI-555). **Immutable**: triggers refuse `UPDATE`, an `INSERT OR REPLACE`
+ * over an existing id, and `DELETE` while the project exists. The newest row's
+ * `body` is `projects.context_md`, and its `revision` is
+ * `projects.context_revision`.
+ *
+ * `author_id` and `agent_id` are **copies, no FK**: history says who wrote it,
+ * and a later change to a person or an agent must not rewrite it. Both are
+ * null on revision 1 of a document that existed before revisions did.
+ */
+export const projectContextRevisions = sqliteTable(
+  'project_context_revisions',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    body: text('body').notNull(),
+    authorId: text('author_id'),
+    agentId: text('agent_id'),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('project_context_revisions_project_revision_unique').on(t.projectId, t.revision),
+    check('project_context_revisions_revision_check', sql`revision >= 1`),
+  ],
+);
+
+// ------------------------------------------ §4.69 agent_session_context_deliveries
+
+/**
+ * The context revision Laika last **delivered** to an agent session, per
+ * project (§4.69, proposal §4.6, LAI-555). Delivered means the server sent
+ * that revision — the whole document or a diff ending at it — in answer to a
+ * call naming the session. It never means the agent read or understood it.
+ *
+ * Per project because a session may work in more than one, and a revision
+ * number means nothing without its project — which is why
+ * `agent_sessions.context_revision_seen` stays unwritten.
+ */
+export const agentSessionContextDeliveries = sqliteTable(
+  'agent_session_context_deliveries',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    deliveredAt: integer('delivered_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.projectId] }),
+    index('agent_session_context_deliveries_project_id_idx').on(t.projectId),
+  ],
+// ------------------------------------------------- §4.70 task_checkpoints
+
+/** A manifest entry (§4.70): a path and its line counts — **names only**. */
 export interface CheckpointManifestEntry {
   path: string;
   added: number;
   removed: number;
 }
 
-/** The structured continuation note (§4.68, D-115 item 3): five strings. */
+/** The structured continuation note (§4.70, D-115 item 3): five strings. */
 export interface CheckpointSummary {
   work_done: string;
   next_step: string;
@@ -1231,7 +1301,7 @@ export interface CheckpointSummary {
 
 /**
  * A save an agent registers **on purpose** inside a task its session holds
- * (§4.68, D-115, LAI-545). Not a heartbeat and not telemetry (D-005).
+ * (§4.70, D-115, LAI-545). Not a heartbeat and not telemetry (D-005).
  *
  * **The saved fields are never changed**: only `verification` and
  * `verified_at` move, and only from a signed push delivery (§10.1, D-116
@@ -1264,7 +1334,7 @@ export const taskCheckpoints = sqliteTable(
     contextRevision: integer('context_revision'),
     createdAt,
     verifiedAt: integer('verified_at'),
-    /** The newest ref's state (§4.69), copied in the transaction that changes it. */
+    /** The newest ref's state (§4.71), copied in the transaction that changes it. */
     verification: text('verification', { enum: CHECKPOINT_VERIFICATIONS }).notNull(),
     idempotencyKey: text('idempotency_key').notNull(),
   },
@@ -1280,12 +1350,12 @@ export const taskCheckpoints = sqliteTable(
   ],
 );
 
-// -------------------------------------------------- §4.69 checkpoint_refs
+// -------------------------------------------------- §4.71 checkpoint_refs
 
 /**
- * Every Git ref a checkpoint has (§4.69, D-116 items 4 and 7): the first tag
+ * Every Git ref a checkpoint has (§4.71, D-116 items 4 and 7): the first tag
  * at revision 0, and each re-tag `…-r<n>`. **Each ref is judged on its own**,
- * from its §4.70 transitions; a checkpoint's state is its newest ref's.
+ * from its §4.72 transitions; a checkpoint's state is its newest ref's.
  */
 export const checkpointRefs = sqliteTable(
   'checkpoint_refs',
@@ -1295,7 +1365,7 @@ export const checkpointRefs = sqliteTable(
       .notNull()
       .references(() => taskCheckpoints.id, { onDelete: 'cascade' }),
     revision: integer('revision').notNull(),
-    /** The checkpoint's repo — with `ref`, the name §4.70's deliveries are matched by. */
+    /** The checkpoint's repo — with `ref`, the name §4.72's deliveries are matched by. */
     repo: text('repo').notNull(),
     /** The full ref, `refs/tags/laika-ckpt/<task>/<id>` or `…-r<n>`. */
     ref: text('ref').notNull(),
@@ -1310,13 +1380,13 @@ export const checkpointRefs = sqliteTable(
   ],
 );
 
-// --------------------------------------- §4.70 checkpoint_ref_transitions
+// --------------------------------------- §4.72 checkpoint_ref_transitions
 
 /**
  * One row per signed `push` delivery that moved a `laika-ckpt/` ref in a
- * configured repo (§4.70, D-116 items 4 and 5, D-116a). Append-only.
+ * configured repo (§4.72, D-116 items 4 and 5, D-116a). Append-only.
  *
- * **Keyed by the ref's name — `repo` and `ref` — not by a §4.69 row**, so a
+ * **Keyed by the ref's name — `repo` and `ref` — not by a §4.71 row**, so a
  * delivery that beats its checkpoint's registration (push, then register:
  * the normal race) is stored durably and counted the moment the ref is
  * registered. `delivery_id` is unique and written **in the transaction that
@@ -1343,10 +1413,10 @@ export const checkpointRefTransitions = sqliteTable(
   ],
 );
 
-// ----------------------------------------- §4.73 agent_checkpoint_consents
+// ----------------------------------------- §4.75 agent_checkpoint_consents
 
 /**
- * The owner's consent to **automatic** checkpoints for one agent (§4.73,
+ * The owner's consent to **automatic** checkpoints for one agent (§4.75,
  * D-115 item 2). Manual saves never need it; the server records what is
  * registered and does not see which kind a save was (§6.4).
  */

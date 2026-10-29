@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "492a6604-757b-4d25-9c85-1df17ce4c7fc",
+  "id": "b71986e3-dae4-45b0-be83-a26ca40207ed",
   "prevId": "75c58d3d-68bf-4f41-b99a-667ef3c837bf",
   "tables": {
     "accounts": {
@@ -326,83 +326,13 @@
         },
         "activity_type_check": {
           "name": "activity_type_check",
-          "value": "type IN ('org.created', 'task.created', 'task.updated', 'task.status_changed', 'task.assigned', 'task.dependency_added', 'task.dependency_removed', 'comment.added', 'comment.edited', 'comment.deleted', 'project.created', 'project.updated', 'project.archived', 'member.added', 'member.role_changed', 'member.removed', 'token.created', 'token.revoked', 'heartbeat.session', 'webhook.commit', 'webhook.received', 'meeting.applied', 'meeting_review.discarded', 'unlisted.logged', 'sprint.created', 'sprint.updated', 'sprint.deleted', 'sprint.tasks_changed', 'project.context_updated', 'unlisted.promoted', 'unlisted.dismissed', 'user.deactivated', 'user.reactivated', 'user.signed_out', 'org.ownership_transferred', 'heartbeat.pruned', 'task.stale_flagged', 'invite.expired', 'meeting_review.expired', 'task.agent_selected', 'task.claim_expired', 'task.claim_reclaimed', 'task.checkpoint_saved')"
+          "value": "type IN ('org.created', 'task.created', 'task.updated', 'task.status_changed', 'task.assigned', 'task.dependency_added', 'task.dependency_removed', 'comment.added', 'comment.edited', 'comment.deleted', 'project.created', 'project.updated', 'project.archived', 'member.added', 'member.role_changed', 'member.removed', 'token.created', 'token.revoked', 'heartbeat.session', 'webhook.commit', 'webhook.received', 'meeting.applied', 'meeting_review.discarded', 'unlisted.logged', 'sprint.created', 'sprint.updated', 'sprint.deleted', 'sprint.tasks_changed', 'project.context_updated', 'unlisted.promoted', 'unlisted.dismissed', 'user.deactivated', 'user.reactivated', 'user.signed_out', 'org.ownership_transferred', 'heartbeat.pruned', 'task.stale_flagged', 'invite.expired', 'meeting_review.expired', 'task.agent_selected', 'task.claim_expired', 'task.claim_reclaimed')"
         },
         "activity_system_actor_check": {
           "name": "activity_system_actor_check",
           "value": "(actor_id IS NULL) = (actor_kind = 'system')"
         }
       }
-    },
-    "agent_checkpoint_consents": {
-      "name": "agent_checkpoint_consents",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "given_by_user_id": {
-          "name": "given_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "given_at": {
-          "name": "given_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "withdrawn_at": {
-          "name": "withdrawn_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "agent_checkpoint_consents_agent_id_idx": {
-          "name": "agent_checkpoint_consents_agent_id_idx",
-          "columns": ["agent_id"],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "agent_checkpoint_consents_agent_id_agents_id_fk": {
-          "name": "agent_checkpoint_consents_agent_id_agents_id_fk",
-          "tableFrom": "agent_checkpoint_consents",
-          "tableTo": "agents",
-          "columnsFrom": ["agent_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_checkpoint_consents_given_by_user_id_users_id_fk": {
-          "name": "agent_checkpoint_consents_given_by_user_id_users_id_fk",
-          "tableFrom": "agent_checkpoint_consents",
-          "tableTo": "users",
-          "columnsFrom": ["given_by_user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
     },
     "agent_project_grants": {
       "name": "agent_project_grants",
@@ -476,6 +406,74 @@
           "value": "scope IN ('full', 'read_only')"
         }
       }
+    },
+    "agent_session_context_deliveries": {
+      "name": "agent_session_context_deliveries",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "agent_session_context_deliveries_project_id_idx": {
+          "name": "agent_session_context_deliveries_project_id_idx",
+          "columns": ["project_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_session_context_deliveries_session_id_agent_sessions_id_fk": {
+          "name": "agent_session_context_deliveries_session_id_agent_sessions_id_fk",
+          "tableFrom": "agent_session_context_deliveries",
+          "tableTo": "agent_sessions",
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_session_context_deliveries_project_id_projects_id_fk": {
+          "name": "agent_session_context_deliveries_project_id_projects_id_fk",
+          "tableFrom": "agent_session_context_deliveries",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "agent_session_context_deliveries_session_id_project_id_pk": {
+          "columns": ["session_id", "project_id"],
+          "name": "agent_session_context_deliveries_session_id_project_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "agent_sessions": {
       "name": "agent_sessions",
@@ -1032,165 +1030,6 @@
       },
       "uniqueConstraints": {},
       "checkConstraints": {}
-    },
-    "checkpoint_ref_transitions": {
-      "name": "checkpoint_ref_transitions",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "repo": {
-          "name": "repo",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "ref": {
-          "name": "ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "delivery_id": {
-          "name": "delivery_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "before_sha": {
-          "name": "before_sha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "after_sha": {
-          "name": "after_sha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "checkpoint_ref_transitions_delivery_id_idx": {
-          "name": "checkpoint_ref_transitions_delivery_id_idx",
-          "columns": ["delivery_id"],
-          "isUnique": true
-        },
-        "checkpoint_ref_transitions_repo_ref_idx": {
-          "name": "checkpoint_ref_transitions_repo_ref_idx",
-          "columns": ["repo", "ref"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "checkpoint_refs": {
-      "name": "checkpoint_refs",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "checkpoint_id": {
-          "name": "checkpoint_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "repo": {
-          "name": "repo",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "ref": {
-          "name": "ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "checkpoint_refs_checkpoint_revision_idx": {
-          "name": "checkpoint_refs_checkpoint_revision_idx",
-          "columns": ["checkpoint_id", "revision"],
-          "isUnique": true
-        },
-        "checkpoint_refs_repo_ref_idx": {
-          "name": "checkpoint_refs_repo_ref_idx",
-          "columns": ["repo", "ref"],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "checkpoint_refs_checkpoint_id_task_checkpoints_id_fk": {
-          "name": "checkpoint_refs_checkpoint_id_task_checkpoints_id_fk",
-          "tableFrom": "checkpoint_refs",
-          "tableTo": "task_checkpoints",
-          "columnsFrom": ["checkpoint_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "checkpoint_refs_state_check": {
-          "name": "checkpoint_refs_state_check",
-          "value": "state IN ('pending', 'verified', 'ref_deleted', 'uncertain')"
-        },
-        "checkpoint_refs_revision_check": {
-          "name": "checkpoint_refs_revision_check",
-          "value": "revision >= 0"
-        }
-      }
     },
     "comment_mentions": {
       "name": "comment_mentions",
@@ -2976,6 +2815,86 @@
         }
       }
     },
+    "project_context_revisions": {
+      "name": "project_context_revisions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "project_context_revisions_project_revision_unique": {
+          "name": "project_context_revisions_project_revision_unique",
+          "columns": ["project_id", "revision"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "project_context_revisions_project_id_projects_id_fk": {
+          "name": "project_context_revisions_project_id_projects_id_fk",
+          "tableFrom": "project_context_revisions",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "project_context_revisions_revision_check": {
+          "name": "project_context_revisions_revision_check",
+          "value": "revision >= 1"
+        }
+      }
+    },
     "project_memberships": {
       "name": "project_memberships",
       "columns": {
@@ -3222,6 +3141,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": "''"
+        },
+        "context_revision": {
+          "name": "context_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
         },
         "board_hide_done_days": {
           "name": "board_hide_done_days",
@@ -4055,180 +3982,6 @@
         "tags_name_check": {
           "name": "tags_name_check",
           "value": "name GLOB '[a-z0-9]*' AND name NOT GLOB '*[^a-z0-9-]*' AND length(name) BETWEEN 1 AND 24"
-        }
-      }
-    },
-    "task_checkpoints": {
-      "name": "task_checkpoints",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "task_id": {
-          "name": "task_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "claim_generation": {
-          "name": "claim_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "repo": {
-          "name": "repo",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "branch": {
-          "name": "branch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "remote_ref": {
-          "name": "remote_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "commit_sha": {
-          "name": "commit_sha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "manifest": {
-          "name": "manifest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "summary_commit_sha": {
-          "name": "summary_commit_sha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "context_revision": {
-          "name": "context_revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "verified_at": {
-          "name": "verified_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "verification": {
-          "name": "verification",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "task_checkpoints_task_created_idx": {
-          "name": "task_checkpoints_task_created_idx",
-          "columns": ["task_id", "created_at"],
-          "isUnique": false
-        },
-        "task_checkpoints_session_id_idx": {
-          "name": "task_checkpoints_session_id_idx",
-          "columns": ["session_id"],
-          "isUnique": false
-        },
-        "task_checkpoints_idempotency_key_idx": {
-          "name": "task_checkpoints_idempotency_key_idx",
-          "columns": ["idempotency_key"],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "task_checkpoints_task_id_tasks_id_fk": {
-          "name": "task_checkpoints_task_id_tasks_id_fk",
-          "tableFrom": "task_checkpoints",
-          "tableTo": "tasks",
-          "columnsFrom": ["task_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "task_checkpoints_session_id_agent_sessions_id_fk": {
-          "name": "task_checkpoints_session_id_agent_sessions_id_fk",
-          "tableFrom": "task_checkpoints",
-          "tableTo": "agent_sessions",
-          "columnsFrom": ["session_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "task_checkpoints_verification_check": {
-          "name": "task_checkpoints_verification_check",
-          "value": "verification IN ('pending', 'verified', 'ref_deleted', 'uncertain')"
-        },
-        "task_checkpoints_generation_check": {
-          "name": "task_checkpoints_generation_check",
-          "value": "claim_generation >= 1"
-        },
-        "task_checkpoints_commit_sha_check": {
-          "name": "task_checkpoints_commit_sha_check",
-          "value": "length(commit_sha) = 40"
-        },
-        "task_checkpoints_summary_check": {
-          "name": "task_checkpoints_summary_check",
-          "value": "(summary IS NULL) = (summary_commit_sha IS NULL)"
         }
       }
     },

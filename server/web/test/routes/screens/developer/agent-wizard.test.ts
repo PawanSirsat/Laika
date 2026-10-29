@@ -8,7 +8,6 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   AGENT_STEPS,
-  AGENT_STEP_NAMES,
   agentFooterHint,
   agentStepOpen,
   choicesFrom,
@@ -21,22 +20,18 @@ import {
   VERIFY_REQUEST_TIMEOUT_MS,
   verifyStateFrom,
 } from '../../../../src/routes/screens/developer/agent-wizard.ts';
+import { REGISTRATION_STEPS } from '../../../../src/components/agent/agent-states.ts';
 import {
   LIVE_BUDGET_MS,
   LIVE_POLL_MS,
 } from '../../../../src/routes/screens/connect/connect-live.ts';
 
 void describe('the five steps', () => {
-  void test('are the proposal’s five, in its order', () => {
+  void test('each has a name in LAI-536’s list, and the list has no step without one', () => {
+    // The tab names step n by REGISTRATION_STEPS[n - 1] (LAI-565).
     assert.deepEqual(
-      AGENT_STEPS.map((n) => AGENT_STEP_NAMES[n]),
-      [
-        'Name, harness and device',
-        'Projects and permissions',
-        'Credential',
-        'Harness instructions',
-        'Verify this agent',
-      ],
+      AGENT_STEPS.map((n) => REGISTRATION_STEPS[n - 1]),
+      [...REGISTRATION_STEPS],
     );
   });
 

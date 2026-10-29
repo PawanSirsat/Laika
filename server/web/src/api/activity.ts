@@ -214,7 +214,7 @@ const LABELS: Readonly<Record<string, string>> = {
   'task.handoff_cancelled': 'withdrew a hand-off of this task',
   'task.handoff_expired': 'expired a hand-off nobody accepted',
   // Written by the system when a claim expired with a verified save: an
-  // offer, never an assignment (§4.71).
+  // offer, never an assignment (§4.73).
   'task.recovered': 'offered this task for recovery from its last verified save',
 
   'comment.added': 'commented',

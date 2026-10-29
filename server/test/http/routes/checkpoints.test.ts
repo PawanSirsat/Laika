@@ -28,8 +28,8 @@ import {
 } from '../../helpers/auth.ts';
 
 /**
- * Checkpoints over the real routes and real signed deliveries (SPEC §4.68 –
- * §4.70, §6.4, §10.1, D-115, D-116, LAI-545).
+ * Checkpoints over the real routes and real signed deliveries (SPEC §4.70 –
+ * §4.72, §6.4, §10.1, D-115, D-116, LAI-545).
  *
  * The saving side is a registered agent's token holding the task's live
  * claim; the verifying side is `POST /webhooks/github` with an HMAC-signed
@@ -296,7 +296,7 @@ afterEach(() => {
 
 // ------------------------------------------------------------- registering
 
-describe('registering a checkpoint (§4.68, §6.4)', () => {
+describe('registering a checkpoint (§4.70, §6.4)', () => {
   it('answers pending with its first ref, built from the task key and its id', async () => {
     const body = saveBody();
     const res = await save(body);
@@ -849,7 +849,7 @@ describe('no code path calls out (D-083)', () => {
 
 // ------------------------------------------------------------- consent
 
-describe('consent to automatic saves over /agents/:id/checkpoint-consent (§4.73, §6.4)', () => {
+describe('consent to automatic saves over /agents/:id/checkpoint-consent (§4.75, §6.4)', () => {
   function agentIdOf(secret: string): string {
     const id = agentIds.get(secret);
     expect(id, 'the agent was registered by this file').toBeDefined();

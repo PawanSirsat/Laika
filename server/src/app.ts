@@ -392,10 +392,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/projects`, projectRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/tasks`, taskCommentRoutes({ db }));
     app.route(`${API_BASE}/tasks`, taskRoutes({ db, sqlite: options.sqlite }));
-    // §4.68 – §4.70 (LAI-545): saving a checkpoint, reading them, re-tagging one.
+    // §4.70 – §4.72 (LAI-545): saving a checkpoint, reading them, re-tagging one.
     app.route(`${API_BASE}/tasks`, taskCheckpointRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/checkpoints`, checkpointRoutes({ db, sqlite: options.sqlite }));
-    // §4.71, §4.72 (LAI-546): hand-off offers, their answers, and the policy.
+    // §4.73, §4.74 (LAI-546): hand-off offers, their answers, and the policy.
     app.route(`${API_BASE}/tasks`, taskHandoffRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/handoff-offers`, handoffOfferRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/projects`, projectHandoffPolicyRoutes({ db, sqlite: options.sqlite }));

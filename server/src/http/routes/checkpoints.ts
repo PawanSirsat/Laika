@@ -14,7 +14,7 @@ import { type AppEnv } from '../context.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
- * Checkpoints (SPEC §6.4, §4.68 – §4.70, D-115, D-116, LAI-545). Transport
+ * Checkpoints (SPEC §6.4, §4.70 – §4.72, D-115, D-116, LAI-545). Transport
  * only: who may save, the fence, the one configured repo and how a ref is
  * judged are `services/checkpoints.ts`, which `checkpoint_task` calls too.
  *
@@ -28,7 +28,7 @@ const SHA = z
   .trim()
   .regex(/^[0-9a-fA-F]{40}$/, 'a full 40-character commit SHA');
 
-/** §4.68's manifest entry: a path and its line counts — names only. */
+/** §4.70's manifest entry: a path and its line counts — names only. */
 export const ManifestEntry = strictObject({
   path: z.string().min(1).max(CHECKPOINT_LIMITS.path),
   added: z.number().int().min(0).max(CHECKPOINT_LIMITS.lines),
@@ -37,7 +37,7 @@ export const ManifestEntry = strictObject({
 
 const NOTE_FIELD = z.string().max(CHECKPOINT_LIMITS.summaryField).optional();
 
-/** §4.68's continuation note: five strings, and nothing else. */
+/** §4.70's continuation note: five strings, and nothing else. */
 export const CheckpointNote = strictObject({
   work_done: NOTE_FIELD,
   next_step: NOTE_FIELD,

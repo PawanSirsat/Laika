@@ -67,7 +67,7 @@ import { requireProjectBySlug } from './projects.ts';
 import { noSuchProjectForAgent, type WorkRequestView } from './work-requests.ts';
 
 /**
- * Hand-off offers, approvals, acceptance and recovery (SPEC §4.71, §4.72,
+ * Hand-off offers, approvals, acceptance and recovery (SPEC §4.73, §4.74,
  * §6.3, §6.4, §11.6, proposal §4.4, §4.5, D-114 – D-116, LAI-546).
  *
  * ## The one rule everything here serves
@@ -100,7 +100,7 @@ import { noSuchProjectForAgent, type WorkRequestView } from './work-requests.ts'
 
 // ------------------------------------------------------------------ policy
 
-/** §4.72's defaults: what a project that never set a policy reads as. */
+/** §4.74's defaults: what a project that never set a policy reads as. */
 export const DEFAULT_HANDOFF_POLICY = {
   allow_other_owners: false,
   cross_owner_requires_approval: true,
@@ -108,13 +108,13 @@ export const DEFAULT_HANDOFF_POLICY = {
   offer_ttl_minutes: 30,
 } as const;
 
-/** §4.72's bounds, shared by the route and the service. */
+/** §4.74's bounds, shared by the route and the service. */
 export const HANDOFF_POLICY_LIMITS = {
   maxHandoffs: { min: 0, max: 20 },
   offerTtlMinutes: { min: 5, max: 1440 },
 } as const;
 
-/** §4.71's bounds. */
+/** §4.73's bounds. */
 export const HANDOFF_LIMITS = {
   reason: 500,
   idempotencyKey: 200,
@@ -129,7 +129,7 @@ export interface HandoffPolicyView {
   max_handoffs: number;
   offer_ttl_minutes: number;
   updated_by: string | null;
-  /** `false` when no row exists and these are the defaults (§4.72). */
+  /** `false` when no row exists and these are the defaults (§4.74). */
   is_set: boolean;
 }
 
@@ -175,7 +175,7 @@ function bounded(field: string, value: number, min: number, max: number): number
 }
 
 /**
- * `PUT /projects/:slug/handoff-policy` (§6.4, §4.72): a lead's. Writes **the
+ * `PUT /projects/:slug/handoff-policy` (§6.4, §4.74): a lead's. Writes **the
  * whole row** from the defaults plus what it was sent — not from the row
  * before it — and `project.updated` with `{ field: 'handoff_policy', from, to
  * }`, a settings change as every other is. A body that changes nothing writes
@@ -425,7 +425,7 @@ function noSuchOffer(): ApiError {
 }
 
 /**
- * **The person, read again inside the write's transaction** (§4.71: every
+ * **The person, read again inside the write's transaction** (§4.73: every
  * write "reads everything again from the database — the owner's
  * permission"). The actor a request resolved was loaded before the lock: a
  * person demoted, removed from the space or deactivated since must be refused
@@ -535,7 +535,7 @@ function ownerOfAgent(db: Db, agentId: string | null): string | null {
 }
 
 /**
- * **Who may receive** (§4.71): an active agent of this organisation with a
+ * **Who may receive** (§4.73): an active agent of this organisation with a
  * `full` grant on the project, whose owner is active and may accept there,
  * in a space that lets agents write — and, unless the policy has
  * `allow_other_owners`, an agent of **the same owner** as the agent the work
@@ -600,7 +600,7 @@ function noteHash(summary: unknown): string | null {
 /**
  * A live offer closed **unaccepted** — declined, cancelled, expired, or closed
  * by a reclaim, a revoke or the task closing. The sender's claim, if it is
- * still `paused`, is `active` again (§4.71); a claim that lapsed meanwhile
+ * still `paused`, is `active` again (§4.73); a claim that lapsed meanwhile
  * stays `expired`, and the task then gets its recovery offer as any expiry
  * does (§11.6) — in this same transaction.
  */
@@ -705,7 +705,7 @@ export function closeLiveOffersOfTask(
 }
 
 /**
- * Revoking an agent closes its live offers `agent_revoked` (§4.71) — the ones
+ * Revoking an agent closes its live offers `agent_revoked` (§4.73) — the ones
  * offered **to** it and the ones its sessions **sent** — as the system, in
  * the revoke's transaction. The sender's paused claim resumes, so it lapses
  * and recovers like any other claim of a revoked agent (LAI-541).
@@ -756,7 +756,7 @@ function latestVerifiedCheckpoint(db: Db, taskId: string) {
     .get();
 }
 
-/** The person behind a recovery (§4.71): the task's assignee, else the project's first lead. */
+/** The person behind a recovery (§4.73): the task's assignee, else the project's first lead. */
 function recoveryCreator(db: Db, task: TaskRow, expiredAgentId: string): string {
   if (task.assigneeId !== null) return task.assigneeId;
   const lead = db
@@ -942,7 +942,7 @@ export interface OfferedHandoff {
   created: boolean;
 }
 
-/** Whether a retried offer carries the body the first one did (§4.71). */
+/** Whether a retried offer carries the body the first one did (§4.73). */
 function sameOffer(
   row: OfferRow,
   taskId: string,
@@ -969,7 +969,7 @@ function sameOffer(
 }
 
 /**
- * `POST /tasks/:id/handoff-offers`, `offer_handoff` (§4.71, §6.4): the
+ * `POST /tasks/:id/handoff-offers`, `offer_handoff` (§4.73, §6.4): the
  * session holding the task's **live, `active`** claim offers it to a named
  * agent, from a `verified` checkpoint of this task saved under that claim's
  * generation, with a reason. Its claim is **paused** in the same transaction.
@@ -1141,7 +1141,7 @@ export function offerHandoff(
 // ---------------------------------------------------------------- approve
 
 /**
- * `POST /handoff-offers/:id/approve` (§4.71, §6.4): a person, signed in —
+ * `POST /handoff-offers/:id/approve` (§4.73, §6.4): a person, signed in —
  * the task's assignee or a lead, **never the owner of the receiving agent**
  * (`403 approver_is_receiver`). A named offer `pending_approval` becomes
  * `open`. An unnamed recovery is named and approved in one step with
@@ -1273,7 +1273,7 @@ function addressedTo(offer: OfferRow, agentId: string): boolean {
 }
 
 /**
- * `POST /handoff-offers/:id/accept`, `respond_handoff` `accept` (§4.71): the
+ * `POST /handoff-offers/:id/accept`, `respond_handoff` `accept` (§4.73): the
  * receiving agent's session, with `verified_commit_sha`. Everything is asked
  * again inside the transaction — the receiver's token, agent and owner, the
  * owner's permission and the agent's grant, the approval, the expiry, the
@@ -1518,7 +1518,7 @@ function notTheReceiver(offer: OfferRow): ApiError {
 // ---------------------------------------------------------------- decline
 
 /**
- * `POST /handoff-offers/:id/decline`, `respond_handoff` `decline` (§4.71):
+ * `POST /handoff-offers/:id/decline`, `respond_handoff` `decline` (§4.73):
  * the named receiver says no. The sender's claim resumes if it is still
  * paused; a claim that lapsed meanwhile stays expired and the task gets its
  * recovery offer here. **An unnamed recovery cannot be declined** — an agent
@@ -1575,7 +1575,7 @@ export function declineHandoff(
 
 /**
  * `POST /handoff-offers/:id/cancel`, `respond_handoff` `cancel` (§3.2,
- * §4.71): the sender — any of its owner's credentials — the task's assignee,
+ * §4.73): the sender — any of its owner's credentials — the task's assignee,
  * or a lead closes a live offer, `withdrawn`. The sender's claim resumes if
  * it is still paused; a lapsed one stays expired and the task gets its
  * recovery offer here.
@@ -1599,7 +1599,7 @@ export function cancelHandoff(
     const { offer, task, project } = requireVisibleOffer(db, caller, offerId);
     if (offer.kind === 'work_request') throw workRequestRefusal(offer);
 
-    // `ownerId` is the sending agent's owner (§3.2 *own agent's*). §4.71 also
+    // `ownerId` is the sending agent's owner (§3.2 *own agent's*). §4.73 also
     // lets the task's assignee cancel, so for them the row is asked as theirs.
     const senderOwner = ownerOfGeneration(db, task.id, offer.fromClaimGeneration);
     const ownerId =

@@ -357,7 +357,7 @@ describe('claim.expiry across a restart (§9.1, proposal §4.2, LAI-541)', () =>
   });
 });
 
-describe('offer.expiry (§11.6, §4.71, LAI-546)', () => {
+describe('offer.expiry (§11.6, §4.73, LAI-546)', () => {
   afterEach(() => {
     configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
   });

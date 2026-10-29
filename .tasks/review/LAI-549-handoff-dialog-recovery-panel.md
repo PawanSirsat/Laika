@@ -99,7 +99,7 @@ So the gate criterion is **not** ticked. Every web and cli red quoted by
 LAI-545 and LAI-546 is green, plus `structure.test.ts`'s WEB_* mirror check.
 
 **Where this differs from the task file**
-- A person cannot *start* a hand-off: SPEC §3.2 / §4.71 make offering,
+- A person cannot *start* a hand-off: SPEC §3.2 / §4.73 make offering,
   accepting and declining a registered agent's acts (`403 not_an_agent`).
   The drawer's control reviews the live offer, and a person approves or
   withdraws it. The gallery's sender-side `HandoffDialog` is unchanged.

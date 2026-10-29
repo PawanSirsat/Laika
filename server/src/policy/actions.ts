@@ -97,7 +97,7 @@ export const PROJECT_ACTIONS = [
   'task.claim',
   'task.checkpoint.create',
   'task.checkpoint.retag',
-  // §4.71, §4.72 (LAI-546): offering, approving, accepting, declining and
+  // §4.73, §4.74 (LAI-546): offering, approving, accepting, declining and
   // cancelling a hand-off, and the project's hand-off policy.
   'task.handoff.offer',
   'task.handoff.approve',
@@ -336,7 +336,7 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // (D-114, LAI-534): a token that could register an agent, widen a grant or
   // rotate a credential could mint itself — or a sibling — more access.
   'agent.manage_own',
-  // **Approving a transfer is a person's, signed in** (§3.2, §4.71, LAI-546):
+  // **Approving a transfer is a person's, signed in** (§3.2, §4.73, LAI-546):
   // an agent that could approve could hand its own work across owners.
   'task.handoff.approve',
 ]);

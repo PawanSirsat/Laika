@@ -21,8 +21,8 @@ import { type AppEnv } from '../context.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
- * Hand-off offers and the project's hand-off policy (SPEC §6.4, §4.71,
- * §4.72, LAI-546). Transport only: who may offer, approve, accept, decline or
+ * Hand-off offers and the project's hand-off policy (SPEC §6.4, §4.73,
+ * §4.74, LAI-546). Transport only: who may offer, approve, accept, decline or
  * cancel, the fence, the checkpoint and the policy are `services/handoffs.ts`,
  * which `offer_handoff`, `respond_handoff` and `agent_sync` call too.
  *
@@ -196,7 +196,7 @@ export function handoffOfferRoutes(options: HandoffRouteOptions): Hono<AppEnv> {
   return app;
 }
 
-/** Mounted at `/api/v1/projects`: `GET` and `PUT /:slug/handoff-policy` (§4.72). */
+/** Mounted at `/api/v1/projects`: `GET` and `PUT /:slug/handoff-policy` (§4.74). */
 export function projectHandoffPolicyRoutes(options: HandoffRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, sqlite } = options;

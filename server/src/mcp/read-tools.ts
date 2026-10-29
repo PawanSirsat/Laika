@@ -4,8 +4,10 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { listProjectActivity } from '../services/activity.ts';
 import { commentViews, listComments } from '../services/comments.ts';
+import { diffProjectContext, recordContextDelivery } from '../services/context-revisions.ts';
 import {
   getProjectContext,
+  type ProjectContextView,
   listMembers,
   listProjects,
   projectSlugById,
@@ -160,7 +162,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           (page) => listProjects(db, actor, { ...page, updatedSince: null }),
           byRowUpdated,
         )
-          .rows.map(projectView)
+          .rows.map((row) => ({ ...projectView(row), context_revision: row.contextRevision }))
           .map(({ context_md, ...rest }) => ({ ...rest, context_length: context_md.length }));
         const now = clock();
 
@@ -496,12 +498,36 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
     {
       title: 'Get project context',
       description:
-        'The project brief every agent on this project should start from: the shared context document, how it has changed, what is open, and who is on the team.',
-      inputSchema: z.strictObject({ project: PROJECT_REF }),
+        'The project brief every agent on this project should start from: the shared context document, how it has changed, what is open, and who is on the team. The document carries its `revision`. Pass `since_revision` with the revision you already have to get only what changed since, as a diff, instead of the whole document. A registered agent passes its `session_id` so Laika records which revision it delivered to that session — delivered, which is all it can know.',
+      inputSchema: z.strictObject({
+        project: PROJECT_REF,
+        since_revision: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            'The revision you already have. Answers a diff from it to the current revision, not the whole document.',
+          ),
+        session_id: z
+          .string()
+          .min(1)
+          .max(64)
+          .optional()
+          .describe(
+            'A registered agent only: your session, as `start_working` returned it. Records the revision delivered to it.',
+          ),
+      }),
     },
-    ({ project }) => {
+    ({ project, since_revision, session_id }) => {
       try {
-        const doc = getProjectContext(db, actor, project);
+        const full = getProjectContext(db, actor, project);
+        // With `since_revision`, the document is **not** sent again — only
+        // what changed (proposal §4.6: never the whole document unasked).
+        const diff =
+          since_revision === undefined
+            ? null
+            : diffProjectContext(db, actor, project, since_revision, full.revision);
         const members = listMembers(db, actor, project);
         const nameOf = nameLookup(members);
         const everyTask = everyRow(
@@ -538,14 +564,20 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         const markdown = [
           `## ${project}`,
           '',
-          '### Context document',
-          doc.context_md === ''
-            ? '_Empty. Nobody has written the project brief yet._'
-            : doc.context_md,
+          `### Context document (revision ${String(full.revision)})`,
+          diff !== null
+            ? diff.truncated
+              ? `_${diff.hint ?? ''}_`
+              : diff.diff === ''
+                ? `_Unchanged since revision ${String(diff.from_revision)}._`
+                : `Changes since revision ${String(diff.from_revision)} (+${String(diff.added)} −${String(diff.removed)} lines):\n\n\`\`\`diff\n${diff.diff}\n\`\`\``
+            : full.context_md === ''
+              ? '_Empty. Nobody has written the project brief yet._'
+              : full.context_md,
           '',
-          doc.updated_at === null
+          full.updated_at === null
             ? '_Never edited._'
-            : `_Last edited by ${nameOf(doc.updated_by)}, ${ago(doc.updated_at, now)} — ${String(doc.length)} of ${String(doc.limit)} characters._`,
+            : `_Last edited by ${nameOf(full.updated_by)}, ${ago(full.updated_at, now)} — ${String(full.length)} of ${String(full.limit)} characters._`,
           '',
           '### Recent edits to this document',
           bullets(
@@ -572,8 +604,23 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           ),
         ].join('\n');
 
+        // Recorded last, once everything above has answered: a call that
+        // failed delivered nothing — and neither did a truncated diff, which
+        // sent no text of the revision at all.
+        if (session_id !== undefined && diff?.truncated !== true) {
+          recordContextDelivery(
+            db,
+            actor,
+            session_id,
+            requireProjectBySlug(db, project).id,
+            full.revision,
+            now,
+          );
+        }
+
         return answer(markdown, {
-          context: doc,
+          context: diff === null ? full : withoutBody(full),
+          ...(diff === null ? {} : { context_diff: diff }),
           context_edits: edits,
           task_counts: Object.fromEntries(byStatus),
           open_task_count: open.length,
@@ -896,4 +943,10 @@ function similarText(similar: SimilarPastTask[] | null): string[] {
     }),
     '',
   ];
+}
+
+/** The document's view without its text — what a diff answer carries. */
+function withoutBody(view: ProjectContextView): Omit<ProjectContextView, 'context_md'> {
+  const { context_md: _omitted, ...rest } = view;
+  return rest;
 }

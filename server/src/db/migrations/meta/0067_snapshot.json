@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "33f0f577-ac48-4fab-ba6d-41e7f58725f8",
-  "prevId": "492a6604-757b-4d25-9c85-1df17ce4c7fc",
+  "id": "492a6604-757b-4d25-9c85-1df17ce4c7fc",
+  "prevId": "b71986e3-dae4-45b0-be83-a26ca40207ed",
   "tables": {
     "accounts": {
       "name": "accounts",
@@ -326,7 +326,7 @@
         },
         "activity_type_check": {
           "name": "activity_type_check",
-          "value": "type IN ('org.created', 'task.created', 'task.updated', 'task.status_changed', 'task.assigned', 'task.dependency_added', 'task.dependency_removed', 'comment.added', 'comment.edited', 'comment.deleted', 'project.created', 'project.updated', 'project.archived', 'member.added', 'member.role_changed', 'member.removed', 'token.created', 'token.revoked', 'heartbeat.session', 'webhook.commit', 'webhook.received', 'meeting.applied', 'meeting_review.discarded', 'unlisted.logged', 'sprint.created', 'sprint.updated', 'sprint.deleted', 'sprint.tasks_changed', 'project.context_updated', 'unlisted.promoted', 'unlisted.dismissed', 'user.deactivated', 'user.reactivated', 'user.signed_out', 'org.ownership_transferred', 'heartbeat.pruned', 'task.stale_flagged', 'invite.expired', 'meeting_review.expired', 'task.agent_selected', 'task.claim_expired', 'task.claim_reclaimed', 'task.checkpoint_saved', 'task.handoff_offered', 'task.handoff_approved', 'task.handoff_accepted', 'task.handoff_declined', 'task.handoff_cancelled', 'task.handoff_expired', 'task.recovered')"
+          "value": "type IN ('org.created', 'task.created', 'task.updated', 'task.status_changed', 'task.assigned', 'task.dependency_added', 'task.dependency_removed', 'comment.added', 'comment.edited', 'comment.deleted', 'project.created', 'project.updated', 'project.archived', 'member.added', 'member.role_changed', 'member.removed', 'token.created', 'token.revoked', 'heartbeat.session', 'webhook.commit', 'webhook.received', 'meeting.applied', 'meeting_review.discarded', 'unlisted.logged', 'sprint.created', 'sprint.updated', 'sprint.deleted', 'sprint.tasks_changed', 'project.context_updated', 'unlisted.promoted', 'unlisted.dismissed', 'user.deactivated', 'user.reactivated', 'user.signed_out', 'org.ownership_transferred', 'heartbeat.pruned', 'task.stale_flagged', 'invite.expired', 'meeting_review.expired', 'task.agent_selected', 'task.claim_expired', 'task.claim_reclaimed', 'task.checkpoint_saved')"
         },
         "activity_system_actor_check": {
           "name": "activity_system_actor_check",
@@ -476,6 +476,74 @@
           "value": "scope IN ('full', 'read_only')"
         }
       }
+    },
+    "agent_session_context_deliveries": {
+      "name": "agent_session_context_deliveries",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "agent_session_context_deliveries_project_id_idx": {
+          "name": "agent_session_context_deliveries_project_id_idx",
+          "columns": ["project_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "agent_session_context_deliveries_session_id_agent_sessions_id_fk": {
+          "name": "agent_session_context_deliveries_session_id_agent_sessions_id_fk",
+          "tableFrom": "agent_session_context_deliveries",
+          "tableTo": "agent_sessions",
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_session_context_deliveries_project_id_projects_id_fk": {
+          "name": "agent_session_context_deliveries_project_id_projects_id_fk",
+          "tableFrom": "agent_session_context_deliveries",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "agent_session_context_deliveries_session_id_project_id_pk": {
+          "columns": ["session_id", "project_id"],
+          "name": "agent_session_context_deliveries_session_id_project_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "agent_sessions": {
       "name": "agent_sessions",
@@ -1629,80 +1697,9 @@
           "notNull": true,
           "autoincrement": false
         },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "from_session_id": {
-          "name": "from_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "from_claim_generation": {
-          "name": "from_claim_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "to_agent_id": {
           "name": "to_agent_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "checkpoint_id": {
-          "name": "checkpoint_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "checkpoint_commit_sha": {
-          "name": "checkpoint_commit_sha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "note_hash": {
-          "name": "note_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "requires_approval": {
-          "name": "requires_approval",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
-        "approved_by_user_id": {
-          "name": "approved_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "approved_at": {
-          "name": "approved_at",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -1712,41 +1709,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "accepted_session_id": {
-          "name": "accepted_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "accepted_claim_id": {
-          "name": "accepted_claim_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "receiver_commit_sha": {
-          "name": "receiver_commit_sha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "closed_reason": {
-          "name": "closed_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         },
         "created_by_user_id": {
@@ -1787,53 +1749,11 @@
           "columns": ["created_by_user_id"],
           "isUnique": false
         },
-        "handoff_offers_from_session_id_idx": {
-          "name": "handoff_offers_from_session_id_idx",
-          "columns": ["from_session_id"],
-          "isUnique": false
-        },
-        "handoff_offers_checkpoint_id_idx": {
-          "name": "handoff_offers_checkpoint_id_idx",
-          "columns": ["checkpoint_id"],
-          "isUnique": false
-        },
-        "handoff_offers_approved_by_user_id_idx": {
-          "name": "handoff_offers_approved_by_user_id_idx",
-          "columns": ["approved_by_user_id"],
-          "isUnique": false
-        },
-        "handoff_offers_accepted_session_id_idx": {
-          "name": "handoff_offers_accepted_session_id_idx",
-          "columns": ["accepted_session_id"],
-          "isUnique": false
-        },
-        "handoff_offers_accepted_claim_id_idx": {
-          "name": "handoff_offers_accepted_claim_id_idx",
-          "columns": ["accepted_claim_id"],
-          "isUnique": false
-        },
-        "handoff_offers_state_expires_idx": {
-          "name": "handoff_offers_state_expires_idx",
-          "columns": ["state", "expires_at"],
-          "isUnique": false
-        },
-        "handoff_offers_idempotency_key_idx": {
-          "name": "handoff_offers_idempotency_key_idx",
-          "columns": ["idempotency_key"],
-          "isUnique": true,
-          "where": "idempotency_key IS NOT NULL"
-        },
         "handoff_offers_one_open_work_request": {
           "name": "handoff_offers_one_open_work_request",
           "columns": ["task_id"],
           "isUnique": true,
           "where": "kind = 'work_request' AND state = 'open'"
-        },
-        "handoff_offers_one_live_handoff": {
-          "name": "handoff_offers_one_live_handoff",
-          "columns": ["task_id"],
-          "isUnique": true,
-          "where": "kind IN ('handoff', 'recovery') AND state IN ('pending_approval', 'open')"
         }
       },
       "foreignKeys": {
@@ -1846,15 +1766,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "handoff_offers_from_session_id_agent_sessions_id_fk": {
-          "name": "handoff_offers_from_session_id_agent_sessions_id_fk",
-          "tableFrom": "handoff_offers",
-          "tableTo": "agent_sessions",
-          "columnsFrom": ["from_session_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
         "handoff_offers_to_agent_id_agents_id_fk": {
           "name": "handoff_offers_to_agent_id_agents_id_fk",
           "tableFrom": "handoff_offers",
@@ -1862,42 +1773,6 @@
           "columnsFrom": ["to_agent_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "handoff_offers_checkpoint_id_task_checkpoints_id_fk": {
-          "name": "handoff_offers_checkpoint_id_task_checkpoints_id_fk",
-          "tableFrom": "handoff_offers",
-          "tableTo": "task_checkpoints",
-          "columnsFrom": ["checkpoint_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "handoff_offers_approved_by_user_id_users_id_fk": {
-          "name": "handoff_offers_approved_by_user_id_users_id_fk",
-          "tableFrom": "handoff_offers",
-          "tableTo": "users",
-          "columnsFrom": ["approved_by_user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "handoff_offers_accepted_session_id_agent_sessions_id_fk": {
-          "name": "handoff_offers_accepted_session_id_agent_sessions_id_fk",
-          "tableFrom": "handoff_offers",
-          "tableTo": "agent_sessions",
-          "columnsFrom": ["accepted_session_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "handoff_offers_accepted_claim_id_task_claims_id_fk": {
-          "name": "handoff_offers_accepted_claim_id_task_claims_id_fk",
-          "tableFrom": "handoff_offers",
-          "tableTo": "task_claims",
-          "columnsFrom": ["accepted_claim_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "handoff_offers_created_by_user_id_users_id_fk": {
@@ -1920,18 +1795,6 @@
         "handoff_offers_state_check": {
           "name": "handoff_offers_state_check",
           "value": "state IN ('pending_approval', 'open', 'accepted', 'declined', 'cancelled', 'expired')"
-        },
-        "handoff_offers_closed_reason_check": {
-          "name": "handoff_offers_closed_reason_check",
-          "value": "closed_reason IS NULL OR closed_reason IN ('withdrawn', 'reclaimed', 'selection_changed', 'task_closed', 'agent_revoked')"
-        },
-        "handoff_offers_approval_check": {
-          "name": "handoff_offers_approval_check",
-          "value": "(approved_by_user_id IS NULL) = (approved_at IS NULL)"
-        },
-        "handoff_offers_reason_check": {
-          "name": "handoff_offers_reason_check",
-          "value": "reason IS NULL OR length(reason) <= 500"
         }
       }
     },
@@ -3181,8 +3044,8 @@
         }
       }
     },
-    "project_handoff_policies": {
-      "name": "project_handoff_policies",
+    "project_context_revisions": {
+      "name": "project_context_revisions",
       "columns": {
         "id": {
           "name": "id",
@@ -3198,88 +3061,66 @@
           "notNull": true,
           "autoincrement": false
         },
-        "allow_other_owners": {
-          "name": "allow_other_owners",
+        "revision": {
+          "name": "revision",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "default": false
+          "autoincrement": false
         },
-        "cross_owner_requires_approval": {
-          "name": "cross_owner_requires_approval",
-          "type": "integer",
+        "body": {
+          "name": "body",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "default": true
+          "autoincrement": false
         },
-        "max_handoffs": {
-          "name": "max_handoffs",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 3
-        },
-        "offer_ttl_minutes": {
-          "name": "offer_ttl_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 30
-        },
-        "updated_by": {
-          "name": "updated_by",
+        "author_id": {
+          "name": "author_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
         }
       },
       "indexes": {
-        "project_handoff_policies_project_id_idx": {
-          "name": "project_handoff_policies_project_id_idx",
-          "columns": ["project_id"],
+        "project_context_revisions_project_revision_unique": {
+          "name": "project_context_revisions_project_revision_unique",
+          "columns": ["project_id", "revision"],
           "isUnique": true
-        },
-        "project_handoff_policies_updated_by_idx": {
-          "name": "project_handoff_policies_updated_by_idx",
-          "columns": ["updated_by"],
-          "isUnique": false
         }
       },
       "foreignKeys": {
-        "project_handoff_policies_project_id_projects_id_fk": {
-          "name": "project_handoff_policies_project_id_projects_id_fk",
-          "tableFrom": "project_handoff_policies",
+        "project_context_revisions_project_id_projects_id_fk": {
+          "name": "project_context_revisions_project_id_projects_id_fk",
+          "tableFrom": "project_context_revisions",
           "tableTo": "projects",
           "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_handoff_policies_updated_by_users_id_fk": {
-          "name": "project_handoff_policies_updated_by_users_id_fk",
-          "tableFrom": "project_handoff_policies",
-          "tableTo": "users",
-          "columnsFrom": ["updated_by"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
-        "project_handoff_policies_max_handoffs_check": {
-          "name": "project_handoff_policies_max_handoffs_check",
-          "value": "max_handoffs BETWEEN 0 AND 20"
-        },
-        "project_handoff_policies_offer_ttl_check": {
-          "name": "project_handoff_policies_offer_ttl_check",
-          "value": "offer_ttl_minutes BETWEEN 5 AND 1440"
+        "project_context_revisions_revision_check": {
+          "name": "project_context_revisions_revision_check",
+          "value": "revision >= 1"
         }
       }
     },
@@ -3529,6 +3370,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": "''"
+        },
+        "context_revision": {
+          "name": "context_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
         },
         "board_hide_done_days": {
           "name": "board_hide_done_days",
@@ -5793,14 +5642,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "handoff_count": {
-          "name": "handoff_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
         },
         "created_at": {
           "name": "created_at",

@@ -361,7 +361,7 @@ export function revokeAgent(
     for (const token of live) revokeTokenRow(db, actor, token, now);
     // D-114 item 2: its sessions end with it (LAI-541); its claims lapse.
     endSessionsOfRevokedAgent(db, row.id, now);
-    // §4.71: its live offers — to it and from it — close `agent_revoked`.
+    // §4.73: its live offers — to it and from it — close `agent_revoked`.
     closeOffersOfRevokedAgent(db, row.id, now);
   });
 

@@ -382,7 +382,7 @@ describe('expiry', () => {
     ).toEqual({ code: 'conflict', reason: 'claim_held' });
   });
 
-  it('opens no recovery offer for a claim that expired with no verified checkpoint (§4.71)', () => {
+  it('opens no recovery offer for a claim that expired with no verified checkpoint (§4.73)', () => {
     const a = agent();
     const id = task();
     startWorking(t.sqlite, t.db, a.actor, id, { now: T0 });
