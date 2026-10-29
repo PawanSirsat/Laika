@@ -320,6 +320,20 @@ function requireOpenSession(db: Db, agentId: string, sessionId: string): Session
   return row;
 }
 
+/**
+ * The calling agent's own open session (LAI-555): what a context delivery is
+ * recorded against. Not an agent's token is `403 not_an_agent`, another
+ * agent's session `404`, an ended one `409`, exactly as a heartbeat answers.
+ */
+export function requireOwnOpenSession(
+  db: Db,
+  actor: ResolvedActor,
+  sessionId: string,
+): { id: string; agentId: string } {
+  const row = requireOpenSession(db, requireAgent(actor).id, sessionId);
+  return { id: row.id, agentId: row.agentId };
+}
+
 // ---------------------------------------------------------------- reading
 
 /** The task's live claim — `active` or `paused` — or undefined. */

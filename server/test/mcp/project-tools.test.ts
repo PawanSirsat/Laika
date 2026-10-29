@@ -774,6 +774,7 @@ describe('update_project_context', () => {
         project: 'core',
         context_md: '# The brief\n\nWhat we are doing.',
         mode: 'replace',
+        base_revision: 0,
       })
     ).context as { context_md: string; length: number };
 
@@ -795,6 +796,7 @@ describe('update_project_context', () => {
       project: 'core',
       context_md: 'First paragraph.',
       mode: 'replace',
+      base_revision: 0,
     });
 
     const appended = (
@@ -851,6 +853,7 @@ describe('update_project_context', () => {
       project: 'core',
       context_md: 'Twelve chars',
       mode: 'replace',
+      base_revision: 0,
     });
 
     const rows = h.db

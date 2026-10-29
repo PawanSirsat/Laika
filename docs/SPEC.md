@@ -598,7 +598,8 @@ future multi-org becomes a migration rather than a rewrite.
 | `description` | |
 | `repo` | nullable — `owner/name` of the git repository this project tracks. Maps an incoming heartbeat's `repo` (§9.1) to a project; without it presence cannot be attributed. A full remote URL stored here still matches: §9.1 normalises both sides. |
 | `visibility` | `public` (org members may self-join) \| `private` |
-| `context_md` | text — the shared project brief served to agents (§7.1) |
+| `context_md` | text — the shared project brief served to agents (§7.1). Always the newest §4.68 revision's `body` |
+| `context_revision` | integer, default 0 — the current revision of `context_md` (§4.68, LAI-555): `0` for a document never written, then one more on every write. A write names the revision it replaces (§7.3) |
 | `board_hide_done_days` | nullable integer — finished work older than this many days leaves the board; null never (LAI-266) |
 | `color` | nullable — one of the design's palette, `black` \| `violet` \| `teal` \| `blue` \| `amber` \| `magenta` \| `red` \| `green`; null until one is picked (D-103) |
 | `task_create_min_role` | `member` (default) \| `lead` — who may create tasks (§3.2, D-103) |
@@ -2441,7 +2442,7 @@ claims (§4.66); it never holds a task by itself.
 | `harness` | nullable, **self-reported** (D-118, LAI-586) — the underlying harness that ran, a lowercase slug of at most 64 characters (`codex`, `claude-code`). A manager's agent (`Polly · Belka`) runs workers of other harnesses as its sessions, so this is the session's, not the agent's §4.63 `harness`. Decides nothing |
 | `harness_version` | nullable, **self-reported** (D-118) — that harness's version, at most 64 printable characters, no spaces. Decides nothing |
 | `model` | nullable, **self-reported**, at most 120 printable characters. Decides nothing. A heartbeat may change it (D-118: *"Changing a model never creates a new agent"*) |
-| `context_revision_seen` | nullable — the project brief's revision the session last read, for the delivery work (proposal §4.6); written by nothing yet |
+| `context_revision_seen` | nullable — **unwritten** (LAI-555). A revision is a project's and a session may work in more than one project, so what was delivered is kept per session **and project** in §4.69 instead |
 
 Indexes: `(agent_id)`, `(token_id)`. **No activity row**: a session is presence,
 as a heartbeat is (§9.1), and the claims it holds are what §4.8 records.
@@ -2495,6 +2496,54 @@ requires an existing device among the caller's own agents. A confirmation
 persists if agents move away or are revoked; moving an agent to another label
 does not confirm that label. No retention beyond the owner and no activity
 verb: these rows record the statement, as agent registration does (§4.63).
+
+### 4.68 `project_context_revisions`
+
+Every revision of a project's context document (§7.3, proposal §4.6, LAI-555).
+**Immutable**: triggers refuse `UPDATE`, any insert that lands on an existing
+row by **either** unique key — its `id`, or its `(project_id, revision)` — so
+`INSERT OR REPLACE` cannot replace a revision whichever key it collides on, and
+`DELETE` while the project exists. Boot refuses to start without them, or with
+a definition that differs from the one it creates, as §4.49's. The newest row's `body` is `projects.context_md` and
+its `revision` is `projects.context_revision` (§4.3).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `project_id` | FK `projects`, cascade |
+| `revision` | integer ≥ 1 (CHECK); `(project_id, revision)` unique — two writers that read the same revision cannot both make the next |
+| `body` | the whole document at this revision |
+| `author_id` | nullable, **a copy, no FK** — the person who wrote it; null on a revision 1 migrated from a document no edit was recorded for |
+| `agent_id` | nullable, **a copy, no FK** — the registered agent whose token wrote it (§4.63), or null |
+| `created_at` | |
+
+**Migration 0066** makes each project's non-empty `context_md` its revision 1,
+authored by whoever last edited it per `activity` (null if nobody is
+recorded), at that edit's time or the project's `updated_at`, and sets
+`context_revision` to 1. `context_md` is left as it was, so a rollback keeps
+the document. **No new §4.8 verb**: each write already writes
+`project.context_updated`, whose payload now carries `revision`.
+
+### 4.69 `agent_session_context_deliveries`
+
+The context revision Laika last **delivered** to an agent session, per
+project (proposal §4.6, LAI-555). Delivered means the server sent that
+revision — the whole document or a diff ending at it — in answer to a call
+that named the session (`get_project_context`'s `session_id`, §7.1). **It
+never means the agent read, understood or acted on it**, and nothing shown
+from it may say so (LAI-556: *received*).
+
+| field | notes |
+| --- | --- |
+| `session_id` | FK `agent_sessions` (§4.65), cascade — with `project_id`, the primary key |
+| `project_id` | FK `projects`, cascade |
+| `revision` | the revision delivered. Only moves forward: a slower call that delivered an older one does not undo a newer delivery |
+| `delivered_at` | |
+
+Index `(project_id)`. Only the calling agent's **own open** session is
+recorded against: another agent's is `404`, an ended one `409`, as a
+heartbeat answers (§9.1). No activity row: a delivery is presence, as a
+session is.
 
 ## 5. Task lifecycle
 
@@ -2900,6 +2949,12 @@ POST   /api/v1/projects/:slug/leave          any member → { slug, implicit_acc
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
                                              DELETE takes an optional body { open_tasks } as deactivation does (LAI-986)
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
+       └ GET answers the document with its `revision`; PATCH takes { context_md, base_revision } — base_revision required, the revision the write replaces; another is 409 `stale_context_revision` with { base_revision, current_revision } and nothing is written (§4.68, LAI-555)
+GET    /api/v1/projects/:slug/context/revisions          newest first, no text: [{ revision, length, author_id, agent_id, created_at }]
+GET    /api/v1/projects/:slug/context/revisions/:revision    one revision with its `body`; one the project has not reached is 404
+GET    /api/v1/projects/:slug/context/diff   ?from=&to= → { from_revision, to_revision, current_revision, diff, added, removed, truncated, hint }; `to` defaults to current, `from` may be 0 (the empty document), from > to is 422
+       └ at most 2,000 changed lines (added + removed) are answered; past that `truncated: true`, `diff: ''`, `added` and `removed` null, and `hint` names how to read the revision whole (`.../context/revisions/:to`, or `get_project_context` without `since_revision`). MCP answers the same `context_diff`
+       └ all four context reads follow project read; a project the caller cannot see is answered **exactly as a missing one** — 404 to a person, and to an agent's token the 403 `agent_not_granted` it gets for any slug it may not use (LAI-555)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
                                              status is a category (§4.5), status_id one project status (§4.20);
@@ -4171,7 +4226,7 @@ matched.
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age. On a registered agent's token, also `work_requests`: its open work requests, ready or not, newest first, under the same `project` and `limit`, as `GET /agents/me/work-requests?project=&limit=` answers (LAI-535) — a request, not a claim |
 | `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name |
-| `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770) |
+| `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
 | `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
@@ -4183,7 +4238,7 @@ matched.
 | `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests?, claim_generation? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083). Releases the session's claim (§5) |
 | `create_sprint` | `{ project, name, goal?, start_date, end_date, status? }` | created sprint, with the id the other sprint tools take |
 | `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
-| `update_project_context` | `{ project, context_md, mode }` | the document's new length. `mode` is `replace` or `append` |
+| `update_project_context` | `{ project, context_md, mode, base_revision? }` | the document's new revision and length. `mode` is `replace` or `append`. `replace` must name the `base_revision` it replaces (absent is `422`, after the permission check); a stale one is `conflict`, `reason: stale_context_revision`, and nothing changes. `append` is computed from the current document inside the write, so two appends both land (LAI-555) |
 | `log_unlisted_work` | `{ repo, note }` | records work or an idea outside any project, for triage |
 | `propose_time_entry` | `{ minutes, task?, day?, note? }` | a draft in the person's own drafts (`source: 'agent'`, §4.47) — **never an entry**: only the person confirms it, signed in to the web app (D-088 item 13). Refused `forbidden` with `details.reason: "time_drafts_off"` unless the organisation's *Time* is `drafts` and the person turned on *Draft my time*. `day` is their local day, by default today in their drafts' zone. It answers `{ id, minutes, day }` and nothing of the person's drafts. Its REST twin is `POST /me/time-drafts` (LAI-787) |
 
@@ -4264,7 +4319,9 @@ and each disagreed:
 - **`mode` on `update_project_context` is required**, deliberately: there is no
   safe default between adding a paragraph and discarding the document. `append`
   is a read-then-write and can lose a simultaneous addition — `context_md` is a
-  single markdown field with no revision column.
+  single markdown field with no revision column. *(Superseded by LAI-555: an
+  `append` is now computed inside the write, and §4.68 gives the document
+  revisions.)*
 
 ### 7.2 Tool contract
 
@@ -4290,6 +4347,7 @@ and each disagreed:
 - `finish_task` stops at `review` by design — agents do not close their own work.
   No tool reaches `done`: `update_status` refuses any done status to an agent
   (§5, D-082), and accepting is a person's, in the web app.
+- **Every answer carries `context_revision`** (proposal §4.6, LAI-555): `{ project, revision, delivered_revision }` for the project the call named — by `project`, `task` or `sprint` — or `null` when it named none or one the caller cannot read. `delivered_revision` is §4.69's for the session the call named (`session_id`, or the claim `start_working` answers), else null. When that session is behind, one more text line of at most 300 characters says so — *"Project context changed: r12 → r14. Call get_project_context with since_revision: 12 for the diff."* — and **the document itself is never added**. A refusal is left as §6.3 shapes it, unstamped. Added once, where tools are registered, so a new tool carries it; a census over the registry proves it.
 - **`claim_generation` is the claim fence's argument** (§6.3, LAI-541): every
   tool that changes a task — `update_task`, `update_status`, `finish_task`,
   `set_task_sprint` — takes it, and it is REST's `X-Laika-Claim-Generation`
@@ -4327,6 +4385,15 @@ anything that changes per-session.
   decisions, open-task summary, and members with roles (§7.1).
 - Every edit writes an `activity` row, so the document has a history and a
   reviewer can see what changed between two agent sessions.
+- **Every edit is an immutable revision** (§4.68, LAI-555). A write names the
+  revision it replaces — `base_revision` on REST and on MCP's `replace` — and
+  a write against any other is refused `409`, `reason:
+  stale_context_revision`, with nothing changed. The history, any revision in
+  full, and a diff between two are §6.4's reads; MCP asks for the diff with
+  `get_project_context`'s `since_revision`.
+- **Laika records what it delivered, never what was understood** (§4.69). An
+  agent behind on the document is told so in one short line on its next
+  answer (§7.2); the whole document is sent only when asked for.
 - Editing is `lead`+ (§3.2). Reading follows project read access — a `viewer`
   sees it.
 - Accepted `decision` proposals from a meeting diff append to it with the date

@@ -592,6 +592,8 @@ describe('the parser itself', () => {
 
     expect(withoutId).toEqual([
       'agent_project_grants',
+      // LAI-555: keyed by (session, project).
+      'agent_session_context_deliveries',
       'agent_time_buckets',
       'agent_time_days',
       'board_activity_days',
