@@ -1,7 +1,8 @@
 /**
  * LAI-543: what a card and the drawer say about an agent's work, derived only
  * from what the server serves — the task view's `selected_agent` and status,
- * and the task's claim rows (LAI-541).
+ * the task's claim rows (LAI-541), and the live claim on the read (LAI-568,
+ * LAI-597).
  *
  * The rows are built in the **shapes the server writes**, and the last block
  * reads `server/src` to prove those shapes are still the ones written: a claim
@@ -15,7 +16,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 import type { ActivityEvent } from '../../../src/api/activity.ts';
 import type { SelectedAgent } from '../../../src/api/selected-agent.ts';
-import type { TaskStatus } from '../../../src/api/tasks.ts';
+import { stampClaims } from '../../../src/api/claim-receipt.ts';
+import type { TaskLiveClaim, TaskStatus } from '../../../src/api/tasks.ts';
 import {
   cardExecutionState,
   changesExecution,
@@ -23,6 +25,10 @@ import {
   executionSignal,
   executionView,
   hasExecution,
+  liveClaimDetail,
+  ageWords,
+  liveConnection,
+  msUntilSuspect,
 } from '../../../src/components/agent/execution-derive.ts';
 import {
   CLAIM_EXPIRED_WORDS,
@@ -117,7 +123,7 @@ void describe('cardExecutionState', () => {
     );
   });
 
-  void test('never derives Working or Connection lost: no task read serves the live claim (LAI-568)', () => {
+  void test('without a live claim, never Working or Connection lost: claim null and a view without claim give the pre-LAI-568 answer', () => {
     for (const status of [
       'backlog',
       'todo',
@@ -126,8 +132,185 @@ void describe('cardExecutionState', () => {
       'done',
       'cancelled',
     ] satisfies TaskStatus[]) {
-      const state = cardExecutionState({ status, selected_agent: LAPTOP });
-      assert.ok(state === null || state === 'waiting_for_agent', `${status} gave ${String(state)}`);
+      const before = cardExecutionState({ status, selected_agent: LAPTOP });
+      assert.ok(
+        before === null || before === 'waiting_for_agent',
+        `${status} gave ${String(before)}`,
+      );
+      // Null and absent read alike, and alike to a view served before LAI-568.
+      assert.equal(cardExecutionState({ status, selected_agent: LAPTOP, claim: null }), before);
+    }
+  });
+});
+
+/** `TaskLiveClaimView`, as `services/claims.ts` serves it. */
+const SUSPECT_AFTER = 90_000;
+const BEAT = 1_000_000;
+const claim = (over: Partial<TaskLiveClaim> = {}): TaskLiveClaim => ({
+  generation: 4,
+  state: 'active',
+  agent_id: 'ag-laptop',
+  session_id: '01SESSIONLAPTOP',
+  lease_expires_at: BEAT + 300_000,
+  last_heartbeat_at: BEAT,
+  heartbeat_age_ms: 0,
+  connection: 'live',
+  suspect_after_ms: SUSPECT_AFTER,
+  device_label: 'Belka',
+  ...over,
+});
+
+/**
+ * Page-clock instants (`performance.now()`), deliberately nowhere near the
+ * wall-clock `last_heartbeat_at` above: the derive must never compare them.
+ */
+const P0 = 5_000;
+
+void describe('the live claim (LAI-597)', () => {
+  const held = (over: Partial<TaskLiveClaim> = {}) => ({
+    status: 'in_progress' as const,
+    selected_agent: LAPTOP,
+    claim: claim(over),
+  });
+  /** A task whose claim arrived in a response at `at`, as the request client stamps it. */
+  const arrived = (over: Partial<TaskLiveClaim> = {}, at = P0) => {
+    const task = held(over);
+    stampClaims({ data: [task] }, at);
+    return task;
+  };
+
+  void test('a claim checking in is Working until suspect_after_ms has elapsed here', () => {
+    const task = arrived();
+    assert.equal(cardExecutionState(task, P0), 'working');
+    assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER - 1), 'working');
+    // A paused claim is still held, and still checking in.
+    assert.equal(cardExecutionState(held({ state: 'paused' }), P0), 'working');
+  });
+
+  void test('a heartbeat exactly suspect_after_ms old is Connection lost — the server’s boundary', () => {
+    const task = arrived();
+    assert.equal(cardExecutionState(task, P0), 'working');
+    assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER), 'connection_lost');
+    assert.equal(cardExecutionState(task, P0 + 10 * SUSPECT_AFTER), 'connection_lost');
+  });
+
+  void test('the server’s age at the read counts: 60 s old leaves 30 s here', () => {
+    const task = arrived({ heartbeat_age_ms: 60_000 });
+    assert.equal(cardExecutionState(task, P0), 'working');
+    assert.equal(msUntilSuspect(task.claim, P0), 30_000);
+    assert.equal(cardExecutionState(task, P0 + 29_999), 'working');
+    assert.equal(cardExecutionState(task, P0 + 30_000), 'connection_lost');
+    // Already past it when served: lost at once.
+    assert.equal(
+      cardExecutionState(held({ heartbeat_age_ms: SUSPECT_AFTER }), P0),
+      'connection_lost',
+    );
+  });
+
+  void test('a claim the server already served suspect is Connection lost, with nothing to wait for', () => {
+    const task = arrived({ connection: 'suspect' });
+    assert.equal(cardExecutionState(task, P0), 'connection_lost');
+    assert.equal(msUntilSuspect(task.claim, P0), undefined);
+    assert.equal(liveConnection(task.claim, P0), 'suspect');
+  });
+
+  void test('the browser’s wall clock is never read: ahead or behind, a fresh claim is Working and turns on elapsed time', () => {
+    const now = Date.now();
+    for (const skew of [5 * 60_000, -5 * 60_000, 365 * 86_400_000]) {
+      // The server stamped the heartbeat on its clock; this browser's differs by `skew`.
+      const task = arrived({ last_heartbeat_at: now - skew, heartbeat_age_ms: 0 });
+      assert.equal(cardExecutionState(task, P0), 'working', `skew ${String(skew)}`);
+      assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER - 1), 'working');
+      assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER), 'connection_lost');
+    }
+  });
+
+  void test('a view served before heartbeat_age_ms reads as age 0 at receipt, never a wall-clock guess', () => {
+    const { heartbeat_age_ms: _dropped, ...older } = claim({ last_heartbeat_at: 1 });
+    const task = { status: 'in_progress' as const, selected_agent: LAPTOP, claim: older };
+    stampClaims(task, P0);
+    assert.equal(cardExecutionState(task, P0), 'working');
+    assert.equal(cardExecutionState(task, P0 + SUSPECT_AFTER), 'connection_lost');
+  });
+
+  void test('drawing a claim never stamps it: its age runs from the response, shown or hidden', () => {
+    // Arrived at P0 and drawn for the first time 95 s later (an Agent field
+    // that was hidden): already lost, not freshly Working.
+    const shownLate = arrived();
+    assert.equal(cardExecutionState(shownLate, P0 + 95_000), 'connection_lost');
+    // A copy that never came through the request client ages by the server's
+    // figure alone — drawing it twice, far apart, does not start a clock.
+    const unstamped = held({ heartbeat_age_ms: 10_000 });
+    assert.equal(cardExecutionState(unstamped, P0), 'working');
+    assert.equal(cardExecutionState(unstamped, P0 + 10 * SUSPECT_AFTER), 'working');
+    assert.equal(msUntilSuspect(unstamped.claim, P0 + 10 * SUSPECT_AFTER), 80_000);
+  });
+
+  void test('the live claim decides before the pick: a claim on a task still in To do is Working', () => {
+    assert.equal(cardExecutionState({ ...held(), status: 'todo' }, P0), 'working');
+    // And it needs no picked agent: the claim is the fact.
+    assert.equal(cardExecutionState({ ...held(), selected_agent: null }, P0), 'working');
+  });
+
+  void test('Last seen is worded from the age, not from a date', () => {
+    assert.equal(ageWords(0), 'just now');
+    assert.equal(ageWords(59_999), 'just now');
+    assert.equal(ageWords(4 * 60_000), '4 min ago');
+    assert.equal(ageWords(3 * 3_600_000), '3 h ago');
+    assert.equal(ageWords(2 * 86_400_000), 'over a day ago');
+  });
+
+  void test('the card names the holder as the task’s agent on the session’s device', () => {
+    assert.equal(liveClaimDetail(held()), 'Claude Code · Belka');
+    // No device reported: the agent's own.
+    assert.equal(liveClaimDetail(held({ device_label: null })), 'Claude Code · laptop-1');
+    // Held by an agent the card cannot name: the device alone, or nothing.
+    assert.equal(liveClaimDetail(held({ agent_id: 'ag-other' })), 'Belka');
+    assert.equal(liveClaimDetail(held({ agent_id: 'ag-other', device_label: null })), undefined);
+    assert.equal(liveClaimDetail({ selected_agent: LAPTOP, claim: null }), undefined);
+  });
+
+  void test('the drawer: the holding session, its last heartbeat and its generation', () => {
+    const task = arrived({ heartbeat_age_ms: 30_000 });
+    const view = executionView(task, [taken(3, 10)], AGENTS, P0 + 30_000);
+    assert.equal(view.state, 'working');
+    assert.deepEqual(view.session, {
+      client: 'claude-code',
+      device: 'Belka',
+      owner: 'Ada Lovelace',
+    });
+    // 30 s by the server, 30 s here.
+    assert.equal(view.lastSeen, '1 min ago');
+    assert.equal(view.lastSeenAt, BEAT);
+    assert.equal(view.liveSessionId, '01SESSIONLAPTOP');
+    // The live claim's generation, not the older one on record.
+    assert.equal(view.generation, 4);
+    assert.equal(hasExecution(view), true);
+
+    // Four minutes on, the same copy: Connection lost, and Last seen says when.
+    const later = executionView(task, [taken(3, 10)], AGENTS, P0 + 30_000 + 3.5 * 60_000);
+    assert.equal(later.state, 'connection_lost');
+    assert.equal(later.lastSeen, '4 min ago');
+  });
+
+  void test('a live claim alone opens the panel; an agent nobody named reads as words', () => {
+    const view = executionView({ ...held(), claim: claim({ agent_id: 'ag-x' }) }, [], AGENTS, P0);
+    assert.equal(view.claim, undefined);
+    assert.equal(view.session, 'a registered agent');
+    assert.equal(view.lastSeen, 'just now');
+    assert.equal(hasExecution(view), true);
+  });
+
+  void test('no live claim: no session, no last seen — the rows stay out', () => {
+    for (const task of [
+      { status: 'in_progress' as const, selected_agent: LAPTOP, claim: null },
+      { status: 'in_progress' as const, selected_agent: LAPTOP },
+    ]) {
+      const view = executionView(task, [taken(3, 10)], AGENTS, P0);
+      assert.equal(view.session, undefined);
+      assert.equal(view.lastSeen, undefined);
+      assert.equal(view.liveSessionId, undefined);
+      assert.equal(view.generation, 3);
     }
   });
 });

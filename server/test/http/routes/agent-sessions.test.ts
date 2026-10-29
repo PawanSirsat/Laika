@@ -740,6 +740,7 @@ describe('the live claim on task reads (LAI-568)', () => {
         session_id: taken.session,
         lease_expires_at: expect.any(Number) as number,
         last_heartbeat_at: expect.any(Number) as number,
+        heartbeat_age_ms: expect.any(Number) as number,
         connection: 'live',
         suspect_after_ms: DEFAULT_CLAIM_TIMINGS.suspectMs,
         device_label: null,

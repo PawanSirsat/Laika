@@ -44,6 +44,7 @@ import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { ForecastSection } from '../task/ForecastSection.tsx';
 import { TokensSection } from '../task/TokensSection.tsx';
 import { ExecutionPanel } from '../../../components/agent/ExecutionPanel.tsx';
+import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
 import { executionView, hasExecution } from '../../../components/agent/execution-derive.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { avatarColorSolid } from '../../../theme/avatar-color.ts';
@@ -156,6 +157,9 @@ function personName(id: string | null, members: ReadonlyMap<string, Member>): st
   if (id === null) return 'someone';
   return members.get(id)?.name ?? id;
 }
+
+/** How often the execution panel's *Last seen* re-words itself (LAI-597). */
+const LAST_SEEN_TICK_MS = 30_000;
 
 /**
  * The panel a card opens into (SPEC §11.4.2.1).
@@ -418,10 +422,17 @@ export function TaskDetailPanel({
     }
     return found;
   }, [detail, agentNames]);
-  /** The execution panel's facts: the task view, and its claim rows (LAI-543). */
+  /**
+   * The execution panel's facts: the task view, its live claim (LAI-597) and
+   * its claim rows (LAI-543). The live claim is read on this reader's clock,
+   * which re-renders the panel when its heartbeat goes stale and every half
+   * minute for *Last seen* — no request either way.
+   */
+  const claimNow = useClaimClock(task.claim, LAST_SEEN_TICK_MS);
   const execution = useMemo(
-    () => executionView(task, detail.status === 'ready' ? detail.activity : [], agentNames),
-    [task, detail, agentNames],
+    () =>
+      executionView(task, detail.status === 'ready' ? detail.activity : [], agentNames, claimNow),
+    [task, detail, agentNames, claimNow],
   );
   /**
    * Which tab is showing.
@@ -1216,18 +1227,23 @@ export function TaskDetailPanel({
           />
 
           {/*
-            **Execution, from real data only** (LAI-543): the agent picked
-            beside the one that last took the work, and that claim as the
-            task's activity records it — an expired one in words. Whether a session is
-            checking in *now* is not served yet (LAI-568), so neither
-            *Working* nor *Connection lost* is drawn from a guess.
+            **Execution, from real data only** (LAI-543, LAI-597): the agent
+            picked beside the one that last took the work, and that claim as
+            the task's activity records it — an expired one in words. The live
+            claim the read serves says who holds it now and when it last
+            checked in, and *Working* or *Connection lost* on this reader's
+            clock.
           */}
           {hasExecution(execution) && (
             <div className="panel-side-exec">
               <ExecutionPanel
                 /* The Agent row above carries *Waiting for agent*. */
-                state={null}
+                state={execution.state === 'waiting_for_agent' ? null : execution.state}
                 intended={execution.intended}
+                session={execution.session}
+                lastSeen={execution.lastSeen}
+                lastSeenAt={execution.lastSeenAt}
+                liveSessionId={execution.liveSessionId}
                 claim={execution.claim}
                 claimExpired={execution.claimExpired}
                 generation={execution.generation}

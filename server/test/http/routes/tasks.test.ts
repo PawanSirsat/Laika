@@ -923,6 +923,7 @@ describe('patch', () => {
         session_id: 'session-1',
         lease_expires_at: 1_000,
         last_heartbeat_at: 500,
+        heartbeat_age_ms: 0,
         connection: 'live',
         suspect_after_ms: 90_000,
         device_label: 'laptop-1',
@@ -931,7 +932,13 @@ describe('patch', () => {
       expect(held).not.toBe(taskVersion(view));
 
       // The pulse: a heartbeat renews the lease, and the clock makes it suspect.
-      const beat = { last_heartbeat_at: 9_000, lease_expires_at: 99_000, connection: 'suspect' };
+      // Its age moves on every read, beat or no beat (LAI-597 review).
+      const beat = {
+        last_heartbeat_at: 9_000,
+        heartbeat_age_ms: 120_000,
+        lease_expires_at: 99_000,
+        connection: 'suspect',
+      };
       expect([...CLAIM_PULSE].sort()).toEqual(Object.keys(beat).sort());
       expect(taskVersion({ ...view, claim: { ...claim, ...beat } as typeof claim })).toBe(held);
 
