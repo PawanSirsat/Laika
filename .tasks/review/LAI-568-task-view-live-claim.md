@@ -220,3 +220,48 @@ drive `cardExecutionState` from `claim` + `suspect_after_ms`.
 
 This branch must be re-based **by merge** onto `integration-agent-identities`
 when Belka posts it ready.
+
+## Belka takeover (2026-10-29)
+
+Taken over from Strelka (idle since 28 Oct) on the owner's instruction, to
+close PR #112's blocking review findings.
+
+- **Merged `origin/master`** (merge, no rebase). Conflicts kept both sides:
+  `server/src/services/tasks.ts` takes master's `claim: null` on the person's
+  claim path (LAI-541: an agent's claim never writes `assignee_id`) with this
+  branch's `viewOne(…, now)` — and `startWorking`'s answer, which arrived from
+  master without the `now`, gets it too; `agent-sessions.test.ts` keeps this
+  branch's live-claim block beside master's rewritten census (the branch's old
+  census opener is dropped, master replaced it); `claims.test.ts` keeps both
+  describe blocks. The merge dropped the `agents` import `liveClaimViews` uses
+  (`claims.ts`), restored.
+- **No-leak assertions, REST** (`agent-sessions.test.ts`, *"never reaches a
+  caller who cannot read the task"*): Bob's token pinned to another project
+  he is a member of, and his agent granted only that project. Each refuses
+  `GET /tasks/:id` and `GET /projects/alpha/tasks` with `403 forbidden`,
+  `details.action: project.read` (plus `reason: agent_not_granted` for the
+  agent); `GET /tasks` answers without the task; no body carries the holder's
+  `session_id`. Positive control on each: the unpinned token / an agent
+  granted alpha reads the claim on the single read and on `GET /tasks`.
+  (These landed inside the merge commit, the file being in conflict.)
+- **No-leak assertions, MCP** (`test/mcp/claims.test.ts`): `get_task_context`
+  for the same two callers is refused `forbidden` / `project.read` and its
+  result does not contain the session id; a granted agent and an unpinned
+  token read `task.claim`.
+- **Client mirror** — a named crossing into `server/web/src/api/tasks.ts`,
+  type only: `TaskLiveClaim` and `claim?` on `TaskSummary`, so the two
+  `view-type-drift.test.ts` lines above go green. `TaskLiveClaimView` stays in
+  `UNPAIRED` as `SelectedAgentView` does. The five inherited web failures are
+  gone on master. **The screens are LAI-597** (SHELL, filed here):
+  `cardExecutionState` → Working / Connection lost, and the drawer's session
+  and last-seen rows.
+- Removed the stale `.tasks/backlog/` copy master carried (§2 two-copy shape).
+
+Local (touched only; CI is the full gate): server `npx vitest run` over
+`test/services/claims.test.ts test/services/tasks.test.ts
+test/http/routes/agent-sessions.test.ts test/mcp/claims.test.ts
+test/mcp/read-tools.test.ts test/tooling/response-type-coverage.test.ts
+test/tooling/structure.test.ts` — 7 files, 266 test cases, exit 0; web
+`pnpm run typecheck` exit 0, `node --test test/api/view-type-drift.test.ts
+test/api/endpoint-coverage.test.ts` 11 pass, exit 0; `pnpm lint` 0;
+`pnpm format` 0.
