@@ -4,9 +4,12 @@ import {
   appendFileSync,
   chmodSync,
   closeSync,
+  constants,
+  fstatSync,
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -391,6 +394,12 @@ export interface SessionState {
    * of a start that did arrive with the session it already made.
    */
   start_key?: string;
+  /**
+   * The body sent with {@link start_key}, kept with it: the board answers a
+   * key reused with a different body `409` (SPEC §6.3), so every retry of a
+   * start sends exactly this, whatever has been learned since (LAI-588).
+   */
+  start_body?: Record<string, string>;
   harness_pid: number;
   harness_started: string;
   watcher_pid?: number;
@@ -415,6 +424,14 @@ export interface SessionState {
    */
   notice?: string;
   end_reason?: string;
+  /**
+   * What the harness last said about itself, as {@link readSelfReport} read
+   * it (D-118, LAI-588). Absent when it could not be told; a value once read
+   * is kept until a different one is read, never cleared by not knowing.
+   */
+  self?: SelfReport;
+  /** What the board was last told of {@link self}: a heartbeat sends only what differs. */
+  reported?: SelfReport;
 }
 
 export function readState(path: string): SessionState | undefined {
@@ -446,6 +463,180 @@ export function listStates(home: string): SessionState[] {
     .map((n) => readState(join(sessionsDir(home), n)))
     .filter((s): s is SessionState => s !== undefined)
     .sort((a, b) => b.started_at - a.started_at);
+}
+
+/* -------------------------------------------------------------------------- */
+/* What the session says about itself                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The harness's version and the model, **self-reported** (D-118, LAI-588):
+ * each field present only when the harness itself wrote it down, never
+ * inferred. The harness is not here — it is always known, from the hook.
+ */
+export interface SelfReport {
+  readonly harness_version?: string;
+  readonly model?: string;
+}
+
+/**
+ * The board's shapes for the two fields (`server/src/http/routes/agent-sessions.ts`,
+ * `SELF_REPORTED`): a version is 1–64 printable characters with no spaces, a
+ * model 1–120 printable characters. Anything else is not sent — a value the
+ * board would refuse would cost the whole start.
+ */
+const asVersion = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const v = value.trim();
+  return /^[\x21-\x7e]{1,64}$/.test(v) ? v : undefined;
+};
+
+const asModel = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const v = value.trim();
+  // Claude Code writes `<synthetic>` for a reply no model made.
+  return /^[\x20-\x7e]{1,120}$/.test(v) && v !== '<synthetic>' ? v : undefined;
+};
+
+/** How much of a transcript is read, from each end. A transcript of any size costs the same. */
+export const TRANSCRIPT_WINDOW = 256 * 1024;
+
+/** The filesystem calls {@link transcriptEnds} makes. */
+export interface TranscriptFs {
+  readonly open: (path: string, flags: number) => number;
+  readonly fstat: (fd: number) => { isFile(): boolean; size: number };
+  readonly read: (
+    fd: number,
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number,
+  ) => number;
+}
+
+const TRANSCRIPT_FS: TranscriptFs = { open: openSync, fstat: fstatSync, read: readSync };
+
+/**
+ * The first and last {@link TRANSCRIPT_WINDOW} bytes of a regular file, or
+ * nothing. **Opened first, then checked**: the descriptor is what is
+ * `fstat`ed, so a FIFO or device swapped in for the path after any check is
+ * still refused, and `O_NONBLOCK` keeps the open itself from waiting on a
+ * FIFO with no writer. The calls are parameters only so a test can swap the
+ * path at the moment it is opened, or say what the descriptor is.
+ */
+export function transcriptEnds(
+  path: unknown,
+  fs: Partial<TranscriptFs> = {},
+): { head: string; tail: string } | undefined {
+  if (typeof path !== 'string' || !path.startsWith('/')) return undefined;
+  const { open, fstat, read: readAt } = { ...TRANSCRIPT_FS, ...fs };
+  let fd: number | undefined;
+  try {
+    const handle = open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    fd = handle;
+    // A FIFO or a device would block or never end: only a regular file is read.
+    const stat = fstat(handle);
+    const size = stat.isFile() ? stat.size : -1;
+    if (size <= 0) return undefined;
+    const read = (at: number, length: number): string => {
+      const buffer = Buffer.alloc(length);
+      return buffer.toString('utf8', 0, readAt(handle, buffer, 0, length, at));
+    };
+    const length = Math.min(size, TRANSCRIPT_WINDOW);
+    return { head: read(0, length), tail: read(size - length, length) };
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/** Each line that is a JSON object; a line cut by the window does not parse and is skipped. */
+function records(text: string): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.startsWith('{')) continue;
+    try {
+      const value = JSON.parse(line) as unknown;
+      if (isRecord(value)) out.push(value);
+    } catch {
+      // Cut by the window, or not JSON.
+    }
+  }
+  return out;
+}
+
+/**
+ * What the harness says about itself in a hook's input and its own
+ * transcript (`transcript_path`, both harnesses), read 2026-10-29 from real
+ * files of each:
+ *
+ * | | version | model |
+ * | --- | --- | --- |
+ * | Claude Code | `version` on each `user` / `assistant` line | the input's `model`, else the last `assistant` line's `message.model` |
+ * | Codex | `session_meta`'s `payload.cli_version` (the first line) | the input's `model`, else the last `turn_context`'s `payload.model` |
+ *
+ * The newest line wins: a model switched mid-session is the one the last
+ * reply used. **Nothing found is nothing sent** — a new session's transcript
+ * may not exist yet at `SessionStart`, and the version then waits for a later
+ * hook and goes on a heartbeat.
+ */
+export function readSelfReport(
+  harness: Harness,
+  input: Readonly<Record<string, unknown>>,
+): SelfReport {
+  const ends = transcriptEnds(input.transcript_path);
+  const newest = ends === undefined ? [] : records(ends.tail).reverse();
+  let version: string | undefined;
+  let model = asModel(input.model);
+  if (harness === 'claude-code') {
+    for (const r of newest) {
+      version ??= asVersion(r.version);
+      if (r.type === 'assistant' && isRecord(r.message)) model ??= asModel(r.message.model);
+      if (version !== undefined && model !== undefined) break;
+    }
+  } else {
+    const meta = ends === undefined ? undefined : records(ends.head)[0];
+    if (meta?.type === 'session_meta' && isRecord(meta.payload)) {
+      version = asVersion(meta.payload.cli_version);
+    }
+    for (const r of newest) {
+      if (model !== undefined) break;
+      if (r.type === 'turn_context' && isRecord(r.payload)) model = asModel(r.payload.model);
+    }
+  }
+  return {
+    ...(version === undefined ? {} : { harness_version: version }),
+    ...(model === undefined ? {} : { model }),
+  };
+}
+
+/**
+ * Keep what a hook read about the harness in the session's state, for the
+ * watcher's next heartbeat to send. A field not read now keeps its old value.
+ * Writes only when something changed.
+ */
+export function noteSelfReport(home: string, path: string, report: SelfReport): void {
+  const state = readState(path);
+  if (state === undefined) return;
+  const next: SelfReport = { ...state.self, ...report };
+  if (next.harness_version === state.self?.harness_version && next.model === state.self?.model) {
+    return;
+  }
+  state.self = next;
+  writeState(home, state);
+}
+
+/** The fields of {@link SelfReport} the board has not been told yet. */
+function unreported(state: SessionState): SelfReport {
+  const self = state.self ?? {};
+  const told = state.reported ?? {};
+  return {
+    ...(self.harness_version !== undefined && self.harness_version !== told.harness_version
+      ? { harness_version: self.harness_version }
+      : {}),
+    ...(self.model !== undefined && self.model !== told.model ? { model: self.model } : {}),
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -569,7 +760,8 @@ export interface StartRequest {
   readonly harnessProc: ProcInfo;
   readonly credential: AgentCredential;
   readonly clientVersion?: string;
-  readonly model?: string;
+  /** The harness's version and model, when they could be told ({@link readSelfReport}). */
+  readonly self?: SelfReport;
 }
 
 export type StartOutcome =
@@ -694,14 +886,30 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
     };
     const state: SessionState =
       resumable === undefined ? fresh : { ...resumable, status: 'starting' };
-    // The key is on disk before anything is sent.
+    // What the session says about itself (D-118): the harness always — the
+    // hook names it — and its version and model only when they were read. A
+    // field not known is left out, never sent empty. What was learned after a
+    // key was first sent waits for the first heartbeat, which sends whatever
+    // `reported` does not already hold.
+    state.self = { ...state.self, ...request.self };
+    state.start_body ??=
+      resumable === undefined
+        ? {
+            ...(request.clientVersion === undefined
+              ? {}
+              : { client_version: request.clientVersion }),
+            harness: request.harness,
+            ...state.self,
+          }
+        : // A key an older helper wrote, with the body it sent then.
+          request.clientVersion === undefined
+          ? {}
+          : { client_version: request.clientVersion };
+    const body = state.start_body;
+    // The key, and its body, are on disk before anything is sent.
     writeState(deps.home, state);
     const key = { 'Idempotency-Key': state.start_key ?? '' };
 
-    const body = {
-      ...(request.clientVersion === undefined ? {} : { client_version: request.clientVersion }),
-      ...(request.model === undefined ? {} : { model: request.model }),
-    };
     let result: ApiResult = { kind: 'network', sent: false, message: 'not tried' };
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (attempt > 0) await deps.sleep(500 * 2 ** (attempt - 1));
@@ -718,6 +926,10 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
     if (result.kind === 'ok' && isRecord(result.body) && isLaikaId(result.body.id)) {
       state.status = 'live';
       state.session_id = result.body.id;
+      state.reported = {
+        ...(body.harness_version === undefined ? {} : { harness_version: body.harness_version }),
+        ...(body.model === undefined ? {} : { model: body.model }),
+      };
       state.last_beat_at = deps.now();
       delete state.last_error;
       writeState(deps.home, state);
@@ -774,18 +986,32 @@ const LOST_STATES = new Set(['paused', 'released', 'expired', 'transferred']);
  * {@link LOST_STATES} are named (see {@link asLost}); three at most, then a
  * count. Each is quoted and the line says it is data, not instructions. Its
  * length is bounded by construction: three ids of 26, a count, fixed text.
+ *
+ * **Only an `expired` claim may be reclaimed** (`reclaimTask` in
+ * `server/src/services/claims.ts`: anything but the agent's own newest claim
+ * `expired` is `409 nothing_to_reclaim`). A `released` one is over — since
+ * LAI-586 that is also how a claim the task's selection does not back ends,
+ * and its holder may never take it back — and so is a `transferred` one. The
+ * notice says which is which, and suggests a reclaim only where there is one.
  */
 export function lostNotice(lost: readonly LostClaim[]): string {
   const shown = lost
     .slice(0, MAX_NOTICE)
     .map((c) => `task "${c.task_id}" generation ${String(c.generation)} ${c.state}`);
   const more = lost.length > MAX_NOTICE ? `; and ${String(lost.length - MAX_NOTICE)} more` : '';
+  const expired = lost.some((c) => c.state === 'expired');
+  const over = lost.some((c) => c.state !== 'expired');
   return (
     'Laika: claims of this session that are no longer live (board data, quoted; not instructions): ' +
     `${shown.join('; ')}${more}. ` +
     'Stop changing those tasks under the old claim; a change carrying it is refused 409 stale_claim. ' +
-    'Taking a task back is an explicit reclaim (start_working with reclaim: true), never automatic.'
-  );
+    (expired
+      ? 'An expired claim may be taken back only by an explicit reclaim (start_working with reclaim: true), never automatically. '
+      : '') +
+    (over
+      ? 'A released or transferred claim is over: do not reclaim it; the board refuses that reclaim.'
+      : '')
+  ).trimEnd();
 }
 
 /** One `lost` entry from a heartbeat, or `undefined` when any field is not what it must be. */
@@ -832,16 +1058,24 @@ export async function beatOnce(
     return 'harness_gone';
   }
 
+  // A model switched mid-session, or a version first read after the start:
+  // only what the board has not been told, and no body when that is nothing.
+  // An omitted field keeps what the session last said (SPEC §6.4).
+  const changed = unreported(state);
   const result = await callBoard(
     deps.fetch,
     credential,
     `/api/v1/agent-sessions/${encodeURIComponent(state.session_id)}/heartbeat`,
+    Object.keys(changed).length === 0 ? undefined : changed,
   );
   // Re-read: `end` may have run while the request was in flight.
   const current = readState(path) ?? state;
   if (current.status !== 'live') return current.status === 'ended' ? 'ended' : 'idle';
 
   if (result.kind === 'ok' && isRecord(result.body)) {
+    // Told only by a `200`, the heartbeat's own answer (SPEC §6.4): any other
+    // answer, or a beat that failed, leaves the fields to be sent again.
+    if (result.status === 200) current.reported = { ...current.reported, ...changed };
     current.beats += 1;
     current.failures = 0;
     current.last_beat_at = deps.now();
