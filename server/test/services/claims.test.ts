@@ -633,11 +633,68 @@ describe('the live claim on a task read (LAI-568)', () => {
       connection: 'live',
       suspect_after_ms: SUSPECT,
       device_label: 'laptop-1',
+      // The session `startWorking` opened reported nothing (LAI-593).
+      harness: null,
+      harness_version: null,
+      model: null,
     };
 
     const { single, listed } = reads(id, T0 + MIN);
     expect(single).toEqual(expected);
     expect(listed).toEqual(expected);
+  });
+
+  it('serves what the holding session said ran, on both reads (LAI-593)', () => {
+    const a = agent();
+    const id = task();
+    const session = startAgentSession(
+      t.db,
+      a.actor,
+      { harness: 'claude-code', harness_version: '2.1.0', model: 'claude-opus-5-5' },
+      T0,
+    );
+    startWorking(t.sqlite, t.db, a.actor, id, { sessionId: session.id, now: T0 });
+
+    const { single, listed } = reads(id, T0 + MIN);
+    expect(single).toMatchObject({
+      session_id: session.id,
+      harness: 'claude-code',
+      harness_version: '2.1.0',
+      model: 'claude-opus-5-5',
+    });
+    expect(listed).toEqual(single);
+  });
+
+  it('a heartbeat that changes the model shows on the next read; one that omits it keeps it', () => {
+    const a = agent();
+    const id = task();
+    const session = startAgentSession(t.db, a.actor, { model: 'gpt-5.5' }, T0);
+    startWorking(t.sqlite, t.db, a.actor, id, { sessionId: session.id, now: T0 });
+    expect(reads(id, T0 + MIN).single?.model).toBe('gpt-5.5');
+
+    heartbeatAgentSession(t.sqlite, t.db, a.actor, session.id, T0 + MIN, { model: 'gpt-5.6' });
+    const after = reads(id, T0 + 2 * MIN);
+    expect(after.single?.model).toBe('gpt-5.6');
+    expect(after.listed?.model).toBe('gpt-5.6');
+
+    heartbeatAgentSession(t.sqlite, t.db, a.actor, session.id, T0 + 2 * MIN);
+    expect(reads(id, T0 + 3 * MIN).single?.model).toBe('gpt-5.6');
+  });
+
+  it('null where the session reported nothing — never the agent’s registered harness', () => {
+    // `agent()` registers harness `claude-code`; the session says nothing.
+    const a = agent();
+    const id = task();
+    const session = startAgentSession(t.db, a.actor, { model: 'claude-opus-5-5' }, T0);
+    startWorking(t.sqlite, t.db, a.actor, id, { sessionId: session.id, now: T0 });
+
+    const { single, listed } = reads(id, T0 + MIN);
+    expect(single).toMatchObject({
+      harness: null,
+      harness_version: null,
+      model: 'claude-opus-5-5',
+    });
+    expect(listed).toEqual(single);
   });
 
   it('is null on a task nothing has claimed, on both reads', () => {

@@ -195,6 +195,15 @@ export interface TaskLiveClaimView {
   suspect_after_ms: number;
   /** The holding agent's, for "Claude Code · laptop-1". */
   device_label: string | null;
+  /**
+   * What the holding session said ran (§4.65, D-118, LAI-593) — the drawer's
+   * *Polly · Belka · Claude Code · <model>* from a task read alone. Each is
+   * self-reported, as the session last sent it (a heartbeat may change the
+   * model), null where it reported nothing, and decides nothing.
+   */
+  harness: string | null;
+  harness_version: string | null;
+  model: string | null;
 }
 
 /** Whether a heartbeat this old is suspect at `now` — one rule for every view. */
@@ -336,6 +345,9 @@ export function liveClaimViews(
       claim: taskClaims,
       lastHeartbeatAt: agentSessions.lastHeartbeatAt,
       sessionEndedAt: agentSessions.endedAt,
+      harness: agentSessions.harness,
+      harnessVersion: agentSessions.harnessVersion,
+      model: agentSessions.model,
       deviceLabel: agents.deviceLabel,
     })
     .from(taskClaims)
@@ -350,7 +362,15 @@ export function liveClaimViews(
     .all();
 
   const views = new Map<string, TaskLiveClaimView>();
-  for (const { claim, lastHeartbeatAt, sessionEndedAt, deviceLabel } of found) {
+  for (const {
+    claim,
+    lastHeartbeatAt,
+    sessionEndedAt,
+    harness,
+    harnessVersion,
+    model,
+    deviceLabel,
+  } of found) {
     if (claim.state === 'active' && leaseLapsed(claim.leaseExpiresAt, now)) continue;
     views.set(claim.taskId, {
       generation: claim.generation,
@@ -363,6 +383,9 @@ export function liveClaimViews(
       connection: sessionEndedAt !== null || isSuspect(lastHeartbeatAt, now) ? 'suspect' : 'live',
       suspect_after_ms: settings.timings.suspectMs,
       device_label: deviceLabel,
+      harness,
+      harness_version: harnessVersion,
+      model,
     });
   }
   return views;
