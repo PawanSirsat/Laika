@@ -1108,7 +1108,7 @@ export function reclaimOfferSteps(_db: Db, _taskId: string, _now: number): void 
   // TODO(LAI-546): refuse `offer_taken`; cancel open and pending-approval offers.
 }
 
-type FreshAgentActor = ResolvedActor & {
+export type FreshAgentActor = ResolvedActor & {
   token: NonNullable<ResolvedActor['token']> & { agent: AgentContext };
 };
 
@@ -1118,9 +1118,14 @@ type FreshAgentActor = ResolvedActor & {
  * `full` — and the agent — active, with today's grants. Each refusal is
  * `403 forbidden` with the reason that names it.
  */
-function reloadAgentActor(db: Db, actor: ResolvedActor, now: number): FreshAgentActor {
+export function reloadAgentActor(
+  db: Db,
+  actor: ResolvedActor,
+  now: number,
+  action: 'task.claim' | 'task.checkpoint.create' = 'task.claim',
+): FreshAgentActor {
   const refuse = (reason: string, message: string) =>
-    new ApiError('forbidden', message, { action: 'task.claim', reason });
+    new ApiError('forbidden', message, { action, reason });
 
   const tokenId = actor.token?.id;
   const token =
@@ -1136,7 +1141,7 @@ function reloadAgentActor(db: Db, actor: ResolvedActor, now: number): FreshAgent
     throw refuse('token_revoked', 'That token is no longer valid');
   }
   if (token.scope !== 'full') {
-    throw refuse('token_read_only', 'Reclaiming needs a token with full scope');
+    throw refuse('token_read_only', 'This needs a token with full scope');
   }
 
   const owner = loadActor(db, token.userId);
