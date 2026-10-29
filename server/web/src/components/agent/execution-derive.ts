@@ -276,6 +276,10 @@ export function claimHistory(events: readonly ActivityEvent[]): ClaimHistory {
 export function changesExecution(event: Pick<ActivityEvent, 'type' | 'payload'>): boolean {
   if (event.type === 'task.claim_expired' || event.type === 'task.claim_reclaimed') return true;
   if (event.type === 'task.agent_selected' || event.type === 'task.status_changed') return true;
+  // A save, and every move of a hand-off or recovery (LAI-549): the drawer's
+  // saves and its hand-off row follow them without a reload.
+  if (event.type === 'task.checkpoint_saved' || event.type === 'task.recovered') return true;
+  if (event.type.startsWith('task.handoff_')) return true;
   return event.type === 'task.updated' && record(event.payload).field === 'claim';
 }
 

@@ -84,16 +84,37 @@ export const NOTE_WORDS: Readonly<Record<NoteState, string>> = {
   missing: 'No continuation note',
 };
 
-/** What a checkpoint's proof is (proposal §4.3.1). Only the first two are drawn today. */
-export type CheckpointVerification = 'verified' | 'pending';
+/**
+ * What a checkpoint's proof is — D-116's four states, `task_checkpoints.
+ * verification` (SPEC §4.70), each worded as §4.70's *What the UI says*.
+ */
+export type CheckpointVerification = 'verified' | 'pending' | 'ref_deleted' | 'uncertain';
 
 export const VERIFICATION_WORDS: Readonly<Record<CheckpointVerification, string>> = {
   verified: 'Verified',
   pending: 'Verification pending',
+  ref_deleted: 'Save removed from GitHub',
+  uncertain: 'Save needs attention — GitHub’s notices do not match a single clean save',
 };
 
-/** No checkpoint at all: never an automatic path (proposal §4.4). */
+/**
+ * `pending` past §9.1.1's ten-minute notice — `pending_notice`, which the
+ * server decides on its own clock, never this page's (SPEC §4.70).
+ */
+export const PENDING_NOTICE_WORDS = 'Verification pending — no push notice from GitHub yet';
+
+/** The pointer §4.70 gives owners and admins beside {@link PENDING_NOTICE_WORDS}. */
+export const PENDING_NOTICE_HINT =
+  'Open the repository webhook’s Recent Deliveries on GitHub, find the push for this save and choose Redeliver.';
+
+/** No checkpoint at all: never an automatic path (SPEC §4.73, proposal §4.4). */
 export const NO_CHECKPOINT = 'Automatic recovery unavailable — no saved checkpoint';
+
+/** Saves exist, and none is verified: still no automatic path (§4.73). */
+export const NO_VERIFIED_CHECKPOINT = 'Automatic recovery unavailable — no verified checkpoint';
+
+/** What a person does instead (§4.73): reassign it, or release it to the backlog. */
+export const RECOVERY_BY_HAND = 'A person reassigns this task or releases it to the backlog.';
 
 /** The dialog's promise, verbatim from proposal §6. */
 export const RECEIVER_MUST_ACCEPT = 'The receiver must accept';

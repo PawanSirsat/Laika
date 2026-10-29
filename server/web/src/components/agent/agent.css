@@ -207,6 +207,45 @@
   font-size: var(--text-small);
 }
 
+/* What a save's notice needs, and what its note says is failing (LAI-549). */
+.exec-checkpoint-hint,
+.exec-checkpoint-failing {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Recovery after an expired claim (LAI-549): a bordered note in words. No
+ * colour carries the meaning — the sentence does, in both themes.
+ */
+.exec-recovery {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+}
+
+.exec-recovery p {
+  margin: 0;
+}
+
+.exec-recovery-path {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.exec-handoff-action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 /* -------------------------------------------------------- hand-off dialog */
 
 .handoff-layer {
@@ -295,6 +334,48 @@
 .handoff-accept {
   margin: 0;
   font-weight: var(--weight-bold);
+}
+
+/* The live offer's status, as the server last reported it (LAI-549). */
+.handoff-status {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+
+/* The agent's note: its own block, drawn as text (D-115 item 7). */
+.handoff-notebox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.handoff-notebox .handoff-note-label,
+.handoff-notebox .handoff-saved {
+  margin: 0;
+}
+
+.handoff-note-fields {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.handoff-note-fields dt {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+}
+
+.handoff-note-fields dd {
+  margin: 0;
+}
+
+.handoff-untrusted-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .handoff-actions {

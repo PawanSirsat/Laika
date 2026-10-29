@@ -119,6 +119,7 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'a React hook — no renderer in this package (CONVENTIONS §4). Its pure half, openUnlistedCount, is tested in test/api/unlisted.test.ts and the sidebar badge in test/browser/capacity.test.ts.',
   ],
   ['api/use-task-detail.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  ['api/use-task-handoffs.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   [
     'components/agent/use-claim-clock.ts',
     // LAI-597. The wait it sets, msUntilSuspect, is mirrored in

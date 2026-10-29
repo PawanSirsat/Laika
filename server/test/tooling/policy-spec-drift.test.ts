@@ -134,6 +134,14 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Create tasks', ['task.create']],
   ['Edit / move any task', ['task.write']],
   ['Claim a task (start_working)', ['task.claim']],
+  ['Save a checkpoint on a task your agent holds', ['task.checkpoint.create']],
+  ['Re-tag a checkpoint one of your agents saved', ['task.checkpoint.retag']],
+  ['Offer a task your agent holds to another agent', ['task.handoff.offer']],
+  ['Approve a cross-owner hand-off', ['task.handoff.approve']],
+  ['Accept a hand-off or recovery offer', ['task.handoff.accept']],
+  ['Decline a hand-off or recovery offer', ['task.handoff.decline']],
+  ['Cancel a hand-off offer', ['task.handoff.cancel']],
+  ["Edit the project's hand-off policy", ['project.handoff_policy.edit']],
   ['Assign a task to someone else', ['task.assign_other']],
   ['Add comment', ['comment.create']],
   ['Edit / delete comment', ['comment.edit', 'comment.delete']],
@@ -387,6 +395,30 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
         expect(can(member('member'), action, { projectId: 'p' })).toBe(true);
         expect(can(member('lead'), action, { projectId: 'p' })).toBe(false);
         expect(can(lead('lead'), action, { projectId: 'p' })).toBe(true);
+      },
+    },
+  ],
+  [
+    "task's assignee",
+    {
+      why: 'A member approves a cross-owner hand-off only on a task assigned to them; `ownerId` is the assignee. Never the receiving agent’s owner is the service’s check (`approver_is_receiver`, §3.2, LAI-546).',
+      verify: (action: Action) => {
+        const member = projectActor('member');
+        expect(can(member, action, { projectId: 'p', ownerId: 'me' })).toBe(true);
+        expect(can(member, action, { projectId: 'p', ownerId: 'someone-else' })).toBe(false);
+        expect(can(member, action, { projectId: 'p' })).toBe(false);
+      },
+    },
+  ],
+  [
+    "own agent's or task's assignee",
+    {
+      why: 'A member cancels an offer a session of their own agent sent, or one on a task assigned to them (§4.73); the service passes either as `ownerId` (§3.2, LAI-546). A lead cancels any.',
+      verify: (action: Action) => {
+        const member = projectActor('member');
+        expect(can(member, action, { projectId: 'p', ownerId: 'me' })).toBe(true);
+        expect(can(member, action, { projectId: 'p', ownerId: 'someone-else' })).toBe(false);
+        expect(can(member, action, { projectId: 'p' })).toBe(false);
       },
     },
   ],

@@ -382,7 +382,7 @@ describe('expiry', () => {
     ).toEqual({ code: 'conflict', reason: 'claim_held' });
   });
 
-  it('TODO(LAI-546): opens no recovery offer yet — the hook is afterClaimExpired', () => {
+  it('opens no recovery offer for a claim that expired with no verified checkpoint (§4.73)', () => {
     const a = agent();
     const id = task();
     startWorking(t.sqlite, t.db, a.actor, id, { now: T0 });
@@ -529,7 +529,7 @@ describe('the explicit reclaim', () => {
     });
   });
 
-  it('TODO(LAI-546): leaves the task’s offers alone — the offer steps are reclaimOfferSteps', () => {
+  it('leaves the task’s work requests alone — the offer steps close only hand-offs and recoveries (§9.1.1)', () => {
     const a = agent();
     const id = task();
     updateTask(t.db, owner, id, { selected_agent_id: a.id, now: T0 });

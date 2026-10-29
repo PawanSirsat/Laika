@@ -1,7 +1,9 @@
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
+import { pruneCheckpoints } from '../services/checkpoints.ts';
 import { claimSettings, expireClaims } from '../services/claims.ts';
+import { expireOffers } from '../services/handoffs.ts';
 import { refitEstimates } from '../services/estimates.ts';
 import { snapshot } from './backup.ts';
 import {
@@ -90,6 +92,16 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
     // Drafts after 30 days, entries after three years (D-088), and once at
     // boot for the reason local activity's runs then.
     { name: 'time.retention', everyMs: DAY, run: (now) => pruneTime(db, now), atStart: true },
+    // Checkpoints of tasks done or cancelled 90 days, with their refs and
+    // transitions (§11.6, D-115 item 9, LAI-545). Laika never deletes a tag.
+    {
+      name: 'checkpoint.retention',
+      everyMs: DAY,
+      run: (now) => {
+        const { checkpoints, orphans } = pruneCheckpoints(db, now);
+        return { changed: checkpoints + orphans };
+      },
+    },
     { name: 'task.stale', everyMs: DAY, run: (now) => flagStaleTasks(db, now) },
     { name: 'invite.expiry', everyMs: HOUR, run: (now) => expireInvites(db, now) },
     // Expired keys, and the pre-LAI-534 rows that may hold secrets — once at
@@ -110,6 +122,16 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       name: 'claim.expiry',
       everyMs: claimSettings().timings.scanMs,
       run: (now) => expireClaims(db, now),
+    },
+    // Live hand-off and recovery offers past `expires_at` become `expired`, a
+    // paused sender resumes or — its lease gone — expires, and a recovery
+    // opens where one is due (§11.6, §4.73, LAI-546). On the claim scan's
+    // cadence. Restart-safe: `expires_at` is a stored timestamp, so the first
+    // run after a restart closes everything that fell due while it was down.
+    {
+      name: 'offer.expiry',
+      everyMs: claimSettings().timings.scanMs,
+      run: (now) => expireOffers(db, now),
     },
     // Sizes and forecasts refitted from each project's history (D-085), and
     // once at boot, so a deploy starts with every task estimated.
