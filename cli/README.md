@@ -714,3 +714,124 @@ claims expire; the watcher can be killed by the OS (sleep, an OOM) and nothing
 renews until the next prompt or tool call restarts it; and a start that keeps
 failing for more than 24 h (the key's replay window) opens a new session when it
 finally gets through.
+
+## `laika agent checkpoint` — save the task's work so another agent can continue it (LAI-547)
+
+A checkpoint is a save an agent makes **on purpose** inside a task its session
+holds (D-115): a work-in-progress commit on the task's own branch, pushed with
+one lightweight tag, then registered on the board. A receiver continues from it
+(LAI-548). The board never fetches anything: a checkpoint is `verified` only by
+GitHub's signed push notice (D-116, D-116a).
+
+```
+laika agent checkpoint save --note-file note.json   # commit, push the branch, push ONE tag, register
+laika agent checkpoint note < note.json              # keep a note for the next (automatic) save
+laika agent checkpoint status                        # retries anything unregistered, then shows verification
+laika agent checkpoint reverify <id>                 # a fresh tag at the same commit (D-116 item 7)
+laika agent checkpoint consent status|on|off         # automatic saves: off until the agent's owner turns them on
+laika agent checkpoints prune --dry-run [--days 90]  # list tags past retention; deletes nothing
+```
+
+### The order
+
+1. **Commit** the work in progress on the task branch.
+2. **Write the record** — the checkpoint id (a ULID the helper mints), the
+   idempotency key and the exact body it will register — to
+   `~/.laika/agent-checkpoints/records/<id>.json` (0600), before anything is sent.
+3. **Push the branch** (`<sha>:refs/heads/<branch>`), then **push the tag**
+   `refs/tags/laika-ckpt/<LAI-NNN>/<id>` at the same commit, **alone in its own
+   push** — GitHub sends no push event for more than three tags at once.
+   Lightweight, never annotated: an annotated tag's notice names the tag
+   object, and the board would read the save as `uncertain`.
+4. **Register** (`POST /tasks/:id/checkpoints`, with the claim's generation).
+   If the board does not answer — a 5xx, a timeout, an answer lost on the way —
+   the record stays at `tag_pushed`, and the next `save`, `status` or hook sends
+   it again **with the same key and the same body**, so the board answers with
+   the one checkpoint it already has. A refusal (a lost claim, the wrong repo)
+   is recorded and not retried.
+
+After registering it prints **"Verification pending"**. `status` asks the
+board each time: **"Verified"** once GitHub's notice arrived, and after ten
+minutes pending (`LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS`, measured by the
+board's clock) **"Verification pending — no push notice from GitHub yet"**,
+with the hint to check the webhook's *Recent Deliveries* and use *Redeliver*,
+or to `reverify`.
+
+### What it refuses
+
+Each is a refusal **before** the step that would change anything; exit code 2.
+
+| Rule | How |
+| --- | --- |
+| Only a task worktree | a linked `git worktree`; the primary checkout only with `git config laika.checkpoint.allowPrimary true` in that repo |
+| Only the task's own branch | not detached, never `master`, `main` or the remote's default branch — asked again at the push itself — and named after the task (`LAI-547-…`) or the branch the task records |
+| Never while git is busy | `index.lock`, `HEAD.lock`, a merge, rebase, cherry-pick, revert or bisect in progress; the helper's own lock beside the git dir keeps two saves apart |
+| Never while a tool is running (automatic saves) | `PreToolUse` marks a tool as running and `PostToolUse` clears it; the save waits up to 30 s for quiet and then gives up |
+| Never `git add -A` | each changed path is staged by name as a `:(literal)` pathspec; ignored files are never candidates; `--file PATH` limits the save to those paths and refuses anything else already staged |
+| Never a secret | a secret-shaped name (`.env`, `*.pem`, `*.key`, `id_rsa`, `.npmrc`, `credentials.json`, …), a file over 1 MB (`--max-file-bytes`), or added lines matching a secret pattern (private keys, AWS, GitHub, Slack, Stripe, Google and API keys, bearer headers, passwords in URLs). **One refused file refuses the whole save, and is named** |
+| Never a force push | every push is one explicit refspec with no `+`; `--force` appears nowhere. A remote that moved on is refused: fetch, merge, save again |
+| Never the repo's own hooks | `core.hooksPath=/dev/null` and `--no-verify` on the helper's commit and pushes: a hook is repo content, and repo content is never run |
+
+### The note
+
+JSON with any of `work_done`, `next_step`, `decisions`, `open_questions` and
+`failing` (known failing tests or builds; a failing test does not stop a
+save), each at most 4000 characters. It is kept **apart from the manifest**
+(the paths and line counts git reports), and it records **which commit it
+describes**: a note given to `save` describes that save; a note kept with
+`note` describes the save made from the HEAD it was written over, and any
+later save carries it as an earlier save's, which the board labels *"Note
+describes an earlier save"*. **A note that matches a secret pattern is
+refused.** That is a mitigation, not a guarantee: no pattern can prove free
+text holds nothing sensitive, and the note is shown to everyone who can read
+the task.
+
+### Automatic saves
+
+**Off until the agent's owner consents** (`laika agent checkpoint consent on`,
+signed in with the owner's password in a terminal — the agent's token cannot
+consent for itself; SPEC §4.75). With consent, `laika agent hooks on`'s hooks
+start a background save after ~10 mutating tool calls (`Edit`, `Write`,
+`MultiEdit`, `NotebookEdit`, `Bash`, Codex's `apply_patch` and shell tools) or
+~2 minutes after the first unsaved one, at `Stop`, and before the session ends
+(the end waits for it, because the save needs the live claim). The background
+save reads consent from the board **every time**; withdrawn, nothing is
+saved, and manual saves keep working. A save that is refused is not retried
+for two minutes. `PreToolUse` and `Stop` print nothing, so they never decide a
+permission or keep a turn going.
+
+The background child gets an allowlisted environment: the session helper's,
+plus `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`, `GIT_SSH`, `XDG_CONFIG_HOME`, `USER`
+and `LOGNAME` so git can reach the remote — never a token. git itself runs with
+`LAIKA_AGENT_TOKEN`, `LAIKA_TOKEN` and every other `GIT_*` override removed,
+and `GIT_TERMINAL_PROMPT=0`, so a background push fails rather than waits for a
+password. The agent's token is handled exactly as the session helper handles
+it (above): a header, a child's stdin, never argv, a record or the log.
+
+**Prune.** `laika agent checkpoints prune --dry-run` lists the `laika-ckpt/`
+tags on the remote whose task the board shows as done or cancelled at least
+`--days` (90) ago. There is no other mode: Laika never deletes a tag, and an
+operator deletes them deliberately under the tag ruleset's bypass (D-116 item
+2).
+
+### Capability matrix, checkpoints
+
+Same cells as the session matrix above. "Tested" here means against a real
+board on its own port and a real bare remote (`agent-checkpoint-e2e.test.ts`);
+the harness rows are about the harness itself.
+
+| Capability | Claude Code 2.1.280 | Codex 0.162.1 |
+| --- | --- | --- |
+| Manual `checkpoint save` / `status` / `reverify` (the CLI, any harness) | Verified-and-tested | Verified-and-tested (the CLI does not depend on the harness) |
+| Push, then one tag alone, then register; retry with the same key | Verified-and-tested (the remote's `pre-receive` log shows one ref per push) | Verified-and-tested (same) |
+| Consent read before every automatic save | Verified-and-tested | Verified-and-tested (same engine) |
+| `PreToolUse` / `PostToolUse` drive the trigger and the in-flight check | Documented-not-tested: the hook entry was run with Claude Code's documented payloads by the test, not fired by a real `claude` process | Documented-not-tested. Codex runs a new hook only after you trust it in `/hooks`, which this run could not do |
+| `Stop` saves what is unsaved | Documented-not-tested | Documented-not-tested |
+| Save before `SessionEnd` ends the session | Documented-not-tested | Documented-not-tested (Codex's end is advisory: a missed end leaves the save to the next session) |
+| GitHub's push notice verifies the save | Unverified here: the bare remote sends no webhook. LAI-545's criteria cover it against a real repository (LAIKA-797) | Unverified here (same) |
+
+What is **not** guaranteed: a save the hooks never trigger (a harness that does
+not fire `Stop`, a crash before `SessionEnd`) is simply not made — the work is
+still on disk and the next session's save picks it up; a remote that is down
+leaves the record to be pushed by a later run; and a note's secret check can
+miss a secret it has no pattern for.
