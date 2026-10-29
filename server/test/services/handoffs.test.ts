@@ -753,6 +753,21 @@ describe('declining and cancelling', () => {
     });
   });
 
+  it('the task’s assignee may cancel an offer another person’s agent sent (§4.71)', () => {
+    const a = agentOf(owner, 'A');
+    const b = agentOf(owner, 'B');
+    const { person } = member();
+    const id = task();
+    const held = claim(a, id);
+    const { offer: made } = offer(a, id, 1, b.id, save(a, id, held.generation).id);
+    t.db.update(tasks).set({ assigneeId: person.userId }).where(eq(tasks.id, id)).run();
+    expect(cancelHandoff(t.sqlite, t.db, person, made.id, T0 + 1)).toMatchObject({
+      state: 'cancelled',
+      closed_reason: 'withdrawn',
+    });
+    expect(claimsOf(id)).toEqual([[1, 'active']]);
+  });
+
   it('another member may not cancel an offer their agent did not send', () => {
     const a = agentOf(owner, 'A');
     const b = agentOf(owner, 'B');

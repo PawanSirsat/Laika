@@ -430,7 +430,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Approve a cross-owner hand-off | ✓ | task's assignee | — |
 | Accept a hand-off or recovery offer | ✓ | ✓ | — |
 | Decline a hand-off or recovery offer | ✓ | ✓ | — |
-| Cancel a hand-off offer | ✓ | own agent's | — |
+| Cancel a hand-off offer | ✓ | own agent's or task's assignee | — |
 | Edit the project's hand-off policy | ✓ | — | — |
 | Assign a task to someone else | ✓ | ✓ | — |
 | Add comment | ✓ | ✓ | — |
@@ -476,9 +476,11 @@ claim, because it changes no task, only which ref is the checkpoint's newest. **
 person's, signed in** (session only): the task's assignee, or a lead (an org
 Owner or Admin is an implicit lead), and **never the owner of the receiving
 agent** — `403`, `reason: approver_is_receiver` — so nobody approves a
-transfer to themselves. *Cancel*'s *own agent's* is an offer sent by a session
-of the caller's own agent; a lead cancels any. Reading checkpoints and offers
-follows *Read tasks*.
+transfer to themselves. *Cancel*'s *own agent's or task's assignee* is an
+offer sent by a session of the caller's own agent, or any offer on a task
+assigned to the caller (§4.71: the sender, the task's assignee or a lead
+cancels); a lead cancels any. Reading checkpoints and offers follows *Read
+tasks*.
 
 ### 3.3 The `can()` module is the only authority
 
@@ -3163,6 +3165,11 @@ credential is not an org credential with a project filter.
   | `403 forbidden` | `approver_is_receiver` | the approver owns the receiving agent |
   | `403 forbidden` | `not_an_agent` | a session or a legacy token saving, offering, accepting or declining |
   | `403 forbidden` | `agent_revoked` | a revoked agent's offer, accept, decline or save |
+  | `403 forbidden` | `not_the_receiver` | an accept or decline by an agent the offer is not addressed to — a named offer's other agents, or an unnamed recovery's ineligible ones (§4.71) |
+  | `403 forbidden` | `user_inactive` | a person deactivated after the request was resolved: approve, cancel and the policy read the person again inside their transaction (§4.71) |
+  | `422 unprocessable` | `recovery_unnamed` | a decline of an unnamed recovery — an agent that does not want it does not accept it (§4.71) |
+  | `422 unprocessable` | `work_request` | an approve, accept, decline or cancel naming a work request: it is accepted by claiming the task and withdrawn by changing its agent (§4.5) |
+  | `429 rate_limited` | `handoff_rate` | the agent's hand-off bucket is spent — making, accepting, declining or cancelling an offer (§6.3 *Rate limits*); with `Retry-After` |
 
   A `422` on a field also carries `field`, as every validation refusal does.
 - **Idempotency**: `POST` accepts `Idempotency-Key`. Only these create routes
