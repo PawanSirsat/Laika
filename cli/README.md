@@ -822,9 +822,9 @@ the harness rows are about the harness itself.
 
 | Capability | Claude Code 2.1.280 | Codex 0.162.1 |
 | --- | --- | --- |
-| Manual `checkpoint save` / `status` / `reverify` (the CLI, any harness) | Verified-and-tested | Verified-and-tested (the CLI does not depend on the harness) |
-| Push, then one tag alone, then register; retry with the same key | Verified-and-tested (the remote's `pre-receive` log shows one ref per push) | Verified-and-tested (same) |
-| Consent read before every automatic save | Verified-and-tested | Verified-and-tested (same engine) |
+| Manual `checkpoint save` / `status` / `reverify` (the CLI, any harness) | Verified-and-tested | Documented-not-tested: the CLI is the same for both, but the tests used a `claude-code` credential, not a Codex one |
+| Push, then one tag alone, then register; retry with the same key | Verified-and-tested (the remote's `pre-receive` log shows one ref per push) | Documented-not-tested (the same engine; no Codex run) |
+| Consent read before every automatic save | Verified-and-tested | Documented-not-tested (the same engine; no Codex run) |
 | `PreToolUse` / `PostToolUse` drive the trigger and the in-flight check | Documented-not-tested: the hook entry was run with Claude Code's documented payloads by the test, not fired by a real `claude` process | Documented-not-tested. Codex runs a new hook only after you trust it in `/hooks`, which this run could not do |
 | `Stop` saves what is unsaved | Documented-not-tested | Documented-not-tested |
 | Save before `SessionEnd` ends the session | Documented-not-tested | Documented-not-tested (Codex's end is advisory: a missed end leaves the save to the next session) |
