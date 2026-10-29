@@ -34,6 +34,15 @@ import {
   statePath,
   writeState,
 } from './agent-session.ts';
+import {
+  autoCheckpoint,
+  clearInflight,
+  markInflight,
+  MUTATING_TOOLS,
+  readActivity,
+  shouldTrigger,
+  writeActivity,
+} from './agent-checkpoint.ts';
 
 /**
  * `laika agent …` — the local helper (proposal §4.7, LAI-542).
@@ -97,6 +106,8 @@ const USAGE = [
   '  laika agent session heartbeat --harness H --harness-session ID',
   '  laika agent session end --harness H --harness-session ID',
   '  laika agent session status',
+  '  laika agent checkpoint save|note|status|reverify|consent   (laika agent checkpoint --help)',
+  '  laika agent checkpoints prune --dry-run',
   '',
   'The token is the agent’s, from the Agents screen — never your own. It is kept',
   'in ~/.laika/agents/<harness>.json (0600), or read from LAIKA_AGENT_TOKEN, and',
@@ -130,11 +141,28 @@ export function deps(io: AgentIo): Deps {
  */
 const CHILD_ENV = ['HOME', 'PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'LAIKA_AGENT_HEARTBEAT_SECONDS'];
 
+/**
+ * A background save also pushes, so it keeps what git needs to reach the
+ * remote — the ssh agent's socket and an ssh command — and the checkpoint
+ * settings. Still an allowlist: no token of any name (LAI-547).
+ */
+const CHECKPOINT_CHILD_ENV = [
+  ...CHILD_ENV,
+  'SSH_AUTH_SOCK',
+  'GIT_SSH_COMMAND',
+  'GIT_SSH',
+  'XDG_CONFIG_HOME',
+  'USER',
+  'LOGNAME',
+  'LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS',
+];
+
 export function childEnv(
   env: Readonly<Record<string, string | undefined>>,
+  names: readonly string[] = CHILD_ENV,
 ): Record<string, string> {
   const next: Record<string, string> = {};
-  for (const name of CHILD_ENV) {
+  for (const name of names) {
     const value = env[name];
     if (value !== undefined) next[name] = value;
   }
@@ -147,7 +175,7 @@ export function childEnv(
  */
 export function spawnChild(
   io: AgentIo,
-  mode: '_watch' | '_end',
+  mode: '_watch' | '_end' | '_checkpoint',
   harness: Harness,
   harnessSessionId: string,
   credential: AgentCredential,
@@ -155,7 +183,7 @@ export function spawnChild(
   const child = spawn(process.execPath, [MAIN, mode, harness, harnessSessionId], {
     detached: true,
     stdio: ['pipe', 'ignore', 'ignore'],
-    env: childEnv(io.env),
+    env: childEnv(io.env, mode === '_watch' ? CHILD_ENV : CHECKPOINT_CHILD_ENV),
   });
   child.on('error', () => undefined);
   child.stdin.on('error', () => undefined);
@@ -186,7 +214,9 @@ function ensureWatcher(io: AgentIo, state: SessionState, credential: AgentCreden
 const HOOK_EVENTS = {
   'session-start': 'SessionStart',
   prompt: 'UserPromptSubmit',
+  'pre-tool': 'PreToolUse',
   tool: 'PostToolUse',
+  stop: 'Stop',
   'session-end': 'SessionEnd',
 } as const;
 
@@ -235,6 +265,53 @@ function hookInput(raw: string): Record<string, unknown> | undefined {
 function hookSessionId(input: Readonly<Record<string, unknown>>): string | undefined {
   const id = input.session_id;
   return typeof id === 'string' && id !== '' && id.length <= 512 ? id : undefined;
+}
+
+/** One tool call's key, the same at `PreToolUse` and `PostToolUse`. */
+function toolKey(input: Readonly<Record<string, unknown>>): string {
+  const id = input.tool_use_id;
+  if (typeof id === 'string' && id !== '' && id.length <= 512) return id;
+  return `${String(input.tool_name)}:${JSON.stringify(input.tool_input ?? null).slice(0, 4096)}`;
+}
+
+/**
+ * The checkpoint half of a hook (LAI-547): no network, a few small files.
+ * `PreToolUse` marks a tool as running; `PostToolUse` clears it and counts a
+ * mutating call; when {@link shouldTrigger} says so — or at `Stop` — a
+ * background `_checkpoint` child is started, which asks the board for consent
+ * before it saves anything.
+ */
+function noteActivity(
+  io: AgentIo,
+  event: HookEvent,
+  harness: Harness,
+  harnessSessionId: string,
+  input: Readonly<Record<string, unknown>>,
+  credential: AgentCredential,
+): void {
+  const now = Date.now();
+  if (event === 'pre-tool') {
+    markInflight(io.home, harness, harnessSessionId, toolKey(input));
+    return;
+  }
+  const activity = readActivity(io.home, harness, harnessSessionId);
+  if (typeof input.cwd === 'string' && input.cwd.startsWith('/') && input.cwd.length < 4096) {
+    activity.cwd = input.cwd;
+  }
+  if (event === 'tool') {
+    clearInflight(io.home, harness, harnessSessionId, toolKey(input));
+    if (typeof input.tool_name === 'string' && MUTATING_TOOLS.has(input.tool_name)) {
+      activity.mutations += 1;
+      activity.first_mutation_at ??= now;
+    }
+  }
+  const trigger = shouldTrigger(activity, now, event === 'stop');
+  if (trigger) activity.last_attempt_at = now;
+  writeActivity(io.home, harness, harnessSessionId, activity);
+  if (trigger) {
+    const pid = spawnChild(io, '_checkpoint', harness, harnessSessionId, credential);
+    log(io.home, `auto checkpoint ${harness}: started pid=${String(pid ?? 0)} at ${event}`);
+  }
 }
 
 async function open(
@@ -287,6 +364,17 @@ export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Pro
     const state = readState(path);
     if (state?.status === 'live') spawnChild(io, '_end', harness, harnessSessionId, credential);
     return '';
+  }
+
+  if (event === 'pre-tool' || event === 'tool' || event === 'stop') {
+    try {
+      noteActivity(io, event, harness, harnessSessionId, input, credential);
+    } catch (cause) {
+      log(io.home, `checkpoint hook ${event}: ${cause instanceof Error ? cause.name : 'error'}`);
+    }
+    // `PreToolUse` and `Stop` print nothing: their output can decide a
+    // permission or keep the model going, and these hooks decide neither.
+    if (event !== 'tool') return '';
   }
 
   let state = readState(path);
@@ -438,7 +526,7 @@ async function session(io: AgentIo, argv: readonly string[]): Promise<number> {
 /** `_watch` and `_end`: the background children. The credential arrives on stdin. */
 async function child(
   io: AgentIo,
-  mode: '_watch' | '_end',
+  mode: '_watch' | '_end' | '_checkpoint',
   argv: readonly string[],
 ): Promise<number> {
   const [harness, id] = argv;
@@ -453,6 +541,21 @@ async function child(
   }
   const path = statePath(io.home, harness, id);
   const d = deps(io);
+
+  if (mode === '_checkpoint' || mode === '_end') {
+    // The session's claims end with it, and a save needs the live claim: so
+    // the last automatic save runs first, then the end (LAI-547).
+    const { checkpointDeps } = await import('./agent-checkpoint-cli.ts');
+    const outcome = await autoCheckpoint(
+      checkpointDeps(io),
+      harness,
+      id,
+      credential,
+      mode === '_end' ? 10_000 : 30_000,
+    );
+    log(io.home, `auto checkpoint ${harness}: ${outcome} (${mode})`);
+    if (mode === '_checkpoint') return 0;
+  }
 
   if (mode === '_end') {
     await endSession(d, path, credential);
@@ -496,8 +599,14 @@ export async function agent(argv: readonly string[], io: AgentIo = CONSOLE): Pro
     return 0;
   }
 
-  if (command === '_watch' || command === '_end') return child(io, command, argv.slice(1));
+  if (command === '_watch' || command === '_end' || command === '_checkpoint') {
+    return child(io, command, argv.slice(1));
+  }
   if (command === 'session') return session(io, argv.slice(1));
+  if (command === 'checkpoint' || command === 'checkpoints') {
+    const { checkpointCommand } = await import('./agent-checkpoint-cli.ts');
+    return checkpointCommand(io, command, argv.slice(1));
+  }
 
   if (command === 'login' || command === 'logout' || command === 'hooks') {
     const { setup } = await import('./agent-setup.ts');

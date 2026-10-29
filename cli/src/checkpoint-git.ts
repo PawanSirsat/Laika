@@ -1,0 +1,642 @@
+import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+
+/**
+ * The git half of the checkpoint helper (LAI-547, proposal §4.3.1, D-115,
+ * D-116). Every rule that keeps a save from hurting the repo lives here, each
+ * a refusal with a reason rather than a best effort:
+ *
+ * - **Only an isolated task worktree** — a linked `git worktree`, never the
+ *   primary checkout unless `git config laika.checkpoint.allowPrimary true`
+ *   says so for that repo — **on a dedicated branch**: not detached, not
+ *   `master`, `main` or the remote's default branch.
+ * - **Never while git is busy**: an `index.lock`, a `HEAD.lock`, or a merge,
+ *   rebase, cherry-pick, revert or bisect in progress is a refusal, and the
+ *   helper's own lock keeps two saves apart.
+ * - **Never a blind `git add -A`.** Each path is staged by name, as a literal
+ *   pathspec, after it passes the deny list (secret-shaped names), the size
+ *   cap and the secret patterns on what it adds. Ignored files are never
+ *   candidates. One refused file refuses the whole save and is named.
+ * - **Never a force push and never a protected branch.** Every push names its
+ *   refspec in full, with no `+`, and `--force` appears nowhere in this file;
+ *   a remote that has moved on is a refusal, not an overwrite.
+ *
+ * **Untrusted text is never executed.** Branch names, paths and notes go to
+ * git as arguments of `execFileSync` — no shell — after `--`, and the repo's
+ * own hooks are switched off for the helper's commit and pushes
+ * (`core.hooksPath=/dev/null`, `--no-verify`), because a hook is repo content.
+ */
+
+export class Refusal extends Error {
+  readonly code: string;
+  readonly paths: readonly string[];
+
+  constructor(message: string, code: string, paths: readonly string[] = []) {
+    super(message);
+    this.name = 'Refusal';
+    this.code = code;
+    this.paths = paths;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Running git                                                                */
+/* -------------------------------------------------------------------------- */
+
+const GIT_TIMEOUT_MS = 120_000;
+
+/**
+ * The environment git runs with: the caller's, **less any Laika token**, with
+ * prompts off (a background save must fail, not wait for a password) and
+ * messages in English so a refusal can be read.
+ */
+export function gitEnv(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined) continue;
+    if (name === 'LAIKA_AGENT_TOKEN' || name === 'LAIKA_TOKEN') continue;
+    if (name.startsWith('GIT_') && name !== 'GIT_SSH_COMMAND' && name !== 'GIT_SSH') continue;
+    next[name] = value;
+  }
+  next.GIT_TERMINAL_PROMPT = '0';
+  next.LC_ALL = 'C';
+  next.LANG = 'C';
+  return next;
+}
+
+export interface GitResult {
+  readonly code: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export type GitRunner = (cwd: string, args: readonly string[]) => GitResult;
+
+export function gitRunner(env: Readonly<Record<string, string | undefined>>): GitRunner {
+  const clean = gitEnv(env);
+  return (cwd, args) => {
+    try {
+      const stdout = execFileSync('git', args, {
+        cwd,
+        env: clean,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: 64 * 1024 * 1024,
+      });
+      return { code: 0, stdout, stderr: '' };
+    } catch (cause) {
+      const e = cause as { status?: number | null; stdout?: string; stderr?: string };
+      return { code: e.status ?? 1, stdout: e.stdout ?? '', stderr: e.stderr ?? '' };
+    }
+  };
+}
+
+/** Switches off every hook for one git call: a hook is repo content, and is never run. */
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null'];
+
+function must(git: GitRunner, cwd: string, args: readonly string[]): string {
+  const r = git(cwd, args);
+  if (r.code !== 0) {
+    throw new Refusal(
+      `git ${args[0] === '-c' ? (args[2] ?? '') : (args[0] ?? '')} failed: ${firstLine(r.stderr)}`,
+      'git_failed',
+    );
+  }
+  return r.stdout;
+}
+
+const firstLine = (text: string): string => text.trim().split('\n')[0]?.slice(0, 300) ?? '';
+
+/** A literal pathspec: a file name is never read as a glob or as magic. */
+export const literal = (path: string): string => `:(literal)${path}`;
+
+/* -------------------------------------------------------------------------- */
+/* Where we are                                                               */
+/* -------------------------------------------------------------------------- */
+
+export interface Worktree {
+  readonly top: string;
+  readonly gitDir: string;
+  readonly commonDir: string;
+  readonly primary: boolean;
+}
+
+export function worktreeAt(git: GitRunner, cwd: string): Worktree {
+  const r = git(cwd, ['rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-common-dir']);
+  if (r.code !== 0) throw new Refusal('not inside a git repository', 'not_a_repo');
+  const [top = '', gitDir = '', commonRaw = ''] = r.stdout.trim().split('\n');
+  const commonDir = isAbsolute(commonRaw) ? commonRaw : resolve(top, commonRaw);
+  return { top, gitDir, commonDir, primary: resolve(gitDir) === resolve(commonDir) };
+}
+
+function configBool(git: GitRunner, cwd: string, key: string): boolean {
+  const r = git(cwd, ['config', '--type=bool', '--get', key]);
+  return r.code === 0 && r.stdout.trim() === 'true';
+}
+
+export function configValue(git: GitRunner, cwd: string, key: string): string | undefined {
+  const r = git(cwd, ['config', '--get', key]);
+  const value = r.stdout.trim();
+  return r.code === 0 && value !== '' ? value : undefined;
+}
+
+/** Refuses the primary checkout unless this repo's own config allows it. */
+export function assertIsolated(git: GitRunner, wt: Worktree): void {
+  if (wt.primary && !configBool(git, wt.top, 'laika.checkpoint.allowPrimary')) {
+    throw new Refusal(
+      `${wt.top} is the repository's primary checkout. Checkpoints run only in a task's own ` +
+        'worktree (`git worktree add -b LAI-NNN-name ../repo-LAI-NNN`); to allow this checkout, ' +
+        'run `git config laika.checkpoint.allowPrimary true` in it.',
+      'primary_checkout',
+    );
+  }
+}
+
+/** Never these, whatever the remote says its default is. */
+export const PROTECTED_BRANCHES: readonly string[] = ['master', 'main'];
+
+export function currentBranch(git: GitRunner, wt: Worktree): string {
+  const r = git(wt.top, ['symbolic-ref', '-q', '--short', 'HEAD']);
+  const branch = r.stdout.trim();
+  if (r.code !== 0 || branch === '') {
+    throw new Refusal('HEAD is detached: a checkpoint saves a branch', 'detached_head');
+  }
+  return branch;
+}
+
+/** The remote a branch pushes to: its configured one, else `origin`. */
+export function remoteFor(git: GitRunner, wt: Worktree, branch: string): string {
+  const remote = configValue(git, wt.top, `branch.${branch}.remote`) ?? 'origin';
+  if (remote === '.' || !/^[A-Za-z0-9._-]{1,100}$/.test(remote)) {
+    throw new Refusal(`branch ${branch} pushes to "${remote}", which is not a remote`, 'no_remote');
+  }
+  if (git(wt.top, ['remote', 'get-url', remote]).code !== 0) {
+    throw new Refusal(`there is no remote named ${remote}`, 'no_remote');
+  }
+  if (configBool(git, wt.top, `remote.${remote}.mirror`)) {
+    throw new Refusal(
+      `remote ${remote} is a mirror: a push to it would overwrite every ref`,
+      'mirror_remote',
+    );
+  }
+  return remote;
+}
+
+/** The remote's default branch as this clone last saw it (`refs/remotes/<r>/HEAD`). */
+export function remoteDefault(git: GitRunner, wt: Worktree, remote: string): string | undefined {
+  const r = git(wt.top, ['symbolic-ref', '-q', '--short', `refs/remotes/${remote}/HEAD`]);
+  const full = r.stdout.trim();
+  return r.code === 0 && full.startsWith(`${remote}/`) ? full.slice(remote.length + 1) : undefined;
+}
+
+export function assertWorkBranch(branch: string, remoteDefaultBranch: string | undefined): void {
+  const protectedNames = new Set([
+    ...PROTECTED_BRANCHES,
+    ...(remoteDefaultBranch === undefined ? [] : [remoteDefaultBranch]),
+  ]);
+  if (protectedNames.has(branch)) {
+    throw new Refusal(
+      `${branch} is a protected branch: checkpoints never commit to or push it. ` +
+        'Work on the task’s own branch, LAI-NNN-short-name.',
+      'protected_branch',
+    );
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Busy                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/** What git leaves in a worktree's git dir while an operation is running. */
+const BUSY_MARKERS: readonly (readonly [string, string])[] = [
+  ['index.lock', 'another git process holds index.lock'],
+  ['HEAD.lock', 'another git process holds HEAD.lock'],
+  ['MERGE_HEAD', 'a merge is in progress'],
+  ['CHERRY_PICK_HEAD', 'a cherry-pick is in progress'],
+  ['REVERT_HEAD', 'a revert is in progress'],
+  ['rebase-merge', 'a rebase is in progress'],
+  ['rebase-apply', 'a rebase or `git am` is in progress'],
+  ['BISECT_LOG', 'a bisect is in progress'],
+];
+
+export function busyReason(wt: Worktree): string | undefined {
+  for (const [name, why] of BUSY_MARKERS) {
+    if (existsSync(join(wt.gitDir, name))) return `${why} (${join(wt.gitDir, name)})`;
+  }
+  return undefined;
+}
+
+export function assertNotBusy(wt: Worktree): void {
+  const why = busyReason(wt);
+  if (why !== undefined) {
+    throw new Refusal(
+      `git is busy here — ${why}. Nothing was staged, committed or pushed; try again when it finishes.`,
+      'git_busy',
+    );
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Secrets                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * File names that are refused whatever they hold. Matched on the base name,
+ * case-insensitively, except where a directory is part of the shape.
+ */
+const DENY_NAMES: readonly RegExp[] = [
+  /^\.env$/i,
+  /^\.env\.(?!example$|sample$|template$|dist$)[^/]+$/i,
+  /\.(pem|key|p12|pfx|jks|keystore|kdbx|ppk|asc|gpg|tfstate|tfvars)$/i,
+  /^id_(rsa|dsa|ecdsa|ed25519)(?!.*\.pub$)/i,
+  /^\.(npmrc|pypirc|netrc|git-credentials|htpasswd|pgpass)$/i,
+  /^(credentials|secrets?)(\.[a-z0-9]+)?$/i,
+  /^service[-_]?account.*\.json$/i,
+];
+
+const DENY_PATHS: readonly RegExp[] = [/(^|\/)\.aws\/(credentials|config)$/, /(^|\/)\.laika\//];
+
+export function deniedName(path: string): boolean {
+  const name = basename(path);
+  return DENY_NAMES.some((re) => re.test(name)) || DENY_PATHS.some((re) => re.test(path));
+}
+
+/**
+ * Secret-shaped text: the patterns a save's added lines, and its continuation
+ * note, are checked against (D-115 item 5). **A mitigation, not a guarantee**:
+ * no pattern can prove free text holds nothing sensitive.
+ */
+export const SECRET_PATTERNS: readonly (readonly [string, RegExp])[] = [
+  ['a private key', /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/],
+  ['an AWS access key id', /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
+  ['a GitHub token', /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})\b/],
+  ['a Slack token', /\bxox[abprs]-[A-Za-z0-9-]{10,}/],
+  ['an API secret key', /\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{32,}/],
+  ['a Stripe live key', /\b(?:sk|rk)_live_[A-Za-z0-9]{20,}/],
+  ['a Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
+  ['a bearer credential', /\bAuthorization:\s*Bearer\s+[A-Za-z0-9._~+/-]{20,}/i],
+  ['a URL with a password', /\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s:@]{6,}@[^/\s]+/i],
+];
+
+/** What the text looks like it holds, or `undefined`. */
+export function secretIn(text: string): string | undefined {
+  for (const [what, re] of SECRET_PATTERNS) if (re.test(text)) return what;
+  return undefined;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Staging                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export const DEFAULT_MAX_FILE_BYTES = 1024 * 1024;
+export const MAX_CHANGED_FILES = 1000;
+
+interface Change {
+  readonly path: string;
+  readonly deleted: boolean;
+  readonly untracked: boolean;
+}
+
+/** `git status --porcelain -z`: every change, tracked or not. Ignored files are never listed. */
+export function changes(git: GitRunner, wt: Worktree): Change[] {
+  const out = must(git, wt.top, [
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+    '--no-renames',
+    '--ignore-submodules=all',
+  ]);
+  const list: Change[] = [];
+  for (const entry of out.split('\0')) {
+    if (entry.length < 4) continue;
+    const xy = entry.slice(0, 2);
+    const path = entry.slice(3);
+    list.push({
+      path,
+      untracked: xy === '??',
+      deleted: xy.includes('D'),
+    });
+  }
+  return list;
+}
+
+export interface StageOptions {
+  /** Only these paths (relative to the worktree's top); otherwise every change. */
+  readonly only?: readonly string[];
+  readonly maxFileBytes: number;
+}
+
+/** What a tracked file's change adds, line by line; the whole file for a new one. */
+function addedText(git: GitRunner, wt: Worktree, change: Change, hasHead: boolean): string {
+  const full = join(wt.top, change.path);
+  if (change.untracked || !hasHead) return readFileSync(full, 'latin1');
+  const r = git(wt.top, [
+    'diff',
+    'HEAD',
+    '--no-ext-diff',
+    '--no-textconv',
+    '--no-color',
+    '-U0',
+    '--',
+    literal(change.path),
+  ]);
+  if (/^Binary files /m.test(r.stdout) || r.stdout === '') return readFileSync(full, 'latin1');
+  return r.stdout
+    .split('\n')
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .map((line) => line.slice(1))
+    .join('\n');
+}
+
+function inside(top: string, path: string): string | undefined {
+  const rel = relative(top, resolve(top, path));
+  return rel === '' || rel.startsWith(`..${sep}`) || rel === '..' || isAbsolute(rel)
+    ? undefined
+    : rel.split(sep).join('/');
+}
+
+/**
+ * Checks every candidate and, only when all pass, stages them by name.
+ * Returns the staged paths. **Throws before staging anything** when one is
+ * refused, naming each refused path.
+ */
+export function stageSafely(git: GitRunner, wt: Worktree, options: StageOptions): string[] {
+  let candidates = changes(git, wt);
+  if (options.only !== undefined) {
+    const wanted = new Set<string>();
+    for (const raw of options.only) {
+      const rel = inside(wt.top, raw);
+      if (rel === undefined) {
+        throw new Refusal(`${raw} is outside this worktree`, 'outside_worktree', [raw]);
+      }
+      wanted.add(rel);
+    }
+    const ignored = [...wanted].filter(
+      (p) => git(wt.top, ['check-ignore', '-q', '--', p]).code === 0,
+    );
+    if (ignored.length > 0) {
+      throw new Refusal(
+        `refused: ${ignored.join(', ')} ${ignored.length === 1 ? 'is' : 'are'} gitignored, and a checkpoint never stages an ignored file`,
+        'ignored_file',
+        ignored,
+      );
+    }
+    // Whatever is already staged outside the list would ride along in the commit.
+    const staged = must(git, wt.top, ['diff', '--cached', '--name-only', '-z', '--no-renames'])
+      .split('\0')
+      .filter((p) => p !== '' && !wanted.has(p));
+    if (staged.length > 0) {
+      throw new Refusal(
+        `refused: ${staged.join(', ')} ${staged.length === 1 ? 'is' : 'are'} staged but not in --files; unstage or list them`,
+        'staged_outside_list',
+        staged,
+      );
+    }
+    candidates = candidates.filter((c) => wanted.has(c.path));
+  }
+  if (candidates.length > MAX_CHANGED_FILES) {
+    throw new Refusal(
+      `refused: ${String(candidates.length)} changed files is more than a checkpoint takes ` +
+        `(${String(MAX_CHANGED_FILES)}). Is a build output missing from .gitignore?`,
+      'too_many_files',
+    );
+  }
+
+  const hasHead = git(wt.top, ['rev-parse', '-q', '--verify', 'HEAD^{commit}']).code === 0;
+  const refused: string[] = [];
+  const why: string[] = [];
+  for (const change of candidates) {
+    if (change.deleted) continue;
+    if (deniedName(change.path)) {
+      refused.push(change.path);
+      why.push(`${change.path} (a secret-shaped file name)`);
+      continue;
+    }
+    let stat;
+    try {
+      stat = lstatSync(join(wt.top, change.path));
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) continue;
+    if (stat.size > options.maxFileBytes) {
+      refused.push(change.path);
+      why.push(
+        `${change.path} (${String(stat.size)} bytes, over the ${String(options.maxFileBytes)}-byte cap)`,
+      );
+      continue;
+    }
+    if (!stat.isFile()) continue;
+    const found = secretIn(addedText(git, wt, change, hasHead));
+    if (found !== undefined) {
+      refused.push(change.path);
+      why.push(`${change.path} (looks like it holds ${found})`);
+    }
+  }
+  if (refused.length > 0) {
+    throw new Refusal(
+      `refused — nothing was staged, committed or pushed. ${why.join('; ')}.`,
+      'secret_refused',
+      refused,
+    );
+  }
+
+  const paths = candidates.map((c) => c.path);
+  for (let at = 0; at < paths.length; at += 200) {
+    must(git, wt.top, ['add', '--', ...paths.slice(at, at + 200).map(literal)]);
+  }
+  return paths;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Committing and the manifest                                                */
+/* -------------------------------------------------------------------------- */
+
+/** Commits what is staged, with the repo's hooks off. `undefined` when nothing was. */
+export function commitStaged(git: GitRunner, wt: Worktree, message: string): string | undefined {
+  if (git(wt.top, ['diff', '--cached', '--quiet']).code === 0) return undefined;
+  must(git, wt.top, [...NO_HOOKS, 'commit', '--no-verify', '--quiet', '-m', message]);
+  return headSha(git, wt);
+}
+
+export function headSha(git: GitRunner, wt: Worktree): string {
+  const sha = must(git, wt.top, ['rev-parse', '--verify', 'HEAD^{commit}']).trim();
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Refusal('HEAD is not a commit', 'no_commit');
+  return sha;
+}
+
+export interface ManifestEntry {
+  readonly path: string;
+  readonly added: number;
+  readonly removed: number;
+}
+
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+/**
+ * The files the branch changed, with line counts — **names only** (D-115
+ * item 4): against where it left the remote's default branch, or its parent
+ * when that cannot be told.
+ */
+export function manifest(
+  git: GitRunner,
+  wt: Worktree,
+  sha: string,
+  remote: string,
+  base: string | undefined,
+): ManifestEntry[] {
+  let from: string | undefined;
+  if (base !== undefined) {
+    const r = git(wt.top, ['merge-base', sha, `refs/remotes/${remote}/${base}`]);
+    if (r.code === 0) from = r.stdout.trim();
+  }
+  if (from === undefined) {
+    const parent = git(wt.top, ['rev-parse', '-q', '--verify', `${sha}^1`]);
+    from = parent.code === 0 ? parent.stdout.trim() : EMPTY_TREE;
+  }
+  const out = must(git, wt.top, ['diff', '--numstat', '-z', '--no-renames', from, sha]);
+  const entries: ManifestEntry[] = [];
+  for (const record of out.split('\0')) {
+    const m = /^(\d+|-)\t(\d+|-)\t(.+)$/s.exec(record);
+    if (m === null) continue;
+    entries.push({
+      path: m[3] ?? '',
+      added: m[1] === '-' ? 0 : Number(m[1]),
+      removed: m[2] === '-' ? 0 : Number(m[2]),
+    });
+  }
+  return entries.slice(0, MAX_CHANGED_FILES).filter((e) => e.path.length <= 1024);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Pushing                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export const TAG_PREFIX = 'refs/tags/laika-ckpt/';
+
+/**
+ * One ref, one push, no `+`, no `--force`: the only shape a push here takes.
+ * A rejection — the remote moved on, or a ruleset refused — is a refusal.
+ */
+function pushOne(git: GitRunner, wt: Worktree, remote: string, sha: string, dst: string): void {
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Refusal('not a commit SHA', 'bad_sha');
+  const r = git(wt.top, [
+    ...NO_HOOKS,
+    'push',
+    '--no-verify',
+    '--porcelain',
+    '--',
+    remote,
+    `${sha}:${dst}`,
+  ]);
+  if (r.code === 0) return;
+  const text = `${r.stdout}\n${r.stderr}`;
+  if (/non-fast-forward|fetch first|\[rejected\]/.test(text)) {
+    throw new Refusal(
+      `the push of ${dst} was rejected: the remote has commits this branch does not. ` +
+        'Fetch and merge them, then save again. A checkpoint never force-pushes.',
+      'non_fast_forward',
+    );
+  }
+  if (text.includes('already exists')) {
+    throw new Refusal(`${dst} already exists on ${remote} at another commit`, 'ref_exists');
+  }
+  throw new Refusal(
+    `the push of ${dst} to ${remote} failed: ${firstLine(r.stderr)}`,
+    'push_failed',
+  );
+}
+
+export function pushBranch(
+  git: GitRunner,
+  wt: Worktree,
+  remote: string,
+  branch: string,
+  sha: string,
+  remoteDefaultBranch: string | undefined,
+): void {
+  // Asked again here, at the push: nothing reaches a protected name.
+  assertWorkBranch(branch, remoteDefaultBranch);
+  if (git(wt.top, ['check-ref-format', '--branch', branch]).code !== 0) {
+    throw new Refusal(`${branch} is not a valid branch name`, 'bad_branch');
+  }
+  pushOne(git, wt, remote, sha, `refs/heads/${branch}`);
+}
+
+/** The lightweight tag, **alone in its own push** (D-116 item 1). */
+export function pushTag(
+  git: GitRunner,
+  wt: Worktree,
+  remote: string,
+  sha: string,
+  ref: string,
+): void {
+  if (!ref.startsWith(TAG_PREFIX) || git(wt.top, ['check-ref-format', ref]).code !== 0) {
+    throw new Refusal(`${ref} is not a checkpoint tag`, 'bad_ref');
+  }
+  pushOne(git, wt, remote, sha, ref);
+}
+
+/** What the remote's ref points at now, by asking it. */
+export function remoteRef(
+  git: GitRunner,
+  wt: Worktree,
+  remote: string,
+  ref: string,
+): string | undefined {
+  const r = git(wt.top, ['ls-remote', '--', remote, ref]);
+  if (r.code !== 0) return undefined;
+  for (const line of r.stdout.split('\n')) {
+    const [sha, name] = line.split('\t');
+    if (name === ref && sha !== undefined) return sha;
+  }
+  return undefined;
+}
+
+/** `owner/name` from a remote URL: GitHub's https, ssh and scp forms. */
+export function repoFromUrl(url: string): string | undefined {
+  const m =
+    /^(?:https?:\/\/(?:[^@/]+@)?|ssh:\/\/(?:[^@/]+@)?|git@)[^/:]+[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(
+      url.trim(),
+    );
+  return m === null ? undefined : `${m[1] ?? ''}/${m[2] ?? ''}`.toLowerCase();
+}
+
+/** The repo the checkpoint is in: `laika.checkpoint.repo`, else the remote's URL. */
+export function repoName(git: GitRunner, wt: Worktree, remote: string): string {
+  const configured = configValue(git, wt.top, 'laika.checkpoint.repo');
+  const repo =
+    configured?.toLowerCase() ?? repoFromUrl(must(git, wt.top, ['remote', 'get-url', remote]));
+  if (repo === undefined || !/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(repo)) {
+    throw new Refusal(
+      `cannot tell the repository (owner/name) from remote ${remote}; set it with ` +
+        '`git config laika.checkpoint.repo owner/name`',
+      'no_repo',
+    );
+  }
+  return repo;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Ids                                                                        */
+/* -------------------------------------------------------------------------- */
+
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/** A ULID (SPEC §4): 48 bits of time, 80 of randomness, Crockford base 32. */
+export function ulid(now: number, random: (n: number) => Uint8Array = randomBytes): string {
+  let time = '';
+  let t = now;
+  for (let i = 0; i < 10; i += 1) {
+    time = (CROCKFORD[t % 32] ?? '0') + time;
+    t = Math.floor(t / 32);
+  }
+  const bytes = random(16);
+  let rest = '';
+  for (let i = 0; i < 16; i += 1) rest += CROCKFORD[(bytes[i] ?? 0) % 32] ?? '0';
+  return time + rest;
+}
