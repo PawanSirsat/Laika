@@ -2,11 +2,12 @@
 id: LAI-591
 title: 'Devices view — web half: Settings › Agents grouped by device, last seen, revoke a device, Not recognised'
 area: web
-assignee: unclaimed
+assignee: SHELL
 priority: p1
 depends-on: [LAI-590, LAI-586]
 discovered-from: LAI-532
-status: backlog
+status: in-progress
+started: 2026-10-29T08:50:13+00:00
 ---
 
 Phase 2.5 slice from `docs/proposals/LAI-532-phase-index.md` (PR #121). The
