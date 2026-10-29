@@ -71,6 +71,12 @@ Claimed by Strelka (D-097) on a branch cut from `origin/LAI-542-agent-session-he
 
 ## Implementation notes (Strelka, LAI-571)
 
+> **Superseded (Belka, 2026-10-29).** The design below, with `updated_at` as
+> the token, a compare-and-swap, and the guarded stamp `max(now, expected + 1)`,
+> was replaced after two Codex reviews. See *Review rounds* below for what
+> shipped. The rest of this section is kept as the record of what was built
+> first.
+
 **Design.** The precondition is `If-Match: "<updated_at>"` and the token is the
 task's existing `updated_at`, sent as a strong `ETag` on `GET /tasks/:id` and on
 every successful `PATCH /tasks/:id`; a guarded write is one compare-and-swap —
@@ -140,24 +146,90 @@ different test that this branch's diff does not touch:
 two-copy collision master brought in, master has since fixed in #131.
 "Repo-root gate exits 0" stays unticked until a gate with no flakes.
 
-## Notes for Belka (SPEC half)
+## Review rounds (Belka, 2026-10-29, taken over from Strelka)
 
-Proposed for SPEC §6.4, a new paragraph after the `PATCH /tasks/:id` body
-paragraph (the one ending *"…and pages with `cursor` like any other filter
-(D-066)."*):
+**Round 1 (Codex, FAIL).** A tags-only `PATCH` left `updated_at`, and so the
+token, unchanged: tags live in `task_tags`. The first fix stamped
+`max(now, updated_at + 1)` at every writer it could find.
+
+**Round 2 (Codex, FAIL).** The writer-by-writer fix missed these:
+- tag rename, merge and delete (cascade)
+- sprint delete (`ON DELETE SET NULL`)
+- the blocker's side of a dependency (`blocks`)
+- a blocker's status moving a dependent's `ready`
+- comments (`comment_count`)
+- estimate recomputes and rollups (`size`)
+- the stale-flag job
+- both backfills
+
+Each of these changes what a read shows without moving the stamp.
+
+**What shipped: the version is a digest of the view.** `taskVersion(view)` is
+the first 128 bits of SHA-256 over `JSON.stringify` of the `TaskView`, and
+`ETag: "<that>"` is sent on `GET /tasks/:id` and on every successful `PATCH`.
+
+- **The check.** A `PATCH` with `If-Match` recomputes the view inside
+  `updateTask`'s `immediate` transaction, which holds every other writer off.
+  It runs after the claim fence (LAI-541, D-119) and before anything is written.
+  A mismatch is `409 conflict` with `details: { current, etag }`.
+- **Why a digest.** It is derived from the state a read returns, not stamped by
+  writers. Every change a read can see changes it, including derived fields
+  (`ready`, `blocks`, `comment_count`, `size`, tag names), whichever code path
+  made the change. A writer added later cannot be missed.
+- **Why it is deterministic.** `toView` has a fixed key order and sorted lists,
+  and reads nothing about the caller or the clock. A task read has no
+  self-changing fields.
+- **Why not a `version` column with triggers.** That needs a trigger per
+  referencing table, plus hand-written rules for each derived field (a
+  dependent's `ready`, a parent's rollup), and those rules are exactly what
+  round 2 found missing. It also needs a migration, a SPEC §4 row and a
+  client-mirrored field.
+- **`updated_at`** goes back to the time of the last edit, exactly as on
+  `master`. Round 1's per-writer `nextTaskVersion` edits and
+  `src/db/task-version.ts` are removed.
+
+**Tests** (`server/test/http/routes/tasks.test.ts`, `describe('patch')`):
+- **Writer scenarios.** One per writer, each run in the millisecond the token
+  was read, and each asserting the guarded `PATCH` is refused `409` with an
+  `etag` that differs from the token. They cover:
+  - every path Codex reproduced
+  - the claim, send-back, reorder, sprint join and removal, and subtask paths
+  - offboarding, heartbeat and webhook, as writes of the column each one writes
+- **Schema census.** Every table with a foreign key to `tasks`, read from
+  `pragma_foreign_key_list`, is classified as either shown (naming the
+  scenarios that prove it) or not shown (with a reason). A new referencing
+  table fails until someone classifies it.
+- **Field check.** Changing any top-level field of a real view must change the
+  version.
+- **Mutation-checked:**
+  - hashing `updated_at` alone (round 1's design) reddens 24 tests, exactly the
+    round-2 paths
+  - dropping the check reddens 32
+  - leaving `comment_count` out of the hash reddens the comment scenarios and
+    the field check
+
+LAI-317 (writes without `If-Match` stamp `now`) is moot for the precondition
+now. It stays open only if `updated_at` itself should be strictly increasing.
+
+## Proposed SPEC §6.4 wording (for polly to apply)
+
+This is a new paragraph after the `PATCH /tasks/:id` body paragraph (the one
+ending *"…and pages with `cursor` like any other filter (D-066)."*):
 
 > **A `PATCH` may be conditional** (LAI-571). `GET /tasks/:id` and every
-> successful `PATCH /tasks/:id` carry `ETag: "<updated_at>"` — the task's
-> `updated_at` (§4.5) as a quoted integer. A `PATCH` that sends `If-Match` with
-> that value is applied only if the task's `updated_at` still equals it, checked
-> and written in one transaction; otherwise it is `409 conflict` with `details:
-> { current }`, the task as `GET /tasks/:id` would return it, and nothing is
-> written — not a field, a tag, a selection or an activity row. A guarded write
-> stamps `updated_at` with the later of now and the old value plus one, so two
-> guarded writes in one millisecond never share a version. `If-Match` other
-> than one quoted non-negative integer — `*` and weak `W/` tags included — is
+> successful `PATCH /tasks/:id` carry a strong `ETag`: the task's **version**,
+> a digest of the task exactly as that response returns it, so any change a
+> read of the task would show — its fields, tags and tag names, size,
+> dependencies in either direction and their readiness, sprint, comments
+> count, send-back — gives it a new version, whatever wrote it. A `PATCH` that
+> sends `If-Match` with that value is applied only if the task's version still
+> equals it, checked and written in one transaction; otherwise it is
+> `409 conflict` with `details: { current, etag }`, the task as
+> `GET /tasks/:id` would return it and its version, and nothing is written —
+> not a field, a tag, a selection or an activity row. `If-Match` other than one
+> ETag as a read sent it — `*`, weak `W/` tags and lists included — is
 > `400 bad_request` with `details: { header: 'If-Match' }`. Without `If-Match`
-> a `PATCH` is unconditional, as before. MCP's `update_task` takes no
-> precondition.
+> a `PATCH` is unconditional, as before. `updated_at` is the time of the last
+> edit and is not the version. MCP's `update_task` takes no precondition.
 
 No `TaskView` field was added, so §4.5 and the client types need nothing.
