@@ -77,6 +77,7 @@ describe('the jobs §11.6 names', () => {
 
     expect(names).toEqual([
       'backup.snapshot',
+      'checkpoint.retention',
       'claim.expiry',
       'db.vacuum',
       'estimate.refit',

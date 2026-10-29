@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
+import { pruneCheckpoints } from '../services/checkpoints.ts';
 import { claimSettings, expireClaims } from '../services/claims.ts';
 import { refitEstimates } from '../services/estimates.ts';
 import { snapshot } from './backup.ts';
@@ -90,6 +91,16 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
     // Drafts after 30 days, entries after three years (D-088), and once at
     // boot for the reason local activity's runs then.
     { name: 'time.retention', everyMs: DAY, run: (now) => pruneTime(db, now), atStart: true },
+    // Checkpoints of tasks done or cancelled 90 days, with their refs and
+    // transitions (§11.6, D-115 item 9, LAI-545). Laika never deletes a tag.
+    {
+      name: 'checkpoint.retention',
+      everyMs: DAY,
+      run: (now) => {
+        const { checkpoints, orphans } = pruneCheckpoints(db, now);
+        return { changed: checkpoints + orphans };
+      },
+    },
     { name: 'task.stale', everyMs: DAY, run: (now) => flagStaleTasks(db, now) },
     { name: 'invite.expiry', everyMs: HOUR, run: (now) => expireInvites(db, now) },
     // Expired keys, and the pre-LAI-534 rows that may hold secrets — once at
