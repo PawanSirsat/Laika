@@ -89,15 +89,13 @@ export interface ContextDiff {
   readonly hint: string | null;
 }
 
-const contextPath = (slug: string): string => `/projects/${encodeURIComponent(slug)}/context`;
-
 /** `GET .../context/revisions` — newest first, no text. */
 export function listContextRevisions(
   slug: string,
   signal?: AbortSignal,
 ): Promise<readonly ContextRevisionSummary[]> {
   return request<readonly ContextRevisionSummary[]>(
-    `${contextPath(slug)}/revisions`,
+    `/projects/${encodeURIComponent(slug)}/context/revisions`,
     signal === undefined ? {} : { signal },
   );
 }
@@ -109,7 +107,7 @@ export function getContextRevision(
   signal?: AbortSignal,
 ): Promise<ContextRevision> {
   return request<ContextRevision>(
-    `${contextPath(slug)}/revisions/${String(revision)}`,
+    `/projects/${encodeURIComponent(slug)}/context/revisions/${String(revision)}`,
     signal === undefined ? {} : { signal },
   );
 }
@@ -122,7 +120,7 @@ export function getContextDiff(
   signal?: AbortSignal,
 ): Promise<ContextDiff> {
   return request<ContextDiff>(
-    `${contextPath(slug)}/diff?from=${String(from)}&to=${String(to)}`,
+    `/projects/${encodeURIComponent(slug)}/context/diff?from=${String(from)}&to=${String(to)}`,
     signal === undefined ? {} : { signal },
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import {
   diffLinesOf,
   getContextDiff,
@@ -396,38 +397,34 @@ export function ContextHistory({ slug, refreshKey, members, agents }: ContextHis
             }}
           >
             <span className="ctx-compare-label">Compare</span>
-            <label className="ctx-compare-field">
-              <span className="visually-hidden">From revision</span>
-              <select
-                value={pickFrom}
-                onChange={(event) => {
-                  setFrom(Number(event.target.value));
-                }}
-              >
-                {revisions.map((r) => (
-                  <option key={r.revision} value={r.revision}>
-                    r{r.revision}
-                  </option>
-                ))}
-                <option value={0}>r0 (empty)</option>
-              </select>
-            </label>
+            <Dropdown
+              className="ctx-compare-field"
+              aria-label="From revision"
+              value={String(pickFrom)}
+              options={[
+                ...revisions.map((r) => ({
+                  value: String(r.revision),
+                  label: `r${String(r.revision)}`,
+                })),
+                { value: '0', label: 'r0 (empty)' },
+              ]}
+              onChange={(value) => {
+                setFrom(Number(value));
+              }}
+            />
             <span aria-hidden="true">→</span>
-            <label className="ctx-compare-field">
-              <span className="visually-hidden">To revision</span>
-              <select
-                value={pickTo}
-                onChange={(event) => {
-                  setTo(Number(event.target.value));
-                }}
-              >
-                {revisions.map((r) => (
-                  <option key={r.revision} value={r.revision}>
-                    r{r.revision}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Dropdown
+              className="ctx-compare-field"
+              aria-label="To revision"
+              value={String(pickTo)}
+              options={revisions.map((r) => ({
+                value: String(r.revision),
+                label: `r${String(r.revision)}`,
+              }))}
+              onChange={(value) => {
+                setTo(Number(value));
+              }}
+            />
             <button type="submit" className="ctx-secondary" disabled={pickFrom === pickTo}>
               Compare
             </button>

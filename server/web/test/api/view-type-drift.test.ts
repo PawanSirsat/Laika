@@ -206,25 +206,6 @@ const PAIRS: readonly Pair[] = [
     client: 'ProjectContext',
     clientFile: 'project-context.ts',
   },
-  // The context document's history (§4.68, LAI-555), as LAI-556 reads it.
-  {
-    server: 'ContextRevisionSummaryView',
-    serverFile: 'services/context-revisions.ts',
-    client: 'ContextRevisionSummary',
-    clientFile: 'project-context.ts',
-  },
-  {
-    server: 'ContextRevisionView',
-    serverFile: 'services/context-revisions.ts',
-    client: 'ContextRevision',
-    clientFile: 'project-context.ts',
-  },
-  {
-    server: 'ContextDiffView',
-    serverFile: 'services/context-revisions.ts',
-    client: 'ContextDiff',
-    clientFile: 'project-context.ts',
-  },
   {
     server: 'SetupResultBody',
     serverFile: 'http/routes/setup.ts',

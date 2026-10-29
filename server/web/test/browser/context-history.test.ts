@@ -23,6 +23,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { answerConfirm } from './confirm.ts';
+import { pick } from './dropdown.ts';
 
 const NOW = Date.now();
 const SLUG = 'laika-core';
@@ -239,8 +240,8 @@ void describe('the revision history', () => {
     try {
       const form = h.page.locator('.ctx-compare');
       await form.waitFor({ timeout: 10_000 });
-      await form.getByLabel('From revision').selectOption('1');
-      await form.getByLabel('To revision').selectOption('3');
+      await pick(form.getByRole('combobox', { name: 'From revision' }), '1');
+      await pick(form.getByRole('combobox', { name: 'To revision' }), '3');
       await form.getByRole('button', { name: 'Compare' }).click();
 
       const truncated = h.page.locator('[data-diff-truncated]');

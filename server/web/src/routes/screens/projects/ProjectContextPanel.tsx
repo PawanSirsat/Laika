@@ -1,4 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
+import { CopyButton } from '../../../components/CopyButton.tsx';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
@@ -64,7 +65,6 @@ export function ProjectContextPanel({
   const [newest, setNewest] = useState<number | undefined>(undefined);
   const [stale, setStale] = useState(false);
   const [comparing, setComparing] = useState(false);
-  const [copied, setCopied] = useState(false);
   /** The comparison was too large, so r{newest} is shown whole instead. */
   const [wholeNewest, setWholeNewest] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -158,7 +158,6 @@ export function ProjectContextPanel({
     setStale(false);
     setComparing(false);
     setWholeNewest(false);
-    setCopied(false);
     setRefreshKey((n) => n + 1);
   };
 
@@ -381,22 +380,12 @@ export function ProjectContextPanel({
                   {comparing ? 'Hide the comparison' : 'Compare with the newer version'}
                 </button>
                 {dirty && (
-                  <button
-                    type="button"
+                  <CopyButton
+                    text={draft}
+                    label="Copy my text"
+                    what="your unsaved text"
                     className="ctx-secondary"
-                    onClick={() => {
-                      void navigator.clipboard
-                        ?.writeText(draft)
-                        .then(() => {
-                          setCopied(true);
-                        })
-                        .catch(() => {
-                          setCopied(false);
-                        });
-                    }}
-                  >
-                    {copied ? 'Copied' : 'Copy my text'}
-                  </button>
+                  />
                 )}
                 <button type="button" className="ctx-secondary" onClick={loadNewest}>
                   {dirty ? `Discard mine, load r${String(behind)}` : `Load r${String(behind)}`}

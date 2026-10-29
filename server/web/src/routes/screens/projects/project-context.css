@@ -367,7 +367,6 @@
 
 .ctx-link:focus-visible,
 .ctx-secondary:focus-visible,
-.ctx-compare select:focus-visible,
 .ctx-viewer-title:focus-visible,
 .ctx-revision-body:focus-visible {
   outline: 2px solid var(--accent);
@@ -387,14 +386,10 @@
   font-weight: var(--weight-semibold);
 }
 
-.ctx-compare select {
-  padding: var(--space-1) var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  color: var(--text-primary);
-  background: var(--bg-canvas);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-chip);
+.ctx-compare .ctx-compare-field {
+  flex: 0 1 8rem;
+  width: auto;
+  min-width: 5.5rem;
 }
 
 .ctx-viewer {
