@@ -265,10 +265,13 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
   );
 
   app.patch('/:slug/context', async (c) => {
+    // Who is asking before what they sent: an anonymous caller is `401`, not
+    // a lesson in the body's shape.
+    const actor = requireActor(c);
     const body = parseBody(ContextBody, await c.req.json().catch(() => null));
 
     return c.json(
-      updateProjectContext(db, requireActor(c), c.req.param('slug'), {
+      updateProjectContext(db, actor, c.req.param('slug'), {
         context_md: body.context_md,
         base_revision: body.base_revision,
       }),

@@ -129,7 +129,10 @@ describe('who may read and write it (§3.1, §7.3)', () => {
       getProjectContext(t.db, actor(outsiderId), 'laika');
       expect.unreachable('an org viewer with no membership sees no project');
     } catch (error) {
-      expect((error as ApiError).code).toBe('forbidden');
+      // The same answer as a slug that names nothing (LAI-555): the brief must
+      // not confirm a project exists to someone who cannot see it.
+      expect((error as ApiError).code).toBe('not_found');
+      expect((error as ApiError).message).toBe('No project with slug "laika"');
     }
   });
 });

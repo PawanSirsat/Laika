@@ -872,16 +872,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         // `append` is computed from the current document **inside** the write,
         // so two agents appending at once both land, in order, as two
         // revisions — the read-then-write that could lose one is gone.
-        if (mode === 'replace' && base_revision === undefined) {
-          throw new ApiError(
-            'unprocessable',
-            '`replace` must name the `base_revision` it replaces; read it with `get_project_context`',
-            { field: 'base_revision' },
-          );
-        }
-
         const updated = reviseProjectContext(db, actor, project, {
           baseRevision: base_revision ?? null,
+          requireBase: mode === 'replace',
           next: (current) => (mode === 'replace' ? context_md : append(current, context_md)),
           now: clock(),
         });

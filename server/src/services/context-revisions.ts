@@ -10,9 +10,9 @@ import {
   tasks,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan, can } from '../policy/can.ts';
+import { can } from '../policy/can.ts';
 import { requireOwnOpenSession } from './claims.ts';
-import { requireProjectBySlug } from './projects.ts';
+import { requireReadableProjectBySlug } from './projects.ts';
 import { resolveTaskRef } from './tasks.ts';
 import { diffLines } from './text-diff.ts';
 
@@ -23,7 +23,7 @@ import { diffLines } from './text-diff.ts';
  * Writes are `reviseProjectContext` in `projects.ts`; this module reads what
  * they left. Everything here follows **project read**, so a viewer sees the
  * history and a project the caller cannot read is the same `404` as one that
- * does not exist.
+ * does not exist (`requireReadableProjectBySlug`).
  *
  * **Delivered, never understood.** Laika records that it *sent* a revision to
  * a session — the whole document or a diff ending at it. Whether the agent
@@ -58,9 +58,7 @@ export interface ContextDiffView {
 }
 
 function readableProject(db: Db, actor: ResolvedActor, slug: string) {
-  const row = requireProjectBySlug(db, slug);
-  assertCan(withProject(actor, row.id), 'project.read', { projectId: row.id });
-  return row;
+  return requireReadableProjectBySlug(db, actor, slug);
 }
 
 function summary(row: typeof projectContextRevisions.$inferSelect): ContextRevisionSummaryView {

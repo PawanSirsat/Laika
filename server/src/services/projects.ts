@@ -179,6 +179,24 @@ export function requireProjectBySlug(db: Db, slug: string): typeof projects.$inf
 }
 
 /**
+ * A project this actor may read, or the **same `404`** a slug that names
+ * nothing gets (LAI-555): the context document and its history must not tell
+ * an outsider that a private project exists. Byte for byte, so a client cannot
+ * tell the two apart by status, code or message.
+ */
+export function requireReadableProjectBySlug(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+): typeof projects.$inferSelect {
+  const row = requireProjectBySlug(db, slug);
+  if (!can(withProject(actor, row.id), 'project.read', { projectId: row.id })) {
+    throw ApiError.notFound(`No project with slug "${slug}"`);
+  }
+  return row;
+}
+
+/**
  * The slug of a project this actor may read, from its id.
  *
  * Every service in this layer is addressed by slug, because that is what a URL
@@ -779,8 +797,7 @@ export interface ProjectContextView {
 export const CONTEXT_MD_LIMIT = 100_000;
 
 export function getProjectContext(db: Db, actor: ResolvedActor, slug: string): ProjectContextView {
-  const row = requireProjectBySlug(db, slug);
-  assertCan(withProject(actor, row.id), 'project.read', { projectId: row.id });
+  const row = requireReadableProjectBySlug(db, actor, slug);
 
   return contextView(db, row);
 }
@@ -817,6 +834,12 @@ export interface ReviseProjectContextInput {
    * its write.
    */
   baseRevision: number | null;
+  /**
+   * Refuse a `null` base with `422`, **after** the permission check — a
+   * `replace` must name what it replaces, and a caller who may not write at
+   * all is told that first.
+   */
+  requireBase?: boolean;
   next: (current: string) => string;
   now?: number;
 }
@@ -837,8 +860,17 @@ export function reviseProjectContext(
   slug: string,
   input: ReviseProjectContextInput,
 ): ProjectContextView {
-  const found = requireProjectBySlug(db, slug);
+  // Read first, so a project the writer cannot see is the missing one's 404;
+  // a reader who may not edit it is told `403`.
+  const found = requireReadableProjectBySlug(db, actor, slug);
   assertCan(withProject(actor, found.id), 'project.settings.edit', { projectId: found.id });
+  if (input.requireBase === true && input.baseRevision === null) {
+    throw new ApiError(
+      'unprocessable',
+      '`replace` must name the `base_revision` it replaces; read it with `get_project_context`',
+      { field: 'base_revision' },
+    );
+  }
   const now = input.now ?? Date.now();
 
   db.transaction(() => {
