@@ -1059,10 +1059,16 @@ export function SetupBlockView({
   secret,
   main = false,
   onCopied,
+  tokenTag = 'carries your token',
 }: {
   readonly block: SetupBlock;
   readonly secret: string | undefined;
   readonly main?: boolean;
+  /**
+   * The badge on a block that holds a token. Yours on Connect; the Agents
+   * wizard's blocks hold the agent's own token, and say so (LAI-583).
+   */
+  readonly tokenTag?: string;
   /** Called when this block's copy *succeeded* — not on a click, not on *Press ⌘C*. */
   readonly onCopied?: (() => void) | undefined;
 }) {
@@ -1097,7 +1103,7 @@ export function SetupBlockView({
           <span className="conn-block-label" id={labelId}>
             <PathLabel text={block.label} />
           </span>
-          {holdsToken && <span className="conn-block-tag">carries your token</span>}
+          {holdsToken && <span className="conn-block-tag">{tokenTag}</span>}
           <CopyButton
             text={block.text}
             selects={ref}

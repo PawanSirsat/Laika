@@ -20,6 +20,7 @@ import {
   reply,
   navigateInApp,
   refuse,
+  setTheme,
   until,
   type ApiStub,
   type Harness,
@@ -437,13 +438,13 @@ void describe('the drawer’s Agent row', () => {
         { value: '', text: 'No agent Human only', disabled: false },
         {
           value: 'ag-laptop',
-          text: 'Claude Code — Ada Lovelace · laptop-1 Available',
+          text: 'Claude Code · laptop-1 — Ada Lovelace Available',
           disabled: false,
         },
-        { value: 'ag-desktop', text: 'Codex — Ada Lovelace · desktop-2 Offline', disabled: false },
+        { value: 'ag-desktop', text: 'Codex · desktop-2 — Ada Lovelace Offline', disabled: false },
         {
           value: 'ag-ro',
-          text: 'Cursor — Ada Lovelace · tablet Read-only on this space',
+          text: 'Cursor · tablet — Ada Lovelace Read-only on this space',
           disabled: true,
         },
       ]);
@@ -599,6 +600,64 @@ void describe('the drawer’s Agent row', () => {
       await h.close();
     }
   });
+
+  // **Whoever has focus names the active agent, after any close** (Codex,
+  // integration round 2): a search left the search box "focused" in the
+  // picker's state when the list closed, so a reopened list named its active
+  // option from the unfocused search box and not from the trigger.
+  for (const close of ['a click outside', 'Escape'] as const) {
+    void test(`after a search closed by ${close}, a reopened list is named by the focused field`, async () => {
+      const { stub } = world();
+      const h = await open('/board?project=laika-core&task=t1', stub);
+      try {
+        const box = await agentBox(h);
+        await box.focus();
+        await h.page.keyboard.press('ArrowDown');
+        await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
+        await h.page.keyboard.type('laptop');
+        const search = h.page.getByRole('combobox', { name: 'Search agents' });
+        await until(async () => (await search.inputValue()) === 'laptop');
+
+        if (close === 'Escape') {
+          await h.page.keyboard.press('Escape');
+        } else {
+          await h.page.locator('.panel-meta p.meta-label', { hasText: 'Reporter' }).click();
+        }
+        await until(async () => (await box.getAttribute('aria-expanded')) === 'false');
+
+        // Reopen on End: the last agent, the disabled read-only one.
+        await box.focus();
+        await h.page.keyboard.press('End');
+        await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
+
+        const focused = await h.page.evaluate(() => {
+          const el = document.activeElement;
+          return {
+            role: el?.getAttribute('role') ?? null,
+            label: el?.getAttribute('aria-label') ?? null,
+            active: el?.getAttribute('aria-activedescendant') ?? null,
+          };
+        });
+        assert.equal(focused.label, null, `focus is on ${JSON.stringify(focused)}, not the field`);
+        assert.equal(focused.active, await box.getAttribute('aria-activedescendant'));
+        assert.ok(focused.active !== null, 'the focused field names no active agent');
+        // Exactly one element names an active option: the focused one.
+        const naming = await h.page.locator('[aria-activedescendant]').count();
+        assert.equal(naming, 1, 'an unfocused element also names the active option');
+
+        const option = h.page.locator(`[id="${focused.active}"]`);
+        assert.equal(await option.getAttribute('data-value'), 'ag-ro');
+        assert.equal(await option.getAttribute('aria-disabled'), 'true');
+        const listId = (await box.getAttribute('aria-controls')) ?? '';
+        const named = h.page
+          .locator(`[id="${listId}"]`)
+          .getByRole('option', { name: /Cursor .*Read-only on this space/ });
+        assert.equal(await named.getAttribute('id'), focused.active, 'the reason is not announced');
+      } finally {
+        await h.close();
+      }
+    });
+  }
 
   void test('No agent withdraws it', async () => {
     const { stub } = world();
@@ -787,6 +846,59 @@ void describe('the List’s Agent column and the agent filter', () => {
       await header.getByRole('button').click();
       await until(async () => (await header.getAttribute('aria-sort')) === 'descending');
       assert.deepEqual(await keys(h), ['LC-3', 'LC-2', 'LC-1']);
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **The Agent column fits a 1440 screen beside the sidebar** (LAI-569).
+   * LAI-538 added its width to the table's minimum, so in a space that uses
+   * agents the table scrolled sideways inside its card. The floors that made
+   * that a layout decision hold here too: SUMMARY over 200px, the two date
+   * columns one width. Both themes, since a theme that draws a wider glyph
+   * would be the one to tip it.
+   */
+  void test('at 1440 the List with the Agent column does not scroll sideways, in both themes', async () => {
+    const { stub } = world();
+    const h = await open('/list?project=laika-core', stub);
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      const cell = h.page.locator('tbody tr[data-task-id="t2"] .list-agent-cell');
+      await cell.waitFor({ timeout: 20_000 });
+      const width = async (selector: string) =>
+        Math.round((await h.page.locator(selector).first().boundingBox())?.width ?? -1);
+      const sideways = () =>
+        h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      for (const theme of ['light', 'dark']) {
+        await h.page.setViewportSize({ width: 1440, height: 900 });
+        await setTheme(h.page, theme);
+        const spare = () =>
+          h.page
+            .locator('.list-scroll')
+            .evaluate((el) => (el as HTMLElement).clientWidth - (el as HTMLElement).scrollWidth);
+        await until(async () => (await spare()) >= 0);
+        const left = await spare();
+        assert.ok(left >= 0, `${theme}: the List scrolls ${String(-left)}px sideways at 1440`);
+        const summary = await width('.list-summary');
+        assert.ok(summary > 200, `${theme}: SUMMARY collapsed to ${String(summary)}px`);
+        assert.equal(
+          await width('.list-updated'),
+          await width('.list-created'),
+          'CREATED ≠ UPDATED',
+        );
+        // A phone is no worse, in this theme too: the table scrolls in its
+        // card, never the page.
+        await h.page.setViewportSize({ width: 390, height: 844 });
+        await until(async () => (await sideways()) === 0);
+        assert.equal(await sideways(), 0, `${theme}: the page scrolls sideways at 390`);
+      }
+      // Still named: on hover, and read aloud with its product and device.
+      assert.match((await cell.getAttribute('title')) ?? '', /^Claude Code · laptop-1 — /);
+      assert.equal(
+        ((await cell.textContent()) ?? '').replace(/\s+/g, ' ').trim(),
+        'Claude Code · laptop-1',
+      );
     } finally {
       await h.close();
     }
@@ -1270,6 +1382,155 @@ void describe('a selection still in flight when the drawer moves on', () => {
     });
   }
 
+  /*
+   * **The save answers inside the read's own render** (LAI-577). The two tests
+   * above let the read land and *then* release the save, from Node — which
+   * cannot see when the page applies anything, so the sharp case arrived only
+   * by chance, and on a loaded CI runner it did: the read's render judged the
+   * earlier confirmation stale, the save's answer queued a new one before
+   * React ran that render's effect, and the effect then cleared the new one.
+   *
+   * Here the order is pinned inside the page. Both answers are held after
+   * they really reached the server, so each carries real data; the read is
+   * released, and the save's answer is released from a MutationObserver the
+   * moment the read's render reaches the DOM — the card gaining its chip,
+   * which only the read can cause. An observer runs at the end of that
+   * render's task, before React's effects task: the window, every time.
+   */
+  for (const [what, second, value, line] of [
+    ['a newer select', 'ag-desktop', 'ag-desktop', DESKTOP_LINE],
+    ['a withdraw', '', '', null],
+  ] as const) {
+    void test(`${what} answered inside the read’s render still shows`, async () => {
+      const { stub } = world();
+      let failReads = false;
+      const fail = {
+        status: 500,
+        contentType: 'application/json',
+        body: '{"error":{"code":"internal","message":"down"}}',
+      };
+      const h = await open('/board?project=laika-core&task=t1', stub, {
+        before: async (page) => {
+          await page.addInitScript(() => {
+            const held: { kind: 'read' | 'patch'; release: () => void }[] = [];
+            const control = { holdReads: false, holdPatch: false, held };
+            (window as unknown as { __lai577: typeof control }).__lai577 = control;
+            const real = window.fetch.bind(window);
+            window.fetch = async (input, init) => {
+              const url = new URL(
+                typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+                location.href,
+              );
+              const method = (init?.method ?? 'GET').toUpperCase();
+              const response = await real(input, init);
+              const kind =
+                method === 'PATCH' && url.pathname === '/api/v1/tasks/t1'
+                  ? control.holdPatch
+                    ? 'patch'
+                    : undefined
+                  : method === 'GET' && url.pathname === '/api/v1/projects/laika-core/tasks'
+                    ? control.holdReads
+                      ? 'read'
+                      : undefined
+                    : undefined;
+              if (kind === undefined) return response;
+              // Read the body now, so releasing is a promise resolving and nothing more.
+              const body = await response.text();
+              await new Promise<void>((resolve) => {
+                held.push({ kind, release: resolve });
+              });
+              return new Response(body, { status: response.status, headers: response.headers });
+            };
+          });
+          await page.route('**/api/v1/projects/laika-core/tasks**', (route) =>
+            failReads ? route.fulfill(fail) : route.continue(),
+          );
+          await page.route('**/api/v1/tasks/t1', (route) =>
+            failReads && route.request().method() === 'GET'
+              ? route.fulfill(fail)
+              : route.continue(),
+          );
+        },
+      });
+      const heldKinds = () =>
+        h.page.evaluate(() =>
+          (window as unknown as { __lai577: { held: { kind: string }[] } }).__lai577.held.map(
+            (x) => x.kind,
+          ),
+        );
+      try {
+        const box = await agentBox(h);
+        // The read the first save triggers is held: it will carry X.
+        await h.page.evaluate(() => {
+          (window as unknown as { __lai577: { holdReads: boolean } }).__lai577.holdReads = true;
+        });
+        const first = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+        await pick(box, 'ag-laptop');
+        await first;
+        await until(async () => (await heldKinds()).includes('read'));
+        assert.ok((await heldKinds()).includes('read'), 'no read was held — nothing was tested');
+        await settledRow(h, 'ag-laptop', LAPTOP_LINE);
+        // X is the overlay alone: the board has not seen it yet.
+        const chip = 'article.card[data-task-id="t1"] .agent-chip';
+        assert.equal(await h.page.locator(chip).count(), 0, 'the read reached the board early');
+
+        // Y goes to the server and its answer is held; every read after it fails.
+        failReads = true;
+        await h.page.evaluate(() => {
+          const c = (window as unknown as { __lai577: { holdReads: boolean; holdPatch: boolean } })
+            .__lai577;
+          c.holdReads = false;
+          c.holdPatch = true;
+        });
+        const sent = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+        await pick(box, second);
+        await sent;
+        await until(async () => (await heldKinds()).includes('patch'));
+        assert.ok(
+          (await heldKinds()).includes('patch'),
+          'the save was not held — nothing was tested',
+        );
+
+        // Release the read; release Y's answer the instant the read's render commits.
+        const order = await h.page.evaluate(
+          (selector) =>
+            new Promise<string[]>((done) => {
+              const c = (
+                window as unknown as {
+                  __lai577: { held: { kind: string; release: () => void }[] };
+                }
+              ).__lai577;
+              const seen: string[] = [];
+              const observer = new MutationObserver(() => {
+                if (document.querySelector(selector) === null) return;
+                observer.disconnect();
+                seen.push('read committed');
+                for (const x of c.held.filter((y) => y.kind === 'patch')) x.release();
+                seen.push('save answered');
+                setTimeout(() => {
+                  done(seen);
+                }, 0);
+              });
+              observer.observe(document.body, { subtree: true, childList: true });
+              for (const x of c.held.filter((y) => y.kind === 'read')) x.release();
+              seen.push('read released');
+            }),
+          chip,
+        );
+        assert.deepEqual(order, ['read released', 'read committed', 'save answered']);
+        await settledRow(h, value, line);
+      } finally {
+        await h.page.evaluate(() => {
+          const c = (window as unknown as { __lai577?: { held: { release: () => void }[] } })
+            .__lai577;
+          for (const x of c?.held ?? []) x.release();
+        });
+        await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+        await h.close();
+      }
+    });
+  }
+
   /** Move the stub's copy of a task to what the server now holds, one version on. */
   const serverHolds = (tasks: Record<string, unknown>[], id: string, agent: string | null) => {
     const task = tasks.find((t) => t.id === id);
@@ -1652,6 +1913,213 @@ void describe('a Viewer whose own agents cannot be read', () => {
         await h.page.getByRole('dialog').first().innerText(),
         /Could not load your agents|forbidden|You may not read agents/i,
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/*
+ * **Two of the reader's agents with one harness on one device** (LAI-583).
+ * Measured live in LAI-582: the label is `harness · device` (D-118), so two
+ * Claude Code agents on one laptop read the same on the card, in the picker,
+ * in History and in the List. Each now carries the name its owner gave it, in
+ * brackets, and only because the two collide; `ag-desktop` stays
+ * `Codex · desktop-2`.
+ */
+void describe('two agents that share a harness and a device', () => {
+  const twin = {
+    ...AGENTS[0],
+    id: 'ag-twin',
+    display_name: 'Second laptop agent',
+    created_at: 4,
+  };
+  const twinView = { ...viewOf('ag-laptop'), id: twin.id, display_name: twin.display_name };
+  const twins = () => {
+    const w = world();
+    // t1 gets the twin; t2 keeps `ag-laptop`; an agent row on t1 is the twin's.
+    Object.assign(w.tasks[0] ?? {}, { selected_agent: twinView });
+    w.activity.unshift(
+      event({ actor_kind: 'agent', actor_token_id: 'tok-t', agent_id: 'ag-twin', created_at: NOW }),
+    );
+    const stub: ApiStub = {
+      ...w.stub,
+      '/api/v1/agents': { data: [...AGENTS, twin], next_cursor: null },
+    };
+    return stub;
+  };
+  const FIRST = 'Claude Code · laptop-1 (Laptop agent)';
+  const SECOND = 'Claude Code · laptop-1 (Second laptop agent)';
+  const folded = (text: string | null) => (text ?? '').replace(/\s+/g, ' ').trim();
+
+  void test('the cards, the picker and History tell them apart, in both themes', async () => {
+    const h = await open('/board?project=laika-core&task=t1', twins());
+    try {
+      const chip = (id: string) => h.page.locator(`article.card[data-task-id="${id}"] .agent-chip`);
+      await chip('t2').waitFor({ timeout: 20_000 });
+      for (const theme of ['light', 'dark']) {
+        await setTheme(h.page, theme);
+        // Read aloud in full; on screen, the name that differs (LAI-583).
+        assert.equal(folded(await chip('t2').textContent()), FIRST, theme);
+        assert.equal(folded(await chip('t1').textContent()), SECOND, theme);
+        const shown = (id: string) =>
+          chip(id).evaluate((el) => {
+            const copy = el.cloneNode(true) as HTMLElement;
+            for (const hidden of copy.querySelectorAll('.visually-hidden')) hidden.remove();
+            return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
+          });
+        assert.equal(await shown('t1'), 'Claude Code · Second laptop agent', theme);
+        assert.equal(await shown('t2'), 'Claude Code · Laptop agent', theme);
+        assert.match(
+          (await chip('t1').getAttribute('title')) ?? '',
+          /on laptop-1 \(Second laptop agent\)$/,
+        );
+        assert.equal(folded(await chip('t3').textContent()), 'Codex · desktop-2', theme);
+      }
+
+      const box = await agentBox(h);
+      await box.click();
+      await until(async () => (await optionsOpen(h.page, box)).length >= 3);
+      const offered = (await optionsOpen(h.page, box)).map((o) => o.text);
+      assert.ok(
+        offered.some((t) => t.includes('laptop-1 (Laptop agent)')),
+        `picker: ${offered.join(' | ')}`,
+      );
+      assert.ok(
+        offered.some((t) => t.includes('laptop-1 (Second laptop agent)')),
+        `picker: ${offered.join(' | ')}`,
+      );
+      await h.page.keyboard.press('Escape');
+
+      await h.page.locator('#tab-history').click();
+      const history = h.page.locator('#panel-history');
+      await history.waitFor({ timeout: 10_000 });
+      const who = () => history.locator('.panel-event-who').allInnerTexts();
+      await until(async () => (await who()).includes(`Ada Lovelace via ${SECOND}`));
+      const rows = await who();
+      assert.ok(rows.includes(`Ada Lovelace via ${SECOND}`), rows.join(' | '));
+      assert.ok(rows.includes(`Ada Lovelace via ${FIRST}`), rows.join(' | '));
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **At 390 the picker still shows what differs** (LAI-583 review). Two agents
+   * on one long-named device: the label ellipsises inside the shared
+   * `Claude Code · build-server-eu-west-1` prefix, so the mark must be drawn
+   * where no ellipsis reaches. Measured on screen — what a reader sees, not
+   * the option's text.
+   */
+  void test('at 390 the picker shows each twin’s mark uncut, in both themes', async () => {
+    const long = (id: string, display_name: string) => ({
+      ...AGENTS[0],
+      id,
+      display_name,
+      device_label: 'build-server-eu-west-1-primary',
+      created_at: 5,
+    });
+    const w = world();
+    const stub: ApiStub = {
+      ...w.stub,
+      '/api/v1/agents': {
+        data: [...AGENTS, long('ag-long-1', 'alpha agent'), long('ag-long-2', 'bravo agent')],
+        next_cursor: null,
+      },
+    };
+    const h = await open('/board?project=laika-core&task=t1', stub);
+    try {
+      for (const theme of ['light', 'dark']) {
+        await h.page.setViewportSize({ width: 390, height: 844 });
+        await setTheme(h.page, theme);
+        await h.page.reload();
+        const box = await agentBox(h);
+        await box.click();
+        await until(async () => (await optionsOpen(h.page, box)).length >= 5);
+        const list = h.page.locator(`[id="${(await box.getAttribute('aria-controls')) ?? ''}"]`);
+        const seen = await list
+          .locator('[role="option"][data-value^="ag-long-"]')
+          .evaluateAll((els) =>
+            els.map((el) => {
+              const option = el.getBoundingClientRect();
+              const label = el.querySelector<HTMLElement>('.dd-label');
+              const badge = el.querySelector<HTMLElement>('.dd-badge');
+              const b = badge?.getBoundingClientRect();
+              return {
+                labelCut: label !== null && label.scrollWidth > label.clientWidth,
+                mark: badge?.textContent ?? null,
+                markWhole:
+                  badge !== null &&
+                  b !== undefined &&
+                  badge.scrollWidth <= badge.clientWidth &&
+                  b.left >= option.left &&
+                  b.right <= option.right &&
+                  b.right <= window.innerWidth,
+                name: el.getAttribute('title') ?? '',
+              };
+            }),
+          );
+        assert.equal(seen.length, 2, theme);
+        // The case is real: the shared label is cut at this width.
+        assert.ok(
+          seen.every((o) => o.labelCut),
+          `${theme}: the label is not cut — ${JSON.stringify(seen)}`,
+        );
+        assert.deepEqual(
+          seen.map((o) => o.mark).sort(),
+          ['alpha agent', 'bravo agent'],
+          `${theme}: ${JSON.stringify(seen)}`,
+        );
+        assert.ok(
+          seen.every((o) => o.markWhole),
+          `${theme}: a mark is cut or off screen — ${JSON.stringify(seen)}`,
+        );
+        // The whole name is still the option's: hover and the accessible name.
+        assert.ok(
+          seen.some((o) =>
+            o.name.startsWith('Claude Code · build-server-eu-west-1-primary (alpha agent)'),
+          ),
+          JSON.stringify(seen),
+        );
+        // And the computed accessible name of each option — what a screen
+        // reader announces — carries the whole label with its own mark.
+        for (const mark of ['alpha agent', 'bravo agent']) {
+          const named = list.getByRole('option', {
+            name: new RegExp(
+              `^Claude Code · build-server-eu-west-1-primary \\(${mark}\\) — Ada Lovelace\\b`,
+            ),
+          });
+          assert.equal(await named.count(), 1, `${theme}: no option is named for ${mark}`);
+        }
+        await h.page.keyboard.press('Escape');
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the List tells them apart, and says so on hover', async () => {
+    const h = await open('/list?project=laika-core', twins());
+    try {
+      const cell = (id: string) =>
+        h.page.locator(`tbody tr[data-task-id="${id}"] .list-agent-cell`);
+      await cell('t1').waitFor({ timeout: 20_000 });
+      assert.equal(folded(await cell('t2').textContent()), FIRST);
+      assert.equal(folded(await cell('t1').textContent()), SECOND);
+      assert.match(
+        (await cell('t1').getAttribute('title')) ?? '',
+        /^Claude Code · laptop-1 \(Second laptop agent\) — /,
+      );
+      // On screen, the narrow cell shows what differs, not two `laptop…`.
+      const visible = (id: string) =>
+        cell(id).evaluate((el) => {
+          const copy = el.cloneNode(true) as HTMLElement;
+          for (const hidden of copy.querySelectorAll('.visually-hidden')) hidden.remove();
+          return (copy.textContent ?? '').trim();
+        });
+      assert.equal(await visible('t1'), 'Second laptop agent');
+      assert.equal(await visible('t2'), 'Laptop agent');
+      assert.equal(await visible('t3'), 'desktop-2', 'an agent with no twin keeps its device');
     } finally {
       await h.close();
     }
