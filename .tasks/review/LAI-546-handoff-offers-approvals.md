@@ -94,8 +94,9 @@ review (draft PR #147). Started on the orchestrator's direction, stacked on
 
 Branch `LAI-546-handoff-offers`, draft PR #148 into `LAI-545-checkpoints`.
 CI (`gh workflow run deploy.yml --ref LAI-546-handoff-offers`, run
-40930434281, head `e349391b`): Lint 0, Format 0, Test 1. `server`: 212 test
-files passed, 2 skipped, none failed. The red is SHELL's mirrors only (§4.4):
+40934629925, head `9781458c`; run 40930434281 on `e349391b` matched): Lint 0,
+Format 0, Test 1. `server`: 212 test files passed, 2 skipped; 4432 collected
+test cases passed, 10 skipped, none failed. The red is SHELL's mirrors only (§4.4):
 
 `server/web` — 4 of 3663 (LAI-549 retires the verbs; LAI-549/LAI-550 the
 endpoints). These were already red on `LAI-545-checkpoints` for
