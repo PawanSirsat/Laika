@@ -2,11 +2,12 @@
 id: LAI-549
 title: 'Hand-off dialog + drawer recovery panel (checkpoint age, note staleness, approval)'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-546, LAI-543]
 discovered-from:
-status: backlog
+started: 2026-10-30T00:55:00Z
+status: in-progress
 ---
 
 Implements **proposal §6 (hand-off dialog, drawer)** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
