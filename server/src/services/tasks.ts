@@ -1389,6 +1389,35 @@ export function taskVersion(view: TaskView): string {
     .slice(0, 32);
 }
 
+/** The version as a strong ETag: what a read sends and `If-Match` takes back. */
+export function taskEtag(view: TaskView): string {
+  return `"${taskVersion(view)}"`;
+}
+
+/**
+ * A row of a task list, carrying the ETag a read of that one task would send
+ * (LAI-571 review, round 3), so a client can make a guarded `PATCH` from a
+ * list without reading each task first. Computed from the full view, so a
+ * slim row's ETag is the full task's, even though the slim row cannot be
+ * hashed back to it.
+ */
+export interface ListedTaskView extends TaskView {
+  etag: string;
+}
+
+/** {@link ListedTaskView}'s slim form (`?fields=slim`, LAI-795). */
+export interface ListedTaskSummaryView extends TaskSummaryView {
+  etag: string;
+}
+
+export function listedTask(view: TaskView): ListedTaskView {
+  return { ...view, etag: taskEtag(view) };
+}
+
+export function listedTaskSummary(view: TaskView): ListedTaskSummaryView {
+  return { ...summaryOf(view), etag: taskEtag(view) };
+}
+
 /** The live claim's fields that move without a write (LAI-568): the heartbeat, the lease, the clock. */
 export const CLAIM_PULSE = ['last_heartbeat_at', 'lease_expires_at', 'connection'] as const;
 
@@ -1473,6 +1502,17 @@ export function updateTask(
       assertClaimFence(db, actor, taskId, now);
       if (selecting) assertSelectionChangeAllowed(db, task);
 
+      // **Every input of the view is read again here**, under the lock, and not
+      // taken from `requireTask` above, which ran before it. The project's
+      // prefix makes the key, and a rename that commits between the two reads
+      // would otherwise let a token for `LAI-1` pass on a task now `NEW-1`
+      // (LAI-571 review, round 3). The row is read here for the same reason.
+      const prefix = db
+        .select({ prefix: projects.prefix })
+        .from(projects)
+        .where(eq(projects.id, project.id))
+        .get()!.prefix;
+
       // The precondition, under the write lock and before anything moves: the
       // task as a read would show it now must be the task the caller read.
       // `immediate` holds every other writer off until this commits, so the
@@ -1481,14 +1521,14 @@ export function updateTask(
         const current = viewOne(
           db,
           db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
-          project.prefix,
+          prefix,
           now,
         );
         const version = taskVersion(current);
         if (version !== input.expected_version) {
           throw new ApiError('conflict', 'The task changed after you read it', {
             current,
-            etag: `"${version}"`,
+            etag: taskEtag(current),
           });
         }
       }
@@ -1600,12 +1640,7 @@ export function updateTask(
         });
       }
 
-      return viewOne(
-        db,
-        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
-        project.prefix,
-        now,
-      );
+      return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, prefix, now);
     },
     { behavior: 'immediate' },
   );

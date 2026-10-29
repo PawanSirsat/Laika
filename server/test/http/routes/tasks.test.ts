@@ -1,11 +1,14 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { newId } from '../../../src/db/ids.ts';
-import { activity, tasks, users } from '../../../src/db/schema.ts';
+import { activity, projects, tasks, users } from '../../../src/db/schema.ts';
 import { flagStaleTasks, STALE_AFTER_MS } from '../../../src/jobs/jobs.ts';
 import { MAX_TAGS_PER_TASK } from '../../../src/services/tags.ts';
 import { CLAIM_PULSE, taskVersion, type TaskView } from '../../../src/services/tasks.ts';
-import { backfillTaskPositions } from '../../../src/db/backfill.ts';
+import { backfillTaskPositions, backfillTaskTimestamps } from '../../../src/db/backfill.ts';
+import { systemPrincipal } from '../../../src/policy/can.ts';
+import { refreshEstimate } from '../../../src/services/estimates.ts';
+import { handlePullRequest } from '../../../src/services/webhooks.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -291,6 +294,11 @@ describe('patch', () => {
     return etag!;
   }
 
+  async function ok(res: Promise<Response>): Promise<void> {
+    const r = await res;
+    expect(r.status, await r.clone().text()).toBeLessThan(300);
+  }
+
   /** A guarded PATCH that must be refused, naming the version that is current. */
   async function expectStale(id: string, token: string): Promise<void> {
     const refused = await req(`/api/v1/tasks/${id}`, {
@@ -474,6 +482,82 @@ describe('patch', () => {
     expect(after).toMatchObject({ title: 'Original', tags: ['kept'] });
   });
 
+  // Round 3's first reproduction: a prefix rename committed by another
+  // connection after `requireTask` read the project and before `BEGIN
+  // IMMEDIATE`. The spy runs the rename at exactly that point.
+  it('refuses a token whose key a prefix rename changed just before the write', async () => {
+    const task = await newTask('Original');
+    const token = await tokenOf(task.id);
+    expect(task.key).toBe('LAI-' + task.key.split('-')[1]);
+    const begin = h.db.transaction.bind(h.db);
+    const spy = vi
+      .spyOn(h.db, 'transaction')
+      .mockImplementationOnce((...args: Parameters<typeof h.db.transaction>) => {
+        h.db.update(projects).set({ prefix: 'NEW' }).run();
+        return begin(...args);
+      });
+    try {
+      const refused = await req(`/api/v1/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'If-Match': token },
+        body: JSON.stringify({ title: 'Late write' }),
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(refused.status).toBe(409);
+      const error = (await refused.json()) as {
+        error: { details: { current: { key: string; title: string }; etag: string } };
+      };
+      expect(error.error.details.current).toMatchObject({
+        key: `NEW-${task.key.split('-')[1]!}`,
+        title: 'Original',
+      });
+      expect(error.error.details.etag).toBe(await tokenOf(task.id));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  describe('list rows carry the ETag a read of the task sends', () => {
+    const LISTS = {
+      'GET /projects/:slug/tasks': '/api/v1/projects/laika/tasks',
+      'GET /tasks': '/api/v1/tasks',
+    };
+
+    for (const [name, path] of Object.entries(LISTS)) {
+      for (const slim of [false, true]) {
+        it(`${name}${slim ? '?fields=slim' : ''}: each row's etag is its GET's`, async () => {
+          const a = await newTask('A', { tags: ['x'] });
+          const b = await newTask('B');
+          await ok(post(`/api/v1/tasks/${a.id}/dependencies`, { blocked_by_task_id: b.id }));
+          await ok(post(`/api/v1/tasks/${b.id}/comments`, { body_md: 'hi' }));
+          const res = await req(`${path}${slim ? '?fields=slim' : ''}`);
+          expect(res.status).toBe(200);
+          const rows = ((await res.json()) as { data: { id: string; etag: string }[] }).data;
+          expect(rows.map((r) => r.id).sort()).toEqual([a.id, b.id].sort());
+          for (const row of rows) expect(row.etag, row.id).toBe(await tokenOf(row.id));
+        });
+      }
+    }
+
+    it("a slim row's etag guards a PATCH: current is 200, then stale is 409", async () => {
+      const task = await newTask('Original');
+      const res = await req('/api/v1/projects/laika/tasks?fields=slim');
+      expect(res.status).toBe(200);
+      const row = ((await res.json()) as { data: { id: string; etag: string }[] }).data.find(
+        (r) => r.id === task.id,
+      )!;
+      expect(row).not.toHaveProperty('description_md');
+
+      const guarded = await req(`/api/v1/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'If-Match': row.etag },
+        body: JSON.stringify({ title: 'From the list' }),
+      });
+      expect(guarded.status).toBe(200);
+      await expectStale(task.id, row.etag);
+    });
+  });
+
   /**
    * **Every writer the two reviews named, and every one the codebase has** — each
    * in the millisecond the token was read, so nothing here leans on the clock.
@@ -490,10 +574,6 @@ describe('patch', () => {
     }
     type Scenario = (task: Made, other: Made) => Setup | Promise<Setup>;
 
-    async function ok(res: Promise<Response>): Promise<void> {
-      const r = await res;
-      expect(r.status, await r.clone().text()).toBeLessThan(300);
-    }
     const patch = (id: string, body: unknown) =>
       ok(req(`/api/v1/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(body) }));
     const del = (path: string) => ok(req(path, { method: 'DELETE' }));
@@ -643,26 +723,91 @@ describe('patch', () => {
           },
         };
       },
-      'backfill: started_at / completed_at (backfill.ts)': (t) => ({
-        watch: t.id,
-        write: raw(t.id, { startedAt: 1 }),
-      }),
-      'estimate recompute (estimates.ts)': (t) => ({
-        watch: t.id,
-        write: raw(t.id, { estimateId: null }),
-      }),
-      'offboarding reassign (offboarding.ts)': (t) => ({
-        watch: t.id,
-        write: raw(t.id, { assigneeId: ownerUserId() }),
-      }),
-      'heartbeat branch (heartbeats.ts)': (t) => ({
-        watch: t.id,
-        write: raw(t.id, { branch: 'LAI-2-from-a-heartbeat' }),
-      }),
-      'webhook pull request ref (webhooks.ts)': (t) => ({
-        watch: t.id,
-        write: raw(t.id, { externalRef: 'kvell/laika#7' }),
-      }),
+      'backfill: started_at / completed_at (backfill.ts)': async (t) => {
+        // A task whose history says it started, with the column lost, as a
+        // database from before the column had it.
+        await ok(post(`/api/v1/tasks/${t.id}/status`, { status: 'in_progress' }));
+        raw(t.id, { startedAt: null })();
+        return {
+          watch: t.id,
+          write: () => {
+            expect(backfillTaskTimestamps(h.db).startedAt).toBeGreaterThan(0);
+          },
+        };
+      },
+      'estimate recompute (estimates.ts)': (t) => {
+        raw(t.id, { estimateId: null })();
+        return {
+          watch: t.id,
+          write: () => {
+            expect(refreshEstimate(h.db, t.id, Date.now())).toBe(true);
+          },
+        };
+      },
+      'offboarding reassign (offboarding.ts)': async (t) => {
+        const orgId = h.db.all<{ id: string }>(sql`SELECT id FROM orgs`)[0]!.id;
+        const email = `leaver-${newId().toLowerCase()}@example.test`;
+        const invite = seedInvite(h.db, {
+          orgId,
+          createdBy: ownerUserId(),
+          email,
+          orgRole: 'member',
+        });
+        const joined = await signUp(h.app, { email, password: PASSWORD, inviteToken: invite });
+        expect(joined.status).toBe(200);
+        const leaver = h.db.select().from(users).where(eq(users.email, email)).get()!.id;
+        await ok(post('/api/v1/projects/laika/members', { user_id: leaver, role: 'member' }));
+        await patch(t.id, { assignee_id: leaver });
+        return {
+          watch: t.id,
+          write: () =>
+            ok(
+              req(`/api/v1/projects/laika/members/${leaver}`, {
+                method: 'DELETE',
+                body: JSON.stringify({ open_tasks: { reassign_to: ownerUserId() } }),
+              }),
+            ),
+        };
+      },
+      'heartbeat branch (heartbeats.ts)': async (t) => {
+        h.db.update(projects).set({ repo: 'kvell/laika' }).run();
+        const minted = await post('/api/v1/tokens', { name: 'agent', scope: 'full' });
+        expect(minted.status).toBe(201);
+        const { secret } = (await minted.json()) as { secret: string };
+        return {
+          watch: t.id,
+          write: async () => {
+            const beat = await h.app.request('/api/v1/heartbeats', {
+              method: 'POST',
+              headers: jsonHeaders({ Authorization: `Bearer ${secret}` }),
+              body: JSON.stringify({
+                repo: 'kvell/laika',
+                branch: `${t.key.toLowerCase()}-from-a-heartbeat`,
+              }),
+            });
+            expect(beat.status).toBe(202);
+          },
+        };
+      },
+      'webhook pull request (webhooks.ts)': (t) => {
+        h.db.update(projects).set({ repo: 'kvell/laika' }).run();
+        return {
+          watch: t.id,
+          write: () => {
+            const outcome = handlePullRequest(
+              h.db,
+              {
+                action: 'opened',
+                repository: { full_name: 'kvell/laika' },
+                pull_request: { head: { ref: `${t.key.toLowerCase()}-a-pr` }, number: 7 },
+              },
+              (projectId) => systemPrincipal(projectId),
+              Date.now(),
+            );
+            expect(outcome.handled, JSON.stringify(outcome)).toBe(true);
+          },
+        };
+      },
     };
 
     for (const [name, scenario] of Object.entries(SCENARIOS)) {
@@ -730,7 +875,9 @@ describe('patch', () => {
       'task_claim_estimates.task_id': {
         not_shown: 'the claimant’s own estimate, read by the estimate endpoint only',
       },
-      'task_rounds.task_id': { not_shown: 'review rounds have their own endpoint' },
+      // A finish opens a round and a send-back closes it; `send_back` reads
+      // the open send-back from it (rounds.ts).
+      'task_rounds.task_id': { shown: ['sent back from review'] },
       'task_watchers.task_id': { not_shown: 'per person, read through /me/watching' },
       'heartbeats.matched_task_id': { not_shown: 'presence, not the task' },
       'unlisted_work.promoted_task_id': { not_shown: 'read from the unlisted entry, not the task' },
@@ -1376,11 +1523,10 @@ describe('a slim list: ?fields=slim (LAI-795)', () => {
 
     expect(items).toHaveLength(5);
     for (const item of items) {
-      const one = (await (await req(`/api/v1/tasks/${String(item.id)}`)).json()) as Record<
-        string,
-        unknown
-      >;
-      expect(item).toEqual(one);
+      const read = await req(`/api/v1/tasks/${String(item.id)}`);
+      const one = (await read.json()) as Record<string, unknown>;
+      // A row is the task's GET body plus that GET's ETag, as `etag` (LAI-571).
+      expect(item).toEqual({ ...one, etag: read.headers.get('etag') });
       for (const field of TEXTS) expect(Object.keys(item)).toContain(field);
     }
   });
