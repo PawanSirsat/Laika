@@ -134,3 +134,28 @@ CHIEF authorised one named cross-area edit (CLAUDE.md §1, D-033/D-034):
 `HandoffOfferView` removed, nothing else changed. This retires the two server
 reds quoted above. `pnpm exec vitest run test/tooling/response-type-coverage.test.ts`:
 exit 0, 10 passed.
+
+### Codex round 1 on #150 (at 1d5e6551): fixed as new commits
+
+1. **Approve and ownership.** `approveGate` disables *Approve* with a reason
+   while `GET /agents` is loading or failed. It never treats an unread list as
+   "owns nothing". The receiver's owner gets no *Approve*.
+2. **An unread save is not an absent one.** `recoveryOf(…, read)` is `unknown`
+   until the checkpoint/offer read succeeded ("Checking this task's saves…" /
+   "Could not read this task's saves…"). *Automatic recovery unavailable* and
+   *Release to backlog* need a successful read that confirmed none. *None
+   verified yet* needs the same.
+3. **The ten-minute notice on a quiet drawer.** While any save is `pending`,
+   `useTaskHandoffs` re-reads every 60 s (`PENDING_POLL_MS`), only on a
+   visible page, quietly. It stops when the drawer closes (unmount) or nothing
+   is pending. The words come from the server's `pending_notice` alone.
+- Non-blocking: "Not needed — the same person owns both agents" became
+  "Not required for this offer", driven by `requires_approval` alone.
+
+Tests, fail-before/pass-after: four cases in `handoff-derive.test.ts` (27/27)
+and four in `handoff-drawer.test.ts` (9/9; Playwright's clock for the
+60 s re-read, focus kept). **Mutation-checked**, each restored by checksum:
+TaskDetailPanel ownAgents → bare id set ⇒ *Approve waits…* red; TaskDetailPanel
+read status dropped ⇒ *a failed read…* red; `recoveryOf`'s read guard
+disabled ⇒ *a read in flight or failed…* red; polling disabled ⇒ *a quiet
+drawer picks up…* red.
