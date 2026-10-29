@@ -4,6 +4,7 @@ import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import { presenceEnabled } from '../db/orgs.ts';
 import { heartbeats, projects, tasks } from '../db/schema.ts';
+import { nextTaskVersion } from '../db/task-version.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { claimFenceRefusal } from './claims.ts';
@@ -530,7 +531,10 @@ export function recordHeartbeat(
     // overwriting is correct, and the history is `activity`. No activity row: a
     // heartbeat is presence, not an audited action, and an agent beating every
     // few minutes would drown the feed (see the module comment).
-    db.update(tasks).set({ branch, updatedAt: now }).where(eq(tasks.id, matched.taskId)).run();
+    db.update(tasks)
+      .set({ branch, updatedAt: nextTaskVersion(now) })
+      .where(eq(tasks.id, matched.taskId))
+      .run();
   }
 
   // After the insert: a repo nobody tracks is **not** an error (§9.2 degrades,

@@ -40,6 +40,7 @@ import { backfillTaskPositions, lastPosition } from '../db/backfill.ts';
 import { keyAfter, keyBetween } from '../db/order-key.ts';
 import { CATEGORY_LABELS, statusForCategory, type StatusRef } from '../db/project-statuses.ts';
 import { projects, projectStatuses, taskDependencies, tasks, users } from '../db/schema.ts';
+import { nextTaskVersion, touchTask } from '../db/task-version.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, effectiveProjectRole } from '../policy/can.ts';
 import {
@@ -1400,16 +1401,22 @@ export function updateTask(
       assertClaimFence(db, actor, taskId, now);
       if (selecting) assertSelectionChangeAllowed(db, task);
 
+      // The version this write stamps, past both the clock and the value now
+      // in the row, so a token read in this millisecond still goes stale
+      // (LAI-571). Read under the write lock: `task` was read before it.
+      const expected = input.expected_updated_at;
+      const updatedAt = Math.max(
+        now,
+        (expected ??
+          db.select({ v: tasks.updatedAt }).from(tasks).where(eq(tasks.id, taskId)).get()!.v) + 1,
+      );
       // A precondition is one atomic compare-and-swap, before tags, fields,
-      // selection, estimates or activity can move. Advancing beyond both the
-      // clock and the value read makes two writes in one millisecond distinct.
-      const updatedAt =
-        input.expected_updated_at === undefined ? now : Math.max(now, task.updatedAt + 1);
-      if (input.expected_updated_at !== undefined) {
+      // selection, estimates or activity can move.
+      if (expected !== undefined) {
         const guarded = db
           .update(tasks)
           .set({ updatedAt })
-          .where(and(eq(tasks.id, taskId), eq(tasks.updatedAt, input.expected_updated_at)))
+          .where(and(eq(tasks.id, taskId), eq(tasks.updatedAt, expected)))
           .run();
         if (guarded.changes === 0) {
           const current = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
@@ -1523,6 +1530,20 @@ export function updateTask(
         });
       }
 
+      // **Every change moves the version, including the ones that are not a
+      // column** (LAI-571 review): tags live in `task_tags`, so a tags-only
+      // PATCH used to leave `updated_at` — and every `If-Match` taken before
+      // it — exactly as it was. One stamp for the whole write; the size
+      // override's own advance is folded back into it.
+      if (
+        tagChange !== null ||
+        Object.keys(changes).length > 0 ||
+        selecting ||
+        sizeChange !== null
+      ) {
+        db.update(tasks).set({ updatedAt }).where(eq(tasks.id, taskId)).run();
+      }
+
       return viewOne(
         db,
         db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
@@ -1621,7 +1642,7 @@ export function startWorking(
     if (before.assigneeId === actor.userId && before.status === 'in_progress') {
       if (onBranch !== undefined && onBranch !== before.branch) {
         db.update(tasks)
-          .set({ branch: onBranch, updatedAt: now })
+          .set({ branch: onBranch, updatedAt: nextTaskVersion(now) })
           .where(eq(tasks.id, taskId))
           .run();
       }
@@ -1666,7 +1687,7 @@ export function startWorking(
         // `before` is read inside this transaction, so nothing moved it since.
         startedAt: before.startedAt ?? now,
         ...(onBranch === undefined ? {} : { branch: onBranch }),
-        updatedAt: now,
+        updatedAt: nextTaskVersion(now),
       })
       .where(and(eq(tasks.id, taskId), isNull(tasks.assigneeId)))
       .run();
@@ -1777,7 +1798,10 @@ function agentStartWorking(
 
   if (before.status === 'in_progress') {
     if (onBranch !== undefined && onBranch !== before.branch) {
-      db.update(tasks).set({ branch: onBranch, updatedAt: now }).where(eq(tasks.id, taskId)).run();
+      db.update(tasks)
+        .set({ branch: onBranch, updatedAt: nextTaskVersion(now) })
+        .where(eq(tasks.id, taskId))
+        .run();
     }
     if (!taken.resumed) {
       appendActivity(db, {
@@ -1802,7 +1826,7 @@ function agentStartWorking(
         statusId: to.id,
         startedAt: before.startedAt ?? now,
         ...(onBranch === undefined ? {} : { branch: onBranch }),
-        updatedAt: now,
+        updatedAt: nextTaskVersion(now),
       })
       .where(eq(tasks.id, taskId))
       .run();
@@ -1909,7 +1933,10 @@ export function changeStatus(
   // is written as the same verb with the same `from`/`to` — equal, which is
   // what tells a reader the category did not move.
   if (to === task.status) {
-    db.update(tasks).set({ statusId: dest.id, updatedAt: now }).where(eq(tasks.id, taskId)).run();
+    db.update(tasks)
+      .set({ statusId: dest.id, updatedAt: nextTaskVersion(now) })
+      .where(eq(tasks.id, taskId))
+      .run();
 
     appendActivity(db, {
       orgId: project.orgId,
@@ -1958,7 +1985,7 @@ export function changeStatus(
     .set({
       status: to,
       statusId: dest.id,
-      updatedAt: now,
+      updatedAt: nextTaskVersion(now),
       // `claimTask` already stamps this, but claiming is not the only way into
       // `in_progress` — a lead moving somebody else's task gets here instead,
       // and before LAI-126 that task started work with `started_at` still null.
@@ -2127,6 +2154,9 @@ export function addTaskDependency(
     }
     throw err;
   }
+  // `blocked_by` is part of the task a read shows, so the edge moves its
+  // version as a column would (LAI-571).
+  touchTask(db, taskId, now);
 
   appendActivity(db, {
     orgId: project.orgId,
@@ -2173,6 +2203,7 @@ export function removeTaskDependency(
     .run();
 
   if (removed.changes === 0) throw ApiError.notFound('That dependency does not exist');
+  touchTask(db, taskId, now);
 
   appendActivity(db, {
     orgId: project.orgId,
@@ -2299,7 +2330,10 @@ export function reorderTask(
     if (alreadyThere) return viewOne(db, task, project.prefix);
 
     const position = keyBetween(lower, upper);
-    db.update(tasks).set({ position, updatedAt: now }).where(eq(tasks.id, taskId)).run();
+    db.update(tasks)
+      .set({ position, updatedAt: nextTaskVersion(now) })
+      .where(eq(tasks.id, taskId))
+      .run();
 
     appendActivity(db, {
       orgId: project.orgId,
