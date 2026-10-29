@@ -2,11 +2,12 @@
 id: LAI-320
 title: 'The client declares RegisteredAgent.owner_display_name (the client half of LAI-592)'
 area: shell
-assignee: unclaimed
+assignee: belka
 priority: p1
 depends-on: [LAI-592]
 discovered-from: LAI-592
-status: backlog
+started: 2026-10-29T18:59:55Z
+status: in-progress
 ---
 
 The client half of LAI-592, under CLAUDE.md §4.4. LAI-592's CORE half adds
