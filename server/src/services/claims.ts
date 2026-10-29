@@ -871,12 +871,10 @@ export function takeClaim(
         agent_id: live.agentId,
       });
     }
-    if (live.state === 'paused') {
-      throw claimConflict('claim_paused', 'This claim is paused while a hand-off is open', {
-        task_id: task.id,
-        claim_generation: live.generation,
-      });
-    }
+    // **A paused claim is renewed by its own session** (§4.66, §9.1.1,
+    // LAI-546 review): an MCP-only sender renews by `start_working`, and its
+    // offer lives longer than one lease. It stays paused — the renewal is the
+    // only thing that changes; every write is still `claim_paused`.
     if (leaseLapsed(live.leaseExpiresAt, now)) {
       expireClaim(db, live, now);
       throw claimConflict('stale_claim', 'Your claim on this task expired; reclaim it explicitly', {
@@ -1318,7 +1316,7 @@ export function afterClaimExpired(db: Db, claim: ClaimRow, now: number): void {
 }
 
 /** Mark one claim `expired` and write `task.claim_expired` as the system (§3.4). */
-function expireClaim(db: Db, claim: ClaimRow, now: number): void {
+export function expireClaim(db: Db, claim: ClaimRow, now: number): void {
   const changed = db
     .update(taskClaims)
     .set({ state: 'expired', endedAt: now })

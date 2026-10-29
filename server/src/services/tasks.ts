@@ -1905,7 +1905,12 @@ function agentStartWorking(
   assertSelectedAgentMayClaim(db, actor, taskId, agent.id);
 
   const requested = hasOpenWorkRequest(db, taskId, agent.id);
-  if (before.assigneeId !== null && before.assigneeId !== actor.userId && !requested) {
+  // **The holder's own renewal is not a second claim** (LAI-546 review): a
+  // receiver that accepted a hand-off holds the live claim on a task whose
+  // human assignee is somebody else's, with no work request left — the claim
+  // is the lock, and `takeClaim` asks that it is this session's.
+  const holds = liveClaim(db, taskId)?.agentId === agent.id;
+  if (before.assigneeId !== null && before.assigneeId !== actor.userId && !requested && !holds) {
     throw new ApiError('conflict', 'That task is already claimed', {
       assignee_id: before.assigneeId,
       status: before.status,
@@ -1917,7 +1922,9 @@ function agentStartWorking(
   const taken = takeClaim(db, actor, before, { sessionId: options.sessionId, now });
 
   if (before.status === 'in_progress') {
-    if (onBranch !== undefined && onBranch !== before.branch) {
+    // A paused claim's renewal writes nothing, its branch included: every
+    // change is refused while the offer is live (§4.71).
+    if (onBranch !== undefined && onBranch !== before.branch && taken.claim.state !== 'paused') {
       db.update(tasks).set({ branch: onBranch, updatedAt: now }).where(eq(tasks.id, taskId)).run();
     }
     if (!taken.resumed) {

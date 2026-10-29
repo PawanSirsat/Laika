@@ -5,7 +5,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { newId } from '../../../src/db/ids.ts';
-import { orgs, projects, taskClaims, users } from '../../../src/db/schema.ts';
+import { orgs, projects, taskClaims, tasks, users } from '../../../src/db/schema.ts';
 import { encryptSecret } from '../../../src/secrets.ts';
 import { resetHandoffRateLimits } from '../../../src/services/handoffs.ts';
 import {
@@ -40,6 +40,7 @@ let taskId: string;
 let taskKey: string;
 let sender: { id: string; secret: string };
 let receiver: { id: string; secret: string };
+let senderSession: string;
 
 interface ErrorBody {
   error: { code: string; message: string; details: Record<string, unknown> | null };
@@ -220,6 +221,7 @@ beforeEach(async () => {
   const claimed = await post(`/api/v1/tasks/${taskId}/claim`, bearer(sender.secret));
   expect(claimed.status, await claimed.clone().text()).toBe(200);
   expect(claimed.headers.get('X-Laika-Claim-Generation')).toBe('1');
+  senderSession = claimed.headers.get('X-Laika-Agent-Session')!;
 
   baseUrl = await new Promise<URL>((resolve) => {
     server = serve({ fetch: h.app.fetch, port: 0, hostname: '127.0.0.1' }, (info) => {
@@ -641,5 +643,114 @@ describe('MCP (§7.1)', () => {
       reason: 'not_an_agent',
     });
     await client.close();
+  });
+});
+
+describe('renewing over MCP while hand-offs are in flight (LAI-546 review)', () => {
+  it('an MCP-only sender renews its paused claim with start_working: it stays paused and nothing is written', async () => {
+    const cp = await verifiedSave();
+    const a = await connect(sender.secret);
+    await succeeded(a, 'offer_handoff', {
+      task: taskKey,
+      to_agent: receiver.id,
+      checkpoint: cp.id,
+      reason: 'Out of context',
+      idempotency_key: 'renew-key',
+      claim_generation: 1,
+    });
+    // The lease nearly gone, as it is a few minutes into a thirty-minute offer.
+    h.db
+      .update(taskClaims)
+      .set({ leaseExpiresAt: Date.now() + 1_000 })
+      .where(eq(taskClaims.taskId, taskId))
+      .run();
+    const branchBefore = h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()!.branch;
+
+    const renewed = await succeeded(a, 'start_working', {
+      task: taskKey,
+      session_id: senderSession,
+      branch: 'LAI-1-somewhere-else',
+    });
+
+    expect(renewed.claim).toMatchObject({ generation: 1, state: 'paused' });
+    const row = h.db.select().from(taskClaims).where(eq(taskClaims.taskId, taskId)).get()!;
+    expect(row.state).toBe('paused');
+    expect(row.leaseExpiresAt).toBeGreaterThan(Date.now() + 60_000);
+    expect(h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()!.branch).toBe(branchBefore);
+    expect(
+      await refused(a, 'update_task', { task: taskKey, title: 'x', claim_generation: 1 }),
+    ).toEqual({ code: 'conflict', reason: 'claim_paused' });
+    await a.close();
+  });
+
+  it('after a cross-owner accept, the receiver renews its claim though the assignee is the sender’s owner', async () => {
+    // Bob, a member with an agent of his own; the space lets other owners
+    // receive without an approver.
+    const orgId = h.db.select().from(orgs).get()!.id;
+    const adaId = h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()!.id;
+    const invite = seedInvite(h.db, {
+      orgId,
+      createdBy: adaId,
+      email: 'bob@example.test',
+      orgRole: 'member',
+    });
+    const signed = await signUp(h.app, {
+      email: 'bob@example.test',
+      password: PASSWORD,
+      inviteToken: invite,
+    });
+    expect(signed.status).toBe(200);
+    const bobCookie = cookieFrom(signed);
+    const bobId = h.db.select().from(users).where(eq(users.email, 'bob@example.test')).get()!.id;
+    await ok(
+      await post(
+        '/api/v1/projects/laika/members',
+        { Cookie: cookie },
+        { user_id: bobId, role: 'member' },
+      ),
+      201,
+    );
+    const bobs = await agent('Bob’s agent', bobCookie);
+    await ok(
+      await h.app.request('/api/v1/projects/laika/handoff-policy', {
+        method: 'PUT',
+        headers: jsonHeaders({ Cookie: cookie }),
+        body: JSON.stringify({ allow_other_owners: true, cross_owner_requires_approval: false }),
+      }),
+      200,
+    );
+    // The human assignee is Ada, the sender's owner — a person is never fenced.
+    await ok(
+      await h.app.request(`/api/v1/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: jsonHeaders({ Cookie: cookie }),
+        body: JSON.stringify({ assignee_id: adaId }),
+      }),
+      200,
+    );
+    const cp = await verifiedSave();
+    const made = await ok(
+      await post(`/api/v1/tasks/${taskId}/handoff-offers`, bearer(sender.secret, 1), {
+        idempotency_key: 'cross',
+        to_agent_id: bobs.id,
+        checkpoint_id: cp.id,
+        reason: 'Bob continues',
+      }),
+      201,
+    );
+    expect(made.state).toBe('open');
+
+    const b = await connect(bobs.secret);
+    const accepted = await succeeded(b, 'respond_handoff', {
+      offer: made.id,
+      action: 'accept',
+      verified_commit_sha: cp.commit,
+    });
+    const session = (accepted.session as { id: string }).id;
+
+    const renewed = await succeeded(b, 'start_working', { task: taskKey, session_id: session });
+    expect(renewed.claim).toMatchObject({ generation: 2, state: 'active', agent_id: bobs.id });
+    expect(h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()!.assigneeId).toBe(adaId);
+    await b.close();
   });
 });

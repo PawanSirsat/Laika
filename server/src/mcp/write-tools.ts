@@ -586,10 +586,11 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
             open_questions: NOTE_FIELD,
             failing: NOTE_FIELD,
           })
+          .nullable()
           .optional(),
-        summary_commit_sha: COMMIT.optional().describe(
-          'The commit your note describes — required with `summary`.',
-        ),
+        summary_commit_sha: COMMIT.nullable()
+          .optional()
+          .describe('The commit your note describes — required with `summary`.'),
         claim_generation: CLAIM_GENERATION,
       }),
     },

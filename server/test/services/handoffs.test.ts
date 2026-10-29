@@ -1,12 +1,16 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
+import { createInterface } from 'node:readline';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, resolveTokenActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
-import { openDb } from '../../src/db/client.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
   activity,
   handoffOffers,
   agentProjectGrants,
+  projectMemberships,
   projects,
   projectStatuses,
   taskCheckpoints,
@@ -60,6 +64,8 @@ const LEASE = DEFAULT_CLAIM_TIMINGS.expireMs;
 const TTL = 30 * MIN;
 const REPO = 'kvell/laika';
 const ZERO = '0'.repeat(40);
+const SERVER_DIR = fileURLToPath(new URL('../../', import.meta.url));
+const RACER = fileURLToPath(new URL('../helpers/accept-racer.ts', import.meta.url));
 
 let t: TestDb;
 let s: Seed;
@@ -82,6 +88,7 @@ afterEach(() => {
 interface AgentHandle {
   id: string;
   actor: ResolvedActor;
+  secret: string;
 }
 
 function agentOf(person: ResolvedActor, name: string): AgentHandle {
@@ -90,11 +97,18 @@ function agentOf(person: ResolvedActor, name: string): AgentHandle {
     harness: 'claude-code',
     grants: [{ projectId: s.projectId, scope: 'full' }],
   });
-  return { id: created.agent.id, actor: resolveTokenActor(t.db, created.secret, T0) };
+  return {
+    id: created.agent.id,
+    actor: resolveTokenActor(t.db, created.secret, T0),
+    secret: created.secret,
+  };
 }
 
 /** A Member of the project, with an agent of their own. */
-function member(name = 'Mira'): { person: ResolvedActor; agent: AgentHandle } {
+function member(
+  name = 'Mira',
+  role: 'member' | 'lead' = 'member',
+): { person: ResolvedActor; agent: AgentHandle } {
   const id = newId();
   t.db
     .insert(users)
@@ -107,7 +121,7 @@ function member(name = 'Mira'): { person: ResolvedActor; agent: AgentHandle } {
       updatedAt: new Date(T0),
     })
     .run();
-  addMember(t.db, owner, 'laika', id, 'member', T0);
+  addMember(t.db, owner, 'laika', id, role, T0);
   const person = loadActor(t.db, id)!;
   return { person, agent: agentOf(person, `${name}’s agent`) };
 }
@@ -635,7 +649,7 @@ describe('accepting', () => {
     ).toEqual({ code: 'conflict', reason: 'handoff_limit' });
   });
 
-  it('two receivers on two connections: exactly one wins, the other is offer_taken', () => {
+  it('two receivers in two processes, released together: exactly one wins, the other is offer_taken', async () => {
     const a = agentOf(owner, 'A');
     const b = agentOf(owner, 'B');
     const c = agentOf(owner, 'C');
@@ -646,31 +660,58 @@ describe('accepting', () => {
     const [recovery] = offersOf(id);
     expect(recovery).toMatchObject({ kind: 'recovery', state: 'open', toAgentId: null });
 
-    const second = openDb({ path: t.path });
-    try {
-      const results = [
-        { conn: t, who: b },
-        { conn: second, who: c },
-      ].map(({ conn, who }) => {
-        try {
-          return acceptHandoff(conn.sqlite, conn.db, who.actor, recovery!.id, {
-            verifiedCommitSha: cp.commit,
-            now: T0 + LEASE + 1,
-          }).claim.agent_id;
-        } catch (err) {
-          return (err as ApiError).details as { reason: string };
-        }
+    // Each racer is its own process with its own connection to the same file.
+    const racers = [b, c].map((who) =>
+      spawn(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          RACER,
+          t.path,
+          who.secret,
+          recovery!.id,
+          cp.commit,
+          String(T0 + LEASE + 1),
+        ],
+        { cwd: SERVER_DIR, stdio: ['pipe', 'pipe', 'inherit'] },
+      ),
+    );
+    const outputs = racers.map((child) => {
+      const lines = createInterface({ input: child.stdout });
+      const ready = new Promise<void>((resolve) => {
+        lines.once('line', (line) => {
+          expect(line).toBe('ready');
+          resolve();
+        });
       });
-      expect(results).toEqual([b.id, expect.objectContaining({ reason: 'offer_taken' })]);
-    } finally {
-      second.sqlite.close();
-    }
+      const answer = ready.then(
+        () =>
+          new Promise<Record<string, unknown>>((resolve) => {
+            lines.once('line', (line) => {
+              resolve(JSON.parse(line) as Record<string, unknown>);
+            });
+          }),
+      );
+      return { ready, answer, exited: once(child, 'exit') };
+    });
+    await Promise.all(outputs.map((o) => o.ready));
+    // Both connections are open; release them in the same tick.
+    for (const child of racers) child.stdin.end('go\n');
+    const answers = await Promise.all(outputs.map((o) => o.answer));
+    await Promise.all(outputs.map((o) => o.exited));
+
+    const winners = answers.filter((x) => 'won' in x);
+    const losers = answers.filter((x) => !('won' in x));
+    expect(winners, JSON.stringify(answers)).toHaveLength(1);
+    expect(losers).toEqual([{ code: 'conflict', reason: 'offer_taken' }]);
+    expect([b.id, c.id]).toContain(winners[0]!.won);
     expect(claimsOf(id)).toEqual([
       [1, 'expired'],
       [2, 'active'],
     ]);
     expect(rowsOf(id, 'task.handoff_accepted')).toHaveLength(1);
-  });
+  }, 30_000);
 });
 
 // ------------------------------------------------------- decline and cancel
@@ -710,6 +751,21 @@ describe('declining and cancelling', () => {
       code: 'conflict',
       reason: 'offer_closed',
     });
+  });
+
+  it('the task’s assignee may cancel an offer another person’s agent sent (§4.71)', () => {
+    const a = agentOf(owner, 'A');
+    const b = agentOf(owner, 'B');
+    const { person } = member();
+    const id = task();
+    const held = claim(a, id);
+    const { offer: made } = offer(a, id, 1, b.id, save(a, id, held.generation).id);
+    t.db.update(tasks).set({ assigneeId: person.userId }).where(eq(tasks.id, id)).run();
+    expect(cancelHandoff(t.sqlite, t.db, person, made.id, T0 + 1)).toMatchObject({
+      state: 'cancelled',
+      closed_reason: 'withdrawn',
+    });
+    expect(claimsOf(id)).toEqual([[1, 'active']]);
   });
 
   it('another member may not cancel an offer their agent did not send', () => {
@@ -1160,5 +1216,124 @@ describe('the policy (§4.72)', () => {
     expect(
       refusal(() => putHandoffPolicy(t.sqlite, t.db, owner, 'laika', { max_handoffs: 21 }, T0)),
     ).toMatchObject({ code: 'unprocessable' });
+  });
+});
+
+// ------------------------------------------- LAI-546 review round 1 (Codex)
+
+describe('closing an offer settles an elapsed sender lease in the same transaction', () => {
+  function pausedAndLapsed() {
+    const a = agentOf(owner, 'A');
+    const b = agentOf(owner, 'B');
+    const id = task();
+    const held = claim(a, id);
+    const cp = save(a, id, held.generation);
+    const { offer: made } = offer(a, id, 1, b.id, cp.id);
+    // No heartbeat, and no scan yet: the paused lease is past, the row still says paused.
+    expect(claimsOf(id)).toEqual([[1, 'paused']]);
+    return { a, b, id, cp, made, late: T0 + LEASE + 1 };
+  }
+
+  for (const how of ['decline', 'cancel'] as const) {
+    it(`a ${how} does not resume it: the claim expires, its row is written, and the recovery opens`, () => {
+      const { a, b, id, cp, made, late } = pausedAndLapsed();
+      if (how === 'decline') declineHandoff(t.sqlite, t.db, b.actor, made.id, { now: late });
+      else cancelHandoff(t.sqlite, t.db, a.actor, made.id, late);
+
+      expect(claimsOf(id)).toEqual([[1, 'expired']]);
+      expect(rowsOf(id, 'task.claim_expired')).toHaveLength(1);
+      expect(
+        offersOf(id)
+          .filter((o) => o.kind === 'recovery')
+          .map((o) => [o.state, o.checkpointId]),
+      ).toEqual([['open', cp.id]]);
+      expect(
+        refusal(() => updateTask(t.db, at(a.actor, 1), id, { title: 'x', now: late + 1 })),
+      ).toEqual({ code: 'conflict', reason: 'stale_claim' });
+    });
+  }
+
+  it('an accept records the expiry first, then takes the task from an expired claim', () => {
+    const { b, id, cp, made, late } = pausedAndLapsed();
+    acceptHandoff(t.sqlite, t.db, b.actor, made.id, { verifiedCommitSha: cp.commit, now: late });
+
+    expect(claimsOf(id)).toEqual([
+      [1, 'expired'],
+      [2, 'active'],
+    ]);
+    const types = t.db
+      .select()
+      .from(activity)
+      .where(eq(activity.taskId, id))
+      .all()
+      .map((r) => r.type);
+    expect(types.indexOf('task.claim_expired')).toBeGreaterThan(-1);
+    expect(types.indexOf('task.claim_expired')).toBeLessThan(
+      types.indexOf('task.handoff_accepted'),
+    );
+    expect(rowsOf(id, 'task.handoff_accepted')[0]).toMatchObject({ from_claim_state: 'expired' });
+    // No recovery beside the accepted offer.
+    expect(offersOf(id).filter((o) => o.kind === 'recovery')).toEqual([]);
+  });
+});
+
+describe('a person is read again inside the write (§4.71)', () => {
+  function crossOwnerPending() {
+    const a = agentOf(owner, 'A');
+    const { agent: theirs } = member('Theo');
+    putHandoffPolicy(t.sqlite, t.db, owner, 'laika', { allow_other_owners: true }, T0);
+    const id = task();
+    const held = claim(a, id);
+    const { offer: made } = offer(a, id, 1, theirs.id, save(a, id, held.generation).id);
+    expect(made.state).toBe('pending_approval');
+    return { a, id, made };
+  }
+
+  it('a lead demoted after the request resolved may not approve', () => {
+    const { made } = crossOwnerPending();
+    const { person: lead } = member('Lena', 'lead');
+    t.db
+      .update(projectMemberships)
+      .set({ role: 'member' })
+      .where(eq(projectMemberships.userId, lead.userId))
+      .run();
+    expect(refusal(() => approveHandoff(t.sqlite, t.db, lead, made.id, { now: T0 + 1 })).code).toBe(
+      'forbidden',
+    );
+  });
+
+  it('a deactivated lead may not approve, set the policy or cancel', () => {
+    const { made } = crossOwnerPending();
+    const { person: lead } = member('Lena', 'lead');
+    t.db.update(users).set({ isActive: 0 }).where(eq(users.id, lead.userId)).run();
+    expect(refusal(() => approveHandoff(t.sqlite, t.db, lead, made.id, { now: T0 + 1 }))).toEqual({
+      code: 'forbidden',
+      reason: 'user_inactive',
+    });
+    expect(
+      refusal(() => putHandoffPolicy(t.sqlite, t.db, lead, 'laika', { max_handoffs: 5 }, T0 + 1)),
+    ).toEqual({ code: 'forbidden', reason: 'user_inactive' });
+    expect(refusal(() => cancelHandoff(t.sqlite, t.db, lead, made.id, T0 + 1))).toEqual({
+      code: 'forbidden',
+      reason: 'user_inactive',
+    });
+    expect(offersOf(made.task_id).find((o) => o.id === made.id)?.state).toBe('pending_approval');
+  });
+
+  it('a lead demoted mid-request may not set the policy or cancel another agent’s offer', () => {
+    const { made } = crossOwnerPending();
+    const { person: lead } = member('Lena', 'lead');
+    t.db
+      .update(projectMemberships)
+      .set({ role: 'member' })
+      .where(eq(projectMemberships.userId, lead.userId))
+      .run();
+    expect(
+      refusal(() => putHandoffPolicy(t.sqlite, t.db, lead, 'laika', { max_handoffs: 5 }, T0 + 1))
+        .code,
+    ).toBe('forbidden');
+    expect(refusal(() => cancelHandoff(t.sqlite, t.db, lead, made.id, T0 + 1)).code).toBe(
+      'forbidden',
+    );
   });
 });

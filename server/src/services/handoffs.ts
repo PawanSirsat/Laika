@@ -49,8 +49,10 @@ import {
   type AgentSessionView,
   claimFenceRefusal,
   claimView,
+  expireClaim,
   insertClaim,
   latestClaim,
+  leaseLapsed,
   liveClaim,
   openSession,
   registeredAgent,
@@ -205,9 +207,10 @@ export function putHandoffPolicy(
     ),
   };
 
-  return immediateTransaction(sqlite, () => {
+  return immediateTransaction(sqlite, (): HandoffPolicyView => {
+    const person = reloadPerson(db, actor);
     const project = requireProjectBySlug(db, slug);
-    assertCan(withProject(actor, project.id), 'project.handoff_policy.edit', {
+    assertCan(withProject(person, project.id), 'project.handoff_policy.edit', {
       projectId: project.id,
     });
     const before = readPolicy(db, project.id);
@@ -224,7 +227,7 @@ export function putHandoffPolicy(
       crossOwnerRequiresApproval: next.cross_owner_requires_approval,
       maxHandoffs: next.max_handoffs,
       offerTtlMinutes: next.offer_ttl_minutes,
-      updatedBy: actor.userId,
+      updatedBy: person.userId,
     };
     db.insert(projectHandoffPolicies)
       .values({ id: newId(), projectId: project.id, ...values })
@@ -235,7 +238,7 @@ export function putHandoffPolicy(
       appendActivity(db, {
         orgId: project.orgId,
         projectId: project.id,
-        ...activityActor(actor),
+        ...activityActor(person),
         type: 'project.updated',
         payload: { field: 'handoff_policy', from, to: next },
         now,
@@ -421,6 +424,22 @@ function noSuchOffer(): ApiError {
   return ApiError.notFound('No such offer');
 }
 
+/**
+ * **The person, read again inside the write's transaction** (§4.71: every
+ * write "reads everything again from the database — the owner's
+ * permission"). The actor a request resolved was loaded before the lock: a
+ * person demoted, removed from the space or deactivated since must be refused
+ * by what is true now. The credential travels unchanged — an agent's is read
+ * again by {@link reloadAgentActor}, and a session has none.
+ */
+function reloadPerson(db: Db, actor: ResolvedActor): ResolvedActor {
+  const now = loadActor(db, actor.userId);
+  if (now?.isActive !== true) {
+    throw new ApiError('forbidden', 'This account is deactivated', { reason: 'user_inactive' });
+  }
+  return { ...now, token: actor.token ?? null, claimGeneration: actor.claimGeneration };
+}
+
 function conflict(reason: string, message: string, details: Record<string, unknown> = {}) {
   return new ApiError('conflict', message, { reason, ...details });
 }
@@ -586,19 +605,32 @@ function noteHash(summary: unknown): string | null {
  * does (§11.6) — in this same transaction.
  */
 function afterOfferClosedUnaccepted(db: Db, offer: OfferRow, now: number): void {
-  if (offer.kind === 'handoff' && offer.fromClaimGeneration !== null) {
-    db.update(taskClaims)
-      .set({ state: 'active' })
-      .where(
-        and(
-          eq(taskClaims.taskId, offer.taskId),
-          eq(taskClaims.generation, offer.fromClaimGeneration),
-          eq(taskClaims.state, 'paused'),
-        ),
-      )
-      .run();
+  const paused = pausedSender(db, offer);
+  if (paused !== undefined) {
+    // **An elapsed lease is not resumed** (LAI-546 review): the sender stopped
+    // renewing while its offer was live, so the claim expires here — with its
+    // `task.claim_expired` row, as the scan would have written it — rather
+    // than coming back `active` on a lease nobody holds.
+    if (leaseLapsed(paused.leaseExpiresAt, now)) expireClaim(db, paused, now);
+    else db.update(taskClaims).set({ state: 'active' }).where(eq(taskClaims.id, paused.id)).run();
   }
   openRecoveryIfDue(db, offer.taskId, now);
+}
+
+/** A hand-off's sender claim while it is still `paused`, or undefined. */
+function pausedSender(db: Db, offer: OfferRow) {
+  if (offer.kind !== 'handoff' || offer.fromClaimGeneration === null) return undefined;
+  return db
+    .select()
+    .from(taskClaims)
+    .where(
+      and(
+        eq(taskClaims.taskId, offer.taskId),
+        eq(taskClaims.generation, offer.fromClaimGeneration),
+        eq(taskClaims.state, 'paused'),
+      ),
+    )
+    .get();
 }
 
 /** Close one live offer: the state, `closed_at`, and the reason when it is not the receiver's or the clock's. */
@@ -1126,8 +1158,9 @@ export function approveHandoff(
 ): HandoffOfferView {
   const now = input.now ?? Date.now();
   return immediateTransaction(sqlite, () => {
-    const { offer, task, project } = requireVisibleOffer(db, actor, offerId);
-    assertCan(withProject(actor, project.id), 'task.handoff.approve', {
+    const person = reloadPerson(db, actor);
+    const { offer, task, project } = requireVisibleOffer(db, person, offerId);
+    assertCan(withProject(person, project.id), 'task.handoff.approve', {
       projectId: project.id,
       ownerId: task.assigneeId,
     });
@@ -1146,18 +1179,18 @@ export function approveHandoff(
       const policy = readPolicy(db, project.id);
       const fromOwner = ownerOfGeneration(db, task.id, offer.fromClaimGeneration);
       const receiver = receiverEligibility(db, project, policy, toAgentId, fromOwner);
-      if (receiver.ownerUserId === actor.userId) throw approverIsReceiver(offer);
+      if (receiver.ownerUserId === person.userId) throw approverIsReceiver(offer);
       db.update(handoffOffers)
         .set({
           toAgentId,
           requiresApproval: receiver.requiresApproval,
-          approvedByUserId: actor.userId,
+          approvedByUserId: person.userId,
           approvedAt: now,
           state: 'open',
         })
         .where(eq(handoffOffers.id, offer.id))
         .run();
-      appendApproved(db, actor, project, task.id, offer.id, toAgentId, true, now);
+      appendApproved(db, person, project, task.id, offer.id, toAgentId, true, now);
       return offerView(db, reloadOffer(db, offer.id));
     }
 
@@ -1169,14 +1202,14 @@ export function approveHandoff(
         { to_agent_id: toAgentId },
       );
     }
-    if (ownerOfAgent(db, offer.toAgentId) === actor.userId) throw approverIsReceiver(offer);
+    if (ownerOfAgent(db, offer.toAgentId) === person.userId) throw approverIsReceiver(offer);
     if (offer.state !== 'pending_approval') return offerView(db, offer);
 
     db.update(handoffOffers)
-      .set({ approvedByUserId: actor.userId, approvedAt: now, state: 'open' })
+      .set({ approvedByUserId: person.userId, approvedAt: now, state: 'open' })
       .where(eq(handoffOffers.id, offer.id))
       .run();
-    appendApproved(db, actor, project, task.id, offer.id, offer.toAgentId, false, now);
+    appendApproved(db, person, project, task.id, offer.id, offer.toAgentId, false, now);
     return offerView(db, reloadOffer(db, offer.id));
   });
 }
@@ -1357,7 +1390,14 @@ export function acceptHandoff(
             )
             .get();
     let fromState = from?.state ?? 'expired';
-    if (from?.state === 'paused') {
+    // A paused sender whose lease elapsed before the scan noticed: its expiry
+    // is history and is recorded first (`task.claim_expired`), then the
+    // receiver takes the task from an expired claim (LAI-546 review). The
+    // offer is still live here, so no recovery opens beside it.
+    if (from?.state === 'paused' && leaseLapsed(from.leaseExpiresAt, now)) {
+      expireClaim(db, from, now);
+      fromState = 'expired';
+    } else if (from?.state === 'paused') {
       db.update(taskClaims)
         .set({ state: 'transferred', endedAt: now })
         .where(eq(taskClaims.id, from.id))
@@ -1552,7 +1592,10 @@ export function cancelHandoff(
 
   return immediateTransaction(sqlite, () => {
     // An agent's credentials are read again, as every hand-off write's are.
-    const caller = agent === null ? actor : reloadAgentActor(db, actor, now, 'task.handoff.cancel');
+    const caller =
+      agent === null
+        ? reloadPerson(db, actor)
+        : reloadAgentActor(db, actor, now, 'task.handoff.cancel');
     const { offer, task, project } = requireVisibleOffer(db, caller, offerId);
     if (offer.kind === 'work_request') throw workRequestRefusal(offer);
 

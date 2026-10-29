@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadActor } from '../../src/auth/resolve-actor.ts';
 import {
+  activity,
   checkpointRefs,
   checkpointRefTransitions,
   projects,
@@ -12,6 +13,8 @@ import {
 } from '../../src/db/schema.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
+  applyCheckpointDelivery,
+  onCheckpointPruneStep,
   readCheckpointConsent,
   configureCheckpoints,
   DEFAULT_CHECKPOINT_SETTINGS,
@@ -204,6 +207,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  onCheckpointPruneStep(null);
   configureCheckpoints(DEFAULT_CHECKPOINT_SETTINGS);
   h.close();
 });
@@ -265,6 +269,171 @@ describe('retention (D-115 item 9, §11.6)', () => {
       .where(eq(tasks.id, task))
       .run();
   }
+
+  /** One signed delivery for `ref`, through the service the webhook calls. */
+  function deliver(ref: string, before: string, after: string, deliveryId: string) {
+    return applyCheckpointDelivery(
+      h.t.sqlite,
+      h.db,
+      { deliveryId, repo: REPO, ref, before, after },
+      Date.now(),
+    );
+  }
+
+  function refOf(checkpointId: string) {
+    return h.db
+      .select()
+      .from(checkpointRefs)
+      .where(eq(checkpointRefs.checkpointId, checkpointId))
+      .get()!;
+  }
+
+  function stateOf(checkpointId: string) {
+    return h.db
+      .select({ verification: taskCheckpoints.verification })
+      .from(taskCheckpoints)
+      .where(eq(taskCheckpoints.id, checkpointId))
+      .get()?.verification;
+  }
+
+  for (const [name, after, deleted] of [
+    ['ref_deleted', C, true],
+    ['uncertain', D, false],
+  ] as const) {
+    it(`a prune that fails half-way leaves a ${name} checkpoint whole, and replaying its creation cannot verify it`, async () => {
+      const id = await saveOn(taskId);
+      const { ref } = refOf(id);
+      deliver(ref, ZERO, after, 'd-create');
+      if (deleted) deliver(ref, C, ZERO, 'd-delete');
+      expect(stateOf(id)).toBe(name);
+      const closedAt = Date.UTC(2026, 0, 1);
+      close(taskId, 'done', closedAt);
+
+      onCheckpointPruneStep(() => {
+        throw new Error('the prune died between the evidence and the checkpoint');
+      });
+      expect(() => pruneCheckpoints(h.db, closedAt + 91 * DAY)).toThrow('died between');
+      onCheckpointPruneStep(null);
+
+      // Nothing moved: the checkpoint, its ref and every delivery id survive together.
+      expect(stateOf(id)).toBe(name);
+      expect(h.db.select().from(checkpointRefTransitions).all()).toHaveLength(deleted ? 2 : 1);
+
+      // GitHub's *Redeliver* of the original creation is a repeat, not new evidence.
+      expect(deliver(ref, ZERO, after, 'd-create')).toMatchObject({ deduplicated: true });
+      expect(deliver(ref, ZERO, C, 'd-create')).toMatchObject({ deduplicated: true });
+      expect(stateOf(id)).toBe(name);
+
+      // And the prune, run again whole, takes everything at once.
+      expect(pruneCheckpoints(h.db, closedAt + 91 * DAY).checkpoints).toBe(1);
+      expect(h.db.select().from(taskCheckpoints).all()).toEqual([]);
+      expect(h.db.select().from(checkpointRefTransitions).all()).toEqual([]);
+    });
+  }
+
+  it('counts a cancelled task from its cancellation, not from a later edit', async () => {
+    await saveOn(taskId);
+    // The cancellation happens on day 0, through the real status route, so
+    // its `task.status_changed` row carries that time.
+    const cancelledOn = Date.UTC(2026, 0, 1);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(cancelledOn);
+    try {
+      const cancel = await h.app.request(`/api/v1/tasks/${taskId}/status`, {
+        method: 'POST',
+        headers: jsonHeaders({ Cookie: cookie }),
+        body: JSON.stringify({ status: 'cancelled' }),
+      });
+      expect(cancel.status, await cancel.clone().text()).toBe(200);
+    } finally {
+      clock.mockRestore();
+    }
+    const row = h.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.taskId, taskId), eq(activity.type, 'task.status_changed')))
+      .all()
+      .find((r) => (JSON.parse(r.payloadJson) as { to?: string }).to === 'cancelled');
+    expect(row?.createdAt, 'the cancellation wrote its status-change row on day 0').toBe(
+      cancelledOn,
+    );
+
+    // An edit on day 89 moves `updated_at`; it must not move the clock.
+    h.db
+      .update(tasks)
+      .set({ updatedAt: cancelledOn + 89 * DAY })
+      .where(eq(tasks.id, taskId))
+      .run();
+
+    expect(pruneCheckpoints(h.db, cancelledOn + 90 * DAY).checkpoints).toBe(0);
+    expect(pruneCheckpoints(h.db, cancelledOn + 90 * DAY + 1).checkpoints).toBe(1);
+  });
+
+  it('a move between two cancelled statuses does not restart the clock', async () => {
+    await saveOn(taskId);
+    const created = await h.app.request('/api/v1/projects/laika/statuses', {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify({ name: 'Won’t do', category: 'cancelled' }),
+    });
+    expect(created.status, await created.clone().text()).toBe(201);
+    const cancelledStatuses = (
+      (await created.json()) as { data: { id: string; category: string }[] }
+    ).data.filter((status) => status.category === 'cancelled');
+    expect(cancelledStatuses, 'two cancelled statuses').toHaveLength(2);
+    const day0 = Date.UTC(2026, 0, 1);
+    async function move(status: Record<string, string>, at: number) {
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(at);
+      try {
+        const res = await h.app.request(`/api/v1/tasks/${taskId}/status`, {
+          method: 'POST',
+          headers: jsonHeaders({ Cookie: cookie }),
+          body: JSON.stringify(status),
+        });
+        expect(res.status, await res.clone().text()).toBe(200);
+      } finally {
+        clock.mockRestore();
+      }
+    }
+    await move({ status: 'cancelled' }, day0);
+    const now = h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()!.statusId;
+    const other = cancelledStatuses.find((status) => status.id !== now)!.id;
+    await move({ status_id: other }, day0 + 89 * DAY);
+    // Positive control: the second move was written, as a cancelled → cancelled row.
+    const moves = h.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.taskId, taskId), eq(activity.type, 'task.status_changed')))
+      .all()
+      .map((r) => JSON.parse(r.payloadJson) as { from: string; to: string });
+    expect(moves).toContainEqual(expect.objectContaining({ from: 'cancelled', to: 'cancelled' }));
+
+    expect(pruneCheckpoints(h.db, day0 + 90 * DAY).checkpoints).toBe(0);
+    expect(pruneCheckpoints(h.db, day0 + 90 * DAY + 1).checkpoints).toBe(1);
+  });
+
+  it('counts a task cancelled twice from its latest cancellation', async () => {
+    await saveOn(taskId);
+    const day0 = Date.UTC(2026, 0, 1);
+    async function move(status: string, at: number) {
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(at);
+      try {
+        const res = await h.app.request(`/api/v1/tasks/${taskId}/status`, {
+          method: 'POST',
+          headers: jsonHeaders({ Cookie: cookie }),
+          body: JSON.stringify({ status }),
+        });
+        expect(res.status, `${status}: ${await res.clone().text()}`).toBe(200);
+      } finally {
+        clock.mockRestore();
+      }
+    }
+    await move('cancelled', day0);
+    await move('backlog', day0 + 10 * DAY);
+    await move('cancelled', day0 + 50 * DAY);
+
+    expect(pruneCheckpoints(h.db, day0 + 91 * DAY).checkpoints).toBe(0);
+    expect(pruneCheckpoints(h.db, day0 + 140 * DAY + 1).checkpoints).toBe(1);
+  });
 
   it('keeps a checkpoint 90 days after Done or Cancelled, then deletes it with its refs and transitions', async () => {
     const doneTask = taskId;

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lt, max, notExists, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, max, notExists } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
@@ -7,6 +7,7 @@ import { type CheckpointVerification } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import {
+  activity,
   agentCheckpointConsents,
   agents,
   agentSessions,
@@ -938,61 +939,123 @@ function writeTransition(
 // ----------------------------------------------------------------- retention
 
 /**
+ * Seam for a test of retention's atomicity: called inside a checkpoint's
+ * prune transaction after its delivery rows are deleted and before the
+ * checkpoint is, so a test can fail the prune half-way and see nothing move.
+ */
+let midPrune: (() => void) | null = null;
+export function onCheckpointPruneStep(hook: (() => void) | null): void {
+  midPrune = hook;
+}
+
+/**
+ * When each `cancelled` task was cancelled: its latest `task.status_changed`
+ * row **into** `cancelled` from another category (§4.8) — the status-change record, not `updated_at`,
+ * which any later edit moves. A task with no such row (created cancelled, or
+ * older than the record) falls back to `updated_at`, which is never earlier
+ * than the cancel, so it is only ever kept longer.
+ */
+function cancelledAt(db: Db, cancelled: readonly { id: string; updatedAt: number }[]) {
+  const at = new Map(cancelled.map((t) => [t.id, null as number | null]));
+  for (let i = 0; i < cancelled.length; i += 500) {
+    const batch = cancelled.slice(i, i + 500).map((t) => t.id);
+    for (const row of db
+      .select({
+        taskId: activity.taskId,
+        payloadJson: activity.payloadJson,
+        createdAt: activity.createdAt,
+      })
+      .from(activity)
+      .where(and(eq(activity.type, 'task.status_changed'), inArray(activity.taskId, batch)))
+      .all()) {
+      const { from, to } = JSON.parse(row.payloadJson) as { from?: unknown; to?: unknown };
+      // A move between two cancelled statuses is not a §5 transition (LAI-738,
+      // D-077): it is written with `from` equal to `to`, and the task was
+      // cancelled before it. Only entering the category counts.
+      if (to !== 'cancelled' || from === 'cancelled' || row.taskId === null) continue;
+      const seen = at.get(row.taskId);
+      if (seen === undefined) continue;
+      if (seen === null || row.createdAt > seen) at.set(row.taskId, row.createdAt);
+    }
+  }
+  return new Map(cancelled.map((t) => [t.id, at.get(t.id) ?? t.updatedAt]));
+}
+
+/**
  * §11.6's checkpoint retention (D-115 item 9), daily, under
  * `system.checkpoint.prune`:
  *
  * - checkpoints of tasks `done` or `cancelled` for longer than the retention,
- *   with their refs (cascade) and the §4.70 rows for those refs' names;
+ *   **each in one transaction with all its evidence** — its refs (cascade)
+ *   and every §4.70 row for those refs' names, delivery ids included. Never
+ *   the evidence without the checkpoint: a surviving ref whose deliveries
+ *   were gone would forget its deletion, and replaying the original creation
+ *   would make a `ref_deleted` or `uncertain` ref `verified` again;
  * - §4.70 rows for a name **never registered** — a tag pushed by hand, or a
  *   helper that pushed and never registered — once as old as the retention.
  *
- * **When a task closed**: `completed_at` for `done`; `updated_at` for
- * `cancelled`, which has no timestamp of its own (§4.5). Both are at or after
- * the moment the task closed, so a row is only ever kept longer, never pruned
- * early. Closed offers that named a pruned checkpoint keep their own snapshot
- * and lose the link (§4.71, `ON DELETE SET NULL` — LAI-546's column). Writes
- * no `activity` row: the `task.checkpoint_saved` rows naming the checkpoints
- * stay, and they are the history. **Laika never deletes a Git tag.**
+ * **When a task closed**: `completed_at` for `done`; for `cancelled`, the
+ * status change into it ({@link cancelledAt}). Closed offers that named a
+ * pruned checkpoint keep their own snapshot and lose the link (§4.71, `ON
+ * DELETE SET NULL` — LAI-546's column). Writes no `activity` row: the
+ * `task.checkpoint_saved` rows naming the checkpoints stay, and they are the
+ * history. **Laika never deletes a Git tag.**
  */
 export function pruneCheckpoints(db: Db, now: number): { checkpoints: number; orphans: number } {
   assertCan(systemPrincipal(), 'system.checkpoint.prune');
   const cutoff = now - settings.retentionMs;
 
-  const closed = db
+  const done = db
     .select({ id: tasks.id })
     .from(tasks)
-    .where(
-      or(
-        and(eq(tasks.status, 'done'), lt(tasks.completedAt, cutoff)),
-        and(eq(tasks.status, 'cancelled'), lt(tasks.updatedAt, cutoff)),
-      ),
-    )
+    .where(and(eq(tasks.status, 'done'), lt(tasks.completedAt, cutoff)))
     .all()
     .map((t) => t.id);
+  const cancelled = db
+    .select({ id: tasks.id, updatedAt: tasks.updatedAt })
+    .from(tasks)
+    .where(eq(tasks.status, 'cancelled'))
+    .all();
+  const closed = [
+    ...done,
+    ...[...cancelledAt(db, cancelled)].filter(([, at]) => at < cutoff).map(([id]) => id),
+  ];
+
+  const due: string[] = [];
+  for (let i = 0; i < closed.length; i += 500) {
+    for (const row of db
+      .select({ id: taskCheckpoints.id })
+      .from(taskCheckpoints)
+      .where(inArray(taskCheckpoints.taskId, closed.slice(i, i + 500)))
+      .all()) {
+      due.push(row.id);
+    }
+  }
 
   let checkpoints = 0;
-  for (let i = 0; i < closed.length; i += 500) {
-    const batch = closed.slice(i, i + 500);
-    const names = db
-      .select({ repo: checkpointRefs.repo, ref: checkpointRefs.ref })
-      .from(checkpointRefs)
-      .innerJoin(taskCheckpoints, eq(taskCheckpoints.id, checkpointRefs.checkpointId))
-      .where(inArray(taskCheckpoints.taskId, batch))
-      .all();
-    for (const name of names) {
-      db.delete(checkpointRefTransitions)
-        .where(
-          and(
-            eq(checkpointRefTransitions.repo, name.repo),
-            eq(checkpointRefTransitions.ref, name.ref),
-          ),
-        )
-        .run();
-    }
-    checkpoints += db
-      .delete(taskCheckpoints)
-      .where(inArray(taskCheckpoints.taskId, batch))
-      .run().changes;
+  for (const checkpointId of due) {
+    immediateTransaction(db.$client, () => {
+      const names = db
+        .select({ repo: checkpointRefs.repo, ref: checkpointRefs.ref })
+        .from(checkpointRefs)
+        .where(eq(checkpointRefs.checkpointId, checkpointId))
+        .all();
+      for (const name of names) {
+        db.delete(checkpointRefTransitions)
+          .where(
+            and(
+              eq(checkpointRefTransitions.repo, name.repo),
+              eq(checkpointRefTransitions.ref, name.ref),
+            ),
+          )
+          .run();
+      }
+      midPrune?.();
+      checkpoints += db
+        .delete(taskCheckpoints)
+        .where(eq(taskCheckpoints.id, checkpointId))
+        .run().changes;
+    });
   }
 
   const orphans = db

@@ -158,3 +158,38 @@ the `cli` one is not LAI-549's.
   MCP-only sender renews a paused claim only by heartbeat.
 - `accepted_claim_id` is `restrict`, as §4.71 says. No code path
   hard-deletes a task, so the cascade order is latent.
+
+## Review round 1 (Codex, failed at 4ca5c3dd) — fixed as new commits
+
+Merged `origin/LAI-545-checkpoints` at `96ea686c` first (clean).
+
+1. **P1 offer expiry had no caller.** `offer.expiry` in `jobs/scheduler.ts`,
+   on the claim scan's cadence; restart-safe because `expires_at` is stored.
+   `test/jobs/scheduler.test.ts` boots an hour late and asserts the overdue
+   offer `expired`, the lapsed sender `expired`, and a recovery `open`.
+2. **P1 MCP renewal.** (a) `takeClaim` renews a paused claim from its own
+   session; it stays paused, and `agentStartWorking` writes no branch for it.
+   (b) The assignee rule lets through an agent that holds the live claim, so
+   a cross-owner receiver renews. Both are asserted through MCP in
+   `test/http/routes/handoffs.test.ts`.
+3. **P2 cached roles.** Approve, the policy `PUT` and a person's cancel read
+   the person again inside the transaction (`reloadPerson`; a deactivated one
+   is `403 user_inactive`). Demoted and deactivated mid-request are asserted.
+4. **P2 elapsed sender lease.** Decline, cancel and expiry expire a paused
+   sender whose lease elapsed — with `task.claim_expired`, then the recovery
+   — instead of resuming it. Accept records that expiry before the transfer
+   (`from_claim_state: expired`).
+5. **P2 the race.** Two Node processes (`test/helpers/accept-racer.ts`), each
+   with its own connection, both report ready and are released by one write.
+   Exactly one wins and the other is `409 offer_taken`; five repeat runs were
+   green.
+
+Also: §6.3 lists `not_the_receiver`, `user_inactive`, `recovery_unnamed`,
+`work_request` and `handoff_rate`. §3.2's Cancel cell reads *own agent's or
+task's assignee*, matching §4.71, with its qualifier registered and an
+assignee-cancel test. `migrate.test.ts` upgrades a populated 0066 database.
+
+Mutation check of 1–4: seven mutants (no-op job, paused refusal restored,
+branch written on a paused renewal, `holds` dropped, person not reloaded,
+elapsed lease resumed, accept not recording the expiry) — each was killed
+by the test naming its rule; files restored and checksummed.

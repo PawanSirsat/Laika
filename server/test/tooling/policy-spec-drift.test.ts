@@ -411,9 +411,9 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
     },
   ],
   [
-    "own agent's",
+    "own agent's or task's assignee",
     {
-      why: 'A member cancels an offer a session of their own agent sent; `ownerId` is the sending agent’s owner (§3.2, LAI-546). A lead cancels any.',
+      why: 'A member cancels an offer a session of their own agent sent, or one on a task assigned to them (§4.71); the service passes either as `ownerId` (§3.2, LAI-546). A lead cancels any.',
       verify: (action: Action) => {
         const member = projectActor('member');
         expect(can(member, action, { projectId: 'p', ownerId: 'me' })).toBe(true);

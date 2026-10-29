@@ -200,9 +200,10 @@ been refused as a repeat — criterion (a) depends on it.
 5. **Re-tag refusal reasons** §6.3 does not name: `not_an_agent` for a person
    or a legacy token, `not_the_owners_agent` for another owner's agent. A
    retried key with another body is `409`, `reason: idempotency_key_reused`.
-6. **Cancelled tasks' retention counts from `updated_at`**: `cancelled` has no
-   timestamp of its own (§4.5), and `updated_at` is never earlier than the
-   cancel, so a row is kept longer, never pruned early.
+6. ~~**Cancelled tasks' retention counts from `updated_at`**~~ — **corrected in
+   review round 1**: it counts from the task's latest `task.status_changed`
+   into `cancelled`, falling back to `updated_at` only for a task with no such
+   row (which can only keep a row longer).
 7. **The closed-offer half of the retention criterion is LAI-546's**:
    `handoff_offers.checkpoint_id` (`ON DELETE SET NULL`) and
    `checkpoint_commit_sha` do not exist yet. The prune deletes checkpoints
@@ -260,7 +261,8 @@ halves, quoted); retention's closed-offer half (LAI-546's column); the live
 GitHub test and (a) – (g) against a real repository — (a), (b), (c), (e), (g)
 and the ordering rule are asserted on signed fixture deliveries in
 `test/http/routes/checkpoints.test.ts`, but the criteria ask for the real
-webhook, which could not be reached (above); (d) and (f) are not tested at all.
+webhook, which could not be reached (above); (d) and (f) are not tested at all. **These are proven in LAI-551, against the
+Laika repo's own webhook after deploy**, and stay unticked here.
 
 ### Verification (touched files only, one at a time, `uptime` first — the owner's rule)
 
@@ -284,3 +286,57 @@ Counts are test cases as vitest reports them.
 run against the two checkpoint test files — **all 19 red**, after one
 survivor (`newest-ref-ignored`) got its test. A no-op control is refused by
 the harness, so a mutant that did not land cannot report green.
+
+## Review round 1 (Codex, at `4923ff44`) — fixed as new commits
+
+Passed: configured-repo tag-only verification, D-116a derivation, registration
+races, claim fencing, hidden = missing, consent, migration 0066, note handling,
+the delivery-log bypass. Failed, and fixed:
+
+1. **P1 — retention could forget a deletion** (`b7363c3a`). The prune deleted a
+   batch's delivery rows in their own commits before the checkpoints, so a
+   crash between them left surviving refs with no delivery ids, and a replayed
+   creation made a `ref_deleted` or `uncertain` ref `verified` again. Now each
+   checkpoint is deleted **with all its evidence** — refs (cascade) and every
+   §4.70 row for their names — in one `BEGIN IMMEDIATE`. Test: a seam fails the
+   prune between the evidence and the checkpoint; the checkpoint, its ref and
+   every delivery id survive; redelivering the original creation is
+   `deduplicated` and the state stays `ref_deleted` / `uncertain`; the next
+   prune takes all of it.
+2. **P2 — cancelled retention read `updated_at`** (`b7363c3a`). Now the latest
+   `task.status_changed` into `cancelled`. Tests: cancelled on day 0 through
+   the real status route, edited on day 89 — kept at day 90, pruned after it;
+   cancelled, reopened, cancelled again on day 50 — counted from day 50.
+3. **P3 — explicit `null` differed between REST and MCP** (`4ad80307`).
+   `checkpoint_task` now takes `summary: null` and `summary_commit_sha: null`
+   as the route does; `parity.test.ts` saves that body through both and
+   compares the rows and the stored note.
+
+**Mutation check, each applied and checksum-verified, restored after:** the
+prune outside a transaction → both P1 tests red; the prune skipping the
+evidence → P1 and retention red; cancellation from `updated_at` → P2 red; the
+earliest cancellation instead of the latest → the twice-cancelled test red
+(it survived until that test was added); the tool refusing `null` → the null
+parity test red. A no-op control is refused by the harness.
+
+**Run, touched files only, one at a time, `uptime` first:**
+`npx vitest run test/services/checkpoints.test.ts` 0 (26 tests);
+`npx vitest run test/mcp/parity.test.ts` 1 (27 passed, 3 failed — the three
+docs/LAI-546 reds already quoted, nothing new); `pnpm run typecheck` 0; eslint
+and prettier on the four changed files 0.
+
+## Review round 2 (Codex, at `e8d71b61`) — fixed as a new commit
+
+P1 prune atomicity and P3 null parity passed. One blocker: `cancelledAt`
+counted every `task.status_changed` row with `to: cancelled`, including a move
+between two cancelled statuses (`from` equal to `to`, which §5 does not treat
+as a transition), so a move on day 89 postponed pruning to about day 179. Now
+only a row whose `from` is another category counts.
+
+Test: a second cancelled status is created; the task is cancelled on day 0,
+moved to the other cancelled status on day 89 (asserted written as
+`cancelled → cancelled`); kept at day 90, pruned after it. Mutation: dropping
+the `from` condition turns exactly that test red.
+
+`npx vitest run test/services/checkpoints.test.ts` exit 0 (27 tests);
+`pnpm run typecheck` 0; eslint and prettier on the two changed files 0.
