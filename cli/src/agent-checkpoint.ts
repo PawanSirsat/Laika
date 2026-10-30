@@ -518,7 +518,14 @@ export interface SaveOptions {
 
 export type SaveOutcome =
   | { readonly kind: 'saved'; readonly record: CheckpointRecord }
-  | { readonly kind: 'unchanged'; readonly record: CheckpointRecord };
+  /** Nothing new, and the save it matches was already registered. */
+  | { readonly kind: 'unchanged'; readonly record: CheckpointRecord }
+  /**
+   * Nothing new, and the save it matches was **not** registered when this
+   * run began: it was retried, with its own key and body, and `record` says
+   * where that left it (P2-9).
+   */
+  | { readonly kind: 'retried'; readonly record: CheckpointRecord };
 
 /**
  * One save, start to finish. Every refusal is thrown as a {@link Refusal}
@@ -537,6 +544,16 @@ export async function save(deps: CheckpointDeps, options: SaveOptions): Promise<
   assertWorkBranch(branch, def);
   const repo = repoName(git, wt, remote);
   const target = await resolveTarget(deps, branch, options.claim);
+
+  // An earlier save that pushed and did not register is finished first —
+  // same key, same body — so a save of the same commit reports what that
+  // one is now, rather than "nothing new" over an unregistered checkpoint.
+  const unfinished = new Set(
+    listRecords(deps.home)
+      .filter((r) => r.stage !== 'registered' && r.stage !== 'refused')
+      .map((r) => r.id),
+  );
+  await retryPending(deps, { harness: target.harness, credential: target.credential });
 
   const release = takeLock(wt, deps.now());
   let record: CheckpointRecord;
@@ -573,7 +590,7 @@ export async function save(deps: CheckpointDeps, options: SaveOptions): Promise<
         (r) => r.task_id === target.task.id && r.commit_sha === sha && r.stage !== 'refused',
       );
       if (last !== undefined && options.note === undefined) {
-        return { kind: 'unchanged', record: last };
+        return { kind: unfinished.has(last.id) ? 'retried' : 'unchanged', record: last };
       }
     }
 
@@ -704,13 +721,21 @@ export async function register(
  * pushed, a registration not yet answered, a re-tag registered but not
  * pushed. Same key, same body, same ref — never a new checkpoint.
  */
-export async function retryPending(deps: CheckpointDeps): Promise<CheckpointRecord[]> {
+export async function retryPending(
+  deps: CheckpointDeps,
+  using?: { readonly harness: Harness; readonly credential: AgentCredential },
+): Promise<CheckpointRecord[]> {
   const done: CheckpointRecord[] = [];
   for (const record of listRecords(deps.home).slice(0, 50)) {
     const unpushedRetag = record.retags.find((r) => !r.pushed);
     if (record.stage === 'registered' && unpushedRetag === undefined) continue;
     if (record.stage === 'refused') continue;
-    const credential = readCredential(deps.home, record.harness, deps.env);
+    // The credential the caller was handed wins for its own harness (P2-10):
+    // a background save has no token on disk or in its environment to read.
+    const credential =
+      using?.harness === record.harness && using.credential.url === record.url
+        ? using.credential
+        : readCredential(deps.home, record.harness, deps.env);
     if (credential?.url !== record.url) continue;
     try {
       if (record.stage === 'committed' || record.stage === 'branch_pushed' || unpushedRetag) {
@@ -1222,6 +1247,7 @@ export function shouldTrigger(activity: Activity, now: number, boundary: boolean
 export type AutoOutcome =
   | 'saved'
   | 'unchanged'
+  | 'retried'
   | 'no_session'
   | 'no_consent'
   | 'consent_unknown'

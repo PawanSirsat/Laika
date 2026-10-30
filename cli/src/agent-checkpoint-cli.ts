@@ -242,6 +242,23 @@ async function run(io: AgentIo, argv: readonly string[]): Promise<number> {
       io.out(`Nothing new since checkpoint ${r.id} (${r.commit_sha.slice(0, 12)}); nothing saved.`);
       return 0;
     }
+    if (outcome.kind === 'retried') {
+      // Nothing new to commit, but the save it matches had not registered.
+      if (r.stage === 'registered') {
+        io.out(
+          `Checkpoint ${r.id} registered on the board — ${r.verification === 'verified' ? 'Verified' : PENDING}`,
+        );
+        io.out(`  (${r.commit_sha.slice(0, 12)} was already pushed; nothing new to save)`);
+        return 0;
+      }
+      io.err(
+        r.stage === 'refused'
+          ? `Checkpoint ${r.id}: the board refused the registration (${r.last_error ?? 'unknown'})`
+          : `Checkpoint ${r.id} is saved here but still not registered (${r.stage.replace('_', ' ')}` +
+              `${r.last_error === undefined ? '' : `; last: ${r.last_error}`}); it is retried with the same key`,
+      );
+      return 1;
+    }
     io.out(`Checkpoint ${r.id} at ${r.commit_sha}`);
     io.out(`  pushed ${r.branch} and ${r.tag_ref.slice('refs/tags/'.length)} to ${r.remote}`);
     io.out(
