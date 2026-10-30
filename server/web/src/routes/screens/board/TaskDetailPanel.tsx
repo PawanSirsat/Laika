@@ -57,6 +57,7 @@ import {
   panelState,
   recoveryOf,
   saveRows,
+  summaryBehind,
 } from '../../../components/agent/handoff-derive.ts';
 import { HandoffSection } from '../../../components/agent/HandoffSection.tsx';
 import type { HandoffOffer } from '../../../api/handoffs.ts';
@@ -134,6 +135,12 @@ export interface TaskDetailPanelProps {
    */
   readonly onTaskEdited: () => void;
   /**
+   * The drawer's own read of saves and offers is fresher than the task view's
+   * `handoff` summary (LAI-1006 review): re-read the board's list, so the card
+   * and this drawer move together on the server's next summary.
+   */
+  readonly onHandoffsChanged?: (() => void) | undefined;
+  /**
    * Open another task in this same drawer — the parent in the breadcrumb, a
    * subtask row, where this was discovered. The board's `openTaskInUrl`, so it
    * is a history entry Back undoes (LAI-252).
@@ -208,6 +215,7 @@ export function TaskDetailPanel({
   mayCreate = false,
   onTagsChanged,
   onTaskEdited,
+  onHandoffsChanged,
   onAssigned,
   onOpen,
   listReadAt = null,
@@ -470,6 +478,21 @@ export function TaskDetailPanel({
     seenHandoffSignal.current = executionSignal;
     refreshHandoffs();
   }, [executionSignal, refreshHandoffs]);
+  // The drawer's poll saw a save or an offer the summary has not: re-read the
+  // board's list once per distinct read, so a server that still disagrees
+  // cannot make this loop (LAI-1006 review).
+  const behindAsked = useRef<readonly [unknown, unknown] | undefined>(undefined);
+  useEffect(() => {
+    if (handoffs.status !== 'ready') return;
+    if (!summaryBehind(task.handoff, handoffs.checkpoints, handoffs.offers)) {
+      behindAsked.current = undefined;
+      return;
+    }
+    const asked = behindAsked.current;
+    if (asked?.[0] === handoffs.checkpoints && asked[1] === handoffs.offers) return;
+    behindAsked.current = [handoffs.checkpoints, handoffs.offers];
+    onHandoffsChanged?.();
+  }, [handoffs.status, handoffs.checkpoints, handoffs.offers, task.handoff, onHandoffsChanged]);
   const saves = useMemo(() => saveRows(handoffs.checkpoints), [handoffs.checkpoints]);
   const offer = useMemo(() => currentOffer(handoffs.offers), [handoffs.offers]);
   const recovery = useMemo(

@@ -35,6 +35,7 @@ import {
   RECOVERY_UNREAD,
   recoveryOf,
   saveRows,
+  summaryBehind,
 } from '../../../src/components/agent/handoff-derive.ts';
 
 const MIN = 60_000;
@@ -444,5 +445,51 @@ void describe('handoffState — the server’s summary, never derived again', ()
       panelState('connection_lost', { kind: 'none' }, rows, recovery),
       'connection_lost',
     );
+  });
+});
+
+void describe('summaryBehind — the drawer’s poll is fresher than the list (LAI-1006 review)', () => {
+  const said = (over: Partial<TaskHandoff> = {}): TaskHandoff => ({
+    checkpoint: {
+      verification: 'pending',
+      saved_at: checkpoint({ verification: 'pending' }).created_at,
+      pending_since: NOW,
+      pending_notice: false,
+    },
+    offer: null,
+    recovery_available: false,
+    save_needs_attention: false,
+    ...over,
+  });
+
+  void test('agrees when the reads say what the summary says', () => {
+    assert.equal(
+      summaryBehind(said(), [checkpoint({ verification: 'pending', pending_notice: false })], []),
+      false,
+    );
+    assert.equal(
+      summaryBehind(said({ checkpoint: null }), [], [offer({ kind: 'work_request' })]),
+      false,
+    );
+    assert.equal(summaryBehind(undefined, [checkpoint({})], []), false);
+  });
+
+  void test('is behind when the newest save turned uncertain, or its notice came due', () => {
+    assert.equal(summaryBehind(said(), [checkpoint({ verification: 'uncertain' })], []), true);
+    assert.equal(
+      summaryBehind(said(), [checkpoint({ verification: 'pending', pending_notice: true })], []),
+      true,
+    );
+    assert.equal(summaryBehind(said({ checkpoint: null }), [checkpoint({})], []), true);
+  });
+
+  void test('is behind when a live hand-off or recovery appears, closes or changes state', () => {
+    const pending = [checkpoint({ verification: 'pending', pending_notice: false })];
+    const live = offer({ kind: 'recovery', state: 'open', requires_approval: false });
+    assert.equal(summaryBehind(said(), pending, [live]), true);
+    const holding = said({ offer: { kind: 'recovery', state: 'open', requires_approval: false } });
+    assert.equal(summaryBehind(holding, pending, [live]), false);
+    assert.equal(summaryBehind(holding, pending, [{ ...live, state: 'accepted' }]), true);
+    assert.equal(summaryBehind(holding, pending, [{ ...live, state: 'pending_approval' }]), true);
   });
 });

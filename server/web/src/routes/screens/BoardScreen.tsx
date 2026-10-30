@@ -1790,6 +1790,7 @@ export function BoardScreen({
             }}
             onAssigned={refresh}
             onTaskEdited={refresh}
+            onHandoffsChanged={refresh}
             onOpen={openTaskInUrl}
             task={openTask}
             listReadAt={board.state.asOf}

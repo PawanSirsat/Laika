@@ -211,6 +211,51 @@ export function handoffState(summary: TaskHandoff | undefined): HandoffState | n
 }
 
 /**
+ * Whether the drawer's own read of saves and offers says something the task
+ * view's summary does not (LAI-1006 review). The drawer polls while a save
+ * waits for its notice, and a notice writes no frame (LAI-1010), so the poll
+ * can be fresher than the board's list. When it is, the drawer asks the board
+ * to re-read, and card and drawer then move together on the server's next
+ * summary — still one rule, never a second derivation here.
+ *
+ * Compared field by field with what the summary carries: the newest save's
+ * verification, time and notice, and the newest live hand-off or recovery.
+ */
+export function summaryBehind(
+  summary: TaskHandoff | undefined,
+  checkpoints: readonly Checkpoint[],
+  offers: readonly HandoffOffer[],
+): boolean {
+  if (summary === undefined) return false;
+  const newest = [...checkpoints].sort(
+    (a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+  )[0];
+  const saw = summary.checkpoint;
+  if ((newest === undefined) !== (saw === null)) return true;
+  if (
+    newest !== undefined &&
+    saw !== null &&
+    (newest.verification !== saw.verification ||
+      newest.created_at !== saw.saved_at ||
+      newest.pending_notice !== saw.pending_notice)
+  ) {
+    return true;
+  }
+  const live = offers
+    .filter((o) => (o.kind === 'handoff' || o.kind === 'recovery') && isLiveOffer(o))
+    .sort((a, b) => b.created_at - a.created_at)[0];
+  const had = summary.offer;
+  if ((live === undefined) !== (had === null)) return true;
+  return (
+    live !== undefined &&
+    had !== null &&
+    (live.kind !== had.kind ||
+      live.state !== had.state ||
+      live.requires_approval !== had.requires_approval)
+  );
+}
+
+/**
  * The panel's state line, with the saves and offers known: *Recovery
  * available* for an expired claim with a verified save; *Save needs
  * attention* when the newest save is `uncertain` and no live claim speaks
