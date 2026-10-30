@@ -972,8 +972,14 @@ column** rather than copied onto `tasks`. So:
   — a stored copy would still say the old one and nothing would reconcile them —
   but it means a name is not a historical record of what the client was called at
   the time.
-- **A name is visible to anyone who can read the task.** It is not private
-  metadata. Do not put anything in it you would not show a project member.
+- **A legacy token's name is visible to anyone who can read the task.** It is
+  not private metadata. Do not put anything in it you would not show a project
+  member. **A registered agent's token is different (D-120):** its name is served
+  to the agent's owner only and is `null` for every other reader, who sees the
+  agent as `harness · device` instead (§6.4 `created_by_client`). The one
+  exception is access oversight: org owners and admins reading a person's
+  profile (`profile.read`) see that person's token names, registered agents
+  included (§6.4 profile `agents`).
 - **Deleting a token removes the name, not the attribution.** `actor_token_id` is
   `ON DELETE set null`, so the audit row outlives the token and
   `created_by_client` becomes `null` — never `"unknown"`, which would be a claim
