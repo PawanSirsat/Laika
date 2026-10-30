@@ -119,3 +119,18 @@ harness* through the shared `harnessName`.
 
 **Not done here, for CHIEF:** SPEC §6.4's `GET /tasks/:id/rounds` sentence
 lists the round's fields and does not yet name `agent`. `docs/` is CHIEF's.
+
+## Round 3 (SHELL, 2026-10-30): Codex round 2 P1 on 7c8f4704
+
+The `rounds.ts` crossing leaked another owner's agent through a round. Now
+`RoundView.agent` is the agent only when the reader owns it, or when it is
+the task's selected agent or holds its live (`active`/`paused`) claim.
+Otherwise it is null, with `by_registered_agent: true`. The UI renders that
+as *an agent* and never shows `client_name` in that case. Both
+`GET /tasks/:id/rounds` and `GET /review` gate on the reader. Two-owner
+tests are in `server/test/http/routes/review.test.ts`.
+
+For CHIEF: `client_name` is unchanged and still carries the finishing token's
+name (D-076), which for a registered agent is its display name. The screens
+no longer show it for a withheld agent. Whether the API should also withhold
+it is a decision this task does not make.
