@@ -924,7 +924,11 @@ void describe('checkpoint review fixes, round 5 (LAI-547, #154 at 3405354c)', ()
       const started = Date.now();
       const child = spawn(process.execPath, [HOOK_ENTRY, 'hook', event, 'claude-code'], {
         stdio: ['pipe', 'pipe', 'ignore'],
-        env: { PATH: process.env.PATH ?? '', HOME: b.home, LAIKA_AGENT_HARNESS_PID: String(process.pid) },
+        env: {
+          PATH: process.env.PATH ?? '',
+          HOME: b.home,
+          LAIKA_AGENT_HARNESS_PID: String(process.pid),
+        },
       });
       let stdout = '';
       child.stdout.on('data', (c: Buffer) => (stdout += c.toString('utf8')));
