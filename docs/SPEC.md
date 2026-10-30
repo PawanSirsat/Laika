@@ -4531,17 +4531,14 @@ optional, so a body with only `summary` and `checklist` behaves as before.
 `pull_request` an `http(s)` URL, and `tests` `[{ command, exit_code }]`; the
 limits are §4.26's and a breach is `422` naming the field, with nothing moved.
 `GET /tasks/:id/rounds` answers `{ rounds, send_back }`: each round as
-`{ id, task_id, number, finished_by, client_name, agent, summary_md, commits,
-branch, pull_request, tests, ci, created_at }`, each item with `id`, `state`,
+`{ id, task_id, number, finished_by, client_name, summary_md, commits, branch,
+pull_request, tests, ci, created_at }`, each item with `id`, `state`,
 `state_source` and `state_at` beside its own fields (`sha` and `message`,
 `name`, `url` and `merged`, `command` and `exit_code`), newest round first;
 `project.read`. `pull_request.merged` is `true` or `false` once a GitHub
 delivery named it, `null` before (D-083). `ci` is `{ head_sha, total, passed,
 failed, pending, failed_names }` from §4.31, or `null` when no CI result was
-reported for the round's head commit. `agent` is `{ id, harness, device_label }`
-— the registered agent whose token finished the round, so a screen can label
-it `<harness> · <device>` (D-120) — or `null` when no registered agent's token
-did (LAI-1001).
+reported for the round's head commit.
 
 **A task's tokens (D-084, LAI-770).** `GET /tasks/:id/usage?tz=` answers `{
 task_id, key, tz, first_day, last_day, totals: { tokens, input, output,

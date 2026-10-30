@@ -18,6 +18,7 @@ import {
   activityActor,
   isSystemPrincipal,
   loadActor,
+  loadActors,
   type ResolvedActor,
   withProject,
 } from '../auth/resolve-actor.ts';
@@ -144,6 +145,27 @@ function readPolicy(db: Db, projectId: string): HandoffPolicyView {
     .from(projectHandoffPolicies)
     .where(eq(projectHandoffPolicies.projectId, projectId))
     .get();
+  return policyView(projectId, row);
+}
+
+/** Every policy of these projects in one read; a project with none reads as the defaults. */
+function readPolicies(db: Db, projectIds: readonly string[]): Map<string, HandoffPolicyView> {
+  const rows =
+    projectIds.length === 0
+      ? []
+      : db
+          .select()
+          .from(projectHandoffPolicies)
+          .where(inArray(projectHandoffPolicies.projectId, [...projectIds]))
+          .all();
+  const byProject = new Map(rows.map((r) => [r.projectId, r]));
+  return new Map(projectIds.map((id) => [id, policyView(id, byProject.get(id))]));
+}
+
+function policyView(
+  projectId: string,
+  row: typeof projectHandoffPolicies.$inferSelect | undefined,
+): HandoffPolicyView {
   if (row === undefined) {
     return { project_id: projectId, ...DEFAULT_HANDOFF_POLICY, updated_by: null, is_set: false };
   }
@@ -540,15 +562,92 @@ function ownerOfAgent(db: Db, agentId: string | null): string | null {
 }
 
 /**
- * **Who may receive** (§4.73): an active agent of this organisation with a
- * `full` grant on the project, whose owner is active and may accept there,
- * in a space that lets agents write — and, unless the policy has
- * `allow_other_owners`, an agent of **the same owner** as the agent the work
- * moves from. Answers whether the transfer then waits for an approver.
+ * Everything §4.73's receiver rules read, for any number of agents at once:
+ * the agents, their grants, and their owners as `can()` sees them. A fixed
+ * number of reads whatever the count (LAI-1009), so the accept route — one
+ * agent — and the inbox — a page of them — load it the same way.
+ */
+interface ReceiverFacts {
+  agents: Map<string, { orgId: string; status: string; ownerUserId: string }>;
+  /** `${agentId}:${projectId}` → the grant's scope. */
+  grants: Map<string, string>;
+  owners: Map<string, ResolvedActor>;
+}
+
+function loadReceiverFacts(db: Db, agentIds: readonly string[]): ReceiverFacts {
+  const ids = [...new Set(agentIds)];
+  if (ids.length === 0) return { agents: new Map(), grants: new Map(), owners: new Map() };
+  const rows = db
+    .select({
+      id: agents.id,
+      orgId: agents.orgId,
+      status: agents.status,
+      ownerUserId: agents.ownerUserId,
+    })
+    .from(agents)
+    .where(inArray(agents.id, ids))
+    .all();
+  const grants = db
+    .select({
+      agentId: agentProjectGrants.agentId,
+      projectId: agentProjectGrants.projectId,
+      scope: agentProjectGrants.scope,
+    })
+    .from(agentProjectGrants)
+    .where(inArray(agentProjectGrants.agentId, ids))
+    .all();
+  return {
+    agents: new Map(rows.map((r) => [r.id, r])),
+    grants: new Map(grants.map((g) => [`${g.agentId}:${g.projectId}`, g.scope])),
+    owners: loadActors(
+      db,
+      rows.map((r) => r.ownerUserId),
+    ),
+  };
+}
+
+/**
+ * **Who may receive** (§4.73) — the rule itself, reading only `facts`: an
+ * active agent of this organisation with a `full` grant on the project, whose
+ * owner is active and may accept there, in a space that lets agents write —
+ * and, unless the policy has `allow_other_owners`, an agent of **the same
+ * owner** as the agent the work moves from. Answers whether the transfer then
+ * waits for an approver, or `null` where it may not receive at all.
  *
- * Every refusal is the one `422 receiver_not_eligible`, whichever check
- * failed — an agent id that names nothing included — so the answer names no
- * more than the caller sent.
+ * The one rule: {@link receiverEligibility} (the writes) and the inbox's
+ * `next_action` both ask it, so a hint cannot promise what the accept refuses.
+ */
+function receiverRule(
+  facts: ReceiverFacts,
+  project: ProjectRow,
+  policy: HandoffPolicyView,
+  agentId: string,
+  fromOwnerId: string | null,
+): { ownerUserId: string; requiresApproval: boolean } | null {
+  const agent = facts.agents.get(agentId);
+  if (agent?.orgId !== project.orgId || agent.status !== 'active') return null;
+  if (facts.grants.get(`${agentId}:${project.id}`) !== 'full' || !project.agentsAllowed) {
+    return null;
+  }
+  const owner = facts.owners.get(agent.ownerUserId);
+  if (
+    owner?.isActive !== true ||
+    !can(withProject(owner, project.id), 'task.handoff.accept', { projectId: project.id })
+  ) {
+    return null;
+  }
+  const otherOwner = fromOwnerId !== null && fromOwnerId !== agent.ownerUserId;
+  if (otherOwner && !policy.allow_other_owners) return null;
+  return {
+    ownerUserId: agent.ownerUserId,
+    requiresApproval: otherOwner && policy.cross_owner_requires_approval,
+  };
+}
+
+/**
+ * {@link receiverRule} for one agent, as a write asks it: every refusal is the
+ * one `422 receiver_not_eligible`, whichever check failed — an agent id that
+ * names nothing included — so the answer names no more than the caller sent.
  */
 function receiverEligibility(
   db: Db,
@@ -557,41 +656,22 @@ function receiverEligibility(
   agentId: string,
   fromOwnerId: string | null,
 ): { ownerUserId: string; requiresApproval: boolean } {
-  const refuse = () =>
-    unprocessable(
+  const answer = receiverRule(
+    loadReceiverFacts(db, [agentId]),
+    project,
+    policy,
+    agentId,
+    fromOwnerId,
+  );
+  if (answer === null) {
+    throw unprocessable(
       'to_agent_id',
       'receiver_not_eligible',
       'That agent may not receive this task: it must be active, granted full access here, and — unless the space allows other owners — the same owner’s',
       { to_agent_id: agentId },
     );
-
-  const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
-  if (agent?.orgId !== project.orgId || agent.status !== 'active') {
-    throw refuse();
   }
-  const grant = db
-    .select({ scope: agentProjectGrants.scope })
-    .from(agentProjectGrants)
-    .where(
-      and(eq(agentProjectGrants.agentId, agentId), eq(agentProjectGrants.projectId, project.id)),
-    )
-    .get();
-  if (grant?.scope !== 'full' || !project.agentsAllowed) throw refuse();
-
-  const owner = loadActor(db, agent.ownerUserId);
-  if (
-    owner?.isActive !== true ||
-    !can(withProject(owner, project.id), 'task.handoff.accept', { projectId: project.id })
-  ) {
-    throw refuse();
-  }
-
-  const otherOwner = fromOwnerId !== null && fromOwnerId !== agent.ownerUserId;
-  if (otherOwner && !policy.allow_other_owners) throw refuse();
-  return {
-    ownerUserId: agent.ownerUserId,
-    requiresApproval: otherOwner && policy.cross_owner_requires_approval,
-  };
+  return answer;
 }
 
 /** SHA-256 of the note as offered, so a receiver can tell it is the same note. */
@@ -2141,7 +2221,7 @@ function personHandoffViews(
           .map((c) => [c.id, c]),
   );
 
-  const actions = new NextActions(db, actor);
+  const actions = new NextActions(db, actor, found);
   return found.map((f): PersonHandoffView => {
     const offer = f.offer;
     const from = fromAgentId(offer);
@@ -2203,19 +2283,56 @@ function personHandoffViews(
  * - `cancel`: a hand-off from the caller's agent that they may cancel.
  */
 class NextActions {
-  private readonly projectsById = new Map<string, ProjectRow | undefined>();
-  private readonly policies = new Map<string, HandoffPolicyView>();
-  private readonly candidates = new Map<string, { id: string; ownerUserId: string }[]>();
-  private readonly eligible = new Map<string, { requiresApproval: boolean } | null>();
+  private readonly actor: ResolvedActor;
+  private readonly projectsById: Map<string, ProjectRow>;
+  private readonly policies: Map<string, HandoffPolicyView>;
+  /** Active agents with a `full` grant, by project: the only ones that could receive. */
+  private readonly candidates: Map<string, { id: string; ownerUserId: string }[]>;
+  private readonly facts: ReceiverFacts;
 
   // Plain fields, not parameter properties: Node's type stripping, which the
   // concurrency tests' worker processes load this file with, refuses those.
-  private readonly db: Db;
-  private readonly actor: ResolvedActor;
-
-  constructor(db: Db, actor: ResolvedActor) {
-    this.db = db;
+  /**
+   * Everything the page's answers need, read up front in a fixed number of
+   * queries whatever the page's size (LAI-1009): its projects, their
+   * policies, the agents that could receive there, and those agents' and the
+   * named receivers' {@link ReceiverFacts}. Every answer after is in memory.
+   */
+  constructor(db: Db, actor: ResolvedActor, rows: readonly FoundOffer[]) {
     this.actor = actor;
+    const projectIds = [...new Set(rows.map((r) => r.projectId))];
+    this.projectsById = new Map(
+      db
+        .select()
+        .from(projects)
+        .where(inArray(projects.id, projectIds))
+        .all()
+        .map((p) => [p.id, p]),
+    );
+    this.policies = readPolicies(db, projectIds);
+    const onProjects = db
+      .select({
+        id: agents.id,
+        ownerUserId: agents.ownerUserId,
+        projectId: agentProjectGrants.projectId,
+      })
+      .from(agents)
+      .innerJoin(agentProjectGrants, eq(agentProjectGrants.agentId, agents.id))
+      .where(
+        and(
+          inArray(agentProjectGrants.projectId, projectIds),
+          eq(agentProjectGrants.scope, 'full'),
+          eq(agents.status, 'active'),
+        ),
+      )
+      .all();
+    this.candidates = new Map(
+      projectIds.map((id) => [id, onProjects.filter((a) => a.projectId === id)]),
+    );
+    this.facts = loadReceiverFacts(db, [
+      ...onProjects.map((a) => a.id),
+      ...rows.map((r) => r.offer.toAgentId).filter((id): id is string => id !== null),
+    ]);
   }
 
   for(
@@ -2244,10 +2361,9 @@ class NextActions {
         row.status === 'in_progress' &&
         verification === 'verified' &&
         row.handoffCount < this.policy(row.projectId).max_handoffs;
+      const candidates = this.candidates.get(row.projectId) ?? [];
       if (offer.toAgentId === null) {
-        const mine = this.agentsOn(row.projectId).filter(
-          (a) => a.ownerUserId === this.actor.userId,
-        );
+        const mine = candidates.filter((a) => a.ownerUserId === this.actor.userId);
         if (
           takeable &&
           mine.some(
@@ -2256,9 +2372,7 @@ class NextActions {
         ) {
           return 'accept_with_your_agent';
         }
-        const others = this.agentsOn(row.projectId).filter(
-          (a) => a.ownerUserId !== this.actor.userId,
-        );
+        const others = candidates.filter((a) => a.ownerUserId !== this.actor.userId);
         if (mayApprove && others.some((a) => this.eligibility(row.projectId, a.id, fromOwner))) {
           return 'name_receiver';
         }
@@ -2280,71 +2394,18 @@ class NextActions {
     return state === 'pending_approval' ? 'wait_for_approval' : 'wait_for_receiver';
   }
 
-  private project(projectId: string): ProjectRow | undefined {
-    if (!this.projectsById.has(projectId)) {
-      this.projectsById.set(
-        projectId,
-        this.db.select().from(projects).where(eq(projects.id, projectId)).get(),
-      );
-    }
-    return this.projectsById.get(projectId);
-  }
-
   private policy(projectId: string): HandoffPolicyView {
-    let policy = this.policies.get(projectId);
-    if (policy === undefined) {
-      policy = readPolicy(this.db, projectId);
-      this.policies.set(projectId, policy);
-    }
-    return policy;
+    return this.policies.get(projectId)!;
   }
 
-  /** Active agents with a `full` grant on the project: the only ones that could receive. */
-  private agentsOn(projectId: string): { id: string; ownerUserId: string }[] {
-    let found = this.candidates.get(projectId);
-    if (found === undefined) {
-      found = this.db
-        .select({ id: agents.id, ownerUserId: agents.ownerUserId })
-        .from(agents)
-        .innerJoin(agentProjectGrants, eq(agentProjectGrants.agentId, agents.id))
-        .where(
-          and(
-            eq(agentProjectGrants.projectId, projectId),
-            eq(agentProjectGrants.scope, 'full'),
-            eq(agents.status, 'active'),
-          ),
-        )
-        .all();
-      this.candidates.set(projectId, found);
-    }
-    return found;
-  }
-
-  /** {@link receiverEligibility}'s answer, or null where it refuses. */
+  /** {@link receiverRule}'s answer, from the facts already loaded. */
   private eligibility(
     projectId: string,
     agentId: string,
     fromOwner: string | null,
   ): { requiresApproval: boolean } | null {
-    const key = `${projectId}:${agentId}:${fromOwner ?? ''}`;
-    if (!this.eligible.has(key)) {
-      const project = this.project(projectId);
-      let answer: { requiresApproval: boolean } | null = null;
-      if (project !== undefined) {
-        try {
-          answer = receiverEligibility(
-            this.db,
-            project,
-            this.policy(projectId),
-            agentId,
-            fromOwner,
-          );
-        } catch (error) {
-          if (!(error instanceof ApiError)) throw error;
-        }
-      }
-      this.eligible.set(key, answer);
-    }
-    return this.eligible.get(key) ?? null;
+    const project = this.projectsById.get(projectId);
+    if (project === undefined) return null;
+    return receiverRule(this.facts, project, this.policy(projectId), agentId, fromOwner);
   }
 }
