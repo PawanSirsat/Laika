@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { newId } from '../../../src/db/ids.ts';
 import {
   agentProjectGrants,
@@ -7,6 +7,7 @@ import {
   orgs,
   projects,
   taskCheckpoints,
+  taskClaims,
   tasks,
   users,
 } from '../../../src/db/schema.ts';
@@ -470,6 +471,121 @@ describe('GET /handoff-offers — next_action is only what would succeed', () =>
       .run();
     const after = (await inbox('bob', '?view=received')).data;
     expect(after.find((r) => r.id === offer.o8)!.next_action).toBe('wait_for_receiver');
+  });
+});
+
+describe('GET /handoff-offers — the hint and the accept are one rule', () => {
+  /**
+   * A recovery named to Bob's agent, of Ada's expired claim: what Bob's inbox
+   * says, and what the accept route then does with Bob's agent's token, under
+   * each policy. The two must agree — both ask `receiverRule`.
+   */
+  it('accept_with_your_agent exactly when the accept succeeds', async () => {
+    const cases: [Record<string, boolean>, boolean][] = [
+      [{ allow_other_owners: false, cross_owner_requires_approval: false }, false],
+      [{ allow_other_owners: true, cross_owner_requires_approval: false }, true],
+    ];
+    for (const [policyBody, expected] of cases) {
+      await ok(
+        await h.app.request('/api/v1/projects/laika/handoff-policy', {
+          method: 'PUT',
+          headers: jsonHeaders({ Cookie: people.ada!.cookie }),
+          body: JSON.stringify(policyBody),
+        }),
+        200,
+      );
+      const t = await claimedTask('laika', 'Agree', 'adaA', 'ada');
+      h.db
+        .update(taskClaims)
+        .set({ state: 'expired', endedAt: Date.now() })
+        .where(eq(taskClaims.taskId, t.taskId))
+        .run();
+      seedOffer('agree', {
+        taskId: t.taskId,
+        kind: 'recovery',
+        state: 'open',
+        toAgentId: agentsOf.bobA!.id,
+        checkpointId: t.checkpointId,
+        checkpointCommitSha: 'c'.repeat(40),
+      });
+      const row = (await inbox('bob', '?view=received')).data.find((r) => r.id === offer.agree)!;
+      const accepted = await post(
+        `/api/v1/handoff-offers/${offer.agree!}/accept`,
+        {
+          Authorization: `Bearer ${agentsOf.bobA!.secret}`,
+        },
+        { verified_commit_sha: 'c'.repeat(40) },
+      );
+      const body = await accepted.clone().text();
+      expect([row.next_action, accepted.status], body).toEqual(
+        expected ? ['accept_with_your_agent', 200] : ['wait_for_receiver', 422],
+      );
+      if (!expected) expect(body).toContain('receiver_not_eligible');
+    }
+  });
+});
+
+describe('GET /handoff-offers — a fixed number of queries', () => {
+  /** Every SQL statement prepared while `run` is awaited. */
+  async function statements(run: () => Promise<unknown>): Promise<number> {
+    const spy = vi.spyOn(h.t.sqlite, 'prepare');
+    try {
+      await run();
+      return spy.mock.calls.length;
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('reads the same number of statements for one offer and for twenty', async () => {
+    await agent('leeA', 'lee', [laikaId]);
+    await agent('carlA', 'carl', [laikaId]);
+    await ok(
+      await h.app.request('/api/v1/projects/laika/handoff-policy', {
+        method: 'PUT',
+        headers: jsonHeaders({ Cookie: people.ada!.cookie }),
+        body: JSON.stringify({ allow_other_owners: true, cross_owner_requires_approval: true }),
+      }),
+      200,
+    );
+    const read = (who: string, query: string) => () => inbox(who, query);
+    // Warm once, so a first-request cost is not counted against either size.
+    await inbox('lee', '?view=recovery');
+    const one = {
+      recovery: await statements(read('lee', '?view=recovery')),
+      ada: await statements(read('ada', '?view=recovery')),
+    };
+    expect((await inbox('lee', '?view=recovery')).data).toHaveLength(1);
+    // The spy sees the request's reads: a count of nothing would compare equal.
+    expect(one.recovery).toBeGreaterThan(10);
+
+    // Nineteen more, each on its own task, held by four owners' agents and
+    // named to six receivers or none, so every pair the rules read differs.
+    const holders = [
+      ['adaA', 'ada'],
+      ['bobA', 'bob'],
+      ['leeA', 'lee'],
+      ['carlA', 'carl'],
+    ] as const;
+    const receivers = [null, 'adaA', 'adaB', 'bobA', 'leeA', 'carlA'];
+    for (let i = 0; i < 19; i += 1) {
+      const [holder, owner] = holders[i % holders.length]!;
+      const t = await claimedTask('laika', `Many ${String(i)}`, holder, owner);
+      const to = receivers[i % receivers.length]!;
+      seedOffer(`many${String(i)}`, {
+        taskId: t.taskId,
+        kind: 'recovery',
+        state: 'open',
+        toAgentId: to === null ? null : agentsOf[to]!.id,
+        checkpointId: t.checkpointId,
+      });
+    }
+    expect((await inbox('lee', '?view=recovery')).data).toHaveLength(20);
+    const twenty = {
+      recovery: await statements(read('lee', '?view=recovery')),
+      ada: await statements(read('ada', '?view=recovery')),
+    };
+    expect(twenty).toEqual(one);
   });
 });
 
