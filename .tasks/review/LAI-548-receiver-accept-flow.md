@@ -36,7 +36,7 @@ worktree on it — so it continues from that exact commit.
 - [x] A note containing shell or prompt-injection text is printed verbatim inside the untrusted block and nothing is executed (asserted).
 - [x] Losing the accept race leaves the prepared worktree clearly labelled and reports `offer_taken`.
 - [x] After accept, `git rev-parse HEAD` in the worktree equals the checkpoint SHA (asserted).
-- [ ] Repo-root gate exits 0. *(Not run on Belka — the machine rule forbids the full suite locally; CI runs it on the PR. Ticked when CI is green.)*
+- [x] Repo-root gate exits 0. *(Run by CI, not on Belka: PR #158, run 41017000854, Gate — test, lint, format: success at 2daed9f8.)*
 - [x] Accept carries `verified_commit_sha`; a forged mismatch is answered `422 checkpoint_mismatch` and the helper reports it without retrying (asserted against a real server).
 - [x] Accept on a `pending` checkpoint is answered `409 checkpoint_unverified` and the helper says "Verification pending".
 - [x] A fetch error or missing tag turns the offer into "Save needs attention" locally, and accept is never called.
