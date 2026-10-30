@@ -831,6 +831,26 @@ void describe('checkpoint review fixes, round 4 (LAI-547, #154 at 84c4ebc2)', ()
     assert.deepEqual([refsOf(a), refsOf(other)], before, 'nothing pushed');
   });
 
+  void test('R4-1: a remote named only in a legacy .git/remotes file cannot catch a local path either', () => {
+    // Not in the config, so the name refusal cannot see it: the absolute
+    // file:// URL is what keeps `ls-remote` from reading `A.git` as it.
+    const { repo, a, other } = relativePush('r41c', false);
+    mkdirSync(join(repo.clone, '.git', 'remotes'), { recursive: true });
+    writeFileSync(join(repo.clone, '.git', 'remotes', 'A.git'), `URL: ${other}\n`);
+    assert.match(
+      b.git(repo.wt, 'ls-remote', '--symref', '--', 'A.git', 'HEAD'),
+      /^ref: refs\/heads\/master\tHEAD/,
+      'git reads the legacy remote',
+    );
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 403;\n');
+    const before = [refsOf(a), refsOf(other)];
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /LAI-547-r41c is a protected branch/);
+    assert.deepEqual([refsOf(a), refsOf(other)], before, 'nothing pushed anywhere');
+  });
+
   void test('R4-2: every background task is read — 200 finished and 1 running keep the live marker', async () => {
     clearInflightDir();
     markInflight(b.home, 'claude-code', HS, 'toolu_r42', harnessOwner());
