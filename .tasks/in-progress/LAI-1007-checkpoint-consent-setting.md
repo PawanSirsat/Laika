@@ -2,11 +2,12 @@
 id: LAI-1007
 title: 'Agents tab: the owner gives and withdraws consent to automatic checkpoints for each agent'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-545]
 discovered-from: LAI-549
-status: backlog
+status: in-progress
+started: 2026-10-30T16:20:00+02:00
 ---
 
 Web only; the API ships in LAI-545 (#147). Board: child of LAIKA-785 (Sprint
