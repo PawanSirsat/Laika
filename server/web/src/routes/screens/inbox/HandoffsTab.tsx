@@ -24,6 +24,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
+import { Spinner } from '../../../components/Spinner.tsx';
 import { KindShape } from '../../../components/agent/HandoffInbox.tsx';
 import {
   HANDOFF_FILTER_WORDS,
@@ -418,7 +419,7 @@ function HandoffRow({
         <span className="visually-hidden">to</span>
         <Party agent={row.to_agent} meId={meId} unnamed="Any eligible agent" />
       </span>
-      <dl className="handoff-facts">
+      <dl className="handoffs-facts">
         <div>
           <dt>Approval</dt>
           <dd data-approval>{approvalWords(row)}</dd>
@@ -435,7 +436,7 @@ function HandoffRow({
           <div>
             <dt>Reason</dt>
             {/* Untrusted (D-115 item 7): text, never markup. */}
-            <dd className="handoff-reason">{row.reason}</dd>
+            <dd className="handoffs-reason">{row.reason}</dd>
           </div>
         )}
         <div>
@@ -449,16 +450,18 @@ function HandoffRow({
         {gone && ' · No longer in this view'}
       </span>
       {(approve || withdraw) && (
-        <span className="handoff-actions">
+        <span className="handoffs-actions">
           {approve && (
             <button
               type="button"
               className="button button-primary"
               disabled={busy}
+              aria-busy={busy || undefined}
               onClick={onApprove}
               data-approve
             >
-              {busy ? 'Approving…' : 'Approve'}
+              {busy && <Spinner size="sm" />}
+              Approve
             </button>
           )}
           {withdraw && (
@@ -466,17 +469,19 @@ function HandoffRow({
               type="button"
               className="button button-secondary"
               disabled={busy}
+              aria-busy={busy || undefined}
               onClick={onWithdraw}
               data-withdraw
             >
-              {busy ? 'Withdrawing…' : 'Withdraw'}
+              {busy && <Spinner size="sm" />}
+              Withdraw
             </button>
           )}
         </span>
       )}
       {note !== undefined && note.words !== '' && (
         <p
-          className={note.error ? 'handoff-note handoff-note-error' : 'handoff-note'}
+          className={note.error ? 'handoffs-note handoffs-note-error' : 'handoffs-note'}
           role={note.error ? 'alert' : 'status'}
         >
           {note.words}
@@ -499,13 +504,13 @@ function Party({
   if (agent === null) return <span className="handoff-nobody">{unnamed}</span>;
   const owner = agent.owner.id === meId ? 'yours' : agent.owner.name;
   return (
-    <span className="handoff-party">
+    <span className="handoffs-party">
       <AgentChip
         client={selectedHarness(agent)}
         device={agentDevice(agent)}
         owner={agent.owner.name}
       />
-      <span className="handoff-owner">{owner}</span>
+      <span className="handoffs-owner">{owner}</span>
     </span>
   );
 }
