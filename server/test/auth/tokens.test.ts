@@ -17,7 +17,7 @@ import {
 } from '../../src/auth/tokens.ts';
 import { newId } from '../../src/db/ids.ts';
 import { eq } from 'drizzle-orm';
-import { orgs, tokens, users } from '../../src/db/schema.ts';
+import { agents, orgs, tokens, users } from '../../src/db/schema.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -450,6 +450,99 @@ describe('MCP activity is recorded on the token (D-076)', () => {
 
   it('touches nothing for a token that does not exist', () => {
     expect(recordMcpUse(t.db, 'nope', 1_000, 'Cursor')).toEqual({ mcp: false, client: false });
+  });
+});
+
+describe('a registered agent’s token takes its harness from the agent (D-120, LAI-1001)', () => {
+  let t: TestDb;
+  let tokenId: string;
+
+  /** A token named `name`, linked to an agent on `harness` when one is given. */
+  function seed(name: string, harness: string | null): void {
+    t = freshDb();
+    const userId = newId();
+    const orgId = newId();
+    tokenId = newId();
+    t.db
+      .insert(users)
+      .values({
+        id: userId,
+        email: 'owner@example.test',
+        name: 'Owner',
+        orgRole: 'member',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      })
+      .run();
+    t.db
+      .insert(orgs)
+      .values({ id: orgId, name: 'Laika', ownerUserId: userId, createdAt: 0, updatedAt: 0 })
+      .run();
+    const agentId = harness === null ? null : newId();
+    if (agentId !== null && harness !== null) {
+      t.db
+        .insert(agents)
+        .values({
+          id: agentId,
+          orgId,
+          ownerUserId: userId,
+          displayName: name,
+          harness,
+          deviceLabel: 'Belka',
+          createdAt: 0,
+        })
+        .run();
+    }
+    t.db
+      .insert(tokens)
+      .values({
+        id: tokenId,
+        userId,
+        agentId,
+        name,
+        prefix: 'lai_bbbb',
+        tokenHash: 'y'.repeat(64),
+        scope: 'full',
+        createdAt: 0,
+      })
+      .run();
+  }
+  afterEach(() => {
+    t.close();
+  });
+
+  const stored = () => {
+    const row = t.db.select().from(tokens).where(eq(tokens.id, tokenId)).get();
+    return { lastClient: row?.lastClient, lastClientName: row?.lastClientName };
+  };
+
+  it('an agent registered as Polly on omnigent, introducing itself as mcp, is omnigent', () => {
+    seed('Polly', 'omnigent');
+    expect(recordMcpUse(t.db, tokenId, 1_000, 'mcp').client).toBe(true);
+    expect(stored()).toEqual({ lastClient: 'omnigent', lastClientName: 'mcp' });
+  });
+
+  it('the agent’s harness wins over a client that names something else', () => {
+    seed('codex on Strelka', 'claude-code');
+    recordMcpUse(t.db, tokenId, 1_000, 'codex-mcp-client');
+    expect(stored()).toEqual({ lastClient: 'claude-code', lastClientName: 'codex-mcp-client' });
+  });
+
+  it('a wrong slug stored before the agent’s harness counted is repaired by a weak name', () => {
+    seed('Polly', 'omnigent');
+    t.db
+      .update(tokens)
+      .set({ lastClient: 'cursor', lastClientName: 'Cursor' })
+      .where(eq(tokens.id, tokenId))
+      .run();
+    expect(recordMcpUse(t.db, tokenId, 1_000, 'mcp').client).toBe(true);
+    expect(stored()).toEqual({ lastClient: 'omnigent', lastClientName: 'mcp' });
+  });
+
+  it('an unregistered legacy token still reads its name’s first word', () => {
+    seed('Polly', null);
+    recordMcpUse(t.db, tokenId, 1_000, 'mcp');
+    expect(stored()).toEqual({ lastClient: 'other', lastClientName: 'mcp' });
   });
 });
 
