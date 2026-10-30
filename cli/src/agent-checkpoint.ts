@@ -29,10 +29,12 @@ import {
   readCredential,
   readJson,
   readProc,
+  isDeadState,
   probeKill,
   type Probe,
   readState,
   sessionFileKey,
+  UNKNOWN,
   type SessionState,
   statePath,
   writePrivate,
@@ -1139,67 +1141,135 @@ export function clearAllInflight(home: string, harness: Harness, id: string): vo
 
 const INTERLOCK = '.saving';
 
-/** The interlock's holder: a PID only. */
-function interlockHolder(path: string): number | undefined {
+/**
+ * The longest an automatic save may hold the interlock: staging, the checks
+ * and the commit, nothing on the network (P1-7, round-2 #2). `PreToolUse`
+ * waits no longer than the deadline this sets, plus {@link INTERLOCK_GRACE_MS}.
+ */
+export const SAVE_BUDGET_MS = 10_000;
+export const INTERLOCK_GRACE_MS = 1_000;
+/** `ps -o lstart=` is whole seconds; a start this close is the same process. */
+const START_TOLERANCE_MS = 2_000;
+
+/** The interlock's holder: the saving process (PID **and** start time) and its deadline. */
+export interface InterlockHolder {
+  readonly pid: number;
+  readonly started_ms: number;
+  readonly deadline: number;
+}
+
+function interlockHolder(path: string): InterlockHolder | undefined {
   const value = readJson(path);
-  return isRecord(value) && Number.isSafeInteger(value.pid) && (value.pid as number) > 0
-    ? (value.pid as number)
+  if (!isRecord(value)) return undefined;
+  const { pid, started_ms: started, deadline } = value;
+  return Number.isSafeInteger(pid) &&
+    (pid as number) > 0 &&
+    typeof started === 'number' &&
+    Number.isFinite(started) &&
+    typeof deadline === 'number' &&
+    Number.isFinite(deadline)
+    ? { pid: pid as number, started_ms: started, deadline }
     : undefined;
 }
 
+/** This process's start time, from its own uptime: no process-table read to time out. */
+const selfStartedMs = (): number => Date.now() - process.uptime() * 1000;
+
 /**
- * An automatic save's interlock (P1-7): held from just before its last quiet
- * check until its commit. `PreToolUse` writes its marker and then waits while
- * it is held, and the save asks for markers again under it — so a tool that
- * starts after the quiet check either waits for the commit or stops the save
- * before it commits.
- *
- * **Held by PID, judged by the kernel** (`kill(pid, 0)`), never by `ps`: the
- * save must not depend on a process-table read that a loaded machine can
- * time out, and a lock whose PID was reused at worst makes one `PreToolUse`
- * wait its 4 s and one save give up — it can never let a save race a tool.
+ * Whether the holder is still the process that took the interlock — the
+ * same liveness rule as the markers (P1-8): **a PID alone is not a holder**,
+ * since the OS hands a freed PID to the next process. Dead on evidence only:
+ * the kernel has no such PID, or the PID's start time is another process's.
+ * A `ps` that cannot answer is `unknown`, which holds — waiting, never racing.
+ */
+function holderState(h: InterlockHolder, probe: Probe, proc: ProcReader): 'alive' | 'dead' | 'unknown' {
+  if (probe(h.pid) === 'absent') return 'dead';
+  if (h.pid === process.pid) {
+    return Math.abs(selfStartedMs() - h.started_ms) <= START_TOLERANCE_MS ? 'alive' : 'dead';
+  }
+  const info = proc(h.pid);
+  if (info === UNKNOWN) return 'unknown';
+  if (info === undefined || isDeadState(info.state)) return 'dead';
+  const started = Date.parse(info.started.trim());
+  if (!Number.isFinite(started)) return 'unknown';
+  return Math.abs(started - h.started_ms) <= START_TOLERANCE_MS ? 'alive' : 'dead';
+}
+
+export type InterlockRelease = (() => void) & { readonly deadline: number };
+
+/**
+ * An automatic save's interlock (P1-7): held from just before staging until
+ * the commit, never across the network. `PreToolUse` writes its marker and
+ * then waits while it is held — until the holder's deadline and a second of
+ * grace, then it **denies** the tool rather than let it race — and the save
+ * asks for markers again under it, so a tool that starts after the quiet
+ * check either waits for the commit or stops the save before it commits.
  */
 export function takeSaveInterlock(
   home: string,
   harness: Harness,
   id: string,
-  pid: number = process.pid,
-  probe: Probe = probeKill,
-): () => void {
+  options: { budgetMs?: number; probe?: Probe; proc?: ProcReader } = {},
+): InterlockRelease {
+  const probe = options.probe ?? probeKill;
+  const proc = options.proc ?? readProc;
+  const budget = Math.max(100, Math.min(SAVE_BUDGET_MS, options.budgetMs ?? SAVE_BUDGET_MS));
   const dir = inflightDir(home, harness, id);
   privateDir(join(home, '.laika'));
   privateDir(checkpointsDir(home));
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const path = join(dir, INTERLOCK);
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    const holder: InterlockHolder = {
+      pid: process.pid,
+      started_ms: selfStartedMs(),
+      deadline: Date.now() + budget,
+    };
     try {
-      writeFileSync(path, JSON.stringify({ pid }), { mode: 0o600, flag: 'wx' });
+      writeFileSync(path, JSON.stringify(holder), { mode: 0o600, flag: 'wx' });
       let released = false;
-      return () => {
+      const release = (): void => {
         if (released) return;
         released = true;
-        if (interlockHolder(path) === pid) rmSync(path, { force: true });
+        const now = interlockHolder(path);
+        if (now?.pid === holder.pid && now.started_ms === holder.started_ms) {
+          rmSync(path, { force: true });
+        }
       };
+      return Object.assign(release, { deadline: holder.deadline });
     } catch {
-      const holder = interlockHolder(path);
-      if (holder !== undefined && probe(holder) !== 'absent') break;
+      const current = interlockHolder(path);
+      // A file in no shape this writes is nobody's: taken over, as a dead holder's is.
+      if (current !== undefined && holderState(current, probe, proc) !== 'dead') break;
       rmSync(path, { force: true });
     }
   }
   throw new Refusal('another automatic save holds this session’s interlock', 'checkpoint_busy');
 }
 
-/** Whether a process that still exists holds the session's save interlock. */
+/** The live holder of the session's save interlock, or `undefined` when nothing holds it. */
+export function interlockHolderOf(
+  home: string,
+  harness: Harness,
+  id: string,
+  probe: Probe = probeKill,
+  proc: ProcReader = readProc,
+): InterlockHolder | undefined {
+  const path = join(inflightDir(home, harness, id), INTERLOCK);
+  if (!existsSync(path)) return undefined;
+  const holder = interlockHolder(path);
+  return holder !== undefined && holderState(holder, probe, proc) !== 'dead' ? holder : undefined;
+}
+
+/** Whether a live process holds the session's save interlock. */
 export function interlockHeld(
   home: string,
   harness: Harness,
   id: string,
   probe: Probe = probeKill,
+  proc: ProcReader = readProc,
 ): boolean {
-  const path = join(inflightDir(home, harness, id), INTERLOCK);
-  if (!existsSync(path)) return false;
-  const holder = interlockHolder(path);
-  return holder === undefined || probe(holder) !== 'absent';
+  return interlockHolderOf(home, harness, id, probe, proc) !== undefined;
 }
 
 function markerOwner(path: string): MarkerOwner | undefined {

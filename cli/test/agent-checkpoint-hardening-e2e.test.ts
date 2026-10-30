@@ -574,7 +574,7 @@ void describe('checkpoint review fixes, round 2 (LAI-547, #154 at 2e401f3c)', ()
     clearInflightDir();
   });
 
-  void test('R2-5: an interlock whose PID was reused is taken over; a live holder is respected', () => {
+  void test('R2-5: an interlock whose PID was reused is taken over; a live holder is respected', async () => {
     clearInflightDir();
     const dir = checkpoint.inflightDir(b.home, 'claude-code', HS);
     mkdirSync(dir, { recursive: true });
@@ -584,6 +584,28 @@ void describe('checkpoint review fixes, round 2 (LAI-547, #154 at 2e401f3c)', ()
       JSON.stringify({ pid: process.pid, started_ms: 1_000_000, deadline: Date.now() + 600_000 }),
     );
     assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), false, 'a reused PID holds nothing');
+    // The same through the process table, as the hook sees another process:
+    // a live PID whose start time is not the holder's holds nothing either.
+    const other = spawn('/bin/sleep', ['30']);
+    try {
+      await sleep(200);
+      const live = readProc(other.pid ?? 0);
+      assert.ok(live !== undefined && live !== UNKNOWN, 'read the other process');
+      const started = Date.parse(live.started.trim());
+      writeFileSync(
+        join(dir, '.saving'),
+        JSON.stringify({ pid: other.pid, started_ms: started - 3_600_000, deadline: Date.now() + 600_000 }),
+      );
+      assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), false, 'reused, by ps');
+      writeFileSync(
+        join(dir, '.saving'),
+        JSON.stringify({ pid: other.pid, started_ms: started, deadline: Date.now() + 600_000 }),
+      );
+      assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), true, 'its own start: held');
+      rmSync(join(dir, '.saving'), { force: true });
+    } finally {
+      other.kill();
+    }
     const release = checkpoint.takeSaveInterlock(b.home, 'claude-code', HS);
     try {
       assert.throws(
