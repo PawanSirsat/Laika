@@ -100,13 +100,21 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
   const [closed, setClosed] = useState(false);
   const [state, setState] = useState<Loaded>(START);
   const [attempt, setAttempt] = useState(0);
-  const [busy, setBusy] = useState<string | null>(null);
+  /*
+   * **Every row's write in flight, not the last one started** (LAI-550 review
+   * round 2). One id let Approve on row B re-enable row A while A's request
+   * was still out, so A could be sent twice. The ref is checked and changed
+   * synchronously, so two clicks before a render still send one request; the
+   * state is what the rows draw.
+   */
+  const pending = useRef(new Set<string>());
+  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
   const [focusInside, setFocusInside] = useState(false);
   const [notes, setNotes] = useState<Readonly<Record<string, { error: boolean; words: string }>>>(
     {},
   );
   const latest = useRef<readonly PersonHandoffView[]>([]);
-  const holding = busy !== null || focusInside;
+  const holding = busy.size > 0 || focusInside;
   const holdingRef = useRef(holding);
   useEffect(() => {
     holdingRef.current = holding;
@@ -251,7 +259,9 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
   };
 
   const write = (kind: 'approve' | 'withdraw', row: PersonHandoffView): void => {
-    setBusy(row.id);
+    if (pending.current.has(row.id)) return;
+    pending.current.add(row.id);
+    setBusy(new Set(pending.current));
     setNotes((n) => ({ ...n, [row.id]: { error: false, words: '' } }));
     (kind === 'approve' ? approveHandoff(row.id) : cancelHandoff(row.id))
       .then(() => {
@@ -273,7 +283,8 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
         reread();
       })
       .finally(() => {
-        setBusy(null);
+        pending.current.delete(row.id);
+        setBusy(new Set(pending.current));
       });
   };
 
@@ -398,7 +409,7 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
                 row={row}
                 gone={gone}
                 meId={meId}
-                busy={busy === row.id}
+                busy={busy.has(row.id)}
                 note={notes[row.id]}
                 onNavigate={onNavigate}
                 onApprove={() => {

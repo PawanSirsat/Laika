@@ -154,6 +154,18 @@ const LATE = row({
   task_key: 'LC-8',
   task_title: 'Second page of Received',
 });
+/** A second offer the reader may approve, for overlapping writes. */
+const ALSO_TO_APPROVE = row({
+  id: 'o-approve-2',
+  task_id: 't9',
+  task_key: 'LC-9',
+  task_title: 'Second approval',
+  state: 'pending_approval',
+  from_agent: SAMS,
+  to_agent: KIMS,
+  requires_approval: true,
+  next_action: 'approve',
+});
 const SENT = row({
   id: 'o-sent',
   task_id: 't6',
@@ -197,14 +209,21 @@ function counts(w: World) {
   return { received: 2, sent: 1, needs_approval: w.approved ? 1 : 2, recovery: 1 };
 }
 
-function world(options: { lead?: boolean; refusePolicy?: boolean; paged?: boolean } = {}): World {
+function world(
+  options: { lead?: boolean; refusePolicy?: boolean; paged?: boolean; twoToApprove?: boolean } = {},
+): World {
   const lead = options.lead ?? true;
   const w: World = { stub: {}, approved: false, reachable: true, policyWrites: [] };
   const page = (data: () => unknown[]) => () =>
     w.reachable
       ? { data: data(), next_cursor: null, counts: counts(w) }
       : refuse(500, 'internal', 'the database is locked');
-  const approveRows = () => (w.approved ? [MINE_TO_APPROVE] : [TO_APPROVE, MINE_TO_APPROVE]);
+  const approveRows = () =>
+    options.twoToApprove === true
+      ? [TO_APPROVE, ALSO_TO_APPROVE]
+      : w.approved
+        ? [MINE_TO_APPROVE]
+        : [TO_APPROVE, MINE_TO_APPROVE];
   const stub: ApiStub = {
     '/api/v1/me': {
       id: 'u1',
@@ -286,6 +305,10 @@ function world(options: { lead?: boolean; refusePolicy?: boolean; paged?: boolea
       assert.equal(call.method, 'POST');
       w.approved = true;
       return { id: 'o-approve', state: 'open' };
+    },
+    '/api/v1/handoff-offers/o-approve-2/approve': (call: StubCall) => {
+      assert.equal(call.method, 'POST');
+      return { id: 'o-approve-2', state: 'open' };
     },
     '/api/v1/projects/laika/handoff-policy': (call: StubCall) => {
       if (call.method === 'PUT') {
@@ -532,6 +555,60 @@ void describe('Inbox → Hand-offs', () => {
       await eventually(async () => (await idsOf(h.page)).includes('o-to-me'));
       assert.ok(!(await idsOf(h.page)).includes('o-late'), 'a dropped page came back later');
     } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('overlapping approvals: a row stays busy until its own request answers', async () => {
+    const h = await inbox(world({ twoToApprove: true }));
+    const gates = new Map<string, () => void>();
+    const sent: string[] = [];
+    h.page.on('request', (request) => {
+      const id = /handoff-offers\/([^/]+)\/approve/.exec(request.url())?.[1];
+      if (request.method() === 'POST' && id !== undefined) sent.push(id);
+    });
+    await h.page.route('**/api/v1/handoff-offers/*/approve', async (route) => {
+      const id = /handoff-offers\/([^/]+)\/approve/.exec(route.request().url())?.[1] ?? '';
+      await new Promise<void>((done) => gates.set(id, done));
+      await route.continue().catch(() => undefined);
+    });
+    try {
+      await tab(h.page).locator('[data-filter="needs_approval"]').click();
+      const a = tab(h.page).locator('[data-offer-id="o-approve"] [data-approve]');
+      const b = tab(h.page).locator('[data-offer-id="o-approve-2"] [data-approve]');
+      await a.waitFor();
+      await b.waitFor();
+
+      await a.click();
+      await eventually(() => gates.has('o-approve'));
+      await b.click();
+      await eventually(() => gates.has('o-approve-2'));
+      assert.equal(await a.getAttribute('aria-disabled'), 'true');
+      assert.equal(await b.getAttribute('aria-disabled'), 'true');
+
+      // B answers; A's request is still out, so A stays busy and a second
+      // press sends nothing.
+      gates.get('o-approve-2')?.();
+      await eventually(async () =>
+        (await tab(h.page).locator('[data-offer-id="o-approve-2"]').innerText()).includes(
+          'Approved.',
+        ),
+      );
+      assert.equal(await a.getAttribute('aria-disabled'), 'true', 'A was re-enabled by B');
+      await a.click({ force: true });
+      await new Promise((done) => setTimeout(done, 300));
+      assert.deepEqual(sent, ['o-approve', 'o-approve-2'], 'A was sent twice');
+
+      gates.get('o-approve')?.();
+      await eventually(async () =>
+        (await tab(h.page).locator('[data-offer-id="o-approve"]').innerText()).includes(
+          'Approved.',
+        ),
+      );
+      assert.deepEqual(sent, ['o-approve', 'o-approve-2']);
+    } finally {
+      for (const release of gates.values()) release();
       await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
