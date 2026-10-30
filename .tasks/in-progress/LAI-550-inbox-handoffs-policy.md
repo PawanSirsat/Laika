@@ -2,11 +2,12 @@
 id: LAI-550
 title: 'Inbox → Hand-offs (Received/Sent/Needs approval/Recovery), badge counts, Access-tab hand-off policy controls'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-546]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-30T06:02:00+02:00
 ---
 
 Implements **proposal §6 (Inbox, Settings → Access), §4.5** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
