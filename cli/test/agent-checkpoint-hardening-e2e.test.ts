@@ -845,16 +845,43 @@ void describe('checkpoint review fixes, round 4 (LAI-547, #154 at 84c4ebc2)', ()
     await runHook('stop', { background_tasks: tasks });
     assert.ok(inflight(b.home, 'claude-code', HS) >= 1, 'the 201st, running, kept the marker');
 
-    // A list past what the hook reads (64 KB) is not judged at all: kept.
-    const huge = Array.from({ length: 2000 }, (_, i) => ({
-      id: `task-${String(i)}`,
-      type: 'shell',
-      status: 'completed',
-      description: 'a finished task, described at some length',
-    }));
-    assert.ok(JSON.stringify(huge).length > 64 * 1024, 'the list really is past the read');
-    await runHook('stop', { background_tasks: huge });
-    assert.ok(inflight(b.home, 'claude-code', HS) >= 1, 'an unreadable list clears nothing');
+    // The cap is explicit, and the list is really read up to it: 1000
+    // finished tasks (well past the ~23–70 KB a non-blocking stdin gave up
+    // at) are judged and clear the markers; 1001 are past the cap and,
+    // unjudged, clear nothing.
+    const finished = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: `task-${String(i)}`,
+        type: 'shell',
+        status: 'completed',
+        description: 'a finished task, described at some length',
+      }));
+    assert.ok(JSON.stringify(finished(1000)).length > 70_000, 'the list is past the old read');
+    await runHook('stop', { background_tasks: finished(1000) });
+    assert.equal(inflight(b.home, 'claude-code', HS), 0, '1000 finished: read, judged, cleared');
+    markInflight(b.home, 'claude-code', HS, 'toolu_r42b', harnessOwner());
+    await runHook('stop', { background_tasks: finished(1001) });
+    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'past the cap: nothing cleared');
+    clearInflightDir();
+  });
+
+  void test('R4-2: a hook reads its whole input — a large PostToolUse clears its marker; past 4 MB, nothing is read', async () => {
+    clearInflightDir();
+    markInflight(b.home, 'claude-code', HS, 'toolu_big', harnessOwner());
+    await runHook('tool', {
+      tool_name: 'Read',
+      tool_use_id: 'toolu_big',
+      tool_response: { content: 'x'.repeat(200_000) },
+    });
+    assert.equal(inflight(b.home, 'claude-code', HS), 0, 'a 200 KB input was read and cleared it');
+
+    markInflight(b.home, 'claude-code', HS, 'toolu_huge', harnessOwner());
+    await runHook('tool', {
+      tool_name: 'Read',
+      tool_use_id: 'toolu_huge',
+      tool_response: { content: 'x'.repeat(5 * 1024 * 1024) },
+    });
+    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'past the 4 MB read: nothing done');
     clearInflightDir();
   });
 });
