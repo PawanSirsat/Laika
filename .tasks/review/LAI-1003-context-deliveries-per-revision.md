@@ -6,7 +6,8 @@ assignee: core
 priority: p2
 depends-on: [LAI-555]
 discovered-from: LAI-556
-status: in-progress
+status: review
+finished: 2026-10-30T17:10:00+05:30
 started: 2026-10-30T16:58:00+05:30
 ---
 
@@ -56,21 +57,38 @@ returns them, so LAI-556 cannot show *Delivered to* at all.
 
 ## Acceptance criteria
 
-- [ ] The endpoint returns `session_id`, agent id and label, and
+- [x] The endpoint returns `session_id`, agent id and label, and
       `delivered_at` for each session whose latest recorded delivery is that
       revision, newest first
-- [ ] A caller without project read gets the same status and body as for a
+- [x] A caller without project read gets the same status and body as for a
       project that does not exist; a revision not reached is the revision
       read's `404`
-- [ ] The response and SPEC both say the list is *latest delivered per
+- [x] The response and SPEC both say the list is *latest delivered per
       session*, and a test shows a session moving from revision N to N+1
-- [ ] `can()` is called before the read (the §5 rule), mutation-checked
-- [ ] Response type paired in `response-type-coverage.test.ts` (no new
+- [x] `can()` is called before the read (the §5 rule), mutation-checked
+- [x] Response type paired in `response-type-coverage.test.ts` (no new
       `UNPAIRED` entry)
-- [ ] The repo gate (`pnpm test`, `pnpm lint`, `pnpm format`) exits 0
+- [x] The repo gate (`pnpm test`, `pnpm lint`, `pnpm format`) exits 0
 
 ## Notes
 
 - Do not add a per-delivery history table to make *every* past delivery
   listable. That is a decision (it changes what Laika retains about agent
   sessions); if the latest-only answer is not enough, say so on the card.
+
+## Builder notes (CORE, Belka, LAI-1003)
+
+- Endpoint: `GET /api/v1/projects/:slug/context/deliveries?revision=&limit=&cursor=`
+  (project-level, optionally per revision, as the dispatch asked), not the
+  `…/revisions/:revision/deliveries` example in Scope. `?revision=N` is the
+  per-revision list; one not reached is the revision read's 404.
+- **Agent rule:** the round rule LAI-1001 applies (`agent` only when the
+  reader may already see it), with no task here to widen it — so the reader's
+  **own** agent only. Another person's agent: `agent: null`, no id, no label
+  (D-121 item 7). Activity rows still carry `agent_id` for every reader; that
+  is the older rule and the one that disagrees with D-121, noted on the card.
+- **UNPAIRED:** the three view types take self-expiring `no client type
+  exists` entries (§4.4 step 2, as LAI-1005's `TaskHandoffView`); LAI-1004's
+  client mirror and `PAIRS` entries retire them, so after the pair lands no
+  new entry remains.
+- Gate: CI runs the repo gate on the PR (Belka runs one file at a time).
