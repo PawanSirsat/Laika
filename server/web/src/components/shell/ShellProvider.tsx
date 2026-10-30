@@ -4,6 +4,7 @@ import { useSession } from '../../api/use-session.ts';
 import { useSetupStatus } from '../../api/use-setup-status.ts';
 import { useShellContext } from '../../api/use-shell-context.ts';
 import { useUnlistedCount } from '../../api/use-unlisted-count.ts';
+import { useHandoffCounts } from '../../api/use-handoff-counts.ts';
 import { useReviewCount } from '../../api/use-review-count.ts';
 import { useTokenAlerts } from '../../api/token-alerts.ts';
 import { showsAppNav } from '../shell-chrome.ts';
@@ -71,6 +72,8 @@ export function ShellProvider({ children }: ShellProviderProps) {
   } = useReviewCount(me !== undefined);
   // Every signed-in person may read their own (a web session; LAI-773).
   const { alerts: tokenAlerts, refresh: refreshTokenAlerts } = useTokenAlerts(me !== undefined);
+  // Every signed-in person may read their own hand-offs (LAI-1009).
+  const { counts: handoffCounts, refresh: refreshHandoffs } = useHandoffCounts(me !== undefined);
 
   const value = useMemo<ShellValue>(
     () => ({
@@ -97,6 +100,8 @@ export function ShellProvider({ children }: ShellProviderProps) {
       refreshReview,
       tokenAlerts,
       refreshTokenAlerts,
+      handoffCounts,
+      refreshHandoffs,
       host: window.location.host,
     }),
     [
@@ -123,6 +128,8 @@ export function ShellProvider({ children }: ShellProviderProps) {
       refreshReview,
       tokenAlerts,
       refreshTokenAlerts,
+      handoffCounts,
+      refreshHandoffs,
     ],
   );
 

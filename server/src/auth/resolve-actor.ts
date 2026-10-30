@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type ActorKind, type ProjectRole } from '../db/enums.ts';
 import { mergeGrants, readStoredGrants } from '../db/org-grants.ts';
@@ -396,7 +396,22 @@ export function activityActor(principal: Principal): {
  * carrying the old role around.
  */
 export function loadActor(db: Db, userId: string): ResolvedActor | null {
-  const row = db
+  return loadActors(db, [userId]).get(userId) ?? null;
+}
+
+/**
+ * {@link loadActor} for several people at once, in the same four reads
+ * whatever their number (LAI-1009): the people, their memberships, the
+ * organisation's grants and the spaces' rules. A read that answers for many
+ * rows — the hand-off inbox asking who may receive — asks once, not per row.
+ * An id that names nobody is absent from the map.
+ */
+export function loadActors(db: Db, userIds: readonly string[]): Map<string, ResolvedActor> {
+  const ids = [...new Set(userIds)];
+  const found = new Map<string, ResolvedActor>();
+  if (ids.length === 0) return found;
+
+  const rows = db
     .select({
       id: users.id,
       email: users.email,
@@ -405,35 +420,45 @@ export function loadActor(db: Db, userId: string): ResolvedActor | null {
       isActive: users.isActive,
     })
     .from(users)
-    .where(eq(users.id, userId))
-    .get();
-
-  if (row === undefined) return null;
+    .where(inArray(users.id, ids))
+    .all();
+  if (rows.length === 0) return found;
 
   const memberships = db
-    .select({ projectId: projectMemberships.projectId, role: projectMemberships.role })
+    .select({
+      userId: projectMemberships.userId,
+      projectId: projectMemberships.projectId,
+      role: projectMemberships.role,
+    })
     .from(projectMemberships)
-    .where(eq(projectMemberships.userId, userId))
+    .where(inArray(projectMemberships.userId, ids))
     .all();
+  // What the owner granted each role (§3, LAI-958), read with the role and
+  // for the same reason: a grant withdrawn after sign-in must not linger.
+  const orgGrants = mergeGrants(readStoredGrants(db), DEFAULT_GRANTS);
+  // Each space's own rules (D-103, LAI-976), for the same reason: a space
+  // that turns its agents off must not wait for their tokens to re-resolve.
+  const projectRules = loadProjectRules(db);
 
-  return {
-    userId: row.id,
-    email: row.email,
-    name: row.name,
-    orgRole: row.orgRole,
-    isActive: row.isActive === 1,
-    // `can()` takes one already-resolved project role (§3.3 rule 2). The caller
-    // picks which project the request concerns; see `withProject`.
-    projectRole: null,
-    memberships,
-    token: null,
-    // What the owner granted each role (§3, LAI-958), read with the role and
-    // for the same reason: a grant withdrawn after sign-in must not linger.
-    orgGrants: mergeGrants(readStoredGrants(db), DEFAULT_GRANTS),
-    // Each space's own rules (D-103, LAI-976), for the same reason: a space
-    // that turns its agents off must not wait for their tokens to re-resolve.
-    projectRules: loadProjectRules(db),
-  };
+  for (const row of rows) {
+    found.set(row.id, {
+      userId: row.id,
+      email: row.email,
+      name: row.name,
+      orgRole: row.orgRole,
+      isActive: row.isActive === 1,
+      // `can()` takes one already-resolved project role (§3.3 rule 2). The caller
+      // picks which project the request concerns; see `withProject`.
+      projectRole: null,
+      memberships: memberships
+        .filter((m) => m.userId === row.id)
+        .map((m) => ({ projectId: m.projectId, role: m.role })),
+      token: null,
+      orgGrants,
+      projectRules,
+    });
+  }
+  return found;
 }
 
 /**

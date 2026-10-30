@@ -1,4 +1,5 @@
-import { useId } from 'react';
+import { useEffect, useId, useState } from 'react';
+import { HANDOFF_POLICY_BOUNDS } from '../../api/handoffs.ts';
 import { Dropdown } from '../Dropdown.tsx';
 import { Switch } from '../Switch.tsx';
 import { OFFER_TTL_CHOICES, type HandoffPolicy } from './agent-states.ts';
@@ -9,10 +10,23 @@ export interface HandoffPolicyFormProps {
   readonly onChange: (next: HandoffPolicy) => void;
   /** False for anyone who is not a project admin: the values are shown, not editable. */
   readonly mayEdit: boolean;
+  /** A save is in flight: every control waits for it. */
+  readonly busy?: boolean | undefined;
+  /**
+   * Moves each time a save settles, refused or not. The number field's draft
+   * then shows what the server holds again — a refused value must not sit in
+   * the field as if it were saved (LAI-550 review).
+   */
+  readonly settled?: number | undefined;
 }
 
-/** The most completed hand-offs one task may have; past it a person reassigns. */
-const MAX_HANDOFFS = 10;
+const { maxHandoffs: MAX_BOUNDS, offerTtlMinutes: TTL_BOUNDS } = HANDOFF_POLICY_BOUNDS;
+
+/** *30 minutes*, *2 hours*, *90 minutes*. */
+function ttlWords(m: number): string {
+  if (m < 60 || m % 60 !== 0) return `${String(m)} minutes`;
+  return `${String(m / 60)} hour${m === 60 ? '' : 's'}`;
+}
 
 /**
  * A project's hand-off policy, on Settings → Access (LAI-536, proposal §4.5).
@@ -23,7 +37,34 @@ const MAX_HANDOFFS = 10;
  * approver is a person — the task's assignee or a project admin — and never
  * the receiving agent's owner acting on their own offer.
  */
-export function HandoffPolicyForm({ policy, onChange, mayEdit }: HandoffPolicyFormProps) {
+export function HandoffPolicyForm({
+  policy,
+  onChange,
+  mayEdit,
+  busy = false,
+  settled = 0,
+}: HandoffPolicyFormProps) {
+  const locked = !mayEdit || busy;
+  // The number is a draft until it is committed — on leaving the field or
+  // Enter — so a space that saves each change does not save every keystroke.
+  const [draft, setDraft] = useState(String(policy.maxHandoffs));
+  useEffect(() => {
+    setDraft(String(policy.maxHandoffs));
+  }, [policy.maxHandoffs, settled]);
+  const commitMax = (): void => {
+    const n = Number.parseInt(draft, 10);
+    if (!Number.isInteger(n)) {
+      setDraft(String(policy.maxHandoffs));
+      return;
+    }
+    const bounded = Math.min(MAX_BOUNDS.max, Math.max(MAX_BOUNDS.min, n));
+    setDraft(String(bounded));
+    if (bounded !== policy.maxHandoffs) set({ maxHandoffs: bounded });
+  };
+  // A value the space holds is always offered, even one no preset names.
+  const ttlChoices = [...new Set([...OFFER_TTL_CHOICES, policy.offerTtlMinutes])]
+    .filter((m) => m >= TTL_BOUNDS.min && m <= TTL_BOUNDS.max)
+    .sort((a, b) => a - b);
   const othersLabel = useId();
   const othersHelp = useId();
   const approvalLabel = useId();
@@ -57,7 +98,7 @@ export function HandoffPolicyForm({ policy, onChange, mayEdit }: HandoffPolicyFo
           }}
           labelledBy={othersLabel}
           describedBy={othersHelp}
-          disabled={!mayEdit}
+          disabled={locked}
         />
       </div>
 
@@ -86,7 +127,7 @@ export function HandoffPolicyForm({ policy, onChange, mayEdit }: HandoffPolicyFo
           }}
           labelledBy={approvalLabel}
           describedBy={approvalHelp}
-          disabled={!mayEdit || !approvalApplies}
+          disabled={locked || !approvalApplies}
         />
       </div>
 
@@ -99,18 +140,24 @@ export function HandoffPolicyForm({ policy, onChange, mayEdit }: HandoffPolicyFo
           className="input handoff-policy-number"
           type="number"
           inputMode="numeric"
-          min={1}
-          max={MAX_HANDOFFS}
-          value={policy.maxHandoffs}
-          disabled={!mayEdit}
+          min={MAX_BOUNDS.min}
+          max={MAX_BOUNDS.max}
+          value={draft}
+          disabled={locked}
           aria-describedby={maxHelp}
           onChange={(event) => {
-            const n = Number.parseInt(event.target.value, 10);
-            if (Number.isInteger(n)) set({ maxHandoffs: Math.min(MAX_HANDOFFS, Math.max(1, n)) });
+            setDraft(event.target.value);
+          }}
+          onBlur={commitMax}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') commitMax();
           }}
         />
         <p id={maxHelp} className="handoff-policy-help">
-          After {policy.maxHandoffs} completed hand-offs a person has to reassign the task.
+          {policy.maxHandoffs === 0
+            ? 'No hand-offs: a person reassigns the task.'
+            : `After ${String(policy.maxHandoffs)} completed hand-offs a person has to reassign the task.`}{' '}
+          From {MAX_BOUNDS.min} to {MAX_BOUNDS.max}.
         </p>
       </div>
 
@@ -120,20 +167,21 @@ export function HandoffPolicyForm({ policy, onChange, mayEdit }: HandoffPolicyFo
         </span>
         <Dropdown
           value={String(policy.offerTtlMinutes)}
-          options={OFFER_TTL_CHOICES.map((m) => ({
-            value: String(m),
-            label: m < 60 ? `${String(m)} minutes` : `${String(m / 60)} hour${m === 60 ? '' : 's'}`,
-          }))}
+          options={ttlChoices.map((m) => ({ value: String(m), label: ttlWords(m) }))}
           onChange={(v) => {
             set({ offerTtlMinutes: Number(v) });
           }}
           aria-labelledby={ttlLabel}
-          disabled={!mayEdit}
+          disabled={locked}
         />
         <p className="handoff-policy-help">An expired offer resumes the sender’s paused claim.</p>
       </div>
 
-      {!mayEdit && <p className="handoff-policy-help">Only a project admin can change these.</p>}
+      {!mayEdit && (
+        <p className="handoff-policy-help" data-policy-readonly>
+          Only a space lead can change these.
+        </p>
+      )}
     </section>
   );
 }
