@@ -598,7 +598,11 @@ void describe('Access', () => {
     );
     try {
       await settled(h);
-      assert.match(await h.page.locator('.ss-card-head').innerText(), /Changes save immediately/);
+      // Access & rules is the first card; the hand-off policy is the second (LAI-550).
+      assert.match(
+        await h.page.locator('.ss-card-head').first().innerText(),
+        /Changes save immediately/,
+      );
       assert.match(
         await h.page.locator('[data-visibility="public"]').innerText(),
         /Anyone in Kvelld can find it and join\./,
@@ -822,7 +826,8 @@ void describe('readers who may not change the space never see a control', () => 
     const h = await open(`${SETTINGS}?tab=access`, stub(MEMBER_ME));
     try {
       await settled(h);
-      const text = await h.page.locator('.ss-card').innerText();
+      // Access & rules is the first card; the hand-off policy is the second (LAI-550).
+      const text = await h.page.locator('.ss-card').first().innerText();
       assert.match(text, /Members/);
       assert.match(text, /On/);
       assert.equal(

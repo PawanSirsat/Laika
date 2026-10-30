@@ -32,10 +32,10 @@ const admin = as('admin');
 const member = as('member');
 
 void describe('the tabs are the owner’s grouping', () => {
-  void test('Inbox is Review then Unlisted work', () => {
+  void test('Inbox is Review, Hand-offs, then Unlisted work', () => {
     assert.deepEqual(
       INBOX_TABS.map((t) => t.label),
-      ['Review', 'Unlisted work'],
+      ['Review', 'Hand-offs', 'Unlisted work'],
     );
   });
 
@@ -65,11 +65,11 @@ void describe('a gated tab is absent, not disabled', () => {
   void test('Unlisted work is offered to an admin and not to a member (LAI-754’s gate)', () => {
     assert.deepEqual(
       visibleTabs(INBOX_TABS, admin).map((t) => t.id),
-      ['review', 'unlisted'],
+      ['review', 'handoffs', 'unlisted'],
     );
     assert.deepEqual(
       visibleTabs(INBOX_TABS, member).map((t) => t.id),
-      ['review'],
+      ['review', 'handoffs'],
     );
   });
 
@@ -106,7 +106,7 @@ void describe('a gated tab is absent, not disabled', () => {
   void test('no predicate hides every gated tab rather than revealing it', () => {
     assert.deepEqual(
       visibleTabs(INBOX_TABS).map((t) => t.id),
-      ['review'],
+      ['review', 'handoffs'],
     );
   });
 
@@ -184,5 +184,12 @@ void describe('the Inbox count is the sum of its tabs', () => {
 
   void test('zero is zero — the sidebar draws no badge for it', () => {
     assert.equal(inboxCount(0, 0), 0);
+  });
+
+  void test('hand-offs waiting on the reader add in (LAI-550)', () => {
+    assert.equal(inboxCount(3, 4, 2), 9);
+    assert.equal(inboxCount(3, undefined, 2), 5);
+    assert.equal(inboxCount(undefined, undefined, 2), 2);
+    assert.equal(inboxCount(3, 4, undefined), 7);
   });
 });

@@ -15,6 +15,7 @@ import { readerLine } from './space-settings-model.ts';
 import { GeneralTab } from './GeneralTab.tsx';
 import { MembersTab } from './MembersTab.tsx';
 import { AccessTab } from './AccessTab.tsx';
+import { HandoffPolicySection } from './HandoffPolicySection.tsx';
 import { DangerTab } from './DangerTab.tsx';
 import './space-settings.css';
 
@@ -207,7 +208,13 @@ export function SpaceSettingsScreen({
             }}
           />
         ) : current === 'access' ? (
-          <AccessTab project={project} orgName={orgName} mayEdit={mayEdit} onSaved={saved} />
+          <>
+            <AccessTab project={project} orgName={orgName} mayEdit={mayEdit} onSaved={saved} />
+            <HandoffPolicySection
+              slug={project.slug}
+              mayEdit={gates.project(project.id, 'project.handoff_policy.edit')}
+            />
+          </>
         ) : current === 'danger' ? (
           <DangerTab project={project} mayArchive={mayArchive} onSaved={saved} />
         ) : (

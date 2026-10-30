@@ -304,6 +304,26 @@ const PAIRS: readonly Pair[] = [
     client: 'HandoffOffer',
     clientFile: 'handoffs.ts',
   },
+  // LAI-550: the Inbox's Hand-offs tab (LAI-1009's person inbox) and the
+  // Access tab's hand-off policy.
+  {
+    server: 'PersonHandoffView',
+    serverFile: 'services/handoffs.ts',
+    client: 'PersonHandoffView',
+    clientFile: 'handoffs.ts',
+  },
+  {
+    server: 'PersonHandoffInbox',
+    serverFile: 'services/handoffs.ts',
+    client: 'PersonHandoffInbox',
+    clientFile: 'handoffs.ts',
+  },
+  {
+    server: 'HandoffPolicyView',
+    serverFile: 'services/handoffs.ts',
+    client: 'HandoffPolicyWire',
+    clientFile: 'handoffs.ts',
+  },
   // LAI-975: `GET /tasks/summary`'s figures (LAI-974), which the Work page's
   // strip draws.
   {

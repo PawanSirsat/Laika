@@ -109,6 +109,23 @@ const REVIEW_PATH = '/api/v1/review';
  * alerts names its own.
  */
 const TOKEN_ALERTS_PATH = '/api/v1/me/token-alerts';
+/**
+ * A person's hand-offs (LAI-1009, LAI-550): the shell reads their counts for
+ * the Inbox badge on every page. Somebody with none has nothing waiting; a
+ * test about hand-offs names its own.
+ */
+const HANDOFFS_PATH = '/api/v1/handoff-offers';
+const NO_HANDOFFS = {
+  data: [],
+  next_cursor: null,
+  counts: { received: 0, sent: 0, needs_approval: 0, recovery: 0 },
+};
+/**
+ * A space's hand-off policy (§4.74, LAI-550), read on Settings → Access. A
+ * space that never set one reads as the defaults; a test about the policy
+ * names its own.
+ */
+const HANDOFF_POLICY_PATH = /^\/api\/v1\/projects\/([^/]+)\/handoff-policy$/;
 
 /**
  * `GET /permissions` as the server answers it under the **default grants**
@@ -586,6 +603,28 @@ function serve(
           // DEFAULT_STATUSES. A test about columns names its own.
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ data: DEFAULT_STATUSES }));
+          return;
+        }
+
+        if (chosen === undefined && req.method === 'GET' && path === HANDOFFS_PATH) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(NO_HANDOFFS));
+          return;
+        }
+
+        if (chosen === undefined && req.method === 'GET' && HANDOFF_POLICY_PATH.test(path)) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              project_id: decodeURIComponent(HANDOFF_POLICY_PATH.exec(path)?.[1] ?? ''),
+              allow_other_owners: false,
+              cross_owner_requires_approval: true,
+              max_handoffs: 3,
+              offer_ttl_minutes: 30,
+              updated_by: null,
+              is_set: false,
+            }),
+          );
           return;
         }
 
