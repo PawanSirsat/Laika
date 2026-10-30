@@ -4503,14 +4503,27 @@ optional, so a body with only `summary` and `checklist` behaves as before.
 `pull_request` an `http(s)` URL, and `tests` `[{ command, exit_code }]`; the
 limits are §4.26's and a breach is `422` naming the field, with nothing moved.
 `GET /tasks/:id/rounds` answers `{ rounds, send_back }`: each round as
-`{ id, task_id, number, finished_by, client_name, summary_md, commits, branch,
-pull_request, tests, ci, created_at }`, each item with `id`, `state`,
+`{ id, task_id, number, finished_by, client_name, agent, by_registered_agent,
+summary_md, commits, branch, pull_request, tests, ci, created_at }`, each item
+with `id`, `state`,
 `state_source` and `state_at` beside its own fields (`sha` and `message`,
 `name`, `url` and `merged`, `command` and `exit_code`), newest round first;
 `project.read`. `pull_request.merged` is `true` or `false` once a GitHub
 delivery named it, `null` before (D-083). `ci` is `{ head_sha, total, passed,
 failed, pending, failed_names }` from §4.31, or `null` when no CI result was
 reported for the round's head commit.
+
+**Which agent finished a round (D-120, LAI-1001).** `agent` is `{ id,
+harness, device_label }` for the registered agent whose token finished the
+round, read through the round's token — **only when the reader may already see
+that agent**: their own, or the task's selected agent or the holder of its live
+claim (§4.63: another person's agent is not disclosed). Otherwise `agent` is
+`null`, and so is **`client_name`**, which for a registered agent carries its
+token's — its registered — name; `by_registered_agent` is `true` so a screen
+can say *an agent* and name none. For a person, a legacy token or a token since
+deleted, `agent` is `null`, `by_registered_agent` is `false`, and `client_name`
+is as stored. `GET /review` (§4.27) and `get_task_context`'s round carry the
+same fields under the same rule; a caller with no user is shown no agent.
 
 **A task's tokens (D-084, LAI-770).** `GET /tasks/:id/usage?tz=` answers `{
 task_id, key, tz, first_day, last_day, totals: { tokens, input, output,
