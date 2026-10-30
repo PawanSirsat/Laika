@@ -217,9 +217,7 @@ export async function startBench(): Promise<Bench> {
         const upstream = await fetch(`${board.url}${req.url ?? ''}`, {
           method: req.method ?? 'GET',
           headers,
-          ...(req.method === 'GET' || req.method === 'HEAD'
-            ? {}
-            : { body: Buffer.concat(chunks) }),
+          ...(req.method === 'GET' || req.method === 'HEAD' ? {} : { body: Buffer.concat(chunks) }),
         });
         const text = await upstream.text();
         if (isRegister && state.mode === 'lose-register') {

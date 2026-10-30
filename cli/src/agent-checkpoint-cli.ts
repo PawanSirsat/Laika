@@ -166,7 +166,10 @@ export async function signInWithPassword(
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
-      throw new Refusal(`could not sign in: the board answered ${String(response.status)}`, 'sign_in_failed');
+      throw new Refusal(
+        `could not sign in: the board answered ${String(response.status)}`,
+        'sign_in_failed',
+      );
     }
     const cookie = response.headers.getSetCookie().join('; ');
     if (cookie === '') throw new Refusal('the sign-in returned no session', 'sign_in_failed');

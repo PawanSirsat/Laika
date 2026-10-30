@@ -308,7 +308,11 @@ function noteActivity(
     // the save sees this marker and stops before it commits, or commits and
     // lets go. Bounded well inside the hook's 5 s budget; past it the tool
     // runs, and the save's own check before its commit still stops it.
-    for (let waited = 0; waited < 4000 && interlockHeld(io.home, harness, harnessSessionId); waited += 100) {
+    for (
+      let waited = 0;
+      waited < 4000 && interlockHeld(io.home, harness, harnessSessionId);
+      waited += 100
+    ) {
       Atomics.wait(PAUSE, 0, 0, 100);
     }
     return;

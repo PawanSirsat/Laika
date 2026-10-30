@@ -68,7 +68,7 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
     assert.deepEqual(b.remoteRefs(repo), before, 'nothing pushed');
   });
 
-  void test("P1-1: a remote whose default cannot be told is refused (fail closed)", () => {
+  void test('P1-1: a remote whose default cannot be told is refused (fail closed)', () => {
     const repo = b.freshRepo('p11b');
     b.git(repo.remote, 'symbolic-ref', 'HEAD', 'refs/heads/nothing-here');
     const before = b.remoteRefs(repo);
@@ -163,7 +163,12 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
     assert.equal(r.code, 0, r.out);
     const env = readFileSync(dump, 'utf8');
     assert.match(env, /^PATH=/m, 'the dump ran');
-    for (const leaked of ['aws-sekrit-value', 'gh-sekrit-value', 'app-sekrit-value', b.seeded.agentToken]) {
+    for (const leaked of [
+      'aws-sekrit-value',
+      'gh-sekrit-value',
+      'app-sekrit-value',
+      b.seeded.agentToken,
+    ]) {
       assert.equal(env.includes(leaked), false, `${leaked.slice(0, 8)}… reached git's child`);
     }
   });
@@ -180,7 +185,8 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
     const deps = {
       ...b.engine(),
       onPhase: (phase: string) => {
-        if (phase === 'quiet') markInflight(b.home, 'claude-code', HS, 'toolu_late', harnessOwner());
+        if (phase === 'quiet')
+          markInflight(b.home, 'claude-code', HS, 'toolu_late', harnessOwner());
       },
     };
     assert.equal(await autoCheckpoint(deps, 'claude-code', HS, creds(), 1000), 'busy');
@@ -225,7 +231,9 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
         stdio: ['pipe', 'ignore', 'ignore'],
         env: { PATH: process.env.PATH ?? '', HOME: b.home },
       });
-      child.stdin.end(JSON.stringify({ session_id: HS, tool_name: 'Edit', tool_use_id: 'toolu_w' }));
+      child.stdin.end(
+        JSON.stringify({ session_id: HS, tool_name: 'Edit', tool_use_id: 'toolu_w' }),
+      );
       child.on('close', () => resolve(Date.now() - startedAt));
     });
     await sleep(1500);
@@ -293,7 +301,10 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
       b.setProxy('pass');
       r = await b.cliAsync(repo.wt, ['checkpoint', 'save']);
       assert.equal(r.code, 0, r.out);
-      assert.match(r.out, new RegExp(`Checkpoint ${String(first.id)} registered on the board — Verification pending`));
+      assert.match(
+        r.out,
+        new RegExp(`Checkpoint ${String(first.id)} registered on the board — Verification pending`),
+      );
       assert.equal(b.recordCount(), records, 'no second checkpoint');
       assert.equal(b.newestRecord().stage, 'registered');
       assert.equal(b.newestRecord().idempotency_key, first.idempotency_key);
@@ -319,9 +330,11 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
       assert.equal(b.remoteRefs(repo).get(String(record.tag_ref)), record.commit_sha);
       assert.equal(record.stage, 'registered');
       assert.equal(
-        (JSON.parse(readFileSync(activityPath(b.home, 'claude-code', HS), 'utf8')) as {
-          mutations: number;
-        }).mutations,
+        (
+          JSON.parse(readFileSync(activityPath(b.home, 'claude-code', HS), 'utf8')) as {
+            mutations: number;
+          }
+        ).mutations,
         0,
       );
     } finally {

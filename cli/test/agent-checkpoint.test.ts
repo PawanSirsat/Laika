@@ -286,8 +286,14 @@ void describe('review fixes, unit (LAI-547, #154)', () => {
     );
     assert.equal(cookie, 'session=1; Path=/');
     assert.match(sent, /"password":"correct-horse-battery"/, 'it was sent');
-    assert.ok(password.every((byte) => byte === 0), 'the password buffer is zeroed');
-    assert.ok(body?.every((byte) => byte === 0), 'the request body is zeroed');
+    assert.ok(
+      password.every((byte) => byte === 0),
+      'the password buffer is zeroed',
+    );
+    assert.ok(
+      body?.every((byte) => byte === 0),
+      'the request body is zeroed',
+    );
   });
 
   void test('a password with quotes, backslashes, control characters and non-ASCII arrives intact', async () => {
@@ -299,7 +305,9 @@ void describe('review fixes, unit (LAI-547, #154)', () => {
       Buffer.from(original, 'utf8'),
       (_url: string, init: RequestInit) => {
         sent = Buffer.from(init.body as Uint8Array).toString('utf8');
-        return Promise.resolve(new Response('{}', { status: 200, headers: { 'set-cookie': 's=1' } }));
+        return Promise.resolve(
+          new Response('{}', { status: 200, headers: { 'set-cookie': 's=1' } }),
+        );
       },
     );
     assert.deepEqual(JSON.parse(sent), { email: 'ada@example.test', password: original });
