@@ -28,7 +28,14 @@ import {
   writeActivity,
 } from '../src/agent-checkpoint.ts';
 import { credentialPath, readProc, readState, statePath, UNKNOWN } from '../src/agent-session.ts';
-import { type Bench, HOOK_ENTRY, HS, type Repo, sleep, startBench } from './support/checkpoint-board.ts';
+import {
+  type Bench,
+  HOOK_ENTRY,
+  HS,
+  type Repo,
+  sleep,
+  startBench,
+} from './support/checkpoint-board.ts';
 
 let b: Bench;
 
@@ -682,7 +689,12 @@ void describe('checkpoint review fixes, round 3 (LAI-547, #154 at d79523e3)', ()
       b.git(repo.clone, 'config', `url.${other}.insteadOf`, a);
     } else {
       // A shorter prefix of A: `…/remote.git` becomes `…/other-b.git`.
-      b.git(repo.clone, 'config', `url.${join(repo.root, 'other-b')}.insteadOf`, join(repo.root, 'remote'));
+      b.git(
+        repo.clone,
+        'config',
+        `url.${join(repo.root, 'other-b')}.insteadOf`,
+        join(repo.root, 'remote'),
+      );
     }
     return { repo, a, b: other };
   }
@@ -701,11 +713,7 @@ void describe('checkpoint review fixes, round 3 (LAI-547, #154 at d79523e3)', ()
     const r = b.cli(repo.wt, ['checkpoint', 'save']);
     assert.equal(r.code, 2, r.out);
     assert.match(r.out, /LAI-547-r31 is a protected branch/);
-    assert.deepEqual(
-      [refsOf(other), refsOf(repo.remote)],
-      before,
-      'nothing pushed anywhere',
-    );
+    assert.deepEqual([refsOf(other), refsOf(repo.remote)], before, 'nothing pushed anywhere');
   });
 
   void test('R3-1: a rule naming the destination exactly cannot be overridden, so it is refused', () => {
@@ -716,11 +724,7 @@ void describe('checkpoint review fixes, round 3 (LAI-547, #154 at d79523e3)', ()
     const r = b.cli(repo.wt, ['checkpoint', 'save']);
     assert.equal(r.code, 2, r.out);
     assert.match(r.out, /an insteadOf rule names it exactly/);
-    assert.deepEqual(
-      [refsOf(other), refsOf(repo.remote)],
-      before,
-      'nothing pushed anywhere',
-    );
+    assert.deepEqual([refsOf(other), refsOf(repo.remote)], before, 'nothing pushed anywhere');
   });
 
   void test('R3-1: pushInsteadOf wins over insteadOf for a push, and that is the repo checked', () => {
@@ -751,7 +755,10 @@ void describe('checkpoint review fixes, round 3 (LAI-547, #154 at d79523e3)', ()
     const r = b.cli(repo.wt, ['checkpoint', 'save']);
     assert.equal(r.code, 0, r.out);
     const record = b.newestRecord();
-    assert.ok(refsOf(a).includes(`${String(record.commit_sha)} ${String(record.tag_ref)}`), 'the tag is in A');
+    assert.ok(
+      refsOf(a).includes(`${String(record.commit_sha)} ${String(record.tag_ref)}`),
+      'the tag is in A',
+    );
     assert.equal(refsOf(other), otherBefore, 'and B is untouched');
   });
 
