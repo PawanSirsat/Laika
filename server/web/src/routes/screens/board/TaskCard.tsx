@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { tagColor } from './tag-colors.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -115,6 +116,7 @@ export function TaskCard({
   // that speak first — and outranks *Waiting for agent*, as the drawer does.
   const saveState = fields.handoff ? handoffState(task.handoff) : null;
   const saveStateId = `card-state-${task.id}`;
+  const openRef = useRef<HTMLButtonElement>(null);
   const describedBy =
     [
       onKeyMove === undefined ? undefined : 'card-move-help',
@@ -213,8 +215,10 @@ export function TaskCard({
           hint={{
             id: saveStateId,
             className: 'card-above card-state-open',
+            // Forwarded to the open control itself, so there is still one
+            // control and one place that opens the card (LAI-424).
             onActivate: () => {
-              onOpen(task.id);
+              openRef.current?.click();
             },
           }}
         />
@@ -231,6 +235,7 @@ export function TaskCard({
 
         <button
           type="button"
+          ref={openRef}
           className="card-key card-open t-code"
           onClick={() => {
             onOpen(task.id);

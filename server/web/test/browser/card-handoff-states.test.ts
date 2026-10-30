@@ -632,6 +632,8 @@ void describe('card and drawer', () => {
       const drawerState = () =>
         panel.locator('[data-exec-state]').first().getAttribute('data-exec-state');
       await until(async () => (await drawerState()) === 'recovery_available', 10_000);
+      // The card renders on its own schedule; wait for it rather than race it.
+      await until(async () => (await stateOf(h.page, 't1')) === 'recovery_available', 10_000);
       assert.equal(await stateOf(h.page, 't1'), 'recovery_available');
       await shoot(h.page, 'card-and-drawer-recovery', '.drawer [data-exec-panel]');
 
