@@ -267,3 +267,45 @@ export function overlayWrites(
   }
   return rows;
 }
+
+// ------------------------------------------------------- checkpoint consent
+
+/**
+ * The owner's consent to **automatic** checkpoints for one agent (SPEC §4.75,
+ * D-115 item 2; API by LAI-545, screen by LAI-1007). With it, the helper may
+ * commit and push work in progress to the task's branch and tag it after tool
+ * activity or at a session's end, without asking each time. Saving by hand
+ * never needs it.
+ *
+ * `given` is the whole answer; the stamps say when. Never given is all
+ * `null`; withdrawn keeps `given_at` and `given_by_user_id` and sets
+ * `withdrawn_at`. Mirrors `CheckpointConsentView` in
+ * `server/src/services/checkpoints.ts`.
+ */
+export interface CheckpointConsent {
+  readonly given: boolean;
+  readonly given_by_user_id: string | null;
+  readonly given_at: number | null;
+  readonly withdrawn_at: number | null;
+}
+
+export function getCheckpointConsent(
+  agentId: string,
+  signal?: AbortSignal,
+): Promise<CheckpointConsent> {
+  return request<CheckpointConsent>(
+    `/agents/${encodeURIComponent(agentId)}/checkpoint-consent`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/**
+ * `PUT` gives it, `DELETE` withdraws it — the owner's, signed in
+ * (`agent.manage_own`). The answer is the consent as the server now holds it,
+ * which is what the screen shows: never a guess made before it arrives.
+ */
+export function setCheckpointConsent(agentId: string, given: boolean): Promise<CheckpointConsent> {
+  return request<CheckpointConsent>(`/agents/${encodeURIComponent(agentId)}/checkpoint-consent`, {
+    method: given ? 'PUT' : 'DELETE',
+  });
+}
