@@ -263,6 +263,8 @@ interface World {
   readonly tasks: Record<string, unknown>[];
   /** `t1`'s offers, as `GET /tasks/t1/handoff-offers` answers now. */
   offers: Record<string, unknown>[];
+  /** `t5`'s one save, as the server reads it now: `pending` until its notice arrives. */
+  t5: 'pending' | 'uncertain';
 }
 
 function world(): World {
@@ -300,7 +302,17 @@ function world(): World {
     // The server lets the live claim speak first (LAI-1005).
     handoff: { ...NONE, checkpoint: savedAs('uncertain') },
   });
-  const filler = Array.from({ length: PAGE - 4 }, (_, i) =>
+  const waiting = task({
+    id: 't5',
+    key: 'LC-5',
+    number: 5,
+    title: 'Its save waits for a notice',
+    handoff: {
+      ...NONE,
+      checkpoint: { ...savedAs('pending'), pending_since: NOW - 40 * MIN },
+    },
+  });
+  const filler = Array.from({ length: PAGE - 5 }, (_, i) =>
     task({
       id: `f${String(i)}`,
       key: `LC-${String(100 + i)}`,
@@ -311,8 +323,15 @@ function world(): World {
       started_at: null,
     }),
   );
-  const tasks: Record<string, unknown>[] = [recoverable, attention, plain, working, ...filler];
-  const w: World = { stub: {}, tasks, offers: [recoveryOffer()] };
+  const tasks: Record<string, unknown>[] = [
+    recoverable,
+    attention,
+    plain,
+    working,
+    waiting,
+    ...filler,
+  ];
+  const w: World = { stub: {}, tasks, offers: [recoveryOffer()], t5: 'pending' };
   const byId = (id: string) => () => w.tasks.find((t) => t.id === id);
 
   const perTask = (id: string) => ({
@@ -371,8 +390,8 @@ function world(): World {
           ...CORE,
           task_counts: {
             backlog: 0,
-            todo: PAGE - 4,
-            in_progress: 4,
+            todo: PAGE - 5,
+            in_progress: 5,
             review: 0,
             done: 0,
             cancelled: 0,
@@ -410,9 +429,23 @@ function world(): World {
       ],
     },
     '/api/v1/tasks/t2/handoff-offers': { data: [] },
+    '/api/v1/projects/laika-core/activity?task_id=t5': { data: lapsed('t5', 2), next_cursor: null },
+    '/api/v1/tasks/t5/checkpoints': () => ({
+      data: [
+        checkpoint('t5', {
+          verification: w.t5,
+          verified_at: null,
+          pending_since: w.t5 === 'pending' ? NOW - 40 * MIN : null,
+          pending_notice: false,
+          refs: [{ ref: 'refs/tags/laika-ckpt/LC/t5', revision: 0, state: w.t5 }],
+        }),
+      ],
+    }),
+    '/api/v1/tasks/t5/handoff-offers': { data: [] },
     '/api/v1/agents': { data: [], next_cursor: null },
     ...perTask('t1'),
     ...perTask('t2'),
+    ...perTask('t5'),
     '/api/v1/org': {
       id: 'o',
       name: 'Borealis Labs',
@@ -627,6 +660,106 @@ void describe('card and drawer', () => {
         0,
       );
       assert.equal(await panel.locator('[data-exec-state="recovery_available"]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('LAI-1006 review fixes', () => {
+  void test('a drawer poll that finds the save turned uncertain moves the card and the drawer together', async () => {
+    const w = world();
+    const h = await open('/board?project=laika-core&task=t5', w.stub, {
+      before: async (page) => {
+        await fakeStream(page);
+        await page.clock.install();
+      },
+    });
+    try {
+      const panel = h.page.locator('.drawer [data-exec-panel]');
+      await panel.waitFor({ timeout: 20_000 });
+      await panel.locator('[data-checkpoint="pending"]').first().waitFor({ timeout: 10_000 });
+      assert.equal(await stateOf(h.page, 't5'), null);
+      assert.equal(await panel.locator('[data-exec-state="save_needs_attention"]').count(), 0);
+      const lists = () =>
+        h.calls.filter((c) => c.path === '/api/v1/projects/laika-core/tasks').length;
+      const before = lists();
+
+      // GitHub's notice lands: the save is `uncertain`. No frame is written
+      // for it (LAI-1010) — only the drawer's own poll can see it.
+      w.t5 = 'uncertain';
+      const i = w.tasks.findIndex((t) => t.id === 't5');
+      w.tasks[i] = {
+        ...w.tasks[i],
+        handoff: {
+          ...NONE,
+          checkpoint: savedAs('uncertain'),
+          save_needs_attention: true,
+        },
+        updated_at: Date.now(),
+      };
+      await h.page.clock.fastForward(61_000);
+
+      // The poll saw it, the board re-read its list, and both now say it.
+      await until(() => lists() > before, 15_000);
+      await until(async () => (await stateOf(h.page, 't5')) === 'save_needs_attention', 15_000);
+      await until(
+        async () => (await panel.locator('[data-exec-state="save_needs_attention"]').count()) === 1,
+        15_000,
+      );
+      // And it asked once: with the summary caught up, nothing re-reads the board.
+      const after = lists();
+      await h.page.clock.fastForward(61_000);
+      await h.page.waitForTimeout(500);
+      assert.equal(lists(), after, 'the drawer kept re-reading the board');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a list that still disagrees after the re-read is not asked again and again', async () => {
+    const w = world();
+    const h = await open('/board?project=laika-core&task=t5', w.stub, {
+      before: async (page) => {
+        await fakeStream(page);
+        await page.clock.install();
+      },
+    });
+    try {
+      const panel = h.page.locator('.drawer [data-exec-panel]');
+      await panel.waitFor({ timeout: 20_000 });
+      await panel.locator('[data-checkpoint="pending"]').first().waitFor({ timeout: 10_000 });
+      const lists = () =>
+        h.calls.filter((c) => c.path === '/api/v1/projects/laika-core/tasks').length;
+      const before = lists();
+
+      // The saves read says `uncertain`; the list's summary never catches up.
+      w.t5 = 'uncertain';
+      await h.page.clock.fastForward(61_000);
+      await until(() => lists() > before, 15_000);
+      for (let i = 0; i < 3; i += 1) {
+        await h.page.clock.fastForward(61_000);
+        await h.page.waitForTimeout(300);
+      }
+      assert.equal(lists(), before + 1, 'one re-read per thing the drawer saw, not a loop');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a click on the card’s state line opens the card, as the rest of the card does', async () => {
+    const w = world();
+    const h = await open('/board?project=laika-core', w.stub, { before: fakeStream });
+    try {
+      await until(async () => (await stateOf(h.page, 't2')) === 'save_needs_attention', 20_000);
+      const line = card(h.page, 't2').locator('[data-exec-state]');
+      // A real pointer at the line's own box: Playwright refuses if something
+      // else would receive the click.
+      await line.click();
+      await h.page.locator('.drawer [data-exec-panel]').waitFor({ timeout: 20_000 });
+      assert.match(h.page.url(), /task=t2/);
+      // The tooltip survived the fix.
+      assert.match((await line.getAttribute('title')) ?? '', /A person has to look/);
     } finally {
       await h.close();
     }
