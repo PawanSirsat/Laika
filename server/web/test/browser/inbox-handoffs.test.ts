@@ -147,6 +147,13 @@ const MINE_TO_APPROVE = row({
   requires_approval: true,
   next_action: 'approve',
 });
+/** Received's second page — and nobody else's. */
+const LATE = row({
+  id: 'o-late',
+  task_id: 't8',
+  task_key: 'LC-8',
+  task_title: 'Second page of Received',
+});
 const SENT = row({
   id: 'o-sent',
   task_id: 't6',
@@ -190,7 +197,7 @@ function counts(w: World) {
   return { received: 2, sent: 1, needs_approval: w.approved ? 1 : 2, recovery: 1 };
 }
 
-function world(options: { lead?: boolean; refusePolicy?: boolean } = {}): World {
+function world(options: { lead?: boolean; refusePolicy?: boolean; paged?: boolean } = {}): World {
   const lead = options.lead ?? true;
   const w: World = { stub: {}, approved: false, reachable: true, policyWrites: [] };
   const page = (data: () => unknown[]) => () =>
@@ -261,7 +268,12 @@ function world(options: { lead?: boolean; refusePolicy?: boolean } = {}): World 
         },
       ],
     },
-    '/api/v1/handoff-offers?view=received': page(() => [TO_ME, TO_ME_PENDING]),
+    '/api/v1/handoff-offers?view=received': () => {
+      const first = page(() => [TO_ME, TO_ME_PENDING])();
+      // A second page of Received, for the test that a late page stays in its view.
+      return options.paged === true && 'data' in first ? { ...first, next_cursor: 'C2' } : first;
+    },
+    '/api/v1/handoff-offers?view=received&cursor=C2': page(() => [LATE]),
     '/api/v1/handoff-offers?view=received&include_closed=true': page(() => [
       TO_ME,
       TO_ME_PENDING,
@@ -298,6 +310,15 @@ function world(options: { lead?: boolean; refusePolicy?: boolean } = {}): World 
   return w;
 }
 
+/**
+ * Wait for `done`, then **assert** it: `until` returns on its timeout without
+ * failing (harness.ts), so a wait alone is not a check.
+ */
+async function eventually(done: () => boolean | Promise<boolean>, ms = 10_000): Promise<void> {
+  await until(done, ms);
+  assert.ok(await done(), `never became true: ${String(done)}`);
+}
+
 void after(async () => {
   await closeBrowser();
 });
@@ -320,13 +341,13 @@ void describe('Inbox → Hand-offs', () => {
     try {
       const badge = h.page.locator('.sidebar-link', { hasText: 'Inbox' }).locator('.sidebar-count');
       // received 2 + needs approval 2; the review queue is empty.
-      await until(async () => (await badge.innerText()).startsWith('4'));
+      await eventually(async () => (await badge.innerText()).startsWith('4'));
       const tabCount = h.page.locator('[data-tab="handoffs"] .page-tab-count');
       assert.match(await tabCount.innerText(), /^4/);
       assert.match(await tab(h.page).locator('[data-count="needs_approval"]').innerText(), /^2/);
 
       await tab(h.page).getByLabel('Show closed and expired').check();
-      await until(async () => (await idsOf(h.page)).includes('o-expired'));
+      await eventually(async () => (await idsOf(h.page)).includes('o-expired'));
       const expired = tab(h.page).locator('[data-offer-id="o-expired"]');
       assert.match(
         await expired.locator('[data-acceptance]').innerText(),
@@ -397,7 +418,7 @@ void describe('Inbox → Hand-offs', () => {
     const h = await inbox(w);
     try {
       await tab(h.page).locator('[data-filter="needs_approval"]').click();
-      await until(async () => (await idsOf(h.page)).join() === 'o-approve,o-mine-approve');
+      await eventually(async () => (await idsOf(h.page)).join() === 'o-approve,o-mine-approve');
       assert.equal(
         await tab(h.page).locator('[data-offer-id="o-mine-approve"] [data-approve]').count(),
         0,
@@ -406,16 +427,16 @@ void describe('Inbox → Hand-offs', () => {
       const approve = tab(h.page).locator('[data-offer-id="o-approve"] [data-approve]');
       await approve.click();
       const target = tab(h.page).locator('[data-offer-id="o-approve"]');
-      await until(async () =>
+      await eventually(async () =>
         (await target.innerText()).includes(
           'Approved. The receiving agent still has to accept it.',
         ),
       );
       // The re-read no longer lists it; the focus is in the list, so it stays put.
-      await until(async () => (await target.innerText()).includes('No longer in this view'));
+      await eventually(async () => (await target.innerText()).includes('No longer in this view'));
       assert.deepEqual(await idsOf(h.page), ['o-approve', 'o-mine-approve']);
       const badge = h.page.locator('.sidebar-link', { hasText: 'Inbox' }).locator('.sidebar-count');
-      await until(async () => (await badge.innerText()).startsWith('3'));
+      await eventually(async () => (await badge.innerText()).startsWith('3'));
       assert.ok(
         h.calls.some(
           (c) => c.method === 'POST' && c.path === '/api/v1/handoff-offers/o-approve/approve',
@@ -426,20 +447,124 @@ void describe('Inbox → Hand-offs', () => {
     }
   });
 
-  void test('keyboard: the filters are buttons that say which is pressed', async () => {
+  void test('keyboard: the views are tabs — one selected, arrows, Home and End', async () => {
     const h = await inbox(world());
     try {
-      const sent = tab(h.page).locator('[data-filter="sent"]');
-      await sent.focus();
-      await h.page.keyboard.press('Enter');
-      await until(async () => (await sent.getAttribute('aria-pressed')) === 'true');
+      const list = tab(h.page).getByRole('tablist', { name: 'Show hand-offs' });
+      const tabs = list.getByRole('tab');
+      assert.equal(await tabs.count(), 4);
+      const state = async () =>
+        tabs.evaluateAll((els) =>
+          els.map((el) => [
+            el.getAttribute('data-filter'),
+            el.getAttribute('aria-selected'),
+            el.getAttribute('tabindex'),
+          ]),
+        );
+      const only = (id: string) =>
+        ['received', 'sent', 'needs_approval', 'recovery'].map((f) => [
+          f,
+          f === id ? 'true' : 'false',
+          f === id ? '0' : '-1',
+        ]);
+      const focused = () =>
+        h.page.evaluate(() => document.activeElement?.getAttribute('data-filter') ?? null);
+      assert.deepEqual(await state(), only('received'));
+
+      await tab(h.page).locator('[data-filter="received"]').focus();
+      await h.page.keyboard.press('ArrowRight');
+      await eventually(async () => JSON.stringify(await state()) === JSON.stringify(only('sent')));
+      assert.equal(await focused(), 'sent');
       await tab(h.page).locator('[data-offer-id="o-sent"]').waitFor();
-      await h.page.keyboard.press('Shift+Tab');
-      await h.page.keyboard.press('Space');
-      await until(
-        async () =>
-          (await tab(h.page).locator('[data-filter="received"]').getAttribute('aria-pressed')) ===
-          'true',
+      const panel = tab(h.page).getByRole('tabpanel');
+      assert.equal(
+        await panel.getAttribute('aria-labelledby'),
+        await tab(h.page).locator('[data-filter="sent"]').getAttribute('id'),
+      );
+
+      await h.page.keyboard.press('End');
+      await eventually(async () => (await focused()) === 'recovery');
+      assert.deepEqual(await state(), only('recovery'));
+      await h.page.keyboard.press('ArrowRight');
+      await eventually(async () => (await focused()) === 'received');
+      assert.deepEqual(await state(), only('received'));
+      await h.page.keyboard.press('ArrowLeft');
+      await eventually(async () => (await focused()) === 'recovery');
+      await h.page.keyboard.press('Home');
+      await eventually(async () => (await focused()) === 'received');
+      assert.deepEqual(await state(), only('received'));
+
+      // Tab leaves the tablist rather than walking through the other tabs.
+      await h.page.keyboard.press('Tab');
+      assert.equal(await focused(), null);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a late Show more page stays in the view that asked for it', async () => {
+    const w = world({ paged: true });
+    const h = await inbox(w);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    let asked = false;
+    let answered = false;
+    await h.page.route('**/api/v1/handoff-offers?*cursor=C2*', async (route) => {
+      asked = true;
+      await held;
+      await route.continue().catch(() => undefined);
+      answered = true;
+    });
+    try {
+      const more = tab(h.page).getByRole('button', { name: 'Show more' });
+      await more.click();
+      await eventually(() => asked);
+      await tab(h.page).locator('[data-filter="sent"]').click();
+      await tab(h.page).locator('[data-offer-id="o-sent"]').waitFor();
+      release();
+      await eventually(() => answered);
+      // Give a late answer every chance to land.
+      await new Promise((done) => setTimeout(done, 500));
+      assert.deepEqual(await idsOf(h.page), ['o-sent'], 'Received’s page landed in Sent');
+      await tab(h.page).locator('[data-filter="received"]').click();
+      await eventually(async () => (await idsOf(h.page)).includes('o-to-me'));
+      assert.ok(!(await idsOf(h.page)).includes('o-late'), 'a dropped page came back later');
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('when a re-read takes the focused action away, the focus stays in its row', async () => {
+    const h = await inbox(world());
+    try {
+      await tab(h.page).locator('[data-filter="needs_approval"]').click();
+      const target = tab(h.page).locator('[data-offer-id="o-approve"]');
+      const approve = target.locator('[data-approve]');
+      await approve.waitFor();
+      await approve.focus();
+      await h.page.keyboard.press('Enter');
+      // The re-read no longer lists it as the reader's to approve: Approve goes.
+      await eventually(async () => (await approve.count()) === 0);
+      await eventually(() =>
+        h.page.evaluate(
+          () =>
+            document.activeElement?.closest('[data-offer-id]')?.getAttribute('data-offer-id') ===
+              'o-approve' && document.activeElement.hasAttribute('data-next'),
+        ),
+      );
+      assert.notEqual(
+        await h.page.evaluate(() => document.activeElement?.tagName),
+        'BODY',
+        'the focus fell to the page',
+      );
+      const status = target.locator('[data-row-status]');
+      assert.equal(await status.getAttribute('role'), 'status');
+      assert.match(
+        await status.innerText(),
+        /Approved\. The receiving agent still has to accept it\./,
       );
     } finally {
       await h.close();
@@ -457,7 +582,7 @@ void describe('Inbox → Hand-offs', () => {
       w.reachable = true;
       await retry.first().click();
       await tab(h.page).locator('[data-filter="needs_approval"]').click();
-      await until(async () => (await idsOf(h.page)).includes('o-approve'));
+      await eventually(async () => (await idsOf(h.page)).includes('o-approve'));
 
       // The approve lands; the re-read after it does not.
       w.reachable = false;
@@ -469,7 +594,7 @@ void describe('Inbox → Hand-offs', () => {
 
       w.reachable = true;
       await stale.getByRole('button', { name: 'Try again' }).click();
-      await until(async () => (await stale.count()) === 0);
+      await eventually(async () => (await stale.count()) === 0);
     } finally {
       await h.close();
     }
@@ -488,20 +613,20 @@ void describe('Settings → Access: the hand-off policy', () => {
       await others.waitFor({ timeout: 20_000 });
       assert.match(await section.innerText(), /Laika’s defaults/);
       await others.click();
-      await until(() => w.policyWrites.length === 1);
+      await eventually(() => w.policyWrites.length === 1);
       assert.deepEqual(w.policyWrites[0], {
         allow_other_owners: true,
         cross_owner_requires_approval: true,
         max_handoffs: 3,
         offer_ttl_minutes: 30,
       });
-      await until(async () => !(await section.innerText()).includes('Laika’s defaults'));
+      await eventually(async () => !(await section.innerText()).includes('Laika’s defaults'));
       const max = section.getByRole('spinbutton', { name: 'Hand-offs per task' });
       assert.equal(await max.getAttribute('max'), '20');
       assert.equal(await max.getAttribute('min'), '0');
       await max.fill('25');
       await max.press('Enter');
-      await until(() => w.policyWrites.length === 2);
+      await eventually(() => w.policyWrites.length === 2);
       assert.equal((w.policyWrites[1] as { max_handoffs: number }).max_handoffs, 20, 'not clamped');
     } finally {
       await h.close();
@@ -545,6 +670,14 @@ void describe('Settings → Access: the hand-off policy', () => {
         /Not saved: Only a space lead can change the hand-off policy/,
       );
       assert.equal(await others.getAttribute('aria-checked'), 'false');
+
+      // A refused number goes back to what the server holds, and says why.
+      const max = section.getByRole('spinbutton', { name: 'Hand-offs per task' });
+      await max.fill('7');
+      await max.press('Enter');
+      await eventually(() => w.policyWrites.length === 2);
+      await eventually(async () => (await max.inputValue()) === '3');
+      assert.match(await alert.innerText(), /Not saved: Only a space lead/);
     } finally {
       await h.close();
     }
