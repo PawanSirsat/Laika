@@ -503,7 +503,7 @@ describe('deriveHandoff', () => {
     expect(deriveHandoff({ ...base }).recovery_available).toBe(false);
   });
 
-    it('a live hand-off offer is not a recovery', () => {
+  it('a live hand-off offer is not a recovery', () => {
     expect(
       deriveHandoff({
         ...base,
