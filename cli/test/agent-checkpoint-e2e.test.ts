@@ -519,7 +519,12 @@ void describe('laika agent checkpoint (LAI-547)', () => {
       200,
     );
     writeActivity(home, 'claude-code', HS, { mutations: 3, cwd: repo.wt });
-    markInflight(home, 'claude-code', HS, 'toolu_running');
+    const bound = readState(statePath(home, 'claude-code', HS));
+    assert.ok(bound !== undefined);
+    markInflight(home, 'claude-code', HS, 'toolu_running', {
+      pid: bound.harness_pid,
+      started: bound.harness_started,
+    });
     assert.equal(
       await autoCheckpoint(
         engine(),

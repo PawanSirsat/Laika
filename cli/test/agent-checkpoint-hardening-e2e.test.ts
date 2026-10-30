@@ -5,13 +5,19 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 
 import * as checkpoint from '../src/agent-checkpoint.ts';
-import { activityPath, autoCheckpoint, markInflight, writeActivity } from '../src/agent-checkpoint.ts';
+import {
+  activityPath,
+  autoCheckpoint,
+  inflight,
+  markInflight,
+  writeActivity,
+} from '../src/agent-checkpoint.ts';
 import { credentialPath, readProc, readState, statePath, UNKNOWN } from '../src/agent-session.ts';
 import { type Bench, HOOK_ENTRY, HS, sleep, startBench } from './support/checkpoint-board.ts';
 
@@ -236,6 +242,14 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
     writeActivity(b.home, 'claude-code', HS, { mutations: 3, cwd: repo.wt });
     assert.equal(await autoCheckpoint(b.engine(), 'claude-code', HS, creds(), 600), 'saved');
     clearInflightDir();
+
+    // A tool whose PostToolUse never came (it failed) is cleared at Stop: the turn is over.
+    markInflight(b.home, 'claude-code', HS, 'toolu_failed', harnessOwner());
+    execFileSync(process.execPath, [HOOK_ENTRY, 'hook', 'stop', 'claude-code'], {
+      input: JSON.stringify({ session_id: HS }),
+      env: { PATH: process.env.PATH ?? '', HOME: b.home },
+    });
+    assert.equal(inflight(b.home, 'claude-code', HS), 0, 'Stop cleared the markers');
     await b.consent(false);
   });
 

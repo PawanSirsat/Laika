@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   closeSync,
+  existsSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -21,10 +22,13 @@ import {
   isLaikaId,
   isRecord,
   listStates,
+  liveness,
   log,
   privateDir,
+  type ProcReader,
   readCredential,
   readJson,
+  readProc,
   readState,
   sessionFileKey,
   type SessionState,
@@ -305,6 +309,8 @@ export interface CheckpointDeps {
   readonly now: () => number;
   readonly sleep: (ms: number) => Promise<void>;
   readonly git: GitRunner;
+  /** The process table, for the in-flight markers' liveness; `ps` by default. */
+  readonly proc?: ProcReader;
 }
 
 const retryable = (r: ApiResult): boolean =>
@@ -1001,7 +1007,6 @@ export const MUTATING_TOOLS: ReadonlySet<string> = new Set([
 
 export const TRIGGER_MUTATIONS = 10;
 export const TRIGGER_MS = 2 * 60_000;
-const INFLIGHT_STALE_MS = 10 * 60_000;
 
 export interface Activity {
   mutations: number;
@@ -1029,21 +1034,76 @@ export function writeActivity(
 const markerName = (key: string): string =>
   createHash('sha256').update(key).digest('hex').slice(0, 32);
 
-/** `PreToolUse`: a tool is running. Removed by its `PostToolUse`. */
-export function markInflight(home: string, harness: Harness, id: string, key: string): void {
+/** The harness process a tool runs in: the marker's proof of life (P1-8). */
+export interface MarkerOwner {
+  readonly pid: number;
+  readonly started: string;
+}
+
+/**
+ * `PreToolUse`: a tool is running, **in this harness process**. Removed by
+ * its `PostToolUse`, and every marker of the session at `Stop` (a turn that
+ * ended runs no tool).
+ */
+export function markInflight(
+  home: string,
+  harness: Harness,
+  id: string,
+  key: string,
+  owner: MarkerOwner,
+): void {
   const dir = inflightDir(home, harness, id);
   privateDir(join(home, '.laika'));
   privateDir(checkpointsDir(home));
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  writeFileSync(join(dir, markerName(key)), '', { mode: 0o600 });
+  writeFileSync(
+    join(dir, markerName(key)),
+    JSON.stringify({ pid: owner.pid, started: owner.started }),
+    { mode: 0o600 },
+  );
 }
 
 export function clearInflight(home: string, harness: Harness, id: string, key: string): void {
   rmSync(join(inflightDir(home, harness, id), markerName(key)), { force: true });
 }
 
-/** Tools still running in this harness session — a marker older than ten minutes is a lost one. */
-export function inflight(home: string, harness: Harness, id: string, now: number): number {
+/** `Stop`: the turn is over, so nothing it started is still running. */
+export function clearAllInflight(home: string, harness: Harness, id: string): void {
+  const dir = inflightDir(home, harness, id);
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.startsWith('.')) rmSync(join(dir, name), { force: true });
+  }
+}
+
+function markerOwner(path: string): MarkerOwner | undefined {
+  const value = readJson(path);
+  return isRecord(value) &&
+    Number.isSafeInteger(value.pid) &&
+    (value.pid as number) > 0 &&
+    typeof value.started === 'string'
+    ? { pid: value.pid as number, started: value.started }
+    : undefined;
+}
+
+/**
+ * Tools still running in this harness session. **Age proves nothing**: a
+ * build can run for an hour. A marker is stale only on evidence — its
+ * harness process is gone, or its PID now belongs to another process (the
+ * start time differs). A live harness, or one whose liveness cannot be told,
+ * or a marker with no owner on it, counts as a tool still running.
+ */
+export function inflight(
+  home: string,
+  harness: Harness,
+  id: string,
+  proc: ProcReader = readProc,
+): number {
   const dir = inflightDir(home, harness, id);
   let names: string[];
   try {
@@ -1053,12 +1113,14 @@ export function inflight(home: string, harness: Harness, id: string, now: number
   }
   let count = 0;
   for (const name of names) {
-    try {
-      if (now - statSync(join(dir, name)).mtimeMs < INFLIGHT_STALE_MS) count += 1;
-      else rmSync(join(dir, name), { force: true });
-    } catch {
-      // Removed meanwhile.
+    if (name.startsWith('.')) continue;
+    const path = join(dir, name);
+    const owner = markerOwner(path);
+    if (owner !== undefined && liveness(owner.pid, owner.started, proc) === 'dead') {
+      rmSync(path, { force: true });
+      continue;
     }
+    if (existsSync(path)) count += 1;
   }
   return count;
 }
@@ -1134,7 +1196,7 @@ export async function autoCheckpoint(
     } catch {
       gitBusy = undefined;
     }
-    const tools = inflight(deps.home, harness, harnessSessionId, deps.now());
+    const tools = inflight(deps.home, harness, harnessSessionId, deps.proc);
     if (gitBusy === undefined && tools === 0) break;
     if (deps.now() >= deadline) {
       log(

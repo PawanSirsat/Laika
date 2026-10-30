@@ -36,6 +36,7 @@ import {
 } from './agent-session.ts';
 import {
   autoCheckpoint,
+  clearAllInflight,
   clearInflight,
   markInflight,
   MUTATING_TOOLS,
@@ -291,9 +292,17 @@ function noteActivity(
 ): void {
   const now = Date.now();
   if (event === 'pre-tool') {
-    markInflight(io.home, harness, harnessSessionId, toolKey(input));
+    // The tool runs in the harness process the session is bound to; without
+    // a session there is nothing to bind it to, and no automatic save either.
+    const session = readState(statePath(io.home, harness, harnessSessionId));
+    if (session === undefined) return;
+    markInflight(io.home, harness, harnessSessionId, toolKey(input), {
+      pid: session.harness_pid,
+      started: session.harness_started,
+    });
     return;
   }
+  if (event === 'stop') clearAllInflight(io.home, harness, harnessSessionId);
   const activity = readActivity(io.home, harness, harnessSessionId);
   if (typeof input.cwd === 'string' && input.cwd.startsWith('/') && input.cwd.length < 4096) {
     activity.cwd = input.cwd;
