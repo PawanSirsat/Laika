@@ -41,6 +41,7 @@ export function HandoffPolicySection({ slug, mayEdit }: HandoffPolicySectionProp
   const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState<string | undefined>(undefined);
+  const [settled, setSettled] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,6 +75,7 @@ export function HandoffPolicySection({ slug, mayEdit }: HandoffPolicySectionProp
       })
       .finally(() => {
         setSaving(false);
+        setSettled((n) => n + 1);
       });
   };
 
@@ -112,6 +114,7 @@ export function HandoffPolicySection({ slug, mayEdit }: HandoffPolicySectionProp
               onChange={save}
               mayEdit={mayEdit}
               busy={saving}
+              settled={settled}
             />
             {!read.policy.is_set && (
               <p className="ss-help" data-policy-defaults>

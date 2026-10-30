@@ -12,6 +12,12 @@ export interface HandoffPolicyFormProps {
   readonly mayEdit: boolean;
   /** A save is in flight: every control waits for it. */
   readonly busy?: boolean | undefined;
+  /**
+   * Moves each time a save settles, refused or not. The number field's draft
+   * then shows what the server holds again — a refused value must not sit in
+   * the field as if it were saved (LAI-550 review).
+   */
+  readonly settled?: number | undefined;
 }
 
 const { maxHandoffs: MAX_BOUNDS, offerTtlMinutes: TTL_BOUNDS } = HANDOFF_POLICY_BOUNDS;
@@ -36,6 +42,7 @@ export function HandoffPolicyForm({
   onChange,
   mayEdit,
   busy = false,
+  settled = 0,
 }: HandoffPolicyFormProps) {
   const locked = !mayEdit || busy;
   // The number is a draft until it is committed — on leaving the field or
@@ -43,7 +50,7 @@ export function HandoffPolicyForm({
   const [draft, setDraft] = useState(String(policy.maxHandoffs));
   useEffect(() => {
     setDraft(String(policy.maxHandoffs));
-  }, [policy.maxHandoffs]);
+  }, [policy.maxHandoffs, settled]);
   const commitMax = (): void => {
     const n = Number.parseInt(draft, 10);
     if (!Number.isInteger(n)) {
