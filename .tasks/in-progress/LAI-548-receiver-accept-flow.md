@@ -2,11 +2,12 @@
 id: LAI-548
 title: 'Receiver flow: laika agent inbox/accept — fetch + verify checkpoint SHA, prepare worktree, then accept; untrusted note rendering'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-546, LAI-547]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-30T12:30:00+02:00
 ---
 
 Implements **proposal §4.3.1, §4.4, §4.7** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -64,6 +65,14 @@ P0 — board priority `p1` + tag `p0`.
 ## Branch
 
 `LAI-548-receiver-accept`
+
+## Claim deviation (CHIEF dispatch, 2026-10-30)
+
+Claimed on CHIEF's direction while `depends-on` is not all in `done/`:
+LAI-546 is in `review/` on `master` with its routes and MCP tools live
+(Phase 3), and LAI-547 is open as PR #154. This task uses **only what is on
+`master`**: it does not import #154's `checkpoint-git.ts`, and carries its
+own git runner with the same env allowlist and safe config.
 
 ## Migration / rollout notes
 
