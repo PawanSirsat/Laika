@@ -789,6 +789,13 @@ const PAIRS: readonly Pair[] = [
     client: 'CreatedAgentToken',
     clientFile: 'agents.ts',
   },
+  // LAI-1007: the owner's consent to automatic checkpoints (§4.75, D-115).
+  {
+    server: 'CheckpointConsentView',
+    serverFile: 'services/checkpoints.ts',
+    client: 'CheckpointConsent',
+    clientFile: 'agents.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [

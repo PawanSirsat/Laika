@@ -91,4 +91,12 @@ returns them, so LAI-556 cannot show *Delivered to* at all.
   exists` entries (§4.4 step 2, as LAI-1005's `TaskHandoffView`); LAI-1004's
   client mirror and `PAIRS` entries retire them, so after the pair lands no
   new entry remains.
+- **Red alone, by name (§4.4 step 1).** On this branch alone CI fails exactly
+  one assertion, `server/web/test/api/endpoint-coverage.test.ts`'s *no endpoint
+  is served, uncalled and unexplained*:
+  `served with no caller and no entry in NO_BROWSER_CALLER — build it, or say why not`,
+  actual `[ 'api/v1/projects/*/context/deliveries' ]`. `NO_BROWSER_CALLER` is
+  in `server/web/` (SHELL's — the `clientOmits` case), so no entry is taken.
+  LAI-1004 (stacked, branch `LAI-1004-delivered-to`) adds the caller and
+  turns it green; land the two together.
 - Gate: CI runs the repo gate on the PR (Belka runs one file at a time).
