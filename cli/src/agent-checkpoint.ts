@@ -31,6 +31,7 @@ import {
   readProc,
   readState,
   sessionFileKey,
+  UNKNOWN,
   type SessionState,
   statePath,
   writePrivate,
@@ -56,6 +57,7 @@ import {
   secretIn,
   stageSafely,
   TAG_PREFIX,
+  unstage,
   ulid,
   type Worktree,
   worktreeAt,
@@ -311,6 +313,8 @@ export interface CheckpointDeps {
   readonly git: GitRunner;
   /** The process table, for the in-flight markers' liveness; `ps` by default. */
   readonly proc?: ProcReader;
+  /** A test's window onto the races P1-7 closes: after the quiet wait, and after staging. */
+  readonly onPhase?: (phase: 'quiet' | 'staged') => void;
 }
 
 const retryable = (r: ApiResult): boolean =>
@@ -504,6 +508,12 @@ export interface SaveOptions {
   readonly files?: readonly string[];
   readonly claim: ClaimQuery;
   readonly maxFileBytes?: number;
+  /**
+   * An automatic save's hold on the session's tools (P1-7): `check` throws
+   * when a tool has started, and is asked right before staging and again
+   * right before the commit; `release` lets `PreToolUse` go once committed.
+   */
+  readonly interlock?: { readonly check: () => void; readonly release: () => void };
 }
 
 export type SaveOutcome =
@@ -536,15 +546,26 @@ export async function save(deps: CheckpointDeps, options: SaveOptions): Promise<
     const before = git(wt.top, ['rev-parse', '-q', '--verify', 'HEAD^{commit}']).stdout.trim();
     const id = ulid(deps.now());
     const segment = target.task.segment;
-    stageSafely(git, wt, {
+    options.interlock?.check();
+    const staged = stageSafely(git, wt, {
       ...(options.files === undefined ? {} : { add: options.files }),
       maxFileBytes: options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES,
     });
+    deps.onPhase?.('staged');
+    try {
+      options.interlock?.check();
+    } catch (cause) {
+      // A tool started while this was staging: what it is writing is not
+      // this save's to commit. Put the index back for these paths and stop.
+      unstage(git, wt, staged);
+      throw cause;
+    }
     const committed = commitStaged(
       git,
       wt,
       `checkpoint(${segment}): work in progress\n\nLaika checkpoint ${id}${options.auto ? ' (automatic)' : ''}.`,
     );
+    options.interlock?.release();
     const sha = committed ?? headSha(git, wt);
 
     if (committed === undefined) {
@@ -1081,6 +1102,58 @@ export function clearAllInflight(home: string, harness: Harness, id: string): vo
   }
 }
 
+const INTERLOCK = '.saving';
+
+/**
+ * An automatic save's interlock (P1-7): held from just before its last quiet
+ * check until its commit. `PreToolUse` writes its marker and then waits while
+ * it is held, and the save asks for markers again under it — so a tool that
+ * starts after the quiet check either waits for the commit or stops the save
+ * before it commits. Held by the saving process; a dead holder's is taken.
+ */
+export function takeSaveInterlock(
+  home: string,
+  harness: Harness,
+  id: string,
+  owner: MarkerOwner,
+  proc: ProcReader = readProc,
+): () => void {
+  const dir = inflightDir(home, harness, id);
+  privateDir(join(home, '.laika'));
+  privateDir(checkpointsDir(home));
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const path = join(dir, INTERLOCK);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      writeFileSync(path, JSON.stringify(owner), { mode: 0o600, flag: 'wx' });
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        if (markerOwner(path)?.pid === owner.pid) rmSync(path, { force: true });
+      };
+    } catch {
+      const holder = markerOwner(path);
+      if (holder !== undefined && liveness(holder.pid, holder.started, proc) !== 'dead') break;
+      rmSync(path, { force: true });
+    }
+  }
+  throw new Refusal('another automatic save holds this session’s interlock', 'checkpoint_busy');
+}
+
+/** Whether a live process holds the session's save interlock. */
+export function interlockHeld(
+  home: string,
+  harness: Harness,
+  id: string,
+  proc: ProcReader = readProc,
+): boolean {
+  const path = join(inflightDir(home, harness, id), INTERLOCK);
+  if (!existsSync(path)) return false;
+  const holder = markerOwner(path);
+  return holder === undefined || liveness(holder.pid, holder.started, proc) !== 'dead';
+}
+
 function markerOwner(path: string): MarkerOwner | undefined {
   const value = readJson(path);
   return isRecord(value) &&
@@ -1208,12 +1281,40 @@ export async function autoCheckpoint(
     await deps.sleep(500);
   }
 
-  await retryPending(deps);
+  deps.onPhase?.('quiet');
+  // The interlock, then the quiet check again under it: a tool that started
+  // since the loop above is seen here, and one that starts from now on waits
+  // in its PreToolUse or is seen by the checks inside the save.
+  const proc = deps.proc ?? readProc;
+  const self = proc(process.pid);
+  if (self === undefined || self === UNKNOWN) return 'busy';
+  let release: () => void;
   try {
+    release = takeSaveInterlock(deps.home, harness, harnessSessionId, self, proc);
+  } catch {
+    return 'busy';
+  }
+  const toolsRunning = (): number => inflight(deps.home, harness, harnessSessionId, proc);
+  if (toolsRunning() > 0) {
+    release();
+    log(deps.home, `auto checkpoint ${harness}: a tool started after the quiet check; not saved`);
+    return 'busy';
+  }
+
+  try {
+    await retryPending(deps);
     const outcome = await save(deps, {
       cwd: activity.cwd,
       auto: true,
       claim: { harness, harnessSessionId },
+      interlock: {
+        check: () => {
+          if (toolsRunning() > 0) {
+            throw new Refusal('a tool started while the save was staging', 'tool_started');
+          }
+        },
+        release,
+      },
     });
     const after = readActivity(deps.home, harness, harnessSessionId);
     after.mutations = 0;
@@ -1227,6 +1328,8 @@ export async function autoCheckpoint(
       deps.home,
       `auto checkpoint ${harness}: ${cause instanceof Refusal ? cause.code : 'error'} — ${cause instanceof Error ? cause.message.slice(0, 300) : ''}`,
     );
-    return 'refused';
+    return cause instanceof Refusal && cause.code === 'tool_started' ? 'busy' : 'refused';
+  } finally {
+    release();
   }
 }

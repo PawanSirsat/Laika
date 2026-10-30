@@ -38,6 +38,7 @@ import {
   autoCheckpoint,
   clearAllInflight,
   clearInflight,
+  interlockHeld,
   markInflight,
   MUTATING_TOOLS,
   readActivity,
@@ -268,6 +269,9 @@ function hookSessionId(input: Readonly<Record<string, unknown>>): string | undef
   return typeof id === 'string' && id !== '' && id.length <= 512 ? id : undefined;
 }
 
+/** A synchronous pause for the hook's short wait: nothing else runs in it. */
+const PAUSE = new Int32Array(new SharedArrayBuffer(4));
+
 /** One tool call's key, the same at `PreToolUse` and `PostToolUse`. */
 function toolKey(input: Readonly<Record<string, unknown>>): string {
   const id = input.tool_use_id;
@@ -300,6 +304,13 @@ function noteActivity(
       pid: session.harness_pid,
       started: session.harness_started,
     });
+    // Marked first, then wait while an automatic save holds the interlock:
+    // the save sees this marker and stops before it commits, or commits and
+    // lets go. Bounded well inside the hook's 5 s budget; past it the tool
+    // runs, and the save's own check before its commit still stops it.
+    for (let waited = 0; waited < 4000 && interlockHeld(io.home, harness, harnessSessionId); waited += 100) {
+      Atomics.wait(PAUSE, 0, 0, 100);
+    }
     return;
   }
   if (event === 'stop') clearAllInflight(io.home, harness, harnessSessionId);

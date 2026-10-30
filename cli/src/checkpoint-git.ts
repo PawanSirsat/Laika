@@ -489,6 +489,16 @@ export function stageSafely(git: GitRunner, wt: Worktree, options: StageOptions)
   return paths;
 }
 
+/**
+ * Undo {@link stageSafely} for these paths: their index entries go back to
+ * HEAD's. Used only when a save stops between staging and committing.
+ */
+export function unstage(git: GitRunner, wt: Worktree, paths: readonly string[]): void {
+  for (let at = 0; at < paths.length; at += 200) {
+    git(wt.top, ['reset', '-q', '--', ...paths.slice(at, at + 200).map(literal)]);
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Committing and the manifest                                                */
 /* -------------------------------------------------------------------------- */

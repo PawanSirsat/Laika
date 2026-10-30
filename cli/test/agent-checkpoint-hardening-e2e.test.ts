@@ -190,6 +190,32 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
     await b.consent(false);
   });
 
+  void test('P1-7: a tool that starts while the save stages stops it before the commit, and the index is put back', async () => {
+    const repo = b.freshRepo('p17b');
+    await b.consent(true);
+    await b.beat();
+    clearInflightDir();
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 112;\n');
+    const head = b.git(repo.wt, 'rev-parse', 'HEAD');
+    writeActivity(b.home, 'claude-code', HS, { mutations: 3, cwd: repo.wt });
+    let staged = '';
+    const deps = {
+      ...b.engine(),
+      onPhase: (phase: string) => {
+        if (phase !== 'staged') return;
+        staged = b.git(repo.wt, 'diff', '--cached', '--name-only');
+        markInflight(b.home, 'claude-code', HS, 'toolu_mid', harnessOwner());
+      },
+    };
+    assert.equal(await autoCheckpoint(deps, 'claude-code', HS, creds(), 1000), 'busy');
+    assert.equal(staged, 'app.ts', 'it had staged');
+    assert.equal(b.git(repo.wt, 'rev-parse', 'HEAD'), head, 'no commit');
+    assert.equal(b.git(repo.wt, 'diff', '--cached', '--name-only'), '', 'the index is put back');
+    assert.equal(b.git(repo.wt, 'diff', '--name-only'), 'app.ts', 'the work is untouched');
+    clearInflightDir();
+    await b.consent(false);
+  });
+
   void test('P1-7: PreToolUse waits while a save holds the interlock', async () => {
     clearInflightDir();
     const release = checkpoint.takeSaveInterlock(b.home, 'claude-code', HS, harnessOwner());
