@@ -2,11 +2,12 @@
 id: LAI-553
 title: 'Durable delivery states + scoped SSE hand-off events with replay/dedup'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-546, LAI-539]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-30T17:10:00+02:00
 ---
 
 Implements **proposal §4.6** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -59,6 +60,12 @@ P1 — board priority `p1`.
 ## Branch
 
 `LAI-553-delivery-sse`
+
+## Claim deviation
+
+`depends-on` names LAI-546, which is in `.tasks/review/` on `master`, not
+`done/`. Claimed on CHIEF's explicit dispatch (Phase 4, polly, 2026-10-30);
+LAI-546's server half is already merged on `master`. Recorded per §2 step 1.
 
 ## Migration / rollout notes
 
