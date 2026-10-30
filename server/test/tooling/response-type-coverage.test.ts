@@ -248,6 +248,9 @@ const UNPAIRED = new Map<string, string>([
   // `If-Match`) brings the mirror, and these leave the way the rest do.
   ['ListedTaskView', 'no client type exists'],
   ['ListedTaskSummaryView', 'no client type exists'],
+  // LAI-1005's saves-and-hand-off summary on every task read. The card states
+  // (LAI-1006) bring the mirror and its `PAIRS` entry, and this leaves then.
+  ['TaskHandoffView', 'no client type exists'],
 ]);
 
 /**

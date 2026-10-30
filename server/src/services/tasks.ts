@@ -59,6 +59,7 @@ import {
   type TaskClaimView,
   type TaskLiveClaimView,
 } from './claims.ts';
+import { handoffViews, NO_HANDOFF, type TaskHandoffView } from './task-handoff.ts';
 import { addComment, commentCounts } from './comments.ts';
 import {
   freezeEstimateAtStart,
@@ -274,6 +275,13 @@ export interface TaskSummaryView {
    * claim is never this; the task's activity is where those are told.
    */
   claim: TaskLiveClaimView | null;
+  /**
+   * The task's newest save and live hand-off in brief, with the two states a
+   * card draws from them — *Recovery available* and *Save needs attention* —
+   * derived here once (§6.4, LAI-1005). Never null: a task with neither reads
+   * {@link NO_HANDOFF}.
+   */
+  handoff: TaskHandoffView;
   created_at: number;
   updated_at: number;
 }
@@ -329,6 +337,8 @@ interface ViewContext {
   readonly selectedAgents: ReadonlyMap<string, SelectedAgentView>;
   /** The live claim per task (LAI-568) — one query whatever the page. */
   readonly claims: ReadonlyMap<string, TaskLiveClaimView>;
+  /** Saves and hand-off in brief per task (LAI-1005) — three queries whatever the page. */
+  readonly handoffs: ReadonlyMap<string, TaskHandoffView>;
 }
 
 /**
@@ -381,6 +391,7 @@ function loadViewContext(db: Db, rows: readonly TaskRow[], now: number): ViewCon
     sizes: sizeViews(db, rows),
     selectedAgents: selectedAgentViews(db, rows),
     claims: liveClaimViews(db, ids, now),
+    handoffs: handoffViews(db, rows, now),
   };
 }
 
@@ -433,6 +444,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
         ? null
         : (context.selectedAgents.get(row.selectedAgentId) ?? null),
     claim: context.claims.get(row.id) ?? null,
+    handoff: context.handoffs.get(row.id) ?? NO_HANDOFF,
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],
     started_at: row.startedAt,
