@@ -116,5 +116,28 @@ ANSI/OSC/C1 escaping, harness dedupe, the capability matrix.
 | — | crash recovery | record written `preparing` before anything is made; the next prepare removes its own worktree (`worktree remove`, never `--force`) and branch (`update-ref -d` conditional on the SHA) only while exactly as made | status forced to `preparing` → redone; an untracked file in the worktree → refused, file kept | recovery off → case 15 red |
 | — | failed lock reported | `label` answers the failure; offer_taken and decline print "could NOT be locked" | pre-locked worktree, decline | silent lock → case 16 red |
 
-Needs git ≥ 2.40 for `--attr-source`; an older git rejects the option, so
+Needs git ≥ 2.41 for `--attr-source` (corrected from 2.40 in round 2); an older git rejects the option, so
 prepare fails closed.
+
+## Review round 2 — Codex on #158 at 3a12d2f0; fixed (SHELL, 2026-10-30)
+
+Codex passed every fresh-prepare fix. All three P1s were in crash recovery
+(`clearOwn`): a clean filter ran during `worktree remove`, an ignored `.env`
+was deleted, and a branch checked out in the primary checkout was deleted.
+**Belka's decision: crash recovery never deletes anything.**
+
+- `clearOwn` is gone, and nothing in `prepare` removes a worktree, a branch or
+  a ref any more. A retry takes the first worktree path, branch and private
+  ref that are **all** free (`…-handoff-<suffix>-2`, `-3`, … up to 20), and
+  prints each leftover with the command that would remove it.
+- `assertNoLocalAttributes` now runs straight after the repository is found,
+  before any other git call in `prepare`, and again in `accept`.
+- The minimum git version is corrected to 2.41 (`agent-handoff.ts`, README).
+
+| Regression | Mutant |
+| --- | --- |
+| clean/smudge/process filter configured, `* filter=evil` in the tree, an edit in the old worktree: no filter ran, the edit is kept, the retry succeeds under new names and accepts | reuse old names → red; delete-and-reuse (the round-1 behaviour) → red |
+| ignored `.env` in the old worktree: kept byte for byte, retry succeeds | same two mutants → red |
+| branch taken into the primary checkout: still checked out and clean, retry succeeds | same two mutants → red |
+| `info/attributes` set after prepare: accept refused, no accept sent | accept check off → red |
+| (round 1) `info/attributes` refused in prepare, check now earlier | prepare check off → red |
