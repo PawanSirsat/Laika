@@ -2208,10 +2208,15 @@ class NextActions {
   private readonly candidates = new Map<string, { id: string; ownerUserId: string }[]>();
   private readonly eligible = new Map<string, { requiresApproval: boolean } | null>();
 
-  constructor(
-    private readonly db: Db,
-    private readonly actor: ResolvedActor,
-  ) {}
+  // Plain fields, not parameter properties: Node's type stripping, which the
+  // concurrency tests' worker processes load this file with, refuses those.
+  private readonly db: Db;
+  private readonly actor: ResolvedActor;
+
+  constructor(db: Db, actor: ResolvedActor) {
+    this.db = db;
+    this.actor = actor;
+  }
 
   for(
     row: FoundOffer,
