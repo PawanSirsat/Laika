@@ -1234,7 +1234,11 @@ const selfStartedMs = (): number => Date.now() - process.uptime() * 1000;
  * the kernel has no such PID, or the PID's start time is another process's.
  * A `ps` that cannot answer is `unknown`, which holds — waiting, never racing.
  */
-function holderState(h: InterlockHolder, probe: Probe, proc: ProcReader): 'alive' | 'dead' | 'unknown' {
+function holderState(
+  h: InterlockHolder,
+  probe: Probe,
+  proc: ProcReader,
+): 'alive' | 'dead' | 'unknown' {
   if (probe(h.pid) === 'absent') return 'dead';
   if (h.pid === process.pid) {
     return Math.abs(selfStartedMs() - h.started_ms) <= START_TOLERANCE_MS ? 'alive' : 'dead';
@@ -1354,8 +1358,7 @@ export function awaitSave(
     pause(100);
     // Cheap while it is the same holder: the file and the kernel, no `ps`.
     const now = interlockHolder(path);
-    const same =
-      now !== undefined && now.pid === holder.pid && now.started_ms === holder.started_ms;
+    const same = now?.pid === holder.pid && now.started_ms === holder.started_ms;
     holder =
       same && probe(holder.pid) !== 'absent'
         ? holder

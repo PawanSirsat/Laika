@@ -47,13 +47,7 @@ import type { Harness } from './agent-session.ts';
 export const AGENT_MARKER = 'laika-agent-hook';
 
 export type AgentHookEvent =
-  | 'session-start'
-  | 'prompt'
-  | 'pre-tool'
-  | 'tool'
-  | 'tool-failed'
-  | 'stop'
-  | 'session-end';
+  'session-start' | 'prompt' | 'pre-tool' | 'tool' | 'tool-failed' | 'stop' | 'session-end';
 
 export interface AgentHookReport {
   readonly harness: Harness;

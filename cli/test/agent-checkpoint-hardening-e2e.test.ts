@@ -530,7 +530,8 @@ void describe('checkpoint review fixes, round 2 (LAI-547, #154 at 2e401f3c)', ()
     const deps = {
       ...b.engine(),
       onPhase: (phase: string) => {
-        if (phase === 'staged') markInflight(b.home, 'claude-code', HS, 'toolu_r23', harnessOwner());
+        if (phase === 'staged')
+          markInflight(b.home, 'claude-code', HS, 'toolu_r23', harnessOwner());
       },
     };
     assert.equal(await autoCheckpoint(deps, 'claude-code', HS, creds(), 1000), 'busy');
@@ -592,7 +593,11 @@ void describe('checkpoint review fixes, round 2 (LAI-547, #154 at 2e401f3c)', ()
       join(dir, '.saving'),
       JSON.stringify({ pid: process.pid, started_ms: 1_000_000, deadline: Date.now() + 600_000 }),
     );
-    assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), false, 'a reused PID holds nothing');
+    assert.equal(
+      checkpoint.interlockHeld(b.home, 'claude-code', HS),
+      false,
+      'a reused PID holds nothing',
+    );
     // The same through the process table, as the hook sees another process:
     // a live PID whose start time is not the holder's holds nothing either.
     const other = spawn('/bin/sleep', ['30']);
@@ -603,14 +608,22 @@ void describe('checkpoint review fixes, round 2 (LAI-547, #154 at 2e401f3c)', ()
       const started = Date.parse(live.started.trim());
       writeFileSync(
         join(dir, '.saving'),
-        JSON.stringify({ pid: other.pid, started_ms: started - 3_600_000, deadline: Date.now() + 600_000 }),
+        JSON.stringify({
+          pid: other.pid,
+          started_ms: started - 3_600_000,
+          deadline: Date.now() + 600_000,
+        }),
       );
       assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), false, 'reused, by ps');
       writeFileSync(
         join(dir, '.saving'),
         JSON.stringify({ pid: other.pid, started_ms: started, deadline: Date.now() + 600_000 }),
       );
-      assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), true, 'its own start: held');
+      assert.equal(
+        checkpoint.interlockHeld(b.home, 'claude-code', HS),
+        true,
+        'its own start: held',
+      );
       rmSync(join(dir, '.saving'), { force: true });
     } finally {
       other.kill();
@@ -619,7 +632,7 @@ void describe('checkpoint review fixes, round 2 (LAI-547, #154 at 2e401f3c)', ()
     try {
       assert.throws(
         () => checkpoint.takeSaveInterlock(b.home, 'claude-code', HS),
-        (e: unknown) => e instanceof Error && /holds this session/.test(e.message),
+        (e: unknown) => e instanceof Error && e.message.includes('holds this session'),
         'the real holder is respected',
       );
       assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), true);
