@@ -200,3 +200,16 @@ non-owners. I left them, since this round did not name them:
 - §6.4 line 4522 (`TaskView.selected_agent`).
 
 Each needs "`display_name` to the agent's owner only, else `null` (D-120)".
+
+## Round 7 (SHELL, 2026-10-30): Codex round 4, Belka's decisions
+
+- **Profile token names** (`profiles.ts:1104`): kept as the documented
+  exception. The SPEC sentence is in §6.4's profile `agents` row and in the
+  §6.4 rounds note. No code change.
+- **`estimates.ts` `by_client`:** a registered agent's round counts under its
+  harness; legacy tokens keep their client name; the at-least-three-people
+  floor is unchanged. Test: three secret registered names never reach the
+  response. 2 mutants red.
+- **SPEC §6.4** `created_by_client` is now qualified as owner-only for a
+  registered agent's token, and the `by_client` text says the same as the
+  code.
