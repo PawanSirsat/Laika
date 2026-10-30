@@ -2,11 +2,12 @@
 id: LAI-1004
 title: 'Context History shows "Delivered to": the sessions a revision reached, by agent label and time'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-1003, LAI-556]
 discovered-from: LAI-556
-status: backlog
+status: in-progress
+started: 2026-10-30T17:20:00+05:30
 ---
 
 Web half of *Delivered to*; the server half is LAI-1003. Board: child of
