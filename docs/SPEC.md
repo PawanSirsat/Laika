@@ -3369,6 +3369,8 @@ GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  
 GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
                                              status is a category (§4.5), status_id one project status (§4.20);
                                              fields=slim leaves out description_md and acceptance_md (LAI-795)
+                                             each task carries `handoff`, its saves and hand-off in brief (LAI-1005), in a
+                                             fixed number of queries whatever the page — see the task shape below
 GET    /api/v1/projects/:slug/statuses       POST .../statuses  body { name, category, position? } → 201  (lead+)
 PATCH  /api/v1/projects/:slug/statuses/:id   body { name?, hidden? } — category is refused   (lead+)
 PUT    /api/v1/projects/:slug/statuses/order body { ids } — every status exactly once   (lead+)
@@ -3591,7 +3593,19 @@ or `suspect`) as of the read by the server's clock — a client ages the claim
 from `heartbeat_age_ms` on its own elapsed time and never compares
 `last_heartbeat_at` with its own clock (LAI-597) — and the last three the
 holding session's self-reported fields as it last sent them — `null` where it
-sent none, and deciding nothing (LAI-593). A heartbeat answers `{ session,
+sent none, and deciding nothing (LAI-593). Every task read also carries
+`handoff` (LAI-1005), never null: `{ checkpoint, offer, recovery_available,
+save_needs_attention }`. `checkpoint` is the task's newest save, `{
+verification, saved_at, pending_since, pending_notice }` as `GET
+/tasks/:id/checkpoints` reports it, or `null`; `offer` is its newest live
+hand-off or recovery offer, `{ kind, state, requires_approval }`, or `null`.
+**`recovery_available`** is derived here once — the task is `in_progress`, its
+newest claim `expired`, and a live recovery offer or a `verified` checkpoint
+lets work continue (§4.73) — and **`save_needs_attention`** is the newest
+checkpoint `uncertain` with no live claim and no recovery available; a
+receiver's failed fetch (LAI-548) is not reported. It names no agent, session
+or commit, and is served under the same *Read tasks* as the checkpoint and
+offer reads, so it shows nothing they would not. A heartbeat answers `{ session,
 claims, lost }`: the live claims it renewed,
 and the session's claims that are no longer live — **an expired one stays in
 `lost`; a heartbeat never brings it back**. A heartbeat to an ended session is
