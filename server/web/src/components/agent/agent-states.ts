@@ -142,7 +142,7 @@ export const HANDOFF_FILTER_WORDS: Readonly<Record<HandoffFilter, string>> = {
 
 /** The registration wizard's five steps (proposal §6). */
 export const REGISTRATION_STEPS = [
-  'Name, harness and device',
+  'Harness and device',
   'Projects and permissions',
   'Credential',
   'Harness instructions',

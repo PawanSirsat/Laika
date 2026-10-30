@@ -20,6 +20,7 @@ import {
   SEND_BACK_REASON_MAX,
   sendBackProblem,
   shortSha,
+  roundAgentName,
   waitingFor,
   type ReviewQueueItem,
   type Round,
@@ -33,6 +34,8 @@ function round(patch: Partial<Round> = {}): Round {
     number: 1,
     finished_by: 'u1',
     client_name: 'codex',
+    agent: null,
+    by_registered_agent: false,
     summary_md: 'Did it',
     commits: [],
     branch: null,
@@ -282,5 +285,34 @@ void describe('sendBackProblem', () => {
   void test('a reason within the limit can, and one over it cannot', () => {
     assert.equal(sendBackProblem('Lint is red'), null);
     assert.notEqual(sendBackProblem('x'.repeat(SEND_BACK_REASON_MAX + 1)), null);
+  });
+});
+
+void describe('who finished a round (D-120, LAI-1001)', () => {
+  void test('a registered agent is its harness and device, never the client’s word', () => {
+    const r = round({
+      client_name: 'omnigent on Belka',
+      agent: { id: 'ag1', harness: 'omnigent', device_label: 'Belka' },
+      by_registered_agent: true,
+    });
+    assert.equal(roundAgentName(r), 'Omnigent · Belka');
+  });
+
+  void test('no registered agent: the client’s word, marked unregistered; a person: null', () => {
+    assert.equal(
+      roundAgentName(round({ client_name: 'codex-mcp-client' })),
+      'unregistered agent (codex-mcp-client)',
+    );
+    assert.equal(roundAgentName(round({ client_name: null })), null);
+  });
+
+  void test('another person’s agent, withheld by the server, is an agent — never its token name', () => {
+    const r = round({ client_name: 'Polly', agent: null, by_registered_agent: true });
+    assert.equal(roundAgentName(r), 'an agent');
+  });
+
+  void test('a round from before the field reads as unregistered, not as a crash', () => {
+    const old = { client_name: 'mcp' } as Parameters<typeof roundAgentName>[0];
+    assert.equal(roundAgentName(old), 'unregistered agent (mcp)');
   });
 });

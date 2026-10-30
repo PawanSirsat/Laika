@@ -17,6 +17,7 @@ import {
   AGENT_FILTER_NONE,
   agentFilterLabel,
   agentLabel,
+  harnessName,
   agentNamesFrom,
   agentsOnTasks,
   agentVia,
@@ -183,14 +184,39 @@ void describe('naming an agent', () => {
     assert.equal(agentLabel(selected({ id: 'a' })), 'Claude Code · laptop-1');
   });
 
-  void test('no device falls back to the agent’s own name; an unknown harness to its name too', () => {
+  void test('the registered name is never the label (D-120): Polly on omnigent, Belka', () => {
     assert.equal(
-      agentLabel(selected({ id: 'a', device_label: null })),
-      'Claude Code · Laptop agent',
+      agentLabel(
+        selected({ id: 'a', harness: 'omnigent', display_name: 'Polly', device_label: 'Belka' }),
+      ),
+      'Omnigent · Belka',
     );
     assert.equal(
+      agentLabel(
+        selected({ id: 'a', harness: 'codex', display_name: 'runner', device_label: 'Cloud' }),
+      ),
+      'Codex · Cloud',
+    );
+  });
+
+  void test('no device reads No device, an unknown harness Other harness — never the name', () => {
+    assert.equal(agentLabel(selected({ id: 'a', device_label: null })), 'Claude Code · No device');
+    assert.equal(agentLabel(selected({ id: 'a', device_label: '   ' })), 'Claude Code · No device');
+    assert.equal(
       agentLabel(selected({ id: 'a', harness: 'made-up', display_name: 'Rig' })),
-      'Rig · laptop-1',
+      'Other harness · laptop-1',
+    );
+  });
+
+  void test('the shared harness word: a known product, or Other harness — never another agent', () => {
+    assert.equal(harnessName('omnigent'), 'Omnigent');
+    assert.equal(harnessName('other'), 'Other harness');
+  });
+
+  void test('a device is trimmed, so the label is the pair the server compares', () => {
+    assert.equal(
+      agentLabel(selected({ id: 'a', device_label: '  Belka ' })),
+      'Claude Code · Belka',
     );
   });
 });
@@ -448,5 +474,20 @@ void describe('the marks are checked, not hoped for', () => {
           checked += 1;
         }
     assert.equal(checked, names.length ** 3);
+  });
+});
+
+void describe('another owner’s agent arrives without its name (D-120, LAI-1001)', () => {
+  void test('two withheld names on one pair are still told apart, by id', () => {
+    const peer = (id: string) => ({
+      id,
+      display_name: null,
+      harness: 'codex',
+      device_label: 'Bob’s laptop',
+    });
+    const twins = twinNames([peer('ag-0001aaaa'), peer('ag-0002bbbb')]);
+    assert.equal(twins.get('ag-0001aaaa'), 'aaaa');
+    assert.equal(twins.get('ag-0002bbbb'), 'bbbb');
+    assert.equal(agentLabel(peer('x')), 'Codex · Bob’s laptop');
   });
 });

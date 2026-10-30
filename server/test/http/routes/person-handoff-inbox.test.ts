@@ -376,6 +376,26 @@ describe('GET /handoff-offers — the views (§6.4, LAI-1009)', () => {
       'wait_for_approval',
     ]);
   });
+
+  it('an agent’s registered name is its owner’s alone (D-120, LAI-1001)', async () => {
+    const raw = async (who: string) =>
+      (
+        await h.app.request('/api/v1/handoff-offers?view=needs_approval', {
+          headers: jsonHeaders({ Cookie: people[who]!.cookie }),
+        })
+      ).text();
+    // O1 is from Ada's agent to Bob's. Ada reads her own agent's name, never Bob's.
+    const ada = await inbox('ada', '?view=needs_approval');
+    const o1 = ada.data.find((r) => r.id === offer.o1)!;
+    expect((o1.from_agent as unknown as { display_name: string | null }).display_name).toBe('adaA');
+    expect((o1.to_agent as unknown as { display_name: string | null }).display_name).toBeNull();
+    expect(await raw('ada')).not.toContain('bobA');
+    // Lee, a lead who owns neither, is served neither name: harness and device only.
+    const leeRaw = await raw('lee');
+    expect(leeRaw).not.toContain('adaA');
+    expect(leeRaw).not.toContain('bobA');
+    expect(leeRaw).toContain('claude-code');
+  });
 });
 
 describe('GET /handoff-offers — next_action is only what would succeed', () => {

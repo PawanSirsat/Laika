@@ -1012,11 +1012,14 @@ export function assertSelectedAgentMayClaim(
   if (task.selectedAgentId === agentId) return;
 
   const details: Record<string, unknown> = { task_id: taskId };
+  // `<harness> · <device>`, the agent's label (D-120), when the caller may see it.
+  let named: string | null = null;
   if (can(withProject(actor, task.projectId), 'project.read', { projectId: task.projectId })) {
     const selected = db
       .select({
         id: agents.id,
         displayName: agents.displayName,
+        ownerUserId: agents.ownerUserId,
         harness: agents.harness,
         deviceLabel: agents.deviceLabel,
       })
@@ -1027,15 +1030,19 @@ export function assertSelectedAgentMayClaim(
       details.selected_agent_id = selected.id;
       details.selected_agent = {
         id: selected.id,
-        display_name: selected.displayName,
+        // The registered name is its owner's alone (D-120, LAI-1001).
+        display_name: selected.ownerUserId === actor.userId ? selected.displayName : null,
         harness: selected.harness,
         device_label: selected.deviceLabel,
       };
+      named = `${selected.harness} · ${selected.deviceLabel ?? 'no device'}`;
     }
   }
   throw claimConflict(
     'selected_for_another_agent',
-    'This task is selected for another agent; only that agent can claim it',
+    named === null
+      ? 'This task is selected for another agent; only that agent can claim it'
+      : `This task is selected for ${named}; only that agent can claim it`,
     details,
   );
 }

@@ -390,6 +390,75 @@
 }
 
 /* Narrow: the step rail stacks above the card. */
+/* D-120 (LAI-1001): the label the pair makes, the pair already taken, and
+   what Cloud means. Existing tokens only (D-020). */
+.agents-row-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.agents-duplicate-note,
+.agents-cloud-expired {
+  margin: 0;
+}
+
+.agents-label-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.agents-label-preview strong {
+  color: var(--text-primary);
+}
+
+.agents-fields > .agents-note {
+  margin: 0;
+}
+
+.agents-existing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-chip);
+}
+
+.agents-credential .agents-existing {
+  align-self: stretch;
+}
+
+.agents-existing-line {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.agents-existing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.agents-existing-actions a.bar-control {
+  text-decoration: none;
+}
+
+.agents-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 @media (max-width: 760px) {
   .agents-wizard {
     grid-template-columns: minmax(0, 1fr);

@@ -1,11 +1,25 @@
 import { desc, eq, inArray } from 'drizzle-orm';
-import { type ResolvedActor, type ServiceCaller, withProject } from '../auth/resolve-actor.ts';
+import {
+  isSystemPrincipal,
+  type ResolvedActor,
+  type ServiceCaller,
+  withProject,
+} from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type EvidenceKind, type EvidenceState, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
-import { projects, taskEvidence, taskReviews, taskRounds, tasks, tokens } from '../db/schema.ts';
+import {
+  agents,
+  projects,
+  taskEvidence,
+  taskReviews,
+  taskRounds,
+  tasks,
+  tokens,
+} from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { liveClaimViews } from './claims.ts';
 import { type RoundCi, confirmRound, roundSummaries } from './github-proof.ts';
 
 /**
@@ -87,8 +101,30 @@ export interface RoundView {
   /** 1 for the task's first finish. */
   number: number;
   finished_by: string;
-  /** The agent's own name for itself when it finished (D-076), or null. */
+  /**
+   * The agent's own name for itself when it finished (D-076), or null. For a
+   * registered agent this is usually its token's name — its registered name
+   * — so it is **its owner's alone** (D-120, Belka, LAI-1001): null for any
+   * other reader, even where `agent` is shown. Kept for unregistered legacy
+   * tokens.
+   */
   client_name: string | null;
+  /**
+   * The registered agent whose token finished the round, so a screen can name
+   * it `<harness> · <device>` (D-120, LAI-1001) instead of the client's own
+   * word. Read through the round's token. **Only an agent the reader may
+   * already see** (§4.63: another person's agent is not disclosed): their own,
+   * or the task's selected agent or live claim holder, which the task view
+   * shows them anyway. Null otherwise — and for a person, a legacy token, or
+   * a round whose token has since been deleted. Decides nothing.
+   */
+  agent: RoundAgentView | null;
+  /**
+   * A registered agent finished this round — true even when `agent` is null
+   * because the reader may not see which one, so a screen says *an agent*
+   * rather than nothing. Identifies no agent.
+   */
+  by_registered_agent: boolean;
   summary_md: string;
   commits: CommitEvidence[];
   branch: BranchEvidence | null;
@@ -100,6 +136,13 @@ export interface RoundView {
    */
   ci: RoundCi | null;
   created_at: number;
+}
+
+/** Which registered agent finished a round: what naming it takes, and nothing else. */
+export interface RoundAgentView {
+  id: string;
+  harness: string;
+  device_label: string | null;
 }
 
 /** The send-back a task currently carries (§4.27): who, when and why. */
@@ -293,7 +336,21 @@ export function recordRound(
   return roundId;
 }
 
-function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundView[] {
+/**
+ * Whom the agents behind rounds may be shown to: the reader's user id, or
+ * `null` for a principal with no user (a delivery), who is shown none.
+ */
+type RoundReader = string | null;
+
+export function roundReader(caller: ServiceCaller): RoundReader {
+  return isSystemPrincipal(caller) ? null : caller.userId;
+}
+
+function toRoundViews(
+  db: Db,
+  rows: (typeof taskRounds.$inferSelect)[],
+  reader: RoundReader,
+): RoundView[] {
   if (rows.length === 0) return [];
   const github = roundSummaries(
     db,
@@ -310,6 +367,52 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
     )
     .orderBy(taskEvidence.roundId, taskEvidence.position)
     .all();
+  // The agent behind each round's token (D-120), in one query whatever the count.
+  const tokenIds = [...new Set(rows.flatMap((r) => (r.tokenId === null ? [] : [r.tokenId])))];
+  const agentByToken = new Map(
+    tokenIds.length === 0
+      ? []
+      : db
+          .select({
+            tokenId: tokens.id,
+            id: agents.id,
+            ownerUserId: agents.ownerUserId,
+            harness: agents.harness,
+            deviceLabel: agents.deviceLabel,
+          })
+          .from(tokens)
+          .innerJoin(agents, eq(agents.id, tokens.agentId))
+          .where(inArray(tokens.id, tokenIds))
+          .all()
+          .map((a) => [a.tokenId, a] as const),
+  );
+  // What each task already shows its reader: its selected agent and the
+  // holder of its live claim. Another person's agent is named only there.
+  const taskIds = [...new Set(rows.map((r) => r.taskId))];
+  const shownOnTask = new Map<string, Set<string>>();
+  const show = (taskId: string, agentId: string | null): void => {
+    if (agentId === null) return;
+    shownOnTask.set(taskId, (shownOnTask.get(taskId) ?? new Set()).add(agentId));
+  };
+  for (const t of db
+    .select({ id: tasks.id, selected: tasks.selectedAgentId })
+    .from(tasks)
+    .where(inArray(tasks.id, taskIds))
+    .all()) {
+    show(t.id, t.selected);
+  }
+  // The claim each task's own view shows (`liveClaimViews`): the same
+  // predicate, lapsed leases and the boot grace included, so a claim the
+  // task no longer shows names nobody here either.
+  for (const [taskId, claim] of liveClaimViews(db, taskIds, Date.now())) {
+    show(taskId, claim.agent_id);
+  }
+  const visibleAgent = (row: (typeof rows)[number]): RoundAgentView | null => {
+    const a = row.tokenId === null ? undefined : agentByToken.get(row.tokenId);
+    if (a === undefined || reader === null) return null;
+    const visible = a.ownerUserId === reader || shownOnTask.get(row.taskId)?.has(a.id) === true;
+    return visible ? { id: a.id, harness: a.harness, device_label: a.deviceLabel } : null;
+  };
 
   return rows.map((row) => {
     const mine = items.filter((i) => i.roundId === row.id);
@@ -322,12 +425,21 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
     const branch = mine.find((i) => i.kind === 'branch');
     const pr = mine.find((i) => i.kind === 'pull_request');
     const said = github.get(row.id);
+    const agent = visibleAgent(row);
+    const finisher = row.tokenId === null ? undefined : agentByToken.get(row.tokenId);
+    const registered = finisher !== undefined;
+    // The token's name is the agent's registered name, its owner's alone
+    // (D-120, Belka): withheld from everyone else, even where `agent` is shown.
+    const ownName = registered && reader !== null && finisher.ownerUserId === reader;
     return {
       id: row.id,
       task_id: row.taskId,
       number: row.number,
       finished_by: row.finishedBy,
-      client_name: row.clientName,
+      // A withheld agent's name is withheld with it.
+      client_name: registered && !ownName ? null : row.clientName,
+      agent,
+      by_registered_agent: registered,
       summary_md: row.summaryMd,
       commits: mine
         .filter((i) => i.kind === 'commit')
@@ -348,7 +460,11 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
  * The latest round of each task asked about, in two queries whatever the
  * count. A task never finished has no entry.
  */
-export function latestRounds(db: Db, taskIds: readonly string[]): Map<string, RoundView> {
+export function latestRounds(
+  db: Db,
+  taskIds: readonly string[],
+  reader: RoundReader,
+): Map<string, RoundView> {
   if (taskIds.length === 0) return new Map();
   const rows = db
     .select()
@@ -360,7 +476,9 @@ export function latestRounds(db: Db, taskIds: readonly string[]): Map<string, Ro
   const newest = new Map<string, typeof taskRounds.$inferSelect>();
   for (const row of rows) if (!newest.has(row.taskId)) newest.set(row.taskId, row);
 
-  return new Map(toRoundViews(db, [...newest.values()]).map((view) => [view.task_id, view]));
+  return new Map(
+    toRoundViews(db, [...newest.values()], reader).map((view) => [view.task_id, view]),
+  );
 }
 
 /**
@@ -471,7 +589,7 @@ export function listTaskRounds(db: Db, actor: ServiceCaller, taskId: string): Ta
     .all();
 
   return {
-    rounds: toRoundViews(db, rows),
+    rounds: toRoundViews(db, rows, roundReader(actor)),
     send_back: activeSendBacks(db, [task]).get(taskId) ?? null,
   };
 }

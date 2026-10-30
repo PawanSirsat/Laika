@@ -67,6 +67,7 @@ import {
 import { assertCheckpointAcceptable } from './checkpoints.ts';
 import { canSeeProject, requireProjectBySlug } from './projects.ts';
 import {
+  namedFor,
   noSuchProjectForAgent,
   type SelectedAgentView,
   type WorkRequestView,
@@ -2225,8 +2226,13 @@ function personHandoffViews(
   return found.map((f): PersonHandoffView => {
     const offer = f.offer;
     const from = fromAgentId(offer);
-    const fromAgent = from === null ? null : (agentLines.get(from) ?? null);
-    const toAgent = offer.toAgentId === null ? null : (agentLines.get(offer.toAgentId) ?? null);
+    // Each agent's registered name is its owner's alone (D-120, LAI-1001).
+    const line = (id: string | null): SelectedAgentView | null => {
+      const view = id === null ? undefined : agentLines.get(id);
+      return view === undefined ? null : namedFor(view, actor.userId);
+    };
+    const fromAgent = line(from);
+    const toAgent = line(offer.toAgentId);
     const checkpoint =
       offer.checkpointId === null ? undefined : checkpoints.get(offer.checkpointId);
     const expired = isLive(offer.state) && offer.expiresAt !== null && offer.expiresAt <= now;

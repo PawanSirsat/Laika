@@ -6,6 +6,7 @@ import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
   activity,
+  agents,
   orgs,
   taskEstimates,
   taskRounds,
@@ -918,6 +919,74 @@ describe('agent-client accuracy counts the people behind the measured tasks only
     finishedTasks(1, () => agent(bea, 'codex'), clock);
     const view = getEstimateAccuracy(t.db, admin(), 'laika');
     expect(view.by_client.map((c) => [c.client_name, c.people])).toEqual([['codex', 3]]);
+  });
+});
+
+describe('a registered agent counts under its harness, never its name (D-120, LAI-1001)', () => {
+  /** The same person through a registered agent's token: named `name`, on `harness`. */
+  function registered(userId: string, name: string, harness: string): ResolvedActor {
+    const orgId = t.db.select().from(orgs).get()?.id ?? '';
+    const agentId = newId();
+    t.db
+      .insert(agents)
+      .values({
+        id: agentId,
+        orgId,
+        ownerUserId: userId,
+        displayName: name,
+        harness,
+        deviceLabel: `${name}'s laptop`,
+        createdAt: Date.now(),
+      })
+      .run();
+    const id = newId();
+    t.db
+      .insert(tokens)
+      .values({
+        id,
+        userId,
+        agentId,
+        // An agent's token carries its name (D-114), and a generic client
+        // leaves `last_client_name` blank: the round copies the token's name.
+        name,
+        prefix: 'lai_test',
+        tokenHash: `${id}-hash`,
+        scope: 'full',
+        projectIdsJson: null,
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+        lastClientName: null,
+        createdAt: Date.now(),
+      })
+      .run();
+    return { ...actor(userId), token: { id, scope: 'full', projectIds: null } };
+  }
+
+  it('three people’s agents on one harness are one client, and no registered name is served', () => {
+    const people = ['Bea', 'Cy', 'Di'].map((name) => {
+      const id = makeUser('member', name);
+      addMember(t.db, admin(), 'laika', id, 'member');
+      return id;
+    });
+    const [bea, cy, di] = people as [string, string, string];
+    let clock = finishClock(finishedTasks(FORECAST_AFTER, admin, T0));
+    refitEstimates(t.db, clock);
+    clock = finishClock(
+      finishedTasks(1, () => registered(bea, 'Bea secret rig', 'claude-code'), clock),
+    );
+    clock = finishClock(
+      finishedTasks(1, () => registered(cy, 'Cy secret rig', 'claude-code'), clock),
+    );
+    finishedTasks(1, () => registered(di, 'Di secret rig', 'claude-code'), clock);
+
+    // The rounds did store the registered names: the grouping is what hides them.
+    const stored = t.db.select({ client: taskRounds.clientName }).from(taskRounds).all();
+    expect(stored.map((r) => r.client)).toContain('Bea secret rig');
+
+    const view = getEstimateAccuracy(t.db, admin(), 'laika');
+    expect(view.by_client.map((c) => [c.client_name, c.people])).toEqual([['claude-code', 3]]);
+    expect(JSON.stringify(view)).not.toMatch(/secret rig/);
   });
 });
 

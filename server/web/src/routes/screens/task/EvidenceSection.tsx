@@ -3,6 +3,7 @@ import {
   ciLine,
   ciVerdict,
   evidenceSummary,
+  roundAgentName,
   getTaskRounds,
   safeHttpUrl,
   shortSha,
@@ -114,6 +115,8 @@ export function RoundProof({
   readonly now: number;
 }) {
   const summary = evidenceSummary(round);
+  // D-120: the agent as `<harness> · <device>`, never the client's own word.
+  const agent = roundAgentName(round);
   const when = timeLabel(round.created_at, now);
   const pr = round.pull_request;
   const prHref = pr === null ? null : safeHttpUrl(pr.url);
@@ -122,9 +125,8 @@ export function RoundProof({
       <p className="ev-by">
         <span className="ev-round-number">Round {round.number}</span>
         <span>
-          Finished by{' '}
-          <strong className="ev-agent">{round.client_name ?? nameOf(round.finished_by)}</strong>
-          {round.client_name !== null && <> for {nameOf(round.finished_by)}</>}
+          Finished by <strong className="ev-agent">{agent ?? nameOf(round.finished_by)}</strong>
+          {agent !== null && <> for {nameOf(round.finished_by)}</>}
         </span>
         <time className="ev-when" dateTime={when.iso} title={when.full}>
           {when.text}

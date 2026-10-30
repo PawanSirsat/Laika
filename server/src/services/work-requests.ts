@@ -48,7 +48,13 @@ export type SelectedAgentRefusal = (typeof SELECTED_AGENT_REFUSALS)[number];
 /** A task's selected agent as `TaskView` carries it. Never a token, never a grant. */
 export interface SelectedAgentView {
   id: string;
-  display_name: string;
+  /**
+   * The name its owner registered — **to its owner only** (D-120, Belka,
+   * LAI-1001). Under D-120 an agent is labelled `<harness> · <device>`; the
+   * free-text name is never the label, so anyone else gets `null` and names
+   * the agent from `harness` and `device_label`. See {@link namedFor}.
+   */
+  display_name: string | null;
   /** Self-reported (§4.63); decides nothing. */
   harness: string;
   /** Self-reported (§4.63); decides nothing. */
@@ -178,6 +184,16 @@ export function moveSelection(
       closedAt: null,
     })
     .run();
+}
+
+/**
+ * `view` as `reader` may see it: whole for the agent's owner; for anyone
+ * else, and for a principal with no user, without the registered name
+ * (D-120, LAI-1001). Every place that serves an agent view to someone other
+ * than the agent's owner reads it through here.
+ */
+export function namedFor(view: SelectedAgentView, reader: string | null): SelectedAgentView {
+  return reader !== null && view.owner.id === reader ? view : { ...view, display_name: null };
 }
 
 /** Selected-agent views for a page of tasks, in one query whatever its size. */

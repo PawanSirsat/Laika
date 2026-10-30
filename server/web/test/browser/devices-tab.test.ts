@@ -754,4 +754,76 @@ void describe('Your devices', () => {
       }
     }
   });
+
+  void test('one row per harness under each device; a legacy duplicate is flagged and told apart', async () => {
+    const now = Date.now();
+    const agents = [
+      agentRow('p1', 'omnigent', 'Belka', { display_name: 'Polly', last_seen_at: now - MIN }),
+      agentRow('p2', 'omnigent', 'Belka', { display_name: 'by hand', last_seen_at: now - HOUR }),
+      agentRow('c1', 'claude-code', 'Belka', { display_name: 'Polly too' }),
+      agentRow('p0', 'omnigent', 'belka', { display_name: 'old', status: 'revoked' }),
+    ];
+    for (const width of [1440, 390]) {
+      const h = await openAt(devicesApi(agents, new Set(['belka'])), width);
+      const { page } = h;
+      try {
+        const belka = group(page, 'belka');
+        await belka.waitFor({ timeout: 20_000 });
+        // One row per harness, in the device's order.
+        assert.deepEqual(
+          await belka
+            .locator('.devices-harness')
+            .evaluateAll((els) => els.map((el) => el.getAttribute('data-harness'))),
+          ['omnigent', 'claude-code'],
+        );
+        // A harness with one agent is that agent's row, named by the pair alone.
+        const claude = belka.locator('.devices-harness[data-harness="claude-code"]');
+        assert.equal(await claude.getAttribute('data-agent'), 'c1');
+        assert.equal(
+          await claude.locator('.devices-agent-name').innerText(),
+          'Claude Code · Belka',
+        );
+
+        // Two active Omnigent agents on Belka: flagged in words, each told apart.
+        const omni = belka.locator('.devices-harness[data-harness="omnigent"]');
+        assert.equal(await omni.getAttribute('data-duplicate'), 'true');
+        assert.equal(await omni.locator('.devices-harness-name').innerText(), 'Omnigent · Belka');
+        assert.equal(
+          await omni.locator('[data-duplicate-flag]').innerText(),
+          'Duplicate: 2 active',
+        );
+        const names = await omni.locator('.devices-agent-name').allInnerTexts();
+        assert.deepEqual(names, [
+          'Omnigent · Belka (Polly)',
+          'Omnigent · Belka (by hand)',
+          // Each agent's device as it typed it: the group is the key, the label is its own.
+          'Omnigent · belka (old)',
+        ]);
+        assert.equal(new Set(names).size, names.length, 'two duplicates read alike');
+        // Each active duplicate links to its row in Registered agents; the revoked one does not.
+        assert.equal(await omni.locator('.devices-agent-link').count(), 2);
+
+        for (const theme of ['light', 'dark']) {
+          await setTheme(page, theme);
+          assert.equal(await sideways(page), 0, `${theme} at ${String(width)} scrolls sideways`);
+          await shoot(page, `devices-duplicate-${theme}-${String(width)}`);
+        }
+
+        // Keyboard: Go to it brings that agent's row into view and gives it focus.
+        await page.locator('.agents-row[data-agent="p2"]').waitFor();
+        await omni.locator('.devices-agent[data-agent="p2"] .devices-agent-link').focus();
+        await page.keyboard.press('Enter');
+        const row = page.locator('.agents-row[data-agent="p2"]');
+        await until(async () => row.evaluate((el) => el === document.activeElement));
+        assert.equal(await row.evaluate((el) => el === document.activeElement), true);
+        assert.equal(await row.getAttribute('data-duplicate'), 'true');
+        assert.match(
+          await row.locator('.agents-row-name').innerText(),
+          /^Omnigent · Belka \(by hand\)$/,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+  });
 });
