@@ -99,3 +99,22 @@ None.
 **Not covered**: accept re-checking that the worktree HEAD did not move after
 prepare has no dedicated case (the forged-SHA case moves the ref, the HEAD and
 the record together).
+
+## Review round 1 — Codex FAILED #158 at 5538142c; fixed (SHELL, 2026-10-30)
+
+Passed by Codex and unchanged: argv-only git, the env allowlist, no token
+reaching git, no accept retry, the primary checkout/index/.env untouched,
+ANSI/OSC/C1 escaping, harness dedupe, the capability matrix.
+
+| # | Finding | Fix | Regression (e2e unless noted) | Mutant |
+| --- | --- | --- | --- | --- |
+| 1 | P1 checkout ran `.gitattributes`-selected filters | `--attr-source=<empty tree>` on every call, `core.attributesFile=/dev/null`, `GIT_ATTR_NOSYSTEM=1`; a repo whose `info/attributes` sets anything is refused before the fetch; the worktree must show no difference | smudge/clean/process probe in the receiver's config, `* filter=evil` in the checkpoint: no file made, blob on disk as committed; `info/attributes` refused | attr-source swapped out → case 10 red; info/attributes check off → case 11 red |
+| 2 | P1 replace refs | `GIT_NO_REPLACE_OBJECTS=1` and `core.useReplaceRefs=false` on every call | `git replace <ckpt> main` in the receiver: HEAD's real tree is the checkpoint's | both removed → case 12 red |
+| 3 | P1 named-remote refmap wrote a branch | fetch by URL, `--refmap=`, the URL's rewrite neutralised; all other refs, HEAD and FETCH_HEAD compared before/after | `+<ckpt ref>:refs/heads/valuable` configured: valuable unmoved, only the private ref and the new branch differ | name + no `--refmap=` → case 13 red (by the snapshot); also snapshot off → case 13 red (valuable moved). Fetch-by-name alone survives: `--refmap=` alone blocks it (layered) |
+| 4 | P1 suffix match on the URL | exact github.com https/ssh/scp forms for the configured owner/repo, rebuilt; a local path only at `<root>/<owner>/<repo>(.git)` after realpath under the operator's `LAIKA_HANDOFF_LOCAL_REMOTE_ROOT` | attacker.invalid refused; `insteadOf` to a same-suffix local copy refused; unit: 16 bad URLs, symlink and `..` | any host → unit red; suffix compare → case 14 red |
+| 5 | P2 bidi controls | U+202A–202E, U+2066–2069, U+200E/F, U+061C, U+200B–D, U+2060–2064, U+FEFF escaped | unit: each code point, trojan-source shape | old class → unit red |
+| — | crash recovery | record written `preparing` before anything is made; the next prepare removes its own worktree (`worktree remove`, never `--force`) and branch (`update-ref -d` conditional on the SHA) only while exactly as made | status forced to `preparing` → redone; an untracked file in the worktree → refused, file kept | recovery off → case 15 red |
+| — | failed lock reported | `label` answers the failure; offer_taken and decline print "could NOT be locked" | pre-locked worktree, decline | silent lock → case 16 red |
+
+Needs git ≥ 2.40 for `--attr-source`; an older git rejects the option, so
+prepare fails closed.
