@@ -97,6 +97,8 @@ const USAGE = [
   '  laika agent session heartbeat --harness H --harness-session ID',
   '  laika agent session end --harness H --harness-session ID',
   '  laika agent session status',
+  '  laika agent handoff inbox|show|prepare|accept|decline   receive a hand-off (laika agent handoff --help)',
+  '  laika agent inbox | accept <offer>                      the same as the handoff forms',
   '',
   'The token is the agent’s, from the Agents screen — never your own. It is kept',
   'in ~/.laika/agents/<harness>.json (0600), or read from LAIKA_AGENT_TOKEN, and',
@@ -498,6 +500,23 @@ export async function agent(argv: readonly string[], io: AgentIo = CONSOLE): Pro
 
   if (command === '_watch' || command === '_end') return child(io, command, argv.slice(1));
   if (command === 'session') return session(io, argv.slice(1));
+
+  if (command === 'handoff' || command === 'inbox' || command === 'accept') {
+    const { handoff } = await import('./agent-handoff.ts');
+    const rest = command === 'handoff' ? argv.slice(1) : argv;
+    return handoff(
+      {
+        out: io.out,
+        err: io.err,
+        home: io.home,
+        env: io.env,
+        cwd: process.cwd(),
+        fetch: (input, init) => fetch(input, init),
+        now: () => Date.now(),
+      },
+      rest,
+    );
+  }
 
   if (command === 'login' || command === 'logout' || command === 'hooks') {
     const { setup } = await import('./agent-setup.ts');

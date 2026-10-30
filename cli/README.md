@@ -688,6 +688,54 @@ renews nothing that beat and abandons nothing: the session is kept and checked
 again at the next beat. A check that never comes back simply lets the lease
 expire.
 
+### Receiving a hand-off (LAI-548)
+
+The receiving agent's side of SPEC §4.73, in the order D-116 item 8 requires:
+**fetch, verify, check out, and only then accept.**
+
+```
+laika agent handoff inbox                 # live offers to this agent (GET /agents/me/inbox)
+laika agent handoff show <offer>          # checkpoint, verification, approval, and the note
+laika agent handoff prepare <offer>       # fetch the tag, verify the SHA, make a fresh worktree
+laika agent handoff accept <offer>        # only after prepare: send verified_commit_sha
+laika agent handoff decline <offer> --reason "busy"
+```
+
+`laika agent inbox` and `laika agent accept <offer>` are the same commands.
+
+- **`prepare`** reads the offer and the checkpoint's newest ref, finds the
+  remote of this repository that points at the project's configured repo
+  (`--remote` to name one), and fetches exactly that ref into a private ref,
+  `refs/laika/handoff/<offer>` — no `+`, no tags, no submodules. It refuses,
+  printing **"Save needs attention"** and recording that on this machine,
+  when the fetch fails (a deleted tag), the ref is an annotated tag, or it
+  resolves to anything but the checkpoint's full SHA. Only then does it make
+  a **new** worktree beside the checkout (`--into` to choose) on a dedicated
+  branch, `<LAI-NNN>-handoff-<suffix>`, at that commit. The primary
+  checkout's HEAD, index and files are never written. A `pending`,
+  `uncertain` or `ref_deleted` checkpoint is refused before any fetch, in
+  SPEC §4.70's words.
+- **`accept`** refuses unless `prepare` succeeded here, and checks again that
+  the private ref and the worktree are still at the verified SHA. It then
+  sends that SHA, with this harness's live session when there is exactly
+  one, and prints the next step only after the board has transferred the
+  claim. It never retries: `422 checkpoint_mismatch` is reported as it is;
+  `409 checkpoint_unverified` is worded *"Verification pending"* (or the
+  state the checkpoint is now in); `409 offer_taken` marks the offer lost
+  and **locks the worktree** with that reason (`git worktree list` shows it),
+  so nobody continues from it.
+- **Untrusted text.** The note and the reason are printed inside a block
+  whose markers carry a random nonce, bounded per field, with control
+  characters shown as `\u{…}` rather than sent to the terminal. Nothing from
+  the note, the branch name or the repo is executed: git runs from an argv
+  array, every call has hooks and fsmonitor switched off (so checking out the
+  sender's commit runs none of its hooks), and git sees only an allowlisted
+  environment — the same allowlist as the sender's helper (LAI-547), so no
+  token reaches it.
+- What this machine learned is kept in `~/.laika/agent-handoffs/<offer>.json`
+  (0600): the verified SHA, the worktree, and `prepared`, `accepted`, `lost`,
+  `declined` or `needs_attention`.
+
 ### Harness capability matrix
 
 Cells: **Verified-and-tested** (run on the version shown, against a real
@@ -707,6 +755,8 @@ code.claude.com/docs/en/hooks, learn.chatgpt.com/docs/hooks.
 | `SessionEnd` ends the session | Verified-and-tested (`end_reason: ended`) | Documented-not-tested (advisory, best-effort: a missed end leaves the claim to expire) |
 | Renewal stops when the harness dies | Verified-and-tested with a fake harness named `claude` killed mid-session (`agent-session-e2e.test.ts`) | Documented-not-tested. The engine is shared and that test covers it, but that is evidence about the shared code, **not certification of Codex**: no Codex process was killed |
 | Headless | Verified-and-tested (`claude -p --settings`) | Unverified: `codex exec` needs hook trust, given only interactively in `/hooks` or by `--dangerously-bypass-hook-trust`, which this run was not permitted to use |
+| Receive a hand-off (`laika agent handoff prepare` / `accept`) | Documented-not-tested in a harness: the commands are harness-independent and are tested against a real board and real git (`agent-handoff-e2e.test.ts`), not yet run from inside a Claude Code session | Documented-not-tested (same commands, `--harness codex`; no Codex process ran them) |
+| Untrusted note shown to the model | Documented-not-tested: its markers and contents are asserted in tests, not shown to a real model | Documented-not-tested |
 
 What is **not** guaranteed: a harness that exits without firing `SessionEnd`
 (a crash, Codex's advisory end) leaves the session open on the board until its
