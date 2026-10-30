@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: [LAI-546]
 discovered-from: LAI-550
-status: in-progress
+status: review
+finished: 2026-10-30T06:55:00Z
 started: 2026-10-30T06:45:00Z
 ---
 
@@ -52,11 +53,11 @@ count per view for the Inbox badge.
 
 ## Acceptance criteria
 
-- [ ] Permission matrix over REST: owner, another member, lead, viewer, and an
+- [x] Permission matrix over REST: owner, another member, lead, viewer, and an
       agent's token refused `403 use_agent_inbox`
-- [ ] Each view's rule tested; the approver is never the receiver's owner
-- [ ] Cursor pagination tested; counts exclude expired and closed offers
-- [ ] A project the caller cannot read contributes nothing
-- [ ] The key rules mutation-checked
-- [ ] Response types named in `response-type-coverage.test.ts`
-- [ ] PR into `master`; CI runs the repo gate
+- [x] Each view's rule tested; the approver is never the receiver's owner
+- [x] Cursor pagination tested; counts exclude expired and closed offers
+- [x] A project the caller cannot read contributes nothing
+- [x] The key rules mutation-checked
+- [x] Response types named in `response-type-coverage.test.ts`
+- [x] PR into `master`; CI runs the repo gate
