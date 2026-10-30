@@ -87,3 +87,35 @@ server rule LAI-1000 named (`409 agent_exists_for_harness_device`,
 Evidence: `.polly/evidence/LAI-1001/` (not in git). D-121 named in the
 dispatch does not exist on `origin/master`; worked from D-120.
 
+
+## Round 2 (SHELL, 2026-10-30) — Codex review of #155 at 88381e72
+
+Fixed as new commits:
+
+1. `ContextHistory.tsx`: the chip's mark is `twinNames(agents)`'s, so it shows
+   only where two of the reader's agents share a pair; the device is
+   `agentDevice`. A single agent reads *Claude Code · Belka*, never *· Polly*.
+2. `EvidenceSection.tsx` and `ReviewScreen.tsx` name the finisher through
+   `roundAgentName`: `agentLabel(round.agent)`, or *unregistered agent
+   (<client word>)* when no registered agent finished.
+3. `AgentsTab.tsx`: a Cloud agent whose token expired offers *Rotate token*,
+   both on its row and in the wizard's taken-pair notice, which rotates the
+   newest unrevoked token with a fresh expiry under a day
+   (`rotatableToken`, `agent-wizard.ts`).
+4. The harness for an agent's token comes from `agents.harness`. *Rename*
+   stays hidden except on legacy duplicates.
+
+Also, from the non-blocking note: `AgentPicker` and `AgentChip` say *Other
+harness* through the shared `harnessName`.
+
+**Named crossings (CHIEF-authorised in the review):**
+- `server/src/auth/tokens.ts`, `recordMcpUse`: a token linked to a registered
+  agent records `agents.harness` as `last_client`. The first-word rule
+  applies only to unregistered tokens. Test: `server/test/auth/tokens.test.ts`.
+- `server/src/services/rounds.ts`: `RoundView` (and its mirror `Round` in
+  `server/web/src/api/review.ts`) gains `agent: { id, harness, device_label }
+  | null`, read through the round's token. Test:
+  `server/test/http/routes/review.test.ts`.
+
+**Not done here, for CHIEF:** SPEC §6.4's `GET /tasks/:id/rounds` sentence
+lists the round's fields and does not yet name `agent`. `docs/` is CHIEF's.
