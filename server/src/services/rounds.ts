@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import {
   isSystemPrincipal,
   type ResolvedActor,
@@ -11,7 +11,6 @@ import { newId } from '../db/ids.ts';
 import {
   agents,
   projects,
-  taskClaims,
   taskEvidence,
   taskReviews,
   taskRounds,
@@ -20,6 +19,7 @@ import {
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { liveClaimViews } from './claims.ts';
 import { type RoundCi, confirmRound, roundSummaries } from './github-proof.ts';
 
 /**
@@ -401,14 +401,11 @@ function toRoundViews(
     .all()) {
     show(t.id, t.selected);
   }
-  for (const c of db
-    .select({ taskId: taskClaims.taskId, agentId: taskClaims.agentId })
-    .from(taskClaims)
-    .where(
-      and(inArray(taskClaims.taskId, taskIds), inArray(taskClaims.state, ['active', 'paused'])),
-    )
-    .all()) {
-    show(c.taskId, c.agentId);
+  // The claim each task's own view shows (`liveClaimViews`): the same
+  // predicate, lapsed leases and the boot grace included, so a claim the
+  // task no longer shows names nobody here either.
+  for (const [taskId, claim] of liveClaimViews(db, taskIds, Date.now())) {
+    show(taskId, claim.agent_id);
   }
   const visibleAgent = (row: (typeof rows)[number]): RoundAgentView | null => {
     const a = row.tokenId === null ? undefined : agentByToken.get(row.tokenId);
