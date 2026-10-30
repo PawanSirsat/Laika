@@ -41,14 +41,18 @@ export const OTHER_HARNESS = 'Other harness';
 /** What an agent that reported no device is labelled by (D-120): null and blank are one device. */
 export const NO_DEVICE = 'No device';
 
+/** A harness as every label writes it: *Claude Code*, or *Other harness* — never *another agent*. */
+export function harnessName(client: AgentClient): string {
+  return client === 'other' ? OTHER_HARNESS : agentClientName(client);
+}
+
 /**
  * The agent's product name: *Claude Code*. A harness Laika does not know reads
  * *Other harness* — never the name its owner typed, which D-120 took out of
  * every label.
  */
 export function agentProductName(agent: Pick<SelectedAgent, 'harness'>): string {
-  const client = selectedHarness(agent);
-  return client === 'other' ? OTHER_HARNESS : agentClientName(client);
+  return harnessName(selectedHarness(agent));
 }
 
 /** Where it runs: the device it reported, trimmed, or *No device* — never its own name (D-120). */

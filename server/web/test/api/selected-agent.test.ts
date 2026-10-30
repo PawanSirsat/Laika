@@ -17,6 +17,7 @@ import {
   AGENT_FILTER_NONE,
   agentFilterLabel,
   agentLabel,
+  harnessName,
   agentNamesFrom,
   agentsOnTasks,
   agentVia,
@@ -205,6 +206,11 @@ void describe('naming an agent', () => {
       agentLabel(selected({ id: 'a', harness: 'made-up', display_name: 'Rig' })),
       'Other harness · laptop-1',
     );
+  });
+
+  void test('the shared harness word: a known product, or Other harness — never another agent', () => {
+    assert.equal(harnessName('omnigent'), 'Omnigent');
+    assert.equal(harnessName('other'), 'Other harness');
   });
 
   void test('a device is trimmed, so the label is the pair the server compares', () => {
