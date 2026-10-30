@@ -106,7 +106,10 @@ function startHarness(extra: Record<string, string> = {}): Harness {
         const names = {
           'session-start': 'SessionStart',
           prompt: 'UserPromptSubmit',
+          'pre-tool': 'PreToolUse',
           tool: 'PostToolUse',
+          'tool-failed': 'PostToolUseFailure',
+          stop: 'Stop',
           'session-end': 'SessionEnd',
         };
         const payload = JSON.stringify({

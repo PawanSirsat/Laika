@@ -93,13 +93,13 @@ export const statePath = (home: string, harness: Harness, harnessSessionId: stri
 /* Private files                                                              */
 /* -------------------------------------------------------------------------- */
 
-function privateDir(path: string): void {
+export function privateDir(path: string): void {
   mkdirSync(path, { recursive: true, mode: 0o700 });
   chmodSync(path, 0o700);
 }
 
 /** Temp file created 0600 beside the target, then renamed over it: never wider, never half-written. */
-function writePrivate(path: string, content: string): void {
+export function writePrivate(path: string, content: string): void {
   const temp = `${path}.${String(process.pid)}-${String(Date.now())}.tmp`;
   try {
     writeFileSync(temp, content, { mode: 0o600, flag: 'wx' });
@@ -110,7 +110,7 @@ function writePrivate(path: string, content: string): void {
   }
 }
 
-function readJson(path: string): unknown {
+export function readJson(path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as unknown;
   } catch {
@@ -118,7 +118,7 @@ function readJson(path: string): unknown {
   }
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** A Laika id is a ULID (SPEC §4): 26 Crockford base-32 characters, nothing else. */
@@ -389,6 +389,11 @@ export interface SessionState {
   status: SessionStatus;
   session_id?: string;
   /**
+   * The registered agent this session is, as the board's answer named it
+   * (LAI-547): the checkpoint helper reads the agent's consent by it.
+   */
+  agent_id?: string;
+  /**
    * The start's `Idempotency-Key` (SPEC §6.3), written before the first
    * attempt: every retry of this start sends it, so the board answers a retry
    * of a start that did arrive with the session it already made.
@@ -646,7 +651,13 @@ function unreported(state: SessionState): SelfReport {
 export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
 export type ApiResult =
-  | { readonly kind: 'ok'; readonly status: number; readonly body: unknown }
+  | {
+      readonly kind: 'ok';
+      readonly status: number;
+      readonly body: unknown;
+      /** The board's clock at the answer (its `Date` header), when it sent one. */
+      readonly date?: number;
+    }
   | {
       readonly kind: 'http';
       readonly status: number;
@@ -689,17 +700,18 @@ export async function callBoard(
   body?: unknown,
   headers: Readonly<Record<string, string>> = {},
   timeoutMs = 10_000,
+  method: 'POST' | 'GET' = 'POST',
 ): Promise<ApiResult> {
   let response: Response;
   try {
     response = await fetchFn(`${credential.url.replace(/\/+$/, '')}${path}`, {
-      method: 'POST',
+      method,
       headers: {
         Authorization: `Bearer ${credential.token}`,
-        'Content-Type': 'application/json',
+        ...(method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
         ...headers,
       },
-      body: body === undefined ? '' : JSON.stringify(body),
+      ...(method === 'GET' ? {} : { body: body === undefined ? '' : JSON.stringify(body) }),
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (cause) {
@@ -721,7 +733,15 @@ export async function callBoard(
     if (response.ok) return { kind: 'network', sent: true, message: 'incomplete body' };
     parsed = undefined;
   }
-  if (response.ok) return { kind: 'ok', status: response.status, body: parsed };
+  if (response.ok) {
+    const date = Date.parse(response.headers.get('date') ?? '');
+    return {
+      kind: 'ok',
+      status: response.status,
+      body: parsed,
+      ...(Number.isFinite(date) ? { date } : {}),
+    };
+  }
   const error = isRecord(parsed) && isRecord(parsed.error) ? parsed.error : undefined;
   const details = error !== undefined && isRecord(error.details) ? error.details : undefined;
   return {
@@ -926,6 +946,7 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
     if (result.kind === 'ok' && isRecord(result.body) && isLaikaId(result.body.id)) {
       state.status = 'live';
       state.session_id = result.body.id;
+      if (isLaikaId(result.body.agent_id)) state.agent_id = result.body.agent_id;
       state.reported = {
         ...(body.harness_version === undefined ? {} : { harness_version: body.harness_version }),
         ...(body.model === undefined ? {} : { model: body.model }),
@@ -1080,6 +1101,8 @@ export async function beatOnce(
     current.failures = 0;
     current.last_beat_at = deps.now();
     delete current.last_error;
+    const session = isRecord(result.body.session) ? result.body.session : undefined;
+    if (isLaikaId(session?.agent_id)) current.agent_id = session.agent_id;
     const claims = Array.isArray(result.body.claims) ? result.body.claims : [];
     current.claims = claims
       .slice(0, 200)
