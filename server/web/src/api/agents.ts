@@ -119,11 +119,22 @@ export function setAgentGrants(
   });
 }
 
-/** Mint a new token and revoke `tokenId`, in one transaction on the server. */
-export function rotateAgentToken(id: string, tokenId: string): Promise<CreatedAgentToken> {
+/**
+ * Mint a new token and revoke `tokenId`, in one transaction on the server.
+ * `expiresAt` absent carries the old token's expiry; a cloud agent's must be
+ * given, within a day (LAI-592), since the one it carries may have passed.
+ */
+export function rotateAgentToken(
+  id: string,
+  tokenId: string,
+  expiresAt?: number,
+): Promise<CreatedAgentToken> {
   return request<CreatedAgentToken>(`/agents/${encodeURIComponent(id)}/rotate-token`, {
     method: 'POST',
-    body: { token_id: tokenId },
+    body:
+      expiresAt === undefined
+        ? { token_id: tokenId }
+        : { token_id: tokenId, expires_at: expiresAt },
   });
 }
 
@@ -139,6 +150,14 @@ export function revokeAgent(id: string): Promise<RegisteredAgent> {
 /** The harness as a known client, or `other` — a value the server did not send is not trusted. */
 export function agentHarness(agent: Pick<RegisteredAgent, 'harness'>): AgentClient {
   return AGENT_CLIENTS.find((slug) => slug === agent.harness) ?? 'other';
+}
+
+/**
+ * The element id of an agent's row in the Agents tab, which a link anywhere on
+ * the tab — the wizard's `409`, a duplicate in *Your devices* — points at.
+ */
+export function agentAnchor(agentId: string): string {
+  return `agent-${agentId}`;
 }
 
 /** The token it acts with now: the newest one neither revoked nor expired. */
