@@ -656,7 +656,14 @@ export function pushDestinations(git: GitRunner, wt: Worktree, remote: string): 
 
 /** Every remote named in the config here — `remote.<name>.<key>`, any key, includes followed. */
 function configuredRemoteNames(git: GitRunner, wt: Worktree): Set<string> {
-  const r = git(wt.top, ['config', '-z', '--includes', '--name-only', '--get-regexp', '^remote\\.']);
+  const r = git(wt.top, [
+    'config',
+    '-z',
+    '--includes',
+    '--name-only',
+    '--get-regexp',
+    '^remote\\.',
+  ]);
   return new Set(
     r.stdout
       .split('\0')
