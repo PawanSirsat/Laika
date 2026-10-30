@@ -251,9 +251,9 @@ interface Receiver {
 }
 
 /** A receiving machine: its own home, its own clone of the remote, the receiver's token in the env. */
-function receiverMachine(token: string): Receiver {
+function receiverMachine(token: string, name = 'laika'): Receiver {
   const home = mkdtempSync(join(root, 'home-'));
-  const repo = join(mkdtempSync(join(root, 'recv-')), 'laika');
+  const repo = join(mkdtempSync(join(root, 'recv-')), name);
   execFileSync('git', ['clone', '-q', bare, repo], {
     env: { PATH: process.env.PATH ?? '', HOME: root },
     stdio: 'ignore',
@@ -710,9 +710,10 @@ void describe('laika agent handoff, receiving (LAI-548)', () => {
   async function interrupted(
     summary: unknown = null,
     extra: Readonly<Record<string, string>> = {},
+    name = 'laika',
   ): Promise<{ s: Scenario; r: Receiver; old: NonNullable<ReturnType<typeof readRecord>> }> {
     const s = await scenario(summary, extra);
-    const r = receiverMachine(s.receiver.token);
+    const r = receiverMachine(s.receiver.token, name);
     assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
     const old = readRecord(r.home, s.offerId)!;
     writeFileSync(
@@ -741,9 +742,107 @@ void describe('laika agent handoff, receiving (LAI-548)', () => {
     const out = r.out.join('\n');
     assert.match(out, /Left exactly as they were/);
     assert.ok(out.includes(`branch ${old.branch}`), out);
-    assert.ok(out.includes(`branch -d -- ${old.branch}`), out);
+    assert.ok(out.includes(`branch -d -- '${old.branch}'`), out);
     assert.match(out, /Nothing was removed\./);
   }
+
+  function symrefOf(repo: string, ref: string): string | undefined {
+    try {
+      return execFileSync('git', ['symbolic-ref', '-q', ref], {
+        cwd: repo,
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH ?? '', HOME: root },
+      }).trim();
+    } catch {
+      return undefined;
+    }
+  }
+
+  function refExists(repo: string, ref: string): boolean {
+    try {
+      execFileSync('git', ['show-ref', '--verify', '--quiet', ref], {
+        cwd: repo,
+        env: { PATH: process.env.PATH ?? '', HOME: root },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  void test('a dangling symbolic ref at the branch name is taken: nothing is written through it', async () => {
+    const s = await scenario();
+    const r = receiverMachine(s.receiver.token);
+    const first = `refs/heads/${s.key}-handoff-${s.offerId.slice(-6).toLowerCase()}`;
+    git(r.repo, 'symbolic-ref', first, 'refs/heads/victim-branch');
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    // The symbolic ref is as it was, and the branch it names was never made.
+    assert.equal(symrefOf(r.repo, first), 'refs/heads/victim-branch');
+    assert.equal(refExists(r.repo, 'refs/heads/victim-branch'), false, 'written through');
+    const record = readRecord(r.home, s.offerId)!;
+    assert.notEqual(`refs/heads/${record.branch}`, first);
+    assert.equal(symrefOf(r.repo, `refs/heads/${record.branch}`), undefined);
+    assert.equal(git(r.repo, 'rev-parse', `refs/heads/${record.branch}`), s.sha);
+    assert.equal(git(record.worktree, 'symbolic-ref', 'HEAD'), `refs/heads/${record.branch}`);
+    const out = r.out.join('\n');
+    assert.ok(out.includes('(a symbolic ref)'), out);
+    assert.ok(out.includes(`symbolic-ref --delete '${first}'`), out);
+    assert.equal(await run(r, 'accept', s.offerId), 0, r.err.join('\n'));
+    assert.equal(refExists(r.repo, 'refs/heads/victim-branch'), false);
+  });
+
+  void test('a dangling symbolic ref at the private ref name is taken: the fetch never writes through it', async () => {
+    const s = await scenario();
+    const r = receiverMachine(s.receiver.token);
+    const first = `refs/laika/handoff/${s.offerId}`;
+    git(r.repo, 'symbolic-ref', first, 'refs/heads/victim-fetch');
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    assert.equal(symrefOf(r.repo, first), 'refs/heads/victim-fetch');
+    assert.equal(refExists(r.repo, 'refs/heads/victim-fetch'), false, 'written through');
+    const record = readRecord(r.home, s.offerId)!;
+    assert.notEqual(record.local_ref, first);
+    assert.equal(symrefOf(r.repo, record.local_ref), undefined);
+    assert.equal(git(r.repo, 'rev-parse', record.local_ref), s.sha);
+    const out = r.out.join('\n');
+    assert.ok(out.includes(`update-ref --no-deref -d '${first}'`), out);
+    assert.equal(await run(r, 'accept', s.offerId), 0, r.err.join('\n'));
+    assert.equal(refExists(r.repo, 'refs/heads/victim-fetch'), false);
+  });
+
+  void test('the printed cleanup commands are copy-paste safe for a path with a space and a quote', async () => {
+    const { s, r, old } = await interrupted(null, {}, `it's a "repo" $HOME`);
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    retriedFresh(s, r, old);
+    const commands = r.out.map((l) => l.trim()).filter((l) => l.startsWith('git -C '));
+    const remove = commands.find((c) => c.includes(' worktree remove -- '));
+    assert.ok(remove, r.out.join('\n'));
+    // Run by a shell exactly as printed, it names the old worktree and nothing else.
+    execFileSync('sh', ['-c', remove], {
+      env: { PATH: process.env.PATH ?? '', HOME: root },
+      stdio: 'ignore',
+    });
+    assert.equal(existsSync(old.worktree), false, 'the printed command removed the old worktree');
+    const fresh = readRecord(r.home, s.offerId)!;
+    assert.equal(git(fresh.worktree, 'rev-parse', 'HEAD'), s.sha);
+    const branch = commands.find((c) => c.includes(' branch -d -- '));
+    assert.ok(branch, r.out.join('\n'));
+    // `branch -d` refuses a branch not merged into HEAD — the safe form, on
+    // purpose — and its refusal names the exact branch: the shell passed the
+    // repository path and the name through intact.
+    let refusal = '';
+    try {
+      execFileSync('sh', ['-c', branch], {
+        env: { PATH: process.env.PATH ?? '', HOME: root, LC_ALL: 'C' },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (cause) {
+      refusal = String((cause as { stderr?: string }).stderr ?? '');
+    }
+    assert.match(refusal, new RegExp(`branch '${old.branch}' is not fully merged`), refusal);
+    assert.equal(refExists(r.repo, `refs/heads/${old.branch}`), true);
+    assert.equal(refExists(r.repo, `refs/heads/${fresh.branch}`), true);
+  });
 
   void test('retry after an interrupted prepare: a clean filter in the old worktree never runs', async () => {
     const pwned = join(root, 'PWNED_CLEANUP_FILTER');
@@ -757,7 +856,7 @@ void describe('laika agent handoff, receiving (LAI-548)', () => {
     assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
     assert.equal(existsSync(pwned), false, 'no filter ran');
     assert.equal(readFileSync(work, 'utf8'), 'edited by the person\n');
-    assert.ok(r.out.join('\n').includes(`worktree remove -- ${old.worktree}`));
+    assert.ok(r.out.join('\n').includes(`worktree remove -- '${old.worktree}'`));
     retriedFresh(s, r, old);
     assert.equal(await run(r, 'accept', s.offerId), 0, r.err.join('\n'));
     assert.equal(existsSync(pwned), false);

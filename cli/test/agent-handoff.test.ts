@@ -5,6 +5,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +13,7 @@ import { after, describe, test } from 'node:test';
 
 import {
   asOffer,
+  cleanupCommand,
   EMPTY_TREE,
   fetchSourceFor,
   gitEnv,
@@ -19,6 +21,7 @@ import {
   LOCAL_ROOT_ENV,
   SAFE_CONFIG,
   saveWording,
+  shellQuote,
   untrustedBlock,
 } from '../src/agent-handoff.ts';
 
@@ -201,5 +204,57 @@ void describe('asOffer', () => {
       checkpoint: { commit_sha: 'a'.repeat(40), verification: 'verified', summary: null },
     });
     assert.equal(offer?.checkpoint?.verification, 'verified');
+  });
+});
+
+void describe('cleanup commands', () => {
+  /** What a POSIX shell makes of one quoted word. */
+  const asShellSees = (word: string): string =>
+    execFileSync('sh', ['-c', `printf '%s' ${word}`], { encoding: 'utf8' });
+
+  void test('a quoted word reaches the shell as itself', () => {
+    for (const word of [
+      'plain',
+      'a path with spaces',
+      `it's`,
+      `"double" and 'single'`,
+      '$HOME `id` $(id) ; echo hi | cat & wait',
+      `'`,
+      '',
+    ]) {
+      assert.equal(asShellSees(shellQuote(word)), word, word);
+    }
+  });
+
+  void test('every name in a printed command is quoted; symbolic refs are removed as themselves', () => {
+    const top = `/tmp/it's a "repo"`;
+    const q = `'/tmp/it'\\''s a "repo"'`;
+    assert.equal(
+      cleanupCommand(top, { kind: 'worktree', name: `${top}-LAI-1-handoff-abcdef` }),
+      `git -C ${q} worktree remove -- '/tmp/it'\\''s a "repo"-LAI-1-handoff-abcdef'`,
+    );
+    assert.equal(
+      cleanupCommand(top, { kind: 'branch', name: 'LAI-1-handoff-abcdef' }),
+      `git -C ${q} branch -d -- 'LAI-1-handoff-abcdef'`,
+    );
+    assert.equal(
+      cleanupCommand(top, { kind: 'branch', name: 'LAI-1-handoff-abcdef', symbolic: true }),
+      `git -C ${q} symbolic-ref --delete 'refs/heads/LAI-1-handoff-abcdef'`,
+    );
+    assert.equal(
+      cleanupCommand(top, { kind: 'ref', name: 'refs/laika/handoff/X', symbolic: true }),
+      `git -C ${q} update-ref --no-deref -d 'refs/laika/handoff/X'`,
+    );
+  });
+
+  void test('a name holding a control or format character is not printed as a command', () => {
+    assert.match(
+      cleanupCommand('/tmp/a\u001b[2Jb', { kind: 'worktree', name: '/tmp/x' }),
+      /^\(worktree name holds control characters/,
+    );
+    assert.match(
+      cleanupCommand('/tmp/a', { kind: 'worktree', name: '/tmp/x‮y' }),
+      /holds control characters/,
+    );
   });
 });

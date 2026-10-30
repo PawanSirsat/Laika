@@ -729,7 +729,18 @@ laika agent handoff decline <offer> --reason "busy"
   takes the first worktree path, branch and private ref that are all free
   (`…-handoff-<suffix>-2`, `-3`, …), leaves whatever an earlier attempt left
   exactly as it is, and prints each leftover with the command that would
-  remove it, for you to run once nothing you need is in it.
+  remove it, for you to run once nothing you need is in it. Every path and
+  name in those commands is single-quoted, so they paste as printed; a
+  symbolic ref is removed as itself (`symbolic-ref --delete`,
+  `update-ref --no-deref -d`), never through to what it names.
+  **A ref name counts as taken if anything is there** — a branch or ref, a
+  **symbolic ref, even one pointing at a branch that does not exist** (which
+  `show-ref` does not list, and which a fetch or `worktree add -b` would write
+  through, creating that branch), a leftover reflog, or a file or directory
+  at its path. After the fetch and after `worktree add`, every other ref is
+  compared with before, the private ref and the new branch must be plain
+  refs at the checkpoint, and the new worktree's `HEAD` must name that
+  branch.
 - **`accept`** refuses unless `prepare` succeeded here, and checks again that
   the private ref and the worktree are still at the verified SHA. It then
   sends that SHA, with this harness's live session when there is exactly

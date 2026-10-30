@@ -880,10 +880,9 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
 
   // The first names nobody has: the worktree path, its branch and the private
   // ref are all free, so nothing that exists is reused, moved or removed.
-  const exists = (ref: string): boolean =>
-    git(toplevel, ['show-ref', '--verify', '--quiet', ref]).code === 0;
+  const exists = (ref: string): boolean => refTaken(git, toplevel, ref);
   const base = offer.id.slice(-6).toLowerCase();
-  const leftovers: string[] = [];
+  const leftovers: Leftover[] = [];
   let picked: { suffix: string; branch: string; worktree: string; localRef: string } | undefined;
   for (let n = 1; n <= 20 && picked === undefined; n += 1) {
     const suffix = n === 1 ? base : `${base}-${String(n)}`;
@@ -899,11 +898,23 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     if (args.into !== undefined && n === 1 && existsSync(candidate.worktree)) {
       return fail(`${candidate.worktree} already exists; pass --into a new path`);
     }
-    const taken = [
-      existsSync(candidate.worktree) ? `worktree ${candidate.worktree}` : undefined,
-      exists(`refs/heads/${candidate.branch}`) ? `branch ${candidate.branch}` : undefined,
-      exists(candidate.localRef) ? `ref ${candidate.localRef}` : undefined,
-    ].filter((t): t is string => t !== undefined);
+    const branchRef = `refs/heads/${candidate.branch}`;
+    const taken: Leftover[] = [];
+    if (existsSync(candidate.worktree)) taken.push({ kind: 'worktree', name: candidate.worktree });
+    if (exists(branchRef)) {
+      taken.push({
+        kind: 'branch',
+        name: candidate.branch,
+        symbolic: isSymref(git, toplevel, branchRef),
+      });
+    }
+    if (exists(candidate.localRef)) {
+      taken.push({
+        kind: 'ref',
+        name: candidate.localRef,
+        symbolic: isSymref(git, toplevel, candidate.localRef),
+      });
+    }
     if (taken.length === 0) picked = candidate;
     else leftovers.push(...taken);
   }
@@ -944,7 +955,7 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     // A ref nobody has (above); the fetch names its refspec in full, with no
     // `+`, no tags and no submodules, from the URL itself with every rewrite
     // of it neutralised.
-    const before = refSnapshot(git, toplevel, localRef);
+    const before = refSnapshot(git, toplevel, [localRef]);
     const fetchHead = git(toplevel, ['rev-parse', '--git-path', 'FETCH_HEAD']).stdout.trim();
     const hadFetchHead = existsSync(resolve(toplevel, fetchHead));
     const fetched = git(toplevel, [
@@ -968,9 +979,13 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
       );
     }
     // Nothing but the private ref may have moved: checked, not assumed.
-    const moved = refSnapshot(git, toplevel, localRef);
+    const moved = refSnapshot(git, toplevel, [localRef]);
     if (moved !== before)
       throw new Stop('the fetch changed refs other than its own; nothing was checked out');
+    // A symbolic ref at that name — one that appeared since the check — would
+    // have been written through: the private ref must be a plain ref.
+    const plain = plainRef(git, toplevel, localRef);
+    if (plain !== undefined) throw new Stop(`${localRef} ${plain}; nothing was checked out`);
     if (!hadFetchHead && existsSync(resolve(toplevel, fetchHead))) {
       throw new Stop('the fetch wrote FETCH_HEAD; nothing was checked out');
     }
@@ -998,6 +1013,14 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     if (git(toplevel, ['cat-file', '-e', `${sha}^{commit}`]).code !== 0) {
       throw new Stop(`commit ${sha} is not in this repository after the fetch`);
     }
+    // Checked again immediately before `-b`, which writes through a symbolic
+    // ref; and after, every other ref is compared and the branch must be a
+    // plain ref at the checkpoint, which the new worktree's HEAD names.
+    const branchRef = `refs/heads/${branch}`;
+    if (refTaken(git, toplevel, branchRef)) {
+      throw new Stop(`${branchRef} appeared since its name was checked; nothing was checked out`);
+    }
+    const beforeAdd = refSnapshot(git, toplevel, [localRef, branchRef]);
     const added = git(toplevel, [
       'worktree',
       'add',
@@ -1010,6 +1033,17 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     ]);
     if (added.code !== 0)
       throw new Stop(`the worktree could not be made: ${firstLine(added.stderr)}`);
+    if (refSnapshot(git, toplevel, [localRef, branchRef]) !== beforeAdd) {
+      throw new Stop(`making the worktree changed refs other than ${branchRef}`);
+    }
+    const branchPlain = plainRef(git, toplevel, branchRef, sha);
+    if (branchPlain !== undefined) throw new Stop(`${branchRef} ${branchPlain}`);
+    const wtHead = git(worktree, ['symbolic-ref', '-q', 'HEAD']).stdout.trim();
+    if (wtHead !== branchRef) {
+      throw new Stop(
+        `the new worktree is on ${inert(wtHead, 200) || 'no branch'}, not ${branchRef}`,
+      );
+    }
     const head = git(worktree, ['rev-parse', 'HEAD']).stdout.trim().toLowerCase();
     if (head !== sha) throw new Stop(`the new worktree is at ${head}, not ${sha}`);
     // What is on disk is that commit's tree, byte for byte: no filter ran
@@ -1027,19 +1061,11 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
   writeRecord(io.home, record);
   if (leftovers.length > 0) {
     io.out('Left exactly as they were, from an earlier attempt or by someone else:');
-    for (const l of leftovers) io.out(`  ${l}`);
-    io.out('Nothing was removed. To clear them yourself, once nothing you need is in them:');
     for (const l of leftovers) {
-      const [kind, ...rest] = l.split(' ');
-      const name = rest.join(' ');
-      io.out(
-        kind === 'worktree'
-          ? `  git -C ${toplevel} worktree remove -- ${name}`
-          : kind === 'branch'
-            ? `  git -C ${toplevel} branch -d -- ${name}`
-            : `  git -C ${toplevel} update-ref -d ${name}`,
-      );
+      io.out(`  ${l.kind} ${inert(l.name, 500)}${l.symbolic === true ? ' (a symbolic ref)' : ''}`);
     }
+    io.out('Nothing was removed. To clear them yourself, once nothing you need is in them:');
+    for (const l of leftovers) io.out(`  ${cleanupCommand(toplevel, l)}`);
   }
   io.out(`Prepared offer ${offer.id}: ${cp.newestRef} resolves to ${sha}.`);
   io.out(`Worktree ${worktree} on branch ${branch}, at that commit. Nothing is accepted yet.`);
@@ -1067,17 +1093,97 @@ function label(io: HandoffIo, record: PreparedOffer, why: string): string | unde
 }
 
 /**
- * Every ref but `except`, with what it points at, and `HEAD`: compared before
- * and after the fetch so that a fetch which wrote anything else is caught.
+ * Every ref but those in `except`, with what it points at and, for a symbolic
+ * ref, its target; and `HEAD`. Compared before and after a write so that one
+ * which moved or created anything else — through a symbolic ref, a refmap or
+ * anything else — is caught.
  */
-function refSnapshot(git: GitRunner, top: string, except: string): string {
-  const refs = git(top, ['for-each-ref', '--format=%(refname) %(objectname)']).stdout;
+function refSnapshot(git: GitRunner, top: string, except: readonly string[]): string {
+  const refs = git(top, ['for-each-ref', '--format=%(refname) %(objectname) %(symref)']).stdout;
   const head = git(top, ['rev-parse', '--symbolic-full-name', 'HEAD']).stdout.trim();
   const at = git(top, ['rev-parse', 'HEAD']).stdout.trim();
   return [
-    ...refs.split('\n').filter((line) => line !== '' && !line.startsWith(`${except} `)),
+    ...refs
+      .split('\n')
+      .filter((line) => line !== '' && !except.some((name) => line.startsWith(`${name} `))),
     `HEAD ${head} ${at}`,
   ].join('\n');
+}
+
+/** `git symbolic-ref -q` answers 0 for a symbolic ref — dangling or not — and 1 for anything else. */
+function isSymref(git: GitRunner, top: string, ref: string): boolean {
+  return git(top, ['symbolic-ref', '-q', '--', ref]).code !== 1;
+}
+
+/**
+ * Whether anything at all is at `ref`, so that this helper must not write
+ * there: a **symbolic ref, dangling or not** — which `show-ref` and
+ * `for-each-ref` do not list, and which a fetch or `worktree add -b` would
+ * write *through*, creating whatever it names — a ref, loose or packed, a
+ * reflog left behind, or anything on disk at its path (a broken ref file, a
+ * directory). An answer git cannot give counts as taken.
+ */
+export function refTaken(git: GitRunner, top: string, ref: string): boolean {
+  if (isSymref(git, top, ref)) return true;
+  if (git(top, ['show-ref', '--verify', '--quiet', ref]).code === 0) return true;
+  if (git(top, ['reflog', 'exists', ref]).code === 0) return true;
+  const path = git(top, ['rev-parse', '--git-path', ref]);
+  if (path.code !== 0) return true;
+  return existsSync(resolve(top, path.stdout.trim()));
+}
+
+/**
+ * Why `ref` is not a plain ref (at `sha`, when given), or undefined when it
+ * is: written through a symbolic ref, it would still resolve, so its kind is
+ * checked as well as its value.
+ */
+function plainRef(git: GitRunner, top: string, ref: string, sha?: string): string | undefined {
+  if (isSymref(git, top, ref)) return 'is a symbolic ref, so a write went through it';
+  const r = git(top, ['show-ref', '--verify', ref]);
+  const at = r.stdout.trim().split(' ')[0]?.toLowerCase();
+  if (r.code !== 0 || at === undefined) return 'was not written';
+  if (sha !== undefined && at !== sha) return `is at ${inert(at, 40)}, not ${sha}`;
+  return undefined;
+}
+
+/** Something an earlier attempt, or somebody else, left at a name prepare would have used. */
+export interface Leftover {
+  readonly kind: 'worktree' | 'branch' | 'ref';
+  readonly name: string;
+  readonly symbolic?: boolean;
+}
+
+/**
+ * One word for a POSIX shell: single-quoted, each `'` closed, escaped and
+ * reopened. Nothing inside single quotes is special, so a path holding a
+ * space, a quote, `$`, a backtick or `;` is passed as itself.
+ */
+export function shellQuote(word: string): string {
+  return `'${word.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The command that removes one leftover, for the person to run **if they
+ * choose** — never run here. Every name is quoted, so it can be copied as it
+ * is. A symbolic ref is removed as itself (`symbolic-ref --delete`,
+ * `update-ref --no-deref -d`), never through to what it names; `worktree
+ * remove` and `branch -d` refuse to lose work. A name holding a control or
+ * format character is not printed as a command, since a terminal would not
+ * show it as it is.
+ */
+export function cleanupCommand(top: string, leftover: Leftover): string {
+  if (new RegExp(CONTROL.source).test(top) || new RegExp(CONTROL.source).test(leftover.name)) {
+    return `(${leftover.kind} name holds control characters; remove it by hand)`;
+  }
+  const git = `git -C ${shellQuote(top)}`;
+  const name = shellQuote(leftover.name);
+  if (leftover.kind === 'worktree') return `${git} worktree remove -- ${name}`;
+  if (leftover.kind === 'branch') {
+    return leftover.symbolic === true
+      ? `${git} symbolic-ref --delete ${shellQuote(`refs/heads/${leftover.name}`)}`
+      : `${git} branch -d -- ${name}`;
+  }
+  return `${git} update-ref --no-deref -d ${name}`;
 }
 
 /**
