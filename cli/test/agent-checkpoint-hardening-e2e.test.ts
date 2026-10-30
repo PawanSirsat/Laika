@@ -6,7 +6,15 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { chmodSync, existsSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 
@@ -277,10 +285,11 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
     assert.equal(await autoCheckpoint(b.engine(), 'claude-code', HS, creds(), 600), 'saved');
     clearInflightDir();
 
-    // A tool whose PostToolUse never came (it failed) is cleared at Stop: the turn is over.
+    // A tool whose PostToolUse never came is cleared at a Stop that lists
+    // no background task: the turn is over and nothing of it still runs.
     markInflight(b.home, 'claude-code', HS, 'toolu_failed', harnessOwner());
     execFileSync(process.execPath, [HOOK_ENTRY, 'hook', 'stop', 'claude-code'], {
-      input: JSON.stringify({ session_id: HS }),
+      input: JSON.stringify({ session_id: HS, background_tasks: [] }),
       env: { PATH: process.env.PATH ?? '', HOME: b.home },
     });
     assert.equal(inflight(b.home, 'claude-code', HS), 0, 'Stop cleared the markers');
@@ -341,5 +350,251 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
       b.credentialAt(b.board.url);
       await b.consent(false);
     }
+  });
+});
+
+/** Run one hook the way the harness does: its JSON on stdin; resolves with its stdout and when it ended. */
+function runHook(
+  event: string,
+  input: Record<string, unknown>,
+  harness = 'claude-code',
+): Promise<{ stdout: string; endedAt: number }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [HOOK_ENTRY, 'hook', event, harness], {
+      stdio: ['pipe', 'pipe', 'ignore'],
+      env: { PATH: process.env.PATH ?? '', HOME: b.home },
+    });
+    let stdout = '';
+    child.stdout.on('data', (c: Buffer) => (stdout += c.toString('utf8')));
+    child.stdin.end(JSON.stringify({ session_id: HS, ...input }));
+    child.on('close', () => resolve({ stdout, endedAt: Date.now() }));
+  });
+}
+
+const denied = (stdout: string): boolean => {
+  try {
+    const out = JSON.parse(stdout) as {
+      hookSpecificOutput?: { hookEventName?: string; permissionDecision?: string };
+    };
+    return (
+      out.hookSpecificOutput?.hookEventName === 'PreToolUse' &&
+      out.hookSpecificOutput.permissionDecision === 'deny'
+    );
+  } catch {
+    return false;
+  }
+};
+
+void describe('checkpoint review fixes, round 2 (LAI-547, #154 at 2e401f3c)', () => {
+  /** A second bare repo to push to, whose HEAD names `head` (or nothing). */
+  function pushTarget(repoRoot: string, name: string, clone: string, head?: string): string {
+    const target = join(repoRoot, `${name}.git`);
+    b.git(repoRoot, 'init', '-q', '--bare', '-b', 'master', target);
+    b.git(clone, 'push', '-q', target, 'master');
+    if (head !== undefined) {
+      if (head !== 'master') b.git(target, 'branch', head, 'master');
+      b.git(target, 'symbolic-ref', 'HEAD', `refs/heads/${head}`);
+    } else {
+      b.git(target, 'symbolic-ref', 'HEAD', 'refs/heads/nothing-here');
+    }
+    return target;
+  }
+
+  void test('R2-1: a pushurl whose default branch is the task branch is refused, whatever the fetch URL says', () => {
+    const repo = b.freshRepo('r21');
+    const target = pushTarget(repo.root, 'push', repo.clone, 'LAI-547-r21');
+    b.git(repo.clone, 'config', 'remote.origin.pushurl', target);
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 201;\n');
+    const before = b.git(repo.clone, 'ls-remote', target);
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /LAI-547-r21 is a protected branch/);
+    assert.equal(b.git(repo.clone, 'ls-remote', target), before, 'nothing pushed to the pushurl');
+  });
+
+  void test('R2-1: every pushurl is asked; one whose default cannot be told is refused', () => {
+    const repo = b.freshRepo('r21b');
+    const good = pushTarget(repo.root, 'good', repo.clone, 'master');
+    const unknown = pushTarget(repo.root, 'unknown', repo.clone);
+    b.git(repo.clone, 'config', '--add', 'remote.origin.pushurl', good);
+    b.git(repo.clone, 'config', '--add', 'remote.origin.pushurl', unknown);
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 202;\n');
+    const before = b.git(repo.clone, 'ls-remote', good);
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /cannot tell the default branch of .*unknown\.git/);
+    assert.equal(b.git(repo.clone, 'ls-remote', good), before, 'nothing pushed to either');
+  });
+
+  void test('R2-1: a pushurl with a sane default is pushed to (the positive control)', () => {
+    const repo = b.freshRepo('r21c');
+    const target = pushTarget(repo.root, 'push', repo.clone, 'master');
+    b.git(repo.clone, 'config', 'remote.origin.pushurl', target);
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 203;\n');
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 0, r.out);
+    const record = b.newestRecord();
+    assert.match(b.git(repo.clone, 'ls-remote', target), new RegExp(String(record.tag_ref)));
+  });
+
+  void test('R2-2: a delayed commit keeps PreToolUse waiting until the interlock is released', async () => {
+    const repo = b.freshRepo('r22');
+    await b.consent(true);
+    await b.beat();
+    clearInflightDir();
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 204;\n');
+    const head = b.git(repo.wt, 'rev-parse', 'HEAD');
+    writeActivity(b.home, 'claude-code', HS, { mutations: 3, cwd: repo.wt });
+
+    let hook: Promise<{ stdout: string; endedAt: number }> | undefined;
+    let releasedAt = 0;
+    const deps = {
+      ...b.engine(),
+      onPhase: async (phase: string) => {
+        if (phase === 'staged') {
+          // Codex's probe: a tool arrives while the save is slow to commit.
+          hook = runHook('pre-tool', { tool_name: 'Edit', tool_use_id: 'toolu_r22' });
+          await sleep(6000);
+        }
+        if (phase === 'released') releasedAt = Date.now();
+      },
+    };
+    assert.equal(await autoCheckpoint(deps, 'claude-code', HS, creds(), 1000), 'busy');
+    assert.ok(hook !== undefined);
+    const { stdout, endedAt } = await hook;
+    assert.ok(releasedAt > 0, 'the interlock was released');
+    assert.ok(
+      endedAt >= releasedAt || denied(stdout),
+      `PreToolUse let the tool go ${String(releasedAt - endedAt)} ms before the save let go`,
+    );
+    assert.equal(b.git(repo.wt, 'rev-parse', 'HEAD'), head, 'the tool stopped the save');
+    clearInflightDir();
+    await b.consent(false);
+  });
+
+  void test('R2-2: a save past its time budget aborts cleanly before it commits', async () => {
+    const repo = b.freshRepo('r22b');
+    await b.consent(true);
+    await b.beat();
+    clearInflightDir();
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 205;\n');
+    const head = b.git(repo.wt, 'rev-parse', 'HEAD');
+    const index = b.git(repo.wt, 'write-tree');
+    writeActivity(b.home, 'claude-code', HS, { mutations: 3, cwd: repo.wt });
+    const deps = {
+      ...b.engine(),
+      saveBudgetMs: 1500,
+      onPhase: async (phase: string) => {
+        if (phase === 'staged') await sleep(2500);
+      },
+    };
+    assert.equal(await autoCheckpoint(deps, 'claude-code', HS, creds(), 1000), 'busy');
+    assert.equal(b.git(repo.wt, 'rev-parse', 'HEAD'), head, 'no commit');
+    assert.equal(b.git(repo.wt, 'write-tree'), index, 'the index is as it was');
+    assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), false, 'and let go');
+    await b.consent(false);
+  });
+
+  void test('R2-2: an interlock still held past its deadline makes PreToolUse deny the tool', async () => {
+    clearInflightDir();
+    const release = checkpoint.takeSaveInterlock(b.home, 'claude-code', HS, { budgetMs: 500 });
+    try {
+      const startedAt = Date.now();
+      const { stdout, endedAt } = await runHook('pre-tool', {
+        tool_name: 'Bash',
+        tool_use_id: 'toolu_r22c',
+      });
+      assert.ok(denied(stdout), `PreToolUse did not deny: ${stdout}`);
+      assert.ok(endedAt - startedAt >= 400, 'it waited for the deadline first');
+      assert.equal(inflight(b.home, 'claude-code', HS), 0, 'a denied tool leaves no marker');
+    } finally {
+      release();
+    }
+  });
+
+  void test('R2-3: an aborted save restores the index exactly, partial staging included', async () => {
+    const repo = b.freshRepo('r23');
+    await b.consent(true);
+    await b.beat();
+    clearInflightDir();
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 206;\n');
+    b.git(repo.wt, 'add', 'app.ts');
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 207;\n');
+    const staged = b.git(repo.wt, 'rev-parse', ':app.ts');
+    const index = b.git(repo.wt, 'write-tree');
+    assert.notEqual(staged, b.git(repo.wt, 'rev-parse', 'HEAD:app.ts'), 'partially staged');
+    writeActivity(b.home, 'claude-code', HS, { mutations: 3, cwd: repo.wt });
+    const deps = {
+      ...b.engine(),
+      onPhase: (phase: string) => {
+        if (phase === 'staged') markInflight(b.home, 'claude-code', HS, 'toolu_r23', harnessOwner());
+      },
+    };
+    assert.equal(await autoCheckpoint(deps, 'claude-code', HS, creds(), 1000), 'busy');
+    assert.equal(b.git(repo.wt, 'rev-parse', ':app.ts'), staged, 'the staged blob is back');
+    assert.equal(b.git(repo.wt, 'write-tree'), index, 'the whole index is as it was');
+    assert.equal(readFileSync(join(repo.wt, 'app.ts'), 'utf8'), 'export const a = 207;\n');
+    clearInflightDir();
+    await b.consent(false);
+  });
+
+  void test('R2-4: Stop keeps the markers of background tasks still running, and clears only completed ones', async () => {
+    clearInflightDir();
+    markInflight(b.home, 'claude-code', HS, 'toolu_bg', harnessOwner());
+    markInflight(b.home, 'claude-code', HS, 'toolu_done', harnessOwner());
+    await runHook('stop', {
+      background_tasks: [{ tool_use_id: 'toolu_bg', tool_name: 'Bash', description: 'Building' }],
+    });
+    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'the running background task is kept');
+
+    // A Stop that does not say what still runs (Codex's) clears nothing live.
+    clearInflightDir();
+    markInflight(b.home, 'claude-code', HS, 'toolu_live', harnessOwner());
+    await runHook('stop', {}, 'codex');
+    await runHook('stop', {});
+    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'no background_tasks: nothing cleared');
+
+    // A background task whose PostToolUse already fired (it returned at once)
+    // is marked at Stop, so a save waits for it, and cleared once it is done.
+    clearInflightDir();
+    await runHook('stop', {
+      background_tasks: [{ tool_use_id: 'toolu_bg2', tool_name: 'Bash', description: 'Tests' }],
+    });
+    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'the background task is marked');
+    await runHook('stop', { background_tasks: [] });
+    assert.equal(inflight(b.home, 'claude-code', HS), 0, 'and cleared once it finished');
+
+    // A failed tool clears its own marker (Claude Code's PostToolUseFailure).
+    markInflight(b.home, 'claude-code', HS, 'toolu_failed2', harnessOwner());
+    await runHook('tool-failed', { tool_name: 'Bash', tool_use_id: 'toolu_failed2' });
+    assert.equal(inflight(b.home, 'claude-code', HS), 0, 'PostToolUseFailure cleared it');
+    clearInflightDir();
+  });
+
+  void test('R2-5: an interlock whose PID was reused is taken over; a live holder is respected', () => {
+    clearInflightDir();
+    const dir = checkpoint.inflightDir(b.home, 'claude-code', HS);
+    mkdirSync(dir, { recursive: true });
+    // This process's PID, alive — but with a start time that is not its own.
+    writeFileSync(
+      join(dir, '.saving'),
+      JSON.stringify({ pid: process.pid, started_ms: 1_000_000, deadline: Date.now() + 600_000 }),
+    );
+    assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), false, 'a reused PID holds nothing');
+    const release = checkpoint.takeSaveInterlock(b.home, 'claude-code', HS);
+    try {
+      assert.throws(
+        () => checkpoint.takeSaveInterlock(b.home, 'claude-code', HS),
+        (e: unknown) => e instanceof Error && /holds this session/.test(e.message),
+        'the real holder is respected',
+      );
+      assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), true);
+    } finally {
+      release();
+    }
+    assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), false);
   });
 });
