@@ -2,11 +2,12 @@
 id: LAI-1005
 title: 'Task list and board reads carry a checkpoint and offer summary, so a card can say "Recovery available" or "Save needs attention"'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-545, LAI-546]
 discovered-from: LAI-549
-status: backlog
+status: in-progress
+started: 2026-10-30T13:01:00+02:00
 ---
 
 Server half of the card states; the web half is LAI-1006. Board: child of
