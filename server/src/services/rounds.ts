@@ -3,7 +3,15 @@ import { type ResolvedActor, type ServiceCaller, withProject } from '../auth/res
 import { type Db } from '../db/client.ts';
 import { type EvidenceKind, type EvidenceState, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
-import { projects, taskEvidence, taskReviews, taskRounds, tasks, tokens } from '../db/schema.ts';
+import {
+  agents,
+  projects,
+  taskEvidence,
+  taskReviews,
+  taskRounds,
+  tasks,
+  tokens,
+} from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { type RoundCi, confirmRound, roundSummaries } from './github-proof.ts';
@@ -89,6 +97,14 @@ export interface RoundView {
   finished_by: string;
   /** The agent's own name for itself when it finished (D-076), or null. */
   client_name: string | null;
+  /**
+   * The registered agent whose token finished the round, so a screen can name
+   * it `<harness> · <device>` (D-120, LAI-1001) instead of the client's own
+   * word. Read through the round's token, so null for a person, a legacy
+   * token, and a round whose token has since been deleted. Self-reported, as
+   * the agent's own row is; decides nothing.
+   */
+  agent: RoundAgentView | null;
   summary_md: string;
   commits: CommitEvidence[];
   branch: BranchEvidence | null;
@@ -100,6 +116,13 @@ export interface RoundView {
    */
   ci: RoundCi | null;
   created_at: number;
+}
+
+/** Which registered agent finished a round: what naming it takes, and nothing else. */
+export interface RoundAgentView {
+  id: string;
+  harness: string;
+  device_label: string | null;
 }
 
 /** The send-back a task currently carries (§4.27): who, when and why. */
@@ -310,6 +333,24 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
     )
     .orderBy(taskEvidence.roundId, taskEvidence.position)
     .all();
+  // The agent behind each round's token (D-120), in one query whatever the count.
+  const tokenIds = [...new Set(rows.flatMap((r) => (r.tokenId === null ? [] : [r.tokenId])))];
+  const agentByToken = new Map(
+    tokenIds.length === 0
+      ? []
+      : db
+          .select({
+            tokenId: tokens.id,
+            id: agents.id,
+            harness: agents.harness,
+            deviceLabel: agents.deviceLabel,
+          })
+          .from(tokens)
+          .innerJoin(agents, eq(agents.id, tokens.agentId))
+          .where(inArray(tokens.id, tokenIds))
+          .all()
+          .map((a) => [a.tokenId, { id: a.id, harness: a.harness, device_label: a.deviceLabel }]),
+  );
 
   return rows.map((row) => {
     const mine = items.filter((i) => i.roundId === row.id);
@@ -328,6 +369,7 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
       number: row.number,
       finished_by: row.finishedBy,
       client_name: row.clientName,
+      agent: (row.tokenId === null ? undefined : agentByToken.get(row.tokenId)) ?? null,
       summary_md: row.summaryMd,
       commits: mine
         .filter((i) => i.kind === 'commit')

@@ -196,6 +196,71 @@ describe('a token is refused every REST door into done (LAIKA-455)', () => {
 });
 
 describe('POST /tasks/:id/finish and GET /tasks/:id/rounds (LAIKA-476)', () => {
+  it('names the registered agent that finished: harness and device, never its name (D-120)', async () => {
+    const projects = await json<{ data: { id: string; slug: string }[] }>(
+      await must(asSession('/api/v1/projects')),
+    );
+    const core = projects.data.find((p) => p.slug === 'core');
+    expect(core).toBeDefined();
+    const registered = await json<{ agent: { id: string }; secret: string }>(
+      await must(
+        asSession('/api/v1/agents', {
+          method: 'POST',
+          body: JSON.stringify({
+            display_name: 'Polly',
+            harness: 'omnigent',
+            device_label: 'Belka',
+            grants: [{ project_id: core?.id, scope: 'full' }],
+          }),
+        }),
+        201,
+      ),
+    );
+    const asAgent = async (
+      path: string,
+      init: RequestInit = {},
+      generation?: string,
+    ): Promise<Response> =>
+      h.app.request(path, {
+        ...init,
+        headers: jsonHeaders({
+          Authorization: `Bearer ${registered.secret}`,
+          ...(generation === undefined ? {} : { 'X-Laika-Claim-Generation': generation }),
+        }),
+      });
+
+    const byAgent = await newTask();
+    const claimed = await must(asAgent(`/api/v1/tasks/${byAgent.id}/claim`, { method: 'POST' }));
+    const generation = claimed.headers.get('X-Laika-Claim-Generation') ?? '';
+    expect(generation).not.toBe('');
+    await must(
+      asAgent(
+        `/api/v1/tasks/${byAgent.id}/finish`,
+        { method: 'POST', body: JSON.stringify({ summary: 'Did it' }) },
+        generation,
+      ),
+    );
+    interface Rounds {
+      rounds: {
+        client_name: string | null;
+        agent: { id: string; harness: string; device_label: string | null } | null;
+      }[];
+    }
+    const mine = await json<Rounds>(await must(asSession(`/api/v1/tasks/${byAgent.id}/rounds`)));
+    expect(mine.rounds[0]?.agent).toEqual({
+      id: registered.agent.id,
+      harness: 'omnigent',
+      device_label: 'Belka',
+    });
+    expect(mine.rounds[0]?.client_name).toBe('Polly');
+
+    // A legacy token is no registered agent: nothing to name.
+    const legacy = await finished();
+    const theirs = await json<Rounds>(await must(asSession(`/api/v1/tasks/${legacy.id}/rounds`)));
+    expect(theirs.rounds[0]?.agent).toBeNull();
+    expect(theirs.rounds[0]?.client_name).toBe('Codex');
+  });
+
   it('moves to review and stores the proof, each item claimed', async () => {
     const task = await finished({
       commits: [{ sha: 'abcdef1234567', message: 'feat: x' }],

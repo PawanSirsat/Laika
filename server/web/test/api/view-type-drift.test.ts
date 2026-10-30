@@ -505,6 +505,12 @@ const PAIRS: readonly Pair[] = [
     clientFile: 'review.ts',
   },
   {
+    server: 'RoundAgentView',
+    serverFile: 'services/rounds.ts',
+    client: 'RoundAgent',
+    clientFile: 'review.ts',
+  },
+  {
     server: 'SendBackView',
     serverFile: 'services/rounds.ts',
     client: 'SendBack',
