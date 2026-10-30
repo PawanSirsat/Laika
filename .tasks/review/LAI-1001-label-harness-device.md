@@ -134,3 +134,20 @@ For CHIEF: `client_name` is unchanged and still carries the finishing token's
 name (D-076), which for a registered agent is its display name. The screens
 no longer show it for a withheld agent. Whether the API should also withhold
 it is a decision this task does not make.
+
+## Round 4 (SHELL, 2026-10-30): Belka's decision, withhold client_name
+
+Where a round's agent is withheld, `client_name` is `null` too. This applies
+to `GET /tasks/:id/rounds`, `GET /review` and `get_task_context` alike,
+through the one projection, `toRoundViews`. It is kept for the reader's own
+agents, visible agents and legacy tokens. The two-owner tests assert that
+Ada's raw REST and MCP answers never contain Bob's agent's name, harness or
+device.
+
+**Named CHIEF edit:** `docs/SPEC.md` §6.4, in the `GET /tasks/:id/rounds`
+field list, plus a paragraph on the withholding rule.
+
+Not changed: `estimates.ts`'s per-client accuracy (`byClient`) also groups
+by a round's stored `client_name`. It only lists a name used by at least
+three people (`MIN_CLIENT_PEOPLE`) and reports a count, never who, so it
+identifies no single agent.
