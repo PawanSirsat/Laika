@@ -20,8 +20,13 @@ import type { Harness } from './agent-session.ts';
  *
  * | harness | file | events |
  * | --- | --- | --- |
- * | Claude Code | `~/.claude/settings.json` (merged) | `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `SessionEnd` |
- * | Codex CLI | `~/.codex/hooks.json` (merged) | `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `SessionEnd` (advisory) |
+ * | Claude Code | `~/.claude/settings.json` (merged) | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SessionEnd` |
+ * | Codex CLI | `~/.codex/hooks.json` (merged) | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SessionEnd` (advisory) |
+ *
+ * `PreToolUse`, `PostToolUse` and `Stop` also drive automatic checkpoints
+ * (LAI-547), which save nothing until the agent's owner consents on the
+ * board; `PreToolUse` and `Stop` print nothing, so they decide no permission
+ * and never keep a turn going.
  *
  * Shapes from code.claude.com/docs/en/hooks and learn.chatgpt.com/docs/hooks,
  * read 2026-10-28. `SessionStart` has no matcher: startup, resume, clear,
@@ -41,7 +46,8 @@ import type { Harness } from './agent-session.ts';
 
 export const AGENT_MARKER = 'laika-agent-hook';
 
-export type AgentHookEvent = 'session-start' | 'prompt' | 'tool' | 'session-end';
+export type AgentHookEvent =
+  'session-start' | 'prompt' | 'pre-tool' | 'tool' | 'tool-failed' | 'stop' | 'session-end';
 
 export interface AgentHookReport {
   readonly harness: Harness;
@@ -65,7 +71,16 @@ export function agentHookGroups(script: string, harness: Harness): Record<string
   return {
     SessionStart: { hooks: [handler('session-start', 10)] },
     UserPromptSubmit: { hooks: [handler('prompt', 5)] },
+    // 30 s: PreToolUse may wait up to 20 s for a checkpoint to let go of the
+    // interlock, and a harness kills a hook at its timeout and runs the tool.
+    PreToolUse: { hooks: [handler('pre-tool', 30)] },
     PostToolUse: { hooks: [handler('tool', 5)] },
+    // Claude Code only: Codex documents no PostToolUseFailure. A failed
+    // tool's marker is cleared here; at Stop otherwise.
+    ...(harness === 'claude-code'
+      ? { PostToolUseFailure: { hooks: [handler('tool-failed', 5)] } }
+      : {}),
+    Stop: { hooks: [handler('stop', 5)] },
     SessionEnd: { hooks: [handler('session-end', 2)] },
   };
 }
