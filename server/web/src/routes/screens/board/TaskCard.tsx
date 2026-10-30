@@ -208,7 +208,16 @@ export function TaskCard({
       {saveState !== null ? (
         // Lifted like the avatar and the blocker so its meaning shows on hover;
         // the open button names it for focus (`aria-describedby`).
-        <ExecutionStateLine state={saveState} hint={{ id: saveStateId, className: 'card-above' }} />
+        <ExecutionStateLine
+          state={saveState}
+          hint={{
+            id: saveStateId,
+            className: 'card-above card-state-open',
+            onActivate: () => {
+              onOpen(task.id);
+            },
+          }}
+        />
       ) : (
         execution !== null && <ExecutionStateLine state={execution} detail={executionDetail} />
       )}

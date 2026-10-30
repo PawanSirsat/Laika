@@ -12,7 +12,19 @@ export interface ExecutionStateLineProps {
    * `title` on hover, and the words for a reader the card's open button
    * points at with `aria-describedby` — so focus reaches it too.
    */
-  readonly hint?: { readonly id: string; readonly className?: string } | undefined;
+  readonly hint?:
+    | {
+        readonly id: string;
+        readonly className?: string;
+        /**
+         * A pointer on the line does what the card's open control does
+         * (LAI-1006 review): lifted for its hover title, the line sits over
+         * that control and would otherwise swallow the click. Keyboard users
+         * reach the control itself; this is the pointer's path only.
+         */
+        readonly onActivate?: () => void;
+      }
+    | undefined;
 }
 
 /**
@@ -37,6 +49,7 @@ export function ExecutionStateLine({
       data-exec-state={state}
       id={hint?.id}
       title={hint === undefined ? undefined : words.meaning}
+      onClick={hint?.onActivate}
       // The drawer's line can change while it is open — Working to Connection
       // lost on the reader's clock (LAI-597). A status is read out without
       // taking the focus from whatever the reader is doing.
