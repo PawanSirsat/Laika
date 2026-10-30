@@ -24,7 +24,6 @@ import {
   listStates,
   readCredential,
 } from './agent-session.ts';
-import { signIn } from './api.ts';
 import { gitRunner, Refusal } from './checkpoint-git.ts';
 import { ask, askSecret, closePrompt } from './prompt.ts';
 
@@ -120,6 +119,65 @@ function credentialFor(
   return only;
 }
 
+/** A password's bytes as a JSON string's contents, escaped byte by byte, into a buffer. */
+function jsonStringBytes(secret: Buffer): Buffer {
+  const out = Buffer.alloc(secret.length * 6);
+  let at = 0;
+  for (const byte of secret) {
+    if (byte === 0x22 || byte === 0x5c) {
+      out[at++] = 0x5c;
+      out[at++] = byte;
+    } else if (byte < 0x20) {
+      at += out.write(`\\u00${byte.toString(16).padStart(2, '0')}`, at, 'latin1');
+    } else {
+      out[at++] = byte;
+    }
+  }
+  const body = Buffer.from(out.subarray(0, at));
+  out.fill(0);
+  return body;
+}
+
+/**
+ * Sign in as the agent's owner for one consent change, and **zero the
+ * password's bytes afterwards** — the buffer it arrived in and the request
+ * body built from it. Only the session cookie is kept. (The prompt hands the
+ * password over as a JavaScript string first, which no code can wipe; this is
+ * the narrowest the window can be made.)
+ */
+export async function signInWithPassword(
+  url: string,
+  email: string,
+  password: Buffer,
+  fetchFn: (input: string, init: RequestInit) => Promise<Response> = (input, init) =>
+    fetch(input, init),
+): Promise<string> {
+  const escaped = jsonStringBytes(password);
+  const body = Buffer.concat([
+    Buffer.from(`{"email":${JSON.stringify(email)},"password":"`, 'utf8'),
+    escaped,
+    Buffer.from('"}', 'utf8'),
+  ]);
+  try {
+    const response = await fetchFn(`${url}/api/v1/auth/sign-in/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: url },
+      body,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      throw new Refusal(`could not sign in: the board answered ${String(response.status)}`, 'sign_in_failed');
+    }
+    const cookie = response.headers.getSetCookie().join('; ');
+    if (cookie === '') throw new Refusal('the sign-in returned no session', 'sign_in_failed');
+    return cookie;
+  } finally {
+    password.fill(0);
+    escaped.fill(0);
+    body.fill(0);
+  }
+}
+
 async function consent(
   io: AgentIo,
   argv: readonly string[],
@@ -163,11 +221,8 @@ async function consent(
   let cookie: string;
   try {
     const email = option(argv, '--email') ?? (await ask('Your Laika email (the agent’s owner)'));
-    const password = await askSecret('Your Laika password');
-    const session = await signIn(credential.url, email.trim(), password);
-    if (!session.ok)
-      throw new Refusal(`could not sign in: ${session.error.message}`, 'sign_in_failed');
-    cookie = session.value.cookie;
+    const password = Buffer.from(await askSecret('Your Laika password'), 'utf8');
+    cookie = await signInWithPassword(credential.url, email.trim(), password);
   } finally {
     closePrompt();
   }

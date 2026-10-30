@@ -276,7 +276,7 @@ void describe('review fixes, unit (LAI-547, #154)', () => {
       'http://board.test',
       'ada@example.test',
       password,
-      (_url, init) => {
+      (_url: string, init: RequestInit) => {
         body = init.body as Uint8Array;
         sent = Buffer.from(body).toString('utf8');
         return Promise.resolve(
@@ -288,5 +288,20 @@ void describe('review fixes, unit (LAI-547, #154)', () => {
     assert.match(sent, /"password":"correct-horse-battery"/, 'it was sent');
     assert.ok(password.every((byte) => byte === 0), 'the password buffer is zeroed');
     assert.ok(body?.every((byte) => byte === 0), 'the request body is zeroed');
+  });
+
+  void test('a password with quotes, backslashes, control characters and non-ASCII arrives intact', async () => {
+    const original = 'p"a\\s\tw\u0001ö€';
+    let sent = '';
+    await checkpointCli.signInWithPassword(
+      'http://board.test',
+      'ada@example.test',
+      Buffer.from(original, 'utf8'),
+      (_url: string, init: RequestInit) => {
+        sent = Buffer.from(init.body as Uint8Array).toString('utf8');
+        return Promise.resolve(new Response('{}', { status: 200, headers: { 'set-cookie': 's=1' } }));
+      },
+    );
+    assert.deepEqual(JSON.parse(sent), { email: 'ada@example.test', password: original });
   });
 });
