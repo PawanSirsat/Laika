@@ -3,10 +3,18 @@ import { streamSSE, type SSEMessage } from 'hono/streaming';
 import { reloadActor, type ResolvedActor } from '../../auth/resolve-actor.ts';
 import { TokenAuthError, type TokenRejection } from '../../auth/tokens.ts';
 import { type ActivityEvent } from '../../db/activity.ts';
+import { isAgentEventType } from '../../db/agent-events.ts';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { type ActivityFeed, type RepeatingTimer } from '../../services/activity-feed.ts';
-import { eventView, parseLastEventId, resumeFrom, visibleTo } from '../../services/events.ts';
+import { deliveryFor } from '../../services/agent-events.ts';
+import {
+  eventView,
+  insidePin,
+  parseLastEventId,
+  resumeFrom,
+  visibleTo,
+} from '../../services/events.ts';
 import { canSeeProject, requireProjectBySlug } from '../../services/projects.ts';
 import { type AppEnv } from '../context.ts';
 
@@ -98,20 +106,6 @@ export interface EventRoutesOptions {
   now?: () => number;
 }
 
-/**
- * May this event reach a stream on this actor's token at all? (audit M10)
- *
- * Separate from `visibleTo` on purpose: that asks the role question, and this
- * asks the narrower credential one directly, so the whitelist does not depend
- * on every `can()` action narrowing by it. A pinned token gets no org-level
- * rows — they belong to no project on its list.
- */
-function insidePin(actor: ResolvedActor, projectId: string | null): boolean {
-  const pinned = actor.token?.projectIds ?? null;
-  if (pinned === null) return true;
-  return projectId !== null && pinned.includes(projectId);
-}
-
 export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, feed } = options;
@@ -196,18 +190,35 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
       }
 
       /**
-       * May this frame be written **now**? Asked as the frame reaches the
-       * front of the queue, never when it joined it (LAI-539 review): a
-       * cookie stream keeps its connect-and-batch checks unchanged.
+       * The frame to write **now**, or null to skip it. Asked as the frame
+       * reaches the front of the queue, never when it joined it (LAI-539
+       * review): a cookie stream keeps its connect-and-batch checks unchanged.
+       *
+       * **An agent event reaches an agent only through its own delivery row**
+       * (§4.77, LAI-553): on a registered agent's token, a hand-off, work
+       * request, recovery or context row that is not addressed to it is
+       * skipped, and one that is carries its envelope — read at this moment,
+       * so a delivery state acknowledged meanwhile is the one sent.
        */
-      const writable = (item: Outgoing): boolean => {
-        if (refused) return false;
-        if (!onToken) return true;
+      const writable = (item: Outgoing): SSEMessage | string | null => {
+        if (refused) return null;
+        if (!onToken) return item.frame;
 
         const current = currentActor();
-        if (current === null) return false;
-        if (item.row === undefined) return true;
-        return insidePin(current, item.row.projectId) && visibleTo(current, item.row);
+        if (current === null) return null;
+        const row = item.row;
+        if (row === undefined) return item.frame;
+        if (!insidePin(current, row.projectId) || !visibleTo(current, row)) return null;
+        if ((current.token?.agent ?? null) === null) return item.frame;
+        if (!isAgentEventType(row.type)) return item.frame;
+
+        const envelope = deliveryFor(db, current, row);
+        if (envelope === null) return null;
+        return {
+          event: row.type,
+          id: String(row.seq),
+          data: JSON.stringify({ ...eventView(row), envelope }),
+        };
       };
 
       const enqueue = (frame: SSEMessage | string, meta: Omit<Outgoing, 'frame'> = {}): void => {
@@ -223,9 +234,10 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
         queued += 1;
         queue = queue
           .then(async () => {
-            if (!writable(item)) return;
-            if (typeof item.frame === 'string') await stream.write(item.frame);
-            else await stream.writeSSE(item.frame);
+            const frame = writable(item);
+            if (frame === null) return;
+            if (typeof frame === 'string') await stream.write(frame);
+            else await stream.writeSSE(frame);
           })
           .then(
             () => {

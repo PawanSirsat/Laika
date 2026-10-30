@@ -115,6 +115,20 @@ export function visibleTo(actor: ResolvedActor, row: ActivityEvent): boolean {
 }
 
 /**
+ * May this event reach a stream on this actor's token at all? (audit M10)
+ *
+ * Separate from `visibleTo` on purpose: that asks the role question, and this
+ * asks the narrower credential one directly, so the whitelist does not depend
+ * on every `can()` action narrowing by it. A pinned token gets no org-level
+ * rows — they belong to no project on its list.
+ */
+export function insidePin(actor: ResolvedActor, projectId: string | null): boolean {
+  const pinned = actor.token?.projectIds ?? null;
+  if (pinned === null) return true;
+  return projectId !== null && pinned.includes(projectId);
+}
+
+/**
  * How far behind a reconnecting client may be before the server refuses to
  * replay (§11.5).
  *
