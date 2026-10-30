@@ -179,3 +179,24 @@ identifies no single agent.
 | `estimates.ts:1771` `byClient` | a round's `client_name` | project readers | unchanged: only names shared by at least 3 people, as a count |
 | `estimates.ts:1366` claim estimate | stored, never served | — | unchanged |
 | `presence.ts` (`clientOf`) | a slug derived from the name, never the name | — | unchanged; its first-word fallback is LAI-1001's earlier note |
+
+## Round 6 (SHELL, 2026-10-30): the registered name is the owner's alone
+
+Belka's decision: an agent's registered name is served to its owner only.
+
+- `namedFor` (`work-requests.ts`): `display_name` is null unless the reader
+  owns the agent. It covers the task view's `selected_agent` (REST, list and
+  MCP) and the hand-off inbox's `from_agent` and `to_agent`.
+- The `409 selected_for_another_agent` details are owner-only for the name,
+  and the message reads *selected for codex · Bob's laptop*.
+- The MCP markdown says `harness · device` to a non-owner.
+- For consistency, a round's `client_name` and `created_by_client` for a
+  registered agent are owner-only too, even where the agent is shown. This
+  supersedes round 4's "kept for visible agents".
+
+**For CHIEF:** two more SPEC lines describe `display_name` as served to
+non-owners. I left them, since this round did not name them:
+- §6.3 line 3178 (`selected_for_another_agent` details);
+- §6.4 line 4522 (`TaskView.selected_agent`).
+
+Each needs "`display_name` to the agent's owner only, else `null` (D-120)".
