@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { newId } from '../../../src/db/ids.ts';
 import {
+  agentProjectGrants,
   handoffOffers,
   orgs,
   projects,
@@ -364,9 +365,8 @@ describe('GET /handoff-offers — the views (§6.4, LAI-1009)', () => {
     });
     expect(row.to_agent!.device_label).toMatch(/^device-/);
 
-    // The receiver's owner waits; the recovery's approver names a receiver.
+    // The receiver's owner waits.
     expect((await inbox('bob', '?view=received')).data[0]!.next_action).toBe('wait_for_approval');
-    expect((await inbox('ada', '?view=recovery')).data[0]!.next_action).toBe('name_receiver');
     expect((await inbox('carl', '?view=recovery')).data[0]!.next_action).toBe('wait_for_receiver');
     // Ada's own two agents: hers to accept. O2 is to her agent, so although
     // she leads the space she waits for somebody else to approve it.
@@ -374,6 +374,102 @@ describe('GET /handoff-offers — the views (§6.4, LAI-1009)', () => {
       'accept_with_your_agent',
       'wait_for_approval',
     ]);
+  });
+});
+
+describe('GET /handoff-offers — next_action is only what would succeed', () => {
+  async function policy(body: Record<string, boolean>) {
+    await ok(
+      await h.app.request('/api/v1/projects/laika/handoff-policy', {
+        method: 'PUT',
+        headers: jsonHeaders({ Cookie: people.ada!.cookie }),
+        body: JSON.stringify(body),
+      }),
+      200,
+    );
+  }
+  const recoveryAction = async (who: string) =>
+    (await inbox(who, '?view=recovery')).data[0]!.next_action;
+
+  it('an unnamed recovery: its sole owner accepts with their agent, never names their own', async () => {
+    // The default policy: only Ada's own agents may take Ada's expired work.
+    // Naming one of them would be `approver_is_receiver`, so it is not offered.
+    expect(await recoveryAction('ada')).toBe('accept_with_your_agent');
+    // A lead who owns none of the eligible agents may name one of Ada's.
+    expect(await recoveryAction('lee')).toBe('name_receiver');
+    // Bob may not approve, and his agent is another owner's: nothing he can do.
+    expect(await recoveryAction('bob')).toBe('wait_for_receiver');
+
+    // Its save no longer verified: Ada's agent cannot take it, and naming her
+    // own agent would be refused, so she has nothing to do — Lee still names.
+    const t3 = h.db.select().from(handoffOffers).where(eq(handoffOffers.id, offer.o3!)).get()!;
+    h.db
+      .update(taskCheckpoints)
+      .set({ verification: 'uncertain' })
+      .where(eq(taskCheckpoints.id, t3.checkpointId!))
+      .run();
+    expect(await recoveryAction('ada')).toBe('wait_for_receiver');
+    expect(await recoveryAction('lee')).toBe('name_receiver');
+    h.db
+      .update(taskCheckpoints)
+      .set({ verification: 'verified' })
+      .where(eq(taskCheckpoints.id, t3.checkpointId!))
+      .run();
+
+    // Other owners allowed, with approval: Bob's agent still waits for a person.
+    await policy({ allow_other_owners: true, cross_owner_requires_approval: true });
+    expect(await recoveryAction('lee')).toBe('name_receiver');
+    expect(await recoveryAction('bob')).toBe('wait_for_receiver');
+    expect(await recoveryAction('ada')).toBe('accept_with_your_agent');
+    // Without approval, Bob's agent may take it directly.
+    await policy({ allow_other_owners: true, cross_owner_requires_approval: false });
+    expect(await recoveryAction('bob')).toBe('accept_with_your_agent');
+  });
+
+  it("a viewer's agent is never told to accept; a member's, otherwise alike, is", async () => {
+    await policy({ allow_other_owners: true, cross_owner_requires_approval: false });
+    await agent('vicA', 'vic', []);
+    // A viewer cannot grant their agent `full` access: written as if they had.
+    h.db
+      .insert(agentProjectGrants)
+      .values({
+        agentId: agentsOf.vicA!.id,
+        projectId: laikaId,
+        scope: 'full',
+        createdAt: Date.now(),
+      })
+      .run();
+    const t7 = await claimedTask('laika', 'Seven', 'adaA', 'ada');
+    seedOffer('o7', {
+      taskId: t7.taskId,
+      kind: 'handoff',
+      state: 'open',
+      fromSessionId: t7.sessionId,
+      toAgentId: agentsOf.vicA!.id,
+      checkpointId: t7.checkpointId,
+    });
+    const t8 = await claimedTask('laika', 'Eight', 'adaA', 'ada');
+    seedOffer('o8', {
+      taskId: t8.taskId,
+      kind: 'handoff',
+      state: 'open',
+      fromSessionId: t8.sessionId,
+      toAgentId: agentsOf.bobA!.id,
+      checkpointId: t8.checkpointId,
+    });
+    const vic = (await inbox('vic', '?view=received')).data;
+    expect(vic.map((r) => [r.id, r.next_action])).toEqual([[offer.o7, 'wait_for_receiver']]);
+    const bob = (await inbox('bob', '?view=received')).data;
+    expect(bob.find((r) => r.id === offer.o8)!.next_action).toBe('accept_with_your_agent');
+
+    // The same member's offer, its checkpoint no longer verified: nothing to accept.
+    h.db
+      .update(taskCheckpoints)
+      .set({ verification: 'uncertain' })
+      .where(eq(taskCheckpoints.id, t8.checkpointId))
+      .run();
+    const after = (await inbox('bob', '?view=received')).data;
+    expect(after.find((r) => r.id === offer.o8)!.next_action).toBe('wait_for_receiver');
   });
 });
 
@@ -442,7 +538,11 @@ describe('GET /handoff-offers — who may read it', () => {
     });
     expect(hidden.status).toBe(404);
     expect(missing.status).toBe(404);
-    expect(((await hidden.json()) as ErrorBody).error.code).toBe('not_found');
+    // Byte for byte: the message names no slug.
+    const hiddenBody = await hidden.text();
+    expect(hiddenBody).toBe(await missing.text());
+    expect(hiddenBody).not.toContain('other');
+    expect((JSON.parse(hiddenBody) as ErrorBody).error.code).toBe('not_found');
     // Not a member of `laika` at all: the same.
     const eve = await h.app.request('/api/v1/handoff-offers?project=laika', {
       headers: jsonHeaders({ Cookie: people.eve!.cookie }),
