@@ -654,14 +654,35 @@ export function pushDestinations(git: GitRunner, wt: Worktree, remote: string): 
   return urls;
 }
 
+/** Every `url.<base>.insteadOf` value in effect here, includes followed. */
+function insteadOfValues(git: GitRunner, wt: Worktree): string[] {
+  const r = git(wt.top, ['config', '-z', '--includes', '--get-regexp', '^url\\..*\\.insteadof$']);
+  return r.stdout
+    .split('\0')
+    .map((entry) => entry.slice(entry.indexOf('\n') + 1))
+    .filter((value) => value !== '');
+}
+
 /**
- * The branch one push destination's `HEAD` names **now**, asked of it
- * (`ls-remote --symref`), never the clone's cached `refs/remotes/<r>/HEAD`,
- * which says what the default was when it was last fetched.
+ * The branch one push destination's `HEAD` names **now**, asked of **that
+ * destination** (`ls-remote --symref`), never the clone's cached
+ * `refs/remotes/<r>/HEAD`.
  *
- * **Fails closed**: a destination that cannot be reached, or whose `HEAD`
- * names no branch (unborn, detached), is a refusal — a push that cannot be
- * told apart from a push to the default is not made.
+ * `url` is already where the push goes: `git remote get-url --push` applied
+ * git's one rewrite (`pushInsteadOf` before `insteadOf`, none for a
+ * `pushurl`), as `git push` does. `ls-remote` would rewrite it **again** —
+ * a chain `alias → A`, `A → B` pushes to A and asks B (round-3 #1). So the
+ * query carries `-c url.<url>.insteadOf=<url>`: git takes the longest
+ * matching rule, and no rule can be longer than the URL itself, so the
+ * rewrite is to itself. The one rule it cannot beat is one whose value is
+ * the URL exactly — git keeps the first of equal length, and a configured
+ * rule comes first — so that destination is refused rather than asked
+ * somewhere else.
+ *
+ * **Fails closed**: a destination that cannot be asked as itself, that does
+ * not answer, or whose `HEAD` names no branch (unborn, detached) is a
+ * refusal — a push that cannot be told apart from a push to the default is
+ * not made.
  */
 export function currentDefaultAt(
   git: GitRunner,
@@ -669,16 +690,27 @@ export function currentDefaultAt(
   remote: string,
   url: string,
 ): string {
-  const r = git(wt.top, ['ls-remote', '--symref', '--', url, 'HEAD']);
-  const m = r.code === 0 ? /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(r.stdout) : null;
-  if (m?.[1] === undefined) {
-    throw new Refusal(
+  const unknown = (why: string): Refusal =>
+    new Refusal(
       `cannot tell the default branch of ${remote}'s push destination ${redactUrl(url)} ` +
-        '(its HEAD names no branch, or it did not answer), so nothing was pushed: ' +
-        'a checkpoint never risks pushing to a default branch',
+        `(${why}), so nothing was pushed: a checkpoint never risks pushing to a default branch`,
       'remote_default_unknown',
     );
+  if (/[=\n\r\0]/.test(url)) throw unknown('its URL cannot be asked without rewriting');
+  if (insteadOfValues(git, wt).includes(url)) {
+    throw unknown('an insteadOf rule names it exactly, so asking it would ask somewhere else');
   }
+  const r = git(wt.top, [
+    '-c',
+    `url.${url}.insteadOf=${url}`,
+    'ls-remote',
+    '--symref',
+    '--',
+    url,
+    'HEAD',
+  ]);
+  const m = r.code === 0 ? /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(r.stdout) : null;
+  if (m?.[1] === undefined) throw unknown('its HEAD names no branch, or it did not answer');
   return m[1];
 }
 
