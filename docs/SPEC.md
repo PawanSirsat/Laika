@@ -3682,7 +3682,14 @@ agent is shown (harness, device, owner), the checkpoint's `verification` and
 `saved_at`, the `reason` (untrusted data), `requires_approval`, `approved`,
 `expires_at`, and `next_action` — what the caller can do now (`approve`,
 `name_receiver`, `accept_with_your_agent`, `cancel`, `wait_for_approval`,
-`wait_for_receiver`, `none`), a hint the writes ask `can()` for again.
+`wait_for_receiver`, `none`). It names **only what would succeed now** —
+`accept_with_your_agent` where one of the caller's agents passes §4.73's
+receiver rules (active, `full` grant, an owner who may accept, the policy's
+owner rule), nothing waits for approval and the checkpoint is `verified`;
+`name_receiver` only where an eligible agent of **another** owner exists,
+since naming one's own is `approver_is_receiver` — and the writes ask `can()`
+again. A `project` that names nothing and one the caller cannot read answer
+the same body, `404` *No such project*.
 `received` is offers to an agent the caller owns; `sent`, hand-offs from one;
 `needs_approval`, `pending_approval` offers the caller may approve (*Approve a
 cross-owner hand-off*, §3.2) and **never one whose receiver they own**;
@@ -4524,14 +4531,17 @@ optional, so a body with only `summary` and `checklist` behaves as before.
 `pull_request` an `http(s)` URL, and `tests` `[{ command, exit_code }]`; the
 limits are §4.26's and a breach is `422` naming the field, with nothing moved.
 `GET /tasks/:id/rounds` answers `{ rounds, send_back }`: each round as
-`{ id, task_id, number, finished_by, client_name, summary_md, commits, branch,
-pull_request, tests, ci, created_at }`, each item with `id`, `state`,
+`{ id, task_id, number, finished_by, client_name, agent, summary_md, commits,
+branch, pull_request, tests, ci, created_at }`, each item with `id`, `state`,
 `state_source` and `state_at` beside its own fields (`sha` and `message`,
 `name`, `url` and `merged`, `command` and `exit_code`), newest round first;
 `project.read`. `pull_request.merged` is `true` or `false` once a GitHub
 delivery named it, `null` before (D-083). `ci` is `{ head_sha, total, passed,
 failed, pending, failed_names }` from §4.31, or `null` when no CI result was
-reported for the round's head commit.
+reported for the round's head commit. `agent` is `{ id, harness, device_label }`
+— the registered agent whose token finished the round, so a screen can label
+it `<harness> · <device>` (D-120) — or `null` when no registered agent's token
+did (LAI-1001).
 
 **A task's tokens (D-084, LAI-770).** `GET /tasks/:id/usage?tz=` answers `{
 task_id, key, tz, first_day, last_day, totals: { tokens, input, output,

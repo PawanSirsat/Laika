@@ -64,7 +64,7 @@ import {
   type TaskClaimView,
 } from './claims.ts';
 import { assertCheckpointAcceptable } from './checkpoints.ts';
-import { canSeeProject, requireProjectBySlug, requireReadableProjectBySlug } from './projects.ts';
+import { canSeeProject, requireProjectBySlug } from './projects.ts';
 import {
   noSuchProjectForAgent,
   type SelectedAgentView,
@@ -1913,7 +1913,18 @@ export function listPersonInbox(
     .map((p) => p.id)
     .filter((projectId) => canSeeProject(actor, projectId));
   if (options.projectSlug !== undefined && options.projectSlug !== null) {
-    readable = [requireReadableProjectBySlug(db, actor, options.projectSlug).id];
+    // One body for a slug that names nothing and one the caller cannot read:
+    // no slug in the message, so the two cannot be told apart (LAI-1009).
+    const slug = options.projectSlug;
+    const found = db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.slug, slug))
+      .get();
+    if (found === undefined || !readable.includes(found.id)) {
+      throw ApiError.notFound('No such project');
+    }
+    readable = [found.id];
   }
   const counts: PersonInboxCounts = { received: 0, sent: 0, needs_approval: 0, recovery: 0 };
   if (readable.length === 0) return { rows: [], counts };
@@ -2000,6 +2011,8 @@ export function listPersonInbox(
       number: tasks.number,
       title: tasks.title,
       assigneeId: tasks.assigneeId,
+      status: tasks.status,
+      handoffCount: tasks.handoffCount,
       projectId: tasks.projectId,
       prefix: projects.prefix,
       slug: projects.slug,
@@ -2015,31 +2028,55 @@ export function listPersonInbox(
   return { rows: personHandoffViews(db, actor, found, now), counts };
 }
 
+interface FoundOffer {
+  offer: OfferRow;
+  number: number;
+  title: string;
+  assigneeId: string | null;
+  status: TaskRow['status'];
+  handoffCount: number;
+  projectId: string;
+  prefix: string;
+  slug: string;
+}
+
 function personHandoffViews(
   db: Db,
   actor: ResolvedActor,
-  found: readonly {
-    offer: OfferRow;
-    number: number;
-    title: string;
-    assigneeId: string | null;
-    projectId: string;
-    prefix: string;
-    slug: string;
-  }[],
+  found: readonly FoundOffer[],
   now: number,
 ): PersonHandoffView[] {
   if (found.length === 0) return [];
-  const taskIds = [...new Set(found.map((f) => f.offer.taskId))];
-  const claims = db
-    .select({
-      taskId: taskClaims.taskId,
-      generation: taskClaims.generation,
-      agentId: taskClaims.agentId,
-    })
-    .from(taskClaims)
-    .where(inArray(taskClaims.taskId, taskIds))
-    .all();
+  // Only the claims the offers name — `(task_id, generation)` pairs — not
+  // every claim those tasks ever had.
+  const pairs = [
+    ...new Map(
+      found
+        .filter((f) => f.offer.fromClaimGeneration !== null)
+        .map((f) => [
+          `${f.offer.taskId}:${String(f.offer.fromClaimGeneration)}`,
+          { taskId: f.offer.taskId, generation: f.offer.fromClaimGeneration! },
+        ]),
+    ).values(),
+  ];
+  const claims =
+    pairs.length === 0
+      ? []
+      : db
+          .select({
+            taskId: taskClaims.taskId,
+            generation: taskClaims.generation,
+            agentId: taskClaims.agentId,
+          })
+          .from(taskClaims)
+          .where(
+            or(
+              ...pairs.map((p) =>
+                and(eq(taskClaims.taskId, p.taskId), eq(taskClaims.generation, p.generation)),
+              ),
+            ),
+          )
+          .all();
   const fromAgentOf = new Map(
     claims.map((c) => [`${c.taskId}:${String(c.generation)}`, c.agentId]),
   );
@@ -2104,6 +2141,7 @@ function personHandoffViews(
           .map((c) => [c.id, c]),
   );
 
+  const actions = new NextActions(db, actor);
   return found.map((f): PersonHandoffView => {
     const offer = f.offer;
     const from = fromAgentId(offer);
@@ -2141,43 +2179,172 @@ function personHandoffViews(
       closed_reason: offer.closedReason,
       created_at: offer.createdAt,
       closed_at: offer.closedAt,
-      next_action: nextActionFor(actor, f, state, fromAgent, toAgent),
+      next_action: actions.for(f, state, fromAgent, toAgent, checkpoint?.verification ?? null),
     };
   });
 }
 
 /**
- * What the caller can do next, asked of `can()` as each write would ask it.
- * Approval comes first: an approver who is also the sender's owner approves
- * before anything else can happen.
+ * What the caller can do next — **only what would succeed now**, asked the way
+ * each write asks it (LAI-1009 review). A hint for the screen, never a
+ * permission: the write asks everything again inside its transaction.
+ *
+ * - `approve`: a named offer waiting for approval, which the caller may
+ *   approve (`task.handoff.approve`) and whose receiver they do not own.
+ * - `accept_with_your_agent`: one of the caller's agents would be accepted —
+ *   {@link receiverEligibility} passes for it (active, `full` grant, its owner
+ *   may `task.handoff.accept` there, the policy's owner rule), no approval is
+ *   waiting, the task is in progress under its hand-off limit, and the
+ *   checkpoint is `verified`. For an unnamed recovery, any of the caller's
+ *   agents may be the one.
+ * - `name_receiver`: an unnamed recovery the caller may approve, where some
+ *   eligible agent of **another** owner exists — approving names a receiver,
+ *   and naming one's own is `approver_is_receiver`.
+ * - `cancel`: a hand-off from the caller's agent that they may cancel.
  */
-function nextActionFor(
-  actor: ResolvedActor,
-  row: { offer: OfferRow; assigneeId: string | null; projectId: string },
-  state: HandoffOfferState,
-  fromAgent: SelectedAgentView | null,
-  toAgent: SelectedAgentView | null,
-): HandoffNextAction {
-  if (!isLive(state)) return 'none';
-  const scoped = withProject(actor, row.projectId);
-  const mayApprove = can(scoped, 'task.handoff.approve', {
-    projectId: row.projectId,
-    ownerId: row.assigneeId,
-  });
-  const receiverMine = toAgent?.owner.id === actor.userId;
-  const senderMine = fromAgent?.owner.id === actor.userId;
+class NextActions {
+  private readonly projectsById = new Map<string, ProjectRow | undefined>();
+  private readonly policies = new Map<string, HandoffPolicyView>();
+  private readonly candidates = new Map<string, { id: string; ownerUserId: string }[]>();
+  private readonly eligible = new Map<string, { requiresApproval: boolean } | null>();
 
-  if (state === 'pending_approval' && toAgent !== null && mayApprove && !receiverMine) {
-    return 'approve';
+  // Plain fields, not parameter properties: Node's type stripping, which the
+  // concurrency tests' worker processes load this file with, refuses those.
+  private readonly db: Db;
+  private readonly actor: ResolvedActor;
+
+  constructor(db: Db, actor: ResolvedActor) {
+    this.db = db;
+    this.actor = actor;
   }
-  if (state === 'open' && row.offer.toAgentId === null && mayApprove) return 'name_receiver';
-  if (state === 'open' && receiverMine) return 'accept_with_your_agent';
-  if (
-    row.offer.kind === 'handoff' &&
-    senderMine &&
-    can(scoped, 'task.handoff.cancel', { projectId: row.projectId, ownerId: actor.userId })
-  ) {
-    return 'cancel';
+
+  for(
+    row: FoundOffer,
+    state: HandoffOfferState,
+    fromAgent: SelectedAgentView | null,
+    toAgent: SelectedAgentView | null,
+    verification: string | null,
+  ): HandoffNextAction {
+    if (!isLive(state)) return 'none';
+    const { offer } = row;
+    const scoped = withProject(this.actor, row.projectId);
+    const mayApprove = can(scoped, 'task.handoff.approve', {
+      projectId: row.projectId,
+      ownerId: row.assigneeId,
+    });
+    const receiverMine = toAgent?.owner.id === this.actor.userId;
+    const senderMine = fromAgent?.owner.id === this.actor.userId;
+    const fromOwner = fromAgent?.owner.id ?? null;
+
+    if (state === 'pending_approval' && toAgent !== null && mayApprove && !receiverMine) {
+      return 'approve';
+    }
+    if (state === 'open') {
+      const takeable =
+        row.status === 'in_progress' &&
+        verification === 'verified' &&
+        row.handoffCount < this.policy(row.projectId).max_handoffs;
+      if (offer.toAgentId === null) {
+        const mine = this.agentsOn(row.projectId).filter(
+          (a) => a.ownerUserId === this.actor.userId,
+        );
+        if (
+          takeable &&
+          mine.some(
+            (a) => this.eligibility(row.projectId, a.id, fromOwner)?.requiresApproval === false,
+          )
+        ) {
+          return 'accept_with_your_agent';
+        }
+        const others = this.agentsOn(row.projectId).filter(
+          (a) => a.ownerUserId !== this.actor.userId,
+        );
+        if (mayApprove && others.some((a) => this.eligibility(row.projectId, a.id, fromOwner))) {
+          return 'name_receiver';
+        }
+      } else if (
+        receiverMine &&
+        takeable &&
+        this.eligibility(row.projectId, offer.toAgentId, fromOwner) !== null
+      ) {
+        return 'accept_with_your_agent';
+      }
+    }
+    if (
+      offer.kind === 'handoff' &&
+      senderMine &&
+      can(scoped, 'task.handoff.cancel', { projectId: row.projectId, ownerId: this.actor.userId })
+    ) {
+      return 'cancel';
+    }
+    return state === 'pending_approval' ? 'wait_for_approval' : 'wait_for_receiver';
   }
-  return state === 'pending_approval' ? 'wait_for_approval' : 'wait_for_receiver';
+
+  private project(projectId: string): ProjectRow | undefined {
+    if (!this.projectsById.has(projectId)) {
+      this.projectsById.set(
+        projectId,
+        this.db.select().from(projects).where(eq(projects.id, projectId)).get(),
+      );
+    }
+    return this.projectsById.get(projectId);
+  }
+
+  private policy(projectId: string): HandoffPolicyView {
+    let policy = this.policies.get(projectId);
+    if (policy === undefined) {
+      policy = readPolicy(this.db, projectId);
+      this.policies.set(projectId, policy);
+    }
+    return policy;
+  }
+
+  /** Active agents with a `full` grant on the project: the only ones that could receive. */
+  private agentsOn(projectId: string): { id: string; ownerUserId: string }[] {
+    let found = this.candidates.get(projectId);
+    if (found === undefined) {
+      found = this.db
+        .select({ id: agents.id, ownerUserId: agents.ownerUserId })
+        .from(agents)
+        .innerJoin(agentProjectGrants, eq(agentProjectGrants.agentId, agents.id))
+        .where(
+          and(
+            eq(agentProjectGrants.projectId, projectId),
+            eq(agentProjectGrants.scope, 'full'),
+            eq(agents.status, 'active'),
+          ),
+        )
+        .all();
+      this.candidates.set(projectId, found);
+    }
+    return found;
+  }
+
+  /** {@link receiverEligibility}'s answer, or null where it refuses. */
+  private eligibility(
+    projectId: string,
+    agentId: string,
+    fromOwner: string | null,
+  ): { requiresApproval: boolean } | null {
+    const key = `${projectId}:${agentId}:${fromOwner ?? ''}`;
+    if (!this.eligible.has(key)) {
+      const project = this.project(projectId);
+      let answer: { requiresApproval: boolean } | null = null;
+      if (project !== undefined) {
+        try {
+          answer = receiverEligibility(
+            this.db,
+            project,
+            this.policy(projectId),
+            agentId,
+            fromOwner,
+          );
+        } catch (error) {
+          if (!(error instanceof ApiError)) throw error;
+        }
+      }
+      this.eligible.set(key, answer);
+    }
+    return this.eligible.get(key) ?? null;
+  }
 }

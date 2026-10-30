@@ -280,8 +280,12 @@ export function updateAgent(
   if (input.deviceLabel !== undefined) set.deviceLabel = cleanDeviceLabel(input.deviceLabel);
   // Relabelling into Cloud is a third way a token comes to be a cloud
   // agent's: every live one must already meet the rule.
+  // Its life is measured from when it was minted (D-121 item 3), so a token
+  // already two days old is refused however little of it is left.
   if (set.deviceLabel !== undefined && isCloudLabel(set.deviceLabel)) {
-    for (const token of liveTokens(db, row.id, now)) assertCloudExpiry(token.expiresAt, now);
+    for (const token of liveTokens(db, row.id, now)) {
+      assertCloudExpiry(token.expiresAt, now, token.createdAt);
+    }
   }
 
   if (Object.keys(set).length > 0) {
@@ -676,12 +680,15 @@ function isCloudLabel(label: string | null): boolean {
 }
 
 /**
- * A cloud agent's token must expire, and within the limit (LAI-592). Both
- * refusals are `unprocessable`; the `reason` names which rule was broken.
- * An expiry already past gives the token no life at all, so it breaks the
- * same rule as none: `cloud_token_expiry_required`.
+ * A cloud agent's token must expire, and within the limit **of when it was
+ * minted** (LAI-592, D-121 item 3): `expires_at - created_at` is at most
+ * {@link CLOUD_TOKEN_MAX_TTL_MS}. A token minted now (register, rotate) is
+ * measured from `now`; an existing one (relabel) from its own `created_at`.
+ * Both refusals are `unprocessable`; the `reason` names which rule was
+ * broken. An expiry already past gives the token no life at all, so it breaks
+ * the same rule as none: `cloud_token_expiry_required`.
  */
-function assertCloudExpiry(expiresAt: number | null, now: number): void {
+function assertCloudExpiry(expiresAt: number | null, now: number, mintedAt: number = now): void {
   if (expiresAt === null || expiresAt <= now) {
     throw new ApiError('unprocessable', 'A cloud agent’s token must have a future expiry', {
       reason: 'cloud_token_expiry_required',
@@ -689,12 +696,12 @@ function assertCloudExpiry(expiresAt: number | null, now: number): void {
       max_ttl_ms: CLOUD_TOKEN_MAX_TTL_MS,
     });
   }
-  if (expiresAt > now + CLOUD_TOKEN_MAX_TTL_MS) {
+  if (expiresAt > mintedAt + CLOUD_TOKEN_MAX_TTL_MS) {
     const hours = CLOUD_TOKEN_MAX_TTL_MS / 3_600_000;
     throw new ApiError('unprocessable', `A cloud agent’s token may live at most ${hours} hours`, {
       reason: 'cloud_token_expiry_too_long',
       expires_at: expiresAt,
-      max_expires_at: now + CLOUD_TOKEN_MAX_TTL_MS,
+      max_expires_at: mintedAt + CLOUD_TOKEN_MAX_TTL_MS,
       max_ttl_ms: CLOUD_TOKEN_MAX_TTL_MS,
     });
   }
