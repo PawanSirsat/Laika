@@ -283,6 +283,14 @@ const PAIRS: readonly Pair[] = [
     client: 'TaskLiveClaim',
     clientFile: 'tasks.ts',
   },
+  // LAI-1005: the saves-and-hand-off summary nested in both task views. The
+  // task pairs see `handoff` and nothing inside it (LAI-1006).
+  {
+    server: 'TaskHandoffView',
+    serverFile: 'services/task-handoff.ts',
+    client: 'TaskHandoff',
+    clientFile: 'tasks.ts',
+  },
   // LAI-549: a task's saves and hand-off offers, as the drawer reads them
   // (LAI-545, LAI-546). The ref is paired on its own because the checkpoint
   // pair sees `refs` and nothing inside it.

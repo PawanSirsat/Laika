@@ -1075,6 +1075,8 @@ describe('started_at and completed_at', () => {
         'discovered_from',
         'due_on',
         'external_ref',
+        // LAI-1005: saves and hand-off in brief, in §6.4's shape.
+        'handoff',
         'id',
         'key',
         'number',

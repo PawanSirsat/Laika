@@ -1,4 +1,5 @@
 import type { Checkpoint, CheckpointSummary, HandoffOffer } from '../../api/handoffs.ts';
+import type { TaskHandoff } from '../../api/tasks.ts';
 import { agentLabel, UNNAMED_AGENT, type AgentNaming } from '../../api/selected-agent.ts';
 import { clockTime } from '../../api/time-label.ts';
 import {
@@ -190,18 +191,88 @@ export function recoveryOf(
   return { kind: 'unavailable', words: rows.count === 0 ? NO_CHECKPOINT : NO_VERIFIED_CHECKPOINT };
 }
 
+/** The two states a task's saves put on its card and its drawer (LAI-1006). */
+export type HandoffState = Extract<ExecutionState, 'recovery_available' | 'save_needs_attention'>;
+
+/**
+ * The state the **server** derived (LAI-1005), read and never re-derived:
+ * *Recovery available* first, then *Save needs attention*, else nothing. A
+ * view served before LAI-1005 has no summary, and shows nothing.
+ *
+ * The card and the drawer both call this on the same task view, so they
+ * cannot disagree. The server already lets a live claim speak first: neither
+ * flag is set while one holds the task.
+ */
+export function handoffState(summary: TaskHandoff | undefined): HandoffState | null {
+  if (summary === undefined) return null;
+  if (summary.recovery_available) return 'recovery_available';
+  if (summary.save_needs_attention) return 'save_needs_attention';
+  return null;
+}
+
+/**
+ * Whether the drawer's own read of saves and offers says something the task
+ * view's summary does not (LAI-1006 review). The drawer polls while a save
+ * waits for its notice, and a notice writes no frame (LAI-1010), so the poll
+ * can be fresher than the board's list. When it is, the drawer asks the board
+ * to re-read, and card and drawer then move together on the server's next
+ * summary — still one rule, never a second derivation here.
+ *
+ * Compared field by field with what the summary carries: the newest save's
+ * verification, time and notice, and the newest live hand-off or recovery.
+ */
+export function summaryBehind(
+  summary: TaskHandoff | undefined,
+  checkpoints: readonly Checkpoint[],
+  offers: readonly HandoffOffer[],
+): boolean {
+  if (summary === undefined) return false;
+  const newest = [...checkpoints].sort(
+    (a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+  )[0];
+  const saw = summary.checkpoint;
+  if ((newest === undefined) !== (saw === null)) return true;
+  if (
+    newest !== undefined &&
+    saw !== null &&
+    (newest.verification !== saw.verification ||
+      newest.created_at !== saw.saved_at ||
+      newest.pending_notice !== saw.pending_notice)
+  ) {
+    return true;
+  }
+  const live = offers
+    .filter((o) => (o.kind === 'handoff' || o.kind === 'recovery') && isLiveOffer(o))
+    .sort((a, b) => b.created_at - a.created_at)[0];
+  const had = summary.offer;
+  if ((live === undefined) !== (had === null)) return true;
+  return (
+    live !== undefined &&
+    had !== null &&
+    (live.kind !== had.kind ||
+      live.state !== had.state ||
+      live.requires_approval !== had.requires_approval)
+  );
+}
+
 /**
  * The panel's state line, with the saves and offers known: *Recovery
  * available* for an expired claim with a verified save; *Save needs
  * attention* when the newest save is `uncertain` and no live claim speaks
  * first. A live claim's *Working* or *Connection lost* is never replaced.
+ *
+ * With the task view's summary (LAI-1005) those two come from
+ * {@link handoffState} — the card's rule — so the drawer says what the card
+ * says. Without one, an older server, the drawer's own reads decide.
  */
 export function panelState(
   base: ExecutionState | null,
   recovery: Recovery,
   rows: SaveRows,
+  summary?: TaskHandoff,
 ): ExecutionState | null {
   if (base === 'working' || base === 'connection_lost') return base;
+  if (summary !== undefined) return handoffState(summary) ?? base;
   if (recovery.kind === 'available') return 'recovery_available';
   if (rows.newer?.verification === 'uncertain') return 'save_needs_attention';
   return base;
