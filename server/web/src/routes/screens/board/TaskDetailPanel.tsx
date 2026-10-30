@@ -1324,6 +1324,8 @@ export function TaskDetailPanel({
                   execution.state === 'waiting_for_agent' ? null : execution.state,
                   recovery,
                   saves,
+                  // The task view's summary (LAI-1005): the card's own rule.
+                  task.handoff,
                 )}
                 intended={execution.intended}
                 session={execution.session}

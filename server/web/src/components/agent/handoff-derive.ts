@@ -1,4 +1,5 @@
 import type { Checkpoint, CheckpointSummary, HandoffOffer } from '../../api/handoffs.ts';
+import type { TaskHandoff } from '../../api/tasks.ts';
 import { agentLabel, UNNAMED_AGENT, type AgentNaming } from '../../api/selected-agent.ts';
 import { clockTime } from '../../api/time-label.ts';
 import {
@@ -190,18 +191,43 @@ export function recoveryOf(
   return { kind: 'unavailable', words: rows.count === 0 ? NO_CHECKPOINT : NO_VERIFIED_CHECKPOINT };
 }
 
+/** The two states a task's saves put on its card and its drawer (LAI-1006). */
+export type HandoffState = Extract<ExecutionState, 'recovery_available' | 'save_needs_attention'>;
+
+/**
+ * The state the **server** derived (LAI-1005), read and never re-derived:
+ * *Recovery available* first, then *Save needs attention*, else nothing. A
+ * view served before LAI-1005 has no summary, and shows nothing.
+ *
+ * The card and the drawer both call this on the same task view, so they
+ * cannot disagree. The server already lets a live claim speak first: neither
+ * flag is set while one holds the task.
+ */
+export function handoffState(summary: TaskHandoff | undefined): HandoffState | null {
+  if (summary === undefined) return null;
+  if (summary.recovery_available) return 'recovery_available';
+  if (summary.save_needs_attention) return 'save_needs_attention';
+  return null;
+}
+
 /**
  * The panel's state line, with the saves and offers known: *Recovery
  * available* for an expired claim with a verified save; *Save needs
  * attention* when the newest save is `uncertain` and no live claim speaks
  * first. A live claim's *Working* or *Connection lost* is never replaced.
+ *
+ * With the task view's summary (LAI-1005) those two come from
+ * {@link handoffState} — the card's rule — so the drawer says what the card
+ * says. Without one, an older server, the drawer's own reads decide.
  */
 export function panelState(
   base: ExecutionState | null,
   recovery: Recovery,
   rows: SaveRows,
+  summary?: TaskHandoff,
 ): ExecutionState | null {
   if (base === 'working' || base === 'connection_lost') return base;
+  if (summary !== undefined) return handoffState(summary) ?? base;
   if (recovery.kind === 'available') return 'recovery_available';
   if (rows.newer?.verification === 'uncertain') return 'save_needs_attention';
   return base;
