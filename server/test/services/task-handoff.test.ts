@@ -422,20 +422,36 @@ describe('who sees it', () => {
 // ------------------------------------------------------------------- cost
 
 describe('cost (LAI-091’s rule)', () => {
-  function statementsDuring(run: () => void): string[] {
-    const recorded: string[] = [];
-    const real = t.sqlite.prepare.bind(t.sqlite);
+  /**
+   * Every statement **executed** during `run`, by its SQL — not every one
+   * prepared (LAI-1005 review): better-sqlite3 caches nothing for Drizzle,
+   * but a statement prepared once and run per row would pass a prepare count.
+   */
+  function executionsDuring(run: () => void): string[] {
+    const executed: string[] = [];
+    const real = t.sqlite.prepare.bind(t.sqlite) as (source: string) => unknown;
     (t.sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
-      recorded.push(source);
-      return real(source);
+      const statement = real(source);
+      const target = statement as Record<string, (...args: unknown[]) => unknown>;
+      for (const method of ['all', 'get', 'run', 'iterate']) {
+        const original = target[method]!.bind(statement);
+        target[method] = (...args: unknown[]) => {
+          executed.push(source);
+          return original(...args);
+        };
+      }
+      return statement;
     };
     try {
       run();
     } finally {
       (t.sqlite as unknown as { prepare: typeof real }).prepare = real;
     }
-    return recorded;
+    return executed;
   }
+
+  const onTable = (sqls: readonly string[], table: string) =>
+    sqls.filter((sql) => sql.includes(`"${table}"`));
 
   /** Tasks each claimed, saved, expired and offered for recovery — real rows on every one. */
   function recoverable(a: AgentHandle, count: number): void {
@@ -446,11 +462,11 @@ describe('cost (LAI-091’s rule)', () => {
     expireClaims(t.db, T0 + LEASE);
   }
 
-  it('one task and fifty cost the same statements, and each table is read once', () => {
+  it('one task and fifty cost the same executions, and each hand-off table is read once', () => {
     const a = agentOf(owner, 'A');
     const measure = (): { all: string[]; page: ReturnType<typeof listTasks> } => {
       let page: ReturnType<typeof listTasks> = [];
-      const all = statementsDuring(() => {
+      const all = executionsDuring(() => {
         page = listTasks(t.db, owner, 'laika', { ...LIST, now: T0 + LEASE });
       });
       return { all, page };
@@ -470,7 +486,40 @@ describe('cost (LAI-091’s rule)', () => {
 
     expect(fifty.all.length).toBe(one.all.length);
     for (const table of ['task_checkpoints', 'handoff_offers']) {
-      expect(fifty.all.filter((sql) => sql.includes(`"${table}"`))).toHaveLength(1);
+      expect(onTable(fifty.all, table)).toHaveLength(1);
+    }
+  });
+
+  it('a ready= walk over several batches still reads the summaries once, for the page it returns', () => {
+    // 120 ready tasks first (unassigned backlog, no blockers), then two held
+    // ones with saves: `ready=false` must walk three batches of 50 to reach
+    // them.
+    for (let i = 0; i < 120; i += 1) task(`ready ${String(i)}`);
+    const a = agentOf(owner, 'A');
+    const held: string[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      const id = task(`held ${String(i)}`);
+      save(a, id, claim(a, id, T0 + 1), 'uncertain', T0 + 1);
+      held.push(id);
+    }
+
+    let page: ReturnType<typeof listTasks> = [];
+    const all = executionsDuring(() => {
+      page = listTasks(t.db, owner, 'laika', { ...LIST, limit: 2, ready: false, now: T0 + 2 });
+    });
+    expect(page.map((x) => x.id)).toEqual(held);
+    expect(page.every((x) => x.handoff.checkpoint?.verification === 'uncertain')).toBe(true);
+    // Several batches really ran: the tasks table was paged more than once …
+    expect(
+      all.filter((sql) => sql.includes('from "tasks"') && sql.includes('limit')).length,
+    ).toBeGreaterThanOrEqual(3);
+    // … and the hand-off tables were each read once, for the returned page.
+    for (const table of ['task_checkpoints', 'handoff_offers', 'checkpoint_refs']) {
+      expect(onTable(all, table), table).toHaveLength(1);
+    }
+    // The single read agrees with the list.
+    for (const view of page) {
+      expect(getTask(t.db, owner, view.id, T0 + 2).handoff).toEqual(view.handoff);
     }
   });
 });
