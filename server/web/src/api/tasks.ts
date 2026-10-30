@@ -1,4 +1,5 @@
 import type { SelectedAgent } from './selected-agent.ts';
+import type { CheckpointVerification } from './handoffs.ts';
 import { type TaskSize } from './estimates.ts';
 import { request } from './client.ts';
 import { ApiError } from './errors.ts';
@@ -63,6 +64,27 @@ export interface TaskLiveClaim {
   readonly harness?: string | null;
   readonly harness_version?: string | null;
   readonly model?: string | null;
+}
+
+/**
+ * `TaskHandoffView` in `server/src/services/task-handoff.ts` (LAI-1005): the
+ * task's newest save and live hand-off in brief, with the two card states the
+ * **server** derives. The card draws them; it never derives them again.
+ */
+export interface TaskHandoff {
+  readonly checkpoint: {
+    readonly verification: CheckpointVerification;
+    readonly saved_at: number;
+    readonly pending_since: number | null;
+    readonly pending_notice: boolean;
+  } | null;
+  readonly offer: {
+    readonly kind: 'handoff' | 'recovery';
+    readonly state: 'pending_approval' | 'open';
+    readonly requires_approval: boolean;
+  } | null;
+  readonly recovery_available: boolean;
+  readonly save_needs_attention: boolean;
 }
 
 export interface TaskSummary {
@@ -231,6 +253,11 @@ export interface TaskSummary {
    * LAI-568 has none, which reads as null.
    */
   readonly claim?: TaskLiveClaim | null;
+  /**
+   * Saves and hand-off in brief (§6.4, LAI-1005). Optional because a view
+   * served before it has none, which reads as nothing to show.
+   */
+  readonly handoff?: TaskHandoff;
   readonly created_at: number;
   readonly updated_at: number;
 }

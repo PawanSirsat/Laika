@@ -65,6 +65,7 @@ import {
   type TaskClaimView,
   type TaskLiveClaimView,
 } from './claims.ts';
+import { handoffViews, NO_HANDOFF, type TaskHandoffView } from './task-handoff.ts';
 import { addComment, commentCounts } from './comments.ts';
 import {
   freezeEstimateAtStart,
@@ -282,6 +283,13 @@ export interface TaskSummaryView {
    * claim is never this; the task's activity is where those are told.
    */
   claim: TaskLiveClaimView | null;
+  /**
+   * The task's newest save and live hand-off in brief, with the two states a
+   * card draws from them — *Recovery available* and *Save needs attention* —
+   * derived here once (§6.4, LAI-1005). Never null: a task with neither reads
+   * {@link NO_HANDOFF}.
+   */
+  handoff: TaskHandoffView;
   created_at: number;
   updated_at: number;
 }
@@ -342,6 +350,8 @@ interface ViewContext {
   readonly selectedAgents: ReadonlyMap<string, SelectedAgentView>;
   /** The live claim per task (LAI-568) — one query whatever the page. */
   readonly claims: ReadonlyMap<string, TaskLiveClaimView>;
+  /** Saves and hand-off in brief per task (LAI-1005) — three queries whatever the page. */
+  readonly handoffs: ReadonlyMap<string, TaskHandoffView>;
 }
 
 /**
@@ -353,6 +363,13 @@ function loadViewContext(
   rows: readonly TaskRow[],
   now: number,
   reader: string | null,
+  /**
+   * Load each task's `handoff` (LAI-1005). A paged read passes `false` for
+   * the candidate batches and loads it once for the page it returns
+   * ({@link withHandoffs}), so a `ready=` walk does not pay for rows it
+   * throws away.
+   */
+  handoffs = true,
 ): ViewContext {
   const edges = dependencyEdges(
     db,
@@ -399,6 +416,7 @@ function loadViewContext(
     sizes: sizeViews(db, rows),
     selectedAgents: selectedAgentViews(db, rows),
     claims: liveClaimViews(db, ids, now),
+    handoffs: handoffs ? handoffViews(db, rows, now) : new Map(),
     reader,
   };
 }
@@ -475,6 +493,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
         ? null
         : selectedFor(context.selectedAgents.get(row.selectedAgentId), context.reader),
     claim: context.claims.get(row.id) ?? null,
+    handoff: context.handoffs.get(row.id) ?? NO_HANDOFF,
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],
     started_at: row.startedAt,
@@ -1132,11 +1151,11 @@ function readTaskPage(
       .limit(size)
       .all();
 
-    const context = loadViewContext(db, rows, now, reader);
+    const context = loadViewContext(db, rows, now, reader, false);
     return rows.map((row) => toView(row, prefixOf(row.projectId), context));
   };
 
-  if (filter.ready === undefined) return read(filter.cursor, wanted);
+  if (filter.ready === undefined) return withHandoffs(db, read(filter.cursor, wanted), now);
 
   // `ready` is derived, so it cannot be a SQL predicate without duplicating the
   // rule (§4.5). Filtering after the query keeps one definition of readiness —
@@ -1156,7 +1175,16 @@ function readTaskPage(
     cursor = { sortKey: last.updated_at, id: last.id };
   }
 
-  return matched.slice(0, wanted);
+  return withHandoffs(db, matched.slice(0, wanted), now);
+}
+
+/**
+ * The page's `handoff` summaries, loaded **once for the rows returned** — never
+ * per candidate batch (LAI-1005 review). Each view keeps its field order.
+ */
+function withHandoffs(db: Db, page: TaskView[], now: number): TaskView[] {
+  const found = handoffViews(db, page, now);
+  return page.map((view) => ({ ...view, handoff: found.get(view.id) ?? NO_HANDOFF }));
 }
 
 export interface ListAllTasksFilter {
