@@ -2,11 +2,12 @@
 id: LAI-1003
 title: 'REST lists the sessions a context revision was delivered to: session, agent label, delivered_at'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-555]
 discovered-from: LAI-556
-status: backlog
+status: in-progress
+started: 2026-10-30T16:58:00+05:30
 ---
 
 Server half of *Delivered to* in the context History; the web half is
