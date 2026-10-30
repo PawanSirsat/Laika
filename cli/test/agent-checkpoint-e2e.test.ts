@@ -400,7 +400,7 @@ void describe('laika agent checkpoint (LAI-547)', () => {
     const note = join(scratch, 'note.json');
     writeFileSync(note, JSON.stringify({ work_done: 'Two exports', next_step: 'Tests' }));
 
-    const r = cli(repo.wt, ['checkpoint', 'save', '--note-file', note]);
+    const r = cli(repo.wt, ['checkpoint', 'save', '--note-file', note, '--file', 'new.ts']);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /Verification pending/);
 
@@ -452,7 +452,8 @@ void describe('laika agent checkpoint (LAI-547)', () => {
 
     writeFileSync(join(repo.wt, '.env'), 'X=1\n');
     writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 5;\n');
-    let r = cli(repo.wt, ['checkpoint', 'save']);
+    // A new file is saved only when listed, and listing a secret-shaped one is refused.
+    let r = cli(repo.wt, ['checkpoint', 'save', '--file', '.env']);
     assert.equal(r.code, 2, r.out);
     assert.match(
       r.out,
@@ -465,10 +466,17 @@ void describe('laika agent checkpoint (LAI-547)', () => {
       join(repo.wt, 'config.ts'),
       `export const k = '${'AKIA'}${'ABCDEFGHIJKLMNOP'}';\n`,
     );
-    r = cli(repo.wt, ['checkpoint', 'save']);
+    r = cli(repo.wt, ['checkpoint', 'save', '--file', 'config.ts']);
     assert.equal(r.code, 2, r.out);
     assert.match(r.out, /config\.ts \(looks like it holds an AWS access key id\)/);
     rmSync(join(repo.wt, 'config.ts'));
+
+    // A tracked file is saved by default, so its added lines are checked by default.
+    writeFileSync(join(repo.wt, 'app.ts'), `export const k = '${'AKIA'}${'ABCDEFGHIJKLMNOQ'}';\n`);
+    r = cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /app\.ts \(looks like it holds an AWS access key id\)/);
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 5;\n');
 
     const note = join(scratch, 'secret-note.json');
     writeFileSync(note, JSON.stringify({ work_done: `${'-----BEGIN '}RSA PRIVATE KEY-----` }));

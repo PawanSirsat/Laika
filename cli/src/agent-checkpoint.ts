@@ -531,7 +531,7 @@ export async function save(deps: CheckpointDeps, options: SaveOptions): Promise<
     const id = ulid(deps.now());
     const segment = target.task.segment;
     stageSafely(git, wt, {
-      ...(options.files === undefined ? {} : { only: options.files }),
+      ...(options.files === undefined ? {} : { add: options.files }),
       maxFileBytes: options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES,
     });
     const committed = commitStaged(

@@ -361,8 +361,11 @@ export function changes(git: GitRunner, wt: Worktree): Change[] {
 }
 
 export interface StageOptions {
-  /** Only these paths (relative to the worktree's top); otherwise every change. */
-  readonly only?: readonly string[];
+  /**
+   * New (untracked) files to include, relative to the worktree's top — the
+   * only way one is saved. Tracked changes are always included.
+   */
+  readonly add?: readonly string[];
   readonly maxFileBytes: number;
 }
 
@@ -401,39 +404,37 @@ function inside(top: string, path: string): string | undefined {
  * refused, naming each refused path.
  */
 export function stageSafely(git: GitRunner, wt: Worktree, options: StageOptions): string[] {
-  let candidates = changes(git, wt);
-  if (options.only !== undefined) {
-    const wanted = new Set<string>();
-    for (const raw of options.only) {
-      const rel = inside(wt.top, raw);
-      if (rel === undefined) {
-        throw new Refusal(`${raw} is outside this worktree`, 'outside_worktree', [raw]);
-      }
-      wanted.add(rel);
+  const all = changes(git, wt);
+  const listed = new Set<string>();
+  for (const raw of options.add ?? []) {
+    const rel = inside(wt.top, raw);
+    if (rel === undefined) {
+      throw new Refusal(`${raw} is outside this worktree`, 'outside_worktree', [raw]);
     }
-    const ignored = [...wanted].filter(
-      (p) => git(wt.top, ['check-ignore', '-q', '--', p]).code === 0,
-    );
-    if (ignored.length > 0) {
-      throw new Refusal(
-        `refused: ${ignored.join(', ')} ${ignored.length === 1 ? 'is' : 'are'} gitignored, and a checkpoint never stages an ignored file`,
-        'ignored_file',
-        ignored,
-      );
-    }
-    // Whatever is already staged outside the list would ride along in the commit.
-    const staged = must(git, wt.top, ['diff', '--cached', '--name-only', '-z', '--no-renames'])
-      .split('\0')
-      .filter((p) => p !== '' && !wanted.has(p));
-    if (staged.length > 0) {
-      throw new Refusal(
-        `refused: ${staged.join(', ')} ${staged.length === 1 ? 'is' : 'are'} staged but not in --files; unstage or list them`,
-        'staged_outside_list',
-        staged,
-      );
-    }
-    candidates = candidates.filter((c) => wanted.has(c.path));
+    listed.add(rel);
   }
+  const ignored = [...listed].filter(
+    (p) => git(wt.top, ['check-ignore', '-q', '--', p]).code === 0,
+  );
+  if (ignored.length > 0) {
+    throw new Refusal(
+      `refused: ${ignored.join(', ')} ${ignored.length === 1 ? 'is' : 'are'} gitignored, and a checkpoint never stages an ignored file`,
+      'ignored_file',
+      ignored,
+    );
+  }
+  const unchanged = [...listed].filter((p) => !all.some((c) => c.path === p));
+  if (unchanged.length > 0) {
+    throw new Refusal(
+      `refused: ${unchanged.join(', ')} ${unchanged.length === 1 ? 'has' : 'have'} no change to save`,
+      'not_changed',
+      unchanged,
+    );
+  }
+  // **Tracked changes only, by default.** A file git has never seen is saved
+  // only when it is named: a scratch file, a local build, a dump — none of
+  // them is work in progress just because it is in the worktree.
+  const candidates = all.filter((c) => !c.untracked || listed.has(c.path));
   if (candidates.length > MAX_CHANGED_FILES) {
     throw new Refusal(
       `refused: ${String(candidates.length)} changed files is more than a checkpoint takes ` +

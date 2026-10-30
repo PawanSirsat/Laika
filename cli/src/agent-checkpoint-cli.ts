@@ -38,8 +38,9 @@ import { ask, askSecret, closePrompt } from './prompt.ts';
 export const CHECKPOINT_USAGE = [
   'laika agent checkpoint — save the task’s work so another agent can continue it.',
   '',
-  '  laika agent checkpoint save [--note-file F|-] [--file PATH]… [--task T] [--harness H]',
-  '                                  commit WIP on the task branch, push it and one tag, register',
+  '  laika agent checkpoint save [--note-file F|-] [--file NEW]… [--task T] [--harness H]',
+  '                                  commit tracked changes (and each --file new file) on the task',
+  '                                  branch, push it and one tag, register',
   '  laika agent checkpoint note     < note.json   keep a continuation note for the next save',
   '  laika agent checkpoint status   the saves made here, retried if unregistered, and their verification',
   '  laika agent checkpoint reverify <id>          push a fresh tag at the same commit (D-116)',
