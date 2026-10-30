@@ -12,6 +12,7 @@ import {
   mkdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -902,6 +903,138 @@ void describe('checkpoint review fixes, round 4 (LAI-547, #154 at 84c4ebc2)', ()
       tool_response: { content: 'x'.repeat(5 * 1024 * 1024) },
     });
     assert.equal(inflight(b.home, 'claude-code', HS), 1, 'past the 4 MB read: nothing done');
+    clearInflightDir();
+  });
+});
+
+void describe('checkpoint review fixes, round 5 (LAI-547, #154 at 3405354c)', () => {
+  const refsOf = (bare: string): string =>
+    b.git(bare, 'for-each-ref', '--format=%(objectname) %(refname)');
+
+  /** A hook through the real entry, the harness named by PID, its stdin left as `stdin` says. */
+  function rawHook(
+    event: string,
+    write: (stdin: NodeJS.WritableStream) => void,
+  ): Promise<{ stdout: string; ms: number }> {
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const child = spawn(process.execPath, [HOOK_ENTRY, 'hook', event, 'claude-code'], {
+        stdio: ['pipe', 'pipe', 'ignore'],
+        env: { PATH: process.env.PATH ?? '', HOME: b.home, LAIKA_AGENT_HARNESS_PID: String(process.pid) },
+      });
+      let stdout = '';
+      child.stdout.on('data', (c: Buffer) => (stdout += c.toString('utf8')));
+      child.stdin.on('error', () => undefined);
+      write(child.stdin);
+      child.on('close', () => {
+        child.stdin.destroy();
+        resolve({ stdout, ms: Date.now() - started });
+      });
+    });
+  }
+
+  const fiveMegabyteWrite = (stdin: NodeJS.WritableStream): void => {
+    stdin.end(
+      JSON.stringify({
+        session_id: HS,
+        tool_name: 'Write',
+        tool_use_id: 'toolu_r53',
+        tool_input: { file_path: '/x', content: 'x'.repeat(5 * 1024 * 1024) },
+      }),
+    );
+  };
+
+  void test('R5-1: a destination through a symlink and .. is asked where the filesystem, and git, take it', () => {
+    const repo = b.freshRepo('r51');
+    // link -> real/sub, so link/../A.git is real/A.git on disk, and ./A.git on paper.
+    mkdirSync(join(repo.wt, 'real', 'sub'), { recursive: true });
+    const physical = join(repo.wt, 'real', 'A.git');
+    const lexical = join(repo.wt, 'A.git');
+    for (const bare of [physical, lexical]) {
+      b.git(repo.root, 'init', '-q', '--bare', '-b', 'master', bare);
+      b.git(repo.clone, 'push', '-q', bare, 'master');
+    }
+    b.git(physical, 'branch', 'LAI-547-r51', 'master');
+    b.git(physical, 'symbolic-ref', 'HEAD', 'refs/heads/LAI-547-r51');
+    symlinkSync(join('real', 'sub'), join(repo.wt, 'link'));
+    b.git(repo.clone, 'config', 'remote.origin.pushurl', 'link/../A.git');
+    // The instrument: git itself reaches the physical repo.
+    assert.match(
+      b.git(repo.wt, 'ls-remote', '--symref', '--', 'link/../A.git', 'HEAD'),
+      /^ref: refs\/heads\/LAI-547-r51\tHEAD/,
+    );
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 501;\n');
+    const before = [refsOf(physical), refsOf(lexical)];
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /LAI-547-r51 is a protected branch/);
+    assert.deepEqual([refsOf(physical), refsOf(lexical)], before, 'nothing pushed anywhere');
+  });
+
+  void test('R5-2: a list too long to judge leaves a session marker that holds saves off until a readable Stop', async () => {
+    const repo = b.freshRepo('r52');
+    await b.consent(true);
+    await b.beat();
+    clearInflightDir();
+    const running = Array.from({ length: 1001 }, (_, i) => ({
+      id: `task-${String(i)}`,
+      type: 'shell',
+      status: 'running',
+    }));
+    await runHook('stop', { background_tasks: running });
+    assert.ok(inflight(b.home, 'claude-code', HS) >= 1, 'an unjudged list is marked');
+
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 502;\n');
+    const head = b.git(repo.wt, 'rev-parse', 'HEAD');
+    writeActivity(b.home, 'claude-code', HS, { mutations: 3, cwd: repo.wt });
+    assert.equal(await autoCheckpoint(b.engine(), 'claude-code', HS, creds(), 600), 'busy');
+    assert.equal(b.git(repo.wt, 'rev-parse', 'HEAD'), head, 'no save went through');
+
+    await runHook('stop', { background_tasks: [] });
+    assert.equal(inflight(b.home, 'claude-code', HS), 0, 'a readable, empty list clears it');
+    await b.consent(false);
+  });
+
+  void test('R5-3: a PreToolUse whose input cannot be read (5 MB) still marks the tool, through the real entry', async () => {
+    const repo = b.freshRepo('r53');
+    await b.consent(true);
+    await b.beat();
+    clearInflightDir();
+    const { stdout } = await rawHook('pre-tool', fiveMegabyteWrite);
+    assert.equal(denied(stdout), false, 'no save holds the interlock: not denied');
+    assert.ok(inflight(b.home, 'claude-code', HS) >= 1, 'a conservative marker was written');
+
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 503;\n');
+    const head = b.git(repo.wt, 'rev-parse', 'HEAD');
+    writeActivity(b.home, 'claude-code', HS, { mutations: 3, cwd: repo.wt });
+    assert.equal(await autoCheckpoint(b.engine(), 'claude-code', HS, creds(), 600), 'busy');
+    assert.equal(b.git(repo.wt, 'rev-parse', 'HEAD'), head, 'no save ran beside it');
+
+    await runHook('stop', { background_tasks: [] });
+    assert.equal(inflight(b.home, 'claude-code', HS), 0, 'the next readable Stop clears it');
+    await b.consent(false);
+  });
+
+  void test('R5-3: an unreadable PreToolUse while a save holds the interlock is denied', async () => {
+    clearInflightDir();
+    const release = checkpoint.takeSaveInterlock(b.home, 'claude-code', HS, { budgetMs: 500 });
+    try {
+      const { stdout } = await rawHook('pre-tool', fiveMegabyteWrite);
+      assert.ok(denied(stdout), `not denied: ${stdout.slice(0, 200)}`);
+      assert.equal(inflight(b.home, 'claude-code', HS), 0, 'a denied tool leaves no marker');
+    } finally {
+      release();
+    }
+  });
+
+  void test('R5-4: a writer that never closes stdin cannot hold the hook past its read deadline', async () => {
+    clearInflightDir();
+    const { ms } = await rawHook('pre-tool', (stdin) => {
+      stdin.write('{"session_id":'); // and never ends
+    });
+    assert.ok(ms < 8000, `the hook returned after ${String(ms)} ms`);
+    assert.ok(inflight(b.home, 'claude-code', HS) >= 1, 'and, unable to read, it marked the tool');
     clearInflightDir();
   });
 });
