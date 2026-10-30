@@ -332,3 +332,20 @@ void describe('the interlock time bounds (LAI-547, #154 round 2)', () => {
     }
   });
 });
+
+void describe('the installed checkpoint hooks (LAI-547, #154 round 2)', () => {
+  void test('PostToolUseFailure is installed for Claude Code, which documents it, and not for Codex, which does not', () => {
+    const cc = agentHookGroups('/x/laika-agent-hook', 'claude-code');
+    const codex = agentHookGroups('/x/laika-agent-hook', 'codex');
+    assert.match(
+      String(
+        (cc.PostToolUseFailure as { hooks: { command: string }[] } | undefined)?.hooks[0]?.command,
+      ),
+      /laika-agent-hook' tool-failed claude-code$/,
+    );
+    assert.equal(codex.PostToolUseFailure, undefined);
+    for (const groups of [cc, codex]) {
+      for (const event of ['PreToolUse', 'PostToolUse', 'Stop']) assert.ok(groups[event], event);
+    }
+  });
+});
