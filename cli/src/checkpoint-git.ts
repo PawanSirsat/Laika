@@ -551,16 +551,39 @@ function pushOne(git: GitRunner, wt: Worktree, remote: string, sha: string, dst:
   );
 }
 
+/**
+ * The branch the remote's `HEAD` names **now**, asked of the remote itself
+ * (`ls-remote --symref`), never the clone's cached `refs/remotes/<r>/HEAD`,
+ * which says what the default was when it was last fetched — and is what a
+ * record written for a retry would otherwise carry for days.
+ *
+ * **Fails closed**: a remote that cannot be reached, or whose `HEAD` names
+ * no branch (unborn, detached), is a refusal — a push that cannot be told
+ * apart from a push to the default is not made.
+ */
+export function currentRemoteDefault(git: GitRunner, wt: Worktree, remote: string): string {
+  const r = git(wt.top, ['ls-remote', '--symref', '--', remote, 'HEAD']);
+  const m = r.code === 0 ? /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(r.stdout) : null;
+  if (m?.[1] === undefined) {
+    throw new Refusal(
+      `cannot tell ${remote}'s default branch (\`git ls-remote --symref ${remote} HEAD\` named none)` +
+        ', so nothing was pushed: a checkpoint never risks pushing to it',
+      'remote_default_unknown',
+    );
+  }
+  return m[1];
+}
+
 export function pushBranch(
   git: GitRunner,
   wt: Worktree,
   remote: string,
   branch: string,
   sha: string,
-  remoteDefaultBranch: string | undefined,
 ): void {
-  // Asked again here, at the push: nothing reaches a protected name.
-  assertWorkBranch(branch, remoteDefaultBranch);
+  // Asked again here, at the push, of the remote as it is now: nothing
+  // reaches master, main or whatever the remote's default has become.
+  assertWorkBranch(branch, currentRemoteDefault(git, wt, remote));
   if (git(wt.top, ['check-ref-format', '--branch', branch]).code !== 0) {
     throw new Refusal(`${branch} is not a valid branch name`, 'bad_branch');
   }

@@ -604,7 +604,7 @@ export async function save(deps: CheckpointDeps, options: SaveOptions): Promise<
     log(deps.home, `checkpoint ${id} committed ${sha} on ${branch}`);
 
     try {
-      pushBranch(git, wt, remote, branch, sha, def);
+      pushBranch(git, wt, remote, branch, sha);
       record.stage = 'branch_pushed';
       writeRecord(deps.home, record);
       pushTag(git, wt, remote, sha, record.tag_ref);
@@ -692,14 +692,7 @@ export async function retryPending(deps: CheckpointDeps): Promise<CheckpointReco
         const release = takeLock(wt, deps.now());
         try {
           if (record.stage === 'committed') {
-            pushBranch(
-              deps.git,
-              wt,
-              record.remote,
-              record.branch,
-              record.commit_sha,
-              record.remote_default,
-            );
+            pushBranch(deps.git, wt, record.remote, record.branch, record.commit_sha);
             record.stage = 'branch_pushed';
             writeRecord(deps.home, record);
           }

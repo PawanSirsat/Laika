@@ -566,7 +566,6 @@ void describe('laika agent checkpoint (LAI-547)', () => {
           'origin',
           'master',
           masterBefore ?? '',
-          undefined,
         ),
       (e: unknown) => e instanceof Refusal && e.code === 'protected_branch',
     );
