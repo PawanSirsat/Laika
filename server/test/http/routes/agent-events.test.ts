@@ -694,6 +694,30 @@ describe('hand-off events on /api/v1/events (§11.5)', () => {
       await live.disconnect();
     }
   });
+
+  it('revoking the agent closes its stream with the unauthorized frame, and refuses its poll', async () => {
+    const cp = await verifiedSave();
+    const live = await stream(receiver.secret);
+    try {
+      await ok(await restOffer(cp.id), 201);
+      await ok(await post(`/api/v1/agents/${receiver.id}/revoke`, { Cookie: cookie }), 200);
+      h.activityFeed.poll();
+      const frame = await live.next();
+      expect(frame.event).toBe('error');
+      expect(JSON.parse(frame.data)).toMatchObject({ error: { code: 'unauthorized' } });
+      expect(frame.id).toBeNull();
+    } finally {
+      await live.disconnect();
+    }
+    expect(
+      (
+        await errorOf(
+          await h.app.request('/api/v1/agents/me/events', { headers: bearer(receiver.secret) }),
+          401,
+        )
+      ).code,
+    ).toBe('unauthorized');
+  });
 });
 
 // -------------------------------------------------------------------- MCP
