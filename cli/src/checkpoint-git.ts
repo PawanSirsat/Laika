@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 /**
@@ -673,6 +673,22 @@ function configuredRemoteNames(git: GitRunner, wt: Worktree): Set<string> {
 }
 
 /**
+ * Where a local path really is, as the push will reach it (round-5 #1): the
+ * operating system's `realpath(3)` of the path joined to the worktree **as
+ * written**. `path.resolve` — and Node's own `realpathSync`, which normalises
+ * first — collapse `link/..` on paper, but the filesystem, and git, follow
+ * `link` and then go up from where it points. `undefined` when it does not
+ * resolve, which is a refusal.
+ */
+function physicalPath(cwd: string, url: string): string | undefined {
+  try {
+    return realpathSync.native(isAbsolute(url) ? url : `${cwd}/${url}`);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * A destination git reads as a local path: no `scheme://`, and no `host:`
  * before the first `/` (git's own test for the scp-like ssh form).
  */
@@ -732,12 +748,13 @@ export function currentDefaultAt(
   // path is asked as the absolute `file://` URL of the repo the push reaches
   // — resolved from the worktree, where the push runs — which no name is.
   const names = configuredRemoteNames(git, wt);
-  const query = localPath(url)
-    ? url.includes('%')
-      ? undefined
-      : `file://${resolve(wt.top, url)}`
-    : url;
-  if (query === undefined) throw unknown('a local path holding % cannot be asked as a URL');
+  let query = url;
+  if (localPath(url)) {
+    const real = physicalPath(wt.top, url);
+    if (real === undefined) throw unknown('its local path does not resolve on disk');
+    if (real.includes('%')) throw unknown('a local path holding % cannot be asked as a URL');
+    query = `file://${real}`;
+  }
   if (names.has(url) || names.has(query)) {
     throw unknown('it is also the name of a configured remote, so asking it would ask that remote');
   }
