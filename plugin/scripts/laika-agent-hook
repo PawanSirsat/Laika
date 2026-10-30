@@ -4,7 +4,7 @@
 # the token below. This is the first command on purpose.
 set +x +v +a
 #
-# laika-agent-hook <session-start|prompt|tool|session-end> <claude-code|codex>
+# laika-agent-hook <session-start|prompt|pre-tool|tool|tool-failed|stop|session-end> <claude-code|codex>
 #
 # The agent-session hook (LAI-542). Installed into Claude Code's and Codex's
 # hook config by `laika agent hooks on`, removed by `laika agent hooks off`;
