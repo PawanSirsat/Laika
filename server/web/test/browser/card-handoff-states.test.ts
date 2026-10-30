@@ -319,6 +319,27 @@ function world(): World {
     [`/api/v1/tasks/${id}`]: byId(id),
     [`/api/v1/tasks/${id}/comments`]: { data: [], next_cursor: null },
     [`/api/v1/tasks/${id}/watchers`]: { watchers: [] },
+    [`/api/v1/tasks/${id}/usage`]: {
+      task_id: id,
+      key: id,
+      tz: 'UTC',
+      first_day: null,
+      last_day: null,
+      totals: {
+        tokens: 0,
+        input: 0,
+        output: 0,
+        cache_write: 0,
+        cache_read: 0,
+        cost: { usd: 0, unpriced_tokens: 0, unpriced_models: [], unconfirmed_models: [] },
+      },
+      people: 'everyone',
+      by_person: [],
+      by_round: [],
+      attributed: null,
+      budget: null,
+      runaway: null,
+    },
     [`/api/v1/projects/laika-core/tasks?parent=${id}&limit=200`]: { data: [], next_cursor: null },
   });
 
@@ -487,7 +508,7 @@ void describe('the card states, from the task list alone', () => {
       // The whole page drew, and not one card read anything of its own.
       assert.equal(await h.page.locator('.card').count(), PAGE);
       assert.deepEqual(perCardReads(h), []);
-      const lists = h.calls.filter((c) => c.path.startsWith('/api/v1/projects/laika-core/tasks?'));
+      const lists = h.calls.filter((c) => c.path === '/api/v1/projects/laika-core/tasks');
       assert.ok(lists.length >= 1, 'the board read its list');
 
       await shoot(h.page, 'card-states', '.card[data-task-id="t1"]');
