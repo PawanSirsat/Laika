@@ -881,6 +881,10 @@ for two minutes. `Stop` prints nothing, so it never keeps a turn going, and
 `PreToolUse` prints only that deny — never an `allow`, which would skip your
 own permission rules.
 
+If a harness never sends a readable Stop after an unreadable hook input,
+automatic saves stay paused for the rest of that session (fail-safe: you lose
+saves, never work).
+
 The background child gets an allowlisted environment: the session helper's,
 plus `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`, `GIT_SSH`, `XDG_CONFIG_HOME`, `USER`
 and `LOGNAME` so git can reach the remote — never a token. **git itself, and
