@@ -224,7 +224,7 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
 
   void test('P1-7: PreToolUse waits while a save holds the interlock', async () => {
     clearInflightDir();
-    const release = checkpoint.takeSaveInterlock(b.home, 'claude-code', HS, harnessOwner());
+    const release = checkpoint.takeSaveInterlock(b.home, 'claude-code', HS);
     const startedAt = Date.now();
     const hook = new Promise<number>((resolve) => {
       const child = spawn(process.execPath, [HOOK_ENTRY, 'hook', 'pre-tool', 'claude-code'], {

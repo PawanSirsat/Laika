@@ -718,13 +718,28 @@ void describe('laika agent checkpoint (LAI-547)', () => {
         env: { PATH: process.env.PATH ?? '', HOME: home },
       });
     }
+    // The save runs in a detached child: a sampling window, not a claim about
+    // speed — a loaded machine (the whole gate at once) takes far longer than
+    // the ~5 s it takes alone.
     let hooked: Record<string, unknown> | undefined;
-    for (let waited = 0; waited < 40 && hooked === undefined; waited += 1) {
+    for (let waited = 0; waited < 120 && hooked === undefined; waited += 1) {
       await sleep(500);
       const r = newestRecord();
       if (r.id !== saved.id && r.stage === 'registered') hooked = r;
     }
-    assert.ok(hooked, 'the hooks saved after ten mutating tool calls');
+    assert.ok(
+      hooked,
+      `the hooks saved after ten mutating tool calls — helper log:\n${(() => {
+        try {
+          return readFileSync(join(home, '.laika', 'agent-sessions', 'helper.log'), 'utf8')
+            .split('\n')
+            .slice(-20)
+            .join('\n');
+        } catch {
+          return '(none)';
+        }
+      })()}`,
+    );
     assert.equal(remoteRefs(repo).get(String(hooked.tag_ref)), hooked.commit_sha);
 
     await must(

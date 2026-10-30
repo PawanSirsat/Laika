@@ -29,9 +29,10 @@ import {
   readCredential,
   readJson,
   readProc,
+  probeKill,
+  type Probe,
   readState,
   sessionFileKey,
-  UNKNOWN,
   type SessionState,
   statePath,
   writePrivate,
@@ -1138,19 +1139,32 @@ export function clearAllInflight(home: string, harness: Harness, id: string): vo
 
 const INTERLOCK = '.saving';
 
+/** The interlock's holder: a PID only. */
+function interlockHolder(path: string): number | undefined {
+  const value = readJson(path);
+  return isRecord(value) && Number.isSafeInteger(value.pid) && (value.pid as number) > 0
+    ? (value.pid as number)
+    : undefined;
+}
+
 /**
  * An automatic save's interlock (P1-7): held from just before its last quiet
  * check until its commit. `PreToolUse` writes its marker and then waits while
  * it is held, and the save asks for markers again under it — so a tool that
  * starts after the quiet check either waits for the commit or stops the save
- * before it commits. Held by the saving process; a dead holder's is taken.
+ * before it commits.
+ *
+ * **Held by PID, judged by the kernel** (`kill(pid, 0)`), never by `ps`: the
+ * save must not depend on a process-table read that a loaded machine can
+ * time out, and a lock whose PID was reused at worst makes one `PreToolUse`
+ * wait its 4 s and one save give up — it can never let a save race a tool.
  */
 export function takeSaveInterlock(
   home: string,
   harness: Harness,
   id: string,
-  owner: MarkerOwner,
-  proc: ProcReader = readProc,
+  pid: number = process.pid,
+  probe: Probe = probeKill,
 ): () => void {
   const dir = inflightDir(home, harness, id);
   privateDir(join(home, '.laika'));
@@ -1159,33 +1173,33 @@ export function takeSaveInterlock(
   const path = join(dir, INTERLOCK);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      writeFileSync(path, JSON.stringify(owner), { mode: 0o600, flag: 'wx' });
+      writeFileSync(path, JSON.stringify({ pid }), { mode: 0o600, flag: 'wx' });
       let released = false;
       return () => {
         if (released) return;
         released = true;
-        if (markerOwner(path)?.pid === owner.pid) rmSync(path, { force: true });
+        if (interlockHolder(path) === pid) rmSync(path, { force: true });
       };
     } catch {
-      const holder = markerOwner(path);
-      if (holder !== undefined && liveness(holder.pid, holder.started, proc) !== 'dead') break;
+      const holder = interlockHolder(path);
+      if (holder !== undefined && probe(holder) !== 'absent') break;
       rmSync(path, { force: true });
     }
   }
   throw new Refusal('another automatic save holds this session’s interlock', 'checkpoint_busy');
 }
 
-/** Whether a live process holds the session's save interlock. */
+/** Whether a process that still exists holds the session's save interlock. */
 export function interlockHeld(
   home: string,
   harness: Harness,
   id: string,
-  proc: ProcReader = readProc,
+  probe: Probe = probeKill,
 ): boolean {
   const path = join(inflightDir(home, harness, id), INTERLOCK);
   if (!existsSync(path)) return false;
-  const holder = markerOwner(path);
-  return holder === undefined || liveness(holder.pid, holder.started, proc) !== 'dead';
+  const holder = interlockHolder(path);
+  return holder === undefined || probe(holder) !== 'absent';
 }
 
 function markerOwner(path: string): MarkerOwner | undefined {
@@ -1321,12 +1335,11 @@ export async function autoCheckpoint(
   // since the loop above is seen here, and one that starts from now on waits
   // in its PreToolUse or is seen by the checks inside the save.
   const proc = deps.proc ?? readProc;
-  const self = proc(process.pid);
-  if (self === undefined || self === UNKNOWN) return 'busy';
   let release: () => void;
   try {
-    release = takeSaveInterlock(deps.home, harness, harnessSessionId, self, proc);
+    release = takeSaveInterlock(deps.home, harness, harnessSessionId);
   } catch {
+    log(deps.home, `auto checkpoint ${harness}: another save holds the interlock; not saved`);
     return 'busy';
   }
   const toolsRunning = (): number => inflight(deps.home, harness, harnessSessionId, proc);
