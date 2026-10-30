@@ -42,6 +42,7 @@ import {
   taskCheckpoints,
   taskClaims,
   tasks,
+  users,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can, systemPrincipal, type AgentContext } from '../policy/can.ts';
@@ -63,8 +64,12 @@ import {
   type TaskClaimView,
 } from './claims.ts';
 import { assertCheckpointAcceptable } from './checkpoints.ts';
-import { requireProjectBySlug } from './projects.ts';
-import { noSuchProjectForAgent, type WorkRequestView } from './work-requests.ts';
+import { canSeeProject, requireProjectBySlug, requireReadableProjectBySlug } from './projects.ts';
+import {
+  noSuchProjectForAgent,
+  type SelectedAgentView,
+  type WorkRequestView,
+} from './work-requests.ts';
 
 /**
  * Hand-off offers, approvals, acceptance and recovery (SPEC §4.73, §4.74,
@@ -1800,4 +1805,379 @@ export function listInbox(db: Db, actor: ResolvedActor, options: InboxOptions): 
       project_id: f.projectId,
     };
   });
+}
+
+// ------------------------------------------------------- a person's inbox
+
+/** The four filters of a person's hand-off inbox (§6.4, LAI-1009). */
+export const PERSON_INBOX_VIEWS = ['received', 'sent', 'needs_approval', 'recovery'] as const;
+export type PersonInboxFilter = (typeof PERSON_INBOX_VIEWS)[number];
+
+/**
+ * What the caller can do about an offer now. A hint for the screen, never a
+ * permission: every write asks `can()` again, inside its own transaction.
+ */
+export type HandoffNextAction =
+  | 'approve'
+  | 'name_receiver'
+  | 'accept_with_your_agent'
+  | 'cancel'
+  | 'wait_for_approval'
+  | 'wait_for_receiver'
+  | 'none';
+
+/** One hand-off or recovery offer, as a signed-in person's inbox reads it. */
+export interface PersonHandoffView {
+  id: string;
+  kind: 'handoff' | 'recovery';
+  /** A live offer past `expires_at` reads `expired`, as every write answers it (§11.6). */
+  state: HandoffOfferState;
+  task_id: string;
+  task_key: string;
+  task_title: string;
+  project_id: string;
+  project_slug: string;
+  /** The agent whose claim the work moves from: the sender's, or the expired one. */
+  from_agent: SelectedAgentView | null;
+  /** Null for an unnamed recovery, which any eligible agent may take. */
+  to_agent: SelectedAgentView | null;
+  checkpoint_id: string | null;
+  /** The checkpoint as it is now, or null once retention removed it. */
+  checkpoint: { commit_sha: string; verification: string; saved_at: number } | null;
+  /** The sender's reason. Untrusted data (D-115 item 7). */
+  reason: string | null;
+  requires_approval: boolean;
+  approved: boolean;
+  approved_at: number | null;
+  expires_at: number | null;
+  closed_reason: HandoffClosedReason | null;
+  created_at: number;
+  closed_at: number | null;
+  next_action: HandoffNextAction;
+}
+
+export type PersonInboxCounts = Record<PersonInboxFilter, number>;
+
+/** `GET /handoff-offers` (§6.4): a page of one view, and every view's count. */
+export interface PersonHandoffInbox {
+  data: PersonHandoffView[];
+  next_cursor: string | null;
+  counts: PersonInboxCounts;
+}
+
+export interface PersonInboxOptions {
+  view: PersonInboxFilter;
+  limit: number;
+  cursor: { sortKey: string | number; id: string } | null;
+  projectSlug?: string | null | undefined;
+  /** Closed and expired offers too. The counts never include them. */
+  includeClosed?: boolean | undefined;
+  now?: number | undefined;
+}
+
+/**
+ * `GET /handoff-offers` (§6.4, LAI-1009): the hand-off and recovery offers
+ * that concern a **signed-in person**, one view at a time, newest first, with
+ * every view's count for the Inbox badge.
+ *
+ * - `received` — addressed to an agent the caller owns;
+ * - `sent` — a hand-off from an agent the caller owns;
+ * - `needs_approval` — `pending_approval`, the caller may approve it
+ *   (`task.handoff.approve`), and **never where the caller owns the
+ *   receiver** (`approver_is_receiver`);
+ * - `recovery` — every recovery offer.
+ *
+ * Only on projects the caller may read now (`project.read`): an unreadable
+ * project contributes nothing, and an unreadable `project` filter is the
+ * missing slug's `404`. Live and unexpired only, unless `includeClosed`; the
+ * counts are live and unexpired always. An agent's token is refused — its
+ * inbox is `GET /agents/me/inbox`. Reads, and records nothing.
+ */
+export function listPersonInbox(
+  db: Db,
+  actor: ResolvedActor,
+  options: PersonInboxOptions,
+): { rows: PersonHandoffView[]; counts: PersonInboxCounts } {
+  if (registeredAgent(actor) !== null) {
+    throw new ApiError('forbidden', 'An agent reads its own inbox at GET /agents/me/inbox', {
+      reason: 'use_agent_inbox',
+    });
+  }
+  assertCan(actor, 'agent.read_own');
+  const now = options.now ?? Date.now();
+
+  let readable = db
+    .select({ id: projects.id })
+    .from(projects)
+    .all()
+    .map((p) => p.id)
+    .filter((projectId) => canSeeProject(actor, projectId));
+  if (options.projectSlug !== undefined && options.projectSlug !== null) {
+    readable = [requireReadableProjectBySlug(db, actor, options.projectSlug).id];
+  }
+  const counts: PersonInboxCounts = { received: 0, sent: 0, needs_approval: 0, recovery: 0 };
+  if (readable.length === 0) return { rows: [], counts };
+
+  // Asked of `can()` once per project: a lead approves any task's offer, a
+  // member only on a task they are the assignee of (§3.2).
+  const approveAny = readable.filter((projectId) =>
+    can(withProject(actor, projectId), 'task.handoff.approve', { projectId }),
+  );
+  const approveAssigned = readable.filter((projectId) =>
+    can(withProject(actor, projectId), 'task.handoff.approve', {
+      projectId,
+      ownerId: actor.userId,
+    }),
+  );
+
+  const mine = db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(eq(agents.ownerUserId, actor.userId));
+  const fromMine = exists(
+    db
+      .select({ id: taskClaims.id })
+      .from(taskClaims)
+      .where(
+        and(
+          eq(taskClaims.taskId, handoffOffers.taskId),
+          eq(taskClaims.generation, handoffOffers.fromClaimGeneration),
+          inArray(taskClaims.agentId, mine),
+        ),
+      ),
+  );
+  const receiverMine = inArray(handoffOffers.toAgentId, mine);
+
+  const viewCondition: Record<PersonInboxFilter, SQL> = {
+    received: receiverMine,
+    sent: and(eq(handoffOffers.kind, 'handoff'), fromMine)!,
+    needs_approval: and(
+      eq(handoffOffers.state, 'pending_approval'),
+      sql`${handoffOffers.toAgentId} IS NOT NULL`,
+      sql`NOT (${receiverMine})`,
+      or(
+        approveAny.length === 0 ? sql`0` : inArray(tasks.projectId, approveAny),
+        approveAssigned.length === 0
+          ? sql`0`
+          : and(inArray(tasks.projectId, approveAssigned), eq(tasks.assigneeId, actor.userId)),
+      ),
+    )!,
+    recovery: eq(handoffOffers.kind, 'recovery'),
+  };
+  const live = and(
+    inArray(handoffOffers.state, [...LIVE_OFFER_STATES]),
+    or(isNull(handoffOffers.expiresAt), sql`${handoffOffers.expiresAt} > ${now}`),
+  )!;
+  const base = [
+    inArray(tasks.projectId, readable),
+    inArray(handoffOffers.kind, ['handoff', 'recovery']),
+  ];
+
+  for (const view of PERSON_INBOX_VIEWS) {
+    counts[view] =
+      db
+        .select({ n: sql<number>`count(*)` })
+        .from(handoffOffers)
+        .innerJoin(tasks, eq(tasks.id, handoffOffers.taskId))
+        .where(and(...base, live, viewCondition[view]))
+        .get()?.n ?? 0;
+  }
+
+  const conditions: SQL[] = [...base, viewCondition[options.view]];
+  if (options.includeClosed !== true) conditions.push(live);
+  if (options.cursor !== null) {
+    const key = Number(options.cursor.sortKey);
+    conditions.push(
+      or(
+        lt(handoffOffers.createdAt, key),
+        and(eq(handoffOffers.createdAt, key), lt(handoffOffers.id, options.cursor.id)),
+      )!,
+    );
+  }
+  const found = db
+    .select({
+      offer: handoffOffers,
+      number: tasks.number,
+      title: tasks.title,
+      assigneeId: tasks.assigneeId,
+      projectId: tasks.projectId,
+      prefix: projects.prefix,
+      slug: projects.slug,
+    })
+    .from(handoffOffers)
+    .innerJoin(tasks, eq(tasks.id, handoffOffers.taskId))
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .where(and(...conditions))
+    .orderBy(desc(handoffOffers.createdAt), desc(handoffOffers.id))
+    .limit(options.limit + 1)
+    .all();
+
+  return { rows: personHandoffViews(db, actor, found, now), counts };
+}
+
+function personHandoffViews(
+  db: Db,
+  actor: ResolvedActor,
+  found: readonly {
+    offer: OfferRow;
+    number: number;
+    title: string;
+    assigneeId: string | null;
+    projectId: string;
+    prefix: string;
+    slug: string;
+  }[],
+  now: number,
+): PersonHandoffView[] {
+  if (found.length === 0) return [];
+  const taskIds = [...new Set(found.map((f) => f.offer.taskId))];
+  const claims = db
+    .select({
+      taskId: taskClaims.taskId,
+      generation: taskClaims.generation,
+      agentId: taskClaims.agentId,
+    })
+    .from(taskClaims)
+    .where(inArray(taskClaims.taskId, taskIds))
+    .all();
+  const fromAgentOf = new Map(
+    claims.map((c) => [`${c.taskId}:${String(c.generation)}`, c.agentId]),
+  );
+  const fromAgentId = (offer: OfferRow) =>
+    offer.fromClaimGeneration === null
+      ? null
+      : (fromAgentOf.get(`${offer.taskId}:${String(offer.fromClaimGeneration)}`) ?? null);
+
+  const agentIds = [
+    ...new Set(
+      found
+        .flatMap((f) => [fromAgentId(f.offer), f.offer.toAgentId])
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+  const agentLines = new Map(
+    agentIds.length === 0
+      ? []
+      : db
+          .select({
+            id: agents.id,
+            displayName: agents.displayName,
+            harness: agents.harness,
+            deviceLabel: agents.deviceLabel,
+            status: agents.status,
+            ownerId: users.id,
+            ownerName: users.name,
+          })
+          .from(agents)
+          .innerJoin(users, eq(users.id, agents.ownerUserId))
+          .where(inArray(agents.id, agentIds))
+          .all()
+          .map((a): [string, SelectedAgentView] => [
+            a.id,
+            {
+              id: a.id,
+              display_name: a.displayName,
+              harness: a.harness,
+              device_label: a.deviceLabel,
+              status: a.status,
+              owner: { id: a.ownerId, name: a.ownerName },
+            },
+          ]),
+  );
+
+  const checkpointIds = [
+    ...new Set(found.map((f) => f.offer.checkpointId).filter((id): id is string => id !== null)),
+  ];
+  const checkpoints = new Map(
+    checkpointIds.length === 0
+      ? []
+      : db
+          .select({
+            id: taskCheckpoints.id,
+            commitSha: taskCheckpoints.commitSha,
+            verification: taskCheckpoints.verification,
+            createdAt: taskCheckpoints.createdAt,
+          })
+          .from(taskCheckpoints)
+          .where(inArray(taskCheckpoints.id, checkpointIds))
+          .all()
+          .map((c) => [c.id, c]),
+  );
+
+  return found.map((f): PersonHandoffView => {
+    const offer = f.offer;
+    const from = fromAgentId(offer);
+    const fromAgent = from === null ? null : (agentLines.get(from) ?? null);
+    const toAgent = offer.toAgentId === null ? null : (agentLines.get(offer.toAgentId) ?? null);
+    const checkpoint =
+      offer.checkpointId === null ? undefined : checkpoints.get(offer.checkpointId);
+    const expired = isLive(offer.state) && offer.expiresAt !== null && offer.expiresAt <= now;
+    const state: HandoffOfferState = expired ? 'expired' : offer.state;
+    return {
+      id: offer.id,
+      kind: offer.kind as 'handoff' | 'recovery',
+      state,
+      task_id: offer.taskId,
+      task_key: `${f.prefix}-${String(f.number)}`,
+      task_title: f.title,
+      project_id: f.projectId,
+      project_slug: f.slug,
+      from_agent: fromAgent,
+      to_agent: toAgent,
+      checkpoint_id: offer.checkpointId,
+      checkpoint:
+        checkpoint === undefined
+          ? null
+          : {
+              commit_sha: checkpoint.commitSha,
+              verification: checkpoint.verification,
+              saved_at: checkpoint.createdAt,
+            },
+      reason: offer.reason,
+      requires_approval: offer.requiresApproval,
+      approved: offer.approvedAt !== null,
+      approved_at: offer.approvedAt,
+      expires_at: offer.expiresAt,
+      closed_reason: offer.closedReason,
+      created_at: offer.createdAt,
+      closed_at: offer.closedAt,
+      next_action: nextActionFor(actor, f, state, fromAgent, toAgent),
+    };
+  });
+}
+
+/**
+ * What the caller can do next, asked of `can()` as each write would ask it.
+ * Approval comes first: an approver who is also the sender's owner approves
+ * before anything else can happen.
+ */
+function nextActionFor(
+  actor: ResolvedActor,
+  row: { offer: OfferRow; assigneeId: string | null; projectId: string },
+  state: HandoffOfferState,
+  fromAgent: SelectedAgentView | null,
+  toAgent: SelectedAgentView | null,
+): HandoffNextAction {
+  if (!isLive(state)) return 'none';
+  const scoped = withProject(actor, row.projectId);
+  const mayApprove = can(scoped, 'task.handoff.approve', {
+    projectId: row.projectId,
+    ownerId: row.assigneeId,
+  });
+  const receiverMine = toAgent?.owner.id === actor.userId;
+  const senderMine = fromAgent?.owner.id === actor.userId;
+
+  if (state === 'pending_approval' && toAgent !== null && mayApprove && !receiverMine) {
+    return 'approve';
+  }
+  if (state === 'open' && row.offer.toAgentId === null && mayApprove) return 'name_receiver';
+  if (state === 'open' && receiverMine) return 'accept_with_your_agent';
+  if (
+    row.offer.kind === 'handoff' &&
+    senderMine &&
+    can(scoped, 'task.handoff.cancel', { projectId: row.projectId, ownerId: actor.userId })
+  ) {
+    return 'cancel';
+  }
+  return state === 'pending_approval' ? 'wait_for_approval' : 'wait_for_receiver';
 }

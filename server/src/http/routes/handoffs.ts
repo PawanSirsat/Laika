@@ -13,11 +13,16 @@ import {
   HANDOFF_POLICY_LIMITS,
   type HandoffOfferView,
   type HandoffPolicyView,
+  listPersonInbox,
   listTaskOffers,
   offerHandoff,
+  PERSON_INBOX_VIEWS,
+  type PersonHandoffInbox,
+  type PersonInboxFilter,
   putHandoffPolicy,
 } from '../../services/handoffs.ts';
 import { type AppEnv } from '../context.ts';
+import { buildPage, parsePageQuery } from '../pagination.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
@@ -142,10 +147,44 @@ export function taskHandoffRoutes(options: HandoffRouteOptions): Hono<AppEnv> {
   return app;
 }
 
-/** Mounted at `/api/v1/handoff-offers`: approve, accept, decline, cancel. */
+/** `?view=` — absent or empty is `received`; anything else is `400`, as `?fields=` is. */
+function parseView(raw: string | undefined): PersonInboxFilter {
+  if (raw === undefined || raw === '') return 'received';
+  if ((PERSON_INBOX_VIEWS as readonly string[]).includes(raw)) return raw as PersonInboxFilter;
+  throw ApiError.badRequest(`view must be one of ${PERSON_INBOX_VIEWS.join(', ')}`, { view: raw });
+}
+
+/** `?include_closed=` — `true` or `false`; absent or empty is `false`. */
+function parseIncludeClosed(raw: string | undefined): boolean {
+  if (raw === undefined || raw === '' || raw === 'false') return false;
+  if (raw === 'true') return true;
+  throw ApiError.badRequest('include_closed must be true or false', { include_closed: raw });
+}
+
+/** Mounted at `/api/v1/handoff-offers`: a person's inbox; approve, accept, decline, cancel. */
 export function handoffOfferRoutes(options: HandoffRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, sqlite } = options;
+
+  /**
+   * A signed-in person's hand-off inbox (LAI-1009): one view, newest first,
+   * and every view's count for the badge. An agent's token reads
+   * `GET /agents/me/inbox` instead.
+   */
+  app.get('/', (c) => {
+    const actor = requireActor(c);
+    const query = c.req.query();
+    const { limit, cursor } = parsePageQuery(query);
+    const { rows, counts } = listPersonInbox(db, actor, {
+      view: parseView(query.view),
+      limit,
+      cursor,
+      projectSlug: query.project === '' ? null : (query.project ?? null),
+      includeClosed: parseIncludeClosed(query.include_closed),
+    });
+    const page = buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id }));
+    return c.json<PersonHandoffInbox>({ ...page, counts });
+  });
 
   /** A person's, signed in: the task's assignee or a lead, never the receiver's owner. */
   app.post('/:id/approve', async (c) => {
