@@ -1696,6 +1696,50 @@ describe('cloud agents hold short-lived tokens (LAI-592)', () => {
     }
   });
 
+  it('relabelling measures a token from when it was minted: 48 h old with 1 h left is too long', async () => {
+    const HOUR = 60 * MINUTE;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const T = Date.now();
+      vi.setSystemTime(T);
+      // Not a cloud agent yet, so a 49-hour token is allowed at T.
+      const old = await register([], bob.cookie, { harness: 'codex', expires_at: T + 49 * HOUR });
+      // Within a day of minting, relabelled half-way through its life.
+      const fresh = await register([], bob.cookie, {
+        harness: 'cursor',
+        expires_at: T + 24 * HOUR,
+      });
+      vi.setSystemTime(T + 48 * HOUR);
+      const relabel = (id: string) =>
+        req(
+          `/api/v1/agents/${id}`,
+          { method: 'PATCH', body: JSON.stringify({ device_label: 'Cloud' }) },
+          { cookie: bob.cookie },
+        );
+      // One hour left, but it would have lived 49 hours as a cloud agent's.
+      const refused = await relabel(old.agent.id);
+      expect(await error(refused.clone())).toEqual({
+        status: 422,
+        code: 'unprocessable',
+        reason: 'cloud_token_expiry_too_long',
+      });
+      expect(
+        ((await refused.json()) as { error: { details: Record<string, unknown> } }).error.details,
+      ).toMatchObject({
+        expires_at: T + 49 * HOUR,
+        max_expires_at: T + 24 * HOUR,
+      });
+      expect(h.db.select().from(agents).where(eq(agents.id, old.agent.id)).get()?.deviceLabel).toBe(
+        'Belka',
+      );
+
+      vi.setSystemTime(T + 12 * HOUR);
+      await ok(await relabel(fresh.agent.id));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('normalises as trim().toLowerCase() does: Unicode spaces around Cloud count, look-alikes do not', async () => {
     // String.prototype.trim strips NBSP, em space and ideographic space.
     expect(' Cloud 　'.trim().toLowerCase()).toBe('cloud');
