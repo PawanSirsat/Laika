@@ -61,6 +61,8 @@ import {
   type GrantChoice,
   type VerifyState,
 } from './agent-wizard.ts';
+import { CheckpointConsentSwitch, goToConsent } from './CheckpointConsentSwitch.tsx';
+import { showsConsent } from './checkpoint-consent.ts';
 import { DevicesSection } from './DevicesSection.tsx';
 import { goToAgent } from './go-to-agent.ts';
 import '../tokens/tokens.css';
@@ -973,6 +975,7 @@ function RegisterWizard({
           {step === 5 && created !== undefined && (
             <VerifyPanel
               state={verify}
+              agentId={created.agent.id}
               agentName={agentLabel(created.agent)}
               onRetry={() => {
                 setRound((n) => n + 1);
@@ -1103,10 +1106,12 @@ function ExistingAgentNotice({
 
 function VerifyPanel({
   state,
+  agentId,
   agentName,
   onRetry,
 }: {
   readonly state: VerifyState;
+  readonly agentId: string;
   readonly agentName: string;
   readonly onRetry: () => void;
 }) {
@@ -1152,6 +1157,18 @@ function VerifyPanel({
       <p className="agents-hint">
         Only this agent’s credential can complete this step: your own session and your other tokens
         do not. It proves the credential reached the board — not which program sent it.
+      </p>
+      <p className="agents-hint" data-consent-pointer>
+        Automatic checkpoints stay off until you turn on{' '}
+        <a
+          href={`#${agentAnchor(agentId)}`}
+          onClick={(event) => {
+            if (goToConsent(agentId)) event.preventDefault();
+          }}
+        >
+          Save checkpoints automatically
+        </a>{' '}
+        on {agentName}’s row. Saving by hand never needs it.
       </p>
     </div>
   );
@@ -1438,6 +1455,11 @@ function AgentRow({
           <dd>Not available yet</dd>
         </div>
       </dl>
+
+      {/* D-115 item 2: the owner's alone (D-121); anyone else sees nothing. */}
+      {showsConsent(agent, me) && (
+        <CheckpointConsentSwitch agent={agent} me={me} canManage={canManage} now={now} />
+      )}
 
       {canManage && active && (
         <div className="agents-row-actions">

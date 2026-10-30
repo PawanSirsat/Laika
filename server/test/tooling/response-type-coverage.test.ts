@@ -197,9 +197,9 @@ const UNPAIRED = new Map<string, string>([
   // `web/src/api/org.ts` — and the staleness guard below is what noticed, by
   // firing on a *reason* going false rather than on an entry going unnecessary.
   ['AvatarView', 'no client type exists'],
-  // LAI-545: checkpoints and consent are served ahead of their screens —
-  // LAI-549 mirrors them on the client, and the drawer reads them there.
-  ['CheckpointConsentView', 'no client type exists'],
+  // LAI-545: checkpoints are served ahead of their screens — LAI-549 mirrors
+  // them on the client, and the drawer reads them there. The consent left this
+  // group in LAI-1007, which built the owner's switch.
   ['CheckpointRefRegistered', 'no client type exists'],
   // LAI-546: the accept is an agent's and has no screen; LAI-550 paired the
   // policy and LAI-1009's person inbox.
