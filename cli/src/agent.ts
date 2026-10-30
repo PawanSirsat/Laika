@@ -80,11 +80,69 @@ export interface AgentIo {
   readonly home: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly stdin: () => string;
+  /**
+   * A hook's input, read with a deadline (round-5 #4): `undefined` when it
+   * cannot be read whole — a writer that never closes, past
+   * {@link STDIN_MAX_BYTES}, an error. Absent in tests that pass `stdin`.
+   */
+  readonly readHookInput?: () => Promise<string | undefined>;
   readonly isTTY: boolean;
 }
 
 /** The most a hook, a child or `login` reads from stdin; past it nothing is read. */
 export const STDIN_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * How long a hook waits for its input. With {@link PRE_TOOL_WAIT_MS} it must
+ * fit inside PreToolUse's 30 s timeout, or the harness kills the hook and
+ * runs the tool undecided.
+ */
+export const HOOK_READ_MS = 5_000;
+
+/**
+ * Stdin, read as a stream with a deadline: a blocking `readSync` cannot be
+ * interrupted, so a writer that holds the pipe open would hold the hook until
+ * the harness killed it. Whole input, or `undefined` — on the deadline, past
+ * `maxBytes`, or on an error — after which stdin is let go so the process
+ * can exit.
+ */
+export function readStdinBounded(
+  maxBytes = STDIN_MAX_BYTES,
+  timeoutMs = HOOK_READ_MS,
+  stream: NodeJS.ReadableStream & { destroy?: () => void } = process.stdin,
+): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
+    const finish = (value: string | undefined): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      stream.removeAllListeners('data');
+      stream.destroy?.();
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      finish(undefined);
+    }, timeoutMs);
+    stream.on('data', (chunk: Buffer | string) => {
+      const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      total += bytes.length;
+      if (total > maxBytes) {
+        finish(undefined);
+        return;
+      }
+      chunks.push(bytes);
+    });
+    stream.on('end', () => {
+      finish(Buffer.concat(chunks).toString('utf8'));
+    });
+    stream.on('error', () => {
+      finish(undefined);
+    });
+  });
+}
 
 /**
  * All of stdin, up to {@link STDIN_MAX_BYTES}, or `''`. **Not `readFileSync(0)`**
@@ -129,6 +187,7 @@ const CONSOLE: AgentIo = {
   home: homedir(),
   env: process.env,
   stdin: () => readStdin(),
+  readHookInput: () => readStdinBounded(),
   isTTY: process.stdin.isTTY === true,
 };
 
@@ -378,6 +437,49 @@ export function denyOutput(reason: string): string {
   });
 }
 
+/**
+ * A `PreToolUse` whose input could not be read (round-5 #3): too large, cut
+ * off, or not JSON. It names no session and no tool, so it is bound to the
+ * sessions of the harness process above this hook — every live one of this
+ * harness when that cannot be told — and treated as a tool that runs: a
+ * conservative marker for each, then the same wait on a save's interlock as
+ * any `PreToolUse`, and a deny if a save still holds it. The marker is
+ * cleared by the next readable `Stop` that shows nothing running — not by a
+ * `PostToolUse`, which cannot be matched to it and could be a parallel
+ * tool's.
+ */
+function unreadablePreTool(io: AgentIo, harness: Harness): string {
+  const live = listStates(io.home).filter((s) => s.harness === harness && s.status === 'live');
+  if (live.length === 0) return '';
+  const proc = findHarness(harness, process.ppid, io.env);
+  const mine =
+    proc === undefined
+      ? []
+      : live.filter((s) => s.harness_pid === proc.pid && s.harness_started === proc.started);
+  const sessions = mine.length > 0 ? mine : live;
+  const key = `unread:${String(process.pid)}:${String(Date.now())}`;
+  for (const s of sessions) {
+    markInflight(io.home, harness, s.harness_session_id, key, {
+      pid: s.harness_pid,
+      started: s.harness_started,
+    });
+  }
+  for (const s of sessions) {
+    const verdict = awaitSave(io.home, harness, s.harness_session_id, (ms) => {
+      Atomics.wait(PAUSE, 0, 0, ms);
+    });
+    if (verdict === 'deny') {
+      for (const t of sessions) clearInflight(io.home, harness, t.harness_session_id, key);
+      log(io.home, `checkpoint hook pre-tool ${harness}: unreadable input during a save; denied`);
+      return denyOutput(
+        'Laika is finishing a checkpoint of this worktree. Run the same tool again in a few seconds.',
+      );
+    }
+  }
+  log(io.home, `checkpoint hook pre-tool ${harness}: unreadable input; marked as running`);
+  return '';
+}
+
 function noteActivity(
   io: AgentIo,
   event: HookEvent,
@@ -488,9 +590,14 @@ async function open(
  * the helper's log, which `laika agent session status` points at.
  */
 export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Promise<string> {
-  const input = hookInput(io.stdin());
+  const raw = io.readHookInput === undefined ? io.stdin() : await io.readHookInput();
+  const input = raw === undefined ? undefined : hookInput(raw);
   const harnessSessionId = input === undefined ? undefined : hookSessionId(input);
-  if (input === undefined || harnessSessionId === undefined) return '';
+  if (input === undefined || harnessSessionId === undefined) {
+    // An input that cannot be read cannot say which tool runs — or that it
+    // will not touch the worktree — so a PreToolUse is held to the safe side.
+    return event === 'pre-tool' ? unreadablePreTool(io, harness) : '';
+  }
   const credential = readCredential(io.home, harness, io.env);
   if (credential === undefined) return '';
   const path = statePath(io.home, harness, harnessSessionId);

@@ -33,6 +33,7 @@ import {
 import * as checkpointCli from '../src/agent-checkpoint-cli.ts';
 import * as checkpoint from '../src/agent-checkpoint.ts';
 import { agentHookGroups } from '../src/agent-hooks.ts';
+import * as agentCli from '../src/agent.ts';
 
 void describe('secret patterns (D-115 item 5)', () => {
   // Every sample is assembled at run time, so this file never holds the shape.
@@ -326,8 +327,8 @@ void describe('the interlock time bounds (LAI-547, #154 round 2)', () => {
       const groups = agentHookGroups('/x/laika-agent-hook', harness);
       const pre = (groups.PreToolUse as { hooks: { timeout: number }[] }).hooks[0]?.timeout ?? 0;
       assert.ok(
-        checkpoint.PRE_TOOL_WAIT_MS + 2000 <= pre * 1000,
-        `${harness}: PreToolUse's ${String(pre)} s timeout leaves room for the wait and node's start`,
+        agentCli.HOOK_READ_MS + checkpoint.PRE_TOOL_WAIT_MS + 2000 <= pre * 1000,
+        `${harness}: PreToolUse's ${String(pre)} s timeout leaves room for the read, the wait and node's start`,
       );
     }
   });
