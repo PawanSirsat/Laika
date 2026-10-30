@@ -549,25 +549,49 @@ export function latestFieldEdit(
  * reader: the channel is known and the client is not, which is `created via api`
  * rather than a blank or an invented "unknown".
  *
+ * **A registered agent's token is named after the agent** (D-114), so the
+ * name here can be the agent's registered name. Each entry carries the agent
+ * and its owner, and the task view withholds the name from a reader who may
+ * not see that agent (LAI-1001); this read decides nothing about who sees it.
+ *
  * Batched because `listTasks` returns up to 200 and a per-task lookup is the
  * N+1 that `commentCounts` and `tagsForTasks` already exist to avoid.
  */
-export function creatingClientNames(db: Db, taskIds: readonly string[]): Map<string, string> {
-  const names = new Map<string, string>();
+export function creatingClientNames(
+  db: Db,
+  taskIds: readonly string[],
+): Map<string, CreatingClient> {
+  const names = new Map<string, CreatingClient>();
   if (taskIds.length === 0) return names;
 
   const rows = db
-    .select({ taskId: activity.taskId, name: tokens.name })
+    .select({
+      taskId: activity.taskId,
+      name: tokens.name,
+      agentId: tokens.agentId,
+      ownerUserId: tokens.userId,
+    })
     .from(activity)
     .innerJoin(tokens, eq(tokens.id, activity.actorTokenId))
     .where(and(eq(activity.type, 'task.created'), inArray(activity.taskId, [...taskIds])))
     .all();
 
   for (const row of rows) {
-    if (row.taskId !== null) names.set(row.taskId, row.name);
+    if (row.taskId !== null) {
+      names.set(row.taskId, { name: row.name, agentId: row.agentId, ownerUserId: row.ownerUserId });
+    }
   }
 
   return names;
+}
+
+/** The token that created a task: its name, and the agent and person it belongs to. */
+export interface CreatingClient {
+  name: string;
+  /** The registered agent the token acts as, or null for a legacy token. */
+  agentId: string | null;
+  /** The token's owner — the agent's owner when `agentId` is set. */
+  ownerUserId: string;
 }
 
 /** The highest sequence written so far, or 0 for an empty table. */

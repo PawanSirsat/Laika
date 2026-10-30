@@ -26,7 +26,13 @@ import {
   type ServiceCaller,
   withProject,
 } from '../auth/resolve-actor.ts';
-import { apiFieldNames, appendActivity, boardDayOf, creatingClientNames } from '../db/activity.ts';
+import {
+  apiFieldNames,
+  appendActivity,
+  boardDayOf,
+  type CreatingClient,
+  creatingClientNames,
+} from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import {
   addDependency,
@@ -83,6 +89,7 @@ import {
   activeSendBacks,
   evidenceItems,
   recordRound,
+  roundReader as readerOf,
   type EvidenceInput,
   type SendBackView,
 } from './rounds.ts';
@@ -318,7 +325,12 @@ interface ViewContext {
   /** Tags per task (§4.16, LAI-079). */
   readonly tags: ReadonlyMap<string, string[]>;
   /** Named client per task, joined from `activity` → `tokens` (LAI-093). */
-  readonly clients: ReadonlyMap<string, string>;
+  readonly clients: ReadonlyMap<string, CreatingClient>;
+  /**
+   * Who is reading: their user id, or null for a principal with no user. It
+   * decides one thing — whether a creating agent's name is theirs to see.
+   */
+  readonly reader: string | null;
   /** Status name per status id, for every status on the page (LAI-738). */
   readonly statusNames: ReadonlyMap<string, string>;
   /** The send-back each task carries, if any (D-082). */
@@ -335,7 +347,12 @@ interface ViewContext {
  * `now` is the read's clock: a claim's `connection` and whether its lease has
  * lapsed are answers about a moment (LAI-568), so a test can ask about one.
  */
-function loadViewContext(db: Db, rows: readonly TaskRow[], now: number): ViewContext {
+function loadViewContext(
+  db: Db,
+  rows: readonly TaskRow[],
+  now: number,
+  reader: string | null,
+): ViewContext {
   const edges = dependencyEdges(
     db,
     rows.map((row) => row.id),
@@ -381,7 +398,27 @@ function loadViewContext(db: Db, rows: readonly TaskRow[], now: number): ViewCon
     sizes: sizeViews(db, rows),
     selectedAgents: selectedAgentViews(db, rows),
     claims: liveClaimViews(db, ids, now),
+    reader,
   };
+}
+
+/**
+ * The creating client's name as this reader may see it (LAI-1001). A legacy
+ * token's name is shown as before. A registered agent's token is named after
+ * the agent, so its name is shown only where the agent itself would be: to
+ * its owner, or on a task that already shows it as its selected agent or
+ * live claim holder. Otherwise null — `created_via` still says it came
+ * through an agent's channel, and names no one.
+ */
+function creatingClientFor(row: TaskRow, context: ViewContext): string | null {
+  const client = context.clients.get(row.id);
+  if (client === undefined) return null;
+  if (client.agentId === null) return client.name;
+  const visible =
+    (context.reader !== null && client.ownerUserId === context.reader) ||
+    row.selectedAgentId === client.agentId ||
+    context.claims.get(row.id)?.agent_id === client.agentId;
+  return visible ? client.name : null;
 }
 
 function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
@@ -409,7 +446,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     sprint_id: row.sprintId,
     created_by: row.createdBy,
     created_via: row.createdVia,
-    created_by_client: context.clients.get(row.id) ?? null,
+    created_by_client: creatingClientFor(row, context),
     discovered_from: row.discoveredFrom,
     parent_task_id: row.parentTaskId,
     due_on: row.dueOn,
@@ -461,9 +498,10 @@ export function viewTasks(
   db: Db,
   rows: readonly TaskRow[],
   prefixes: ReadonlyMap<string, string>,
+  reader: string | null,
   now: number = Date.now(),
 ): TaskView[] {
-  const context = loadViewContext(db, rows, now);
+  const context = loadViewContext(db, rows, now, reader);
   return rows.map((row) => toView(row, prefixes.get(row.projectId) ?? '', context));
 }
 
@@ -534,8 +572,14 @@ export function assertMayCloseReview(
 }
 
 /** One task's view, loading only what that task needs. */
-function viewOne(db: Db, row: TaskRow, prefix: string, now: number): TaskView {
-  return toView(row, prefix, loadViewContext(db, [row], now));
+function viewOne(
+  db: Db,
+  row: TaskRow,
+  prefix: string,
+  now: number,
+  reader: string | null,
+): TaskView {
+  return toView(row, prefix, loadViewContext(db, [row], now, reader));
 }
 
 /** Load a task and the project it belongs to, or 404. */
@@ -799,7 +843,7 @@ export function getTask(
   const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
-  return viewOne(db, task, project.prefix, now);
+  return viewOne(db, task, project.prefix, now, readerOf(actor));
 }
 
 export interface CreateTaskInput {
@@ -946,7 +990,13 @@ export function createTask(
       now,
     });
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, id)).get()!, project.prefix, now);
+    return viewOne(
+      db,
+      db.select().from(tasks).where(eq(tasks.id, id)).get()!,
+      project.prefix,
+      now,
+      readerOf(actor),
+    );
   });
 }
 
@@ -997,7 +1047,7 @@ export function listTasks(
     conditions.push(inArray(tasks.id, taskIdsWithTag(db, project.id, filter.tag)));
   }
 
-  return readTaskPage(db, conditions, () => project.prefix, filter);
+  return readTaskPage(db, conditions, () => project.prefix, filter, readerOf(actor));
 }
 
 /**
@@ -1043,6 +1093,7 @@ function readTaskPage(
   conditions: readonly SQL[],
   prefixOf: (projectId: string) => string,
   filter: Pick<ListTasksFilter, 'ready' | 'limit' | 'cursor' | 'now'>,
+  reader: string | null,
 ): TaskView[] {
   const now = filter.now ?? Date.now();
   // One over the limit, so the route can tell whether another page exists.
@@ -1076,7 +1127,7 @@ function readTaskPage(
       .limit(size)
       .all();
 
-    const context = loadViewContext(db, rows, now);
+    const context = loadViewContext(db, rows, now, reader);
     return rows.map((row) => toView(row, prefixOf(row.projectId), context));
   };
 
@@ -1135,11 +1186,17 @@ export function listAllTasks(db: Db, actor: ResolvedActor, filter: ListAllTasksF
   const scope = allTasksScope(db, actor, filter);
   if (scope === null) return [];
 
-  return readTaskPage(db, scope.conditions, (id) => scope.prefixes.get(id) ?? '', {
-    limit: filter.limit,
-    cursor: filter.cursor,
-    now: filter.now,
-  });
+  return readTaskPage(
+    db,
+    scope.conditions,
+    (id) => scope.prefixes.get(id) ?? '',
+    {
+      limit: filter.limit,
+      cursor: filter.cursor,
+      now: filter.now,
+    },
+    readerOf(actor),
+  );
 }
 
 /**
@@ -1536,6 +1593,7 @@ export function updateTask(
           db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
           prefix,
           now,
+          readerOf(actor),
         );
         const version = taskVersion(current);
         if (version !== input.expected_version) {
@@ -1653,7 +1711,13 @@ export function updateTask(
         });
       }
 
-      return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, prefix, now);
+      return viewOne(
+        db,
+        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+        prefix,
+        now,
+        readerOf(actor),
+      );
     },
     { behavior: 'immediate' },
   );
@@ -1759,6 +1823,7 @@ export function startWorking(
           db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
           project.prefix,
           now,
+          readerOf(actor),
         ),
         claim: null,
       };
@@ -1836,6 +1901,7 @@ export function startWorking(
         db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
         project.prefix,
         now,
+        readerOf(actor),
       ),
       claim: null,
     };
@@ -1979,6 +2045,7 @@ function agentStartWorking(
       db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
       project.prefix,
       now,
+      readerOf(actor),
     ),
     claim: claimView(taken.claim),
   };
@@ -2079,6 +2146,7 @@ export function changeStatus(
       db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
       project.prefix,
       now,
+      readerOf(actor),
     );
   }
 
@@ -2182,6 +2250,7 @@ export function changeStatus(
     db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
     project.prefix,
     now,
+    readerOf(actor),
   );
 }
 
@@ -2465,7 +2534,7 @@ export function reorderTask(
 
     const current = task.position!;
     const alreadyThere = (lower === null || lower < current) && (upper === null || current < upper);
-    if (alreadyThere) return viewOne(db, task, project.prefix, now);
+    if (alreadyThere) return viewOne(db, task, project.prefix, now, readerOf(actor));
 
     const position = keyBetween(lower, upper);
     db.update(tasks).set({ position, updatedAt: now }).where(eq(tasks.id, taskId)).run();
@@ -2488,6 +2557,7 @@ export function reorderTask(
       db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
       project.prefix,
       now,
+      readerOf(actor),
     );
   });
 }

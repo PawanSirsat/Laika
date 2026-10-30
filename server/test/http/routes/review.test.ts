@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { orgs, users } from '../../../src/db/schema.ts';
+import { orgs, taskClaims, users } from '../../../src/db/schema.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -566,4 +566,86 @@ describe('a round names another person’s agent only where the task already sho
     await must(asBob(`/api/v1/tasks/${task.id}/claim`, { method: 'POST' }, rig.secret));
     expect((await read('ada')).rounds?.agent?.id).toBe(rig.agent.id);
   });
+
+  it('a claim whose lease lapsed names nobody, exactly as the task view stops showing it', async () => {
+    const { rig, task, read, asBob } = await bobsAgentFinishes(false);
+    await must(
+      asSession(`/api/v1/tasks/${task.id}/send-back`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'One more thing' }),
+      }),
+    );
+    await must(asBob(`/api/v1/tasks/${task.id}/claim`, { method: 'POST' }, rig.secret));
+    expect((await read('ada')).rounds?.agent?.id).toBe(rig.agent.id);
+
+    // The lease runs out; the expiry scan has not run yet.
+    h.db.update(taskClaims).set({ leaseExpiresAt: 1 }).where(eq(taskClaims.taskId, task.id)).run();
+    const view = await json<{ claim: unknown; selected_agent: unknown }>(
+      await must(asSession(`/api/v1/tasks/${task.id}`)),
+    );
+    expect(view.claim).toBeNull();
+    expect(view.selected_agent).toBeNull();
+    const ada = await read('ada');
+    expect(ada.rounds?.agent).toBeNull();
+    expect(ada.rounds?.client_name).toBeNull();
+    expect(ada.rawRounds).not.toContain('Bob’s secret rig');
+  });
+
+  it('created_by_client: a task Bob’s agent created is unnamed to Ada, named to Bob', async () => {
+    const { rig, asBob } = await bobsAgentFinishes(false);
+    const made = await json<{ id: string; key: string }>(
+      await must(
+        asBob(
+          '/api/v1/projects/core/tasks',
+          { method: 'POST', body: JSON.stringify({ title: 'Made by the rig' }) },
+          rig.secret,
+        ),
+        201,
+      ),
+    );
+    interface Shown {
+      created_via: string;
+      created_by_client: string | null;
+    }
+    const rawAda = await (await must(asSession(`/api/v1/tasks/${made.id}`))).text();
+    const ada = JSON.parse(rawAda) as Shown;
+    expect(ada.created_by_client).toBeNull();
+    expect(ada.created_via).not.toBe('web');
+    expect(rawAda).not.toContain('Bob’s secret rig');
+    const listed = await (await must(asSession('/api/v1/projects/core/tasks'))).text();
+    expect(listed).not.toContain('Bob’s secret rig');
+
+    const bob = await json<Shown>(await must(asBob(`/api/v1/tasks/${made.id}`)));
+    expect(bob.created_by_client).toBe('Bob’s secret rig');
+
+    // Selected on the task, the agent is shown there, and so is its name.
+    await must(
+      asBob(`/api/v1/tasks/${made.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ selected_agent_id: rig.agent.id }),
+      }),
+    );
+    const shown = await json<Shown>(await must(asSession(`/api/v1/tasks/${made.id}`)));
+    expect(shown.created_by_client).toBe('Bob’s secret rig');
+  });
+
+  it('created_by_client: a legacy token’s name is shown as before', async () => {
+    const task = await newTaskAsToken();
+    const view = await json<{ created_by_client: string | null }>(
+      await must(asSession(`/api/v1/tasks/${task.id}`)),
+    );
+    expect(view.created_by_client).toBe('Codex');
+  });
 });
+
+async function newTaskAsToken(): Promise<{ id: string }> {
+  return json<{ id: string }>(
+    await must(
+      asToken('/api/v1/projects/core/tasks', {
+        method: 'POST',
+        body: JSON.stringify({ title: 'By the legacy token' }),
+      }),
+      201,
+    ),
+  );
+}
