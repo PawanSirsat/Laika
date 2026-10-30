@@ -84,7 +84,7 @@ void describe('checkpoint review fixes (LAI-547, #154)', () => {
 
     const r = b.cli(repo.wt, ['checkpoint', 'save']);
     assert.equal(r.code, 2, r.out);
-    assert.match(r.out, /cannot tell origin's default branch/);
+    assert.match(r.out, /cannot tell the default branch of origin's push destination/);
     assert.deepEqual(b.remoteRefs(repo), before, 'nothing pushed');
   });
 

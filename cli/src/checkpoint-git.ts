@@ -604,27 +604,64 @@ function pushOne(git: GitRunner, wt: Worktree, remote: string, sha: string, dst:
   );
 }
 
+/** A URL as it may be printed: any `user:password@` taken out. */
+export function redactUrl(url: string): string {
+  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, '$1***@');
+}
+
 /**
- * The branch the remote's `HEAD` names **now**, asked of the remote itself
- * (`ls-remote --symref`), never the clone's cached `refs/remotes/<r>/HEAD`,
- * which says what the default was when it was last fetched — and is what a
- * record written for a retry would otherwise carry for days.
- *
- * **Fails closed**: a remote that cannot be reached, or whose `HEAD` names
- * no branch (unborn, detached), is a refusal — a push that cannot be told
- * apart from a push to the default is not made.
+ * Every URL a push to `remote` reaches — each `remote.<r>.pushurl`, or every
+ * `remote.<r>.url` when there is none — expanded as git expands them
+ * (`insteadOf`, `pushInsteadOf`). A push goes to all of them, so each is
+ * asked; asking only the fetch URL checks a repository the push may never
+ * touch.
  */
-export function currentRemoteDefault(git: GitRunner, wt: Worktree, remote: string): string {
-  const r = git(wt.top, ['ls-remote', '--symref', '--', remote, 'HEAD']);
+export function pushDestinations(git: GitRunner, wt: Worktree, remote: string): string[] {
+  const r = git(wt.top, ['remote', 'get-url', '--push', '--all', remote]);
+  const urls = r.stdout
+    .split('\n')
+    .map((u) => u.trim())
+    .filter((u) => u !== '');
+  if (r.code !== 0 || urls.length === 0) {
+    throw new Refusal(`cannot tell where a push to ${remote} goes`, 'remote_default_unknown');
+  }
+  return urls;
+}
+
+/**
+ * The branch one push destination's `HEAD` names **now**, asked of it
+ * (`ls-remote --symref`), never the clone's cached `refs/remotes/<r>/HEAD`,
+ * which says what the default was when it was last fetched.
+ *
+ * **Fails closed**: a destination that cannot be reached, or whose `HEAD`
+ * names no branch (unborn, detached), is a refusal — a push that cannot be
+ * told apart from a push to the default is not made.
+ */
+export function currentDefaultAt(
+  git: GitRunner,
+  wt: Worktree,
+  remote: string,
+  url: string,
+): string {
+  const r = git(wt.top, ['ls-remote', '--symref', '--', url, 'HEAD']);
   const m = r.code === 0 ? /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(r.stdout) : null;
   if (m?.[1] === undefined) {
     throw new Refusal(
-      `cannot tell ${remote}'s default branch (\`git ls-remote --symref ${remote} HEAD\` named none)` +
-        ', so nothing was pushed: a checkpoint never risks pushing to it',
+      `cannot tell the default branch of ${remote}'s push destination ${redactUrl(url)} ` +
+        '(its HEAD names no branch, or it did not answer), so nothing was pushed: ' +
+        'a checkpoint never risks pushing to a default branch',
       'remote_default_unknown',
     );
   }
   return m[1];
+}
+
+/** Refuses `branch` if it is master, main, or the current default of **any** push destination. */
+export function assertPushable(git: GitRunner, wt: Worktree, remote: string, branch: string): void {
+  assertWorkBranch(branch, undefined);
+  for (const url of pushDestinations(git, wt, remote)) {
+    assertWorkBranch(branch, currentDefaultAt(git, wt, remote, url));
+  }
 }
 
 export function pushBranch(
@@ -634,9 +671,10 @@ export function pushBranch(
   branch: string,
   sha: string,
 ): void {
-  // Asked again here, at the push, of the remote as it is now: nothing
-  // reaches master, main or whatever the remote's default has become.
-  assertWorkBranch(branch, currentRemoteDefault(git, wt, remote));
+  // Asked again here, at the push, of every place the push goes, as each is
+  // now: nothing reaches master, main or whatever a destination's default
+  // has become.
+  assertPushable(git, wt, remote, branch);
   if (git(wt.top, ['check-ref-format', '--branch', branch]).code !== 0) {
     throw new Refusal(`${branch} is not a valid branch name`, 'bad_branch');
   }
