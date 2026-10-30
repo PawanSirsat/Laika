@@ -201,10 +201,9 @@ const UNPAIRED = new Map<string, string>([
   // LAI-549 mirrors them on the client, and the drawer reads them there.
   ['CheckpointConsentView', 'no client type exists'],
   ['CheckpointRefRegistered', 'no client type exists'],
-  // LAI-546: hand-offs and the policy are served ahead of their screens —
-  // LAI-549 and LAI-550 mirror them on the client.
+  // LAI-546: the accept is an agent's and has no screen; LAI-550 paired the
+  // policy and LAI-1009's person inbox.
   ['AcceptedHandoff', 'no client type exists'],
-  ['HandoffPolicyView', 'no client type exists'],
   // The meeting-review screen is SHELL's and unbuilt; §11.4.2 lists it. These
   // three leave this group the same way `CapacityView` and `PresenceView` did —
   // when the screen exists, and therefore the mirror.
@@ -249,10 +248,6 @@ const UNPAIRED = new Map<string, string>([
   // `If-Match`) brings the mirror, and these leave the way the rest do.
   ['ListedTaskView', 'no client type exists'],
   ['ListedTaskSummaryView', 'no client type exists'],
-  // LAI-1009's person inbox is served ahead of its screen: LAI-550's Inbox →
-  // Hand-offs tab mirrors it on the client, and these leave the way the rest do.
-  ['PersonHandoffView', 'no client type exists'],
-  ['PersonHandoffInbox', 'no client type exists'],
 ]);
 
 /**

@@ -155,6 +155,106 @@ export function cancelHandoff(offerId: string): Promise<HandoffOffer> {
   });
 }
 
+/** `PERSON_INBOX_VIEWS`: the Inbox's four Hand-offs filters (LAI-1009). */
+export const PERSON_INBOX_VIEWS = ['received', 'sent', 'needs_approval', 'recovery'] as const;
+export type PersonInboxView = (typeof PERSON_INBOX_VIEWS)[number];
+
+/**
+ * `HandoffNextAction`: what the server says the reader can do now. A hint for
+ * the screen, never a permission — every write asks `can()` again.
+ */
+export type HandoffNextAction =
+  | 'approve'
+  | 'name_receiver'
+  | 'accept_with_your_agent'
+  | 'cancel'
+  | 'wait_for_approval'
+  | 'wait_for_receiver'
+  | 'none';
+
+/** An agent as a person's inbox names it: `SelectedAgentView`. */
+export interface PersonHandoffAgent {
+  readonly id: string;
+  readonly display_name: string;
+  readonly harness: string;
+  readonly device_label: string | null;
+  readonly status: 'active' | 'revoked';
+  readonly owner: { readonly id: string; readonly name: string };
+}
+
+/** The save an inbox row carries, as it is now: its commit, verification and when it was saved. */
+export interface PersonHandoffCheckpoint {
+  readonly commit_sha: string;
+  readonly verification: string;
+  readonly saved_at: number;
+}
+
+/** `PersonHandoffView` in `server/src/services/handoffs.ts`: one row of a person's inbox. */
+export interface PersonHandoffView {
+  readonly id: string;
+  readonly kind: 'handoff' | 'recovery';
+  /** A live offer past `expires_at` reads `expired`. */
+  readonly state: HandoffOfferState;
+  readonly task_id: string;
+  readonly task_key: string;
+  readonly task_title: string;
+  readonly project_id: string;
+  readonly project_slug: string;
+  /** The agent whose claim the work moves from: the sender's, or the expired one. */
+  readonly from_agent: PersonHandoffAgent | null;
+  /** Null for an unnamed recovery, which any eligible agent may take. */
+  readonly to_agent: PersonHandoffAgent | null;
+  readonly checkpoint_id: string | null;
+  /** The checkpoint as it is now, or null once retention removed it. */
+  readonly checkpoint: PersonHandoffCheckpoint | null;
+  /** The sender's reason. Untrusted (D-115 item 7): drawn as text. */
+  readonly reason: string | null;
+  readonly requires_approval: boolean;
+  readonly approved: boolean;
+  readonly approved_at: number | null;
+  readonly expires_at: number | null;
+  readonly closed_reason: HandoffClosedReason | null;
+  readonly created_at: number;
+  readonly closed_at: number | null;
+  readonly next_action: HandoffNextAction;
+}
+
+/** Each view's live, unexpired count, as the server counts it for the reader. */
+export type PersonInboxCounts = Readonly<Record<PersonInboxView, number>>;
+
+/** `PersonHandoffInbox`: one view's page and every view's count. */
+export interface PersonHandoffInbox {
+  readonly data: readonly PersonHandoffView[];
+  readonly next_cursor: string | null;
+  readonly counts: PersonInboxCounts;
+}
+
+export interface PersonInboxQuery {
+  readonly view: PersonInboxView;
+  /** Closed and expired offers too; `counts` never includes them. */
+  readonly includeClosed?: boolean | undefined;
+  readonly limit?: number | undefined;
+  readonly cursor?: string | undefined;
+}
+
+/**
+ * A signed-in person's hand-offs (`GET /handoff-offers`, LAI-1009): one view,
+ * newest first, across every space they may read, with every view's count.
+ */
+export function listPersonHandoffs(
+  query: PersonInboxQuery,
+  signal?: AbortSignal,
+): Promise<PersonHandoffInbox> {
+  const params = new URLSearchParams({ view: query.view });
+  if (query.includeClosed === true) params.set('include_closed', 'true');
+  if (query.limit !== undefined) params.set('limit', String(query.limit));
+  if (query.cursor !== undefined) params.set('cursor', query.cursor);
+  return request<PersonHandoffInbox>(
+    `/handoff-offers?${params.toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
 /** `HandoffPolicyView` in `server/src/services/handoffs.ts`: a space's hand-off policy (§4.74). */
 export interface HandoffPolicyWire {
   readonly project_id: string;
@@ -197,7 +297,10 @@ export function getHandoffPolicy(slug: string, signal?: AbortSignal): Promise<Ha
  * before, so every call sends all four settings: one left out would quietly
  * reset to its default.
  */
-export function putHandoffPolicy(slug: string, policy: HandoffPolicyInput): Promise<HandoffPolicyWire> {
+export function putHandoffPolicy(
+  slug: string,
+  policy: HandoffPolicyInput,
+): Promise<HandoffPolicyWire> {
   return request<HandoffPolicyWire>(`/projects/${encodeURIComponent(slug)}/handoff-policy`, {
     method: 'PUT',
     body: {

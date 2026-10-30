@@ -2,6 +2,7 @@ import { Sidebar } from '../sidebar/Sidebar.tsx';
 import { useShell } from './shell-context.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
 import { inboxCount } from '../../routes/page-tabs.ts';
+import { handoffsWaiting } from '../agent/person-handoffs.ts';
 
 export interface ShellSidebarProps {
   readonly open: boolean;
@@ -32,6 +33,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
     unlistedOpen,
     reviewWaiting,
     tokenAlerts,
+    handoffCounts,
   } = useShell();
 
   const projectSlug = params.get('project') ?? undefined;
@@ -64,12 +66,13 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       onTogglePin={togglePinnedSpace}
       orgName={orgName}
       spaceName={spaceName}
-      // Inbox is what waits on its two tabs (LAI-796): the review queue
-      // (D-082) plus the open unlisted count (LAI-754), which is `undefined`
-      // for a reader it is not for — so they count Review alone. A person's
+      // Inbox is what waits on its tabs (LAI-796): the review queue (D-082),
+      // the hand-offs waiting on this person (LAI-550, the server's live
+      // counts) and the open unlisted count (LAI-754), which is `undefined`
+      // for a reader it is not for. A person's
       // open token alerts (LAI-773) are on Insights, where Usage now is.
       counts={{
-        '/inbox': inboxCount(reviewWaiting, unlistedOpen),
+        '/inbox': inboxCount(reviewWaiting, unlistedOpen, handoffsWaiting(handoffCounts)),
         '/insights': tokenAlerts?.length,
       }}
       user={me}

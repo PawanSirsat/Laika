@@ -91,7 +91,8 @@ export function HandoffInbox({ items, filter, onFilter }: HandoffInboxProps) {
   );
 }
 
-function KindShape({ kind }: { readonly kind: HandoffKind }) {
+/** Each kind's shape, so a kind is told by more than its colour or its word. */
+export function KindShape({ kind }: { readonly kind: HandoffKind }) {
   const paths: Record<HandoffKind, readonly string[]> = {
     // An envelope: something asked for.
     work_request: ['M3 6h18v12H3z', 'm3 7 9 6 9-6'],

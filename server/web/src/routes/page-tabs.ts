@@ -27,9 +27,13 @@ export interface PageTab {
   readonly refusedByAddress?: true;
 }
 
-/** Work handed back for a person, then work nobody filed (admin-up, §4.14). */
+/**
+ * Work handed back for a person, hand-offs between agents that concern them
+ * (LAI-550), then work nobody filed (admin-up, §4.14).
+ */
 export const INBOX_TABS: readonly PageTab[] = [
   { id: 'review', label: 'Review' },
+  { id: 'handoffs', label: 'Hand-offs' },
   { id: 'unlisted', label: 'Unlisted work', requires: 'audit_log.export' },
 ];
 
@@ -132,15 +136,19 @@ export function tabHref(path: string, id: string): string {
 }
 
 /**
- * The sidebar's Inbox count: what waits on Review plus what waits on Unlisted
- * work. `undefined` for a count that is not this reader's or not read yet, so
- * a reader who may not triage unlisted work counts Review alone — and nothing
- * read at all is no badge rather than a zero that was never measured.
+ * The sidebar's Inbox count: what waits on Review, on Hand-offs (LAI-550) and
+ * on Unlisted work. `undefined` for a count that is not this reader's or not
+ * read yet, so a reader who may not triage unlisted work counts the others
+ * alone — and nothing read at all is no badge rather than a zero that was
+ * never measured.
  */
 export function inboxCount(
   reviewWaiting: number | undefined,
   unlistedOpen: number | undefined,
+  handoffsWaiting?: number,
 ): number | undefined {
-  if (reviewWaiting === undefined && unlistedOpen === undefined) return undefined;
-  return (reviewWaiting ?? 0) + (unlistedOpen ?? 0);
+  if (reviewWaiting === undefined && unlistedOpen === undefined && handoffsWaiting === undefined) {
+    return undefined;
+  }
+  return (reviewWaiting ?? 0) + (unlistedOpen ?? 0) + (handoffsWaiting ?? 0);
 }

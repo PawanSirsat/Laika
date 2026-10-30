@@ -1,3 +1,5 @@
+import { HandoffsTab } from '../../routes/screens/inbox/HandoffsTab.tsx';
+import { handoffsWaiting } from '../agent/person-handoffs.ts';
 import { useEffect, type ComponentType } from 'react';
 import { useShell } from './shell-context.ts';
 import { SpaceLayout } from '../space/SpaceLayout.tsx';
@@ -302,8 +304,9 @@ function ReviewRoute() {
 }
 
 /**
- * Inbox (LAI-796): Review and Unlisted work as tabs. The counts are the
- * shell's — the same two numbers the sidebar adds up for Inbox's badge.
+ * Inbox (LAI-796): Review, Hand-offs (LAI-550) and Unlisted work as tabs. The
+ * counts are the shell's — the same numbers the sidebar adds up for Inbox's
+ * badge.
  */
 function InboxRoute() {
   const {
@@ -311,6 +314,8 @@ function InboxRoute() {
     me,
     reviewWaiting,
     unlistedOpen,
+    handoffCounts,
+    refreshHandoffs,
   } = useShell();
   const { permissions } = usePermissions(me !== undefined);
   const holds = permissionHolder(permissions?.me.actions);
@@ -319,10 +324,25 @@ function InboxRoute() {
     <InboxScreen
       tabs={visibleTabs(INBOX_TABS, holds)}
       current={tab}
-      counts={{ review: reviewWaiting, unlisted: unlistedOpen }}
+      counts={{
+        review: reviewWaiting,
+        handoffs: handoffsWaiting(handoffCounts),
+        unlisted: unlistedOpen,
+      }}
       onNavigate={navigate}
     >
-      {tab === 'unlisted' ? <UnlistedRoute /> : <ReviewRoute />}
+      {tab === 'unlisted' ? (
+        <UnlistedRoute />
+      ) : tab === 'handoffs' ? (
+        <HandoffsTab
+          meId={me?.id}
+          counts={handoffCounts}
+          onChanged={refreshHandoffs}
+          onNavigate={navigate}
+        />
+      ) : (
+        <ReviewRoute />
+      )}
     </InboxScreen>
   );
 }
