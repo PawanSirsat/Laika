@@ -101,7 +101,13 @@ export interface RoundView {
   /** 1 for the task's first finish. */
   number: number;
   finished_by: string;
-  /** The agent's own name for itself when it finished (D-076), or null. */
+  /**
+   * The agent's own name for itself when it finished (D-076), or null. For a
+   * registered agent this is usually its token's name — its registered name
+   * — so it is **withheld (null) wherever `agent` is**: another person's
+   * agent the reader may not see (Belka, LAI-1001). Kept for the reader's own
+   * agents, agents the task shows them, and unregistered legacy tokens.
+   */
   client_name: string | null;
   /**
    * The registered agent whose token finished the round, so a screen can name
@@ -422,14 +428,17 @@ function toRoundViews(
     const branch = mine.find((i) => i.kind === 'branch');
     const pr = mine.find((i) => i.kind === 'pull_request');
     const said = github.get(row.id);
+    const agent = visibleAgent(row);
+    const registered = row.tokenId !== null && agentByToken.has(row.tokenId);
     return {
       id: row.id,
       task_id: row.taskId,
       number: row.number,
       finished_by: row.finishedBy,
-      client_name: row.clientName,
-      agent: visibleAgent(row),
-      by_registered_agent: row.tokenId !== null && agentByToken.has(row.tokenId),
+      // A withheld agent's name is withheld with it.
+      client_name: registered && agent === null ? null : row.clientName,
+      agent,
+      by_registered_agent: registered,
       summary_md: row.summaryMd,
       commits: mine
         .filter((i) => i.kind === 'commit')

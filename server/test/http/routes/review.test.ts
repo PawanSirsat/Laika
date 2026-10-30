@@ -497,15 +497,17 @@ describe('a round names another person’s agent only where the task already sho
     );
     const read = async (as: 'ada' | 'bob') => {
       const get = (path: string) => (as === 'ada' ? asSession(path) : asBob(path));
-      const rounds = await json<{ rounds: RoundShape[] }>(
-        await must(get(`/api/v1/tasks/${task.id}/rounds`)),
-      );
-      const queue = await json<{ tasks: { task: { id: string }; round: RoundShape | null }[] }>(
-        await must(get('/api/v1/review')),
-      );
+      const rawRounds = await (await must(get(`/api/v1/tasks/${task.id}/rounds`))).text();
+      const rawQueue = await (await must(get('/api/v1/review'))).text();
+      const rounds = JSON.parse(rawRounds) as { rounds: RoundShape[] };
+      const queue = JSON.parse(rawQueue) as {
+        tasks: { task: { id: string }; round: RoundShape | null }[];
+      };
       return {
         rounds: rounds.rounds[0],
         queue: queue.tasks.find((t) => t.task.id === task.id)?.round,
+        rawRounds,
+        rawQueue,
       };
     };
     return { rig, task, read, asBob };
@@ -519,16 +521,21 @@ describe('a round names another person’s agent only where the task already sho
       expect(round?.agent).toBeNull();
       expect(round?.by_registered_agent).toBe(true);
     }
-    // Nothing in either answer names Bob's agent, its harness or its device.
-    const said = JSON.stringify(ada);
-    expect(said).not.toContain('Bob’s laptop');
-    expect(said).not.toContain('codex');
+    for (const round of [ada.rounds, ada.queue]) expect(round?.client_name).toBeNull();
+    // Nothing in either raw answer names Bob's agent, its harness or its device.
+    for (const raw of [ada.rawRounds, ada.rawQueue]) {
+      expect(raw).not.toContain('Bob’s secret rig');
+      expect(raw).not.toContain('Bob’s laptop');
+      expect(raw).not.toContain('codex');
+    }
   });
 
   it('Bob reads the same rounds and sees his own agent on both endpoints', async () => {
     const { rig, read } = await bobsAgentFinishes(false);
     const bob = await read('bob');
     for (const round of [bob.rounds, bob.queue]) {
+      // His own agent's name is his to read.
+      expect(round?.client_name).toBe('Bob’s secret rig');
       expect(round?.agent).toEqual({
         id: rig.agent.id,
         harness: 'codex',
@@ -542,6 +549,7 @@ describe('a round names another person’s agent only where the task already sho
     const ada = await read('ada');
     for (const round of [ada.rounds, ada.queue]) {
       expect(round?.agent?.id).toBe(rig.agent.id);
+      expect(round?.client_name).toBe('Bob’s secret rig');
     }
   });
 
