@@ -36,7 +36,6 @@ let baseUrl: URL;
 let cookie: string;
 let projectId: string;
 let taskId: string;
-let taskKey: string;
 let sender: { id: string; secret: string };
 let receiver: { id: string; secret: string };
 let senderSession: string;
@@ -344,7 +343,6 @@ beforeEach(async () => {
     201,
   );
   taskId = created.id as string;
-  taskKey = created.key as string;
   sender = await agent('Sender');
   receiver = await agent('Receiver');
   // Same owner, same `full` grant on the same project: it may read every row
