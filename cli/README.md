@@ -734,7 +734,11 @@ laika agent checkpoints prune --dry-run [--days 90]  # list tags past retention;
 
 ### The order
 
-1. **Commit** the work in progress on the task branch.
+1. **Commit** the work in progress on the task branch: **tracked changes
+   only**. A new file is saved only when it is named with `--file NEW`
+   (repeatable) — a scratch file, a dump or a local build is not work in
+   progress just because it is in the worktree. Automatic saves never add a
+   new file.
 2. **Write the record** — the checkpoint id (a ULID the helper mints), the
    idempotency key and the exact body it will register — to
    `~/.laika/agent-checkpoints/records/<id>.json` (0600), before anything is sent.
@@ -747,8 +751,10 @@ laika agent checkpoints prune --dry-run [--days 90]  # list tags past retention;
    If the board does not answer — a 5xx, a timeout, an answer lost on the way —
    the record stays at `tag_pushed`, and the next `save`, `status` or hook sends
    it again **with the same key and the same body**, so the board answers with
-   the one checkpoint it already has. A refusal (a lost claim, the wrong repo)
-   is recorded and not retried.
+   the one checkpoint it already has. A `save` of a commit already pushed
+   answers with that checkpoint's real state — registered and "Verification
+   pending", or still unregistered (exit 1) — never "nothing new". A refusal
+   (a lost claim, the wrong repo) is recorded and not retried.
 
 After registering it prints **"Verification pending"**. `status` asks the
 board each time: **"Verified"** once GitHub's notice arrived, and after ten
@@ -764,13 +770,13 @@ Each is a refusal **before** the step that would change anything; exit code 2.
 | Rule | How |
 | --- | --- |
 | Only a task worktree | a linked `git worktree`; the primary checkout only with `git config laika.checkpoint.allowPrimary true` in that repo |
-| Only the task's own branch | not detached, never `master`, `main` or the remote's default branch — asked again at the push itself — and named after the task (`LAI-547-…`) or the branch the task records |
+| Only the task's own branch | not detached, never `master`, `main` or the remote's default branch, and named after the task (`LAI-547-…`) or the branch the task records. At the push itself the remote is asked what its default is **now** (`git ls-remote --symref <remote> HEAD`), not the clone's cached `origin/HEAD`; a remote whose `HEAD` names no branch is refused |
 | Never while git is busy | `index.lock`, `HEAD.lock`, a merge, rebase, cherry-pick, revert or bisect in progress; the helper's own lock beside the git dir keeps two saves apart |
-| Never while a tool is running (automatic saves) | `PreToolUse` marks a tool as running and `PostToolUse` clears it; the save waits up to 30 s for quiet and then gives up |
-| Never `git add -A` | each changed path is staged by name as a `:(literal)` pathspec; ignored files are never candidates; `--file PATH` limits the save to those paths and refuses anything else already staged |
-| Never a secret | a secret-shaped name (`.env`, `*.pem`, `*.key`, `id_rsa`, `.npmrc`, `credentials.json`, …), a file over 1 MB (`--max-file-bytes`), or added lines matching a secret pattern (private keys, AWS, GitHub, Slack, Stripe, Google and API keys, bearer headers, passwords in URLs). **One refused file refuses the whole save, and is named** |
-| Never a force push | every push is one explicit refspec with no `+`; `--force` appears nowhere. A remote that moved on is refused: fetch, merge, save again |
-| Never the repo's own hooks | `core.hooksPath=/dev/null` and `--no-verify` on the helper's commit and pushes: a hook is repo content, and repo content is never run |
+| Never while a tool is running (automatic saves) | `PreToolUse` marks a tool as running, with the harness process it runs in, and `PostToolUse` clears it; `Stop` clears the session's markers, since a finished turn runs no tool. A marker counts **while that process lives, whatever its age**, and is stale only once it is dead or its PID reused. The save waits up to 30 s for quiet, then takes the session's **interlock** and checks again under it, right before staging and again before committing; a tool that appears stops the save (after staging, the index is put back). `PreToolUse` writes its marker, then waits up to 4 s while a save holds the interlock |
+| Never `git add -A` | each tracked change, and each `--file` new file, is staged by name as a `:(literal)` pathspec; ignored files are never candidates, and listing one, or a file with no change, is refused |
+| Never a secret | a secret-shaped name (`.env`, `*.pem`, `*.key`, `id_rsa`, `.npmrc`, `credentials.json`, …), a file over 1 MB (`--max-file-bytes`), or added lines matching a secret pattern (Laika's own `lai_` tokens, private keys, AWS, GitHub, Slack, Stripe, Google and API keys, bearer headers, passwords in URLs). **One refused file refuses the whole save, and is named** |
+| Never a force push, never a stray ref | every push is one explicit refspec with no `+`; `--force` appears nowhere. `-c push.followTags=false --no-follow-tags --recurse-submodules=no`, so a repo's `push.followTags` cannot carry its annotated tags along. A remote that moved on is refused: fetch, merge, save again |
+| Never the repo's own code | **every** git call runs with `core.fsmonitor=false`, `core.hooksPath=/dev/null` and `core.untrackedCache=false` — `git status` would otherwise start the repo's fsmonitor command — and the commit and pushes with `--no-verify`: a hook is repo content, and repo content is never run |
 
 ### The note
 
@@ -802,11 +808,23 @@ permission or keep a turn going.
 
 The background child gets an allowlisted environment: the session helper's,
 plus `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`, `GIT_SSH`, `XDG_CONFIG_HOME`, `USER`
-and `LOGNAME` so git can reach the remote — never a token. git itself runs with
-`LAIKA_AGENT_TOKEN`, `LAIKA_TOKEN` and every other `GIT_*` override removed,
-and `GIT_TERMINAL_PROMPT=0`, so a background push fails rather than waits for a
-password. The agent's token is handled exactly as the session helper handles
-it (above): a header, a child's stdin, never argv, a record or the log.
+and `LOGNAME` so git can reach the remote — never a token. **git itself, and
+everything it starts** (credential helpers, ssh, a remote's `receive-pack`),
+gets an allowlist too: `PATH`, `HOME`, `TMPDIR`, `USER`, `LOGNAME`,
+`XDG_CONFIG_HOME`, `GH_CONFIG_DIR`, `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`,
+`GIT_SSH`, with `LC_ALL=LANG=C` and `GIT_TERMINAL_PROMPT=0` — so no
+`AWS_SECRET_ACCESS_KEY`, `GH_TOKEN` or Laika token reaches it, and a
+background push fails rather than waits for a password. A credential helper
+that needs `GH_TOKEN` from the environment therefore does not get it; one that
+reads its own stored login (`gh auth`, the keychain) works. The agent's token
+is handled exactly as the session helper handles it (above): a header, a
+child's stdin, never argv, a record or the log — and a background save acts
+with the credential on its stdin, so an agent logged in by `LAIKA_AGENT_TOKEN`
+alone saves too.
+
+**The owner's password** (consent on/off) is read into a buffer, sent, and
+the buffer and the request body are zeroed once the board answers. The
+prompt hands it over as a JavaScript string first, which no code can wipe.
 
 **Prune.** `laika agent checkpoints prune --dry-run` lists the `laika-ckpt/`
 tags on the remote whose task the board shows as done or cancelled at least
