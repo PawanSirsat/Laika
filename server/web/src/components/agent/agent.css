@@ -974,3 +974,8 @@
     grid-column: 1;
   }
 }
+
+/* The Inbox's tab body keeps Review's gutter (`.rev`), at every width. */
+.handoffs-tab {
+  margin: var(--space-4) 1.125rem var(--space-6);
+}

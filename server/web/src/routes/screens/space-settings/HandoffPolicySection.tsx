@@ -78,7 +78,11 @@ export function HandoffPolicySection({ slug, mayEdit }: HandoffPolicySectionProp
   };
 
   return (
-    <section className="ss-card" aria-labelledby="ss-handoff-title" data-handoff-policy-section>
+    <section
+      className="ss-card ss-handoff"
+      aria-labelledby="ss-handoff-title"
+      data-handoff-policy-section
+    >
       <header className="ss-card-head ss-card-head-split">
         <div>
           <h2 id="ss-handoff-title">Agent hand-off</h2>
@@ -88,38 +92,40 @@ export function HandoffPolicySection({ slug, mayEdit }: HandoffPolicySectionProp
           <p className="ss-immediate">Changes save immediately</p>
         )}
       </header>
-      {read.kind === 'loading' && (
-        <LoadingState shape="row" count={4} label="Loading the hand-off policy" />
-      )}
-      {read.kind === 'error' && (
-        <ApiErrorState
-          error={read.error}
-          resource="this space’s hand-off policy"
-          onRetry={() => {
-            setAttempt((n) => n + 1);
-          }}
-        />
-      )}
-      {read.kind === 'ready' && (
-        <>
-          <HandoffPolicyForm
-            policy={toForm(read.policy)}
-            onChange={save}
-            mayEdit={mayEdit}
-            busy={saving}
+      <div className="ss-handoff-body">
+        {read.kind === 'loading' && (
+          <LoadingState shape="row" count={4} label="Loading the hand-off policy" />
+        )}
+        {read.kind === 'error' && (
+          <ApiErrorState
+            error={read.error}
+            resource="this space’s hand-off policy"
+            onRetry={() => {
+              setAttempt((n) => n + 1);
+            }}
           />
-          {!read.policy.is_set && (
-            <p className="ss-help" data-policy-defaults>
-              This space has not set a policy, so these are Laika’s defaults.
-            </p>
-          )}
-          {failed !== undefined && (
-            <p className="ss-field-error" role="alert" data-error="handoff_policy">
-              Not saved: {failed}
-            </p>
-          )}
-        </>
-      )}
+        )}
+        {read.kind === 'ready' && (
+          <>
+            <HandoffPolicyForm
+              policy={toForm(read.policy)}
+              onChange={save}
+              mayEdit={mayEdit}
+              busy={saving}
+            />
+            {!read.policy.is_set && (
+              <p className="ss-help" data-policy-defaults>
+                This space has not set a policy, so these are Laika’s defaults.
+              </p>
+            )}
+            {failed !== undefined && (
+              <p className="ss-field-error" role="alert" data-error="handoff_policy">
+                Not saved: {failed}
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </section>
   );
 }

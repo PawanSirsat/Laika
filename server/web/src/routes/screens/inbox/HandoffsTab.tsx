@@ -246,6 +246,10 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
                 aria-controls={listId}
                 data-filter={id}
                 onClick={() => {
+                  if (id === view) return;
+                  // Cleared in the same render as the press, so the pressed
+                  // filter never sits over the last view's rows.
+                  setState(START);
                   setView(id);
                 }}
               >
@@ -266,6 +270,7 @@ export function HandoffsTab({ meId, counts, onChanged, onNavigate }: HandoffsTab
             type="checkbox"
             checked={closed}
             onChange={(event) => {
+              setState(START);
               setClosed(event.target.checked);
             }}
           />
