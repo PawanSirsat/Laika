@@ -109,14 +109,6 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     'agent-token only, a session is `403 not_an_agent`; `laika agent accept` (LAI-548) and MCP `respond_handoff` call it',
   'api/v1/handoff-offers/*/decline':
     'agent-token only, a session is `403 not_an_agent`; MCP `respond_handoff` calls it',
-  /*
-   * §4.75's consent: `GET` answers the agent's own token, which the helper
-   * (LAI-547) reads before an automatic save. `PUT` and `DELETE` are the
-   * owner's, signed in, and have no screen yet: no task builds the setup
-   * toggle, and LAI-549's report names the gap for CHIEF to file.
-   */
-  'api/v1/agents/*/checkpoint-consent':
-    'LAI-547 — the helper reads it with the agent’s token; the owner’s toggle has no screen or task yet (raised by LAI-549)',
 
   // Built, served, and waiting on a screen. Each names the task, not a reason.
   'api/v1/comments/*': 'LAI-234 — a comment cannot be edited or deleted from the UI',
