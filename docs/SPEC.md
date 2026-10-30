@@ -4546,9 +4546,11 @@ harness, device_label }` for the registered agent whose token finished the
 round, read through the round's token — **only when the reader may already see
 that agent**: their own, or the task's selected agent or the holder of its live
 claim (§4.63: another person's agent is not disclosed). Otherwise `agent` is
-`null`, and so is **`client_name`**, which for a registered agent carries its
-token's — its registered — name; `by_registered_agent` is `true` so a screen
-can say *an agent* and name none. For a person, a legacy token or a token since
+`null`, and `by_registered_agent` is `true` so a screen can say *an agent* and
+name none. **`client_name` of a registered agent's round is its owner's
+alone**: for a registered agent it carries its token's — its registered —
+name, which under D-120 is never the label, so every other reader gets `null`,
+even where `agent` is shown. For a person, a legacy token or a token since
 deleted, `agent` is `null`, `by_registered_agent` is `false`, and `client_name`
 is as stored. `GET /review` (§4.27) and `get_task_context`'s round carry the
 same fields under the same rule; a caller with no user is shown no agent.
