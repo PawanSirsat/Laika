@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, resolveTokenActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
-import { projects, users } from '../../src/db/schema.ts';
+import { handoffOffers, projects, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { registerAgent } from '../../src/services/agents.ts';
 import {
@@ -12,6 +12,7 @@ import {
 } from '../../src/services/checkpoints.ts';
 import { configureClaims, DEFAULT_CLAIM_TIMINGS, expireClaims } from '../../src/services/claims.ts';
 import {
+  acceptHandoff,
   offerHandoff,
   putHandoffPolicy,
   resetHandoffRateLimits,
@@ -236,15 +237,29 @@ describe('recovery_available (§4.73)', () => {
     expect(handoffOf(id, T0 + LEASE + 1).recovery_available).toBe(false);
   });
 
-  it('is false again once another agent claims the task back', () => {
+  it('is false again once another agent accepts the recovery — the offer and the flag both go', () => {
     const a = agentOf(owner, 'A');
     const b = agentOf(owner, 'B');
     const id = task();
-    save(a, id, claim(a, id), 'verified');
+    const saved = save(a, id, claim(a, id), 'verified');
     expireClaims(t.db, T0 + LEASE);
     expect(handoffOf(id, T0 + LEASE).recovery_available).toBe(true);
-    claim(b, id, T0 + LEASE + 1);
-    expect(handoffOf(id, T0 + LEASE + 1).recovery_available).toBe(false);
+    const recovery = t.db
+      .select()
+      .from(handoffOffers)
+      .where(eq(handoffOffers.taskId, id))
+      .all()
+      .find((o) => o.kind === 'recovery');
+    expect(recovery?.state).toBe('open');
+    acceptHandoff(t.sqlite, t.db, b.actor, recovery!.id, {
+      verifiedCommitSha: saved.commit_sha,
+      now: T0 + LEASE + 1,
+    });
+    const after = handoffOf(id, T0 + LEASE + 1);
+    expect(after.offer).toBeNull();
+    expect(after.recovery_available).toBe(false);
+    // A live claim holds it now: the read says so, beside the summary.
+    expect(getTask(t.db, owner, id, T0 + LEASE + 1).claim?.agent_id).toBe(b.id);
   });
 });
 
@@ -480,7 +495,15 @@ describe('deriveHandoff', () => {
     ).toBe(true);
   });
 
-  it('a live hand-off offer is not a recovery', () => {
+  it('a verified save is enough with no offer open yet — the scan opens one later', () => {
+    expect(deriveHandoff({ ...base, hasVerified: true })).toEqual({
+      recovery_available: true,
+      save_needs_attention: false,
+    });
+    expect(deriveHandoff({ ...base }).recovery_available).toBe(false);
+  });
+
+    it('a live hand-off offer is not a recovery', () => {
     expect(
       deriveHandoff({
         ...base,
