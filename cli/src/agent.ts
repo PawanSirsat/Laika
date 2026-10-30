@@ -36,6 +36,7 @@ import {
 } from './agent-session.ts';
 import {
   autoCheckpoint,
+  type BackgroundTask,
   clearInflight,
   awaitSave,
   markInflight,
@@ -280,19 +281,27 @@ function subagentOf(input: Readonly<Record<string, unknown>>): string | undefine
 }
 
 /**
- * `Stop`'s `background_tasks`, as tool-use ids: what is still running when
- * the turn ends. `undefined` when the input does not carry the field — the
- * harness did not say, which is not the same as "nothing runs".
+ * `Stop`'s `background_tasks` as documented: `{ id, type, status, … }` per
+ * task in flight. `undefined` when the input does not carry the field — the
+ * harness did not say, which is not the same as "nothing runs". An entry of
+ * another shape is kept with no status, which counts as still running.
  */
-function backgroundTasks(input: Readonly<Record<string, unknown>>): string[] | undefined {
+function backgroundTasks(input: Readonly<Record<string, unknown>>): BackgroundTask[] | undefined {
   const tasks = input.background_tasks;
   if (!Array.isArray(tasks)) return undefined;
-  return tasks
-    .slice(0, 200)
-    .map((t: unknown) =>
-      typeof t === 'object' && t !== null ? (t as Record<string, unknown>).tool_use_id : undefined,
-    )
-    .filter((id): id is string => typeof id === 'string' && id !== '' && id.length <= 512);
+  const text = (value: unknown): string | undefined =>
+    typeof value === 'string' && value !== '' && value.length <= 512 ? value : undefined;
+  return tasks.slice(0, 200).map((t: unknown) => {
+    const entry = typeof t === 'object' && t !== null ? (t as Record<string, unknown>) : {};
+    const id = text(entry.id);
+    const type = text(entry.type);
+    const status = text(entry.status);
+    return {
+      ...(id === undefined ? {} : { id }),
+      ...(type === undefined ? {} : { type }),
+      ...(status === undefined ? {} : { status }),
+    };
+  });
 }
 
 /** One tool call's key, the same at `PreToolUse` and `PostToolUse`. */
