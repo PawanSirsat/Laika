@@ -31,6 +31,8 @@ import {
   ulid,
 } from '../src/checkpoint-git.ts';
 import * as checkpointCli from '../src/agent-checkpoint-cli.ts';
+import * as checkpoint from '../src/agent-checkpoint.ts';
+import { agentHookGroups } from '../src/agent-hooks.ts';
 
 void describe('secret patterns (D-115 item 5)', () => {
   // Every sample is assembled at run time, so this file never holds the shape.
@@ -311,5 +313,22 @@ void describe('review fixes, unit (LAI-547, #154)', () => {
       },
     );
     assert.deepEqual(JSON.parse(sent), { email: 'ada@example.test', password: original });
+  });
+});
+
+void describe('the interlock time bounds (LAI-547, #154 round 2)', () => {
+  void test('a save’s budget and grace end before PreToolUse stops waiting, which ends before the harness kills the hook', () => {
+    assert.ok(
+      checkpoint.SAVE_BUDGET_MS + checkpoint.INTERLOCK_GRACE_MS < checkpoint.PRE_TOOL_WAIT_MS,
+      'a save that keeps to its budget is always waited for, never denied',
+    );
+    for (const harness of ['claude-code', 'codex'] as const) {
+      const groups = agentHookGroups('/x/laika-agent-hook', harness);
+      const pre = (groups.PreToolUse as { hooks: { timeout: number }[] }).hooks[0]?.timeout ?? 0;
+      assert.ok(
+        checkpoint.PRE_TOOL_WAIT_MS + 2000 <= pre * 1000,
+        `${harness}: PreToolUse's ${String(pre)} s timeout leaves room for the wait and node's start`,
+      );
+    }
   });
 });

@@ -38,7 +38,7 @@ import {
   autoCheckpoint,
   clearAllInflight,
   clearInflight,
-  interlockHeld,
+  awaitSave,
   markInflight,
   MUTATING_TOOLS,
   readActivity,
@@ -286,6 +286,20 @@ function toolKey(input: Readonly<Record<string, unknown>>): string {
  * background `_checkpoint` child is started, which asks the board for consent
  * before it saves anything.
  */
+/**
+ * `PreToolUse`'s documented refusal, the same in both harnesses
+ * (code.claude.com/docs/en/hooks, learn.chatgpt.com/docs/hooks).
+ */
+export function denyOutput(reason: string): string {
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: reason,
+    },
+  });
+}
+
 function noteActivity(
   io: AgentIo,
   event: HookEvent,
@@ -293,29 +307,31 @@ function noteActivity(
   harnessSessionId: string,
   input: Readonly<Record<string, unknown>>,
   credential: AgentCredential,
-): void {
+): string {
   const now = Date.now();
   if (event === 'pre-tool') {
     // The tool runs in the harness process the session is bound to; without
     // a session there is nothing to bind it to, and no automatic save either.
     const session = readState(statePath(io.home, harness, harnessSessionId));
-    if (session === undefined) return;
-    markInflight(io.home, harness, harnessSessionId, toolKey(input), {
+    if (session === undefined) return '';
+    const key = toolKey(input);
+    markInflight(io.home, harness, harnessSessionId, key, {
       pid: session.harness_pid,
       started: session.harness_started,
     });
     // Marked first, then wait while an automatic save holds the interlock:
     // the save sees this marker and stops before it commits, or commits and
-    // lets go. Bounded well inside the hook's 5 s budget; past it the tool
-    // runs, and the save's own check before its commit still stops it.
-    for (
-      let waited = 0;
-      waited < 4000 && interlockHeld(io.home, harness, harnessSessionId);
-      waited += 100
-    ) {
-      Atomics.wait(PAUSE, 0, 0, 100);
-    }
-    return;
+    // lets go. A save still holding it past its deadline is not raced: the
+    // tool is denied, and its marker goes with it, since it will not run.
+    const verdict = awaitSave(io.home, harness, harnessSessionId, (ms) => {
+      Atomics.wait(PAUSE, 0, 0, ms);
+    });
+    if (verdict === 'clear') return '';
+    clearInflight(io.home, harness, harnessSessionId, key);
+    log(io.home, `checkpoint hook pre-tool ${harness}: a save overran its deadline; tool denied`);
+    return denyOutput(
+      'Laika is finishing a checkpoint of this worktree. Run the same tool again in a few seconds.',
+    );
   }
   if (event === 'stop') clearAllInflight(io.home, harness, harnessSessionId);
   const activity = readActivity(io.home, harness, harnessSessionId);
@@ -336,6 +352,7 @@ function noteActivity(
     const pid = spawnChild(io, '_checkpoint', harness, harnessSessionId, credential);
     log(io.home, `auto checkpoint ${harness}: started pid=${String(pid ?? 0)} at ${event}`);
   }
+  return '';
 }
 
 async function open(
@@ -391,14 +408,15 @@ export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Pro
   }
 
   if (event === 'pre-tool' || event === 'tool' || event === 'stop') {
+    let out = '';
     try {
-      noteActivity(io, event, harness, harnessSessionId, input, credential);
+      out = noteActivity(io, event, harness, harnessSessionId, input, credential);
     } catch (cause) {
       log(io.home, `checkpoint hook ${event}: ${cause instanceof Error ? cause.name : 'error'}`);
     }
-    // `PreToolUse` and `Stop` print nothing: their output can decide a
-    // permission or keep the model going, and these hooks decide neither.
-    if (event !== 'tool') return '';
+    // `Stop` prints nothing, and `PreToolUse` prints only the deny above:
+    // never an `allow`, which would skip the person's own permission rules.
+    if (event !== 'tool') return out;
   }
 
   let state = readState(path);

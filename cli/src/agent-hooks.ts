@@ -71,7 +71,9 @@ export function agentHookGroups(script: string, harness: Harness): Record<string
   return {
     SessionStart: { hooks: [handler('session-start', 10)] },
     UserPromptSubmit: { hooks: [handler('prompt', 5)] },
-    PreToolUse: { hooks: [handler('pre-tool', 5)] },
+    // 30 s: PreToolUse may wait up to 20 s for a checkpoint to let go of the
+    // interlock, and a harness kills a hook at its timeout and runs the tool.
+    PreToolUse: { hooks: [handler('pre-tool', 30)] },
     PostToolUse: { hooks: [handler('tool', 5)] },
     Stop: { hooks: [handler('stop', 5)] },
     SessionEnd: { hooks: [handler('session-end', 2)] },

@@ -316,8 +316,13 @@ export interface CheckpointDeps {
   readonly git: GitRunner;
   /** The process table, for the in-flight markers' liveness; `ps` by default. */
   readonly proc?: ProcReader;
-  /** A test's window onto the races P1-7 closes: after the quiet wait, and after staging. */
-  readonly onPhase?: (phase: 'quiet' | 'staged') => void;
+  /**
+   * A test's window onto the races P1-7 closes: after the quiet wait, after
+   * staging (a delay here is a slow commit), and when the interlock is let go.
+   */
+  readonly onPhase?: (phase: 'quiet' | 'staged' | 'released') => void | Promise<void>;
+  /** An automatic save's time budget under the interlock; {@link SAVE_BUDGET_MS} at most. */
+  readonly saveBudgetMs?: number;
 }
 
 const retryable = (r: ApiResult): boolean =>
@@ -521,11 +526,17 @@ export interface SaveOptions {
   readonly claim: ClaimQuery;
   readonly maxFileBytes?: number;
   /**
-   * An automatic save's hold on the session's tools (P1-7): `check` throws
-   * when a tool has started, and is asked right before staging and again
-   * right before the commit; `release` lets `PreToolUse` go once committed.
+   * An automatic save's hold on the session's tools (P1-7, round-2 #2).
+   * `acquire` takes the interlock right before staging and throws if a tool
+   * is running; `check` throws when a tool has started or the save's time
+   * budget is nearly spent, and is asked right before the commit; `release`
+   * lets `PreToolUse` go, after the commit or on any way out.
    */
-  readonly interlock?: { readonly check: () => void; readonly release: () => void };
+  readonly interlock?: {
+    readonly acquire: () => void;
+    readonly check: () => void;
+    readonly release: () => void;
+  };
 }
 
 export type SaveOutcome =
@@ -575,12 +586,14 @@ export async function save(deps: CheckpointDeps, options: SaveOptions): Promise<
     const before = git(wt.top, ['rev-parse', '-q', '--verify', 'HEAD^{commit}']).stdout.trim();
     const id = ulid(deps.now());
     const segment = target.task.segment;
-    options.interlock?.check();
+    // Held from here to the commit, and only that: nothing below until the
+    // commit touches the network, so the budget bounds local git work alone.
+    options.interlock?.acquire();
     const staged = stageSafely(git, wt, {
       ...(options.files === undefined ? {} : { add: options.files }),
       maxFileBytes: options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES,
     });
-    deps.onPhase?.('staged');
+    await deps.onPhase?.('staged');
     try {
       options.interlock?.check();
     } catch (cause) {
@@ -673,6 +686,7 @@ export async function save(deps: CheckpointDeps, options: SaveOptions): Promise<
     log(deps.home, `checkpoint ${id} pushed ${branch} and ${record.tag_ref}`);
   } finally {
     // A refusal after the record exists leaves it for the next run to finish.
+    options.interlock?.release();
     release();
   }
   await register(deps, record, target.credential);
@@ -1272,6 +1286,46 @@ export function interlockHeld(
   return interlockHolderOf(home, harness, id, probe, proc) !== undefined;
 }
 
+/**
+ * The longest `PreToolUse` waits for a save, whatever a lock file says: it
+ * must stay inside the hook's own timeout (30 s), or the harness would kill
+ * the hook and run the tool anyway.
+ */
+export const PRE_TOOL_WAIT_MS = 20_000;
+
+/**
+ * What `PreToolUse` does about a save in progress (round-2 #2): wait while a
+ * live save holds the interlock — until it lets go, or its deadline and
+ * {@link INTERLOCK_GRACE_MS} have passed — and then `deny` if it still
+ * holds it. **A tool never starts while a live save holds the interlock**:
+ * it waits for the commit, or it is refused and the model is told to retry.
+ */
+export function awaitSave(
+  home: string,
+  harness: Harness,
+  id: string,
+  pause: (ms: number) => void,
+  probe: Probe = probeKill,
+  proc: ProcReader = readProc,
+): 'clear' | 'deny' {
+  const cap = Date.now() + PRE_TOOL_WAIT_MS;
+  const path = join(inflightDir(home, harness, id), INTERLOCK);
+  let holder = interlockHolderOf(home, harness, id, probe, proc);
+  while (holder !== undefined) {
+    if (Date.now() >= Math.min(holder.deadline + INTERLOCK_GRACE_MS, cap)) return 'deny';
+    pause(100);
+    // Cheap while it is the same holder: the file and the kernel, no `ps`.
+    const now = interlockHolder(path);
+    const same =
+      now !== undefined && now.pid === holder.pid && now.started_ms === holder.started_ms;
+    holder =
+      same && probe(holder.pid) !== 'absent'
+        ? holder
+        : interlockHolderOf(home, harness, id, probe, proc);
+  }
+  return 'clear';
+}
+
 function markerOwner(path: string): MarkerOwner | undefined {
   const value = readJson(path);
   return isRecord(value) &&
@@ -1337,6 +1391,9 @@ export function shouldTrigger(activity: Activity, now: number, boundary: boolean
   return now - since >= TRIGGER_MS;
 }
 
+/** Refusals that mean "not now" rather than "not this": the next trigger tries again. */
+const BUSY_CODES: ReadonlySet<string> = new Set(['tool_started', 'save_budget', 'checkpoint_busy']);
+
 export type AutoOutcome =
   | 'saved'
   | 'unchanged'
@@ -1400,24 +1457,44 @@ export async function autoCheckpoint(
     await deps.sleep(500);
   }
 
-  deps.onPhase?.('quiet');
-  // The interlock, then the quiet check again under it: a tool that started
-  // since the loop above is seen here, and one that starts from now on waits
-  // in its PreToolUse or is seen by the checks inside the save.
+  await deps.onPhase?.('quiet');
+  // The interlock is taken inside the save, right before staging, and the
+  // quiet check asked again under it: a tool that started since the loop
+  // above is seen there, and one that starts from then on waits in its
+  // PreToolUse — or is denied, past the deadline — or is seen before the
+  // commit. Its budget covers local git work only; the network is outside it.
   const proc = deps.proc ?? readProc;
-  let release: () => void;
-  try {
-    release = takeSaveInterlock(deps.home, harness, harnessSessionId);
-  } catch {
-    log(deps.home, `auto checkpoint ${harness}: another save holds the interlock; not saved`);
-    return 'busy';
-  }
+  const budget = Math.max(100, Math.min(SAVE_BUDGET_MS, deps.saveBudgetMs ?? SAVE_BUDGET_MS));
+  // Time kept back for the commit itself: past this point the save stops
+  // rather than start a commit that could outrun its deadline.
+  const reserve = Math.min(2000, Math.floor(budget / 3));
   const toolsRunning = (): number => inflight(deps.home, harness, harnessSessionId, proc);
-  if (toolsRunning() > 0) {
-    release();
-    log(deps.home, `auto checkpoint ${harness}: a tool started after the quiet check; not saved`);
-    return 'busy';
-  }
+  let held: InterlockRelease | undefined;
+  const interlock = {
+    acquire: () => {
+      held = takeSaveInterlock(deps.home, harness, harnessSessionId, { budgetMs: budget, proc });
+      if (toolsRunning() > 0) {
+        throw new Refusal('a tool started after the quiet check', 'tool_started');
+      }
+    },
+    check: () => {
+      if (toolsRunning() > 0) {
+        throw new Refusal('a tool started while the save was staging', 'tool_started');
+      }
+      if (held !== undefined && Date.now() > held.deadline - reserve) {
+        throw new Refusal(
+          `the save ran past its ${String(budget)} ms budget before its commit`,
+          'save_budget',
+        );
+      }
+    },
+    release: () => {
+      if (held === undefined) return;
+      held();
+      held = undefined;
+      void deps.onPhase?.('released');
+    },
+  };
 
   try {
     // The credential this child was handed, for everything it sends (P2-10).
@@ -1426,14 +1503,7 @@ export async function autoCheckpoint(
       cwd: activity.cwd,
       auto: true,
       claim: { harness, harnessSessionId, credential },
-      interlock: {
-        check: () => {
-          if (toolsRunning() > 0) {
-            throw new Refusal('a tool started while the save was staging', 'tool_started');
-          }
-        },
-        release,
-      },
+      interlock,
     });
     const after = readActivity(deps.home, harness, harnessSessionId);
     after.mutations = 0;
@@ -1447,8 +1517,8 @@ export async function autoCheckpoint(
       deps.home,
       `auto checkpoint ${harness}: ${cause instanceof Refusal ? cause.code : 'error'} — ${cause instanceof Error ? cause.message.slice(0, 300) : ''}`,
     );
-    return cause instanceof Refusal && cause.code === 'tool_started' ? 'busy' : 'refused';
+    return cause instanceof Refusal && BUSY_CODES.has(cause.code) ? 'busy' : 'refused';
   } finally {
-    release();
+    interlock.release();
   }
 }
