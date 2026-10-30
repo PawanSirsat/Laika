@@ -775,3 +775,72 @@ void describe('checkpoint review fixes, round 3 (LAI-547, #154 at d79523e3)', ()
     clearInflightDir();
   });
 });
+
+void describe('checkpoint review fixes, round 4 (LAI-547, #154 at 84c4ebc2)', () => {
+  const refsOf = (bare: string): string =>
+    b.git(bare, 'for-each-ref', '--format=%(objectname) %(refname)');
+
+  /**
+   * origin pushes to the relative local path `A.git` (resolved, as a push
+   * resolves it, from the worktree), a bare repo whose HEAD is the task
+   * branch. B's HEAD is master. With `named`, a remote called `A.git` points
+   * at B — so `ls-remote A.git` would read the remote name and ask B.
+   */
+  function relativePush(name: string, named: boolean): { repo: Repo; a: string; other: string } {
+    const repo = b.freshRepo(name);
+    const a = join(repo.wt, 'A.git');
+    const other = join(repo.root, 'B.git');
+    for (const bare of [a, other]) {
+      b.git(repo.root, 'init', '-q', '--bare', '-b', 'master', bare);
+      b.git(repo.clone, 'push', '-q', bare, 'master');
+    }
+    b.git(a, 'branch', `LAI-547-${name}`, 'master');
+    b.git(a, 'symbolic-ref', 'HEAD', `refs/heads/LAI-547-${name}`);
+    b.git(repo.clone, 'config', 'remote.origin.pushurl', 'A.git');
+    if (named) b.git(repo.clone, 'config', 'remote.A.git.url', other);
+    return { repo, a, other };
+  }
+
+  void test('R4-1: a destination that is also a configured remote name is refused, never read as that remote', () => {
+    const { repo, a, other } = relativePush('r41', true);
+    // The instrument: ls-remote really does read `A.git` as the remote and ask B.
+    assert.match(
+      b.git(repo.wt, 'ls-remote', '--symref', '--', 'A.git', 'HEAD'),
+      /^ref: refs\/heads\/master\tHEAD/,
+    );
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 401;\n');
+    const before = [refsOf(a), refsOf(other)];
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /is also the name of a configured remote/);
+    assert.deepEqual([refsOf(a), refsOf(other)], before, 'nothing pushed anywhere');
+  });
+
+  void test('R4-1: a relative local path is asked as the absolute repo the push reaches', () => {
+    const { repo, a, other } = relativePush('r41b', false);
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 402;\n');
+    const before = [refsOf(a), refsOf(other)];
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /LAI-547-r41b is a protected branch/);
+    assert.deepEqual([refsOf(a), refsOf(other)], before, 'nothing pushed');
+  });
+
+  void test('R4-2: every background task is read — 200 finished and 1 running keep the live marker', async () => {
+    clearInflightDir();
+    markInflight(b.home, 'claude-code', HS, 'toolu_r42', harnessOwner());
+    const tasks = [
+      ...Array.from({ length: 200 }, (_, i) => ({
+        id: `task-${String(i)}`,
+        type: 'shell',
+        status: 'completed',
+      })),
+      { id: 'task-200', type: 'shell', status: 'running' },
+    ];
+    await runHook('stop', { background_tasks: tasks });
+    assert.ok(inflight(b.home, 'claude-code', HS) >= 1, 'the 201st, running, kept the marker');
+    clearInflightDir();
+  });
+});
