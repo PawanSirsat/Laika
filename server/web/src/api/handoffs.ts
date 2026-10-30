@@ -155,6 +155,60 @@ export function cancelHandoff(offerId: string): Promise<HandoffOffer> {
   });
 }
 
+/** `HandoffPolicyView` in `server/src/services/handoffs.ts`: a space's hand-off policy (§4.74). */
+export interface HandoffPolicyWire {
+  readonly project_id: string;
+  readonly allow_other_owners: boolean;
+  readonly cross_owner_requires_approval: boolean;
+  readonly max_handoffs: number;
+  readonly offer_ttl_minutes: number;
+  readonly updated_by: string | null;
+  /** `false` when the space never set one and these are the defaults. */
+  readonly is_set: boolean;
+}
+
+/** What `PUT /projects/:slug/handoff-policy` takes — the four settings. */
+export type HandoffPolicyInput = Pick<
+  HandoffPolicyWire,
+  'allow_other_owners' | 'cross_owner_requires_approval' | 'max_handoffs' | 'offer_ttl_minutes'
+>;
+
+/**
+ * §4.74's bounds, as the server enforces them (`HANDOFF_POLICY_LIMITS`): an
+ * integer outside either is `422`. The policy's `GET` does not serve them, so
+ * they are read from SPEC §4.74 by `handoff-policy.test.ts` and kept equal.
+ */
+export const HANDOFF_POLICY_BOUNDS = {
+  maxHandoffs: { min: 0, max: 20 },
+  offerTtlMinutes: { min: 5, max: 1440 },
+} as const;
+
+/** A space's hand-off policy; one the space never set reads as the defaults. Readable by every reader of the space. */
+export function getHandoffPolicy(slug: string, signal?: AbortSignal): Promise<HandoffPolicyWire> {
+  return request<HandoffPolicyWire>(
+    `/projects/${encodeURIComponent(slug)}/handoff-policy`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/**
+ * Set it — a lead's (`project.handoff_policy.edit`). **The server writes the
+ * whole row from the defaults plus what it is sent** (§6.4), not from the row
+ * before, so every call sends all four settings: one left out would quietly
+ * reset to its default.
+ */
+export function putHandoffPolicy(slug: string, policy: HandoffPolicyInput): Promise<HandoffPolicyWire> {
+  return request<HandoffPolicyWire>(`/projects/${encodeURIComponent(slug)}/handoff-policy`, {
+    method: 'PUT',
+    body: {
+      allow_other_owners: policy.allow_other_owners,
+      cross_owner_requires_approval: policy.cross_owner_requires_approval,
+      max_handoffs: policy.max_handoffs,
+      offer_ttl_minutes: policy.offer_ttl_minutes,
+    },
+  });
+}
+
 /**
  * Every hand-off refusal's `details.reason` (SPEC §6.3, *Checkpoints and
  * hand-offs*), worded for the person who saw it. Most are an agent's and
