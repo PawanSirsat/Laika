@@ -59,8 +59,9 @@ import {
   repoName,
   secretIn,
   stageSafely,
+  indexSnapshot,
+  restoreIndex,
   TAG_PREFIX,
-  unstage,
   ulid,
   type Worktree,
   worktreeAt,
@@ -589,6 +590,7 @@ export async function save(deps: CheckpointDeps, options: SaveOptions): Promise<
     // Held from here to the commit, and only that: nothing below until the
     // commit touches the network, so the budget bounds local git work alone.
     options.interlock?.acquire();
+    const snapshot = indexSnapshot(git, wt);
     const staged = stageSafely(git, wt, {
       ...(options.files === undefined ? {} : { add: options.files }),
       maxFileBytes: options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES,
@@ -597,9 +599,10 @@ export async function save(deps: CheckpointDeps, options: SaveOptions): Promise<
     try {
       options.interlock?.check();
     } catch (cause) {
-      // A tool started while this was staging: what it is writing is not
-      // this save's to commit. Put the index back for these paths and stop.
-      unstage(git, wt, staged);
+      // A tool started while this was staging, or the budget ran out: what
+      // was staged is not this save's to commit. Put the index back exactly
+      // as it was for these paths — the person's own staging included.
+      restoreIndex(git, wt, snapshot, staged);
       throw cause;
     }
     const committed = commitStaged(

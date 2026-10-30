@@ -490,12 +490,38 @@ export function stageSafely(git: GitRunner, wt: Worktree, options: StageOptions)
 }
 
 /**
- * Undo {@link stageSafely} for these paths: their index entries go back to
- * HEAD's. Used only when a save stops between staging and committing.
+ * The index as it is, as a tree: what {@link restoreIndex} puts back. Taken
+ * before staging, so a person's own partial staging — a hunk added with
+ * `git add -p` — survives a save that stops. An index git cannot write as a
+ * tree (an unresolved conflict) is a refusal: there is nothing exact to
+ * restore to.
  */
-export function unstage(git: GitRunner, wt: Worktree, paths: readonly string[]): void {
+export function indexSnapshot(git: GitRunner, wt: Worktree): string {
+  const r = git(wt.top, ['write-tree']);
+  const tree = r.stdout.trim();
+  if (r.code !== 0 || !/^[0-9a-f]{40}$/.test(tree)) {
+    throw new Refusal(
+      'the index cannot be saved as it is (an unresolved conflict?); nothing was staged',
+      'index_unmerged',
+    );
+  }
+  return tree;
+}
+
+/**
+ * Undo {@link stageSafely} for these paths: each index entry goes back to
+ * what the snapshot held — a partially staged blob stays partially staged,
+ * and a file that was not in the index leaves it again. Used only when a
+ * save stops between staging and committing.
+ */
+export function restoreIndex(
+  git: GitRunner,
+  wt: Worktree,
+  snapshot: string,
+  paths: readonly string[],
+): void {
   for (let at = 0; at < paths.length; at += 200) {
-    git(wt.top, ['reset', '-q', '--', ...paths.slice(at, at + 200).map(literal)]);
+    must(git, wt.top, ['reset', '-q', snapshot, '--', ...paths.slice(at, at + 200).map(literal)]);
   }
 }
 
