@@ -71,6 +71,14 @@ export interface CardFields {
    * `assignee`; this says which agent the work is *meant for*.
    */
   readonly agent: boolean;
+  /**
+   * *Recovery available* or *Save needs attention* (LAI-1006), as the server
+   * derived them for the task (LAI-1005): a task that can continue from a
+   * verified save, or whose newest save needs a person. Its own field, not
+   * the agent's: a reader who hides the chip still wants to see work that is
+   * stranded.
+   */
+  readonly handoff: boolean;
 }
 
 /** Everything on, so a board with no stored preference looks exactly as before. */
@@ -85,6 +93,7 @@ export const ALL_FIELDS: CardFields = Object.freeze({
   due: true,
   size: true,
   agent: true,
+  handoff: true,
 });
 
 /** The panel's rows, in the order it lists them. */
@@ -100,6 +109,7 @@ export const FIELD_LABELS: Readonly<Record<keyof CardFields, string>> = {
   // Called effort on screen (LAI-785); the stored key stays `size`.
   size: 'Effort',
   agent: 'Agent',
+  handoff: 'Recovery and saves',
 };
 
 export const FIELD_KEYS = Object.keys(FIELD_LABELS) as (keyof CardFields)[];
@@ -122,6 +132,7 @@ export const FIELD_ICONS: Readonly<Record<keyof CardFields, string>> = {
   due: '\u25a6',
   size: '\u25a3',
   agent: '\u25c8',
+  handoff: '\u21ba',
 };
 
 /**

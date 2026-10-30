@@ -7,6 +7,24 @@ export interface ExecutionStateLineProps {
   readonly detail?: string | undefined;
   /** `card` is one quiet line; `panel` adds what the state means underneath. */
   readonly variant?: 'card' | 'panel';
+  /**
+   * A card line that carries its meaning without drawing it (LAI-1006): the
+   * `title` on hover, and the words for a reader the card's open button
+   * points at with `aria-describedby` — so focus reaches it too.
+   */
+  readonly hint?:
+    | {
+        readonly id: string;
+        readonly className?: string;
+        /**
+         * A pointer on the line does what the card's open control does
+         * (LAI-1006 review): lifted for its hover title, the line sits over
+         * that control and would otherwise swallow the click. Keyboard users
+         * reach the control itself; this is the pointer's path only.
+         */
+        readonly onActivate?: () => void;
+      }
+    | undefined;
 }
 
 /**
@@ -17,12 +35,21 @@ export interface ExecutionStateLineProps {
  * state is told apart by colour, so the line reads the same in either theme,
  * in greyscale, and to a screen reader.
  */
-export function ExecutionStateLine({ state, detail, variant = 'card' }: ExecutionStateLineProps) {
+export function ExecutionStateLine({
+  state,
+  detail,
+  variant = 'card',
+  hint,
+}: ExecutionStateLineProps) {
   const words = EXECUTION_STATE_WORDS[state];
+  const extra = hint?.className === undefined ? '' : ` ${hint.className}`;
   return (
     <p
-      className={`exec-state exec-state-${variant}`}
+      className={`exec-state exec-state-${variant}${extra}`}
       data-exec-state={state}
+      id={hint?.id}
+      title={hint === undefined ? undefined : words.meaning}
+      onClick={hint?.onActivate}
       // The drawer's line can change while it is open — Working to Connection
       // lost on the reader's clock (LAI-597). A status is read out without
       // taking the focus from whatever the reader is doing.
@@ -33,6 +60,9 @@ export function ExecutionStateLine({ state, detail, variant = 'card' }: Executio
         <b className="exec-state-label">{words.label}</b>
         {detail !== undefined && <span className="exec-state-detail"> · {detail}</span>}
         {variant === 'panel' && <span className="exec-state-meaning">{words.meaning}</span>}
+        {variant === 'card' && hint !== undefined && (
+          <span className="visually-hidden">. {words.meaning}</span>
+        )}
       </span>
     </p>
   );

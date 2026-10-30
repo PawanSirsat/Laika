@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { Checkpoint, HandoffOffer } from '../../../src/api/handoffs.ts';
 import type { AgentNaming } from '../../../src/api/selected-agent.ts';
+import type { TaskHandoff } from '../../../src/api/tasks.ts';
 import {
   NO_CHECKPOINT,
   NO_VERIFIED_CHECKPOINT,
@@ -24,6 +25,7 @@ import {
   asSummary,
   checkpointTitle,
   currentOffer,
+  handoffState,
   noteStateOf,
   offerStatusWords,
   panelCheckpointOf,
@@ -33,6 +35,7 @@ import {
   RECOVERY_UNREAD,
   recoveryOf,
   saveRows,
+  summaryBehind,
 } from '../../../src/components/agent/handoff-derive.ts';
 
 const MIN = 60_000;
@@ -373,5 +376,120 @@ void describe('review fixes (LAI-549, Codex round 1)', () => {
     assert.equal(pollsForNotice([checkpoint()]), false);
     assert.equal(pollsForNotice([checkpoint({ verification: 'uncertain' })]), false);
     assert.equal(pollsForNotice([]), false);
+  });
+});
+
+/**
+ * LAI-1006: the card's state, and the drawer's once the task view carries the
+ * server's summary (LAI-1005). One rule, read on both, so they cannot differ.
+ */
+void describe('handoffState — the server’s summary, never derived again', () => {
+  const none: TaskHandoff = {
+    checkpoint: null,
+    offer: null,
+    recovery_available: false,
+    save_needs_attention: false,
+  };
+  const recovery: TaskHandoff = {
+    checkpoint: {
+      verification: 'verified',
+      saved_at: NOW,
+      pending_since: null,
+      pending_notice: false,
+    },
+    offer: { kind: 'recovery', state: 'open', requires_approval: false },
+    recovery_available: true,
+    save_needs_attention: false,
+  };
+  const attention: TaskHandoff = {
+    checkpoint: {
+      verification: 'uncertain',
+      saved_at: NOW,
+      pending_since: null,
+      pending_notice: false,
+    },
+    offer: null,
+    recovery_available: false,
+    save_needs_attention: true,
+  };
+
+  void test('says each flag, and nothing for a task with neither or a view without one', () => {
+    assert.equal(handoffState(recovery), 'recovery_available');
+    assert.equal(handoffState(attention), 'save_needs_attention');
+    assert.equal(handoffState(none), null);
+    assert.equal(handoffState(undefined), null);
+  });
+
+  void test('reads the flags, not the checkpoint: an uncertain save the server did not flag is not drawn', () => {
+    // A live claim, say: the server leaves the flag off, and the card must too.
+    assert.equal(handoffState({ ...attention, save_needs_attention: false }), null);
+    // A verified save with no expiry is not a recovery either.
+    assert.equal(handoffState({ ...recovery, recovery_available: false }), null);
+  });
+
+  void test('Recovery available outranks Save needs attention', () => {
+    assert.equal(handoffState({ ...recovery, save_needs_attention: true }), 'recovery_available');
+  });
+
+  void test('the drawer says what the card says once the view carries a summary', () => {
+    // The drawer's own reads would say *Save needs attention* here …
+    const rows = saveRows([checkpoint({ verification: 'uncertain' })]);
+    assert.equal(panelState(null, { kind: 'none' }, rows), 'save_needs_attention');
+    // … and with the summary it follows the server, as the card does.
+    for (const summary of [none, recovery, attention]) {
+      assert.equal(panelState(null, { kind: 'none' }, rows, summary), handoffState(summary));
+    }
+    // A live claim still speaks first, summary or not.
+    assert.equal(panelState('working', { kind: 'none' }, rows, attention), 'working');
+    assert.equal(
+      panelState('connection_lost', { kind: 'none' }, rows, recovery),
+      'connection_lost',
+    );
+  });
+});
+
+void describe('summaryBehind — the drawer’s poll is fresher than the list (LAI-1006 review)', () => {
+  const said = (over: Partial<TaskHandoff> = {}): TaskHandoff => ({
+    checkpoint: {
+      verification: 'pending',
+      saved_at: checkpoint({ verification: 'pending' }).created_at,
+      pending_since: NOW,
+      pending_notice: false,
+    },
+    offer: null,
+    recovery_available: false,
+    save_needs_attention: false,
+    ...over,
+  });
+
+  void test('agrees when the reads say what the summary says', () => {
+    assert.equal(
+      summaryBehind(said(), [checkpoint({ verification: 'pending', pending_notice: false })], []),
+      false,
+    );
+    assert.equal(
+      summaryBehind(said({ checkpoint: null }), [], [offer({ kind: 'work_request' })]),
+      false,
+    );
+    assert.equal(summaryBehind(undefined, [checkpoint({})], []), false);
+  });
+
+  void test('is behind when the newest save turned uncertain, or its notice came due', () => {
+    assert.equal(summaryBehind(said(), [checkpoint({ verification: 'uncertain' })], []), true);
+    assert.equal(
+      summaryBehind(said(), [checkpoint({ verification: 'pending', pending_notice: true })], []),
+      true,
+    );
+    assert.equal(summaryBehind(said({ checkpoint: null }), [checkpoint({})], []), true);
+  });
+
+  void test('is behind when a live hand-off or recovery appears, closes or changes state', () => {
+    const pending = [checkpoint({ verification: 'pending', pending_notice: false })];
+    const live = offer({ kind: 'recovery', state: 'open', requires_approval: false });
+    assert.equal(summaryBehind(said(), pending, [live]), true);
+    const holding = said({ offer: { kind: 'recovery', state: 'open', requires_approval: false } });
+    assert.equal(summaryBehind(holding, pending, [live]), false);
+    assert.equal(summaryBehind(holding, pending, [{ ...live, state: 'accepted' }]), true);
+    assert.equal(summaryBehind(holding, pending, [{ ...live, state: 'pending_approval' }]), true);
   });
 });

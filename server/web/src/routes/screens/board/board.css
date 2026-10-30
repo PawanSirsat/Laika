@@ -326,6 +326,12 @@
   z-index: 1;
 }
 
+/* The card's state line (LAI-1006): lifted for its hover title, and a click
+   on it opens the card as the rest of the card does. */
+.card-state-open {
+  cursor: pointer;
+}
+
 /* In flight. The card has NOT moved — the server has not answered yet. */
 .card-moving {
   opacity: 0.6;

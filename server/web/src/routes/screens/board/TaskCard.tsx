@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { tagColor } from './tag-colors.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -18,6 +19,7 @@ import {
 } from '../../../api/selected-agent.ts';
 import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
 import { cardExecutionState, liveClaimDetail } from '../../../components/agent/execution-derive.ts';
+import { handoffState } from '../../../components/agent/handoff-derive.ts';
 import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
 
 export interface TaskCardProps {
@@ -109,6 +111,19 @@ export function TaskCard({
   const execution = fields.agent ? cardExecutionState(task, now) : null;
   const executionDetail =
     execution === 'working' || execution === 'connection_lost' ? liveClaimDetail(task) : undefined;
+  // The server's own state for the task's saves (LAI-1005, LAI-1006), the
+  // drawer's rule too. It never coincides with a live claim — the server lets
+  // that speak first — and outranks *Waiting for agent*, as the drawer does.
+  const saveState = fields.handoff ? handoffState(task.handoff) : null;
+  const saveStateId = `card-state-${task.id}`;
+  const openRef = useRef<HTMLButtonElement>(null);
+  const describedBy =
+    [
+      onKeyMove === undefined ? undefined : 'card-move-help',
+      saveState === null ? undefined : saveStateId,
+    ]
+      .filter((id): id is string => id !== undefined)
+      .join(' ') || undefined;
 
   return (
     <article
@@ -192,7 +207,24 @@ export function TaskCard({
       {/* One quiet line, words beside a shape — never a colour alone. Only
           what the task view serves: *Working* and *Connection lost* from its
           live claim (LAI-568, LAI-597), *Waiting for agent* from its pick. */}
-      {execution !== null && <ExecutionStateLine state={execution} detail={executionDetail} />}
+      {saveState !== null ? (
+        // Lifted like the avatar and the blocker so its meaning shows on hover;
+        // the open button names it for focus (`aria-describedby`).
+        <ExecutionStateLine
+          state={saveState}
+          hint={{
+            id: saveStateId,
+            className: 'card-above card-state-open',
+            // Forwarded to the open control itself, so there is still one
+            // control and one place that opens the card (LAI-424).
+            onActivate: () => {
+              openRef.current?.click();
+            },
+          }}
+        />
+      ) : (
+        execution !== null && <ExecutionStateLine state={execution} detail={executionDetail} />
+      )}
 
       <div className="card-foot">
         {/* Jira's priority icons (LAI-705): an up chevron, an equals sign, a
@@ -203,15 +235,16 @@ export function TaskCard({
 
         <button
           type="button"
+          ref={openRef}
           className="card-key card-open t-code"
           onClick={() => {
             onOpen(task.id);
           }}
+          aria-describedby={describedBy}
           {...(onKeyMove === undefined
             ? {}
             : {
                 'aria-keyshortcuts': 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight',
-                'aria-describedby': 'card-move-help',
                 onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
                   const direction = event.altKey ? KEY_MOVES[event.key] : undefined;
                   if (direction === undefined) return;
