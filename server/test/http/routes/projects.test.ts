@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { users } from '../../../src/db/schema.ts';
+import { agentSessionContextDeliveries, users } from '../../../src/db/schema.ts';
 import { CONTEXT_MD_LIMIT, REPO_MAX_LENGTH } from '../../../src/services/projects.ts';
 import {
   type AuthHarness,
@@ -648,6 +648,8 @@ describe('context revisions over REST (§6.4, §4.68, LAI-555)', () => {
       ['GET', '/context/revisions', undefined],
       ['GET', '/context/revisions/1', undefined],
       ['GET', '/context/diff?from=0', undefined],
+      ['GET', '/context/deliveries', undefined],
+      ['GET', '/context/deliveries?revision=1', undefined],
     ] as const) {
       const init = {
         method,
@@ -661,5 +663,90 @@ describe('context revisions over REST (§6.4, §4.68, LAI-555)', () => {
         ((await missing.json()) as { error: { code: string } }).error.code,
       );
     }
+
+    // The deliveries read (LAI-1003): byte for byte, but for the slug it names.
+    for (const tail of ['/context/deliveries', '/context/deliveries?revision=1']) {
+      const hidden = await req(`/api/v1/projects/hidden${tail}`, {}, outsider);
+      const missing = await req(`/api/v1/projects/nope${tail}`, {}, outsider);
+      expect(hidden.status, tail).toBe(missing.status);
+      expect((await hidden.text()).replace('\\"hidden\\"', '\\"nope\\"'), tail).toBe(
+        await missing.text(),
+      );
+    }
+  });
+
+  const projectId = (): string =>
+    h.db.all<{ id: string }>(sql`SELECT id FROM projects WHERE slug = 'laika'`)[0]!.id;
+
+  it('lists each session’s latest delivered revision, saying that is all it keeps (LAI-1003)', async () => {
+    expect((await write('one', 0)).status).toBe(200);
+    expect((await write('two', 1)).status).toBe(200);
+
+    const empty = await req('/api/v1/projects/laika/context/deliveries?revision=2');
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toEqual({
+      scope: 'latest_per_session',
+      revision: 2,
+      current_revision: 2,
+      data: [],
+      next_cursor: null,
+    });
+
+    const registered = await req('/api/v1/agents', {
+      method: 'POST',
+      body: JSON.stringify({
+        display_name: 'Polly',
+        harness: 'omnigent',
+        device_label: 'Belka',
+        grants: [{ project_id: projectId(), scope: 'full' }],
+      }),
+    });
+    expect(registered.status, await registered.clone().text()).toBe(201);
+    const { agent, secret } = (await registered.json()) as {
+      agent: { id: string };
+      secret: string;
+    };
+    const opened = await h.app.request('/api/v1/agent-sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(opened.status, await opened.clone().text()).toBe(201);
+    const session = ((await opened.json()) as { id: string }).id;
+    h.db
+      .insert(agentSessionContextDeliveries)
+      .values({ sessionId: session, projectId: projectId(), revision: 1, deliveredAt: 1_000 })
+      .run();
+
+    const all = (await (await req('/api/v1/projects/laika/context/deliveries')).json()) as {
+      revision: number | null;
+      data: unknown[];
+    };
+    expect(all.revision).toBeNull();
+    expect(all.data).toEqual([
+      {
+        session_id: session,
+        revision: 1,
+        delivered_at: 1_000,
+        session_ended_at: null,
+        agent: {
+          id: agent.id,
+          harness: 'omnigent',
+          device_label: 'Belka',
+          display_name: 'Polly',
+          status: 'active',
+        },
+      },
+    ]);
+
+    const paged = (await (
+      await req('/api/v1/projects/laika/context/deliveries?revision=1&limit=1')
+    ).json()) as { data: unknown[]; next_cursor: string | null };
+    expect(paged.data).toHaveLength(1);
+    expect(paged.next_cursor).toBeNull();
+
+    expect((await req('/api/v1/projects/laika/context/deliveries?revision=3')).status).toBe(404);
+    expect((await req('/api/v1/projects/laika/context/deliveries?revision=x')).status).toBe(422);
+    expect((await req('/api/v1/projects/laika/context/deliveries?cursor=%%')).status).toBe(400);
   });
 });

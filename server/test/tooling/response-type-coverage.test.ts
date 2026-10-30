@@ -248,6 +248,13 @@ const UNPAIRED = new Map<string, string>([
   // `If-Match`) brings the mirror, and these leave the way the rest do.
   ['ListedTaskView', 'no client type exists'],
   ['ListedTaskSummaryView', 'no client type exists'],
+  // LAI-1003's context deliveries read and its two nested shapes. History's
+  // *Delivered to* (LAI-1004) brings the mirror and the `PAIRS` entries, and
+  // these leave then — a self-expiring crossing (§4.4 step 2), as LAI-1005's
+  // `TaskHandoffView` was.
+  ['ContextDeliveriesView', 'no client type exists'],
+  ['ContextDeliveryView', 'no client type exists'],
+  ['ContextDeliveryAgentView', 'no client type exists'],
 ]);
 
 /**
