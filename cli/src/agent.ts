@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,18 +83,52 @@ export interface AgentIo {
   readonly isTTY: boolean;
 }
 
+/** The most a hook, a child or `login` reads from stdin; past it nothing is read. */
+export const STDIN_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * All of stdin, up to {@link STDIN_MAX_BYTES}, or `''`. **Not `readFileSync(0)`**
+ * (round-4 #2): once anything touches `process.stdin` — `isTTY` below does —
+ * Node makes fd 0 non-blocking, and `readFileSync` then throws `EAGAIN` as
+ * soon as it catches up with a slower writer, so a hook input past a few
+ * tens of KB was never read at all: a large `PostToolUse` cleared no marker,
+ * and a long `background_tasks` list was never looked at. This loops, waits
+ * out `EAGAIN` for up to 10 s, and gives up whole — an input it cannot read
+ * entirely is no input, which leaves every marker where it is.
+ */
+export function readStdin(fd = 0, maxBytes = STDIN_MAX_BYTES, waitMs = 10_000): string {
+  const chunks: Buffer[] = [];
+  const buffer = Buffer.alloc(64 * 1024);
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  const until = Date.now() + waitMs;
+  let total = 0;
+  for (;;) {
+    let n: number;
+    try {
+      n = readSync(fd, buffer, 0, buffer.length, null);
+    } catch (cause) {
+      const code = (cause as { code?: unknown }).code;
+      if (code === 'EAGAIN' && Date.now() < until) {
+        Atomics.wait(pause, 0, 0, 5);
+        continue;
+      }
+      if (code === 'EOF') break;
+      return '';
+    }
+    if (n === 0) break;
+    total += n;
+    if (total > maxBytes) return '';
+    chunks.push(Buffer.from(buffer.subarray(0, n)));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 const CONSOLE: AgentIo = {
   out: (line) => process.stdout.write(`${line}\n`),
   err: (line) => process.stderr.write(`${line}\n`),
   home: homedir(),
   env: process.env,
-  stdin: () => {
-    try {
-      return readFileSync(0, 'utf8');
-    } catch {
-      return '';
-    }
-  },
+  stdin: () => readStdin(),
   isTTY: process.stdin.isTTY === true,
 };
 
@@ -257,7 +291,9 @@ export function contextOutput(event: HookEvent, text: string): string {
 function hookInput(raw: string): Record<string, unknown> | undefined {
   let input: unknown;
   try {
-    input = JSON.parse(raw.slice(0, 64 * 1024));
+    // `raw` is already bounded by {@link readStdin}; a cut here would only
+    // turn a large, whole input into one that does not parse.
+    input = JSON.parse(raw);
   } catch {
     return undefined;
   }
@@ -274,6 +310,9 @@ function hookSessionId(input: Readonly<Record<string, unknown>>): string | undef
 /** A synchronous pause for the hook's short wait: nothing else runs in it. */
 const PAUSE = new Int32Array(new SharedArrayBuffer(4));
 
+/** The longest `background_tasks` list judged; a longer one clears nothing. */
+export const MAX_BACKGROUND_TASKS = 1000;
+
 /** The subagent a tool event came from, when the harness names one (`agent_id`). */
 function subagentOf(input: Readonly<Record<string, unknown>>): string | undefined {
   const id = input.agent_id;
@@ -287,13 +326,15 @@ function subagentOf(input: Readonly<Record<string, unknown>>): string | undefine
  * another shape is kept with no status, which counts as still running.
  *
  * **Every entry is read** (round-4 #2): one running task among any number of
- * finished ones keeps every marker. The bound is the hook's input itself —
- * {@link hookInput} reads 64 KB, and a list longer than that does not parse,
- * so the hook does nothing and clears nothing.
+ * finished ones keeps every marker. A list longer than
+ * {@link MAX_BACKGROUND_TASKS} is not judged, and counts as running.
  */
 function backgroundTasks(input: Readonly<Record<string, unknown>>): BackgroundTask[] | undefined {
   const tasks = input.background_tasks;
   if (!Array.isArray(tasks)) return undefined;
+  // Past the cap the list is not judged: one task of no status stands for
+  // it, which counts as running, so nothing is cleared.
+  if (tasks.length > MAX_BACKGROUND_TASKS) return [{}];
   const text = (value: unknown): string | undefined =>
     typeof value === 'string' && value !== '' && value.length <= 512 ? value : undefined;
   return tasks.map((t: unknown) => {
