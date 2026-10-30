@@ -285,13 +285,18 @@ function subagentOf(input: Readonly<Record<string, unknown>>): string | undefine
  * task in flight. `undefined` when the input does not carry the field — the
  * harness did not say, which is not the same as "nothing runs". An entry of
  * another shape is kept with no status, which counts as still running.
+ *
+ * **Every entry is read** (round-4 #2): one running task among any number of
+ * finished ones keeps every marker. The bound is the hook's input itself —
+ * {@link hookInput} reads 64 KB, and a list longer than that does not parse,
+ * so the hook does nothing and clears nothing.
  */
 function backgroundTasks(input: Readonly<Record<string, unknown>>): BackgroundTask[] | undefined {
   const tasks = input.background_tasks;
   if (!Array.isArray(tasks)) return undefined;
   const text = (value: unknown): string | undefined =>
     typeof value === 'string' && value !== '' && value.length <= 512 ? value : undefined;
-  return tasks.slice(0, 200).map((t: unknown) => {
+  return tasks.map((t: unknown) => {
     const entry = typeof t === 'object' && t !== null ? (t as Record<string, unknown>) : {};
     const id = text(entry.id);
     const type = text(entry.type);

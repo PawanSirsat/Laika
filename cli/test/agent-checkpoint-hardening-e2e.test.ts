@@ -374,6 +374,9 @@ function runHook(
     });
     let stdout = '';
     child.stdout.on('data', (c: Buffer) => (stdout += c.toString('utf8')));
+    // A hook may stop reading early (its input is capped) and exit: the
+    // harness then sees a broken pipe, which is not the hook's failure.
+    child.stdin.on('error', () => undefined);
     child.stdin.end(JSON.stringify({ session_id: HS, ...input }));
     child.on('close', () => resolve({ stdout, endedAt: Date.now() }));
   });
@@ -841,6 +844,17 @@ void describe('checkpoint review fixes, round 4 (LAI-547, #154 at 84c4ebc2)', ()
     ];
     await runHook('stop', { background_tasks: tasks });
     assert.ok(inflight(b.home, 'claude-code', HS) >= 1, 'the 201st, running, kept the marker');
+
+    // A list past what the hook reads (64 KB) is not judged at all: kept.
+    const huge = Array.from({ length: 2000 }, (_, i) => ({
+      id: `task-${String(i)}`,
+      type: 'shell',
+      status: 'completed',
+      description: 'a finished task, described at some length',
+    }));
+    assert.ok(JSON.stringify(huge).length > 64 * 1024, 'the list really is past the read');
+    await runHook('stop', { background_tasks: huge });
+    assert.ok(inflight(b.home, 'claude-code', HS) >= 1, 'an unreadable list clears nothing');
     clearInflightDir();
   });
 });

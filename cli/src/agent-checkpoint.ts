@@ -1209,7 +1209,9 @@ export function reconcileAtStop(
 ): void {
   const running = tasks.filter((task) => !isTerminal(task));
   if (running.length > 0) {
-    for (const task of running) {
+    // Every running task was looked at; one marker is enough to hold a save
+    // off, so at most 200 files are written however long the list.
+    for (const task of running.slice(0, 200)) {
       if (task.id !== undefined) {
         markInflight(home, harness, id, `bg:${task.type ?? ''}:${task.id}`, owner);
       }
