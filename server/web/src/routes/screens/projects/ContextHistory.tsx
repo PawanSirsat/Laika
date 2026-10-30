@@ -13,6 +13,7 @@ import {
   type ContextRevisionSummary,
 } from '../../../api/project-context.ts';
 import { agentHarness, type RegisteredAgent } from '../../../api/agents.ts';
+import { agentDevice, twinNames } from '../../../api/selected-agent.ts';
 import type { Member } from '../../../api/tasks.ts';
 import { dateTime } from '../../../api/time-label.ts';
 
@@ -313,6 +314,9 @@ export function ContextHistory({ slug, refreshKey, members, agents }: ContextHis
   const pickFrom = from ?? revisions[1]?.revision ?? 0;
   const pickTo = to ?? current ?? 0;
   const agentById = new Map(agents.map((agent) => [agent.id, agent]));
+  // D-120: an agent is its harness and device. LAI-583's mark only where two
+  // of the reader's agents share both — a legacy duplicate — never otherwise.
+  const twins = twinNames(agents);
 
   return (
     <section className="ctx-history" aria-labelledby={`${ids}-h`} data-context-history>
@@ -354,8 +358,8 @@ export function ContextHistory({ slug, refreshKey, members, agents }: ContextHis
                         <span className="visually-hidden">through </span>
                         <AgentChip
                           client={agentHarness(agent)}
-                          device={agent.device_label ?? ''}
-                          twin={agent.display_name}
+                          device={agentDevice(agent)}
+                          twin={twins.get(agent.id)}
                         />
                       </span>
                     ) : (
