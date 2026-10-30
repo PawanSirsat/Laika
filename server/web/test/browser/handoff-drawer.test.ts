@@ -764,6 +764,8 @@ void describe('review fixes (LAI-549, Codex round 1)', () => {
         async () => (await unknown.innerText()).includes('Could not read this task’s saves'),
         10_000,
       );
+      // `until` returns on its timeout without failing; this is the assertion.
+      assert.match(await unknown.innerText(), /Could not read this task’s saves/);
       assert.equal(await found.locator('[data-recovery="unavailable"]').count(), 0);
       assert.doesNotMatch(await found.innerText(), /Automatic recovery unavailable/);
       assert.equal(await found.getByRole('button', { name: 'Release to backlog' }).count(), 0);
