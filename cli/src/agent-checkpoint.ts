@@ -390,6 +390,12 @@ export interface ClaimQuery {
   readonly task?: string;
   /** With `task` as an id: the claim's generation, for a session this machine has no state for. */
   readonly generation?: number;
+  /**
+   * The credential to act with for {@link harness} — a background save's,
+   * handed to it on stdin (P2-10). Its child process has no token on disk
+   * or in its environment when the agent was logged in by environment only.
+   */
+  readonly credential?: AgentCredential;
 }
 
 /**
@@ -423,7 +429,10 @@ export async function resolveTarget(
   );
   const seen: TaskInfo[] = [];
   for (const state of states) {
-    const credential = readCredential(deps.home, state.harness, deps.env);
+    const credential =
+      query.credential !== undefined && state.harness === query.harness
+        ? query.credential
+        : readCredential(deps.home, state.harness, deps.env);
     if (credential === undefined) continue;
     for (const claim of state.claims.slice(0, 20)) {
       if (!isLaikaId(claim.task_id) || !Number.isSafeInteger(claim.generation)) continue;
@@ -1328,11 +1337,12 @@ export async function autoCheckpoint(
   }
 
   try {
-    await retryPending(deps);
+    // The credential this child was handed, for everything it sends (P2-10).
+    await retryPending(deps, { harness, credential });
     const outcome = await save(deps, {
       cwd: activity.cwd,
       auto: true,
-      claim: { harness, harnessSessionId },
+      claim: { harness, harnessSessionId, credential },
       interlock: {
         check: () => {
           if (toolsRunning() > 0) {
