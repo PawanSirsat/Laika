@@ -40,7 +40,7 @@ Once a team runs agents, the task board goes stale within hours: the real work h
 | 🎯 **Pick the agent for a task** | The task drawer has an **Agent** field beside Assignee. The human stays accountable; the agent gets a work request. Only the selected agent can start the task. |
 | 🟢 **See who is actually working** | Cards show **Working · Claude Code · Belka**, or **Connection lost** when its heartbeats stop. The drawer shows the session, its model and when it was last seen. |
 | 🔒 **One worker at a time** | Claims are exclusive and numbered. Writes from an old or expired claim are refused, even from the same person's other agent. |
-| 💾 **Checkpoints and safe hand-off** | Agents push their work and register a checkpoint; GitHub's signed push notice verifies it. An agent can hand a task to another, cross-owner hand-offs need a human's approval, and if a device disappears Laika offers **recovery** from the last verified checkpoint. |
+| 💾 **Checkpoints and safe hand-off** | Agents push their work and register a checkpoint; GitHub's signed push notice verifies it. An agent can hand a task to another, cross-owner hand-offs need a human's approval by default, and if a device disappears Laika offers **recovery** from the last verified checkpoint. |
 | 📥 **Inbox › Hand-offs** | Received, Sent, Needs approval and Recovery views, with the next step for each. Approval and acceptance are separate — the receiver always accepts itself. |
 | 💻 **Devices view** | Your agents grouped by laptop or cloud runner, last seen per device, unknown devices flagged, and **Revoke device** in one action. |
 | 🧠 **Versioned project context** | One context doc per project, with full revision history and compare. Agents fetch only what changed, and a stale edit can't overwrite a newer one. |
@@ -108,7 +108,7 @@ laika activity on                            # if your organisation collects loc
 ```bash
 pbpaste | laika agent login claude-code      # store the agent credential from the wizard (0600, never echoed)
 laika agent hooks on                         # session heartbeats, claim tracking, automatic checkpoints
-laika agent checkpoint consent on            # allow automatic saves for this agent (asks for your password)
+laika agent checkpoint consent on            # allow automatic saves (run inside an agent session, or add --agent <id>; asks for your password)
 ```
 
 **Once per project**, commit the block the board's *Developer access → Projects*
@@ -146,11 +146,12 @@ claude mcp add --transport http laika https://your-board.example.com/mcp \
 | `laika agent login <harness>` · `logout` | Store or remove this machine's credential for one registered agent |
 | `laika agent hooks on` · `off` | Install or remove the Claude Code / Codex hooks. Nothing is installed until you ask |
 | `laika agent session start` · `heartbeat` · `end` · `status` | One session per running harness process; heartbeats stop the moment that process dies |
-| `laika agent checkpoint save` · `note` · `status` · `reverify` | Commit work in progress on the task branch, push it plus one checkpoint tag, register it |
+| `laika agent checkpoint save` | Commit work in progress on the task branch, push it plus one checkpoint tag, register it |
+| `laika agent checkpoint note` · `status` · `reverify` | Store the continuation note · report and retry a pending registration · push a fresh tag at the same commit |
 | `laika agent checkpoint consent on` · `off` | Owner consent for automatic saves (also a switch on the Agents tab) |
-| `laika agent checkpoint prune --dry-run` | List checkpoints past retention. It deletes nothing |
+| `laika agent checkpoints prune --dry-run` | List checkpoints past retention. It deletes nothing |
 
-The helper never pushes to `master`/`main` or the repo's default branch, never force-pushes, never stages the whole repo, refuses secret-looking files and never saves while a tool is running. Capabilities per harness — tested, documented or unsupported — are in [`cli/README.md`](cli/README.md).
+The helper never pushes to `master`/`main` or the repo's default branch, never force-pushes, never stages the whole repo, refuses secret-looking files, and its automatic saves never run while a tool is running. Capabilities per harness — tested, documented or unsupported — are in [`cli/README.md`](cli/README.md).
 
 ---
 
@@ -160,22 +161,22 @@ Laika keeps four facts apart:
 
 | | |
 |---|---|
-| **Human assignee** | who is accountable — never changed by agent activity |
+| **Human assignee** | who is accountable — claims and hand-offs never change it; reassigning is always an explicit edit |
 | **Selected agent** | who is meant to do it — creates a work request, nothing more |
 | **Active claim** | which agent session actually holds the task right now |
 | **Agent owner** | the human who registered that agent |
 
 **An agent is one harness on one device.** *Claude Code · Belka* and *Claude Code · Strelka* are two agents; changing the model is not a new agent — the model is recorded per session (*Omnigent · Belka · Claude Code · claude-opus*). A cloud runner is the device `Cloud`, and its tokens last at most 24 hours. Only an agent's owner sees its registered name; everyone else sees harness · device.
 
-**Effective access** is the intersection of the owner's permissions, the agent's project grants, the token's scope and the project's hand-off policy — checked on every REST route and MCP tool, not just in the UI. No token can mint a token that outlives it, and agent tokens cannot mint tokens at all.
+**Effective access** is the intersection of the owner's permissions, the agent's project grants and the token's scope — checked on every REST route and MCP tool, not just in the UI. The project's hand-off policy additionally governs who may receive a transfer. No token can mint a token that outlives it, and agent tokens cannot mint tokens at all.
 
 **A hand-off, step by step**
 
 1. The working agent saves a checkpoint: branch, full commit, files changed and a continuation note (work done, next step, decisions, open questions, failing tests).
 2. It pushes the branch and a `laika-ckpt/…` tag, then registers the checkpoint. GitHub's signed push notice marks it **verified**; until then the card says **Verification pending**.
-3. It offers the task to an allowed agent. Same owner: no approval by default. Different owner: a human approves first.
+3. It offers the task to an allowed agent. Same owner: no approval. Different owner: by default a human approves first (a project setting).
 4. The receiver fetches the exact commit, checks it, and **explicitly accepts**. The claim moves in one transaction; the old session's writes are refused from then on.
-5. Laptop died instead? After 5 minutes without heartbeats the claim expires and Laika offers **recovery** from the last verified checkpoint. One receiver wins; no checkpoint means a human recovery path.
+5. Laptop died instead? After 5 minutes without heartbeats (the configurable default) the claim expires and Laika offers **recovery** from the last verified checkpoint. One receiver wins; no checkpoint means a human recovery path.
 
 The guarantee is recovery **from the last pushed and verified checkpoint** — Laika never claims to recover edits that never left the dead machine. Notes, branch names and repo content are treated as untrusted data and never executed.
 
