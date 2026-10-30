@@ -21,7 +21,11 @@ import type { Task, TaskEdit, TaskSummary } from './tasks.ts';
 /** `SelectedAgentView` in `server/src/services/work-requests.ts`. Never a token, never a grant. */
 export interface SelectedAgent {
   readonly id: string;
-  readonly display_name: string;
+  /**
+   * Its registered name — sent to its owner only (D-120, LAI-1001); `null`
+   * for anyone else. Never the label, which is `harness` and `device_label`.
+   */
+  readonly display_name: string | null;
   /** Self-reported; decides nothing. Read through {@link selectedHarness}. */
   readonly harness: string;
   /** Self-reported; decides nothing. */
@@ -144,7 +148,7 @@ export function twinNames(agents: Iterable<Peer>): ReadonlyMap<string, string> {
   for (const group of groups.values()) {
     if (group.length < 2) continue;
     const said = (agent: Peer): string | undefined => {
-      const name = agent.display_name.trim();
+      const name = (agent.display_name ?? '').trim();
       const lower = name.toLowerCase();
       return name === '' ||
         lower === agentLabel(agent).toLowerCase() ||

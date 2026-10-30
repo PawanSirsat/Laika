@@ -545,12 +545,33 @@ describe('a round names another person’s agent only where the task already sho
   });
 
   it('Ada sees Bob’s agent where the task already shows it: its selected agent', async () => {
-    const { rig, read } = await bobsAgentFinishes(true);
+    const { rig, task, read } = await bobsAgentFinishes(true);
     const ada = await read('ada');
     for (const round of [ada.rounds, ada.queue]) {
       expect(round?.agent?.id).toBe(rig.agent.id);
-      expect(round?.client_name).toBe('Bob’s secret rig');
+      // Shown by harness and device; the registered name is Bob's alone (D-120).
+      expect(round?.client_name).toBeNull();
     }
+    for (const raw of [ada.rawRounds, ada.rawQueue]) expect(raw).not.toContain('Bob’s secret rig');
+
+    // The task view's selected agent: harness, device and owner, never the name.
+    interface Selected {
+      selected_agent: {
+        display_name: string | null;
+        harness: string;
+        device_label: string | null;
+        owner: { name: string };
+      } | null;
+    }
+    const rawView = await (await must(asSession(`/api/v1/tasks/${task.id}`))).text();
+    expect(rawView).not.toContain('Bob’s secret rig');
+    expect((JSON.parse(rawView) as Selected).selected_agent).toMatchObject({
+      display_name: null,
+      harness: 'codex',
+      device_label: 'Bob’s laptop',
+    });
+    const rawList = await (await must(asSession('/api/v1/projects/core/tasks'))).text();
+    expect(rawList).not.toContain('Bob’s secret rig');
   });
 
   it('Ada sees Bob’s agent while it holds the task’s live claim', async () => {
@@ -618,15 +639,17 @@ describe('a round names another person’s agent only where the task already sho
     const bob = await json<Shown>(await must(asBob(`/api/v1/tasks/${made.id}`)));
     expect(bob.created_by_client).toBe('Bob’s secret rig');
 
-    // Selected on the task, the agent is shown there, and so is its name.
+    // Selected on the task, the agent is shown there by harness and device;
+    // its registered name stays Bob's (D-120).
     await must(
       asBob(`/api/v1/tasks/${made.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ selected_agent_id: rig.agent.id }),
       }),
     );
-    const shown = await json<Shown>(await must(asSession(`/api/v1/tasks/${made.id}`)));
-    expect(shown.created_by_client).toBe('Bob’s secret rig');
+    const shownRaw = await (await must(asSession(`/api/v1/tasks/${made.id}`))).text();
+    expect((JSON.parse(shownRaw) as Shown).created_by_client).toBeNull();
+    expect(shownRaw).not.toContain('Bob’s secret rig');
   });
 
   it('created_by_client: a legacy token’s name is shown as before', async () => {
@@ -635,6 +658,58 @@ describe('a round names another person’s agent only where the task already sho
       await must(asSession(`/api/v1/tasks/${task.id}`)),
     );
     expect(view.created_by_client).toBe('Codex');
+  });
+
+  it('Bob reads his own selected agent with its name; Ada’s agent is refused naming it by harness and device', async () => {
+    const { rig, task, asBob } = await bobsAgentFinishes(true);
+    const bobView = await json<{ selected_agent: { display_name: string | null } | null }>(
+      await must(asBob(`/api/v1/tasks/${task.id}`)),
+    );
+    expect(bobView.selected_agent?.display_name).toBe('Bob’s secret rig');
+
+    // A task selected for Bob's agent, and Ada's own agent tries to claim it.
+    const fresh = await newTask();
+    await must(
+      asBob(`/api/v1/tasks/${fresh.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ selected_agent_id: rig.agent.id }),
+      }),
+    );
+    const projects = await json<{ data: { id: string; slug: string }[] }>(
+      await must(asSession('/api/v1/projects')),
+    );
+    const core = projects.data.find((p) => p.slug === 'core')?.id ?? '';
+    const mine = await json<{ secret: string }>(
+      await must(
+        asSession('/api/v1/agents', {
+          method: 'POST',
+          body: JSON.stringify({
+            display_name: 'Ada’s own',
+            harness: 'omnigent',
+            device_label: 'Belka',
+            grants: [{ project_id: core, scope: 'full' }],
+          }),
+        }),
+        201,
+      ),
+    );
+    const refused = await h.app.request(`/api/v1/tasks/${fresh.id}/claim`, {
+      method: 'POST',
+      headers: jsonHeaders({ Authorization: `Bearer ${mine.secret}` }),
+    });
+    const raw = await refused.text();
+    expect(refused.status, raw).toBe(409);
+    const body = JSON.parse(raw) as {
+      error: { message: string; details: { reason: string; selected_agent: unknown } };
+    };
+    expect(body.error.details.reason).toBe('selected_for_another_agent');
+    expect(body.error.message).toContain('codex · Bob’s laptop');
+    expect(body.error.details.selected_agent).toMatchObject({
+      display_name: null,
+      harness: 'codex',
+      device_label: 'Bob’s laptop',
+    });
+    expect(raw).not.toContain('Bob’s secret rig');
   });
 });
 

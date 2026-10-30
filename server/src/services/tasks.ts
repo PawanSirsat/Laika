@@ -97,6 +97,7 @@ import {
   assertAgentSelectable,
   assertSelectionChangeAllowed,
   moveSelection,
+  namedFor,
   selectedAgentViews,
   type SelectedAgentView,
 } from './work-requests.ts';
@@ -402,23 +403,27 @@ function loadViewContext(
   };
 }
 
+/** The selected agent as this reader may see it: its registered name is its owner's (D-120). */
+function selectedFor(
+  view: SelectedAgentView | undefined,
+  reader: string | null,
+): SelectedAgentView | null {
+  return view === undefined ? null : namedFor(view, reader);
+}
+
 /**
  * The creating client's name as this reader may see it (LAI-1001). A legacy
  * token's name is shown as before. A registered agent's token is named after
- * the agent, so its name is shown only where the agent itself would be: to
- * its owner, or on a task that already shows it as its selected agent or
- * live claim holder. Otherwise null — `created_via` still says it came
- * through an agent's channel, and names no one.
+ * the agent, and that registered name is **its owner's alone** (D-120,
+ * Belka): null for everyone else, even on a task that shows the agent —
+ * which names it by harness and device instead. `created_via` still says it
+ * came through an agent's channel.
  */
 function creatingClientFor(row: TaskRow, context: ViewContext): string | null {
   const client = context.clients.get(row.id);
   if (client === undefined) return null;
   if (client.agentId === null) return client.name;
-  const visible =
-    (context.reader !== null && client.ownerUserId === context.reader) ||
-    row.selectedAgentId === client.agentId ||
-    context.claims.get(row.id)?.agent_id === client.agentId;
-  return visible ? client.name : null;
+  return context.reader !== null && client.ownerUserId === context.reader ? client.name : null;
 }
 
 function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
@@ -468,7 +473,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     selected_agent:
       row.selectedAgentId === null
         ? null
-        : (context.selectedAgents.get(row.selectedAgentId) ?? null),
+        : selectedFor(context.selectedAgents.get(row.selectedAgentId), context.reader),
     claim: context.claims.get(row.id) ?? null,
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],

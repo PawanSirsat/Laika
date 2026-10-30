@@ -839,7 +839,8 @@ describe('get_task_context withholds another person’s agent in its round (LAI-
       bobCookie,
     );
     expect(registered.status, await registered.clone().text()).toBe(201);
-    const rig = (await registered.json()) as { secret: string };
+    const rig = (await registered.json()) as { secret: string; agent: { id: string } };
+    const rigId = rig.agent.id;
 
     const created = await task('core', { title: 'Bob’s agent does it' });
     const asRig = (path: string, generation?: string) =>
@@ -876,6 +877,25 @@ describe('get_task_context withholds another person’s agent in its round (LAI-
     const raw = JSON.stringify(result);
     expect(raw).not.toContain('Bob’s secret rig');
     expect(raw).not.toContain('Bob’s laptop');
+
+    // Bob selects his agent: now the task shows it to Ada — by harness and
+    // device, in the payload and the markdown, never by its registered name.
+    const selected = await api(
+      `/api/v1/tasks/${created.id}`,
+      { method: 'PATCH', body: JSON.stringify({ selected_agent_id: rigId }) },
+      bobCookie,
+    );
+    expect(selected.status, await selected.clone().text()).toBe(200);
+    const again = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: created.key },
+    });
+    const shownTask = payload(again).task as {
+      selected_agent: { display_name: string | null; harness: string } | null;
+    };
+    expect(shownTask.selected_agent).toMatchObject({ display_name: null, harness: 'codex' });
+    expect(text(again)).toContain('Requested of agent **codex · Bob’s laptop**');
+    expect(JSON.stringify(again)).not.toContain('Bob’s secret rig');
     await client.close();
   });
 });

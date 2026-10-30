@@ -476,3 +476,18 @@ void describe('the marks are checked, not hoped for', () => {
     assert.equal(checked, names.length ** 3);
   });
 });
+
+void describe('another owner’s agent arrives without its name (D-120, LAI-1001)', () => {
+  void test('two withheld names on one pair are still told apart, by id', () => {
+    const peer = (id: string) => ({
+      id,
+      display_name: null,
+      harness: 'codex',
+      device_label: 'Bob’s laptop',
+    });
+    const twins = twinNames([peer('ag-0001aaaa'), peer('ag-0002bbbb')]);
+    assert.equal(twins.get('ag-0001aaaa'), 'aaaa');
+    assert.equal(twins.get('ag-0002bbbb'), 'bbbb');
+    assert.equal(agentLabel(peer('x')), 'Codex · Bob’s laptop');
+  });
+});

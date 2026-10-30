@@ -104,9 +104,9 @@ export interface RoundView {
   /**
    * The agent's own name for itself when it finished (D-076), or null. For a
    * registered agent this is usually its token's name — its registered name
-   * — so it is **withheld (null) wherever `agent` is**: another person's
-   * agent the reader may not see (Belka, LAI-1001). Kept for the reader's own
-   * agents, agents the task shows them, and unregistered legacy tokens.
+   * — so it is **its owner's alone** (D-120, Belka, LAI-1001): null for any
+   * other reader, even where `agent` is shown. Kept for unregistered legacy
+   * tokens.
    */
   client_name: string | null;
   /**
@@ -426,14 +426,18 @@ function toRoundViews(
     const pr = mine.find((i) => i.kind === 'pull_request');
     const said = github.get(row.id);
     const agent = visibleAgent(row);
-    const registered = row.tokenId !== null && agentByToken.has(row.tokenId);
+    const finisher = row.tokenId === null ? undefined : agentByToken.get(row.tokenId);
+    const registered = finisher !== undefined;
+    // The token's name is the agent's registered name, its owner's alone
+    // (D-120, Belka): withheld from everyone else, even where `agent` is shown.
+    const ownName = registered && reader !== null && finisher.ownerUserId === reader;
     return {
       id: row.id,
       task_id: row.taskId,
       number: row.number,
       finished_by: row.finishedBy,
       // A withheld agent's name is withheld with it.
-      client_name: registered && agent === null ? null : row.clientName,
+      client_name: registered && !ownName ? null : row.clientName,
       agent,
       by_registered_agent: registered,
       summary_md: row.summaryMd,
