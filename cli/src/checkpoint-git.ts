@@ -654,6 +654,28 @@ export function pushDestinations(git: GitRunner, wt: Worktree, remote: string): 
   return urls;
 }
 
+/** Every remote named in the config here — `remote.<name>.<key>`, any key, includes followed. */
+function configuredRemoteNames(git: GitRunner, wt: Worktree): Set<string> {
+  const r = git(wt.top, ['config', '-z', '--includes', '--name-only', '--get-regexp', '^remote\\.']);
+  return new Set(
+    r.stdout
+      .split('\0')
+      .filter((key) => key.startsWith('remote.') && key.lastIndexOf('.') > 'remote.'.length)
+      .map((key) => key.slice('remote.'.length, key.lastIndexOf('.'))),
+  );
+}
+
+/**
+ * A destination git reads as a local path: no `scheme://`, and no `host:`
+ * before the first `/` (git's own test for the scp-like ssh form).
+ */
+function localPath(url: string): boolean {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return false;
+  const colon = url.indexOf(':');
+  const slash = url.indexOf('/');
+  return colon === -1 || (slash !== -1 && slash < colon);
+}
+
 /** Every `url.<base>.insteadOf` value in effect here, includes followed. */
 function insteadOfValues(git: GitRunner, wt: Worktree): string[] {
   const r = git(wt.top, ['config', '-z', '--includes', '--get-regexp', '^url\\..*\\.insteadof$']);
@@ -697,16 +719,31 @@ export function currentDefaultAt(
       'remote_default_unknown',
     );
   if (/[=\n\r\0]/.test(url)) throw unknown('its URL cannot be asked without rewriting');
-  if (insteadOfValues(git, wt).includes(url)) {
+  // `ls-remote <x>` reads `x` as a remote's name first (round-4 #1): a
+  // pushurl `A.git` beside a remote named `A.git` would be asked as that
+  // remote. So a destination that is a remote's name is refused, and a local
+  // path is asked as the absolute `file://` URL of the repo the push reaches
+  // — resolved from the worktree, where the push runs — which no name is.
+  const names = configuredRemoteNames(git, wt);
+  const query = localPath(url)
+    ? url.includes('%')
+      ? undefined
+      : `file://${resolve(wt.top, url)}`
+    : url;
+  if (query === undefined) throw unknown('a local path holding % cannot be asked as a URL');
+  if (names.has(url) || names.has(query)) {
+    throw unknown('it is also the name of a configured remote, so asking it would ask that remote');
+  }
+  if (insteadOfValues(git, wt).some((v) => v === url || v === query)) {
     throw unknown('an insteadOf rule names it exactly, so asking it would ask somewhere else');
   }
   const r = git(wt.top, [
     '-c',
-    `url.${url}.insteadOf=${url}`,
+    `url.${query}.insteadOf=${query}`,
     'ls-remote',
     '--symref',
     '--',
-    url,
+    query,
     'HEAD',
   ]);
   const m = r.code === 0 ? /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(r.stdout) : null;
