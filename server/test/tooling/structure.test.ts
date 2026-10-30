@@ -121,6 +121,13 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/use-task-detail.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-task-handoffs.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   [
+    'api/use-handoff-counts.ts',
+    // LAI-550. The request it makes is listPersonHandoffs, mirrored in
+    // test/api/handoff-policy.test.ts; the sum it feeds is handoffsWaiting,
+    // and the badge is asserted in a browser.
+    'a React hook — no renderer in this package (CONVENTIONS §4). Its request, listPersonHandoffs, is tested in test/api/handoff-policy.test.ts, the badge sum in test/components/agent/person-handoffs.test.ts, and the sidebar badge in test/browser/inbox-handoffs.test.ts.',
+  ],
+  [
     'components/agent/use-claim-clock.ts',
     // LAI-597. The wait it sets, msUntilSuspect, is mirrored in
     // test/components/agent/execution-derive.test.ts; the flip it causes is

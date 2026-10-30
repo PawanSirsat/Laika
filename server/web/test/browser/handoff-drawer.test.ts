@@ -757,7 +757,13 @@ void describe('review fixes (LAI-549, Codex round 1)', () => {
       const found = await panel(h);
       const unknown = found.locator('[data-recovery="unknown"]');
       await unknown.waitFor({ timeout: 10_000 });
-      assert.match(await unknown.innerText(), /Could not read this task’s saves/);
+      // The same element says *Checking…* while the read is in flight, so wait
+      // for the failure's words rather than reading the first frame (LAI-550:
+      // CI caught it mid-read).
+      await until(
+        async () => (await unknown.innerText()).includes('Could not read this task’s saves'),
+        10_000,
+      );
       assert.equal(await found.locator('[data-recovery="unavailable"]').count(), 0);
       assert.doesNotMatch(await found.innerText(), /Automatic recovery unavailable/);
       assert.equal(await found.getByRole('button', { name: 'Release to backlog' }).count(), 0);
