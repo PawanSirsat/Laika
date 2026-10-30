@@ -1438,6 +1438,72 @@ export const agentCheckpointConsents = sqliteTable(
   (t) => [uniqueIndex('agent_checkpoint_consents_agent_id_idx').on(t.agentId)],
 );
 
+// ------------------------------------------------------- §4.76 agent_events
+
+/**
+ * The versioned envelope of one hand-off, work-request, recovery or context
+ * event (§4.76, proposal §4.6, LAI-553): one row per `activity` row of those
+ * verbs, written by `appendActivity` **in the same transaction**, so an
+ * envelope exists exactly when its activity row does. `detail_json` is frozen
+ * at that moment — the offer may change later; what it said then does not.
+ * Never updated: `db/agent-events.ts` exports no update.
+ */
+export const agentEvents = sqliteTable(
+  'agent_events',
+  {
+    activityId: text('activity_id')
+      .primaryKey()
+      .references(() => activity.id, { onDelete: 'cascade' }),
+    /** The activity row's sequence — the ordering cursor (§11.5). */
+    seq: integer('seq').notNull(),
+    schemaVersion: integer('schema_version').notNull(),
+    /** The offer it is about, a copy — no FK, so the envelope outlives it. */
+    offerId: text('offer_id'),
+    detailJson: text('detail_json').notNull(),
+  },
+  (t) => [
+    uniqueIndex('agent_events_seq_idx').on(t.seq),
+    index('agent_events_offer_id_idx').on(t.offerId),
+  ],
+);
+
+// ---------------------------------------------- §4.77 agent_event_deliveries
+
+/**
+ * Where one event stands for one receiving agent (§4.77, LAI-553):
+ * `available` from the moment the row exists (written with the event),
+ * `received` when the agent's helper acknowledges it, `presented` when a hook
+ * showed it to the agent. `accepted` is not stored: it is the offer's own
+ * state (§4.73). **None of them claims the model understood anything.**
+ */
+export const agentEventDeliveries = sqliteTable(
+  'agent_event_deliveries',
+  {
+    activityId: text('activity_id')
+      .notNull()
+      .references(() => agentEvents.activityId, { onDelete: 'cascade' }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    /** A copy of the event's sequence, so an agent's deliveries page in order. */
+    seq: integer('seq').notNull(),
+    availableAt: integer('available_at').notNull(),
+    receivedAt: integer('received_at'),
+    /** The session that acknowledged it, a copy — no FK. */
+    receivedSessionId: text('received_session_id'),
+    presentedAt: integer('presented_at'),
+    presentedSessionId: text('presented_session_id'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.activityId, t.agentId] }),
+    index('agent_event_deliveries_agent_seq_idx').on(t.agentId, t.seq),
+    check(
+      'agent_event_deliveries_presented_after_received_check',
+      sql`presented_at IS NULL OR received_at IS NOT NULL`,
+    ),
+  ],
+);
+
 // ----------------------------------------------------------- §4.10 heartbeats
 
 /**
