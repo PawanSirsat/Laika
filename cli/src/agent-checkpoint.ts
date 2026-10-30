@@ -1216,6 +1216,13 @@ export function reconcileAtStop(
         markInflight(home, harness, id, `bg:${task.type ?? ''}:${task.id}`, owner);
       }
     }
+    // A running task with no id to key it by — or a list too long to judge,
+    // which stands as one such task (round-5 #2) — still holds saves off:
+    // one session-level marker, cleared only by a later Stop whose list is
+    // readable and empty or all finished.
+    if (running.some((task) => task.id === undefined)) {
+      markInflight(home, harness, id, 'bg:unidentified-running', owner);
+    }
     return;
   }
   const dir = inflightDir(home, harness, id);

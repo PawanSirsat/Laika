@@ -882,7 +882,11 @@ void describe('checkpoint review fixes, round 4 (LAI-547, #154 at 84c4ebc2)', ()
     assert.equal(inflight(b.home, 'claude-code', HS), 0, '1000 finished: read, judged, cleared');
     markInflight(b.home, 'claude-code', HS, 'toolu_r42b', harnessOwner());
     await runHook('stop', { background_tasks: finished(1001) });
-    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'past the cap: nothing cleared');
+    assert.equal(
+      inflight(b.home, 'claude-code', HS),
+      2,
+      'past the cap: nothing cleared, and the unjudged list is marked (round 5)',
+    );
     clearInflightDir();
   });
 
