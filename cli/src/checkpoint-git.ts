@@ -91,11 +91,27 @@ export interface GitResult {
 
 export type GitRunner = (cwd: string, args: readonly string[]) => GitResult;
 
+/**
+ * Set on **every** git call the helper makes, not only its commit and push:
+ * `git status`, `diff` and `add` start the repo's `core.fsmonitor` command,
+ * and any command can run a hook. Both are repo content, and repo content is
+ * never run. The untracked cache is off too, so a cache written by another
+ * tool cannot decide which files are seen.
+ */
+export const SAFE_CONFIG: readonly string[] = [
+  '-c',
+  'core.fsmonitor=false',
+  '-c',
+  'core.hooksPath=/dev/null',
+  '-c',
+  'core.untrackedCache=false',
+];
+
 export function gitRunner(env: Readonly<Record<string, string | undefined>>): GitRunner {
   const clean = gitEnv(env);
   return (cwd, args) => {
     try {
-      const stdout = execFileSync('git', args, {
+      const stdout = execFileSync('git', [...SAFE_CONFIG, ...args], {
         cwd,
         env: clean,
         encoding: 'utf8',
