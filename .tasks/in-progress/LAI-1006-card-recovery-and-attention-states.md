@@ -2,14 +2,20 @@
 id: LAI-1006
 title: 'Cards show "Recovery available" and "Save needs attention" from the task list summary'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-1005, LAI-549]
 discovered-from: LAI-549
-status: backlog
+status: in-progress
+started: 2026-10-30T14:05:00+02:00
 ---
 
-Web half of the card states; the server half is LAI-1005. Board: child of
+Web half of the card states; the server half is LAI-1005.
+
+**Deviation recorded (§2 step 1):** `depends-on` names LAI-1005, which is
+in review, not done. CHIEF's dispatch put both on one builder, with this
+branch stacked on LAI-1005's (`LAI-1006-card-handoff-states` on
+`LAI-1005-task-handoff-summary`), and the two land together under §4.4. Board: child of
 LAIKA-785 (Sprint 10, `phase-3`, `host-belka`).
 
 ## Outcome
