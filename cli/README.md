@@ -590,8 +590,10 @@ laika agent session status                                                 # wha
 `login` refuses a person's token (the board answers `403 not_an_agent`), and
 keeps the agent's in `~/.laika/agents/<harness>.json` (0600, directory 0700).
 `LAIKA_AGENT_TOKEN` (with `LAIKA_AGENT_URL`) overrides it; `LAIKA_TOKEN` is
-never read. `hooks on` merges four entries into `~/.claude/settings.json` or
-`~/.codex/hooks.json`, recognised by `laika-agent-hook` in the command, and
+never read. `hooks on` merges its entries into `~/.claude/settings.json` or
+`~/.codex/hooks.json` — `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
+`PostToolUse`, `Stop` and `SessionEnd` for both, and `PostToolUseFailure` for
+Claude Code, which Codex does not document — recognised by `laika-agent-hook` in the command, and
 `hooks off` removes exactly those. Codex runs a new hook only after you trust
 it in `/hooks`.
 
@@ -770,9 +772,9 @@ Each is a refusal **before** the step that would change anything; exit code 2.
 | Rule | How |
 | --- | --- |
 | Only a task worktree | a linked `git worktree`; the primary checkout only with `git config laika.checkpoint.allowPrimary true` in that repo |
-| Only the task's own branch | not detached, never `master`, `main` or the remote's default branch, and named after the task (`LAI-547-…`) or the branch the task records. At the push itself the remote is asked what its default is **now** (`git ls-remote --symref <remote> HEAD`), not the clone's cached `origin/HEAD`; a remote whose `HEAD` names no branch is refused |
+| Only the task's own branch | not detached, never `master`, `main` or the remote's default branch, and named after the task (`LAI-547-…`) or the branch the task records. At the push itself **every place the push goes** is asked what its default is **now** — each URL from `git remote get-url --push --all <remote>` (every `pushurl`, or every `url`), with `git ls-remote --symref <url> HEAD` — not the clone's cached `origin/HEAD` and not just the fetch URL; a destination whose `HEAD` names no branch, or that does not answer, is refused |
 | Never while git is busy | `index.lock`, `HEAD.lock`, a merge, rebase, cherry-pick, revert or bisect in progress; the helper's own lock beside the git dir keeps two saves apart |
-| Never while a tool is running (automatic saves) | `PreToolUse` marks a tool as running, with the harness process it runs in, and `PostToolUse` clears it; `Stop` clears the session's markers, since a finished turn runs no tool. A marker counts **while that process lives, whatever its age**, and is stale only once it is dead or its PID reused. The save waits up to 30 s for quiet, then takes the session's **interlock** and checks again under it, right before staging and again before committing; a tool that appears stops the save (after staging, the index is put back). `PreToolUse` writes its marker, then waits up to 4 s while a save holds the interlock |
+| Never while a tool is running (automatic saves) | `PreToolUse` marks a tool as running, with the harness process it runs in (and the subagent, from `agent_id`), and `PostToolUse` or Claude Code's `PostToolUseFailure` clears it. A marker counts **while that process lives, whatever its age**, and is stale only once it is dead or its PID reused. `Stop` clears only what it shows is finished: Claude Code's `Stop` lists `background_tasks`, so a main-turn marker not on that list goes, one on it stays, and a listed background task with no marker gets one; a subagent's marker is left to its own `PostToolUse`, and a `Stop` that does not list what runs (Codex's) clears nothing. The save waits up to 30 s for quiet, then takes the session's **interlock** right before staging — held to the commit only, never across the network, under a **10 s budget** written into the lock as a deadline — and checks again under it, before staging and before committing; a tool that appears, or a budget nearly spent, stops the save before its commit, and the index goes back **exactly** as it was (snapshotted with `git write-tree`, so a hunk you staged by hand stays staged). `PreToolUse` writes its marker, then waits while a live save holds the interlock — until it lets go, or its deadline and 1 s more pass — and then **denies** the tool (`permissionDecision: "deny"`, documented by both harnesses) rather than let it run; the hook's timeout is 30 s, over that wait. The lock names its holder by PID **and** start time, so a reused PID holds nothing |
 | Never `git add -A` | each tracked change, and each `--file` new file, is staged by name as a `:(literal)` pathspec; ignored files are never candidates, and listing one, or a file with no change, is refused |
 | Never a secret | a secret-shaped name (`.env`, `*.pem`, `*.key`, `id_rsa`, `.npmrc`, `credentials.json`, …), a file over 1 MB (`--max-file-bytes`), or added lines matching a secret pattern (Laika's own `lai_` tokens, private keys, AWS, GitHub, Slack, Stripe, Google and API keys, bearer headers, passwords in URLs). **One refused file refuses the whole save, and is named** |
 | Never a force push, never a stray ref | every push is one explicit refspec with no `+`; `--force` appears nowhere. `-c push.followTags=false --no-follow-tags --recurse-submodules=no`, so a repo's `push.followTags` cannot carry its annotated tags along. A remote that moved on is refused: fetch, merge, save again |
@@ -803,8 +805,9 @@ start a background save after ~10 mutating tool calls (`Edit`, `Write`,
 (the end waits for it, because the save needs the live claim). The background
 save reads consent from the board **every time**; withdrawn, nothing is
 saved, and manual saves keep working. A save that is refused is not retried
-for two minutes. `PreToolUse` and `Stop` print nothing, so they never decide a
-permission or keep a turn going.
+for two minutes. `Stop` prints nothing, so it never keeps a turn going, and
+`PreToolUse` prints only that deny — never an `allow`, which would skip your
+own permission rules.
 
 The background child gets an allowlisted environment: the session helper's,
 plus `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND`, `GIT_SSH`, `XDG_CONFIG_HOME`, `USER`
@@ -844,7 +847,8 @@ the harness rows are about the harness itself.
 | Push, then one tag alone, then register; retry with the same key | Verified-and-tested (the remote's `pre-receive` log shows one ref per push) | Documented-not-tested (the same engine; no Codex run) |
 | Consent read before every automatic save | Verified-and-tested | Documented-not-tested (the same engine; no Codex run) |
 | `PreToolUse` / `PostToolUse` drive the trigger and the in-flight check | Documented-not-tested: the hook entry was run with Claude Code's documented payloads by the test, not fired by a real `claude` process | Documented-not-tested. Codex runs a new hook only after you trust it in `/hooks`, which this run could not do |
-| `Stop` saves what is unsaved | Documented-not-tested | Documented-not-tested |
+| `Stop` saves what is unsaved; `background_tasks` keeps a running task's marker | Documented-not-tested: the hook entry was run with the documented `background_tasks` input by the test, not fired by a real `claude` | Documented-not-tested: Codex's `Stop` documents no `background_tasks`, so it clears no marker |
+| `PreToolUse` deny while a save overruns its deadline | Documented-not-tested: the deny output is the documented shape and asserted, not shown to a real `claude` | Documented-not-tested (the same documented shape) |
 | Save before `SessionEnd` ends the session | Documented-not-tested | Documented-not-tested (Codex's end is advisory: a missed end leaves the save to the next session) |
 | GitHub's push notice verifies the save | Unverified here: the bare remote sends no webhook. LAI-545's criteria cover it against a real repository (LAIKA-797) | Unverified here (same) |
 
