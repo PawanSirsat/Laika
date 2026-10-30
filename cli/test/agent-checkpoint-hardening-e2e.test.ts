@@ -567,6 +567,15 @@ void describe('checkpoint review fixes, round 2 (LAI-547, #154 at 2e401f3c)', ()
     await runHook('stop', { background_tasks: [] });
     assert.equal(inflight(b.home, 'claude-code', HS), 0, 'and cleared once it finished');
 
+    // A subagent's tool is not the main turn's: the main Stop leaves it, and
+    // its PreToolUse records the subagent from the harness's agent_id.
+    await runHook('pre-tool', { tool_name: 'Bash', tool_use_id: 'toolu_sub', agent_id: 'agent_1' });
+    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'the subagent tool is marked');
+    await runHook('stop', { background_tasks: [] });
+    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'the main Stop leaves a subagent tool');
+    await runHook('tool', { tool_name: 'Bash', tool_use_id: 'toolu_sub', agent_id: 'agent_1' });
+    assert.equal(inflight(b.home, 'claude-code', HS), 0, 'its own PostToolUse clears it');
+
     // A failed tool clears its own marker (Claude Code's PostToolUseFailure).
     markInflight(b.home, 'claude-code', HS, 'toolu_failed2', harnessOwner());
     await runHook('tool-failed', { tool_name: 'Bash', tool_use_id: 'toolu_failed2' });

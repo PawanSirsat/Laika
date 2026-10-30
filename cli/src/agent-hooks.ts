@@ -47,7 +47,13 @@ import type { Harness } from './agent-session.ts';
 export const AGENT_MARKER = 'laika-agent-hook';
 
 export type AgentHookEvent =
-  'session-start' | 'prompt' | 'pre-tool' | 'tool' | 'stop' | 'session-end';
+  | 'session-start'
+  | 'prompt'
+  | 'pre-tool'
+  | 'tool'
+  | 'tool-failed'
+  | 'stop'
+  | 'session-end';
 
 export interface AgentHookReport {
   readonly harness: Harness;
@@ -75,6 +81,11 @@ export function agentHookGroups(script: string, harness: Harness): Record<string
     // interlock, and a harness kills a hook at its timeout and runs the tool.
     PreToolUse: { hooks: [handler('pre-tool', 30)] },
     PostToolUse: { hooks: [handler('tool', 5)] },
+    // Claude Code only: Codex documents no PostToolUseFailure. A failed
+    // tool's marker is cleared here; at Stop otherwise.
+    ...(harness === 'claude-code'
+      ? { PostToolUseFailure: { hooks: [handler('tool-failed', 5)] } }
+      : {}),
     Stop: { hooks: [handler('stop', 5)] },
     SessionEnd: { hooks: [handler('session-end', 2)] },
   };

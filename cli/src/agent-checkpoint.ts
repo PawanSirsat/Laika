@@ -1117,8 +1117,9 @@ export interface MarkerOwner {
 
 /**
  * `PreToolUse`: a tool is running, **in this harness process**. Removed by
- * its `PostToolUse`, and every marker of the session at `Stop` (a turn that
- * ended runs no tool).
+ * its `PostToolUse` or `PostToolUseFailure`, or at a `Stop` that shows it is
+ * done ({@link reconcileAtStop}). `agent` is the subagent it runs in, when
+ * the harness says so: a subagent's tools outlive the main turn's `Stop`.
  */
 export function markInflight(
   home: string,
@@ -1126,6 +1127,7 @@ export function markInflight(
   id: string,
   key: string,
   owner: MarkerOwner,
+  agent?: string,
 ): void {
   const dir = inflightDir(home, harness, id);
   privateDir(join(home, '.laika'));
@@ -1133,7 +1135,11 @@ export function markInflight(
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   writeFileSync(
     join(dir, markerName(key)),
-    JSON.stringify({ pid: owner.pid, started: owner.started }),
+    JSON.stringify({
+      pid: owner.pid,
+      started: owner.started,
+      ...(agent === undefined ? {} : { agent }),
+    }),
     { mode: 0o600 },
   );
 }
@@ -1142,17 +1148,46 @@ export function clearInflight(home: string, harness: Harness, id: string, key: s
   rmSync(join(inflightDir(home, harness, id), markerName(key)), { force: true });
 }
 
-/** `Stop`: the turn is over, so nothing it started is still running. */
-export function clearAllInflight(home: string, harness: Harness, id: string): void {
+/**
+ * `Stop`, from a harness that says what still runs (round-2 #4). Claude
+ * Code's `Stop` input carries `background_tasks` — every task still running,
+ * each with its `tool_use_id` (code.claude.com/docs/en/hooks#stop-input) —
+ * and when the main turn stops, every foreground tool it ran has finished.
+ * So, and only so:
+ *
+ * - a main-turn marker **not** in `background_tasks` is a completed tool, and
+ *   goes (one whose `PostToolUse` never fired, or was interrupted);
+ * - a marker in `background_tasks` stays, and a background task with no
+ *   marker gets one — its `PostToolUse` fired when it went to the background
+ *   — so a save waits for it, and a later `Stop` clears it once it is gone;
+ * - a subagent's marker stays: its tools are not the main turn's.
+ *
+ * A `Stop` that does not say what runs (Codex's, an older Claude Code's)
+ * calls nothing here: a live marker is never cleared on a guess.
+ */
+export function reconcileAtStop(
+  home: string,
+  harness: Harness,
+  id: string,
+  owner: MarkerOwner,
+  running: readonly string[],
+): void {
+  const keep = new Map(running.map((toolUseId) => [markerName(toolUseId), toolUseId]));
   const dir = inflightDir(home, harness, id);
-  let names: string[];
+  let names: string[] = [];
   try {
     names = readdirSync(dir);
   } catch {
-    return;
+    names = [];
   }
   for (const name of names) {
-    if (!name.startsWith('.')) rmSync(join(dir, name), { force: true });
+    if (name.startsWith('.') || keep.has(name)) continue;
+    const value = readJson(join(dir, name));
+    if (isRecord(value) && typeof value.agent === 'string') continue;
+    rmSync(join(dir, name), { force: true });
+  }
+  for (const [name, toolUseId] of keep) {
+    if (!names.includes(name)) markInflight(home, harness, id, toolUseId, owner);
   }
 }
 

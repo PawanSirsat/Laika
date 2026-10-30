@@ -108,6 +108,7 @@ function startHarness(extra: Record<string, string> = {}): Harness {
           prompt: 'UserPromptSubmit',
           'pre-tool': 'PreToolUse',
           tool: 'PostToolUse',
+          'tool-failed': 'PostToolUseFailure',
           stop: 'Stop',
           'session-end': 'SessionEnd',
         };

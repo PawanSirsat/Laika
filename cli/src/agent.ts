@@ -36,12 +36,12 @@ import {
 } from './agent-session.ts';
 import {
   autoCheckpoint,
-  clearAllInflight,
   clearInflight,
   awaitSave,
   markInflight,
   MUTATING_TOOLS,
   readActivity,
+  reconcileAtStop,
   shouldTrigger,
   writeActivity,
 } from './agent-checkpoint.ts';
@@ -218,6 +218,7 @@ const HOOK_EVENTS = {
   prompt: 'UserPromptSubmit',
   'pre-tool': 'PreToolUse',
   tool: 'PostToolUse',
+  'tool-failed': 'PostToolUseFailure',
   stop: 'Stop',
   'session-end': 'SessionEnd',
 } as const;
@@ -272,6 +273,28 @@ function hookSessionId(input: Readonly<Record<string, unknown>>): string | undef
 /** A synchronous pause for the hook's short wait: nothing else runs in it. */
 const PAUSE = new Int32Array(new SharedArrayBuffer(4));
 
+/** The subagent a tool event came from, when the harness names one (`agent_id`). */
+function subagentOf(input: Readonly<Record<string, unknown>>): string | undefined {
+  const id = input.agent_id;
+  return typeof id === 'string' && id !== '' && id.length <= 512 ? id : undefined;
+}
+
+/**
+ * `Stop`'s `background_tasks`, as tool-use ids: what is still running when
+ * the turn ends. `undefined` when the input does not carry the field — the
+ * harness did not say, which is not the same as "nothing runs".
+ */
+function backgroundTasks(input: Readonly<Record<string, unknown>>): string[] | undefined {
+  const tasks = input.background_tasks;
+  if (!Array.isArray(tasks)) return undefined;
+  return tasks
+    .slice(0, 200)
+    .map((t: unknown) =>
+      typeof t === 'object' && t !== null ? (t as Record<string, unknown>).tool_use_id : undefined,
+    )
+    .filter((id): id is string => typeof id === 'string' && id !== '' && id.length <= 512);
+}
+
 /** One tool call's key, the same at `PreToolUse` and `PostToolUse`. */
 function toolKey(input: Readonly<Record<string, unknown>>): string {
   const id = input.tool_use_id;
@@ -315,10 +338,14 @@ function noteActivity(
     const session = readState(statePath(io.home, harness, harnessSessionId));
     if (session === undefined) return '';
     const key = toolKey(input);
-    markInflight(io.home, harness, harnessSessionId, key, {
-      pid: session.harness_pid,
-      started: session.harness_started,
-    });
+    markInflight(
+      io.home,
+      harness,
+      harnessSessionId,
+      key,
+      { pid: session.harness_pid, started: session.harness_started },
+      subagentOf(input),
+    );
     // Marked first, then wait while an automatic save holds the interlock:
     // the save sees this marker and stops before it commits, or commits and
     // lets go. A save still holding it past its deadline is not raced: the
@@ -333,12 +360,24 @@ function noteActivity(
       'Laika is finishing a checkpoint of this worktree. Run the same tool again in a few seconds.',
     );
   }
-  if (event === 'stop') clearAllInflight(io.home, harness, harnessSessionId);
+  if (event === 'stop') {
+    const running = backgroundTasks(input);
+    const session = readState(statePath(io.home, harness, harnessSessionId));
+    if (running !== undefined && session !== undefined) {
+      reconcileAtStop(
+        io.home,
+        harness,
+        harnessSessionId,
+        { pid: session.harness_pid, started: session.harness_started },
+        running,
+      );
+    }
+  }
   const activity = readActivity(io.home, harness, harnessSessionId);
   if (typeof input.cwd === 'string' && input.cwd.startsWith('/') && input.cwd.length < 4096) {
     activity.cwd = input.cwd;
   }
-  if (event === 'tool') {
+  if (event === 'tool' || event === 'tool-failed') {
     clearInflight(io.home, harness, harnessSessionId, toolKey(input));
     if (typeof input.tool_name === 'string' && MUTATING_TOOLS.has(input.tool_name)) {
       activity.mutations += 1;
@@ -407,7 +446,7 @@ export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Pro
     return '';
   }
 
-  if (event === 'pre-tool' || event === 'tool' || event === 'stop') {
+  if (event === 'pre-tool' || event === 'tool' || event === 'tool-failed' || event === 'stop') {
     let out = '';
     try {
       out = noteActivity(io, event, harness, harnessSessionId, input, credential);
