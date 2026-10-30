@@ -725,10 +725,11 @@ laika agent handoff decline <offer> --reason "busy"
   checkout's HEAD, index and files are never written. A `pending`,
   `uncertain` or `ref_deleted` checkpoint is refused before any fetch, in
   SPEC §4.70's words. A prepare that stopped part-way (a crash, a kill)
-  leaves its record as `preparing`; the next prepare removes its own
-  worktree and branch first, but only while they are still exactly what it
-  made — a worktree with anything written in it, or a branch that moved, is
-  left alone and named.
+  leaves its record as `preparing`. **A retry never deletes anything**: it
+  takes the first worktree path, branch and private ref that are all free
+  (`…-handoff-<suffix>-2`, `-3`, …), leaves whatever an earlier attempt left
+  exactly as it is, and prints each leftover with the command that would
+  remove it, for you to run once nothing you need is in it.
 - **`accept`** refuses unless `prepare` succeeded here, and checks again that
   the private ref and the worktree are still at the verified SHA. It then
   sends that SHA, with this harness's live session when there is exactly
@@ -752,7 +753,7 @@ laika agent handoff decline <offer> --reason "busy"
   driver to run; Git LFS pointers stay pointers. **Replace refs are never
   followed** (`GIT_NO_REPLACE_OBJECTS`), so `HEAD` at the checkpoint SHA is
   that commit's tree, and the new worktree must show no difference from it.
-  Needs git 2.40 or later; an older git refuses `--attr-source`, so this
+  Needs git 2.41 or later; an older git refuses `--attr-source`, so this
   fails closed. Bidirectional and zero-width format characters in the note
   are escaped as well.
 - What this machine learned is kept in `~/.laika/agent-handoffs/<offer>.json`

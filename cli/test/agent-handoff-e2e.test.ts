@@ -702,26 +702,94 @@ void describe('laika agent handoff, receiving (LAI-548)', () => {
     assert.equal(accepts(s.offerId), 0);
   });
 
-  void test('a prepare that died part-way is cleared and redone; a touched worktree is left alone', async () => {
+  /**
+   * An earlier prepare that stopped part-way: its record says `preparing`,
+   * whatever it made is still there. The retry must leave all of it exactly as
+   * it is and succeed under fresh names (Codex round 2 on #158).
+   */
+  async function interrupted(
+    summary: unknown = null,
+    extra: Readonly<Record<string, string>> = {},
+  ): Promise<{ s: Scenario; r: Receiver; old: NonNullable<ReturnType<typeof readRecord>> }> {
+    const s = await scenario(summary, extra);
+    const r = receiverMachine(s.receiver.token);
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    const old = readRecord(r.home, s.offerId)!;
+    writeFileSync(
+      join(r.home, '.laika', 'agent-handoffs', `${s.offerId}.json`),
+      JSON.stringify({ ...old, status: 'preparing' }),
+    );
+    r.out.length = 0;
+    r.err.length = 0;
+    return { s, r, old };
+  }
+
+  function retriedFresh(
+    s: Scenario,
+    r: Receiver,
+    old: NonNullable<ReturnType<typeof readRecord>>,
+  ): void {
+    const fresh = readRecord(r.home, s.offerId)!;
+    assert.equal(fresh.status, 'prepared');
+    assert.notEqual(fresh.worktree, old.worktree);
+    assert.notEqual(fresh.branch, old.branch);
+    assert.notEqual(fresh.local_ref, old.local_ref);
+    assert.equal(git(fresh.worktree, 'rev-parse', 'HEAD'), s.sha);
+    // The earlier attempt's branch and private ref are where they were.
+    assert.equal(git(r.repo, 'rev-parse', `refs/heads/${old.branch}`), s.sha);
+    assert.equal(git(r.repo, 'rev-parse', old.local_ref), s.sha);
+    const out = r.out.join('\n');
+    assert.match(out, /Left exactly as they were/);
+    assert.ok(out.includes(`branch ${old.branch}`), out);
+    assert.ok(out.includes(`branch -d -- ${old.branch}`), out);
+    assert.match(out, /Nothing was removed\./);
+  }
+
+  void test('retry after an interrupted prepare: a clean filter in the old worktree never runs', async () => {
+    const pwned = join(root, 'PWNED_CLEANUP_FILTER');
+    const { s, r, old } = await interrupted(null, { '.gitattributes': '* filter=evil\n' });
+    git(r.repo, 'config', 'filter.evil.clean', `sh -c 'touch "${pwned}"; cat'`);
+    git(r.repo, 'config', 'filter.evil.smudge', `sh -c 'touch "${pwned}"; cat'`);
+    git(r.repo, 'config', 'filter.evil.process', `sh -c 'touch "${pwned}"'`);
+    // A change in the old worktree, so anything that asked whether it is clean would filter it.
+    const work = join(old.worktree, `work-${String(scenarios)}.txt`);
+    writeFileSync(work, 'edited by the person\n');
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    assert.equal(existsSync(pwned), false, 'no filter ran');
+    assert.equal(readFileSync(work, 'utf8'), 'edited by the person\n');
+    assert.ok(r.out.join('\n').includes(`worktree remove -- ${old.worktree}`));
+    retriedFresh(s, r, old);
+    assert.equal(await run(r, 'accept', s.offerId), 0, r.err.join('\n'));
+    assert.equal(existsSync(pwned), false);
+  });
+
+  void test('retry after an interrupted prepare: an ignored .env in the old worktree survives', async () => {
+    const { s, r, old } = await interrupted(null, { '.gitignore': '.env\n' });
+    writeFileSync(join(old.worktree, '.env'), 'SECRET=keep-me\n');
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    assert.equal(readFileSync(join(old.worktree, '.env'), 'utf8'), 'SECRET=keep-me\n');
+    assert.equal(git(old.worktree, 'rev-parse', 'HEAD'), s.sha);
+    retriedFresh(s, r, old);
+  });
+
+  void test('retry after an interrupted prepare: a branch checked out in the primary checkout survives', async () => {
+    const { s, r, old } = await interrupted();
+    // The person removed the worktree themselves and took the branch into their checkout.
+    git(r.repo, 'worktree', 'remove', '--', old.worktree);
+    git(r.repo, 'checkout', '-q', old.branch);
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    assert.equal(git(r.repo, 'symbolic-ref', '--short', 'HEAD'), old.branch);
+    assert.equal(git(r.repo, 'status', '--porcelain'), '');
+    retriedFresh(s, r, old);
+  });
+
+  void test('accept refuses when info/attributes was set after prepare, and sends nothing', async () => {
     const s = await scenario();
     const r = receiverMachine(s.receiver.token);
     assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
-    const path = join(r.home, '.laika', 'agent-handoffs', `${s.offerId}.json`);
-    const record = readRecord(r.home, s.offerId)!;
-    // A crash after the worktree was made, before the record said so.
-    writeFileSync(path, JSON.stringify({ ...record, status: 'preparing' }));
-    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
-    assert.equal(readRecord(r.home, s.offerId)!.status, 'prepared');
-    assert.equal(readRecord(r.home, s.offerId)!.worktree, record.worktree);
-    assert.equal(git(record.worktree, 'rev-parse', 'HEAD'), s.sha);
-
-    // Work written there since: never removed.
-    writeFileSync(join(record.worktree, 'mine.txt'), 'keep me\n');
-    writeFileSync(path, JSON.stringify({ ...record, status: 'preparing' }));
-    assert.equal(await run(r, 'prepare', s.offerId), 1);
-    assert.match(r.err.join('\n'), /could not be removed .*; left as it is/);
-    assert.equal(readFileSync(join(record.worktree, 'mine.txt'), 'utf8'), 'keep me\n');
-    assert.equal(git(r.repo, 'rev-parse', `refs/heads/${record.branch}`), s.sha);
+    writeFileSync(join(r.repo, '.git', 'info', 'attributes'), '* filter=evil\n');
+    assert.equal(await run(r, 'accept', s.offerId), 1);
+    assert.match(r.err.join('\n'), /not accepted — .*info\/attributes sets attributes/);
     assert.equal(accepts(s.offerId), 0);
   });
 

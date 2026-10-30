@@ -193,7 +193,7 @@ export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbcabc96';
  * attributes file is off here and the system one in {@link gitEnv}; the
  * repository's own `info/attributes` is refused before anything is checked
  * out ({@link assertNoLocalAttributes}). A git too old to know `--attr-source`
- * (before 2.40) refuses the option, so this fails closed rather than open.
+ * (before 2.41) refuses the option, so this fails closed rather than open.
  * Replace refs are never followed (`core.useReplaceRefs`, and the env).
  */
 export const SAFE_CONFIG: readonly string[] = [
@@ -771,9 +771,12 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
   };
 
   // `preparing` is a prepare that stopped part-way — a crash, a kill — and
-  // `needs_attention` one that refused: either may have left this helper's
-  // own worktree, branch and private ref, which are cleared (only if they are
-  // still exactly what it made) before trying again.
+  // `needs_attention` one that refused: either may have left a worktree, a
+  // branch and a private ref behind. **Nothing is ever deleted to retry**:
+  // whatever is there may hold the person's work, an ignored `.env`, or be
+  // checked out elsewhere, and removing it would run git over it. The retry
+  // takes fresh names instead, and the leftovers are named with the command
+  // that would remove them, for the person to run if they choose.
   const existing = readRecord(io.home, args.offerId);
   if (
     existing !== undefined &&
@@ -783,10 +786,6 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     return fail(
       `this offer was already prepared here (${existing.status}) at ${existing.worktree}`,
     );
-  }
-  if (existing !== undefined) {
-    const cleared = clearOwn(git, existing);
-    if (cleared !== undefined) return fail(cleared);
   }
 
   const offer = await findOffer(io, args.credential, args.offerId);
@@ -827,6 +826,10 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
   const top = git(repoDir, ['rev-parse', '--show-toplevel']);
   if (top.code !== 0) return fail(`${repoDir} is not inside a git repository`);
   const toplevel = top.stdout.trim();
+  // Before any other git call here: a set `info/attributes` would select a
+  // filter for anything that reads a worktree.
+  const attributes = assertNoLocalAttributes(git, toplevel);
+  if (attributes !== undefined) return fail(attributes);
 
   // Which remote: only to learn the URL. The fetch goes to that URL, checked
   // in full and rebuilt ({@link fetchSourceFor}), never to the remote's name —
@@ -874,20 +877,39 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
   }
   const rewrite = rewriteRefusal(git, toplevel, names, source.url);
   if (rewrite !== undefined) return fail(rewrite);
-  const attributes = assertNoLocalAttributes(git, toplevel);
-  if (attributes !== undefined) return fail(attributes);
 
-  const localRef = `refs/laika/handoff/${offer.id}`;
-  const suffix = offer.id.slice(-6).toLowerCase();
-  const branch = `${taskRef}-handoff-${suffix}`;
-  const worktree =
-    args.into === undefined
-      ? join(dirname(toplevel), `${basename(toplevel)}-${taskRef}-handoff-${suffix}`)
-      : resolve(io.cwd, args.into);
-  if (existsSync(worktree)) return fail(`${worktree} already exists; pass --into a new path`);
-  if (git(toplevel, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).code === 0) {
-    return fail(`branch ${branch} already exists`);
+  // The first names nobody has: the worktree path, its branch and the private
+  // ref are all free, so nothing that exists is reused, moved or removed.
+  const exists = (ref: string): boolean =>
+    git(toplevel, ['show-ref', '--verify', '--quiet', ref]).code === 0;
+  const base = offer.id.slice(-6).toLowerCase();
+  const leftovers: string[] = [];
+  let picked: { suffix: string; branch: string; worktree: string; localRef: string } | undefined;
+  for (let n = 1; n <= 20 && picked === undefined; n += 1) {
+    const suffix = n === 1 ? base : `${base}-${String(n)}`;
+    const candidate = {
+      suffix,
+      branch: `${taskRef}-handoff-${suffix}`,
+      worktree:
+        args.into !== undefined && n === 1
+          ? resolve(io.cwd, args.into)
+          : join(dirname(toplevel), `${basename(toplevel)}-${taskRef}-handoff-${suffix}`),
+      localRef: `refs/laika/handoff/${offer.id}${n === 1 ? '' : `-${String(n)}`}`,
+    };
+    if (args.into !== undefined && n === 1 && existsSync(candidate.worktree)) {
+      return fail(`${candidate.worktree} already exists; pass --into a new path`);
+    }
+    const taken = [
+      existsSync(candidate.worktree) ? `worktree ${candidate.worktree}` : undefined,
+      exists(`refs/heads/${candidate.branch}`) ? `branch ${candidate.branch}` : undefined,
+      exists(candidate.localRef) ? `ref ${candidate.localRef}` : undefined,
+    ].filter((t): t is string => t !== undefined);
+    if (taken.length === 0) picked = candidate;
+    else leftovers.push(...taken);
   }
+  if (picked === undefined)
+    return fail('twenty earlier attempts’ names are all taken; clear some first');
+  const { branch, worktree, localRef } = picked;
 
   const record: PreparedOffer = {
     version: 1,
@@ -915,14 +937,13 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
   };
 
   // Written before anything is made, so a prepare that dies part-way leaves a
-  // record naming what it may have made, and the next prepare clears it.
+  // record naming what it may have made; the next prepare takes fresh names.
   writeRecord(io.home, record);
 
   try {
-    // Ours alone, so a stale one from an earlier attempt goes; then the fetch
-    // names its refspec in full, with no `+`, no tags and no submodules, from
-    // the URL itself with every rewrite of it neutralised.
-    git(toplevel, ['update-ref', '-d', localRef]);
+    // A ref nobody has (above); the fetch names its refspec in full, with no
+    // `+`, no tags and no submodules, from the URL itself with every rewrite
+    // of it neutralised.
     const before = refSnapshot(git, toplevel, localRef);
     const fetchHead = git(toplevel, ['rev-parse', '--git-path', 'FETCH_HEAD']).stdout.trim();
     const hadFetchHead = existsSync(resolve(toplevel, fetchHead));
@@ -1004,6 +1025,22 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
 
   record.status = 'prepared';
   writeRecord(io.home, record);
+  if (leftovers.length > 0) {
+    io.out('Left exactly as they were, from an earlier attempt or by someone else:');
+    for (const l of leftovers) io.out(`  ${l}`);
+    io.out('Nothing was removed. To clear them yourself, once nothing you need is in them:');
+    for (const l of leftovers) {
+      const [kind, ...rest] = l.split(' ');
+      const name = rest.join(' ');
+      io.out(
+        kind === 'worktree'
+          ? `  git -C ${toplevel} worktree remove -- ${name}`
+          : kind === 'branch'
+            ? `  git -C ${toplevel} branch -d -- ${name}`
+            : `  git -C ${toplevel} update-ref -d ${name}`,
+      );
+    }
+  }
   io.out(`Prepared offer ${offer.id}: ${cp.newestRef} resolves to ${sha}.`);
   io.out(`Worktree ${worktree} on branch ${branch}, at that commit. Nothing is accepted yet.`);
   io.out(`Next: laika agent handoff accept ${offer.id}`);
@@ -1102,52 +1139,6 @@ export function assertNoLocalAttributes(git: GitRunner, top: string): string | u
     : `${path} sets attributes, which could run a filter on checkout; nothing was fetched`;
 }
 
-/**
- * What an earlier prepare of this offer made, removed **only while it is
- * exactly what it made**: the worktree at its path, registered to this
- * repository on its branch, clean, at the verified commit — `worktree
- * remove`, never `--force`, so anything written there stops it — then the
- * branch, deleted only if it still points at that commit, then the private
- * ref. Anything else is left alone and named.
- */
-function clearOwn(git: GitRunner, record: PreparedOffer): string | undefined {
-  const list = git(record.repo_dir, ['worktree', 'list', '--porcelain']);
-  if (list.code !== 0) return `cannot list the worktrees of ${record.repo_dir}`;
-  const entries = list.stdout.split('\n\n').map((block) => {
-    const lines = block.split('\n');
-    const field = (key: string): string | undefined =>
-      lines.find((l) => l.startsWith(`${key} `))?.slice(key.length + 1);
-    return { path: field('worktree'), branch: field('branch'), head: field('HEAD') };
-  });
-  const realWt = realPath(record.worktree);
-  const mine = entries.find(
-    (e) => e.path !== undefined && (e.path === record.worktree || realPath(e.path) === realWt),
-  );
-  if (mine !== undefined) {
-    if (mine.branch !== `refs/heads/${record.branch}` || mine.head !== record.verified_commit_sha) {
-      return `${record.worktree} from an earlier prepare is no longer on ${record.branch} at the checkpoint; left as it is`;
-    }
-    const removed = git(record.repo_dir, ['worktree', 'remove', '--', record.worktree]);
-    if (removed.code !== 0) {
-      return `${record.worktree} from an earlier prepare could not be removed (${firstLine(removed.stderr)}); left as it is`;
-    }
-  } else if (existsSync(record.worktree)) {
-    return `${record.worktree} exists and is not this helper’s worktree; left as it is`;
-  }
-  const ref = `refs/heads/${record.branch}`;
-  const at = git(record.repo_dir, ['rev-parse', '--verify', '--quiet', '--end-of-options', ref]);
-  if (at.code === 0) {
-    if (at.stdout.trim() !== record.verified_commit_sha) {
-      return `branch ${record.branch} has moved since an earlier prepare; left as it is`;
-    }
-    // Conditional on its old value: a branch that moved between the check and here survives.
-    const deleted = git(record.repo_dir, ['update-ref', '-d', ref, record.verified_commit_sha]);
-    if (deleted.code !== 0) return `branch ${record.branch} could not be removed; left as it is`;
-  }
-  git(record.repo_dir, ['update-ref', '-d', record.local_ref]);
-  return undefined;
-}
-
 export async function accept(
   io: HandoffIo,
   offerId: string,
@@ -1176,6 +1167,9 @@ export async function accept(
     return refuse(`it was prepared for ${record.harness}, not ${harness}`);
   const sha = record.verified_commit_sha;
   if (!FULL_SHA.test(sha)) return refuse('the prepared record carries no full SHA');
+  // Attributes set since prepare would select a filter for git in the worktree.
+  const attributes = assertNoLocalAttributes(git, record.repo_dir);
+  if (attributes !== undefined) return refuse(attributes);
   // Checked again now, not trusted from the file: the ref and the worktree
   // are still at the verified commit, and no work was done before the claim.
   const ref = git(record.repo_dir, [
