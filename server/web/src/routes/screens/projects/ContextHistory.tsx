@@ -16,6 +16,7 @@ import { agentHarness, type RegisteredAgent } from '../../../api/agents.ts';
 import { agentDevice, twinNames } from '../../../api/selected-agent.ts';
 import type { Member } from '../../../api/tasks.ts';
 import { dateTime } from '../../../api/time-label.ts';
+import { DeliveredTo } from './DeliveredTo.tsx';
 
 /**
  * What the reader asked to see under the history: one revision whole, or the
@@ -469,7 +470,10 @@ export function ContextHistory({ slug, refreshKey, members, agents }: ContextHis
             </button>
           </div>
           {view.kind === 'revision' ? (
-            <RevisionBody slug={slug} revision={view.revision} />
+            <>
+              <RevisionBody slug={slug} revision={view.revision} />
+              <DeliveredTo slug={slug} revision={view.revision} agents={agents} />
+            </>
           ) : (
             <ContextDiffPanel
               slug={slug}

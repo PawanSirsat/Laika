@@ -228,6 +228,28 @@ const PAIRS: readonly Pair[] = [
     client: 'ContextDiff',
     clientFile: 'project-context.ts',
   },
+  // Who each revision was delivered to (LAI-1003), as History's *Delivered
+  // to* reads it (LAI-1004). Their self-expiring `no client type exists`
+  // entries in `server/test/tooling/response-type-coverage.test.ts` leave in
+  // the same commit (§4.4 step 2).
+  {
+    server: 'ContextDeliveriesView',
+    serverFile: 'services/context-revisions.ts',
+    client: 'ContextDeliveries',
+    clientFile: 'project-context.ts',
+  },
+  {
+    server: 'ContextDeliveryView',
+    serverFile: 'services/context-revisions.ts',
+    client: 'ContextDelivery',
+    clientFile: 'project-context.ts',
+  },
+  {
+    server: 'ContextDeliveryAgentView',
+    serverFile: 'services/context-revisions.ts',
+    client: 'ContextDeliveryAgent',
+    clientFile: 'project-context.ts',
+  },
   {
     server: 'SetupResultBody',
     serverFile: 'http/routes/setup.ts',

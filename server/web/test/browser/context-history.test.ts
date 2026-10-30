@@ -75,6 +75,21 @@ const MY_AGENT = {
   last_seen_at: null,
 };
 
+/** `GET …/context/deliveries` as §6.4 answers it (LAI-1003). */
+function deliveries(revision: number | null, data: readonly unknown[]) {
+  return { scope: 'latest_per_session', revision, current_revision: 3, data, next_cursor: null };
+}
+
+const DELIVERIES = `/api/v1/projects/${SLUG}/context/deliveries`;
+
+/** The default: nothing delivered yet, for every revision and for the project. */
+const NO_DELIVERIES: ApiStub = {
+  [`${DELIVERIES}?limit=200`]: deliveries(null, []),
+  [`${DELIVERIES}?limit=200&revision=1`]: deliveries(1, []),
+  [`${DELIVERIES}?limit=200&revision=2`]: deliveries(2, []),
+  [`${DELIVERIES}?limit=200&revision=3`]: deliveries(3, []),
+};
+
 function doc(revision: number, body: string) {
   return {
     context_md: body,
@@ -138,6 +153,7 @@ function world(overrides: ApiStub = {}): ApiStub {
       truncated: true,
       hint: 'More than 2,000 lines changed between revision 1 and 3, so no diff is sent.',
     },
+    ...NO_DELIVERIES,
     ...overrides,
   };
 }
@@ -591,6 +607,260 @@ void describe('wording, themes and a phone', () => {
           assert.ok(right <= viewport, `the panel ends ${String(right - viewport)} px past it`);
           await h.page.locator('.ctx-history').scrollIntoViewIfNeeded();
           await shot(h, `history-${theme}-${String(width)}`);
+        } finally {
+          await h.close();
+        }
+      });
+    }
+  }
+});
+
+// ------------------------------------------------------------ Delivered to
+
+/** The reader's own agent's session, sent r3 two minutes ago. */
+const MINE_ON_3 = {
+  session_id: '01SESSIONMINEAAAAAA3XK2P',
+  revision: 3,
+  delivered_at: NOW - 120_000,
+  session_ended_at: null,
+  agent: {
+    id: 'a1',
+    harness: 'claude-code',
+    device_label: 'Belka',
+    display_name: 'Polly',
+    status: 'active',
+  },
+};
+/** Another person's agent's session, sent r3 an hour ago: no id, no label. */
+const THEIRS_ON_3 = {
+  session_id: '01SESSIONTHEIRSBBBBB9QW7',
+  revision: 3,
+  delivered_at: NOW - 3_600_000,
+  session_ended_at: null,
+  agent: null,
+};
+/** The reader's own agent's earlier session, still on r2 and since ended. */
+const MINE_ON_2 = {
+  session_id: '01SESSIONOLDCCCCCCCC4MN8',
+  revision: 2,
+  delivered_at: NOW - 7_200_000,
+  session_ended_at: NOW - 7_000_000,
+  agent: MINE_ON_3.agent,
+};
+
+const DELIVERED: ApiStub = {
+  [`${DELIVERIES}?limit=200`]: deliveries(null, [MINE_ON_3, THEIRS_ON_3, MINE_ON_2]),
+  [`${DELIVERIES}?limit=200&revision=3`]: deliveries(3, [MINE_ON_3, THEIRS_ON_3]),
+  [`${DELIVERIES}?limit=200&revision=2`]: deliveries(2, [MINE_ON_2]),
+};
+
+async function viewRevision(h: Harness, revision: number) {
+  await h.page
+    .getByRole('button', { name: `View r${String(revision)}` })
+    .click({ timeout: 10_000 });
+  await h.page.locator('[data-delivered-to]').waitFor({ timeout: 10_000 });
+}
+
+void describe('Delivered to', () => {
+  void test('lists the sessions a revision reached, newest first, each received and when', async () => {
+    const h = await openPanel(world(DELIVERED));
+    try {
+      await viewRevision(h, 3);
+      const panel = h.page.locator('[data-delivered-to]');
+      const rows = panel.locator('ul[aria-label="Sessions that received r3"] > [data-delivery]');
+      await rows.first().waitFor({ timeout: 10_000 });
+      assert.deepEqual(await rows.evaluateAll((els) => els.map((el) => el.dataset.delivery)), [
+        MINE_ON_3.session_id,
+        THEIRS_ON_3.session_id,
+      ]);
+
+      const mine = rows.nth(0);
+      assert.equal(
+        (await mine.locator('[data-agent-chip]').innerText()).trim(),
+        'Claude Code · Belka',
+      );
+      assert.match(await mine.innerText(), /session …A3XK2P/);
+      assert.match(await mine.innerText(), /received 2 min ago/);
+      // The registered name is never the label (D-120).
+      assert.doesNotMatch(await panel.innerText(), /Polly/);
+
+      const theirs = rows.nth(1);
+      assert.equal(await theirs.locator('[data-agent-chip]').count(), 0);
+      assert.match(await theirs.innerText(), /Another person’s agent/);
+      assert.match(await theirs.innerText(), /received 1 h ago/);
+
+      // The absolute time is there for hover and for a screen reader.
+      const when = mine.locator('time');
+      assert.ok(((await when.getAttribute('title')) ?? '').length > 10);
+      assert.equal(
+        await when.getAttribute('datetime'),
+        new Date(MINE_ON_3.delivered_at).toISOString(),
+      );
+
+      // A session still on an older revision says which one it has.
+      const older = panel.locator('[data-delivered-older] [data-delivery]');
+      assert.equal(await older.count(), 1);
+      assert.equal(await older.first().getAttribute('data-delivery'), MINE_ON_2.session_id);
+      assert.match(await older.first().innerText(), /has r2/);
+      assert.match(await older.first().innerText(), /session ended/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('says delivered and received, never read, and that a session moves on', async () => {
+    const h = await openPanel(world(DELIVERED));
+    try {
+      await viewRevision(h, 3);
+      const panel = h.page.locator('[data-delivered-to]');
+      await panel.locator('[data-delivery]').first().waitFor({ timeout: 10_000 });
+      const text = await panel.innerText();
+      assert.match(text, /Delivered to/);
+      assert.match(text, /received/);
+      assert.match(text, /listed under the latest revision it was sent/);
+      assert.match(text, /moves there/);
+      assert.doesNotMatch(text, /\bread\b|\bseen\b|understood/i);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a revision sent to nobody is the empty state', async () => {
+    const h = await openPanel(world());
+    try {
+      await viewRevision(h, 1);
+      const empty = h.page.locator('[data-delivered-empty]');
+      await empty.waitFor({ timeout: 10_000 });
+      assert.equal(await empty.innerText(), 'Not delivered to any agent session yet.');
+      assert.equal(await h.page.locator('[data-delivered-older]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused read is the error state, and Retry reads again', async () => {
+    let refused = true;
+    const h = await openPanel(
+      world({
+        [`${DELIVERIES}?limit=200&revision=3`]: () =>
+          refused ? refuse(500, 'internal', 'boom') : deliveries(3, [MINE_ON_3]),
+      }),
+    );
+    try {
+      await viewRevision(h, 3);
+      const panel = h.page.locator('[data-delivered-to]');
+      const retry = panel.getByRole('button', { name: /retry|try again/i });
+      await retry.waitFor({ timeout: 10_000 });
+      refused = false;
+      await retry.click();
+      await panel.locator(`[data-delivery="${MINE_ON_3.session_id}"]`).waitFor({ timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('switching revision never shows the list of the one before (crossing reads)', async () => {
+    // r3's answer is held until r2's has landed; then it is let go.
+    const held: (() => void)[] = [];
+    const h = await openPanel(world(DELIVERED));
+    try {
+      await h.page.route('**/context/deliveries?*revision=3*', async (route) => {
+        await new Promise<void>((resolve) => {
+          held.push(resolve);
+        });
+        await route.fallback();
+      });
+      await h.page.getByRole('button', { name: 'View r3' }).click({ timeout: 10_000 });
+      await until(() => held.length > 0, 10_000);
+      assert.equal(held.length, 1, 'r3’s read was never sent');
+
+      await viewRevision(h, 2);
+      const panel = h.page.locator('[data-delivered-to]');
+      await panel.locator(`[data-delivery="${MINE_ON_2.session_id}"]`).waitFor({ timeout: 10_000 });
+      held.forEach((release) => {
+        release();
+      });
+      // Long enough for r3's answer to land and render, were it going to.
+      await h.page.waitForTimeout(500);
+      assert.equal(await panel.locator(`[data-delivery="${MINE_ON_3.session_id}"]`).count(), 0);
+      assert.equal(await panel.locator(`[data-delivery="${THEIRS_ON_3.session_id}"]`).count(), 0);
+      assert.match(await panel.innerText(), /sent r2 to/);
+      assert.equal(
+        await panel.locator('ul[aria-label="Sessions that received r2"] > [data-delivery]').count(),
+        1,
+      );
+      // And r3 reads again when it is opened again: no list kept from before.
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await viewRevision(h, 3);
+      await panel.locator(`[data-delivery="${MINE_ON_3.session_id}"]`).waitFor({ timeout: 10_000 });
+      assert.equal(
+        await panel.locator('ul[aria-label="Sessions that received r3"] > *').count(),
+        2,
+      );
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [390, 1280]) {
+      void test(`${theme} at ${String(width)} px: legible, keyboard reachable, no sideways scroll`, async () => {
+        const h = await openPanel(world(DELIVERED));
+        try {
+          await h.page.setViewportSize({ width, height: 900 });
+          await setTheme(h.page, theme);
+          await viewRevision(h, 3);
+          const panel = h.page.locator('[data-delivered-to]');
+          await panel.locator('[data-delivery]').first().waitFor({ timeout: 10_000 });
+
+          const ctx = h.page.locator('.ctx');
+          const [left, right, viewport, scrolls] = await ctx.evaluate((el) => {
+            const box = el.getBoundingClientRect();
+            return [
+              box.left,
+              box.right,
+              document.documentElement.clientWidth,
+              el.scrollWidth > el.clientWidth ? 1 : 0,
+            ];
+          });
+          assert.equal(scrolls, 0, 'the panel scrolls sideways');
+          assert.ok(left >= 0 && right <= viewport, 'the panel runs off the screen');
+          for (const row of await panel.locator('[data-delivery]').all()) {
+            const box = await row.boundingBox();
+            assert.ok(box !== null && box.x >= 0 && box.x + box.width <= viewport + 0.5);
+          }
+          const [ink, ground] = await panel.locator('.ctx-delivered-note').evaluate((el) => {
+            const style = getComputedStyle(el);
+            let node: Element | null = el;
+            let bg = 'rgba(0, 0, 0, 0)';
+            while (node !== null && (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent')) {
+              bg = getComputedStyle(node).backgroundColor;
+              node = node.parentElement;
+            }
+            return [style.color, bg];
+          });
+          assert.notEqual(ink, ground, 'the note is the colour of its ground');
+
+          // Keyboard: Tab from the viewer's title reaches each received time,
+          // and focus shows the absolute time beside the relative one.
+          await h.page.locator('.ctx-viewer-title').focus();
+          let reached = false;
+          for (let i = 0; i < 12 && !reached; i++) {
+            await h.page.keyboard.press('Tab');
+            reached = await h.page.evaluate(
+              () => document.activeElement?.classList.contains('ctx-delivery-when') === true,
+            );
+          }
+          assert.ok(reached, 'no received time is reachable by Tab');
+          const after = await h.page.evaluate(() => {
+            const el = document.activeElement;
+            return el === null ? '' : getComputedStyle(el, '::after').content;
+          });
+          assert.match(after, /\d{4}/, 'focus does not show the absolute time');
+
+          await panel.scrollIntoViewIfNeeded();
+          await shot(h, `delivered-to-${theme}-${String(width)}`);
         } finally {
           await h.close();
         }
