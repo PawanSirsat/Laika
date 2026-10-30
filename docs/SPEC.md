@@ -3375,8 +3375,9 @@ GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  
 GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
                                              status is a category (§4.5), status_id one project status (§4.20);
                                              fields=slim leaves out description_md and acceptance_md (LAI-795)
-                                             each task carries `handoff`, its saves and hand-off in brief (LAI-1005), in a
-                                             fixed number of queries whatever the page — see the task shape below
+                                             each task carries `handoff`, its saves and hand-off in brief (LAI-1005), read once
+                                             for the page returned, whatever its size and however many `ready=` batches were
+                                             walked to fill it — see the task shape below
 GET    /api/v1/projects/:slug/statuses       POST .../statuses  body { name, category, position? } → 201  (lead+)
 PATCH  /api/v1/projects/:slug/statuses/:id   body { name?, hidden? } — category is refused   (lead+)
 PUT    /api/v1/projects/:slug/statuses/order body { ids } — every status exactly once   (lead+)
