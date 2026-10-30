@@ -543,7 +543,7 @@ void describe('the card states, from the task list alone', () => {
           document.elementFromPoint(r.left + 4, r.top + r.height / 2)?.closest('[data-exec-state]')
             ?.id ?? null
         );
-      }, lineId!);
+      }, lineId);
       assert.equal(top, lineId);
 
       await button.focus();
