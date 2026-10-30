@@ -5,13 +5,18 @@
  */
 
 import assert from 'node:assert/strict';
-import { describe, test } from 'node:test';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, describe, test } from 'node:test';
 
 import {
   asOffer,
+  EMPTY_TREE,
+  fetchSourceFor,
   gitEnv,
   inert,
-  repoOfUrl,
+  LOCAL_ROOT_ENV,
   SAFE_CONFIG,
   saveWording,
   untrustedBlock,
@@ -36,12 +41,19 @@ void describe('gitEnv', () => {
       GIT_TERMINAL_PROMPT: '0',
       LC_ALL: 'C',
       LANG: 'C',
+      GIT_NO_REPLACE_OBJECTS: '1',
+      GIT_ATTR_NOSYSTEM: '1',
     });
   });
 
-  void test('every git call switches hooks and fsmonitor off', () => {
+  void test('every git call switches hooks, fsmonitor, attributes and replace refs off', () => {
     assert.ok(SAFE_CONFIG.includes('core.hooksPath=/dev/null'));
     assert.ok(SAFE_CONFIG.includes('core.fsmonitor=false'));
+    assert.ok(SAFE_CONFIG.includes(`--attr-source=${EMPTY_TREE}`));
+    assert.ok(SAFE_CONFIG.includes('core.attributesFile=/dev/null'));
+    assert.ok(SAFE_CONFIG.includes('core.useReplaceRefs=false'));
+    assert.ok(SAFE_CONFIG.includes('protocol.allow=never'));
+    assert.ok(!SAFE_CONFIG.includes('protocol.file.allow=always'));
   });
 });
 
@@ -50,6 +62,18 @@ void describe('untrusted text', () => {
     assert.equal(inert('$(rm -rf ~) `id`; "x"'), '$(rm -rf ~) `id`; "x"');
     assert.equal(inert('a\u001b[2Jb\u0007c d'), 'a\\u{1b}[2Jb\\u{7}c\\u{2028}d');
     assert.equal(inert('line\n\tnext'), 'line\n\tnext');
+  });
+
+  void test('bidirectional and invisible format characters are shown, not sent', () => {
+    for (const code of [
+      0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0x200e, 0x200f,
+      0x061c, 0x200b, 0x200c, 0x200d, 0x2060, 0xfeff,
+    ]) {
+      const c = String.fromCharCode(code);
+      assert.equal(inert(`a${c}b`), `a\\u{${code.toString(16)}}b`, code.toString(16));
+    }
+    // The trojan-source shape: an override that would show `rm` backwards.
+    assert.equal(inert('safe \u202emr\u202c'), 'safe \\u{202e}mr\\u{202c}');
   });
 
   void test('a field is cut at its bound, and says so', () => {
@@ -93,18 +117,77 @@ void describe('untrusted text', () => {
   });
 });
 
-void describe('repoOfUrl', () => {
-  void test('https, ssh, scp-like and a path all name owner/name', () => {
-    for (const url of [
-      'https://github.com/Kvell/Laika.git',
-      'https://user@github.com/kvell/laika',
+const scratch = mkdtempSync(join(tmpdir(), 'laika-548-unit-'));
+after(() => {
+  rmSync(scratch, { recursive: true, force: true });
+});
+
+void describe('fetchSourceFor', () => {
+  void test('github.com over https or ssh, exactly the configured repo, rebuilt', () => {
+    const ok = (url: string): string => {
+      const got = fetchSourceFor(url, 'Kvell/Laika', {});
+      assert.equal(typeof got, 'object', `${url}: ${JSON.stringify(got)}`);
+      return (got as { url: string }).url;
+    };
+    assert.equal(ok('https://github.com/Kvell/Laika.git'), 'https://github.com/kvell/laika.git');
+    assert.equal(
+      ok('https://PawanSirsat@github.com/kvell/laika'),
+      'https://PawanSirsat@github.com/kvell/laika.git',
+    );
+    assert.equal(ok('https://github.com/kvell/laika/'), 'https://github.com/kvell/laika.git');
+    assert.equal(
+      ok('ssh://git@github.com/kvell/laika.git'),
       'ssh://git@github.com/kvell/laika.git',
-      'git@github.com:kvell/laika.git',
+    );
+    assert.equal(ok('git@github.com:kvell/laika.git'), 'ssh://git@github.com/kvell/laika.git');
+  });
+
+  void test('a path ending in owner/repo is not enough: host, transport and path all count', () => {
+    for (const url of [
+      'https://attacker.invalid/kvell/laika.git',
+      'https://github.com.attacker.invalid/kvell/laika.git',
+      'https://github.com:8443/kvell/laika.git',
+      'https://user:pass@github.com/kvell/laika.git',
+      'https://github.com/evil/kvell/laika.git',
+      'https://github.com/kvell/laika-fork.git',
+      'https://github.com/kvell/laika.git?x=1',
+      'http://github.com/kvell/laika.git',
+      'git://github.com/kvell/laika.git',
+      'ext::sh -c touch% /tmp/pwned',
+      'ssh://evil@github.com/kvell/laika.git',
+      'git@attacker.invalid:kvell/laika.git',
+      'gh-alias:kvell/laika.git',
       '/tmp/remotes/kvell/laika.git',
+      'file:///tmp/remotes/kvell/laika.git',
+      'kvell/laika.git',
     ]) {
-      assert.equal(repoOfUrl(url), 'kvell/laika', url);
+      assert.equal(typeof fetchSourceFor(url, 'kvell/laika', {}), 'string', url);
     }
-    assert.notEqual(repoOfUrl('https://github.com/kvell/laika-fork.git'), 'kvell/laika');
+  });
+
+  void test('a local remote only at exactly <root>/<owner>/<repo>.git, after realpath', () => {
+    const root = join(scratch, 'root');
+    const elsewhere = join(scratch, 'elsewhere');
+    mkdirSync(join(root, 'kvell', 'laika.git'), { recursive: true });
+    mkdirSync(join(elsewhere, 'kvell', 'laika.git'), { recursive: true });
+    symlinkSync(join(elsewhere, 'kvell'), join(root, 'link'));
+    const env = { [LOCAL_ROOT_ENV]: root };
+    const got = fetchSourceFor(join(root, 'kvell', 'laika.git'), 'kvell/laika', env);
+    assert.equal(typeof got, 'object', JSON.stringify(got));
+    assert.equal((got as { local: boolean }).local, true);
+    assert.match((got as { url: string }).url, /^file:\/\/.*\/root\/kvell\/laika\.git$/);
+    assert.equal(
+      typeof fetchSourceFor(`file://${join(root, 'kvell', 'laika.git')}`, 'kvell/laika', env),
+      'object',
+    );
+    // The same name somewhere else, reached by a suffix, a symlink or `..`.
+    for (const url of [
+      join(elsewhere, 'kvell', 'laika.git'),
+      join(root, 'link', 'laika.git'),
+      `${root}/kvell/../../elsewhere/kvell/laika.git`,
+    ]) {
+      assert.equal(typeof fetchSourceFor(url, 'kvell/laika', env), 'string', url);
+    }
   });
 });
 

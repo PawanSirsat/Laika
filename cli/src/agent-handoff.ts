@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -45,7 +46,14 @@ import {
  * takes one), never used as a path, and shown to the model only inside a
  * delimited block whose markers carry a nonce the text cannot predict.
  * Repo content is never run either: every git call switches hooks and
- * fsmonitor off, so checking out the sender's commit runs none of its hooks.
+ * fsmonitor off and reads attributes from the empty tree, so checking out the
+ * sender's commit runs none of its hooks and none of its filters; replace refs
+ * are never followed, so the SHA checked is the commit checked out.
+ *
+ * **The fetch goes to the project's repository and nowhere else**: the URL is
+ * checked in full (github.com, the configured `owner/name`) and fetched as a
+ * URL, never as a remote's name, so no configured refmap or rewrite applies;
+ * afterwards every other ref is compared with before.
  *
  * **What is touched**: the repo's object store and one private ref,
  * `refs/laika/handoff/<offer>`, plus the new worktree and its branch. The
@@ -64,10 +72,17 @@ export const MAX_NOTE = 12_000;
 /**
  * Control characters other than newline and tab become `\u{…}` escapes, so a
  * note cannot move the cursor, clear the screen or hide text from the person
- * reading over the model's shoulder. Printable text — including shell and
- * prompt-injection text — is kept exactly as written.
+ * reading over the model's shoulder. **Bidirectional and invisible format
+ * characters are escaped too** — the embeddings and overrides (U+202A–202E),
+ * the isolates (U+2066–2069), the marks (U+200E/200F, U+061C), zero-width
+ * characters (U+200B–200D, U+2060–2064) and the BOM — so text cannot be shown
+ * in an order other than the one it is stored in. Printable text — including
+ * shell and prompt-injection text — is kept exactly as written.
  */
-const CONTROL = new RegExp('[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u2028\\u2029]', 'g');
+const CONTROL = new RegExp(
+  '[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u061c\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufeff]',
+  'g',
+);
 
 export function inert(text: string, max = MAX_FIELD): string {
   const clean = text.replace(CONTROL, (c) => `\\u{${c.charCodeAt(0).toString(16)}}`);
@@ -154,23 +169,57 @@ export function gitEnv(env: Readonly<Record<string, string | undefined>>): Recor
   next.GIT_TERMINAL_PROMPT = '0';
   next.LC_ALL = 'C';
   next.LANG = 'C';
+  // A replace ref can make `HEAD` print the checkpoint's SHA while the files
+  // checked out are another commit's: no git call here follows one.
+  next.GIT_NO_REPLACE_OBJECTS = '1';
+  // The system gitattributes file is never read (and the global one is
+  // switched off in SAFE_CONFIG): attributes are how a filter is selected.
+  next.GIT_ATTR_NOSYSTEM = '1';
   return next;
 }
+
+/** The empty tree's id: always present to git, whatever the repository holds. */
+export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbcabc96';
 
 /**
  * On every git call: repo content is never run. A checkout of the sender's
  * commit would otherwise start `post-checkout`, and `status` the repo's
  * fsmonitor; submodules are never followed.
+ *
+ * **No attribute is read from the sender's tree**: `--attr-source` points
+ * git's attributes at the empty tree, so a `.gitattributes` in the checkpoint
+ * cannot select a `filter` (whose `smudge`, `clean` or `process` command a
+ * checkout or a `status` would run), a `diff` or a `merge` driver. The global
+ * attributes file is off here and the system one in {@link gitEnv}; the
+ * repository's own `info/attributes` is refused before anything is checked
+ * out ({@link assertNoLocalAttributes}). A git too old to know `--attr-source`
+ * (before 2.40) refuses the option, so this fails closed rather than open.
+ * Replace refs are never followed (`core.useReplaceRefs`, and the env).
  */
 export const SAFE_CONFIG: readonly string[] = [
+  `--attr-source=${EMPTY_TREE}`,
   '-c',
   'core.fsmonitor=false',
   '-c',
   'core.hooksPath=/dev/null',
   '-c',
+  'core.attributesFile=/dev/null',
+  '-c',
+  'core.useReplaceRefs=false',
+  '-c',
   'submodule.recurse=false',
   '-c',
-  'protocol.ext.allow=never',
+  'fetch.recurseSubmodules=false',
+  '-c',
+  'gc.auto=0',
+  '-c',
+  'maintenance.auto=false',
+  '-c',
+  'protocol.allow=never',
+  '-c',
+  'protocol.https.allow=always',
+  '-c',
+  'protocol.ssh.allow=always',
 ];
 
 export interface GitResult {
@@ -216,17 +265,119 @@ const CHECKPOINT_REF =
 
 const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-/** `owner/name` from a remote URL — https, ssh, scp-like or a path ending in it. */
-export function repoOfUrl(url: string): string | undefined {
-  const m = /([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(url.trim());
-  return m === null ? undefined : `${m[1] ?? ''}/${m[2] ?? ''}`.toLowerCase();
+/** `owner/name` as GitHub spells one, lower case. */
+const OWNER_REPO = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9._-]{1,100}$/;
+
+/**
+ * Where a fetch goes, as this helper will ask git to fetch it: never a
+ * remote's name (whose configured refmap would write refs of its own), always
+ * the full URL of the project's configured repository.
+ */
+export interface FetchSource {
+  readonly url: string;
+  /** Only for a local mirror the operator named ({@link LOCAL_ROOT_ENV}). */
+  readonly local: boolean;
+}
+
+/**
+ * A local directory of mirrors, named by the **operator's environment**, never
+ * by the repository: a remote that is a local path is accepted only when its
+ * real path is exactly `<root>/<owner>/<repo>.git` (or without `.git`). For
+ * tests and air-gapped mirrors; unset, only github.com is accepted.
+ */
+export const LOCAL_ROOT_ENV = 'LAIKA_HANDOFF_LOCAL_REMOTE_ROOT';
+
+function realPath(path: string): string | undefined {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The fetch source for `url` — a remote's URL as `git remote get-url`
+ * expanded it — when it is **exactly** the project's repository `repo`, else
+ * a reason. Transport, host and path are all checked, never a suffix:
+ *
+ * - `https://[user@]github.com/<owner>/<repo>[.git][/]`, with no password, port,
+ *   query or fragment;
+ * - `ssh://git@github.com/<owner>/<repo>[.git]` and `git@github.com:<owner>/<repo>[.git]`;
+ * - a local path or `file://` URL only under {@link LOCAL_ROOT_ENV}, compared
+ *   after `realpath`, so neither a symlink nor `..` reaches another directory.
+ *
+ * The answer is rebuilt from the parts, so what git is asked is what was
+ * checked.
+ */
+export function fetchSourceFor(
+  url: string,
+  repo: string,
+  env: Readonly<Record<string, string | undefined>>,
+): FetchSource | string {
+  const wanted = repo.toLowerCase();
+  if (!OWNER_REPO.test(wanted)) return `the configured repo ${inert(repo, 120)} is not owner/name`;
+  if (/[\s\0]/.test(url) || url.length > 2048) return 'the remote URL holds whitespace';
+  const parts = (path: string): string | undefined => {
+    const m = /^\/?([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(path);
+    return m === null ? undefined : `${m[1] ?? ''}/${m[2] ?? ''}`.toLowerCase();
+  };
+
+  const https = /^https:\/\/(?:([A-Za-z0-9._-]+)@)?([^/@:?#]+)(\/[^?#]*)$/i.exec(url);
+  if (https !== null) {
+    if (https[2]?.toLowerCase() !== 'github.com')
+      return `host ${inert(https[2] ?? '', 80)} is not github.com`;
+    if (parts(https[3] ?? '') !== wanted) return `the path is not ${repo}`;
+    const user = https[1] === undefined ? '' : `${https[1]}@`;
+    return { url: `https://${user}github.com/${wanted}.git`, local: false };
+  }
+  const ssh =
+    /^ssh:\/\/git@([^/:@]+)(\/[^?#]*)$/i.exec(url) ?? /^git@([^/:@]+):([^?#]*)$/i.exec(url);
+  if (ssh !== null) {
+    if (ssh[1]?.toLowerCase() !== 'github.com')
+      return `host ${inert(ssh[1] ?? '', 80)} is not github.com`;
+    if (parts(ssh[2] ?? '') !== wanted) return `the path is not ${repo}`;
+    return { url: `ssh://git@github.com/${wanted}.git`, local: false };
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url) && !/^file:\/\//i.test(url)) {
+    return 'only https and ssh to github.com are fetched from';
+  }
+  // git's own test for a local path: a `file://` URL, or no `host:` before the first `/`.
+  const colon = url.indexOf(':');
+  const slash = url.indexOf('/');
+  const isFile = /^file:\/\//i.test(url);
+  if (!isFile && colon !== -1 && (slash === -1 || colon < slash)) {
+    return 'an scp-style remote is fetched from only at git@github.com';
+  }
+  const root = env[LOCAL_ROOT_ENV];
+  if (root === undefined || root === '') {
+    return `a local remote is fetched from only under ${LOCAL_ROOT_ENV}`;
+  }
+  let path = isFile ? url.slice('file://'.length) : url;
+  if (isFile) {
+    try {
+      path = decodeURIComponent(path);
+    } catch {
+      return 'the file URL does not decode';
+    }
+  }
+  if (!isAbsolute(path)) return 'a local remote must be an absolute path';
+  const real = realPath(path);
+  const realRoot = realPath(root);
+  if (real === undefined || realRoot === undefined)
+    return 'the local remote does not resolve on disk';
+  const [owner, name] = wanted.split('/') as [string, string];
+  const allowed = [join(realRoot, owner, `${name}.git`), join(realRoot, owner, name)];
+  if (!allowed.includes(real)) return `the local remote is not ${repo} under ${LOCAL_ROOT_ENV}`;
+  if (/[%#?]/.test(real)) return 'a local path holding %, # or ? cannot be fetched as a URL';
+  return { url: `file://${real}`, local: true };
 }
 
 /* -------------------------------------------------------------------------- */
 /* Local records                                                              */
 /* -------------------------------------------------------------------------- */
 
-export type PreparedStatus = 'prepared' | 'accepted' | 'lost' | 'declined' | 'needs_attention';
+export type PreparedStatus =
+  'preparing' | 'prepared' | 'accepted' | 'lost' | 'declined' | 'needs_attention';
 
 /** What `prepare` established, kept so `accept` can refuse anything less. */
 export interface PreparedOffer {
@@ -619,11 +770,23 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     return 1;
   };
 
+  // `preparing` is a prepare that stopped part-way — a crash, a kill — and
+  // `needs_attention` one that refused: either may have left this helper's
+  // own worktree, branch and private ref, which are cleared (only if they are
+  // still exactly what it made) before trying again.
   const existing = readRecord(io.home, args.offerId);
-  if (existing !== undefined && existing.status !== 'needs_attention') {
+  if (
+    existing !== undefined &&
+    existing.status !== 'needs_attention' &&
+    existing.status !== 'preparing'
+  ) {
     return fail(
       `this offer was already prepared here (${existing.status}) at ${existing.worktree}`,
     );
+  }
+  if (existing !== undefined) {
+    const cleared = clearOwn(git, existing);
+    if (cleared !== undefined) return fail(cleared);
   }
 
   const offer = await findOffer(io, args.credential, args.offerId);
@@ -665,25 +828,54 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
   if (top.code !== 0) return fail(`${repoDir} is not inside a git repository`);
   const toplevel = top.stdout.trim();
 
+  // Which remote: only to learn the URL. The fetch goes to that URL, checked
+  // in full and rebuilt ({@link fetchSourceFor}), never to the remote's name —
+  // a named fetch would also apply the remote's configured refmap and write
+  // refs this helper never asked for.
   const remotes = git(toplevel, ['remote']);
   const names = remotes.stdout
     .split('\n')
-    .map((s) => s.trim())
-    .filter((s) => REMOTE_NAME.test(s));
-  const wanted = cp.repo.toLowerCase();
-  const urlOf = (name: string): string =>
-    git(toplevel, ['remote', 'get-url', '--', name]).stdout.trim();
+    .map((n) => n.trim())
+    .filter((n) => REMOTE_NAME.test(n));
+  const sourceOf = (name: string): FetchSource | string => {
+    const got = git(toplevel, ['remote', 'get-url', '--', name]);
+    if (got.code !== 0) return `remote ${name} has no URL`;
+    return fetchSourceFor(got.stdout.trim(), cp.repo, io.env);
+  };
   let remote = args.remote;
+  let source: FetchSource;
   if (remote !== undefined) {
     if (!REMOTE_NAME.test(remote) || !names.includes(remote))
       return fail(`no remote named ${inert(remote, 64)}`);
-    if (repoOfUrl(urlOf(remote)) !== wanted) {
-      return fail(`remote ${remote} is not ${cp.repo}, the project’s configured repo`);
+    const found = sourceOf(remote);
+    if (typeof found === 'string') {
+      return fail(`remote ${remote} is not ${cp.repo}, the project’s configured repo: ${found}`);
     }
+    source = found;
   } else {
-    remote = names.find((n) => repoOfUrl(urlOf(n)) === wanted);
-    if (remote === undefined) return fail(`no remote of this repository points at ${cp.repo}`);
+    const why: string[] = [];
+    let found: FetchSource | undefined;
+    for (const name of names) {
+      const s = sourceOf(name);
+      if (typeof s === 'string') why.push(`${name}: ${s}`);
+      else {
+        found = s;
+        remote = name;
+        break;
+      }
+    }
+    if (found === undefined) {
+      return fail(
+        `no remote of this repository is ${cp.repo} on github.com` +
+          (why.length === 0 ? '' : ` (${why.slice(0, 5).join('; ')})`),
+      );
+    }
+    source = found;
   }
+  const rewrite = rewriteRefusal(git, toplevel, names, source.url);
+  if (rewrite !== undefined) return fail(rewrite);
+  const attributes = assertNoLocalAttributes(git, toplevel);
+  if (attributes !== undefined) return fail(attributes);
 
   const localRef = `refs/laika/handoff/${offer.id}`;
   const suffix = offer.id.slice(-6).toLowerCase();
@@ -703,7 +895,7 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     task_id: offer.task_id,
     checkpoint_id: cp.id,
     harness: args.harness,
-    status: 'needs_attention',
+    status: 'preparing',
     verified_commit_sha: sha,
     ref: cp.newestRef,
     local_ref: localRef,
@@ -722,23 +914,44 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     return 1;
   };
 
+  // Written before anything is made, so a prepare that dies part-way leaves a
+  // record naming what it may have made, and the next prepare clears it.
+  writeRecord(io.home, record);
+
   try {
     // Ours alone, so a stale one from an earlier attempt goes; then the fetch
-    // names its refspec in full, with no `+`, no tags and no submodules.
+    // names its refspec in full, with no `+`, no tags and no submodules, from
+    // the URL itself with every rewrite of it neutralised.
     git(toplevel, ['update-ref', '-d', localRef]);
+    const before = refSnapshot(git, toplevel, localRef);
+    const fetchHead = git(toplevel, ['rev-parse', '--git-path', 'FETCH_HEAD']).stdout.trim();
+    const hadFetchHead = existsSync(resolve(toplevel, fetchHead));
     const fetched = git(toplevel, [
+      '-c',
+      `url.${source.url}.insteadOf=${source.url}`,
+      ...(source.local ? ['-c', 'protocol.file.allow=always'] : []),
       'fetch',
       '--no-tags',
       '--no-recurse-submodules',
       '--no-write-fetch-head',
+      '--no-auto-gc',
+      '--no-auto-maintenance',
+      '--refmap=',
       '--',
-      remote,
+      source.url,
       `${cp.newestRef}:${localRef}`,
     ]);
     if (fetched.code !== 0) {
       throw new Stop(
-        `the checkpoint tag could not be fetched from ${remote}: ${firstLine(fetched.stderr)}`,
+        `the checkpoint tag could not be fetched from ${remote ?? ''}: ${firstLine(fetched.stderr)}`,
       );
+    }
+    // Nothing but the private ref may have moved: checked, not assumed.
+    const moved = refSnapshot(git, toplevel, localRef);
+    if (moved !== before)
+      throw new Stop('the fetch changed refs other than its own; nothing was checked out');
+    if (!hadFetchHead && existsSync(resolve(toplevel, fetchHead))) {
+      throw new Stop('the fetch wrote FETCH_HEAD; nothing was checked out');
     }
     const type = git(toplevel, ['cat-file', '-t', localRef]).stdout.trim();
     if (type !== 'commit') {
@@ -778,6 +991,12 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
       throw new Stop(`the worktree could not be made: ${firstLine(added.stderr)}`);
     const head = git(worktree, ['rev-parse', 'HEAD']).stdout.trim().toLowerCase();
     if (head !== sha) throw new Stop(`the new worktree is at ${head}, not ${sha}`);
+    // What is on disk is that commit's tree, byte for byte: no filter ran
+    // (attributes come from the empty tree), and nothing differs.
+    const status = git(worktree, ['status', '--porcelain', '--untracked-files=all']);
+    if (status.code !== 0 || status.stdout.trim() !== '') {
+      throw new Stop('the new worktree does not match the checkpoint commit');
+    }
   } catch (cause) {
     if (cause instanceof Stop) return attention(cause.message);
     throw cause;
@@ -799,10 +1018,134 @@ function liveSession(home: string, harness: Harness): string | undefined {
   return live.length === 1 ? live[0]?.session_id : undefined;
 }
 
-/** Labels a worktree that is not this agent's to continue: git keeps the reason and shows it. */
-function label(io: HandoffIo, record: PreparedOffer, why: string): void {
+/**
+ * Labels a worktree that is not this agent's to continue: git keeps the
+ * reason and shows it. Answers the failure, if any — a label that did not
+ * land is reported as not landing, never as done.
+ */
+function label(io: HandoffIo, record: PreparedOffer, why: string): string | undefined {
   const git = gitRunner(io.env);
-  git(record.repo_dir, ['worktree', 'lock', '--reason', why, '--', record.worktree]);
+  const r = git(record.repo_dir, ['worktree', 'lock', '--reason', why, '--', record.worktree]);
+  return r.code === 0 ? undefined : firstLine(r.stderr) || `git exited ${String(r.code)}`;
+}
+
+/**
+ * Every ref but `except`, with what it points at, and `HEAD`: compared before
+ * and after the fetch so that a fetch which wrote anything else is caught.
+ */
+function refSnapshot(git: GitRunner, top: string, except: string): string {
+  const refs = git(top, ['for-each-ref', '--format=%(refname) %(objectname)']).stdout;
+  const head = git(top, ['rev-parse', '--symbolic-full-name', 'HEAD']).stdout.trim();
+  const at = git(top, ['rev-parse', 'HEAD']).stdout.trim();
+  return [
+    ...refs.split('\n').filter((line) => line !== '' && !line.startsWith(`${except} `)),
+    `HEAD ${head} ${at}`,
+  ].join('\n');
+}
+
+/**
+ * Why the fetch URL could be fetched as something else, if it could. git
+ * reads `fetch <x>` as a remote's name first, and rewrites a URL by the
+ * longest matching `insteadOf`: the fetch carries `url.<x>.insteadOf=<x>`,
+ * which no rule can be longer than, so the one rule it cannot beat — one
+ * whose value is `<x>` exactly, which git keeps first — is refused, and so is
+ * a URL that is also a remote's name.
+ */
+function rewriteRefusal(
+  git: GitRunner,
+  top: string,
+  names: readonly string[],
+  url: string,
+): string | undefined {
+  const configured = git(top, [
+    'config',
+    '-z',
+    '--includes',
+    '--name-only',
+    '--get-regexp',
+    '^remote\\.',
+  ]).stdout.split('\0');
+  const remoteNames = new Set([
+    ...names,
+    ...configured
+      .filter((k) => k.startsWith('remote.') && k.lastIndexOf('.') > 'remote.'.length)
+      .map((k) => k.slice('remote.'.length, k.lastIndexOf('.'))),
+  ]);
+  if (remoteNames.has(url))
+    return `${url} is also the name of a remote, so a fetch would use that remote`;
+  const rules = git(top, ['config', '-z', '--includes', '--get-regexp', '^url\\..*\\.insteadof$'])
+    .stdout.split('\0')
+    .map((entry) => entry.slice(entry.indexOf('\n') + 1));
+  if (rules.includes(url))
+    return `an insteadOf rule names ${url} exactly, so a fetch would go elsewhere`;
+  return undefined;
+}
+
+/**
+ * The repository's own `info/attributes` — the one attributes file
+ * `--attr-source` does not replace — must say nothing: an attribute there
+ * selects a filter for every checkout, the sender's included.
+ */
+export function assertNoLocalAttributes(git: GitRunner, top: string): string | undefined {
+  const r = git(top, ['rev-parse', '--git-path', 'info/attributes']);
+  if (r.code !== 0) return 'cannot tell where this repository keeps its attributes';
+  const path = resolve(top, r.stdout.trim());
+  let text = '';
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return undefined;
+  }
+  const lines = text.split('\n').filter((l) => l.trim() !== '' && !l.trim().startsWith('#'));
+  return lines.length === 0
+    ? undefined
+    : `${path} sets attributes, which could run a filter on checkout; nothing was fetched`;
+}
+
+/**
+ * What an earlier prepare of this offer made, removed **only while it is
+ * exactly what it made**: the worktree at its path, registered to this
+ * repository on its branch, clean, at the verified commit — `worktree
+ * remove`, never `--force`, so anything written there stops it — then the
+ * branch, deleted only if it still points at that commit, then the private
+ * ref. Anything else is left alone and named.
+ */
+function clearOwn(git: GitRunner, record: PreparedOffer): string | undefined {
+  const list = git(record.repo_dir, ['worktree', 'list', '--porcelain']);
+  if (list.code !== 0) return `cannot list the worktrees of ${record.repo_dir}`;
+  const entries = list.stdout.split('\n\n').map((block) => {
+    const lines = block.split('\n');
+    const field = (key: string): string | undefined =>
+      lines.find((l) => l.startsWith(`${key} `))?.slice(key.length + 1);
+    return { path: field('worktree'), branch: field('branch'), head: field('HEAD') };
+  });
+  const realWt = realPath(record.worktree);
+  const mine = entries.find(
+    (e) => e.path !== undefined && (e.path === record.worktree || realPath(e.path) === realWt),
+  );
+  if (mine !== undefined) {
+    if (mine.branch !== `refs/heads/${record.branch}` || mine.head !== record.verified_commit_sha) {
+      return `${record.worktree} from an earlier prepare is no longer on ${record.branch} at the checkpoint; left as it is`;
+    }
+    const removed = git(record.repo_dir, ['worktree', 'remove', '--', record.worktree]);
+    if (removed.code !== 0) {
+      return `${record.worktree} from an earlier prepare could not be removed (${firstLine(removed.stderr)}); left as it is`;
+    }
+  } else if (existsSync(record.worktree)) {
+    return `${record.worktree} exists and is not this helper’s worktree; left as it is`;
+  }
+  const ref = `refs/heads/${record.branch}`;
+  const at = git(record.repo_dir, ['rev-parse', '--verify', '--quiet', '--end-of-options', ref]);
+  if (at.code === 0) {
+    if (at.stdout.trim() !== record.verified_commit_sha) {
+      return `branch ${record.branch} has moved since an earlier prepare; left as it is`;
+    }
+    // Conditional on its old value: a branch that moved between the check and here survives.
+    const deleted = git(record.repo_dir, ['update-ref', '-d', ref, record.verified_commit_sha]);
+    if (deleted.code !== 0) return `branch ${record.branch} could not be removed; left as it is`;
+  }
+  git(record.repo_dir, ['update-ref', '-d', record.local_ref]);
+  return undefined;
 }
 
 export async function accept(
@@ -901,14 +1244,20 @@ export async function accept(
     record.status = 'lost';
     record.detail = 'offer_taken — another receiver accepted this offer first';
     writeRecord(io.home, record);
-    label(
+    const unlabelled = label(
       io,
       record,
       `laika: offer ${offerId} was taken by another receiver (offer_taken); do not continue here`,
     );
+    if (unlabelled !== undefined) {
+      record.detail = `${record.detail ?? ''}; the worktree could NOT be locked: ${unlabelled}`;
+      writeRecord(io.home, record);
+    }
     io.err(`laika agent handoff: offer_taken — another receiver accepted offer ${offerId} first.`);
     io.err(
-      `The worktree ${record.worktree} is NOT this agent’s to continue; it is locked with that reason.`,
+      unlabelled === undefined
+        ? `The worktree ${record.worktree} is NOT this agent’s to continue; it is locked with that reason.`
+        : `The worktree ${record.worktree} is NOT this agent’s to continue, and it could NOT be locked: ${unlabelled}. Do not continue there.`,
     );
     return 1;
   }
@@ -960,7 +1309,16 @@ async function decline(
     record.status = 'declined';
     writeRecord(io.home, record);
     if (existsSync(record.worktree)) {
-      label(io, record, `laika: offer ${offerId} was declined; do not continue here`);
+      const unlabelled = label(
+        io,
+        record,
+        `laika: offer ${offerId} was declined; do not continue here`,
+      );
+      if (unlabelled !== undefined) {
+        io.err(
+          `The worktree ${record.worktree} could NOT be locked: ${unlabelled}. Do not continue there.`,
+        );
+      }
     }
   }
   io.out(`Declined offer ${offerId}; the sender's claim resumes.`);

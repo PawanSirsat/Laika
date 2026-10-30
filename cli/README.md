@@ -704,9 +704,17 @@ laika agent handoff decline <offer> --reason "busy"
 `laika agent inbox` and `laika agent accept <offer>` are the same commands.
 
 - **`prepare`** reads the offer and the checkpoint's newest ref, finds the
-  remote of this repository that points at the project's configured repo
-  (`--remote` to name one), and fetches exactly that ref into a private ref,
-  `refs/laika/handoff/<offer>` — no `+`, no tags, no submodules. It refuses,
+  remote of this repository whose URL is **exactly** the project's configured
+  repo on github.com (`--remote` to name one) — `https://[user@]github.com/
+  <owner>/<repo>`, `ssh://git@github.com/…` or `git@github.com:…`, checked
+  after `insteadOf` and compared whole, never by suffix — and fetches exactly
+  that ref into a private ref, `refs/laika/handoff/<offer>` — no `+`, no tags,
+  no submodules. The fetch goes to the URL, rebuilt from what was checked,
+  never to the remote's name, so no configured refmap applies; rewrites of
+  that URL are neutralised, and every other ref and `FETCH_HEAD` are compared
+  before and after. A local mirror is fetched from only when the operator's
+  environment names its directory (`LAIKA_HANDOFF_LOCAL_REMOTE_ROOT`) and its
+  real path is exactly `<root>/<owner>/<repo>.git`; the tests use this. It refuses,
   printing **"Save needs attention"** and recording that on this machine,
   when the fetch fails (a deleted tag), the ref is an annotated tag, or it
   resolves to anything but the checkpoint's full SHA. Only then does it make
@@ -714,7 +722,11 @@ laika agent handoff decline <offer> --reason "busy"
   branch, `<LAI-NNN>-handoff-<suffix>`, at that commit. The primary
   checkout's HEAD, index and files are never written. A `pending`,
   `uncertain` or `ref_deleted` checkpoint is refused before any fetch, in
-  SPEC §4.70's words.
+  SPEC §4.70's words. A prepare that stopped part-way (a crash, a kill)
+  leaves its record as `preparing`; the next prepare removes its own
+  worktree and branch first, but only while they are still exactly what it
+  made — a worktree with anything written in it, or a branch that moved, is
+  left alone and named.
 - **`accept`** refuses unless `prepare` succeeded here, and checks again that
   the private ref and the worktree are still at the verified SHA. It then
   sends that SHA, with this harness's live session when there is exactly
@@ -723,7 +735,7 @@ laika agent handoff decline <offer> --reason "busy"
   `409 checkpoint_unverified` is worded *"Verification pending"* (or the
   state the checkpoint is now in); `409 offer_taken` marks the offer lost
   and **locks the worktree** with that reason (`git worktree list` shows it),
-  so nobody continues from it.
+  so nobody continues from it. A lock that fails is reported as failed.
 - **Untrusted text.** The note and the reason are printed inside a block
   whose markers carry a random nonce, bounded per field, with control
   characters shown as `\u{…}` rather than sent to the terminal. Nothing from
@@ -731,7 +743,16 @@ laika agent handoff decline <offer> --reason "busy"
   array, every call has hooks and fsmonitor switched off (so checking out the
   sender's commit runs none of its hooks), and git sees only an allowlisted
   environment — the same allowlist as the sender's helper (LAI-547), so no
-  token reaches it.
+  token reaches it. **No attribute is read from the sender's tree**
+  (`--attr-source` is the empty tree, the global and system attributes files
+  are off, and a repository whose own `info/attributes` sets anything is
+  refused), so a `.gitattributes` cannot select a `filter`, `diff` or `merge`
+  driver to run; Git LFS pointers stay pointers. **Replace refs are never
+  followed** (`GIT_NO_REPLACE_OBJECTS`), so `HEAD` at the checkpoint SHA is
+  that commit's tree, and the new worktree must show no difference from it.
+  Needs git 2.40 or later; an older git refuses `--attr-source`, so this
+  fails closed. Bidirectional and zero-width format characters in the note
+  are escaped as well.
 - What this machine learned is kept in `~/.laika/agent-handoffs/<offer>.json`
   (0600): the verified SHA, the worktree, and `prepared`, `accepted`, `lost`,
   `declined` or `needs_attention`.

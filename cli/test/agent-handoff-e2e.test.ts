@@ -26,12 +26,12 @@
 import assert from 'node:assert/strict';
 import { createHmac, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 
-import { handoff, type HandoffIo, readRecord } from '../src/agent-handoff.ts';
+import { handoff, type HandoffIo, LOCAL_ROOT_ENV, readRecord } from '../src/agent-handoff.ts';
 import { must, type RealBoard, startRealBoard } from './support/real-board.ts';
 
 const REPO = 'kvell/laika';
@@ -168,7 +168,10 @@ interface Scenario {
 let scenarios = 0;
 
 /** A task, claimed by a sender, saved at a real pushed commit, verified, and offered to a receiver. */
-async function scenario(summary: unknown = MALICIOUS): Promise<Scenario> {
+async function scenario(
+  summary: unknown = MALICIOUS,
+  extra: Readonly<Record<string, string>> = {},
+): Promise<Scenario> {
   scenarios += 1;
   const sender = await newAgent(`Sender ${String(scenarios)}`);
   const receiver = await newAgent(`Receiver ${String(scenarios)}`);
@@ -193,7 +196,8 @@ async function scenario(summary: unknown = MALICIOUS): Promise<Scenario> {
     join(senderRepo, `work-${String(scenarios)}.txt`),
     `scenario ${String(scenarios)}\n`,
   );
-  git(senderRepo, 'add', '--', `work-${String(scenarios)}.txt`);
+  for (const [name, text] of Object.entries(extra)) writeFileSync(join(senderRepo, name), text);
+  git(senderRepo, 'add', '--', `work-${String(scenarios)}.txt`, ...Object.keys(extra));
   git(senderRepo, 'commit', '-q', '-m', `work ${String(scenarios)}`);
   const sha = git(senderRepo, 'rev-parse', 'HEAD');
   git(senderRepo, 'push', '-q', 'origin', `refs/heads/${branch}:refs/heads/${branch}`);
@@ -272,6 +276,8 @@ function receiverMachine(token: string): Receiver {
         LAIKA_AGENT_URL: board.url,
         // A secret git must never see: the allowlist drops it (agent-handoff.test.ts).
         AWS_SECRET_ACCESS_KEY: 'must-not-reach-git',
+        // The bare remote is a local mirror the operator names (never github.com here).
+        [LOCAL_ROOT_ENV]: join(root, 'remotes'),
       },
       cwd: repo,
       fetch: (input, init) => fetch(input, init),
@@ -579,6 +585,154 @@ void describe('laika agent handoff, receiving (LAI-548)', () => {
     const list = git(r.repo, 'worktree', 'list', '--porcelain');
     assert.match(list, /locked laika: offer .* was taken by another receiver \(offer_taken\)/);
     assert.ok(list.includes(record.worktree));
+  });
+
+  void test('a checkpoint .gitattributes naming a configured filter runs nothing on checkout', async () => {
+    const pwned = join(root, 'PWNED_FILTER');
+    const s = await scenario(null, { '.gitattributes': '* filter=evil diff=evil merge=evil\n' });
+    const r = receiverMachine(s.receiver.token);
+    // The receiver's own config defines the driver the sender's tree names (Codex's probe).
+    git(r.repo, 'config', 'filter.evil.smudge', `sh -c 'touch "${pwned}"; cat'`);
+    git(r.repo, 'config', 'filter.evil.clean', `sh -c 'touch "${pwned}"; cat'`);
+    git(r.repo, 'config', 'filter.evil.process', `sh -c 'touch "${pwned}"'`);
+    git(r.repo, 'config', 'filter.evil.required', 'true');
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    assert.equal(existsSync(pwned), false, 'no filter command ran');
+    const record = readRecord(r.home, s.offerId)!;
+    assert.equal(git(record.worktree, 'rev-parse', 'HEAD'), s.sha);
+    // The file is the blob as committed: nothing smudged it.
+    assert.equal(
+      readFileSync(join(record.worktree, `work-${String(scenarios)}.txt`), 'utf8'),
+      `scenario ${String(scenarios)}\n`,
+    );
+    assert.equal(await run(r, 'accept', s.offerId), 0, r.err.join('\n'));
+    assert.equal(existsSync(pwned), false, 'accept ran no filter either');
+  });
+
+  void test('the repository’s own info/attributes is refused before anything is fetched', async () => {
+    const s = await scenario();
+    const r = receiverMachine(s.receiver.token);
+    writeFileSync(join(r.repo, '.git', 'info', 'attributes'), '* filter=lfs\n');
+    assert.equal(await run(r, 'prepare', s.offerId), 1);
+    assert.match(r.err.join('\n'), /info\/attributes sets attributes, which could run a filter/);
+    assert.equal(readRecord(r.home, s.offerId), undefined, 'nothing was made');
+    assert.equal(accepts(s.offerId), 0);
+  });
+
+  void test('a replace ref cannot pass another commit’s files off as the checkpoint', async () => {
+    const s = await scenario();
+    const r = receiverMachine(s.receiver.token);
+    // The checkpoint commit is in the clone (its branch was pushed); replace it with main.
+    git(r.repo, 'fetch', '-q', 'origin');
+    const main = git(r.repo, 'rev-parse', 'origin/main');
+    git(r.repo, 'replace', s.sha, main);
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    const record = readRecord(r.home, s.offerId)!;
+    const env = { PATH: process.env.PATH ?? '', HOME: root, GIT_NO_REPLACE_OBJECTS: '1' };
+    const tree = (rev: string): string =>
+      execFileSync('git', ['rev-parse', `${rev}^{tree}`], {
+        cwd: record.worktree,
+        env,
+        encoding: 'utf8',
+      }).trim();
+    assert.equal(tree('HEAD'), tree(s.sha), 'HEAD’s real tree is the checkpoint’s');
+    assert.ok(
+      existsSync(join(record.worktree, `work-${String(scenarios)}.txt`)),
+      'the checkpoint’s own file is on disk, not main’s tree',
+    );
+  });
+
+  void test('the remote’s configured refmap writes nothing: only the private ref moves', async () => {
+    const s = await scenario();
+    const r = receiverMachine(s.receiver.token);
+    const main = git(r.repo, 'rev-parse', 'HEAD');
+    git(r.repo, 'branch', 'valuable', main);
+    git(r.repo, 'config', '--add', 'remote.origin.fetch', `+${s.ref}:refs/heads/valuable`);
+    const refs = (): string[] =>
+      git(r.repo, 'for-each-ref', '--format=%(refname) %(objectname)')
+        .split('\n')
+        .filter((l) => !l.startsWith('refs/laika/'));
+    const before = refs();
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    assert.equal(git(r.repo, 'rev-parse', 'refs/heads/valuable'), main, 'valuable did not move');
+    const record = readRecord(r.home, s.offerId)!;
+    // Every ref but the new branch is as it was; the private ref is the checkpoint.
+    assert.deepEqual(
+      refs().filter((l) => !l.startsWith(`refs/heads/${record.branch} `)),
+      before,
+    );
+    assert.equal(git(r.repo, 'rev-parse', record.local_ref), s.sha);
+    assert.equal(existsSync(join(r.repo, '.git', 'FETCH_HEAD')), false, 'no FETCH_HEAD');
+  });
+
+  void test('a remote elsewhere is refused: another host, or an insteadOf to another path', async () => {
+    const s = await scenario();
+    const r = receiverMachine(s.receiver.token);
+    git(r.repo, 'remote', 'set-url', 'origin', 'https://attacker.invalid/kvell/laika.git');
+    assert.equal(await run(r, 'prepare', s.offerId), 1);
+    assert.match(r.err.join('\n'), /no remote of this repository is kvell\/laika on github\.com/);
+    assert.match(r.err.join('\n'), /host attacker\.invalid is not github\.com/);
+
+    // A copy of the remote, at a path that also ends in kvell/laika.git, reached by a rewrite.
+    const evil = join(root, 'evil', 'kvell', 'laika.git');
+    if (!existsSync(evil)) {
+      mkdirSync(join(root, 'evil', 'kvell'), { recursive: true });
+      execFileSync('git', ['clone', '-q', '--bare', bare, evil], {
+        env: { PATH: process.env.PATH ?? '', HOME: root },
+        stdio: 'ignore',
+      });
+    }
+    const r2 = receiverMachine(s.receiver.token);
+    git(r2.repo, 'remote', 'set-url', 'origin', 'https://github.com/kvell/laika.git');
+    git(r2.repo, 'config', `url.${join(root, 'evil')}/.insteadOf`, 'https://github.com/');
+    assert.equal(
+      git(r2.repo, 'remote', 'get-url', 'origin'),
+      `${join(root, 'evil')}/kvell/laika.git`,
+    );
+    assert.equal(await run(r2, 'prepare', s.offerId), 1);
+    assert.match(r2.err.join('\n'), /the local remote is not kvell\/laika under/);
+    for (const m of [r, r2]) {
+      assert.equal(readRecord(m.home, s.offerId), undefined);
+      assert.equal(
+        execFileSync('git', ['for-each-ref', 'refs/laika/'], { cwd: m.repo, encoding: 'utf8' }),
+        '',
+        'nothing was fetched',
+      );
+    }
+    assert.equal(accepts(s.offerId), 0);
+  });
+
+  void test('a prepare that died part-way is cleared and redone; a touched worktree is left alone', async () => {
+    const s = await scenario();
+    const r = receiverMachine(s.receiver.token);
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    const path = join(r.home, '.laika', 'agent-handoffs', `${s.offerId}.json`);
+    const record = readRecord(r.home, s.offerId)!;
+    // A crash after the worktree was made, before the record said so.
+    writeFileSync(path, JSON.stringify({ ...record, status: 'preparing' }));
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    assert.equal(readRecord(r.home, s.offerId)!.status, 'prepared');
+    assert.equal(readRecord(r.home, s.offerId)!.worktree, record.worktree);
+    assert.equal(git(record.worktree, 'rev-parse', 'HEAD'), s.sha);
+
+    // Work written there since: never removed.
+    writeFileSync(join(record.worktree, 'mine.txt'), 'keep me\n');
+    writeFileSync(path, JSON.stringify({ ...record, status: 'preparing' }));
+    assert.equal(await run(r, 'prepare', s.offerId), 1);
+    assert.match(r.err.join('\n'), /could not be removed .*; left as it is/);
+    assert.equal(readFileSync(join(record.worktree, 'mine.txt'), 'utf8'), 'keep me\n');
+    assert.equal(git(r.repo, 'rev-parse', `refs/heads/${record.branch}`), s.sha);
+    assert.equal(accepts(s.offerId), 0);
+  });
+
+  void test('a worktree that cannot be locked is reported as not locked', async () => {
+    const s = await scenario();
+    const r = receiverMachine(s.receiver.token);
+    assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+    const record = readRecord(r.home, s.offerId)!;
+    git(r.repo, 'worktree', 'lock', '--reason', 'somebody else', '--', record.worktree);
+    assert.equal(await run(r, 'decline', s.offerId), 0, r.err.join('\n'));
+    assert.match(r.err.join('\n'), /could NOT be locked: .*already locked/);
   });
 
   void test('decline sends the reason and labels nothing that was not prepared', async () => {
