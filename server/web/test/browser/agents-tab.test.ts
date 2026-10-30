@@ -19,6 +19,8 @@
  */
 
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import {
@@ -26,6 +28,7 @@ import {
   open,
   refuse,
   reply,
+  setTheme,
   until,
   type ApiStub,
   type StubCall,
@@ -229,6 +232,22 @@ function existing(over: Partial<AgentRow> = {}): AgentRow {
   };
 }
 
+/** Evidence for the PR, when `$LAIKA_SHOTS` is set: the Agents card, whole. */
+const SHOTS = process.env.LAIKA_SHOTS;
+async function shoot(page: Page, name: string): Promise<void> {
+  if (SHOTS === undefined) return;
+  mkdirSync(SHOTS, { recursive: true });
+  // Tall enough for the whole card: the page scrolls inside `main`, which
+  // would otherwise clip it.
+  const size = page.viewportSize();
+  if (size === null) throw new Error('no viewport');
+  const card = page.locator('[data-testid="agents-tab"]');
+  const tall = await card.evaluate((el) => el.scrollHeight);
+  await page.setViewportSize({ width: size.width, height: Math.max(size.height, tall + 400) });
+  await card.screenshot({ path: join(SHOTS, `${name}.png`) });
+  await page.setViewportSize(size);
+}
+
 after(async () => {
   await closeBrowser();
 });
@@ -260,6 +279,15 @@ async function readiness(page: Page): Promise<Record<string, string>> {
 }
 
 /** Press a button by its name, from the keyboard. */
+/** Step 1's one field (D-120): the device, typed by keyboard into the wizard's only input. */
+async function typeDevice(page: Page, device = 'laptop-1'): Promise<void> {
+  const field = page.locator('.agents-wizard input').first();
+  await field.waitFor();
+  await field.focus();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type(device);
+}
+
 async function press(page: Page, name: string | RegExp, scope = 'body'): Promise<void> {
   const button = page.locator(scope).getByRole('button', { name, exact: typeof name === 'string' });
   await button.focus();
@@ -401,31 +429,32 @@ void describe('the Agents tab (LAI-537)', () => {
       await press(page, '+ Register an agent');
 
       // Step 1 — focus lands on the step's title, inside the wizard.
-      await until(async () => (await focusedText(page)) === 'Name, harness and device');
-      assert.equal(await focusedText(page), 'Name, harness and device');
+      await until(async () => (await focusedText(page)) === 'Harness and device');
+      assert.equal(await focusedText(page), 'Harness and device');
       // The rail is LAI-536's RegistrationSteps (LAI-565), and the tab draws
       // no rail of its own beside it.
       assert.deepEqual(await railSteps(page), [
-        'current Name, harness and device',
+        'current Harness and device',
         'todo Projects and permissions',
         'todo Credential',
         'todo Harness instructions',
         'todo Verify a request from this agent',
       ]);
       assert.equal(await page.locator('.agents-wizard .agents-rail, .agents-rail-step').count(), 0);
-      // The Name's hint says what the board shows (LAI-583): cards and
-      // history name an agent by harness and device, not by this name.
-      assert.match(
-        (await page.locator('.agents-wizard .agents-field .agents-hint').first().textContent()) ??
-          '',
-        /^Your name for it, shown here\. Cards and history name it by harness and device/,
+      // D-120: no name field. The one input is the device, and the step
+      // says what every screen will call the agent: its harness and device.
+      assert.equal(await page.locator('.agents-wizard input').count(), 1);
+      assert.equal(
+        await page.locator('.agents-wizard').getByRole('button', { name: 'Continue' }).isDisabled(),
+        true,
+        'Continue is open with no device',
       );
-      const name = page.locator('.agents-wizard input').first();
-      await name.focus();
-      await page.keyboard.press('ControlOrMeta+A');
-      await page.keyboard.type('reviewer bot');
-      await page.locator('.agents-wizard input').nth(1).focus();
-      await page.keyboard.type('laptop-1');
+      await typeDevice(page, 'laptop-1');
+      assert.equal(
+        await page.locator('[data-agent-label-preview]').innerText(),
+        'Shown everywhere as Claude Code · laptop-1',
+      );
+      assert.equal(await page.locator('[data-cloud-note]').count(), 0);
       await press(page, 'Continue', '.agents-wizard');
 
       // Step 2 — OnRoute: No access → Read only → Full, by arrow keys.
@@ -442,7 +471,7 @@ void describe('the Agents tab (LAI-537)', () => {
       await page.locator('[data-testid="agent-secret"]').waitFor();
       const posted = h.calls.find((c) => c.method === 'POST' && c.path === '/api/v1/agents');
       assert.deepEqual(posted?.body, {
-        display_name: 'reviewer bot',
+        display_name: 'claude-code on laptop-1',
         harness: 'claude-code',
         device_label: 'laptop-1',
         grants: [{ project_id: 'p1', scope: 'full' }],
@@ -456,7 +485,7 @@ void describe('the Agents tab (LAI-537)', () => {
       // Steps 1 and 2 are closed now: the agent exists. The rail says they
       // are done, and Back, the only way to them, is gone.
       assert.deepEqual((await railSteps(page)).slice(0, 3), [
-        'done Name, harness and device',
+        'done Harness and device',
         'done Projects and permissions',
         'current Credential',
       ]);
@@ -543,7 +572,10 @@ void describe('the Agents tab (LAI-537)', () => {
         'rotate stayed disabled after the wizard closed',
       );
       assert.equal(await focusedText(page), '+ Register an agent');
-      assert.match(await page.locator('.agents-row').innerText(), /reviewer bot/);
+      assert.equal(
+        await page.locator('.agents-row .agents-row-name').innerText(),
+        'Claude Code · laptop-1',
+      );
       assert.deepEqual(await readiness(page), {
         credential_created: 'true',
         connected: 'true',
@@ -571,10 +603,11 @@ void describe('the Agents tab (LAI-537)', () => {
         /Connected — not yet/,
       );
       assert.equal(await page.locator('.agents-state').count(), 0, 'the tab drew its own pill');
-      // Harness and device are LAI-536's AgentChip, and its mark is the row's only one.
-      const chip = page.locator('.agents-row .agents-row-meta [data-agent-chip="codex"]');
-      assert.equal(await chip.count(), 1);
-      assert.equal((await chip.innerText()).trim(), 'Codex · build box');
+      // The row is named by harness and device (D-120), and its mark is its only one.
+      assert.equal(
+        (await page.locator('.agents-row .agents-row-name').innerText()).trim(),
+        'Codex · build box',
+      );
       assert.equal(await page.locator('.agents-row .agent-mark').count(), 1);
       assert.match(await page.locator('.agents-row').innerText(), /self-reported/);
 
@@ -612,7 +645,10 @@ void describe('the Agents tab (LAI-537)', () => {
       await page.locator('.agents-row').waitFor({ timeout: 20_000 });
       await press(page, 'Revoke', '.agents-row');
       await confirmSettled(page);
-      assert.match(await page.locator('[data-confirm-dialog]').innerText(), /codex on Linux/);
+      // Named by its harness and device (D-120), never its registered name.
+      const asked = await page.locator('[data-confirm-dialog]').innerText();
+      assert.match(asked, /Revoke Codex · build box\?/);
+      assert.doesNotMatch(asked, /codex on Linux/);
       await page.keyboard.press('Escape');
       await page.locator('[data-confirm-dialog]').waitFor({ state: 'detached' });
       assert.equal(h.calls.filter((c) => c.path.endsWith('/revoke')).length, 0);
@@ -668,13 +704,19 @@ void describe('the Agents tab (LAI-537)', () => {
   });
 
   void test('rename and manage access send exactly what was changed', async () => {
-    const api = agentsApi([existing()]);
+    // Rename is offered only to a legacy duplicate (D-120), where the typed
+    // name is the mark that tells two agents on one pair apart.
+    const api = agentsApi([
+      existing(),
+      existing({ id: 'a2', display_name: 'by hand', tokens: [tokenRow('t-a2', 'by hand', 1_000)] }),
+    ]);
     const h = await open('/developer?tab=agents', api.stub);
     const { page } = h;
     try {
-      await page.locator('.agents-row').waitFor({ timeout: 20_000 });
+      await page.locator('.agents-row').first().waitFor({ timeout: 20_000 });
+      assert.equal(await page.locator('.agents-row[data-duplicate]').count(), 2);
 
-      await press(page, 'Rename', '.agents-row');
+      await press(page, 'Rename', '.agents-row[data-agent="a1"]');
       await page.locator('.agents-panel input').waitFor();
       await page.keyboard.type('codex builder');
       await page.keyboard.press('Enter');
@@ -686,12 +728,12 @@ void describe('the Agents tab (LAI-537)', () => {
       // `until` gives up quietly: a PATCH answered after its default 5 s left
       // the old name on screen and failed the read below under a full gate.
       // Focus comes back in the same answer, so it is asserted after.
-      const rowName = page.locator('.agents-row-name');
+      const rowName = page.locator('.agents-row[data-agent="a1"] .agents-row-name');
       await until(async () => (await rowName.innerText()).includes('codex builder'), 20_000);
-      assert.match(await rowName.innerText(), /codex builder/);
+      assert.equal(await rowName.innerText(), 'Codex · build box (codex builder)');
       assert.equal(await focusedText(page), 'Rename');
 
-      await press(page, 'Manage access', '.agents-row');
+      await press(page, 'Manage access', '.agents-row[data-agent="a1"]');
       await page.locator('.agents-panel input[name="grant-p2"]').first().waitFor();
       // Skynet: No access → Read only.
       await page.locator('.agents-panel input[name="grant-p2"]').first().focus();
@@ -705,7 +747,10 @@ void describe('the Agents tab (LAI-537)', () => {
         ],
       });
       await until(async () => (await page.locator('.agents-panel').count()) === 0);
-      assert.match(await page.locator('.agents-row').innerText(), /Skynet \(read only\)/);
+      assert.match(
+        await page.locator('.agents-row[data-agent="a1"]').innerText(),
+        /Skynet \(read only\)/,
+      );
     } finally {
       await h.close();
     }
@@ -759,7 +804,7 @@ void describe('the Agents tab (LAI-537)', () => {
 
   void test('390 px: the list and every wizard step fit without sideways scrolling', async () => {
     const api = agentsApi([
-      existing({ display_name: 'a-very-long-agent-name-that-must-wrap-somewhere-sensible' }),
+      existing({ device_label: 'a-very-long-device-name-that-must-wrap-somewhere-sensible' }),
     ]);
     const h = await open('/developer?tab=agents', api.stub);
     const { page } = h;
@@ -778,6 +823,7 @@ void describe('the Agents tab (LAI-537)', () => {
       await press(page, '+ Register an agent');
       for (const step of [1, 2, 3, 4, 5]) {
         await page.locator(`.agents-wizard[data-step="${String(step)}"]`).waitFor();
+        if (step === 1) await typeDevice(page, 'a-very-long-device-name-that-must-wrap-somewhere');
         assert.ok((await overflow()) <= 0, `step ${String(step)} scrolls sideways`);
         if (step === 3) {
           await press(page, 'Register and create its credential');
@@ -794,6 +840,7 @@ void describe('the Agents tab (LAI-537)', () => {
   async function registerTo(page: Page, step: 4 | 5): Promise<void> {
     await page.getByRole('button', { name: '+ Register an agent' }).waitFor({ timeout: 20_000 });
     await press(page, '+ Register an agent');
+    await typeDevice(page);
     await press(page, 'Continue', '.agents-wizard');
     await page.locator('.agents-grant').first().waitFor();
     await press(page, 'Continue', '.agents-wizard');
@@ -854,6 +901,7 @@ void describe('the Agents tab (LAI-537)', () => {
     try {
       await page.getByRole('button', { name: '+ Register an agent' }).waitFor({ timeout: 20_000 });
       await press(page, '+ Register an agent');
+      await typeDevice(page);
       await press(page, 'Continue', '.agents-wizard');
       await page.locator('.agents-grant').first().waitFor();
       await press(page, 'Continue', '.agents-wizard');
@@ -931,10 +979,8 @@ void describe('the Agents tab (LAI-537)', () => {
   async function toStep3(page: Page, name: string): Promise<void> {
     await page.getByRole('button', { name: '+ Register an agent' }).waitFor({ timeout: 20_000 });
     await press(page, '+ Register an agent');
-    const field = page.locator('.agents-wizard input').first();
-    await field.focus();
-    await page.keyboard.press('ControlOrMeta+A');
-    await page.keyboard.type(name);
+    // The device is the one field, and with the harness it is the label.
+    await typeDevice(page, name);
     await press(page, 'Continue', '.agents-wizard');
     await page.locator('.agents-grant').first().waitFor();
     await press(page, 'Continue', '.agents-wizard');
@@ -1362,6 +1408,226 @@ void describe('the Agents tab (LAI-537)', () => {
         await page.waitForTimeout(15);
       }
       assert.equal(asked, after, 'it kept polling after the deadline');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('one agent per harness per device (D-120, LAI-1001)', () => {
+  /** An active Claude Code agent registered as "Polly" on Belka. */
+  const polly = (over: Partial<AgentRow> = {}): AgentRow =>
+    existing({
+      display_name: 'Polly',
+      harness: 'claude-code',
+      device_label: 'Belka',
+      tokens: [tokenRow('t-a1', 'Polly', 1_000)],
+      ...over,
+    });
+
+  for (const [theme, width] of [
+    ['light', 1440],
+    ['dark', 390],
+  ] as const) {
+    void test(`${theme} ${String(width)}: the list says the pair is taken; Go to it and Rotate its token`, async () => {
+      const api = agentsApi([polly()]);
+      const h = await open('/developer?tab=agents', api.stub);
+      const { page } = h;
+      try {
+        await page.setViewportSize({ width, height: 900 });
+        await setTheme(page, theme);
+        const row = page.locator('.agents-row[data-agent="a1"]');
+        await row.waitFor({ timeout: 20_000 });
+        // The label is the pair, never the registered name.
+        assert.equal(await row.locator('.agents-row-name').innerText(), 'Claude Code · Belka');
+        assert.doesNotMatch(await row.innerText(), /Polly/);
+
+        await press(page, '+ Register an agent');
+        await typeDevice(page, ' belka ');
+        const notice = page.locator('[data-agent-exists="a1"]');
+        await notice.waitFor();
+        assert.match(await notice.innerText(), /You already have Claude Code · Belka\./);
+        assert.equal(
+          await page
+            .locator('.agents-wizard')
+            .getByRole('button', { name: 'Continue' })
+            .isDisabled(),
+          true,
+          'a taken pair can still be continued past',
+        );
+        assert.equal(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          ),
+          0,
+        );
+        await shoot(page, `wizard-pair-taken-${theme}-${String(width)}`);
+
+        // Go to it: the row comes into view and takes focus, by keyboard.
+        await notice.getByRole('link', { name: 'Go to Claude Code · Belka' }).focus();
+        await page.keyboard.press('Enter');
+        await until(async () => row.evaluate((el) => el === document.activeElement));
+        assert.equal(await row.evaluate((el) => el === document.activeElement), true);
+
+        // Rotate its token: that row's own question, about that agent.
+        await press(page, 'Rotate its token', '[data-agent-exists="a1"]');
+        await confirmSettled(page);
+        assert.match(
+          await page.locator('[data-confirm-dialog]').innerText(),
+          /Rotate Claude Code · Belka’s credential\?/,
+        );
+        await page.locator('[data-confirm-dialog] [data-confirm-ok] button').click();
+        await page.locator('[data-testid="agent-secret"]').waitFor();
+        assert.deepEqual(
+          h.calls.filter((c) => c.method === 'POST').map((c) => [c.path, c.body]),
+          [['/api/v1/agents/a1/rotate-token', { token_id: 't-a1' }]],
+          'something other than the one rotation was sent',
+        );
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('the server’s 409 names an agent the list missed: the notice, no secret, no row', async () => {
+    // The list is a picture from before: the server knows the pair is taken.
+    const api = agentsApi([polly({ device_label: 'Strelka' })], {
+      '/api/v1/agents': (call: StubCall) =>
+        call.method === 'POST'
+          ? reply(409, {
+              error: {
+                code: 'conflict',
+                message: 'You already have an active claude-code agent on this device ("Polly")',
+                details: {
+                  reason: 'agent_exists_for_harness_device',
+                  agent_id: 'a1',
+                  harness: 'claude-code',
+                  device_label: 'belka',
+                },
+              },
+            })
+          : { data: api.agents, next_cursor: null },
+    });
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      await page.locator('.agents-row').waitFor({ timeout: 20_000 });
+      await press(page, '+ Register an agent');
+      await typeDevice(page, 'Belka');
+      assert.equal(await page.locator('[data-agent-exists]').count(), 0);
+      await press(page, 'Continue', '.agents-wizard');
+      await page.locator('.agents-grant').first().waitFor();
+      await press(page, 'Continue', '.agents-wizard');
+      await press(page, 'Register and create its credential');
+
+      const notice = page.locator('[data-agent-exists="a1"]');
+      await notice.waitFor();
+      // The label of the agent the server named, as the list knows it.
+      assert.match(await notice.innerText(), /You already have Claude Code · Strelka\./);
+      assert.equal(await notice.getByRole('link').getAttribute('href'), '#agent-a1');
+      assert.equal(await notice.getByRole('button', { name: 'Rotate its token' }).count(), 1);
+      assert.equal(await page.locator('[data-testid="agent-secret"]').count(), 0);
+      assert.equal(await page.locator('.agents-wizard .agents-error').count(), 0);
+      assert.equal(await page.locator('.agents-row').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Cloud: the 24-hour rule is said first, asked for, and a refusal says it', async () => {
+    let refuseNext = true;
+    const plain = agentsApi([]);
+    const base = plain.stub['/api/v1/agents'] as (call: StubCall) => unknown;
+    const api = { ...plain, stub: { ...plain.stub } as Record<string, unknown> };
+    api.stub['/api/v1/agents'] = (call: StubCall) => {
+      if (call.method === 'POST' && refuseNext) {
+        refuseNext = false;
+        return reply(422, {
+          error: {
+            code: 'unprocessable',
+            message: 'A cloud agent’s token may live at most 24 hours',
+            details: { reason: 'cloud_token_expiry_too_long' },
+          },
+        });
+      }
+      return base(call);
+    };
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      await page.getByRole('button', { name: '+ Register an agent' }).waitFor({ timeout: 20_000 });
+      await press(page, '+ Register an agent');
+      await typeDevice(page, 'Cloud');
+      await page.locator('[data-cloud-note]').waitFor();
+      assert.match(await page.locator('[data-cloud-note]').innerText(), /expires within 24 hours/);
+      assert.equal(
+        await page.locator('[data-agent-label-preview]').innerText(),
+        'Shown everywhere as Claude Code · Cloud',
+      );
+      await shoot(page, 'wizard-cloud-light-1440');
+      await press(page, 'Continue', '.agents-wizard');
+      await page.locator('.agents-grant').first().waitFor();
+      await press(page, 'Continue', '.agents-wizard');
+      assert.match(await page.locator('.agents-summary').innerText(), /Within 24 hours/);
+
+      const before = Date.now();
+      await press(page, 'Register and create its credential');
+      const error = page.locator('.agents-wizard .agents-error');
+      await error.waitFor();
+      assert.match(await error.innerText(), /may live at most 24 hours/);
+      await shoot(page, 'wizard-cloud-refused-light-1440');
+
+      await press(page, 'Register and create its credential');
+      await page.locator('[data-testid="agent-secret"]').waitFor();
+      const sent = h.calls.filter((c) => c.method === 'POST' && c.path === '/api/v1/agents');
+      assert.equal(sent.length, 2);
+      for (const call of sent) {
+        const body = call.body as { expires_at?: number; device_label: string };
+        assert.equal(body.device_label, 'Cloud');
+        assert.ok(typeof body.expires_at === 'number', 'no expiry was asked for');
+        assert.ok(body.expires_at > before, 'the expiry is not in the future');
+        assert.ok(body.expires_at <= Date.now() + 24 * 3_600_000, 'the expiry is past a day');
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a Cloud agent whose token expired is rotated, never revoked and registered again', async () => {
+    const expired = { ...tokenRow('t-a1', 'claude-code on Cloud', 1_000), expires_at: 2_000 };
+    const api = agentsApi([
+      existing({
+        harness: 'claude-code',
+        device_label: 'Cloud',
+        display_name: 'claude-code on Cloud',
+        tokens: [expired],
+      }),
+    ]);
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      const row = page.locator('.agents-row[data-agent="a1"]');
+      await row.waitFor({ timeout: 20_000 });
+      assert.match(await row.locator('[data-cloud-expired]').innerText(), /Rotate it/);
+      assert.equal(await row.getByRole('button', { name: 'Rotate token' }).isDisabled(), false);
+
+      // The wizard's notice on that pair offers the same rotation, not a revoke.
+      await press(page, '+ Register an agent');
+      await typeDevice(page, 'Cloud');
+      const notice = page.locator('[data-agent-exists="a1"]');
+      await notice.waitFor();
+      assert.doesNotMatch(await notice.innerText(), /Revoke it/);
+      await press(page, 'Rotate its token', '[data-agent-exists="a1"]');
+      await confirmSettled(page);
+      const before = Date.now();
+      await page.locator('[data-confirm-dialog] [data-confirm-ok] button').click();
+      await page.locator('[data-testid="agent-secret"]').waitFor();
+      const sent = h.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/rotate-token'));
+      assert.equal(sent.length, 1);
+      const body = sent[0]?.body as { token_id: string; expires_at?: number };
+      assert.equal(body.token_id, 't-a1');
+      assert.ok(typeof body.expires_at === 'number' && body.expires_at > before);
+      assert.ok(body.expires_at <= Date.now() + 24 * 3_600_000, 'the new expiry is past a day');
     } finally {
       await h.close();
     }

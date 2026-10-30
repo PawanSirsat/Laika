@@ -1,4 +1,5 @@
-import { agentClientName, type AgentClient } from '../../api/agent-clients.ts';
+import { type AgentClient } from '../../api/agent-clients.ts';
+import { harnessName } from '../../api/selected-agent.ts';
 import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import './agent.css';
 
@@ -32,7 +33,8 @@ export interface AgentChipProps {
  * fact as *an agent is selected to do it*.
  */
 export function AgentChip({ client, device, owner, twin }: AgentChipProps) {
-  const name = agentClientName(client);
+  // D-120: a harness Laika does not know is *Other harness*, as every label reads it.
+  const name = harnessName(client);
   const where = twin === undefined ? device : `${device} (${twin})`;
   return (
     <span

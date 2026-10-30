@@ -102,6 +102,19 @@ export interface ReadToolContext {
  * guard, not a working size — and reaching it sets `truncated` so a tool can
  * say its counts are a floor rather than print a short number as if whole.
  */
+/**
+ * The selected agent as the markdown names it: its registered name for its
+ * owner, as before; `<harness> · <device>` for anyone else, who is served no
+ * name (D-120, LAI-1001).
+ */
+function agentPair(agent: {
+  display_name: string | null;
+  harness: string;
+  device_label: string | null;
+}): string {
+  return agent.display_name ?? `${agent.harness} · ${agent.device_label ?? 'no device'}`;
+}
+
 const PAGE_SIZE = 200;
 const MAX_PAGES = 50;
 
@@ -405,7 +418,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
             ? []
             : [
                 '',
-                `Requested of agent **${view.selected_agent.display_name}** (${view.selected_agent.owner.name}'s${view.selected_agent.status === 'revoked' ? ', revoked' : ''}) — a work request; it claims nothing.`,
+                `Requested of agent **${agentPair(view.selected_agent)}** (${view.selected_agent.owner.name}'s${view.selected_agent.status === 'revoked' ? ', revoked' : ''}) — a work request; it claims nothing.`,
               ]),
           '',
           '### Description',
