@@ -6,7 +6,8 @@ assignee: shell
 priority: p2
 depends-on: [LAI-545]
 discovered-from: LAI-549
-status: in-progress
+status: review
+finished: 2026-10-30T16:30:00+02:00
 started: 2026-10-30T16:20:00+02:00
 ---
 
@@ -43,13 +44,27 @@ without a raw request (found while building LAI-549).
 
 ## Acceptance criteria
 
-- [ ] The owner sees each agent's consent state, with when it was given or
+- [x] The owner sees each agent's consent state, with when it was given or
       withdrawn
-- [ ] Turning it on sends `PUT`, off sends `DELETE`, and the control
+- [x] Turning it on sends `PUT`, off sends `DELETE`, and the control
       reflects the server's response; a refused request shows its reason
       inline and leaves the state unchanged
-- [ ] A revoked agent's consent is read-only
-- [ ] The control is a real labelled switch: keyboard operable, state
+- [x] A revoked agent's consent is read-only
+- [x] The control is a real labelled switch: keyboard operable, state
       announced, both themes, 390 px and desktop
-- [ ] Mutation-checked; the repo gate (`pnpm test`, `pnpm lint`,
+- [x] Mutation-checked; the repo gate (`pnpm test`, `pnpm lint`,
       `pnpm format`) exits 0
+
+## Delivered (SHELL, 2026-10-30)
+
+- Switch on each of the owner's rows in Settings › Agents (the row is the
+  agent's detail; there is no separate detail view): *Save checkpoints
+  automatically*, with the D-115 sentence under it. `CheckpointConsentSwitch.tsx`,
+  rules in `checkpoint-consent.ts`, client `CheckpointConsent` in `api/agents.ts`.
+- The wizard's step 5 says automatic saves stay off and links to the switch.
+- **Named cross-area edit (D-033):** the single `UNPAIRED` entry
+  `CheckpointConsentView` removed from `server/test/tooling/response-type-coverage.test.ts`
+  — the pairing this task asks for makes the staleness guard require it.
+- The endpoint-coverage exemption for `api/v1/agents/*/checkpoint-consent` is
+  gone; `getCheckpointConsent` / `setCheckpointConsent` are the real callers.
+- Also, by CHIEF's dispatch: one line in `cli/README.md`'s *Automatic saves*.
