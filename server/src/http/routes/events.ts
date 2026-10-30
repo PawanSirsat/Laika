@@ -3,11 +3,10 @@ import { streamSSE, type SSEMessage } from 'hono/streaming';
 import { reloadActor, type ResolvedActor } from '../../auth/resolve-actor.ts';
 import { TokenAuthError, type TokenRejection } from '../../auth/tokens.ts';
 import { type ActivityEvent } from '../../db/activity.ts';
-import { isAgentEventType } from '../../db/agent-events.ts';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { type ActivityFeed, type RepeatingTimer } from '../../services/activity-feed.ts';
-import { deliveryFor } from '../../services/agent-events.ts';
+import { deliveryFor, isAgentEventType } from '../../services/agent-events.ts';
 import {
   eventView,
   insidePin,

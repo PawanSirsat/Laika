@@ -3,6 +3,7 @@ import { and, asc, eq, getTableColumns, gt, inArray, isNull, type SQL } from 'dr
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { latestActivitySeq, type ActivityEvent } from '../db/activity.ts';
 import { type AgentEventDetail, type AgentEventType } from '../db/agent-events.ts';
+
 import { type Db } from '../db/client.ts';
 import { type ActorKind } from '../db/enums.ts';
 import { immediateTransaction } from '../db/numbering.ts';
@@ -17,6 +18,9 @@ import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { registeredAgent, requireOwnOpenSession } from './claims.ts';
 import { insidePin, visibleTo } from './events.ts';
+
+/** Is this §4.8 verb an agent event (§4.76)? Re-exported so routes stay on services/. */
+export { isAgentEventType } from '../db/agent-events.ts';
 
 /**
  * An agent's hand-off events and where each stands (SPEC §4.76, §4.77, §6.4,
@@ -113,7 +117,7 @@ function joined(db: Db, conditions: SQL[], limit?: number): Joined[] {
     .innerJoin(activity, eq(activity.id, agentEventDeliveries.activityId))
     .where(and(...conditions))
     .orderBy(asc(agentEventDeliveries.seq));
-  return (limit === undefined ? query : query.limit(limit)).all() as Joined[];
+  return (limit === undefined ? query : query.limit(limit)).all();
 }
 
 /** When this agent accepted the event's offer, or null (§4.73: `accepted` is the offer's). */

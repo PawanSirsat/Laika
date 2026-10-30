@@ -247,7 +247,9 @@ interface Frame {
 }
 
 function sseClient(res: Response) {
-  const reader = res.body!.getReader();
+  const body: ReadableStream<Uint8Array> | null = res.body;
+  if (body === null) throw new Error('no response body');
+  const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   async function raw(): Promise<string | null> {
@@ -524,7 +526,7 @@ describe('GET /agents/me/events and the ack (§4.77, §6.4)', () => {
     expect((presented.data as Envelope[])[0]!.delivery).toMatchObject({
       state: 'presented',
       received_at: first.received_at,
-      presented_at: expect.any(Number),
+      presented_at: expect.any(Number) as unknown,
     });
 
     await ok(
@@ -537,7 +539,7 @@ describe('GET /agents/me/events and the ack (§4.77, §6.4)', () => {
     const after = await poll(receiver.secret, '?state=all');
     expect(after.data.find((e) => e.event_id === event.event_id)!.delivery).toMatchObject({
       state: 'accepted',
-      accepted_at: expect.any(Number),
+      accepted_at: expect.any(Number) as unknown,
     });
     // The accept itself is the receiver's write: not delivered back to it. The
     // sender, whose claim it ends, gets it.
