@@ -6486,3 +6486,60 @@ reason against four digits was the tooling guards; measured today:
 - **the §3 sweep itself** greps `LAI-[0-9]\{3\}`, which reads `LAI-1000` as
   `LAI-100` and so cannot see a four-digit id is taken. CLAUDE.md §3 and the
   `laika-workflow` skill now grep `LAI-[0-9]\{3,\}`.
+
+## D-121 — An agent is one harness on one device, at most one active per owner; a cloud runner is the device `Cloud`, whose tokens live at most a day; every agent is its registering person's (LAI-592)
+
+**Date:** 2026-10-30 · **By:** CHIEF (Belka), recording the owner's approval
+· **Amends:** D-120 · **Status:** approved on Pawan's instruction to proceed
+(2026-10-30), relayed to Belka through the polly manager session
+
+The decision was proposed in the body of PR #141 (LAI-592, card LAIKA-846),
+which merged on 2026-10-29 without the decision ever being written here. The
+text below is that body's *Proposed decision text*, verbatim. Item 1 restates
+D-120; items 2 – 8 are what #141 built. Recorded by LAI-1009.
+
+1. **An agent is exactly `<harness> · <device>`** (D-118; restates D-120), and **an owner
+   holds at most one active agent for each pair.** The device is compared
+   by its normalised key (§4.63: trimmed, lower-cased); an agent with no
+   device label is on one unnamed device. Registering a second, or renaming
+   the harness or relabelling onto a pair another active agent of yours
+   holds, is `409 conflict` with `reason` `agent_exists_for_harness_device`
+   and `agent_id` naming yours. A revoked agent frees its pair. Only your
+   own agents are compared: another person's agent on the same label and
+   harness is no conflict and is never named. Agents that already share a
+   pair before this ships keep working; the rule bites on the next register,
+   rename or relabel.
+2. **A cloud runner is a device like any other, labelled `Cloud`** (the
+   same normalisation; look-alike and compatibility forms — fullwidth,
+   Cyrillic, zero-width — are other labels). No new field.
+3. **A cloud agent's tokens must expire, within 24 hours of minting**
+   (`CLOUD_TOKEN_MAX_TTL_MS`; exactly 24 h is allowed). Registering one,
+   rotating one of its tokens, or relabelling an agent into `Cloud` while a
+   live token breaks the rule is `422 unprocessable` with `reason`
+   `cloud_token_expiry_required` (none, or not in the future) or
+   `cloud_token_expiry_too_long`. A rotation with no `expires_at` carries
+   the old expiry, which must itself pass. Why 24 h: a runner's longest job
+   and a daily schedule both fit, a secret leaked from a runner is dead
+   within a day, and minting is session-only, so a shorter limit would cut
+   long jobs off mid-run.
+4. **No token mints a token that outlives it.** A token with an expiry
+   asking `POST /tokens` for no expiry or a later one is `403 forbidden`,
+   `reason` `token_expiry_bounded` — refused, never clamped, as LAI-562's
+   project pin is. An agent's token, a cloud one included, cannot mint at
+   all (`agent_token`), and registering or rotating is session-only, so a
+   short-lived credential can never produce a longer-lived one.
+5. **An expired cloud token is refused as any expired token is** — `401`,
+   byte-identical body; the agent and the owner's other devices are
+   untouched.
+6. **The owner is the person who registered it**, always the session user;
+   no route, body field or tool registers an agent for anyone else. Every
+   agent read and the device list name them (`owner_display_name`, live
+   `users.name`).
+7. **Another person's agents and devices are missing, not hidden**: every
+   agent route answers a foreign agent — a cloud one included — exactly as
+   an id that does not exist (`404`, same body), and neither list mentions
+   it. Another person's laptop carries that person's own agent, registered
+   by them (D-114).
+8. `device_label` now decides two things — the one-per-pair rule and the
+   cloud rule — both of which only constrain the owner's own credentials and
+   grant no access.

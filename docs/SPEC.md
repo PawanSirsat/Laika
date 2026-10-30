@@ -3408,6 +3408,8 @@ POST   /api/v1/tasks/:id/handoff-offers      body { idempotency_key, to_agent_id
                                              pauses the caller's live claim (§4.73, LAI-546)
 GET    /api/v1/tasks/:id/handoff-offers      every offer on the task, newest first, work requests included
 GET    /api/v1/agents/me/inbox               the calling agent's live work requests and offers, newest first (agent_sync's twin)
+GET    /api/v1/handoff-offers                ?view=received|sent|needs_approval|recovery, project?, include_closed?, limit?, cursor?
+                                             → { data, next_cursor, counts } — a signed-in person's hand-off inbox (LAI-1009)
 POST   /api/v1/handoff-offers/:id/approve    body { to_agent_id? } → offer, `open` (session only; the task's assignee or a lead,
                                              never the receiver's owner); to_agent_id names an unnamed recovery's receiver
 POST   /api/v1/handoff-offers/:id/accept     body { verified_commit_sha, session_id? } → { offer, claim, session }
@@ -3671,7 +3673,33 @@ takes responsibility for having checked. `GET /agents/me/inbox` is `{ data:
 […], next_cursor }`, each item a work request as `GET
 /agents/me/work-requests` returns it or an offer as above, **live only**,
 limited to projects the agent may read now; Phase 4's delivery states
-(`received`, `presented`) are not on it yet. A policy the project never set
+(`received`, `presented`) are not on it yet. **`GET /handoff-offers` is a
+person's inbox** (LAI-1009), the one the web Inbox's *Hand-offs* tab reads: an
+agent's token is `403` with `reason: use_agent_inbox` and keeps `GET
+/agents/me/inbox`. Each row is a hand-off or recovery offer with its task (`id`,
+`key`, `title`, project), `from_agent` and `to_agent` as the task's selected
+agent is shown (harness, device, owner), the checkpoint's `verification` and
+`saved_at`, the `reason` (untrusted data), `requires_approval`, `approved`,
+`expires_at`, and `next_action` — what the caller can do now (`approve`,
+`name_receiver`, `accept_with_your_agent`, `cancel`, `wait_for_approval`,
+`wait_for_receiver`, `none`). It names **only what would succeed now** —
+`accept_with_your_agent` where one of the caller's agents passes §4.73's
+receiver rules (active, `full` grant, an owner who may accept, the policy's
+owner rule), nothing waits for approval and the checkpoint is `verified`;
+`name_receiver` only where an eligible agent of **another** owner exists,
+since naming one's own is `approver_is_receiver` — and the writes ask `can()`
+again. A `project` that names nothing and one the caller cannot read answer
+the same body, `404` *No such project*.
+`received` is offers to an agent the caller owns; `sent`, hand-offs from one;
+`needs_approval`, `pending_approval` offers the caller may approve (*Approve a
+cross-owner hand-off*, §3.2) and **never one whose receiver they own**;
+`recovery`, every recovery offer. Absent or empty `view` is `received`, and
+another is `400 bad_request` with `details: { view }`. Only projects the caller
+may read now are answered, and a `project` they cannot read is the missing
+slug's `404`. Rows are live and unexpired unless `include_closed=true`, where a
+live offer past `expires_at` reads `expired`; `counts` holds every view's
+number, live and unexpired only, for the badge. Work requests are not on it:
+they are the agent's to answer. A policy the project never set
 reads as the defaults (§4.74); `PUT` writes the whole row from the defaults
 plus what it was sent.
 

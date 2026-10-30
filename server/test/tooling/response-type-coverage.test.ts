@@ -249,6 +249,10 @@ const UNPAIRED = new Map<string, string>([
   // `If-Match`) brings the mirror, and these leave the way the rest do.
   ['ListedTaskView', 'no client type exists'],
   ['ListedTaskSummaryView', 'no client type exists'],
+  // LAI-1009's person inbox is served ahead of its screen: LAI-550's Inbox →
+  // Hand-offs tab mirrors it on the client, and these leave the way the rest do.
+  ['PersonHandoffView', 'no client type exists'],
+  ['PersonHandoffInbox', 'no client type exists'],
 ]);
 
 /**
