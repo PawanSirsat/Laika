@@ -265,6 +265,12 @@ interface World {
   offers: Record<string, unknown>[];
   /** `t5`'s one save, as the server reads it now: `pending` until its notice arrives. */
   t5: 'pending' | 'uncertain';
+  /**
+   * Serve `t5` with a fresh `updated_at` on every list read, its summary
+   * unchanged: the store then hands the drawer a new task object each walk —
+   * the shape a re-read loop would feed on.
+   */
+  churnT5: boolean;
 }
 
 function world(): World {
@@ -331,7 +337,7 @@ function world(): World {
     waiting,
     ...filler,
   ];
-  const w: World = { stub: {}, tasks, offers: [recoveryOffer()], t5: 'pending' };
+  const w: World = { stub: {}, tasks, offers: [recoveryOffer()], t5: 'pending', churnT5: false };
   const byId = (id: string) => () => w.tasks.find((t) => t.id === id);
 
   const perTask = (id: string) => ({
@@ -405,7 +411,12 @@ function world(): World {
       next_cursor: null,
     },
     '/api/v1/projects/laika-core': CORE,
-    '/api/v1/projects/laika-core/tasks?limit=200': () => ({ data: w.tasks, next_cursor: null }),
+    '/api/v1/projects/laika-core/tasks?limit=200': () => ({
+      data: w.churnT5
+        ? w.tasks.map((t) => (t.id === 't5' ? { ...t, updated_at: Date.now() } : t))
+        : w.tasks,
+      next_cursor: null,
+    }),
     '/api/v1/projects/laika-core/members': {
       members: [{ user_id: 'u1', name: 'Ada Lovelace', email: 'u1@example.com', role: 'lead' }],
     },
@@ -733,8 +744,10 @@ void describe('LAI-1006 review fixes', () => {
         h.calls.filter((c) => c.path === '/api/v1/projects/laika-core/tasks').length;
       const before = lists();
 
-      // The saves read says `uncertain`; the list's summary never catches up.
+      // The saves read says `uncertain`; the list's summary never catches up,
+      // and every read of it hands the store a new t5.
       w.t5 = 'uncertain';
+      w.churnT5 = true;
       await h.page.clock.fastForward(61_000);
       await until(() => lists() > before, 15_000);
       for (let i = 0; i < 3; i += 1) {
