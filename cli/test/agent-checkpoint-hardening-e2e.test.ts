@@ -22,12 +22,13 @@ import * as checkpoint from '../src/agent-checkpoint.ts';
 import {
   activityPath,
   autoCheckpoint,
+  clearInflight,
   inflight,
   markInflight,
   writeActivity,
 } from '../src/agent-checkpoint.ts';
 import { credentialPath, readProc, readState, statePath, UNKNOWN } from '../src/agent-session.ts';
-import { type Bench, HOOK_ENTRY, HS, sleep, startBench } from './support/checkpoint-board.ts';
+import { type Bench, HOOK_ENTRY, HS, type Repo, sleep, startBench } from './support/checkpoint-board.ts';
 
 let b: Bench;
 
@@ -542,31 +543,43 @@ void describe('checkpoint review fixes, round 2 (LAI-547, #154 at 2e401f3c)', ()
     await b.consent(false);
   });
 
-  void test('R2-4: Stop keeps the markers of background tasks still running, and clears only completed ones', async () => {
-    clearInflightDir();
-    markInflight(b.home, 'claude-code', HS, 'toolu_bg', harnessOwner());
-    markInflight(b.home, 'claude-code', HS, 'toolu_done', harnessOwner());
-    await runHook('stop', {
-      background_tasks: [{ tool_use_id: 'toolu_bg', tool_name: 'Bash', description: 'Building' }],
+  void test('R2-4: Stop clears no marker while a background task runs, and only finished main-turn markers once none does', async () => {
+    // The documented payload (code.claude.com/docs/en/hooks#stop-input):
+    // entries are { id, type, status, description, command? }.
+    const shell = (status: string) => ({
+      id: 'task-001',
+      type: 'shell',
+      status,
+      description: 'tail logs',
+      command: 'tail -f /var/log/syslog',
     });
-    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'the running background task is kept');
+    clearInflightDir();
+    markInflight(b.home, 'claude-code', HS, 'toolu_live', harnessOwner());
+    markInflight(b.home, 'claude-code', HS, 'toolu_done', harnessOwner());
+    await runHook('stop', { background_tasks: [shell('running')] });
+    assert.equal(
+      inflight(b.home, 'claude-code', HS),
+      3,
+      'a running task: nothing cleared, and the task itself is marked',
+    );
+
+    // A status nobody documented is not taken as finished.
+    await runHook('stop', { background_tasks: [shell('paused')] });
+    assert.equal(inflight(b.home, 'claude-code', HS), 3, 'an unknown status clears nothing');
+
+    // Every entry finished: the main turn's markers are finished tools.
+    await runHook('stop', { background_tasks: [shell('completed')] });
+    assert.equal(inflight(b.home, 'claude-code', HS), 0, 'all terminal: cleared');
 
     // A Stop that does not say what still runs (Codex's) clears nothing live.
-    clearInflightDir();
     markInflight(b.home, 'claude-code', HS, 'toolu_live', harnessOwner());
     await runHook('stop', {}, 'codex');
     await runHook('stop', {});
     assert.equal(inflight(b.home, 'claude-code', HS), 1, 'no background_tasks: nothing cleared');
 
-    // A background task whose PostToolUse already fired (it returned at once)
-    // is marked at Stop, so a save waits for it, and cleared once it is done.
-    clearInflightDir();
-    await runHook('stop', {
-      background_tasks: [{ tool_use_id: 'toolu_bg2', tool_name: 'Bash', description: 'Tests' }],
-    });
-    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'the background task is marked');
+    // An empty list is "nothing in flight": a finished turn's markers go.
     await runHook('stop', { background_tasks: [] });
-    assert.equal(inflight(b.home, 'claude-code', HS), 0, 'and cleared once it finished');
+    assert.equal(inflight(b.home, 'claude-code', HS), 0, 'an empty list clears them');
 
     // A subagent's tool is not the main turn's: the main Stop leaves it, and
     // its PreToolUse records the subagent from the harness's agent_id.
@@ -640,5 +653,118 @@ void describe('checkpoint review fixes, round 2 (LAI-547, #154 at 2e401f3c)', ()
       release();
     }
     assert.equal(checkpoint.interlockHeld(b.home, 'claude-code', HS), false);
+  });
+});
+
+void describe('checkpoint review fixes, round 3 (LAI-547, #154 at d79523e3)', () => {
+  /** A bare repo's refs read in the repo itself: no URL, so no rewrite can redirect the reading. */
+  const refsOf = (bare: string): string =>
+    b.git(bare, 'for-each-ref', '--format=%(objectname) %(refname)');
+  /**
+   * A remote reached through URL rewriting. The clone's origin becomes
+   * `alias:<name>`, rewritten once (as `git push` does) to the repo's own
+   * remote A. A second rule rewrites A's path to another bare repo B — the
+   * place a second rewrite would wrongly send a check. A's HEAD is the task
+   * branch (a push there is a push to its default); B's is master.
+   */
+  function rewritten(name: string, tie: boolean): { repo: Repo; a: string; b: string } {
+    const repo = b.freshRepo(name);
+    const a = repo.remote;
+    const other = join(repo.root, `${tie ? 'tie' : 'other'}-b.git`);
+    b.git(repo.root, 'init', '-q', '--bare', '-b', 'master', other);
+    b.git(repo.clone, 'push', '-q', other, 'master');
+    b.git(a, 'branch', `LAI-547-${name}`, 'master');
+    b.git(a, 'symbolic-ref', 'HEAD', `refs/heads/LAI-547-${name}`);
+    b.git(repo.clone, 'config', 'remote.origin.url', `alias:${name}`);
+    b.git(repo.clone, 'config', `url.${a}.insteadOf`, `alias:${name}`);
+    if (tie) {
+      // A rule whose value is A exactly: it ties with any override, and wins.
+      b.git(repo.clone, 'config', `url.${other}.insteadOf`, a);
+    } else {
+      // A shorter prefix of A: `…/remote.git` becomes `…/other-b.git`.
+      b.git(repo.clone, 'config', `url.${join(repo.root, 'other-b')}.insteadOf`, join(repo.root, 'remote'));
+    }
+    return { repo, a, b: other };
+  }
+
+  void test('R3-1: chained insteadOf — the check asks the repo the push reaches, not a second rewrite of it', () => {
+    const { repo, a, b: other } = rewritten('r31', false);
+    // The instrument: a plain ls-remote of A really does land on B here.
+    assert.match(
+      b.git(repo.clone, 'ls-remote', '--symref', '--', a, 'HEAD'),
+      /^ref: refs\/heads\/master\tHEAD/,
+      'git rewrites the destination a second time',
+    );
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 301;\n');
+    const before = [refsOf(other), refsOf(repo.remote)];
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /LAI-547-r31 is a protected branch/);
+    assert.deepEqual(
+      [refsOf(other), refsOf(repo.remote)],
+      before,
+      'nothing pushed anywhere',
+    );
+  });
+
+  void test('R3-1: a rule naming the destination exactly cannot be overridden, so it is refused', () => {
+    const { repo, b: other } = rewritten('r31b', true);
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 302;\n');
+    const before = [refsOf(other), refsOf(repo.remote)];
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /an insteadOf rule names it exactly/);
+    assert.deepEqual(
+      [refsOf(other), refsOf(repo.remote)],
+      before,
+      'nothing pushed anywhere',
+    );
+  });
+
+  void test('R3-1: pushInsteadOf wins over insteadOf for a push, and that is the repo checked', () => {
+    const repo = b.freshRepo('r31c');
+    const fetchSide = join(repo.root, 'fetch-side.git');
+    b.git(repo.root, 'init', '-q', '--bare', '-b', 'master', fetchSide);
+    b.git(repo.clone, 'push', '-q', fetchSide, 'master');
+    b.git(repo.remote, 'branch', 'LAI-547-r31c', 'master');
+    b.git(repo.remote, 'symbolic-ref', 'HEAD', 'refs/heads/LAI-547-r31c');
+    b.git(repo.clone, 'config', 'remote.origin.url', 'alias:r31c');
+    b.git(repo.clone, 'config', `url.${repo.remote}.pushInsteadOf`, 'alias:r31c');
+    b.git(repo.clone, 'config', `url.${fetchSide}.insteadOf`, 'alias:r31c');
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 303;\n');
+    const before = refsOf(repo.remote);
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /LAI-547-r31c is a protected branch/);
+    assert.deepEqual(refsOf(repo.remote), before, 'nothing pushed');
+  });
+
+  void test('R3-1: through a rewrite whose destination is sane, the save reaches it (the positive control)', () => {
+    const { repo, a, b: other } = rewritten('r31d', false);
+    b.git(a, 'symbolic-ref', 'HEAD', 'refs/heads/master');
+    writeFileSync(join(repo.wt, 'app.ts'), 'export const a = 304;\n');
+    const otherBefore = refsOf(other);
+
+    const r = b.cli(repo.wt, ['checkpoint', 'save']);
+    assert.equal(r.code, 0, r.out);
+    const record = b.newestRecord();
+    assert.ok(refsOf(a).includes(`${String(record.commit_sha)} ${String(record.tag_ref)}`), 'the tag is in A');
+    assert.equal(refsOf(other), otherBefore, 'and B is untouched');
+  });
+
+  void test('R3-2: the documented running shell task keeps every live marker at Stop', async () => {
+    clearInflightDir();
+    markInflight(b.home, 'claude-code', HS, 'toolu_r32', harnessOwner());
+    await runHook('stop', {
+      background_tasks: [{ id: 'task-001', type: 'shell', status: 'running' }],
+    });
+    assert.ok(inflight(b.home, 'claude-code', HS) >= 1, 'the live marker survived Stop');
+    // And an automatic save waits for that task rather than racing it.
+    clearInflight(b.home, 'claude-code', HS, 'toolu_r32');
+    assert.equal(inflight(b.home, 'claude-code', HS), 1, 'the running task itself is marked');
+    clearInflightDir();
   });
 });
