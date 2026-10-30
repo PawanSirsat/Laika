@@ -30,6 +30,7 @@ import {
   secretIn,
   ulid,
 } from '../src/checkpoint-git.ts';
+import * as checkpointCli from '../src/agent-checkpoint-cli.ts';
 
 void describe('secret patterns (D-115 item 5)', () => {
   // Every sample is assembled at run time, so this file never holds the shape.
@@ -228,5 +229,64 @@ void describe('names and ids', () => {
     assert.equal(env.GIT_DIR, undefined);
     assert.equal(env.GIT_TERMINAL_PROMPT, '0');
     assert.equal(env.SSH_AUTH_SOCK, '/s');
+  });
+});
+
+void describe('review fixes, unit (LAI-547, #154)', () => {
+  void test("P1-4: Laika's token shape, lai_ and 40 base62", () => {
+    const token = `${'lai'}_${'Zz09'.repeat(10)}`;
+    assert.equal(secretIn(`const t = '${token}';`), 'a Laika token');
+    assert.equal(secretIn(`${'lai'}_short`), undefined);
+  });
+
+  void test("P1-6: git's environment is an allowlist", () => {
+    const env = gitEnv({
+      PATH: '/bin',
+      HOME: '/h',
+      LANG: 'en_GB.UTF-8',
+      LC_CTYPE: 'UTF-8',
+      TMPDIR: '/t',
+      SSH_AUTH_SOCK: '/s',
+      GIT_SSH_COMMAND: 'ssh -i k',
+      AWS_SECRET_ACCESS_KEY: 'a',
+      GH_TOKEN: 'g',
+      GITHUB_TOKEN: 'g',
+      NPM_TOKEN: 'n',
+      LAIKA_AGENT_TOKEN: 'l',
+      GIT_DIR: '/x',
+      GIT_CONFIG_PARAMETERS: "'core.hooksPath'='/evil'",
+    });
+    assert.deepEqual(Object.keys(env).sort(), [
+      'GIT_SSH_COMMAND',
+      'GIT_TERMINAL_PROMPT',
+      'HOME',
+      'LANG',
+      'LC_ALL',
+      'PATH',
+      'SSH_AUTH_SOCK',
+      'TMPDIR',
+    ]);
+  });
+
+  void test("the owner's password is zeroed after the sign-in, in the request body too", async () => {
+    const password = Buffer.from('correct-horse-battery');
+    let sent = '';
+    let body: Uint8Array | undefined;
+    const cookie = await checkpointCli.signInWithPassword(
+      'http://board.test',
+      'ada@example.test',
+      password,
+      (_url, init) => {
+        body = init.body as Uint8Array;
+        sent = Buffer.from(body).toString('utf8');
+        return Promise.resolve(
+          new Response('{}', { status: 200, headers: { 'set-cookie': 'session=1; Path=/' } }),
+        );
+      },
+    );
+    assert.equal(cookie, 'session=1; Path=/');
+    assert.match(sent, /"password":"correct-horse-battery"/, 'it was sent');
+    assert.ok(password.every((byte) => byte === 0), 'the password buffer is zeroed');
+    assert.ok(body?.every((byte) => byte === 0), 'the request body is zeroed');
   });
 });
