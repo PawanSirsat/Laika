@@ -141,3 +141,40 @@ was deleted, and a branch checked out in the primary checkout was deleted.
 | branch taken into the primary checkout: still checked out and clean, retry succeeds | same two mutants → red |
 | `info/attributes` set after prepare: accept refused, no accept sent | accept check off → red |
 | (round 1) `info/attributes` refused in prepare, check now earlier | prepare check off → red |
+
+## Review round 3 — Codex on #158 at 717205b3; fixed (SHELL, 2026-10-31)
+
+Codex's blocking finding: a ref this helper writes — the private fetch ref or
+the new worktree branch — could be a **symbolic ref pointing at a branch that
+does not exist yet**. `show-ref` and `for-each-ref` do not list a dangling
+symbolic ref, so the "name free?" check passed; the fetch and `worktree add -b`
+then wrote through it and created the branch it named, and prepare and accept
+still reported success. Reproduced here for both before fixing.
+
+- `refTaken`: a name is taken if `symbolic-ref -q` says it is a symbolic ref
+  (dangling or not), `show-ref --verify` finds it, `reflog exists` is true, or
+  anything is on disk at its `--git-path`. The branch is checked again just
+  before `worktree add -b`.
+- After the fetch, and again after `worktree add`, every other ref is compared
+  with before; the private ref and the branch must be plain refs at the
+  checkpoint (`plainRef`); the new worktree's `HEAD` must name the branch.
+- A create-only `update-ref --no-deref` was probed as the write and rejected:
+  it silently **replaces** a dangling symbolic ref instead of refusing.
+- Cleanup commands single-quote every path and name (`shellQuote`), remove a
+  symbolic ref as itself (`symbolic-ref --delete`, `update-ref --no-deref -d`),
+  and are not printed at all for a name holding a control or format character.
+
+| Regression | On the old code |
+| --- | --- |
+| dangling symref at the first branch name: prepare succeeds under a fresh name, the symref unchanged, its target never created, accept succeeds | red |
+| dangling symref at the private ref name: same, fetch never writes through it | red |
+| repo dir `it's a "repo" $HOME`: the printed `worktree remove` run through `sh -c` removes exactly the old worktree; the printed `branch -d` reaches git with the exact name (git's own "not fully merged" refusal names it) | red |
+| unit: `shellQuote` round-trips through `sh` for spaces, both quotes, `$`, backticks, `;`, `|`, `&`, empty; exact command strings; control characters refused | — |
+
+Mutation check (e2e file, one run each): `refTaken` reduced to the old
+`show-ref` check → both symref cases red; that plus every post-write check off
+→ red (`written through` for the fetch; the worktree-HEAD check catches the
+branch); unquoted cleanup → red; symbolic branch cleanup via `branch -d` →
+red; private-ref cleanup without `--no-deref` → red. The symbolic-ref check
+alone, and the on-disk check alone, each keep both cases green: they are
+independent layers, and removing only one of them survives.
