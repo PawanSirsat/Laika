@@ -48,17 +48,34 @@ export class Refusal extends Error {
 const GIT_TIMEOUT_MS = 120_000;
 
 /**
- * The environment git runs with: the caller's, **less any Laika token**, with
- * prompts off (a background save must fail, not wait for a password) and
- * messages in English so a refusal can be read.
+ * What git and every process it starts may see of the caller's environment:
+ * **an allowlist**, so no credential of any name reaches a hook, a helper, an
+ * ssh command or a remote's `receive-pack` — not `AWS_SECRET_ACCESS_KEY`,
+ * not `GH_TOKEN`, not the agent's or the person's Laika token. What is kept
+ * is what a push needs: a path and a home (where git's config and credential
+ * helpers live), a temp dir, the user's names, the ssh agent's socket and an
+ * ssh command the user set. Prompts are off (a background save must fail,
+ * not wait for a password) and messages are in English so a refusal can be
+ * read.
  */
+export const GIT_ENV_ALLOW: readonly string[] = [
+  'PATH',
+  'HOME',
+  'TMPDIR',
+  'USER',
+  'LOGNAME',
+  'XDG_CONFIG_HOME',
+  'GH_CONFIG_DIR',
+  'SSH_AUTH_SOCK',
+  'GIT_SSH_COMMAND',
+  'GIT_SSH',
+];
+
 export function gitEnv(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
   const next: Record<string, string> = {};
-  for (const [name, value] of Object.entries(env)) {
-    if (value === undefined) continue;
-    if (name === 'LAIKA_AGENT_TOKEN' || name === 'LAIKA_TOKEN') continue;
-    if (name.startsWith('GIT_') && name !== 'GIT_SSH_COMMAND' && name !== 'GIT_SSH') continue;
-    next[name] = value;
+  for (const name of GIT_ENV_ALLOW) {
+    const value = env[name];
+    if (value !== undefined && value !== '') next[name] = value;
   }
   next.GIT_TERMINAL_PROMPT = '0';
   next.LC_ALL = 'C';
