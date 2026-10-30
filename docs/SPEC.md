@@ -3762,7 +3762,7 @@ on a Monday, 00:00 UTC:
 | `activity_sharing` | `{ org_enabled, enabled }` — since D-102 (amended) both are the organisation's Developer insights (`enabled` kept for older clients) — whatever their kind, so the Activity card is drawn in its final shape before `GET /people/:id/activity` answers (LAI-751). Whether their pushed and local work may be shown, never a count of it |
 | `current_work` | their tasks in progress, oldest start first, and in review, longest waiting first — each review task with `review_since`, its entry into Review by `review`'s rule, null when the log cannot say (LAI-751); each list at most 50, with `in_progress_total` and `in_review_total` |
 | `delivery` | `accepted_per_week` and `accepted`: moves of their tasks into a Done status (D-077) by someone else; `sent_back`: Review to an earlier status by someone else; `reopened`: Done back into work; `cycle_time`: p50/p75 of `completed_at − started_at` for their tasks done in the window, the unstarted ones counted as `unmeasured` |
-| `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; which agents are online now (§9.3) — never where; and `writes`: their `activity` rows made through a token in the window, grouped by the agent that token last connected as, most first, with `writes_total` — revoked tokens' writes included (LAI-750) |
+| `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; which agents are online now (§9.3) — never where; and `writes`: their `activity` rows made through a token in the window, grouped by the agent that token last connected as, most first, with `writes_total` — revoked tokens' writes included (LAI-750). Org owners and admins reading a person's profile (`profile.read`) see that person's token names, registered agents included; this is access oversight, the one exception to D-120's owner-only name rule. |
 | `queue` | a manager's only: projects they lead (membership role `lead`, not archived), the tasks in a Review status there that are not theirs — someone else's or nobody's (`waiting`, in total and per project) — and `oldest_waiting_since`, the entry into Review, by `review`'s rule, of the longest-waiting one (LAI-750, LAI-751) |
 
 **This is not a §4 table and its rows are not columns** — the drift check reads
@@ -4514,7 +4514,7 @@ same shape without `description_md` and `acceptance_md` (LAI-795):
 | `key` | `project.key` + `number` — the display key an agent works in (§7) |
 | `tags` | `task_tags` (§4.16), the whole set |
 | `comment_count` | `comments`, excluding soft-deleted |
-| `created_by_client` | the token's name, when a token created it (LAI-093) |
+| `created_by_client` | the token's name, when a token created it (LAI-093). For a registered agent's token — named after the agent — it is served to the agent's owner only and is `null` for every other reader (D-120); a legacy token's name is unchanged |
 | `status_name` | the `project_statuses.name` of `status_id` (§4.20) |
 | `blocked_by`, `blocks` | **both directions of §4.6** — see §4.5. `ready` depends only on `blocked_by` |
 | `send_back` | `{ reason_md, decided_by, created_at }` of the task's current send-back (§4.27), or `null` (D-082) |
@@ -4554,6 +4554,10 @@ even where `agent` is shown. For a person, a legacy token or a token since
 deleted, `agent` is `null`, `by_registered_agent` is `false`, and `client_name`
 is as stored. `GET /review` (§4.27) and `get_task_context`'s round carry the
 same fields under the same rule; a caller with no user is shown no agent.
+Org owners and admins reading a person's profile (`profile.read`, §6.4's profile `agents`) see that person's token names, registered agents included; this is access oversight, the one exception to D-120's owner-only name rule.
+The estimate accuracy's per-client figures (`by_client`) count a registered
+agent's round under its harness (`claude-code`), never its name; a legacy
+token keeps its client name, and the three-person floor is unchanged.
 
 **A task's tokens (D-084, LAI-770).** `GET /tasks/:id/usage?tz=` answers `{
 task_id, key, tz, first_day, last_day, totals: { tokens, input, output,
@@ -4613,7 +4617,9 @@ replay against the plain median, `{ n, method_error, median_error,
 p80_hit_rate, beats_median }`, or `null` before there is one; `by_client` is
 the same figures per agent client, **only where at least three distinct people
 are behind the measured tasks it finished first** — not everyone who has used
-it — with `people` as a count. Nothing in either answer names or groups
+it — with `people` as a count; a registered agent's round counts under its
+**harness** (`claude-code`), never its registered name (D-120), and a legacy
+token's under its client name. Nothing in either answer names or groups
 by a person.
 
 **The sprint forecast (LAI-772).** `GET /sprints/:id/forecast` answers, under
