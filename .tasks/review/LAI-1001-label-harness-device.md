@@ -151,3 +151,31 @@ Not changed: `estimates.ts`'s per-client accuracy (`byClient`) also groups
 by a round's stored `client_name`. It only lists a name used by at least
 three people (`MIN_CLIENT_PEOPLE`) and reports a count, never who, so it
 identifies no single agent.
+
+## Round 5 (SHELL, 2026-10-30): Codex round 3, two P1s
+
+1. **A lapsed lease.** `rounds.ts` now gets the claim holder from
+   `liveClaimViews`, the task view's own function. It is shared, not copied,
+   so a lapsed lease names nobody here either.
+2. **`created_by_client`.** `creatingClientNames` (`db/activity.ts`) carries
+   each token's agent and owner. `tasks.ts` shows the name only to the
+   agent's owner, or where the task shows that agent as its selected agent or
+   live claim holder; otherwise it is null. `created_via` is unchanged and
+   legacy tokens are as before. Every task view (`viewOne`, `viewTasks`,
+   `readTaskPage`) now takes the reader as a required argument.
+
+**The sweep:** every server path that reads a token name or an agent's name.
+
+| Path | What it serves | To whom | Status |
+| --- | --- | --- | --- |
+| `rounds.ts` `client_name` / `agent` | finishing token's name, agent | task readers | gated (rounds 3–5) |
+| `tasks.ts` `created_by_client` | creating token's name | task readers | gated (this round) |
+| `work-requests.ts:212` `selected_agent.display_name`, `read-tools.ts:408` | the **selected** agent's name | task readers | unchanged: the agent the rule calls visible |
+| `claims.ts:1030` `selected_for_another_agent` | the selected agent's name | the refused caller | unchanged: same agent |
+| `profiles.ts:1106/1133` agent tokens | a member's token names, client names | `profile.read` (owner/admin) | unchanged: an admin grant by design |
+| `agents.ts` views, the `409` message | own agents | the owner | unchanged |
+| `tokens.ts:104` | own tokens | the owner | unchanged |
+| `mcp/server.ts:130` whoami | the agent's own name | that agent | unchanged |
+| `estimates.ts:1771` `byClient` | a round's `client_name` | project readers | unchanged: only names shared by at least 3 people, as a count |
+| `estimates.ts:1366` claim estimate | stored, never served | — | unchanged |
+| `presence.ts` (`clientOf`) | a slug derived from the name, never the name | — | unchanged; its first-word fallback is LAI-1001's earlier note |
