@@ -5,11 +5,12 @@ import { CopyButton } from '../../../components/CopyButton.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { AgentChip } from '../../../components/agent/AgentChip.tsx';
+import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { AgentReadiness } from '../../../components/agent/AgentReadiness.tsx';
 import { RegistrationSteps } from '../../../components/agent/RegistrationSteps.tsx';
 import { REGISTRATION_STEPS } from '../../../components/agent/agent-states.ts';
 import {
+  agentAnchor,
   agentHarness,
   agentState,
   getAgent,
@@ -31,10 +32,9 @@ import { everyPage } from '../../../api/every-page.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import { useGates } from '../../../api/permissions.ts';
 import { isTombstone, listProjects, type Project } from '../../../api/projects.ts';
-import { agentDevice } from '../../../api/selected-agent.ts';
+import { agentLabel, twinNames } from '../../../api/selected-agent.ts';
 import { lastUsedLabel } from '../../../api/tokens.ts';
 import { AGENT_GUIDES, guideFor, setupBlocks } from '../connect/connect-agents.ts';
-import { suggestTokenName } from '../connect/connect-token-name.ts';
 import { SetupBlockView } from '../connect/ConnectScreen.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { agentReadiness } from './agent-readiness.ts';
@@ -42,9 +42,16 @@ import {
   agentFooterHint,
   agentStepOpen,
   choicesFrom,
+  cloudExpiry,
+  cloudExpiryProblem,
+  derivedAgentName,
   deviceProblem,
+  existingOnPair,
   grantsFrom,
+  harnessDeviceConflict,
+  isCloudDevice,
   nameProblem,
+  rotatableToken,
   sameGrants,
   VERIFY_BUDGET_MS,
   VERIFY_POLL_MS,
@@ -55,6 +62,7 @@ import {
   type VerifyState,
 } from './agent-wizard.ts';
 import { DevicesSection } from './DevicesSection.tsx';
+import { goToAgent } from './go-to-agent.ts';
 import '../tokens/tokens.css';
 import './agents.css';
 
@@ -68,8 +76,16 @@ export interface AgentsTabProps {
  *
  * The reader's registered agents, and a five-step wizard to add one. Every
  * value on this tab comes from `/api/v1/agents` and `/api/v1/projects` — the
- * agent's name, harness, device, grants and stamps — and nothing is filled in
+ * agent's harness, device, grants and stamps — and nothing is filled in
  * when they are absent.
+ *
+ * ## An agent is its harness on its device (D-120, LAI-1001)
+ *
+ * Every row, question and notice names an agent `<harness> · <device>` —
+ * *Omnigent · Belka* — and never by the name it was registered with. The
+ * wizard asks for those two and nothing else; the owner already holding an
+ * active agent on that pair is told so, with a way to it and to rotating its
+ * token, before and after the server's `409` says the same.
  *
  * ## The secret, once
  *
@@ -108,6 +124,8 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
     { readonly id: string; readonly name: string; readonly tokenId: string | undefined } | undefined
   >(undefined);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
+  /** An agent whose *Rotate token* the wizard's conflict notice asked for. */
+  const [rotateAsk, setRotateAsk] = useState<string | undefined>(undefined);
   const registerButton = useRef<HTMLButtonElement | null>(null);
 
   /**
@@ -237,6 +255,14 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
 
   const viewer = me?.org_role === 'viewer';
 
+  // The label of each agent: its pair, and LAI-583's mark only where two of
+  // these share one — a legacy duplicate, or a revoked predecessor.
+  const twins = twinNames(agents ?? []);
+  const labelOf = (agent: RegisteredAgent): string => {
+    const twin = twins.get(agent.id);
+    return twin === undefined ? agentLabel(agent) : `${agentLabel(agent)} (${twin})`;
+  };
+
   // The notice stands until that agent is revoked or its unseen token replaced.
   const abandonedRow =
     abandoned === undefined ? undefined : agents?.find((a) => a.id === abandoned.id);
@@ -246,7 +272,7 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
 
   const revoke = (agent: RegisteredAgent): void => {
     void confirm({
-      title: `Revoke “${agent.display_name}”?`,
+      title: `Revoke ${labelOf(agent)}?`,
       body: 'Every token it holds stops working at once, and the agent cannot be restored. Your own tokens and your other agents are not touched. Its history keeps its name.',
       confirmLabel: 'Revoke agent',
       danger: true,
@@ -308,6 +334,14 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
           projectsError={projectsError}
           onRetryProjects={retryProjects}
           viewer={viewer}
+          agents={agents}
+          labelOf={labelOf}
+          onRotateExisting={(id) => {
+            setRotateAsk(id);
+          }}
+          onConflict={() => {
+            reload();
+          }}
           onRegistered={(agent) => {
             setWizardAgent(agent.id);
             put(agent);
@@ -316,7 +350,7 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
             // Created on the server after the wizard was gone: listed, never
             // locked, and its secret was never kept (review round 2).
             put(agent);
-            setAbandoned({ id: agent.id, name: agent.display_name, tokenId: agent.tokens[0]?.id });
+            setAbandoned({ id: agent.id, name: agentLabel(agent), tokenId: agent.tokens[0]?.id });
           }}
           onClose={closeWizard}
         />
@@ -324,8 +358,8 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
 
       {abandoned !== undefined && abandonedStands && (
         <p className="agents-note" role="status">
-          “{abandoned.name}” was registered after you cancelled, so its credential was never shown
-          and nobody holds it. Rotate its token to get one, or revoke it.
+          {abandoned.name} was registered after you cancelled, so its credential was never shown and
+          nobody holds it. Rotate its token to get one, or revoke it.
         </p>
       )}
 
@@ -366,6 +400,12 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
             <AgentRow
               key={agent.id}
               agent={agent}
+              label={labelOf(agent)}
+              duplicate={twins.has(agent.id) && agent.status === 'active'}
+              rotateAsked={rotateAsk === agent.id}
+              onRotateAsked={() => {
+                setRotateAsk(undefined);
+              }}
               now={now}
               me={me}
               projects={projects}
@@ -460,11 +500,14 @@ function useOnceSecret() {
 
 function SecretPanel({
   created,
+  label,
   title,
   onDone,
   doneLabel = 'Done',
 }: {
   readonly created: HeldSecret;
+  /** The agent's label, `<harness> · <device>`. */
+  readonly label: string;
   readonly title: string;
   readonly onDone?: (() => void) | undefined;
   readonly doneLabel?: string;
@@ -477,9 +520,9 @@ function SecretPanel({
     <section className="tok-reveal agents-secret" role="alert" tabIndex={-1} ref={ref}>
       <h3 className="tok-reveal-title">{title}</h3>
       <p className="tok-reveal-body">
-        This is <strong>{created.agent.display_name}</strong>’s own credential and the only copy of
-        it. Laika stores a hash, not the secret, so nobody can show it to you again. Keep it on the
-        machine the agent runs on — never in a repository, a chat or a screenshot.
+        This is <strong>{label}</strong>’s own credential and the only copy of it. Laika stores a
+        hash, not the secret, so nobody can show it to you again. Keep it on the machine the agent
+        runs on — never in a repository, a chat or a screenshot.
       </p>
       <div className="tok-reveal-row">
         <code className="tok-secret" data-testid="agent-secret">
@@ -505,6 +548,13 @@ interface WizardProps {
   readonly projectsError: unknown;
   readonly onRetryProjects: () => void;
   readonly viewer: boolean;
+  /** The owner's agents as listed, to say before registering that a pair is taken. */
+  readonly agents: readonly RegisteredAgent[] | undefined;
+  readonly labelOf: (agent: RegisteredAgent) => string;
+  /** The conflict notice's *Rotate its token*: that row's rotation, asked for. */
+  readonly onRotateExisting: (agentId: string) => void;
+  /** The server named an agent on this pair: the list may not show it yet, so read it again. */
+  readonly onConflict: () => void;
   readonly onRegistered: (agent: RegisteredAgent) => void;
   /** Registration answered after this wizard closed or unmounted. Never carries the secret. */
   readonly onAbandoned: (agent: RegisteredAgent) => void;
@@ -518,6 +568,10 @@ function RegisterWizard({
   projectsError,
   onRetryProjects,
   viewer,
+  agents,
+  labelOf,
+  onRotateExisting,
+  onConflict,
   onRegistered,
   onAbandoned,
   onClose,
@@ -525,9 +579,10 @@ function RegisterWizard({
   const [step, setStep] = useState<AgentStep>(1);
   const [guideId, setGuideId] = useState(AGENT_GUIDES[0]?.id ?? 'claude-code');
   const guide = guideFor(guideId);
-  const [name, setName] = useState(() => suggestTokenName(navigator.userAgent, guide.tokenWord));
-  const nameTouched = useRef(false);
   const [device, setDevice] = useState('');
+  const [deviceTouched, setDeviceTouched] = useState(false);
+  /** The agent the server's `409` named: the owner's own, already on this pair. */
+  const [conflictId, setConflictId] = useState<string | undefined>(undefined);
   const [choices, setChoices] = useState<Map<string, GrantChoice>>(() => new Map());
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -542,8 +597,15 @@ function RegisterWizard({
   const secret = created === undefined || created.secret === '' ? undefined : created.secret;
   const order = (projects ?? []).map((p) => p.id);
   const grants = grantsFrom(choices, order, viewer);
-  const nameError = nameProblem(name);
   const deviceError = deviceProblem(device);
+  const cloud = isCloudDevice(device);
+  // What every screen will call it (D-120): the pair, never a typed name.
+  const label = agentLabel({ harness: guide.client, device_label: device });
+  // The list says the pair is taken before the server has to; the server's
+  // answer names the agent when the list could not.
+  const listed = existingOnPair(agents, guide.client, device);
+  const existingId = listed?.id ?? conflictId;
+  const existing = existingId === undefined ? undefined : agents?.find((a) => a.id === existingId);
 
   // Focus follows the step, as Connect's does: into the wizard when it opens,
   // and to each step's title as the reader moves.
@@ -589,11 +651,14 @@ function RegisterWizard({
   const register = (): void => {
     setPending(true);
     setError(undefined);
+    setConflictId(undefined);
     registerAgent({
-      display_name: name.trim(),
+      display_name: derivedAgentName(guide.tokenWord, device),
       harness: guide.client,
-      device_label: device.trim() === '' ? null : device.trim(),
+      device_label: device.trim(),
       grants,
+      // LAI-592: a cloud runner's token lives at most a day, and must say so.
+      ...(cloud ? { expires_at: cloudExpiry(Date.now()) } : {}),
     })
       .then((answer) => {
         if (!live.current) {
@@ -604,7 +669,14 @@ function RegisterWizard({
         onRegistered(answer.agent);
       })
       .catch((cause: unknown) => {
-        if (live.current) setError(errorText(cause, 'Could not register that agent.'));
+        if (!live.current) return;
+        const conflict = harnessDeviceConflict(cause);
+        if (conflict !== undefined) {
+          setConflictId(conflict.agentId);
+          onConflict();
+          return;
+        }
+        setError(cloudExpiryProblem(cause) ?? errorText(cause, 'Could not register that agent.'));
       })
       .finally(() => {
         if (live.current) setPending(false);
@@ -693,7 +765,7 @@ function RegisterWizard({
   const canForward = ((): boolean => {
     switch (step) {
       case 1:
-        return nameError === undefined && deviceError === undefined;
+        return deviceError === undefined && existingId === undefined;
       case 2:
         return projects !== undefined;
       case 3:
@@ -732,23 +804,6 @@ function RegisterWizard({
         <div className="agents-card-body">
           {step === 1 && (
             <div className="agents-fields">
-              <label className="agents-field">
-                <span className="agents-label">Name</span>
-                <input
-                  className="tok-input"
-                  value={name}
-                  maxLength={120}
-                  aria-invalid={nameError !== undefined}
-                  onChange={(event) => {
-                    nameTouched.current = true;
-                    setName(event.target.value);
-                  }}
-                />
-                <span className="agents-hint">
-                  {nameError ??
-                    'Your name for it, shown here. Cards and history name it by harness and device, and add this name where two of your agents share both.'}
-                </span>
-              </label>
               <div className="agents-field">
                 <span className="agents-label" id="agents-harness-label">
                   Harness
@@ -760,9 +815,7 @@ function RegisterWizard({
                   options={AGENT_GUIDES.map((g) => ({ value: g.id, label: g.name }))}
                   onChange={(id) => {
                     setGuideId(id);
-                    if (!nameTouched.current) {
-                      setName(suggestTokenName(navigator.userAgent, guideFor(id).tokenWord));
-                    }
+                    setConflictId(undefined);
                   }}
                 />
                 <span className="agents-hint">
@@ -774,17 +827,47 @@ function RegisterWizard({
                 <input
                   className="tok-input"
                   value={device}
-                  placeholder="work laptop"
+                  placeholder="Belka"
                   maxLength={120}
-                  aria-invalid={deviceError !== undefined}
+                  required
+                  aria-invalid={deviceTouched && deviceError !== undefined}
+                  aria-describedby="agents-device-hint"
                   onChange={(event) => {
                     setDevice(event.target.value);
+                    setDeviceTouched(true);
+                    setConflictId(undefined);
+                  }}
+                  onBlur={() => {
+                    setDeviceTouched(true);
                   }}
                 />
-                <span className="agents-hint">
-                  {deviceError ?? 'Optional and self-reported — which machine it runs on.'}
+                <span className="agents-hint" id="agents-device-hint">
+                  {deviceTouched && deviceError !== undefined
+                    ? deviceError
+                    : 'Required and self-reported — the machine it runs on, or Cloud for a hosted runner.'}
                 </span>
               </label>
+              <p className="agents-label-preview" data-agent-label-preview>
+                {deviceError === undefined ? (
+                  <>
+                    <AgentMark client={guide.client} size="sm" />
+                    <span>
+                      Shown everywhere as <strong>{label}</strong>
+                    </span>
+                  </>
+                ) : (
+                  <span>Its harness and device are its label — one agent for each pair.</span>
+                )}
+              </p>
+              {cloud && <CloudNote />}
+              {existingId !== undefined && (
+                <ExistingAgentNotice
+                  agentId={existingId}
+                  existing={existing}
+                  label={existing === undefined ? label : labelOf(existing)}
+                  onRotate={onRotateExisting}
+                />
+              )}
             </div>
           )}
 
@@ -806,8 +889,8 @@ function RegisterWizard({
                 <>
                   <dl className="agents-summary">
                     <div>
-                      <dt>Name</dt>
-                      <dd>{name.trim()}</dd>
+                      <dt>Shown as</dt>
+                      <dd>{label}</dd>
                     </div>
                     <div>
                       <dt>Harness</dt>
@@ -815,15 +898,27 @@ function RegisterWizard({
                     </div>
                     <div>
                       <dt>Device</dt>
-                      <dd>
-                        {device.trim() === '' ? 'Not given' : `${device.trim()} (self-reported)`}
-                      </dd>
+                      <dd>{device.trim()} (self-reported)</dd>
                     </div>
+                    {cloud && (
+                      <div>
+                        <dt>Token expires</dt>
+                        <dd>Within 24 hours — rotate it for the next run</dd>
+                      </div>
+                    )}
                     <div>
                       <dt>Projects</dt>
                       <dd>{grantSummary(grants, projects)}</dd>
                     </div>
                   </dl>
+                  {conflictId !== undefined && (
+                    <ExistingAgentNotice
+                      agentId={conflictId}
+                      existing={existing}
+                      label={existing === undefined ? label : labelOf(existing)}
+                      onRotate={onRotateExisting}
+                    />
+                  )}
                   {me !== undefined && viewer && (
                     <p className="agents-note">
                       Your organisation role is viewer, so the agent’s credential reads and writes
@@ -833,7 +928,7 @@ function RegisterWizard({
                   <button
                     type="button"
                     className="bar-control bar-control-primary"
-                    disabled={pending}
+                    disabled={pending || conflictId !== undefined}
                     aria-busy={pending}
                     onClick={register}
                   >
@@ -843,7 +938,11 @@ function RegisterWizard({
                 </>
               )}
               {created !== undefined && secret !== undefined && (
-                <SecretPanel created={created} title="Copy this now — it is not shown again" />
+                <SecretPanel
+                  created={created}
+                  label={agentLabel(created.agent)}
+                  title="Copy this now — it is not shown again"
+                />
               )}
               {created !== undefined && secret === undefined && !closing && (
                 <p className="agents-note" role="alert">
@@ -857,7 +956,7 @@ function RegisterWizard({
           {step === 4 && created !== undefined && (
             <div className="agents-setup">
               <p className="agents-note">
-                These carry <strong>{created.agent.display_name}</strong>’s token, not yours. Run
+                These carry <strong>{agentLabel(created.agent)}</strong>’s token, not yours. Run
                 them on the machine the agent works from.
               </p>
               {blocks.map((block) => (
@@ -874,7 +973,7 @@ function RegisterWizard({
           {step === 5 && created !== undefined && (
             <VerifyPanel
               state={verify}
-              agentName={created.agent.display_name}
+              agentName={agentLabel(created.agent)}
               onRetry={() => {
                 setRound((n) => n + 1);
               }}
@@ -930,6 +1029,75 @@ function RegisterWizard({
         </footer>
       </div>
     </section>
+  );
+}
+
+/**
+ * What a Cloud device means (LAI-592): its token expires within a day, which
+ * the wizard asks for itself, and a runner gets a fresh one by rotation.
+ */
+function CloudNote() {
+  return (
+    <p className="agents-note agents-cloud" role="note" data-cloud-note>
+      <strong>Cloud runs somewhere you do not sit</strong>, so its token expires within 24 hours —
+      Laika refuses a longer one, and a credential copied out of a runner is dead by the next day.
+      Rotate it to give the runner a fresh one.
+    </p>
+  );
+}
+
+/**
+ * The owner's own active agent already on this harness and device (D-120).
+ * Never a second one: a link to it and its *Rotate token*, or — with no live
+ * token to rotate — what to do instead. `existing` is `undefined` when the
+ * server named an agent the list has not loaded; the link still points at it.
+ */
+function ExistingAgentNotice({
+  agentId,
+  existing,
+  label,
+  onRotate,
+}: {
+  readonly agentId: string;
+  readonly existing: RegisteredAgent | undefined;
+  readonly label: string;
+  readonly onRotate: (agentId: string) => void;
+}) {
+  const now = Date.now();
+  const rotatable = existing !== undefined && rotatableToken(existing, now) !== undefined;
+  return (
+    <div className="agents-existing" role="alert" data-agent-exists={agentId}>
+      <p className="agents-existing-line">
+        You already have <strong>{label}</strong>. One agent for each harness on each device — use
+        that one, or rotate its token to set it up again.
+      </p>
+      <div className="agents-existing-actions">
+        <a
+          className="bar-control"
+          href={`#${agentAnchor(agentId)}`}
+          onClick={(event) => {
+            if (goToAgent(agentId)) event.preventDefault();
+          }}
+        >
+          Go to {label}
+        </a>
+        {rotatable ? (
+          <button
+            type="button"
+            className="bar-control bar-control-primary"
+            onClick={() => {
+              onRotate(agentId);
+            }}
+          >
+            Rotate its token
+          </button>
+        ) : (
+          <span className="agents-hint">
+            It has no live token to rotate. Revoke it below, then register this one.
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1091,6 +1259,13 @@ function grantSummary(
 
 interface RowProps {
   readonly agent: RegisteredAgent;
+  /** `<harness> · <device>`, with LAI-583's mark where another listed agent shares it. */
+  readonly label: string;
+  /** Another active agent of the owner's shares its pair: registered before D-120. */
+  readonly duplicate: boolean;
+  /** The wizard's conflict notice asked for this agent's rotation. */
+  readonly rotateAsked: boolean;
+  readonly onRotateAsked: () => void;
   readonly now: number;
   readonly me: MeProfile | undefined;
   readonly projects: readonly Project[] | undefined;
@@ -1109,6 +1284,10 @@ type Panel = 'none' | 'rename' | 'access';
 
 function AgentRow({
   agent,
+  label,
+  duplicate,
+  rotateAsked,
+  onRotateAsked,
   now,
   me,
   projects,
@@ -1132,6 +1311,8 @@ function AgentRow({
   const accessButton = useRef<HTMLButtonElement | null>(null);
   const rotateButton = useRef<HTMLButtonElement | null>(null);
   const live = liveToken(agent, now);
+  // What Rotate replaces: the live token, or a Cloud agent's expired one.
+  const replaceable = rotatableToken(agent, now);
   // The list is the reader's own (the server filters it), so the owner is
   // the reader — named from `/me`, never assumed.
   const owner = me?.id === agent.owner_user_id ? `${me.name} (you)` : '—';
@@ -1143,23 +1324,30 @@ function AgentRow({
   };
 
   const rotate = (): void => {
-    if (live === undefined || heldByWizard) return;
+    if (replaceable === undefined || heldByWizard) return;
     void confirmRotate({
-      title: `Rotate “${agent.display_name}”’s credential?`,
-      body: 'A new token is created and the current one stops working at once. The agent keeps its name, grants and history; you give it the new token.',
+      title: `Rotate ${label}’s credential?`,
+      body: isCloudDevice(agent.device_label)
+        ? 'A new token is created, expiring within 24 hours as every Cloud token does, and the current one stops working at once. The agent keeps its grants and history; you give the runner the new token.'
+        : 'A new token is created and the current one stops working at once. The agent keeps its grants and history; you give it the new token.',
       confirmLabel: 'Rotate token',
       icon: 'warning',
     }).then((yes) => {
       if (!yes) return;
       setBusy(true);
       setError(undefined);
-      rotateAgentToken(agent.id, live.id)
+      rotateAgentToken(
+        agent.id,
+        replaceable.id,
+        // LAI-592: a cloud agent's new token must expire within a day.
+        isCloudDevice(agent.device_label) ? cloudExpiry(Date.now()) : undefined,
+      )
         .then((answer) => {
           holdRotated(answer);
           onChanged(answer.agent);
         })
         .catch((cause: unknown) => {
-          setError(errorText(cause, 'Could not rotate that token.'));
+          setError(cloudExpiryProblem(cause) ?? errorText(cause, 'Could not rotate that token.'));
         })
         .finally(() => {
           setBusy(false);
@@ -1167,16 +1355,56 @@ function AgentRow({
     });
   };
 
+  // The wizard's conflict notice asked for this rotation: scroll here, then ask.
+  const rotateRef = useRef(rotate);
+  rotateRef.current = rotate;
+  const askedRef = useRef(onRotateAsked);
+  askedRef.current = onRotateAsked;
+  useEffect(() => {
+    if (!rotateAsked) return;
+    askedRef.current();
+    rotateButton.current?.scrollIntoView({ block: 'center' });
+    rotateButton.current?.focus();
+    rotateRef.current();
+  }, [rotateAsked]);
+
   return (
-    <li className="agents-row" data-state={state} data-agent={agent.id}>
+    <li
+      className="agents-row"
+      id={agentAnchor(agent.id)}
+      tabIndex={-1}
+      data-state={state}
+      data-agent={agent.id}
+      data-duplicate={duplicate || undefined}
+    >
       <div className="agents-row-main">
-        <span className="agents-row-name">{agent.display_name}</span>
+        {/* Named as cards and history name it (D-120): harness and device. */}
+        <span className="agents-row-name">
+          <AgentMark client={agentHarness(agent)} size="sm" />
+          <span>{label}</span>
+        </span>
         <span className="agents-row-meta">
-          {/* Named as cards and history name it (LAI-536): harness and device. */}
-          <AgentChip client={agentHarness(agent)} device={agentDevice(agent)} />
-          <span className="agents-self">self-reported</span>
+          <span className="agents-self">harness and device self-reported</span>
+          {duplicate && (
+            <span className="devices-duplicate" data-duplicate-flag>
+              Duplicate
+            </span>
+          )}
         </span>
       </div>
+      {active && live === undefined && replaceable !== undefined && (
+        <p className="agents-hint agents-cloud-expired" data-cloud-expired>
+          Its Cloud token has expired, as every Cloud token does within a day. Rotate it to give the
+          runner a fresh one — nothing needs revoking.
+        </p>
+      )}
+      {duplicate && (
+        <p className="agents-hint agents-duplicate-note">
+          Another of your active agents is on this harness and device — registered before one agent
+          per pair. Revoke the one you do not want; <em>Rename</em> changes the mark that tells them
+          apart.
+        </p>
+      )}
 
       {readiness === undefined ? (
         <p className="agents-revoked">Revoked — its credentials no longer work.</p>
@@ -1213,17 +1441,19 @@ function AgentRow({
 
       {canManage && active && (
         <div className="agents-row-actions">
-          <button
-            type="button"
-            className="bar-control"
-            ref={renameButton}
-            aria-expanded={panel === 'rename'}
-            onClick={() => {
-              setPanel(panel === 'rename' ? 'none' : 'rename');
-            }}
-          >
-            Rename
-          </button>
+          {duplicate && (
+            <button
+              type="button"
+              className="bar-control"
+              ref={renameButton}
+              aria-expanded={panel === 'rename'}
+              onClick={() => {
+                setPanel(panel === 'rename' ? 'none' : 'rename');
+              }}
+            >
+              Rename
+            </button>
+          )}
           <button
             type="button"
             className="bar-control"
@@ -1239,7 +1469,7 @@ function AgentRow({
             type="button"
             className="bar-control"
             ref={rotateButton}
-            disabled={busy || live === undefined || heldByWizard}
+            disabled={busy || replaceable === undefined || heldByWizard}
             {...(heldByWizard ? { 'aria-describedby': `agents-held-${agent.id}` } : {})}
             onClick={rotate}
           >
@@ -1298,6 +1528,7 @@ function AgentRow({
       {rotated !== undefined && (
         <SecretPanel
           created={rotated}
+          label={label}
           title="New credential — copy it now, it is not shown again"
           onDone={() => {
             forget();

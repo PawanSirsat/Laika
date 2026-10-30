@@ -27,6 +27,7 @@ import {
 import { newId } from '../db/ids.ts';
 import {
   activity,
+  agents,
   projects,
   tags,
   taskClaimEstimates,
@@ -322,6 +323,10 @@ export interface BacktestFigures {
 
 /** One agent client's figures, where at least three people use it. */
 export interface ClientAccuracy extends AccuracyFigures {
+  /**
+   * The client: a registered agent's **harness** slug (`claude-code`), or a
+   * legacy token's client name. Never a registered agent's name (D-120).
+   */
   client_name: string;
   /** A count, never who. */
   people: number;
@@ -1744,12 +1749,25 @@ export function getEstimateAccuracy(
   // measured tasks count towards the three people** (D-078 item 6): a client
   // three people have used, of whom two are behind the figures, would report
   // what is in fact two people's work (LAI-771 review).
+  //
+  // **A registered agent's round counts under its harness** — `claude-code`,
+  // `omnigent` — never its client name, which for a registered agent is
+  // usually its token's, i.e. its registered, name: the owner's alone (D-120,
+  // LAI-1001). A legacy token keeps the name it was always grouped by.
   const firstRounds = db
-    .select({ taskId: taskRounds.taskId, client: taskRounds.clientName, by: taskRounds.finishedBy })
+    .select({
+      taskId: taskRounds.taskId,
+      clientName: taskRounds.clientName,
+      harness: agents.harness,
+      by: taskRounds.finishedBy,
+    })
     .from(taskRounds)
     .innerJoin(tasks, eq(tasks.id, taskRounds.taskId))
+    .leftJoin(tokens, eq(tokens.id, taskRounds.tokenId))
+    .leftJoin(agents, eq(agents.id, tokens.agentId))
     .where(and(eq(tasks.projectId, project.id), eq(taskRounds.number, 1)))
-    .all();
+    .all()
+    .map((r) => ({ taskId: r.taskId, client: r.harness ?? r.clientName, by: r.by }));
   const clients = new Map<
     string,
     { people: Set<string>; pairs: { log: number; hit: boolean }[] }

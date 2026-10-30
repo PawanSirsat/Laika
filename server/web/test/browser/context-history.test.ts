@@ -180,6 +180,13 @@ void describe('the revision history', () => {
       const r2 = rows.nth(1);
       assert.match(await r2.innerText(), /Reader Lead/);
       assert.equal(await r2.locator('[data-agent-chip]').count(), 1);
+      // Named by harness and device (D-120): one agent, so no mark, and
+      // never the name it was registered with.
+      assert.equal(
+        (await r2.locator('[data-agent-chip]').innerText()).trim(),
+        'Claude Code · Belka',
+      );
+      assert.doesNotMatch(await r2.innerText(), /Polly/);
 
       // r1 predates revisions: no author recorded, said plainly.
       assert.match(await rows.nth(2).innerText(), /Author not recorded/);

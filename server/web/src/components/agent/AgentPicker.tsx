@@ -1,5 +1,6 @@
 import { useId } from 'react';
-import { agentClientName, type AgentClient } from '../../api/agent-clients.ts';
+import { type AgentClient } from '../../api/agent-clients.ts';
+import { harnessName } from '../../api/selected-agent.ts';
 import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import { Dropdown, type DropdownOption } from '../Dropdown.tsx';
 import { AVAILABILITY_WORDS } from './agent-states.ts';
@@ -56,7 +57,8 @@ export interface AgentPickerProps {
  * what tells two agents apart is also drawn as the option's badge (LAI-583).
  */
 export function choiceLabel(agent: AgentChoice): string {
-  return `${agentClientName(agent.client)} · ${agent.device} — ${agent.owner}`;
+  // D-120: the shared harness word, so an unknown one is *Other harness* here too.
+  return `${harnessName(agent.client)} · ${agent.device} — ${agent.owner}`;
 }
 
 /** What the option says after its label: the availability, or the reason it is out. */

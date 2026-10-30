@@ -3,9 +3,14 @@ import { eq } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
 import { presenceEnabled } from '../db/orgs.ts';
-import { tokens } from '../db/schema.ts';
+import { agents, tokens } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { agentClientSlug, cleanClientName, isWeakClientName } from './agent-clients.ts';
+import {
+  AGENT_CLIENTS,
+  agentClientSlug,
+  cleanClientName,
+  isWeakClientName,
+} from './agent-clients.ts';
 
 /**
  * Personal access token secrets (SPEC §4.9, §13.1).
@@ -330,6 +335,11 @@ export interface McpUseWrite {
  * - `clientName` is `clientInfo.name` from an `initialize` request, and
  *   `undefined` on every other request. It is cleaned, turned into a slug, and
  *   written **only when it changed**.
+ * - **A registered agent's token takes its harness from the agent** (D-120,
+ *   LAI-1001): `agents.harness` is the slug, whatever the client said and
+ *   whatever the token is called — an agent registered as `Polly` on
+ *   `omnigent` is Omnigent, not `other`. The first-word rule below is for
+ *   unregistered, legacy tokens only.
  *
  * Bookkeeping on the credential that was just presented, the same as
  * `touchTokenUsage`, which is why it lives here and asks `can()` nothing. It
@@ -351,11 +361,14 @@ export function recordMcpUse(
       lastMcpAt: tokens.lastMcpAt,
       lastClient: tokens.lastClient,
       lastClientName: tokens.lastClientName,
+      agentHarness: agents.harness,
     })
     .from(tokens)
+    .leftJoin(agents, eq(agents.id, tokens.agentId))
     .where(eq(tokens.id, tokenId))
     .get();
   if (row === undefined) return { mcp: false, client: false };
+  const registered = AGENT_CLIENTS.find((slug) => slug === row.agentHarness);
 
   const set: Partial<typeof tokens.$inferInsert> = {};
 
@@ -366,11 +379,15 @@ export function recordMcpUse(
   let client = false;
   if (clientName !== undefined) {
     const name = cleanClientName(clientName);
-    const slug = agentClientSlug(name, row.name);
+    const slug = registered ?? agentClientSlug(name, row.name);
     // A weak name (`mcp`, `hermes-probe`) never replaces a client the token
-    // already knows; it only fills a blank or an `other`.
+    // already knows; it only fills a blank or an `other`. A registered
+    // agent's slug is its harness, so only the name itself can be new.
     const known = row.lastClient !== null && row.lastClient !== 'other';
-    const keep = isWeakClientName(name) && known;
+    const keep =
+      isWeakClientName(name) &&
+      known &&
+      (registered === undefined || row.lastClient === registered);
     if (!keep && (name !== row.lastClientName || slug !== row.lastClient)) {
       set.lastClientName = name;
       set.lastClient = slug;

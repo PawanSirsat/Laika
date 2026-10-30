@@ -11,6 +11,7 @@ import { describe, test } from 'node:test';
 import {
   confirmAgentDevice,
   deviceKey,
+  harnessRows,
   listAgentDevices,
   revokeAgentDevice,
   revokedOnly,
@@ -211,5 +212,70 @@ void describe('what a write changes', () => {
     const [s, u] = withRecognised([strelka, unnamed], null);
     assert.equal(s?.recognised, false);
     assert.equal(u?.recognised, true);
+  });
+});
+
+void describe('one row per harness (D-120, LAI-1001)', () => {
+  void test('each harness on the device is one row, in the order the device lists them', () => {
+    const rows = harnessRows(
+      device({
+        agents: [
+          agent('om', { harness: 'omnigent' }),
+          agent('cc', { harness: 'claude-code' }),
+          agent('cx', { harness: 'codex', status: 'revoked' }),
+        ],
+      }),
+    );
+    assert.deepEqual(
+      rows.map((r) => [r.harness, r.agents.map((a) => a.id), r.active, r.duplicate]),
+      [
+        ['omnigent', ['om'], 1, false],
+        ['claude-code', ['cc'], 1, false],
+        ['codex', ['cx'], 0, false],
+      ],
+    );
+  });
+
+  void test('two active agents of one harness are one row, flagged as a legacy duplicate', () => {
+    const [row, ...rest] = harnessRows(
+      device({
+        agents: [
+          agent('old', { harness: 'omnigent', status: 'revoked' }),
+          agent('polly', { harness: 'omnigent' }),
+          agent('by-hand', { harness: 'omnigent' }),
+        ],
+      }),
+    );
+    assert.equal(rest.length, 0);
+    assert.equal(row?.duplicate, true);
+    assert.equal(row?.active, 2);
+    // Active first, the device's order kept within each.
+    assert.deepEqual(
+      row?.agents.map((a) => a.id),
+      ['polly', 'by-hand', 'old'],
+    );
+  });
+
+  void test('one active agent beside a revoked predecessor is no duplicate', () => {
+    const [row] = harnessRows(
+      device({
+        agents: [
+          agent('new', { harness: 'omnigent' }),
+          agent('old', { harness: 'omnigent', status: 'revoked' }),
+        ],
+      }),
+    );
+    assert.equal(row?.duplicate, false);
+    assert.equal(row?.agents.length, 2);
+  });
+
+  void test('harnesses Laika does not know share the one Other row', () => {
+    const rows = harnessRows(
+      device({ agents: [agent('a', { harness: 'made-up' }), agent('b', { harness: 'other' })] }),
+    );
+    assert.deepEqual(
+      rows.map((r) => [r.harness, r.duplicate]),
+      [['other', true]],
+    );
   });
 });

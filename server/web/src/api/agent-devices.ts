@@ -1,4 +1,5 @@
-import type { RegisteredAgent } from './agents.ts';
+import type { AgentClient } from './agent-clients.ts';
+import { agentHarness, type RegisteredAgent } from './agents.ts';
 import { request } from './client.ts';
 
 /**
@@ -109,4 +110,38 @@ export function withRecognised(
   return devices.map((device) =>
     device.device_label === deviceLabel ? { ...device, recognised: true } : device,
   );
+}
+
+// ------------------------------------------------------------------ one row per harness
+
+/**
+ * One harness on one device (D-120): the agents of that harness the device
+ * holds, active first, newest first within each. An owner has at most one
+ * active agent per pair since LAI-1000, so `duplicate` marks a **legacy** pair
+ * — two or more active agents registered before the rule — which is reported,
+ * never merged (D-120 item 3): the owner revokes the one they do not want.
+ */
+export interface HarnessRow {
+  /** The slug as `agentHarness` reads it: an unknown one is `other`. */
+  readonly harness: AgentClient;
+  readonly agents: readonly RegisteredAgent[];
+  readonly active: number;
+  readonly duplicate: boolean;
+}
+
+/** A device's agents, one row per harness, in the order the device lists their newest agent. */
+export function harnessRows(device: Pick<AgentDevice, 'agents'>): HarnessRow[] {
+  const rows = new Map<AgentClient, RegisteredAgent[]>();
+  for (const agent of device.agents) {
+    const harness = agentHarness(agent);
+    rows.set(harness, [...(rows.get(harness) ?? []), agent]);
+  }
+  return [...rows].map(([harness, agents]) => {
+    const ordered = [
+      ...agents.filter((agent) => agent.status === 'active'),
+      ...agents.filter((agent) => agent.status !== 'active'),
+    ];
+    const active = agents.length - agents.filter((agent) => agent.status !== 'active').length;
+    return { harness, agents: ordered, active, duplicate: active > 1 };
+  });
 }

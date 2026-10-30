@@ -207,7 +207,8 @@ export const CONTEXT_SESSIONS: readonly ContextSession[] = [
   { id: 's3', agent: SAMS, received: null },
 ];
 
-export const AGENT_NAME = 'Ada’s laptop agent';
+/** An agent is named by its harness and device (D-120), never a typed name. */
+export const AGENT_NAME = 'Claude Code · laptop-1';
 
 export const GRANTS: readonly ProjectGrant[] = [
   { id: 'p1', name: 'Importer', scope: 'full' },

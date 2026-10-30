@@ -4,8 +4,15 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { newId } from '../../src/db/ids.ts';
-import { activity, users } from '../../src/db/schema.ts';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpers/auth.ts';
+import { activity, orgs, users } from '../../src/db/schema.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  seedInvite,
+  signUp,
+} from '../helpers/auth.ts';
 
 /**
  * The four read tools (SPEC §7.1, LAI-407), through a real MCP client.
@@ -794,3 +801,101 @@ describe('the read tools read every row, not the first page (LAI-704)', () => {
     await client.close();
   });
 }, 60_000);
+
+describe('get_task_context withholds another person’s agent in its round (LAI-1001)', () => {
+  it('Ada’s token reads a round Bob’s agent finished: an agent, no name, no harness, no device', async () => {
+    const coreId = await project('core', 'COR');
+    const orgId = h.db.select().from(orgs).get()?.id ?? '';
+    const adaId = h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()?.id;
+    const invite = seedInvite(h.db, {
+      orgId,
+      createdBy: adaId ?? '',
+      email: 'bob@example.test',
+      orgRole: 'member',
+    });
+    const signed = await signUp(h.app, {
+      email: 'bob@example.test',
+      password: PASSWORD,
+      inviteToken: invite,
+    });
+    expect(signed.status, await signed.clone().text()).toBe(200);
+    const bobCookie = cookieFrom(signed);
+    const bobId = h.db.select().from(users).where(eq(users.email, 'bob@example.test')).get()?.id;
+    await must('/api/v1/projects/core/members', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: bobId, role: 'member' }),
+    });
+    const registered = await api(
+      '/api/v1/agents',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          display_name: 'Bob’s secret rig',
+          harness: 'codex',
+          device_label: 'Bob’s laptop',
+          grants: [{ project_id: coreId, scope: 'full' }],
+        }),
+      },
+      bobCookie,
+    );
+    expect(registered.status, await registered.clone().text()).toBe(201);
+    const rig = (await registered.json()) as { secret: string; agent: { id: string } };
+    const rigId = rig.agent.id;
+
+    const created = await task('core', { title: 'Bob’s agent does it' });
+    const asRig = (path: string, generation?: string) =>
+      h.app.request(path, {
+        method: 'POST',
+        body: path.endsWith('/finish') ? JSON.stringify({ summary: 'Did it' }) : '',
+        headers: jsonHeaders({
+          Authorization: `Bearer ${rig.secret}`,
+          ...(generation === undefined ? {} : { 'X-Laika-Claim-Generation': generation }),
+        }),
+      });
+    const claimed = await asRig(`/api/v1/tasks/${created.id}/claim`);
+    expect(claimed.status, await claimed.clone().text()).toBe(200);
+    const finished = await asRig(
+      `/api/v1/tasks/${created.id}/finish`,
+      claimed.headers.get('X-Laika-Claim-Generation') ?? '',
+    );
+    expect(finished.status, await finished.clone().text()).toBe(200);
+
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: created.key },
+    });
+    const evidence = payload(result).evidence as {
+      client_name: string | null;
+      agent: unknown;
+      by_registered_agent: boolean;
+    } | null;
+    expect(evidence).not.toBeNull();
+    expect(evidence?.by_registered_agent).toBe(true);
+    expect(evidence?.agent).toBeNull();
+    expect(evidence?.client_name).toBeNull();
+    const raw = JSON.stringify(result);
+    expect(raw).not.toContain('Bob’s secret rig');
+    expect(raw).not.toContain('Bob’s laptop');
+
+    // Bob selects his agent: now the task shows it to Ada — by harness and
+    // device, in the payload and the markdown, never by its registered name.
+    const selected = await api(
+      `/api/v1/tasks/${created.id}`,
+      { method: 'PATCH', body: JSON.stringify({ selected_agent_id: rigId }) },
+      bobCookie,
+    );
+    expect(selected.status, await selected.clone().text()).toBe(200);
+    const again = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: created.key },
+    });
+    const shownTask = payload(again).task as {
+      selected_agent: { display_name: string | null; harness: string } | null;
+    };
+    expect(shownTask.selected_agent).toMatchObject({ display_name: null, harness: 'codex' });
+    expect(text(again)).toContain('Requested of agent **codex · Bob’s laptop**');
+    expect(JSON.stringify(again)).not.toContain('Bob’s secret rig');
+    await client.close();
+  });
+});

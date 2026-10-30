@@ -1,9 +1,17 @@
-import type { AgentGrant, AgentGrantScope, TokenSeen } from '../../../api/agents.ts';
+import {
+  liveToken,
+  type AgentGrant,
+  type AgentGrantScope,
+  type RegisteredAgent,
+  type TokenSeen,
+} from '../../../api/agents.ts';
+import type { TokenView } from '../../../api/tokens.ts';
+import { ApiError } from '../../../api/errors.ts';
 import { LIVE_BUDGET_MS, LIVE_POLL_MS } from '../connect/connect-live.ts';
 
 /**
- * Registering an agent, as five steps (proposal §6, LAI-537): name, harness
- * and device → projects and permissions → credential → harness instructions
+ * Registering an agent, as five steps (proposal §6, LAI-537): harness and
+ * device (D-120: nothing else names it) → projects and permissions → credential → harness instructions
  * → verify a request from **this** agent.
  *
  * Adapted from Connect's wizard (`connect-wizard.ts`), and different from it
@@ -23,14 +31,14 @@ export const AGENT_STEPS: readonly AgentStep[] = [1, 2, 3, 4, 5];
 /**
  * Steps 1 to 3 are open from the start; 4 and 5 need the agent to exist.
  * **Back past step 3 is closed once it does**: the agent is registered, and
- * editing its name or grants from here would silently be a second write the
- * reader did not ask for — those are the list's *Rename* and *Access*.
+ * editing its device or grants from here would silently be a second write
+ * the reader did not ask for — the list's *Access* is where grants change.
  */
 export function agentStepOpen(step: AgentStep, registered: boolean): boolean {
   return registered ? step >= 3 : step <= 3;
 }
 
-/** What step 1 must hold before Continue goes anywhere. */
+/** What *Rename* must hold — a legacy duplicate's mark, the one place a typed name still shows. */
 export function nameProblem(name: string): string | undefined {
   const trimmed = name.trim();
   if (trimmed === '') return 'Give the agent a name.';
@@ -38,8 +46,119 @@ export function nameProblem(name: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Step 1's one field (D-120): the device is **required**, because an agent is
+ * its harness on its device and the label is that pair.
+ */
 export function deviceProblem(device: string): string | undefined {
-  return device.trim().length > 80 ? 'At most 80 characters.' : undefined;
+  const trimmed = device.trim();
+  if (trimmed === '') return 'Say which device it runs on — Belka, Strelka, Cloud.';
+  return trimmed.length > 80 ? 'At most 80 characters.' : undefined;
+}
+
+/** The device key the server compares (SPEC §4.63): trimmed, any case. */
+export function deviceKeyOf(device: string | null): string {
+  return (device ?? '').trim().toLowerCase();
+}
+
+/** A device the server treats as a cloud runner (LAI-592): `Cloud`, in any case. */
+export function isCloudDevice(device: string | null): boolean {
+  return deviceKeyOf(device) === 'cloud';
+}
+
+/**
+ * The longest a cloud agent's token may live — `CLOUD_TOKEN_MAX_TTL_MS` in
+ * `server/src/services/agents.ts`, one day. Asked for {@link CLOUD_TTL_MARGIN_MS}
+ * short of it, so a browser clock a little ahead of the server's is not
+ * refused for asking a minute too long.
+ */
+export const CLOUD_TOKEN_MAX_TTL_MS = 24 * 60 * 60 * 1000;
+export const CLOUD_TTL_MARGIN_MS = 5 * 60 * 1000;
+
+/** The expiry the wizard and *Rotate* ask for a cloud agent's token. */
+export function cloudExpiry(now: number): number {
+  return now + CLOUD_TOKEN_MAX_TTL_MS - CLOUD_TTL_MARGIN_MS;
+}
+
+/**
+ * The name sent to the server, which still requires one (1–80 characters).
+ * **Derived, never typed, never the label** (D-120): `<slug> on <device>` —
+ * the token takes the agent's name, and the server identifies a client that
+ * names itself generically by the token name's **first word**, so the slug
+ * leads (LAI-736, as Connect's `suggestTokenName`).
+ */
+export function derivedAgentName(tokenWord: string, device: string): string {
+  const name = `${tokenWord} on ${device.trim()}`;
+  return name.length <= 80 ? name : name.slice(0, 80).trimEnd();
+}
+
+/**
+ * The token *Rotate* replaces: the live one, or — for a **Cloud** agent whose
+ * day-long token has run out — its newest token not revoked (LAI-592). The
+ * server rotates an expired, unrevoked token with a fresh expiry inside a
+ * day, so a Cloud agent's expiry is the routine case, never a reason to
+ * revoke it and register again. `undefined` when every token is revoked:
+ * nothing is left to rotate.
+ */
+export function rotatableToken(agent: RegisteredAgent, now: number): TokenView | undefined {
+  const live = liveToken(agent, now);
+  if (live !== undefined || agent.status !== 'active' || !isCloudDevice(agent.device_label)) {
+    return live;
+  }
+  // `tokens` is newest first.
+  return agent.tokens.find((token) => token.revoked_at === null);
+}
+
+/** The existing agent a `409 agent_exists_for_harness_device` names (D-120, LAI-1000). */
+export interface HarnessDeviceConflict {
+  readonly agentId: string;
+}
+
+export function harnessDeviceConflict(cause: unknown): HarnessDeviceConflict | undefined {
+  if (!(cause instanceof ApiError) || cause.status !== 409) return undefined;
+  const details = cause.details as { reason?: unknown; agent_id?: unknown } | null;
+  if (details?.reason !== 'agent_exists_for_harness_device') return undefined;
+  return typeof details.agent_id === 'string' ? { agentId: details.agent_id } : undefined;
+}
+
+/**
+ * The owner's own active agent already on this harness and device, if their
+ * list shows one — so step 1 says so before the server has to. The server's
+ * `409` stays the authority: a list that has not loaded, or is stale, finds
+ * nothing here and the refusal still arrives.
+ */
+export function existingOnPair<
+  A extends {
+    readonly id: string;
+    readonly harness: string;
+    readonly device_label: string | null;
+    readonly status: string;
+  },
+>(agents: readonly A[] | undefined, harness: string, device: string): A | undefined {
+  if (deviceKeyOf(device) === '') return undefined;
+  return agents?.find(
+    (agent) =>
+      agent.status === 'active' &&
+      agent.harness === harness &&
+      deviceKeyOf(agent.device_label) === deviceKeyOf(device),
+  );
+}
+
+/**
+ * A cloud agent's `422` in words (LAI-592): `cloud_token_expiry_required` and
+ * `cloud_token_expiry_too_long`, each naming the 24-hour rule and what to do.
+ * Any other answer is `undefined`, for the caller's own wording.
+ */
+export function cloudExpiryProblem(cause: unknown): string | undefined {
+  if (!(cause instanceof ApiError) || cause.status !== 422) return undefined;
+  const reason = (cause.details as { reason?: unknown } | null)?.reason;
+  if (reason === 'cloud_token_expiry_required') {
+    return 'A Cloud agent’s token must expire, within 24 hours — Laika refused one that would not. Nothing was created; try again.';
+  }
+  if (reason === 'cloud_token_expiry_too_long') {
+    return 'A Cloud agent’s token may live at most 24 hours, and this one asked for longer — is this computer’s clock ahead? Nothing was created.';
+  }
+  return undefined;
 }
 
 /**
@@ -120,7 +239,7 @@ export function verifyStateFrom(seen: TokenSeen, elapsedMs: number): VerifyState
 export function agentFooterHint(step: AgentStep, registered: boolean, verified: boolean): string {
   switch (step) {
     case 1:
-      return 'Name it, then choose what it may reach';
+      return 'Its harness and device, then what it may reach';
     case 2:
       return 'Projects it may reach, and how';
     case 3:
