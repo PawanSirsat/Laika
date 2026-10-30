@@ -524,10 +524,16 @@ export const TAG_PREFIX = 'refs/tags/laika-ckpt/';
  */
 function pushOne(git: GitRunner, wt: Worktree, remote: string, sha: string, dst: string): void {
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Refusal('not a commit SHA', 'bad_sha');
+  // Exactly the one ref: `push.followTags` would add every annotated tag
+  // reachable from the commit, and `push.recurseSubmodules` other repos.
   const r = git(wt.top, [
     ...NO_HOOKS,
+    '-c',
+    'push.followTags=false',
     'push',
     '--no-verify',
+    '--no-follow-tags',
+    '--recurse-submodules=no',
     '--porcelain',
     '--',
     remote,
