@@ -2,11 +2,12 @@
 id: LAI-1009
 title: 'A signed-in person reads their hand-off inbox: GET /handoff-offers?view=received|sent|needs_approval|recovery, with counts'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-546]
 discovered-from: LAI-550
-status: backlog
+status: in-progress
+started: 2026-10-30T06:45:00Z
 ---
 
 Server half of LAI-550's Inbox → Hand-offs tab. Board: child of LAIKA-785
