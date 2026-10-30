@@ -1,4 +1,11 @@
-import type { AgentGrant, AgentGrantScope, TokenSeen } from '../../../api/agents.ts';
+import {
+  liveToken,
+  type AgentGrant,
+  type AgentGrantScope,
+  type RegisteredAgent,
+  type TokenSeen,
+} from '../../../api/agents.ts';
+import type { TokenView } from '../../../api/tokens.ts';
 import { ApiError } from '../../../api/errors.ts';
 import { LIVE_BUDGET_MS, LIVE_POLL_MS } from '../connect/connect-live.ts';
 
@@ -83,6 +90,23 @@ export function cloudExpiry(now: number): number {
 export function derivedAgentName(tokenWord: string, device: string): string {
   const name = `${tokenWord} on ${device.trim()}`;
   return name.length <= 80 ? name : name.slice(0, 80).trimEnd();
+}
+
+/**
+ * The token *Rotate* replaces: the live one, or — for a **Cloud** agent whose
+ * day-long token has run out — its newest token not revoked (LAI-592). The
+ * server rotates an expired, unrevoked token with a fresh expiry inside a
+ * day, so a Cloud agent's expiry is the routine case, never a reason to
+ * revoke it and register again. `undefined` when every token is revoked:
+ * nothing is left to rotate.
+ */
+export function rotatableToken(agent: RegisteredAgent, now: number): TokenView | undefined {
+  const live = liveToken(agent, now);
+  if (live !== undefined || agent.status !== 'active' || !isCloudDevice(agent.device_label)) {
+    return live;
+  }
+  // `tokens` is newest first.
+  return agent.tokens.find((token) => token.revoked_at === null);
 }
 
 /** The existing agent a `409 agent_exists_for_harness_device` names (D-120, LAI-1000). */

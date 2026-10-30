@@ -21,6 +21,7 @@ import {
   harnessDeviceConflict,
   isCloudDevice,
   nameProblem,
+  rotatableToken,
   sameGrants,
   VERIFY_BUDGET_MS,
   VERIFY_POLL_MS,
@@ -29,6 +30,8 @@ import {
 } from '../../../../src/routes/screens/developer/agent-wizard.ts';
 import { REGISTRATION_STEPS } from '../../../../src/components/agent/agent-states.ts';
 import { ApiError } from '../../../../src/api/errors.ts';
+import type { RegisteredAgent } from '../../../../src/api/agents.ts';
+import type { TokenView } from '../../../../src/api/tokens.ts';
 import {
   LIVE_BUDGET_MS,
   LIVE_POLL_MS,
@@ -196,5 +199,65 @@ void describe('step 5: the watch ends by the clock', () => {
     assert.equal(VERIFY_BUDGET_MS, 180_000);
     assert.equal(VERIFY_POLL_MS, LIVE_POLL_MS);
     assert.ok(VERIFY_REQUEST_TIMEOUT_MS > 0 && VERIFY_REQUEST_TIMEOUT_MS < VERIFY_BUDGET_MS);
+  });
+});
+
+void describe('what Rotate replaces (LAI-592)', () => {
+  const now = 10_000;
+  const token = (id: string, over: Partial<TokenView> = {}): TokenView => ({
+    id,
+    name: id,
+    prefix: 'lai_x',
+    scope: 'full',
+    project_ids: null,
+    last_used_at: null,
+    last_mcp_at: null,
+    last_client: null,
+    last_client_name: null,
+    expires_at: null,
+    revoked_at: null,
+    created_at: 1,
+    ...over,
+  });
+  const agent = (device: string | null, tokens: TokenView[], over: Partial<RegisteredAgent> = {}) =>
+    ({
+      id: 'a',
+      owner_user_id: 'u',
+      owner_display_name: 'Ada',
+      display_name: 'x',
+      harness: 'codex',
+      device_label: device,
+      status: 'active',
+      grants: [],
+      tokens,
+      created_at: 1,
+      revoked_at: null,
+      last_seen_at: null,
+      ...over,
+    }) satisfies RegisteredAgent;
+
+  void test('the live token, wherever the agent runs', () => {
+    const live = token('live', { expires_at: now + 1 });
+    assert.equal(rotatableToken(agent('Belka', [live]), now)?.id, 'live');
+    assert.equal(rotatableToken(agent('Cloud', [live]), now)?.id, 'live');
+  });
+
+  void test('a Cloud agent whose token expired rotates that token — the newest not revoked', () => {
+    const tokens = [
+      token('newest', { expires_at: now - 1 }),
+      token('older', { expires_at: now - 100 }),
+    ];
+    assert.equal(rotatableToken(agent(' cloud ', tokens), now)?.id, 'newest');
+    const revokedFirst = [token('gone', { revoked_at: 5 }), token('expired', { expires_at: 1 })];
+    assert.equal(rotatableToken(agent('Cloud', revokedFirst), now)?.id, 'expired');
+  });
+
+  void test('nothing to rotate: every Cloud token revoked, a non-Cloud expiry, a revoked agent', () => {
+    assert.equal(rotatableToken(agent('Cloud', [token('t', { revoked_at: 5 })]), now), undefined);
+    assert.equal(rotatableToken(agent('Belka', [token('t', { expires_at: 1 })]), now), undefined);
+    assert.equal(
+      rotatableToken(agent('Cloud', [token('t', { expires_at: 1 })], { status: 'revoked' }), now),
+      undefined,
+    );
   });
 });

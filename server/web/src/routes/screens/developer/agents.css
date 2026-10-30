@@ -399,7 +399,8 @@
   min-width: 0;
 }
 
-.agents-duplicate-note {
+.agents-duplicate-note,
+.agents-cloud-expired {
   margin: 0;
 }
 

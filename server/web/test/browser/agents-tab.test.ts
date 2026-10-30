@@ -1592,4 +1592,44 @@ void describe('one agent per harness per device (D-120, LAI-1001)', () => {
       await h.close();
     }
   });
+
+  void test('a Cloud agent whose token expired is rotated, never revoked and registered again', async () => {
+    const expired = { ...tokenRow('t-a1', 'claude-code on Cloud', 1_000), expires_at: 2_000 };
+    const api = agentsApi([
+      existing({
+        harness: 'claude-code',
+        device_label: 'Cloud',
+        display_name: 'claude-code on Cloud',
+        tokens: [expired],
+      }),
+    ]);
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      const row = page.locator('.agents-row[data-agent="a1"]');
+      await row.waitFor({ timeout: 20_000 });
+      assert.match(await row.locator('[data-cloud-expired]').innerText(), /Rotate it/);
+      assert.equal(await row.getByRole('button', { name: 'Rotate token' }).isDisabled(), false);
+
+      // The wizard's notice on that pair offers the same rotation, not a revoke.
+      await press(page, '+ Register an agent');
+      await typeDevice(page, 'Cloud');
+      const notice = page.locator('[data-agent-exists="a1"]');
+      await notice.waitFor();
+      assert.doesNotMatch(await notice.innerText(), /Revoke it/);
+      await press(page, 'Rotate its token', '[data-agent-exists="a1"]');
+      await confirmSettled(page);
+      const before = Date.now();
+      await page.locator('[data-confirm-dialog] [data-confirm-ok] button').click();
+      await page.locator('[data-testid="agent-secret"]').waitFor();
+      const sent = h.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/rotate-token'));
+      assert.equal(sent.length, 1);
+      const body = sent[0]?.body as { token_id: string; expires_at?: number };
+      assert.equal(body.token_id, 't-a1');
+      assert.ok(typeof body.expires_at === 'number' && body.expires_at > before);
+      assert.ok(body.expires_at <= Date.now() + 24 * 3_600_000, 'the new expiry is past a day');
+    } finally {
+      await h.close();
+    }
+  });
 });

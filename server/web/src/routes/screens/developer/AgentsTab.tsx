@@ -51,6 +51,7 @@ import {
   harnessDeviceConflict,
   isCloudDevice,
   nameProblem,
+  rotatableToken,
   sameGrants,
   VERIFY_BUDGET_MS,
   VERIFY_POLL_MS,
@@ -1063,7 +1064,7 @@ function ExistingAgentNotice({
   readonly onRotate: (agentId: string) => void;
 }) {
   const now = Date.now();
-  const rotatable = existing !== undefined && liveToken(existing, now) !== undefined;
+  const rotatable = existing !== undefined && rotatableToken(existing, now) !== undefined;
   return (
     <div className="agents-existing" role="alert" data-agent-exists={agentId}>
       <p className="agents-existing-line">
@@ -1310,6 +1311,8 @@ function AgentRow({
   const accessButton = useRef<HTMLButtonElement | null>(null);
   const rotateButton = useRef<HTMLButtonElement | null>(null);
   const live = liveToken(agent, now);
+  // What Rotate replaces: the live token, or a Cloud agent's expired one.
+  const replaceable = rotatableToken(agent, now);
   // The list is the reader's own (the server filters it), so the owner is
   // the reader — named from `/me`, never assumed.
   const owner = me?.id === agent.owner_user_id ? `${me.name} (you)` : '—';
@@ -1321,7 +1324,7 @@ function AgentRow({
   };
 
   const rotate = (): void => {
-    if (live === undefined || heldByWizard) return;
+    if (replaceable === undefined || heldByWizard) return;
     void confirmRotate({
       title: `Rotate ${label}’s credential?`,
       body: isCloudDevice(agent.device_label)
@@ -1335,7 +1338,7 @@ function AgentRow({
       setError(undefined);
       rotateAgentToken(
         agent.id,
-        live.id,
+        replaceable.id,
         // LAI-592: a cloud agent's new token must expire within a day.
         isCloudDevice(agent.device_label) ? cloudExpiry(Date.now()) : undefined,
       )
@@ -1389,6 +1392,12 @@ function AgentRow({
           )}
         </span>
       </div>
+      {active && live === undefined && replaceable !== undefined && (
+        <p className="agents-hint agents-cloud-expired" data-cloud-expired>
+          Its Cloud token has expired, as every Cloud token does within a day. Rotate it to give the
+          runner a fresh one — nothing needs revoking.
+        </p>
+      )}
       {duplicate && (
         <p className="agents-hint agents-duplicate-note">
           Another of your active agents is on this harness and device — registered before one agent
@@ -1460,7 +1469,7 @@ function AgentRow({
             type="button"
             className="bar-control"
             ref={rotateButton}
-            disabled={busy || live === undefined || heldByWizard}
+            disabled={busy || replaceable === undefined || heldByWizard}
             {...(heldByWizard ? { 'aria-describedby': `agents-held-${agent.id}` } : {})}
             onClick={rotate}
           >
