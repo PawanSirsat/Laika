@@ -303,6 +303,9 @@ export function deniedName(path: string): boolean {
  * no pattern can prove free text holds nothing sensitive.
  */
 export const SECRET_PATTERNS: readonly (readonly [string, RegExp])[] = [
+  // `lai_` and 40 base62 characters: TOKEN_PREFIX + TOKEN_SECRET_LENGTH in
+  // server/src/auth/tokens.ts (SPEC §4.9) — a person's token or an agent's.
+  ['a Laika token', /\blai_[0-9A-Za-z]{40}\b/],
   ['a private key', /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/],
   ['an AWS access key id', /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
   ['a GitHub token', /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})\b/],
