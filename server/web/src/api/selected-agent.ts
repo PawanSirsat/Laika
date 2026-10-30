@@ -35,27 +35,36 @@ export function selectedHarness(agent: Pick<SelectedAgent, 'harness'>): AgentCli
   return AGENT_CLIENTS.find((slug) => slug === agent.harness) ?? 'other';
 }
 
+/** What an agent whose harness Laika does not know is labelled by (D-120): never its own name. */
+export const OTHER_HARNESS = 'Other harness';
+
+/** What an agent that reported no device is labelled by (D-120): null and blank are one device. */
+export const NO_DEVICE = 'No device';
+
 /**
  * The agent's product name: *Claude Code*. A harness Laika does not know reads
- * as the name its owner gave it, never as *another agent*, which is a
- * placeholder and not a name.
+ * *Other harness* — never the name its owner typed, which D-120 took out of
+ * every label.
  */
-export function agentProductName(agent: Pick<SelectedAgent, 'harness' | 'display_name'>): string {
+export function agentProductName(agent: Pick<SelectedAgent, 'harness'>): string {
   const client = selectedHarness(agent);
-  return client === 'other' ? agent.display_name : agentClientName(client);
+  return client === 'other' ? OTHER_HARNESS : agentClientName(client);
 }
 
-/** Where it runs: the device it reported, or its own name when it reported none. */
-export function agentDevice(agent: Pick<SelectedAgent, 'device_label' | 'display_name'>): string {
-  return agent.device_label === null || agent.device_label === ''
-    ? agent.display_name
-    : agent.device_label;
+/** Where it runs: the device it reported, trimmed, or *No device* — never its own name (D-120). */
+export function agentDevice(agent: Pick<SelectedAgent, 'device_label'>): string {
+  const device = agent.device_label?.trim() ?? '';
+  return device === '' ? NO_DEVICE : device;
 }
 
-/** *Claude Code · laptop-1* — the chip's words, and the List's and the filter's. */
-export function agentLabel(
-  agent: Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>,
-): string {
+/**
+ * *Omnigent · Belka* — **the** label of an agent (D-120, LAI-1001): its
+ * harness and its device, and nothing its owner typed. The chip's words, the
+ * List's, the filter's, History's and the Agents tab's. Two of one owner's
+ * active agents can no longer share it (LAI-1000's `409`); a legacy pair that
+ * already does is told apart by {@link twinNames}, and only then.
+ */
+export function agentLabel(agent: Pick<SelectedAgent, 'harness' | 'device_label'>): string {
   return `${agentProductName(agent)} · ${agentDevice(agent)}`;
 }
 

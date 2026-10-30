@@ -13,12 +13,20 @@ import {
   revokedOnly,
   revokeTargets,
   withRecognised,
+  harnessRows,
   withRevoked,
   type AgentDevice,
 } from '../../../api/agent-devices.ts';
-import { AGENT_STATE_LABELS, agentHarness, agentState } from '../../../api/agents.ts';
-import { agentLabel } from '../../../api/selected-agent.ts';
+import {
+  AGENT_STATE_LABELS,
+  agentAnchor,
+  agentHarness,
+  agentState,
+  type RegisteredAgent,
+} from '../../../api/agents.ts';
+import { agentLabel, twinNames } from '../../../api/selected-agent.ts';
 import { timeLabel } from '../../../api/time-label.ts';
+import { goToAgent } from './go-to-agent.ts';
 import './devices.css';
 
 export interface DevicesSectionProps {
@@ -46,6 +54,9 @@ export interface DevicesSectionProps {
  *   its question open with the server's refusal when the call fails — so a
  *   failure changes nothing on screen.
  * - A device with nothing left running collapses to one muted row.
+ * - **One row per harness** under each device (D-120). Two active agents of
+ *   one harness on one device are a legacy duplicate: flagged in words, told
+ *   apart by LAI-583's marks, each linked to its row to revoke one.
  */
 export function DevicesSection({ canManage, generation, onRevoked }: DevicesSectionProps) {
   const [devices, setDevices] = useState<readonly AgentDevice[] | undefined>(undefined);
@@ -290,17 +301,95 @@ function DeviceGroup({
     </div>
   );
 
+  // One row per harness (D-120). A harness with one agent is that agent's
+  // row; one with more lists them under it, told apart by LAI-583's marks —
+  // which only a legacy duplicate or a revoked predecessor still needs.
+  const twins = twinNames(device.agents);
+  const nameOf = (agent: RegisteredAgent): string => {
+    const twin = twins.get(agent.id);
+    return twin === undefined ? agentLabel(agent) : `${agentLabel(agent)} (${twin})`;
+  };
+  const agentLine = (agent: RegisteredAgent, duplicate: boolean) => {
+    const state = agentState(agent, now);
+    return (
+      <>
+        <AgentMark client={agentHarness(agent)} />
+        <span className="devices-agent-name">{nameOf(agent)}</span>
+        <span className="agents-state" data-state={state}>
+          {AGENT_STATE_LABELS[state]}
+        </span>
+        {duplicate && agent.status === 'active' && (
+          <a
+            className="devices-agent-link"
+            href={`#${agentAnchor(agent.id)}`}
+            onClick={(event) => {
+              if (goToAgent(agent.id)) event.preventDefault();
+            }}
+          >
+            Go to it<span className="visually-hidden">: {nameOf(agent)}</span>
+          </a>
+        )}
+      </>
+    );
+  };
   const agents = (
     <ul className="devices-agents" aria-label={`Agents on ${device.display_name}`}>
-      {device.agents.map((agent) => {
-        const state = agentState(agent, now);
+      {harnessRows(device).map((row) => {
+        const [only] = row.agents;
+        if (row.agents.length === 1 && only !== undefined) {
+          const state = agentState(only, now);
+          return (
+            <li
+              key={row.harness}
+              className="devices-harness devices-agent"
+              data-harness={row.harness}
+              data-agent={only.id}
+              data-state={state}
+            >
+              {agentLine(only, false)}
+            </li>
+          );
+        }
+        const first = row.agents[0];
         return (
-          <li key={agent.id} className="devices-agent" data-agent={agent.id} data-state={state}>
-            <AgentMark client={agentHarness(agent)} />
-            <span className="devices-agent-name">{agentLabel(agent)}</span>
-            <span className="agents-state" data-state={state}>
-              {AGENT_STATE_LABELS[state]}
-            </span>
+          <li
+            key={row.harness}
+            className="devices-harness"
+            data-harness={row.harness}
+            data-duplicate={row.duplicate || undefined}
+          >
+            <div className="devices-harness-head">
+              <span className="devices-harness-name">
+                {first === undefined ? '' : agentLabel(first)}
+              </span>
+              {row.duplicate ? (
+                <span className="devices-duplicate" data-duplicate-flag>
+                  Duplicate: {row.active} active
+                </span>
+              ) : (
+                <span className="devices-harness-count">
+                  {row.agents.length} {row.agents.length === 1 ? 'agent' : 'agents'}
+                </span>
+              )}
+            </div>
+            {row.duplicate && (
+              <p className="devices-duplicate-note">
+                Registered before one agent per harness per device. Both keep working; revoke the
+                one you do not want.
+              </p>
+            )}
+            <ul className="devices-harness-agents">
+              {row.agents.map((agent) => (
+                <li
+                  key={agent.id}
+                  className="devices-agent"
+                  data-agent={agent.id}
+                  data-state={agentState(agent, now)}
+                >
+                  {agentLine(agent, row.duplicate)}
+                </li>
+              ))}
+            </ul>
           </li>
         );
       })}
@@ -405,6 +494,7 @@ function RevokeDeviceDialog({
   readonly onClose: () => void;
 }) {
   const targets = revokeTargets(device);
+  const twins = twinNames(device.agents);
   const count = targets.length;
   /**
    * **Focus never leaves a pending revoke** (review round 1, APG modal
@@ -439,9 +529,14 @@ function RevokeDeviceDialog({
       detail={
         <>
           <ul className="devices-dialog-list" data-revoke-targets>
-            {targets.map((agent) => (
-              <li key={agent.id}>{agentLabel(agent)}</li>
-            ))}
+            {targets.map((agent) => {
+              const twin = twins.get(agent.id);
+              return (
+                <li key={agent.id}>
+                  {twin === undefined ? agentLabel(agent) : `${agentLabel(agent)} (${twin})`}
+                </li>
+              );
+            })}
           </ul>
           <p
             ref={holder}

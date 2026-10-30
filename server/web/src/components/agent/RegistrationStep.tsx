@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { AGENT_CLIENTS, agentClientName, type AgentClient } from '../../api/agent-clients.ts';
+import { agentLabel } from '../../api/selected-agent.ts';
 import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import { CopyButton } from '../CopyButton.tsx';
 import { Dropdown } from '../Dropdown.tsx';
@@ -21,9 +22,13 @@ export interface ProjectGrant {
 export type WizardStep =
   | {
       readonly kind: 'identity';
-      readonly name: string;
       readonly client: AgentClient;
       readonly device: string;
+      /**
+       * The owner's agent already on this pair, by its label — the `409
+       * agent_exists_for_harness_device` notice (D-120). Absent when free.
+       */
+      readonly existing?: string | undefined;
     }
   | { readonly kind: 'access'; readonly grants: readonly ProjectGrant[] }
   | {
@@ -89,12 +94,6 @@ function StepBody({ step, onStep, onRetry }: RegistrationStepProps) {
     case 'identity':
       return (
         <>
-          <TextInput
-            label="Name"
-            value={step.name}
-            onChange={(name) => onStep?.({ ...step, name })}
-            help="What people see on cards and in activity."
-          />
           <div className="field">
             <span id={harnessLabel} className="field-label">
               Harness
@@ -103,7 +102,7 @@ function StepBody({ step, onStep, onRetry }: RegistrationStepProps) {
               value={step.client}
               options={AGENT_CLIENTS.map((c) => ({
                 value: c,
-                label: agentClientName(c),
+                label: c === 'other' ? 'Other harness' : agentClientName(c),
                 icon: <AgentMark client={c} size="sm" />,
               }))}
               onChange={(client) => onStep?.({ ...step, client })}
@@ -115,8 +114,25 @@ function StepBody({ step, onStep, onRetry }: RegistrationStepProps) {
             label="Device"
             value={step.device}
             onChange={(device) => onStep?.({ ...step, device })}
-            help="Self-reported, like the harness. Laika cannot check either."
+            help="Required and self-reported, like the harness — or Cloud for a hosted runner."
           />
+          <p className="agent-wizard-lead">
+            Shown everywhere as{' '}
+            <strong>{agentLabel({ harness: step.client, device_label: step.device })}</strong> — one
+            agent for each harness on each device, and no other name.
+          </p>
+          {step.device.trim().toLowerCase() === 'cloud' && (
+            <p className="agent-wizard-lead" role="note">
+              Cloud runs somewhere you do not sit, so its token expires within 24 hours. Rotate it
+              to give the runner a fresh one.
+            </p>
+          )}
+          {step.existing !== undefined && (
+            <p className="agent-wizard-lead" role="alert">
+              You already have <strong>{step.existing}</strong>. Go to it, or rotate its token to
+              set it up again.
+            </p>
+          )}
         </>
       );
     case 'access':

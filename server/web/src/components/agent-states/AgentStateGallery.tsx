@@ -221,17 +221,33 @@ export default function AgentStateGallery() {
         </Specimen>
         <Specimen
           id="wizard-identity"
-          title="Register an agent — 1. name, harness and device"
-          note="Harness and device are self-reported, and the step says so."
+          title="Register an agent — 1. harness and device"
+          note="The pair is the label (D-120): no name field. Both self-reported, and the step says so."
+        >
+          <WizardSpecimen
+            initial={{ kind: 'identity', client: 'claude-code', device: 'laptop-1' }}
+          />
+        </Specimen>
+        <Specimen
+          id="wizard-identity-taken"
+          title="Register an agent — 1. that pair is taken"
+          note="409 agent_exists_for_harness_device: the existing agent, a way to it and its Rotate."
         >
           <WizardSpecimen
             initial={{
               kind: 'identity',
-              name: AGENT_NAME,
-              client: 'claude-code',
-              device: 'laptop-1',
+              client: 'omnigent',
+              device: 'Belka',
+              existing: 'Omnigent · Belka',
             }}
           />
+        </Specimen>
+        <Specimen
+          id="wizard-identity-cloud"
+          title="Register an agent — 1. a Cloud runner"
+          note="Cloud tokens expire within 24 hours (LAI-592); the step says so before registering."
+        >
+          <WizardSpecimen initial={{ kind: 'identity', client: 'codex', device: 'Cloud' }} />
         </Specimen>
         <Specimen
           id="wizard-access"

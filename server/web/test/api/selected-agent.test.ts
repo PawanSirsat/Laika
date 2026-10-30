@@ -183,14 +183,34 @@ void describe('naming an agent', () => {
     assert.equal(agentLabel(selected({ id: 'a' })), 'Claude Code · laptop-1');
   });
 
-  void test('no device falls back to the agent’s own name; an unknown harness to its name too', () => {
+  void test('the registered name is never the label (D-120): Polly on omnigent, Belka', () => {
     assert.equal(
-      agentLabel(selected({ id: 'a', device_label: null })),
-      'Claude Code · Laptop agent',
+      agentLabel(
+        selected({ id: 'a', harness: 'omnigent', display_name: 'Polly', device_label: 'Belka' }),
+      ),
+      'Omnigent · Belka',
     );
     assert.equal(
+      agentLabel(
+        selected({ id: 'a', harness: 'codex', display_name: 'runner', device_label: 'Cloud' }),
+      ),
+      'Codex · Cloud',
+    );
+  });
+
+  void test('no device reads No device, an unknown harness Other harness — never the name', () => {
+    assert.equal(agentLabel(selected({ id: 'a', device_label: null })), 'Claude Code · No device');
+    assert.equal(agentLabel(selected({ id: 'a', device_label: '   ' })), 'Claude Code · No device');
+    assert.equal(
       agentLabel(selected({ id: 'a', harness: 'made-up', display_name: 'Rig' })),
-      'Rig · laptop-1',
+      'Other harness · laptop-1',
+    );
+  });
+
+  void test('a device is trimmed, so the label is the pair the server compares', () => {
+    assert.equal(
+      agentLabel(selected({ id: 'a', device_label: '  Belka ' })),
+      'Claude Code · Belka',
     );
   });
 });

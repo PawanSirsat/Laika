@@ -272,3 +272,85 @@
     left: 0;
   }
 }
+
+/* One row per harness (D-120, LAI-1001). A harness with several agents — a
+   legacy duplicate, or a revoked predecessor — lists them under its label. */
+.devices-harness {
+  min-width: 0;
+}
+
+.devices-harness:not(.devices-agent) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.devices-harness-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+.devices-harness-name {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.devices-harness-count {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+/* A word, never only a colour (§5.1). */
+.devices-duplicate {
+  flex: none;
+  padding: 0.125rem var(--space-2);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-pill);
+}
+
+.devices-duplicate-note {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.devices-harness-agents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 0 0 var(--space-4);
+  list-style: none;
+  border-left: 2px solid var(--border-subtle);
+}
+
+.devices-agent-link {
+  flex: none;
+  font-size: var(--text-small);
+  color: var(--accent);
+  border-radius: var(--radius-control);
+}
+
+.devices-agent-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .devices-harness-agents {
+    padding-left: var(--space-3);
+  }
+
+  .devices-harness-agents .devices-agent {
+    flex-wrap: wrap;
+  }
+}

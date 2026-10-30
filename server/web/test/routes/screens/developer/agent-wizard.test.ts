@@ -11,8 +11,15 @@ import {
   agentFooterHint,
   agentStepOpen,
   choicesFrom,
+  cloudExpiry,
+  cloudExpiryProblem,
+  CLOUD_TOKEN_MAX_TTL_MS,
+  derivedAgentName,
   deviceProblem,
+  existingOnPair,
   grantsFrom,
+  harnessDeviceConflict,
+  isCloudDevice,
   nameProblem,
   sameGrants,
   VERIFY_BUDGET_MS,
@@ -21,6 +28,7 @@ import {
   verifyStateFrom,
 } from '../../../../src/routes/screens/developer/agent-wizard.ts';
 import { REGISTRATION_STEPS } from '../../../../src/components/agent/agent-states.ts';
+import { ApiError } from '../../../../src/api/errors.ts';
 import {
   LIVE_BUDGET_MS,
   LIVE_POLL_MS,
@@ -57,16 +65,85 @@ void describe('the five steps', () => {
 });
 
 void describe('step 1', () => {
-  void test('a name is 1 to 80 characters once trimmed, as the server cleans it', () => {
+  void test('a rename is 1 to 80 characters once trimmed, as the server cleans it', () => {
     assert.ok(nameProblem('   ') !== undefined);
     assert.equal(nameProblem(' a '), undefined);
     assert.equal(nameProblem('x'.repeat(80)), undefined);
     assert.ok(nameProblem('x'.repeat(81)) !== undefined);
   });
 
-  void test('a device is optional and at most 80', () => {
-    assert.equal(deviceProblem(''), undefined);
+  void test('a device is required (D-120) and at most 80', () => {
+    assert.match(deviceProblem('') ?? '', /which device/);
+    assert.match(deviceProblem('   ') ?? '', /which device/);
+    assert.equal(deviceProblem(' Belka '), undefined);
     assert.ok(deviceProblem('x'.repeat(81)) !== undefined);
+  });
+
+  void test('the name sent is derived: the slug first, for the server’s first-word match', () => {
+    assert.equal(derivedAgentName('omnigent', ' Belka '), 'omnigent on Belka');
+    assert.equal(derivedAgentName('claude-code', 'x'.repeat(80)).length, 80);
+    assert.match(derivedAgentName('claude-code', 'x'.repeat(80)), /^claude-code on x+$/);
+  });
+
+  void test('Cloud is a cloud runner in any case and padding; nothing else is', () => {
+    assert.equal(isCloudDevice(' cLoUd '), true);
+    assert.equal(isCloudDevice('Cloudy'), false);
+    assert.equal(isCloudDevice(null), false);
+  });
+
+  void test('a cloud token is asked for inside 24 hours, never at or past it', () => {
+    const now = 1_000_000;
+    assert.ok(cloudExpiry(now) > now);
+    assert.ok(cloudExpiry(now) < now + CLOUD_TOKEN_MAX_TTL_MS);
+    assert.equal(CLOUD_TOKEN_MAX_TTL_MS, 86_400_000);
+  });
+});
+
+void describe('the server’s refusals, read', () => {
+  const conflict = new ApiError('conflict', 'You already have…', 409, {
+    reason: 'agent_exists_for_harness_device',
+    agent_id: 'ag-1',
+    harness: 'omnigent',
+    device_label: 'belka',
+  });
+
+  void test('409 agent_exists_for_harness_device names the existing agent', () => {
+    assert.deepEqual(harnessDeviceConflict(conflict), { agentId: 'ag-1' });
+  });
+
+  void test('another 409, or the reason on another status, is not that conflict', () => {
+    const other = new ApiError('conflict', 'x', 409, { reason: 'stale_claim', agent_id: 'ag-1' });
+    const wrongStatus = new ApiError('unprocessable', 'x', 422, {
+      reason: 'agent_exists_for_harness_device',
+      agent_id: 'ag-1',
+    });
+    assert.equal(harnessDeviceConflict(other), undefined);
+    assert.equal(harnessDeviceConflict(wrongStatus), undefined);
+    assert.equal(harnessDeviceConflict(new Error('x')), undefined);
+  });
+
+  void test('each cloud 422 says the 24-hour rule; another 422 is left to the caller', () => {
+    const required = new ApiError('unprocessable', 'x', 422, {
+      reason: 'cloud_token_expiry_required',
+    });
+    const long = new ApiError('unprocessable', 'x', 422, { reason: 'cloud_token_expiry_too_long' });
+    assert.match(cloudExpiryProblem(required) ?? '', /must expire, within 24 hours/);
+    assert.match(cloudExpiryProblem(long) ?? '', /at most 24 hours/);
+    assert.equal(cloudExpiryProblem(new ApiError('unprocessable', 'x', 422, {})), undefined);
+    assert.equal(cloudExpiryProblem(conflict), undefined);
+  });
+
+  void test('the list finds the owner’s active agent on the pair, by the server’s key', () => {
+    const agents = [
+      { id: 'old', harness: 'omnigent', device_label: 'Belka', status: 'revoked' },
+      { id: 'cc', harness: 'claude-code', device_label: 'Belka', status: 'active' },
+      { id: 'om', harness: 'omnigent', device_label: ' belka ', status: 'active' },
+    ];
+    assert.equal(existingOnPair(agents, 'omnigent', 'BELKA')?.id, 'om');
+    assert.equal(existingOnPair(agents, 'omnigent', 'Strelka'), undefined);
+    assert.equal(existingOnPair(agents, 'codex', 'Belka'), undefined);
+    assert.equal(existingOnPair(agents, 'omnigent', ''), undefined);
+    assert.equal(existingOnPair(undefined, 'omnigent', 'Belka'), undefined);
   });
 });
 

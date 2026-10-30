@@ -79,6 +79,8 @@ void describe('agent states on /design/states (LAI-536)', () => {
         'policy-other-owners',
         'context',
         'wizard-identity',
+        'wizard-identity-taken',
+        'wizard-identity-cloud',
         'wizard-access',
         'wizard-credential',
         'wizard-instructions',
@@ -514,7 +516,7 @@ void describe('agent states on /design/states (LAI-536)', () => {
     try {
       const where = async (id: string) =>
         specimen(h.page, id).locator('[aria-current="step"] .reg-step-name').innerText();
-      assert.equal(await where('wizard-identity'), 'Name, harness and device');
+      assert.equal(await where('wizard-identity'), 'Harness and device');
       assert.equal(await where('wizard-access'), 'Projects and permissions');
       assert.equal(await where('wizard-credential'), 'Credential');
       assert.equal(await where('wizard-instructions'), 'Harness instructions');
@@ -528,6 +530,17 @@ void describe('agent states on /design/states (LAI-536)', () => {
       assert.equal(
         await identity.getByRole('combobox', { name: 'Harness' }).getAttribute('data-value'),
         'claude-code',
+      );
+      // D-120: no name field, and the step says what the pair is shown as.
+      assert.equal(await identity.getByRole('textbox').count(), 1);
+      assert.match(await identity.innerText(), /Shown everywhere as Claude Code · laptop-1/);
+      assert.match(
+        await specimen(h.page, 'wizard-identity-taken').locator('[role="alert"]').innerText(),
+        /You already have Omnigent · Belka/,
+      );
+      assert.match(
+        await specimen(h.page, 'wizard-identity-cloud').innerText(),
+        /Codex · Cloud[\s\S]*expires within 24 hours/,
       );
       const access = specimen(h.page, 'wizard-access');
       assert.equal(
