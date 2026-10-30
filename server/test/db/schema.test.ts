@@ -74,6 +74,9 @@ describe('migrations', () => {
     'activity',
     // LAI-545, D-115 item 2: an owner's consent to automatic saves.
     'agent_checkpoint_consents',
+    // LAI-553: agent event envelopes and their per-agent deliveries.
+    'agent_event_deliveries',
+    'agent_events',
     // LAI-534, D-114: what each registered agent may reach.
     'agent_project_grants',
     // LAI-555: the context revision last delivered to a session, per project.

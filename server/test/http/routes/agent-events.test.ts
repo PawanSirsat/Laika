@@ -452,6 +452,22 @@ describe('the envelope (§4.76)', () => {
     expect((await poll(receiver.secret)).data).toEqual([]);
     expect((await poll(bystander.secret)).data).toEqual([]);
   });
+  it('a context change is addressed to every agent granted the project, with its revision', async () => {
+    await ok(
+      await h.app.request('/api/v1/projects/laika/context', {
+        method: 'PATCH',
+        headers: jsonHeaders({ Cookie: cookie }),
+        body: JSON.stringify({ context_md: 'New brief', base_revision: 0 }),
+      }),
+      200,
+    );
+    for (const a of [sender, receiver, bystander]) {
+      const page = await poll(a.secret);
+      expect(
+        page.data.map((e) => [e.type, (e as { context_revision?: number }).context_revision]),
+      ).toEqual([['project.context_updated', 1]]);
+    }
+  });
 });
 
 // ------------------------------------------------------- polling and acking
@@ -648,25 +664,29 @@ describe('hand-off events on /api/v1/events (§11.5)', () => {
     ]);
   });
 
-  it('re-checks the grant per event: a grant removed after the offer keeps it off the replay', async () => {
+  it('re-checks the grant as each frame is written: a grant removed while the offer is queued drops it', async () => {
     const cp = await verifiedSave();
-    const from = latestActivitySeq(h.db);
-    await ok(await restOffer(cp.id), 201);
-    await ok(
-      await h.app.request(`/api/v1/agents/${receiver.id}/grants`, {
-        method: 'PUT',
-        headers: jsonHeaders({ Cookie: cookie }),
-        body: JSON.stringify({ grants: [] }),
-      }),
-      200,
-    );
-    // The delivery row still exists; the stream asks the grant as it writes.
-    expect(deliveryRows(lastRow('task.handoff_offered').id)).toHaveLength(1);
-    const live = await stream(receiver.secret, from);
+    const live = await stream(receiver.secret);
     try {
+      // `streamSSE` holds a write until the client reads the frame before it
+      // (LAI-539's technique): with two comments unread ahead of it, the
+      // offer is queued, already past the batch filter, and not yet checked.
+      await comment('first');
+      await comment('second');
+      await ok(await restOffer(cp.id), 201);
       h.activityFeed.poll();
+      await ok(
+        await h.app.request(`/api/v1/agents/${receiver.id}/grants`, {
+          method: 'PUT',
+          headers: jsonHeaders({ Cookie: cookie }),
+          body: JSON.stringify({ grants: [] }),
+        }),
+        200,
+      );
+      expect((await live.next()).event).toBe('comment.added');
+      expect((await live.next()).event).toBe('comment.added');
       const next = await Promise.race([
-        live.next(),
+        live.next().catch(() => null),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 400)),
       ]);
       expect(next?.event ?? null).not.toBe('task.handoff_offered');
