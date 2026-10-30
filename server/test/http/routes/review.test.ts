@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
+import { eq } from 'drizzle-orm';
+import { orgs, users } from '../../../src/db/schema.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  seedInvite,
+  signUp,
+} from '../../helpers/auth.ts';
 
 /**
  * The review gate over HTTP (§6.4, D-082, LAI-758): the refusal an agent's
@@ -397,5 +406,156 @@ describe('the decisions and the queue (LAIKA-478)', () => {
     });
     expect(replay.headers.get('Idempotent-Replay')).toBeNull();
     expect(replay.status).toBe(403);
+  });
+});
+
+describe('a round names another person’s agent only where the task already shows it (LAI-1001)', () => {
+  interface RoundShape {
+    client_name: string | null;
+    agent: { id: string; harness: string; device_label: string | null } | null;
+    by_registered_agent: boolean;
+  }
+
+  /** Bob, a member of `core`, whose agent "Bob's secret rig" finishes a task Ada can read. */
+  async function bobsAgentFinishes(select: boolean) {
+    const orgId = h.db.select().from(orgs).get()?.id ?? '';
+    const adaId = h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()?.id;
+    const invite = seedInvite(h.db, {
+      orgId,
+      createdBy: adaId ?? '',
+      email: 'bob@example.test',
+      orgRole: 'member',
+    });
+    const signed = await signUp(h.app, {
+      email: 'bob@example.test',
+      password: PASSWORD,
+      inviteToken: invite,
+    });
+    expect(signed.status, await signed.clone().text()).toBe(200);
+    const bobCookie = cookieFrom(signed);
+    const bobId = h.db.select().from(users).where(eq(users.email, 'bob@example.test')).get()?.id;
+    const projects = await json<{ data: { id: string; slug: string }[] }>(
+      await must(asSession('/api/v1/projects')),
+    );
+    const core = projects.data.find((p) => p.slug === 'core')?.id ?? '';
+    await must(
+      asSession('/api/v1/projects/core/members', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: bobId, role: 'member' }),
+      }),
+      201,
+    );
+    const asBob = async (
+      path: string,
+      init: RequestInit = {},
+      bearer?: string,
+      generation?: string,
+    ): Promise<Response> =>
+      h.app.request(path, {
+        ...init,
+        headers: jsonHeaders({
+          ...(bearer === undefined ? { Cookie: bobCookie } : { Authorization: `Bearer ${bearer}` }),
+          ...(generation === undefined ? {} : { 'X-Laika-Claim-Generation': generation }),
+        }),
+      });
+    const rig = await json<{ agent: { id: string }; secret: string }>(
+      await must(
+        asBob('/api/v1/agents', {
+          method: 'POST',
+          body: JSON.stringify({
+            display_name: 'Bob’s secret rig',
+            harness: 'codex',
+            device_label: 'Bob’s laptop',
+            grants: [{ project_id: core, scope: 'full' }],
+          }),
+        }),
+        201,
+      ),
+    );
+
+    const task = await newTask();
+    if (select) {
+      await must(
+        asBob(`/api/v1/tasks/${task.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ selected_agent_id: rig.agent.id }),
+        }),
+      );
+    }
+    const claimed = await must(
+      asBob(`/api/v1/tasks/${task.id}/claim`, { method: 'POST' }, rig.secret),
+    );
+    const generation = claimed.headers.get('X-Laika-Claim-Generation') ?? '';
+    expect(generation).not.toBe('');
+    await must(
+      asBob(
+        `/api/v1/tasks/${task.id}/finish`,
+        { method: 'POST', body: JSON.stringify({ summary: 'Did it' }) },
+        rig.secret,
+        generation,
+      ),
+    );
+    const read = async (as: 'ada' | 'bob') => {
+      const get = (path: string) => (as === 'ada' ? asSession(path) : asBob(path));
+      const rounds = await json<{ rounds: RoundShape[] }>(
+        await must(get(`/api/v1/tasks/${task.id}/rounds`)),
+      );
+      const queue = await json<{ tasks: { task: { id: string }; round: RoundShape | null }[] }>(
+        await must(get('/api/v1/review')),
+      );
+      return {
+        rounds: rounds.rounds[0],
+        queue: queue.tasks.find((t) => t.task.id === task.id)?.round,
+      };
+    };
+    return { rig, task, read, asBob };
+  }
+
+  it('Ada reads a round Bob’s unselected agent finished: an agent, never which one', async () => {
+    const { read } = await bobsAgentFinishes(false);
+    const ada = await read('ada');
+    for (const round of [ada.rounds, ada.queue]) {
+      expect(round).toBeDefined();
+      expect(round?.agent).toBeNull();
+      expect(round?.by_registered_agent).toBe(true);
+    }
+    // Nothing in either answer names Bob's agent, its harness or its device.
+    const said = JSON.stringify(ada);
+    expect(said).not.toContain('Bob’s laptop');
+    expect(said).not.toContain('codex');
+  });
+
+  it('Bob reads the same rounds and sees his own agent on both endpoints', async () => {
+    const { rig, read } = await bobsAgentFinishes(false);
+    const bob = await read('bob');
+    for (const round of [bob.rounds, bob.queue]) {
+      expect(round?.agent).toEqual({
+        id: rig.agent.id,
+        harness: 'codex',
+        device_label: 'Bob’s laptop',
+      });
+    }
+  });
+
+  it('Ada sees Bob’s agent where the task already shows it: its selected agent', async () => {
+    const { rig, read } = await bobsAgentFinishes(true);
+    const ada = await read('ada');
+    for (const round of [ada.rounds, ada.queue]) {
+      expect(round?.agent?.id).toBe(rig.agent.id);
+    }
+  });
+
+  it('Ada sees Bob’s agent while it holds the task’s live claim', async () => {
+    const { rig, task, read, asBob } = await bobsAgentFinishes(false);
+    await must(
+      asSession(`/api/v1/tasks/${task.id}/send-back`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'One more thing' }),
+      }),
+    );
+    expect((await read('ada')).rounds?.agent).toBeNull();
+    // Bob's agent takes it back: now the task itself shows that agent.
+    await must(asBob(`/api/v1/tasks/${task.id}/claim`, { method: 'POST' }, rig.secret));
+    expect((await read('ada')).rounds?.agent?.id).toBe(rig.agent.id);
   });
 });

@@ -133,6 +133,7 @@ export function listReviewQueue(db: Db, actor: ResolvedActor): ReviewQueueView {
   const rounds = latestRounds(
     db,
     page.map((r) => r.id),
+    actor.userId,
   );
   // A round CI confirmed is checked already: the cue is for work nothing has.
   const confirmed = (round: RoundView | undefined) =>

@@ -35,6 +35,7 @@ function round(patch: Partial<Round> = {}): Round {
     finished_by: 'u1',
     client_name: 'codex',
     agent: null,
+    by_registered_agent: false,
     summary_md: 'Did it',
     commits: [],
     branch: null,
@@ -292,6 +293,7 @@ void describe('who finished a round (D-120, LAI-1001)', () => {
     const r = round({
       client_name: 'omnigent on Belka',
       agent: { id: 'ag1', harness: 'omnigent', device_label: 'Belka' },
+      by_registered_agent: true,
     });
     assert.equal(roundAgentName(r), 'Omnigent · Belka');
   });
@@ -302,6 +304,11 @@ void describe('who finished a round (D-120, LAI-1001)', () => {
       'unregistered agent (codex-mcp-client)',
     );
     assert.equal(roundAgentName(round({ client_name: null })), null);
+  });
+
+  void test('another person’s agent, withheld by the server, is an agent — never its token name', () => {
+    const r = round({ client_name: 'Polly', agent: null, by_registered_agent: true });
+    assert.equal(roundAgentName(r), 'an agent');
   });
 
   void test('a round from before the field reads as unregistered, not as a crash', () => {

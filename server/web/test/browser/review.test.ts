@@ -93,6 +93,7 @@ const ROUND_2 = {
     harness: string;
     device_label: string | null;
   } | null,
+  by_registered_agent: true,
   summary_md: 'Fixed the lint run',
   commits: [
     { id: 'e1', ...claimed, sha: 'abcdef0123456789abcdef0123456789abcdef01', message: 'fix: lint' },
@@ -118,6 +119,7 @@ const ROUND_1 = {
   // A legacy token finished round 1: no registered agent to name.
   client_name: 'codex-mcp-client',
   agent: null,
+  by_registered_agent: false,
   commits: [],
   branch: null,
   pull_request: null,

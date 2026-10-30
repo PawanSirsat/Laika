@@ -1,11 +1,17 @@
-import { desc, eq, inArray } from 'drizzle-orm';
-import { type ResolvedActor, type ServiceCaller, withProject } from '../auth/resolve-actor.ts';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import {
+  isSystemPrincipal,
+  type ResolvedActor,
+  type ServiceCaller,
+  withProject,
+} from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type EvidenceKind, type EvidenceState, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import {
   agents,
   projects,
+  taskClaims,
   taskEvidence,
   taskReviews,
   taskRounds,
@@ -100,11 +106,19 @@ export interface RoundView {
   /**
    * The registered agent whose token finished the round, so a screen can name
    * it `<harness> · <device>` (D-120, LAI-1001) instead of the client's own
-   * word. Read through the round's token, so null for a person, a legacy
-   * token, and a round whose token has since been deleted. Self-reported, as
-   * the agent's own row is; decides nothing.
+   * word. Read through the round's token. **Only an agent the reader may
+   * already see** (§4.63: another person's agent is not disclosed): their own,
+   * or the task's selected agent or live claim holder, which the task view
+   * shows them anyway. Null otherwise — and for a person, a legacy token, or
+   * a round whose token has since been deleted. Decides nothing.
    */
   agent: RoundAgentView | null;
+  /**
+   * A registered agent finished this round — true even when `agent` is null
+   * because the reader may not see which one, so a screen says *an agent*
+   * rather than nothing. Identifies no agent.
+   */
+  by_registered_agent: boolean;
   summary_md: string;
   commits: CommitEvidence[];
   branch: BranchEvidence | null;
@@ -316,7 +330,21 @@ export function recordRound(
   return roundId;
 }
 
-function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundView[] {
+/**
+ * Whom the agents behind rounds may be shown to: the reader's user id, or
+ * `null` for a principal with no user (a delivery), who is shown none.
+ */
+type RoundReader = string | null;
+
+export function roundReader(caller: ServiceCaller): RoundReader {
+  return isSystemPrincipal(caller) ? null : caller.userId;
+}
+
+function toRoundViews(
+  db: Db,
+  rows: (typeof taskRounds.$inferSelect)[],
+  reader: RoundReader,
+): RoundView[] {
   if (rows.length === 0) return [];
   const github = roundSummaries(
     db,
@@ -342,6 +370,7 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
           .select({
             tokenId: tokens.id,
             id: agents.id,
+            ownerUserId: agents.ownerUserId,
             harness: agents.harness,
             deviceLabel: agents.deviceLabel,
           })
@@ -349,8 +378,38 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
           .innerJoin(agents, eq(agents.id, tokens.agentId))
           .where(inArray(tokens.id, tokenIds))
           .all()
-          .map((a) => [a.tokenId, { id: a.id, harness: a.harness, device_label: a.deviceLabel }]),
+          .map((a) => [a.tokenId, a] as const),
   );
+  // What each task already shows its reader: its selected agent and the
+  // holder of its live claim. Another person's agent is named only there.
+  const taskIds = [...new Set(rows.map((r) => r.taskId))];
+  const shownOnTask = new Map<string, Set<string>>();
+  const show = (taskId: string, agentId: string | null): void => {
+    if (agentId === null) return;
+    shownOnTask.set(taskId, (shownOnTask.get(taskId) ?? new Set()).add(agentId));
+  };
+  for (const t of db
+    .select({ id: tasks.id, selected: tasks.selectedAgentId })
+    .from(tasks)
+    .where(inArray(tasks.id, taskIds))
+    .all()) {
+    show(t.id, t.selected);
+  }
+  for (const c of db
+    .select({ taskId: taskClaims.taskId, agentId: taskClaims.agentId })
+    .from(taskClaims)
+    .where(
+      and(inArray(taskClaims.taskId, taskIds), inArray(taskClaims.state, ['active', 'paused'])),
+    )
+    .all()) {
+    show(c.taskId, c.agentId);
+  }
+  const visibleAgent = (row: (typeof rows)[number]): RoundAgentView | null => {
+    const a = row.tokenId === null ? undefined : agentByToken.get(row.tokenId);
+    if (a === undefined || reader === null) return null;
+    const visible = a.ownerUserId === reader || shownOnTask.get(row.taskId)?.has(a.id) === true;
+    return visible ? { id: a.id, harness: a.harness, device_label: a.deviceLabel } : null;
+  };
 
   return rows.map((row) => {
     const mine = items.filter((i) => i.roundId === row.id);
@@ -369,7 +428,8 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
       number: row.number,
       finished_by: row.finishedBy,
       client_name: row.clientName,
-      agent: (row.tokenId === null ? undefined : agentByToken.get(row.tokenId)) ?? null,
+      agent: visibleAgent(row),
+      by_registered_agent: row.tokenId !== null && agentByToken.has(row.tokenId),
       summary_md: row.summaryMd,
       commits: mine
         .filter((i) => i.kind === 'commit')
@@ -390,7 +450,11 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
  * The latest round of each task asked about, in two queries whatever the
  * count. A task never finished has no entry.
  */
-export function latestRounds(db: Db, taskIds: readonly string[]): Map<string, RoundView> {
+export function latestRounds(
+  db: Db,
+  taskIds: readonly string[],
+  reader: RoundReader,
+): Map<string, RoundView> {
   if (taskIds.length === 0) return new Map();
   const rows = db
     .select()
@@ -402,7 +466,9 @@ export function latestRounds(db: Db, taskIds: readonly string[]): Map<string, Ro
   const newest = new Map<string, typeof taskRounds.$inferSelect>();
   for (const row of rows) if (!newest.has(row.taskId)) newest.set(row.taskId, row);
 
-  return new Map(toRoundViews(db, [...newest.values()]).map((view) => [view.task_id, view]));
+  return new Map(
+    toRoundViews(db, [...newest.values()], reader).map((view) => [view.task_id, view]),
+  );
 }
 
 /**
@@ -513,7 +579,7 @@ export function listTaskRounds(db: Db, actor: ServiceCaller, taskId: string): Ta
     .all();
 
   return {
-    rounds: toRoundViews(db, rows),
+    rounds: toRoundViews(db, rows, roundReader(actor)),
     send_back: activeSendBacks(db, [task]).get(taskId) ?? null,
   };
 }

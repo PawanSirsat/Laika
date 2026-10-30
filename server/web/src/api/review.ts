@@ -70,9 +70,12 @@ export interface Round {
   /**
    * The registered agent whose token finished it (D-120, LAI-1001): named
    * `<harness> · <device>` through `agentLabel`. Null for a person, a legacy
-   * token, or a token since deleted — then `client_name`, as neutral words.
+   * token, a token since deleted — **and for an agent the reader may not
+   * see** (another person's, neither selected on the task nor holding it).
    */
   readonly agent: RoundAgent | null;
+  /** A registered agent finished it, even when `agent` is withheld: *an agent*. */
+  readonly by_registered_agent: boolean;
   readonly summary_md: string;
   readonly commits: readonly CommitEvidence[];
   readonly branch: BranchEvidence | null;
@@ -192,17 +195,29 @@ export interface EvidenceSummary {
   readonly empty: boolean;
 }
 
+/** A registered agent the reader may not see: true, and naming nobody. */
+export const HIDDEN_AGENT = 'an agent';
+
 /**
  * Who finished a round, as the review screens name them (D-120, LAI-1001):
- * the registered agent as `<harness> · <device>` — *Omnigent · Belka* —
- * never the client's own word for itself. A round no registered agent
- * finished keeps that word, marked as unregistered rather than passed off as
- * an agent's name; a round a person finished is `null`. `agent` is read with
- * `??`, so a round from a server older than the field reads as unregistered.
+ *
+ * - a registered agent the reader may see, as `<harness> · <device>` —
+ *   *Omnigent · Belka* — never the client's own word for itself;
+ * - one they may not (the server withholds it), as {@link HIDDEN_AGENT}, and
+ *   **not** by `client_name`, which carries the agent's token name;
+ * - a legacy token's round by its client word, marked unregistered;
+ * - a round a person finished: `null`.
+ *
+ * Both fields are read with `??`, so a round from a server older than them
+ * reads as unregistered rather than crashing.
  */
-export function roundAgentName(round: Pick<Round, 'agent' | 'client_name'>): string | null {
-  const agent = (round as { agent?: RoundAgent | null }).agent ?? null;
+export function roundAgentName(
+  round: Pick<Round, 'agent' | 'by_registered_agent' | 'client_name'>,
+): string | null {
+  const sent = round as { agent?: RoundAgent | null; by_registered_agent?: boolean };
+  const agent = sent.agent ?? null;
   if (agent !== null) return agentLabel(agent);
+  if (sent.by_registered_agent === true) return HIDDEN_AGENT;
   return round.client_name === null ? null : `unregistered agent (${round.client_name})`;
 }
 
