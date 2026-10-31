@@ -1497,6 +1497,11 @@ export const agentEventDeliveries = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.activityId, t.agentId] }),
     index('agent_event_deliveries_agent_seq_idx').on(t.agentId, t.seq),
+    // An `undelivered` poll reads only what is still unreceived (LAI-553
+    // review 2): from cursor 0, it never walks an agent's received history.
+    index('agent_event_deliveries_agent_undelivered_idx')
+      .on(t.agentId, t.seq)
+      .where(sql`received_at IS NULL`),
     check(
       'agent_event_deliveries_presented_after_received_check',
       sql`presented_at IS NULL OR received_at IS NOT NULL`,
