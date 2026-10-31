@@ -17,7 +17,10 @@ import {
   selectedHarness,
   twinsOnTasks,
 } from '../../../api/selected-agent.ts';
-import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
+import {
+  ExecutionStateLine,
+  NoRecentSaveLine,
+} from '../../../components/agent/ExecutionStateLine.tsx';
 import { cardExecutionState, liveClaimDetail } from '../../../components/agent/execution-derive.ts';
 import { handoffState } from '../../../components/agent/handoff-derive.ts';
 import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
@@ -116,6 +119,9 @@ export function TaskCard({
   // that speak first — and outranks *Waiting for agent*, as the drawer does.
   const saveState = fields.handoff ? handoffState(task.handoff) : null;
   const saveStateId = `card-state-${task.id}`;
+  // §9.1.1's checkpoint warning (LAI-1016), the server's: only ever beside a
+  // live claim, so under its *Working* line, never in place of it.
+  const noRecentSave = fields.handoff ? (task.handoff?.no_recent_save ?? null) : null;
   const openRef = useRef<HTMLButtonElement>(null);
   const describedBy =
     [
@@ -225,6 +231,7 @@ export function TaskCard({
       ) : (
         execution !== null && <ExecutionStateLine state={execution} detail={executionDetail} />
       )}
+      {noRecentSave !== null && <NoRecentSaveLine windowMs={noRecentSave.window_ms} />}
 
       <div className="card-foot">
         {/* Jira's priority icons (LAI-705): an up chevron, an equals sign, a

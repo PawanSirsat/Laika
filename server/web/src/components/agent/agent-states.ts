@@ -107,6 +107,24 @@ export const PENDING_NOTICE_WORDS = 'Verification pending — no push notice fro
 export const PENDING_NOTICE_HINT =
   'Open the repository webhook’s Recent Deliveries on GitHub, find the push for this save and choose Redeliver.';
 
+/**
+ * §9.1.1's checkpoint warning (LAI-1016): *"No save in the last 5 minutes"*,
+ * with the window the server used — which a deployment may change, so the
+ * words follow it rather than repeat a default.
+ */
+export function noRecentSaveWords(windowMs: number): string {
+  if (windowMs < 60_000) {
+    const seconds = Math.max(1, Math.round(windowMs / 1000));
+    return `No save in the last ${String(seconds)} second${seconds === 1 ? '' : 's'}`;
+  }
+  const minutes = Math.round(windowMs / 60_000);
+  return `No save in the last ${String(minutes)} minute${minutes === 1 ? '' : 's'}`;
+}
+
+/** What it means, for the panel and a card's hover — and what it does not decide. */
+export const NO_RECENT_SAVE_MEANING =
+  'The agent holds the task and has not saved a checkpoint. Nothing changes because of it.';
+
 /** No checkpoint at all: never an automatic path (SPEC §4.73, proposal §4.4). */
 export const NO_CHECKPOINT = 'Automatic recovery unavailable — no saved checkpoint';
 

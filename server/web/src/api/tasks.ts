@@ -85,6 +85,13 @@ export interface TaskHandoff {
   } | null;
   readonly recovery_available: boolean;
   readonly save_needs_attention: boolean;
+  /**
+   * §9.1.1's checkpoint warning (LAI-1016): a live claim with no save for
+   * longer than `window_ms`, on the **server's** clock. Shown beside *Working*
+   * or *Connection lost*, never instead of them; decides nothing. Optional
+   * because a view served before LAI-1016 has none, which reads as null.
+   */
+  readonly no_recent_save?: { readonly since: number; readonly window_ms: number } | null;
 }
 
 export interface TaskSummary {

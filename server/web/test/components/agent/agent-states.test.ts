@@ -19,6 +19,7 @@ import {
   HANDOFF_FILTER_WORDS,
   HANDOFF_KIND_WORDS,
   NO_CHECKPOINT,
+  noRecentSaveWords,
   NOTE_WORDS,
   READINESS_WORDS,
   RECEIVER_MUST_ACCEPT,
@@ -181,5 +182,17 @@ void describe('the gallery stays the gallery', () => {
     const card = await readFile(`${SRC}routes/screens/board/TaskCard.tsx`, 'utf8');
     assert.match(card, /const byAgent = task\.created_via === 'mcp';/);
     assert.match(card, /title=\{`Written by \$\{assignee\.name\}'s agent`\}/);
+  });
+});
+
+void describe('§9.1.1’s checkpoint warning (LAI-1016)', () => {
+  void test('says SPEC’s words at the default window, verbatim', () => {
+    assert.equal(noRecentSaveWords(5 * 60_000), 'No save in the last 5 minutes');
+  });
+
+  void test('follows the window the server used, not a default', () => {
+    assert.equal(noRecentSaveWords(60_000), 'No save in the last 1 minute');
+    assert.equal(noRecentSaveWords(15 * 60_000), 'No save in the last 15 minutes');
+    assert.equal(noRecentSaveWords(30_000), 'No save in the last 30 seconds');
   });
 });

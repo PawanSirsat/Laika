@@ -1,4 +1,9 @@
-import { EXECUTION_STATE_WORDS, type ExecutionState } from './agent-states.ts';
+import {
+  EXECUTION_STATE_WORDS,
+  NO_RECENT_SAVE_MEANING,
+  noRecentSaveWords,
+  type ExecutionState,
+} from './agent-states.ts';
 import './agent.css';
 
 export interface ExecutionStateLineProps {
@@ -63,6 +68,29 @@ export function ExecutionStateLine({
         {variant === 'card' && hint !== undefined && (
           <span className="visually-hidden">. {words.meaning}</span>
         )}
+      </span>
+    </p>
+  );
+}
+
+/**
+ * §9.1.1's checkpoint warning (LAI-1016), drawn under a live claim's line:
+ * the words, with the warning triangle *Save needs attention* uses. Not an
+ * execution state — the claim's *Working* still speaks — and decides nothing.
+ */
+export function NoRecentSaveLine({
+  windowMs,
+  variant = 'card',
+}: {
+  readonly windowMs: number;
+  readonly variant?: 'card' | 'panel';
+}) {
+  return (
+    <p className={`exec-state exec-state-${variant}`} data-no-recent-save>
+      <StateShape state="save_needs_attention" />
+      <span className="exec-state-text">
+        <b className="exec-state-label">{noRecentSaveWords(windowMs)}</b>
+        {variant === 'panel' && <span className="exec-state-meaning">{NO_RECENT_SAVE_MEANING}</span>}
       </span>
     </p>
   );
