@@ -18,7 +18,7 @@ it among the configurable defaults. At `1fe55ff1` nothing produces it: a grep
 of `server/src`, `server/web/src` and `cli/src` for the wording, a
 `warning` setting near checkpoints, or a "no save" state finds nothing.
 
-Found writing `docs/AGENTS-ROLLOUT.md` § 4, which lists it as *not found*.
+Board: LAIKA-870. Found writing `docs/AGENTS-ROLLOUT.md` § 4, which lists it as *not found*.
 
 ## Acceptance criteria
 

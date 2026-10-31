@@ -21,7 +21,7 @@ environment and not these. The helper already reads
 `LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS`; the server does not, so the two
 can disagree.
 
-Found writing `docs/AGENTS-ROLLOUT.md` § 4, which lists them as *constant*.
+Board: LAIKA-869. Found writing `docs/AGENTS-ROLLOUT.md` § 4, which lists them as *constant*.
 
 ## Acceptance criteria
 

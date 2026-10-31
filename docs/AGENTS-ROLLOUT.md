@@ -108,8 +108,9 @@ Nothing in the code does this yet.
 
 Where a default can be changed, this says where. **Four of the proposal's
 "configurable" settings cannot be changed at deploy time today**: they are
-constants in the code (marked *constant*). LAI-1014 is filed to make the two
-server ones §11.7 variables.
+constants in the code (marked *constant*), and one is not built. LAI-1015 is
+filed to make the two checkpoint windows §11.7 variables, and LAI-1016 to
+build the checkpoint warning.
 
 ### Server, per deployment (`docker/` environment, SPEC §11.7)
 
