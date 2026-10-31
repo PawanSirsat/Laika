@@ -204,6 +204,8 @@ const UNPAIRED = new Map<string, string>([
   // LAI-546: the accept is an agent's and has no screen; LAI-550 paired the
   // policy and LAI-1009's person inbox.
   ['AcceptedHandoff', 'no client type exists'],
+  // LAI-553: an agent's event feed has no screen; the helper (LAI-554) reads it.
+  ['AgentEventsPage', 'no client type exists'],
   // The meeting-review screen is SHELL's and unbuilt; §11.4.2 lists it. These
   // three leave this group the same way `CapacityView` and `PresenceView` did —
   // when the screen exists, and therefore the mirror.
@@ -271,6 +273,10 @@ const UNPAIRED = new Map<string, string>([
 const RESPONSE_SHAPED = ['Summary', 'Detail', 'Response', 'Payload', 'Result', 'Body'] as const;
 
 const NOT_SERVED = new Map<string, string>([
+  [
+    'AgentEventDetail',
+    'the frozen part of an agent event (§4.76): a JSON column’s type, served only inside AgentEventsPage',
+  ],
   [
     'CheckpointSummary',
     'the five-field continuation note (§4.70): a JSON column’s type, served only inside CheckpointView',

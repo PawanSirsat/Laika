@@ -12,6 +12,7 @@ import {
   sql,
   type SQL,
 } from 'drizzle-orm';
+import { recordAgentEvent } from './agent-events.ts';
 import { type Db } from './client.ts';
 import { type ActivityType, type ActorKind, LIVE_CLAIM_STATES } from './enums.ts';
 import { newId } from './ids.ts';
@@ -96,8 +97,11 @@ export function appendActivity(db: Db, entry: AppendActivity): Activity {
   };
 
   db.transaction((tx) => {
-    tx.insert(activity).values(row).run();
+    const { lastInsertRowid } = tx.insert(activity).values(row).run();
     countOnBoardDay(tx as unknown as Db, row);
+    // The agent half (§4.76, LAI-553): an envelope and its deliveries land
+    // with the row they describe, or not at all.
+    recordAgentEvent(tx as unknown as Db, row, Number(lastInsertRowid));
   });
 
   return row;

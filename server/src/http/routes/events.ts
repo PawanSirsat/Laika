@@ -6,10 +6,12 @@ import { type ActivityEvent } from '../../db/activity.ts';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { type ActivityFeed, type RepeatingTimer } from '../../services/activity-feed.ts';
+import { deliveryFor, isAgentEventType } from '../../services/agent-events.ts';
 import { agentReader } from '../../services/agent-visibility.ts';
 import {
   activityLens,
   eventView,
+  insidePin,
   parseLastEventId,
   resumeFrom,
   visibleTo,
@@ -105,20 +107,6 @@ export interface EventRoutesOptions {
   now?: () => number;
 }
 
-/**
- * May this event reach a stream on this actor's token at all? (audit M10)
- *
- * Separate from `visibleTo` on purpose: that asks the role question, and this
- * asks the narrower credential one directly, so the whitelist does not depend
- * on every `can()` action narrowing by it. A pinned token gets no org-level
- * rows — they belong to no project on its list.
- */
-function insidePin(actor: ResolvedActor, projectId: string | null): boolean {
-  const pinned = actor.token?.projectIds ?? null;
-  if (pinned === null) return true;
-  return projectId !== null && pinned.includes(projectId);
-}
-
 export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, feed } = options;
@@ -203,7 +191,17 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
        */
       type Outgoing = { frame: SSEMessage | string } | { row: ActivityEvent };
 
-      /** The frame to write **now**, or null to skip it. */
+      /**
+       * The frame to write **now**, or null to skip it.
+       *
+       * **An agent event reaches an agent only through its own delivery row**
+       * (§4.77, LAI-553): on a registered agent's token, a hand-off, work
+       * request, recovery or context row that is not addressed to it is
+       * skipped, and one that is carries its envelope — read at this moment,
+       * so a delivery state acknowledged meanwhile is the one sent, and named
+       * through the same reader as the row (LAI-1011), so neither half names
+       * an agent the other withholds.
+       */
       const writable = (item: Outgoing): SSEMessage | string | null => {
         if (refused) return null;
         let reader: ResolvedActor = actor;
@@ -220,7 +218,17 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
         // lens reused across that wait is the window this closes. Constant
         // queries per frame, whatever the batch held.
         const lens = activityLens(db, agentReader(reader), [row]);
-        return { event: row.type, id: String(row.seq), data: JSON.stringify(eventView(row, lens)) };
+        const view = eventView(row, lens);
+        if (onToken && (reader.token?.agent ?? null) !== null && isAgentEventType(row.type)) {
+          const envelope = deliveryFor(db, reader, row);
+          if (envelope === null) return null;
+          return {
+            event: row.type,
+            id: String(row.seq),
+            data: JSON.stringify({ ...view, envelope }),
+          };
+        }
+        return { event: row.type, id: String(row.seq), data: JSON.stringify(view) };
       };
 
       const enqueue = (item: Outgoing): void => {
