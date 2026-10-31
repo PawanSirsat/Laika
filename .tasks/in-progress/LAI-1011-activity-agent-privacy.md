@@ -2,11 +2,12 @@
 id: LAI-1011
 title: "Activity rows name another person's agent only where the task already shows it"
 area: core
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-1003
-status: backlog
+status: in-progress
+started: 2026-10-31T05:55:18+05:30
 ---
 
 Board: LAIKA-866, child of LAIKA-785 (Sprint 10, `phase-4`, `host-belka`).
