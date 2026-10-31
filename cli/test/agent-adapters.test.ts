@@ -28,6 +28,11 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
 import { ADAPTERS, HOOK_HARNESSES, isHarness, type Harness } from '../src/agent-adapters.ts';
+import {
+  autoCheckpointResult,
+  type CheckpointDeps,
+  writeActivity,
+} from '../src/agent-checkpoint.ts';
 import { installAgentHooks, removeAgentHooks } from '../src/agent-hooks.ts';
 import {
   type AgentCredential,
@@ -342,6 +347,40 @@ void describe('the explicit-command path on the shared engine', () => {
     ]);
     assert.equal(r.status, 1);
     assert.match(r.stderr, /Gemini CLI's process cannot be told by its name: pass --pid/);
+  });
+});
+
+void describe('no automatic save for a harness whose tools nothing reports', () => {
+  const run = async (harness: Harness): Promise<{ outcome: string; calls: number }> => {
+    const home = temp();
+    // Activity a hook would have counted: three edits in a worktree.
+    writeActivity(home, harness, 'hs-1', { mutations: 3, cwd: home });
+    let calls = 0;
+    const deps: CheckpointDeps = {
+      home,
+      env: {},
+      now: () => 1_000_000,
+      sleep: () => Promise.resolve(),
+      fetch: () => {
+        calls += 1;
+        return Promise.reject(new Error('no board here'));
+      },
+      git: () => {
+        throw new Error('no git here');
+      },
+    };
+    const result = await autoCheckpointResult(deps, harness, 'hs-1', CRED, 0);
+    return { outcome: result.outcome, calls };
+  };
+
+  for (const name of NEW) {
+    void test(`${name}: no_hooks, before consent is asked or git is touched`, async () => {
+      assert.deepEqual(await run(name as Harness), { outcome: 'no_hooks', calls: 0 });
+    });
+  }
+
+  void test('the control: Claude Code goes past that check (to no_session, with no state here)', async () => {
+    assert.deepEqual(await run('claude-code'), { outcome: 'no_session', calls: 0 });
   });
 });
 
