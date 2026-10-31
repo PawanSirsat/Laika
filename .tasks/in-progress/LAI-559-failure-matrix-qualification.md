@@ -2,11 +2,12 @@
 id: LAI-559
 title: 'End-to-end failure matrix + browser/accessibility qualification (both themes, narrow screens, keyboard)'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-551, LAI-553, LAI-555, LAI-557]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-31T22:04:00+02:00
 ---
 
 Implements **proposal §1, §7** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
