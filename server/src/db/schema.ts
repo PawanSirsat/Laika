@@ -1485,6 +1485,15 @@ export const agentEventDeliveries = sqliteTable(
     agentId: text('agent_id')
       .notNull()
       .references(() => agents.id, { onDelete: 'cascade' }),
+    /**
+     * A copy of the event's project — an activity row never changes, so the
+     * copy never drifts. A poll reads each project the agent may read now as
+     * its own index range (LAI-553 review 3), so a project it may not read
+     * costs it nothing, however much is waiting there.
+     */
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
     /** A copy of the event's sequence, so an agent's deliveries page in order. */
     seq: integer('seq').notNull(),
     availableAt: integer('available_at').notNull(),
@@ -1496,12 +1505,13 @@ export const agentEventDeliveries = sqliteTable(
   },
   (t) => [
     primaryKey({ columns: [t.activityId, t.agentId] }),
-    index('agent_event_deliveries_agent_seq_idx').on(t.agentId, t.seq),
+    index('agent_event_deliveries_agent_project_seq_idx').on(t.agentId, t.projectId, t.seq),
     // An `undelivered` poll reads only what is still unreceived (LAI-553
     // review 2): from cursor 0, it never walks an agent's received history.
-    index('agent_event_deliveries_agent_undelivered_idx')
-      .on(t.agentId, t.seq)
+    index('agent_event_deliveries_agent_project_undelivered_idx')
+      .on(t.agentId, t.projectId, t.seq)
       .where(sql`received_at IS NULL`),
+    index('agent_event_deliveries_project_id_idx').on(t.projectId),
     check(
       'agent_event_deliveries_presented_after_received_check',
       sql`presented_at IS NULL OR received_at IS NOT NULL`,

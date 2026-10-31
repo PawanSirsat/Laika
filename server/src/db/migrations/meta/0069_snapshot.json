@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "adec1fc8-68c9-411b-b248-4821650a85be",
+  "id": "c30212fe-c603-4f98-8388-7ebe407fb189",
   "prevId": "33f0f577-ac48-4fab-ba6d-41e7f58725f8",
   "tables": {
     "accounts": {
@@ -421,6 +421,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "seq": {
           "name": "seq",
           "type": "integer",
@@ -465,16 +472,21 @@
         }
       },
       "indexes": {
-        "agent_event_deliveries_agent_seq_idx": {
-          "name": "agent_event_deliveries_agent_seq_idx",
-          "columns": ["agent_id", "seq"],
+        "agent_event_deliveries_agent_project_seq_idx": {
+          "name": "agent_event_deliveries_agent_project_seq_idx",
+          "columns": ["agent_id", "project_id", "seq"],
           "isUnique": false
         },
-        "agent_event_deliveries_agent_undelivered_idx": {
-          "name": "agent_event_deliveries_agent_undelivered_idx",
-          "columns": ["agent_id", "seq"],
+        "agent_event_deliveries_agent_project_undelivered_idx": {
+          "name": "agent_event_deliveries_agent_project_undelivered_idx",
+          "columns": ["agent_id", "project_id", "seq"],
           "isUnique": false,
           "where": "received_at IS NULL"
+        },
+        "agent_event_deliveries_project_id_idx": {
+          "name": "agent_event_deliveries_project_id_idx",
+          "columns": ["project_id"],
+          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -492,6 +504,15 @@
           "tableFrom": "agent_event_deliveries",
           "tableTo": "agents",
           "columnsFrom": ["agent_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_event_deliveries_project_id_projects_id_fk": {
+          "name": "agent_event_deliveries_project_id_projects_id_fk",
+          "tableFrom": "agent_event_deliveries",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
