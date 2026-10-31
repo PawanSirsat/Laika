@@ -690,6 +690,100 @@ renews nothing that beat and abandons nothing: the session is kept and checked
 again at the next beat. A check that never comes back simply lets the lease
 expire.
 
+### Receiving a hand-off (LAI-548)
+
+The receiving agent's side of SPEC §4.73, in the order D-116 item 8 requires:
+**fetch, verify, check out, and only then accept.**
+
+```
+laika agent handoff inbox                 # live offers to this agent (GET /agents/me/inbox)
+laika agent handoff show <offer>          # checkpoint, verification, approval, and the note
+laika agent handoff prepare <offer>       # fetch the tag, verify the SHA, make a fresh worktree
+laika agent handoff accept <offer>        # only after prepare: send verified_commit_sha
+laika agent handoff decline <offer> --reason "busy"
+```
+
+`laika agent inbox` and `laika agent accept <offer>` are the same commands.
+
+- **`prepare`** reads the offer and the checkpoint's newest ref, finds the
+  remote of this repository whose URL is **exactly** the project's configured
+  repo on github.com (`--remote` to name one) — `https://[user@]github.com/
+  <owner>/<repo>`, `ssh://git@github.com/…` or `git@github.com:…`, checked
+  after `insteadOf` and compared whole, never by suffix — and fetches exactly
+  that ref into a private ref, `refs/laika/handoff/<offer>` — no `+`, no tags,
+  no submodules. The fetch goes to the URL, rebuilt from what was checked,
+  never to the remote's name, so no configured refmap applies; rewrites of
+  that URL are neutralised, and every other ref and `FETCH_HEAD` are compared
+  before and after. A local mirror is fetched from only when the operator's
+  environment names its directory (`LAIKA_HANDOFF_LOCAL_REMOTE_ROOT`) and its
+  real path is exactly `<root>/<owner>/<repo>.git`; the tests use this. It refuses,
+  printing **"Save needs attention"** and recording that on this machine,
+  when the fetch fails (a deleted tag), the ref is an annotated tag, or it
+  resolves to anything but the checkpoint's full SHA. Only then does it make
+  a **new** worktree beside the checkout (`--into` to choose) on a dedicated
+  branch, `<LAI-NNN>-handoff-<suffix>`, at that commit. The primary
+  checkout's HEAD, index and files are never written. A `pending`,
+  `uncertain` or `ref_deleted` checkpoint is refused before any fetch, in
+  SPEC §4.70's words. A prepare that stopped part-way (a crash, a kill)
+  leaves its record as `preparing`. **A retry never deletes anything**: it
+  takes the first worktree path, branch and private ref that are all free
+  (`…-handoff-<suffix>-2`, `-3`, …), leaves whatever an earlier attempt left
+  exactly as it is, and prints each leftover with the command that would
+  remove it, for you to run once nothing you need is in it. Every path and
+  name in those commands is single-quoted, so they paste as printed; a
+  symbolic ref is removed as itself (`symbolic-ref --delete`,
+  `update-ref --no-deref -d`), never through to what it names. Read them
+  before running them: `worktree remove` refuses modified or untracked
+  files but deletes **ignored** ones (a `.env`) without asking, and
+  `branch -d` refuses only a branch not merged into its upstream or `HEAD`.
+  **Choosing names:** a name counts as taken if anything is there — a
+  branch or ref, a **symbolic ref, even one pointing at a branch that does
+  not exist** (which `show-ref` does not list), a leftover reflog, or a file
+  or directory at its path.
+  **Writing refs:** the fetch writes no ref at all — it brings the objects,
+  and the tag's value is read with `ls-remote` by its exact name. The
+  private ref and the branch are each created in one create-only step,
+  `git update-ref --no-deref <ref> <sha> <zero>`, with nothing checked in
+  between, and the worktree is added on that branch (never `worktree add
+  -b`, which follows a symbolic ref). git refuses that step for an existing
+  ref or a symbolic ref naming a branch that exists, and never writes
+  through a symbolic ref. A **dangling** one depends on the git: the CI
+  runner's refuses it (`dangling symref already exists`); Apple git 2.50.1
+  replaces it with the plain ref, and has no command that both verifies and
+  creates one ref. After
+  the writes, every other ref is compared with before, both refs must be
+  plain refs at the checkpoint, and the new worktree's `HEAD` must name the
+  branch.
+- **`accept`** refuses unless `prepare` succeeded here, and checks again that
+  the private ref and the worktree are still at the verified SHA. It then
+  sends that SHA, with this harness's live session when there is exactly
+  one, and prints the next step only after the board has transferred the
+  claim. It never retries: `422 checkpoint_mismatch` is reported as it is;
+  `409 checkpoint_unverified` is worded *"Verification pending"* (or the
+  state the checkpoint is now in); `409 offer_taken` marks the offer lost
+  and **locks the worktree** with that reason (`git worktree list` shows it),
+  so nobody continues from it. A lock that fails is reported as failed.
+- **Untrusted text.** The note and the reason are printed inside a block
+  whose markers carry a random nonce, bounded per field, with control
+  characters shown as `\u{…}` rather than sent to the terminal. Nothing from
+  the note, the branch name or the repo is executed: git runs from an argv
+  array, every call has hooks and fsmonitor switched off (so checking out the
+  sender's commit runs none of its hooks), and git sees only an allowlisted
+  environment — the same allowlist as the sender's helper (LAI-547), so no
+  token reaches it. **No attribute is read from the sender's tree**
+  (`--attr-source` is the empty tree, the global and system attributes files
+  are off, and a repository whose own `info/attributes` sets anything is
+  refused), so a `.gitattributes` cannot select a `filter`, `diff` or `merge`
+  driver to run; Git LFS pointers stay pointers. **Replace refs are never
+  followed** (`GIT_NO_REPLACE_OBJECTS`), so `HEAD` at the checkpoint SHA is
+  that commit's tree, and the new worktree must show no difference from it.
+  Needs git 2.41 or later; an older git refuses `--attr-source`, so this
+  fails closed. Bidirectional and zero-width format characters in the note
+  are escaped as well.
+- What this machine learned is kept in `~/.laika/agent-handoffs/<offer>.json`
+  (0600): the verified SHA, the worktree, and `prepared`, `accepted`, `lost`,
+  `declined` or `needs_attention`.
+
 ### Harness capability matrix
 
 Cells: **Verified-and-tested** (run on the version shown, against a real
@@ -709,6 +803,8 @@ code.claude.com/docs/en/hooks, learn.chatgpt.com/docs/hooks.
 | `SessionEnd` ends the session | Verified-and-tested (`end_reason: ended`) | Documented-not-tested (advisory, best-effort: a missed end leaves the claim to expire) |
 | Renewal stops when the harness dies | Verified-and-tested with a fake harness named `claude` killed mid-session (`agent-session-e2e.test.ts`) | Documented-not-tested. The engine is shared and that test covers it, but that is evidence about the shared code, **not certification of Codex**: no Codex process was killed |
 | Headless | Verified-and-tested (`claude -p --settings`) | Unverified: `codex exec` needs hook trust, given only interactively in `/hooks` or by `--dangerously-bypass-hook-trust`, which this run was not permitted to use |
+| Receive a hand-off (`laika agent handoff prepare` / `accept`) | Documented-not-tested in a harness: the commands are harness-independent and are tested against a real board and real git (`agent-handoff-e2e.test.ts`), not yet run from inside a Claude Code session | Documented-not-tested (same commands, `--harness codex`; no Codex process ran them) |
+| Untrusted note shown to the model | Documented-not-tested: its markers and contents are asserted in tests, not shown to a real model | Documented-not-tested |
 
 What is **not** guaranteed: a harness that exits without firing `SessionEnd`
 (a crash, Codex's advisory end) leaves the session open on the board until its

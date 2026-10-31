@@ -228,6 +228,34 @@ void describe('describeProjectEvent', () => {
     );
   });
 
+  // LAI-1011: once the server hides the agent, a selection and a withdrawal
+  // arrive as the same `{ from: null, to: null }`; only the flag tells the
+  // feed it may not claim either.
+  void test('a hidden agent selection or withdrawal reads neutrally, as History does', () => {
+    const hiddenSelect = event({
+      id: '1',
+      type: 'task.agent_selected',
+      agent_redacted: true,
+      payload: { from: null, to: null }, // `to` was another person's agent
+    });
+    const hiddenWithdraw = event({
+      id: '2',
+      type: 'task.agent_selected',
+      agent_redacted: true,
+      payload: { from: null, to: null }, // `from` was another person's agent
+    });
+    for (const hidden of [hiddenSelect, hiddenWithdraw]) {
+      assert.equal(describeProjectEvent(hidden), 'changed the agent selection on this task');
+    }
+    // Not hidden: the feed's own wording, unchanged.
+    assert.equal(
+      describeProjectEvent(
+        event({ id: '3', type: 'task.agent_selected', payload: { from: null, to: 'ag1' } }),
+      ),
+      'picked an agent for a task',
+    );
+  });
+
   void test('reads as a project feed, not a task panel', () => {
     // `api/activity.ts` says "created this task", correct in a detail panel and
     // wrong in a feed where every row names a different task.

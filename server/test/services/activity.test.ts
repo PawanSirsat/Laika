@@ -11,7 +11,7 @@ import {
   listProjectActivity,
   visibleProjectIds,
 } from '../../src/services/activity.ts';
-import { eventView, visibleTo } from '../../src/services/events.ts';
+import { eventViews, visibleTo } from '../../src/services/events.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
@@ -325,9 +325,11 @@ describe('it answers exactly what the stream would (CHIEF’s note)', () => {
 
     for (const [label, who] of actors) {
       // What the SSE stream would deliver, computed the way `events.ts` does it.
-      const streamed = rows
-        .filter((row) => visibleTo(who, row))
-        .map(eventView)
+      const streamed = eventViews(
+        t.db,
+        who.userId,
+        rows.filter((row) => visibleTo(who, row)),
+      )
         .map((row) => row.id)
         .sort();
 
@@ -345,7 +347,7 @@ describe('it answers exactly what the stream would (CHIEF’s note)', () => {
     write(alphaId, 'task.created', 1000);
 
     const fetched = listOrgActivity(t.db, actor(ownerId), PAGE);
-    const streamed = allRows().map(eventView);
+    const streamed = eventViews(t.db, ownerId, allRows());
 
     expect(fetched[0]?.seq).toBe(streamed[streamed.length - 1]?.seq);
     expect(fetched[0]?.actor_kind).toBe('user');
