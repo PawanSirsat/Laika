@@ -540,6 +540,8 @@ export function agentNamesFrom(
 /** What an agent-written row says after the person: an agent we can name, or what we know. */
 export const UNREGISTERED_AGENT = 'agent (unregistered token)';
 export const UNNAMED_AGENT = 'a registered agent';
+/** A row whose agent the server withheld from this reader (LAI-1011). */
+export const WITHHELD_AGENT = 'an agent';
 
 /**
  * *Claude Code · laptop-1*, *a registered agent* or *agent (unregistered
@@ -549,15 +551,21 @@ export const UNNAMED_AGENT = 'a registered agent';
  * `agent_id` is set on every row a **registered** agent's token wrote
  * (LAI-535) and null on a legacy token's, which is how the two are told apart.
  * An agent this reader cannot name — another member's, not on this task — is
- * *a registered agent*: true, and never a guess.
+ * *a registered agent*: true, and never a guess. One the server withheld
+ * (`agent_redacted`, LAI-1011) comes with a null id and is *an agent*, not
+ * an unregistered token.
  */
 export function agentVia(
-  event: { readonly actor_kind: string; readonly agent_id?: string | null | undefined },
+  event: {
+    readonly actor_kind: string;
+    readonly agent_id?: string | null | undefined;
+    readonly agent_redacted?: boolean | undefined;
+  },
   agents: ReadonlyMap<string, Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>>,
 ): string | undefined {
   if (event.actor_kind !== 'agent') return undefined;
   const id = event.agent_id ?? null;
-  if (id === null) return UNREGISTERED_AGENT;
+  if (id === null) return event.agent_redacted === true ? WITHHELD_AGENT : UNREGISTERED_AGENT;
   const agent = agents.get(id);
   return agent === undefined ? UNNAMED_AGENT : agentLabel(agent);
 }
@@ -565,15 +573,20 @@ export function agentVia(
 /**
  * `task.agent_selected`'s line, with the agent named where the reader can
  * name it: *selected Claude Code · laptop-1*, *withdrew the agent*. The payload
- * is `{ from, to }`, both agent ids or null.
+ * is `{ from, to }`, both agent ids or null. On a row the server withheld an
+ * agent from (`redacted`, LAI-1011) a null `to` may be an agent this reader
+ * may not see, so it reads neutrally rather than as a withdrawal.
  */
 export function describeAgentSelected(
   payload: unknown,
   agents: ReadonlyMap<string, Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>>,
+  redacted = false,
 ): string | undefined {
   const sent = payload as { from?: unknown; to?: unknown } | null | undefined;
   if (sent === null || sent === undefined) return undefined;
-  if (sent.to === null) return 'withdrew the agent from this task';
+  if (sent.to === null) {
+    return redacted ? 'changed the agent selection on this task' : 'withdrew the agent from this task';
+  }
   if (typeof sent.to !== 'string') return undefined;
   const agent = agents.get(sent.to);
   return agent === undefined
