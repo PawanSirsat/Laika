@@ -41,6 +41,7 @@ import {
   expireOffers,
   getHandoffPolicy,
   listInbox,
+  listTaskOffers,
   offerHandoff,
   putHandoffPolicy,
   resetHandoffRateLimits,
@@ -951,10 +952,17 @@ describe('expiry and recovery', () => {
       toAgentId: theirs.id,
       now: T0 + LEASE + 2,
     });
+    // The approver named another person's agent the task does not show yet:
+    // the answer withholds it (D-121 item 7, LAI-1012); its owner reads it.
     expect(named).toMatchObject({
       state: 'open',
-      to_agent_id: theirs.id,
+      to_agent_id: null,
+      to_agent_redacted: true,
       approved_by_user_id: owner.userId,
+    });
+    expect(listTaskOffers(t.db, person, id).find((o) => o.id === recovery!.id)).toMatchObject({
+      to_agent_id: theirs.id,
+      to_agent_redacted: false,
     });
     expect(rowsOf(id, 'task.handoff_approved')).toEqual([
       { offer_id: recovery!.id, to_agent_id: theirs.id, named: true },
