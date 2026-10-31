@@ -109,6 +109,14 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     'agent-token only, a session is `403 not_an_agent`; `laika agent accept` (LAI-548) and MCP `respond_handoff` call it',
   'api/v1/handoff-offers/*/decline':
     'agent-token only, a session is `403 not_an_agent`; MCP `respond_handoff` calls it',
+  // LAI-553 serves them. Permanent for the same reason: an agent's event feed
+  // and its delivery acknowledgements are its own token's acts, and the SPA
+  // holds a person's session. A person sees offers on the task and the
+  // Hand-offs inbox, never the agent's delivery states.
+  'api/v1/agents/me/events':
+    'agent-token only, a session is `403 not_an_agent`; the local helper (LAI-554) polls it and MCP `agent_sync` is its twin',
+  'api/v1/agents/me/events/ack':
+    'agent-token only, a session is `403 not_an_agent`; the local helper (LAI-554) records received and presented with it',
 
   // Built, served, and waiting on a screen. Each names the task, not a reason.
   'api/v1/comments/*': 'LAI-234 — a comment cannot be edited or deleted from the UI',
