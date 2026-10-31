@@ -983,3 +983,80 @@ not fire `Stop`, a crash before `SessionEnd`) is simply not made — the work is
 still on disk and the next session's save picks it up; a remote that is down
 leaves the record to be pushed by a later run; and a note's secret check can
 miss a secret it has no pattern for.
+
+## `laika agent watch` — ask for a checkpoint before the machine dies (LAI-552)
+
+Opt-in: nothing starts it but you. Run it in a terminal beside the harness.
+
+```sh
+laika agent watch                       # battery ≤ 15 % unplugged, or memory pressure for 60 s
+laika agent watch --battery-percent 25 --memory-seconds 120 --interval-seconds 15
+laika agent watch --offer-to <agent id> # also offer the task on, once the save is verified
+laika agent watch --once                # print the two readings and exit
+```
+
+**When it fires.** The battery at or below `--battery-percent` (default 15)
+**while unplugged**; or memory pressure elevated on every reading for
+`--memory-seconds` (default 60) — one normal reading restarts the count, so a
+spike is not sustained. **Hysteresis:** each condition fires once and is then
+disarmed. The battery re-arms when it is plugged in or climbs 5 points above
+the threshold; memory re-arms after 30 s of normal readings. Both firing on one
+tick make **one** request.
+
+**What a trigger does.** It requests the hooks' automatic save — the same
+`autoCheckpoint` the hooks run, for every live agent session on this machine
+that holds a claim. So the same rules hold: the owner's **consent** is read from
+the board first, it waits for quiet (no tool running, no git operation), it
+saves only the task's own branch and never `master`. It **writes no
+continuation note** — that is the agent's (`laika agent checkpoint note`).
+Then, only with `--offer-to`, it offers the task to that agent through
+`POST /tasks/:id/handoff-offers` under the save's claim generation — and only
+once the board calls the checkpoint `verified` (it waits up to
+`--offer-wait-seconds`, default 120). **An offer pauses your claim** until it is
+accepted, declined or expires, which is why it is never the default.
+
+**What it reports.** Only what the board confirmed. Each line is one of:
+no live claim here (nothing saved, nothing offered); consent off or unreadable
+(nothing saved); busy (nothing saved); refused (the reason is in
+`~/.laika/agent-sessions/helper.log`); saved here but **not registered** (with
+the error; `laika agent checkpoint status` retries it); registered; offered, or
+not offered and why. A save is never called successful unless the board
+registered it.
+
+**What it reads.**
+
+| Metric | macOS | Linux | Anything else |
+| --- | --- | --- | --- |
+| Battery | `pmset -g batt` | `/sys/class/power_supply/*` with `type` `Battery`: `capacity`, and `status` `Discharging` as unplugged | `unsupported` |
+| Memory pressure | `sysctl -n kern.memorystatus_vm_pressure_level` (1 normal; 2 warn and 4 critical are elevated) | `/proc/pressure/memory`, `some avg10` at or above `--psi-percent` (default 10) | `unsupported` |
+
+**Not `memory_pressure`**: run without flags, that tool *allocates memory*
+until the machine is under pressure. The sysctl is the kernel level it reports,
+without the side effect.
+
+**What the tools are given.** `pmset` and `sysctl` run by absolute path
+(`/usr/bin/pmset`, `/usr/sbin/sysctl`), never looked up on `PATH`, with an
+environment built from nothing: `PATH=/usr/bin:/bin:/usr/sbin:/sbin`,
+`LANG=C`, `LC_ALL=C`. No token of any name — the agent's `LAIKA_AGENT_TOKEN`
+included — reaches them. A save's git calls keep the checkpoint helper's own
+allowlist.
+
+**Which checkpoint is reported and offered.** Exactly the one the save made or
+matched, by its id. A session holding two tasks never reports or offers the
+other task's checkpoint, however new it is.
+
+A metric that cannot be read is printed as `unsupported (why)` — no battery,
+no PSI in the kernel, another OS — or `unavailable (why)` when its command or
+file failed. **Never as a number**, and it never fires anything.
+
+### Capability matrix, watcher
+
+Same cells as the session matrix above.
+
+| Capability | macOS | Linux | Windows, other |
+| --- | --- | --- | --- |
+| Battery reading | Verified-and-tested (`--once` on Belka, macOS 27.2: `battery: 59%, plugged in`); the parser is tested on `pmset` text for both power sources | Documented-not-tested: the reader is tested against a fake `/sys` tree, not run on a Linux machine | Unsupported |
+| Memory pressure reading | Verified-and-tested (`--once` on Belka: `kernel level 1, normal`); levels 2 and 4 tested on injected text only, never observed here | Documented-not-tested: the parser is tested on PSI text, not run on a Linux machine | Unsupported |
+| Thresholds, hysteresis, one request per firing | Verified-and-tested with injected readings and an injected clock (`agent-watch.test.ts`) | the same (the logic does not depend on the OS) | — |
+| A trigger's save and offer | Documented-not-tested end to end: the reporting is tested with the save and the board faked (no claim, consent off, refused, unregistered, pending, verified, offer refused); the save itself is `autoCheckpoint`, tested in `agent-checkpoint-e2e.test.ts` | the same | — |
+| Fires on a real low battery or real memory pressure | Unverified: no battery was drained and no pressure was induced | Unverified | — |

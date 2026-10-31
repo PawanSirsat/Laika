@@ -1496,10 +1496,17 @@ export type AutoOutcome =
   | 'nothing';
 
 /**
- * The background save a hook starts. **Consent first**, from the board,
- * every time; then quiet — no tool in flight in this harness session and no
- * git operation — waiting up to `quietMs` and giving up rather than racing.
+ * What an automatic save came to, **with the record it made or matched**
+ * (LAI-552): a caller that reports or offers the save names exactly this
+ * one, never "the newest record" — a session holding two tasks has two.
  */
+export interface AutoResult {
+  readonly outcome: AutoOutcome;
+  /** Present for `saved`, `unchanged` and `retried`: the save's own record. */
+  readonly record?: CheckpointRecord;
+}
+
+/** {@link autoCheckpointResult}'s outcome alone, for callers that need only that. */
 export async function autoCheckpoint(
   deps: CheckpointDeps,
   harness: Harness,
@@ -1507,21 +1514,36 @@ export async function autoCheckpoint(
   credential: AgentCredential,
   quietMs = 30_000,
 ): Promise<AutoOutcome> {
+  return (await autoCheckpointResult(deps, harness, harnessSessionId, credential, quietMs)).outcome;
+}
+
+/**
+ * The background save a hook starts. **Consent first**, from the board,
+ * every time; then quiet — no tool in flight in this harness session and no
+ * git operation — waiting up to `quietMs` and giving up rather than racing.
+ */
+export async function autoCheckpointResult(
+  deps: CheckpointDeps,
+  harness: Harness,
+  harnessSessionId: string,
+  credential: AgentCredential,
+  quietMs = 30_000,
+): Promise<AutoResult> {
   const activity = readActivity(deps.home, harness, harnessSessionId);
-  if (activity.mutations < 1 || activity.cwd === undefined) return 'nothing';
+  if (activity.mutations < 1 || activity.cwd === undefined) return { outcome: 'nothing' };
   const session: SessionState | undefined = readState(
     statePath(deps.home, harness, harnessSessionId),
   );
-  if (session?.status !== 'live' || !isLaikaId(session.agent_id)) return 'no_session';
+  if (session?.status !== 'live' || !isLaikaId(session.agent_id)) return { outcome: 'no_session' };
 
   const given = await consentGiven(deps, credential, session.agent_id);
   if (given === undefined) {
     log(deps.home, `auto checkpoint ${harness}: consent could not be read; not saved`);
-    return 'consent_unknown';
+    return { outcome: 'consent_unknown' };
   }
   if (!given) {
     log(deps.home, `auto checkpoint ${harness}: no consent for automatic saves; not saved`);
-    return 'no_consent';
+    return { outcome: 'no_consent' };
   }
 
   activity.last_attempt_at = deps.now();
@@ -1542,7 +1564,7 @@ export async function autoCheckpoint(
         deps.home,
         `auto checkpoint ${harness}: still busy (${gitBusy ?? `${String(tools)} tool(s) running`}); not saved`,
       );
-      return 'busy';
+      return { outcome: 'busy' };
     }
     await deps.sleep(500);
   }
@@ -1601,13 +1623,13 @@ export async function autoCheckpoint(
     delete after.last_attempt_at;
     after.last_save_at = deps.now();
     writeActivity(deps.home, harness, harnessSessionId, after);
-    return outcome.kind;
+    return { outcome: outcome.kind, record: outcome.record };
   } catch (cause) {
     log(
       deps.home,
       `auto checkpoint ${harness}: ${cause instanceof Refusal ? cause.code : 'error'} — ${cause instanceof Error ? cause.message.slice(0, 300) : ''}`,
     );
-    return cause instanceof Refusal && BUSY_CODES.has(cause.code) ? 'busy' : 'refused';
+    return { outcome: cause instanceof Refusal && BUSY_CODES.has(cause.code) ? 'busy' : 'refused' };
   } finally {
     interlock.release();
   }
