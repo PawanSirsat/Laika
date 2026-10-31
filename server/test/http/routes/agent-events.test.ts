@@ -11,7 +11,10 @@ import {
   agentEventDeliveries,
   agentEvents,
   orgs,
+  projectMemberships,
   projects,
+  tokens,
+  users,
 } from '../../../src/db/schema.ts';
 import { encryptSecret } from '../../../src/secrets.ts';
 import { resetHandoffRateLimits } from '../../../src/services/handoffs.ts';
@@ -602,6 +605,99 @@ describe('GET /agents/me/events and the ack (§4.77, §6.4)', () => {
   });
 });
 
+describe('the ack re-reads its credentials inside its transaction (LAI-553 review)', () => {
+  /**
+   * An ack whose body arrives only when `release` is called. The route
+   * resolves the actor first and then waits on the body, so whatever changes
+   * in between is what the service must catch.
+   */
+  function heldAck(secret: string, eventIds: string[]) {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({ event_ids: eventIds, state: 'received' }),
+    );
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        await gate;
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+    const response = h.app.request('/api/v1/agents/me/events/ack', {
+      method: 'POST',
+      // A declared length, as a real client sends: without it `bodyLimit`
+      // reads the whole stream before auth runs, and the hold would sit
+      // before the actor is resolved rather than after it.
+      headers: jsonHeaders({ ...bearer(secret), 'Content-Length': String(bytes.byteLength) }),
+      body,
+      duplex: 'half',
+    });
+    return { response, release };
+  }
+
+  const changes: [string, number, (agentId: string) => Promise<void> | void][] = [
+    [
+      'its token is revoked',
+      401,
+      (agentId) => {
+        h.db.update(tokens).set({ revokedAt: Date.now() }).where(eq(tokens.agentId, agentId)).run();
+      },
+    ],
+    [
+      'its grant is removed',
+      404,
+      async (agentId) => {
+        await ok(
+          await h.app.request(`/api/v1/agents/${agentId}/grants`, {
+            method: 'PUT',
+            headers: jsonHeaders({ Cookie: cookie }),
+            body: JSON.stringify({ grants: [] }),
+          }),
+          200,
+        );
+      },
+    ],
+    [
+      'its owner is demoted out of the project',
+      404,
+      () => {
+        // Off the org's top roles and off the project: the owner reads it no
+        // longer, so neither does the agent they cap.
+        h.db.update(users).set({ orgRole: 'member' }).run();
+        h.db.delete(projectMemberships).where(eq(projectMemberships.projectId, projectId)).run();
+      },
+    ],
+  ];
+
+  for (const [what, status, change] of changes) {
+    it(`refuses, and records nothing, when ${what} while the body is in flight`, async () => {
+      const { event } = await offered();
+      const held = heldAck(receiver.secret, [event.event_id]);
+      // Let the route resolve the actor and start waiting on the body.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await change(receiver.id);
+      held.release();
+      const res = await held.response;
+      expect(res.status, await res.clone().text()).toBe(status);
+      const body = (await res.json()) as ErrorBody & { data?: unknown };
+      expect(body.data).toBeUndefined();
+      expect(deliveryRows(event.event_id).map((d) => d.receivedAt)).toEqual([null]);
+    });
+  }
+
+  it('the same held body, nothing changed, is recorded — the hold is not the refusal', async () => {
+    const { event } = await offered();
+    const held = heldAck(receiver.secret, [event.event_id]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    held.release();
+    expect((await held.response).status).toBe(200);
+    expect(deliveryRows(event.event_id).map((d) => d.receivedAt)).toEqual([expect.any(Number)]);
+  });
+});
+
 // ------------------------------------------------------------------- the stream
 
 describe('hand-off events on /api/v1/events (§11.5)', () => {
@@ -723,6 +819,59 @@ describe('hand-off events on /api/v1/events (§11.5)', () => {
 // -------------------------------------------------------------------- MCP
 
 describe('agent_sync (§7.1)', () => {
+  it('a sync for one project neither returns another’s events nor moves its cursor past them', async () => {
+    await ok(
+      await h.app.request('/api/v1/projects', {
+        method: 'POST',
+        headers: jsonHeaders({ Cookie: cookie }),
+        body: JSON.stringify({ name: 'Other', slug: 'other', prefix: 'OTH' }),
+      }),
+      201,
+    );
+    const otherId = h.db.select().from(projects).where(eq(projects.slug, 'other')).get()!.id;
+    await ok(
+      await h.app.request(`/api/v1/agents/${receiver.id}/grants`, {
+        method: 'PUT',
+        headers: jsonHeaders({ Cookie: cookie }),
+        body: JSON.stringify({
+          grants: [
+            { project_id: projectId, scope: 'full' },
+            { project_id: otherId, scope: 'full' },
+          ],
+        }),
+      }),
+      200,
+    );
+    const { event } = await offered();
+    // Then a context change in Other: later in the log than Laika's offer.
+    await ok(
+      await h.app.request('/api/v1/projects/other/context', {
+        method: 'PATCH',
+        headers: jsonHeaders({ Cookie: cookie }),
+        body: JSON.stringify({ context_md: 'Other brief', base_revision: 0 }),
+      }),
+      200,
+    );
+    const otherRow = lastRow('project.context_updated');
+
+    const client = await connect(receiver.secret);
+    const laika = await succeeded(client, 'agent_sync', { project: 'laika' });
+    expect((laika.events as Envelope[]).map((e) => e.event_id)).toEqual([event.event_id]);
+    expect(laika.cursor).toBe(event.cursor);
+
+    const other = await succeeded(client, 'agent_sync', {
+      project: 'other',
+      after: laika.cursor,
+    });
+    expect((other.events as Envelope[]).map((e) => e.event_id)).toEqual([otherRow.id]);
+    await client.close();
+
+    // The REST twin answers the same.
+    expect((await poll(receiver.secret, '?project=laika')).data.map((e) => e.event_id)).toEqual([
+      event.event_id,
+    ]);
+  });
+
   it('returns the agent’s undelivered events with a cursor, and its inbox with delivery states', async () => {
     const { event, offerId } = await offered();
     const client = await connect(receiver.secret);

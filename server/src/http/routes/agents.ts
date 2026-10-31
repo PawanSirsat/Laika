@@ -64,6 +64,7 @@ const EventsQuery = z.object({
   after: z.coerce.number().int().min(0).optional(),
   state: z.enum(['undelivered', 'all']).optional(),
   limit: z.coerce.number().int().min(1).optional(),
+  project: z.string().trim().min(1).max(200).optional(),
 });
 
 /** `POST /agents/me/events/ack` (§6.4, LAI-553). */
@@ -178,6 +179,7 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
         after: query.after ?? 0,
         state: query.state ?? 'undelivered',
         limit: Math.min(query.limit ?? AGENT_EVENTS_DEFAULT_LIMIT, AGENT_EVENTS_MAX_LIMIT),
+        projectSlug: query.project ?? null,
       }),
     );
   });

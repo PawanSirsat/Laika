@@ -7,7 +7,7 @@ import { ApiError } from '../../src/errors.ts';
 import { ackAgentEvents, listAgentEvents } from '../../src/services/agent-events.ts';
 import { registerAgent, setAgentGrants } from '../../src/services/agents.ts';
 import { createToken } from '../../src/services/tokens.ts';
-import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+import { freshDb, preparedDuring, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
  * `services/agent-events.ts` (SPEC §4.77, §6.4, LAI-553) on its own: the rules
@@ -130,6 +130,59 @@ describe('listAgentEvents', () => {
     expect(page.has_more).toBe(false);
     // The hidden row came first and was skipped, not counted against the limit.
     expect(page.data[0]!.cursor).toBe(page.cursor);
+  });
+
+  it('costs the same queries however many deliveries it may no longer read, and has_more counts only readable ones', () => {
+    /** Statements one `limit: 1` page prepares with `hidden` unreadable deliveries behind it. */
+    const costWith = (hidden: number): { statements: number; hasMore: boolean } => {
+      t.close();
+      t = freshDb();
+      s = seed(t.db);
+      const now = Date.now();
+      t.db
+        .insert(projects)
+        .values({
+          id: otherProject,
+          orgId: s.orgId,
+          name: 'Other',
+          slug: 'other',
+          prefix: 'OTH',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      const created = registerAgent(t.sqlite, t.db, owner(), {
+        displayName: 'one',
+        harness: 'claude-code',
+        deviceLabel: 'one',
+        grants: [
+          { projectId: s.projectId, scope: 'full' },
+          { projectId: otherProject, scope: 'full' },
+        ],
+      });
+      secret = created.secret;
+      // Unreadable deliveries on both sides of the one readable event: before
+      // it, a page that filtered row by row would read them one query at a
+      // time; after it, a look-ahead that counted them would say has_more.
+      for (let i = 0; i < hidden; i += 1) contextChanged(otherProject);
+      contextChanged(s.projectId);
+      for (let i = 0; i < hidden; i += 1) contextChanged(otherProject);
+      setAgentGrants(t.sqlite, t.db, owner(), created.agent.id, [
+        { projectId: s.projectId, scope: 'full' },
+      ]);
+      const actor = asAgent();
+      let hasMore = true;
+      const statements = preparedDuring(t.sqlite, () => {
+        hasMore = listAgentEvents(t.db, actor, { after: 0, state: 'all', limit: 1 }).has_more;
+      }).length;
+      return { statements, hasMore };
+    };
+
+    const few = costWith(3);
+    const many = costWith(60);
+    expect(many.statements).toBe(few.statements);
+    // A hidden event is a missing one: nothing more follows the readable one.
+    expect([few.hasMore, many.hasMore]).toEqual([false, false]);
   });
 
   it('is an agent’s: a personal token is forbidden, not_an_agent', () => {
