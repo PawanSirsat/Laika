@@ -5,14 +5,16 @@ import { loadActor, resolveTokenActor } from '../../../src/auth/resolve-actor.ts
 import { appendActivity } from '../../../src/db/activity.ts';
 import { type ActivityType } from '../../../src/db/enums.ts';
 import { newId } from '../../../src/db/ids.ts';
-import { agents, orgs, tokens, users } from '../../../src/db/schema.ts';
+import { agents, orgs, tasks, tokens, users } from '../../../src/db/schema.ts';
 import { type AppEnv } from '../../../src/http/context.ts';
 import { createErrorHandler } from '../../../src/http/error-handler.ts';
 import { eventRoutes, MAX_QUEUED_FRAMES, RECONNECT_MS } from '../../../src/http/routes/events.ts';
 import { ActivityFeed, type RepeatingTimer } from '../../../src/services/activity-feed.ts';
 import { registerAgent, revokeAgent } from '../../../src/services/agents.ts';
+import { expireClaims } from '../../../src/services/claims.ts';
 import { MAX_REPLAY } from '../../../src/services/events.ts';
 import { addMember, createProject } from '../../../src/services/projects.ts';
+import { createTask, startWorking } from '../../../src/services/tasks.ts';
 import { createToken, revokeOwnToken } from '../../../src/services/tokens.ts';
 import { captureLog } from '../../helpers/app.ts';
 import { authHarness, cookieFrom, jsonHeaders, type AuthHarness } from '../../helpers/auth.ts';
@@ -1145,5 +1147,68 @@ describe('mounted in the app', () => {
     expect(body.project_id).not.toBeNull();
 
     await client.disconnect();
+  });
+});
+
+/**
+ * Another person's agent is named on the stream only while the task shows it,
+ * and that is asked **when the frame is written** (D-121 item 7, LAI-1011).
+ * A frame that waited behind a slow client while the agent's claim lapsed must
+ * not carry the agent out.
+ */
+describe("another person's agent on a held write (LAI-1011)", () => {
+  it('a claim that lapses while the frame waits is not named when it is written', async () => {
+    const bea = member('laika', 'member');
+    const created = registerAgent(t.sqlite, t.db, actor(bea), {
+      displayName: 'Bea private bot',
+      harness: 'codex',
+      deviceLabel: 'bea-1',
+      grants: [{ projectId: laikaId, scope: 'full' }],
+    });
+    const agentId = created.agent.id;
+    const taskId = createTask(t.sqlite, t.db, actor(ownerId), 'laika', { title: 'Shared' }).id;
+    // A real claim and session: Bea's agent is "working" the task, so the task
+    // shows it to every reader.
+    startWorking(t.sqlite, t.db, resolveTokenActor(t.db, created.secret, Date.now()), taskId);
+    t.db.update(tasks).set({ selectedAgentId: null }).where(eq(tasks.id, taskId)).run();
+
+    const { client } = await connect(ownerId);
+    try {
+      expect((await client.next()).event).toBe('ready');
+      // The claim's own rows were written before connecting, so the stream
+      // starts after them: what follows is only what this test writes.
+      write(laikaId); // X: written and left unread, so the next write is held
+      feed.poll();
+      await settle();
+      write(laikaId); // A: checked, then held in the write
+      appendActivity(t.db, {
+        orgId,
+        projectId: laikaId,
+        taskId,
+        actorId: bea,
+        actorKind: 'agent',
+        actorTokenId: created.token.id,
+        type: 'task.updated',
+        payload: { field: 'description_md', agent_id: agentId },
+      }); // B: queued behind A while the claim is live
+      feed.poll();
+      await settle();
+
+      // While A waits, the claim lapses: the task no longer shows the agent.
+      expireClaims(t.db, Date.now() + 365 * 24 * 60 * 60 * 1000);
+
+      expect((await client.next()).event).toBe('task.created'); // X
+      expect((await client.next()).event).toBe('task.created'); // A
+      const held = await client.next();
+      expect(held.event).toBe('task.updated');
+      const view = JSON.parse(held.data) as Record<string, unknown>;
+      expect(view.task_id).toBe(taskId);
+      expect(view.agent_id).toBeNull();
+      expect(view.agent_session).toBeNull();
+      expect(view.agent_redacted).toBe(true);
+      expect(held.data).not.toContain(agentId);
+    } finally {
+      await client.disconnect();
+    }
   });
 });
