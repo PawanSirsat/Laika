@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { adapter, HOOK_HARNESSES } from './agent-adapters.ts';
 import {
   type AgentCredential,
   asLost,
@@ -195,8 +196,8 @@ const USAGE = [
   'laika agent — a registered agent’s session, renewed while its harness runs.',
   '',
   'Usage:',
-  '  laika agent login <claude-code|codex> [--url URL]   save the agent’s own token (read from stdin)',
-  '  laika agent logout <claude-code|codex>              forget it',
+  '  laika agent login <harness> [--url URL]             save the agent’s own token (read from stdin)',
+  '  laika agent logout <harness>                        forget it',
   '  laika agent hooks on|off [--harness H]              install the session hooks (opt-in)',
   '  laika agent session start --harness H --harness-session ID [--pid PID]',
   '  laika agent session heartbeat --harness H --harness-session ID',
@@ -212,6 +213,9 @@ const USAGE = [
   'The token is the agent’s, from the Agents screen — never your own. It is kept',
   'in ~/.laika/agents/<harness>.json (0600), or read from LAIKA_AGENT_TOKEN, and',
   'is never printed, logged, or put on a command line.',
+  '',
+  `Harnesses: ${HARNESSES.join(', ')}. Hooks install for ${HOOK_HARNESSES.join(' and ')};`,
+  'the others use the commands above (cli/agent-adapters/CAPABILITIES.md).',
 ].join('\n');
 
 /** The file this module's entry is, beside it: `.ts` from source, `.js` once built. */
@@ -323,7 +327,7 @@ const HOOK_EVENTS = {
 
 type HookEvent = keyof typeof HOOK_EVENTS;
 
-const NAMES: Readonly<Record<Harness, string>> = { 'claude-code': 'Claude Code', codex: 'Codex' };
+const name = (harness: Harness): string => adapter(harness).name;
 
 /** The most a hook ever hands a model, all notes together. */
 export const MAX_CONTEXT = 1200;
@@ -332,7 +336,7 @@ export const MAX_CONTEXT = 1200;
 export function sessionContext(state: SessionState): string {
   if (!isLaikaId(state.session_id)) return '';
   return (
-    `Laika: agent session ${state.session_id ?? ''} is open for this ${NAMES[state.harness]} ` +
+    `Laika: agent session ${state.session_id ?? ''} is open for this ${name(state.harness)} ` +
     'session and is renewed only while this process runs. When you claim a Laika task ' +
     `(start_working), pass session_id: "${state.session_id ?? ''}" so this session holds the claim.`
   );
@@ -572,7 +576,12 @@ async function open(
         : named;
   if (proc === undefined) {
     log(io.home, `start ${harness}: no ${harness} process found above this hook — not opened`);
-    return { why: `no running ${NAMES[harness]} process was found to bind the session to` };
+    return {
+      why:
+        adapter(harness).comm === undefined
+          ? `${name(harness)}'s process cannot be told by its name: pass --pid <its process id>`
+          : `no running ${name(harness)} process was found to bind the session to`,
+    };
   }
   const outcome = await startSession(deps(io), {
     harness,
@@ -834,6 +843,13 @@ export async function agent(argv: readonly string[], io: AgentIo = CONSOLE): Pro
     const event = argv[1];
     const harness = argv[2];
     if (event === undefined || !(event in HOOK_EVENTS) || !isHarness(harness)) return 0;
+    // Only a harness whose hook format was verified gets an answer (LAI-557):
+    // the output below is Claude Code's and Codex's shape, and another
+    // harness reads its hooks' stdout differently.
+    if (!adapter(harness).hooks) {
+      log(io.home, `hook ${event} ${harness}: no verified hook adapter; ignored`);
+      return 0;
+    }
     try {
       const out = await hook(io, event as HookEvent, harness);
       if (out !== '') io.out(out);

@@ -412,6 +412,8 @@ const SAVE_WORDS: Record<Exclude<AutoOutcome, 'saved' | 'unchanged' | 'retried'>
   consent_unknown: 'the board did not answer the consent; nothing saved',
   busy: 'a tool or git operation was still running; nothing saved',
   refused: 'the save was refused',
+  no_hooks:
+    'this harness has no hooks reporting its tools, so nothing is saved automatically; run `laika agent checkpoint save` in it',
 };
 
 async function verificationOf(
