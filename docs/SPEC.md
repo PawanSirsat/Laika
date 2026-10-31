@@ -5235,14 +5235,14 @@ deployment** through §11.7's variables:
 | Claim expires | after 5 min | `LAIKA_CLAIM_EXPIRE_SECONDS` | the lease: how long after its last renewal a claim lapses. Must be longer than the heartbeat |
 | Expiry scan | every 30 s | `LAIKA_CLAIM_SCAN_SECONDS` | how often §11.6's scan marks lapsed claims `expired` |
 | Checkpoint warning | after 5 min | — | a live claim with no checkpoint, or none newer than this, is shown *"No save in the last 5 minutes"* on the task (LAI-545). Shown, decides nothing |
-| Pending notice | after 10 min | — | a `pending` checkpoint older than this is shown *"Verification pending — no push notice from GitHub yet"* (§4.70, D-116 item 6; LAI-545) |
+| Pending notice | after 10 min | `LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS` | a `pending` checkpoint older than this is shown *"Verification pending — no push notice from GitHub yet"* (§4.70, D-116 item 6; LAI-545) |
 | Offer expires | after 30 min | — | the default of the project policy's `offer_ttl_minutes` (§4.74; LAI-546) |
 | Completed hand-offs per task | at most 3 | — | the default of the project policy's `max_handoffs` (§4.74; LAI-546) |
 
 The last four are listed so the table is the proposal's whole. The two
-policy defaults are set per project, not per deployment; the warning and the
-notice become §11.7 variables with the work that reads them (LAI-545) — **not
-before**, because §11.7 lists only what the server reads. Tests use an
+policy defaults are set per project, not per deployment. The pending notice is
+a §11.7 variable (LAI-1015); the warning becomes one with the work that reads
+it (LAI-1016) — **not before**, because §11.7 lists only what the server reads. Tests use an
 injected clock.
 
 **Fencing.** Every change an agent session makes to a task carries its claim's
