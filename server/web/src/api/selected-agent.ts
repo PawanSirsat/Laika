@@ -585,7 +585,9 @@ export function describeAgentSelected(
   const sent = payload as { from?: unknown; to?: unknown } | null | undefined;
   if (sent === null || sent === undefined) return undefined;
   if (sent.to === null) {
-    return redacted ? 'changed the agent selection on this task' : 'withdrew the agent from this task';
+    return redacted
+      ? 'changed the agent selection on this task'
+      : 'withdrew the agent from this task';
   }
   if (typeof sent.to !== 'string') return undefined;
   const agent = agents.get(sent.to);

@@ -326,7 +326,9 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
         // LAI-002: say goodbye rather than vanish, so the client knows this was a
         // deploy and not a network fault, and reconnects with its last id.
         onClose: () => {
-          enqueue({ frame: { event: 'closing', data: JSON.stringify({ reason: 'server_shutdown' }) } });
+          enqueue({
+            frame: { event: 'closing', data: JSON.stringify({ reason: 'server_shutdown' }) },
+          });
           end();
         },
       });

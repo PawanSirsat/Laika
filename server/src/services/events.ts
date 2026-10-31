@@ -165,9 +165,7 @@ export function activityLens(
   reader: AgentReader,
   rows: readonly ActivityEvent[],
 ): ActivityLens {
-  const tokenIds = [
-    ...new Set(rows.flatMap((r) => tokenIdOf(r, apiPayload(r)) ?? [])),
-  ];
+  const tokenIds = [...new Set(rows.flatMap((r) => tokenIdOf(r, apiPayload(r)) ?? []))];
   const agentByToken = new Map<string, string | null>(
     tokenIds.length === 0
       ? []
