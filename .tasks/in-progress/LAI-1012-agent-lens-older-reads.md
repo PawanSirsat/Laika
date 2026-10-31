@@ -2,11 +2,12 @@
 id: LAI-1012
 title: "Hand-offs, inboxes, context revisions and checkpoints name another person's agent only through the agent lens"
 area: core
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-1011]
 discovered-from: LAI-1011
-status: backlog
+status: in-progress
+started: 2026-10-31T10:35:53Z
 ---
 
 Board: LAIKA-867, child of LAIKA-785 (Sprint 10, `phase-4`, `host-belka`).
