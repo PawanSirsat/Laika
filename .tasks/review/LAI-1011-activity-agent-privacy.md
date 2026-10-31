@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-1003
-status: in-progress
+status: review
+finished: 2026-10-31T12:48:39+05:30
 started: 2026-10-31T05:55:18+05:30
 ---
 
@@ -56,13 +57,13 @@ Anyone else sees "an agent": `actor_kind: 'agent'`, `agent_id: null`,
 
 ## Acceptance criteria
 
-- [ ] One shared gate decides every activity surface above; rounds reuse it
-- [ ] A two-owner test for each surface: the other owner's agent id never
+- [x] One shared gate decides every activity surface above; rounds reuse it
+- [x] A two-owner test for each surface: the other owner's agent id never
       appears in the raw response body; the owner still sees it; a task
       that shows the agent names it
-- [ ] Mutation-checked: breaking the gate turns those tests red
-- [ ] SPEC rows that describe activity agent fields say so
-- [ ] Touched test files pass one at a time; lint and format exit 0; CI gate
+- [x] Mutation-checked: breaking the gate turns those tests red
+- [x] SPEC rows that describe activity agent fields say so
+- [x] Touched test files pass one at a time; lint and format exit 0; CI gate
       green on the PR
 
 ## Result
@@ -110,3 +111,31 @@ Re-applied by the builder from the dispatch note, 2026-10-31:
 - `server/web/src/api/selected-agent.ts`: `WITHHELD_AGENT`, `agentVia`, and
   `describeAgentSelected(…, redacted)`
 - `server/web/test/api/selected-agent.test.ts`: one test
+
+## Result, round 2
+
+1. **Token names:** `token.created` / `token.revoked` `name` is withheld
+   when the token is an agent token whose agent this reader may not see
+   (`ActivityLens.agentOfToken`). Admin profile token names are unchanged.
+2. **SSE:** activity rows are framed when they are written
+   (`routes/events.ts` `writable`), on cookie and token streams alike, so a
+   claim that lapses while a frame waits does not name the agent.
+3. **Flag and wording:** `EventView.agent_redacted` is set when anything was
+   withheld. The web pairs it (`ActivityEvent.agent_redacted`): a redacted
+   row reads *an agent*, and a redacted selection reads *changed the agent
+   selection on this task*.
+4. **Tests:** `agent-visibility.test.ts` now has 21 cases. It uses a real
+   claim and session, which then lapse; rows carrying `to_agent_id`,
+   `from_agent_id` and `selected_agent_id`; and registered names, which are
+   absent for the other owner on every surface and present for the owner on
+   the four org-row surfaces. `events.test.ts` adds a held-write case for a
+   lapsed claim. The `events.ts` comment now names the real test and says
+   what it cannot see.
+- **Mutations**, each red: token name kept 8/21; flag always false 1/21;
+  batch-time SSE lens 1/44 (the held-write case); web `agentVia` 1/33; web
+  withdrawal wording 1/33.
+- **Follow-up filed:** LAI-1012 (LAIKA-867), for the hand-off views and
+  inboxes, context revisions and checkpoints.
+- **PR #165 (LAI-553)** adds a `writable()` re-frame in `routes/events.ts`.
+  Whichever of the two merges second must frame through
+  `activityLens(db, agentReader(reader), [row])` there.
