@@ -3481,7 +3481,7 @@ POST   /api/v1/tasks/:id/handoff-offers      body { idempotency_key, to_agent_id
                                              pauses the caller's live claim (§4.73, LAI-546)
 GET    /api/v1/tasks/:id/handoff-offers      every offer on the task, newest first, work requests included
 GET    /api/v1/agents/me/inbox               the calling agent's live work requests and offers, newest first (agent_sync's twin)
-GET    /api/v1/agents/me/events              ?after=, state=undelivered|all, limit= → { data, cursor, has_more, gap } — the
+GET    /api/v1/agents/me/events              ?after=, state=undelivered|all, limit=, project= → { data, cursor, has_more, gap } — the
                                              calling agent's event envelopes, oldest first (§4.76, §4.77, LAI-553)
 POST   /api/v1/agents/me/events/ack          body { event_ids, state: received|presented, session_id? } → { data }
 GET    /api/v1/handoff-offers                ?view=received|sent|needs_approval|recovery, project?, include_closed?, limit?, cursor?
@@ -3767,13 +3767,26 @@ durable half of what `/events` notifies: the envelopes (§4.76) addressed to
 the calling agent with `seq` after `after` (default 0), oldest first, at most
 `limit` (default and most 100), with their `delivery`; `state=undelivered`
 (the default) keeps only those not yet `received`, so an event comes back
-**at least once** until the helper acknowledges it. `cursor` is the last
-`seq` read — passed back as `after` — and `has_more` says more follow. An
-event the agent may no longer read (token, grant, owner's role, asked now) is
-skipped. An `after` ahead of the log answers `gap: { reason: unknown_cursor
-}` and starts from 0. **`POST /agents/me/events/ack`** records `received` or
+**at least once** until the helper acknowledges it. `project`, a slug, keeps
+one project's events; one the agent may not read is `403`, `reason:
+agent_not_granted`, as on its inbox. **Its paging is not §6.3's**, on
+purpose: the position is the log's own sequence, so `after` is a number the
+client keeps between sessions — the same one an SSE frame's `id:` carries —
+rather than an opaque cursor, and the answer is `{ data, cursor, has_more }`
+rather than `{ data, next_cursor }`. `cursor` is the last `seq` returned (or
+`after` when none was), passed back as `after`; `has_more` says more
+**readable** events follow. An event the agent may no longer read (token,
+grant, owner's role, asked now) is filtered out in the query itself, so it
+is neither returned nor counted, and a page costs the same however many
+there are; it returns, still undelivered, if the access does. An `after`
+ahead of the log answers `gap: { reason: unknown_cursor }` and starts from
+0. **`POST /agents/me/events/ack`** records `received` or
 `presented` for up to 100 events, all or nothing, in one `BEGIN IMMEDIATE`
-transaction: acknowledging again keeps the first time; `presented` before
+transaction that **reads the token, the agent, its grants and the owner
+again** — a body is read after the request is authenticated, and a
+credential revoked or narrowed meanwhile gets what a new request on it
+would: `401`, or `404` for an event it may no longer read, and nothing
+recorded. Acknowledging again keeps the first time; `presented` before
 `received` is `409 conflict`, `reason: not_received`, naming the events; an
 event not addressed to the agent, or one it may no longer read, is `404` with
 `event_ids`; `session_id` must be its own open session (§4.65). It is
@@ -4915,7 +4928,7 @@ matched.
 | `update_project_context` | `{ project, context_md, mode, base_revision? }` | the document's new revision and length. `mode` is `replace` or `append`. `replace` must name the `base_revision` it replaces (absent is `422`, after the permission check); a stale one is `conflict`, `reason: stale_context_revision`, and nothing changes. `append` is computed from the current document inside the write, so two appends both land (LAI-555) |
 | `log_unlisted_work` | `{ repo, note }` | records work or an idea outside any project, for triage |
 | `propose_time_entry` | `{ minutes, task?, day?, note? }` | a draft in the person's own drafts (`source: 'agent'`, §4.47) — **never an entry**: only the person confirms it, signed in to the web app (D-088 item 13). Refused `forbidden` with `details.reason: "time_drafts_off"` unless the organisation's *Time* is `drafts` and the person turned on *Draft my time*. `day` is their local day, by default today in their drafts' zone. It answers `{ id, minutes, day }` and nothing of the person's drafts. Its REST twin is `POST /me/time-drafts` (LAI-787) |
-| `agent_sync` | `{ project?, after? }` | a registered agent's inbox: its **live** work requests and the hand-off and recovery offers it may accept, newest first — `GET /agents/me/inbox`'s twin (§6.4, LAI-546), each item with its `delivery` (§4.77); and `{ after? }` returns `events` — `GET /agents/me/events` with `state=undelivered` — with `cursor`, `has_more` and `gap` (LAI-553). Any other token is `forbidden`, `reason: not_an_agent`. It reads, and records nothing: acknowledging is `POST /agents/me/events/ack` |
+| `agent_sync` | `{ project?, after? }` | a registered agent's inbox: its **live** work requests and the hand-off and recovery offers it may accept, newest first — `GET /agents/me/inbox`'s twin (§6.4, LAI-546), each item with its `delivery` (§4.77); and `{ after? }` returns `events` — `GET /agents/me/events` with `state=undelivered` and the same `project` — with `cursor`, `has_more` and `gap` (LAI-553). Any other token is `forbidden`, `reason: not_an_agent`. It reads, and records nothing: acknowledging is `POST /agents/me/events/ack` |
 | `checkpoint_task` | `{ task, id, idempotency_key, repo, branch, commit_sha, manifest, summary?, summary_commit_sha?, claim_generation }` | the checkpoint, `verification: 'pending'` until a signed push delivery verifies it — `POST /tasks/:id/checkpoints`'s twin (§4.70, LAI-545). Register **after** the push; the server never fetches anything (D-083) |
 | `offer_handoff` | `{ task, to_agent, checkpoint, reason, idempotency_key, claim_generation }` | the offer, `open` or `pending_approval`; the caller's claim is `paused` — `POST /tasks/:id/handoff-offers`'s twin (§4.73, LAI-546). `to_agent` is an agent id |
 | `respond_handoff` | `{ offer, action, verified_commit_sha?, reason?, session_id? }` | `action` is `accept`, `decline` or `cancel` — the twins of `POST /handoff-offers/:id/accept`, `/decline` and `/cancel` (LAI-546). `accept` needs `verified_commit_sha` and returns the offer, the new claim and its `generation`; approving is a person's and has no tool |
