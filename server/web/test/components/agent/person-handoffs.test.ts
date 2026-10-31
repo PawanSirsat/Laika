@@ -56,6 +56,8 @@ const row = (over: Partial<PersonHandoffView>): PersonHandoffView => ({
   created_at: 500,
   closed_at: null,
   next_action: 'approve',
+  from_agent_redacted: false,
+  to_agent_redacted: false,
   ...over,
 });
 
@@ -85,6 +87,20 @@ void describe('Approve', () => {
   void test('never before the reader is known, and never for an unnamed receiver', () => {
     assert.equal(mayApprove(row({}), undefined), false);
     assert.equal(mayApprove(row({ to_agent: null }), 'u-lead'), false);
+  });
+
+  void test('offered for a receiver the server withheld: never the reader’s own (LAI-1012)', () => {
+    const withheld = row({ to_agent: null, to_agent_redacted: true });
+    assert.equal(mayApprove(withheld, 'u-lead'), true);
+    assert.equal(mayApprove(withheld, undefined), false);
+    assert.equal(mayApprove({ ...withheld, next_action: 'wait_for_approval' }, 'u-lead'), false);
+  });
+
+  void test('a withheld receiver is a registered agent, not any eligible agent (LAI-1012)', () => {
+    const withheld = row({ to_agent: null, to_agent_redacted: true });
+    assert.equal(acceptanceWords(withheld), 'a registered agent can accept once it is approved');
+    assert.doesNotMatch(nextActionWords(withheld), /eligible/);
+    assert.match(acceptanceWords(row({ to_agent: null })), /any eligible agent/);
   });
 
   void test('only on a pending offer the server says to approve', () => {

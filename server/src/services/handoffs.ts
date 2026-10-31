@@ -64,6 +64,7 @@ import {
   sessionView,
   type TaskClaimView,
 } from './claims.ts';
+import { type AgentReader, agentLens, agentReader } from './agent-visibility.ts';
 import { inboxDeliveries, type AgentEventDelivery } from './agent-events.ts';
 import { assertCheckpointAcceptable } from './checkpoints.ts';
 import { canSeeProject, requireProjectBySlug } from './projects.ts';
@@ -354,6 +355,18 @@ export interface HandoffOfferView {
   expires_at: number | null;
   accepted_session_id: string | null;
   accepted_claim_id: string | null;
+  /**
+   * The sender's agent is one this reader may not see (D-121 item 7,
+   * LAI-1012): `from_agent_id` and `from_session_id` are null, and it reads
+   * as *an agent*.
+   */
+  from_agent_redacted: boolean;
+  /**
+   * The receiver is one this reader may not see (D-121 item 7, LAI-1012):
+   * `to_agent_id` is null — *an agent*, **not** "any eligible agent" — and so
+   * are `accepted_session_id` and `accepted_claim_id` when it accepted.
+   */
+  to_agent_redacted: boolean;
   /** The receiver's acknowledgement, not proof (D-116 item 8). */
   receiver_commit_sha: string | null;
   closed_reason: HandoffClosedReason | null;
@@ -362,10 +375,20 @@ export interface HandoffOfferView {
   closed_at: number | null;
 }
 
-function offerViews(db: Db, rows: readonly OfferRow[]): HandoffOfferView[] {
+/**
+ * Offers as `reader` may see them. Each agent an offer names — the sender's,
+ * the receiver, the session that accepted — asks the one gate (`agentLens`,
+ * D-121 item 7, LAI-1012): another person's agent is named only beside a task
+ * that shows it as selected or as its live claim's holder.
+ */
+function offerViews(db: Db, reader: AgentReader, rows: readonly OfferRow[]): HandoffOfferView[] {
   if (rows.length === 0) return [];
   const sessionIds = [
-    ...new Set(rows.map((r) => r.fromSessionId).filter((id): id is string => id !== null)),
+    ...new Set(
+      rows
+        .flatMap((r) => [r.fromSessionId, r.acceptedSessionId])
+        .filter((id): id is string => id !== null),
+    ),
   ];
   const agentOfSession = new Map(
     sessionIds.length === 0
@@ -391,18 +414,38 @@ function offerViews(db: Db, rows: readonly OfferRow[]): HandoffOfferView[] {
           .map((c) => [c.id, c]),
   );
 
+  const sessionAgent = (id: string | null): string | null =>
+    id === null ? null : (agentOfSession.get(id) ?? null);
+  const lens = agentLens(
+    db,
+    reader,
+    rows.map((r) => r.taskId),
+    rows
+      .flatMap((r) => [
+        sessionAgent(r.fromSessionId),
+        r.toAgentId,
+        sessionAgent(r.acceptedSessionId),
+      ])
+      .filter((id): id is string => id !== null),
+  );
+
   return rows.map((row) => {
     const checkpoint = row.checkpointId === null ? undefined : checkpoints.get(row.checkpointId);
+    const withheld = (agentId: string | null): boolean =>
+      agentId !== null && !lens.visible(row.taskId, agentId);
+    const from = sessionAgent(row.fromSessionId);
+    const fromHidden = withheld(from);
+    const acceptedHidden = withheld(sessionAgent(row.acceptedSessionId));
+    const toHidden = withheld(row.toAgentId) || acceptedHidden;
     return {
       id: row.id,
       task_id: row.taskId,
       kind: row.kind,
       state: row.state,
-      from_session_id: row.fromSessionId,
-      from_agent_id:
-        row.fromSessionId === null ? null : (agentOfSession.get(row.fromSessionId) ?? null),
+      from_session_id: fromHidden ? null : row.fromSessionId,
+      from_agent_id: fromHidden ? null : from,
       from_claim_generation: row.fromClaimGeneration,
-      to_agent_id: row.toAgentId,
+      to_agent_id: toHidden ? null : row.toAgentId,
       checkpoint_id: row.checkpointId,
       checkpoint_commit_sha: row.checkpointCommitSha,
       checkpoint:
@@ -420,8 +463,10 @@ function offerViews(db: Db, rows: readonly OfferRow[]): HandoffOfferView[] {
       approved_by_user_id: row.approvedByUserId,
       approved_at: row.approvedAt,
       expires_at: row.expiresAt,
-      accepted_session_id: row.acceptedSessionId,
-      accepted_claim_id: row.acceptedClaimId,
+      accepted_session_id: toHidden ? null : row.acceptedSessionId,
+      accepted_claim_id: toHidden ? null : row.acceptedClaimId,
+      from_agent_redacted: fromHidden,
+      to_agent_redacted: toHidden,
       receiver_commit_sha: row.receiverCommitSha,
       closed_reason: row.closedReason,
       created_by_user_id: row.createdByUserId,
@@ -431,8 +476,8 @@ function offerViews(db: Db, rows: readonly OfferRow[]): HandoffOfferView[] {
   });
 }
 
-function offerView(db: Db, row: OfferRow): HandoffOfferView {
-  return offerViews(db, [row])[0]!;
+function offerView(db: Db, reader: AgentReader, row: OfferRow): HandoffOfferView {
+  return offerViews(db, reader, [row])[0]!;
 }
 
 function reloadOffer(db: Db, id: string): OfferRow {
@@ -935,7 +980,8 @@ export function openRecoveryIfDue(db: Db, taskId: string, now: number): HandoffO
     },
     now,
   });
-  return offerView(db, row);
+  // Its callers serve nothing from it, so it names no agent (`null` reader).
+  return offerView(db, null, row);
 }
 
 /**
@@ -1106,7 +1152,7 @@ export function offerHandoff(
           field: 'idempotency_key',
         });
       }
-      return { offer: offerView(db, seen), created: false };
+      return { offer: offerView(db, agentReader(actor), seen), created: false };
     }
 
     // The fence (§6.3): a paused, stale or other session's offer is refused.
@@ -1221,7 +1267,7 @@ export function offerHandoff(
       },
       now,
     });
-    return { offer: offerView(db, row), created: true };
+    return { offer: offerView(db, agentReader(actor), row), created: true };
   });
 }
 
@@ -1278,7 +1324,7 @@ export function approveHandoff(
         .where(eq(handoffOffers.id, offer.id))
         .run();
       appendApproved(db, person, project, task.id, offer.id, toAgentId, true, now);
-      return offerView(db, reloadOffer(db, offer.id));
+      return offerView(db, agentReader(actor), reloadOffer(db, offer.id));
     }
 
     if (toAgentId !== null && toAgentId !== offer.toAgentId) {
@@ -1290,14 +1336,14 @@ export function approveHandoff(
       );
     }
     if (ownerOfAgent(db, offer.toAgentId) === person.userId) throw approverIsReceiver(offer);
-    if (offer.state !== 'pending_approval') return offerView(db, offer);
+    if (offer.state !== 'pending_approval') return offerView(db, agentReader(actor), offer);
 
     db.update(handoffOffers)
       .set({ approvedByUserId: person.userId, approvedAt: now, state: 'open' })
       .where(eq(handoffOffers.id, offer.id))
       .run();
     appendApproved(db, person, project, task.id, offer.id, offer.toAgentId, false, now);
-    return offerView(db, reloadOffer(db, offer.id));
+    return offerView(db, agentReader(actor), reloadOffer(db, offer.id));
   });
 }
 
@@ -1414,7 +1460,7 @@ export function acceptHandoff(
           .where(eq(agentSessions.id, claim.sessionId))
           .get()!;
         return {
-          offer: offerView(db, offer),
+          offer: offerView(db, agentReader(actor), offer),
           claim: claimView(claim),
           session: sessionView(session, now),
         };
@@ -1587,7 +1633,7 @@ export function acceptHandoff(
     });
 
     return {
-      offer: offerView(db, reloadOffer(db, offer.id)),
+      offer: offerView(db, agentReader(actor), reloadOffer(db, offer.id)),
       claim: claimView(claim),
       session: sessionView(session, now),
     };
@@ -1654,7 +1700,7 @@ export function declineHandoff(
       now,
     });
     afterOfferClosedUnaccepted(db, offer, now);
-    return offerView(db, reloadOffer(db, offer.id));
+    return offerView(db, agentReader(actor), reloadOffer(db, offer.id));
   });
 }
 
@@ -1712,7 +1758,7 @@ export function cancelHandoff(
       now,
     });
     afterOfferClosedUnaccepted(db, offer, now);
-    return offerView(db, reloadOffer(db, offer.id));
+    return offerView(db, agentReader(actor), reloadOffer(db, offer.id));
   });
 }
 
@@ -1729,6 +1775,7 @@ export function listTaskOffers(db: Db, actor: ResolvedActor, taskId: string): Ha
   }
   return offerViews(
     db,
+    agentReader(actor),
     db
       .select()
       .from(handoffOffers)
@@ -1869,6 +1916,7 @@ export function listInbox(db: Db, actor: ResolvedActor, options: InboxOptions): 
   const views = new Map(
     offerViews(
       db,
+      agentReader(actor),
       found.filter((f) => f.offer.kind !== 'work_request').map((f) => f.offer),
     ).map((v) => [v.id, v]),
   );
@@ -1937,8 +1985,19 @@ export interface PersonHandoffView {
   project_slug: string;
   /** The agent whose claim the work moves from: the sender's, or the expired one. */
   from_agent: SelectedAgentView | null;
-  /** Null for an unnamed recovery, which any eligible agent may take. */
+  /**
+   * Null for an unnamed recovery, which any eligible agent may take — unless
+   * `to_agent_redacted`.
+   */
   to_agent: SelectedAgentView | null;
+  /**
+   * `from_agent` is another person's agent this reader may not see (D-121
+   * item 7, LAI-1012): null, and it reads as *an agent* — no id, harness,
+   * device or owner.
+   */
+  from_agent_redacted: boolean;
+  /** As `from_agent_redacted`, for `to_agent`: *an agent*, not "any eligible agent". */
+  to_agent_redacted: boolean;
   checkpoint_id: string | null;
   /** The checkpoint as it is now, or null once retention removed it. */
   checkpoint: { commit_sha: string; verification: string; saved_at: number } | null;
@@ -2239,13 +2298,22 @@ function personHandoffViews(
           .map((c) => [c.id, c]),
   );
 
+  // Another person's agent is missing unless the task shows it, selected or
+  // holding the live claim (D-121 item 7, LAI-1012): the one gate.
+  const lens = agentLens(
+    db,
+    agentReader(actor),
+    found.map((f) => f.offer.taskId),
+    agentIds,
+  );
   const actions = new NextActions(db, actor, found);
   return found.map((f): PersonHandoffView => {
     const offer = f.offer;
     const from = fromAgentId(offer);
+    const hidden = (id: string | null): boolean => id !== null && !lens.visible(offer.taskId, id);
     // Each agent's registered name is its owner's alone (D-120, LAI-1001).
     const line = (id: string | null): SelectedAgentView | null => {
-      const view = id === null ? undefined : agentLines.get(id);
+      const view = id === null || hidden(id) ? undefined : agentLines.get(id);
       return view === undefined ? null : namedFor(view, actor.userId);
     };
     const fromAgent = line(from);
@@ -2265,6 +2333,8 @@ function personHandoffViews(
       project_slug: f.slug,
       from_agent: fromAgent,
       to_agent: toAgent,
+      from_agent_redacted: hidden(from),
+      to_agent_redacted: hidden(offer.toAgentId),
       checkpoint_id: offer.checkpointId,
       checkpoint:
         checkpoint === undefined
@@ -2282,7 +2352,15 @@ function personHandoffViews(
       closed_reason: offer.closedReason,
       created_at: offer.createdAt,
       closed_at: offer.closedAt,
-      next_action: actions.for(f, state, fromAgent, toAgent, checkpoint?.verification ?? null),
+      // Asked of the agents themselves, never of what this reader is shown:
+      // a withheld receiver is still one this reader may approve.
+      next_action: actions.for(
+        f,
+        state,
+        from === null ? null : (agentLines.get(from) ?? null),
+        offer.toAgentId === null ? null : (agentLines.get(offer.toAgentId) ?? null),
+        checkpoint?.verification ?? null,
+      ),
     };
   });
 }

@@ -350,10 +350,13 @@ export function liveClaim(db: Db, taskId: string): ClaimRow | undefined {
  * The live claim of each task on a page, keyed by task id — **one query
  * whatever the page size**, as LAI-091 keeps every other part of a task view.
  *
- * An `active` claim whose lease has lapsed is left out before the scan
- * catches it ({@link leaseLapsed}, so the boot grace holds here too): the
- * fence already refuses its generation, and a card must not say *Working*
- * for a claim nobody can use.
+ * A claim whose lease has lapsed — `active` **or `paused`** — is left out
+ * before the scan catches it ({@link leaseLapsed}, so the boot grace holds
+ * here too): the scan expires both, the fence already refuses its
+ * generation, and a card must not say *Working* for a claim nobody can use.
+ * This is also what `agentLens` reads, so a lapsed sender with an open
+ * hand-off stops being named the moment its lease ends, not when the scan
+ * runs (LAI-1012).
  */
 export function liveClaimViews(
   db: Db,
@@ -393,7 +396,7 @@ export function liveClaimViews(
     model,
     deviceLabel,
   } of found) {
-    if (claim.state === 'active' && leaseLapsed(claim.leaseExpiresAt, now)) continue;
+    if (leaseLapsed(claim.leaseExpiresAt, now)) continue;
     views.set(claim.taskId, {
       generation: claim.generation,
       // The query's predicate: only the live states reach here.

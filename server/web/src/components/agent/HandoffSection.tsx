@@ -6,7 +6,7 @@ import {
   type Checkpoint,
   type HandoffOffer,
 } from '../../api/handoffs.ts';
-import type { AgentNaming } from '../../api/selected-agent.ts';
+import { type AgentNaming, UNNAMED_AGENT } from '../../api/selected-agent.ts';
 import { RECOVERY_BY_HAND } from './agent-states.ts';
 import {
   asSummary,
@@ -142,13 +142,15 @@ export function HandoffSection({
           taskKey={taskKey}
           offer={offer}
           from={
-            offer.from_agent_id === null
-              ? offer.kind === 'recovery'
-                ? 'The expired claim'
-                : 'Nobody'
-              : offerAgentName(offer.from_agent_id, agents)
+            offer.from_agent_redacted
+              ? UNNAMED_AGENT
+              : offer.from_agent_id === null
+                ? offer.kind === 'recovery'
+                  ? 'The expired claim'
+                  : 'Nobody'
+                : offerAgentName(offer.from_agent_id, agents)
           }
-          to={offerAgentName(offer.to_agent_id, agents)}
+          to={offerAgentName(offer.to_agent_id, agents, offer.to_agent_redacted)}
           agents={agents}
           checkpoint={
             saved === undefined

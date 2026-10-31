@@ -44,8 +44,10 @@ export interface CheckpointSummary {
 export interface Checkpoint {
   readonly id: string;
   readonly task_id: string;
-  readonly session_id: string;
-  readonly agent_id: string;
+  /** Null, with `agent_redacted`, when the save's agent is one this reader may not see (LAI-1012). */
+  readonly session_id: string | null;
+  readonly agent_id: string | null;
+  readonly agent_redacted: boolean;
   readonly claim_generation: number;
   readonly repo: string;
   readonly branch: string;
@@ -105,6 +107,10 @@ export interface HandoffOffer {
   readonly expires_at: number | null;
   readonly accepted_session_id: string | null;
   readonly accepted_claim_id: string | null;
+  /** The sender's agent is withheld from this reader (D-121 item 7, LAI-1012): *an agent*. */
+  readonly from_agent_redacted: boolean;
+  /** The receiver is withheld: a null `to_agent_id` is *an agent*, not any eligible agent. */
+  readonly to_agent_redacted: boolean;
   /** The receiver's acknowledgement, not proof (D-116 item 8). */
   readonly receiver_commit_sha: string | null;
   readonly closed_reason: HandoffClosedReason | null;
@@ -202,8 +208,12 @@ export interface PersonHandoffView {
   readonly project_slug: string;
   /** The agent whose claim the work moves from: the sender's, or the expired one. */
   readonly from_agent: PersonHandoffAgent | null;
-  /** Null for an unnamed recovery, which any eligible agent may take. */
+  /** Null for an unnamed recovery, which any eligible agent may take — unless `to_agent_redacted`. */
   readonly to_agent: PersonHandoffAgent | null;
+  /** `from_agent` is another person's agent withheld from this reader (LAI-1012): *an agent*. */
+  readonly from_agent_redacted: boolean;
+  /** As `from_agent_redacted`, for `to_agent`. */
+  readonly to_agent_redacted: boolean;
   readonly checkpoint_id: string | null;
   /** The checkpoint as it is now, or null once retention removed it. */
   readonly checkpoint: PersonHandoffCheckpoint | null;

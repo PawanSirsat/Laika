@@ -528,11 +528,19 @@ function HandoffRow({
         <Party
           agent={row.from_agent}
           meId={meId}
-          unnamed={row.kind === 'recovery' ? 'The expired claim' : 'A registered agent'}
+          unnamed={
+            row.kind === 'recovery' && !row.from_agent_redacted
+              ? 'The expired claim'
+              : 'A registered agent'
+          }
         />
         <span aria-hidden="true">→</span>
         <span className="visually-hidden">to</span>
-        <Party agent={row.to_agent} meId={meId} unnamed="Any eligible agent" />
+        <Party
+          agent={row.to_agent}
+          meId={meId}
+          unnamed={row.to_agent_redacted ? 'A registered agent' : 'Any eligible agent'}
+        />
       </span>
       <dl className="handoffs-facts">
         <div>

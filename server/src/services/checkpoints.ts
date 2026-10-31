@@ -28,6 +28,7 @@ import {
   reloadAgentActor,
   requireVisibleTaskToClaim,
 } from './claims.ts';
+import { type AgentReader, agentLens, agentReader } from './agent-visibility.ts';
 import { foldRepo } from './github-proof.ts';
 import { resolveRepoProjects } from './heartbeats.ts';
 
@@ -189,8 +190,16 @@ export interface CheckpointRefView {
 export interface CheckpointView {
   id: string;
   task_id: string;
-  session_id: string;
-  agent_id: string;
+  /**
+   * The saving session and its agent — null, with `agent_redacted`, to a
+   * reader who may not see that agent: another person's, once the task no
+   * longer shows it as selected or as its live claim's holder (D-121 item 7,
+   * LAI-1012).
+   */
+  session_id: string | null;
+  agent_id: string | null;
+  /** The save's agent is one this reader may not see: *an agent*. */
+  agent_redacted: boolean;
   claim_generation: number;
   repo: string;
   branch: string;
@@ -214,7 +223,12 @@ export interface CheckpointView {
 type CheckpointRow = typeof taskCheckpoints.$inferSelect;
 type RefRow = typeof checkpointRefs.$inferSelect;
 
-function views(db: Db, rows: readonly CheckpointRow[], now: number): CheckpointView[] {
+function views(
+  db: Db,
+  reader: AgentReader,
+  rows: readonly CheckpointRow[],
+  now: number,
+): CheckpointView[] {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
 
@@ -239,6 +253,12 @@ function views(db: Db, rows: readonly CheckpointRow[], now: number): CheckpointV
       .where(inArray(agentSessions.id, sessionIds))
       .all()
       .map((s) => [s.id, s.agentId]),
+  );
+  const lens = agentLens(
+    db,
+    reader,
+    rows.map((r) => r.taskId),
+    [...agentOf.values()],
   );
 
   // `superseded` (§4.70): a newer verified checkpoint on the same claim — the
@@ -268,11 +288,14 @@ function views(db: Db, rows: readonly CheckpointRow[], now: number): CheckpointV
     const pendingSince =
       row.verification === 'pending' ? (newest?.createdAt ?? row.createdAt) : null;
     const newer = newestVerified.get(`${row.taskId}:${String(row.claimGeneration)}`);
+    const agentId = agentOf.get(row.sessionId) ?? null;
+    const hidden = agentId === null || !lens.visible(row.taskId, agentId);
     return {
       id: row.id,
       task_id: row.taskId,
-      session_id: row.sessionId,
-      agent_id: agentOf.get(row.sessionId) ?? '',
+      session_id: hidden ? null : row.sessionId,
+      agent_id: hidden ? null : agentId,
+      agent_redacted: hidden,
       claim_generation: row.claimGeneration,
       repo: row.repo,
       branch: row.branch,
@@ -292,8 +315,8 @@ function views(db: Db, rows: readonly CheckpointRow[], now: number): CheckpointV
   });
 }
 
-function viewOf(db: Db, row: CheckpointRow, now: number): CheckpointView {
-  return views(db, [row], now)[0]!;
+function viewOf(db: Db, reader: AgentReader, row: CheckpointRow, now: number): CheckpointView {
+  return views(db, reader, [row], now)[0]!;
 }
 
 // ---------------------------------------------------------------- refusals
@@ -502,7 +525,7 @@ export function registerCheckpoint(
           field: 'idempotency_key',
         });
       }
-      return { checkpoint: viewOf(db, seen, now), created: false };
+      return { checkpoint: viewOf(db, agentReader(actor), seen, now), created: false };
     }
 
     // The fence (§6.3): a paused, stale or other session's save is refused. A
@@ -577,7 +600,7 @@ export function registerCheckpoint(
     });
 
     const row = db.select().from(taskCheckpoints).where(eq(taskCheckpoints.id, clean.id)).get()!;
-    return { checkpoint: viewOf(db, row, now), created: true };
+    return { checkpoint: viewOf(db, agentReader(actor), row, now), created: true };
   });
 }
 
@@ -750,7 +773,7 @@ export function listCheckpoints(
     .where(eq(taskCheckpoints.taskId, taskId))
     .orderBy(desc(taskCheckpoints.createdAt), desc(taskCheckpoints.id))
     .all();
-  return views(db, rows, now);
+  return views(db, agentReader(actor), rows, now);
 }
 
 /**

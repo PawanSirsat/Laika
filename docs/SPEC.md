@@ -3445,7 +3445,9 @@ GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
                                              DELETE takes an optional body { open_tasks } as deactivation does (LAI-986)
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
        └ GET answers the document with its `revision`; PATCH takes { context_md, base_revision } — base_revision required, the revision the write replaces; another is 409 `stale_context_revision` with { base_revision, current_revision } and nothing is written (§4.68, LAI-555)
-GET    /api/v1/projects/:slug/context/revisions          newest first, no text: [{ revision, length, author_id, agent_id, created_at }]
+GET    /api/v1/projects/:slug/context/revisions          newest first, no text: [{ revision, length, author_id, agent_id, agent_redacted, created_at }]
+       └ `agent_id` to its owner only: a revision is beside no task, so another person's agent is null with
+         `agent_redacted: true` (D-121 item 7, LAI-1012); the same on `.../revisions/:revision`
 GET    /api/v1/projects/:slug/context/revisions/:revision    one revision with its `body`; one the project has not reached is 404
 GET    /api/v1/projects/:slug/context/diff   ?from=&to= → { from_revision, to_revision, current_revision, diff, added, removed, truncated, hint }; `to` defaults to current, `from` may be 0 (the empty document), from > to is 422
        └ at most 2,000 changed lines (added + removed) are answered; past that `truncated: true`, `diff: ''`, `added` and `removed` null, and `hint` names how to read the revision whole (`.../context/revisions/:to`, or `get_project_context` without `since_revision`). MCP answers the same `context_diff`
@@ -3490,6 +3492,8 @@ POST   /api/v1/tasks/:id/checkpoints         body { id, idempotency_key, repo, b
                                              → 201 checkpoint; the same key again → 200 that checkpoint (§4.70, LAI-545).
                                              The live claim's holder only, with X-Laika-Claim-Generation
 GET    /api/v1/tasks/:id/checkpoints         newest first, each with its refs, `verification`, `pending_since`, `superseded`
+                                             `session_id` and `agent_id` are null with `agent_redacted: true` where the
+                                             saving agent is another person's the task no longer shows (D-121 item 7, LAI-1012)
 POST   /api/v1/checkpoints/:id/refs          → 201 { ref, revision, verification } — registers the next re-tag before it is
                                              pushed (`laika agent checkpoint reverify`, D-116 item 7); task.checkpoint.retag
 GET    /api/v1/agents/:id/checkpoint-consent → { given, given_by_user_id, given_at, withdrawn_at } (§4.75; the owner, or the agent's own token)
@@ -3761,9 +3765,18 @@ state, from_session_id, from_agent_id, from_claim_generation, to_agent_id,
 checkpoint_id, checkpoint_commit_sha, checkpoint: { commit_sha, verification,
 summary, summary_commit_sha } | null, reason, note_hash, requires_approval,
 approved_by_user_id, approved_at, expires_at, accepted_session_id,
-accepted_claim_id, receiver_commit_sha, closed_reason, created_by_user_id,
-created_at, closed_at }` — the column names, unchanged on the wire;
-`checkpoint` is null once retention removed it. An offer retry is matched as
+accepted_claim_id, from_agent_redacted, to_agent_redacted, receiver_commit_sha,
+closed_reason, created_by_user_id, created_at, closed_at }` — the column names,
+unchanged on the wire; `checkpoint` is null once retention removed it. **Its
+agents are named as activity's are** (D-121 item 7, LAI-1012), through the same
+gate: another person's agent only beside a task that shows it as its selected
+agent or its live claim's holder. Otherwise the sender's `from_agent_id` and
+`from_session_id` are null with `from_agent_redacted: true`, and the receiver's
+`to_agent_id`, `accepted_session_id` and `accepted_claim_id` are null with
+`to_agent_redacted: true` — *an agent*, **not** "any eligible agent". The same
+holds on every route and tool that answers an offer: the task's offer history,
+`GET /agents/me/inbox`, `agent_sync`, and the offer, approve, accept, decline
+and cancel answers. An offer retry is matched as
 §4.73 says, before the fence. **Consent** (§4.75): `PUT` gives it, `DELETE`
 withdraws it, both the owner's, signed in; `GET` answers the owner and the
 agent's own token, so the helper knows whether it may save on its own. Giving
@@ -3819,7 +3832,10 @@ person's inbox** (LAI-1009), the one the web Inbox's *Hand-offs* tab reads: an
 agent's token is `403` with `reason: use_agent_inbox` and keeps `GET
 /agents/me/inbox`. Each row is a hand-off or recovery offer with its task (`id`,
 `key`, `title`, project), `from_agent` and `to_agent` as the task's selected
-agent is shown (harness, device, owner), the checkpoint's `verification` and
+agent is shown (harness, device, owner) — **through the same gate** (D-121 item
+7, LAI-1012): another person's agent the task does not show is `null` with
+`from_agent_redacted` or `to_agent_redacted` true, no id, harness, device or
+owner, while `next_action` is still decided on the agents themselves — then the checkpoint's `verification` and
 `saved_at`, the `reason` (untrusted data), `requires_approval`, `approved`,
 `expires_at`, and `next_action` — what the caller can do now (`approve`,
 `name_receiver`, `accept_with_your_agent`, `cancel`, `wait_for_approval`,
