@@ -271,11 +271,13 @@ function readableProjects(actor: ResolvedActor): string[] {
  * delivery state — **at least once**: an event stays `undelivered` until the
  * helper acknowledges it, whatever the stream did.
  *
- * **Only what the agent may read now is answered, and the filter is in the
- * query** (LAI-553 review): one page is one query plus one row of look-ahead,
- * however many deliveries it may no longer read, and `has_more` counts only
- * rows it may read — a hidden event is indistinguishable from a missing one.
- * A grant given back returns its events, still undelivered.
+ * **Only what the agent may read now is answered, and the filter is the
+ * index** (LAI-553 reviews 1 and 3): each project it may read is its own
+ * range on `(agent_id, project_id, seq)`, read to at most `limit + 1` rows,
+ * so a page costs (readable projects) × (limit + 1) rows whatever is waiting
+ * in projects it may no longer read. `has_more` counts only rows it may read
+ * — a hidden event is indistinguishable from a missing one. A grant given
+ * back returns its events, still undelivered.
  */
 export function listAgentEvents(
   db: Db,
@@ -311,14 +313,26 @@ export function listAgentEvents(
   }
   if (readable.length === 0) return { data: [], cursor: after, has_more: false, gap };
 
-  const conditions: SQL[] = [
-    eq(agentEventDeliveries.agentId, agentId),
-    gt(agentEventDeliveries.seq, after),
-    inArray(activity.projectId, readable),
-  ];
-  if (options.state === 'undelivered') conditions.push(isNull(agentEventDeliveries.receivedAt));
-
-  const page = joined(db, conditions, options.limit + 1);
+  // One index range per readable project, each at most `limit + 1` rows,
+  // merged by sequence (LAI-553 review 3). The first `limit + 1` of the merge
+  // are the first `limit + 1` overall, because each project gave its own
+  // first `limit + 1`. A project the agent may not read is never a range at
+  // all, so its waiting events — however many — are never visited, never
+  // counted, and come back with the access.
+  const page = readable
+    .flatMap((projectId) => {
+      const conditions: SQL[] = [
+        eq(agentEventDeliveries.agentId, agentId),
+        eq(agentEventDeliveries.projectId, projectId),
+        gt(agentEventDeliveries.seq, after),
+      ];
+      if (options.state === 'undelivered') {
+        conditions.push(isNull(agentEventDeliveries.receivedAt));
+      }
+      return joined(db, conditions, options.limit + 1);
+    })
+    .sort((a, b) => a.event.seq - b.event.seq)
+    .slice(0, options.limit + 1);
   const out = page.slice(0, options.limit);
   return {
     data: envelopes(db, out, agentId, agentReader(actor)),
