@@ -1,6 +1,5 @@
 import { desc, eq, inArray } from 'drizzle-orm';
 import {
-  isSystemPrincipal,
   type ResolvedActor,
   type ServiceCaller,
   withProject,
@@ -19,7 +18,7 @@ import {
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
-import { liveClaimViews } from './claims.ts';
+import { type AgentReader, agentLens, agentReader } from './agent-visibility.ts';
 import { type RoundCi, confirmRound, roundSummaries } from './github-proof.ts';
 
 /**
@@ -340,11 +339,9 @@ export function recordRound(
  * Whom the agents behind rounds may be shown to: the reader's user id, or
  * `null` for a principal with no user (a delivery), who is shown none.
  */
-type RoundReader = string | null;
+type RoundReader = AgentReader;
 
-export function roundReader(caller: ServiceCaller): RoundReader {
-  return isSystemPrincipal(caller) ? null : caller.userId;
-}
+export const roundReader: (caller: ServiceCaller) => RoundReader = agentReader;
 
 function toRoundViews(
   db: Db,
@@ -386,32 +383,18 @@ function toRoundViews(
           .all()
           .map((a) => [a.tokenId, a] as const),
   );
-  // What each task already shows its reader: its selected agent and the
-  // holder of its live claim. Another person's agent is named only there.
-  const taskIds = [...new Set(rows.map((r) => r.taskId))];
-  const shownOnTask = new Map<string, Set<string>>();
-  const show = (taskId: string, agentId: string | null): void => {
-    if (agentId === null) return;
-    shownOnTask.set(taskId, (shownOnTask.get(taskId) ?? new Set()).add(agentId));
-  };
-  for (const t of db
-    .select({ id: tasks.id, selected: tasks.selectedAgentId })
-    .from(tasks)
-    .where(inArray(tasks.id, taskIds))
-    .all()) {
-    show(t.id, t.selected);
-  }
-  // The claim each task's own view shows (`liveClaimViews`): the same
-  // predicate, lapsed leases and the boot grace included, so a claim the
-  // task no longer shows names nobody here either.
-  for (const [taskId, claim] of liveClaimViews(db, taskIds, Date.now())) {
-    show(taskId, claim.agent_id);
-  }
+  // What each task already shows its reader names the agent there; nothing
+  // else does (D-121 item 7). The one gate every agent-naming read asks.
+  const lens = agentLens(
+    db,
+    reader,
+    rows.map((r) => r.taskId),
+    [...agentByToken.values()].map((a) => a.id),
+  );
   const visibleAgent = (row: (typeof rows)[number]): RoundAgentView | null => {
     const a = row.tokenId === null ? undefined : agentByToken.get(row.tokenId);
-    if (a === undefined || reader === null) return null;
-    const visible = a.ownerUserId === reader || shownOnTask.get(row.taskId)?.has(a.id) === true;
-    return visible ? { id: a.id, harness: a.harness, device_label: a.deviceLabel } : null;
+    if (a === undefined) return null;
+    return lens.visible(row.taskId, a.id) ? { id: a.id, harness: a.harness, device_label: a.deviceLabel } : null;
   };
 
   return rows.map((row) => {

@@ -6,7 +6,14 @@ import { type ActivityEvent } from '../../db/activity.ts';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { type ActivityFeed, type RepeatingTimer } from '../../services/activity-feed.ts';
-import { eventView, parseLastEventId, resumeFrom, visibleTo } from '../../services/events.ts';
+import { agentReader } from '../../services/agent-visibility.ts';
+import {
+  activityLens,
+  eventView,
+  parseLastEventId,
+  resumeFrom,
+  visibleTo,
+} from '../../services/events.ts';
 import { canSeeProject, requireProjectBySlug } from '../../services/projects.ts';
 import { type AppEnv } from '../context.ts';
 
@@ -299,13 +306,18 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
           const current = currentActor();
           if (current === null) return;
 
-          for (const row of events) {
-            if (projectId !== null && row.projectId !== projectId) continue;
-            if (!insidePin(current, row.projectId)) continue;
-            if (!visibleTo(current, row)) continue;
-
+          const shown = events.filter(
+            (row) =>
+              (projectId === null || row.projectId === projectId) &&
+              insidePin(current, row.projectId) &&
+              visibleTo(current, row),
+          );
+          // One lens for the batch, live or replayed: another person's agent is
+          // named only where the row's task shows it (D-121 item 7, LAI-1011).
+          const lens = activityLens(db, agentReader(current), shown);
+          for (const row of shown) {
             enqueue(
-              { event: row.type, id: String(row.seq), data: JSON.stringify(eventView(row)) },
+              { event: row.type, id: String(row.seq), data: JSON.stringify(eventView(row, lens)) },
               { row },
             );
           }

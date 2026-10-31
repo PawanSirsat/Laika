@@ -17,6 +17,7 @@ import {
   resumeFrom,
   visibleTo,
 } from '../../src/services/events.ts';
+import { BLIND_LENS } from '../../src/services/agent-visibility.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
@@ -148,7 +149,7 @@ describe('org-scoped rows are the audit trail', () => {
 
 describe('the wire shape', () => {
   it('renames §4.8 columns to §6.3 style and parses the payload', () => {
-    const view = eventView(write(laikaId, 'task.created'));
+    const view = eventView(write(laikaId, 'task.created'), BLIND_LENS);
 
     expect(view).toMatchObject({
       type: 'task.created',
@@ -173,7 +174,7 @@ describe('the wire shape', () => {
     });
     const rows = readActivityAfter(t.db, 0, 10);
 
-    expect(eventView(rows[rows.length - 1]!).actor_kind).toBe('system');
+    expect(eventView(rows[rows.length - 1]!, BLIND_LENS).actor_kind).toBe('system');
   });
 });
 
