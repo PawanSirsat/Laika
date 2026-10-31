@@ -6,8 +6,7 @@ assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-1003
-status: review
-finished: 2026-10-31T10:39:52+05:30
+status: in-progress
 started: 2026-10-31T05:55:18+05:30
 ---
 
@@ -57,13 +56,13 @@ Anyone else sees "an agent": `actor_kind: 'agent'`, `agent_id: null`,
 
 ## Acceptance criteria
 
-- [x] One shared gate decides every activity surface above; rounds reuse it
-- [x] A two-owner test for each surface: the other owner's agent id never
+- [ ] One shared gate decides every activity surface above; rounds reuse it
+- [ ] A two-owner test for each surface: the other owner's agent id never
       appears in the raw response body; the owner still sees it; a task
       that shows the agent names it
-- [x] Mutation-checked: breaking the gate turns those tests red
-- [x] SPEC rows that describe activity agent fields say so
-- [x] Touched test files pass one at a time; lint and format exit 0; CI gate
+- [ ] Mutation-checked: breaking the gate turns those tests red
+- [ ] SPEC rows that describe activity agent fields say so
+- [ ] Touched test files pass one at a time; lint and format exit 0; CI gate
       green on the PR
 
 ## Result
@@ -87,3 +86,27 @@ Anyone else sees "an agent": `actor_kind: 'agent'`, `agent_id: null`,
 - PR #165 (LAI-553) calls `eventView(row)` with one argument in its SSE
   re-frame path. When it merges with this, that call needs a lens
   (`activityLens(db, agentReader(current), [row])`), or it will not compile.
+
+## Review notes (Codex, round 1): failed
+
+Re-applied by the builder from the dispatch note, 2026-10-31:
+
+1. Agent token names leak: `registerAgent` names the token after the agent,
+   and `token.created` / `token.revoked` carry `payload.name` to other owners
+   and admins (org activity, history and CSV, SSE). Withhold it through the
+   same lens. Admin profile token names stay the documented exception.
+2. SSE builds the lens when a batch arrives but writes later. Re-apply the
+   lens at write time; test it with a held write.
+3. Web wording: a redacted selection reads as *withdrew*, and a redacted row
+   reads as *unregistered token*. Use a server-set flag, not a guess.
+4. Tests: real sessions and claims in the fixture, a live SSE claim-expiry
+   case, registered-name absence, and fixtures carrying `to_agent_id`,
+   `from_agent_id` and `selected_agent_id`. Fix the `events.ts` comment.
+
+**Named crossing (authorised by the dispatch, SHELL area):** the
+`agent_redacted` pairing and wording, minimal:
+- `server/web/src/api/activity.ts`: `ActivityEvent.agent_redacted`, passed
+  to `describeAgentSelected`
+- `server/web/src/api/selected-agent.ts`: `WITHHELD_AGENT`, `agentVia`, and
+  `describeAgentSelected(…, redacted)`
+- `server/web/test/api/selected-agent.test.ts`: one test
