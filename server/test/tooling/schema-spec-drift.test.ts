@@ -587,6 +587,9 @@ describe('the parser itself', () => {
       .sort();
 
     expect(withoutId).toEqual([
+      // LAI-553: keyed by (event, agent), and by the activity row's id.
+      'agent_event_deliveries',
+      'agent_events',
       'agent_project_grants',
       // LAI-555: keyed by (session, project).
       'agent_session_context_deliveries',

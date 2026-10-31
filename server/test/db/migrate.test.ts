@@ -2782,10 +2782,12 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
       // Production stands at the context revisions; everything after it is cut.
       expect(journal.entries[at - 1]?.tag).toMatch(/_project_context_revisions$/);
       const dropped = journal.entries.splice(at);
-      // The guard on this guard: the cut is exactly the two Phase 3 migrations.
+      // The guard on this guard: the cut is exactly the two Phase 3 migrations
+      // and LAI-553's agent events, which a 0066 database also upgrades through.
       expect(dropped.map((e) => e.tag)).toEqual([
         expect.stringMatching(/_checkpoints$/),
         expect.stringMatching(/_handoff_offers$/),
+        expect.stringMatching(/_agent_events$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 

@@ -21,6 +21,15 @@ import {
 import { listOwnWorkRequests } from '../../services/work-requests.ts';
 import { listInbox } from '../../services/handoffs.ts';
 import {
+  AGENT_EVENTS_DEFAULT_LIMIT,
+  AGENT_EVENTS_MAX_ACK,
+  AGENT_EVENTS_MAX_LIMIT,
+  ackAgentEvents,
+  listAgentEvents,
+  type AgentEventEnvelope,
+  type AgentEventsPage,
+} from '../../services/agent-events.ts';
+import {
   type CheckpointConsentView,
   readCheckpointConsent,
   setCheckpointConsent,
@@ -28,7 +37,7 @@ import {
 import { type AppEnv } from '../context.ts';
 import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
-import { parseBody, strictObject, z } from '../validation.ts';
+import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
 
 /**
  * `/api/v1/agents` (SPEC §6.4, D-114, LAI-534). Transport only: who may, what
@@ -49,6 +58,21 @@ const Grant = strictObject({
 });
 
 const Grants = z.array(Grant).max(200);
+
+/** `GET /agents/me/events` (§6.4, LAI-553). */
+const EventsQuery = z.object({
+  after: z.coerce.number().int().min(0).optional(),
+  state: z.enum(['undelivered', 'all']).optional(),
+  limit: z.coerce.number().int().min(1).optional(),
+  project: z.string().trim().min(1).max(200).optional(),
+});
+
+/** `POST /agents/me/events/ack` (§6.4, LAI-553). */
+const AckBody = strictObject({
+  event_ids: z.array(z.string().trim().min(1).max(64)).min(1).max(AGENT_EVENTS_MAX_ACK),
+  state: z.enum(['received', 'presented']),
+  session_id: z.string().trim().min(1).max(64).optional(),
+});
 
 const RegisterBody = strictObject({
   display_name: z.string().min(1).max(200),
@@ -142,6 +166,34 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
     const { limit, cursor } = parsePageQuery(query);
     const rows = listInbox(db, actor, { limit, cursor, projectSlug: query.project ?? null });
     return c.json(buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id })));
+  });
+
+  // The calling agent's hand-off events and their delivery states (§6.4,
+  // §4.77, LAI-553): the durable half of what `/events` notifies. Polled at
+  // session start, at each prompt and every few tool calls.
+  app.get('/me/events', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(EventsQuery, c.req.query());
+    return c.json<AgentEventsPage>(
+      listAgentEvents(db, actor, {
+        after: query.after ?? 0,
+        state: query.state ?? 'undelivered',
+        limit: Math.min(query.limit ?? AGENT_EVENTS_DEFAULT_LIMIT, AGENT_EVENTS_MAX_LIMIT),
+        projectSlug: query.project ?? null,
+      }),
+    );
+  });
+
+  app.post('/me/events/ack', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(AckBody, await c.req.json().catch(() => null));
+    return c.json<{ data: AgentEventEnvelope[] }>({
+      data: ackAgentEvents(sqlite, db, actor, {
+        eventIds: body.event_ids,
+        state: body.state,
+        sessionId: body.session_id,
+      }),
+    });
   });
 
   // Static device routes precede /:id so 'devices' is never an agent id.

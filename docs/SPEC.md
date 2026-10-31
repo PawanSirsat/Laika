@@ -2933,6 +2933,80 @@ Given, read and withdrawn through `/agents/:id/checkpoint-consent` (§6.4).
 | `given_at` | |
 | `withdrawn_at` | nullable — set when the owner withdraws it; automatic saves stop, manual ones keep working. Giving it again clears this and stamps `given_at` afresh |
 
+### 4.76 `agent_events`
+
+The versioned envelope of one agent event (proposal §4.6, LAI-553): every
+`activity` row of `task.agent_selected`, `task.handoff_offered`,
+`task.handoff_approved`, `task.handoff_accepted`, `task.handoff_declined`,
+`task.handoff_cancelled`, `task.handoff_expired`, `task.recovered` and
+`project.context_updated` gets one, **written by `appendActivity` in the same
+transaction as the row** — so an envelope exists exactly when its row does,
+and a refused or rolled-back write leaves neither. **Never updated**: it says
+what was true when it was written, as the row does.
+
+| field | notes |
+| --- | --- |
+| `activity_id` | primary key, FK `activity` (§4.8), cascade — the event id a client de-duplicates by |
+| `seq` | the row's sequence (§11.5), unique — the ordering cursor |
+| `schema_version` | the envelope's shape version, `1` |
+| `offer_id` | nullable, **a copy, no FK** — the offer (§4.73) it is about: the payload's, or for a selection the work request it opened |
+| `detail_json` | the frozen part of the envelope, below |
+
+The envelope (`GET /agents/me/events`, §6.4) is the row's `event_id`,
+`cursor`, `type`, `occurred_at`, `project_id`, `task_id` and `actor` (`kind`,
+`user_id`, `agent_id`, `session_id`), and from `detail_json`: `offer` (`id`,
+`kind`); `from` and `to` as `{ agent_id, harness, device }` — **harness and
+device, never the registered name** (D-120); `reason` (the sender's, or a
+decline's; untrusted data, D-115 item 7) and `closed_reason`; `checkpoint`
+(`id`, `commit_sha`, the newest `ref`); `note_hash` — **the note's hash, never
+its text**; `context_revision`; `approval` (`required`, `approved_by_user_id`,
+`approved_at`); `state` `{ before, after }`; `claim_generation` `{ from, to }`.
+No token, secret or note text is in it. **Its agents are named as the
+row's are** (§4.8 `agent_id`, D-121 item 7, LAI-1011): `from`, `to` and the
+writing agent and its session are served only where the receiving agent's
+owner may see that agent, through the same gate, and are otherwise `null`
+with `agent_redacted: true`.
+
+### 4.77 `agent_event_deliveries`
+
+Where one agent event stands for one agent it is addressed to (proposal §4.6,
+LAI-553). Written with the event (§4.76), so **available** is durable from the
+moment the event exists.
+
+| field | notes |
+| --- | --- |
+| `activity_id` | FK `agent_events`, cascade — with `agent_id`, the primary key: one delivery per event per agent |
+| `agent_id` | FK `agents` (§4.63), cascade |
+| `project_id` | FK `projects`, cascade — a copy of the event's project; an activity row never changes, so the copy never drifts. A poll reads each project the agent may read as its own range |
+| `seq` | a copy of the event's `seq`, so an agent's deliveries page in order |
+| `available_at` | the event's time |
+| `received_at` | nullable — when the agent's helper acknowledged it. Set once: acknowledging again keeps the first |
+| `received_session_id` | nullable, **a copy, no FK** — the session that acknowledged it |
+| `presented_at` | nullable — when a hook showed it to the agent. **Never before `received_at`** (CHECK) |
+| `presented_session_id` | nullable, a copy, no FK |
+
+Indexes `(agent_id, project_id, seq)`, the same **where `received_at` is
+null** — so an undelivered poll reads only what is unreceived, never the
+agent's acknowledged history — and `(project_id)`. **A project the agent may
+no longer read is never read at all**: its waiting events cost a poll
+nothing however many there are, are neither returned nor counted, and come
+back, still undelivered, if the access does. **Four states, none of which claims the model
+understood anything**: `available` (the row exists), `received`, `presented`,
+and `accepted` — which is **not stored**: it is the offer's own state (§4.73),
+read when this agent's session accepted it, or for a work request, when it
+claimed the task.
+
+**Addressed to the agents an event concerns, and only those** — never every
+agent that can read the project: a selection, the agent selected and the one it
+replaced; an offer or recovery made, its named receiver, or for an unnamed
+recovery every agent that could take it then (active, a `full` grant, the
+expired claim's owner's unless the space allows other owners); an offer
+approved, answered or closed, everyone an earlier event of it reached and the
+agents it moves between; a context change, every agent granted the project.
+**The writer gets no delivery of its own write**, and a revoked agent none.
+What actually reaches an agent is asked again on every read and every frame
+(§6.4, §11.5). No activity row: a delivery is presence, as a session is.
+
 ## 5. Task lifecycle
 
 ```
@@ -3424,6 +3498,9 @@ POST   /api/v1/tasks/:id/handoff-offers      body { idempotency_key, to_agent_id
                                              pauses the caller's live claim (§4.73, LAI-546)
 GET    /api/v1/tasks/:id/handoff-offers      every offer on the task, newest first, work requests included
 GET    /api/v1/agents/me/inbox               the calling agent's live work requests and offers, newest first (agent_sync's twin)
+GET    /api/v1/agents/me/events              ?after=, state=undelivered|all, limit=, project= → { data, cursor, has_more, gap } — the
+                                             calling agent's event envelopes, oldest first (§4.76, §4.77, LAI-553)
+POST   /api/v1/agents/me/events/ack          body { event_ids, state: received|presented, session_id? } → { data }
 GET    /api/v1/handoff-offers                ?view=received|sent|needs_approval|recovery, project?, include_closed?, limit?, cursor?
                                              → { data, next_cursor, counts } — a signed-in person's hand-off inbox (LAI-1009)
 POST   /api/v1/handoff-offers/:id/approve    body { to_agent_id? } → offer, `open` (session only; the task's assignee or a lead,
@@ -3701,8 +3778,43 @@ only compare that SHA with the checkpoint's. Another client that sends it
 takes responsibility for having checked. `GET /agents/me/inbox` is `{ data:
 […], next_cursor }`, each item a work request as `GET
 /agents/me/work-requests` returns it or an offer as above, **live only**,
-limited to projects the agent may read now; Phase 4's delivery states
-(`received`, `presented`) are not on it yet. **`GET /handoff-offers` is a
+limited to projects the agent may read now; each item carries `delivery`,
+the state of its offer's newest event for this agent (§4.77), or null for an
+offer older than deliveries. **`GET /agents/me/events`** (LAI-553) is the
+durable half of what `/events` notifies: the envelopes (§4.76) addressed to
+the calling agent with `seq` after `after` (default 0), oldest first, at most
+`limit` (default and most 100), with their `delivery`; `state=undelivered`
+(the default) keeps only those not yet `received`, so an event comes back
+**at least once** until the helper acknowledges it. `project`, a slug, keeps
+one project's events; one the agent may not read is `403`, `reason:
+agent_not_granted`, as on its inbox. **Its paging is not §6.3's**, on
+purpose: the position is the log's own sequence, so `after` is a number the
+client keeps between sessions — the same one an SSE frame's `id:` carries —
+rather than an opaque cursor, and the answer is `{ data, cursor, has_more }`
+rather than `{ data, next_cursor }`. `cursor` is the last `seq` returned (or
+`after` when none was), passed back as `after`; `has_more` says more
+**readable** events follow. An event the agent may no longer read (token,
+grant, owner's role, asked now) is filtered out in the query itself — the
+readable projects are the agent's current grants within its token's pin and
+its owner's `project.read`, never derived from its delivery history — so it
+is neither returned nor counted. A page is one index range per readable
+project, each read to at most `limit + 1` rows and merged by `seq`, so it
+costs the same however long the agent's history and however much waits in
+projects it may no longer read (LAI-553); a hidden event returns, still
+undelivered, if the access does. An `after`
+ahead of the log answers `gap: { reason: unknown_cursor }` and starts from
+0. **`POST /agents/me/events/ack`** records `received` or
+`presented` for up to 100 events, all or nothing, in one `BEGIN IMMEDIATE`
+transaction that **reads the token, the agent, its grants and the owner
+again** — a body is read after the request is authenticated, and a
+credential revoked or narrowed meanwhile gets what a new request on it
+would: `401`, or `404` for an event it may no longer read, and nothing
+recorded. Acknowledging again keeps the first time; `presented` before
+`received` is `409 conflict`, `reason: not_received`, naming the events; an
+event not addressed to the agent, or one it may no longer read, is `404` with
+`event_ids`; `session_id` must be its own open session (§4.65). It is
+presence, as a heartbeat is: `heartbeat.send_own`, no activity row. Both are
+an agent's: any other token is `403`, `reason: not_an_agent`. **`GET /handoff-offers` is a
 person's inbox** (LAI-1009), the one the web Inbox's *Hand-offs* tab reads: an
 agent's token is `403` with `reason: use_agent_inbox` and keeps `GET
 /agents/me/inbox`. Each row is a hand-off or recovery offer with its task (`id`,
@@ -4839,7 +4951,7 @@ matched.
 | `update_project_context` | `{ project, context_md, mode, base_revision? }` | the document's new revision and length. `mode` is `replace` or `append`. `replace` must name the `base_revision` it replaces (absent is `422`, after the permission check); a stale one is `conflict`, `reason: stale_context_revision`, and nothing changes. `append` is computed from the current document inside the write, so two appends both land (LAI-555) |
 | `log_unlisted_work` | `{ repo, note }` | records work or an idea outside any project, for triage |
 | `propose_time_entry` | `{ minutes, task?, day?, note? }` | a draft in the person's own drafts (`source: 'agent'`, §4.47) — **never an entry**: only the person confirms it, signed in to the web app (D-088 item 13). Refused `forbidden` with `details.reason: "time_drafts_off"` unless the organisation's *Time* is `drafts` and the person turned on *Draft my time*. `day` is their local day, by default today in their drafts' zone. It answers `{ id, minutes, day }` and nothing of the person's drafts. Its REST twin is `POST /me/time-drafts` (LAI-787) |
-| `agent_sync` | `{ project? }` | a registered agent's inbox: its **live** work requests and the hand-off and recovery offers it may accept, newest first — `GET /agents/me/inbox`'s twin (§6.4, LAI-546). Any other token is `forbidden`, `reason: not_an_agent`. Phase 4 adds delivery states; this reads, and records nothing |
+| `agent_sync` | `{ project?, after? }` | a registered agent's inbox: its **live** work requests and the hand-off and recovery offers it may accept, newest first — `GET /agents/me/inbox`'s twin (§6.4, LAI-546), each item with its `delivery` (§4.77); and `{ after? }` returns `events` — `GET /agents/me/events` with `state=undelivered` and the same `project` — with `cursor`, `has_more` and `gap` (LAI-553). Any other token is `forbidden`, `reason: not_an_agent`. It reads, and records nothing: acknowledging is `POST /agents/me/events/ack` |
 | `checkpoint_task` | `{ task, id, idempotency_key, repo, branch, commit_sha, manifest, summary?, summary_commit_sha?, claim_generation }` | the checkpoint, `verification: 'pending'` until a signed push delivery verifies it — `POST /tasks/:id/checkpoints`'s twin (§4.70, LAI-545). Register **after** the push; the server never fetches anything (D-083) |
 | `offer_handoff` | `{ task, to_agent, checkpoint, reason, idempotency_key, claim_generation }` | the offer, `open` or `pending_approval`; the caller's claim is `paused` — `POST /tasks/:id/handoff-offers`'s twin (§4.73, LAI-546). `to_agent` is an agent id |
 | `respond_handoff` | `{ offer, action, verified_commit_sha?, reason?, session_id? }` | `action` is `accept`, `decline` or `cancel` — the twins of `POST /handoff-offers/:id/accept`, `/decline` and `/cancel` (LAI-546). `accept` needs `verified_commit_sha` and returns the offer, the new claim and its `generation`; approving is a person's and has no tool |
@@ -6160,6 +6272,30 @@ show an error.
 **An open stream re-reads its actor.** Streams outlive role changes, so a
 demotion or deactivation takes effect on the next batch — without this it is the
 one place in the API where a permission change would not apply.
+
+#### Agent events on the stream (LAI-553)
+
+On a **registered agent's token**, a row of an agent-event verb (§4.76) is
+written only if it is addressed to that agent (§4.77) — asked as the frame is
+written, with the token, the agent's status and grant re-read as for every
+frame (LAI-539) — and its data is the activity row with one more field,
+`envelope`: the §4.76 envelope with its current `delivery`. Every other
+stream, and every other row, is unchanged. Replay from `Last-Event-ID`, the
+500-row bound and `gap` are the stream's own; past a gap, or after any
+reconnect, the agent's helper catches up from `GET /agents/me/events`, which
+holds every undelivered event however long it was away. A client
+de-duplicates by `envelope.event_id`; acknowledging twice records one
+`received`. Delivery is **at least once**.
+
+**Why SSE and a durable inbox, not webhooks.** Laika is self-hosted, and the
+helpers that receive hand-offs run on laptops behind NAT and firewalls: an
+outbound `text/event-stream` connection reaches them, an inbound webhook
+would need a public address on every laptop. The stream already exists, is
+authenticated and re-checked per frame, and is only a notice; the record is
+the delivery row, which a helper polls at session start, at each prompt and
+every few tool calls, so a closed laptop, a dropped connection or a restart
+loses nothing. One transport and one table — no second delivery path to
+secure, retry or monitor.
 
 ### 11.6 Scheduled work — in-process cron
 
