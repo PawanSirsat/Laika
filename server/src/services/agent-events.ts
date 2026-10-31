@@ -201,26 +201,22 @@ export interface ListAgentEventsOptions {
 
 /**
  * The projects whose events this agent may read **now** (§11.5's question,
- * asked once per project rather than once per row): those its deliveries
- * name, kept where {@link mayRead} holds — the token's pin, the agent's
- * grant, the owner's role. An agent event always names a project, so an
- * org-level row is never among them.
+ * asked once per project rather than once per row): the agent's current
+ * grants (§4.64), kept where the token's pin and the owner's `project.read`
+ * hold — the rule `can()` applies to every request on the token, and the one
+ * `GET /agents/me/inbox` reads by. **Read from the grants, never from the
+ * delivery history** (LAI-553 review 2), so the cost is the agent's grants
+ * and not its lifetime of events. A project with no grant is unreadable to
+ * an agent whatever its owner may read, so nothing readable is left out.
  */
-function readableProjects(db: Db, actor: ResolvedActor, agentId: string): string[] {
-  const named = db
-    .selectDistinct({ projectId: activity.projectId })
-    .from(agentEventDeliveries)
-    .innerJoin(activity, eq(activity.id, agentEventDeliveries.activityId))
-    .where(eq(agentEventDeliveries.agentId, agentId))
-    .all();
-  return named
-    .map((n) => n.projectId)
-    .filter((id): id is string => id !== null)
-    .filter(
-      (projectId) =>
-        insidePin(actor, projectId) &&
-        can(withProject(actor, projectId), 'project.read', { projectId }),
-    );
+function readableProjects(actor: ResolvedActor): string[] {
+  const grants = registeredAgent(actor)?.grants;
+  if (grants === undefined) return [];
+  return [...grants.keys()].filter(
+    (projectId) =>
+      insidePin(actor, projectId) &&
+      can(withProject(actor, projectId), 'project.read', { projectId }),
+  );
 }
 
 /**
@@ -250,7 +246,7 @@ export function listAgentEvents(
     after = 0;
   }
 
-  let readable = readableProjects(db, actor, agentId);
+  let readable = readableProjects(actor);
   if (options.projectSlug !== undefined && options.projectSlug !== null) {
     // A slug the agent may not read and one that names nothing answer alike.
     const found = db
