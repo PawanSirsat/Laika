@@ -248,6 +248,9 @@ interface Receiver {
   readonly err: string[];
   readonly home: string;
   readonly repo: string;
+  /** Run with each ref's name the instant before prepare creates it; every name is recorded. */
+  inject?: (ref: string) => void;
+  readonly writes: string[];
 }
 
 /** A receiving machine: its own home, its own clone of the remote, the receiver's token in the env. */
@@ -260,12 +263,17 @@ function receiverMachine(token: string, name = 'laika'): Receiver {
   });
   const out: string[] = [];
   const err: string[] = [];
-  return {
+  const machine: Receiver = {
     out,
     err,
     home,
     repo,
+    writes: [],
     io: {
+      beforeRefWrite: (ref) => {
+        machine.writes.push(ref);
+        machine.inject?.(ref);
+      },
       out: (l) => out.push(l),
       err: (l) => err.push(l),
       home,
@@ -284,6 +292,7 @@ function receiverMachine(token: string, name = 'laika'): Receiver {
       now: () => Date.now(),
     },
   };
+  return machine;
 }
 
 const run = (r: Receiver, ...argv: string[]): Promise<number> => handoff(r.io, argv);
@@ -744,6 +753,7 @@ void describe('laika agent handoff, receiving (LAI-548)', () => {
     assert.ok(out.includes(`branch ${old.branch}`), out);
     assert.ok(out.includes(`branch -d -- '${old.branch}'`), out);
     assert.match(out, /Nothing was removed\./);
+    assert.match(out, /`worktree remove` also deletes ignored files there, such as a \.env/);
   }
 
   function symrefOf(repo: string, ref: string): string | undefined {
@@ -808,6 +818,81 @@ void describe('laika agent handoff, receiving (LAI-548)', () => {
     assert.equal(await run(r, 'accept', s.offerId), 0, r.err.join('\n'));
     assert.equal(refExists(r.repo, 'refs/heads/victim-fetch'), false);
   });
+
+  /**
+   * Codex round 4 on #158: a symbolic ref put at the name **between** the
+   * free-name check and the write. `inject` runs the instant before each
+   * create-only step, which is the last moment anything could be put there.
+   */
+  function handoffBranches(repo: string): string[] {
+    return git(repo, 'for-each-ref', '--format=%(refname)', 'refs/heads/')
+      .split('\n')
+      .filter((name) => name.includes('-handoff-'));
+  }
+
+  for (const target of ['private ref', 'branch'] as const) {
+    const aimed = (ref: string): boolean =>
+      target === 'private ref' ? ref.startsWith('refs/laika/') : ref.startsWith('refs/heads/');
+
+    void test(`a symbolic ref put at the ${target} name the instant before it is created: refused, nothing written through it`, async () => {
+      const s = await scenario();
+      const r = receiverMachine(s.receiver.token);
+      const main = git(r.repo, 'rev-parse', 'refs/heads/main');
+      let injected: string | undefined;
+      r.inject = (ref) => {
+        if (!aimed(ref)) return;
+        injected = ref;
+        git(r.repo, 'symbolic-ref', ref, 'refs/heads/main');
+      };
+      assert.equal(await run(r, 'prepare', s.offerId), 1);
+      assert.ok(injected, `no ${target} write was attempted`);
+      const err = r.err.join('\n');
+      assert.match(
+        err,
+        /Save needs attention — .* could not be created \(.*reference already exists/,
+      );
+      assert.match(err, /Nothing was sent to the board/);
+      // The injected ref is as it was put, and what it names did not move.
+      assert.equal(symrefOf(r.repo, injected), 'refs/heads/main');
+      assert.equal(git(r.repo, 'rev-parse', 'refs/heads/main'), main);
+      // No branch was made, no worktree, and the board was not asked.
+      const record = readRecord(r.home, s.offerId)!;
+      assert.equal(record.status, 'needs_attention');
+      assert.deepEqual(handoffBranches(r.repo), target === 'branch' ? [injected] : []);
+      assert.equal(existsSync(record.worktree), false);
+      assert.deepEqual(
+        r.writes,
+        target === 'private ref' ? [injected] : [record.local_ref, injected],
+        'the branch is attempted only after the private ref was made',
+      );
+      assert.equal(accepts(s.offerId), 0);
+    });
+
+    void test(`a dangling symbolic ref put at the ${target} name the instant before is never followed`, async () => {
+      const s = await scenario();
+      const r = receiverMachine(s.receiver.token);
+      const victim = `refs/heads/victim-late-${target === 'branch' ? 'branch' : 'fetch'}`;
+      let injected: string | undefined;
+      r.inject = (ref) => {
+        if (!aimed(ref)) return;
+        injected = ref;
+        git(r.repo, 'symbolic-ref', ref, victim);
+      };
+      // git's create-only step does not refuse a symbolic ref naming nothing:
+      // it replaces it with the plain ref (measured; see createRef). What must
+      // hold is that the write never lands where it pointed.
+      assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+      assert.ok(injected);
+      assert.equal(refExists(r.repo, victim), false, 'written through');
+      assert.equal(symrefOf(r.repo, injected), undefined);
+      assert.equal(git(r.repo, 'rev-parse', injected), s.sha);
+      const record = readRecord(r.home, s.offerId)!;
+      assert.equal(git(record.worktree, 'symbolic-ref', 'HEAD'), `refs/heads/${record.branch}`);
+      assert.equal(git(record.worktree, 'rev-parse', 'HEAD'), s.sha);
+      assert.equal(await run(r, 'accept', s.offerId), 0, r.err.join('\n'));
+      assert.equal(refExists(r.repo, victim), false);
+    });
+  }
 
   void test('the printed cleanup commands are copy-paste safe for a path with a space and a quote', async () => {
     const { s, r, old } = await interrupted(null, {}, `it's a "repo" $HOME`);

@@ -732,14 +732,25 @@ laika agent handoff decline <offer> --reason "busy"
   remove it, for you to run once nothing you need is in it. Every path and
   name in those commands is single-quoted, so they paste as printed; a
   symbolic ref is removed as itself (`symbolic-ref --delete`,
-  `update-ref --no-deref -d`), never through to what it names.
-  **A ref name counts as taken if anything is there** — a branch or ref, a
-  **symbolic ref, even one pointing at a branch that does not exist** (which
-  `show-ref` does not list, and which a fetch or `worktree add -b` would write
-  through, creating that branch), a leftover reflog, or a file or directory
-  at its path. After the fetch and after `worktree add`, every other ref is
-  compared with before, the private ref and the new branch must be plain
-  refs at the checkpoint, and the new worktree's `HEAD` must name that
+  `update-ref --no-deref -d`), never through to what it names. Read them
+  before running them: `worktree remove` refuses modified or untracked
+  files but deletes **ignored** ones (a `.env`) without asking, and
+  `branch -d` refuses only a branch not merged into its upstream or `HEAD`.
+  **Choosing names:** a name counts as taken if anything is there — a
+  branch or ref, a **symbolic ref, even one pointing at a branch that does
+  not exist** (which `show-ref` does not list), a leftover reflog, or a file
+  or directory at its path.
+  **Writing refs:** the fetch writes no ref at all — it brings the objects,
+  and the tag's value is read with `ls-remote` by its exact name. The
+  private ref and the branch are each created in one create-only step,
+  `git update-ref --no-deref <ref> <sha> <zero>`, with nothing checked in
+  between, and the worktree is added on that branch (never `worktree add
+  -b`, which follows a symbolic ref). git refuses that step for an existing
+  ref or a symbolic ref naming a branch that exists, and never writes
+  through a symbolic ref; for a **dangling** one it replaces it rather than
+  refusing (git 2.50: no command both verifies and creates one ref). After
+  the writes, every other ref is compared with before, both refs must be
+  plain refs at the checkpoint, and the new worktree's `HEAD` must name the
   branch.
 - **`accept`** refuses unless `prepare` succeeded here, and checks again that
   the private ref and the worktree are still at the verified SHA. It then

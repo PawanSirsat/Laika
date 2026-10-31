@@ -1192,9 +1192,11 @@ function createRef(
     sha,
     ZERO_OID,
   ]);
-  return r.code === 0
-    ? plainRef(git, top, ref, sha)
-    : `${ref} could not be created (${firstLine(r.stderr) || `git exited ${String(r.code)}`})`;
+  if (r.code !== 0) {
+    return `${ref} could not be created (${firstLine(r.stderr) || `git exited ${String(r.code)}`})`;
+  }
+  const plain = plainRef(git, top, ref, sha);
+  return plain === undefined ? undefined : `${ref} ${plain}`;
 }
 
 /** Something an earlier attempt, or somebody else, left at a name prepare would have used. */
