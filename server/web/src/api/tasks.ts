@@ -91,7 +91,10 @@ export interface TaskHandoff {
    * or *Connection lost*, never instead of them; decides nothing. Optional
    * because a view served before LAI-1016 has none, which reads as null.
    */
-  readonly no_recent_save?: { readonly since: number; readonly window_ms: number } | null;
+  readonly no_recent_save?: {
+    readonly since: number;
+    readonly window_ms: number;
+  } | null;
 }
 
 export interface TaskSummary {
