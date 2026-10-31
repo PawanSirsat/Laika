@@ -361,3 +361,83 @@ describe('context revision history (GET /projects/:slug/context/revisions)', () 
     });
   }
 });
+
+describe('a paused sender whose lease lapsed, before the scan runs (Codex round 1 on #170)', () => {
+  /** Bea's agent's paused claim on the hand-off task: its lease moved to `at`. */
+  function leaseEndsAt(at: number): void {
+    h.db
+      .update(taskClaims)
+      .set({ leaseExpiresAt: at })
+      .where(and(eq(taskClaims.taskId, handoffTask), eq(taskClaims.agentId, bea.agentId)))
+      .run();
+  }
+
+  function pausedStill(): void {
+    const row = h.db
+      .select()
+      .from(taskClaims)
+      .where(and(eq(taskClaims.taskId, handoffTask), eq(taskClaims.agentId, bea.agentId)))
+      .get();
+    // Nothing expired it: the boundary is the read's, not the scan's.
+    expect(row?.state).toBe('paused');
+  }
+
+  async function agentSync(): Promise<string> {
+    const res = await h.app.request('/mcp', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${ada.secret}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'agent_sync', arguments: {} },
+      }),
+    });
+    const text = await res.text();
+    expect(res.status, text).toBe(200);
+    expect(text).toContain(offerId);
+    return text;
+  }
+
+  /** Every surface that names the sender, read by Ada, who does not own it. */
+  const surfaces: Record<string, () => Promise<string>> = {
+    'hand-off history': () => read(`/api/v1/tasks/${handoffTask}/handoff-offers`, ada),
+    'agent inbox': () => read('/api/v1/agents/me/inbox', ada, 'agent'),
+    agent_sync: agentSync,
+    'person inbox': () => read('/api/v1/handoff-offers?view=received', ada),
+    checkpoints: () => read(`/api/v1/tasks/${handoffTask}/checkpoints`, ada),
+  };
+
+  for (const [name, body] of Object.entries(surfaces)) {
+    it(`${name}: names the sender just before its lease ends, and not just after`, async () => {
+      leaseEndsAt(Date.now() + 60_000);
+      pausedStill();
+      expect(await body()).toContain(bea.agentId);
+
+      leaseEndsAt(Date.now() - 1);
+      pausedStill();
+      const after = await body();
+      expect(after).toContain(handoffTask);
+      absent(after, bea, BEA);
+    });
+  }
+
+  it('the task view drops the lapsed paused claim too, through the same predicate', async () => {
+    leaseEndsAt(Date.now() + 60_000);
+    const before = JSON.parse(await read(`/api/v1/tasks/${handoffTask}`, ada)) as {
+      claim: { agent_id: string; state: string } | null;
+    };
+    expect(before.claim).toMatchObject({ agent_id: bea.agentId, state: 'paused' });
+
+    leaseEndsAt(Date.now() - 1);
+    pausedStill();
+    const after = JSON.parse(await read(`/api/v1/tasks/${handoffTask}`, ada)) as {
+      claim: unknown;
+    };
+    expect(after.claim).toBeNull();
+  });
+});
