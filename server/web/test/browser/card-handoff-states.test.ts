@@ -839,9 +839,7 @@ void describe('the checkpoint warning (LAI-1016)', () => {
           assert.ok(await where.isVisible(), `${theme}: the warning is drawn`);
         }
         ink.push(
-          await warning
-            .locator('.exec-state-label')
-            .evaluate((el) => getComputedStyle(el).color),
+          await warning.locator('.exec-state-label').evaluate((el) => getComputedStyle(el).color),
         );
       }
       assert.notEqual(ink[0], ink[1], 'the label takes each theme’s token');

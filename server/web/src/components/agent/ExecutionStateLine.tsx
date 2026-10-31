@@ -90,7 +90,9 @@ export function NoRecentSaveLine({
       <StateShape state="save_needs_attention" />
       <span className="exec-state-text">
         <b className="exec-state-label">{noRecentSaveWords(windowMs)}</b>
-        {variant === 'panel' && <span className="exec-state-meaning">{NO_RECENT_SAVE_MEANING}</span>}
+        {variant === 'panel' && (
+          <span className="exec-state-meaning">{NO_RECENT_SAVE_MEANING}</span>
+        )}
       </span>
     </p>
   );
