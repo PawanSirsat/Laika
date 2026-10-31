@@ -597,6 +597,28 @@ Claude Code, which Codex does not document — recognised by `laika-agent-hook` 
 `hooks off` removes exactly those. Codex runs a new hook only after you trust
 it in `/hooks`.
 
+**Other harnesses (LAI-557).** `laika agent` also knows `cursor`,
+`copilot-cli`, `copilot-vscode`, `copilot-cloud`, `gemini-cli` and
+`antigravity` (`cli/src/agent-adapters.ts`, one table). Each one runs on the
+same engine, with **no hooks**: no other harness's hook format has been run on
+a real binary here. So `laika agent hooks on --harness gemini-cli` installs
+nothing. It prints the explicit commands and exits 1:
+
+```
+laika agent login gemini-cli --url https://board.example < agent-token
+laika agent session start --harness gemini-cli --harness-session <id> --pid <gemini's pid>
+laika agent inbox --harness gemini-cli          # the only delivery boundary without hooks
+laika agent checkpoint save --harness gemini-cli --note-file note.json
+laika agent session end --harness gemini-cli --harness-session <id>
+```
+
+`--pid` is required, because the helper never guesses which `node` is the
+harness. The watcher then renews the session while that process lives.
+Nothing reaches the agent mid-turn: it sees new work when one of these runs.
+What each harness documents (hooks, injection, credentials, headless start),
+and what was and was not run on Belka, is in
+[`agent-adapters/CAPABILITIES.md`](agent-adapters/CAPABILITIES.md).
+
 ### How it stays bound to the harness
 
 | Event | What the hook does |
@@ -785,6 +807,10 @@ laika agent handoff decline <offer> --reason "busy"
   `declined` or `needs_attention`.
 
 ### Harness capability matrix
+
+Claude Code and Codex only. Cursor, Copilot (CLI, VS Code, cloud), Gemini CLI
+and Antigravity are in [`agent-adapters/CAPABILITIES.md`](agent-adapters/CAPABILITIES.md),
+under the same four cells; none of them has a Verified-and-tested cell.
 
 Cells: **Verified-and-tested** (run on the version shown, against a real
 board), **Documented-not-tested** (in the harness's docs, not run here),
