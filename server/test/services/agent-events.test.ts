@@ -213,24 +213,25 @@ describe('listAgentEvents', () => {
         all.filter((line) => line.startsWith('SCAN ')),
         state,
       ).toEqual([]);
+      // One range per readable project (the agent holds two grants here),
+      // every key term bound: no residual filter can make it walk rows it
+      // then discards.
+      const range =
+        state === 'undelivered'
+          ? // From cursor 0 an undelivered poll reads only unreceived rows:
+            // the partial index holds nothing the agent has acknowledged.
+            /^SEARCH agent_event_deliveries USING INDEX agent_event_deliveries_agent_project_undelivered_idx \(agent_id=\? AND project_id=\? AND seq>\?\)$/
+          : /^SEARCH agent_event_deliveries USING INDEX agent_event_deliveries_agent_project_seq_idx \(agent_id=\? AND project_id=\? AND seq>\?\)$/;
       expect(
         all.filter((line) => line.includes('agent_event_deliveries')),
         state,
-      ).toEqual([
-        expect.stringMatching(
-          state === 'undelivered'
-            ? // From cursor 0 an undelivered poll reads only unreceived rows:
-              // the partial index holds nothing the agent has acknowledged.
-              /^SEARCH agent_event_deliveries USING INDEX agent_event_deliveries_agent_undelivered_idx \(agent_id=\? AND seq>\?\)$/
-            : /^SEARCH agent_event_deliveries USING INDEX agent_event_deliveries_agent_seq_idx \(agent_id=\? AND seq>\?\)$/,
-        ),
-      ]);
+      ).toEqual([expect.stringMatching(range), expect.stringMatching(range)]);
       expect(
         all.filter((line) =>
           /^SEARCH activity USING INDEX sqlite_autoindex_activity_1 \(id=\?\)$/.test(line),
         ),
         state,
-      ).toHaveLength(1);
+      ).toHaveLength(2);
     }
   });
 
@@ -286,6 +287,85 @@ describe('listAgentEvents', () => {
         undelivered.cursor,
         false,
       ]);
+    },
+  );
+
+  // Two setups of thousands of rows: the seeding is the slow part, not the poll.
+  it(
+    'a poll costs the same with 10 or 5,000 unreceived events in a project whose grant was removed',
+    { timeout: 60_000 },
+    () => {
+      /**
+       * The fastest of seven batches of twenty `undelivered` polls from cursor
+       * 0, with `hidden` unreceived deliveries in Other — whose grant is then
+       * removed — on both sides of one readable event in Laika.
+       *
+       * Wall time, because the bundled SQLite exposes no step or scan counter
+       * (`sqlite_stmt` is not compiled in). The old poll walked every hidden
+       * row through the activity join and kept its cursor, so every poll paid
+       * for them again — about 100× the work at this size (Codex measured 273
+       * vs 24,091 VM steps for 10 vs 2,000). A fastest-of-batches ratio is far
+       * from that, and far from a busy machine's noise.
+       */
+      const costWith = (hidden: number) => {
+        t.close();
+        t = freshDb();
+        s = seed(t.db);
+        const now = Date.now();
+        t.db
+          .insert(projects)
+          .values({
+            id: otherProject,
+            orgId: s.orgId,
+            name: 'Other',
+            slug: 'other',
+            prefix: 'OTH',
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+        const created = registerAgent(t.sqlite, t.db, owner(), {
+          displayName: 'one',
+          harness: 'claude-code',
+          deviceLabel: 'one',
+          grants: [
+            { projectId: s.projectId, scope: 'full' },
+            { projectId: otherProject, scope: 'full' },
+          ],
+        });
+        secret = created.secret;
+        let shown = '';
+        t.db.transaction(() => {
+          for (let i = 0; i < hidden / 2; i += 1) contextChanged(otherProject);
+          shown = contextChanged(s.projectId);
+          for (let i = 0; i < hidden / 2; i += 1) contextChanged(otherProject);
+        });
+        setAgentGrants(t.sqlite, t.db, owner(), created.agent.id, [
+          { projectId: s.projectId, scope: 'full' },
+        ]);
+        const actor = asAgent();
+        const poll = () =>
+          listAgentEvents(t.db, actor, { after: 0, state: 'undelivered', limit: 100 });
+
+        // What it answers: the one readable event, and nothing about the rest.
+        const page = poll();
+        expect([page.data.map((e) => e.event_id), page.has_more]).toEqual([[shown], false]);
+
+        let fastest = Number.POSITIVE_INFINITY;
+        for (let batch = 0; batch < 7; batch += 1) {
+          const start = process.hrtime.bigint();
+          for (let i = 0; i < 20; i += 1) poll();
+          fastest = Math.min(fastest, Number(process.hrtime.bigint() - start));
+        }
+        return fastest;
+      };
+
+      const small = costWith(10);
+      const large = costWith(5_000);
+      expect(
+        large,
+        `5,000 hidden: ${(large / 1e6).toFixed(2)} ms per 20 polls; 10 hidden: ${(small / 1e6).toFixed(2)} ms`,
+      ).toBeLessThan(small * 4);
     },
   );
 
