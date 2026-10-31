@@ -6,7 +6,8 @@ assignee: shell
 priority: p2
 depends-on: [LAI-554]
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-10-31T18:15:00+02:00
 started: 2026-10-31T15:05:00+02:00
 ---
 
@@ -28,10 +29,10 @@ notice, and a capability matrix records what each one can do on a real version.
 
 ## Acceptance criteria
 
-- [ ] Each harness has an install test that fails if its adapter is absent.
-- [ ] Harnesses that cannot inject at a prompt (Cursor, Copilot) deliver at the next tool boundary, documented.
-- [ ] Not-installed harnesses stay Documented-not-tested, never marked certified.
-- [ ] Repo-root gate exits 0.
+- [x] Each harness has an install test that fails if its adapter is absent. (`cli/test/agent-adapters.test.ts`; break 1, dropping `gemini-cli` from the table, goes red)
+- [x] Harnesses that cannot inject at a prompt (Cursor, Copilot) deliver at the next tool boundary, documented. (`cli/agent-adapters/CAPABILITIES.md` and `cli/README.md`, with the docs quoted. No harness hook was verified on a real binary, so Laika installs none for them, and the next boundary is the explicit `laika agent inbox` / `agent_sync`.)
+- [x] Not-installed harnesses stay Documented-not-tested, never marked certified. (Nor do the installed but signed-out ones, Cursor and Gemini CLI. Asserted for both matrices: breaks 5 and 10 go red.)
+- [x] Repo-root gate exits 0. (CI run 41198336402 on `2f704811`: Gate: test, lint, format, pass. It was not run locally, per the Belka resource rule.)
 
 ## Tests and UI evidence required
 
