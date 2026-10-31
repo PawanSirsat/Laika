@@ -788,7 +788,7 @@ gave for sending the task back from review (D-082).
 | `actor_id` | **nullable, and only when `actor_kind = 'system'`** (D-022) |
 | `actor_kind` | `user` (cookie) \| `agent` (token) \| `system` (no human — cron or webhook) |
 | `actor_token_id` | nullable — *which* token, for audit |
-| `agent_id` | nullable FK `agents` (§4.63), `restrict` — *which* registered agent wrote the row (D-114 item 4, LAI-535), read by the activity writer from the token's `agent_id` and from nothing else. Null for a session, a legacy token, the system and **every row written before the column existed: never back-filled** |
+| `agent_id` | nullable FK `agents` (§4.63), `restrict` — *which* registered agent wrote the row (D-114 item 4, LAI-535), read by the activity writer from the token's `agent_id` and from nothing else. Null for a session, a legacy token, the system and **every row written before the column existed: never back-filled**. **Served only where the reader may see that agent** (D-121 item 7, LAI-1011): to its owner, or beside a task that shows it as its selected agent or its live claim's holder. Everyone else reads the row as *an agent* — `actor_kind: 'agent'` with `agent_id: null`, `agent_session: null`, and every agent id in the payload (`agent_id`, `to_agent_id`, `from_agent_id`, `selected_agent_id` at any depth; `from`/`to` on `task.agent_selected`) set to `null`, the key kept. One gate decides it on every surface: the activity reads and their CSV, the SSE stream live and on replay, and the MCP reads. `actor_token_id` and payload `session_id` are still served |
 | `agent_session_id` | nullable, no FK — the agent session (§4.65) the row was written under (D-118, LAI-586): the session a claim was just taken or finished under, else the one holding the writing agent's live claim on the task, else null. Read by the activity writer from the database, never from a request; only ever the writing agent's own session |
 | `session_harness` | nullable — that session's self-reported `harness` **when the row was written** (D-118) |
 | `session_harness_version` | nullable — likewise its `harness_version` |
@@ -3448,9 +3448,9 @@ POST   /api/v1/tasks/:id/dependencies        body { blocked_by_task_id }  — th
 DELETE /api/v1/tasks/:id/dependencies/:depId
 GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
-GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+)
+GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+) — another person's agent is withheld per row (§4.8 `agent_id`, LAI-1011)
 GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until= — every row, newest first   (owner, admin)
-                                             ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984)
+                                             ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984); an owner or admin is withheld another person's agent too (§4.8 `agent_id`, LAI-1011)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
 GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only)
@@ -3588,7 +3588,8 @@ a claim (D-118: *"Each session records what actually ran, self-reported and
 labelled as such"*); `GET /agents/:id` answers the agent with `sessions`, its
 twenty most recent, newest first, and every activity row (§4.8) carries
 `agent_session: { id, harness, harness_version, model } | null`, the snapshot
-taken when it was written. A session's `connection` is one of `live`, `suspect`
+taken when it was written — `null`, with `agent_id`, where the reader may not
+see that agent (§4.8, LAI-1011). A session's `connection` is one of `live`, `suspect`
 (silent past §9.1's suspect interval) or `ended`; a claim is `{ id, task_id,
 session_id, agent_id, generation, state, lease_expires_at, created_at, ended_at
 }`. A task read — `GET /tasks/:id` and the task lists — carries `claim`, the
