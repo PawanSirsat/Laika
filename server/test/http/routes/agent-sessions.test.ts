@@ -706,6 +706,8 @@ const NOT_FENCED: Record<string, string> = {
     'session only (agent.manage_own); records the owner’s statement about a label, touches no task',
   'POST /api/v1/agents/devices/revoke':
     'session only (agent.manage_own); revokes each agent as /agents/:id/revoke does, its claims lapse',
+  'POST /api/v1/agents/me/events/ack':
+    'presence, as a heartbeat is (§4.77, LAI-553): records a delivery state, touches no task',
   'POST /api/v1/tokens': 'a credential, not a task',
   'DELETE /api/v1/tokens/:id': 'a credential, not a task',
   'DELETE /api/v1/users/:id/tokens/:tokenId': 'a credential, not a task',

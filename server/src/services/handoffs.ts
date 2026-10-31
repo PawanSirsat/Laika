@@ -65,6 +65,7 @@ import {
   type TaskClaimView,
 } from './claims.ts';
 import { type AgentReader, agentLens, agentReader } from './agent-visibility.ts';
+import { inboxDeliveries, type AgentEventDelivery } from './agent-events.ts';
 import { assertCheckpointAcceptable } from './checkpoints.ts';
 import { canSeeProject, requireProjectBySlug } from './projects.ts';
 import {
@@ -1780,9 +1781,17 @@ export function listTaskOffers(db: Db, actor: ResolvedActor, taskId: string): Ha
   );
 }
 
-export type InboxItem =
+export type InboxItem = (
   | WorkRequestView
-  | (HandoffOfferView & { task_key: string; task_title: string; project_id: string });
+  | (HandoffOfferView & { task_key: string; task_title: string; project_id: string })
+) & {
+  /**
+   * Where the offer's newest event stands for this agent (§4.77, LAI-553):
+   * `available`, `received`, `presented` or `accepted`. Null for an offer
+   * made before deliveries were recorded.
+   */
+  delivery: AgentEventDelivery | null;
+};
 
 export interface InboxOptions {
   limit: number;
@@ -1796,7 +1805,7 @@ export interface InboxOptions {
  * newest first, paged — limited to the projects it may read now. An unnamed
  * recovery is on it where the agent could take it: its owner's expired
  * claim, or a space that lets other owners' agents receive. Reads, and
- * records nothing; Phase 4's delivery states are not here yet.
+ * records nothing; each item carries its delivery state (§4.77, LAI-553).
  */
 export function listInbox(db: Db, actor: ResolvedActor, options: InboxOptions): InboxItem[] {
   assertCan(actor, 'agent.read_own');
@@ -1907,8 +1916,14 @@ export function listInbox(db: Db, actor: ResolvedActor, options: InboxOptions): 
       found.filter((f) => f.offer.kind !== 'work_request').map((f) => f.offer),
     ).map((v) => [v.id, v]),
   );
+  const deliveries = inboxDeliveries(
+    db,
+    agent.id,
+    found.map((f) => f.offer.id),
+  );
   return found.map((f): InboxItem => {
     const taskKey = `${f.prefix}-${String(f.number)}`;
+    const delivery = deliveries.get(f.offer.id) ?? null;
     if (f.offer.kind === 'work_request') {
       return {
         id: f.offer.id,
@@ -1921,6 +1936,7 @@ export function listInbox(db: Db, actor: ResolvedActor, options: InboxOptions): 
         agent_id: agent.id,
         requested_by: f.offer.createdByUserId,
         created_at: f.offer.createdAt,
+        delivery,
       };
     }
     return {
@@ -1928,6 +1944,7 @@ export function listInbox(db: Db, actor: ResolvedActor, options: InboxOptions): 
       task_key: taskKey,
       task_title: f.title,
       project_id: f.projectId,
+      delivery,
     };
   });
 }
