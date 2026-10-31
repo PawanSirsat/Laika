@@ -74,13 +74,19 @@ import {
  * still the one it started with (PID and start time). When it is not, the
  * watcher sends nothing more and exits.
  *
- * `UserPromptSubmit` and `PostToolUse` are the backstop, and cost no network
- * when the session is open: they open it if `SessionStart` did not (hooks
- * installed mid-session, or a start that failed on the network, retried with
- * its key), restart a watcher that has died while its harness lives (a laptop
- * sleep can kill it), and deliver, once, a notice that a claim was lost.
- * `SessionEnd` hands the end to a background process, so the harness's
+ * `UserPromptSubmit` and `PostToolUse` are the backstop, and renew nothing
+ * themselves when the session is open: they open it if `SessionStart` did not
+ * (hooks installed mid-session, or a start that failed on the network, retried
+ * with its key), restart a watcher that has died while its harness lives (a
+ * laptop sleep can kill it), and deliver, once, a notice that a claim was
+ * lost. `SessionEnd` hands the end to a background process, so the harness's
  * one-to-three-second budget never cuts it short.
+ *
+ * **Event notices (LAI-554, `agent-events.ts`) do use the network**:
+ * `SessionStart` and every `UserPromptSubmit` poll the agent's undelivered
+ * events (2–3 s budget), and so does every tenth `PostToolUse`. The watcher
+ * also holds the event stream. `LAIKA_AGENT_EVENTS=off` in the harness's
+ * environment turns both off.
  *
  * The trade-off: one more process per session, and a session whose watcher
  * dies goes unrenewed until the next prompt or tool call restarts it.
