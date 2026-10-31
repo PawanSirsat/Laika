@@ -35,7 +35,7 @@ and the owner gets one evidence pack to accept.
 - [x] Rollback rehearsal leaves legacy tokens and historical activity working (recorded).
 - [x] Operator docs exist under `docs/` and name every configurable default.
 - [ ] The evidence pack links every child's PR, gate exit codes and the demonstration evidence.
-- [ ] Repo-root gate exits 0.
+- [x] Repo-root gate exits 0.
 
 ## Tests and UI evidence required
 
@@ -85,6 +85,6 @@ named `LAI-560-rollout-evidence`; the worktree was cut with the longer name).
 - *Rollback rehearsal*: ticked, **on a synthetic 0060 database, not a copy of production data.** The scope asked for a production copy; this run was told not to touch production. The production-copy rehearsal is item 13 of the pack's § 6.
 - *Operator docs name every default*: ticked. Four of the defaults are not actually configurable at deploy time, and the guide marks them so (LAI-1015, LAI-1016).
 - *Evidence pack links the demonstration evidence*: **unticked.** The pack links every child's PR and gate result, but the demonstration (LAI-559's 9 steps, LAI-551's two-device run) does not exist yet. It can be ticked when those land.
-- *Repo-root gate*: **unticked here.** On Belka the gate runs in CI, not locally (the machine rule). The PR's CI result is recorded below once it finishes.
+- *Repo-root gate*: ticked from CI. On Belka the gate runs in CI, not locally (the machine rule). PR #173's "Gate — test, lint, format" (`pnpm test`, `pnpm lint`, `pnpm format` at the repo root) **passed** on `7c18216d`, the head carrying all of this work before this note: <https://github.com/PawanSirsat/Laika/actions/runs/41221518363>.
 
 **Verification run locally** (docs only; no code touched): `pnpm lint` exit 0 and `pnpm format` exit 0, each to its own file.
