@@ -76,8 +76,12 @@ const MY_AGENT = {
 };
 
 /** `GET …/context/deliveries` as §6.4 answers it (LAI-1003). */
-function deliveries(revision: number | null, data: readonly unknown[]) {
-  return { scope: 'latest_per_session', revision, current_revision: 3, data, next_cursor: null };
+function deliveries(
+  revision: number | null,
+  data: readonly unknown[],
+  next_cursor: string | null = null,
+) {
+  return { scope: 'latest_per_session', revision, current_revision: 3, data, next_cursor };
 }
 
 const DELIVERIES = `/api/v1/projects/${SLUG}/context/deliveries`;
@@ -797,6 +801,239 @@ void describe('Delivered to', () => {
         await panel.locator('ul[aria-label="Sessions that received r3"] > *').count(),
         2,
       );
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  // ------------------------------------------- two reads, one row a session
+
+  /** A session sent r2, then r3 between the panel's two reads (#164 review). */
+  const MOVER_ON_2 = {
+    session_id: '01SESSIONMOVERDDDDDD5ZT1',
+    revision: 2,
+    delivered_at: NOW - 600_000,
+    session_ended_at: null,
+    agent: MINE_ON_3.agent,
+  };
+  const MOVER_ON_3 = { ...MOVER_ON_2, revision: 3, delivered_at: NOW - 60_000 };
+
+  /**
+   * Holds every deliveries read matching `held` until the other read has been
+   * **answered** — fetched from the stub and handed to the page — so the two
+   * answers are, provably, two moments.
+   */
+  async function holdBehindTheOther(h: Harness, held: (url: URL) => boolean) {
+    const state = { otherAnswered: false, release: [] as (() => void)[] };
+    await h.page.route('**/context/deliveries?*', async (route) => {
+      if (held(new URL(route.request().url()))) {
+        await new Promise<void>((resolve) => {
+          state.release.push(resolve);
+        });
+        await route.fallback();
+        return;
+      }
+      const response = await route.fetch();
+      await route.fulfill({ response });
+      state.otherAnswered = true;
+    });
+    return state;
+  }
+
+  void test('a session sent r3 between the reads is listed once, under r3 — never also as on r2', async () => {
+    // The project-wide read answers first and still has the session on r2;
+    // r3's read, held until then, has it on r3.
+    const h = await openPanel(
+      world({
+        [`${DELIVERIES}?limit=200`]: deliveries(null, [MOVER_ON_2, MINE_ON_2]),
+        [`${DELIVERIES}?limit=200&revision=3`]: deliveries(3, [MOVER_ON_3]),
+      }),
+    );
+    try {
+      const hold = await holdBehindTheOther(h, (url) => url.searchParams.get('revision') === '3');
+      await h.page.getByRole('button', { name: 'View r3' }).click({ timeout: 10_000 });
+      await until(() => hold.otherAnswered && hold.release.length > 0, 10_000);
+      assert.ok(hold.otherAnswered, 'the project-wide read was never answered');
+      assert.equal(hold.release.length, 1, 'r3’s read was never sent');
+      hold.release.forEach((release) => {
+        release();
+      });
+
+      const panel = h.page.locator('[data-delivered-to]');
+      const on = panel.locator('ul[aria-label="Sessions that received r3"] > [data-delivery]');
+      await on.first().waitFor({ timeout: 10_000 });
+      assert.deepEqual(await on.evaluateAll((els) => els.map((el) => el.dataset.delivery)), [
+        MOVER_ON_3.session_id,
+      ]);
+      assert.equal(await panel.locator(`[data-delivery="${MOVER_ON_2.session_id}"]`).count(), 1);
+      const older = panel.locator('[data-delivered-older] [data-delivery]');
+      assert.deepEqual(await older.evaluateAll((els) => els.map((el) => el.dataset.delivery)), [
+        MINE_ON_2.session_id,
+      ]);
+      assert.equal(await panel.locator('[data-delivery-has]').count(), 1);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('a session r2’s read still has, that the later read has on r3, is not listed under r2', async () => {
+    // The other order: r2's read answers first with the session on r2; the
+    // project-wide read, held until then, has it on r3. It is r3's now.
+    const h = await openPanel(
+      world({
+        [`${DELIVERIES}?limit=200`]: deliveries(null, [MOVER_ON_3, MINE_ON_2]),
+        [`${DELIVERIES}?limit=200&revision=2`]: deliveries(2, [MOVER_ON_2, MINE_ON_2]),
+      }),
+    );
+    try {
+      const hold = await holdBehindTheOther(h, (url) => !url.searchParams.has('revision'));
+      await h.page.getByRole('button', { name: 'View r2' }).click({ timeout: 10_000 });
+      await until(() => hold.otherAnswered && hold.release.length > 0, 10_000);
+      assert.ok(hold.otherAnswered, 'r2’s read was never answered');
+      assert.equal(hold.release.length, 1, 'the project-wide read was never sent');
+      hold.release.forEach((release) => {
+        release();
+      });
+
+      const panel = h.page.locator('[data-delivered-to]');
+      const on = panel.locator('ul[aria-label="Sessions that received r2"] > [data-delivery]');
+      await on.first().waitFor({ timeout: 10_000 });
+      assert.deepEqual(await on.evaluateAll((els) => els.map((el) => el.dataset.delivery)), [
+        MINE_ON_2.session_id,
+      ]);
+      assert.equal(await panel.locator(`[data-delivery="${MOVER_ON_2.session_id}"]`).count(), 0);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  // ------------------------------------------------------------- Show more
+
+  /** A third session on r3, only on the second page of r3's read. */
+  const EXTRA_ON_3 = {
+    ...THEIRS_ON_3,
+    session_id: '01SESSIONEXTRAEEEEEE7HV4',
+    delivered_at: NOW - 5_000_000,
+  };
+  const PAGED_ON_3: ApiStub = {
+    ...DELIVERED,
+    [`${DELIVERIES}?limit=200&revision=3`]: deliveries(3, [MINE_ON_3, THEIRS_ON_3], 'c-on-2'),
+    [`${DELIVERIES}?limit=200&revision=3&cursor=c-on-2`]: deliveries(3, [EXTRA_ON_3]),
+  };
+
+  /** Holds every read carrying a cursor, counting them. */
+  async function holdPages(h: Harness) {
+    const pages = { asked: 0, release: [] as (() => void)[] };
+    await h.page.route('**/context/deliveries?*cursor=*', async (route) => {
+      pages.asked += 1;
+      await new Promise<void>((resolve) => {
+        pages.release.push(resolve);
+      });
+      await route.fallback();
+    });
+    return pages;
+  }
+
+  void test('Show more reads the next page with the cursor, one read at a time', async () => {
+    const h = await openPanel(world(PAGED_ON_3));
+    try {
+      const pages = await holdPages(h);
+      await viewRevision(h, 3);
+      const panel = h.page.locator('[data-delivered-to]');
+      const truncated = panel.locator('[data-delivered-truncated="on"]');
+      await truncated.waitFor({ timeout: 10_000 });
+      assert.match(await truncated.innerText(), /More sessions received r3 than the 2 shown/);
+
+      const more = panel.getByRole('button', { name: 'Show more sessions that received r3' });
+      await more.click();
+      await until(() => pages.asked > 0, 10_000);
+      assert.equal(pages.asked, 1);
+      assert.equal(await more.isDisabled(), true, 'Show more is pressable while its read is out');
+      assert.equal(await more.getAttribute('aria-busy'), 'true');
+      // A second press while the first is out sends nothing.
+      await more.dispatchEvent('click');
+      await h.page.waitForTimeout(300);
+      assert.equal(pages.asked, 1, 'a second page read went out beside the first');
+
+      pages.release.forEach((release) => {
+        release();
+      });
+      await panel
+        .locator(`[data-delivery="${EXTRA_ON_3.session_id}"]`)
+        .waitFor({ timeout: 10_000 });
+      const rows = panel.locator('ul[aria-label="Sessions that received r3"] > [data-delivery]');
+      assert.deepEqual(await rows.evaluateAll((els) => els.map((el) => el.dataset.delivery)), [
+        MINE_ON_3.session_id,
+        THEIRS_ON_3.session_id,
+        EXTRA_ON_3.session_id,
+      ]);
+      // The last page has no cursor: nothing is left out, so nothing says so.
+      assert.equal(await truncated.count(), 0);
+      assert.equal(await panel.locator('[data-delivered-more]').count(), 0);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('the project-wide read says it is cut short even with no older row, and Show more reads on', async () => {
+    const h = await openPanel(
+      world({
+        ...DELIVERED,
+        [`${DELIVERIES}?limit=200`]: deliveries(null, [MINE_ON_3, THEIRS_ON_3], 'c-all-2'),
+        [`${DELIVERIES}?limit=200&cursor=c-all-2`]: deliveries(null, [MINE_ON_2]),
+      }),
+    );
+    try {
+      await viewRevision(h, 3);
+      const panel = h.page.locator('[data-delivered-to]');
+      const truncated = panel.locator('[data-delivered-truncated="all"]');
+      await truncated.waitFor({ timeout: 10_000 });
+      assert.equal(await panel.locator('[data-delivered-older]').count(), 0);
+      assert.match(await truncated.innerText(), /Checked the 2 most recent sessions/);
+
+      await panel
+        .getByRole('button', { name: 'Show more sessions checked for an older revision' })
+        .click();
+      const older = panel.locator(
+        `[data-delivered-older] [data-delivery="${MINE_ON_2.session_id}"]`,
+      );
+      await older.waitFor({ timeout: 10_000 });
+      assert.match(await older.innerText(), /has r2/);
+      assert.equal(await truncated.count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a page that answers after the reader moved to another revision is dropped', async () => {
+    const h = await openPanel(world(PAGED_ON_3));
+    try {
+      const pages = await holdPages(h);
+      await viewRevision(h, 3);
+      const panel = h.page.locator('[data-delivered-to]');
+      await panel
+        .getByRole('button', { name: 'Show more sessions that received r3' })
+        .click({ timeout: 10_000 });
+      await until(() => pages.asked > 0, 10_000);
+      assert.equal(pages.asked, 1, 'r3’s next page was never asked for');
+
+      await viewRevision(h, 2);
+      await panel.locator(`[data-delivery="${MINE_ON_2.session_id}"]`).waitFor({ timeout: 10_000 });
+      pages.release.forEach((release) => {
+        release();
+      });
+      // Long enough for the page to land and render, were it going to.
+      await h.page.waitForTimeout(500);
+      assert.equal(await panel.locator(`[data-delivery="${EXTRA_ON_3.session_id}"]`).count(), 0);
+      assert.equal(
+        await panel.locator('ul[aria-label="Sessions that received r2"] > [data-delivery]').count(),
+        1,
+      );
+      assert.equal(await panel.locator('[data-delivered-truncated]').count(), 0);
     } finally {
       await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
