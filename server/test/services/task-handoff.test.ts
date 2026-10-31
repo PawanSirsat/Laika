@@ -7,6 +7,8 @@ import { ApiError } from '../../src/errors.ts';
 import { registerAgent } from '../../src/services/agents.ts';
 import {
   applyCheckpointDelivery,
+  configureCheckpoints,
+  DEFAULT_CHECKPOINT_SETTINGS,
   listCheckpoints,
   registerCheckpoint,
 } from '../../src/services/checkpoints.ts';
@@ -21,6 +23,7 @@ import { addMember } from '../../src/services/projects.ts';
 import {
   deriveHandoff,
   NO_HANDOFF,
+  noRecentSave,
   type TaskHandoffView,
 } from '../../src/services/task-handoff.ts';
 import {
@@ -61,6 +64,7 @@ beforeEach(() => {
 
 afterEach(() => {
   configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+  configureCheckpoints(DEFAULT_CHECKPOINT_SETTINGS);
   t.close();
 });
 
@@ -183,6 +187,7 @@ describe('recovery_available (§4.73)', () => {
       offer: { kind: 'recovery', state: 'open', requires_approval: false },
       recovery_available: true,
       save_needs_attention: false,
+      no_recent_save: null,
     });
   });
 
@@ -363,6 +368,94 @@ describe('the live offer', () => {
     });
     // The sender still holds its claim, paused: no recovery while it does.
     expect(summary.recovery_available).toBe(false);
+  });
+});
+
+describe('no_recent_save — §9.1.1’s checkpoint warning (LAI-1016)', () => {
+  const WINDOW = DEFAULT_CHECKPOINT_SETTINGS.saveWarningMs;
+
+  it('the default window is five minutes', () => {
+    expect(WINDOW).toBe(5 * MIN);
+  });
+
+  it('a live claim with no save: nothing up to the window, the warning just past it', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    expect(handoffOf(id, T0 + WINDOW).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toEqual({
+      since: T0,
+      window_ms: WINDOW,
+    });
+  });
+
+  it('a fresh save clears it, and it returns just past the window from that save', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    const generation = claim(a, id);
+    save(a, id, generation, 'verified', T0 + 4 * MIN);
+    expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + 4 * MIN + WINDOW).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + 4 * MIN + WINDOW + 1).no_recent_save).toEqual({
+      since: T0 + 4 * MIN,
+      window_ms: WINDOW,
+    });
+  });
+
+  for (const as of ['pending', 'uncertain', 'ref_deleted'] as const) {
+    it(`a ${as} save counts as a save — the warning is about saving, not proof`, () => {
+      const a = agentOf(owner, 'A');
+      const id = task();
+      save(a, id, claim(a, id), as, T0 + 4 * MIN);
+      expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toBeNull();
+    });
+  }
+
+  it('says nothing once the claim is not live, however old the save', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    expireClaims(t.db, T0 + LEASE);
+    expect(handoffOf(id, T0 + LEASE + WINDOW + 1).no_recent_save).toBeNull();
+  });
+
+  it('a task never claimed says nothing', () => {
+    expect(handoffOf(task(), T0 + WINDOW + 1).no_recent_save).toBeNull();
+  });
+
+  it('the window is configurable, and the summary names the one it used', () => {
+    configureCheckpoints({ saveWarningMs: MIN });
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    expect(handoffOf(id, T0 + MIN).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + MIN + 1).no_recent_save).toEqual({ since: T0, window_ms: MIN });
+  });
+
+  it('the rule alone: a paused claim is live; released or expired is not', () => {
+    const at = (state: 'active' | 'paused' | 'released' | 'expired') =>
+      noRecentSave({
+        newestClaim: { state, createdAt: T0 },
+        newestSavedAt: null,
+        windowMs: WINDOW,
+        now: T0 + WINDOW + 1,
+      });
+    expect(at('active')).toEqual({ since: T0, window_ms: WINDOW });
+    expect(at('paused')).toEqual({ since: T0, window_ms: WINDOW });
+    expect(at('released')).toBeNull();
+    expect(at('expired')).toBeNull();
+  });
+
+  it('the rule alone: a save older than the claim does not shorten the claim’s grace', () => {
+    // A reclaim or an accepted hand-off starts a new claim over an old save.
+    expect(
+      noRecentSave({
+        newestClaim: { state: 'active', createdAt: T0 + 10 * MIN },
+        newestSavedAt: T0,
+        windowMs: WINDOW,
+        now: T0 + 10 * MIN + WINDOW,
+      }),
+    ).toBeNull();
   });
 });
 
