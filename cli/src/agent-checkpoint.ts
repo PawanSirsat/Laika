@@ -471,7 +471,7 @@ export async function resolveTarget(
 function onlyHarness(deps: CheckpointDeps): Harness {
   const saved = HARNESSES.filter((h) => readCredential(deps.home, h, deps.env) !== undefined);
   if (saved.length === 1 && saved[0] !== undefined) return saved[0];
-  throw new Refusal('name the harness: --harness claude-code|codex', 'bad_arguments');
+  throw new Refusal(`name the harness: --harness ${HARNESSES.join('|')}`, 'bad_arguments');
 }
 
 const noCredential = (harness: Harness): Refusal =>

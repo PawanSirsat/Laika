@@ -18,6 +18,8 @@ import {
 } from 'node:fs';
 import { basename, join } from 'node:path';
 
+import { adapter, type Harness, isHarness } from './agent-adapters.ts';
+
 /**
  * The local helper's engine: an agent session that lives exactly as long as
  * the harness process holding it (proposal §4.2, §4.7; SPEC §9.1.1; LAI-542).
@@ -46,17 +48,8 @@ import { basename, join } from 'node:path';
  * process table as arguments, so the tests drive time and death directly.
  */
 
-export type Harness = 'claude-code' | 'codex';
-export const HARNESSES: readonly Harness[] = ['claude-code', 'codex'];
-
-export const isHarness = (value: string | undefined): value is Harness =>
-  value === 'claude-code' || value === 'codex';
-
-/** The executable name each harness runs as — what `ps -o comm=` prints. */
-const HARNESS_COMM: Readonly<Record<Harness, RegExp>> = {
-  'claude-code': /^claude$/,
-  codex: /^codex/,
-};
+/** The harnesses and their adapters live in one table (LAI-557). */
+export { HARNESSES, isHarness, type Harness } from './agent-adapters.ts';
 
 export const DEFAULT_INTERVAL_MS = 30_000;
 
@@ -321,12 +314,16 @@ export function findHarness(
     const info = /^\d+$/.test(named) ? proc(Number(named)) : undefined;
     return info === undefined || info === UNKNOWN || isDeadState(info.state) ? undefined : info;
   }
+  // A harness with no known executable name is never guessed at (LAI-557):
+  // its session is bound by `--pid` or `LAIKA_AGENT_HARNESS_PID` only.
+  const comm = adapter(harness).comm;
+  if (comm === undefined) return undefined;
   let pid = from;
   for (let depth = 0; depth < 16 && pid > 1; depth += 1) {
     const info = proc(pid);
     // Unknown is not good enough to bind a session to.
     if (info === undefined || info === UNKNOWN) return undefined;
-    if (HARNESS_COMM[harness].test(info.comm)) return isDeadState(info.state) ? undefined : info;
+    if (comm.test(info.comm)) return isDeadState(info.state) ? undefined : info;
     pid = info.ppid;
   }
   return undefined;
@@ -581,6 +578,9 @@ function records(text: string): Record<string, unknown>[] {
  * | Claude Code | `version` on each `user` / `assistant` line | the input's `model`, else the last `assistant` line's `message.model` |
  * | Codex | `session_meta`'s `payload.cli_version` (the first line) | the input's `model`, else the last `turn_context`'s `payload.model` |
  *
+ * Any other harness (LAI-557) reports only the input's `model`: its
+ * transcript has not been read here, so nothing is guessed from it.
+ *
  * The newest line wins: a model switched mid-session is the one the last
  * reply used. **Nothing found is nothing sent** — a new session's transcript
  * may not exist yet at `SessionStart`, and the version then waits for a later
@@ -600,7 +600,7 @@ export function readSelfReport(
       if (r.type === 'assistant' && isRecord(r.message)) model ??= asModel(r.message.model);
       if (version !== undefined && model !== undefined) break;
     }
-  } else {
+  } else if (harness === 'codex') {
     const meta = ends === undefined ? undefined : records(ends.head)[0];
     if (meta?.type === 'session_meta' && isRecord(meta.payload)) {
       version = asVersion(meta.payload.cli_version);
