@@ -111,6 +111,11 @@ Re-applied by the builder from the dispatch note, 2026-10-31:
 - `server/web/src/api/selected-agent.ts`: `WITHHELD_AGENT`, `agentVia`, and
   `describeAgentSelected(…, redacted)`
 - `server/web/test/api/selected-agent.test.ts`: one test
+- Round 3 (Codex round-2 finding): `server/web/src/routes/screens/dashboard/dashboard-derive.ts`
+  (`describeProjectEvent`) and its test
+  `server/web/test/routes/screens/dashboard/dashboard-derive.test.ts`. A
+  hidden `task.agent_selected` on the dashboard reads as History does, using
+  the shared `WITHHELD_SELECTION` in `selected-agent.ts`.
 
 ## Result, round 2
 

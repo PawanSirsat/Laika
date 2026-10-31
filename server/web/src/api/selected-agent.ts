@@ -542,6 +542,11 @@ export const UNREGISTERED_AGENT = 'agent (unregistered token)';
 export const UNNAMED_AGENT = 'a registered agent';
 /** A row whose agent the server withheld from this reader (LAI-1011). */
 export const WITHHELD_AGENT = 'an agent';
+/**
+ * A `task.agent_selected` row whose agent the server withheld: a selection
+ * and a withdrawal look the same once the id is gone, so neither is claimed.
+ */
+export const WITHHELD_SELECTION = 'changed the agent selection on this task';
 
 /**
  * *Claude Code · laptop-1*, *a registered agent* or *agent (unregistered
@@ -585,9 +590,7 @@ export function describeAgentSelected(
   const sent = payload as { from?: unknown; to?: unknown } | null | undefined;
   if (sent === null || sent === undefined) return undefined;
   if (sent.to === null) {
-    return redacted
-      ? 'changed the agent selection on this task'
-      : 'withdrew the agent from this task';
+    return redacted ? WITHHELD_SELECTION : 'withdrew the agent from this task';
   }
   if (typeof sent.to !== 'string') return undefined;
   const agent = agents.get(sent.to);
