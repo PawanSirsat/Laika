@@ -46,6 +46,18 @@ function refusal(fn: () => unknown): { code: string; details: unknown } {
   throw new Error('expected a refusal; it succeeded');
 }
 
+/** Every statement one poll prepares, as `EXPLAIN QUERY PLAN` lines — the poll alone is measured. */
+function pollPlans(actor: ReturnType<typeof asAgent>, state: 'undelivered' | 'all'): string[][] {
+  return preparedDuring(t.sqlite, () =>
+    listAgentEvents(t.db, actor, { after: 0, state, limit: 100 }),
+  ).map((source) => {
+    const bindings = Array.from({ length: (source.match(/\?/g) ?? []).length }, () => 'x');
+    return (
+      t.sqlite.prepare(`EXPLAIN QUERY PLAN ${source}`).all(...bindings) as { detail: string }[]
+    ).map((row) => row.detail);
+  });
+}
+
 beforeEach(() => {
   t = freshDb();
   s = seed(t.db);
@@ -186,17 +198,8 @@ describe('listAgentEvents', () => {
   });
 
   it('does bounded work: no statement scans, deliveries by the agent’s index range, activity by key', () => {
-    /** Every statement one poll prepares, with its query plan. */
     const actor = asAgent();
-    const plans = (state: 'undelivered' | 'all') =>
-      preparedDuring(t.sqlite, () =>
-        listAgentEvents(t.db, actor, { after: 0, state, limit: 100 }),
-      ).map((source) => {
-        const bindings = Array.from({ length: (source.match(/\?/g) ?? []).length }, () => 'x');
-        return (
-          t.sqlite.prepare(`EXPLAIN QUERY PLAN ${source}`).all(...bindings) as { detail: string }[]
-        ).map((row) => row.detail);
-      });
+    const plans = (state: 'undelivered' | 'all') => pollPlans(actor, state);
 
     for (const state of ['undelivered', 'all'] as const) {
       const all = plans(state).flat();
@@ -221,16 +224,57 @@ describe('listAgentEvents', () => {
         ),
       ]);
       expect(
-        all.filter((line) => /\bactivity\b/.test(line) && line.includes('agent_event')),
-        state,
-      ).toEqual([]);
-      expect(
         all.filter((line) =>
           /^SEARCH activity USING INDEX sqlite_autoindex_activity_1 \(id=\?\)$/.test(line),
         ),
         state,
       ).toHaveLength(1);
     }
+  });
+
+  it('keeps the same bounded plans over a long history, with the planner’s real statistics', () => {
+    const actor = asAgent();
+    const small = { undelivered: pollPlans(actor, 'undelivered'), all: pollPlans(actor, 'all') };
+
+    // Two thousand old deliveries the agent has acknowledged, then three it
+    // has not; ANALYZE so the planner chooses with real row counts, which is
+    // where a plan that is bounded on an empty table can stop being bounded.
+    const HISTORY = 2000;
+    for (let i = 0; i < HISTORY; i += 1) contextChanged(s.projectId);
+    t.db.update(agentEventDeliveries).set({ receivedAt: Date.now() }).run();
+    const fresh = [
+      contextChanged(s.projectId),
+      contextChanged(s.projectId),
+      contextChanged(s.projectId),
+    ];
+    t.sqlite.exec('ANALYZE');
+
+    // The same access paths, step for step — the planner may order the two
+    // by-key lookups (envelope, activity row) either way once it has row
+    // counts, and both are one row per delivery. A scan, or any new path,
+    // fails this.
+    const steps = (plans: string[][]) => plans.map((plan) => [...plan].sort());
+    expect(steps(pollPlans(actor, 'undelivered'))).toEqual(steps(small.undelivered));
+    expect(steps(pollPlans(actor, 'all'))).toEqual(steps(small.all));
+
+    // And what those plans answer: from cursor 0 the undelivered poll is
+    // exactly the three, and an up-to-date poll is empty and stays put.
+    const undelivered = listAgentEvents(t.db, actor, {
+      after: 0,
+      state: 'undelivered',
+      limit: 100,
+    });
+    expect(undelivered.data.map((e) => e.event_id)).toEqual(fresh);
+    const upToDate = listAgentEvents(t.db, actor, {
+      after: undelivered.cursor,
+      state: 'all',
+      limit: 100,
+    });
+    expect([upToDate.data, upToDate.cursor, upToDate.has_more]).toEqual([
+      [],
+      undelivered.cursor,
+      false,
+    ]);
   });
 
   it('is an agent’s: a personal token is forbidden, not_an_agent', () => {
