@@ -2980,7 +2980,9 @@ moment the event exists.
 | `presented_at` | nullable — when a hook showed it to the agent. **Never before `received_at`** (CHECK) |
 | `presented_session_id` | nullable, a copy, no FK |
 
-Index `(agent_id, seq)`. **Four states, none of which claims the model
+Indexes `(agent_id, seq)`, and `(agent_id, seq)` **where `received_at` is
+null**, so an undelivered poll reads only what is unreceived, never the
+agent's acknowledged history. **Four states, none of which claims the model
 understood anything**: `available` (the row exists), `received`, `presented`,
 and `accepted` — which is **not stored**: it is the offer's own state (§4.73),
 read when this agent's session accepted it, or for a work request, when it
@@ -3783,9 +3785,11 @@ rather than an opaque cursor, and the answer is `{ data, cursor, has_more }`
 rather than `{ data, next_cursor }`. `cursor` is the last `seq` returned (or
 `after` when none was), passed back as `after`; `has_more` says more
 **readable** events follow. An event the agent may no longer read (token,
-grant, owner's role, asked now) is filtered out in the query itself, so it
-is neither returned nor counted, and a page costs the same however many
-there are; it returns, still undelivered, if the access does. An `after`
+grant, owner's role, asked now) is filtered out in the query itself — the
+readable projects are the agent's current grants within its token's pin and
+its owner's `project.read`, never derived from its delivery history — so it
+is neither returned nor counted, and a page is an index range over the
+agent's new rows however long its history; it returns, still undelivered, if the access does. An `after`
 ahead of the log answers `gap: { reason: unknown_cursor }` and starts from
 0. **`POST /agents/me/events/ack`** records `received` or
 `presented` for up to 100 events, all or nothing, in one `BEGIN IMMEDIATE`
