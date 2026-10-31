@@ -45,6 +45,13 @@ let root: string;
 let bare: string;
 let senderRepo: string;
 let devices = 0;
+/**
+ * Whether this git refuses `update-ref --no-deref <ref> <sha> <zero>` over a
+ * dangling symbolic ref, probed in `before`. git differs here: the CI
+ * runner's refuses (`dangling symref already exists`), Apple git 2.50.1
+ * replaces the symbolic ref. Each test asserts what this git does, exactly.
+ */
+let refusesDangling = false;
 
 /** A ULID, as the checkpoint helper mints one (§6.4): time then randomness, Crockford base 32. */
 function ulid(): string {
@@ -363,6 +370,15 @@ before(async () => {
   git(senderRepo, 'commit', '-q', '-m', 'base');
   git(senderRepo, 'push', '-q', 'origin', 'main');
   git(senderRepo, 'fetch', '-q', 'origin');
+
+  git(senderRepo, 'symbolic-ref', 'refs/laika/probe', 'refs/heads/probe-target');
+  try {
+    git(senderRepo, 'update-ref', '--no-deref', 'refs/laika/probe', 'HEAD', ZERO);
+  } catch {
+    refusesDangling = true;
+  }
+  git(senderRepo, 'update-ref', '--no-deref', '-d', 'refs/laika/probe');
+  assert.throws(() => git(senderRepo, 'rev-parse', '--verify', 'refs/heads/probe-target'));
 });
 
 after(async () => {
@@ -878,12 +894,23 @@ void describe('laika agent handoff, receiving (LAI-548)', () => {
         injected = ref;
         git(r.repo, 'symbolic-ref', ref, victim);
       };
-      // git's create-only step does not refuse a symbolic ref naming nothing:
-      // it replaces it with the plain ref (measured; see createRef). What must
-      // hold is that the write never lands where it pointed.
-      assert.equal(await run(r, 'prepare', s.offerId), 0, r.err.join('\n'));
+      // What must hold whatever git does: the write never lands where the
+      // symbolic ref pointed. Then git differs (see `refusesDangling`).
+      const code = await run(r, 'prepare', s.offerId);
       assert.ok(injected);
       assert.equal(refExists(r.repo, victim), false, 'written through');
+      if (refusesDangling) {
+        assert.equal(code, 1);
+        assert.match(r.err.join('\n'), /could not be created \(.*dangling symref already exists/);
+        assert.equal(symrefOf(r.repo, injected), victim, 'left as it was put');
+        const refused = readRecord(r.home, s.offerId)!;
+        assert.equal(refused.status, 'needs_attention');
+        assert.equal(existsSync(refused.worktree), false);
+        assert.equal(accepts(s.offerId), 0);
+        return;
+      }
+      // This git replaces a symbolic ref naming nothing with the plain ref.
+      assert.equal(code, 0, r.err.join('\n'));
       assert.equal(symrefOf(r.repo, injected), undefined);
       assert.equal(git(r.repo, 'rev-parse', injected), s.sha);
       const record = readRecord(r.home, s.offerId)!;

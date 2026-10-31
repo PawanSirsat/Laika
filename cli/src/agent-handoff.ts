@@ -1168,12 +1168,13 @@ const ZERO_OID = '0'.repeat(40);
  * is checked between the caller choosing the name and this write, so there is
  * no gap for a symbolic ref to redirect it into.
  *
- * What git does not do, measured on 2.50: a **dangling** symbolic ref at
- * `ref` (one naming a branch that does not exist) reads as "no value", so the
- * zero old value matches and git *replaces* it with the plain ref — refused
- * by no git command that also creates, since a transaction may not verify and
- * create one ref. Still never followed: nothing is written where it pointed.
- * Answers why it failed, or undefined.
+ * A **dangling** symbolic ref at `ref` (one naming a branch that does not
+ * exist) is where git versions differ, both measured: the CI runner's git
+ * refuses it (`dangling symref already exists`), and Apple git 2.50.1 reads
+ * it as "no value", so the zero old value matches and it *replaces* it with
+ * the plain ref — and no git command there both verifies and creates one ref
+ * in one transaction. Either way it is never followed: nothing is written
+ * where it pointed. Answers why it failed, or undefined.
  */
 function createRef(
   io: HandoffIo,

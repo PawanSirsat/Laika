@@ -747,8 +747,10 @@ laika agent handoff decline <offer> --reason "busy"
   between, and the worktree is added on that branch (never `worktree add
   -b`, which follows a symbolic ref). git refuses that step for an existing
   ref or a symbolic ref naming a branch that exists, and never writes
-  through a symbolic ref; for a **dangling** one it replaces it rather than
-  refusing (git 2.50: no command both verifies and creates one ref). After
+  through a symbolic ref. A **dangling** one depends on the git: the CI
+  runner's refuses it (`dangling symref already exists`); Apple git 2.50.1
+  replaces it with the plain ref, and has no command that both verifies and
+  creates one ref. After
   the writes, every other ref is compared with before, both refs must be
   plain refs at the checkpoint, and the new worktree's `HEAD` must name the
   branch.
