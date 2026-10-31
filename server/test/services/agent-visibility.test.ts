@@ -265,7 +265,7 @@ describe("another person's agent on every activity surface (D-121 item 7, LAI-10
   }
 
   it("withholds the row's agent_id and session snapshot, and keeps the row", async () => {
-    type Page = {
+    interface Page {
       data: {
         type: string;
         actor_kind: string;
@@ -275,7 +275,7 @@ describe("another person's agent on every activity surface (D-121 item 7, LAI-10
         agent_redacted: boolean;
         payload: Record<string, unknown>;
       }[];
-    };
+    }
     const read = async (who: Reader): Promise<Page['data']> =>
       (
         JSON.parse(
