@@ -302,6 +302,33 @@ void describe('who an agent’s row says acted', () => {
     assert.equal(describeAgentSelected(null, agents), undefined);
   });
 
+  // LAI-1011: the server sets `agent_redacted` when it withheld an agent, so a
+  // null reads as "an agent" and never as a legacy token or a withdrawal.
+  void test('a row the server withheld an agent from says "an agent", never a guess', () => {
+    assert.equal(
+      agentVia({ actor_kind: 'agent', agent_id: null, agent_redacted: true }, agents),
+      'an agent',
+    );
+    assert.equal(
+      agentVia({ actor_kind: 'agent', agent_id: null, agent_redacted: false }, agents),
+      'agent (unregistered token)',
+    );
+    assert.equal(
+      describeAgentSelected({ from: null, to: null }, agents, true),
+      'changed the agent selection on this task',
+    );
+    // Not redacted: a null `to` really is a withdrawal.
+    assert.equal(
+      describeAgentSelected({ from: 'ag1', to: null }, agents, false),
+      'withdrew the agent from this task',
+    );
+    // Redacted, but the new agent is one the reader may see: named as before.
+    assert.equal(
+      describeAgentSelected({ from: null, to: 'ag1' }, agents, true),
+      'selected Claude Code · laptop-1 for this task',
+    );
+  });
+
   void test('names come from the reader’s own agents and the tasks they hold, nothing else', () => {
     const names = agentNamesFrom(
       [registered({ id: 'mine', harness: 'cursor', device_label: 'tablet' })],

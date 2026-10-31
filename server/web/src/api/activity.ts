@@ -45,6 +45,14 @@ export interface ActivityEvent {
    * has no key at all. Read through `agentLine` (`agent-session.ts`).
    */
   readonly agent_session?: ActivitySession | null;
+  /**
+   * The server withheld an agent this reader may not see (D-121 item 7,
+   * LAI-1011): the row's agent, an agent id in the payload, or an agent
+   * token's name. A null `agent_id` with this set is *an agent*, never a
+   * legacy token; a null `to` is not a withdrawal. Optional because a row
+   * served before LAI-1011 has no key.
+   */
+  readonly agent_redacted?: boolean;
   readonly payload: unknown;
   readonly created_at: number;
 }
@@ -355,7 +363,7 @@ export function describeEvent(
   if (isGrantsChange(event)) return 'changed who can do what';
   // The agent by name where this reader can name it (LAI-538).
   if (event.type === 'task.agent_selected') {
-    const line = describeAgentSelected(event.payload, agents);
+    const line = describeAgentSelected(event.payload, agents, event.agent_redacted === true);
     if (line !== undefined) return line;
   }
   const membership = describeMembership(event);
