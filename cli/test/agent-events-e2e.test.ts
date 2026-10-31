@@ -260,10 +260,9 @@ void describe('the stream', () => {
           (r) => r.type === 'task.agent_selected' && r.state === 'received',
         ),
       );
-      assert.ok(
-        frames.some((f) => f.event === 'gap'),
-        'the board said gap',
-      );
+      // `ready` comes first and its poll alone can bring the record, and a
+      // frame reaches `onFrame` only after its own poll: wait for the gap.
+      await until('the board said gap', () => frames.some((f) => f.event === 'gap'));
       assert.ok(
         !frames.some((f) => f.event === 'task.agent_selected'),
         'it did not arrive on the stream: only the poll could have brought it',
