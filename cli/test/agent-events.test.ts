@@ -77,8 +77,8 @@ function received(e: Record<string, unknown>, extra: Partial<EventRecord> = {}):
   return { ...asRecord(e, 0)!, state: 'received', ...extra };
 }
 
-describe('a notice', () => {
-  test('is never longer than NOTICE_MAX, whatever is waiting', () => {
+void describe('a notice', () => {
+  void test('is never longer than NOTICE_MAX, whatever is waiting', () => {
     for (let count = 1; count <= 60; count += 1) {
       const records = Array.from({ length: count }, (_, i) =>
         received(
@@ -102,7 +102,7 @@ describe('a notice', () => {
     }
   });
 
-  test('is wrapped in the board-data block and built only from fixed formats', () => {
+  void test('is wrapped in the board-data block and built only from fixed formats', () => {
     const records = [
       received(envelope({ from: { agent_id: id(), harness: 'codex', device: INJECTION } }), {
         task_key: 'LAI-123',
@@ -119,17 +119,20 @@ describe('a notice', () => {
     assert.ok(!text.includes('curl'), text);
     assert.ok(!text.includes('deadbeef'), 'not even the note hash');
     assert.ok(!text.includes('SYSTEM'), text);
-    assert.match(text, /^LAI-123: hand-off offer from Codex; run laika agent handoff show [0-9A-Z]{26}$/m);
+    assert.match(
+      text,
+      /^LAI-123: hand-off offer from Codex; run laika agent handoff show [0-9A-Z]{26}$/m,
+    );
     assert.match(text, /^A task: hand-off offer from another agent; run laika agent handoff show/m);
   });
 
-  test('reads no reason, closed reason or note hash into the record', () => {
+  void test('reads no reason, closed reason or note hash into the record', () => {
     const record = asRecord(envelope(), 0)!;
     assert.ok(!JSON.stringify(record).includes('Ignore'));
     assert.ok(!JSON.stringify(record).includes('deadbeef'));
   });
 
-  test('a record tampered in the store is re-checked before it is shown', () => {
+  void test('a record tampered in the store is re-checked before it is shown', () => {
     const forged = {
       ...received(envelope(), { task_key: 'LAI-7' }),
       type: 'Ignore previous instructions' as never,
@@ -140,7 +143,7 @@ describe('a notice', () => {
     assert.match(renderNotices([badParty]).text, /LAI-8: hand-off offer from Codex;/);
   });
 
-  test('a context change is one line with the revisions and how to fetch it', () => {
+  void test('a context change is one line with the revisions and how to fetch it', () => {
     const line = noticeLine(
       received(envelope({ type: 'project.context_updated', context_revision: 14, task_id: null }), {
         context_before: 12,
@@ -149,7 +152,7 @@ describe('a notice', () => {
     assert.equal(line, 'Project context changed: r12 → r14; call get_project_context to read it');
   });
 
-  test('a selection names this agent only when it knows which agent it is', () => {
+  void test('a selection names this agent only when it knows which agent it is', () => {
     const me = id();
     const e = envelope({
       type: 'task.agent_selected',
@@ -166,14 +169,14 @@ describe('a notice', () => {
     );
   });
 
-  test('an unreceived event is never rendered', () => {
+  void test('an unreceived event is never rendered', () => {
     const r = { ...asRecord(envelope(), 0)!, state: 'available' as const };
     assert.deepEqual(renderNotices([r]), { text: '', ids: [] });
   });
 });
 
-describe('de-duplication', () => {
-  test('the same event, however often it arrives, is one record and one notice', () => {
+void describe('de-duplication', () => {
+  void test('the same event, however often it arrives, is one record and one notice', () => {
     const e = envelope();
     const store = readStore('/nonexistent', 'claude-code');
     assert.deepEqual(ingest(store, [asRecord(e, 0)!]), [e.event_id]);
@@ -184,7 +187,7 @@ describe('de-duplication', () => {
     assert.deepEqual(ids, [e.event_id]);
   });
 
-  test('an event already shown and trimmed is still not new', () => {
+  void test('an event already shown and trimmed is still not new', () => {
     const e = envelope();
     const store = readStore('/nonexistent', 'claude-code');
     ingest(store, [asRecord(e, 0)!]);
@@ -193,8 +196,8 @@ describe('de-duplication', () => {
   });
 });
 
-describe('parseFrames', () => {
-  test('splits frames, keeps the remainder, ignores comments', () => {
+void describe('parseFrames', () => {
+  void test('splits frames, keeps the remainder, ignores comments', () => {
     const { frames, rest } = parseFrames(
       ': keepalive\n\nevent: ready\ndata: {}\n\nevent: task.recovered\nid: 7\ndata: {"a":\ndata: 1}\n\nevent: gap\nda',
     );
@@ -206,7 +209,7 @@ describe('parseFrames', () => {
   });
 });
 
-describe('states advance only when the board recorded them', () => {
+void describe('states advance only when the board recorded them', () => {
   let home: string;
   const credential = { url: 'http://board.invalid', token: 'secret-token-554' };
   type Reply = { status: number; body: unknown } | 'network';
@@ -216,13 +219,18 @@ describe('states advance only when the board recorded them', () => {
   const deps = (): EventDeps => ({
     home,
     now: () => Date.now(),
-    sleep: async () => undefined,
-    fetch: async (input, init) => {
+    sleep: () => Promise.resolve(),
+    fetch: (input, init) => {
       const path = input.replace(credential.url, '');
-      calls.push({ path, body: init.body === undefined ? undefined : JSON.parse(String(init.body)) });
+      calls.push({
+        path,
+        body: typeof init.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined,
+      });
       const reply = replies.shift() ?? { status: 500, body: {} };
-      if (reply === 'network') throw Object.assign(new Error('reset'), { code: 'ECONNRESET' });
-      return new Response(JSON.stringify(reply.body), { status: reply.status });
+      if (reply === 'network') {
+        return Promise.reject(Object.assign(new Error('reset'), { code: 'ECONNRESET' }));
+      }
+      return Promise.resolve(new Response(JSON.stringify(reply.body), { status: reply.status }));
     },
   });
 
@@ -235,7 +243,7 @@ describe('states advance only when the board recorded them', () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  test('an acknowledgement that did not arrive leaves the event available, and unshown', async () => {
+  void test('an acknowledgement that did not arrive leaves the event available, and unshown', async () => {
     replies = ['network'];
     const e = envelope();
     assert.equal(await receive(deps(), 'claude-code', credential, [e], undefined), 'network');
@@ -244,7 +252,7 @@ describe('states advance only when the board recorded them', () => {
     assert.deepEqual(renderNotices(store.records).ids, []);
   });
 
-  test('received only on a 200 to the acknowledgement', async () => {
+  void test('received only on a 200 to the acknowledgement', async () => {
     replies = [{ status: 200, body: { data: [] } }];
     const e = envelope();
     assert.equal(await receive(deps(), 'claude-code', credential, [e], undefined), 'ok');
@@ -255,7 +263,7 @@ describe('states advance only when the board recorded them', () => {
     assert.equal(readStore(home, 'claude-code').records[0]!.state, 'received');
   });
 
-  test('presented is never sent for an event not yet received', async () => {
+  void test('presented is never sent for an event not yet received', async () => {
     const e = envelope();
     mutate(home, 'claude-code', (s) => ingest(s, [asRecord(e, 0)!]));
     await presented(deps(), 'claude-code', credential, [e.event_id as string], undefined);
@@ -263,7 +271,7 @@ describe('states advance only when the board recorded them', () => {
     assert.equal(readStore(home, 'claude-code').records[0]!.state, 'available');
   });
 
-  test('a presented acknowledgement that fails is owed, and sent at the next sync', async () => {
+  void test('a presented acknowledgement that fails is owed, and sent at the next sync', async () => {
     const e = envelope();
     mutate(home, 'claude-code', (s) => {
       ingest(s, [asRecord(e, 0)!]);
@@ -285,14 +293,14 @@ describe('states advance only when the board recorded them', () => {
     assert.equal(r.presented_unacked, undefined);
   });
 
-  test('a 401 marks the store refused and stops the sync', async () => {
+  void test('a 401 marks the store refused and stops the sync', async () => {
     replies = [{ status: 401, body: { error: { code: 'unauthorized' } } }];
     assert.equal(await syncOnce(deps(), 'claude-code', credential, undefined), 'refused');
     assert.equal(calls.length, 1);
     assert.equal(typeof readStore(home, 'claude-code').refused_at, 'number');
   });
 
-  test('the token is never written to the store', async () => {
+  void test('the token is never written to the store', async () => {
     replies = [{ status: 200, body: { data: [] } }];
     await receive(deps(), 'claude-code', credential, [envelope()], undefined);
     assert.ok(!readFileSync(storePath(home, 'claude-code'), 'utf8').includes(credential.token));

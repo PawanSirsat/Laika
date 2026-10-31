@@ -8,7 +8,7 @@ import {
   storePath,
   syncOnce,
 } from './agent-events.ts';
-import { type Harness, HARNESSES, isHarness, readCredential } from './agent-session.ts';
+import { HARNESSES, isHarness, readCredential } from './agent-session.ts';
 
 /**
  * `laika agent events` (LAI-554): what the event helper holds, a catch-up on
@@ -31,7 +31,8 @@ function option(argv: readonly string[], name: string): string | undefined {
   return at === -1 ? undefined : argv[at + 1];
 }
 
-function pick(io: AgentIo, argv: readonly string[]): Harness | string {
+/** The harness to act for, or why there is none (a harness name is itself a string). */
+function pick(io: AgentIo, argv: readonly string[]): string {
   const named = option(argv, '--harness');
   if (named !== undefined) {
     return isHarness(named) ? named : `--harness must be one of ${HARNESSES.join(', ')}`;
@@ -104,7 +105,9 @@ export async function eventsCommand(io: AgentIo, argv: readonly string[]): Promi
   io.out(BLOCK_OPEN);
   for (const r of store.records.slice(-50)) {
     const board = r.board_state === undefined ? '' : `, board: ${r.board_state}`;
-    io.out(`[${r.state}${r.presented_unacked === true ? ' (ack owed)' : ''}${board}] ${noticeLine(r)}`);
+    io.out(
+      `[${r.state}${r.presented_unacked === true ? ' (ack owed)' : ''}${board}] ${noticeLine(r)}`,
+    );
   }
   io.out(BLOCK_CLOSE);
   return 0;

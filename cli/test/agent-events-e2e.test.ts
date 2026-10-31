@@ -41,7 +41,12 @@ let agents = 0;
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-async function api(method: string, path: string, body?: unknown, token?: string): Promise<Response> {
+async function api(
+  method: string,
+  path: string,
+  body?: unknown,
+  token?: string,
+): Promise<Response> {
   return fetch(`${board.url}${path}`, {
     method,
     headers: {
@@ -83,7 +88,10 @@ async function selectFor(agentId: string): Promise<{ id: string; key: string }> 
     await api('POST', `/api/v1/projects/${projectSlug}/tasks`, { title: `For ${agentId}` }),
     201,
   );
-  await must(await api('PATCH', `/api/v1/tasks/${String(task.id)}`, { selected_agent_id: agentId }), 200);
+  await must(
+    await api('PATCH', `/api/v1/tasks/${String(task.id)}`, { selected_agent_id: agentId }),
+    200,
+  );
   return { id: String(task.id), key: String(task.key) };
 }
 
@@ -94,7 +102,10 @@ interface BoardView {
 }
 
 async function boardEvents(token: string): Promise<BoardView[]> {
-  const page = await must(await api('GET', '/api/v1/agents/me/events?state=all', undefined, token), 200);
+  const page = await must(
+    await api('GET', '/api/v1/agents/me/events?state=all', undefined, token),
+    200,
+  );
   return page.data as BoardView[];
 }
 
@@ -122,7 +133,11 @@ function linked(): AbortController {
   return own;
 }
 
-async function until(what: string, check: () => boolean | Promise<boolean>, ms = 15_000): Promise<void> {
+async function until(
+  what: string,
+  check: () => boolean | Promise<boolean>,
+  ms = 15_000,
+): Promise<void> {
   const end = Date.now() + ms;
   while (!(await check())) {
     if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
@@ -150,15 +165,17 @@ before(async () => {
   const created = await must(setup, 201);
   projectId = String(created.project_id);
   const projects = await must(await api('GET', '/api/v1/projects'), 200);
-  projectSlug = (projects.data as { id: string; slug: string }[]).find((p) => p.id === projectId)!.slug;
+  projectSlug = (projects.data as { id: string; slug: string }[]).find(
+    (p) => p.id === projectId,
+  )!.slug;
 });
 
 after(async () => {
   await board.stop();
 });
 
-describe('the stream', () => {
-  test('a reconnect that replays what was seen produces no duplicate', async () => {
+void describe('the stream', () => {
+  void test('a reconnect that replays what was seen produces no duplicate', async () => {
     const receiver = await newAgent();
     const { home, deps } = machine();
     const credential = { url: board.url, token: receiver.token };
@@ -212,20 +229,17 @@ describe('the stream', () => {
       assert.equal(store.records.find((r) => r.type === 'task.agent_selected')!.task_key, task.key);
       // The board agrees: both received, neither presented.
       const view = await boardEvents(receiver.token);
-      assert.deepEqual(
-        view.map((e) => [e.type, e.delivery.state]).sort(),
-        [
-          ['project.context_updated', 'received'],
-          ['task.agent_selected', 'received'],
-        ],
-      );
+      assert.deepEqual(view.map((e) => [e.type, e.delivery.state]).sort(), [
+        ['project.context_updated', 'received'],
+        ['task.agent_selected', 'received'],
+      ]);
     } finally {
       teardown.abort();
       rmSync(home, { recursive: true, force: true });
     }
   });
 
-  test('a gap — a cursor the board does not know — is recovered from the durable record', async () => {
+  void test('a gap — a cursor the board does not know — is recovered from the durable record', async () => {
     const receiver = await newAgent();
     const { home, deps } = machine();
     const credential = { url: board.url, token: receiver.token };
@@ -246,7 +260,10 @@ describe('the stream', () => {
           (r) => r.type === 'task.agent_selected' && r.state === 'received',
         ),
       );
-      assert.ok(frames.some((f) => f.event === 'gap'), 'the board said gap');
+      assert.ok(
+        frames.some((f) => f.event === 'gap'),
+        'the board said gap',
+      );
       assert.ok(
         !frames.some((f) => f.event === 'task.agent_selected'),
         'it did not arrive on the stream: only the poll could have brought it',
@@ -259,7 +276,7 @@ describe('the stream', () => {
     }
   });
 
-  test('a revoked token closes the stream for good', async () => {
+  void test('a revoked token closes the stream for good', async () => {
     const receiver = await newAgent();
     const { home, deps } = machine();
     const credential = { url: board.url, token: receiver.token };
@@ -292,8 +309,8 @@ describe('the stream', () => {
   });
 });
 
-describe('the hook', () => {
-  test('presents a bounded notice once, and the board records presented only after it printed', async () => {
+void describe('the hook', () => {
+  void test('presents a bounded notice once, and the board records presented only after it printed', async () => {
     const receiver = await newAgent();
     const { home } = machine();
     try {
@@ -309,7 +326,8 @@ describe('the hook', () => {
           // A harness pid that names nothing: no session is bound to whatever
           // process runs this test, and no watcher is started.
           env: { LAIKA_AGENT_HARNESS_PID: 'none' },
-          stdin: () => JSON.stringify({ session_id: 'hook-554', hook_event_name: 'UserPromptSubmit' }),
+          stdin: () =>
+            JSON.stringify({ session_id: 'hook-554', hook_event_name: 'UserPromptSubmit' }),
           isTTY: false,
         };
         assert.equal(await agent(['hook', 'prompt', 'claude-code'], io), 0);
@@ -325,11 +343,17 @@ describe('the hook', () => {
       assert.ok(block.endsWith(BLOCK_CLOSE));
       assert.ok(block.length <= NOTICE_MAX, String(block.length));
       assert.ok(TASK_KEY.test(task.key));
-      assert.match(block, new RegExp(`^${task.key}: agent selection changed; run laika agent inbox$`, 'm'));
+      assert.match(
+        block,
+        new RegExp(`^${task.key}: agent selection changed; run laika agent inbox$`, 'm'),
+      );
       assert.match(block, /^Project context changed: r\d+; call get_project_context to read it$/m);
 
       const view = await boardEvents(receiver.token);
-      assert.deepEqual(view.map((e) => e.delivery.state), ['presented', 'presented']);
+      assert.deepEqual(
+        view.map((e) => e.delivery.state),
+        ['presented', 'presented'],
+      );
       for (const e of view) {
         assert.ok(e.delivery.presented_at! >= e.delivery.received_at!);
       }

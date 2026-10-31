@@ -561,7 +561,9 @@ async function fillKeys(
   deadline: number,
 ): Promise<void> {
   const missing = readStore(deps.home, harness)
-    .records.filter((r) => r.task_id !== null && r.task_key === undefined && r.state !== 'presented')
+    .records.filter(
+      (r) => r.task_id !== null && r.task_key === undefined && r.state !== 'presented',
+    )
     .slice(0, 5);
   const keys = new Map<string, string>();
   for (const r of missing) {
