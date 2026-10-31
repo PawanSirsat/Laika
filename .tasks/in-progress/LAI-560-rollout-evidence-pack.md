@@ -2,11 +2,12 @@
 id: LAI-560
 title: 'Migration/rollback rehearsal, operator docs, rollout plan, acceptance evidence pack'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-559]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-31T16:33:21Z
 ---
 
 Implements **proposal §7** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -62,3 +63,11 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 This is the migration task. Never run against the production database; use a copy over SSM per the deploy runbook.
+
+## Claim note (deviation, 2026-10-31)
+
+Claimed while `LAI-559` is still in `.tasks/backlog/` on `origin/master`, on
+direct dispatch by CHIEF (polly) — not inferred from §2. Consequence: the
+evidence pack cannot cite the failure matrix as done; it lists every LAI-559
+row as **UNVERIFIED**. Branch is `LAI-560-rollout-evidence-pack` (the task
+named `LAI-560-rollout-evidence`; the worktree was cut with the longer name).
