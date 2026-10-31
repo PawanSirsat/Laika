@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, describe, test } from 'node:test';
 
 import { type AutoOutcome, recordPath } from '../src/agent-checkpoint.ts';
-import { type SessionState, writeState } from '../src/agent-session.ts';
+import { readState, type SessionState, statePath, writeState } from '../src/agent-session.ts';
 import {
   type BatteryReading,
   batteryLine,
@@ -170,6 +170,18 @@ void describe('memory pressure: sustained, then hysteresis', () => {
       [],
       ['memory_pressure'],
     ]);
+  });
+
+  void test('one normal reading between two sustained runs does not re-arm it', () => {
+    const { triggers } = run([
+      [0, NO_BAT, mem(true)],
+      [60_000, NO_BAT, mem(true)], // fires
+      [70_000, NO_BAT, mem(false)], // normal for less than 30 s
+      [80_000, NO_BAT, mem(true)],
+      [140_000, NO_BAT, mem(true)], // a second sustained 60 s, still disarmed
+      [200_000, NO_BAT, mem(true)],
+    ]);
+    assert.deepEqual(triggers, [[], ['memory_pressure'], [], [], [], []]);
   });
 
   void test('both conditions on one tick are one step with two triggers', () => {
@@ -353,7 +365,7 @@ void describe('what a trigger requests, and what it reports', () => {
   const CKPT = '01J000000000000000000CKPT1';
   const URL = 'http://board.test';
 
-  function home(withSession: boolean): string {
+  function home(withSession: boolean, ...overrides: Partial<SessionState>[]): string {
     const h = mkdtempSync(join(tmpdir(), 'laika-watch-'));
     homes.push(h);
     if (withSession) {
@@ -374,6 +386,9 @@ void describe('what a trigger requests, and what it reports', () => {
         noticed: [],
       };
       writeState(h, state);
+      overrides.forEach((o, i) => {
+        writeState(h, { ...state, harness_session_id: `hs-extra-${String(i)}`, ...o });
+      });
       const cred = join(h, '.laika', 'agents', 'claude-code.json');
       mkdirSync(dirname(cred), { recursive: true });
       writeFileSync(cred, JSON.stringify({ url: URL, token: 'tok' }));
@@ -413,6 +428,9 @@ void describe('what a trigger requests, and what it reports', () => {
       }),
     );
   }
+
+  const sessionOf = (h: string): SessionState | undefined =>
+    readState(statePath(h, 'claude-code', 'hs-1'));
 
   interface Call {
     url: string;
@@ -469,6 +487,20 @@ void describe('what a trigger requests, and what it reports', () => {
 
   void test('no live claim on this machine: says so, saves nothing', async () => {
     const d = deps(home(false), 'saved');
+    const lines = await requestCheckpoint(d, OPTS);
+    assert.deepEqual(lines, [
+      'no agent session on this machine holds a live claim: nothing saved, nothing offered',
+    ]);
+    assert.equal(d.saves, 0);
+  });
+
+  void test('a live session with no claim, or an ended one with a claim, saves nothing', async () => {
+    // hs-1 is live and holds no claim; hs-extra-0 holds one and has ended.
+    const h = home(true, { status: 'ended' });
+    const live = sessionOf(h);
+    assert.ok(live !== undefined);
+    writeState(h, { ...live, claims: [] });
+    const d = deps(h, 'saved');
     const lines = await requestCheckpoint(d, OPTS);
     assert.deepEqual(lines, [
       'no agent session on this machine holds a live claim: nothing saved, nothing offered',
