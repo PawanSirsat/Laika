@@ -1,4 +1,5 @@
 import { isGrantsChange, type ActivityEvent } from '../../../api/activity.ts';
+import { WITHHELD_SELECTION } from '../../../api/selected-agent.ts';
 import type { TaskSummary, TaskStatus } from '../../../api/tasks.ts';
 
 /**
@@ -260,6 +261,11 @@ export function shownInFeed(type: string): boolean {
 
 export function describeProjectEvent(event: ActivityEvent): string {
   if (isGrantsChange(event)) return 'changed who can do what';
+  // The server hid the agent (LAI-1011): a withdrawal must not read as a pick,
+  // so the line says what History says. The flag decides, never the nulls.
+  if (event.type === 'task.agent_selected' && event.agent_redacted === true) {
+    return WITHHELD_SELECTION;
+  }
   return PROJECT_LABELS[event.type] ?? event.type;
 }
 

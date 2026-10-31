@@ -6,7 +6,14 @@ import { type ActivityEvent } from '../../db/activity.ts';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { type ActivityFeed, type RepeatingTimer } from '../../services/activity-feed.ts';
-import { eventView, parseLastEventId, resumeFrom, visibleTo } from '../../services/events.ts';
+import { agentReader } from '../../services/agent-visibility.ts';
+import {
+  activityLens,
+  eventView,
+  parseLastEventId,
+  resumeFrom,
+  visibleTo,
+} from '../../services/events.ts';
 import { canSeeProject, requireProjectBySlug } from '../../services/projects.ts';
 import { type AppEnv } from '../context.ts';
 
@@ -187,30 +194,36 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
       const terminalWritten = (): Promise<void> => terminal ?? Promise.resolve();
 
       /**
-       * `row` marks an activity frame, which a token stream filters again
-       * against the actor it reloads at write time.
+       * A control frame (`ready`, `gap`, `closing`, a keepalive) is written as
+       * queued. An activity row is **framed when it is written**, never when
+       * it joined the queue: a token stream filters it again against the actor
+       * it reloads then (LAI-539 review), and every stream asks the agent lens
+       * then (LAI-1011), so a selection changed or a claim lapsed while the
+       * frame waited behind a slow client cannot carry the agent out.
        */
-      interface Outgoing {
-        frame: SSEMessage | string;
-        row?: ActivityEvent;
-      }
+      type Outgoing = { frame: SSEMessage | string } | { row: ActivityEvent };
 
-      /**
-       * May this frame be written **now**? Asked as the frame reaches the
-       * front of the queue, never when it joined it (LAI-539 review): a
-       * cookie stream keeps its connect-and-batch checks unchanged.
-       */
-      const writable = (item: Outgoing): boolean => {
-        if (refused) return false;
-        if (!onToken) return true;
+      /** The frame to write **now**, or null to skip it. */
+      const writable = (item: Outgoing): SSEMessage | string | null => {
+        if (refused) return null;
+        let reader: ResolvedActor = actor;
+        if (onToken) {
+          const current = currentActor();
+          if (current === null) return null;
+          reader = current;
+        }
+        if ('frame' in item) return item.frame;
 
-        const current = currentActor();
-        if (current === null) return false;
-        if (item.row === undefined) return true;
-        return insidePin(current, item.row.projectId) && visibleTo(current, item.row);
+        const { row } = item;
+        if (onToken && !(insidePin(reader, row.projectId) && visibleTo(reader, row))) return null;
+        // One frame at a time, because each write may wait on the client: a
+        // lens reused across that wait is the window this closes. Constant
+        // queries per frame, whatever the batch held.
+        const lens = activityLens(db, agentReader(reader), [row]);
+        return { event: row.type, id: String(row.seq), data: JSON.stringify(eventView(row, lens)) };
       };
 
-      const enqueue = (frame: SSEMessage | string, meta: Omit<Outgoing, 'frame'> = {}): void => {
+      const enqueue = (item: Outgoing): void => {
         if (ended || refused) return;
 
         if (queued >= MAX_QUEUED_FRAMES) {
@@ -219,13 +232,13 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
           return;
         }
 
-        const item: Outgoing = { frame, ...meta };
         queued += 1;
         queue = queue
           .then(async () => {
-            if (!writable(item)) return;
-            if (typeof item.frame === 'string') await stream.write(item.frame);
-            else await stream.writeSSE(item.frame);
+            const frame = writable(item);
+            if (frame === null) return;
+            if (typeof frame === 'string') await stream.write(frame);
+            else await stream.writeSSE(frame);
           })
           .then(
             () => {
@@ -238,13 +251,15 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
       };
 
       enqueue({
-        event: 'ready',
-        data: JSON.stringify({ seq: resume.from, project_id: projectId }),
-        retry: RECONNECT_MS,
+        frame: {
+          event: 'ready',
+          data: JSON.stringify({ seq: resume.from, project_id: projectId }),
+          retry: RECONNECT_MS,
+        },
       });
 
       if (resume.gap !== null) {
-        enqueue({ event: 'gap', data: JSON.stringify(resume.gap) });
+        enqueue({ frame: { event: 'gap', data: JSON.stringify(resume.gap) } });
       }
 
       /** Close the stream for a credential that no longer holds. */
@@ -304,16 +319,16 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
             if (!insidePin(current, row.projectId)) continue;
             if (!visibleTo(current, row)) continue;
 
-            enqueue(
-              { event: row.type, id: String(row.seq), data: JSON.stringify(eventView(row)) },
-              { row },
-            );
+            // Framed at write time, through the agent lens (see `writable`).
+            enqueue({ row });
           }
         },
         // LAI-002: say goodbye rather than vanish, so the client knows this was a
         // deploy and not a network fault, and reconnects with its last id.
         onClose: () => {
-          enqueue({ event: 'closing', data: JSON.stringify({ reason: 'server_shutdown' }) });
+          enqueue({
+            frame: { event: 'closing', data: JSON.stringify({ reason: 'server_shutdown' }) },
+          });
           end();
         },
       });
@@ -322,7 +337,7 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
         if (currentActor() === null) return;
         // A comment frame: valid SSE, ignored by every client, and enough to keep
         // a proxy from calling the connection idle.
-        enqueue(': keepalive\n\n');
+        enqueue({ frame: ': keepalive\n\n' });
       }, keepaliveMs);
       keepalive.unref?.();
 
