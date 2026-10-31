@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { Spinner } from '../../../components/Spinner.tsx';
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
 import { listContextDeliveries, type ContextDelivery } from '../../../api/project-context.ts';
 import { agentHarness, type RegisteredAgent } from '../../../api/agents.ts';
@@ -177,13 +178,14 @@ export function DeliveredTo({ slug, revision, agents }: DeliveredToProps) {
         type="button"
         className="ctx-link"
         data-delivered-more={which}
-        aria-label={state.more === which ? undefined : label}
+        aria-label={label}
+        aria-busy={state.more === which}
         disabled={state.more !== null}
         onClick={() => {
           showMore(which);
         }}
       >
-        {state.more === which ? 'Loading…' : 'Show more'}
+        {state.more === which && <Spinner size="sm" />} Show more
       </button>
     );
 
