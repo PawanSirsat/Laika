@@ -14,6 +14,7 @@ CREATE TABLE `agent_event_deliveries` (
 );
 --> statement-breakpoint
 CREATE INDEX `agent_event_deliveries_agent_seq_idx` ON `agent_event_deliveries` (`agent_id`,`seq`);--> statement-breakpoint
+CREATE INDEX `agent_event_deliveries_agent_undelivered_idx` ON `agent_event_deliveries` (`agent_id`,`seq`) WHERE received_at IS NULL;--> statement-breakpoint
 CREATE TABLE `agent_events` (
 	`activity_id` text PRIMARY KEY NOT NULL,
 	`seq` integer NOT NULL,

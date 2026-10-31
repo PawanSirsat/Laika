@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d0d0c2ce-7c6e-4283-ba10-9b065951ff26",
+  "id": "adec1fc8-68c9-411b-b248-4821650a85be",
   "prevId": "33f0f577-ac48-4fab-ba6d-41e7f58725f8",
   "tables": {
     "accounts": {
@@ -469,6 +469,12 @@
           "name": "agent_event_deliveries_agent_seq_idx",
           "columns": ["agent_id", "seq"],
           "isUnique": false
+        },
+        "agent_event_deliveries_agent_undelivered_idx": {
+          "name": "agent_event_deliveries_agent_undelivered_idx",
+          "columns": ["agent_id", "seq"],
+          "isUnique": false,
+          "where": "received_at IS NULL"
         }
       },
       "foreignKeys": {

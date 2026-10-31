@@ -619,13 +619,26 @@ describe('the ack re-reads its credentials inside its transaction (LAI-553 revie
     const bytes = new TextEncoder().encode(
       JSON.stringify({ event_ids: eventIds, state: 'received' }),
     );
-    const body = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        await gate;
-        controller.enqueue(bytes);
-        controller.close();
-      },
+    /**
+     * Resolves when the route first asks for the body — after auth, inside
+     * the handler's `c.req.json()`. A high-water mark of 0 means the stream
+     * pulls only on a real read, never eagerly when it is constructed.
+     */
+    let markReading!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      markReading = resolve;
     });
+    const body = new ReadableStream<Uint8Array>(
+      {
+        async pull(controller) {
+          markReading();
+          await gate;
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
     const response = h.app.request('/api/v1/agents/me/events/ack', {
       method: 'POST',
       // A declared length, as a real client sends: without it `bodyLimit`
@@ -635,7 +648,7 @@ describe('the ack re-reads its credentials inside its transaction (LAI-553 revie
       body,
       duplex: 'half',
     });
-    return { response, release };
+    return { response, release, reading };
   }
 
   const changes: [string, number, (agentId: string) => Promise<void> | void][] = [
@@ -676,8 +689,8 @@ describe('the ack re-reads its credentials inside its transaction (LAI-553 revie
     it(`refuses, and records nothing, when ${what} while the body is in flight`, async () => {
       const { event } = await offered();
       const held = heldAck(receiver.secret, [event.event_id]);
-      // Let the route resolve the actor and start waiting on the body.
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      // The route has resolved the actor and is waiting on the body.
+      await held.reading;
       await change(receiver.id);
       held.release();
       const res = await held.response;
@@ -691,7 +704,7 @@ describe('the ack re-reads its credentials inside its transaction (LAI-553 revie
   it('the same held body, nothing changed, is recorded — the hold is not the refusal', async () => {
     const { event } = await offered();
     const held = heldAck(receiver.secret, [event.event_id]);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await held.reading;
     held.release();
     expect((await held.response).status).toBe(200);
     expect(deliveryRows(event.event_id).map((d) => d.receivedAt)).toEqual([expect.any(Number)]);

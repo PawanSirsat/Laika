@@ -1,8 +1,9 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, lt, or } from 'drizzle-orm';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import {
   agentSessionContextDeliveries,
+  agents,
   agentSessions,
   projectContextRevisions,
   projects,
@@ -231,6 +232,147 @@ export function deliveredRevision(db: Db, sessionId: string, projectId: string):
     )
     .get();
   return row?.revision ?? null;
+}
+
+// ------------------------------------------------ who it was delivered to
+
+/**
+ * The agent a delivery row names, to a reader who may see it (D-120, D-121):
+ * the reader's **own** agent. Another person's agent is missing to everyone
+ * else (D-121 item 7), so its row carries `agent: null` and no id or label an
+ * agent route would answer `404` for — the rule a round's `agent` follows
+ * (LAI-1001), with no task here to make anyone else's agent visible.
+ */
+export interface ContextDeliveryAgentView {
+  id: string;
+  harness: string;
+  device_label: string | null;
+  /** The agent's registered name — served only to its owner (D-120), who this is. */
+  display_name: string;
+  /** A revoked agent's sessions stay listed, with its label. */
+  status: string;
+}
+
+/** One session's **latest** delivery in a project (§4.69). */
+export interface ContextDeliveryView {
+  session_id: string;
+  /** The revision last delivered to the session — never one before it. */
+  revision: number;
+  /** When the server sent it. Sent, never read or understood (§4.69). */
+  delivered_at: number;
+  /** Null while the session is open. */
+  session_ended_at: number | null;
+  /** The session's agent when it is the reader's own; null otherwise. */
+  agent: ContextDeliveryAgentView | null;
+}
+
+/**
+ * `GET /projects/:slug/context/deliveries` (§6.4, LAI-1003). §4.69 keeps one
+ * row per (session, project): the revision **last** delivered. So this says
+ * which revision each session has now, and is not a history — a session later
+ * given N+1 is no longer listed under N. `scope` says so on every answer.
+ */
+export interface ContextDeliveriesView {
+  scope: 'latest_per_session';
+  /** The filter asked for, or null for every session. */
+  revision: number | null;
+  current_revision: number;
+  data: ContextDeliveryView[];
+  next_cursor: string | null;
+}
+
+export interface ListContextDeliveriesOptions {
+  /** Only sessions whose latest delivery is this revision; it must exist. */
+  revision: number | null;
+  limit: number;
+  cursor: { sortKey: string | number; id: string } | null;
+}
+
+/**
+ * The page under `GET /projects/:slug/context/deliveries`, newest delivery
+ * first, `limit + 1` rows so the route can tell whether another page follows.
+ *
+ * Project read first (`requireReadableProjectBySlug` calls `can()`), so a
+ * project the caller cannot read is the missing slug's answer and nothing is
+ * read. A revision the project has not reached is the revision read's `404`.
+ * Three statements whatever the page holds: the project, the revision (when
+ * filtered) and one join for the rows and their agents.
+ */
+export function listContextDeliveries(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+  options: ListContextDeliveriesOptions,
+): { project: typeof projects.$inferSelect; rows: ContextDeliveryView[] } {
+  const project = readableProject(db, actor, slug);
+  if (options.revision !== null) {
+    assertRevisionNumber('revision', options.revision);
+    const reached = db
+      .select({ id: projectContextRevisions.id })
+      .from(projectContextRevisions)
+      .where(
+        and(
+          eq(projectContextRevisions.projectId, project.id),
+          eq(projectContextRevisions.revision, options.revision),
+        ),
+      )
+      .get();
+    if (reached === undefined) {
+      throw ApiError.notFound(`No context revision ${String(options.revision)}`);
+    }
+  }
+
+  const d = agentSessionContextDeliveries;
+  const conditions = [eq(d.projectId, project.id)];
+  if (options.revision !== null) conditions.push(eq(d.revision, options.revision));
+  if (options.cursor !== null) {
+    const key = Number(options.cursor.sortKey);
+    conditions.push(
+      or(lt(d.deliveredAt, key), and(eq(d.deliveredAt, key), lt(d.sessionId, options.cursor.id)))!,
+    );
+  }
+
+  const reader = actor.userId;
+  const rows = db
+    .select({
+      sessionId: d.sessionId,
+      revision: d.revision,
+      deliveredAt: d.deliveredAt,
+      endedAt: agentSessions.endedAt,
+      agentId: agents.id,
+      ownerUserId: agents.ownerUserId,
+      harness: agents.harness,
+      deviceLabel: agents.deviceLabel,
+      displayName: agents.displayName,
+      status: agents.status,
+    })
+    .from(d)
+    .innerJoin(agentSessions, eq(agentSessions.id, d.sessionId))
+    .innerJoin(agents, eq(agents.id, agentSessions.agentId))
+    .where(and(...conditions))
+    .orderBy(desc(d.deliveredAt), desc(d.sessionId))
+    .limit(options.limit + 1)
+    .all();
+
+  return {
+    project,
+    rows: rows.map((row) => ({
+      session_id: row.sessionId,
+      revision: row.revision,
+      delivered_at: row.deliveredAt,
+      session_ended_at: row.endedAt,
+      agent:
+        row.ownerUserId === reader
+          ? {
+              id: row.agentId,
+              harness: row.harness,
+              device_label: row.deviceLabel,
+              display_name: row.displayName,
+              status: row.status,
+            }
+          : null,
+    })),
+  };
 }
 
 // ------------------------------------------------- the MCP response stamp
