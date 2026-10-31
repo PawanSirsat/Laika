@@ -1,9 +1,5 @@
 import { desc, eq, inArray } from 'drizzle-orm';
-import {
-  type ResolvedActor,
-  type ServiceCaller,
-  withProject,
-} from '../auth/resolve-actor.ts';
+import { type ResolvedActor, type ServiceCaller, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type EvidenceKind, type EvidenceState, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
@@ -394,7 +390,9 @@ function toRoundViews(
   const visibleAgent = (row: (typeof rows)[number]): RoundAgentView | null => {
     const a = row.tokenId === null ? undefined : agentByToken.get(row.tokenId);
     if (a === undefined) return null;
-    return lens.visible(row.taskId, a.id) ? { id: a.id, harness: a.harness, device_label: a.deviceLabel } : null;
+    return lens.visible(row.taskId, a.id)
+      ? { id: a.id, harness: a.harness, device_label: a.deviceLabel }
+      : null;
   };
 
   return rows.map((row) => {

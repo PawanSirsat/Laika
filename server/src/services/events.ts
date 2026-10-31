@@ -85,7 +85,12 @@ function isAgentKey(type: ActivityType, key: string, depth: number): boolean {
 }
 
 /** Every agent id a payload names, for building the lens before any row is shown. */
-function payloadAgentIds(type: ActivityType, value: unknown, depth = 0, out: string[] = []): string[] {
+function payloadAgentIds(
+  type: ActivityType,
+  value: unknown,
+  depth = 0,
+  out: string[] = [],
+): string[] {
   if (Array.isArray(value)) {
     for (const v of value) payloadAgentIds(type, v, depth + 1, out);
   } else if (value !== null && typeof value === 'object') {
@@ -171,7 +176,11 @@ export function eventView(row: ActivityEvent, lens: AgentLens): EventView {
 }
 
 /** A page of rows on the wire, through one lens for the page. */
-export function eventViews(db: Db, reader: AgentReader, rows: readonly ActivityEvent[]): EventView[] {
+export function eventViews(
+  db: Db,
+  reader: AgentReader,
+  rows: readonly ActivityEvent[],
+): EventView[] {
   const lens = activityLens(db, reader, rows);
   return rows.map((row) => eventView(row, lens));
 }

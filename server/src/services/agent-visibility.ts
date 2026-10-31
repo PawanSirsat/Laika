@@ -84,7 +84,9 @@ export function agentLens(
     visible(taskId, agentId) {
       const owner = ownerOf.get(agentId);
       if (owner === undefined) return false;
-      return owner === reader || (taskId !== null && shownOnTask.get(taskId)?.has(agentId) === true);
+      return (
+        owner === reader || (taskId !== null && shownOnTask.get(taskId)?.has(agentId) === true)
+      );
     },
   };
 }

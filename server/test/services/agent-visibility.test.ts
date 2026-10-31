@@ -69,11 +69,7 @@ function agentFor(userId: string, harness: string, device: string) {
 }
 
 /** One row written as an owner's agent, carrying agent ids in its payload too. */
-function writeAs(
-  who: { id: string; tokenId: string },
-  type: ActivityType,
-  payload: unknown,
-): void {
+function writeAs(who: { id: string; tokenId: string }, type: ActivityType, payload: unknown): void {
   appendActivity(h.db, {
     orgId,
     projectId: laikaId,
@@ -162,7 +158,7 @@ async function sseBody(cookie: string): Promise<string> {
   // Replay from the start: the same `onEvents` path a live row takes.
   const res = await req('/api/v1/events', cookie, { headers: { 'Last-Event-ID': '0' } });
   expect(res.status).toBe(200);
-  const body = res.body;
+  const body: ReadableStream<Uint8Array> | null = res.body;
   if (body === null) throw new Error('no stream body');
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -289,8 +285,8 @@ describe('agentLens (the one gate)', () => {
 
   it('names nothing to a reader with no user, and nothing it does not know', () => {
     expect(agentLens(h.db, null, [taskId], [ada.agentId]).visible(taskId, ada.agentId)).toBe(false);
-    expect(agentLens(h.db, ada.id, [taskId], ['no-such-agent']).visible(taskId, 'no-such-agent')).toBe(
-      false,
-    );
+    expect(
+      agentLens(h.db, ada.id, [taskId], ['no-such-agent']).visible(taskId, 'no-such-agent'),
+    ).toBe(false);
   });
 });
