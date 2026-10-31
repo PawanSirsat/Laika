@@ -166,15 +166,18 @@ export const DELIVERIES_PAGE = 200;
 
 /**
  * Each session's latest delivery, newest first: those on `revision` when it
- * is given, every session's otherwise.
+ * is given, every session's otherwise. `cursor` is a previous answer's
+ * `next_cursor`, for the page after it.
  */
 export function listContextDeliveries(
   slug: string,
   revision: number | null,
   signal?: AbortSignal,
+  cursor: string | null = null,
 ): Promise<ContextDeliveries> {
   const query = new URLSearchParams({ limit: String(DELIVERIES_PAGE) });
   if (revision !== null) query.set('revision', String(revision));
+  if (cursor !== null) query.set('cursor', cursor);
   return request<ContextDeliveries>(
     `/projects/${encodeURIComponent(slug)}/context/deliveries?${query.toString()}`,
     signal === undefined ? {} : { signal },
