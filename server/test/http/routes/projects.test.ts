@@ -624,6 +624,23 @@ describe('context revisions over REST (§6.4, §4.68, LAI-555)', () => {
   });
 
   it('a project the caller cannot see answers exactly as a missing one', async () => {
+    const owner = h.db.select().from(users).get()!;
+    const orgId = h.db.all<{ id: string }>(sql`SELECT id FROM orgs`)[0]!.id;
+    const email = 'outsider@example.test';
+    const token = seedInvite(h.db, { orgId, createdBy: owner.id, email, orgRole: 'member' });
+    const joined = await signUp(h.app, { email, password: PASSWORD, inviteToken: token });
+    expect(joined.status, await joined.clone().text()).toBe(200);
+    const outsider = cookieFrom(joined);
+
+    // The deliveries read (LAI-1003), literally byte for byte: the same slug
+    // before the project exists, and again once it exists and is hidden.
+    const tails = ['/context/deliveries', '/context/deliveries?revision=1'];
+    const beforeItExists = new Map<string, { status: number; body: string }>();
+    for (const tail of tails) {
+      const res = await req(`/api/v1/projects/hidden${tail}`, {}, outsider);
+      beforeItExists.set(tail, { status: res.status, body: await res.text() });
+    }
+
     expect(
       (
         await createProject({
@@ -634,13 +651,6 @@ describe('context revisions over REST (§6.4, §4.68, LAI-555)', () => {
         })
       ).status,
     ).toBe(201);
-    const owner = h.db.select().from(users).get()!;
-    const orgId = h.db.all<{ id: string }>(sql`SELECT id FROM orgs`)[0]!.id;
-    const email = 'outsider@example.test';
-    const token = seedInvite(h.db, { orgId, createdBy: owner.id, email, orgRole: 'member' });
-    const joined = await signUp(h.app, { email, password: PASSWORD, inviteToken: token });
-    expect(joined.status, await joined.clone().text()).toBe(200);
-    const outsider = cookieFrom(joined);
 
     for (const [method, tail, body] of [
       ['GET', '/context', undefined],
@@ -664,13 +674,11 @@ describe('context revisions over REST (§6.4, §4.68, LAI-555)', () => {
       );
     }
 
-    // The deliveries read (LAI-1003): byte for byte, but for the slug it names.
-    for (const tail of ['/context/deliveries', '/context/deliveries?revision=1']) {
-      const hidden = await req(`/api/v1/projects/hidden${tail}`, {}, outsider);
-      const missing = await req(`/api/v1/projects/nope${tail}`, {}, outsider);
-      expect(hidden.status, tail).toBe(missing.status);
-      expect((await hidden.text()).replace('\\"hidden\\"', '\\"nope\\"'), tail).toBe(
-        await missing.text(),
+    for (const tail of tails) {
+      const res = await req(`/api/v1/projects/hidden${tail}`, {}, outsider);
+      expect(beforeItExists.get(tail)?.status, tail).toBe(404);
+      expect({ status: res.status, body: await res.text() }, tail).toEqual(
+        beforeItExists.get(tail),
       );
     }
   });
