@@ -185,6 +185,54 @@ describe('listAgentEvents', () => {
     expect([few.hasMore, many.hasMore]).toEqual([false, false]);
   });
 
+  it('does bounded work: no statement scans, deliveries by the agent’s index range, activity by key', () => {
+    /** Every statement one poll prepares, with its query plan. */
+    const actor = asAgent();
+    const plans = (state: 'undelivered' | 'all') =>
+      preparedDuring(t.sqlite, () =>
+        listAgentEvents(t.db, actor, { after: 0, state, limit: 100 }),
+      ).map((source) => {
+        const bindings = Array.from({ length: (source.match(/\?/g) ?? []).length }, () => 'x');
+        return (
+          t.sqlite.prepare(`EXPLAIN QUERY PLAN ${source}`).all(...bindings) as { detail: string }[]
+        ).map((row) => row.detail);
+      });
+
+    for (const state of ['undelivered', 'all'] as const) {
+      const all = plans(state).flat();
+      // Not one full scan — of deliveries, of activity, of anything: the work
+      // is the agent's grants and its new rows, never its lifetime of events
+      // (LAI-553 review 2: readable projects came from a DISTINCT over every
+      // delivery).
+      expect(
+        all.filter((line) => line.startsWith('SCAN ')),
+        state,
+      ).toEqual([]);
+      expect(
+        all.filter((line) => line.includes('agent_event_deliveries')),
+        state,
+      ).toEqual([
+        expect.stringMatching(
+          state === 'undelivered'
+            ? // From cursor 0 an undelivered poll reads only unreceived rows:
+              // the partial index holds nothing the agent has acknowledged.
+              /^SEARCH agent_event_deliveries USING INDEX agent_event_deliveries_agent_undelivered_idx \(agent_id=\? AND seq>\?\)$/
+            : /^SEARCH agent_event_deliveries USING INDEX agent_event_deliveries_agent_seq_idx \(agent_id=\? AND seq>\?\)$/,
+        ),
+      ]);
+      expect(
+        all.filter((line) => /\bactivity\b/.test(line) && line.includes('agent_event')),
+        state,
+      ).toEqual([]);
+      expect(
+        all.filter((line) =>
+          /^SEARCH activity USING INDEX sqlite_autoindex_activity_1 \(id=\?\)$/.test(line),
+        ),
+        state,
+      ).toHaveLength(1);
+    }
+  });
+
   it('is an agent’s: a personal token is forbidden, not_an_agent', () => {
     const personal = createToken(t.sqlite, t.db, owner(), {
       name: 'personal',
