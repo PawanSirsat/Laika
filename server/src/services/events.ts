@@ -10,6 +10,8 @@ import { type ActivityType, type ActorKind } from '../db/enums.ts';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { can } from '../policy/can.ts';
 import { type AgentLens, type AgentReader, agentLens } from './agent-visibility.ts';
+import { tokens } from '../db/schema.ts';
+import { inArray } from 'drizzle-orm';
 
 /**
  * What a client is allowed to see on the live stream, and where a reconnect
@@ -51,6 +53,14 @@ export interface EventView {
    * with `agent_id` (LAI-1011): its harness is half the agent's label.
    */
   agent_session: ActivitySessionView | null;
+  /**
+   * True when this reader was withheld an agent the row names (LAI-1011): the
+   * row's own agent, an agent id in the payload, or the registered name on an
+   * agent token's `token.created` / `token.revoked`. A client reads it to say
+   * *an agent* rather than guess from a null — a null alone also means a person,
+   * a legacy token, or a selection really withdrawn.
+   */
+  agent_redacted: boolean;
   payload: unknown;
   created_at: number;
 }
@@ -66,9 +76,10 @@ export interface ActivitySessionView {
 /**
  * The payload keys that hold a registered agent's id, at any depth (LAI-1011).
  * `task.agent_selected` names it as `from` and `to`, so those two count there.
- * A new verb that carries an agent id under another key must be added here;
- * `activity-agent-privacy.test.ts` writes every agent-carrying verb and
- * checks the raw body.
+ * A new verb that carries an agent id under another key must be added here:
+ * nothing finds it for you. `test/services/agent-visibility.test.ts` writes
+ * rows carrying each key listed and checks the raw body; it cannot see a key
+ * that is not listed.
  */
 const AGENT_ID_KEYS: ReadonlySet<string> = new Set([
   'agent_id',
@@ -79,6 +90,15 @@ const AGENT_ID_KEYS: ReadonlySet<string> = new Set([
 const AGENT_ID_KEYS_BY_TYPE: Partial<Record<ActivityType, ReadonlySet<string>>> = {
   'task.agent_selected': new Set(['from', 'to']),
 };
+
+/** The verbs whose payload names a token, and with it, for an agent token, the agent's registered name. */
+const TOKEN_VERBS: ReadonlySet<ActivityType> = new Set(['token.created', 'token.revoked']);
+
+function tokenIdOf(row: ActivityEvent, payload: unknown): string | null {
+  if (!TOKEN_VERBS.has(row.type) || payload === null || typeof payload !== 'object') return null;
+  const id = (payload as Record<string, unknown>).token_id;
+  return typeof id === 'string' ? id : null;
+}
 
 function isAgentKey(type: ActivityType, key: string, depth: number): boolean {
   return AGENT_ID_KEYS.has(key) || (depth === 0 && AGENT_ID_KEYS_BY_TYPE[type]?.has(key) === true);
@@ -121,32 +141,85 @@ function withheldPayload(
 }
 
 /**
- * The lens for one page of rows: every agent the rows name, on the rows' tasks
- * (`agentLens`). Build it once per page, never once per row.
+ * The gate for activity: `agentLens`, plus which agent each token a token row
+ * names belongs to — an agent token carries its agent's registered name.
+ */
+export interface ActivityLens extends AgentLens {
+  /** The token's agent; `null` for a person's own token; `undefined` for a token not looked up. */
+  agentOfToken(tokenId: string): string | null | undefined;
+}
+
+/** Names nothing: every agent withheld, every token treated as an unknown agent's. */
+export const BLIND_ACTIVITY_LENS: ActivityLens = {
+  visible: () => false,
+  agentOfToken: () => undefined,
+};
+
+/**
+ * The lens for one batch of rows: every agent the rows name, on the rows'
+ * tasks (`agentLens`), and the agents behind the tokens they name. A constant
+ * number of queries whatever the batch holds; build it once per batch.
  */
 export function activityLens(
   db: Db,
   reader: AgentReader,
   rows: readonly ActivityEvent[],
-): AgentLens {
-  return agentLens(
+): ActivityLens {
+  const tokenIds = [
+    ...new Set(rows.flatMap((r) => tokenIdOf(r, apiPayload(r)) ?? [])),
+  ];
+  const agentByToken = new Map<string, string | null>(
+    tokenIds.length === 0
+      ? []
+      : db
+          .select({ id: tokens.id, agentId: tokens.agentId })
+          .from(tokens)
+          .where(inArray(tokens.id, tokenIds))
+          .all()
+          .map((t) => [t.id, t.agentId] as const),
+  );
+  const lens = agentLens(
     db,
     reader,
     rows.map((r) => r.taskId),
-    rows.flatMap((r) => [
-      ...(r.agentId === null ? [] : [r.agentId]),
-      ...payloadAgentIds(r.type, apiPayload(r)),
-    ]),
+    [
+      ...rows.flatMap((r) => [
+        ...(r.agentId === null ? [] : [r.agentId]),
+        ...payloadAgentIds(r.type, apiPayload(r)),
+      ]),
+      ...[...agentByToken.values()].flatMap((a) => (a === null ? [] : [a])),
+    ],
   );
+  return {
+    visible: (taskId, agentId) => lens.visible(taskId, agentId),
+    agentOfToken: (tokenId) => agentByToken.get(tokenId),
+  };
 }
 
 /**
  * One row on the wire. **The lens is required**: every surface that serves
  * activity passes through here, and there is no default that names an agent.
  */
-export function eventView(row: ActivityEvent, lens: AgentLens): EventView {
-  const keep = (agentId: string): boolean => lens.visible(row.taskId, agentId);
+export function eventView(row: ActivityEvent, lens: ActivityLens): EventView {
+  let redacted = false;
+  const keep = (agentId: string): boolean => {
+    const shown = lens.visible(row.taskId, agentId);
+    if (!shown) redacted = true;
+    return shown;
+  };
   const agentShown = row.agentId !== null && keep(row.agentId);
+  const raw = apiPayload(row);
+  let payload = withheldPayload(row.type, raw, keep);
+  // An agent token's name is its agent's registered name (D-120): withheld
+  // with the agent. A token not looked up is withheld too, never guessed.
+  const tokenId = tokenIdOf(row, raw);
+  if (tokenId !== null) {
+    const agentId = lens.agentOfToken(tokenId);
+    if (agentId === undefined || (agentId !== null && !keep(agentId))) {
+      redacted = true;
+      payload = { ...(payload as Record<string, unknown>), name: null };
+    }
+  }
   return {
     id: row.id,
     seq: row.seq,
@@ -168,9 +241,10 @@ export function eventView(row: ActivityEvent, lens: AgentLens): EventView {
             harness_version: row.sessionHarnessVersion,
             model: row.sessionModel,
           },
+    agent_redacted: redacted,
     // `apiPayload`, not `readPayload`: rows written before LAI-045 name Drizzle
     // properties, and this is the one boundary every client passes through.
-    payload: withheldPayload(row.type, apiPayload(row), keep),
+    payload,
     created_at: row.createdAt,
   };
 }

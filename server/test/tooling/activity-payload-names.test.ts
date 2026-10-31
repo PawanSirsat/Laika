@@ -19,8 +19,7 @@ import {
   unlistedWork,
   users,
 } from '../../src/db/schema.ts';
-import { BLIND_LENS } from '../../src/services/agent-visibility.ts';
-import { eventView } from '../../src/services/events.ts';
+import { BLIND_ACTIVITY_LENS, eventView } from '../../src/services/events.ts';
 import { addComment, deleteComment, editComment } from '../../src/services/comments.ts';
 import { createInvite, consumeInvite } from '../../src/services/invites.ts';
 import {
@@ -451,7 +450,7 @@ describe('rows written before LAI-045 still read correctly', () => {
     try {
       const { row } = legacyRow(t, { changed: ['acceptanceMd', 'descriptionMd', 'assigneeId'] });
 
-      const view = eventView({ ...row, seq: 1 }, BLIND_LENS);
+      const view = eventView({ ...row, seq: 1 }, BLIND_ACTIVITY_LENS);
 
       expect(view.payload).toEqual({
         changed: ['acceptance_md', 'description_md', 'assignee_id'],
