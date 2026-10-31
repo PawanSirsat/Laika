@@ -2,11 +2,12 @@
 id: LAI-554
 title: 'Local event helper: receive, dedupe, present bounded notices at hook boundaries'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-553, LAI-542]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-31T12:17:25Z
 ---
 
 Implements **proposal §4.6, §5** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
