@@ -5,12 +5,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, test } from 'node:test';
 
-import { type AutoOutcome, recordPath } from '../src/agent-checkpoint.ts';
+import { type AutoOutcome, type CheckpointRecord, recordPath } from '../src/agent-checkpoint.ts';
 import { readState, type SessionState, statePath, writeState } from '../src/agent-session.ts';
 import {
   type BatteryReading,
@@ -23,11 +24,13 @@ import {
   parseMacPressure,
   parsePmset,
   parsePsi,
+  PMSET,
   type RequestDeps,
   type RequestOptions,
   requestCheckpoint,
   step,
   systemMetrics,
+  toolRun,
   watch,
   type WatchConfig,
   type WatchState,
@@ -282,6 +285,99 @@ void describe('readers: unsupported is printed as unsupported, never as a number
   });
 });
 
+void describe('system tools: absolute paths, a fixed PATH, no inherited environment', () => {
+  const SECRET = `laika_agent_${'s'.repeat(24)}`;
+
+  void test('every child gets TOOL_ENV exactly — no token — and an absolute path', async () => {
+    const seen: { file: string; env: Readonly<Record<string, string>> }[] = [];
+    const saved = { token: process.env.LAIKA_AGENT_TOKEN, laika: process.env.LAIKA_TOKEN };
+    process.env.LAIKA_AGENT_TOKEN = SECRET;
+    process.env.LAIKA_TOKEN = SECRET;
+    try {
+      const run = toolRun((file, _args, options, callback) => {
+        seen.push({ file, env: options.env });
+        callback(
+          null,
+          file === PMSET
+            ? "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t50%; charging\n"
+            : '1\n',
+        );
+        return undefined;
+      });
+      const m = systemMetrics('darwin', { psiPercent: 10, run });
+      assert.equal((await m.battery()).kind, 'battery');
+      assert.equal((await m.memory()).kind, 'memory');
+    } finally {
+      if (saved.token === undefined) delete process.env.LAIKA_AGENT_TOKEN;
+      else process.env.LAIKA_AGENT_TOKEN = saved.token;
+      if (saved.laika === undefined) delete process.env.LAIKA_TOKEN;
+      else process.env.LAIKA_TOKEN = saved.laika;
+    }
+    assert.deepEqual(
+      seen.map((c) => c.file),
+      ['/usr/bin/pmset', '/usr/sbin/sysctl'],
+    );
+    for (const c of seen) {
+      assert.deepEqual(c.env, { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C', LC_ALL: 'C' });
+      assert.doesNotMatch(JSON.stringify(c.env), new RegExp(SECRET));
+    }
+  });
+
+  void test('a bare tool name is refused, never looked up on PATH', async () => {
+    let ran = 0;
+    const run = toolRun((_file, _args, _options, callback) => {
+      ran += 1;
+      callback(null, '');
+      return undefined;
+    });
+    await assert.rejects(run('pmset', ['-g', 'batt']), /pmset is not an absolute path/);
+    assert.equal(ran, 0);
+  });
+
+  void test('a fake pmset first on PATH never runs, and the token reaches no child', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-watch-path-'));
+    const marker = join(dir, 'ran');
+    const fake = join(dir, 'pmset');
+    // Records that it ran and the environment it got, then prints a reading
+    // the real tool never would (1 %, unplugged).
+    writeFileSync(
+      fake,
+      `#!/bin/sh\nenv > '${marker}'\nprintf "Now drawing from 'Battery Power'\\n -InternalBattery-0 (id=9)\\t1%%; discharging\\n"\n`,
+      { mode: 0o755 },
+    );
+    writeFileSync(join(dir, 'sysctl'), `#!/bin/sh\nenv > '${marker}'\necho 4\n`, { mode: 0o755 });
+    const saved = { path: process.env.PATH, token: process.env.LAIKA_AGENT_TOKEN };
+    process.env.PATH = `${dir}:${saved.path ?? ''}`;
+    process.env.LAIKA_AGENT_TOKEN = SECRET;
+    let battery: BatteryReading;
+    let memory: MemoryReading;
+    try {
+      // Positive control: an ordinary lookup, with this process's PATH, DOES
+      // find the fake — so the setup is live and a bare name would run it.
+      const found = execFileSync('/bin/sh', ['-c', 'command -v pmset'], {
+        env: process.env,
+        encoding: 'utf8',
+      }).trim();
+      assert.equal(found, fake);
+      const m = systemMetrics('darwin', { psiPercent: 10 });
+      battery = await m.battery();
+      memory = await m.memory();
+    } finally {
+      process.env.PATH = saved.path;
+      if (saved.token === undefined) delete process.env.LAIKA_AGENT_TOKEN;
+      else process.env.LAIKA_AGENT_TOKEN = saved.token;
+    }
+    try {
+      assert.equal(existsSync(marker), false, 'the fake pmset or sysctl ran');
+      // On a Mac the real tools answer; elsewhere they are absent — never the fake's 1 %.
+      assert.ok(battery.kind !== 'battery' || battery.percent !== 1 || !battery.onBattery);
+      assert.ok(memory.kind !== 'memory' || memory.detail !== 'kernel level 4, critical');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 void describe('the loop, with a fake source and clock', () => {
   void test('--once prints the readings and requests nothing', async () => {
     const out: string[] = [];
@@ -396,37 +492,40 @@ void describe('what a trigger requests, and what it reports', () => {
     return h;
   }
 
-  function writeRecord(h: string, stage: string, extra: Record<string, unknown> = {}): void {
-    const path = recordPath(h, CKPT);
+  function writeRecord(
+    h: string,
+    stage: string,
+    extra: Record<string, unknown> = {},
+  ): CheckpointRecord {
+    const record = {
+      version: 1,
+      id: CKPT,
+      idempotency_key: 'k',
+      harness: 'claude-code',
+      url: URL,
+      task_id: TASK,
+      task_segment: 'LAI-552',
+      generation: 3,
+      worktree: '/w',
+      remote: 'origin',
+      repo: 'o/r',
+      branch: 'LAI-552-x',
+      commit_sha: 'a'.repeat(40),
+      tag_ref: 'refs/tags/laika/checkpoints/LAI-552/x',
+      manifest: [],
+      summary: null,
+      summary_commit_sha: null,
+      auto: true,
+      created_at: 10,
+      stage,
+      attempts: 1,
+      retags: [],
+      ...extra,
+    } as unknown as CheckpointRecord;
+    const path = recordPath(h, record.id);
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(
-      path,
-      JSON.stringify({
-        version: 1,
-        id: CKPT,
-        idempotency_key: 'k',
-        harness: 'claude-code',
-        url: URL,
-        task_id: TASK,
-        task_segment: 'LAI-552',
-        generation: 3,
-        worktree: '/w',
-        remote: 'origin',
-        repo: 'o/r',
-        branch: 'LAI-552-x',
-        commit_sha: 'a'.repeat(40),
-        tag_ref: 'refs/tags/laika/checkpoints/LAI-552/x',
-        manifest: [],
-        summary: null,
-        summary_commit_sha: null,
-        auto: true,
-        created_at: 10,
-        stage,
-        attempts: 1,
-        retags: [],
-        ...extra,
-      }),
-    );
+    writeFileSync(path, JSON.stringify(record));
+    return record;
   }
 
   const sessionOf = (h: string): SessionState | undefined =>
@@ -442,7 +541,8 @@ void describe('what a trigger requests, and what it reports', () => {
   function deps(
     h: string,
     outcome: AutoOutcome,
-    onSave: () => void = () => undefined,
+    /** The save's work: the record it made or matched, as the real save returns it. */
+    onSave: () => CheckpointRecord | undefined = () => undefined,
     board: (c: Call) => { status: number; body: unknown } = () => ({ status: 404, body: {} }),
   ): RequestDeps & { calls: Call[]; saves: number } {
     const calls: Call[] = [];
@@ -476,8 +576,8 @@ void describe('what a trigger requests, and what it reports', () => {
       },
       autoSave: () => {
         d.saves += 1;
-        onSave();
-        return Promise.resolve(outcome);
+        const record = onSave();
+        return Promise.resolve(record === undefined ? { outcome } : { outcome, record });
       },
     };
     return d;
@@ -525,9 +625,9 @@ void describe('what a trigger requests, and what it reports', () => {
 
   void test('save failed: committed and pushed but unregistered is NOT reported as success', async () => {
     const h = home(true);
-    const d = deps(h, 'saved', () => {
-      writeRecord(h, 'tag_pushed', { created_at: 5, last_error: 'network: ECONNRESET' });
-    });
+    const d = deps(h, 'saved', () =>
+      writeRecord(h, 'tag_pushed', { created_at: 5, last_error: 'network: ECONNRESET' }),
+    );
     const lines = await requestCheckpoint(d, { ...OPTS, offerTo: AGENT });
     assert.equal(lines.length, 1);
     assert.match(
@@ -545,9 +645,9 @@ void describe('what a trigger requests, and what it reports', () => {
 
   void test('registered, no --offer-to: reports the save and that no offer was made', async () => {
     const h = home(true);
-    const d = deps(h, 'saved', () => {
-      writeRecord(h, 'registered', { created_at: 5, verification: 'pending' });
-    });
+    const d = deps(h, 'saved', () =>
+      writeRecord(h, 'registered', { created_at: 5, verification: 'pending' }),
+    );
     const lines = await requestCheckpoint(d, OPTS);
     assert.match(
       lines[0] ?? '',
@@ -561,9 +661,7 @@ void describe('what a trigger requests, and what it reports', () => {
     const d = deps(
       h,
       'saved',
-      () => {
-        writeRecord(h, 'registered', { created_at: 5 });
-      },
+      () => writeRecord(h, 'registered', { created_at: 5 }),
       (c) =>
         c.method === 'GET'
           ? { status: 200, body: { data: [{ id: CKPT, verification: 'pending' }] } }
@@ -582,9 +680,7 @@ void describe('what a trigger requests, and what it reports', () => {
     const d = deps(
       h,
       'unchanged',
-      () => {
-        writeRecord(h, 'registered');
-      },
+      () => writeRecord(h, 'registered'),
       (c) =>
         c.method === 'GET'
           ? { status: 200, body: { data: [{ id: CKPT, verification: 'verified' }] } }
@@ -604,14 +700,70 @@ void describe('what a trigger requests, and what it reports', () => {
     assert.match(lines[1] ?? '', /offered to .*: offer 01J00000000000000000OFFER1 is open/);
   });
 
+  void test('two tasks in one session: reports and offers exactly the checkpoint the save returned', async () => {
+    const TASK_B = '01J000000000000000000TASKB';
+    const CKPT_B = '01J000000000000000000CKPTB';
+    const h = home(true);
+    const live = sessionOf(h);
+    assert.ok(live !== undefined);
+    writeState(h, {
+      ...live,
+      claims: [
+        { task_id: TASK, generation: 3, lease_expires_at: 1 },
+        { task_id: TASK_B, generation: 7, lease_expires_at: 1 },
+      ],
+    });
+    // Task B's checkpoint is the NEWEST on disk, registered and verified —
+    // the one a "newest record" lookup would wrongly pick.
+    writeRecord(h, 'registered', {
+      id: CKPT_B,
+      task_id: TASK_B,
+      task_segment: 'LAI-999',
+      generation: 7,
+      commit_sha: 'b'.repeat(40),
+      created_at: 1_000,
+    });
+    // The save itself is task A's, made earlier on the clock.
+    const d = deps(
+      h,
+      'saved',
+      () => writeRecord(h, 'registered', { created_at: 5 }),
+      (c) =>
+        c.method === 'GET'
+          ? {
+              status: 200,
+              body: {
+                data: [
+                  { id: CKPT, verification: 'verified' },
+                  { id: CKPT_B, verification: 'verified' },
+                ],
+              },
+            }
+          : { status: 201, body: { id: '01J00000000000000000OFFER1', state: 'open' } },
+    );
+    const lines = await requestCheckpoint(d, { ...OPTS, offerTo: AGENT });
+    assert.match(
+      lines[0] ?? '',
+      new RegExp(`checkpoint ${CKPT} \\(aaaaaaaaaaaa\\) registered on the board for LAI-552$`),
+    );
+    assert.doesNotMatch(lines.join('\n'), new RegExp(`${CKPT_B}|LAI-999|bbbbbbbb`));
+    const posts = d.calls.filter((c) => c.method === 'POST');
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0]?.url, `${URL}/api/v1/tasks/${TASK}/handoff-offers`);
+    assert.equal(posts[0]?.headers['X-Laika-Claim-Generation'], '3');
+    assert.equal((posts[0]?.body as { checkpoint_id?: string }).checkpoint_id, CKPT);
+    assert.ok(
+      d.calls.every((c) => !c.url.includes(TASK_B)),
+      'nothing was asked of task B',
+    );
+  });
+
   void test('a refused offer says what the board answered', async () => {
     const h = home(true);
     const d = deps(
       h,
       'unchanged',
-      () => {
-        writeRecord(h, 'registered');
-      },
+      () => writeRecord(h, 'registered'),
       (c) =>
         c.method === 'GET'
           ? { status: 200, body: { data: [{ id: CKPT, verification: 'verified' }] } }

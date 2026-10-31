@@ -5,16 +5,15 @@ import { join } from 'node:path';
 import type { AgentIo } from './agent.ts';
 import {
   type AutoOutcome,
-  autoCheckpoint,
+  autoCheckpointResult,
   type CheckpointDeps,
   type CheckpointRecord,
-  listRecords,
+  readRecord,
 } from './agent-checkpoint.ts';
 import { checkpointDeps } from './agent-checkpoint-cli.ts';
 import {
   type AgentCredential,
   callBoard,
-  type Harness,
   isLaikaId,
   isRecord,
   listStates,
@@ -185,30 +184,74 @@ export function linuxMemory(fs: LinuxFs, percent: number): MemoryReading {
 
 export type Run = (file: string, args: readonly string[]) => Promise<string>;
 
-const REAL_RUN: Run = (file, args) =>
-  new Promise((resolve, reject) => {
-    execFile(file, [...args], { timeout: 5_000, encoding: 'utf8' }, (error, stdout) => {
-      if (error) reject(new Error(`${file} failed: ${error.message}`));
-      else resolve(stdout);
+/**
+ * The system tools, by absolute path: a `pmset` earlier on `PATH` is never
+ * the one run.
+ */
+export const PMSET = '/usr/bin/pmset';
+export const SYSCTL = '/usr/sbin/sysctl';
+
+/**
+ * Everything a system tool is given of the environment: a fixed system
+ * `PATH` and the C locale, built from nothing — **not** a copy of this
+ * process's environment with names removed — so no token of any name (the
+ * agent's `LAIKA_AGENT_TOKEN`, the person's, a cloud key) reaches it.
+ */
+export const TOOL_ENV: Readonly<Record<string, string>> = Object.freeze({
+  PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+  LANG: 'C',
+  LC_ALL: 'C',
+});
+
+export interface ToolOptions {
+  readonly timeout: number;
+  readonly encoding: 'utf8';
+  readonly env: Readonly<Record<string, string>>;
+}
+
+export type ExecFile = (
+  file: string,
+  args: string[],
+  options: ToolOptions,
+  callback: (error: Error | null, stdout: string) => void,
+) => unknown;
+
+/** A {@link Run} over `execFile`, injectable so a test can see what each child is given. */
+export function toolRun(exec: ExecFile = execFile): Run {
+  return (file, args) =>
+    new Promise((resolve, reject) => {
+      if (!file.startsWith('/')) {
+        reject(new Error(`${file} is not an absolute path`));
+        return;
+      }
+      exec(
+        file,
+        [...args],
+        { timeout: 5_000, encoding: 'utf8', env: { ...TOOL_ENV } },
+        (error, stdout) => {
+          if (error) reject(new Error(`${file} failed: ${error.message}`));
+          else resolve(stdout);
+        },
+      );
     });
-  });
+}
 
 /** The readers for this OS; any other OS reports both metrics unsupported. */
 export function systemMetrics(
   platform: NodeJS.Platform,
   options: { readonly psiPercent: number; readonly run?: Run; readonly fs?: LinuxFs },
 ): MetricsSource {
-  const run = options.run ?? REAL_RUN;
+  const run = options.run ?? toolRun();
   const fs = options.fs ?? REAL_FS;
   if (platform === 'darwin') {
     return {
       battery: () =>
-        run('pmset', ['-g', 'batt']).then(parsePmset, () => ({
+        run(PMSET, ['-g', 'batt']).then(parsePmset, () => ({
           kind: 'unavailable' as const,
           why: 'pmset failed',
         })),
       memory: () =>
-        run('sysctl', ['-n', 'kern.memorystatus_vm_pressure_level']).then(parseMacPressure, () => ({
+        run(SYSCTL, ['-n', 'kern.memorystatus_vm_pressure_level']).then(parseMacPressure, () => ({
           kind: 'unavailable' as const,
           why: 'sysctl failed',
         })),
@@ -351,8 +394,8 @@ export function step(
 /* -------------------------------------------------------------------------- */
 
 export interface RequestDeps extends CheckpointDeps {
-  /** The hooks' automatic save; injected in tests. */
-  readonly autoSave?: typeof autoCheckpoint;
+  /** The hooks' automatic save, with the record it made; injected in tests. */
+  readonly autoSave?: typeof autoCheckpointResult;
 }
 
 export interface RequestOptions {
@@ -370,15 +413,6 @@ const SAVE_WORDS: Record<Exclude<AutoOutcome, 'saved' | 'unchanged' | 'retried'>
   busy: 'a tool or git operation was still running; nothing saved',
   refused: 'the save was refused',
 };
-
-function newestFor(home: string, harness: Harness, taskIds: ReadonlySet<string>, since?: number) {
-  return listRecords(home).find(
-    (r) =>
-      r.harness === harness &&
-      taskIds.has(r.task_id) &&
-      (since === undefined || r.created_at >= since),
-  );
-}
 
 async function verificationOf(
   deps: CheckpointDeps,
@@ -453,7 +487,7 @@ export async function requestCheckpoint(
   if (sessions.length === 0) {
     return ['no agent session on this machine holds a live claim: nothing saved, nothing offered'];
   }
-  const autoSave = deps.autoSave ?? autoCheckpoint;
+  const autoSave = deps.autoSave ?? autoCheckpointResult;
   for (const s of sessions) {
     const who = `${s.harness} session ${s.session_id ?? s.harness_session_id}`;
     const credential = readCredential(deps.home, s.harness, deps.env);
@@ -461,20 +495,20 @@ export async function requestCheckpoint(
       lines.push(`${who}: no agent token here; nothing saved`);
       continue;
     }
-    const started = deps.now();
-    const outcome = await autoSave(deps, s.harness, s.harness_session_id, credential);
+    const result = await autoSave(deps, s.harness, s.harness_session_id, credential);
+    const outcome = result.outcome;
     if (outcome !== 'saved' && outcome !== 'unchanged' && outcome !== 'retried') {
       const extra = outcome === 'refused' ? ` — the reason is in ${logPath(deps.home)}` : '';
       lines.push(`${who}: ${SAVE_WORDS[outcome]}${extra}`);
       continue;
     }
-    const tasks = new Set(s.claims.map((c) => c.task_id));
-    const record = newestFor(
-      deps.home,
-      s.harness,
-      tasks,
-      outcome === 'saved' ? started : undefined,
-    );
+    // Exactly the record this save made or matched — never "the newest" on
+    // disk, which for a session holding two tasks can be the other task's.
+    // Re-read by its id for the latest stage the save left it at.
+    const record =
+      result.record === undefined
+        ? undefined
+        : (readRecord(deps.home, result.record.id) ?? result.record);
     if (record === undefined) {
       lines.push(
         `${who}: the save reported ${outcome}, but no record of it is here; not confirmed`,
