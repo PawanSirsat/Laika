@@ -217,3 +217,17 @@ into another branch.
 Each mutant was red only on its own cases. Where the old write path wrote
 through, the post-write checks then failed prepare closed, so those cases go
 red on prepare's exit code.
+
+### Round 4, correction (SHELL, 2026-10-31)
+
+The "Deviation" bullet above holds for **Apple git 2.50.1 on Belka only**.
+CI run 41180852191 (head 6fd42c9d) showed the runner's git **refuses** the
+same create-only step over a dangling symbolic ref: `cannot lock ref '<ref>':
+dangling symref already exists`. prepare was right on both — refused and
+failed closed on CI, never followed on Belka — but the two "dangling … never
+followed" cases asserted Belka's behaviour and went red on CI. Caused by this
+branch, not a flake. Fixed in 56a2b8bc: the e2e file probes the running git
+once (`refusesDangling`) and asserts that git's behaviour exactly — refused
+with the symbolic ref left as put, no worktree and no accept; or replaced by
+the plain ref at the checkpoint — and "never written through" on both. The
+refusal branch runs only where git refuses, so CI is what exercises it.
