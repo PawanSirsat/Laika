@@ -232,50 +232,60 @@ describe('listAgentEvents', () => {
     }
   });
 
-  it('keeps the same bounded plans over a long history, with the planner’s real statistics', () => {
-    const actor = asAgent();
-    const small = { undelivered: pollPlans(actor, 'undelivered'), all: pollPlans(actor, 'all') };
+  // Seeding two thousand rows is the slow part, not the poll; on a loaded CI
+  // runner it can pass vitest's 5 s default, as it did on #165's gate.
+  it(
+    'keeps the same bounded plans over a long history, with the planner’s real statistics',
+    { timeout: 30_000 },
+    () => {
+      const actor = asAgent();
+      const small = { undelivered: pollPlans(actor, 'undelivered'), all: pollPlans(actor, 'all') };
 
-    // Two thousand old deliveries the agent has acknowledged, then three it
-    // has not; ANALYZE so the planner chooses with real row counts, which is
-    // where a plan that is bounded on an empty table can stop being bounded.
-    const HISTORY = 2000;
-    for (let i = 0; i < HISTORY; i += 1) contextChanged(s.projectId);
-    t.db.update(agentEventDeliveries).set({ receivedAt: Date.now() }).run();
-    const fresh = [
-      contextChanged(s.projectId),
-      contextChanged(s.projectId),
-      contextChanged(s.projectId),
-    ];
-    t.sqlite.exec('ANALYZE');
+      // Two thousand old deliveries the agent has acknowledged, then three it
+      // has not; ANALYZE so the planner chooses with real row counts, which is
+      // where a plan that is bounded on an empty table can stop being bounded.
+      const HISTORY = 2000;
+      // One transaction: each append nests as a savepoint, so the history costs
+      // one commit rather than two thousand.
+      t.db.transaction(() => {
+        for (let i = 0; i < HISTORY; i += 1) contextChanged(s.projectId);
+        t.db.update(agentEventDeliveries).set({ receivedAt: Date.now() }).run();
+      });
+      const fresh = [
+        contextChanged(s.projectId),
+        contextChanged(s.projectId),
+        contextChanged(s.projectId),
+      ];
+      t.sqlite.exec('ANALYZE');
 
-    // The same access paths, step for step — the planner may order the two
-    // by-key lookups (envelope, activity row) either way once it has row
-    // counts, and both are one row per delivery. A scan, or any new path,
-    // fails this.
-    const steps = (plans: string[][]) => plans.map((plan) => [...plan].sort());
-    expect(steps(pollPlans(actor, 'undelivered'))).toEqual(steps(small.undelivered));
-    expect(steps(pollPlans(actor, 'all'))).toEqual(steps(small.all));
+      // The same access paths, step for step — the planner may order the two
+      // by-key lookups (envelope, activity row) either way once it has row
+      // counts, and both are one row per delivery. A scan, or any new path,
+      // fails this.
+      const steps = (plans: string[][]) => plans.map((plan) => [...plan].sort());
+      expect(steps(pollPlans(actor, 'undelivered'))).toEqual(steps(small.undelivered));
+      expect(steps(pollPlans(actor, 'all'))).toEqual(steps(small.all));
 
-    // And what those plans answer: from cursor 0 the undelivered poll is
-    // exactly the three, and an up-to-date poll is empty and stays put.
-    const undelivered = listAgentEvents(t.db, actor, {
-      after: 0,
-      state: 'undelivered',
-      limit: 100,
-    });
-    expect(undelivered.data.map((e) => e.event_id)).toEqual(fresh);
-    const upToDate = listAgentEvents(t.db, actor, {
-      after: undelivered.cursor,
-      state: 'all',
-      limit: 100,
-    });
-    expect([upToDate.data, upToDate.cursor, upToDate.has_more]).toEqual([
-      [],
-      undelivered.cursor,
-      false,
-    ]);
-  });
+      // And what those plans answer: from cursor 0 the undelivered poll is
+      // exactly the three, and an up-to-date poll is empty and stays put.
+      const undelivered = listAgentEvents(t.db, actor, {
+        after: 0,
+        state: 'undelivered',
+        limit: 100,
+      });
+      expect(undelivered.data.map((e) => e.event_id)).toEqual(fresh);
+      const upToDate = listAgentEvents(t.db, actor, {
+        after: undelivered.cursor,
+        state: 'all',
+        limit: 100,
+      });
+      expect([upToDate.data, upToDate.cursor, upToDate.has_more]).toEqual([
+        [],
+        undelivered.cursor,
+        false,
+      ]);
+    },
+  );
 
   it('is an agent’s: a personal token is forbidden, not_an_agent', () => {
     const personal = createToken(t.sqlite, t.db, owner(), {
