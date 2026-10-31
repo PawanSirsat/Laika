@@ -117,12 +117,15 @@ export function recordAgentEvent(db: Db, row: Activity, seq: number): void {
 
   // The writer does not deliver to itself: it already knows what it did.
   const to = [...recipients].filter((id) => id !== row.agentId);
-  if (to.length === 0) return;
+  // Every agent-event verb is a project's; a row without one reaches nobody.
+  const projectId = row.projectId;
+  if (to.length === 0 || projectId === null) return;
   db.insert(agentEventDeliveries)
     .values(
       to.map((agentId) => ({
         activityId: row.id,
         agentId,
+        projectId,
         seq,
         availableAt: row.createdAt,
       })),

@@ -2977,6 +2977,7 @@ moment the event exists.
 | --- | --- |
 | `activity_id` | FK `agent_events`, cascade — with `agent_id`, the primary key: one delivery per event per agent |
 | `agent_id` | FK `agents` (§4.63), cascade |
+| `project_id` | FK `projects`, cascade — a copy of the event's project; an activity row never changes, so the copy never drifts. A poll reads each project the agent may read as its own range |
 | `seq` | a copy of the event's `seq`, so an agent's deliveries page in order |
 | `available_at` | the event's time |
 | `received_at` | nullable — when the agent's helper acknowledged it. Set once: acknowledging again keeps the first |
@@ -2984,9 +2985,12 @@ moment the event exists.
 | `presented_at` | nullable — when a hook showed it to the agent. **Never before `received_at`** (CHECK) |
 | `presented_session_id` | nullable, a copy, no FK |
 
-Indexes `(agent_id, seq)`, and `(agent_id, seq)` **where `received_at` is
-null**, so an undelivered poll reads only what is unreceived, never the
-agent's acknowledged history. **Four states, none of which claims the model
+Indexes `(agent_id, project_id, seq)`, the same **where `received_at` is
+null** — so an undelivered poll reads only what is unreceived, never the
+agent's acknowledged history — and `(project_id)`. **A project the agent may
+no longer read is never read at all**: its waiting events cost a poll
+nothing however many there are, are neither returned nor counted, and come
+back, still undelivered, if the access does. **Four states, none of which claims the model
 understood anything**: `available` (the row exists), `received`, `presented`,
 and `accepted` — which is **not stored**: it is the offer's own state (§4.73),
 read when this agent's session accepted it, or for a work request, when it
@@ -3793,8 +3797,11 @@ rather than `{ data, next_cursor }`. `cursor` is the last `seq` returned (or
 grant, owner's role, asked now) is filtered out in the query itself — the
 readable projects are the agent's current grants within its token's pin and
 its owner's `project.read`, never derived from its delivery history — so it
-is neither returned nor counted, and a page is an index range over the
-agent's new rows however long its history; it returns, still undelivered, if the access does. An `after`
+is neither returned nor counted. A page is one index range per readable
+project, each read to at most `limit + 1` rows and merged by `seq`, so it
+costs the same however long the agent's history and however much waits in
+projects it may no longer read (LAI-553); a hidden event returns, still
+undelivered, if the access does. An `after`
 ahead of the log answers `gap: { reason: unknown_cursor }` and starts from
 0. **`POST /agents/me/events/ack`** records `received` or
 `presented` for up to 100 events, all or nothing, in one `BEGIN IMMEDIATE`
