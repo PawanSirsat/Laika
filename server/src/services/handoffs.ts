@@ -421,7 +421,11 @@ function offerViews(db: Db, reader: AgentReader, rows: readonly OfferRow[]): Han
     reader,
     rows.map((r) => r.taskId),
     rows
-      .flatMap((r) => [sessionAgent(r.fromSessionId), r.toAgentId, sessionAgent(r.acceptedSessionId)])
+      .flatMap((r) => [
+        sessionAgent(r.fromSessionId),
+        r.toAgentId,
+        sessionAgent(r.acceptedSessionId),
+      ])
       .filter((id): id is string => id !== null),
   );
 
@@ -2306,8 +2310,7 @@ function personHandoffViews(
   return found.map((f): PersonHandoffView => {
     const offer = f.offer;
     const from = fromAgentId(offer);
-    const hidden = (id: string | null): boolean =>
-      id !== null && !lens.visible(offer.taskId, id);
+    const hidden = (id: string | null): boolean => id !== null && !lens.visible(offer.taskId, id);
     // Each agent's registered name is its owner's alone (D-120, LAI-1001).
     const line = (id: string | null): SelectedAgentView | null => {
       const view = id === null || hidden(id) ? undefined : agentLines.get(id);

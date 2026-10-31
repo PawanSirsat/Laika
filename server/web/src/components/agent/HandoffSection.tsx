@@ -145,10 +145,10 @@ export function HandoffSection({
             offer.from_agent_redacted
               ? UNNAMED_AGENT
               : offer.from_agent_id === null
-              ? offer.kind === 'recovery'
-                ? 'The expired claim'
-                : 'Nobody'
-              : offerAgentName(offer.from_agent_id, agents)
+                ? offer.kind === 'recovery'
+                  ? 'The expired claim'
+                  : 'Nobody'
+                : offerAgentName(offer.from_agent_id, agents)
           }
           to={offerAgentName(offer.to_agent_id, agents, offer.to_agent_redacted)}
           agents={agents}
