@@ -63,6 +63,8 @@ export interface ContextRevisionSummary {
   readonly length: number;
   readonly author_id: string | null;
   readonly agent_id: string | null;
+  /** An agent wrote it and this reader may not see which (LAI-1012): *an agent*. */
+  readonly agent_redacted: boolean;
   readonly created_at: number;
 }
 

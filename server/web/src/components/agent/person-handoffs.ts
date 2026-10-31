@@ -4,7 +4,7 @@ import type {
   PersonInboxCounts,
   PersonInboxView,
 } from '../../api/handoffs.ts';
-import { agentLabel } from '../../api/selected-agent.ts';
+import { agentLabel, UNNAMED_AGENT } from '../../api/selected-agent.ts';
 import { clockTime } from '../../api/time-label.ts';
 import { ageWords } from './execution-derive.ts';
 
@@ -51,9 +51,9 @@ export function approvalWords(
 
 /** The acceptance step: the receiving agent's, and only the server says it happened. */
 export function acceptanceWords(
-  row: Pick<PersonHandoffView, 'state' | 'to_agent' | 'closed_reason'>,
+  row: Pick<PersonHandoffView, 'state' | 'to_agent' | 'to_agent_redacted' | 'closed_reason'>,
 ): string {
-  const to = agentWords(row.to_agent, 'any eligible agent');
+  const to = agentWords(row.to_agent, row.to_agent_redacted ? UNNAMED_AGENT : 'any eligible agent');
   switch (row.state) {
     case 'pending_approval':
       return `${to} can accept once it is approved`;
@@ -112,8 +112,10 @@ export function expiryWords(
 }
 
 /** The next step, as the server's `next_action` names it, in words. */
-export function nextActionWords(row: Pick<PersonHandoffView, 'next_action' | 'to_agent'>): string {
-  const to = agentWords(row.to_agent, 'an eligible agent');
+export function nextActionWords(
+  row: Pick<PersonHandoffView, 'next_action' | 'to_agent' | 'to_agent_redacted'>,
+): string {
+  const to = agentWords(row.to_agent, row.to_agent_redacted ? UNNAMED_AGENT : 'an eligible agent');
   switch (row.next_action) {
     case 'approve':
       return `Your approval — then ${to} can accept`;
@@ -140,11 +142,14 @@ export function nextActionWords(row: Pick<PersonHandoffView, 'next_action' | 'to
  * someone it would refuse, and never offers it on a guess.
  */
 export function mayApprove(
-  row: Pick<PersonHandoffView, 'next_action' | 'to_agent' | 'state'>,
+  row: Pick<PersonHandoffView, 'next_action' | 'to_agent' | 'to_agent_redacted' | 'state'>,
   meId: string | undefined,
 ): boolean {
   if (row.next_action !== 'approve' || row.state !== 'pending_approval') return false;
-  if (meId === undefined || row.to_agent === null) return false;
+  if (meId === undefined) return false;
+  // Withheld (LAI-1012): another person's agent, as the reader's own is always shown.
+  if (row.to_agent_redacted) return true;
+  if (row.to_agent === null) return false;
   return row.to_agent.owner.id !== meId;
 }
 

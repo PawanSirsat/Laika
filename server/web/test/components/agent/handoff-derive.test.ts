@@ -57,6 +57,7 @@ function checkpoint(over: Partial<Checkpoint> = {}): Checkpoint {
     task_id: 't1',
     session_id: '01SESSION',
     agent_id: 'ag-laptop',
+    agent_redacted: false,
     claim_generation: 2,
     repo: 'owner/repo',
     branch: 'LAI-549-handoff-ui',
@@ -107,6 +108,8 @@ function offer(over: Partial<HandoffOffer> = {}): HandoffOffer {
     created_by_user_id: 'u1',
     created_at: NOW - MIN,
     closed_at: null,
+    from_agent_redacted: false,
+    to_agent_redacted: false,
     ...over,
   };
 }

@@ -56,6 +56,8 @@ const row = (over: Partial<PersonHandoffView>): PersonHandoffView => ({
   created_at: 500,
   closed_at: null,
   next_action: 'approve',
+  from_agent_redacted: false,
+  to_agent_redacted: false,
   ...over,
 });
 
