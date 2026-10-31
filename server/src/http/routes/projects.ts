@@ -30,11 +30,13 @@ import { deleteTag, listProjectTags, renameTag } from '../../services/tags.ts';
 import { getEstimateAccuracy, type EstimateAccuracyView } from '../../services/estimates.ts';
 import { mentionableUsers } from '../../services/mentions.ts';
 import {
+  type ContextDeliveriesView,
   type ContextDiffView,
   type ContextRevisionSummaryView,
   type ContextRevisionView,
   diffProjectContext,
   getContextRevision,
+  listContextDeliveries,
   listContextRevisions,
 } from '../../services/context-revisions.ts';
 import { type AppEnv } from '../context.ts';
@@ -149,6 +151,12 @@ const RevisionNumber = z
 const RevisionParams = z.object({ revision: RevisionNumber });
 
 const DiffQuery = strictObject({ from: RevisionNumber, to: RevisionNumber.optional() });
+
+const DeliveriesQuery = strictObject({
+  revision: RevisionNumber.optional(),
+  limit: z.string().optional(),
+  cursor: z.string().optional(),
+});
 
 const MemberBody = strictObject({
   user_id: z.string().min(1),
@@ -298,6 +306,29 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
     return c.json<ContextDiffView>(
       diffProjectContext(db, requireActor(c), c.req.param('slug'), from, to),
     );
+  });
+
+  // Which revision each agent session was last delivered (§4.69, LAI-1003).
+  // Project read, in the service; the table keeps the latest delivery only,
+  // so the answer says `scope: 'latest_per_session'`.
+  app.get('/:slug/context/deliveries', (c) => {
+    const query = parseQuery(DeliveriesQuery, c.req.query());
+    const { limit, cursor } = parsePageQuery({ limit: query.limit, cursor: query.cursor });
+    const { project, rows } = listContextDeliveries(db, requireActor(c), c.req.param('slug'), {
+      revision: query.revision ?? null,
+      limit,
+      cursor,
+    });
+    const page = buildPage(rows, limit, (row) => ({
+      sortKey: row.delivered_at,
+      id: row.session_id,
+    }));
+    return c.json<ContextDeliveriesView>({
+      scope: 'latest_per_session',
+      revision: query.revision ?? null,
+      current_revision: project.contextRevision,
+      ...page,
+    });
   });
 
   // D-103 item 5: any member leaves; the last space admin is refused 409.

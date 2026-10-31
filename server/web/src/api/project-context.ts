@@ -126,6 +126,64 @@ export function getContextDiff(
 }
 
 /** One line of a unified diff, as a screen draws it. */
+/**
+ * The session's agent, served **only when it is the reader's own** (D-120,
+ * D-121): another person's agent is `null` on its row, with no id or label.
+ */
+export interface ContextDeliveryAgent {
+  readonly id: string;
+  readonly harness: string;
+  readonly device_label: string | null;
+  readonly display_name: string;
+  readonly status: string;
+}
+
+/** One agent session's **latest** delivered revision (§4.69, LAI-1003). */
+export interface ContextDelivery {
+  readonly session_id: string;
+  readonly revision: number;
+  /** When Laika sent it — received, never read. */
+  readonly delivered_at: number;
+  readonly session_ended_at: number | null;
+  readonly agent: ContextDeliveryAgent | null;
+}
+
+/**
+ * `GET /projects/:slug/context/deliveries` (§6.4). The server keeps each
+ * session's latest delivery only, so a session later sent N+1 is no longer
+ * under N — `scope` says so on every answer.
+ */
+export interface ContextDeliveries {
+  readonly scope: 'latest_per_session';
+  readonly revision: number | null;
+  readonly current_revision: number;
+  readonly data: readonly ContextDelivery[];
+  readonly next_cursor: string | null;
+}
+
+/** The most rows one read asks for: §6.3's maximum page. */
+export const DELIVERIES_PAGE = 200;
+
+/**
+ * Each session's latest delivery, newest first: those on `revision` when it
+ * is given, every session's otherwise. `cursor` is a previous answer's
+ * `next_cursor`, for the page after it.
+ */
+export function listContextDeliveries(
+  slug: string,
+  revision: number | null,
+  signal?: AbortSignal,
+  cursor: string | null = null,
+): Promise<ContextDeliveries> {
+  const query = new URLSearchParams({ limit: String(DELIVERIES_PAGE) });
+  if (revision !== null) query.set('revision', String(revision));
+  if (cursor !== null) query.set('cursor', cursor);
+  return request<ContextDeliveries>(
+    `/projects/${encodeURIComponent(slug)}/context/deliveries?${query.toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
 export interface DiffLine {
   readonly kind: 'hunk' | 'added' | 'removed' | 'same';
   readonly text: string;
