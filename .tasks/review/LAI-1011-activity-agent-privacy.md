@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-1003
-status: in-progress
+status: review
+finished: 2026-10-31T10:39:52+05:30
 started: 2026-10-31T05:55:18+05:30
 ---
 
@@ -56,11 +57,33 @@ Anyone else sees "an agent": `actor_kind: 'agent'`, `agent_id: null`,
 
 ## Acceptance criteria
 
-- [ ] One shared gate decides every activity surface above; rounds reuse it
-- [ ] A two-owner test for each surface: the other owner's agent id never
+- [x] One shared gate decides every activity surface above; rounds reuse it
+- [x] A two-owner test for each surface: the other owner's agent id never
       appears in the raw response body; the owner still sees it; a task
       that shows the agent names it
-- [ ] Mutation-checked: breaking the gate turns those tests red
-- [ ] SPEC rows that describe activity agent fields say so
-- [ ] Touched test files pass one at a time; lint and format exit 0; CI gate
+- [x] Mutation-checked: breaking the gate turns those tests red
+- [x] SPEC rows that describe activity agent fields say so
+- [x] Touched test files pass one at a time; lint and format exit 0; CI gate
       green on the PR
+
+## Result
+
+- Gate: `server/src/services/agent-visibility.ts` (`agentLens`), extracted
+  from `rounds.ts`; rounds now call it. `eventView(row, lens)` requires the
+  lens, and `eventViews` / `activityLens` build one per page. The SSE route
+  builds one per delivered batch, live or replayed.
+- Test: `server/test/services/agent-visibility.test.ts`, 17 cases. Seven
+  surfaces (project activity, `?task=`, org activity, history, history CSV,
+  SSE replay, MCP `get_task_context`) each get two cases, read as raw text:
+  (1) the other owner's agent id is absent and the reader's own is present;
+  (2) once the task selects Bea's agent, Ada sees it and Bea still does not
+  see Ada's. Plus one shape case and two gate unit cases.
+- Mutations, each anchored and checked to have landed, run against that one
+  file, every one red: gate always open 16/17 failed; task rule dropped 7/17;
+  raw payload 15/17; raw `agent_id` 13/17; SSE route with an open lens 2/17.
+- SPEC: §4.8 `agent_id` row, the §6.4 activity and history lines, and the
+  agent-session paragraph's `agent_session` sentence.
+- No `server/web/` edit was needed or made.
+- PR #165 (LAI-553) calls `eventView(row)` with one argument in its SSE
+  re-frame path. When it merges with this, that call needs a lens
+  (`activityLens(db, agentReader(current), [row])`), or it will not compile.
