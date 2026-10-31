@@ -2,11 +2,12 @@
 id: LAI-552
 title: 'Resource watcher (battery <15% unplugged, memory pressure 60s, hysteresis, unsupported reported)'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-547]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-31T09:03:11Z
 ---
 
 Implements **proposal §4.7 (`laika agent watch`)** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
