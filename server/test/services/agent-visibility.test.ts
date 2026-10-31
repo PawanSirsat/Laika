@@ -1,11 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
+import { loadActor, resolveTokenActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { appendActivity } from '../../src/db/activity.ts';
 import { type ActivityType } from '../../src/db/enums.ts';
 import { orgs, projects, tasks, users } from '../../src/db/schema.ts';
 import { agentLens } from '../../src/services/agent-visibility.ts';
 import { registerAgent } from '../../src/services/agents.ts';
+import { expireClaims } from '../../src/services/claims.ts';
+import { startWorking } from '../../src/services/tasks.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -29,6 +31,9 @@ import {
  */
 
 const PASSWORD = 'correct-horse-battery-staple';
+/** Registered names, distinct from every harness and device, so a raw-body search finds only the name. */
+const ADA_NAME = 'Ada private bot';
+const BEA_NAME = 'Bea private bot';
 
 let h: AuthHarness;
 let orgId: string;
@@ -58,9 +63,9 @@ async function okText(res: Promise<Response>): Promise<string> {
   return text;
 }
 
-function agentFor(userId: string, harness: string, device: string) {
+function agentFor(userId: string, name: string, harness: string, device: string) {
   const created = registerAgent(h.t.sqlite, h.db, actorOf(userId), {
-    displayName: harness,
+    displayName: name,
     harness,
     deviceLabel: device,
     grants: [{ projectId: laikaId, scope: 'full' }],
@@ -121,8 +126,16 @@ beforeEach(async () => {
   const beaId = h.db.select().from(users).where(eq(users.email, 'bea@example.test')).get()?.id;
   expect(beaId).toBeDefined();
 
-  ada = { id: adaId!, cookie: adaCookie, ...agentFor(adaId!, 'claude-code', 'Ada-laptop') };
-  bea = { id: beaId!, cookie: cookieFrom(joined), ...agentFor(beaId!, 'codex', 'Bea-laptop') };
+  ada = {
+    id: adaId!,
+    cookie: adaCookie,
+    ...agentFor(adaId!, ADA_NAME, 'claude-code', 'Ada-laptop'),
+  };
+  bea = {
+    id: beaId!,
+    cookie: cookieFrom(joined),
+    ...agentFor(beaId!, BEA_NAME, 'codex', 'Bea-laptop'),
+  };
 
   const created = await req('/api/v1/projects/laika/tasks', ada.cookie, {
     method: 'POST',
@@ -133,11 +146,27 @@ beforeEach(async () => {
   taskId = task.id;
   taskKey = task.key;
 
+  // A real claim and session: Bea's agent starts work, so its rows carry the
+  // session snapshot. Then the claim lapses and nothing selects the agent, so
+  // the task shows it to nobody but Bea.
+  startWorking(h.t.sqlite, h.db, resolveTokenActor(h.db, bea.secret, Date.now()), taskId);
+  expireClaims(h.db, Date.now() + 365 * 24 * 60 * 60 * 1000);
+  h.db.update(tasks).set({ selectedAgentId: null }).where(eq(tasks.id, taskId)).run();
+
   // Each agent writes a row, and each payload names the agent as well — the
-  // claim and selection verbs carry agent ids there (§4.8).
+  // claim, selection and hand-off verbs carry agent ids there (§4.8), under
+  // every key the gate lists.
   writeAs(ada, 'task.claim_expired', { generation: 1, session_id: 's-ada', agent_id: ada.agentId });
   writeAs(bea, 'task.claim_expired', { generation: 2, session_id: 's-bea', agent_id: bea.agentId });
   writeAs(bea, 'task.agent_selected', { from: null, to: bea.agentId });
+  writeAs(bea, 'task.handoff_offered', {
+    offer_id: 'offer-1',
+    kind: 'handoff',
+    to_agent_id: bea.agentId,
+    from_agent_id: bea.agentId,
+  });
+  writeAs(bea, 'task.updated', { field: 'selected_agent_id', selected_agent_id: bea.agentId });
+  // Last on purpose: `sseBody` reads until this row's `"field":"claim"`.
   writeAs(bea, 'task.updated', {
     field: 'claim',
     from: { generation: 2, session_id: 's-bea', agent_id: bea.agentId },
@@ -218,10 +247,12 @@ describe("another person's agent on every activity surface (D-121 item 7, LAI-10
         const asAda = await read(ada);
         expect(asAda, 'Ada reads her own agent').toContain(ada.agentId);
         expect(asAda, "Ada never reads Bea's agent").not.toContain(bea.agentId);
+        expect(asAda, "Ada never reads Bea's agent's registered name").not.toContain(BEA_NAME);
 
         const asBea = await read(bea);
         expect(asBea, 'Bea reads her own agent').toContain(bea.agentId);
         expect(asBea, "Bea never reads Ada's agent").not.toContain(ada.agentId);
+        expect(asBea, "Bea never reads Ada's agent's registered name").not.toContain(ADA_NAME);
       });
 
       it('names it once the task shows it as selected', async () => {
@@ -234,39 +265,89 @@ describe("another person's agent on every activity surface (D-121 item 7, LAI-10
   }
 
   it("withholds the row's agent_id and session snapshot, and keeps the row", async () => {
-    const page = JSON.parse(
-      await okText(req(`/api/v1/projects/laika/activity?task=${taskId}`, ada.cookie)),
-    ) as {
+    type Page = {
       data: {
         type: string;
         actor_kind: string;
         actor_id: string;
         agent_id: string | null;
-        agent_session: unknown;
+        agent_session: { id: string } | null;
+        agent_redacted: boolean;
         payload: Record<string, unknown>;
       }[];
     };
-    const beas = page.data.filter((r) => r.actor_id === bea.id);
-    // claim_expired, agent_selected and the claim update: still there, as "an agent".
-    expect(beas.map((r) => r.type).sort()).toEqual([
-      'task.agent_selected',
-      'task.claim_expired',
-      'task.updated',
-    ]);
+    const read = async (who: Reader): Promise<Page['data']> =>
+      (
+        JSON.parse(
+          await okText(req(`/api/v1/projects/laika/activity?task=${taskId}`, who.cookie)),
+        ) as Page
+      ).data;
+
+    const asAda = await read(ada);
+    const beas = asAda.filter((r) => r.actor_id === bea.id);
+    // The rows stay, as "an agent": the real claim's, and every written one.
+    expect(beas.map((r) => r.type)).toEqual(
+      expect.arrayContaining([
+        'task.status_changed',
+        'task.claim_expired',
+        'task.agent_selected',
+        'task.handoff_offered',
+        'task.updated',
+      ]),
+    );
     for (const row of beas) {
       expect(row.actor_kind).toBe('agent');
       expect(row.agent_id).toBeNull();
       expect(row.agent_session).toBeNull();
+      expect(row.agent_redacted).toBe(true);
     }
-    expect(beas.find((r) => r.type === 'task.agent_selected')?.payload).toEqual({
-      from: null,
-      to: null,
+    const payloadOf = (type: string, field?: string) =>
+      beas.find((r) => r.type === type && (field === undefined || r.payload.field === field))
+        ?.payload;
+    expect(payloadOf('task.agent_selected')).toEqual({ from: null, to: null });
+    expect(payloadOf('task.handoff_offered')).toMatchObject({
+      to_agent_id: null,
+      from_agent_id: null,
     });
-    expect(beas.find((r) => r.type === 'task.updated')?.payload).toMatchObject({
+    expect(payloadOf('task.updated', 'selected_agent_id')).toMatchObject({
+      selected_agent_id: null,
+    });
+    expect(payloadOf('task.updated', 'claim')).toMatchObject({
       from: { generation: 2, session_id: 's-bea', agent_id: null },
     });
-    expect(page.data.find((r) => r.actor_id === ada.id)?.agent_id).toBe(ada.agentId);
+    // The lapse the system wrote names the agent in its payload: withheld too.
+    const lapse = asAda.find((r) => r.type === 'task.claim_expired' && r.actor_kind === 'system');
+    expect(lapse?.payload.agent_id).toBeNull();
+    expect(lapse?.agent_redacted).toBe(true);
+    expect(asAda.find((r) => r.actor_id === ada.id)?.agent_id).toBe(ada.agentId);
+
+    // Bea reads her own real session on the claim's row.
+    const claimed = (await read(bea)).find(
+      (r) => r.actor_id === bea.id && r.type === 'task.status_changed',
+    );
+    expect(claimed?.agent_id).toBe(bea.agentId);
+    expect(claimed?.agent_session?.id).toEqual(expect.any(String));
+    expect(claimed?.agent_redacted).toBe(false);
   });
+
+  // The registered name rides on `token.created`, an org row: these four
+  // surfaces carry org rows to an owner or admin.
+  for (const name of [
+    'GET /activity',
+    'GET /activity/history',
+    'GET /activity/history?format=csv',
+    'GET /events (SSE replay)',
+  ]) {
+    it(`${name}: an agent token's registered name reaches its owner only`, async () => {
+      const read = SURFACES[name]!;
+      const asAda = await read(ada);
+      expect(asAda).toContain(ADA_NAME);
+      expect(asAda).not.toContain(BEA_NAME);
+      const asBea = await read(bea);
+      expect(asBea).toContain(BEA_NAME);
+      expect(asBea).not.toContain(ADA_NAME);
+    });
+  }
 });
 
 describe('agentLens (the one gate)', () => {
