@@ -98,7 +98,11 @@ async function boardEvents(token: string): Promise<BoardView[]> {
   return page.data as BoardView[];
 }
 
+/** Aborted in each test's `finally`, so a failed wait never leaves a stream running. */
+let teardown = new AbortController();
+
 function machine(): { home: string; deps: EventDeps } {
+  teardown = new AbortController();
   const home = mkdtempSync(join(tmpdir(), 'laika-554-home-'));
   return {
     home,
@@ -109,6 +113,13 @@ function machine(): { home: string; deps: EventDeps } {
       sleep: (ms) => sleep(Math.min(ms, 200)),
     },
   };
+}
+
+/** A stop of its own that the test's teardown also triggers. */
+function linked(): AbortController {
+  const own = new AbortController();
+  teardown.signal.addEventListener('abort', () => own.abort(), { once: true });
+  return own;
 }
 
 async function until(what: string, check: () => boolean | Promise<boolean>, ms = 15_000): Promise<void> {
@@ -153,7 +164,7 @@ describe('the stream', () => {
     const credential = { url: board.url, token: receiver.token };
     try {
       const frames: Frame[] = [];
-      let stop = new AbortController();
+      let stop = linked();
       const first = runEventStream(deps, 'claude-code', credential, {
         signal: stop.signal,
         onFrame: (f) => frames.push(f),
@@ -175,7 +186,7 @@ describe('the stream', () => {
         s.stream_cursor = 1;
       });
       frames.length = 0;
-      stop = new AbortController();
+      stop = linked();
       const second = runEventStream(deps, 'claude-code', credential, {
         signal: stop.signal,
         onFrame: (f) => frames.push(f),
@@ -209,6 +220,7 @@ describe('the stream', () => {
         ],
       );
     } finally {
+      teardown.abort();
       rmSync(home, { recursive: true, force: true });
     }
   });
@@ -224,7 +236,7 @@ describe('the stream', () => {
         s.stream_cursor = 9_000_000;
       });
       const frames: Frame[] = [];
-      const stop = new AbortController();
+      const stop = linked();
       const run = runEventStream(deps, 'claude-code', credential, {
         signal: stop.signal,
         onFrame: (f) => frames.push(f),
@@ -242,6 +254,7 @@ describe('the stream', () => {
       stop.abort();
       await run;
     } finally {
+      teardown.abort();
       rmSync(home, { recursive: true, force: true });
     }
   });
@@ -253,6 +266,7 @@ describe('the stream', () => {
     try {
       const frames: Frame[] = [];
       const run = runEventStream(deps, 'claude-code', credential, {
+        signal: teardown.signal,
         onFrame: (f) => frames.push(f),
       });
       await until('ready', () => frames.some((f) => f.event === 'ready'));
@@ -272,6 +286,7 @@ describe('the stream', () => {
         'the token is not in the store',
       );
     } finally {
+      teardown.abort();
       rmSync(home, { recursive: true, force: true });
     }
   });
@@ -324,6 +339,7 @@ describe('the hook', () => {
       const log = readFileSync(logPath(home), 'utf8');
       assert.ok(!log.includes(receiver.token), 'the token is not in the log');
     } finally {
+      teardown.abort();
       rmSync(home, { recursive: true, force: true });
     }
   });
