@@ -2618,6 +2618,11 @@ recorded against: another agent's is `404`, an ended one `409`, as a
 heartbeat answers (§9.1). No activity row: a delivery is presence, as a
 session is.
 
+**Latest only.** A session's row is overwritten by its next delivery, so this
+table says which revision each session has **now** and is not a record of
+every delivery: `GET /projects/:slug/context/deliveries` (§6.4, LAI-1003) lists
+it as such, `scope: 'latest_per_session'`.
+
 ### 4.70 `task_checkpoints`
 
 A save an agent registers **on purpose** inside a task its session holds
@@ -3434,7 +3439,9 @@ GET    /api/v1/projects/:slug/context/revisions          newest first, no text: 
 GET    /api/v1/projects/:slug/context/revisions/:revision    one revision with its `body`; one the project has not reached is 404
 GET    /api/v1/projects/:slug/context/diff   ?from=&to= → { from_revision, to_revision, current_revision, diff, added, removed, truncated, hint }; `to` defaults to current, `from` may be 0 (the empty document), from > to is 422
        └ at most 2,000 changed lines (added + removed) are answered; past that `truncated: true`, `diff: ''`, `added` and `removed` null, and `hint` names how to read the revision whole (`.../context/revisions/:to`, or `get_project_context` without `since_revision`). MCP answers the same `context_diff`
-       └ all four context reads follow project read; a project the caller cannot see is answered **exactly as a missing one** — 404 to a person, and to an agent's token the 403 `agent_not_granted` it gets for any slug it may not use (LAI-555)
+GET    /api/v1/projects/:slug/context/deliveries   ?revision=&limit=&cursor= → { scope: 'latest_per_session', revision, current_revision, data, next_cursor }
+       └ **each session's latest delivery, not a history** (§4.69 keeps one row per session and project): `data` is [{ session_id, revision, delivered_at, session_ended_at, agent }], newest delivery first; `?revision=N` keeps the sessions whose latest delivery is N, so a session later given N+1 leaves N's list. A revision the project has not reached is 404, as the revision read's. *Delivered* means sent, never read (§4.69). `agent` is `{ id, harness, device_label, display_name, status }` only for the reader's own agent — another person's agent is missing to everyone else (D-121 item 7), so its row carries `agent: null` and no id or label (LAI-1003)
+       └ all five context reads follow project read; a project the caller cannot see is answered **exactly as a missing one** — 404 to a person, and to an agent's token the 403 `agent_not_granted` it gets for any slug it may not use (LAI-555)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
                                              status is a category (§4.5), status_id one project status (§4.20);
