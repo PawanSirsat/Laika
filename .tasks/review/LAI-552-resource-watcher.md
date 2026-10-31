@@ -81,3 +81,22 @@ Opt-in.
 - Deliberate breaks: 15 mutations of `cli/src/agent-watch.ts`, every one red
   (two survived the first run; tests added for both).
 
+## Round 2 — Codex review of PR #168 (2026-10-31)
+
+Two blocking findings, fixed in new commits; criteria unchanged.
+
+1. **System tools inherited the full environment and PATH**, so the agent's
+   token reached `pmset`/`sysctl`, and a `pmset` earlier on `PATH` would have
+   run. Now absolute paths and `TOOL_ENV` (a fixed system `PATH`, the C locale,
+   nothing inherited); a bare name is refused before anything is spawned.
+2. **Wrong task offered**: the watcher took the newest record on disk across
+   the session's claims, so it could save task A and offer task B.
+   `autoCheckpointResult` now returns the save's own record, and the watcher
+   reports and offers that one only (`autoCheckpoint` keeps its signature).
+
+Deliberate breaks, `agent-watch.test.ts` alone, single worker — all red:
+inherited env (token leaks); env = process env; `pmset` by bare name; the
+absolute-path guard removed; the original behaviour (bare names, inherited
+env, no guard: the fake `pmset` on `PATH` ran); newest-record-on-disk.
+The round-1 set (15) re-run: all red.
+

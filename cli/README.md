@@ -1008,6 +1008,17 @@ registered it.
 until the machine is under pressure. The sysctl is the kernel level it reports,
 without the side effect.
 
+**What the tools are given.** `pmset` and `sysctl` run by absolute path
+(`/usr/bin/pmset`, `/usr/sbin/sysctl`), never looked up on `PATH`, with an
+environment built from nothing: `PATH=/usr/bin:/bin:/usr/sbin:/sbin`,
+`LANG=C`, `LC_ALL=C`. No token of any name — the agent's `LAIKA_AGENT_TOKEN`
+included — reaches them. A save's git calls keep the checkpoint helper's own
+allowlist.
+
+**Which checkpoint is reported and offered.** Exactly the one the save made or
+matched, by its id. A session holding two tasks never reports or offers the
+other task's checkpoint, however new it is.
+
 A metric that cannot be read is printed as `unsupported (why)` — no battery,
 no PSI in the kernel, another OS — or `unavailable (why)` when its command or
 file failed. **Never as a number**, and it never fires anything.
