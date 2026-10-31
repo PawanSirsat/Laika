@@ -808,9 +808,34 @@ laika agent handoff decline <offer> --reason "busy"
 
 ### Harness capability matrix
 
-Claude Code and Codex only. Cursor, Copilot (CLI, VS Code, cloud), Gemini CLI
-and Antigravity are in [`agent-adapters/CAPABILITIES.md`](agent-adapters/CAPABILITIES.md),
-under the same four cells; none of them has a Verified-and-tested cell.
+The table below covers Claude Code and Codex. The other harnesses
+(LAI-557) are summarised here; their full cells, versions, the docs read and
+the words relied on are in [`agent-adapters/CAPABILITIES.md`](agent-adapters/CAPABILITIES.md).
+**None of them ran on Belka on 2026-10-31**:
+
+- `cursor-agent` 2026.01.28 answered `Authentication required`.
+- `gemini` 0.49.0 stopped at browser sign-in.
+- Copilot and the Antigravity CLI (`agy`) are not installed.
+
+So none of them has a Verified-and-tested cell.
+
+| Capability | Cursor | Copilot CLI | Copilot in VS Code | Copilot cloud agent | Gemini CLI | Antigravity |
+| --- | --- | --- | --- | --- | --- | --- |
+| Agent credential (`laika agent login <h>`, own 0600 file) | Documented-not-tested | Documented-not-tested | Documented-not-tested | Unsupported as a file (ephemeral `/root`); env token Unverified | Documented-not-tested | Documented-not-tested |
+| Session id / lifecycle | explicit `session start --pid` … `end`; Documented-not-tested | same | same | Unsupported in practice (board behind the cloud firewall) | same | same; the harness has no session-end hook |
+| `laika agent hooks on` | Unsupported by Laika: prints the explicit commands, writes nothing | same | same | same | same | same |
+| Checkpoint | `laika agent checkpoint save` only; automatic saves and `watch` answer `no_hooks` | same | same | same | same | same |
+| Inbox boundary | when `laika agent inbox` / MCP `agent_sync` runs | same | same | same | same | same |
+| Inject at a prompt (if hooks were installed) | Unsupported (`beforeSubmitPrompt` has no context field) | Unsupported (output dropped) | Unverified | Unsupported | Documented-not-tested (`BeforeAgent`) | Documented-not-tested (`PreInvocation` `injectSteps`) |
+| Inject after a tool (if hooks were installed) | Documented-not-tested (`additional_context`) | Documented-not-tested (`additionalContext`) | Unverified | Documented-not-tested | Documented-not-tested (`AfterTool`) | Unsupported (`PostToolUse` returns `{}`) |
+| Context reload | `get_project_context` when the agent calls it | same | same | same | same | same |
+| Mid-turn delivery | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported |
+| Headless start | Documented-not-tested (`agent -p`) | Documented-not-tested (`copilot -p`) | Unsupported | Documented-not-tested (`gh agent-task create`) | Documented-not-tested (`gemini -p`) | Documented-not-tested (`agy -p`) |
+
+Nothing recovers automatically for these harnesses. A session whose harness
+dies stops renewing because its PID is gone, and its claims expire. Taking a
+claim back is an explicit `start_working` with `reclaim: true`, exactly as for
+Claude Code.
 
 Cells: **Verified-and-tested** (run on the version shown, against a real
 board), **Documented-not-tested** (in the harness's docs, not run here),

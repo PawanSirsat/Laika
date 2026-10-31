@@ -38,7 +38,8 @@ in `cli/README.md` (LAI-542, LAI-547) and are columns here only for comparison.
 - `cursor.com/docs/mcp.md`
 - `docs.github.com/api/article/body?pathname=/en/copilot/reference/hooks-configuration`
 - `…/en/copilot/concepts/agents/coding-agent/about-hooks`
-- `raw.githubusercontent.com/google-gemini/gemini-cli/main/docs/hooks/{index,reference}.md`
+- `geminicli.com/docs/hooks/reference.md` (the same text as `raw.githubusercontent.com/google-gemini/gemini-cli/main/docs/hooks/reference.md`, diffed: one link differs)
+- `raw.githubusercontent.com/google-gemini/gemini-cli/main/docs/hooks/index.md`
 - `…/docs/tools/mcp-server.md`
 - `…/docs/cli/headless.md`
 - `antigravity.google/docs/hooks.md`
@@ -47,6 +48,7 @@ in `cli/README.md` (LAI-542, LAI-547) and are columns here only for comparison.
 - `…/en/copilot/reference/cli-command-reference`
 - `…/en/copilot/how-tos/use-copilot-agents/cloud-agent/extend-cloud-agent-with-mcp`
 - `cli.github.com/manual/gh_agent-task_create`
+- `modelcontextprotocol.io/specification/` (redirects to `/specification/2026-07-28`), `…/server/resources.md`
 
 ## What every adapter shares
 
@@ -127,7 +129,54 @@ differently.
 | Inject at a prompt | Documented-not-tested | Documented-not-tested | **Unsupported**: `beforeSubmitPrompt` returns only `continue` / `user_message` | **Unsupported**: "`userPromptSubmitted` hooks have their output dropped" | Unverified | Unsupported (same) | Documented-not-tested: `BeforeAgent` → `additionalContext`, this turn only | Documented-not-tested: `PreInvocation` → `injectSteps`, before every model call |
 | Inject after a tool (the next tool boundary) | Documented-not-tested | Documented-not-tested (a block **replaces** the result) | Documented-not-tested: `postToolUse` → `additional_context` | Documented-not-tested: `postToolUse` → `additionalContext`, capped at 10 KB | Unverified | Documented-not-tested | Documented-not-tested: `AfterTool` → `additionalContext`, appended to the result | **Unsupported**: `PostToolUse` "returns an empty JSON object `{}`" |
 | Context reload after a revision | the 300-character notice, then `get_project_context` | same | Explicit: `get_project_context` when the agent calls it | Explicit (same) | Explicit (same) | Explicit (same) | Explicit (same) | Explicit (same) |
+| `laika agent watch` saves under pressure | Documented-not-tested (LAI-552) | Documented-not-tested | **Unsupported**: answers `no_hooks` and names `laika agent checkpoint save`; nothing marks this harness's tools as running, so a save could not wait for them | Unsupported (same) | Unsupported (same) | Unsupported (same) | Unsupported (same) | Unsupported (same) |
+| MCP resource subscriptions (`subscriptions/listen` → `notifications/resources/updated`, MCP 2026-07-28) | Unverified: not in its hooks docs | Unverified | Unverified: `cursor.com/docs/mcp.md` does not mention subscriptions | Unverified: not in the Copilot CLI or cloud MCP docs | Unverified | Unverified | Unverified: not in `mcp-server.md` | Unverified: not in `docs/mcp.md` |
 | Mid-turn delivery | Unsupported (no harness interrupts a running turn) | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported |
+
+## The words each cell relies on
+
+Quoted from the pages above, 2026-10-31.
+
+- **Cursor, prompt.** `beforeSubmitPrompt` output is `{ "continue": true | false, "user_message": … }`,
+  with no context field. After a tool: `postToolUse` → `"additional_context": "Extra
+  context injected into the conversation after the tool result"`.
+  `sessionStart`: *"This hook runs as fire-and-forget; the agent loop does not
+  wait for or enforce a blocking response."* `sessionEnd`: *"The response is
+  logged but not used."* Cloud: *"User-level hooks (`~/.cursor/hooks.json`) are
+  not available in cloud agents."* Third party: *"Claude Code hooks load when
+  Include Third-Party Plugins, Skills, and Other Configs is enabled … The
+  setting is on by default."*
+- **Copilot, prompt.** *"Command and HTTP config-file `userPromptSubmitted` hooks
+  have their output dropped."* After a tool: `postToolUse` `additionalContext`
+  is *"appended to `textResultForLlm` so the model sees it after the tool output
+  on the same turn … capped at 10 KB."* VS Code: *"Do not assume that the same
+  events, input, or output work unchanged across surfaces."* Cloud: *"By
+  default only GitHub and Copilot hostnames are reachable"*, and *"`HOME` is set
+  to `/root`, so any hook script that resolves `~/...` paths writes into the
+  ephemeral sandbox."* The CLI also reads *"Cross-tool `.claude/settings.json`
+  and `.claude/settings.local.json` files in the repository."*
+- **Gemini CLI.** Hook `timeout` is *"Execution timeout in milliseconds (default:
+  60000)"*. `BeforeAgent`: *"`hookSpecificOutput.additionalContext`: Text that is
+  appended to the prompt for this turn only."* `AfterTool`: *"Text that is
+  appended to the tool result for the agent."* `SessionEnd`: *"The CLI will not
+  wait for this hook to complete."* `BeforeTool` deny is `decision: "deny"`, with
+  `reason` *"sent to the agent as a tool error"*. MCP: *"Values can reference
+  environment variables using `$VAR_NAME` or `${VAR_NAME}` syntax"*, said of
+  `env`, not `headers`.
+- **Antigravity.** `PostToolUse` output: *"Returns an empty JSON object `{}`."*
+  `PreInvocation` output: *"`injectSteps` … List of steps to inject into the
+  conversation trajectory before the model is called."* Events: `SessionStart`,
+  `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`, `Stop`; there
+  is no session-end event. `Stop` input `fullyIdle`: *"`false` if active
+  background tasks are still running."* Headless: *"Headless mode uses your
+  cached credentials. Authenticate once with an interactive `agy` session
+  first."*
+- **MCP 2026-07-28.** *"Clients subscribe to change notifications for specific
+  resources by sending a `subscriptions/listen` request … The server delivers
+  `notifications/resources/updated` on the resulting stream."* This is a
+  protocol capability, and none of the harness doc sets above says it
+  subscribes, so it stays Unverified everywhere and is never the delivery
+  path.
 
 ## What a later task needs, to move a harness to hooks
 

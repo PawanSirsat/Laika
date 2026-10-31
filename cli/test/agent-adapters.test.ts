@@ -50,6 +50,7 @@ import {
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const MATRIX = fileURLToPath(new URL('../agent-adapters/CAPABILITIES.md', import.meta.url));
+const README = fileURLToPath(new URL('../README.md', import.meta.url));
 const SCRIPT = '/opt/laika/plugin/scripts/laika-agent-hook';
 const CRED: AgentCredential = { url: 'http://board.test', token: 'lai_AGENTsecret_do_not_leak' };
 
@@ -384,11 +385,11 @@ void describe('no automatic save for a harness whose tools nothing reports', () 
   });
 });
 
-void describe('cli/agent-adapters/CAPABILITIES.md', () => {
-  const lines = readFileSync(MATRIX, 'utf8').split('\n');
+/** Every Markdown table in `text`, as rows of trimmed cells, separator rows dropped. */
+function tablesOf(text: string): string[][][] {
   const tables: string[][][] = [];
   let current: string[][] | undefined;
-  for (const line of lines) {
+  for (const line of text.split('\n')) {
     if (line.startsWith('|')) {
       const cells = line
         .slice(1, -1)
@@ -398,6 +399,32 @@ void describe('cli/agent-adapters/CAPABILITIES.md', () => {
       if (!cells.every((c) => /^:?-+:?$/.test(c))) current.push(cells);
     } else current = undefined;
   }
+  return tables;
+}
+
+/** How many cells of the LAI-557 harnesses' columns were read; throws on a false Verified-and-tested. */
+function noFalseClaims(tables: string[][][], where: string): number {
+  let checked = 0;
+  for (const table of tables) {
+    const header = table[0] ?? [];
+    for (const name of NEW) {
+      const col = header.findIndex((h) => h.startsWith(ADAPTERS[name as Harness].name));
+      if (col === -1) continue;
+      for (const row of table.slice(1)) {
+        checked += 1;
+        assert.doesNotMatch(
+          row[col] ?? '',
+          /Verified-and-tested/,
+          `${where}: ${name}, row "${row[0] ?? ''}" claims a run that never happened`,
+        );
+      }
+    }
+  }
+  return checked;
+}
+
+void describe('cli/agent-adapters/CAPABILITIES.md', () => {
+  const tables = tablesOf(readFileSync(MATRIX, 'utf8'));
 
   void test('has a column for every adapter, Claude Code and Codex included', () => {
     const headers = tables.flatMap((t) => t[0] ?? []);
@@ -410,22 +437,23 @@ void describe('cli/agent-adapters/CAPABILITIES.md', () => {
   });
 
   void test('no cell of a harness that never ran here says Verified-and-tested', () => {
-    let checked = 0;
-    for (const table of tables) {
-      const header = table[0] ?? [];
-      for (const name of NEW) {
-        const col = header.findIndex((h) => h.startsWith(ADAPTERS[name as Harness].name));
-        if (col === -1) continue;
-        for (const row of table.slice(1)) {
-          checked += 1;
-          assert.doesNotMatch(
-            row[col] ?? '',
-            /Verified-and-tested/,
-            `${name}, row "${row[0] ?? ''}" claims a run that never happened`,
-          );
-        }
-      }
+    const checked = noFalseClaims(tables, 'CAPABILITIES.md');
+    assert.ok(
+      checked >= NEW.length * 8,
+      `only ${String(checked)} cells read: the table did not parse`,
+    );
+  });
+});
+
+void describe("cli/README.md's matrix", () => {
+  void test('names every LAI-557 harness and marks none of them Verified-and-tested', () => {
+    const tables = tablesOf(readFileSync(README, 'utf8'));
+    const headers = tables.flatMap((t) => t[0] ?? []);
+    for (const name of NEW) {
+      const label = ADAPTERS[name as Harness].name;
+      assert.ok(headers.includes(label), `no "${label}" column in cli/README.md`);
     }
+    const checked = noFalseClaims(tables, 'README.md');
     assert.ok(
       checked >= NEW.length * 8,
       `only ${String(checked)} cells read: the table did not parse`,
