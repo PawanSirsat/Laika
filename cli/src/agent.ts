@@ -206,6 +206,8 @@ const USAGE = [
   '  laika agent checkpoints prune --dry-run',
   '  laika agent handoff inbox|show|prepare|accept|decline   receive a hand-off (laika agent handoff --help)',
   '  laika agent inbox | accept <offer>                      the same as the handoff forms',
+  '  laika agent watch [--battery-percent 15] [--memory-seconds 60] [--offer-to AGENT]',
+  '                                  opt-in: ask for a checkpoint before battery or memory runs out',
   '',
   'The token is the agent’s, from the Agents screen — never your own. It is kept',
   'in ~/.laika/agents/<harness>.json (0600), or read from LAIKA_AGENT_TOKEN, and',
@@ -868,6 +870,11 @@ export async function agent(argv: readonly string[], io: AgentIo = CONSOLE): Pro
       },
       rest,
     );
+  }
+
+  if (command === 'watch') {
+    const { watchCommand } = await import('./agent-watch.ts');
+    return watchCommand(io, argv.slice(1));
   }
 
   if (command === 'login' || command === 'logout' || command === 'hooks') {
