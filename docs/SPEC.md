@@ -6391,6 +6391,8 @@ compose file or systemd unit.
 | `LAIKA_CLAIM_SUSPECT_SECONDS` | `90` | §9.1.1: a session silent this long is shown suspect |
 | `LAIKA_CLAIM_EXPIRE_SECONDS` | `300` | §9.1.1: a claim's lease. **Must be longer than the heartbeat** — a startup failure otherwise, since every claim would lapse between heartbeats |
 | `LAIKA_CLAIM_SCAN_SECONDS` | `30` | §11.6: how often the claim-expiry scan runs |
+| `LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS` | `600` | §9.1.1: a `pending` checkpoint older than this is shown *"Verification pending — no push notice from GitHub yet"*. Whole seconds, 1–86400. The checkpoint helper reads the same variable, so set it in both places (LAI-1015) |
+| `LAIKA_CHECKPOINT_RETENTION_DAYS` | `90` | D-115 item 9, §11.6: how long a task's checkpoints are kept after it reaches `done` or `cancelled`, and how old the §4.72 rows for a ref never registered grow before they are pruned. Whole days, 1–3650 |
 
 **This table is the deployment contract.** Anything the server reads from the
 environment belongs in it, and anything in it must be read. It drifted in both
