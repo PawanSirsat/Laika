@@ -345,6 +345,23 @@ void describe('review fixes (LAI-549, Codex round 1)', () => {
     assert.deepEqual(approveGate(pending, reader(new Set(['ag-laptop']))), { kind: 'enabled' });
   });
 
+  void test('a receiver the server withheld is another person’s: Approve, and no "any eligible agent" (LAI-1012)', () => {
+    const withheld = offer({
+      state: 'pending_approval',
+      requires_approval: true,
+      to_agent_id: null,
+      to_agent_redacted: true,
+    });
+    assert.deepEqual(approveGate(withheld, reader('loading')), { kind: 'enabled' });
+    assert.equal(
+      offerStatusWords(withheld, AGENTS),
+      'Waiting for approval, then for a registered agent to accept',
+    );
+    // An unnamed recovery is still any eligible agent, and still not approvable here.
+    const unnamed = offer({ state: 'pending_approval', kind: 'recovery', to_agent_id: null });
+    assert.deepEqual(approveGate(unnamed, reader(new Set())), { kind: 'hidden' });
+  });
+
   void test('Approve is hidden without the grant or the role, and on an offer not waiting', () => {
     const known = new Set<string>();
     assert.equal(approveGate(pending, { ...reader(known), holdsApprove: false }).kind, 'hidden');
