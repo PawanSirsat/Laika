@@ -1010,7 +1010,14 @@ void describe('Delivered to', () => {
   });
 
   void test('a page that answers after the reader moved to another revision is dropped', async () => {
-    const h = await openPanel(world(PAGED_ON_3));
+    // The late page has a cursor of its own: taken into r2's list, it would
+    // say r2 was cut short. Its rows alone would not show — they are r3's.
+    const h = await openPanel(
+      world({
+        ...PAGED_ON_3,
+        [`${DELIVERIES}?limit=200&revision=3&cursor=c-on-2`]: deliveries(3, [EXTRA_ON_3], 'c-on-3'),
+      }),
+    );
     try {
       const pages = await holdPages(h);
       await viewRevision(h, 3);
