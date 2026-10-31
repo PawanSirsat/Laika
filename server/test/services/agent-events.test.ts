@@ -2,7 +2,9 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, resolveTokenActor } from '../../src/auth/resolve-actor.ts';
 import { appendActivity } from '../../src/db/activity.ts';
-import { agentEventDeliveries, projects } from '../../src/db/schema.ts';
+import { newId } from '../../src/db/ids.ts';
+import { statusForCategory } from '../../src/db/project-statuses.ts';
+import { agentEventDeliveries, projects, tasks, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { ackAgentEvents, listAgentEvents } from '../../src/services/agent-events.ts';
 import { registerAgent, setAgentGrants } from '../../src/services/agents.ts';
@@ -302,5 +304,97 @@ describe('listAgentEvents', () => {
         }),
       ),
     ).toEqual({ code: 'forbidden', details: { reason: 'not_an_agent' } });
+  });
+});
+
+describe('the envelope names agents as the reader may see them (D-121 item 7, LAI-1011)', () => {
+  it('an event delivered to agent A never names another owner’s agent A cannot see', () => {
+    // Bob, another owner who reads the project, with his own agent on it.
+    const bob = newId();
+    const now = Date.now();
+    t.db
+      .insert(users)
+      .values({
+        id: bob,
+        email: 'bob@example.test',
+        name: 'Bob',
+        orgRole: 'admin',
+        isActive: 1,
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+      })
+      .run();
+    const bobs = registerAgent(t.sqlite, t.db, loadActor(t.db, bob)!, {
+      displayName: 'bob',
+      harness: 'codex',
+      deviceLabel: 'bob',
+      grants: [{ projectId: s.projectId, scope: 'full' }],
+    });
+    // A task that now shows only our agent: Bob's selection was replaced.
+    const taskId = newId();
+    t.db
+      .insert(tasks)
+      .values({
+        id: taskId,
+        projectId: s.projectId,
+        number: 1,
+        title: 'A task',
+        status: 'todo',
+        statusId: statusForCategory(t.db, s.projectId, 'todo').id,
+        priority: 'p2',
+        createdBy: s.userId,
+        createdVia: 'web',
+        selectedAgentId: agentId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    // Written by Bob's agent's token: the writer, `from`, is his agent.
+    const row = appendActivity(t.db, {
+      orgId: s.orgId,
+      projectId: s.projectId,
+      taskId,
+      actorId: bob,
+      actorKind: 'agent',
+      actorTokenId: bobs.token.id,
+      type: 'task.agent_selected',
+      payload: { from: bobs.agent.id, to: agentId },
+    });
+
+    const [event] = listAgentEvents(t.db, asAgent(), { after: 0, state: 'all', limit: 100 }).data;
+    expect(event).toMatchObject({
+      event_id: row.id,
+      from: null,
+      to: { agent_id: agentId },
+      actor: { kind: 'agent', user_id: bob, agent_id: null, session_id: null },
+      agent_redacted: true,
+    });
+    // Not anywhere — not in an offer, a field or a nested value.
+    expect(JSON.stringify(event)).not.toContain(bobs.agent.id);
+
+    // The ack answers the same envelope, through the same lens.
+    const [acked] = ackAgentEvents(t.sqlite, t.db, asAgent(), {
+      eventIds: [row.id],
+      state: 'received',
+    });
+    expect(acked).toMatchObject({ from: null, agent_redacted: true });
+    expect(JSON.stringify(acked)).not.toContain(bobs.agent.id);
+
+    // The writer is not delivered its own write.
+    expect(
+      listAgentEvents(t.db, resolveTokenActor(t.db, bobs.secret, Date.now()), {
+        after: 0,
+        state: 'all',
+        limit: 100,
+      }).data,
+    ).toEqual([]);
+  });
+
+  it('names an own agent and an agent the task shows, and says nothing was withheld', () => {
+    const [event] = (() => {
+      contextChanged(s.projectId);
+      return listAgentEvents(t.db, asAgent(), { after: 0, state: 'all', limit: 100 }).data;
+    })();
+    expect(event!.agent_redacted).toBe(false);
   });
 });

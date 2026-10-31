@@ -3,7 +3,11 @@ import { and, asc, eq, getTableColumns, gt, inArray, isNull, type SQL } from 'dr
 import { reloadActor, withProject, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { TokenAuthError } from '../auth/tokens.ts';
 import { latestActivitySeq, type ActivityEvent } from '../db/activity.ts';
-import { type AgentEventDetail, type AgentEventType } from '../db/agent-events.ts';
+import {
+  type AgentEventDetail,
+  type AgentEventType,
+  type AgentIdentity,
+} from '../db/agent-events.ts';
 
 import { type Db } from '../db/client.ts';
 import { type ActorKind } from '../db/enums.ts';
@@ -18,6 +22,7 @@ import {
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
+import { agentLens, agentReader, type AgentReader } from './agent-visibility.ts';
 import { registeredAgent, requireOwnOpenSession } from './claims.ts';
 import { insidePin, visibleTo } from './events.ts';
 import { noSuchProjectForAgent } from './work-requests.ts';
@@ -67,6 +72,8 @@ export interface AgentEventEnvelope extends AgentEventDetail {
     agent_id: string | null;
     session_id: string | null;
   };
+  /** Something here named an agent this reader may not see, and it was withheld (LAI-1011). */
+  agent_redacted: boolean;
   delivery: AgentEventDelivery;
 }
 
@@ -147,13 +154,48 @@ function acceptedAt(db: Db, offerIds: string[], agentId: string): Map<string, nu
   return out;
 }
 
-function envelopes(db: Db, rows: Joined[], agentId: string): AgentEventEnvelope[] {
+/**
+ * The envelopes of `rows` as `reader` may see them (D-121 item 7, LAI-1011):
+ * through the one agent lens every activity surface uses, so the envelope's
+ * `from`, `to` and writing agent are withheld exactly where the row's own
+ * view withholds them — another owner's agent, beside a task that does not
+ * show it, is *an agent*: the field null, `agent_redacted: true`.
+ */
+function envelopes(
+  db: Db,
+  rows: Joined[],
+  agentId: string,
+  reader: AgentReader,
+): AgentEventEnvelope[] {
+  const details = rows.map((r) => JSON.parse(r.event.detailJson) as AgentEventDetail);
+  const lens = agentLens(
+    db,
+    reader,
+    rows.map((r) => r.row.taskId),
+    rows.flatMap((r, i) => [
+      ...(r.row.agentId === null ? [] : [r.row.agentId]),
+      ...(details[i]!.from === null ? [] : [details[i]!.from.agent_id]),
+      ...(details[i]!.to === null ? [] : [details[i]!.to.agent_id]),
+    ]),
+  );
   const accepted = acceptedAt(
     db,
     [...new Set(rows.map((r) => r.event.offerId).filter((id): id is string => id !== null))],
     agentId,
   );
-  return rows.map(({ row, event, delivery }) => {
+  return rows.map(({ row, event, delivery }, i) => {
+    const detail = details[i]!;
+    let redacted = false;
+    const shown = (identity: AgentIdentity | null): AgentIdentity | null => {
+      if (identity === null) return null;
+      if (lens.visible(row.taskId, identity.agent_id)) return identity;
+      redacted = true;
+      return null;
+    };
+    const from = shown(detail.from);
+    const to = shown(detail.to);
+    const writerShown = row.agentId === null || lens.visible(row.taskId, row.agentId);
+    if (!writerShown) redacted = true;
     const acceptedOn = event.offerId === null ? null : (accepted.get(event.offerId) ?? null);
     const state: DeliveryState =
       acceptedOn !== null
@@ -174,10 +216,14 @@ function envelopes(db: Db, rows: Joined[], agentId: string): AgentEventEnvelope[
       actor: {
         kind: row.actorKind,
         user_id: row.actorId,
-        agent_id: row.agentId,
-        session_id: row.agentSessionId,
+        // The session goes with its agent, as on the row's own view.
+        agent_id: writerShown ? row.agentId : null,
+        session_id: writerShown ? row.agentSessionId : null,
       },
-      ...(JSON.parse(event.detailJson) as AgentEventDetail),
+      ...detail,
+      from,
+      to,
+      agent_redacted: redacted,
       delivery: {
         state,
         available_at: delivery.availableAt,
@@ -275,7 +321,7 @@ export function listAgentEvents(
   const page = joined(db, conditions, options.limit + 1);
   const out = page.slice(0, options.limit);
   return {
-    data: envelopes(db, out, agentId),
+    data: envelopes(db, out, agentId, agentReader(actor)),
     cursor: out.at(-1)?.event.seq ?? after,
     has_more: page.length > options.limit,
     gap,
@@ -376,6 +422,7 @@ export function ackAgentEvents(
         inArray(agentEventDeliveries.activityId, ids),
       ]),
       agentId,
+      agentReader(current),
     );
   });
 }
@@ -396,7 +443,7 @@ export function deliveryFor(
     eq(agentEventDeliveries.agentId, agentId),
     eq(agentEventDeliveries.activityId, row.id),
   ]);
-  return found.length === 0 ? null : envelopes(db, found, agentId)[0]!;
+  return found.length === 0 ? null : envelopes(db, found, agentId, agentReader(actor))[0]!;
 }
 
 /** The delivery of every offer's newest event for this agent, keyed by offer id — the inbox's. */
@@ -411,7 +458,8 @@ export function inboxDeliveries(
     inArray(agentEvents.offerId, offerIds),
   ]);
   const out = new Map<string, AgentEventDelivery>();
-  for (const env of envelopes(db, rows, agentId)) {
+  // Only the delivery is read here: a reader that names no agent costs nothing.
+  for (const env of envelopes(db, rows, agentId, null)) {
     if (env.offer !== null) out.set(env.offer.id, env.delivery);
   }
   return out;

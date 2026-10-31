@@ -2961,7 +2961,11 @@ decline's; untrusted data, D-115 item 7) and `closed_reason`; `checkpoint`
 (`id`, `commit_sha`, the newest `ref`); `note_hash` — **the note's hash, never
 its text**; `context_revision`; `approval` (`required`, `approved_by_user_id`,
 `approved_at`); `state` `{ before, after }`; `claim_generation` `{ from, to }`.
-No token, secret or note text is in it.
+No token, secret or note text is in it. **Its agents are named as the
+row's are** (§4.8 `agent_id`, D-121 item 7, LAI-1011): `from`, `to` and the
+writing agent and its session are served only where the receiving agent's
+owner may see that agent, through the same gate, and are otherwise `null`
+with `agent_redacted: true`.
 
 ### 4.77 `agent_event_deliveries`
 
