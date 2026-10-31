@@ -608,6 +608,12 @@ export interface HandoffIo {
   readonly cwd: string;
   readonly fetch: Fetch;
   readonly now: () => number;
+  /**
+   * Tests only: called with each ref's name immediately before prepare
+   * creates it, so a test can put something there in the last instant. The
+   * CLI never sets it.
+   */
+  readonly beforeRefWrite?: (ref: string) => void;
 }
 
 const USAGE = [
@@ -952,16 +958,22 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
   writeRecord(io.home, record);
 
   try {
-    // A ref nobody has (above); the fetch names its refspec in full, with no
-    // `+`, no tags and no submodules, from the URL itself with every rewrite
-    // of it neutralised.
-    const before = refSnapshot(git, toplevel, [localRef]);
+    // **The fetch writes no ref.** A fetch into a destination follows a
+    // symbolic ref at that name, and nothing can stop it, so it fetches the
+    // objects only — no destination, no FETCH_HEAD, no tags, no submodules,
+    // from the URL itself with every rewrite of it neutralised — and the
+    // private ref is created afterwards in one create-only step (below).
+    const branchRef = `refs/heads/${branch}`;
+    const before = refSnapshot(git, toplevel, [localRef, branchRef]);
     const fetchHead = git(toplevel, ['rev-parse', '--git-path', 'FETCH_HEAD']).stdout.trim();
     const hadFetchHead = existsSync(resolve(toplevel, fetchHead));
-    const fetched = git(toplevel, [
+    const remoteArgs = [
       '-c',
       `url.${source.url}.insteadOf=${source.url}`,
       ...(source.local ? ['-c', 'protocol.file.allow=always'] : []),
+    ];
+    const fetched = git(toplevel, [
+      ...remoteArgs,
       'fetch',
       '--no-tags',
       '--no-recurse-submodules',
@@ -971,25 +983,37 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
       '--refmap=',
       '--',
       source.url,
-      `${cp.newestRef}:${localRef}`,
+      cp.newestRef,
     ]);
     if (fetched.code !== 0) {
       throw new Stop(
         `the checkpoint tag could not be fetched from ${remote ?? ''}: ${firstLine(fetched.stderr)}`,
       );
     }
-    // Nothing but the private ref may have moved: checked, not assumed.
-    const moved = refSnapshot(git, toplevel, [localRef]);
-    if (moved !== before)
-      throw new Stop('the fetch changed refs other than its own; nothing was checked out');
-    // A symbolic ref at that name — one that appeared since the check — would
-    // have been written through: the private ref must be a plain ref.
-    const plain = plainRef(git, toplevel, localRef);
-    if (plain !== undefined) throw new Stop(`${localRef} ${plain}; nothing was checked out`);
+    if (refSnapshot(git, toplevel, [localRef, branchRef]) !== before) {
+      throw new Stop('the fetch changed refs; nothing was checked out');
+    }
     if (!hadFetchHead && existsSync(resolve(toplevel, fetchHead))) {
       throw new Stop('the fetch wrote FETCH_HEAD; nothing was checked out');
     }
-    const type = git(toplevel, ['cat-file', '-t', localRef]).stdout.trim();
+    // What the tag points at on the remote, asked by its exact name: a
+    // lightweight tag names the commit, an annotated one its tag object.
+    const listed = git(toplevel, [...remoteArgs, 'ls-remote', '--', source.url, cp.newestRef]);
+    if (listed.code !== 0) {
+      throw new Stop(
+        `the checkpoint tag could not be read from ${remote ?? ''}: ${firstLine(listed.stderr)}`,
+      );
+    }
+    const at = listed.stdout
+      .split('\n')
+      .map((line) => line.split('\t'))
+      .find(([, name]) => name === cp.newestRef)?.[0]
+      ?.trim()
+      .toLowerCase();
+    if (at === undefined || !FULL_SHA.test(at)) {
+      throw new Stop(`the checkpoint tag is no longer on ${remote ?? ''}`);
+    }
+    const type = git(toplevel, ['cat-file', '-t', at]).stdout.trim();
     if (type !== 'commit') {
       throw new Stop(
         type === 'tag'
@@ -997,45 +1021,31 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
           : `the checkpoint ref is a ${inert(type, 20) || 'missing object'}, not a commit`,
       );
     }
-    const resolved = git(toplevel, [
-      'rev-parse',
-      '--verify',
-      '--end-of-options',
-      `${localRef}^{commit}`,
-    ])
-      .stdout.trim()
-      .toLowerCase();
-    if (resolved !== sha) {
-      throw new Stop(
-        `the checkpoint tag resolves to ${inert(resolved, 40) || 'nothing'}, not the checkpoint’s ${sha}`,
-      );
+    if (at !== sha) {
+      throw new Stop(`the checkpoint tag resolves to ${at}, not the checkpoint’s ${sha}`);
     }
     if (git(toplevel, ['cat-file', '-e', `${sha}^{commit}`]).code !== 0) {
       throw new Stop(`commit ${sha} is not in this repository after the fetch`);
     }
-    // Checked again immediately before `-b`, which writes through a symbolic
-    // ref; and after, every other ref is compared and the branch must be a
-    // plain ref at the checkpoint, which the new worktree's HEAD names.
-    const branchRef = `refs/heads/${branch}`;
-    if (refTaken(git, toplevel, branchRef)) {
-      throw new Stop(`${branchRef} appeared since its name was checked; nothing was checked out`);
-    }
-    const beforeAdd = refSnapshot(git, toplevel, [localRef, branchRef]);
-    const added = git(toplevel, [
-      'worktree',
-      'add',
-      '--no-track',
-      '-b',
-      branch,
-      '--',
-      worktree,
-      sha,
-    ]);
+
+    // Each ref is created in **one create-only step**, with nothing checked
+    // between choosing the name and writing it ({@link createRef}), and the
+    // worktree is added on the branch that step made — not with `-b`, which
+    // follows a symbolic ref.
+    const createdLocal = createRef(io, git, toplevel, localRef, sha);
+    if (createdLocal !== undefined) throw new Stop(`${createdLocal}; nothing was checked out`);
+    const createdBranch = createRef(io, git, toplevel, branchRef, sha);
+    if (createdBranch !== undefined) throw new Stop(`${createdBranch}; nothing was checked out`);
+    const added = git(toplevel, ['worktree', 'add', '--', worktree, branch]);
     if (added.code !== 0)
       throw new Stop(`the worktree could not be made: ${firstLine(added.stderr)}`);
-    if (refSnapshot(git, toplevel, [localRef, branchRef]) !== beforeAdd) {
+    // And after, checked rather than assumed: no other ref moved, both refs
+    // are still plain refs at the checkpoint, the worktree's HEAD names the branch.
+    if (refSnapshot(git, toplevel, [localRef, branchRef]) !== before) {
       throw new Stop(`making the worktree changed refs other than ${branchRef}`);
     }
+    const localPlain = plainRef(git, toplevel, localRef, sha);
+    if (localPlain !== undefined) throw new Stop(`${localRef} ${localPlain}`);
     const branchPlain = plainRef(git, toplevel, branchRef, sha);
     if (branchPlain !== undefined) throw new Stop(`${branchRef} ${branchPlain}`);
     const wtHead = git(worktree, ['symbolic-ref', '-q', 'HEAD']).stdout.trim();
@@ -1066,6 +1076,7 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     }
     io.out('Nothing was removed. To clear them yourself, once nothing you need is in them:');
     for (const l of leftovers) io.out(`  ${cleanupCommand(toplevel, l)}`);
+    io.out('(`worktree remove` also deletes ignored files there, such as a .env, without asking.)');
   }
   io.out(`Prepared offer ${offer.id}: ${cp.newestRef} resolves to ${sha}.`);
   io.out(`Worktree ${worktree} on branch ${branch}, at that commit. Nothing is accepted yet.`);
@@ -1146,6 +1157,46 @@ function plainRef(git: GitRunner, top: string, ref: string, sha?: string): strin
   return undefined;
 }
 
+const ZERO_OID = '0'.repeat(40);
+
+/**
+ * Creates `ref` at `sha` in **one create-only step**:
+ * `git update-ref --no-deref <ref> <sha> <zero>`. The zero old value makes
+ * git refuse, under its own lock, a ref that exists — a plain ref, or a
+ * symbolic ref naming a branch that exists — and `--no-deref` means the write
+ * lands on `ref` itself, **never on what a symbolic ref there names**. Nothing
+ * is checked between the caller choosing the name and this write, so there is
+ * no gap for a symbolic ref to redirect it into.
+ *
+ * What git does not do, measured on 2.50: a **dangling** symbolic ref at
+ * `ref` (one naming a branch that does not exist) reads as "no value", so the
+ * zero old value matches and git *replaces* it with the plain ref — refused
+ * by no git command that also creates, since a transaction may not verify and
+ * create one ref. Still never followed: nothing is written where it pointed.
+ * Answers why it failed, or undefined.
+ */
+function createRef(
+  io: HandoffIo,
+  git: GitRunner,
+  top: string,
+  ref: string,
+  sha: string,
+): string | undefined {
+  io.beforeRefWrite?.(ref);
+  const r = git(top, [
+    'update-ref',
+    '--no-deref',
+    '-m',
+    'laika handoff prepare',
+    ref,
+    sha,
+    ZERO_OID,
+  ]);
+  return r.code === 0
+    ? plainRef(git, top, ref, sha)
+    : `${ref} could not be created (${firstLine(r.stderr) || `git exited ${String(r.code)}`})`;
+}
+
 /** Something an earlier attempt, or somebody else, left at a name prepare would have used. */
 export interface Leftover {
   readonly kind: 'worktree' | 'branch' | 'ref';
@@ -1166,10 +1217,15 @@ export function shellQuote(word: string): string {
  * The command that removes one leftover, for the person to run **if they
  * choose** — never run here. Every name is quoted, so it can be copied as it
  * is. A symbolic ref is removed as itself (`symbolic-ref --delete`,
- * `update-ref --no-deref -d`), never through to what it names; `worktree
- * remove` and `branch -d` refuse to lose work. A name holding a control or
- * format character is not printed as a command, since a terminal would not
- * show it as it is.
+ * `update-ref --no-deref -d`), never through to what it names.
+ *
+ * **What git guarantees is less than "refuses to lose work"**, so the
+ * commands are offered, not vouched for: `worktree remove` refuses a
+ * worktree with modified or untracked files, but deletes **ignored** files —
+ * a `.env`, build output — without asking (measured on 2.50); `branch -d`
+ * refuses only a branch not merged into its upstream or `HEAD`; and the two
+ * ref deletions refuse nothing. A name holding a control or format character
+ * is not printed as a command, since a terminal would not show it as it is.
  */
 export function cleanupCommand(top: string, leftover: Leftover): string {
   if (new RegExp(CONTROL.source).test(top) || new RegExp(CONTROL.source).test(leftover.name)) {
