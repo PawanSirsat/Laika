@@ -5,7 +5,7 @@ import { appendActivity } from '../../src/db/activity.ts';
 import { type ActivityType } from '../../src/db/enums.ts';
 import { orgs, projects, tasks, users } from '../../src/db/schema.ts';
 import { agentLens } from '../../src/services/agent-visibility.ts';
-import { registerAgent } from '../../src/services/agents.ts';
+import { registerAgent, revokeAgent } from '../../src/services/agents.ts';
 import { expireClaims } from '../../src/services/claims.ts';
 import { startWorking } from '../../src/services/tasks.ts';
 import {
@@ -348,6 +348,43 @@ describe("another person's agent on every activity surface (D-121 item 7, LAI-10
       expect(asBea).not.toContain(ADA_NAME);
     });
   }
+});
+
+describe("a revoked agent token's row (LAI-1011)", () => {
+  it('token.revoked carries the registered name to its owner only', async () => {
+    // Revoking the agent revokes its live token, and `token.revoked` names it.
+    revokeAgent(h.t.sqlite, h.db, actorOf(bea.id), bea.agentId);
+
+    interface Row {
+      type: string;
+      agent_redacted: boolean;
+      payload: Record<string, unknown>;
+    }
+    const revokedRow = async (who: Reader): Promise<Row | undefined> =>
+      (
+        JSON.parse(
+          await okText(req('/api/v1/activity/history?type=token.revoked', who.cookie)),
+        ) as { data: Row[] }
+      ).data.find((r) => r.payload.token_id === bea.tokenId);
+
+    // The row is there for both: the absence below is the name, not the row.
+    const asAda = await revokedRow(ada);
+    expect(asAda?.type).toBe('token.revoked');
+    expect(asAda?.payload.name).toBeNull();
+    expect(asAda?.agent_redacted).toBe(true);
+    const asBea = await revokedRow(bea);
+    expect(asBea?.payload.name).toBe(BEA_NAME);
+    expect(asBea?.agent_redacted).toBe(false);
+
+    // And nowhere in Ada's raw bodies, on every surface carrying org rows.
+    for (const name of [
+      'GET /activity',
+      'GET /activity/history',
+      'GET /activity/history?format=csv',
+    ]) {
+      expect(await SURFACES[name]!(ada), name).not.toContain(BEA_NAME);
+    }
+  });
 });
 
 describe('agentLens (the one gate)', () => {
