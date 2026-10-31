@@ -720,6 +720,9 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           after: after ?? 0,
           state: 'undelivered',
           limit: AGENT_EVENTS_DEFAULT_LIMIT,
+          // The same restriction as the inbox items (LAI-553 review): a sync
+          // for one project neither returns another's events nor moves past them.
+          projectSlug: project ?? null,
         });
         const items = listInbox(db, actor, {
           limit: 100,

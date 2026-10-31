@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { and, asc, eq, getTableColumns, gt, inArray, isNull, type SQL } from 'drizzle-orm';
-import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import { reloadActor, withProject, type ResolvedActor } from '../auth/resolve-actor.ts';
+import { TokenAuthError } from '../auth/tokens.ts';
 import { latestActivitySeq, type ActivityEvent } from '../db/activity.ts';
 import { type AgentEventDetail, type AgentEventType } from '../db/agent-events.ts';
 
@@ -13,11 +14,13 @@ import {
   agentEvents,
   agentSessions,
   handoffOffers,
+  projects,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { assertCan, can } from '../policy/can.ts';
 import { registeredAgent, requireOwnOpenSession } from './claims.ts';
 import { insidePin, visibleTo } from './events.ts';
+import { noSuchProjectForAgent } from './work-requests.ts';
 
 /** Is this §4.8 verb an agent event (§4.76)? Re-exported so routes stay on services/. */
 export { isAgentEventType } from '../db/agent-events.ts';
@@ -192,14 +195,45 @@ export interface ListAgentEventsOptions {
   /** `undelivered` (default): not yet `received`. `all`: every state. */
   state: 'undelivered' | 'all';
   limit: number;
+  /** Only this project's events: a slug the agent may read now (`agent_sync`'s `project`). */
+  projectSlug?: string | null | undefined;
+}
+
+/**
+ * The projects whose events this agent may read **now** (§11.5's question,
+ * asked once per project rather than once per row): those its deliveries
+ * name, kept where {@link mayRead} holds — the token's pin, the agent's
+ * grant, the owner's role. An agent event always names a project, so an
+ * org-level row is never among them.
+ */
+function readableProjects(db: Db, actor: ResolvedActor, agentId: string): string[] {
+  const named = db
+    .selectDistinct({ projectId: activity.projectId })
+    .from(agentEventDeliveries)
+    .innerJoin(activity, eq(activity.id, agentEventDeliveries.activityId))
+    .where(eq(agentEventDeliveries.agentId, agentId))
+    .all();
+  return named
+    .map((n) => n.projectId)
+    .filter((id): id is string => id !== null)
+    .filter(
+      (projectId) =>
+        insidePin(actor, projectId) &&
+        can(withProject(actor, projectId), 'project.read', { projectId }),
+    );
 }
 
 /**
  * `GET /agents/me/events`, `agent_sync`'s `events` (§6.4, §7.1): the events
  * addressed to the calling agent after `after`, oldest first, each with its
  * delivery state — **at least once**: an event stays `undelivered` until the
- * helper acknowledges it, whatever the stream did. Only what the agent may
- * read now is answered; one it may no longer read is skipped, not refused.
+ * helper acknowledges it, whatever the stream did.
+ *
+ * **Only what the agent may read now is answered, and the filter is in the
+ * query** (LAI-553 review): one page is one query plus one row of look-ahead,
+ * however many deliveries it may no longer read, and `has_more` counts only
+ * rows it may read — a hidden event is indistinguishable from a missing one.
+ * A grant given back returns its events, still undelivered.
  */
 export function listAgentEvents(
   db: Db,
@@ -216,33 +250,40 @@ export function listAgentEvents(
     after = 0;
   }
 
-  const conditions: SQL[] = [eq(agentEventDeliveries.agentId, agentId)];
+  let readable = readableProjects(db, actor, agentId);
+  if (options.projectSlug !== undefined && options.projectSlug !== null) {
+    // A slug the agent may not read and one that names nothing answer alike.
+    const found = db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.slug, options.projectSlug))
+      .get();
+    if (
+      found === undefined ||
+      !insidePin(actor, found.id) ||
+      !can(withProject(actor, found.id), 'project.read', { projectId: found.id })
+    ) {
+      throw noSuchProjectForAgent();
+    }
+    readable = readable.filter((id) => id === found.id);
+  }
+  if (readable.length === 0) return { data: [], cursor: after, has_more: false, gap };
+
+  const conditions: SQL[] = [
+    eq(agentEventDeliveries.agentId, agentId),
+    gt(agentEventDeliveries.seq, after),
+    inArray(activity.projectId, readable),
+  ];
   if (options.state === 'undelivered') conditions.push(isNull(agentEventDeliveries.receivedAt));
 
-  // Rows the agent may no longer read are skipped, so read in pages until the
-  // limit is filled or the log is exhausted; `cursor` moves past skipped rows.
-  const out: Joined[] = [];
-  let cursor = after;
-  let hasMore = false;
-  for (;;) {
-    const page = joined(
-      db,
-      [...conditions, gt(agentEventDeliveries.seq, cursor)],
-      options.limit + 1,
-    );
-    for (const item of page.slice(0, options.limit)) {
-      if (out.length === options.limit) break;
-      cursor = item.event.seq;
-      if (mayRead(actor, item.row)) out.push(item);
-    }
-    if (out.length === options.limit) {
-      hasMore = joined(db, [...conditions, gt(agentEventDeliveries.seq, cursor)], 1).length > 0;
-      break;
-    }
-    if (page.length <= options.limit) break;
-  }
-
-  return { data: envelopes(db, out, agentId), cursor, has_more: hasMore, gap };
+  const page = joined(db, conditions, options.limit + 1);
+  const out = page.slice(0, options.limit);
+  return {
+    data: envelopes(db, out, agentId),
+    cursor: out.at(-1)?.event.seq ?? after,
+    has_more: page.length > options.limit,
+    gap,
+  };
 }
 
 export interface AckAgentEventsInput {
@@ -275,16 +316,26 @@ export function ackAgentEvents(
   now = Date.now(),
 ): AgentEventEnvelope[] {
   assertCan(actor, 'heartbeat.send_own');
-  const agentId = requireAgentToken(actor);
+  requireAgentToken(actor);
   const ids = [...new Set(input.eventIds)];
 
   return immediateTransaction(sqlite, () => {
+    // Read again inside the transaction (LAI-553 review): the route resolved
+    // the actor before it waited for the body, and a token revoked or
+    // narrowed, an agent revoked or ungranted, or an owner demoted in that
+    // wait must not acknowledge — nor be answered an envelope. The refusal is
+    // the one a fresh request on that token would get.
+    const fresh = reloadActor(db, actor, now);
+    if (!fresh.ok) throw new TokenAuthError(fresh.reason);
+    const current = fresh.actor;
+    assertCan(current, 'heartbeat.send_own');
+    const agentId = requireAgentToken(current);
     const session =
-      input.sessionId === undefined ? null : requireOwnOpenSession(db, actor, input.sessionId).id;
+      input.sessionId === undefined ? null : requireOwnOpenSession(db, current, input.sessionId).id;
     const found = joined(db, [
       eq(agentEventDeliveries.agentId, agentId),
       inArray(agentEventDeliveries.activityId, ids),
-    ]).filter((item) => mayRead(actor, item.row));
+    ]).filter((item) => mayRead(current, item.row));
     const known = new Set(found.map((f) => f.row.id));
     const missing = ids.filter((id) => !known.has(id));
     if (missing.length > 0) {

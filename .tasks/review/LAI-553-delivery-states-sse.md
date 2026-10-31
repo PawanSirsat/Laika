@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: [LAI-546, LAI-539]
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-10-31T03:10:00+02:00
 started: 2026-10-30T17:10:00+02:00
 ---
 
@@ -32,10 +33,10 @@ states are recorded without claiming the model understood anything.
 
 ## Acceptance criteria
 
-- [ ] An agent never receives another agent's offer event (asserted).
-- [ ] Replaying a delivery twice records one `received` (dedup).
-- [ ] Each state transition is asserted; `presented` cannot precede `received`.
-- [ ] Repo-root gate exits 0.
+- [x] An agent never receives another agent's offer event (asserted).
+- [x] Replaying a delivery twice records one `received` (dedup).
+- [x] Each state transition is asserted; `presented` cannot precede `received`.
+- [x] Repo-root gate exits 0.
 
 ## Tests and UI evidence required
 
@@ -70,3 +71,11 @@ LAI-546's server half is already merged on `master`. Recorded per §2 step 1.
 ## Migration / rollout notes
 
 Additive.
+
+## Submission notes (CORE, Belka, 2026-10-31)
+
+- PR #165 (`LAI-553-durable-delivery`) is the server half and the named SPEC edit (§4.76, §4.77, §6.4, §7.1, §11.5).
+- PR #166 (`LAI-553-web`) is stacked on it: two `NO_BROWSER_CALLER` entries in `server/web/test/api/endpoint-coverage.test.ts`, the web half the dispatch authorised.
+- **The gate on #165 alone is red with exactly one assertion**, as in §4.4: `server/web/test/api/endpoint-coverage.test.ts` › `no endpoint is served, uncalled and unexplained`, naming `api/v1/agents/me/events` and `api/v1/agents/me/events/ack`. The server suite passes (4606 passed, 10 skipped; run 41127696220). #166 turns it green.
+- **The repo-root gate on the two together is green**: workflow_dispatch run 41127803152 on `LAI-553-web`, Gate job `success`.
+- Delivery states keep this file's names (`received`, not the dispatch's `received_by_helper`).
