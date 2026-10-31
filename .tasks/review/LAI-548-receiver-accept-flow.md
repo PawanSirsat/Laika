@@ -178,3 +178,42 @@ branch); unquoted cleanup → red; symbolic branch cleanup via `branch -d` →
 red; private-ref cleanup without `--no-deref` → red. The symbolic-ref check
 alone, and the on-disk check alone, each keep both cases green: they are
 independent layers, and removing only one of them survives.
+
+## Review round 4 — Codex on #158 at 6e494d86; fixed (SHELL, 2026-10-31)
+
+Codex's blocker: the free-name check ran **before** the write, so a symbolic
+ref put at the name in between could redirect the fetch or `worktree add -b`
+into another branch.
+
+- **The fetch writes no ref.** It brings the objects only (no destination, no
+  FETCH_HEAD); the tag's value is read with `ls-remote` by its exact name, and
+  is checked as before (lightweight, at the checkpoint SHA, commit present).
+- **Each ref is created in one create-only step**, `git update-ref --no-deref
+  <ref> <sha> <zero-oid>` (`createRef`), with nothing checked between choosing
+  the name and writing it; the worktree is added on the branch that step made
+  (`worktree add -- <path> <branch>`), never with `-b`. The free-name check
+  (`refTaken`) now only chooses names. Post-write checks are unchanged.
+- **Deviation, measured on git 2.50.1, not assumed:** git refuses that step
+  for an existing ref or a symbolic ref naming an existing branch, and never
+  writes through a symbolic ref; but a **dangling** symbolic ref reads as "no
+  value", the zero old value matches, and git **replaces** it rather than
+  refusing. No git command closes this: `update-ref --stdin` with
+  `symref-verify` and `create` for one ref is refused (`multiple updates for
+  ref … not allowed`). So for a dangling one the guarantee is "never
+  followed", not "refused"; the tests assert exactly that.
+- The cleanup comment promised that `worktree remove` and `branch -d` "refuse
+  to lose work". Measured: `worktree remove` deleted an ignored `.env`
+  without asking. The comment, the README and the printed hint now say what
+  git does: it refuses modified or untracked files but deletes ignored ones;
+  `branch -d` refuses only an unmerged branch.
+
+| Regression (`beforeRefWrite` injects the instant before the write) | Mutant that turns it red |
+| --- | --- |
+| symref → existing branch at the private ref name: refused, the symref and `main` unchanged, no branch, no worktree, no accept | private ref by fetch into it (round 3); create without the zero old value |
+| same at the branch name | branch by `worktree add -b` (round 3); create without the zero old value |
+| dangling symref at the private ref name: never followed, the ref ends plain at the checkpoint, accept succeeds | create without `--no-deref`; fetch into it (round 3) |
+| same at the branch name | create without `--no-deref`; `worktree add -b` (round 3) |
+
+Each mutant was red only on its own cases. Where the old write path wrote
+through, the post-write checks then failed prepare closed, so those cases go
+red on prepare's exit code.
