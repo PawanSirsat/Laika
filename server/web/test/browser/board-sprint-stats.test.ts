@@ -7,10 +7,14 @@
  * somewhere on top, adjust that one; then also remove this row, that's it."*
  * Row one was the sprint strip, row two WORKING NOW.
  *
- * The figures must mean what the strip's summary meant. `stripSummary` is the
- * strip's `countFor` and `LEFT` from `board/SprintStrip.tsx` at 5adbfae, run
- * over the same fixture the stub serves, and each test also states the numbers
- * by hand — a reference that drifted with the code would agree with anything.
+ * The figures must mean what the strip's summary meant — **except BLK and a
+ * future sprint's LEFT, which LAI-819 corrected.** `summary` is the strip's
+ * `countFor` and `LEFT` from `board/SprintStrip.tsx` at 5adbfae with those two
+ * changed: BLK is open work held by a dependency that is not done (the
+ * server's rule; the strip's `!ready` also counted every assigned task), and a
+ * sprint not yet started says when it starts. It runs over the same fixture
+ * the stub serves, and each test also states the numbers by hand — a
+ * reference that drifted with the code would agree with anything.
  *
  * The stub answers `GET /tasks` by its query, as the server does: a sprint
  * scopes it, an assignee narrows it. Every task request is recorded with its
@@ -65,7 +69,12 @@ let n = 0;
 const task = (
   status: string,
   sprintId: string | null,
-  over: { ready?: boolean; assignee?: string | null; parent?: string | null } = {},
+  over: {
+    ready?: boolean;
+    assignee?: string | null;
+    parent?: string | null;
+    blockedBy?: readonly string[];
+  } = {},
 ) => {
   n += 1;
   return {
@@ -87,7 +96,7 @@ const task = (
     tags: [],
     ready: over.ready ?? true,
     comment_count: 0,
-    blocked_by: [],
+    blocked_by: over.blockedBy ?? [],
     blocks: [],
     discovered_from: null,
     parent_task_id: over.parent ?? null,
@@ -114,26 +123,39 @@ const TASKS: readonly Row[] = [
   task('in_progress', 's2', { assignee: 'u2' }),
   task('in_progress', 's2'),
   task('review', 's2'),
-  task('todo', 's2', { ready: false, assignee: 'u2' }),
-  task('todo', 's2', { ready: false }),
-  task('todo', 's2', { ready: false, parent: 't4' }),
-  task('backlog', 's2', { ready: false }),
-  task('todo', 's3', { ready: false }),
+  // Assigned, and its one blocker (LC-1) is done: not ready, and not blocked —
+  // the strip's `!ready` counted it (LAI-819).
+  task('todo', 's2', { ready: false, assignee: 'u2', blockedBy: ['t1'] }),
+  // Waiting on LC-13, open in the next sprint: blocked from outside the scope.
+  task('todo', 's2', { ready: false, blockedBy: ['t13'] }),
+  task('todo', 's2', { ready: false, parent: 't4', blockedBy: ['t6'] }),
+  task('backlog', 's2', { ready: false, blockedBy: ['t14'] }),
+  task('todo', 's3', { ready: false, blockedBy: ['t7'] }),
   task('todo', 's3'),
-  task('backlog', null, { ready: false }),
+  task('backlog', null, { ready: false, blockedBy: ['t8'] }),
 ];
 
-/** `SprintStrip.tsx` at 5adbfae: `countFor` and its LEFT, the figures LAI-727 keeps. */
-function stripSummary(sprintId: string | undefined): string {
+/**
+ * `SprintStrip.tsx` at 5adbfae, `countFor` and its LEFT — with LAI-819's BLK
+ * and STARTS. A blocker is judged against the whole fixture, as the board
+ * judges it against the whole project.
+ */
+function summary(sprintId: string | undefined): string {
   const inScope = sprintId === undefined ? TASKS : TASKS.filter((t) => t.sprint_id === sprintId);
   const done = inScope.filter((t) => t.status === 'done').length;
-  const blocked = inScope.filter((t) => !t.ready && t.status !== 'done').length;
+  const open = (t: Row) => t.status !== 'done' && t.status !== 'cancelled';
+  const blocked = inScope.filter(
+    (t) => open(t) && t.blocked_by.some((id) => TASKS.find((b) => b.id === id)?.status !== 'done'),
+  ).length;
   const current = SPRINTS.find((s) => s.id === sprintId);
+  const startsIn = current === undefined ? 0 : Math.round((current.starts_on - MIDNIGHT) / DAY);
   const left =
     current === undefined
-      ? '—'
-      : String(Math.max(0, Math.round((current.ends_on - MIDNIGHT) / DAY) + 1));
-  return `DONE ${String(done)}/${String(inScope.length)} BLK ${String(blocked)} LEFT ${left}`;
+      ? 'LEFT —'
+      : startsIn > 0
+        ? `STARTS in ${String(startsIn)}d`
+        : `LEFT ${String(Math.max(0, Math.round((current.ends_on - MIDNIGHT) / DAY) + 1))}`;
+  return `DONE ${String(done)}/${String(inScope.length)} BLK ${String(blocked)} ${left}`;
 }
 
 const page = (rows: readonly Row[]) => ({ data: rows, next_cursor: null });
@@ -228,7 +250,7 @@ function recordTaskReads(target: string[]) {
   };
 }
 
-/** What the group shows a sighted reader, whitespace folded: `S2 DONE 3/10 BLK 4 LEFT 10`. */
+/** What the group shows a sighted reader, whitespace folded: `S2 DONE 3/10 BLK 3 LEFT 10`. */
 const shown = async (h: Harness): Promise<string> =>
   (
     await h.page
@@ -307,10 +329,12 @@ void describe('DONE / BLK / LEFT are the strip’s figures (LAI-727)', () => {
   void test('the active sprint, which the board opens on', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await reads(h, `S2 ${stripSummary('s2')}`);
-      // By hand: 2 of 8 top-level tasks and 1 of 2 subtasks done; four open
-      // and not ready; the sprint ends nine days after today, so ten are left.
-      assert.equal(await shown(h), 'S2 DONE 3/10 BLK 4 LEFT 10');
+      await reads(h, `S2 ${summary('s2')}`);
+      // By hand: 2 of 8 top-level tasks and 1 of 2 subtasks done; three open
+      // and held by unfinished work — LC-9 is not ready, but its blocker is
+      // done and it is merely assigned; the sprint ends nine days after today,
+      // so ten are left.
+      assert.equal(await shown(h), 'S2 DONE 3/10 BLK 3 LEFT 10');
       assert.equal(sprintInUrl(h), 's2', 'the board no longer opens on the active sprint');
     } finally {
       await h.close();
@@ -320,18 +344,23 @@ void describe('DONE / BLK / LEFT are the strip’s figures (LAI-727)', () => {
   void test('All sprints counts every task, sprint or not, and has no days left', async () => {
     const h = await open('/board?project=laika-core&sprint=all', STUB);
     try {
-      await reads(h, `All sprints ${stripSummary(undefined)}`);
-      assert.equal(await shown(h), 'All sprints DONE 5/15 BLK 6 LEFT —');
+      await reads(h, `All sprints ${summary(undefined)}`);
+      assert.equal(await shown(h), 'All sprints DONE 5/15 BLK 5 LEFT —');
     } finally {
       await h.close();
     }
   });
 
-  void test('a sprint with blocked work', async () => {
+  void test('a sprint with blocked work, which has not started yet', async () => {
     const h = await open('/board?project=laika-core&sprint=s3', STUB);
     try {
-      await reads(h, `S3 ${stripSummary('s3')}`);
-      assert.equal(await shown(h), 'S3 DONE 0/2 BLK 1 LEFT 24');
+      await reads(h, `S3 ${summary('s3')}`);
+      // It starts in ten days: when it starts, not LEFT 24 (LAI-819).
+      assert.equal(await shown(h), 'S3 DONE 0/2 BLK 1 STARTS in 10d');
+      assert.equal(
+        await h.page.locator('.bstats-left .visually-hidden').textContent(),
+        'Starts in 10 days',
+      );
       // BLK is the danger token, as it was in the strip.
       const colours = await h.page.evaluate(() => {
         const blk = document.querySelector('.bstats-blocked [aria-hidden="true"] b');
@@ -368,7 +397,7 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
     const urls: string[] = [];
     const h = await open('/board?project=laika-core', STUB, { before: recordTaskReads(urls) });
     try {
-      await reads(h, `S2 ${stripSummary('s2')}`);
+      await reads(h, `S2 ${summary('s2')}`);
       // Kept as a sleep (LAI-715 sweep): a quiet window: a second read would come after this, so no condition can stand in.
       await h.page.waitForTimeout(800);
       assert.deepEqual(
@@ -395,7 +424,7 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
         3,
         'positive control: the board is narrowed',
       );
-      await reads(h, `S2 ${stripSummary('s2')}`);
+      await reads(h, `S2 ${summary('s2')}`);
       // Kept as a sleep (LAI-715 sweep): a quiet window: a second read would come after this, so no condition can stand in.
       await h.page.waitForTimeout(800);
       assert.deepEqual(urls, theWalk(urls), `a scoped task read: ${urls.join(' ')}`);
@@ -418,7 +447,7 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
         3,
         'positive control: the board is narrowed',
       );
-      await reads(h, `All sprints ${stripSummary(undefined)}`);
+      await reads(h, `All sprints ${summary(undefined)}`);
       assert.doesNotMatch(
         (await h.page.locator('.bstats').getAttribute('aria-label')) ?? '',
         /filtered/i,
@@ -443,33 +472,33 @@ void describe('sprints are switched in the Filter now (LAI-727)', () => {
   void test('choosing a sprint moves the figures; Any and the chip’s × are All sprints', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await reads(h, `S2 ${stripSummary('s2')}`);
+      await reads(h, `S2 ${summary('s2')}`);
 
       await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
       await pick(sprintSelect(h), 's3');
       await h.page.waitForFunction(() => location.search.includes('sprint=s3'), undefined, {
         timeout: 5000,
       });
-      await reads(h, `S3 ${stripSummary('s3')}`);
+      await reads(h, `S3 ${summary('s3')}`);
 
       // Any is the empty value, as it was on the `<select>`.
       await pick(sprintSelect(h), '');
       await h.page.waitForFunction(() => location.search.includes('sprint=all'), undefined, {
         timeout: 5000,
       });
-      await reads(h, `All sprints ${stripSummary(undefined)}`);
+      await reads(h, `All sprints ${summary(undefined)}`);
 
       await pick(sprintSelect(h), 's1');
       await h.page.waitForFunction(() => location.search.includes('sprint=s1'), undefined, {
         timeout: 5000,
       });
-      await reads(h, `S1 ${stripSummary('s1')}`);
+      await reads(h, `S1 ${summary('s1')}`);
       await h.page.keyboard.press('Escape');
       await h.page.locator('.bt-chip', { hasText: 'Sprint: S1' }).click();
       await h.page.waitForFunction(() => location.search.includes('sprint=all'), undefined, {
         timeout: 5000,
       });
-      await reads(h, `All sprints ${stripSummary(undefined)}`);
+      await reads(h, `All sprints ${summary(undefined)}`);
     } finally {
       await h.close();
     }
@@ -480,14 +509,14 @@ void describe('the group is readable without sight (LAI-727)', () => {
   void test('a named group, and each figure a sentence', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await reads(h, `S2 ${stripSummary('s2')}`);
+      await reads(h, `S2 ${summary('s2')}`);
       const group = h.page.locator('.bstats');
       assert.equal(await group.getAttribute('role'), 'group');
       assert.match((await group.getAttribute('aria-label')) ?? '', /S2.*Finish what’s open/);
       const spoken = await h.page
         .locator('.bstats .visually-hidden')
         .evaluateAll((els) => els.map((el) => el.textContent ?? ''));
-      assert.deepEqual(spoken, ['Done 3 of 10', 'Blocked 4', '10 days left']);
+      assert.deepEqual(spoken, ['Done 3 of 10', 'Blocked 3', '10 days left']);
     } finally {
       await h.close();
     }
@@ -592,7 +621,7 @@ void describe('the group fits the toolbar (LAI-727)', () => {
       void test(`${String(size.width)}px, ${theme}: overlaps nothing and never scrolls sideways`, async () => {
         const h = await open('/board?project=laika-core', STUB);
         try {
-          await reads(h, `S2 ${stripSummary('s2')}`);
+          await reads(h, `S2 ${summary('s2')}`);
           // The theme first: below 900px its switch is in the off-canvas rail.
           await setTheme(h.page, theme);
           await h.page.setViewportSize(size);
@@ -718,7 +747,7 @@ void describe('All sprints is always named (LAI-727 review)', () => {
     void test(`${String(width)}px: the scope reads "All sprints" and is visible`, async () => {
       const h = await open('/board?project=laika-core&sprint=all', STUB);
       try {
-        await reads(h, `All sprints ${stripSummary(undefined)}`);
+        await reads(h, `All sprints ${summary(undefined)}`);
         await h.page.setViewportSize({ width, height: 768 });
         await settled(h);
         assert.equal(await h.page.locator('.bt-chip').count(), 0, 'positive control: no chip');
@@ -742,7 +771,7 @@ void describe('All sprints is always named (LAI-727 review)', () => {
   void test('LEFT says there is no end date, not "no days left"', async () => {
     const h = await open('/board?project=laika-core&sprint=all', STUB);
     try {
-      await reads(h, `All sprints ${stripSummary(undefined)}`);
+      await reads(h, `All sprints ${summary(undefined)}`);
       const left = h.page.locator('.bstats-left');
       assert.equal(await left.getAttribute('title'), 'No sprint end date');
       assert.equal(await left.locator('.visually-hidden').textContent(), 'No sprint end date');
@@ -765,7 +794,7 @@ void describe('the group is in the toolbar row in every tier (LAI-727 review)', 
   void test('full, compact and pill are all reached, and every one is in the row', async () => {
     const h = await open('/board?project=laika-core&sprint=s2&group=assignee', SIX_MEMBERS);
     try {
-      await reads(h, `S2 ${stripSummary('s2')}`);
+      await reads(h, `S2 ${summary('s2')}`);
       await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
       const seen = new Set<string>();
       for (const width of [...WIDTHS, ...[...WIDTHS].reverse()]) {
@@ -795,7 +824,7 @@ void describe('the pill (LAI-727 review)', () => {
         before: async (page) => page.setViewportSize({ width: 920, height: 768 }),
       });
       try {
-        await reads(h, `S2 ${stripSummary('s2')}`);
+        await reads(h, `S2 ${summary('s2')}`);
         await setTheme(h.page, theme);
         // The icon rail, as 920px draws it since LAI-796: the sidebar is not
         // opened (LAI-804). The boundary itself has its own test below.
@@ -811,7 +840,7 @@ void describe('the pill (LAI-727 review)', () => {
         assert.equal(await pill.getAttribute('role'), 'button');
         assert.equal(await pill.getAttribute('tabindex'), '0');
         const name = (await pill.getAttribute('aria-label')) ?? '';
-        for (const said of ['S2', 'Done 3 of 10', 'Blocked 4', '10 days left']) {
+        for (const said of ['S2', 'Done 3 of 10', 'Blocked 3', '10 days left']) {
           assert.ok(name.includes(said), `the pill's name lacks "${said}": ${name}`);
         }
         // One figure drawn: the scope and done-of-total; BLK and LEFT are not.
@@ -832,7 +861,7 @@ void describe('the pill (LAI-727 review)', () => {
         await pill.hover();
         await tip.waitFor({ state: 'visible', timeout: 3000 });
         const text = (await tip.innerText()).replace(/\s+/g, ' ');
-        assert.match(text, /BLK 4/);
+        assert.match(text, /BLK 3/);
         assert.match(text, /LEFT 10/);
         assert.equal(await pill.getAttribute('aria-describedby'), await tip.getAttribute('id'));
         const opened = await measureToolbar(h);
@@ -892,7 +921,7 @@ void describe('the pill on its boundary with compact (LAI-804)', () => {
       before: async (page) => page.setViewportSize({ width: 1180, height: 768 }),
     });
     try {
-      await reads(h, `S2 ${stripSummary('s2')}`);
+      await reads(h, `S2 ${summary('s2')}`);
       await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
 
       const tierAt = async (width: number): Promise<string> => {
@@ -966,7 +995,7 @@ void describe('the pill on its boundary with compact (LAI-804)', () => {
       );
       assert.equal(await tip.isVisible(), true, 'the first hover did not open the tooltip');
       assert.equal(await pill.getAttribute('aria-expanded'), 'true');
-      assert.match((await tip.innerText()).replace(/\s+/g, ' '), /BLK 4/);
+      assert.match((await tip.innerText()).replace(/\s+/g, ' '), /BLK 3/);
 
       await h.page.mouse.move(5, 760);
       await tip.waitFor({ state: 'hidden', timeout: 3000 });
@@ -1153,7 +1182,7 @@ void describe('the board does not move after it is drawn (LAI-727 review)', () =
         release();
         await landed;
         await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
-        await reads(h, `S2 ${stripSummary('s2')}`);
+        await reads(h, `S2 ${summary('s2')}`);
         await settled(h);
         const after = await rowGeometry(h);
         assert.ok(

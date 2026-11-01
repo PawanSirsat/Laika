@@ -28,13 +28,18 @@ export interface SprintStatsFigures {
  */
 export function useSprintStats(
   filter: TaskFilter,
-  board: Pick<BoardState, 'status' | 'all' | 'truncated'>,
+  board: Pick<BoardState, 'status' | 'all' | 'allById' | 'truncated'>,
 ): SprintStatsFigures {
   const sprint = filter.sprint;
   const counts = useMemo(() => {
     if (board.status !== 'ready') return undefined;
-    if (sprint === undefined) return countStats(board.all);
-    return countStats(board.all.filter((task) => matchesTaskFilter(task, { sprint })));
-  }, [board.status, board.all, sprint]);
+    // Blockers are judged against the whole project (LAI-819): a task in this
+    // sprint waiting on one in the next is blocked all the same.
+    if (sprint === undefined) return countStats(board.all, board.allById);
+    return countStats(
+      board.all.filter((task) => matchesTaskFilter(task, { sprint })),
+      board.allById,
+    );
+  }, [board.status, board.all, board.allById, sprint]);
   return { counts, partial: board.truncated };
 }

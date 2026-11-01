@@ -43,6 +43,8 @@ export interface Swimlane {
   readonly avatarId?: string | undefined;
   /** Every card in this row, across all its columns. */
   readonly count: number;
+  /** Of them, the open ones — not done, not cancelled — which the rows are ranked by. */
+  readonly open: number;
   readonly lanes: readonly Lane[];
 }
 
@@ -91,6 +93,11 @@ function bucketFor(
   };
 }
 
+/** Cards still to finish: not `done`, not `cancelled`. */
+function openCount(tasks: readonly TaskSummary[]): number {
+  return tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled').length;
+}
+
 /**
  * Split the board into rows, each holding the whole column set.
  *
@@ -135,7 +142,13 @@ export function groupSwimlanes(
      * already the filtered set — the counts are of what the board is showing,
      * so narrowing to one sprint reorders the rows by that sprint's workload
      * without this function knowing a filter exists.
+     *
+     * **Busiest means open work** (LAI-819). Ranked by every card, a row of
+     * forty finished tasks led a row of ten in progress; done work is a record,
+     * not a workload. All cards break a tie.
      */
+    const open = openCount(right.tasks) - openCount(left.tasks);
+    if (open !== 0) return open;
     if (left.tasks.length !== right.tasks.length) return right.tasks.length - left.tasks.length;
 
     // Ties by name, so the order is stable rather than insertion-dependent.
@@ -147,6 +160,7 @@ export function groupSwimlanes(
     name: bucket.name,
     avatarId: bucket.avatarId,
     count: bucket.tasks.length,
+    open: openCount(bucket.tasks),
     // The same function the ungrouped board uses, against the same columns.
     lanes: groupByColumn(bucket.tasks, columns, options.all ?? columns, options.placing),
   }));

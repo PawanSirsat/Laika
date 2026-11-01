@@ -11,6 +11,15 @@
   min-width: 0;
 }
 
+/* What the grid cannot show (LAI-819): nothing dated, or dates beyond it. */
+.cal-note {
+  margin: 0 0 0.625rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
 .cal-scroll {
   overflow-x: auto;
   overscroll-behavior-x: contain;

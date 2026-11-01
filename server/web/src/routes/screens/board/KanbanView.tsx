@@ -111,7 +111,14 @@ export function KanbanView({ swimlanes, collapsed, onToggleGroup, ...row }: Kanb
               <h3 className="swim-name" id={`swim-${lane.key || 'none'}`}>
                 {lane.name}
               </h3>
-              <span className="swim-count">{lane.count}</span>
+              {/* Every card in the row; the rows are ranked by the open ones,
+                  which the hover says (LAI-819). */}
+              <span
+                className="swim-count"
+                title={`${String(lane.open)} open of ${String(lane.count)} — rows are ordered by open work`}
+              >
+                {lane.count}
+              </span>
             </header>
 
             {!shut && (
