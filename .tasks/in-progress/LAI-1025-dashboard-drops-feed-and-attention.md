@@ -2,11 +2,12 @@
 id: LAI-1025
 title: 'The project Dashboard drops Recent activity and Needs attention, and the requests that fed only them'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
+started: 2026-11-01T12:53:37Z
 discovered-from:
-status: backlog
+status: in-progress
 ---
 
 ## Goal
