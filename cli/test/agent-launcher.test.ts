@@ -22,7 +22,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
 import type { EventRecord } from '../src/agent-events.ts';
@@ -43,8 +44,11 @@ import {
   pidPath,
   runDir,
   startLauncher,
+  STOP_SIGNALS,
+  statusPath,
+  takePid,
 } from '../src/agent-launcher.ts';
-import { writeCredential } from '../src/agent-session.ts';
+import { readProc, writeCredential } from '../src/agent-session.ts';
 
 const OWNER = '01M2ZHT4HVYDPS7GE8S24CF4HH';
 const PROJECT = '01M50CDWK51GKGJ3JQEDM0S507';
@@ -81,6 +85,14 @@ function fakeHarness(dir: string): string {
       '    argv: process.argv.slice(1), env: process.env, stdin: input, cwd: process.cwd() }));',
       '});',
       "if (process.argv.includes('--ignore-term')) process.on('SIGTERM', () => undefined);",
+      "if (process.argv.includes('--grandchildren')) {",
+      "  const { spawn } = await import('node:child_process');",
+      "  const keep = ['-e', 'setTimeout(() => undefined, 60000)'];",
+      "  const same = spawn(process.execPath, keep, { stdio: 'ignore' });",
+      "  const own = spawn(process.execPath, keep, { stdio: 'ignore', detached: true });",
+      '  own.unref();',
+      '  writeFileSync(process.env.LAIKA_LAUNCH_DIR + "/gc.json", JSON.stringify({ same: same.pid, own: own.pid }));',
+      '}',
       'const ms = Number(process.argv[process.argv.indexOf("--ms") + 1]);',
       'setTimeout(() => process.exit(0), ms);',
     ].join('\n'),
@@ -119,6 +131,7 @@ function config(over: Partial<LauncherConfig> & { argv: string[] }): LauncherCon
     max_concurrent: 1,
     max_runtime_seconds: 60,
     poll_seconds: 10,
+    pass_ssh_agent: false,
     ...rest,
   };
 }
@@ -332,6 +345,49 @@ void describe('config', () => {
       assert.match(result.errors.join('\n'), /writable by group or others/);
   });
 
+  void test('refuses a config that is a symlink, even to a valid file', () => {
+    const home = scratch();
+    writeConfig(home, valid(home));
+    const real = join(home, 'real.json');
+    writeFileSync(real, readFileSync(configPath(home)), { mode: 0o600 });
+    rmSync(configPath(home));
+    symlinkSync(real, configPath(home));
+    const result = loadConfig(home);
+    assert.equal(result.kind, 'invalid');
+    if (result.kind === 'invalid') assert.match(result.errors.join('\n'), /is a symlink/);
+  });
+
+  void test('refuses a ~/.laika others can write', () => {
+    const home = scratch();
+    writeConfig(home, valid(home));
+    chmodSync(join(home, '.laika'), 0o777);
+    const result = loadConfig(home);
+    assert.equal(result.kind, 'invalid');
+    if (result.kind === 'invalid') assert.match(result.errors.join('\n'), /\.laika is writable/);
+  });
+
+  void test('refuses a program others can rewrite', () => {
+    const home = scratch();
+    const program = join(home, 'harness');
+    writeFileSync(program, '#!/bin/sh\n', { mode: 0o775 });
+    chmodSync(program, 0o775);
+    assert.match(argvProblem([program]) ?? '', /writable by group or others/);
+    chmodSync(program, 0o755);
+    assert.equal(argvProblem([program]), undefined);
+  });
+
+  void test('pass_ssh_agent is off unless set, and must be a boolean', () => {
+    const home = scratch();
+    writeConfig(home, valid(home));
+    const off = loadConfig(home);
+    assert.equal(off.kind === 'enabled' && off.config.pass_ssh_agent, false);
+    writeConfig(home, { ...valid(home), pass_ssh_agent: true });
+    const on = loadConfig(home);
+    assert.equal(on.kind === 'enabled' && on.config.pass_ssh_agent, true);
+    writeConfig(home, { ...valid(home), pass_ssh_agent: 'yes' });
+    assert.equal(loadConfig(home).kind, 'invalid');
+  });
+
   void test('refuses a file another user owns', () => {
     const home = scratch();
     writeConfig(home, valid(home));
@@ -471,6 +527,12 @@ void describe('prompt and environment', () => {
       'LAIKA_LAUNCH_OFFER',
       'PATH',
     ]);
+  });
+  void test('the ssh agent socket is passed only when the config opts in', () => {
+    const parent = { PATH: '/bin', SSH_AUTH_SOCK: '/tmp/agent.sock' };
+    assert.equal(launchEnv(parent, '/d', ids(1)).SSH_AUTH_SOCK, undefined);
+    assert.equal(launchEnv(parent, '/d', ids(1), false).SSH_AUTH_SOCK, undefined);
+    assert.equal(launchEnv(parent, '/d', ids(1), true).SSH_AUTH_SOCK, '/tmp/agent.sock');
   });
 });
 
@@ -646,5 +708,222 @@ void describe('the loop', () => {
     assert.ok(lines.some((l) => l.event === 'stopped' && l.offer_id === offer));
     assert.equal(lines.find((l) => l.event === 'exit')?.reason, 'launcher_stopped');
     assert.equal(lines.at(-1)?.event, 'daemon_stop');
+  });
+});
+
+void describe('the loop, more', () => {
+  void test('an offer id that is not a Laika id is refused before prepare', async () => {
+    const r = rig(() => [record({ event_id: ids(30), offer_id: 'not-an-id' })]);
+    await startLauncher({ ...r.deps, maxTicks: 1 }, config({ argv: [process.execPath] })).finished;
+    assert.deepEqual(r.prepared, []);
+    assert.equal(auditLines(r.home).find((l) => l.event === 'refused')?.reason, 'bad_offer_id');
+  });
+
+  void test('a run persists its pid, start time and deadline in status.json', async () => {
+    const dir = scratch();
+    const offer = ids(31);
+    const r = rig(() => [record({ event_id: ids(32), offer_id: offer })]);
+    const launcher = startLauncher(
+      r.deps,
+      config({ argv: [process.execPath, fakeHarness(dir), '--ms', '30000'] }),
+    );
+    await until(() => launcher.running.size === 1);
+    const s = JSON.parse(readFileSync(statusPath(r.home), 'utf8')) as {
+      running: { pid: number; started: string; deadline: number; started_at: number }[];
+    };
+    r.stop();
+    await launcher.finished;
+    const run = s.running[0]!;
+    assert.ok(run.started !== '', 'start time recorded');
+    assert.equal(run.deadline - run.started_at, 60_000);
+  });
+
+  void test('ending a run kills its process group, not a process the harness detached', async () => {
+    const dir = scratch();
+    const offer = ids(33);
+    const r = rig(() => [record({ event_id: ids(34), offer_id: offer })]);
+    const launcher = startLauncher(
+      r.deps,
+      config({ argv: [process.execPath, fakeHarness(dir), '--ms', '30000', '--grandchildren'] }),
+    );
+    const gcPath = join(runDir(r.home, offer), 'gc.json');
+    await until(() => existsSync(gcPath));
+    const gc = JSON.parse(readFileSync(gcPath, 'utf8')) as { same: number; own: number };
+    r.stop();
+    await launcher.finished;
+    try {
+      await until(() => !alive(gc.same), 3000);
+      assert.equal(alive(gc.own), true, 'a detached grandchild escapes the group, as documented');
+    } finally {
+      for (const pid of [gc.same, gc.own]) {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {
+          // Gone.
+        }
+      }
+    }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Review B1: the single-instance lock                                        */
+/* -------------------------------------------------------------------------- */
+
+const SUPPORT = join(dirname(fileURLToPath(import.meta.url)), 'support');
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function contend(home: string, n: number): Promise<string[]> {
+  const goAt = Date.now() + 2500;
+  const runs = Array.from(
+    { length: n },
+    () =>
+      new Promise<string>((resolve) => {
+        const child = spawn(
+          process.execPath,
+          [join(SUPPORT, 'launcher-lock-child.ts'), home, String(goAt), '1500'],
+          { stdio: ['ignore', 'pipe', 'inherit'] },
+        );
+        let out = '';
+        child.stdout.on('data', (c: Buffer) => (out += c.toString()));
+        child.on('exit', () => resolve(out.trim()));
+      }),
+  );
+  return Promise.all(runs);
+}
+
+void describe('the single-instance lock', () => {
+  void test('contenders started at once: exactly one wins', async () => {
+    const home = scratch();
+    const results = await contend(home, 6);
+    assert.equal(results.filter((r) => r === 'won').length, 1, JSON.stringify(results));
+    assert.equal(results.filter((r) => r === 'lost').length, 5, JSON.stringify(results));
+  });
+
+  void test('a stale lock (its holder is dead) is recovered by exactly one', async () => {
+    const home = scratch();
+    mkdirSync(join(home, '.laika', 'launcher'), { recursive: true });
+    const dead = spawn(process.execPath, ['-e', '0']);
+    await new Promise((r) => dead.on('exit', r));
+    writeFileSync(
+      pidPath(home),
+      JSON.stringify({ pid: dead.pid, started: 'Mon Jan  1 00:00:00 2001' }),
+    );
+    const results = await contend(home, 6);
+    assert.equal(results.filter((r) => r === 'won').length, 1, JSON.stringify(results));
+    assert.equal(existsSync(`${pidPath(home)}.reap`), false, 'the reap lock is released');
+  });
+
+  void test('a live holder is never displaced, and its file is untouched', () => {
+    const home = scratch();
+    mkdirSync(join(home, '.laika', 'launcher'), { recursive: true });
+    const me = readProc(process.pid);
+    assert.ok(me !== 'unknown' && me !== undefined);
+    const body = JSON.stringify({ pid: process.pid, started: me.started });
+    writeFileSync(pidPath(home), body);
+    assert.equal(takePid(home), false);
+    assert.equal(readFileSync(pidPath(home), 'utf8'), body);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Review B2: runs a launcher leaves behind                                   */
+/* -------------------------------------------------------------------------- */
+
+interface LauncherChild {
+  readonly pid: number;
+  readonly exited: Promise<void>;
+}
+
+function launcherChild(home: string, mode: 'offer' | 'idle', argv: string[]): LauncherChild {
+  const child = spawn(
+    process.execPath,
+    [join(SUPPORT, 'launcher-run-child.ts'), home, mode, ...argv],
+    { stdio: ['ignore', 'ignore', 'inherit'] },
+  );
+  return { pid: child.pid!, exited: new Promise((r) => child.on('exit', () => r())) };
+}
+
+async function harnessPid(home: string): Promise<number> {
+  await until(() => {
+    try {
+      const s = JSON.parse(readFileSync(statusPath(home), 'utf8')) as { running?: unknown[] };
+      return (s.running ?? []).length === 1;
+    } catch {
+      return false;
+    }
+  }, 20_000);
+  const s = JSON.parse(readFileSync(statusPath(home), 'utf8')) as { running: { pid: number }[] };
+  return s.running[0]!.pid;
+}
+
+void describe('runs a launcher leaves behind', () => {
+  void test('SIGHUP stops the launcher and its runs, like SIGTERM', async () => {
+    assert.ok(STOP_SIGNALS.includes('SIGHUP'));
+    const home = scratch();
+    const harness = fakeHarness(home);
+    const l = launcherChild(home, 'offer', [process.execPath, harness, '--ms', '60000']);
+    const pid = await harnessPid(home);
+    assert.equal(alive(pid), true);
+    process.kill(l.pid, 'SIGHUP');
+    await l.exited;
+    await until(() => !alive(pid), 5000);
+    const lines = auditLines(home);
+    assert.ok(lines.some((x) => x.event === 'stopped' && x.pid === pid));
+    assert.equal(lines.at(-1)?.event, 'daemon_stop');
+  });
+
+  void test('a SIGKILLed launcher: status names the leftover, stop ends it', async () => {
+    const home = scratch();
+    const harness = fakeHarness(home);
+    const l = launcherChild(home, 'offer', [process.execPath, harness, '--ms', '60000']);
+    const pid = await harnessPid(home);
+    process.kill(l.pid, 'SIGKILL');
+    await l.exited;
+    try {
+      assert.equal(alive(pid), true, 'the run outlived its launcher');
+      const out: string[] = [];
+      const io = {
+        out: (x: string) => out.push(x),
+        err: (x: string) => out.push(x),
+        home,
+        env: {},
+      };
+      await launcherCommand(io, ['status']);
+      assert.match(out.join('\n'), new RegExp(`Leftover run .*pid ${String(pid)}`));
+      out.length = 0;
+      assert.equal(await launcherCommand(io, ['stop']), 0);
+      assert.match(out.join('\n'), /ended 1 run/);
+      await until(() => !alive(pid), 5000);
+      assert.ok(auditLines(home).some((x) => x.event === 'reaped' && x.pid === pid));
+    } finally {
+      if (alive(pid)) process.kill(pid, 'SIGKILL');
+    }
+  });
+
+  void test('a SIGKILLed launcher: the next launcher ends the leftover as it starts', async () => {
+    const home = scratch();
+    const harness = fakeHarness(home);
+    const first = launcherChild(home, 'offer', [process.execPath, harness, '--ms', '60000']);
+    const pid = await harnessPid(home);
+    process.kill(first.pid, 'SIGKILL');
+    await first.exited;
+    const second = launcherChild(home, 'idle', [process.execPath]);
+    try {
+      await until(() => !alive(pid), 15_000);
+      await until(() => auditLines(home).some((x) => x.event === 'reaped' && x.pid === pid));
+    } finally {
+      process.kill(second.pid, 'SIGTERM');
+      await second.exited;
+      if (alive(pid)) process.kill(pid, 'SIGKILL');
+    }
   });
 });

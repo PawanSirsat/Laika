@@ -4,6 +4,9 @@ import {
   appendFileSync,
   closeSync,
   constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
   openSync,
   readFileSync,
   realpathSync,
@@ -26,15 +29,17 @@ import {
   type AgentCredential,
   type Fetch,
   type Harness,
-  isAlive,
   isHarness,
   isLaikaId,
   isRecord,
+  liveness,
   privateDir,
+  probeKill,
   readCredential,
   readJson,
   readProc,
   type ProcReader,
+  UNKNOWN,
   writePrivate,
 } from './agent-session.ts';
 
@@ -94,6 +99,8 @@ export interface LauncherConfig {
   readonly max_concurrent: number;
   readonly max_runtime_seconds: number;
   readonly poll_seconds: number;
+  /** Pass `SSH_AUTH_SOCK` to the harness, so it can push over ssh. Off unless set. */
+  readonly pass_ssh_agent: boolean;
 }
 
 export type ConfigResult =
@@ -115,13 +122,16 @@ const TOP_KEYS = new Set([
   'max_concurrent',
   'max_runtime_seconds',
   'poll_seconds',
+  'pass_ssh_agent',
 ]);
 const PROJECT_KEYS = new Set(['project_id', 'repo', 'remote']);
 
 /**
  * A program that reads its arguments as a command of its own. Refused as a
  * harness's `argv[0]` — a fixed argv array that starts `sh -c` is a shell
- * string with extra steps.
+ * string with extra steps. **This is a guard against an obvious mistake, not
+ * a guarantee**: any program the owner lists — `node`, `python`, a script —
+ * can run whatever it likes. The owner is trusting each argv they write.
  */
 export const INTERPRETERS: ReadonlySet<string> = new Set([
   'sh',
@@ -172,20 +182,48 @@ export function loadConfig(
   let text: string;
   let mode: number;
   let owner: number;
+  // Opened without following a symlink, and checked on the descriptor read
+  // from — so the file judged is the file read, not one swapped in between.
+  let fd: number;
   try {
-    const st = statSync(path);
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (cause) {
+    const code = (cause as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      return { kind: 'disabled', why: `no ${path}: the launcher is off on this device` };
+    }
+    return {
+      kind: 'invalid',
+      errors: [
+        code === 'ELOOP' ? `${path} is a symlink` : `${path} cannot be read (${code ?? 'error'})`,
+      ],
+    };
+  }
+  try {
+    const st = fstatSync(fd);
     mode = st.mode;
     owner = st.uid;
     if (!st.isFile()) return { kind: 'invalid', errors: [`${path} is not a regular file`] };
-    text = readFileSync(path, 'utf8');
-  } catch {
-    return { kind: 'disabled', why: `no ${path}: the launcher is off on this device` };
+    text = readFileSync(fd, 'utf8');
+  } finally {
+    closeSync(fd);
   }
   const errors: string[] = [];
-  // Whoever can write this file chooses what runs: only its owner may.
+  // Whoever can write this file, or replace it, chooses what runs: only its owner may.
   if ((mode & 0o022) !== 0) errors.push(`${path} is writable by group or others; chmod 600 it`);
   if (fsInfo.uid !== undefined && owner !== fsInfo.uid) {
     errors.push(`${path} is not owned by the user running the launcher`);
+  }
+  const folder = join(home, '.laika');
+  try {
+    const dir = lstatSync(folder);
+    if (!dir.isDirectory()) errors.push(`${folder} is not a directory (a symlink?)`);
+    if ((dir.mode & 0o022) !== 0) errors.push(`${folder} is writable by group or others`);
+    if (fsInfo.uid !== undefined && dir.uid !== fsInfo.uid) {
+      errors.push(`${folder} is not owned by the user running the launcher`);
+    }
+  } catch {
+    errors.push(`${folder} cannot be read`);
   }
   let raw: unknown;
   try {
@@ -281,6 +319,9 @@ export function loadConfig(
   if (raw.poll_seconds !== undefined && !whole(raw.poll_seconds, 10, 3600)) {
     errors.push('poll_seconds must be a whole number from 10 to 3600');
   }
+  if (raw.pass_ssh_agent !== undefined && typeof raw.pass_ssh_agent !== 'boolean') {
+    errors.push('pass_ssh_agent must be true or false');
+  }
   if (errors.length > 0) return { kind: 'invalid', errors };
   return {
     kind: 'enabled',
@@ -292,6 +333,7 @@ export function loadConfig(
       max_concurrent: raw.max_concurrent as number,
       max_runtime_seconds: raw.max_runtime_seconds as number,
       poll_seconds: (raw.poll_seconds as number | undefined) ?? 30,
+      pass_ssh_agent: raw.pass_ssh_agent === true,
     },
   };
 }
@@ -311,8 +353,11 @@ export function argvProblem(argv: unknown): string | undefined {
     return `argv[0] may not be ${basename(program)}: a shell or wrapper would run a command string`;
   }
   try {
-    if (!statSync(program).isFile()) return `${program} is not a file`;
+    const st = statSync(program);
+    if (!st.isFile()) return `${program} is not a file`;
     accessSync(program, constants.X_OK);
+    // Anyone who can rewrite the program chooses what runs.
+    if ((st.mode & 0o022) !== 0) return `${program} is writable by group or others`;
   } catch {
     return `${program} is not an executable file`;
   }
@@ -360,7 +405,8 @@ export type AuditEvent =
   | 'start'
   | 'exit'
   | 'timeout'
-  | 'stopped';
+  | 'stopped'
+  | 'reaped';
 
 /**
  * Only these fields reach the audit log, each a fixed word, an id, a number
@@ -413,17 +459,21 @@ export const LAUNCH_ENV: readonly string[] = [
   'USER',
   'LOGNAME',
   'TERM',
-  'SSH_AUTH_SOCK',
   'XDG_CONFIG_HOME',
 ];
 
+/**
+ * The ssh agent's socket lets the harness sign as you to any host your keys
+ * reach, so it is passed only when the config says `pass_ssh_agent: true`.
+ */
 export function launchEnv(
   env: Readonly<Record<string, string | undefined>>,
   dir: string,
   offerId: string,
+  passSshAgent = false,
 ): Record<string, string> {
   const next: Record<string, string> = {};
-  for (const name of LAUNCH_ENV) {
+  for (const name of passSshAgent ? [...LAUNCH_ENV, 'SSH_AUTH_SOCK'] : LAUNCH_ENV) {
     const value = env[name];
     if (value !== undefined) next[name] = value;
   }
@@ -463,7 +513,10 @@ export interface Running {
   readonly task_key: string;
   readonly harness: Harness;
   readonly pid: number;
+  /** The process's own start time (`ps`), so a later reap cannot hit a reused pid. */
+  readonly started: string;
   readonly started_at: number;
+  readonly deadline: number;
   readonly child: ChildProcess;
   timedOut: boolean;
   stopping: boolean;
@@ -495,6 +548,8 @@ export interface LauncherDeps {
   readonly stopped: () => boolean;
   /** Ms between SIGTERM and SIGKILL. */
   readonly graceMs?: number;
+  /** The process table, for start times. */
+  readonly proc?: ProcReader;
   /** Tests only: stop after this many polls. */
   readonly maxTicks?: number;
 }
@@ -567,7 +622,9 @@ function writeStatus(
             task_key: r.task_key,
             harness: r.harness,
             pid: r.pid,
+            started: r.started,
             started_at: r.started_at,
+            deadline: r.deadline,
           })),
         },
         null,
@@ -604,7 +661,11 @@ async function launchOne(
   harness: Harness,
   credential: AgentCredential,
 ): Promise<void> {
-  const offerId = record.offer_id!;
+  const offerId = record.offer_id;
+  if (!isLaikaId(offerId)) {
+    audit(deps.home, deps.now(), { event: 'refused', reason: 'bad_offer_id', harness });
+    return;
+  }
   const base = {
     offer_id: offerId,
     ...(record.task_id === null ? {} : { task_id: record.task_id }),
@@ -656,13 +717,21 @@ async function launchOne(
     )}\n`,
   );
   writePrivate(join(dir, 'note.txt'), `${await deps.note(offerId, credential)}\n`);
+  // Built before anything starts: a prompt that cannot be built starts nothing.
+  let prompt: string;
+  try {
+    prompt = launchPrompt(offerId, taskKey, harness, dir);
+  } catch {
+    audit(deps.home, deps.now(), { event: 'refused', reason: 'bad_prompt_fields', ...base });
+    return;
+  }
 
   const output = openSync(join(dir, 'output.log'), 'a', 0o600);
   let child: ChildProcess;
   try {
     child = deps.spawn(argv[0]!, argv.slice(1), {
       cwd: prepared.worktree,
-      env: launchEnv(deps.env, dir, offerId),
+      env: launchEnv(deps.env, dir, offerId, config.pass_ssh_agent),
       stdio: ['pipe', output, output],
       detached: true,
       shell: false,
@@ -676,15 +745,19 @@ async function launchOne(
     return;
   }
   child.stdin?.on('error', () => undefined);
-  child.stdin?.end(launchPrompt(offerId, taskKey, harness, dir));
+  child.stdin?.end(prompt);
   const startedAt = deps.now();
+  const info = (deps.proc ?? readProc)(child.pid);
+  const started = info === UNKNOWN || info === undefined ? '' : info.started;
   let resolveDone!: () => void;
   const run: Running = {
     offer_id: offerId,
     task_key: taskKey,
     harness,
     pid: child.pid,
+    started,
     started_at: startedAt,
+    deadline: startedAt + config.max_runtime_seconds * 1000,
     child,
     timedOut: false,
     stopping: false,
@@ -707,7 +780,9 @@ async function launchOne(
   child.on('exit', (exitCode, signal) => {
     clearTimeout(run.timer);
     clearTimeout(run.killTimer);
-    // The whole group goes with it: nothing the harness started outlives the run.
+    // The harness's process group goes with it. A process the harness moved
+    // into a session or group of its own (setsid, a detached spawn) is not in
+    // that group, is not seen here, and is not killed.
     try {
       process.kill(-run.pid, 'SIGKILL');
     } catch {
@@ -755,6 +830,9 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
   const graceMs = deps.graceMs ?? 10_000;
   const loop = async (): Promise<void> => {
     audit(deps.home, deps.now(), { event: 'daemon_start' });
+    // Runs a previous launcher left when it died are ended before anything new
+    // starts; this one holds the lock, so that launcher is gone.
+    await reapLeftovers(deps.home, deps.proc ?? readProc, graceMs, deps.now);
     writeStatus(deps, memory, running, true);
     for (let tick = 0; deps.maxTicks === undefined || tick < deps.maxTicks; tick += 1) {
       if (deps.stopped()) break;
@@ -877,28 +955,180 @@ function readPid(home: string): PidFile | undefined {
   return { pid: value.pid, started: value.started };
 }
 
+/**
+ * Whether a recorded process is still the one recorded. A check that cannot
+ * complete counts as alive: a lock is never taken over, and a process never
+ * signalled, on doubt. With no start time recorded, only a signal probe can
+ * answer, and it cannot tell a reused pid — so that also counts as alive.
+ */
+function stillThere(pid: number, started: string, proc: ProcReader): boolean {
+  if (started === '') return probeKill(pid) !== 'absent';
+  return liveness(pid, started, proc) !== 'dead';
+}
+
 /** The launcher running on this device now, if any. */
 export function runningLauncher(home: string, proc: ProcReader = readProc): PidFile | undefined {
   const file = readPid(home);
-  return file !== undefined && isAlive(file.pid, file.started, proc) ? file : undefined;
+  return file !== undefined && stillThere(file.pid, file.started, proc) ? file : undefined;
 }
 
-function takePid(home: string, proc: ProcReader): boolean {
-  if (runningLauncher(home, proc) !== undefined) return false;
-  const me = proc(process.pid);
-  const started = me === 'unknown' || me === undefined ? '' : me.started;
+/** A lock file this old with nobody able to read it is a crash, not a write in progress. */
+export const STALE_LOCK_MS = 10_000;
+
+function ageMs(path: string): number | undefined {
+  try {
+    return Date.now() - statSync(path).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Create `path` exclusively. `false` only when it already exists. */
+function createExclusive(path: string, content: string): boolean {
+  try {
+    writeFileSync(path, content, { mode: 0o600, flag: 'wx' });
+    return true;
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw cause;
+  }
+}
+
+/**
+ * Take the single-instance lock. **The exclusive create is the lock**: the pid
+ * file is never removed before it. Only when the create fails, and the holder
+ * it names is gone, is the file removed and the create tried once more — and
+ * that is done under a second exclusive lock, so two launchers that both find
+ * the holder dead cannot each remove the other's fresh lock.
+ */
+export function takePid(home: string, proc: ProcReader = readProc): boolean {
   privateDir(join(home, '.laika'));
   privateDir(launcherDir(home));
-  rmSync(pidPath(home), { force: true });
-  try {
-    writeFileSync(pidPath(home), `${JSON.stringify({ pid: process.pid, started })}\n`, {
-      mode: 0o600,
-      flag: 'wx',
-    });
-  } catch {
-    return false;
+  const path = pidPath(home);
+  const me = proc(process.pid);
+  const started = me === UNKNOWN || me === undefined ? '' : me.started;
+  const body = `${JSON.stringify({ pid: process.pid, started })}\n`;
+  if (createExclusive(path, body)) return true;
+
+  const reap = `${path}.reap`;
+  if (!createExclusive(reap, `${String(process.pid)}\n`)) {
+    // Left by a launcher that died mid-reap: cleared only once clearly old.
+    const age = ageMs(reap);
+    if (age === undefined || age < STALE_LOCK_MS) return false;
+    rmSync(reap, { force: true });
+    if (!createExclusive(reap, `${String(process.pid)}\n`)) return false;
   }
-  return true;
+  try {
+    if (!existsSync(path)) return createExclusive(path, body);
+    const holder = readPid(home);
+    if (holder === undefined) {
+      // Unreadable: a holder may be between its create and its write.
+      const age = ageMs(path);
+      if (age === undefined || age < STALE_LOCK_MS) return false;
+    } else if (stillThere(holder.pid, holder.started, proc)) {
+      return false;
+    }
+    rmSync(path, { force: true });
+    return createExclusive(path, body);
+  } finally {
+    rmSync(reap, { force: true });
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Runs a dead launcher left behind                                           */
+/* -------------------------------------------------------------------------- */
+
+export interface Leftover {
+  readonly offer_id: string;
+  readonly pid: number;
+  readonly started: string;
+  readonly deadline: number | undefined;
+}
+
+/** The runs `status.json` records as running, whoever wrote it. */
+export function recordedRuns(home: string): Leftover[] {
+  const s = readJson(statusPath(home));
+  if (!isRecord(s) || !Array.isArray(s.running)) return [];
+  return s.running
+    .filter(isRecord)
+    .filter((r) => typeof r.pid === 'number' && Number.isInteger(r.pid) && r.pid > 1)
+    .map((r) => ({
+      offer_id: isLaikaId(r.offer_id) ? r.offer_id : '',
+      pid: r.pid as number,
+      started: typeof r.started === 'string' ? r.started : '',
+      deadline: typeof r.deadline === 'number' ? r.deadline : undefined,
+    }));
+}
+
+/** Recorded runs still alive as the process that was recorded (start time matched). */
+export function liveLeftovers(home: string, proc: ProcReader = readProc): Leftover[] {
+  // Without a start time the pid may be anyone's now: never treated as ours.
+  return recordedRuns(home).filter(
+    (r) => r.started !== '' && liveness(r.pid, r.started, proc) === 'alive',
+  );
+}
+
+/**
+ * End every run a launcher that is no longer running left behind: SIGTERM to
+ * its process group, SIGKILL after `graceMs`. Each is audited `reaped`, and
+ * the status file is cleared of them. **Call only while no launcher runs** —
+ * at start, holding the lock, or from `stop` once the launcher is gone.
+ */
+export async function reapLeftovers(
+  home: string,
+  proc: ProcReader = readProc,
+  graceMs = 10_000,
+  now: () => number = Date.now,
+): Promise<number> {
+  const live = liveLeftovers(home, proc);
+  const signal = (pid: number, sig: NodeJS.Signals): void => {
+    try {
+      process.kill(-pid, sig);
+    } catch {
+      try {
+        process.kill(pid, sig);
+      } catch {
+        // Gone.
+      }
+    }
+  };
+  for (const r of live) signal(r.pid, 'SIGTERM');
+  const end = Date.now() + graceMs;
+  while (live.some((r) => liveness(r.pid, r.started, proc) === 'alive') && Date.now() < end) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  for (const r of live) {
+    if (liveness(r.pid, r.started, proc) === 'alive') signal(r.pid, 'SIGKILL');
+    audit(home, now(), {
+      event: 'reaped',
+      ...(r.offer_id === '' ? {} : { offer_id: r.offer_id }),
+      pid: r.pid,
+    });
+  }
+  if (recordedRuns(home).length > 0) {
+    const s = readJson(statusPath(home));
+    try {
+      writePrivate(
+        statusPath(home),
+        `${JSON.stringify({ ...(isRecord(s) ? s : {}), live: false, running: [] }, null, 2)}\n`,
+      );
+    } catch {
+      // The audit lines are the record.
+    }
+  }
+  return live.length;
+}
+
+/** The signals that stop the launcher (and its runs) cleanly. */
+export const STOP_SIGNALS: readonly NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+
+/** Call `handler` on any stop signal; returns the function that removes it. */
+export function onStopSignals(handler: () => void): () => void {
+  for (const sig of STOP_SIGNALS) process.on(sig, handler);
+  return () => {
+    for (const sig of STOP_SIGNALS) process.off(sig, handler);
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1021,13 +1251,26 @@ function status(io: LauncherIo): number {
       );
     }
   }
+  if (live === undefined) {
+    for (const r of liveLeftovers(io.home)) {
+      io.out(
+        `Leftover run from a launcher that is gone: pid ${String(r.pid)}${r.offer_id === '' ? '' : ` offer ${r.offer_id}`} — \`laika agent launcher stop\` ends it`,
+      );
+    }
+  }
   return result.kind === 'invalid' ? 1 : 0;
 }
 
-function stop(io: LauncherIo): number {
+async function stop(io: LauncherIo): Promise<number> {
   const live = runningLauncher(io.home);
   if (live === undefined) {
-    io.out('The launcher is not running.');
+    // Nobody will end what a dead launcher left running: this does.
+    const reaped = await reapLeftovers(io.home);
+    io.out(
+      reaped === 0
+        ? 'The launcher is not running.'
+        : `The launcher is not running; ended ${String(reaped)} run(s) it left behind.`,
+    );
     return 0;
   }
   try {
@@ -1047,7 +1290,7 @@ export async function launcherCommand(io: LauncherIo, argv: readonly string[]): 
     return sub === undefined ? 1 : 0;
   }
   if (sub === 'status') return status(io);
-  if (sub === 'stop') return stop(io);
+  if (sub === 'stop') return await stop(io);
   if (sub !== 'check' && sub !== 'run') {
     io.err(`laika agent launcher: unknown subcommand "${sub}"\n\n${LAUNCHER_USAGE}`);
     return 1;
@@ -1075,11 +1318,9 @@ export async function launcherCommand(io: LauncherIo, argv: readonly string[]): 
     return 1;
   }
   let stopping = false;
-  const onSignal = (): void => {
+  const removeSignals = onStopSignals(() => {
     stopping = true;
-  };
-  process.on('SIGINT', onSignal);
-  process.on('SIGTERM', onSignal);
+  });
   try {
     io.out('Launcher running. `laika agent launcher stop` to stop it.');
     const launcher = startLauncher(
@@ -1089,8 +1330,7 @@ export async function launcherCommand(io: LauncherIo, argv: readonly string[]): 
     await launcher.finished;
     return 0;
   } finally {
-    process.off('SIGINT', onSignal);
-    process.off('SIGTERM', onSignal);
+    removeSignals();
     const file = readPid(io.home);
     if (file?.pid === process.pid) rmSync(pidPath(io.home), { force: true });
   }
