@@ -373,9 +373,10 @@ function parseDeveloperAccess(raw: string | undefined): DeveloperAccessMode {
 }
 
 /**
- * `LAIKA_CLI_SOURCE_URL`: an `https://` URL with **no credentials in it**. It is
- * served to anyone who asks, so a URL carrying a user or a token would publish
- * that secret; refusing it at boot keeps it out of every response. The value is
+ * `LAIKA_CLI_SOURCE_URL`: an `https://` URL with **no credentials in it** — no
+ * user, no password, and no query or fragment, where a token can ride just as
+ * well (`?token=…`). It is served to anyone who asks, so such a URL would
+ * publish that secret; refusing it at boot keeps it out of every response. The value is
  * redacted from the error for the same reason.
  */
 function parseCliSourceUrl(raw: string | undefined): string {
@@ -386,11 +387,20 @@ function parseCliSourceUrl(raw: string | undefined): string {
   } catch {
     throw new EnvError('LAIKA_CLI_SOURCE_URL', '<redacted>', 'an https:// git repository URL');
   }
-  if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') {
+  if (
+    url.protocol !== 'https:' ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.search !== '' ||
+    url.hash !== '' ||
+    // `new URL` drops an empty `?` or `#`, which would still be a different URL.
+    raw.includes('?') ||
+    raw.includes('#')
+  ) {
     throw new EnvError(
       'LAIKA_CLI_SOURCE_URL',
       '<redacted>',
-      'an https:// git repository URL with no user or password in it',
+      'an https:// git repository URL with no user, password, query or fragment in it',
     );
   }
   return raw;

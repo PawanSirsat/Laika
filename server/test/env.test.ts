@@ -407,12 +407,15 @@ describe('LAIKA_BUILD_COMMIT, LAIKA_DEVELOPER_ACCESS, LAIKA_CLI_SOURCE_URL (§11
     ).toBe('https://git.example.test/laika.git');
   });
 
-  it('refuses a source URL that is not https or carries credentials, and never echoes it', () => {
+  it('refuses a source URL that is not https or carries credentials, a query or a fragment, and never echoes it', () => {
     for (const bad of [
       'http://git.example.test/laika.git',
       'git@github.com:PawanSirsat/Laika.git',
       'https://user:lai_supersecret@git.example.test/laika.git',
       'https://lai_supersecret@git.example.test/laika.git',
+      'https://git.example.test/laika.git?token=lai_supersecret',
+      'https://git.example.test/laika.git#lai_supersecret',
+      'https://git.example.test/laika.git?',
     ]) {
       let caught: unknown;
       try {
