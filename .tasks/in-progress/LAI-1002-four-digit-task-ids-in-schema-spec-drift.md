@@ -2,11 +2,12 @@
 id: LAI-1002
 title: 'schema-spec-drift reads LAI-1000 as LAI-100: closedTaskIds and PLANNED_MARK take exactly three digits'
 area: server
-assignee: unclaimed
+assignee: polly
 priority: p3
 depends-on: []
 discovered-from: LAI-1000
-status: backlog
+status: in-progress
+started: 2026-11-01T20:45:41Z
 ---
 
 D-120 gives CHIEF `LAI-1000` – `LAI-1099`. Two anchored parsers in
