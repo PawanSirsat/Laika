@@ -3,7 +3,7 @@ import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { PageTabs } from '../../../components/PageTabs.tsx';
 import { useProjects } from '../../../api/use-projects.ts';
-import type { PageTab } from '../../page-tabs.ts';
+import { DEVELOPER_LINKS, type PageTab } from '../../page-tabs.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { invitableRoles } from '../invite-roles.ts';
@@ -42,6 +42,9 @@ import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import { useGates } from '../../../api/permissions.ts';
 import './organisation.css';
+
+const OWN_TOKENS_HREF = DEVELOPER_LINKS.ownTokens;
+const ACTIVITY_HREF = DEVELOPER_LINKS.activity;
 
 export interface OrganisationScreenProps {
   readonly me: MeProfile;
@@ -447,7 +450,20 @@ export function OrganisationScreen({
                         and agents’ token counts. They appear on that person’s profile as activity,
                         and each person is told so on Developer access and Connect — never prompt
                         text, file or repository names, branches or commit messages. Off stops it
-                        for everyone at once.
+                        for everyone at once.{' '}
+                        <a
+                          className="org-fact-link"
+                          href={ACTIVITY_HREF}
+                          onClick={(event) => {
+                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                              return;
+                            }
+                            event.preventDefault();
+                            onNavigate(ACTIVITY_HREF);
+                          }}
+                        >
+                          What developers see: Developer access · Activity
+                        </a>
                       </span>
                       {insightsError !== undefined && (
                         <span className="org-fact-error" role="alert">
@@ -674,13 +690,13 @@ export function OrganisationScreen({
                     {person.id === me.id ? (
                       <a
                         className="org-person-role"
-                        href="/developer"
+                        href={OWN_TOKENS_HREF}
                         onClick={(event) => {
                           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
                             return;
                           }
                           event.preventDefault();
-                          onNavigate('/developer');
+                          onNavigate(OWN_TOKENS_HREF);
                         }}
                       >
                         On Developer access

@@ -614,8 +614,19 @@ void describe('Access', () => {
         async () =>
           (await h.page.locator('[data-create="lead"]').getAttribute('aria-checked')) === 'true',
       );
-      // Agent sessions.
-      const agents = h.page.getByRole('switch', { name: 'Agent sessions' });
+      // Coding tools may work here (was *Agent sessions*, LAI-1058).
+      const agents = h.page.getByRole('switch', { name: 'Coding tools may work here' });
+      // The help separates the space's switch from each tool's own grant.
+      assert.match(
+        await h.page.locator('#ss-agents-help').innerText(),
+        /Each tool also needs its own project access — set in Developer access · Project setup\./,
+      );
+      assert.equal(
+        await h.page
+          .getByRole('link', { name: 'Developer access · Project setup' })
+          .getAttribute('href'),
+        '/developer?tab=projects',
+      );
       await agents.click();
       await until(async () => (await agents.getAttribute('aria-checked')) === 'false');
       // Public asks first.
@@ -659,12 +670,14 @@ void describe('Access', () => {
     );
     try {
       await settled(h);
-      await h.page.getByRole('switch', { name: 'Agent sessions' }).click();
+      await h.page.getByRole('switch', { name: 'Coding tools may work here' }).click();
       const error = h.page.locator('[data-error="agents_allowed"]');
       await error.waitFor({ timeout: 5_000 });
       assert.equal(await error.innerText(), 'Not saved: You may not change this space');
       assert.equal(
-        await h.page.getByRole('switch', { name: 'Agent sessions' }).getAttribute('aria-checked'),
+        await h.page
+          .getByRole('switch', { name: 'Coding tools may work here' })
+          .getAttribute('aria-checked'),
         'true',
       );
     } finally {

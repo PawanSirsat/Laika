@@ -177,6 +177,11 @@
   line-height: 1.5;
 }
 
+.ss-help a {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
 .ss-row-field {
   min-width: 0;
   display: flex;

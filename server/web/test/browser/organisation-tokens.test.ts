@@ -164,6 +164,52 @@ void describe('who is offered it', () => {
   });
 
   /**
+   * The own-row link is a classic tab id (LAI-1058): Tokens in classic and
+   * preview, and `developerAlias` takes it to Advanced in v3.
+   */
+  for (const [mode, lands] of [
+    ['classic', '/developer?tab=tokens'],
+    ['preview', '/developer?tab=tokens'],
+    ['v3', '/developer?tab=advanced'],
+  ] as const) {
+    void test(`${mode}: my own row links to my tokens, which land on ${lands}`, async () => {
+      const h = await open('/organisation?tab=security', {
+        ...BASE,
+        '/api/v1/me': me('u1', 'owner'),
+        '/api/v1/tokens': { data: [], next_cursor: null },
+        '/api/v1/developer/compatibility': {
+          server: { version: '0.1.0', build_commit: null },
+          protocol: { current: 1, min_client: 1 },
+          features: {
+            developer_access: mode,
+            device_pairing: false,
+            tool_setup_exchange: false,
+            client_reports: false,
+            project_setups: false,
+          },
+          cli: {},
+          release_notes: { ref: null, whats_new: [] },
+        },
+      });
+      try {
+        const link = h.page
+          .locator('.org-person', { hasText: 'Ada Lovelace' })
+          .getByRole('link', { name: 'On Developer access' });
+        await link.waitFor({ timeout: 20_000 });
+        assert.equal(await link.getAttribute('href'), '/developer?tab=tokens');
+        await link.click();
+        await until(() => new URL(h.page.url()).pathname === '/developer', 10_000);
+        await until(() => {
+          const url = new URL(h.page.url());
+          return `${url.pathname}${url.search}` === lands;
+        }, 10_000);
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  /**
    * A page of people would be `n` extra requests if every row loaded eagerly,
    * on a screen whose main job is the member list.
    */

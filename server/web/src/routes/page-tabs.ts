@@ -181,6 +181,23 @@ export function developerAlias(
 }
 
 /**
+ * Where pages outside Developer access link into it (LAI-1058, plan §B.7).
+ *
+ * **Classic tab ids, on purpose.** `developerAlias` moves `tokens` to Advanced
+ * in `v3` and leaves every one alone in `classic` and `preview`, so one
+ * address lands right in every mode; `projects` and `activity` are the same id
+ * everywhere.
+ */
+export const DEVELOPER_LINKS = {
+  /** The reader's own tokens: Tokens in classic, Advanced in V3. */
+  ownTokens: '/developer?tab=tokens',
+  /** What a developer's machine shares, and the history held for them. */
+  activity: '/developer?tab=activity',
+  /** Where a tool is given a project: Projects in classic, Project setup in V3. */
+  projectSetup: '/developer?tab=projects',
+} as const;
+
+/**
  * A space's settings (D-103, LAI-977), in the owner's order. Every reader of
  * the space sees all four — read only without `project.settings.edit` — so
  * none is gated here; the controls inside each are.

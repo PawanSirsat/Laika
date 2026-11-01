@@ -73,7 +73,8 @@ export function UsageCard({
     };
   }, [userId]);
 
-  const title = self ? 'Your tokens' : 'Tokens';
+  // *LLM* tokens (LAI-1058, plan §B.7): the bare word is a credential elsewhere.
+  const title = self ? 'Your LLM tokens' : 'LLM tokens';
   const id = `usage-${section}-title`;
   const usage = load.kind === 'ready' ? load.usage : undefined;
   const totals = usage?.totals;
@@ -85,13 +86,13 @@ export function UsageCard({
           {title}
         </h3>
         <span className="prof-card-caption">12 weeks · at least</span>
-        <InfoTip label="About these tokens">
+        <InfoTip label="About these LLM tokens">
           <p className="usage-info">
             Counted on {self ? 'your' : `${name}’s`} machines from the agents’ own session files —
             Claude Code, Codex, Gemini CLI — and sent as totals per day. <strong>At least</strong>:
-            those files miss an agent’s background calls. <strong>Tokens</strong> are input, output
-            and cache writes; cache reads, most of the raw count, are shown apart. Context only —
-            never a rating or a ranking of people.
+            those files miss an agent’s background calls. <strong>LLM tokens</strong> are input,
+            output and cache writes; cache reads, most of the raw count, are shown apart. Context
+            only — never a rating or a ranking of people.
           </p>
         </InfoTip>
       </header>
@@ -113,7 +114,7 @@ export function UsageCard({
             <>
               <dl className="usage-person-stats">
                 <div data-stat="tokens" title={`${exactTokens(totals.tokens)} tokens`}>
-                  <dt>Tokens</dt>
+                  <dt>LLM tokens</dt>
                   <dd className="usage-person-value">
                     <span className="usage-floor-mark">at least</span>{' '}
                     {compactTokens(totals.tokens)}
