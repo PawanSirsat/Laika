@@ -11,6 +11,7 @@ import {
 } from '../db/enums.ts';
 import { checkpointRefs, handoffOffers, taskCheckpoints, taskClaims } from '../db/schema.ts';
 import { checkpointSettings } from './checkpoints.ts';
+import { leaseLapsed } from './claims.ts';
 
 /**
  * A task's saves and hand-off in one small summary (§6.4, LAI-1005), so a card
@@ -119,9 +120,13 @@ export function deriveHandoff(facts: HandoffFacts): {
  * The checkpoint warning's rule, once (LAI-1016), on the server's clock: the
  * newest claim is live and the later of its start and the task's newest save
  * (any state) is more than `windowMs` ago.
+ *
+ * An `active` claim whose lease has lapsed is not live, though the expiry scan
+ * has not marked it yet — {@link leaseLapsed}, the one rule the scan and the
+ * task's live claim read (LAI-541). Nothing then holds the task to warn about.
  */
 export function noRecentSave(facts: {
-  newestClaim: { state: TaskClaimState; createdAt: number } | null;
+  newestClaim: { state: TaskClaimState; createdAt: number; leaseExpiresAt: number } | null;
   newestSavedAt: number | null;
   windowMs: number;
   now: number;
@@ -130,6 +135,7 @@ export function noRecentSave(facts: {
   if (claim === null || !(LIVE_CLAIM_STATES as readonly string[]).includes(claim.state)) {
     return null;
   }
+  if (claim.state === 'active' && leaseLapsed(claim.leaseExpiresAt, facts.now)) return null;
   const since = Math.max(claim.createdAt, facts.newestSavedAt ?? claim.createdAt);
   return facts.now - since > facts.windowMs ? { since, window_ms: facts.windowMs } : null;
 }
@@ -150,7 +156,7 @@ export function handoffViews(
 
   const newestClaim = new Map<
     string,
-    { generation: number; state: TaskClaimState; createdAt: number }
+    { generation: number; state: TaskClaimState; createdAt: number; leaseExpiresAt: number }
   >();
   for (const claim of db
     .select({
@@ -158,6 +164,7 @@ export function handoffViews(
       generation: taskClaims.generation,
       state: taskClaims.state,
       createdAt: taskClaims.createdAt,
+      leaseExpiresAt: taskClaims.leaseExpiresAt,
     })
     .from(taskClaims)
     .where(inArray(taskClaims.taskId, ids))
