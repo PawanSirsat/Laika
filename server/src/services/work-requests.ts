@@ -36,15 +36,12 @@ import { claimInForce } from './claims.ts';
  * **Another person's agent is missing, not hidden** (D-121 item 7, LAI-1027):
  * one owned by somebody else, or sitting in another organisation, is refused
  * byte for byte as an id that names no agent, so a selection cannot be used to
- * learn that an id is real. `agent_other_owner` and `agent_wrong_org` stay in
- * the list below only because the web client mirrors it exactly; nothing
- * answers them any more.
+ * learn that an id is real. That is why there is no "another member's agent"
+ * or "another organisation" reason: both retired with LAI-1029.
  */
 
 export const SELECTED_AGENT_REFUSALS = [
   'agent_not_found',
-  'agent_other_owner',
-  'agent_wrong_org',
   'agent_revoked',
   'agent_not_granted',
   'agent_read_only',
@@ -86,9 +83,6 @@ export interface WorkRequestView {
 
 const MESSAGES: Record<SelectedAgentRefusal, string> = {
   agent_not_found: AGENT_NOT_FOUND,
-  agent_other_owner:
-    "Only your own agents can be selected; another member's agent needs the project's hand-off policy (LAI-546)",
-  agent_wrong_org: 'That agent belongs to another organisation',
   agent_revoked: 'That agent is revoked',
   agent_not_granted: 'That agent has no access to this project; grant it first',
   agent_read_only: 'That agent may only read in this project; it needs a full grant to do the work',
