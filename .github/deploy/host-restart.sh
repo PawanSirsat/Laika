@@ -18,9 +18,10 @@
 # before it applies a migration (LAI-468), so a snapshot written since this
 # deploy began means the database is now ahead of the image being restored,
 # and older code on a newer schema ignores agent grants and claims
-# (docs/AGENTS-ROLLOUT.md § 7). The rollback stops the container, moves the
-# migrated database aside — kept, never deleted — copies the snapshot over it
-# and starts the previous image on that. No snapshot since the deploy began
+# (docs/AGENTS-ROLLOUT.md § 7). The rollback stops the container, puts the
+# snapshot in place of the migrated database — which is kept beside it, never
+# deleted — and starts the previous image on that. A restore that fails is
+# undone, and the previous image starts on the database as it was. No snapshot since the deploy began
 # means nothing was migrated, and the rollback is the image alone, as before.
 set -euo pipefail
 
@@ -47,6 +48,25 @@ case "$MODE" in deploy | rollback) ;; *)
   ;;
 esac
 
+# **Never start on a fresh database while a real one sits beside it.** A
+# missing `laika.db` makes the server create an empty one and come up healthy,
+# so a deploy would go green on no data. Kept copies from a rollback mean the
+# real one exists and someone has to put it back (LAI-1033 review, B1).
+if [ ! -e "$DB" ] && compgen -G "$DB.rolled-back-*" >/dev/null; then
+  echo "refused: $DB is missing but rolled-back copies exist:"
+  ls -l "$DB".rolled-back-* || true
+  echo "refused: put the right file back at $DB by hand before deploying" \
+    "(docs/AGENTS-ROLLOUT.md § 7). Nothing was started or changed."
+  exit 1
+fi
+
+# Before anything is stopped: a failure here exits with the old container
+# still running.
+if [ "$MODE" = deploy ]; then
+  mkdir -p "$(dirname "$DEPLOY_STARTED")"
+  printf '%s\n%s\n' "$RUN" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$DEPLOY_STARTED"
+fi
+
 aws ecr get-login-password --region us-east-1 |
   docker login --username AWS --password-stdin "$REGISTRY" >/dev/null
 
@@ -62,35 +82,73 @@ docker rm -f laika >/dev/null 2>&1 || true
 # **Only if the marker is this run's.** A deploy that failed before it reached
 # the instance left the previous successful deploy's marker, and the snapshot
 # after that one is days of other people's work behind the live file.
+#
+# Prints nothing, and never fails, when there is nothing to restore — a
+# missing backups directory included.
 this_deploys_snapshot() {
-  [ -n "$RUN" ] && [ -f "$DEPLOY_STARTED" ] || return 0
+  [ -n "$RUN" ] && [ -f "$DEPLOY_STARTED" ] && [ -d "$BACKUPS" ] || return 0
   [ "$(sed -n 1p "$DEPLOY_STARTED")" = "$RUN" ] || return 0
-  find "$BACKUPS" -maxdepth 1 -type f -name 'pre-migration-*.sqlite' -newer "$DEPLOY_STARTED" \
-    2>/dev/null | sort | sed -n 1p
+  { find "$BACKUPS" -maxdepth 1 -type f -name 'pre-migration-*.sqlite' -newer "$DEPLOY_STARTED" \
+    2>/dev/null || true; } | sort | sed -n 1p
 }
 
-if [ "$MODE" = deploy ]; then
-  mkdir -p "$(dirname "$DEPLOY_STARTED")"
-  printf '%s\n%s\n' "$RUN" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$DEPLOY_STARTED"
-else
+# Put the snapshot in place of the live database, keeping the live one.
+#
+# **`$DB` is never missing.** The snapshot is copied to a temporary name
+# first; the original gets a second name by hard link; and the copy is renamed
+# over `$DB` in one step. Every step checks its own result rather than relying
+# on `set -e` — which a function called from `if` does not have — and the
+# caller undoes whatever happened if any of them fails.
+restore() {
+  local snapshot="$1" suffix
+  cp -p "$snapshot" "$DB.restoring" || return 1
+  if [ -e "$DB" ]; then
+    ln "$DB" "$aside" || return 1
+    echo "restore: kept $DB as $aside"
+  fi
+  # A -wal or -shm left beside the restored file would replay over it.
+  for suffix in -wal -shm; do
+    if [ -e "$DB$suffix" ]; then
+      mv "$DB$suffix" "$aside$suffix" || return 1
+      echo "restore: kept $DB$suffix as $aside$suffix"
+    fi
+  done
+  mv -f "$DB.restoring" "$DB" || return 1
+}
+
+# Back to exactly the files there were. The temporary copy is ours to remove;
+# nothing else is removed.
+undo_restore() {
+  local suffix
+  for suffix in -wal -shm; do
+    if [ -e "$aside$suffix" ]; then mv -f "$aside$suffix" "$DB$suffix" || true; fi
+  done
+  # `$aside` is a hard link to `$DB` until the final rename, which is the last
+  # step, so on any failure it is the same file: a rename onto it would do
+  # nothing, and removing the second name removes no data. Were it a different
+  # file, it would be the original, and it goes back.
+  if [ -e "$aside" ]; then
+    if [ "$aside" -ef "$DB" ]; then rm -f "$aside"; else mv -f "$aside" "$DB" || true; fi
+  fi
+  rm -f "$DB.restoring"
+}
+
+restore_failed=no
+if [ "$MODE" = rollback ]; then
   snapshot="$(this_deploys_snapshot)"
   if [ -n "$snapshot" ]; then
-    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-    aside="$DB.rolled-back-$stamp"
+    aside="$DB.rolled-back-$(date -u +%Y%m%dT%H%M%SZ)"
     echo "restore: the failed deploy migrated the database; restoring $snapshot"
-    echo "restore: snapshot sha256 $(sha256sum "$snapshot" | cut -d' ' -f1)"
-    # The live database is three files in WAL mode, so all three move
-    # together and stay a consistent set. Moved, never removed.
-    for suffix in '' -wal -shm; do
-      if [ -e "$DB$suffix" ]; then
-        mv "$DB$suffix" "$aside$suffix"
-        echo "restore: kept $DB$suffix as $aside$suffix"
-      fi
-    done
-    # Copied, so the snapshot itself stays where it is. `-p` keeps the owner
-    # the container wrote it as. One file: a snapshot has no -wal or -shm.
-    cp -p "$snapshot" "$DB"
-    echo "restore: $DB is now $snapshot"
+    echo "restore: snapshot sha256 $({ sha256sum "$snapshot" || echo unreadable; } | cut -d' ' -f1)"
+    if restore "$snapshot"; then
+      echo "restore: $DB is now $snapshot"
+    else
+      undo_restore
+      restore_failed=yes
+      echo "restore: FAILED — the database is back as it was before this step;" \
+        "starting the previous image on it. It may refuse it (schema-ahead):" \
+        "restore $snapshot by hand (docs/AGENTS-ROLLOUT.md § 7)."
+    fi
   else
     echo "restore: none needed (no pre-migration snapshot since run ${RUN:-?} began)"
   fi
@@ -120,6 +178,13 @@ if [ "$healthy" != yes ]; then
       "and this deploy took no snapshot to restore. Restore by hand:" \
       "docs/AGENTS-ROLLOUT.md § 7, Full rollback."
   fi
+  exit 1
+fi
+
+# The previous image is up, on the database it had, but the restore it needed
+# did not happen: the step stays red so a person looks.
+if [ "$restore_failed" = yes ]; then
+  echo "restore: FAILED — running on the database as it was; see above"
   exit 1
 fi
 

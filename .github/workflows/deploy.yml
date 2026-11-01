@@ -238,6 +238,7 @@ jobs:
           echo "latest: $now"
 
       - name: Restart production and check it
+        id: restart
         run: .github/deploy/deploy.sh "$ECR_REGISTRY/$ECR_REPOSITORY@$DIGEST"
 
       # Only after a deploy that came up healthy (LAI-720). Everything but the
@@ -276,8 +277,14 @@ jobs:
       # host-restart.sh restores the pre-migration snapshot this run's boot
       # took, keeping the migrated file beside it, before it starts the old
       # image — older code on a newer schema ignores agent grants and claims.
+      #
+      # **Only when retagging or the restart and its checks failed.** A clean-up
+      # that fails after production came up healthy and was checked from
+      # outside leaves it running: rolling a verified deploy back would put
+      # older code on its migrated database, or throw away what was written
+      # since. The run is red either way.
       - name: Roll back to the image this replaced
-        if: failure() && steps.tag.outputs.previous != '' && steps.tag.outputs.previous != 'None' && steps.tag.outputs.previous != env.DIGEST
+        if: failure() && (steps.tag.outcome == 'failure' || steps.restart.outcome == 'failure') && steps.tag.outputs.previous != '' && steps.tag.outputs.previous != 'None' && steps.tag.outputs.previous != env.DIGEST
         env:
           PREVIOUS: ${{ steps.tag.outputs.previous }}
         run: |

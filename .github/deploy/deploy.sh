@@ -21,8 +21,18 @@ case "$MODE" in deploy | rollback) ;; *)
   ;;
 esac
 # The same on the deploy and on its rollback, so host-restart.sh restores only
-# a snapshot this run's deploy caused (LAI-1033).
-RUN="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+# a snapshot this run's deploy caused (LAI-1033). In Actions, the run and its
+# attempt. By hand there is no run: each call gets its own id, so a manual
+# rollback restores nothing unless LAIKA_DEPLOY_RUN names the deploy's id,
+# which the deploy prints.
+if [ -n "${LAIKA_DEPLOY_RUN:-}" ]; then
+  RUN="$LAIKA_DEPLOY_RUN"
+elif [ -n "${GITHUB_RUN_ID:-}" ]; then
+  RUN="$GITHUB_RUN_ID-${GITHUB_RUN_ATTEMPT:-1}"
+else
+  RUN="local-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+fi
+echo "run: $RUN ($MODE)"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # The host script travels inside the command, so the instance needs nothing

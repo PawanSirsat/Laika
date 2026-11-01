@@ -451,9 +451,9 @@ export function pendingMigrations(
 
 /**
  * The first words of the refusal below. **`.github/deploy/host-restart.sh`
- * greps the container log for this string** to tell a rolled-back image that
- * refused a newer schema from one that failed for any other reason, and only
- * then restores the pre-migration snapshot (LAI-1033). Change both or neither.
+ * greps an unhealthy container's log for this string** and, if it is there,
+ * prints that the restore is manual (LAI-1033). The script's restore does not
+ * depend on it. Change both or neither.
  */
 export const SCHEMA_AHEAD_MARKER = 'laika: schema-ahead';
 
