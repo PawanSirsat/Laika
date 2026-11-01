@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { activity, time } from './activity.ts';
 import { connect } from './connect.ts';
+import { doctor } from './doctor.ts';
 import { init } from './init.ts';
+import { version } from './version.ts';
 import { whoami } from './whoami.ts';
 
 /**
@@ -20,6 +22,9 @@ const USAGE = [
   'Usage:',
   '  laika init               authenticate, create a token, and save it',
   '  laika whoami             who this machine is, and to which board',
+  '  laika version            this CLI: version, checkout commit, protocol (--json)',
+  '  laika doctor             read-only health check of this machine’s Laika setup',
+  '                           and its board (alias: laika status; --offline, --json)',
   '  laika connect <agent>    point a coding agent at the board (--project: this folder)',
   '  laika connect --list     the agents connect knows, and what it does for each',
   '  laika activity on|off    count local agent activity for the heatmap (opt-in)',
@@ -49,6 +54,8 @@ async function main(argv: readonly string[]): Promise<number> {
 
   if (command === 'init') return init();
   if (command === 'whoami') return whoami();
+  if (command === 'version' || command === '--version') return version(argv.slice(1));
+  if (command === 'doctor' || command === 'status') return doctor(argv.slice(1));
   if (command === 'connect') return connect(argv.slice(1));
   if (command === 'activity') return activity(argv.slice(1));
   if (command === 'time') return time(argv.slice(1));

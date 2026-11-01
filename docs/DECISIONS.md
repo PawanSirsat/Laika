@@ -6619,6 +6619,36 @@ beyond the items below is still on the stop list.
    starts nothing; its offers wait on the board and recovery works as before
    (D-115, D-116).
 
+## D-123 — Public deployment metadata is the third named exception to "every endpoint calls `can()`" (LAI-1047)
+
+**Date:** 2026-11-02 · **Decided by:** Pawan (owner), on the standing instruction to continue
+Developer Access V3; recorded by CHIEF.
+
+**In one line:** a handler that reads no data and no actor and answers only from
+environment and constants may skip `can()`; its instances are `/health` and
+`/developer/compatibility`.
+
+**Context.** CLAUDE.md §5 named two exhaustive exceptions (a pure dispatcher, and
+reflecting the actor back). `/health` already skipped `can()` without being either,
+and LAI-1043 adds `GET /api/v1/developer/compatibility`, which serves build commit,
+protocol range, feature gates and the CLI source to any caller. Adding a `can()`
+call would mean inventing an action with no resource, which §5 names as the sign
+you are looking at an exception.
+
+**Decision.** A third case is added to CLAUDE.md §5, with all of these conditions:
+1. The handler reads no database row and resolves no actor; its factory takes no
+   `db` handle.
+2. Its body is built only from environment variables and constants.
+3. Nothing the caller sends is echoed back.
+4. It is named: `GET /api/v1/health`, `GET /api/v1/developer/compatibility`.
+   A further instance is a new decision.
+
+The setup gate still applies: before first-boot setup, the compatibility endpoint
+answers 409 like every API path except `/health` and `/setup`.
+
+**Consequences.** Values served by these routes must be safe for anonymous readers;
+`LAIKA_CLI_SOURCE_URL` refuses user, password, query and fragment at boot.
+
 ## D-122 — A device has a server row and a kind; the cloud rule applies to a device of kind `cloud` or the label `Cloud` (LAI-1045; amends D-121 item 2)
 
 **Date:** 2026-11-02 · **By:** recorded by the LAI-1045 builder on Belka · **Amends:**
