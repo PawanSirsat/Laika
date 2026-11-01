@@ -2,11 +2,12 @@
 id: LAI-1035
 title: 'Heatmap phone test: a month label seen under the weekdays mid-scroll on CI'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p3
 depends-on: []
+started: 2026-11-01T17:16:00Z
 discovered-from: LAI-1031
-status: backlog
+status: in-progress
 ---
 
 Board: LAIKA-891.
