@@ -59,8 +59,9 @@ function folderBefore0070(): { dir: string; restore: () => void } {
   const at = journal.entries.findIndex((e) => /^0070_devices$/.test(e.tag));
   expect(at, 'the LAI-1045 migration is in the journal').toBeGreaterThan(0);
   const dropped = journal.entries.splice(at);
-  // The guard on this guard: the cut is exactly this migration.
-  expect(dropped.map((e) => e.tag)).toEqual(['0070_devices']);
+  // The guard on this guard: the cut is exactly this migration and LAI-1050's
+  // pairing requests, which a 0069 database also upgrades through.
+  expect(dropped.map((e) => e.tag)).toEqual(['0070_devices', '0071_device_pairing_requests']);
   writeFileSync(journalPath, JSON.stringify(journal));
   return {
     dir,
@@ -115,12 +116,17 @@ function addAgent(db: Db, orgId: string, a: AgentFixture): string {
   return id;
 }
 
-/** Every table but the two this migration writes, row for row. */
+/**
+ * Every table but the two this migration writes, row for row. LAI-1050's
+ * pairing requests are left out too: the cut migrates through 0071, which
+ * creates that table empty, so it exists only on one side of the comparison.
+ */
 function everythingElse(db: Db): Record<string, unknown[]> {
   const names = db
     .all<{ name: string }>(
       sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-          AND name NOT IN ('agents', 'devices', '__drizzle_migrations') ORDER BY name`,
+          AND name NOT IN ('agents', 'devices', 'device_pairing_requests', '__drizzle_migrations')
+          ORDER BY name`,
     )
     .map((r) => r.name);
   expect(names.length, 'the snapshot reads real tables').toBeGreaterThan(40);

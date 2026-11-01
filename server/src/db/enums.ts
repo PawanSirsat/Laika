@@ -266,6 +266,24 @@ export const DEVICE_STATUSES = ['active', 'revoked'] as const;
 export type DeviceStatus = (typeof DEVICE_STATUSES)[number];
 
 /**
+ * A device pairing request (§4.79, LAI-1050). `open` → `claimed` (a device
+ * presented the code and a key) → `approved` (the owner saw the fingerprint)
+ * → `completed` (the device signed the challenge). `denied` and `cancelled`
+ * are the owner's; `expired` is ten minutes passing. All but the first three
+ * are terminal.
+ */
+export const DEVICE_PAIRING_STATES = [
+  'open',
+  'claimed',
+  'approved',
+  'completed',
+  'denied',
+  'expired',
+  'cancelled',
+] as const;
+export type DevicePairingState = (typeof DEVICE_PAIRING_STATES)[number];
+
+/**
  * An agent's grant on one project (§4.64, D-114): the same two words a token's
  * scope uses, because it narrows the same way — `read_only` keeps the reads.
  */

@@ -70,6 +70,7 @@ import {
   DEVICE_KINDS,
   DEVICE_ORIGINS,
   DEVICE_STATUSES,
+  DEVICE_PAIRING_STATES,
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
   TIME_DRAFT_SOURCES,
@@ -958,6 +959,56 @@ export const devices = sqliteTable(
     check('devices_kind_check', oneOf('kind', DEVICE_KINDS)),
     check('devices_origin_check', oneOf('origin', DEVICE_ORIGINS)),
     check('devices_status_check', oneOf('status', DEVICE_STATUSES)),
+  ],
+);
+
+// ------------------------------------------ §4.79 device_pairing_requests
+
+/**
+ * A device asking to be paired with its owner's board (§4.79, LAI-1050).
+ *
+ * **The code is never stored**: `code_hash` is its sha256, and the code is
+ * shown once to the browser that asked for it. A code binds a device's key to
+ * this request; it is never a credential, and nothing here mints one.
+ */
+export const devicePairingRequests = sqliteTable(
+  'device_pairing_requests',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The owner's imported device this pairs, chosen in the browser; null makes a new one. */
+    deviceId: text('device_id').references(() => devices.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: DEVICE_KINDS }).notNull(),
+    displayName: text('display_name').notNull(),
+    codeHash: text('code_hash').notNull(),
+    state: text('state', { enum: DEVICE_PAIRING_STATES }).notNull(),
+    /** SPKI DER, base64url, Ed25519. Set at claim; not secret. */
+    publicKey: text('public_key'),
+    keyFingerprint: text('key_fingerprint'),
+    /** The challenge the device signs to complete. Set at claim. */
+    claimNonce: text('claim_nonce'),
+    claimedOs: text('claimed_os'),
+    claimedCliVersion: text('claimed_cli_version'),
+    failedAttempts: integer('failed_attempts').notNull().default(0),
+    createdAt,
+    expiresAt: integer('expires_at').notNull(),
+    claimedAt: integer('claimed_at'),
+    decidedAt: integer('decided_at'),
+    completedAt: integer('completed_at'),
+  },
+  (t) => [
+    index('device_pairing_requests_owner_state_idx').on(t.ownerUserId, t.state),
+    // A live code names one request; a finished one frees its hash.
+    uniqueIndex('device_pairing_requests_code_hash_live_unique')
+      .on(t.codeHash)
+      .where(sql`state IN ('open', 'claimed', 'approved')`),
+    check('device_pairing_requests_state_check', oneOf('state', DEVICE_PAIRING_STATES)),
+    check('device_pairing_requests_kind_check', oneOf('kind', DEVICE_KINDS)),
   ],
 );
 
