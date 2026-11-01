@@ -2,12 +2,13 @@
 id: LAI-1018
 title: 'Phase 6 live browser qualification: agent and hand-off screens, keyboard and both themes'
 area: chief
-assignee: unclaimed
+assignee: chief
 priority: p1
 parent: LAIKA-785
 depends-on: []
 discovered-from: LAI-559
-status: backlog
+started: 2026-11-01T07:29:30Z
+status: in-progress
 ---
 
 ## Goal
