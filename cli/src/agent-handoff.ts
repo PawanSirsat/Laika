@@ -678,7 +678,7 @@ function offerLine(o: InboxOffer): string {
   return `${o.id}  ${o.kind}  ${o.state}  task ${o.task_id}  ${save}  expires ${when(o.expires_at)}`;
 }
 
-async function findOffer(
+export async function findOffer(
   io: HandoffIo,
   credential: AgentCredential,
   offerId: string,
