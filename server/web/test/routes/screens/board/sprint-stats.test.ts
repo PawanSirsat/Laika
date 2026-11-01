@@ -12,6 +12,12 @@
  * every assigned task and every task already moving, so a 99-task sprint read
  * BLK 95 where 9 were blocked. BLK is the server's count now: open work
  * waiting on a dependency that is not `done`.
+ *
+ * **Nor is DONE's total, for cancelled work** (LAI-1040). The strip put it in
+ * the total; the Sprints card and the Timeline (SPEC §11.4.3) leave it out of
+ * both, so a sprint with 8 done and 2 cancelled read 8/10 here and 8/8 there.
+ * The total is the strip's less the cancelled tasks in scope; done is the
+ * strip's unchanged.
  */
 
 import assert from 'node:assert/strict';
@@ -115,7 +121,7 @@ const SPRINTS = [
   sprint('s3', 'planned', 23),
 ];
 
-void describe('DONE and its total are still the strip’s countFor (LAI-727)', () => {
+void describe('DONE is the strip’s countFor, its total less cancelled (LAI-727, LAI-1040)', () => {
   for (const scope of ['s1', 's2', 's3', undefined]) {
     void test(`over ${scope ?? 'every sprint'}`, () => {
       // The board's set for a scope is what the server returns for it, which is
@@ -123,7 +129,8 @@ void describe('DONE and its total are still the strip’s countFor (LAI-727)', (
       const set = scope === undefined ? PROJECT : PROJECT.filter((t) => t.sprint_id === scope);
       const { total, done } = countStats(set, BY_ID);
       const strip = stripCountFor(PROJECT, scope);
-      assert.deepEqual({ total, done }, { total: strip.total, done: strip.done });
+      const cancelled = set.filter((t) => t.status === 'cancelled').length;
+      assert.deepEqual({ total, done }, { total: strip.total - cancelled, done: strip.done });
     });
   }
 });
@@ -133,8 +140,8 @@ void describe('BLK is open work held by an unfinished blocker (LAI-819)', () => 
 
   void test('the active sprint, by hand', () => {
     // f (blocker open in s3), i (blocker cancelled), j (blocker unknown).
-    // Subtasks count, as DONE counts them.
-    assert.deepEqual(countStats(s2, BY_ID), { total: 10, done: 2, blocked: 3 });
+    // Subtasks count, as DONE counts them. Ten tasks, k cancelled: total 9.
+    assert.deepEqual(countStats(s2, BY_ID), { total: 9, done: 2, blocked: 3 });
   });
 
   void test('not the strip’s `!ready`, which also counted e, g and k', () => {

@@ -408,9 +408,10 @@ void describe('sprintFigures — a sprint card’s lock and flow (LAI-819)', () 
     assert.equal(sprintFigures(own, project).subtasks, 1);
   });
 
-  void test('in flight and unassigned are as they were', () => {
+  void test('in flight is as it was; unassigned counts open work only (LAI-1040)', () => {
     const figures = sprintFigures(own, project);
     assert.equal(figures.wip, 2);
-    assert.equal(figures.unassigned, 5);
+    // 1, 2 and 4 have nobody; 5 (done) and 6 (cancelled) are not waiting for anyone.
+    assert.equal(figures.unassigned, 3);
   });
 });

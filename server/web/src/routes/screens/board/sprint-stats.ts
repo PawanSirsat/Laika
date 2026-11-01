@@ -1,5 +1,5 @@
 import { heldByBlocker } from '../../../api/board-derive.ts';
-import { daysLeft, daysUntilStart } from '../sprints/sprint-derive.ts';
+import { daysLeft, daysUntilStart, progressOf } from '../sprints/sprint-derive.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import type { TaskSummary } from '../../../api/tasks.ts';
 
@@ -8,7 +8,8 @@ import type { TaskSummary } from '../../../api/tasks.ts';
  * carried, kept when the owner removed the strip.
  *
  * DONE is the strip's: every task in scope, subtasks included, and those of
- * them done. **BLK is not the strip's any more** (LAI-819): the strip counted
+ * them done — **less cancelled work, which is in neither** (`progressOf`,
+ * LAI-1040), so the toolbar and the sprint's card read the same. **BLK is not the strip's any more** (LAI-819): the strip counted
  * every task that was not `ready` and not done, and `ready` is also false for
  * every assigned task, so a 99-task sprint read BLK 95 where 9 were blocked.
  * BLK is now open work waiting on an unfinished dependency — `heldByBlocker`,
@@ -27,12 +28,15 @@ export function countStats(
   byId: ReadonlyMap<string, Pick<TaskSummary, 'status'>>,
 ): StatCounts {
   let done = 0;
+  let cancelled = 0;
   let blocked = 0;
   for (const task of tasks) {
     if (task.status === 'done') done += 1;
+    else if (task.status === 'cancelled') cancelled += 1;
     else if (heldByBlocker(task, byId)) blocked += 1;
   }
-  return { total: tasks.length, done, blocked };
+  const progress = progressOf({ done, total: tasks.length, cancelled });
+  return { total: progress.total, done: progress.done, blocked };
 }
 
 export interface StatsScope {
