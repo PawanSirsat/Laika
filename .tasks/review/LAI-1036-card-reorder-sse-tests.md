@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p3
 depends-on: [LAI-473]
 discovered-from: LAI-473
-status: in-progress
+status: review
 started: 2026-11-01T16:24:25Z
+finished: 2026-11-01T16:25:01Z
 ---
 
 ## Why
@@ -28,14 +29,14 @@ they had no task file. This is it. Board card: LAIKA-892.
 
 ## Acceptance criteria
 
-- [ ] A `task.updated` echo for the moved card, arriving while the reorder
+- [x] A `task.updated` echo for the moved card, arriving while the reorder
       write is held, does not snap the card back; the lane reads the new
       order before and after the answer, with exactly one re-read.
-- [ ] A frame about another card, during a held cross-lane drop, does not
+- [x] A frame about another card, during a held cross-lane drop, does not
       pull the dropped card back to its old lane.
-- [ ] Another viewer's change during the drop lands beside the dropped card.
-- [ ] A second viewer sees the reorder over SSE without a reload.
-- [ ] The file is green on current `master`, run on its own.
+- [x] Another viewer's change during the drop lands beside the dropped card.
+- [x] A second viewer sees the reorder over SSE without a reload.
+- [x] The file is green on current `master`, run on its own.
 
 ## Notes
 
