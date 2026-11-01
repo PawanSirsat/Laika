@@ -1638,7 +1638,7 @@ export function updateTask(
       // The claim fence (LAI-541), under the write lock and before anything
       // is written, so a stale holder changes nothing at all.
       assertClaimFence(db, actor, taskId, now);
-      if (selecting) assertSelectionChangeAllowed(db, task, input.selected_agent_id ?? null);
+      if (selecting) assertSelectionChangeAllowed(db, task, input.selected_agent_id ?? null, now);
 
       // **Every input of the view is read again here**, under the lock, and not
       // taken from `requireTask` above, which ran before it. The project's

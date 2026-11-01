@@ -347,6 +347,25 @@ export function liveClaim(db: Db, taskId: string): ClaimRow | undefined {
 }
 
 /**
+ * Whether a live claim is **in force** at `now`: its lease has not lapsed
+ * ({@link leaseLapsed}, so the boot grace holds). A live claim whose lease
+ * ran out is still `active` or `paused` until the scan expires it, and
+ * nobody can use it in between — the fence refuses its generation. The task
+ * view ({@link liveClaimViews}) and the selection rule
+ * (`assertSelectionChangeAllowed`, LAI-1032) both ask this, so a card never
+ * shows no claim while the selection is refused for one.
+ */
+export function inForce(claim: Pick<ClaimRow, 'leaseExpiresAt'>, now: number): boolean {
+  return !leaseLapsed(claim.leaseExpiresAt, now);
+}
+
+/** The task's live claim when it is {@link inForce} at `now`, or undefined. */
+export function claimInForce(db: Db, taskId: string, now: number): ClaimRow | undefined {
+  const live = liveClaim(db, taskId);
+  return live !== undefined && inForce(live, now) ? live : undefined;
+}
+
+/**
  * The live claim of each task on a page, keyed by task id — **one query
  * whatever the page size**, as LAI-091 keeps every other part of a task view.
  *
@@ -396,7 +415,7 @@ export function liveClaimViews(
     model,
     deviceLabel,
   } of found) {
-    if (leaseLapsed(claim.leaseExpiresAt, now)) continue;
+    if (!inForce(claim, now)) continue;
     views.set(claim.taskId, {
       generation: claim.generation,
       // The query's predicate: only the live states reach here.
