@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, lt, or, type SQL } from 'drizzle-orm';
 import { AGENT_CLIENTS, type AgentClient } from '../auth/agent-clients.ts';
 import { hashToken, newTokenSecret, tokenDisplayPrefix } from '../auth/tokens.ts';
 import { activityActor, type ResolvedActor } from '../auth/resolve-actor.ts';
@@ -9,7 +9,7 @@ import { requireOrgId } from '../db/orgs.ts';
 import { type TokenScope } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
-import { projects, tokens, users } from '../db/schema.ts';
+import { agents, projects, tokens, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, forcedTokenScope } from '../policy/can.ts';
 import { canSeeProject } from './projects.ts';
@@ -46,6 +46,16 @@ import { canSeeProject } from './projects.ts';
  */
 export { TOKEN_SCOPES } from '../db/enums.ts';
 
+/**
+ * What a token is (LAI-1046): a person's own, or a registered agent's
+ * credential (§4.9 `agent_id`). Derived from `agent_id` and nothing else.
+ */
+export const TOKEN_KINDS = ['personal', 'agent'] as const;
+export type TokenKind = (typeof TOKEN_KINDS)[number];
+
+/** What an agent credential is labelled by, when the device is blank (D-120). */
+export const NO_DEVICE = 'No device';
+
 /** One token as it goes over the wire. Never the secret, never the hash. */
 export interface TokenView {
   id: string;
@@ -68,6 +78,17 @@ export interface TokenView {
   expires_at: number | null;
   revoked_at: number | null;
   created_at: number;
+  /** `agent` when `agent_id` is set, else `personal` — a legacy token (LAI-1046). */
+  kind: TokenKind;
+  /** The registered agent this token is the credential of (§4.9), or null. */
+  agent_id: string | null;
+  /**
+   * `<harness> · <device>` — the agent's label (D-120), `No device` for a
+   * blank one — or null for a personal token. **Never the registered
+   * `display_name`**, which is its owner's alone; built from the two columns
+   * that are not that name, so no reader can be handed it through here.
+   */
+  agent_label: string | null;
 }
 
 export interface CreatedToken {
@@ -84,14 +105,27 @@ export interface CreatedToken {
 
 type TokenRow = typeof tokens.$inferSelect;
 
+/** The two agent columns a label is made of — and deliberately not its name. */
+export type TokenAgent = Pick<typeof agents.$inferSelect, 'harness' | 'deviceLabel'>;
+
+/** `<harness> · <device>` (D-120). */
+export function tokenAgentLabel(agent: TokenAgent): string {
+  const device = agent.deviceLabel?.trim() ?? '';
+  return `${agent.harness} · ${device === '' ? NO_DEVICE : device}`;
+}
+
 /**
  * Row → view.
  *
  * `tokenHash` is dropped here by construction rather than by remembering to omit
  * it: the object is built field by field, so a column added to the table does
  * not appear on the wire until someone writes the line that puts it there.
+ *
+ * `agent` is the row's agent, read by the caller — a required argument, so no
+ * call site can forget it. `agent_id` cascades (§4.9), so a credential always
+ * has one; were it ever missing, the label is null rather than the list a 500.
  */
-export function tokenView(row: TokenRow): TokenView {
+export function tokenView(row: TokenRow, agent: TokenAgent | null): TokenView {
   return {
     id: row.id,
     name: row.name,
@@ -105,6 +139,9 @@ export function tokenView(row: TokenRow): TokenView {
     expires_at: row.expiresAt,
     revoked_at: row.revokedAt,
     created_at: row.createdAt,
+    kind: row.agentId === null ? 'personal' : 'agent',
+    agent_id: row.agentId,
+    agent_label: row.agentId === null || agent === null ? null : tokenAgentLabel(agent),
   };
 }
 
@@ -235,13 +272,24 @@ export function insertToken(db: Db, actor: ResolvedActor, input: InsertTokenInpu
     now: input.now,
   });
 
-  return { token: tokenView(row), secret };
+  const agent =
+    input.agentId === null
+      ? null
+      : (db
+          .select({ harness: agents.harness, deviceLabel: agents.deviceLabel })
+          .from(agents)
+          .where(eq(agents.id, input.agentId))
+          .get() ?? null);
+
+  return { token: tokenView(row, agent), secret };
 }
 
 export interface ListTokensOptions {
   limit: number;
   /** Keyset position, `(created_at, id)`, matching the ORDER BY below. */
   cursor: { sortKey: string | number; id: string } | null;
+  /** Only this kind (LAI-1046); absent is every token, as before. */
+  kind?: TokenKind | undefined;
 }
 
 /** Your own tokens, newest first. */
@@ -311,6 +359,8 @@ export function revokeTokenFor(
  */
 function selectTokens(db: Db, userId: string, options: ListTokensOptions): TokenView[] {
   const conditions: SQL[] = [eq(tokens.userId, userId)];
+  if (options.kind === 'personal') conditions.push(isNull(tokens.agentId));
+  if (options.kind === 'agent') conditions.push(isNotNull(tokens.agentId));
 
   if (options.cursor !== null) {
     const key = Number(options.cursor.sortKey);
@@ -323,13 +373,16 @@ function selectTokens(db: Db, userId: string, options: ListTokensOptions): Token
   }
 
   return db
-    .select()
+    .select({ token: tokens, harness: agents.harness, deviceLabel: agents.deviceLabel })
     .from(tokens)
+    .leftJoin(agents, eq(agents.id, tokens.agentId))
     .where(and(...conditions))
     .orderBy(desc(tokens.createdAt), desc(tokens.id))
     .limit(options.limit + 1)
     .all()
-    .map(tokenView);
+    .map(({ token, harness, deviceLabel }) =>
+      tokenView(token, harness === null ? null : { harness, deviceLabel }),
+    );
 }
 
 function requireToken(db: Db, tokenId: string): TokenRow {

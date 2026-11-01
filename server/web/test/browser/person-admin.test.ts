@@ -621,6 +621,55 @@ void describe('access', () => {
     }
   });
 
+  void test('their tokens: grouped by kind; a tool credential says what revoking stops', async () => {
+    const h = await open(
+      '/people?user=u2',
+      stub(OWNER, {
+        '/api/v1/users/u2/tokens': {
+          data: [
+            token('k1', 'Laptop Claude', { kind: 'personal', agent_id: null, agent_label: null }),
+            token('k2', 'Secret registered name', {
+              kind: 'agent',
+              agent_id: 'a1',
+              agent_label: 'codex · Strelka',
+            }),
+          ],
+          next_cursor: null,
+        },
+      }),
+    );
+    try {
+      const admin = await panel(h);
+      await admin.locator('[data-token="k2"]').waitFor();
+      const tools = admin.locator('[data-kind="agent"]');
+      assert.match(await tools.innerText(), /Tool credentials[\s\S]*Codex · Strelka/);
+      assert.equal(await tools.locator('[data-token="k1"]').count(), 0);
+      assert.equal(await admin.locator('[data-kind="personal"] [data-token="k1"]').count(), 1);
+      assert.doesNotMatch(await admin.innerText(), /Secret registered name/);
+
+      // N3: the button is named as the tool, never by the registered name.
+      assert.equal(
+        await admin
+          .locator('[data-token="k2"] [data-action="revoke-token"]')
+          .getAttribute('aria-label'),
+        'Revoke Codex · Strelka',
+      );
+      await admin.locator('[data-token="k2"] [data-action="revoke-token"]').click();
+      const impact = admin.locator('[data-token="k2"] [data-impact]');
+      await impact.waitFor();
+      assert.match(await impact.innerText(), /only live credential/);
+      assert.match(
+        await impact.innerText(),
+        /stays registered but cannot work again: to use it, .+ disconnects it and connects it afresh/,
+      );
+      assert.doesNotMatch(await impact.innerText(), /reconnect/i);
+
+      assert.equal(await admin.locator('[data-token="k1"] [data-impact]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('spaces: removed through the dialog, added with a chosen role', async () => {
     const sent: string[] = [];
     let held = [membership('p1', 'laika-core', 'Laika Core', 'LC', 'member')];

@@ -1,6 +1,7 @@
 import { pageSuffix, type PageQuery } from './every-page.ts';
 import type { AgentClient } from './agent-clients.ts';
 import { request } from './client.ts';
+import { harnessName, selectedHarness } from './selected-agent.ts';
 import type { Page } from './tasks.ts';
 
 /**
@@ -21,6 +22,13 @@ import type { Page } from './tasks.ts';
 
 export const TOKEN_SCOPES = ['full', 'read_only'] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
+
+/**
+ * A person's own token, or a registered agent's credential (§4.9 `agent_id`,
+ * LAI-1046). The server derives it from `agent_id` and nothing else.
+ */
+export const TOKEN_KINDS = ['personal', 'agent'] as const;
+export type TokenKind = (typeof TOKEN_KINDS)[number];
 
 export interface TokenView {
   readonly id: string;
@@ -49,6 +57,88 @@ export interface TokenView {
   readonly expires_at: number | null;
   readonly revoked_at: number | null;
   readonly created_at: number;
+  /** `agent` for a registered agent's credential, else `personal` (LAI-1046). */
+  readonly kind: TokenKind;
+  /** The agent this is the credential of, or null. */
+  readonly agent_id: string | null;
+  /**
+   * The server's `<harness> · <device>` — never the agent's registered name
+   * (D-120) — or null for a personal token. Read through {@link tokenAgentLabel}.
+   */
+  readonly agent_label: string | null;
+}
+
+/**
+ * *Claude Code · Belka* — an agent credential's label as every agent label
+ * reads (D-120): the server sends the harness slug before the first ` · `,
+ * which no slug contains, and the device after it. Null for a personal token.
+ */
+export function tokenAgentLabel(token: Pick<TokenView, 'agent_label'>): string | null {
+  // `typeof`, not `=== null`: a reply from a server older than LAI-1046 has
+  // no field at all, and reads as a personal token.
+  const label: unknown = token.agent_label;
+  if (typeof label !== 'string') return null;
+  const at = label.indexOf(' · ');
+  if (at === -1) return label;
+  return `${harnessName(selectedHarness({ harness: label.slice(0, at) }))}${label.slice(at)}`;
+}
+
+/** Split a list in two, each in the order given: own tokens, then tool credentials. */
+export function tokensByKind(tokens: readonly TokenView[]): {
+  readonly personal: readonly TokenView[];
+  readonly agent: readonly TokenView[];
+} {
+  return {
+    // Anything not `agent` is personal, so a row without the field is too.
+    personal: tokens.filter((t) => t.kind !== 'agent'),
+    agent: tokens.filter((t) => t.kind === 'agent'),
+  };
+}
+
+/**
+ * What revoking one agent credential stops, said before an admin does it
+ * (`token.revoke_any`, plan LAI-1042 §E.4). The revoke stays a token revoke —
+ * it never revokes the agent (A13) — so the copy says exactly that.
+ *
+ * Exactly what stops, from the server: every request on the token is refused
+ * from the next one (`/mcp` re-reads it per request), an open event stream
+ * sends its `401` and closes (LAI-539), and the session's claims lapse when
+ * its heartbeats stop renewing them. When the agent holds another live
+ * credential, the tool itself keeps working, and the copy says that instead.
+ *
+ * **There is no reconnect today**, and the copy does not promise one: rotating
+ * a revoked token is `409 token_revoked`, and registering the same tool on the
+ * same device again is `409 agent_exists_for_harness_device` while the agent
+ * is active. The owner's only way back is to disconnect the tool and connect it
+ * afresh. Slice C's reconnect exchange (plan LAI-1042 §E.2) is what changes
+ * this sentence.
+ *
+ * `complete` is false when the list was cut short (`everyPage`'s cap): then
+ * "only live credential" is not known, and the copy says it may have others.
+ */
+export function agentRevokeImpact(
+  token: TokenView,
+  ownerName: string,
+  siblings: readonly TokenView[],
+  now: number,
+  complete = true,
+): string {
+  const label = tokenAgentLabel(token) ?? token.name;
+  const others = siblings.filter(
+    (t) => t.id !== token.id && t.agent_id === token.agent_id && tokenState(t, now) === 'active',
+  ).length;
+  if (others > 0) {
+    const them =
+      others === 1
+        ? 'its other live credential keeps'
+        : `its ${String(others)} other live credentials keep`;
+    return `This is one of ${label}’s credentials. Whatever uses this one stops at once; ${them} working, so the tool does not stop.`;
+  }
+  const stops = `stops that tool at once: its next request is refused, its open event streams close, and the claims its sessions hold lapse when their lease runs out. Nothing else of ${ownerName}’s changes. The tool stays registered but cannot work again: to use it, ${ownerName} disconnects it and connects it afresh.`;
+  if (!complete) {
+    return `Not all of ${ownerName}’s tokens could be read, so ${label} may have other live credentials. If this is its only one, revoking it ${stops}`;
+  }
+  return `This is ${label}’s only live credential. Revoking it ${stops}`;
 }
 
 /**
@@ -72,9 +162,20 @@ export interface CreateTokenInput {
   readonly expires_at?: number;
 }
 
-export function listTokens(signal?: AbortSignal, page: PageQuery = {}): Promise<Page<TokenView>> {
+/** `pageSuffix` plus `kind=` when one is asked for; absent is every token. */
+function tokenQuery(page: PageQuery, kind: TokenKind | undefined): string {
+  const suffix = pageSuffix(page);
+  if (kind === undefined) return suffix;
+  return `${suffix === '' ? '?' : `${suffix}&`}kind=${kind}`;
+}
+
+export function listTokens(
+  signal?: AbortSignal,
+  page: PageQuery = {},
+  kind?: TokenKind,
+): Promise<Page<TokenView>> {
   return request<Page<TokenView>>(
-    `/tokens${pageSuffix(page)}`,
+    `/tokens${tokenQuery(page, kind)}`,
     signal === undefined ? {} : { signal },
   );
 }
@@ -98,9 +199,10 @@ export function listUserTokens(
   userId: string,
   signal?: AbortSignal,
   page: PageQuery = {},
+  kind?: TokenKind,
 ): Promise<Page<TokenView>> {
   return request<Page<TokenView>>(
-    `/users/${encodeURIComponent(userId)}/tokens${pageSuffix(page)}`,
+    `/users/${encodeURIComponent(userId)}/tokens${tokenQuery(page, kind)}`,
     signal === undefined ? {} : { signal },
   );
 }

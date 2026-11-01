@@ -9,7 +9,13 @@ import { LoadingState } from '../../../components/LoadingState.tsx';
 import { invitableRoles } from '../invite-roles.ts';
 import { revokeInvite } from '../../../api/invites.ts';
 import { getOrg, updateOrg, type Org } from '../../../api/org.ts';
-import { revokeUserToken, type TokenView } from '../../../api/tokens.ts';
+import {
+  agentRevokeImpact,
+  revokeUserToken,
+  tokenAgentLabel,
+  tokensByKind,
+  type TokenView,
+} from '../../../api/tokens.ts';
 import { Switch } from '../../../components/Switch.tsx';
 import { TokenRow } from '../../../components/TokenRow.tsx';
 import { useUserTokens } from './use-user-tokens.ts';
@@ -186,9 +192,22 @@ export function OrganisationScreen({
   }, []);
 
   const revoke = (owner: { id: string; name: string }, token: TokenView): void => {
+    const agent = tokenAgentLabel(token);
     void confirm({
-      title: `Revoke “${token.name}”?`,
-      body: `It is ${owner.name}’s. Anything using it — an agent, a script, their editor — stops working immediately, and the token cannot be restored. They can mint a new one themselves.`,
+      // An agent's credential says which tool stops, and that the tool stays
+      // registered (plan LAI-1042 §E.4): `token.revoke_any` revokes the token,
+      // never the agent.
+      title: agent === null ? `Revoke “${token.name}”?` : `Revoke ${agent}’s credential?`,
+      body:
+        agent === null
+          ? `It is ${owner.name}’s. Anything using it — an agent, a script, their editor — stops working immediately, and the token cannot be restored. They can mint a new one themselves.`
+          : agentRevokeImpact(
+              token,
+              owner.name,
+              tokens?.status === 'ready' ? tokens.tokens : [],
+              Date.now(),
+              tokens?.status === 'ready' && !tokens.truncated,
+            ),
       confirmLabel: 'Revoke token',
       danger: true,
       icon: 'warning',
@@ -720,22 +739,38 @@ export function OrganisationScreen({
                             No tokens. Nothing of theirs is signed in to the API.
                           </p>
                         ) : (
-                          <ul className="tok-list org-tokens-list">
-                            {tokens.tokens.map((token) => (
-                              <TokenRow
-                                key={token.id}
-                                token={token}
-                                now={now}
-                                onRevoke={
-                                  canRevokeTokens
-                                    ? (revoked) => {
-                                        revoke(person, revoked);
+                          // Grouped by kind (LAI-1046): a tool's credential is
+                          // named as the tool, never as an anonymous token.
+                          (
+                            [
+                              ['personal', 'Personal tokens'],
+                              ['agent', 'Tool credentials (Tool · Device)'],
+                            ] as const
+                          ).map(([kind, heading]) => {
+                            const group = tokensByKind(tokens.tokens)[kind];
+                            if (group.length === 0) return null;
+                            return (
+                              <div key={kind} className="org-tokens-group" data-kind={kind}>
+                                <p className="org-tokens-group-head">{heading}</p>
+                                <ul className="tok-list org-tokens-list">
+                                  {group.map((token) => (
+                                    <TokenRow
+                                      key={token.id}
+                                      token={token}
+                                      now={now}
+                                      onRevoke={
+                                        canRevokeTokens
+                                          ? (revoked) => {
+                                              revoke(person, revoked);
+                                            }
+                                          : undefined
                                       }
-                                    : undefined
-                                }
-                              />
-                            ))}
-                          </ul>
+                                    />
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          })
                         ))}
 
                       {tokenError !== undefined && (

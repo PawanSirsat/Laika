@@ -1,4 +1,4 @@
-import { lastUsedLabel, tokenState, type TokenView } from '../api/tokens.ts';
+import { lastUsedLabel, tokenAgentLabel, tokenState, type TokenView } from '../api/tokens.ts';
 import './token-row.css';
 
 export interface TokenRowProps {
@@ -33,11 +33,15 @@ export interface TokenRowProps {
  */
 export function TokenRow({ token, now, onRevoke }: TokenRowProps) {
   const state = tokenState(token, now);
+  // An agent's credential is named as the agent is, *Claude Code · Belka*
+  // (D-120), and says what it is; never by the name its owner registered.
+  const agent = tokenAgentLabel(token);
 
   return (
     <li className={`tok-row tok-row-${state}`}>
       <div className="tok-row-main">
-        <span className="tok-name">{token.name}</span>
+        <span className="tok-name">{agent ?? token.name}</span>
+        {agent !== null && <span className="tok-kind">Tool credential</span>}
         <code className="tok-prefix">{token.prefix}</code>
         <span className={`marker marker-${token.scope === 'full' ? 'agent' : 'ready'}`}>
           {token.scope === 'full' ? 'full' : 'read only'}

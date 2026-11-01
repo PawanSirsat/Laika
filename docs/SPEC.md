@@ -962,6 +962,23 @@ where the instance itself was created.
 Token format `lai_<40 base62>`. **The secret is never stored and is shown exactly
 once, at creation.**
 
+**Every token view says what the token is** (LAI-1046). `TokenView` — on
+`GET`/`POST /tokens`, `GET /users/:id/tokens`, and the tokens an agent's
+register, rotate and read return — carries `kind` (`agent` when `agent_id` is
+set, else `personal`), `agent_id`, and `agent_label`: the agent's
+`<harness> · <device>` (`No device` for a blank one), **never its registered
+`display_name`** (D-120), and `null` for a personal token. Both list endpoints
+take an optional `?kind=personal|agent`; absent is every token, as before, and
+any other value is `400`. The fields are additive, so an older client reads
+the same rows. Serving `agent_id` and `agent_label` to an owner or admin on
+`GET /users/:id/tokens` falls under the access-oversight exception to
+D-120's owner-only names, stated in the `name` bullets below (`profile.read`,
+which already shows them a person's token names). Revoking an
+agent's credential through `token.revoke_any` is a token revoke and leaves the
+agent registered (§4.63) but unable to work: a revoked credential cannot be
+rotated, so its owner disconnects the tool and connects it afresh. The admin
+screens say so before it happens.
+
 **`name` is wire-visible, and that constrains what renaming means** (added
 2026-09-01, LAI-093). `TaskView.created_by_client` reports the name of the token
 that created a task, **derived by joining `activity.actor_token_id` to this
@@ -3598,8 +3615,8 @@ PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
 GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+) — another person's agent is withheld per row (§4.8 `agent_id`, LAI-1011)
 GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until= — every row, newest first   (owner, admin)
                                              ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984); an owner or admin is withheld another person's agent too (§4.8 `agent_id`, LAI-1011)
-GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
-GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
+GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id    ?kind=personal|agent optional (§4.9, LAI-1046)
+GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)    ?kind= as above
 GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only)
 GET    /api/v1/agents/devices                own agents grouped by device → { data: [{ device_label, display_name, recognised, last_seen_at, active_count, revoked_count, agents }] } (§4.63, agent.read_own)
 POST   /api/v1/agents/devices/confirm        body { device_label: string | null } → { device_label, recognised: true } (agent.manage_own, session only)
