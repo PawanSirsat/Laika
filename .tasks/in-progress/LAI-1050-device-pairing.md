@@ -19,6 +19,11 @@ already taken on `LAI-1046-token-kind`, by
 `.tasks/backlog/LAI-1049-agent-token-lists-only-itself.md`, so this task is
 LAI-1050: the next number free across every branch and on the board.
 
+**No commit carries the stale id.** The branch was renamed from
+`LAI-1049-device-pairing` before its first push, and every commit says
+`[LAI-1050]`. Only the temporary worktree's directory, `.polly/wt-1049`, keeps
+the old number.
+
 **The dependency deviates from the claim rule too.** LAI-1045 (PR #202) is in
 review and not yet in `done/`. The owner's dispatch stacks this branch on it
 explicitly, and the PR targets `LAI-1045-devices-migration` until #202 merges.
@@ -41,8 +46,9 @@ explicitly, and the PR targets `LAI-1045-devices-migration` until #202 merges.
 
 ## Named cross-area edits (D-033)
 
-- `docs/SPEC.md`: a new §4.79 `device_pairing_requests`, and the §E.1
-  endpoint lines in §6.4.
+- `docs/SPEC.md`: a new §4.79 `device_pairing_requests`, the §E.1 endpoint
+  lines in §6.4, and one paragraph in §6.3's rate limits for pairing's
+  buckets.
 - `server/web/test/api/endpoint-coverage.test.ts`: `NO_BROWSER_CALLER`
   entries for the new paths, naming the V3 pairing screen (slice D) as the
   caller to come. This is the LAI-1045 precedent.
@@ -56,7 +62,10 @@ explicitly, and the PR targets `LAI-1045-devices-migration` until #202 merges.
       requests per owner.
 - [ ] A device claims once, with a fresh Ed25519 public key. Claim is
       unauthenticated and rate-limited in its own bucket.
-- [ ] Unknown, expired and already-used codes answer byte-identical `404`s.
+- [ ] Unknown, malformed, expired and finished codes answer byte-identical
+      `404`s. A code still live but claimed already is `409`
+      `pairing_already_claimed`, as plan §E.1 says, so the real device learns
+      it was raced.
 - [ ] Of two concurrent claims, exactly one wins.
 - [ ] The browser sees the fingerprint. Approve requires the fingerprint it
       saw: a mismatch is `409`. Deny is terminal.
