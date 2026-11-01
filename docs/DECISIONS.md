@@ -6649,3 +6649,30 @@ answers 409 like every API path except `/health` and `/setup`.
 **Consequences.** Values served by these routes must be safe for anonymous readers;
 `LAIKA_CLI_SOURCE_URL` refuses user, password, query and fragment at boot.
 
+## D-122 — A device has a server row and a kind; the cloud rule applies to a device of kind `cloud` or the label `Cloud` (LAI-1045; amends D-121 item 2)
+
+**Date:** 2026-11-02 · **By:** recorded by the LAI-1045 builder on Belka · **Amends:**
+D-121 item 2 · **Status:** approved by Pawan in chat on 2026-11-02, on his
+standing instruction to build Developer access V3 to the merged plan
+(`docs/proposals/LAI-1042-developer-access-v3-plan.md` §L1, its proposed
+default), relayed through the polly manager session
+
+1. **A device is a row** (`devices`, SPEC §4.78), not only a normalised label.
+   Each owner's existing labels became one `imported` device per normalised
+   key, named as the devices list already named them; nothing was merged,
+   revoked, renamed or created. `agents.device_id` links an agent to its
+   device and is kept in step with `device_label`.
+2. **`device_label` stays the authority** for D-120's one active agent per
+   harness per device. The device row adds to the cloud rule and replaces
+   nothing.
+3. **D-121 item 2 is amended: a device has a `kind`, `local` or `cloud`.** An
+   agent is a cloud agent, and D-121 item 3's 24-hour limit applies, when its
+   label normalises to `cloud` **or** its device is of kind `cloud`. This is
+   strictly tighter than D-121: everything refused before is still refused.
+   It lets a cloud runner be named freely (*CI runner*) once pairing (plan
+   slice C) can make a cloud device under another name. An imported device is
+   `cloud` exactly when its key is `cloud`, so on upgrade no agent's rule
+   changes. Look-alike forms are still other labels and other devices.
+4. **No new §3.1 action** (plan §L5): devices are owner records under
+   `agent.read_own` / `agent.manage_own`. Another owner's device is the same
+   `404` as one that does not exist. **No new §4.8 verb** (plan §L4).

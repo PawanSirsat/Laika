@@ -2424,13 +2424,20 @@ narrowed (§4.64).
 | `owner_user_id` | FK `users`, cascade — the one person whose agent it is; their current permissions cap it |
 | `display_name` | 1 to 80 characters, trimmed. An agent's tokens carry it as their `name`, and renaming the agent renames them |
 | `harness` | **self-reported**: an `AGENT_CLIENTS` slug or `other`, checked at the API. No CHECK, so a new client needs no rebuild. Decides nothing |
-| `device_label` | nullable, at most 80 characters, **self-reported**. Decides nothing |
+| `device_label` | nullable, at most 80 characters, **self-reported**. Grants nothing; decides D-120's one active agent per harness per device and, with its device's kind, the cloud rule (D-121, D-122) |
+| `device_id` | nullable, FK `devices` (§4.78), no cascade — the device this label names. Registering and relabelling set it; null only until the boot backfill links an agent an older build wrote (LAI-1045) |
 | `status` | `active` \| `revoked` (CHECK). `revoked` is terminal |
 | `created_at` | |
 | `revoked_at` | nullable — when it was revoked |
 | `last_seen_at` | nullable — the last request on one of its tokens, stamped at most once a minute as `tokens.last_used_at` is |
 
-Indexes: `(org_id)`, `(owner_user_id)`.
+Indexes: `(org_id)`, `(owner_user_id)`, `(device_id)`.
+
+**A cloud agent's tokens expire within a day of minting** (D-121, LAI-592): an
+agent is a cloud agent when its label normalises to `cloud` **or** its device
+is of kind `cloud` (D-122). Registering, rotating, or relabelling onto such a
+device with a token that breaks it is `422`, `reason`
+`cloud_token_expiry_required` or `cloud_token_expiry_too_long`.
 
 **Revoking an agent** sets `revoked` and revokes every live token it holds, in
 one transaction; `resolve-actor.ts` refuses an agent's token whose agent is not
@@ -2460,6 +2467,8 @@ claims cease to be live exactly as with single-agent revocation. Other devices,
 other owners and personal tokens are untouched. Confirm and revoke use
 `agent.manage_own`, session only; list uses `agent.read_own`. A label absent
 from the caller's own agents is `404`, including another owner's label.
+Each such group also has a row in `devices` (§4.78) since LAI-1045; this list
+and its confirm and revoke are unchanged by it.
 
 ### 4.64 `agent_project_grants`
 
@@ -3007,6 +3016,56 @@ agents it moves between; a context change, every agent granted the project.
 What actually reaches an agent is asked again on every read and every frame
 (§6.4, §11.5). No activity row: a delivery is presence, as a session is.
 
+### 4.78 `devices`
+
+A device an owner's agents run on (LAI-1045, D-122; plan LAI-1042 §D.2). Until
+LAI-1045 a device was only a normalised label (§4.63); this gives it a server
+id, which pairing (plan slice C) will bind a key to. **Self-reported, and it
+grants nothing**: a device row is evidence and a name, never an authorisation
+input.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID — the server's opaque device id |
+| `org_id` | FK `orgs`, cascade |
+| `owner_user_id` | FK `users`, cascade — whose device it is |
+| `display_name` | 1 to 80 characters, trimmed; *Unnamed device* for the empty key |
+| `label_key` | the name normalised as §4.63; the empty string for the unnamed device |
+| `kind` | `local` \| `cloud` (CHECK). An imported device is `cloud` exactly when its key is `cloud` |
+| `origin` | `imported` \| `paired` (CHECK). `imported` was made from agents' labels and holds no key |
+| `public_key` | nullable — set by pairing only; not secret |
+| `key_fingerprint` | nullable — set by pairing only |
+| `confirmed_at` | nullable — the owner said it is theirs; carried over from §4.67 on upgrade |
+| `paired_at` | nullable |
+| `status` | `active` \| `revoked` (CHECK). `revoked` is terminal and frees the name |
+| `revoked_at` | nullable |
+| `last_seen_at` | nullable — on upgrade, the newest of its agents'; reads serve the newest of this and its agents' |
+| `created_at` | on upgrade, its oldest agent's registration |
+
+Indexes `(owner_user_id)`, and **unique `(owner_user_id, label_key)` where
+`status = 'active'`**: two active devices of one owner never share a name.
+
+**Upgrade (`0070`) makes one `imported` device per owner and label key**,
+exactly the groups `GET /agents/devices` serves, named as that list names
+them (the newest agent's trimmed label), and links every agent to it. A key
+whose agents are all revoked gets a `revoked` device. Nothing is merged,
+revoked or renamed, no agent is created, and no other row changes. The same
+rule runs at every boot for any agent whose `device_id` is null **or stale** —
+linked to a device whose owner or label key is not the agent's own, as a
+relabel by a pre-`0070` build leaves it — and changes nothing once every agent
+is linked to its label's device.
+
+**Registering or relabelling** links the agent to the owner's active device
+for its label, making an `imported` one if there is none; a relabel moves the
+agent and leaves the old device's row. `device_label` stays the authority for
+D-120; the cloud rule reads the label and the device's `kind` (§4.63, D-122).
+Devices are revoked, never deleted: the agent's link has no cascade, and an
+owner's deletion removes both through their own cascades.
+
+Reading is `agent.read_own`, filtered to the caller's own devices; another
+owner's device is a `404` identical to an id that does not exist. No §3.1
+action and no §4.8 verb of its own (D-122).
+
 ## 5. Task lifecycle
 
 ```
@@ -3545,6 +3604,8 @@ GET    /api/v1/agents                        POST /api/v1/agents  body { display
 GET    /api/v1/agents/devices                own agents grouped by device → { data: [{ device_label, display_name, recognised, last_seen_at, active_count, revoked_count, agents }] } (§4.63, agent.read_own)
 POST   /api/v1/agents/devices/confirm        body { device_label: string | null } → { device_label, recognised: true } (agent.manage_own, session only)
 POST   /api/v1/agents/devices/revoke         body { device_label: string | null } → { revoked_agent_ids: string[] } (agent.manage_own, session only)
+GET    /api/v1/devices                       own devices (§4.78), active first → { data: [{ id, display_name, device_label, kind, origin, status, confirmed, confirmed_at, paired_at, key_fingerprint, last_seen_at, active_count, revoked_count, agents, created_at, revoked_at }] } (agent.read_own; not paginated)
+GET    /api/v1/devices/:id                   one own device, the same shape; another owner's or an unknown id is the same 404 (agent.read_own)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
