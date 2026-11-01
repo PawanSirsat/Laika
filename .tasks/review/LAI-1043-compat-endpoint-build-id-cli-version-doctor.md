@@ -74,6 +74,10 @@ One PR, dispatched by the owner as one slice. Each crossing is named here:
 - `server/web/src/api/health.ts` (SHELL): one field, `build_commit`, on the
   `Health` client type, which `view-type-drift.test.ts` pairs with the
   server's `HealthBody`.
+- `server/web/test/api/endpoint-coverage.test.ts` (SHELL): one
+  `NO_BROWSER_CALLER` entry for `api/v1/developer/compatibility`. Its only
+  caller is `laika doctor` until the V3 screens exist. Found by CI on the
+  first run of PR #200.
 - `cli/` (SHELL): `src/index.ts`, `src/version.ts` (new), `src/doctor.ts`
   (new), `src/protocol.ts` (new), `test/version.test.ts` (new),
   `test/doctor.test.ts` (new).
