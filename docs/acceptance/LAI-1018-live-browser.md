@@ -60,7 +60,7 @@ before any interaction, so it was not set by this walk.
 | Unavailable (`aria-disabled`) option: Enter does nothing | NOT LIVE | NOT LIVE | NOT LIVE | NOT LIVE | No agent on production is unavailable to this owner (the revoked one is not listed). See §6 gallery |
 | Escape closes the list only: listbox gone, focus back on trigger, drawer stays open | PASS | PASS | PASS | PASS | — |
 | Execution panel (LAIKA-872, this task's own live claim, view only): state line `role=status` "Working — An agent session holds the task and is checking in."; rows in words; panel "Details" toggles `aria-expanded` by Enter, focus stays | PASS | PASS | PASS | PASS | `s2-execution-panel-details-<cfg>.png` |
-| Checkpoints / recovery panel | NOT LIVE | NOT LIVE | NOT LIVE | NOT LIVE | **UNVERIFIED** (no gallery specimen either). The only card with a checkpoint is LAIKA-875, excluded by instruction. Making one needs a claim and a pushed `laika-ckpt/` tag, outside the sandbox |
+| Checkpoints / recovery panel | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED | **UNVERIFIED** (no gallery specimen either). The only card with a checkpoint is LAIKA-875, excluded by instruction. Making one needs a claim and a pushed `laika-ckpt/` tag, outside the sandbox |
 | Hand-off offer dialog focus trap | NOT LIVE | NOT LIVE | NOT LIVE | NOT LIVE | No offer exists on production (Inbox counts 0/0/0/0 including closed). Checked at component level in the §6 gallery |
 
 No agent was committed on the sandbox: selecting one sends a work request to
@@ -169,7 +169,7 @@ no specimen of it. It closes once a sandbox of its own carries an offer
 | Screen | Configs | Result |
 | --- | --- | --- |
 | 1. Agents tab + Your devices (list, wizard 1–3, duplicate notice, rotate confirm, consent switch, revoke-device → Cancel) | 4/4 | **PASS** |
-| 2. Drawer: Agent picker (APG), execution panel | 4/4 | **PASS**; checkpoints/recovery panel and review dialog NOT LIVE |
+| 2. Drawer: Agent picker (APG), execution panel | 4/4 | **PASS**; checkpoints/recovery panel and review dialog UNVERIFIED |
 | 3. Board cards: chip, Working, No save in 5 min, Recovery available, open, keyboard move, drag | 4/4 | **PASS** except drawer close focus: **FAIL** (LAI-1021) |
 | 4. Inbox › Hand-offs tabs, Access hand-off policy | 4/4 | **PASS** |
 | 5. Project context History / Compare / Delivered to | 4/4 | **PASS** except panel close focus: **FAIL** (LAI-1022) |

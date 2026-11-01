@@ -57,8 +57,8 @@ light and dark, at 1440 px and 390 px, keyboard only.
 
 `docs/acceptance/LAI-1018-live-browser.md`. All five screens were walked in
 all four configs, on production `8469099f` (screen 1 on `37fec80b`; #175
-changed none of its files). Of the six sections, three pass outright and §2 passes with two rows
-UNVERIFIED (below). Two
+changed none of its files). Of the six sections, three pass outright; §2 passes, with the checkpoints /
+recovery panel and the hand-off review dialog UNVERIFIED (below). Two
 checks fail: focus is not restored when the task drawer closes (LAI-1021,
 LAIKA-877) or when the Project context panel closes (LAI-1022, LAIKA-878).
 LAI-1023 (LAIKA-879, p3) covers identical "Context" button names.
