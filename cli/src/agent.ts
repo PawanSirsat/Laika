@@ -8,6 +8,7 @@ import {
   type AgentCredential,
   asLost,
   beatOnce,
+  credentialFingerprint,
   type Deps,
   endSession,
   findHarness,
@@ -46,6 +47,21 @@ import {
   shouldTrigger,
   writeActivity,
 } from './agent-checkpoint.ts';
+import {
+  type EventDeps,
+  mutate as mutateEvents,
+  noteAgent,
+  POLL_EVERY_TOOL_CALLS,
+  presented,
+  readStore,
+  releaseStreamSlot,
+  renderNotices,
+  runEventStream,
+  storeKey,
+  type StoreKey,
+  syncOnce,
+  takeStreamSlot,
+} from './agent-events.ts';
 
 /**
  * `laika agent …` — the local helper (proposal §4.7, LAI-542).
@@ -62,13 +78,19 @@ import {
  * still the one it started with (PID and start time). When it is not, the
  * watcher sends nothing more and exits.
  *
- * `UserPromptSubmit` and `PostToolUse` are the backstop, and cost no network
- * when the session is open: they open it if `SessionStart` did not (hooks
- * installed mid-session, or a start that failed on the network, retried with
- * its key), restart a watcher that has died while its harness lives (a laptop
- * sleep can kill it), and deliver, once, a notice that a claim was lost.
- * `SessionEnd` hands the end to a background process, so the harness's
+ * `UserPromptSubmit` and `PostToolUse` are the backstop, and renew nothing
+ * themselves when the session is open: they open it if `SessionStart` did not
+ * (hooks installed mid-session, or a start that failed on the network, retried
+ * with its key), restart a watcher that has died while its harness lives (a
+ * laptop sleep can kill it), and deliver, once, a notice that a claim was
+ * lost. `SessionEnd` hands the end to a background process, so the harness's
  * one-to-three-second budget never cuts it short.
+ *
+ * **Event notices (LAI-554, `agent-events.ts`) do use the network**:
+ * `SessionStart` and every `UserPromptSubmit` poll the agent's undelivered
+ * events (2–3 s budget), and so does every tenth `PostToolUse`. The watcher
+ * also holds the event stream. `LAIKA_AGENT_EVENTS=off` in the harness's
+ * environment turns both off.
  *
  * The trade-off: one more process per session, and a session whose watcher
  * dies goes unrenewed until the next prompt or tool call restarts it.
@@ -206,6 +228,7 @@ const USAGE = [
   '  laika agent checkpoints prune --dry-run',
   '  laika agent handoff inbox|show|prepare|accept|decline   receive a hand-off (laika agent handoff --help)',
   '  laika agent inbox | accept <offer>                      the same as the handoff forms',
+  '  laika agent events [sync|listen] [--harness H]      hand-off and context notices (opt out: LAIKA_AGENT_EVENTS=off)',
   '  laika agent watch [--battery-percent 15] [--memory-seconds 60] [--offer-to AGENT]',
   '                                  opt-in: ask for a checkpoint before battery or memory runs out',
   '',
@@ -239,7 +262,15 @@ export function deps(io: AgentIo): Deps {
  * not a blocklist, so no credential of any name — the agent's, the person's,
  * a cloud key — reaches it. The child needs a home, a path and the interval.
  */
-const CHILD_ENV = ['HOME', 'PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'LAIKA_AGENT_HEARTBEAT_SECONDS'];
+const CHILD_ENV = [
+  'HOME',
+  'PATH',
+  'TMPDIR',
+  'LANG',
+  'LC_ALL',
+  'LAIKA_AGENT_HEARTBEAT_SECONDS',
+  'LAIKA_AGENT_EVENTS',
+];
 
 /**
  * A background save also pushes, so it keeps what git needs to reach the
@@ -588,40 +619,140 @@ async function open(
   return { state: outcome.state };
 }
 
+/** Events are on unless the harness's environment says `LAIKA_AGENT_EVENTS=off` (LAI-554). */
+export const eventsEnabled = (env: Readonly<Record<string, string | undefined>>): boolean =>
+  env.LAIKA_AGENT_EVENTS !== 'off';
+
+export function eventDeps(io: AgentIo): EventDeps {
+  return {
+    home: io.home,
+    fetch: (input, init) => fetch(input, init),
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  };
+}
+
+/**
+ * The session this credential speaks for, or `undefined` (LAI-554 review). A
+ * session file the board opened on **another** credential — a login since
+ * changed — is another identity's: its `session_id` would be refused on every
+ * acknowledgement, and its `agent_id` names the wrong agent. One an older
+ * helper opened says nothing of its credential, and is treated the same.
+ */
+export function ownSession(
+  state: SessionState | undefined,
+  credential: AgentCredential,
+): SessionState | undefined {
+  return state?.credential_fp === credentialFingerprint(credential) ? state : undefined;
+}
+
+/** What a hook prints, and the events whose notice it carries — presented only once printed. */
+export interface HookResult {
+  readonly out: string;
+  readonly present?: {
+    readonly key: StoreKey;
+    readonly ids: readonly string[];
+    /** How many dropped notices the printed block told of. */
+    readonly dropped: number;
+    readonly sessionId: string | undefined;
+    readonly credential: AgentCredential;
+  };
+}
+
+interface EventNotices {
+  readonly key: StoreKey;
+  readonly text: string;
+  readonly ids: string[];
+  readonly dropped: number;
+  readonly sessionId: string | undefined;
+}
+
+/**
+ * The event half of a hook (LAI-554): catch up with the board at session
+ * start, at each prompt and every {@link POLL_EVERY_TOOL_CALLS} tool calls,
+ * then render what has been received and not yet shown.
+ */
+async function eventNotices(
+  io: AgentIo,
+  event: HookEvent,
+  harness: Harness,
+  state: SessionState | undefined,
+  credential: AgentCredential,
+): Promise<EventNotices> {
+  // The store is this credential's; the session counts only if it is too.
+  const key = storeKey(harness, credential);
+  const mine = ownSession(state, credential);
+  const sessionId = mine?.status === 'live' ? mine.session_id : undefined;
+  if (mine?.agent_id !== undefined) noteAgent(io.home, key, mine.agent_id);
+  let poll = event === 'session-start' || event === 'prompt';
+  if (event === 'tool') {
+    const calls = mutateEvents(io.home, key, (s) => (s.tool_calls += 1));
+    poll = calls % POLL_EVERY_TOOL_CALLS === 0;
+  }
+  if (poll) {
+    const outcome = await syncOnce(
+      eventDeps(io),
+      key,
+      credential,
+      sessionId,
+      event === 'session-start' ? 3000 : 2000,
+    );
+    if (outcome !== 'ok') log(io.home, `events ${harness} sync at ${event}: ${outcome}`);
+  }
+  const store = readStore(io.home, key);
+  return {
+    key,
+    sessionId,
+    ...renderNotices(store.records, mine?.agent_id, store.dropped_unshown),
+  };
+}
+
 /**
  * What an installed hook runs. **Never fails the harness and never prints
  * anything but the documented JSON**: every path exits 0, and errors go to
  * the helper's log, which `laika agent session status` points at.
+ *
+ * Event notices are not recorded as presented here: only {@link agent}'s
+ * `hook` command does that, after it has printed them.
  */
 export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Promise<string> {
+  return (await hookResult(io, event, harness)).out;
+}
+
+export async function hookResult(
+  io: AgentIo,
+  event: HookEvent,
+  harness: Harness,
+): Promise<HookResult> {
+  const out = (text: string): HookResult => ({ out: text });
   const raw = io.readHookInput === undefined ? io.stdin() : await io.readHookInput();
   const input = raw === undefined ? undefined : hookInput(raw);
   const harnessSessionId = input === undefined ? undefined : hookSessionId(input);
   if (input === undefined || harnessSessionId === undefined) {
     // An input that cannot be read cannot say which tool runs — or that it
     // will not touch the worktree — so a PreToolUse is held to the safe side.
-    return event === 'pre-tool' ? unreadablePreTool(io, harness) : '';
+    return out(event === 'pre-tool' ? unreadablePreTool(io, harness) : '');
   }
   const credential = readCredential(io.home, harness, io.env);
-  if (credential === undefined) return '';
+  if (credential === undefined) return out('');
   const path = statePath(io.home, harness, harnessSessionId);
 
   if (event === 'session-end') {
     const state = readState(path);
     if (state?.status === 'live') spawnChild(io, '_end', harness, harnessSessionId, credential);
-    return '';
+    return out('');
   }
 
   if (event === 'pre-tool' || event === 'tool' || event === 'tool-failed' || event === 'stop') {
-    let out = '';
+    let printed = '';
     try {
-      out = noteActivity(io, event, harness, harnessSessionId, input, credential);
+      printed = noteActivity(io, event, harness, harnessSessionId, input, credential);
     } catch (cause) {
       log(io.home, `checkpoint hook ${event}: ${cause instanceof Error ? cause.name : 'error'}`);
     }
     // `Stop` prints nothing, and `PreToolUse` prints only the deny above:
     // never an `allow`, which would skip the person's own permission rules.
-    if (event !== 'tool') return out;
+    if (event !== 'tool') return out(printed);
   }
 
   let state = readState(path);
@@ -660,7 +791,34 @@ export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Pro
     delete state.notice;
     writeState(io.home, state);
   }
-  return notes.length === 0 ? '' : contextOutput(event, notes.join('\n\n'));
+  let present: EventNotices | undefined;
+  if (eventsEnabled(io.env)) {
+    try {
+      present = await eventNotices(io, event, harness, state, credential);
+    } catch (cause) {
+      log(io.home, `events hook ${event}: ${cause instanceof Error ? cause.name : 'error'}`);
+    }
+  }
+  // Shown whole or not at all: a notice cut by the overall cap is not presented.
+  const block = present?.text ?? '';
+  const withEvents = [...notes, ...(block === '' ? [] : [block])].join('\n\n');
+  const shown = present !== undefined && block !== '' && withEvents.length <= MAX_CONTEXT;
+  const text = shown ? withEvents : notes.join('\n\n');
+  if (text === '') return out('');
+  return {
+    out: contextOutput(event, text),
+    ...(shown && present !== undefined
+      ? {
+          present: {
+            key: present.key,
+            ids: present.ids,
+            dropped: present.dropped,
+            sessionId: present.sessionId,
+            credential,
+          },
+        }
+      : {}),
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -817,8 +975,32 @@ async function child(
   state.watcher_pid = self.pid;
   state.watcher_started = self.started;
   writeState(io.home, state);
-  process.on('SIGTERM', () => process.exit(0));
+  // One event stream per harness (LAI-554), in whichever watcher takes the slot;
+  // it stops with the watcher.
+  // Into its own credential's store: a watcher started before a login
+  // changed keeps writing where that identity's notices belong.
+  const streaming = new AbortController();
+  const events = storeKey(harness, credential);
+  const streams = eventsEnabled(io.env) && takeStreamSlot(io.home, events, self);
+  process.on('SIGTERM', () => {
+    if (streams) releaseStreamSlot(io.home, events, self);
+    process.exit(0);
+  });
+  const stream = streams
+    ? runEventStream(eventDeps(io), events, credential, {
+        signal: streaming.signal,
+        sessionId: () => {
+          const current = ownSession(readState(path), credential);
+          return current?.status === 'live' ? current.session_id : undefined;
+        },
+      }).then((outcome) => {
+        log(io.home, `events stream ${harness} stopped: ${outcome}`);
+      })
+    : Promise.resolve();
   const outcome = await runWatcher(d, path, credential, self, heartbeatIntervalMs(io.env));
+  streaming.abort();
+  await stream.catch(() => undefined);
+  if (streams) releaseStreamSlot(io.home, events, self);
   log(io.home, `watcher ${state.session_id ?? ''} stopped: ${outcome}`);
   return 0;
 }
@@ -835,8 +1017,22 @@ export async function agent(argv: readonly string[], io: AgentIo = CONSOLE): Pro
     const harness = argv[2];
     if (event === undefined || !(event in HOOK_EVENTS) || !isHarness(harness)) return 0;
     try {
-      const out = await hook(io, event as HookEvent, harness);
-      if (out !== '') io.out(out);
+      const result = await hookResult(io, event as HookEvent, harness);
+      if (result.out !== '') {
+        io.out(result.out);
+        // Printed: only now is it presented (LAI-554).
+        if (result.present !== undefined) {
+          await presented(
+            eventDeps(io),
+            result.present.key,
+            result.present.credential,
+            result.present.ids,
+            result.present.sessionId,
+            2000,
+            result.present.dropped,
+          );
+        }
+      }
     } catch (cause) {
       log(
         io.home,
@@ -870,6 +1066,11 @@ export async function agent(argv: readonly string[], io: AgentIo = CONSOLE): Pro
       },
       rest,
     );
+  }
+
+  if (command === 'events') {
+    const { eventsCommand } = await import('./agent-events-cli.ts');
+    return eventsCommand(io, argv.slice(1));
   }
 
   if (command === 'watch') {
