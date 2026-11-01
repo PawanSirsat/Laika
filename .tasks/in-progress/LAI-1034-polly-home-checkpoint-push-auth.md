@@ -2,11 +2,12 @@
 id: LAI-1034
 title: 'A checkpoint save from a Polly session cannot push: polly-home hides git''s credential helper and gh''s login'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
+started: 2026-11-01T17:10:38Z
 discovered-from: LAI-1019
-status: backlog
+status: in-progress
 ---
 
 Board card LAIKA-890, under LAIKA-785.
