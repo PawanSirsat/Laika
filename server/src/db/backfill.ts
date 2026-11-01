@@ -292,69 +292,81 @@ export function backfillAgentDevices(db: Db): number {
   );
   if ((ready?.n ?? 0) === 0) return 0;
 
-  const unlinked = db
-    .select({
-      id: agents.id,
-      orgId: agents.orgId,
-      ownerUserId: agents.ownerUserId,
-      deviceLabel: agents.deviceLabel,
-      status: agents.status,
-      createdAt: agents.createdAt,
-      revokedAt: agents.revokedAt,
-      lastSeenAt: agents.lastSeenAt,
-    })
-    .from(agents)
-    .where(isNull(agents.deviceId))
-    .orderBy(desc(agents.createdAt), desc(agents.id))
-    .all();
-  if (unlinked.length === 0) return 0;
+  // The read is inside the write transaction, so nothing registered between
+  // reading and writing can be missed or linked twice.
+  return immediateTransaction(db.$client, () => {
+    const unlinked = db
+      .select({
+        id: agents.id,
+        orgId: agents.orgId,
+        ownerUserId: agents.ownerUserId,
+        deviceLabel: agents.deviceLabel,
+        status: agents.status,
+        createdAt: agents.createdAt,
+        revokedAt: agents.revokedAt,
+        lastSeenAt: agents.lastSeenAt,
+      })
+      .from(agents)
+      .where(isNull(agents.deviceId))
+      .orderBy(desc(agents.createdAt), desc(agents.id))
+      .all();
+    if (unlinked.length === 0) return 0;
 
-  // Newest first, so each group's first row names the device, as the list does.
-  const groups = new Map<string, typeof unlinked>();
-  for (const row of unlinked) {
-    const key = `${row.ownerUserId}\u0000${deviceLabelKey(row.deviceLabel)}`;
-    const group = groups.get(key);
-    if (group === undefined) groups.set(key, [row]);
-    else group.push(row);
-  }
-
-  immediateTransaction(db.$client, () => {
-    for (const group of groups.values()) {
-      const newest = group[0]!;
-      const labelKey = deviceLabelKey(newest.deviceLabel);
-      const anyActive = group.some((row) => row.status === 'active');
-      const lastSeenAt = group.reduce<number | null>(
-        (max, row) =>
-          row.lastSeenAt === null ? max : Math.max(max ?? row.lastSeenAt, row.lastSeenAt),
-        null,
-      );
-      const device =
-        activeDeviceFor(db, newest.ownerUserId, labelKey) ??
-        (anyActive ? null : newestDeviceFor(db, newest.ownerUserId, labelKey)) ??
-        insertImportedDevice(db, {
-          orgId: newest.orgId,
-          ownerUserId: newest.ownerUserId,
-          label: labelKey === '' ? null : (newest.deviceLabel ?? null),
-          status: anyActive ? 'active' : 'revoked',
-          now: Math.min(...group.map((row) => row.createdAt)),
-          revokedAt: anyActive
-            ? null
-            : Math.max(...group.map((row) => row.revokedAt ?? row.createdAt)),
-          lastSeenAt,
-        });
-      db.update(agents)
-        .set({ deviceId: device.id })
-        .where(
-          and(
-            isNull(agents.deviceId),
-            inArray(
-              agents.id,
-              group.map((row) => row.id),
-            ),
-          ),
-        )
-        .run();
+    // Newest first, so each group's first row names the device, as the list does.
+    const groups = new Map<string, typeof unlinked>();
+    for (const row of unlinked) {
+      const key = `${row.ownerUserId}\u0000${deviceLabelKey(row.deviceLabel)}`;
+      const group = groups.get(key);
+      if (group === undefined) groups.set(key, [row]);
+      else group.push(row);
     }
+
+    for (const group of groups.values()) {
+      linkGroup(db, group);
+    }
+    return unlinked.length;
   });
-  return unlinked.length;
+}
+
+interface UnlinkedAgent {
+  id: string;
+  orgId: string;
+  ownerUserId: string;
+  deviceLabel: string | null;
+  status: 'active' | 'revoked';
+  createdAt: number;
+  revokedAt: number | null;
+  lastSeenAt: number | null;
+}
+
+/** Link one (owner, label key) group, newest first, to its device. */
+function linkGroup(db: Db, group: UnlinkedAgent[]): void {
+  const newest = group[0]!;
+  const labelKey = deviceLabelKey(newest.deviceLabel);
+  const anyActive = group.some((row) => row.status === 'active');
+  const lastSeenAt = group.reduce<number | null>(
+    (max, row) => (row.lastSeenAt === null ? max : Math.max(max ?? row.lastSeenAt, row.lastSeenAt)),
+    null,
+  );
+  const device =
+    activeDeviceFor(db, newest.ownerUserId, labelKey) ??
+    (anyActive ? null : newestDeviceFor(db, newest.ownerUserId, labelKey)) ??
+    insertImportedDevice(db, {
+      orgId: newest.orgId,
+      ownerUserId: newest.ownerUserId,
+      label: labelKey === '' ? null : (newest.deviceLabel ?? null),
+      status: anyActive ? 'active' : 'revoked',
+      now: Math.min(...group.map((row) => row.createdAt)),
+      revokedAt: anyActive ? null : Math.max(...group.map((row) => row.revokedAt ?? row.createdAt)),
+      lastSeenAt,
+    });
+  db.update(agents)
+    .set({ deviceId: device.id })
+    .where(
+      inArray(
+        agents.id,
+        group.map((row) => row.id),
+      ),
+    )
+    .run();
 }
