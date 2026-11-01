@@ -203,10 +203,9 @@ export function updateStatus(
   body: Compatibility,
   protocol: number = PROTOCOL,
 ): Check {
-  const pull =
-    local.checkout === null
-      ? 'update this Laika checkout'
-      : `git -C ${tildePath(local.checkout)} pull`;
+  // `laika update`, never `git pull`: the board names the commit to run, and
+  // the newest commit on a branch is not it (LAI-1051).
+  const pull = local.checkout === null ? 'update this Laika checkout' : 'laika update';
   if (protocol < body.protocol.min_client) {
     return {
       name: 'update',
@@ -250,7 +249,11 @@ export function updateStatus(
   };
 }
 
-function pickBoard(io: DoctorIo, flag: string | undefined): { url?: string; from: string } {
+/** Where the board URL comes from, in order; shared with `laika update`. */
+export function pickBoard(
+  io: Pick<DoctorIo, 'env' | 'home'>,
+  flag: string | undefined,
+): { url?: string; from: string } {
   if (flag !== undefined) return { url: flag, from: '--board' };
   const live = io.env.LAIKA_URL;
   if (live !== undefined && live !== '') return { url: live, from: 'the environment' };
