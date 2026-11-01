@@ -2,11 +2,12 @@
 id: LAI-1028
 title: 'SPEC §4.5: `selected_agent_id` is also set on create, and a live claim lets it move to its holder'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: [LAI-1027]
 discovered-from: LAI-1027
-status: backlog
+status: in-progress
+started: 2026-11-01T23:30:00+02:00
 ---
 
 ## Goal
