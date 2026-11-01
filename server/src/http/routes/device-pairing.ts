@@ -1,0 +1,192 @@
+import { Hono, type Context } from 'hono';
+import type Database from 'better-sqlite3';
+import { type Db } from '../../db/client.ts';
+import { ApiError } from '../../errors.ts';
+import {
+  PAIRING_KINDS,
+  cancelPairingRequest,
+  claimPairingRequest,
+  completePairingRequest,
+  createPairingRequest,
+  decidePairingRequest,
+  getPairingRequest,
+  type CreatedPairingView,
+  type DevicePairingView,
+  type PairingClaimView,
+  type PairingCompleteView,
+} from '../../services/device-pairing.ts';
+import { type AppEnv } from '../context.ts';
+import { markOneTimeSecret } from '../idempotency.ts';
+import { LIMITS, type RateLimiter } from '../rate-limit.ts';
+import { parseBody, strictObject, z } from '../validation.ts';
+
+/**
+ * Device pairing (SPEC §4.79, §6.4, LAI-1050; plan LAI-1042 §E.1). Transport
+ * only; `services/device-pairing.ts` holds the rules.
+ *
+ * Two routers, because the two sides authenticate differently:
+ *
+ * - **The owner's**, at `/devices/pairing-requests`: a signed-in web session,
+ *   `agent.manage_own` (session only) to act and `agent.read_own` to read.
+ * - **The device's**, at `/device-pairing`: no actor at all. A claim presents
+ *   the code; completing presents a signature. Neither is a credential and
+ *   neither yields one, so there is no third way to be an actor (§6.1).
+ */
+
+export interface DevicePairingRouteOptions {
+  db: Db;
+  sqlite: Database.Database;
+  /** The limiter the middleware uses, for the shared failure backoff. */
+  rateLimiter: RateLimiter;
+  /** `LAIKA_PUBLIC_URL` (§11.7): the origin a completing device signs. */
+  publicUrl?: string | undefined;
+}
+
+/** The one key every failed pairing attempt counts on (plan §E.1). */
+export const PAIRING_FAILURE_KEY = 'pairing:failures';
+
+const CreateBody = strictObject({
+  kind: z.enum(PAIRING_KINDS),
+  display_name: z.string().max(200),
+  device_id: z.string().min(1).max(64).optional(),
+});
+
+const DecideBody = strictObject({
+  key_fingerprint: z.string().min(1).max(64),
+});
+
+const ClaimBody = strictObject({
+  code: z.string().min(1).max(32),
+  public_key: z.string().min(1).max(512),
+  os: z.string().trim().min(1).max(64).optional(),
+  cli_version: z.string().trim().min(1).max(64).optional(),
+});
+
+const CompleteBody = strictObject({
+  signature: z.string().min(1).max(200),
+});
+
+function requireActor(c: Context<AppEnv>) {
+  const actor = c.get('actor');
+  if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+  return actor;
+}
+
+/** The board's origin: the public URL's, or this request's when none is set. */
+function boardOrigin(c: Context<AppEnv>, publicUrl: string | undefined): string {
+  return new URL(publicUrl !== undefined && publicUrl !== '' ? publicUrl : c.req.url).origin;
+}
+
+export function devicePairingRequestRoutes(options: DevicePairingRouteOptions): Hono<AppEnv> {
+  const { db, sqlite } = options;
+  const app = new Hono<AppEnv>();
+
+  app.post('/', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(CreateBody, await c.req.json().catch(() => null));
+    const created = createPairingRequest(sqlite, db, actor, {
+      kind: body.kind,
+      displayName: body.display_name,
+      deviceId: body.device_id,
+      boardOrigin: boardOrigin(c, options.publicUrl),
+    });
+    // The code is shown once; the idempotency store keeps no copy of it.
+    markOneTimeSecret(c);
+    return c.json<CreatedPairingView>(created, 201);
+  });
+
+  app.get('/:id', (c) =>
+    c.json<DevicePairingView>(getPairingRequest(db, requireActor(c), c.req.param('id'))),
+  );
+
+  async function decide(c: Context<AppEnv>, approve: boolean) {
+    const actor = requireActor(c);
+    const body = parseBody(DecideBody, await c.req.json().catch(() => null));
+    return c.json<DevicePairingView>(
+      decidePairingRequest(sqlite, db, actor, c.req.param('id') ?? '', {
+        approve,
+        keyFingerprint: body.key_fingerprint,
+      }),
+    );
+  }
+
+  app.post('/:id/approve', (c) => decide(c, true));
+  app.post('/:id/deny', (c) => decide(c, false));
+
+  app.delete('/:id', (c) => {
+    cancelPairingRequest(sqlite, db, requireActor(c), c.req.param('id'));
+    return c.body(null, 204);
+  });
+
+  return app;
+}
+
+export function devicePairingRoutes(options: DevicePairingRouteOptions): Hono<AppEnv> {
+  const { db, sqlite, rateLimiter } = options;
+  const app = new Hono<AppEnv>();
+
+  /** Refuse while the shared failure budget is spent, before anything is read. */
+  function assertNotBackedOff(c: Context<AppEnv>): void {
+    const decision = rateLimiter.peek(PAIRING_FAILURE_KEY, LIMITS.pairingFailures);
+    if (decision.allowed) return;
+    c.header('Retry-After', String(decision.retryAfterSeconds));
+    throw new ApiError('rate_limited', 'Too many failed pairing attempts', {
+      retry_after_seconds: decision.retryAfterSeconds,
+      reason: 'pairing_backoff',
+    });
+  }
+
+  /** Count a failure, then rethrow what the caller would have been told. */
+  function failed(error: unknown): never {
+    rateLimiter.take(PAIRING_FAILURE_KEY, LIMITS.pairingFailures);
+    throw error;
+  }
+
+  app.post('/claim', async (c) => {
+    assertNotBackedOff(c);
+    const body = parseBody(ClaimBody, await c.req.json().catch(() => null));
+    try {
+      return c.json<PairingClaimView>(
+        claimPairingRequest(sqlite, db, {
+          code: body.code,
+          publicKey: body.public_key,
+          os: body.os,
+          cliVersion: body.cli_version,
+        }),
+      );
+    } catch (error) {
+      // A wrong code is the guess this exists to slow; a used one is not.
+      if (error instanceof ApiError && error.code === 'not_found') failed(error);
+      throw error;
+    }
+  });
+
+  app.post('/:id/complete', async (c) => {
+    assertNotBackedOff(c);
+    const body = parseBody(CompleteBody, await c.req.json().catch(() => null));
+    let outcome;
+    try {
+      outcome = completePairingRequest(sqlite, db, {
+        id: c.req.param('id'),
+        signature: body.signature,
+        boardOrigin: boardOrigin(c, options.publicUrl),
+      });
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'not_found') failed(error);
+      throw error;
+    }
+    if (outcome.kind === 'bad_signature') {
+      failed(
+        new ApiError('unauthorized', 'The signature does not match the device key', {
+          reason: 'device_signature_invalid',
+        }),
+      );
+    }
+    if (outcome.kind === 'pending') {
+      return c.json<{ state: 'claimed' }>({ state: outcome.state }, 202);
+    }
+    return c.json<PairingCompleteView>(outcome.body);
+  });
+
+  return app;
+}

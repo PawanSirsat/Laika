@@ -200,6 +200,12 @@ const UNPAIRED = new Map<string, string>([
   // LAI-1045: `GET /devices` is served ahead of the V3 Devices screen; plan
   // LAI-1042 slice B3 writes the client's `DeviceView` and pairs it.
   ['DeviceView', 'no client type exists'],
+  // LAI-1050: pairing is served ahead of the V3 pairing screen and the CLI's
+  // `laika device pair`; plan LAI-1042 slices C3 and D write their types.
+  ['CreatedPairingView', 'no client type exists'],
+  ['DevicePairingView', 'no client type exists'],
+  ['PairingClaimView', 'no client type exists'],
+  ['PairingCompleteView', 'no client type exists'],
   // LAI-545: checkpoints are served ahead of their screens — LAI-549 mirrors
   // them on the client, and the drawer reads them there. The consent left this
   // group in LAI-1007, which built the owner's switch.

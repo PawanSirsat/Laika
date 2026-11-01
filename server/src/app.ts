@@ -54,6 +54,7 @@ import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
 import { eventRoutes } from './http/routes/events.ts';
 import { agentRoutes } from './http/routes/agents.ts';
 import { deviceRoutes } from './http/routes/devices.ts';
+import { devicePairingRequestRoutes, devicePairingRoutes } from './http/routes/device-pairing.ts';
 import { agentSessionRoutes } from './http/routes/agent-sessions.ts';
 import { tokenRoutes, userTokenRoutes } from './http/routes/tokens.ts';
 import { mcpRoutes } from './http/routes/mcp.ts';
@@ -292,7 +293,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       ? authMiddleware({ auth: options.auth, db: options.db })
       : anonymousAuth,
   );
-  app.use('*', rateLimitMiddleware(options.rateLimiter ?? new RateLimiter()));
+  // One limiter: pairing's failure backoff (LAI-1050) reads the same buckets.
+  const rateLimiter = options.rateLimiter ?? new RateLimiter();
+  app.use('*', rateLimitMiddleware(rateLimiter));
 
   // After rateLimit, before the routes: an un-set-up instance answers `conflict`
   // for every API path except setup and health (LAI-009 AC1).
@@ -376,6 +379,12 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/tokens`, tokenRoutes({ db, sqlite: options.sqlite }));
     // D-114 (LAI-534): a person's registered agents and their credentials.
     app.route(`${API_BASE}/agents`, agentRoutes({ db, sqlite: options.sqlite }));
+    // LAI-1050: pairing a device (§4.79). The owner's side is mounted before
+    // `/devices`, whose `/:id` would otherwise be asked first; the device's
+    // side has no actor, and its own buckets.
+    const pairing = { db, sqlite: options.sqlite, rateLimiter, publicUrl: options.publicUrl };
+    app.route(`${API_BASE}/devices/pairing-requests`, devicePairingRequestRoutes(pairing));
+    app.route(`${API_BASE}/device-pairing`, devicePairingRoutes(pairing));
     // LAI-1045: the owner's devices (§4.78), read only.
     app.route(`${API_BASE}/devices`, deviceRoutes({ db }));
     app.route(`${API_BASE}/agent-sessions`, agentSessionRoutes({ db, sqlite: options.sqlite }));

@@ -55,6 +55,25 @@ export const LIMITS = {
    * own bucket, so telemetry never spends the agent's API budget.
    */
   otlp: { perMinute: 12, burst: 60 },
+  /**
+   * A device claiming a pairing code (LAI-1050, plan LAI-1042 §E.8): ten at
+   * once, then one every ten seconds, on its **own** bucket rather than the
+   * shared anonymous one, so a guessing loop neither spends the sign-in
+   * page's budget nor is hidden in it.
+   */
+  pairing: { perMinute: 6, burst: 10 },
+  /**
+   * A device polling one pairing request to complete it (LAI-1050): the CLI
+   * asks every two seconds until the owner decides, so per request id.
+   */
+  pairingComplete: { perMinute: 40, burst: 10 },
+  /**
+   * Failed pairing attempts — an unknown code or a bad signature — on one
+   * shared key (LAI-1050, the reset-link semantics of §6.1). Spent only by a
+   * failure and checked before every attempt, so a guesser is stopped while
+   * a device that knows its code is slowed only once the failures pile up.
+   */
+  pairingFailures: { perMinute: 2, burst: 10 },
 } as const satisfies Record<string, LimitPolicy>;
 
 export type LimitName = keyof typeof LIMITS;
@@ -102,6 +121,31 @@ export class RateLimiter {
     this.buckets.set(key, bucket);
 
     return { allowed: true, retryAfterSeconds: 0, remaining: Math.floor(bucket.tokens) };
+  }
+
+  /**
+   * Whether `take` would be refused now, without taking anything. For a
+   * bucket only failures spend: every attempt asks, only a failure takes.
+   */
+  peek(key: string, policy: LimitPolicy): RateLimitDecision {
+    const bucket = this.buckets.get(key);
+    if (bucket === undefined) {
+      return { allowed: true, retryAfterSeconds: 0, remaining: policy.burst ?? policy.perMinute };
+    }
+    const capacity = policy.burst ?? policy.perMinute;
+    const perMs = policy.perMinute / 60_000;
+    const tokens = Math.min(
+      capacity,
+      bucket.tokens + Math.max(0, this.now() - bucket.lastRefillMs) * perMs,
+    );
+    if (tokens < 1) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil((1 - tokens) / perMs / 1000)),
+        remaining: 0,
+      };
+    }
+    return { allowed: true, retryAfterSeconds: 0, remaining: Math.floor(tokens) };
   }
 
   /**

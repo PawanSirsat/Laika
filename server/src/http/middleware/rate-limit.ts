@@ -108,6 +108,10 @@ export const LOCAL_ACTIVITY_PATH = '/api/v1/me/local-activity';
 /** The OpenTelemetry receiver (LAI-773). */
 export const OTLP_PREFIX = '/api/v1/otlp/';
 
+/** A device's side of pairing (LAI-1050): claim, and `/:id/complete`. */
+export const PAIRING_PREFIX = '/api/v1/device-pairing/';
+export const PAIRING_CLAIM_PATH = '/api/v1/device-pairing/claim';
+
 /** A collector's drafted blocks (LAI-787). */
 export const TIME_DRAFTS_PATH = '/api/v1/me/time-drafts';
 
@@ -145,6 +149,18 @@ export function classify(
     return {
       key: `otlp:${credential?.tokenId != null ? 'token' : 'user'}:${who}`,
       policy: LIMITS.otlp,
+    };
+  }
+
+  // A device pairing (LAI-1050): anonymous, and on buckets of its own. Claims
+  // share one; completing is per request, because the CLI polls it.
+  if (path === PAIRING_CLAIM_PATH) {
+    return { key: 'pairing:claim', policy: LIMITS.pairing };
+  }
+  if (path.startsWith(PAIRING_PREFIX)) {
+    return {
+      key: `pairing:complete:${path.slice(PAIRING_PREFIX.length)}`,
+      policy: LIMITS.pairingComplete,
     };
   }
 
