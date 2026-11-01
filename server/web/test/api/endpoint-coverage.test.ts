@@ -125,6 +125,21 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   // LAI-1045 serves the owner's devices ahead of their screen. The V3 Devices
   // tab (LAI-1054) reads the list; one device alone has no caller yet.
   'api/v1/devices/*': 'LAI-1045 — the V3 Devices screen (plan LAI-1042 slice D) is not built',
+  // LAI-1050 serves pairing ahead of its screen and its CLI: the V3 pairing
+  // screen (plan LAI-1042 slice D) is the owner's caller, `laika device pair`
+  // (slice C3) the device's. Named by LAI-1050 (D-033).
+  'api/v1/devices/pairing-requests':
+    'LAI-1050 — the V3 pairing screen (plan LAI-1042 slice D) is not built',
+  'api/v1/devices/pairing-requests/*':
+    'LAI-1050 — the V3 pairing screen (plan LAI-1042 slice D) is not built',
+  'api/v1/devices/pairing-requests/*/approve':
+    'LAI-1050 — the V3 pairing screen (plan LAI-1042 slice D) is not built',
+  'api/v1/devices/pairing-requests/*/deny':
+    'LAI-1050 — the V3 pairing screen (plan LAI-1042 slice D) is not built',
+  'api/v1/device-pairing/claim':
+    'a device calls it with no session (LAI-1050); `laika device pair` (plan LAI-1042 slice C3)',
+  'api/v1/device-pairing/*/complete':
+    'a device calls it with no session (LAI-1050); `laika device pair` (plan LAI-1042 slice C3)',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */

@@ -3061,6 +3061,8 @@ input.
 
 Indexes `(owner_user_id)`, and **unique `(owner_user_id, label_key)` where
 `status = 'active'`**: two active devices of one owner never share a name.
+And **unique `(public_key)` where it is not null** (LAI-1050): one key is
+never proof for two devices, revoked ones included.
 
 **Upgrade (`0070`) makes one `imported` device per owner and label key**,
 exactly the groups `GET /agents/devices` serves, named as that list names
@@ -3082,6 +3084,81 @@ owner's deletion removes both through their own cascades.
 Reading is `agent.read_own`, filtered to the caller's own devices; another
 owner's device is a `404` identical to an id that does not exist. No §3.1
 action and no §4.8 verb of its own (D-122).
+
+### 4.79 `device_pairing_requests`
+
+A device asking to be paired with its owner's board (LAI-1050; plan LAI-1042
+§D.2, §E.1). The owner asks for a short code signed in; the device presents
+it **once** with a fresh Ed25519 public key; the owner approves the key's
+fingerprint signed in; the device signs the server's challenge with its
+private key, and only then is the device row made or given the key. **The code
+binds a key to a request; it is never a credential, and no step of pairing
+mints a token, a session or an agent.**
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `org_id` | FK `orgs`, cascade |
+| `owner_user_id` | FK `users`, cascade — whose request, and whose device it makes |
+| `device_id` | nullable, FK `devices`, cascade — the owner's imported device chosen to pair; at completion, the device paired |
+| `kind` | `local` \| `cloud` (CHECK) — the owner's choice; an existing device's own |
+| `display_name` | 1 to 80 characters, trimmed; an existing device's own name |
+| `code_hash` | sha256 of the normalised code. **The code itself is never stored** |
+| `state` | `open` \| `claimed` \| `approved` \| `completed` \| `denied` \| `expired` \| `cancelled` (CHECK) |
+| `public_key` | nullable — SPKI DER, base64url, Ed25519; set at claim, not secret |
+| `key_fingerprint` | nullable — the first 16 hex characters of the key's sha256, shown to the owner |
+| `claim_nonce` | nullable — the random challenge the device signs; set at claim |
+| `claimed_os`, `claimed_cli_version` | nullable — self-reported, at most 64 characters, shown only |
+| `failed_attempts` | bad signatures; the fifth cancels the request |
+| `created_at`, `expires_at` | ten minutes apart |
+| `claimed_at`, `decided_at`, `completed_at` | nullable |
+
+Indexes `(owner_user_id, state)`, and **unique `(code_hash)` where `state` is
+`open`, `claimed` or `approved`**: a live code names one request.
+
+**The code** is sixteen Crockford base32 characters (**80 bits**, CHIEF on
+PR #205), served as `XXXX-XXXX-XXXX-XXXX` once, inside the command the owner
+pastes, in the create answer, which the idempotency store never
+keeps. Case, hyphens and spaces are ignored, and `O`, `I` and `L` read as `0`,
+`1` and `1`. A live request past `expires_at` reads, and is refused, as
+`expired`.
+
+**The owner's side** is a signed-in web session: create, approve, deny and
+cancel are `agent.manage_own` (session only), reading is `agent.read_own`, and
+every query is the caller's own requests — another owner's is a `404`
+identical to an id that does not exist. At most **five** live requests per
+owner (`409`, `too_many_open_pairings`). A new device's name must be free among
+the owner's active devices (`409`, `device_name_taken`); pairing an imported
+device is an explicit `device_id`, of the caller's own, active and unpaired
+device, **whose kind pairing never changes** (`409`, `device_kind_mismatch`).
+Approving or denying echoes the fingerprint the owner was shown; another is
+`409`, `pairing_key_changed`.
+
+**The device's side has no actor** — neither the code nor the signature is a
+way to be one (§6.1), and both routes read and write only the request a code or
+an id names. A claim of an unknown, malformed, expired or finished code is one
+`404` body; a code claimed already is `409`, `pairing_already_claimed`, so the
+real device can tell its owner it was raced — the browser shows the fingerprint
+that won. Exactly one of two concurrent claims moves `open` to `claimed`. A key
+a device already holds is `409`, `device_key_in_use`. Completing verifies an
+Ed25519 signature over `laika-pair-v1\n<id>\n<nonce>\n<board origin>` — the
+board's origin being `LAIKA_PUBLIC_URL`'s — **before** it says anything about
+the state: a bad one is `401`, `device_signature_invalid`; a good one is `202
+{ state: 'claimed' }` until the owner approves, `200` once, and `409`
+`pairing_<state>` after. **Five bad signatures cancel a request**, so anyone
+who holds its id — the device that claimed it, or whoever it told — can end
+it that way; they cannot complete it, and the owner starts again. Completing
+re-checks that no device holds the key (`409`, `device_key_in_use`), since
+two requests may claim one key before either finishes. **Both sides need
+`LAIKA_PUBLIC_URL`**: without it, creating and completing are `409`
+`public_url_unset`, rather than signing an origin a proxy happened to
+forward.
+
+Completing an approved request makes a device of `origin` `paired`, with the
+key, `paired_at` and `confirmed_at` — the owner approved it — or sets the key
+on the chosen imported device, which becomes `paired`. A `cloud` device puts
+every agent registered on it under the 24 h rule (§4.63, D-122). No activity
+row and no §3.1 action (plan §L4, §L5): this table is the record.
 
 ## 5. Task lifecycle
 
@@ -3411,6 +3488,18 @@ credential is not an org credential with a project filter.
   seconds**; making, accepting, declining or cancelling an offer, **10 a
   burst, refilled one a minute**. Approving is a person's and shares the
   session's budget. A repeated idempotency key still spends a token.
+  **Device pairing's side has buckets of its own** (§4.79, LAI-1050), apart
+  from the shared anonymous one. Every claim, well-formed or not, spends one
+  bucket of **6,000 a minute with a burst of 6,000**; there is no failure
+  backoff. It bounds load, not guessing: against an 80-bit code with at most
+  five live per owner, a caller holding it empty all day makes 8.6 million
+  guesses for about 3.6e-17 × (owners) expected hits. Holding it empty takes
+  **100 requests a second, sustained**. Completing is **40 a minute, a burst
+  of 10, per request id**, for the CLI's two-second poll; a path whose id is
+  not ULID-shaped shares one bucket of that size, which no real device uses.
+  Shared anonymous buckets can always be drained by enough traffic; keys per
+  address wait for a trusted-proxy setting. A limiter holds at most 50,000
+  buckets, dropping refilled ones first, then the least recently used.
   `429` with `Retry-After`, never below one second.
 
   **Writes share the general budget; there is no separate write limit** (D-021).
@@ -3628,6 +3717,13 @@ POST   /api/v1/agents/devices/confirm        body { device_label: string | null 
 POST   /api/v1/agents/devices/revoke         body { device_label: string | null } → { revoked_agent_ids: string[] } (agent.manage_own, session only)
 GET    /api/v1/devices                       own devices (§4.78), active first → { data: [{ id, display_name, device_label, kind, origin, status, confirmed, confirmed_at, paired_at, key_fingerprint, last_seen_at, active_count, revoked_count, agents, created_at, revoked_at }] } (agent.read_own; not paginated)
 GET    /api/v1/devices/:id                   one own device, the same shape; another owner's or an unknown id is the same 404 (agent.read_own)
+POST   /api/v1/devices/pairing-requests      body { kind: 'local'|'cloud', display_name, device_id? } → 201 { pairing, user_code, command }; the code is shown once (§4.79, agent.manage_own, session only)
+GET    /api/v1/devices/pairing-requests/:id  one own request → { id, state, kind, display_name, device_id, claimed: { key_fingerprint, os, cli_version, claimed_at } | null, created_at, expires_at, decided_at, completed_at }; never the code (agent.read_own)
+POST   /api/v1/devices/pairing-requests/:id/approve   body { key_fingerprint } → the request; from claimed only (agent.manage_own, session only)
+POST   /api/v1/devices/pairing-requests/:id/deny      body { key_fingerprint } → the request, denied (agent.manage_own, session only)
+DELETE /api/v1/devices/pairing-requests/:id  cancel a live request → 204 (agent.manage_own, session only)
+POST   /api/v1/device-pairing/claim          no actor; body { code, public_key, os?, cli_version? } → { pairing_id, nonce, key_fingerprint, expires_at } (§4.79)
+POST   /api/v1/device-pairing/:id/complete   no actor; body { signature } → 200 { device_id, display_name, kind, board_origin } once, 202 { state: 'claimed' } before approval (§4.79)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction

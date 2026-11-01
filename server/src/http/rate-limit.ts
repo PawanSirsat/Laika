@@ -55,16 +55,61 @@ export const LIMITS = {
    * own bucket, so telemetry never spends the agent's API budget.
    */
   otlp: { perMinute: 12, burst: 60 },
+  /**
+   * Devices claiming pairing codes (LAI-1050; CHIEF, PR #205 round 2): one
+   * bucket for every anonymous claim, well-formed or not, **6,000 a minute
+   * with a burst of 6,000**. It bounds load, not guessing: a code is 80 bits,
+   * so a guesser holding this bucket empty all day makes 8.6 million guesses
+   * against at most five live codes per owner — an expected 3.6e-17 × U hits
+   * a day on a board of U owners.
+   *
+   * **A shared anonymous bucket can always be drained**; that is what shared
+   * means. This one takes **100 requests a second, sustained**, to hold empty,
+   * which is load the server has to answer for anyway. Keys per address wait
+   * for a trusted-proxy setting (see `rateLimitMiddleware`).
+   */
+  pairing: { perMinute: 6000, burst: 6000 },
+  /**
+   * A device polling one pairing request to complete it (LAI-1050): the CLI
+   * asks every two seconds until the owner decides, so per request id. A
+   * path with no ULID-shaped id shares one bucket of this size, which no
+   * real device ever uses.
+   */
+  pairingComplete: { perMinute: 40, burst: 10 },
 } as const satisfies Record<string, LimitPolicy>;
 
 export type LimitName = keyof typeof LIMITS;
 
-export class RateLimiter {
-  private readonly buckets = new Map<string, Bucket>();
-  private readonly now: () => number;
+/**
+ * How many buckets one limiter holds at most (LAI-1050 review, B2).
+ *
+ * Bucket keys come from requests — a token id, a user id, a pairing request
+ * id an anonymous caller chose — so without a bound the map grows for as long
+ * as someone keeps sending new ones. Past the cap, refilled buckets go first,
+ * as `prune` does: a full bucket is what a missing key gives back, so dropping
+ * one changes nothing. If that is not enough, the least recently used go.
+ *
+ * Evicting a bucket that is not full **forgets a spend**, so its key starts
+ * again from a full bucket. That gives a caller more, never less, and buying
+ * it means sending this many requests to new keys first.
+ */
+export const MAX_BUCKETS = 50_000;
 
-  constructor(now: () => number = Date.now) {
+interface StoredBucket extends Bucket {
+  capacity: number;
+  perMs: number;
+}
+
+export class RateLimiter {
+  /** Insertion order is use order: every touch moves a key to the end. */
+  private readonly buckets = new Map<string, StoredBucket>();
+  private readonly now: () => number;
+  private readonly maxBuckets: number;
+  private lastPruneMs = Number.NEGATIVE_INFINITY;
+
+  constructor(now: () => number = Date.now, maxBuckets: number = MAX_BUCKETS) {
     this.now = now;
+    this.maxBuckets = maxBuckets;
   }
 
   /**
@@ -74,50 +119,28 @@ export class RateLimiter {
    * this class never has to know how a request was authenticated.
    */
   take(key: string, policy: LimitPolicy): RateLimitDecision {
-    const capacity = policy.burst ?? policy.perMinute;
-    const perMs = policy.perMinute / 60_000;
-    const now = this.now();
-
-    const bucket = this.buckets.get(key) ?? { tokens: capacity, lastRefillMs: now };
-
-    // Continuous refill: elapsed time converts straight into tokens, capped.
-    const elapsed = Math.max(0, now - bucket.lastRefillMs);
-    bucket.tokens = Math.min(capacity, bucket.tokens + elapsed * perMs);
-    bucket.lastRefillMs = now;
-
-    if (bucket.tokens < 1) {
-      const deficit = 1 - bucket.tokens;
-      this.buckets.set(key, bucket);
-
-      return {
-        allowed: false,
-        // Always at least a second: `Retry-After: 0` invites an immediate retry
-        // that is guaranteed to fail again.
-        retryAfterSeconds: Math.max(1, Math.ceil(deficit / perMs / 1000)),
-        remaining: 0,
-      };
-    }
-
-    bucket.tokens -= 1;
-    this.buckets.set(key, bucket);
-
-    return { allowed: true, retryAfterSeconds: 0, remaining: Math.floor(bucket.tokens) };
+    const bucket = this.refilled(key, policy);
+    const decision = decide(bucket);
+    if (decision.allowed) bucket.tokens -= 1;
+    this.store(key, bucket);
+    return decision.allowed ? { ...decision, remaining: Math.floor(bucket.tokens) } : decision;
   }
 
   /**
-   * Drop buckets that have refilled completely.
+   * Drop buckets that have refilled completely, each by its own policy — or,
+   * given one, by that policy for all.
    *
    * Without this the map grows once per distinct key forever, which for
    * token-authenticated agents means a slow leak that only shows up in a
    * long-running container — exactly the deployment Laika is.
    */
-  prune(policy: LimitPolicy = LIMITS.session): number {
-    const capacity = policy.burst ?? policy.perMinute;
-    const perMs = policy.perMinute / 60_000;
+  prune(policy?: LimitPolicy): number {
     const now = this.now();
     let removed = 0;
 
     for (const [key, bucket] of this.buckets) {
+      const capacity = policy === undefined ? bucket.capacity : (policy.burst ?? policy.perMinute);
+      const perMs = policy === undefined ? bucket.perMs : policy.perMinute / 60_000;
       const refilled = bucket.tokens + (now - bucket.lastRefillMs) * perMs;
       if (refilled >= capacity) {
         this.buckets.delete(key);
@@ -131,4 +154,58 @@ export class RateLimiter {
   get size(): number {
     return this.buckets.size;
   }
+
+  /** The bucket for `key`, refilled to now; a new one is full. */
+  private refilled(key: string, policy: LimitPolicy): StoredBucket {
+    const capacity = policy.burst ?? policy.perMinute;
+    const perMs = policy.perMinute / 60_000;
+    const now = this.now();
+    const bucket = this.buckets.get(key) ?? {
+      tokens: capacity,
+      lastRefillMs: now,
+      capacity,
+      perMs,
+    };
+
+    // Continuous refill: elapsed time converts straight into tokens, capped.
+    const elapsed = Math.max(0, now - bucket.lastRefillMs);
+    bucket.tokens = Math.min(capacity, bucket.tokens + elapsed * perMs);
+    bucket.lastRefillMs = now;
+    bucket.capacity = capacity;
+    bucket.perMs = perMs;
+    return bucket;
+  }
+
+  /** Keep `key` as the most recently used, inside the cap. */
+  private store(key: string, bucket: StoredBucket): void {
+    this.buckets.delete(key);
+    if (this.buckets.size >= this.maxBuckets) {
+      // A full scan at most once a second: at the cap, every new key would
+      // otherwise cost one, which is its own way to spend the server.
+      const now = this.now();
+      if (now - this.lastPruneMs >= 1000) {
+        this.lastPruneMs = now;
+        this.prune();
+      }
+      for (const oldest of this.buckets.keys()) {
+        if (this.buckets.size < this.maxBuckets) break;
+        this.buckets.delete(oldest);
+      }
+    }
+    this.buckets.set(key, bucket);
+  }
+}
+
+function decide(bucket: StoredBucket): RateLimitDecision {
+  if (bucket.tokens < 1) {
+    const deficit = 1 - bucket.tokens;
+    return {
+      allowed: false,
+      // Always at least a second: `Retry-After: 0` invites an immediate retry
+      // that is guaranteed to fail again.
+      retryAfterSeconds: Math.max(1, Math.ceil(deficit / bucket.perMs / 1000)),
+      remaining: 0,
+    };
+  }
+  return { allowed: true, retryAfterSeconds: 0, remaining: Math.floor(bucket.tokens - 1) };
 }

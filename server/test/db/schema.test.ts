@@ -97,6 +97,8 @@ describe('migrations', () => {
     'checkpoint_refs',
     'comment_mentions',
     'comments',
+    // LAI-1050: a device asking to be paired; the code is stored only as a hash.
+    'device_pairing_requests',
     // LAI-1045, D-122: the devices an owner's agents run on.
     'devices',
     // LAI-766, D-083: what GitHub's deliveries said, kept 30 days.
