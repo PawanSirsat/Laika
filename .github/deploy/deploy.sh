@@ -3,13 +3,36 @@
 # Runs on the GitHub runner (LAI-714): restart production on one exact image
 # and prove it from both sides.
 #
-#   deploy.sh <registry>/laika@sha256:<digest>
+#   deploy.sh <registry>/laika@sha256:<digest>            a deploy
+#   deploy.sh <registry>/laika@sha256:<digest> rollback   CI's rollback, which
+#                                                         also restores the
+#                                                         database the failed
+#                                                         deploy migrated
 #
 # Needs AWS credentials for the laika-github-deploy role, AWS_REGION and
 # INSTANCE_ID in the environment.
 set -euo pipefail
 
 IMAGE="$1"
+MODE="${2:-deploy}"
+case "$MODE" in deploy | rollback) ;; *)
+  echo "::error::unknown mode $MODE"
+  exit 2
+  ;;
+esac
+# The same on the deploy and on its rollback, so host-restart.sh restores only
+# a snapshot this run's deploy caused (LAI-1033). In Actions, the run and its
+# attempt. By hand there is no run: each call gets its own id, so a manual
+# rollback restores nothing unless LAIKA_DEPLOY_RUN names the deploy's id,
+# which the deploy prints.
+if [ -n "${LAIKA_DEPLOY_RUN:-}" ]; then
+  RUN="$LAIKA_DEPLOY_RUN"
+elif [ -n "${GITHUB_RUN_ID:-}" ]; then
+  RUN="$GITHUB_RUN_ID-${GITHUB_RUN_ATTEMPT:-1}"
+else
+  RUN="local-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+fi
+echo "run: $RUN ($MODE)"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # The host script travels inside the command, so the instance needs nothing
@@ -18,9 +41,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # carried to the end explicitly — otherwise the clean-up would report success
 # for a failed restart.
 script_b64="$(base64 -w0 "$HERE/host-restart.sh")"
-params="$(jq -n --arg b "$script_b64" --arg img "$IMAGE" '{commands: [
+params="$(jq -n --arg b "$script_b64" --arg img "$IMAGE" --arg mode "$MODE" --arg run "$RUN" '{commands: [
   "echo \($b) | base64 -d > /tmp/laika-restart.sh",
-  "bash /tmp/laika-restart.sh \($img); rc=$?",
+  "bash /tmp/laika-restart.sh \($img) \($mode) \($run); rc=$?",
   "rm -f /tmp/laika-restart.sh",
   "exit $rc"
 ]}')"

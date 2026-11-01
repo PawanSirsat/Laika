@@ -232,23 +232,95 @@ redeploys old code, but **onto the database as it is**, so the restore has to
 happen around that deploy, with the instance stopped. The exact production
 sequence is the deploy runbook's, and **was not run by LAI-560**.
 
-### Image-only rollback: what CI does by itself
+### CI's automatic rollback: the image, and the database it migrated
 
-A deploy that does not come up healthy is rolled back to the previous image
-**with the database left as migrated**. In the rehearsal, pre-programme code
-on the migrated database booted and served legacy tokens. But by the code at
-`71dd4217`, which has no notion of agents:
+A deploy that does not come up healthy is rolled back by CI. **Since LAI-1033
+that includes the database whenever the failed deploy migrated it.** End to
+end, with `.github/deploy/host-restart.sh` doing the instance half:
 
-- a registered agent's token is resolved as its owner's token, narrowed only
-  by its own scope and pin: **project grants stop narrowing it** (**Read**,
-  not run);
-- live claims are ignored, so fencing stops;
-- new rows carry no agent and no session.
+1. **The deploy** writes `/opt/laika/deploy-started-at` on the instance (the
+   workflow run id and attempt, then the time) and starts the new image. If
+   migrations are pending, its boot copies the database to
+   `/data/backups/pre-migration-<ISO time>.sqlite` before it applies any
+   (LAI-468) and then migrates.
+2. **Retagging or the restart fails**, including its checks: the 90-second
+   health wait, the digest, the outside health, the web app. **A later step
+   failing does not roll back** (since LAI-1033's review). If the ECR
+   clean-up fails after production came up healthy and passed the outside
+   checks, production stays on the new image and the run is red. Rolling a
+   verified deploy back would put older code on its migrated database or
+   discard what was written since.
+3. **The rollback step** points `latest` back at the previous digest and runs
+   `deploy.sh <previous> rollback`. On the instance, before it starts the
+   previous image:
+   - If `deploy-started-at` names **this** run and a `pre-migration-*`
+     snapshot has been written since, the deploy migrated the database. The
+     **oldest** such snapshot is restored: that is the one the first boot
+     took, because a crash-looped boot takes a second one of a half-migrated
+     file. The restore runs in four steps, and **`laika.db` is never
+     missing**:
+     1. The snapshot is copied to `laika.db.restoring`.
+     2. The live file gets a second name, `laika.db.rolled-back-<UTC time>`,
+        by hard link.
+     3. Its `-wal` and `-shm` move to the same name plus those suffixes.
+     4. The copy is renamed over `laika.db` in one step.
 
-**So after an image-only rollback past 0061: revoke every registered agent's
-token, or do the full rollback.** An agent's tokens are its owner's rows in
-`tokens`, so they appear under the owner's *Tokens* in pre-release code; that
-revoking them there works is **UNVERIFIED**.
+     The step log prints the snapshot's path and sha256.
+   - **If any of those steps fails**, it is undone, and the files are exactly
+     as they were. The step log says `restore: FAILED`, the previous image
+     starts on the database as it was (no worse than before LAI-1033), and
+     the step stays red. Restore by hand.
+   - Otherwise nothing was migrated, and the database is not touched.
+   - **Before any of this, on a deploy or a rollback:** if `laika.db` is
+     missing while `laika.db.rolled-back-*` files exist, the script refuses
+     and starts nothing. A missing file would otherwise make the server create
+     an empty one, come up healthy and go green on no data. Put the right
+     file back at `/data/laika.db` by hand.
+   (**Tested**: `server/test/tooling/host-restart.test.ts`, with docker, aws
+   and curl stubbed. **Not yet run on production.**)
+4. The previous image starts on the restored file, which it knows all of, and
+   must come up healthy. The run stays red, so a person looks.
+
+**Nothing is deleted.** The snapshot is copied, not moved. The migrated
+database is kept beside it, and the nightly prune never reaches it, because it
+removes only `backups/laika-*.sqlite`.
+
+**What it loses:** anything written by the new image between its migration
+and the rollback. Usually nothing, because a failed deploy has not been
+serving. If the new image did serve before a later check failed, those writes
+are in the kept `laika.db.rolled-back-*` file, not in the live one.
+
+**What stops the silent case it replaces.** Since LAI-1033 the server refuses
+to start on a database that holds a migration newer than any it carries. It
+exits 1, and stderr starts with `laika: schema-ahead:` and names each unknown
+migration by its time and hash (**Tested**: `server/test/db/schema-ahead.test.ts`,
+including through `src/index.ts`). Before that guard, Drizzle applied nothing
+and reported nothing, so pre-programme code on the migrated database booted.
+It resolved a registered agent's token as its owner's, narrowed only by its
+scope and pin; ignored project grants and live claims; and wrote rows with no
+agent and no session (**Read**, at `71dd4217`).
+
+**What it does not cover. Do the full rollback above by hand when:**
+
+- **The previous image predates LAI-1033 and no restore happened.** It has no
+  guard and boots silently on a newer schema. The restore in step 3 does not
+  depend on the guard, so this arises only when there was no snapshot from
+  this run: the database had been migrated by an earlier deploy, or the
+  backups directory was cleared. Then revoke every registered agent's token,
+  or restore by hand. (An agent's tokens are its owner's rows in `tokens`,
+  so they appear under the owner's *Tokens* in pre-release code; that revoking
+  them there works is **UNVERIFIED**.)
+- **The step log says `schema-ahead: this image refuses the database`.** The
+  previous image has the guard and there was no snapshot from this run to
+  restore. The server is down until someone restores by hand. That is the
+  intended outcome: down, not insecure.
+- **A revert pushed to `master`.** That is a new deploy, not a rollback. The
+  older image refuses the newer database and the deploy goes red, so restore
+  by hand around it, as described above.
+- **`deploy.sh` run by hand.** Without Actions, each call gets its own run id
+  (`local-<UTC time>-<pid>`, printed as `run:`). So a manual rollback
+  restores nothing unless `LAIKA_DEPLOY_RUN` is set to the id its deploy
+  printed.
 
 ## 8. Retention and pruning
 
@@ -314,3 +386,5 @@ From D-116's *Limitations*, the proposal, and the capability matrices in
 - [ ] After the deploy: health, an old personal token's `GET /me`, a project's
       activity history.
 - [ ] Rollback owner named, and this file's § 7 read by them.
+- [ ] If a deploy goes red, read its *Roll back* step log: `restore:` lines
+      say whether the database was put back (§ 7).

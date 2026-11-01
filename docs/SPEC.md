@@ -5597,7 +5597,9 @@ that take an `Actor` — which is what lets MCP tools reuse them exactly.
 `synchronous=NORMAL`. Database at `$DATA_DIR/laika.db`.
 
 **All access through Drizzle** — schema, queries, migrations. Migrations are
-generated files, committed, applied on boot, forward-only. Multi-table writes run
+generated files, committed, applied on boot, forward-only. A build refuses to
+start on a database holding a migration newer than any it carries, naming them,
+rather than running older code on a newer schema (LAI-1033). Multi-table writes run
 in a transaction. No raw SQL in handlers; the only exception is the `PRAGMA`s
 above, at startup.
 
