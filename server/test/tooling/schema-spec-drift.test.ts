@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ACTIVITY_TYPES, ACTOR_KINDS } from '../../src/db/enums.ts';
@@ -180,7 +181,7 @@ export function parseSpecTables(text: string): Map<string, string[]> {
  * It is also the honest place: a reader of §4.16 learns it is not built by
  * reading §4.16, not by grepping a test.
  */
-const PLANNED_MARK = /^\*\*Planned\s*[—-]\s*(LAI-\d{3})[^*]*\*\*\s*$/m;
+const PLANNED_MARK = /^\*\*Planned\s*[—-]\s*(LAI-\d{3,})(?!\d)[^*]*\*\*\s*$/m;
 
 export interface PlannedSection {
   /** The table the section names — the key `parseSpecTables` uses. */
@@ -225,7 +226,7 @@ export function closedTaskIds(root: string): Set<string> {
   const ids = new Set<string>();
 
   for (const entry of readdirSync(dir)) {
-    const id = /^(LAI-\d{3})/.exec(entry);
+    const id = /^(LAI-\d{3,})(?!\d)/.exec(entry);
     if (id !== null) ids.add(id[1]!);
   }
 
@@ -878,6 +879,31 @@ describe('the planned mark (LAI-080)', () => {
     // LAI-051 built this file, so it is accepted by definition of being here.
     expect(closed.has('LAI-051')).toBe(true);
     expect(closed.has('LAI-999')).toBe(false);
+  });
+
+  // LAI-1002. D-120 opened `LAI-1000` – `LAI-1099`, and both parsers took exactly
+  // three digits: `LAI-1045` read as `LAI-104`, which is in `done/`, so a
+  // four-digit mark expired the day it was written.
+  it('reads a four-digit task in the mark, not its first three digits', () => {
+    const marks = parsePlannedSections('### 4.16 `tags`\n\n**Planned — LAI-1045 builds this.**\n');
+
+    expect(marks.get('tags')?.taskId).toBe('LAI-1045');
+    expect(marksNamingClosedTasks(marks, new Set(['LAI-104']))).toEqual([]);
+    expect(marksNamingClosedTasks(marks, new Set(['LAI-1045']))).toHaveLength(1);
+  });
+
+  it('reads a four-digit file in .tasks/done/, not its first three digits', () => {
+    const root = mkdtempSync(join(tmpdir(), 'laika-closed-ids-'));
+
+    try {
+      mkdirSync(join(root, '.tasks', 'done'), { recursive: true });
+      writeFileSync(join(root, '.tasks', 'done', 'LAI-1045-four-digits.md'), '');
+      writeFileSync(join(root, '.tasks', 'done', 'LAI-100-three-digits.md'), '');
+
+      expect([...closedTaskIds(root)].sort()).toEqual(['LAI-100', 'LAI-1045']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
