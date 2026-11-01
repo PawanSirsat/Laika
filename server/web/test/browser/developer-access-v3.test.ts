@@ -358,16 +358,17 @@ void describe('the tab bars (plan §I)', () => {
       await h.page.locator('.page-tab[data-tab="activity"]').click();
       await h.page.locator('.dev-sharing').waitFor({ timeout: 20_000 });
       await h.page.locator('.page-tab[data-tab="advanced"]').click();
-      await h.page.locator('.dev-advanced .tokens').waitFor({ timeout: 20_000 });
-      // *New token* sits in Advanced itself, not in the page header.
+      await h.page.locator('.dev-advanced .dev-adv').waitFor({ timeout: 20_000 });
+      // *New personal credential* sits in Advanced itself, not in the page
+      // header (LAI-1058; developer-advanced.test.ts has the rest).
       await h.page
-        .locator('.dev-advanced-actions')
-        .getByRole('button', { name: /New token/ })
+        .locator('.dev-advanced')
+        .getByRole('button', { name: /New personal credential/ })
         .waitFor({ timeout: 10_000 });
       assert.equal(
         await h.page
           .locator('.screen-page-actions')
-          .getByRole('button', { name: /New token/ })
+          .getByRole('button', { name: /New (token|personal credential)/ })
           .count(),
         0,
       );
