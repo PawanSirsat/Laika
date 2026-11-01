@@ -289,7 +289,24 @@ void describe('the task panel', () => {
        * members, and a second source for "who is this" would disagree with the
        * first. The rail names the people and calls out the Viewers, which is
        * the distinction that matters — a Viewer is told and cannot act.
+       *
+       * **Wait for both reads, then read once** (LAI-1031). The drawer draws
+       * as soon as the task arrives, while `/watchers` and `/members` may still
+       * be in flight, and a single `innerText` then saw "Nobody yet." or "and
+       * others" on a loaded CI runner. The wait is on the *data* having
+       * settled — both names drawn, and the server's count — and never on the
+       * Viewer clause itself, so a broken role still fails the assertion below
+       * rather than timing out a wait that looks the same.
        */
+      const watchers = h.page.locator('.meta-row', { hasText: 'Watchers' });
+      await until(async () => {
+        const text = await watchers.innerText();
+        return (
+          text.includes('Ada Lovelace') &&
+          text.includes('Grace Hopper') &&
+          text.includes('2 people')
+        );
+      }, 20_000);
       const rail = await h.page.locator('.panel-meta').innerText();
       assert.match(rail, /Ada Lovelace/);
       assert.match(rail, /Grace Hopper/);
