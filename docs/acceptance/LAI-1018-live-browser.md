@@ -4,7 +4,8 @@ Board LAIKA-872, part of LAI-532 / LAIKA-785. Walked 2026-11-01, 09:56–10:37
 UTC, against production (`LAIKA_URL`), project `laika`, as Pawan (owner),
 from Belka. This closes the keyboard and accessibility rows left
 **UNVERIFIED** in `LAI-559-failure-matrix.md` (row 26) and the LAI-560
-evidence pack, except the one named in §6.
+evidence pack, except the two named in §6 (the checkpoints / recovery
+panel and the hand-off review dialog).
 
 The browser was headless Chromium (Playwright 1.62.1, already in
 `server/web`), driven keyboard only: Tab / Shift-Tab / arrows / Home / End /
@@ -59,7 +60,8 @@ before any interaction, so it was not set by this walk.
 | Unavailable (`aria-disabled`) option: Enter does nothing | NOT LIVE | NOT LIVE | NOT LIVE | NOT LIVE | No agent on production is unavailable to this owner (the revoked one is not listed). See §6 gallery |
 | Escape closes the list only: listbox gone, focus back on trigger, drawer stays open | PASS | PASS | PASS | PASS | — |
 | Execution panel (LAIKA-872, this task's own live claim, view only): state line `role=status` "Working — An agent session holds the task and is checking in."; rows in words; panel "Details" toggles `aria-expanded` by Enter, focus stays | PASS | PASS | PASS | PASS | `s2-execution-panel-details-<cfg>.png` |
-| Checkpoints / recovery panel, hand-off dialog focus trap | NOT LIVE | NOT LIVE | NOT LIVE | NOT LIVE | No offer exists on production (Inbox counts 0/0/0/0 including closed). The only card with a checkpoint is LAIKA-875, excluded by instruction. Making one needs a claim, a pushed `laika-ckpt/` tag and an offer into another agent's inbox, all outside the sandbox. See §6 gallery |
+| Checkpoints / recovery panel | NOT LIVE | NOT LIVE | NOT LIVE | NOT LIVE | **UNVERIFIED** (no gallery specimen either). The only card with a checkpoint is LAIKA-875, excluded by instruction. Making one needs a claim and a pushed `laika-ckpt/` tag, outside the sandbox |
+| Hand-off offer dialog focus trap | NOT LIVE | NOT LIVE | NOT LIVE | NOT LIVE | No offer exists on production (Inbox counts 0/0/0/0 including closed). Checked at component level in the §6 gallery |
 
 No agent was committed on the sandbox: selecting one sends a work request to
 a real registered agent, which is outside the sandbox. Afterwards LAIKA-876
@@ -124,7 +126,7 @@ Notes, not defects:
 - All five spaces' openers are named just "Context". The space name is in
   the row, so the purpose is clear in context (WCAG 2.4.4), but a
   screen-reader user's button list reads "Context" five times. Logged as an
-  observation.
+  observation and filed as LAI-1023.
 - Nothing was typed or saved. The editor text length (4425) and the disabled
   Save button are unchanged after the walk.
 
@@ -141,7 +143,13 @@ fixture data. It proves component behaviour, not a live flow.
 | "Connection lost" (×3), "Save needs attention" (×1), "Recovery available" (×2), "Verification pending" (×3) shown as words with a shape, not colour alone | PASS | PASS | PASS | PASS | `s6-connection-lost-<cfg>.png`, `s6-save-needs-attention-<cfg>.png` |
 | No horizontal scroll | PASS | PASS | PASS | PASS | — |
 
-Still **unverified anywhere**: the drawer's hand-off **review** dialog
+Still **unverified anywhere**:
+
+- the drawer's **checkpoints / recovery panel** (keyboard order, labels,
+  focus). It renders only for a task with a checkpoint; the only one is
+  LAIKA-875, excluded by instruction, and the gallery has no specimen. The
+  "Recovery available" words above are the card status label, not this panel.
+- the drawer's hand-off **review** dialog
 (`HandoffOfferDialog`, opened by "Review recovery offer" / "Review
 hand-off"). It renders only for a live offer. The only live offer is
 LAIKA-875's recovery offer, which is excluded by instruction. The gallery has

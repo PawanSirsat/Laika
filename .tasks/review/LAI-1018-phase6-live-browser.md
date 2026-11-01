@@ -57,14 +57,17 @@ light and dark, at 1440 px and 390 px, keyboard only.
 
 `docs/acceptance/LAI-1018-live-browser.md`. All five screens were walked in
 all four configs, on production `8469099f` (screen 1 on `37fec80b`; #175
-changed none of its files). Of the six sections, four pass outright. Two
+changed none of its files). Of the six sections, three pass outright and §2 passes with two rows
+UNVERIFIED (below). Two
 checks fail: focus is not restored when the task drawer closes (LAI-1021,
 LAIKA-877) or when the Project context panel closes (LAI-1022, LAIKA-878).
 LAI-1023 (LAIKA-879, p3) covers identical "Context" button names.
 
-**Deviation from criterion 1, stated rather than ticked away:** the
-drawer's hand-off *review* dialog (`HandoffOfferDialog`) could not be walked.
-It renders only for a live offer. The only live offer belongs to LAIKA-875,
+**Deviation from criterion 1, stated rather than ticked away:** two
+items it names could not be walked: the drawer's **checkpoints / recovery
+panel**, which renders only for a task with a checkpoint (only LAIKA-875,
+excluded; no gallery specimen), and the drawer's hand-off *review* dialog
+(`HandoffOfferDialog`), which renders only for a live offer. The only live offer belongs to LAIKA-875,
 another test's sandbox that this walk was told not to touch, and making one
 on LAIKA-876 needs a claim, a pushed `laika-ckpt/` tag and an offer delivered
 to another agent. The *offer* dialog, the unavailable agent options and the
