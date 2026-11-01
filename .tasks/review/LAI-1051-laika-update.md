@@ -6,8 +6,9 @@ assignee: polly
 priority: p2
 depends-on: []
 started: 2026-11-01T22:04:43Z
+finished: 2026-11-01T22:18:37Z
 discovered-from: LAI-1042
-status: in-progress
+status: review
 ---
 
 Plan: `docs/proposals/LAI-1042-developer-access-v3-plan.md` sections F.5, H,
@@ -27,42 +28,42 @@ instruction files.
 
 ## Acceptance criteria
 
-- [ ] `laika update` with a board that has no compatibility answer (404, or a
+- [x] `laika update` with a board that has no compatibility answer (404, or a
       200 that is not the body) prints `Version unknown — cannot pick a safe
       target`, exits non-zero and changes nothing; a board that does not
       answer prints `Could not check` and changes nothing.
-- [ ] A dirty checkout (any `git status --porcelain` output) is refused, and
+- [x] A dirty checkout (any `git status --porcelain` output) is refused, and
       so is a checkout whose `HEAD` has commits the source does not have
       (diverged); neither is ever stashed, reset or discarded.
-- [ ] The target is fetched from the board's `cli.source.url` by commit and
+- [x] The target is fetched from the board's `cli.source.url` by commit and
       must resolve to exactly the advertised 40-character SHA; anything else
       (short SHA, a SHA the source does not have, a branch name) is refused.
-- [ ] Before anything changes, the previous `HEAD` and every config file the
+- [x] Before anything changes, the previous `HEAD` and every config file the
       refresh may touch are copied under `~/.laika/update/<ts>/`.
-- [ ] The target is checked out in a separate staging worktree, `laika
+- [x] The target is checked out in a separate staging worktree, `laika
       version --json` and `laika doctor --offline --json` run there, and a
       failure there leaves the checkout's `HEAD` and files unchanged.
-- [ ] The switch is `checkout --detach <commit>`; an interrupted switch (a
+- [x] The switch is `checkout --detach <commit>`; an interrupted switch (a
       leftover in-flight marker) is recovered on the next run by returning to
       the recorded previous commit.
-- [ ] Hooks are re-applied only where they were already on, and the laika MCP
+- [x] Hooks are re-applied only where they were already on, and the laika MCP
       entry only where it already exists; other MCP servers and unrelated
       config keys are byte-identical afterwards.
-- [ ] Any failure after the switch rolls back to the previous commit, restores
+- [x] Any failure after the switch rolls back to the previous commit, restores
       the backed-up files, and prints exactly what was restored.
-- [ ] `--dry-run` prints the plan and writes nothing; `--check` prints one of
+- [x] `--dry-run` prints the plan and writes nothing; `--check` prints one of
       Up to date / Update available / Update required for <feature> / Version
       unknown / Could not check and writes nothing.
-- [ ] Already at the target: `Up to date`, exit 0, nothing written.
-- [ ] Restart and trust instructions are printed where they apply (restart
+- [x] Already at the target: `Up to date`, exit 0, nothing written.
+- [x] Restart and trust instructions are printed where they apply (restart
       Claude Code with `laika-claude`; trust the hook in Codex with `/hooks`).
-- [ ] Tests in temp git repos cover: clean update, dirty refused, diverged
+- [x] Tests in temp git repos cover: clean update, dirty refused, diverged
       refused, wrong SHA refused, network failure, staging self-check failure
       rolled back, interrupted switch recovered, config backup with other MCP
       servers untouched, no secret in any output, and `~/.laika/env`,
       `~/.laika/agents/*` and `~/.laika/device/*` byte-identical before and
       after.
-- [ ] `cli/README.md` documents the command.
+- [x] `cli/README.md` documents the command.
 
 ## Notes / context
 
@@ -70,3 +71,15 @@ instruction files.
   (`cli/bin/laika`). No new dependency.
 - Signed release tags are a follow-up hardening (plan L3), not this task.
 - Does not touch device pairing (LAI-1050) or the V3 web shell (LAI-1048).
+
+## Builder notes
+
+- Branch `LAI-1051-laika-update` (LAI-1050 was taken by device pairing).
+- **Deviation for review:** a board over plain http off loopback is refused for
+  the update unless `--allow-http`; `--check` and `--dry-run` only warn. The
+  owner's production board is `http://<ip>`, so a strict https-only rule would
+  make `laika update` unusable there today.
+- MCP config is hashed, not rewritten: no laika MCP entry names a checkout
+  path, so there is nothing to re-apply; a change during the update fails it.
+- `--dry-run` fetches nothing, so reachability and divergence are checked only
+  by a real run.
