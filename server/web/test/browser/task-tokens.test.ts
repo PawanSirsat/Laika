@@ -586,7 +586,7 @@ void describe('LAI-773: cost, the budget and the runaway banner', () => {
       assert.ok(await meter.isVisible(), 'the budget bar is folded into Details');
       assert.equal(await section.locator('details [data-block="budget"]').count(), 0);
       assert.equal(await meter.locator('.budget-badge').innerText(), '100%');
-      assert.match(await meter.innerText(), /4\.01M of 3M · 134% · set by a lead/);
+      assert.match(await meter.innerText(), /4\.01M of 3M · 134% · set by a space admin/);
       assert.equal(await section.locator('.tk-budget-alert').count(), 0);
       const editor = section.locator('[data-block="budget"] .budget-editor');
       await editor.waitFor({ timeout: 10_000 });

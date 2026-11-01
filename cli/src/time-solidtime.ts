@@ -615,6 +615,8 @@ interface PushItem {
   project: { slug: string; name: string } | null;
   solidtime_project_id: string | null;
   note: string | null;
+  /** The person's own title for it (D-108), when they gave one. */
+  title?: string | null;
   moved?: boolean;
   solidtime: { id: string; hash: string; started_at: number } | null;
 }
@@ -636,9 +638,13 @@ interface Link {
   removed?: true;
 }
 
-/** `KEY title` for a card, Solidtime's own extension's form; the note otherwise. */
-export function describe(item: Pick<PushItem, 'task' | 'note'>): string | null {
-  const text = item.task === null ? item.note : `${item.task.key} ${item.task.title}`;
+/**
+ * `KEY title` for a card, Solidtime's own extension's form; otherwise the
+ * person's own title for the entry (D-108), else their note.
+ */
+export function describe(item: Pick<PushItem, 'task' | 'note' | 'title'>): string | null {
+  const text =
+    item.task === null ? (item.title ?? item.note) : `${item.task.key} ${item.task.title}`;
   return text === null ? null : text.slice(0, DESCRIPTION_MAX);
 }
 

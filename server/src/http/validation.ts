@@ -78,4 +78,15 @@ export function requireJsonObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+/**
+ * What happens to a leaving person's open tasks (D-104 item 5, LAI-986):
+ * `"unassign"`, or `{ reassign_to: <user id> }`. Shared by member removal and
+ * deactivation so the two routes cannot spell it differently; what each
+ * choice does is `services/offboarding.ts`'s.
+ */
+export const OpenTasksSchema = z.union([
+  z.literal('unassign'),
+  z.strictObject({ reassign_to: z.string().min(1).max(64) }),
+]);
+
 export { z };

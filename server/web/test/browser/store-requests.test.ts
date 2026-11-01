@@ -71,18 +71,32 @@ const task = (id: string, n: number, status: string, over: Record<string, unknow
   ...over,
 });
 
-const event = (seq: number, at: number, actor: 'user' | 'agent' = 'agent') => ({
+const event = (
+  seq: number,
+  at: number,
+  actor: 'user' | 'agent' = 'agent',
+  /** LC-3 started, unless a test needs a delivery the Dashboard counts. */
+  move: { readonly task: string; readonly from: string; readonly to: string } = {
+    task: 't3',
+    from: 'todo',
+    to: 'in_progress',
+  },
+) => ({
   id: `e${String(seq)}`,
   seq,
   type: 'task.status_changed',
   project_id: 'laika-core',
-  task_id: 't3',
+  task_id: move.task,
   actor_id: actor === 'agent' ? 'u2' : 'u1',
   actor_kind: actor,
   actor_token_id: null,
-  payload: { from: 'todo', to: 'in_progress' },
+  payload: { from: move.from, to: move.to },
   created_at: at,
 });
+
+/** `task` moved into review by Ada — a delivery Contributors counts (D-092). */
+const delivery = (seq: number, at: number, task: string) =>
+  event(seq, at, 'user', { task, from: 'in_progress', to: 'review' });
 
 interface Server {
   /** LC-3's status on the server. */
@@ -100,6 +114,19 @@ function stub(server: Server): ApiStub {
       org_role: 'owner',
       is_active: true,
       memberships: [{ project_id: 'laika-core', role: 'lead' }],
+    },
+    '/api/v1/permissions': {
+      org_roles: [],
+      project_roles: [],
+      permissions: [],
+      me: {
+        org_role: 'owner',
+        credential: 'session',
+        project_scope: 'all',
+        implicit_project_role: 'lead',
+        actions: ['audit_log.export'],
+        projects: [],
+      },
     },
     '/api/v1/health': { status: 'ok', version: '0.1.0', uptime_ms: 1 },
     '/api/v1/org': {
@@ -327,9 +354,14 @@ void describe('a live change (LAI-724, keeping LAI-707 and LAI-708)', () => {
   });
 
   void test('with the Dashboard open: one small activity read since the newest held, and the count follows', async () => {
+    /*
+     * The count that follows is Contributors' *Delivered* (LAI-1025 took the
+     * activity feed and its All count off the page): distinct tasks Ada moved
+     * into review, so each event below is one more.
+     */
     const server: Server = {
       t3: 'todo',
-      events: [event(2, NOW - HOUR), event(1, NOW - 2 * HOUR, 'user')],
+      events: [delivery(2, NOW - HOUR, 't2'), delivery(1, NOW - 2 * HOUR, 't1')],
     };
     const h = await open('/dashboard?project=laika-core', stub(server), {
       before: async (page) => {
@@ -339,19 +371,23 @@ void describe('a live change (LAI-724, keeping LAI-707 and LAI-708)', () => {
     });
     const seen = record(h);
     try {
-      const all = h.page.locator('.dash-filter', { hasText: 'All' }).locator('.dash-filter-count');
-      await all.waitFor({ timeout: 20_000 });
+      const delivered = h.page.locator(
+        '.dash-contrib-row[data-person="u1"] td[data-col="delivered"]',
+      );
+      await delivered.waitFor({ timeout: 20_000 });
       await settle(seen, h.page);
-      assert.equal((await all.innerText()).trim(), '2', 'positive control: both events');
+      assert.equal((await delivered.innerText()).trim(), '2', 'positive control: both events');
       const from = seen.length;
 
-      const fresh = event(3, Date.now());
+      const fresh = delivery(3, Date.now(), 't3');
       server.events = [fresh, ...server.events];
       server.t3 = 'in_progress';
       await emit(h.page, fresh, 3);
       await h.page.waitForFunction(
         () =>
-          document.querySelector('.dash-filter .dash-filter-count')?.textContent?.trim() === '3',
+          document
+            .querySelector('.dash-contrib-row[data-person="u1"] td[data-col="delivered"]')
+            ?.textContent?.trim() === '3',
         undefined,
         { timeout: 10_000 },
       );
@@ -414,14 +450,14 @@ void describe('presence follows every burst', () => {
   });
 });
 
-void describe('Capacity resolves tasks from the store (LAI-724)', () => {
+void describe('Capacity reads no task (LAI-992; was LAI-724)', () => {
   /*
-   * **Capacity is one global page since LAI-754**, reached from the sidebar,
-   * so there is no "open project" any more. What LAI-724 saved still holds for
-   * the space you came from: its task set is held, and the tasks in it resolve
-   * with no request. Only a drawn task from elsewhere is read by id.
+   * **Capacity is one global page since LAI-754**, reached from the sidebar.
+   * LAI-724 had it resolve a drawn task from the held set and read only a
+   * task from elsewhere by id; LAI-992 took the drawn tasks off the cards, so
+   * now it reads none at all — not a held one, not one from elsewhere.
    */
-  void test('no GET /tasks/:id for a held space’s tasks, one for a drawn task elsewhere, nothing twice', async () => {
+  void test('no GET /tasks/:id at all, and nothing twice', async () => {
     const server: Server = { t3: 'in_progress', events: [] };
     const elsewhere = task('x9', 9, 'in_progress', { key: 'OT-9', project_id: 'other' });
     const h = await open('/board?project=laika-core', {
@@ -454,9 +490,9 @@ void describe('Capacity resolves tasks from the store (LAI-724)', () => {
         ],
       },
       '/api/v1/unlisted': { data: [], next_cursor: null },
+      // Served if asked, so a client that still resolves an id by GET fails
+      // on the list below rather than on a missing stub.
       '/api/v1/tasks/x9': elsewhere,
-      // Served if asked, so a client that resolves every id by GET fails on
-      // the list below rather than on a missing stub.
       '/api/v1/tasks/x8': task('x8', 8, 'review', { key: 'OT-8', project_id: 'other' }),
       '/api/v1/tasks/t1': task('t1', 1, 'todo'),
       '/api/v1/tasks/t3': task('t3', 3, 'in_progress'),
@@ -466,20 +502,15 @@ void describe('Capacity resolves tasks from the store (LAI-724)', () => {
       const seen = record(h);
       // Capacity is Insights' first tab since LAI-796.
       await h.page.locator('#sidebar .sidebar-link', { hasText: 'Insights' }).click();
-      // Since LAI-767 a person's tasks are drawn when their *Show tasks* is
-      // opened, and only then resolved.
-      await h.page.getByRole('button', { name: /Show tasks/ }).click({ timeout: 20_000 });
-      await h.page.locator('.cap-task .cap-key', { hasText: 'LC-3' }).waitFor({ timeout: 20_000 });
-      await h.page.locator('.cap-task .cap-key', { hasText: 'OT-9' }).waitFor({ timeout: 10_000 });
+      await h.page
+        .locator('.cap-grid > .cap-card:not(.cap-card-skeleton)')
+        .first()
+        .waitFor({ timeout: 20_000 });
       await settle(seen, h.page);
 
       const perTask = seen.filter((p) => p.startsWith('/api/v1/tasks/'));
-      // x8 is in review: not drawn, so not read.
-      assert.deepEqual(perTask, ['/api/v1/tasks/x9'], `per-task reads: ${perTask.join(', ')}`);
-      assert.ok(
-        (await h.page.locator('.cap-task .cap-key', { hasText: 'LC-1' }).count()) === 1,
-        'a task in the held space did not resolve',
-      );
+      assert.deepEqual(perTask, [], `per-task reads: ${perTask.join(', ')}`);
+      assert.equal(await h.page.getByRole('button', { name: /Show tasks/ }).count(), 0);
       assert.ok(seen.length <= 8, `Capacity asked ${String(seen.length)}: ${seen.join(', ')}`);
       assert.deepEqual(duplicates(seen), [], 'Capacity asked for something twice');
     } finally {

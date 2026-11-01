@@ -6,8 +6,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { reportDiscovery } from '../helpers/discovery.ts';
 import * as schema from '../../src/db/schema.ts';
 import { apiFieldNames, apiPayload, appendActivity, readPayload } from '../../src/db/activity.ts';
-import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
-import { ACTIVITY_TYPES, type OrgRole } from '../../src/db/enums.ts';
+import { loadActor, resolveTokenActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
+import { ACTIVITY_TYPES, CAPABILITIES, type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
   activity,
@@ -19,7 +19,7 @@ import {
   unlistedWork,
   users,
 } from '../../src/db/schema.ts';
-import { eventView } from '../../src/services/events.ts';
+import { BLIND_ACTIVITY_LENS, eventView } from '../../src/services/events.ts';
 import { addComment, deleteComment, editComment } from '../../src/services/comments.ts';
 import { createInvite, consumeInvite } from '../../src/services/invites.ts';
 import {
@@ -44,11 +44,30 @@ import {
   claimTask,
   createTask,
   removeTaskDependency,
+  startWorking,
   updateTask,
 } from '../../src/services/tasks.ts';
+import { expireClaims, reclaimTask } from '../../src/services/claims.ts';
+import { applyCheckpointDelivery, registerCheckpoint } from '../../src/services/checkpoints.ts';
+import {
+  acceptHandoff,
+  approveHandoff,
+  cancelHandoff,
+  declineHandoff,
+  expireOffers,
+  offerHandoff,
+  putHandoffPolicy,
+} from '../../src/services/handoffs.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
+import { registerAgent } from '../../src/services/agents.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
-import { setOrgRole, setUserActive } from '../../src/services/users.ts';
+import {
+  setOrgRole,
+  setUserActive,
+  signOutEverywhere,
+  transferOwnership,
+} from '../../src/services/users.ts';
+import { setOrgPermissions } from '../../src/services/org-permissions.ts';
 import {
   expireInvites,
   expireMeetingReviews,
@@ -431,7 +450,7 @@ describe('rows written before LAI-045 still read correctly', () => {
     try {
       const { row } = legacyRow(t, { changed: ['acceptanceMd', 'descriptionMd', 'assigneeId'] });
 
-      const view = eventView({ ...row, seq: 1 });
+      const view = eventView({ ...row, seq: 1 }, BLIND_ACTIVITY_LENS);
 
       expect(view.payload).toEqual({
         changed: ['acceptance_md', 'description_md', 'assignee_id'],
@@ -503,7 +522,7 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       updateProject(t.db, owner(), 'core', { description: 'A board' });
       // Its own writer since LAI-404, and still a `project.updated` row — so the
       // sweep must reach it here rather than through the general update path.
-      updateProjectContext(t.db, owner(), 'core', { context_md: 'Some context' });
+      updateProjectContext(t.db, owner(), 'core', { context_md: 'Some context', base_revision: 0 });
       addMember(t.db, owner(), 'core', memberId, 'member');
       changeMemberRole(t.db, owner(), 'core', memberId, 'lead');
 
@@ -523,6 +542,107 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       });
       updateTask(t.db, owner(), task.id, { tags: ['core', 'agent'] });
       updateTask(t.db, owner(), task.id, { assignee_id: memberId });
+
+      // --- work-requests.ts via tasks.ts: task.agent_selected (LAI-535) ----
+      const { agent } = registerAgent(t.sqlite, t.db, owner(), {
+        displayName: 'Sweep agent',
+        harness: 'claude-code',
+        grants: [{ projectId: task.project_id, scope: 'full' }],
+      });
+      updateTask(t.db, owner(), task.id, { selected_agent_id: agent.id });
+
+      // --- claims.ts: task.claim_expired, task.claim_reclaimed (LAI-541) ----
+      // The agent's own token takes the claim; the scan, with a clock past
+      // the lease, expires it; the agent reclaims. Real services, real rows.
+      const claimer = registerAgent(t.sqlite, t.db, owner(), {
+        displayName: 'Claim sweep agent',
+        harness: 'claude-code',
+        // Not the sweep agent's device: one agent per harness per device (D-120).
+        deviceLabel: 'claim-sweep',
+        grants: [{ projectId: task.project_id, scope: 'full' }],
+      });
+      const asAgent = resolveTokenActor(t.db, claimer.secret, Date.now());
+      const claimed = createTask(t.sqlite, t.db, owner(), 'core', { title: 'Claimed by an agent' });
+      startWorking(t.sqlite, t.db, asAgent, claimed.id);
+      expireClaims(t.db, Date.now() + 60 * 60 * 1000);
+      const reclaimed = reclaimTask(t.sqlite, t.db, asAgent, claimed.id);
+
+      // --- checkpoints.ts: task.checkpoint_saved (LAI-545) -----------------
+      // Saved under the reclaimed claim, in the project's configured repo.
+      t.db
+        .update(schema.projects)
+        .set({ repo: 'kvell/core' })
+        .where(eq(schema.projects.id, claimed.project_id))
+        .run();
+      const saved = registerCheckpoint(
+        t.sqlite,
+        t.db,
+        { ...asAgent, claimGeneration: reclaimed.claim.generation },
+        claimed.id,
+        {
+          id: newId(),
+          idempotencyKey: 'payload-sweep',
+          repo: 'kvell/core',
+          branch: 'COR-2-work',
+          commitSha: 'c'.repeat(40),
+          manifest: [],
+        },
+      ).checkpoint;
+
+      // --- handoffs.ts: the seven hand-off verbs (LAI-546) -----------------
+      // The checkpoint verified by its delivery, offered to a second agent of
+      // the owner and declined, cancelled, then accepted; the receiver's claim
+      // lapses into a recovery a person names and approves, and the scan
+      // expires it.
+      applyCheckpointDelivery(
+        t.sqlite,
+        t.db,
+        {
+          deliveryId: 'payload-sweep',
+          repo: 'kvell/core',
+          ref: saved.remote_ref,
+          before: '0'.repeat(40),
+          after: 'c'.repeat(40),
+        },
+        Date.now(),
+      );
+      const receiving = registerAgent(t.sqlite, t.db, owner(), {
+        displayName: 'Receiving sweep agent',
+        harness: 'claude-code',
+        deviceLabel: 'receiving-sweep',
+        grants: [{ projectId: claimed.project_id, scope: 'full' }],
+      });
+      const asReceiver = resolveTokenActor(t.db, receiving.secret, Date.now());
+      const holder = { ...asAgent, claimGeneration: reclaimed.claim.generation };
+      const offerOf = (key: string) =>
+        offerHandoff(t.sqlite, t.db, holder, claimed.id, {
+          idempotencyKey: key,
+          toAgentId: receiving.agent.id,
+          checkpointId: saved.id,
+          reason: 'Sweep',
+        }).offer.id;
+      declineHandoff(t.sqlite, t.db, asReceiver, offerOf('sweep-1'), { reason: 'No' });
+      cancelHandoff(t.sqlite, t.db, asAgent, offerOf('sweep-2'));
+      acceptHandoff(t.sqlite, t.db, asReceiver, offerOf('sweep-3'), {
+        verifiedCommitSha: 'c'.repeat(40),
+      });
+      expireClaims(t.db, Date.now() + 2 * 60 * 60 * 1000);
+      const recovery = t.db
+        .select()
+        .from(schema.handoffOffers)
+        .where(eq(schema.handoffOffers.kind, 'recovery'))
+        .get()!;
+      putHandoffPolicy(t.sqlite, t.db, owner(), 'core', { allow_other_owners: true });
+      const membersAgent = registerAgent(t.sqlite, t.db, actorFor(t, memberId), {
+        displayName: 'Member sweep agent',
+        harness: 'codex',
+        grants: [{ projectId: claimed.project_id, scope: 'full' }],
+      });
+      approveHandoff(t.sqlite, t.db, owner(), recovery.id, {
+        toAgentId: membersAgent.agent.id,
+        now: Date.now() + 2 * 60 * 60 * 1000,
+      });
+      expireOffers(t.db, Date.now() + 4 * 60 * 60 * 1000);
 
       addTaskDependency(t.sqlite, t.db, owner(), task.id, other.id);
       removeTaskDependency(t.db, owner(), task.id, other.id);
@@ -568,9 +688,34 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
           updatedAt: new Date(1000),
         })
         .run();
+      // A session and a token first, so deactivation's payload carries what
+      // it ended (LAI-981) rather than two empty fields.
+      const sparesSession = () =>
+        t.db
+          .insert(schema.sessions)
+          .values({
+            id: newId(),
+            userId: spare,
+            token: newId(),
+            expiresAt: new Date(10_000_000),
+            createdAt: new Date(1000),
+            updatedAt: new Date(1000),
+          })
+          .run();
+      sparesSession();
+      createToken(t.sqlite, t.db, loadActor(t.db, spare)!, { name: 'spare', scope: 'full' });
       setUserActive(t.db, owner(), spare, false);
       setUserActive(t.db, owner(), spare, true);
+      // LAI-981: a forced sign-out, which writes only when it ended a session.
+      sparesSession();
+      signOutEverywhere(t.db, owner(), spare);
       setOrgRole(t.db, owner(), spare, 'admin');
+      // LAI-958: the owner's grants ride `member.role_changed` too.
+      setOrgPermissions(t.db, owner(), {
+        admin: Object.fromEntries(CAPABILITIES.map((c) => [c, true])),
+        member: Object.fromEntries(CAPABILITIES.map((c) => [c, c === 'see_org_activity'])),
+        viewer: Object.fromEntries(CAPABILITIES.map((c) => [c, false])),
+      });
 
       // --- jobs/: the four verbs §11.6's cron writes (LAI-431) --------------
       // Driven through the real job functions with an injected clock, not by
@@ -762,8 +907,13 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       discardMeetingReview(t.db, owner(), discardedId, JAN1);
 
       // Archiving last: it is the one that takes a project out of active views.
-      removeMember(t.db, owner(), 'core', memberId);
+      // With their open tasks unassigned (LAI-986), so the offboarding
+      // `task.assigned` rows are in the census too.
+      removeMember(t.db, owner(), 'core', memberId, JAN1, 'unassign');
       updateProject(t.db, owner(), 'core', { archived: true });
+
+      // Very last, because it takes the owner's role away (LAI-982).
+      transferOwnership(t.db, owner(), { userId: spare, confirm: 'spare@example.test' });
 
       const rows = t.db.select().from(activity).all();
       const forbidden = drizzleOnlyNames();

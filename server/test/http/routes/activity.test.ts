@@ -1,7 +1,18 @@
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { appendActivity } from '../../../src/db/activity.ts';
-import { orgs, projects, users } from '../../../src/db/schema.ts';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
+import { ACTIVITY_TYPES, type ActivityType } from '../../../src/db/enums.ts';
+import { activity, orgs, projects, users } from '../../../src/db/schema.ts';
+import { HISTORY_CSV_COLUMNS } from '../../../src/services/activity-csv.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  seedInvite,
+  signUp,
+} from '../../helpers/auth.ts';
+import { parseCsv } from '../../helpers/csv.ts';
 
 let h: AuthHarness;
 let cookie: string;
@@ -14,6 +25,7 @@ interface Row {
   type: string;
   project_id: string | null;
   task_id: string | null;
+  actor_id: string | null;
   actor_kind: string;
   payload: unknown;
   created_at: number;
@@ -351,5 +363,510 @@ describe('GET /projects/:slug/metrics (LAI-124)', () => {
 
   it('404s an unknown project', async () => {
     expect((await req('/api/v1/projects/nope/metrics')).status).toBe(404);
+  });
+});
+
+describe('GET /activity/history — the organisation history (LAI-886)', () => {
+  const BASE = '/api/v1/activity/history';
+  /** Far below anything setup writes, so the seeded rows are the oldest in the log. */
+  const T0 = 5_000_000;
+
+  let orgId: string;
+  let ownerId: string;
+  let laikaId: string;
+  let otherId: string;
+  let admin: { cookie: string; id: string };
+  let member: { cookie: string; id: string };
+
+  async function as(path: string, who: string): Promise<Response> {
+    return h.app.request(path, { headers: jsonHeaders({ Cookie: who }) });
+  }
+
+  async function page(path: string): Promise<FeedPage> {
+    const res = await req(path);
+    expect(res.status, `${path} ${await res.clone().text()}`).toBe(200);
+    return (await res.json()) as FeedPage;
+  }
+
+  async function codeOf(res: Response): Promise<string> {
+    return ((await res.json()) as { error: { code: string } }).error.code;
+  }
+
+  async function join(email: string, orgRole: 'admin' | 'member') {
+    const token = seedInvite(h.db, { orgId, createdBy: ownerId, email, orgRole });
+    const res = await signUp(h.app, { email, password: PASSWORD, inviteToken: token });
+    expect(res.status, await res.clone().text()).toBe(200);
+    return {
+      cookie: cookieFrom(res),
+      id: h.db.select().from(users).where(eq(users.email, email)).get()?.id ?? '',
+    };
+  }
+
+  /** Rows with timestamps the test chose, so every filter has an exact answer. */
+  function seed(
+    rows: { at: number; projectId: string | null; actorId: string; type: ActivityType }[],
+  ): void {
+    for (const row of rows) {
+      appendActivity(h.db, {
+        orgId,
+        projectId: row.projectId,
+        actorId: row.actorId,
+        actorKind: 'user',
+        type: row.type,
+        now: row.at,
+      });
+    }
+  }
+
+  /** Every page of one query, so a filter is asserted on the whole answer. */
+  async function all(query: string, limit = 200): Promise<Row[]> {
+    const rows: Row[] = [];
+    let cursor: string | null = null;
+
+    for (let pages = 0; pages < 100; pages++) {
+      const sep = query === '' ? '?' : `?${query}&`;
+      const got: FeedPage = await page(
+        `${BASE}${sep}limit=${String(limit)}${cursor === null ? '' : `&cursor=${cursor}`}`,
+      );
+      rows.push(...got.data);
+      cursor = got.next_cursor;
+      if (cursor === null) break;
+    }
+
+    return rows;
+  }
+
+  beforeEach(async () => {
+    orgId = h.db.select().from(orgs).get()?.id ?? '';
+    ownerId = h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()?.id ?? '';
+    laikaId = h.db.select().from(projects).where(eq(projects.slug, 'laika')).get()?.id ?? '';
+
+    const created = await req('/api/v1/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Other', slug: 'other', prefix: 'OTH' }),
+    });
+    expect(created.status, await created.clone().text()).toBe(201);
+    otherId = ((await created.json()) as { id: string }).id;
+
+    admin = await join('ari@example.test', 'admin');
+    member = await join('bea@example.test', 'member');
+
+    seed([
+      { at: T0 + 0, projectId: laikaId, actorId: member.id, type: 'task.created' },
+      { at: T0 + 1, projectId: otherId, actorId: ownerId, type: 'task.created' },
+      { at: T0 + 2, projectId: otherId, actorId: member.id, type: 'comment.added' },
+      { at: T0 + 3, projectId: null, actorId: ownerId, type: 'token.created' },
+      { at: T0 + 4, projectId: laikaId, actorId: member.id, type: 'task.updated' },
+    ]);
+  });
+
+  it('answers an owner and an admin; refuses a member with forbidden, anonymous with unauthorized', async () => {
+    for (const who of [cookie, admin.cookie]) {
+      const res = await as(BASE, who);
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(Object.keys((await res.json()) as object).sort()).toEqual(['data', 'next_cursor']);
+    }
+
+    const refused = await as(BASE, member.cookie);
+    expect(refused.status).toBe(403);
+    expect(await codeOf(refused)).toBe('forbidden');
+
+    const anonymous = await h.app.request(BASE);
+    expect(anonymous.status).toBe(401);
+    expect(await codeOf(anonymous)).toBe('unauthorized');
+  });
+
+  it('a member is refused even with a filter naming only themselves', async () => {
+    const res = await as(`${BASE}?actor=${member.id}`, member.cookie);
+    expect(res.status).toBe(403);
+    expect(await codeOf(res)).toBe('forbidden');
+  });
+
+  it('returns every board activity row across every project, newest first', async () => {
+    const rows = await all('');
+    const everyRow = h.db.select({ id: activity.id }).from(activity).all();
+
+    // Every `activity` row and nothing else — no D-079 local-activity counts,
+    // which live in their own tables and never reach this read.
+    expect(rows.map((row) => row.id).sort()).toEqual(everyRow.map((row) => row.id).sort());
+    expect(rows.every((row) => (ACTIVITY_TYPES as readonly string[]).includes(row.type))).toBe(
+      true,
+    );
+    expect(rows.some((row) => row.project_id === laikaId)).toBe(true);
+    expect(rows.some((row) => row.project_id === otherId)).toBe(true);
+    expect(rows.some((row) => row.project_id === null)).toBe(true);
+
+    const order = rows.map((row) => [row.created_at, row.seq] as const);
+    expect(order).toEqual([...order].sort((a, b) => (b[0] === a[0] ? b[1] - a[1] : b[0] - a[0])));
+  });
+
+  it('?actor= narrows to one person', async () => {
+    // Joining wrote a row of their own, so the whole answer is only theirs, and
+    // the seeded window is exactly the three they were given.
+    const rows = await all(`actor=${member.id}`);
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    expect(rows.every((row) => row.actor_id === member.id)).toBe(true);
+
+    const seeded = await all(`actor=${member.id}&until=${String(T0 + 4)}`);
+    expect(seeded.map((row) => row.created_at)).toEqual([T0 + 4, T0 + 2, T0 + 0]);
+    expect(await all(`actor=nobody`)).toEqual([]);
+  });
+
+  it('?project= narrows to one project by slug, and 404s an unknown one', async () => {
+    const rows = await all('project=other');
+
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    expect(rows.every((row) => row.project_id === otherId)).toBe(true);
+    expect(rows.filter((row) => row.created_at < T0 + 5).map((row) => row.created_at)).toEqual([
+      T0 + 2,
+      T0 + 1,
+    ]);
+
+    const unknown = await req(`${BASE}?project=nope`);
+    expect(unknown.status).toBe(404);
+    expect(await codeOf(unknown)).toBe('not_found');
+  });
+
+  it('?type= narrows to one §4.8 verb, and 400s one that is not', async () => {
+    const rows = await all('type=token.created');
+
+    expect(rows.map((row) => row.created_at)).toEqual([T0 + 3]);
+    expect(rows.every((row) => row.type === 'token.created')).toBe(true);
+
+    const bad = await req(`${BASE}?type=task.exploded`);
+    expect(bad.status).toBe(400);
+    expect(await codeOf(bad)).toBe('bad_request');
+  });
+
+  it('?since= and ?until= are inclusive unix-ms bounds, and nonsense is a 400', async () => {
+    const rows = await all(`since=${String(T0 + 1)}&until=${String(T0 + 3)}`);
+    expect(rows.map((row) => row.created_at)).toEqual([T0 + 3, T0 + 2, T0 + 1]);
+
+    expect((await all(`until=${String(T0 + 1)}`)).map((row) => row.created_at)).toEqual([
+      T0 + 1,
+      T0 + 0,
+    ]);
+
+    for (const query of ['since=yesterday', 'until=tomorrow']) {
+      const bad = await req(`${BASE}?${query}`);
+      expect(bad.status, query).toBe(400);
+      expect(await codeOf(bad)).toBe('bad_request');
+    }
+  });
+
+  it('filters combine', async () => {
+    const rows = await all(
+      `actor=${member.id}&project=laika&type=task.updated&since=${String(T0)}&until=${String(T0 + 4)}`,
+    );
+    expect(rows.map((row) => row.created_at)).toEqual([T0 + 4]);
+  });
+
+  it('pages a filtered query without repeating or losing a row', async () => {
+    const whole = await all(`until=${String(T0 + 4)}`);
+    const walked = await all(`until=${String(T0 + 4)}`, 2);
+
+    expect(whole.map((row) => row.created_at)).toEqual([T0 + 4, T0 + 3, T0 + 2, T0 + 1, T0]);
+    expect(walked.map((row) => row.id)).toEqual(whole.map((row) => row.id));
+
+    const first = await page(`${BASE}?until=${String(T0 + 4)}&limit=2`);
+    expect(first.data).toHaveLength(2);
+    expect(first.next_cursor).not.toBeNull();
+
+    const bad = await req(`${BASE}?cursor=not-a-cursor`);
+    expect(bad.status).toBe(400);
+    expect(await codeOf(bad)).toBe('bad_request');
+  });
+
+  it('pages across rows that share one created_at without skipping or repeating', async () => {
+    // Five rows in one millisecond: a page boundary lands inside the tie twice,
+    // so only the `seq` half of the cursor can say where to resume.
+    const TIE = T0 + 10;
+    seed(
+      Array.from({ length: 5 }, (_, i) => ({
+        at: TIE,
+        projectId: i % 2 === 0 ? laikaId : otherId,
+        actorId: i % 2 === 0 ? member.id : ownerId,
+        type: 'task.updated' as const,
+      })),
+    );
+    const window = `since=${String(TIE)}&until=${String(TIE)}`;
+
+    const unpaged = await page(`${BASE}?${window}&limit=200`);
+    expect(unpaged.next_cursor).toBeNull();
+    expect(unpaged.data).toHaveLength(5);
+    expect(unpaged.data.every((row) => row.created_at === TIE)).toBe(true);
+
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const got: FeedPage = await page(
+        `${BASE}?${window}&limit=2${cursor === null ? '' : `&cursor=${cursor}`}`,
+      );
+      expect(got.data.length).toBeLessThanOrEqual(2);
+      walked.push(...got.data.map((row) => row.id));
+      cursor = got.next_cursor;
+      pages += 1;
+    } while (cursor !== null && pages < 10);
+
+    expect(pages).toBe(3);
+    expect(walked).toEqual(unpaged.data.map((row) => row.id));
+  });
+
+  it('?limit= follows §6.3: 0 is a 400, above 200 is served at 200', async () => {
+    for (const limit of ['0', '-1', 'ten']) {
+      const bad = await req(`${BASE}?limit=${limit}`);
+      expect(bad.status, limit).toBe(400);
+      expect(await codeOf(bad)).toBe('bad_request');
+    }
+
+    // More than 200 rows exist, so a clamp is visible as exactly 200 and a cursor.
+    seed(
+      Array.from({ length: 210 }, (_, i) => ({
+        at: T0 + 100 + i,
+        projectId: laikaId,
+        actorId: ownerId,
+        type: 'task.updated' as const,
+      })),
+    );
+    const clamped = await page(`${BASE}?limit=500`);
+    expect(clamped.data).toHaveLength(200);
+    expect(clamped.next_cursor).not.toBeNull();
+  });
+
+  it('a malformed or oversized ?since= / ?until= is a 400, never a silent page', async () => {
+    const values = ['-1', '1.5', '1e3', 'NaN', '99999999999999999999', `${'9'.repeat(400)}`];
+
+    for (const name of ['since', 'until']) {
+      for (const value of values) {
+        const res = await req(`${BASE}?${name}=${value}`);
+        expect(res.status, `${name}=${value}`).toBe(400);
+        expect(await codeOf(res), `${name}=${value}`).toBe('bad_request');
+      }
+    }
+  });
+
+  it('is read-only', async () => {
+    const res = await req(BASE, { method: 'POST', body: JSON.stringify({}) });
+    expect(res.status).toBe(405);
+    expect(await codeOf(res)).toBe('method_not_allowed');
+  });
+
+  describe('?format=csv — the same answer as a file (LAI-984)', () => {
+    async function csv(query: string, who = cookie): Promise<Response> {
+      return as(`${BASE}?format=csv${query === '' ? '' : `&${query}`}`, who);
+    }
+
+    /** The parsed body, header first, after asserting it is a CSV download. */
+    async function table(
+      query: string,
+    ): Promise<{ header: string[]; rows: Record<string, string>[] }> {
+      const res = await csv(query);
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(res.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+      expect(res.headers.get('content-disposition')).toMatch(
+        /^attachment; filename="laika-history-/,
+      );
+
+      const [header = [], ...lines] = parseCsv(await res.text());
+      return {
+        header,
+        rows: lines.map((line) =>
+          Object.fromEntries(header.map((name, i) => [name, line[i] ?? ''])),
+        ),
+      };
+    }
+
+    it('answers with the documented columns and every row the JSON answer has, in its order', async () => {
+      const { header, rows } = await table('');
+      expect(header).toEqual([...HISTORY_CSV_COLUMNS]);
+
+      const json = await all('');
+      expect(rows.map((row) => row.id)).toEqual(json.map((row) => row.id));
+      expect(rows.map((row) => Number(row.seq))).toEqual(json.map((row) => row.seq));
+
+      const first = rows.find((row) => row.id === json[0]?.id);
+      expect(first?.created_at).toBe(new Date(json[0]?.created_at ?? 0).toISOString());
+    });
+
+    it('refuses a member with forbidden and an anonymous caller with unauthorized, as JSON', async () => {
+      const refused = await csv('', member.cookie);
+      expect(refused.status).toBe(403);
+      expect(await codeOf(refused)).toBe('forbidden');
+
+      const narrowed = await csv(`actor=${member.id}`, member.cookie);
+      expect(narrowed.status).toBe(403);
+      expect(await codeOf(narrowed)).toBe('forbidden');
+
+      const anonymous = await h.app.request(`${BASE}?format=csv`);
+      expect(anonymous.status).toBe(401);
+      expect(await codeOf(anonymous)).toBe('unauthorized');
+    });
+
+    it('an admin gets the same file as the owner', async () => {
+      const owner = await (await csv('')).text();
+      const res = await csv('', admin.cookie);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe(owner);
+    });
+
+    it('applies ?actor= and ?until= — the rows are exactly the filtered ones', async () => {
+      const { rows } = await table(`actor=${member.id}&until=${String(T0 + 4)}`);
+      const memberName = h.db.select().from(users).where(eq(users.id, member.id)).get()?.name;
+
+      expect(
+        rows.map((row) => [row.created_at_ms, row.type, row.actor_id, row.project_slug]),
+      ).toEqual([
+        [String(T0 + 4), 'task.updated', member.id, 'laika'],
+        [String(T0 + 2), 'comment.added', member.id, 'other'],
+        [String(T0 + 0), 'task.created', member.id, 'laika'],
+      ]);
+      expect(rows.every((row) => row.actor_name === memberName && row.actor_kind === 'user')).toBe(
+        true,
+      );
+    });
+
+    it('applies ?project=, ?type= and ?since= together', async () => {
+      const { rows } = await table(`project=other&type=task.created&since=${String(T0)}`);
+      expect(rows.map((row) => [row.created_at_ms, row.project_id, row.actor_id])).toEqual([
+        [String(T0 + 1), otherId, ownerId],
+      ]);
+    });
+
+    it('an org-scoped row has an empty project', async () => {
+      const { rows } = await table(`type=token.created&until=${String(T0 + 3)}`);
+      expect(rows.map((row) => [row.created_at_ms, row.project_id, row.project_slug])).toEqual([
+        [String(T0 + 3), '', ''],
+      ]);
+    });
+
+    it('carries a payload with commas, quotes and newlines intact', async () => {
+      const payload = { title: 'one, "two"\nthree', note: '=SUM(A1)' };
+      appendActivity(h.db, {
+        orgId,
+        projectId: laikaId,
+        actorId: ownerId,
+        actorKind: 'user',
+        type: 'task.updated',
+        payload,
+        now: T0 + 50,
+      });
+
+      const { rows } = await table(`since=${String(T0 + 50)}&until=${String(T0 + 50)}`);
+      expect(rows).toHaveLength(1);
+      expect(JSON.parse(rows[0]?.payload ?? '')).toEqual(payload);
+    });
+
+    it('is the whole answer, not a page: more rows than one page all arrive', async () => {
+      seed(
+        Array.from({ length: 450 }, (_, i) => ({
+          at: T0 + 100 + i,
+          projectId: laikaId,
+          actorId: ownerId,
+          type: 'task.updated' as const,
+        })),
+      );
+
+      const { rows } = await table('');
+      expect(rows).toHaveLength(h.db.select({ id: activity.id }).from(activity).all().length);
+      expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length);
+    });
+
+    it('validates its filters exactly as the JSON answer does', async () => {
+      const badType = await csv('type=task.exploded');
+      expect(badType.status).toBe(400);
+      expect(await codeOf(badType)).toBe('bad_request');
+
+      const badSince = await csv('since=1.5');
+      expect(badSince.status).toBe(400);
+      expect(await codeOf(badSince)).toBe('bad_request');
+
+      const unknownProject = await csv('project=nope');
+      expect(unknownProject.status).toBe(404);
+      expect(await codeOf(unknownProject)).toBe('not_found');
+    });
+
+    it('refuses paging parameters, which a whole-file answer would ignore', async () => {
+      for (const query of ['limit=10', 'cursor=abc']) {
+        const res = await csv(query);
+        expect(res.status, query).toBe(400);
+        expect(await codeOf(res)).toBe('bad_request');
+      }
+    });
+
+    it('refuses a format it does not have; json is the default spelled out', async () => {
+      const res = await as(`${BASE}?format=xml`, cookie);
+      expect(res.status).toBe(400);
+      expect(await codeOf(res)).toBe('bad_request');
+
+      const json = await as(`${BASE}?format=json`, cookie);
+      expect(json.status).toBe(200);
+      expect(Object.keys((await json.json()) as object).sort()).toEqual(['data', 'next_cursor']);
+    });
+  });
+});
+
+describe('membership rows name the person they are about (LAI-984)', () => {
+  let personId: string;
+
+  beforeEach(async () => {
+    const orgId = h.db.select().from(orgs).get()?.id ?? '';
+    const ownerId =
+      h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()?.id ?? '';
+    const token = seedInvite(h.db, { orgId, createdBy: ownerId, email: 'cy@example.test' });
+    const res = await signUp(h.app, {
+      email: 'cy@example.test',
+      password: PASSWORD,
+      name: 'Cy Young',
+      inviteToken: token,
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    personId = h.db.select().from(users).where(eq(users.email, 'cy@example.test')).get()?.id ?? '';
+  });
+
+  function rowsOf(type: ActivityType): { projectId: string | null; payload: unknown }[] {
+    return h.db
+      .select({ projectId: activity.projectId, payloadJson: activity.payloadJson })
+      .from(activity)
+      .where(eq(activity.type, type))
+      .all()
+      .map((row) => ({ projectId: row.projectId, payload: JSON.parse(row.payloadJson) as unknown }))
+      .filter((row) => (row.payload as { user_id?: string }).user_id === personId);
+  }
+
+  async function write(method: string, path: string, body: unknown): Promise<void> {
+    const res = await req(path, { method, body: JSON.stringify(body) });
+    expect(res.status, `${method} ${path} ${await res.clone().text()}`).toBeLessThan(300);
+  }
+
+  it('joining by invite carries user_name', () => {
+    expect(rowsOf('member.added').map((row) => row.payload)).toEqual([
+      expect.objectContaining({ user_id: personId, user_name: 'Cy Young', org_role: 'member' }),
+    ]);
+  });
+
+  it('a project add, role change and removal carry user_name and the roles', async () => {
+    await write('POST', '/api/v1/projects/laika/members', { user_id: personId, role: 'member' });
+    await write('PATCH', `/api/v1/projects/laika/members/${personId}`, { role: 'lead' });
+    await write('DELETE', `/api/v1/projects/laika/members/${personId}`, {});
+
+    const added = rowsOf('member.added').filter((row) => row.projectId !== null);
+    expect(added.map((row) => row.payload)).toEqual([
+      expect.objectContaining({ user_name: 'Cy Young', role: 'member' }),
+    ]);
+    expect(rowsOf('member.role_changed').map((row) => row.payload)).toEqual([
+      expect.objectContaining({ user_name: 'Cy Young', from: 'member', to: 'lead' }),
+    ]);
+    expect(rowsOf('member.removed').map((row) => row.payload)).toEqual([
+      expect.objectContaining({ user_name: 'Cy Young', role: 'lead' }),
+    ]);
+  });
+
+  it('an organisation role change carries user_name and the roles', async () => {
+    await write('PATCH', `/api/v1/users/${personId}`, { org_role: 'viewer' });
+
+    expect(rowsOf('member.role_changed').map((row) => row.payload)).toEqual([
+      { scope: 'org', user_id: personId, user_name: 'Cy Young', from: 'member', to: 'viewer' },
+    ]);
   });
 });

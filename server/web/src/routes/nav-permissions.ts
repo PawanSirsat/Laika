@@ -1,7 +1,3 @@
-import { canManageOrg } from '../api/invites.ts';
-import { mayOpenProfiles } from '../api/profiles.ts';
-import { mayTriageUnlisted } from '../api/unlisted.ts';
-
 /**
  * Whether a reader holds a permission a nav entry requires (LAI-248).
  *
@@ -11,18 +7,12 @@ import { mayTriageUnlisted } from '../api/unlisted.ts';
  * control §5.1 says not to render. Two copies of a permission predicate is how
  * one of them quietly stops matching the server.
  *
- * `undefined` means "unrestricted" only in the sense that nothing is granted:
- * the pre-auth render and the tests pass no role, and gated entries stay hidden
- * rather than leaking.
+ * **The server's answer, never a role** (LAI-970): `actions` is
+ * `GET /permissions`' `me.actions`, which already reflects the owner's grants.
+ * `undefined` — before it answers, when it failed, pre-auth — grants nothing:
+ * gated entries stay hidden rather than leaking to somebody the owner withdrew
+ * them from.
  */
-export function permissionHolder(orgRole: string | undefined): (permission: string) => boolean {
-  return (permission) => {
-    if (permission === 'audit_log.export') return mayTriageUnlisted(orgRole ?? '');
-    // §3.1 `profile.read` (LAI-743), through the predicate the links use.
-    if (permission === 'profile.read') return mayOpenProfiles(orgRole);
-    // §3.1 `token.list_any` — everyone's tokens, the Organisation page's
-    // Security tab (LAI-796) — through the predicate that page's controls use.
-    if (permission === 'token.list_any') return canManageOrg(orgRole ?? '');
-    return false;
-  };
+export function permissionHolder(actions?: readonly string[]): (permission: string) => boolean {
+  return (permission) => actions?.includes(permission) === true;
 }

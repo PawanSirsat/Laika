@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type Browser, type ElementHandle, type Page } from 'playwright';
 
 /**
  * A real browser against the real built SPA (LAI-227).
@@ -109,6 +109,183 @@ const REVIEW_PATH = '/api/v1/review';
  * alerts names its own.
  */
 const TOKEN_ALERTS_PATH = '/api/v1/me/token-alerts';
+/**
+ * A person's hand-offs (LAI-1009, LAI-550): the shell reads their counts for
+ * the Inbox badge on every page. Somebody with none has nothing waiting; a
+ * test about hand-offs names its own.
+ */
+const HANDOFFS_PATH = '/api/v1/handoff-offers';
+const NO_HANDOFFS = {
+  data: [],
+  next_cursor: null,
+  counts: { received: 0, sent: 0, needs_approval: 0, recovery: 0 },
+};
+/**
+ * A space's hand-off policy (§4.74, LAI-550), read on Settings → Access. A
+ * space that never set one reads as the defaults; a test about the policy
+ * names its own.
+ */
+const HANDOFF_POLICY_PATH = /^\/api\/v1\/projects\/([^/]+)\/handoff-policy$/;
+
+/**
+ * `GET /permissions` as the server answers it under the **default grants**
+ * (D-102 rule 6), for a stub that does not name it: what `/me` says the
+ * reader is decides what they hold, as it does on a board whose owner changed
+ * nothing.
+ *
+ * **Since LAI-970 every gate denies until this answers**, so a fixture written
+ * before that — about cards, columns, sprints — would otherwise lose every
+ * control it is about. A test about grants names its own.
+ *
+ * Generated from the server's own `permissionsCatalogue()` with
+ * `DEFAULT_GRANTS` (2026-10-22), not written by hand: a hand copy of §3 is the
+ * second source of truth LAI-970 removed from the client.
+ */
+const EVERY_ROLE_ORG = [
+  'org.read',
+  'presence.read',
+  'capacity.read',
+  'member_list.read',
+  'project.join_public',
+  'token.create_own',
+  'token.read_own',
+  'token.revoke_own',
+  'unlisted.log_own',
+  'heartbeat.send_own',
+  'activity_sharing.read_own',
+  'activity_sharing.set_own',
+  'local_activity.send_own',
+  'local_activity.read_own',
+  'local_activity.delete_own',
+  'usage.read_own',
+  'token_alerts.own',
+  'plan_limit.own',
+  'time_settings.read_own',
+  'time_settings.set_own',
+  'time_drafts.send_own',
+  'time_drafts.read_own',
+  'time_drafts.manage_own',
+  'time_entries.read_own',
+  'time_entries.write_own',
+  'time_sync.own',
+  // Everyone may sign themselves out everywhere (LAI-981): conditional, and
+  // `/permissions` lists a conditional action the caller holds about themselves.
+  'user.sign_out',
+  // A person's own registered agents (D-114, LAI-534): every role's, and
+  // managing them is a signed-in session's, which a browser always is.
+  'agent.read_own',
+  'agent.manage_own',
+] as const;
+const ADMIN_UP_ORG = [
+  'org.settings.edit',
+  'project.create',
+  'project.archive',
+  'user.invite',
+  'user.deactivate',
+  'user.reset_password',
+  'token.list_any',
+  'token.revoke_any',
+  'audit_log.export',
+  'webhook.configure',
+  'profile.read',
+  'profile.set_kind',
+  'profile.rate',
+  'profile.activity.read',
+  'people.analytics.read',
+  'org.developer_insights.set',
+  'usage.read_org',
+  'usage.read_people',
+  'org.model_prices.set',
+  'org.time.set',
+  'time_sync.map',
+  'time_sync.import_all',
+] as const;
+const OWNER_ONLY_ORG = [
+  'org.delete',
+  'org.transfer_ownership',
+  'user.set_role',
+  'org.permissions.manage',
+] as const;
+const PROJECT_ACTIONS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
+  lead: [
+    'project.members.manage',
+    'project.settings.edit',
+    'sprint.manage',
+    'task.assign_sprint',
+    'task.create',
+    'task.write',
+    'task.claim',
+    'task.assign_other',
+    'comment.create',
+    'comment.edit',
+    'comment.delete',
+    'task.delete',
+    'task.dependency.write',
+    'task.watch',
+    'project.read',
+    'meeting_proposal.apply',
+    'usage.read_project',
+    'budget.set',
+  ],
+  member: [
+    'task.assign_sprint',
+    'task.create',
+    'task.write',
+    'task.claim',
+    'task.assign_other',
+    'comment.create',
+    'comment.edit',
+    'comment.delete',
+    'task.delete',
+    'task.dependency.write',
+    'task.watch',
+    'project.read',
+    'meeting_proposal.apply',
+    'usage.read_project',
+  ],
+  viewer: ['task.watch', 'project.read', 'usage.read_project'],
+};
+// `task.create` (LAI-976) is a lead's and a member's under the default rule,
+// *Members*; a space set to *Space admins only* withholds it from members —
+// a test about that names its own `/permissions` (LAI-178).
+
+interface StubMe {
+  readonly org_role?: unknown;
+  readonly memberships?: readonly { readonly project_id: string; readonly role: string }[];
+}
+
+/** The default-grants answer for this `/me` — see {@link EVERY_ROLE_ORG}. */
+export function defaultPermissions(me: StubMe): unknown {
+  const role = typeof me.org_role === 'string' ? me.org_role : 'viewer';
+  const adminUp = role === 'owner' || role === 'admin';
+  const actions = [
+    ...EVERY_ROLE_ORG,
+    ...(adminUp ? ADMIN_UP_ORG : []),
+    ...(role === 'owner' ? OWNER_ONLY_ORG : []),
+  ];
+  // `effectiveProjectRole`: an implicit lead everywhere, an org viewer capped.
+  const effective = (given: string): string =>
+    adminUp ? 'lead' : role === 'viewer' ? 'viewer' : given;
+  return {
+    org_roles: ['owner', 'admin', 'member', 'viewer'],
+    project_roles: ['lead', 'member', 'viewer'],
+    permissions: [],
+    me: {
+      org_role: role,
+      credential: 'session',
+      project_scope: 'all',
+      implicit_project_role: adminUp ? 'lead' : null,
+      actions,
+      projects: (me.memberships ?? []).map((m) => ({
+        project_id: m.project_id,
+        role: effective(m.role),
+        actions: PROJECT_ACTIONS_BY_ROLE[effective(m.role)] ?? [],
+      })),
+    },
+  };
+}
+const PERMISSIONS_PATH = '/api/v1/permissions';
+const ME_PATH = '/api/v1/me';
 
 /**
  * The task list and one task (LAI-795). **The list is answered as the server
@@ -391,6 +568,8 @@ function serve(
 ): Promise<{ server: Server; origin: string }> {
   /** Every task a list has served, in full, by id — see {@link ONE_TASK_PATH}. */
   const listed = new Map<string, unknown>();
+  /** The last `/me` this server answered, for {@link defaultPermissions}. */
+  let lastMe: StubMe | undefined;
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname;
@@ -427,6 +606,28 @@ function serve(
           return;
         }
 
+        if (chosen === undefined && req.method === 'GET' && path === HANDOFFS_PATH) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(NO_HANDOFFS));
+          return;
+        }
+
+        if (chosen === undefined && req.method === 'GET' && HANDOFF_POLICY_PATH.test(path)) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              project_id: decodeURIComponent(HANDOFF_POLICY_PATH.exec(path)?.[1] ?? ''),
+              allow_other_owners: false,
+              cross_owner_requires_approval: true,
+              max_handoffs: 3,
+              offer_ttl_minutes: 30,
+              updated_by: null,
+              is_set: false,
+            }),
+          );
+          return;
+        }
+
         if (
           chosen === undefined &&
           req.method === 'GET' &&
@@ -452,6 +653,17 @@ function serve(
         if (listedTask !== undefined) {
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify(listedTask));
+          return;
+        }
+
+        if (
+          chosen === undefined &&
+          req.method === 'GET' &&
+          path === PERMISSIONS_PATH &&
+          lastMe !== undefined
+        ) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(defaultPermissions(lastMe)));
           return;
         }
 
@@ -493,6 +705,10 @@ function serve(
           status === 200 &&
           TASK_LIST_PATH.test(path) &&
           url.searchParams.get('fields') === 'slim';
+        // Whose answer `/permissions` defaults to: the user `/me` last named.
+        if (path === ME_PATH && req.method === 'GET') {
+          lastMe = status === 200 && typeof body === 'object' && body !== null ? body : undefined;
+        }
         res.writeHead(status, { 'content-type': 'application/json', ...headers });
         res.end(JSON.stringify(slim ? slimPage(body, listed) : body));
       });
@@ -545,6 +761,34 @@ export async function closeBrowser(): Promise<void> {
 }
 
 /**
+ * How long one attempt at the theme control may take (LAI-578). A control
+ * still in the document after this has refused, and `setTheme` fails with
+ * the refusal rather than trying again.
+ */
+export const THEME_CLICK_MS = 10_000;
+
+/**
+ * Run `act` on `control`. `true` if it failed because `control` left the
+ * document — the signed-in shell replaced it — so the caller chooses again;
+ * every other failure is rethrown unchanged (LAI-578).
+ */
+async function replacedDuring(control: ElementHandle, act: () => Promise<void>): Promise<boolean> {
+  try {
+    await act();
+    return false;
+  } catch (error) {
+    let connected = true;
+    try {
+      connected = await control.evaluate((el) => el.isConnected);
+    } catch {
+      // The page itself went away; that is not the replacement this allows.
+    }
+    if (connected) throw error;
+    return true;
+  }
+}
+
+/**
  * Put the page in a theme **through the real control** (LAI-249).
  *
  * The control became the design's two-state `ThemeSwitch`, so "select Dark"
@@ -566,27 +810,56 @@ export async function setTheme(page: Page, theme: string) {
   const wantDark = theme.toLowerCase() === 'dark';
   const reads = () => document.documentElement.getAttribute('data-theme') !== 'light';
 
-  const isDark = await page.evaluate(reads);
-  if (wantDark !== isDark) {
-    /*
-     * **Two real controls since LAI-796.** Signed in, the theme is an item in
-     * the user menu at the foot of the sidebar; before a session there is no
-     * sidebar and the header carries `ThemeSwitch`. Both write the one store.
-     *
-     * The menu's clicks are dispatched rather than pointed: on a phone the
-     * sidebar is off-canvas, so its button is outside the viewport, and the
-     * question here is the theme, not whether the off-canvas menu is open.
-     */
-    const control = page.locator('.theme-switch, .user-menu-trigger').first();
-    await control.waitFor({ state: 'attached', timeout: 10_000 });
-    if ((await control.getAttribute('class'))?.includes('theme-switch') === true) {
-      await control.click();
-    } else {
-      await control.dispatchEvent('click');
-      const item = page.locator('.user-menu-theme');
-      await item.waitFor({ state: 'attached', timeout: 5_000 });
-      await item.dispatchEvent('click');
+  /*
+   * **Two real controls since LAI-796.** Signed in, the theme is an item in
+   * the user menu at the foot of the sidebar; before a session there is no
+   * sidebar and the header carries `ThemeSwitch`. Both write the one store.
+   *
+   * The menu's clicks are dispatched rather than pointed: on a phone the
+   * sidebar is off-canvas, so its button is outside the viewport, and the
+   * question here is the theme, not whether the off-canvas menu is open.
+   *
+   * **Each control is chosen afresh only when the session replaced the last
+   * one** (LAI-576, narrowed by LAI-578). A test calls this straight after
+   * `open`, while `/me` may still be in flight, so the header's switch can be
+   * detached by the signed-in shell between being chosen and being clicked.
+   * One locator for both then re-resolved to the user menu and *pointed* at
+   * it, which on a phone waited thirty seconds for a button that is
+   * off-canvas by design.
+   *
+   * So the control is held as an element, not a selector, and a failure is
+   * retried only if that element has left the document. Anything else — a
+   * click refused while the switch stays mounted, a menu that never shows its
+   * item — is the failure, and is thrown as it was. #116 retried every error
+   * and would have passed a switch that refused its first click.
+   */
+  const deadline = Date.now() + 20_000;
+  while ((await page.evaluate(reads)) !== wantDark) {
+    if (Date.now() > deadline) {
+      throw new Error('setTheme: the session replaced the theme control on every try for 20s');
     }
+    await page
+      .locator('.theme-switch, .user-menu-trigger')
+      .first()
+      .waitFor({ state: 'attached', timeout: 10_000 });
+    const menu = await page.$('.user-menu-trigger');
+    const control = menu ?? (await page.$('.theme-switch'));
+    // One was attached a moment ago and neither is now: the swap is mid-way.
+    if (control === null) continue;
+
+    const replaced = await replacedDuring(control, async () => {
+      if (menu === null) {
+        await control.click({ timeout: THEME_CLICK_MS });
+        return;
+      }
+      if ((await page.$('.user-menu-theme')) === null) await menu.dispatchEvent('click');
+      const item = await page.waitForSelector('.user-menu-theme', {
+        state: 'attached',
+        timeout: THEME_CLICK_MS,
+      });
+      await item.dispatchEvent('click');
+    });
+    if (!replaced) break;
   }
 
   await page.waitForFunction(
@@ -705,4 +978,50 @@ export async function fakeStream(page: Page): Promise<void> {
       })();
     `,
   });
+}
+
+/**
+ * Record whether any of `selectors` is **ever** in the document, from before
+ * the app boots (LAI-970). Pass as `open(path, stub, { before: (p) =>
+ * watchFor(p, [...]) })`, then ask {@link everSeen}.
+ *
+ * A gate that shows a control for one frame and then withdraws it passes
+ * every "is it there now" check taken after the frame; that frame is the bug
+ * when the reader is somebody the owner withdrew it from. A MutationObserver
+ * sees every frame the DOM had.
+ */
+export async function watchFor(page: Page, selectors: readonly string[]): Promise<void> {
+  await page.addInitScript({
+    content: `
+      (() => {
+        const selectors = ${JSON.stringify(selectors)};
+        const seen = (window.__laikaSeen = {});
+        const check = () => {
+          for (const s of selectors) if (document.querySelector(s)) seen[s] = true;
+        };
+        new MutationObserver(check).observe(document, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+        });
+      })();
+    `,
+  });
+}
+
+/** Whether `selector`, given to {@link watchFor}, was ever in the document. */
+export async function everSeen(page: Page, selector: string): Promise<boolean> {
+  return page.evaluate(
+    (s) =>
+      (window as unknown as { __laikaSeen?: Record<string, boolean> }).__laikaSeen?.[s] === true,
+    selector,
+  );
+}
+
+/** Go to `to` inside the app, as a link would: no reload, so module state survives. */
+export async function navigateInApp(page: Page, to: string): Promise<void> {
+  await page.evaluate((path) => {
+    history.pushState({}, '', path);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, to);
 }

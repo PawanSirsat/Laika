@@ -75,19 +75,6 @@ export function dismissUnlisted(id: string): Promise<void> {
   return request<void>(`/unlisted/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
-/**
- * May this actor triage the pile?
- *
- * **Mirrors `audit_log.export` in `policy/can.ts`, which is admin-up.** These
- * rows are audit rows — §4.14 borrows that permission deliberately rather than
- * inventing one. The nav entry is *absent* for everyone else rather than
- * disabled (LAI-082): a disabled entry still advertises a screen they cannot
- * open, and every endpoint here answers `403` for them anyway.
- */
-export function mayTriageUnlisted(orgRole: string): boolean {
-  return orgRole === 'owner' || orgRole === 'admin';
-}
-
 /** What a row is, once triage has happened to it. */
 export type UnlistedState = 'pending' | 'promoted' | 'dismissed';
 

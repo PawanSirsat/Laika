@@ -10,9 +10,10 @@ import { navHref } from '../../routes/nav-url.ts';
 import { SpacesSection } from './SpacesSection.tsx';
 import { SidebarFooter } from './SidebarFooter.tsx';
 import { NavIcon } from './NavIcon.tsx';
-import type { Space } from '../../routes/spaces.ts';
+import type { SidebarSpace, Space } from '../../routes/spaces.ts';
 import type { MeProfile } from '../../api/me.ts';
 import './sidebar.css';
+import { usePermissions } from '../../api/permissions.ts';
 
 export interface SidebarProps {
   readonly currentPath: string;
@@ -28,17 +29,14 @@ export interface SidebarProps {
   readonly onToggleCollapse: () => void;
   /** Slug of the project in the URL, when there is one. */
   readonly projectSlug?: string | undefined;
-  /** The pinned spaces, most recent first (LAI-247). Empty renders no section. */
-  readonly spaces?: readonly Space[] | undefined;
+  /** The rail's spaces: pinned, then recent (LAI-247, LAI-989). Empty renders no section. */
+  readonly spaces?: readonly SidebarSpace[] | undefined;
   /** Every fetched space, for the More-spaces popover. */
   readonly allSpaces?: readonly Space[] | undefined;
   /** Open a space: sets the project and goes to its board. */
   readonly onOpenSpace?: ((slug: string) => void) | undefined;
-  /**
-   * The reader's org role, for entries that require a permission. Absent means
-   * "unrestricted" — gated entries stay hidden rather than leaking.
-   */
-  readonly orgRole?: string | undefined;
+  /** Pin or unpin a space, in this browser (LAI-989). Absent draws no pin control. */
+  readonly onTogglePin?: ((slug: string) => void) | undefined;
   /** The organisation's name, under the wordmark (prototype line 50). */
   readonly orgName?: string | undefined;
   /** Accepted and currently unused: the rail's wordmark is always the
@@ -83,18 +81,19 @@ export function Sidebar({
   spaces,
   allSpaces,
   onOpenSpace,
-  orgRole,
+  onTogglePin,
   orgName,
   counts,
   user,
   onSignOut,
   signingOut,
 }: SidebarProps) {
+  const { permissions } = usePermissions(user !== undefined);
   /**
    * The reader's permissions, mirrored from `policy/can.ts` at one remove — the
    * one predicate every gated entry and tab asks.
    */
-  const holds = permissionHolder(orgRole);
+  const holds = permissionHolder(permissions?.me.actions);
   // The Connect wizard lights Developer access, the page it is opened from.
   const section = navSection(currentPath);
 
@@ -214,6 +213,7 @@ export function Sidebar({
             collapsed={collapsed}
             onNavigate={onNavigate}
             onOpenSpace={onOpenSpace}
+            onTogglePin={onTogglePin}
             onClose={onClose}
           />
         )}

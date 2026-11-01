@@ -13,12 +13,11 @@ import {
   isOutsideId,
   OUTSIDE_ID_PATTERN,
   assignTask,
-  canAssignOthers,
   claimTask,
   claimWinner,
-  canCreateTask,
   changeStatus,
   createTask,
+  listAllTasks,
   listMembers,
   listTasks,
   SLIM_OMITS,
@@ -117,6 +116,42 @@ void describe('listTasks query string', () => {
     const calls = stub(page);
     await listTasks('a project/with slash');
     assert.ok(calls[0]?.url.includes('a%20project%2Fwith%20slash'));
+  });
+});
+
+void describe('listAllTasks — everyone’s work (LAI-887, LAI-952)', () => {
+  void test('reads GET /tasks, slim, with nothing else when no filter is set', async () => {
+    const calls = stub(page);
+    await listAllTasks();
+    assert.equal(calls[0]?.url, '/api/v1/tasks?fields=slim');
+  });
+
+  void test('maps the four filters it takes, and the cursor, onto their params', async () => {
+    const calls = stub(page);
+    await listAllTasks({
+      project: 'onroute',
+      status: 'in_progress',
+      assignee: 'none',
+      sprint: 's1',
+      limit: 50,
+      cursor: 'C2',
+    });
+    const query = new URL(calls[0]?.url ?? '', 'http://x').searchParams;
+    assert.deepEqual(Object.fromEntries(query), {
+      fields: 'slim',
+      project: 'onroute',
+      status: 'in_progress',
+      assignee: 'none',
+      sprint: 's1',
+      limit: '50',
+      cursor: 'C2',
+    });
+  });
+
+  void test('hands the page back exactly as the server sent it', async () => {
+    const served = { data: [{ id: 't1' }, { id: 't2' }], next_cursor: 'C3' };
+    stub(served);
+    assert.deepEqual(await listAllTasks(), served);
   });
 });
 
@@ -229,39 +264,6 @@ void describe('createTask (LAI-065)', () => {
   });
 });
 
-void describe('canCreateTask (LAI-065)', () => {
-  const project = 'p1';
-  const member = [{ project_id: project, role: 'member' }];
-  const lead = [{ project_id: project, role: 'lead' }];
-  const viewerRow = [{ project_id: project, role: 'viewer' }];
-
-  void test('org owner and admin may, with no membership row at all', () => {
-    // They hold implicit lead everywhere (policy/can.ts).
-    assert.equal(canCreateTask('owner', project, []), true);
-    assert.equal(canCreateTask('admin', project, []), true);
-  });
-
-  void test('project lead and member may', () => {
-    assert.equal(canCreateTask('member', project, lead), true);
-    assert.equal(canCreateTask('member', project, member), true);
-  });
-
-  void test('a project viewer may not', () => {
-    assert.equal(canCreateTask('member', project, viewerRow), false);
-  });
-
-  void test('an org viewer may not, whatever their membership row says', () => {
-    // D-006: a row claiming otherwise is corruption or an escalation attempt,
-    // and the server caps it. The UI must agree or it offers a button that 403s.
-    assert.equal(canCreateTask('viewer', project, lead), false);
-    assert.equal(canCreateTask('viewer', project, member), false);
-  });
-
-  void test('no membership in this project means no', () => {
-    assert.equal(canCreateTask('member', project, [{ project_id: 'other', role: 'lead' }]), false);
-  });
-});
-
 void describe('assignment (LAI-097)', () => {
   void test('assignTask sends the id, and null to unassign', async () => {
     let calls = stub({ id: 't1' });
@@ -299,13 +301,6 @@ void describe('assignment (LAI-097)', () => {
     assert.equal(claimWinner(new ApiError('forbidden', 'no', 403)), undefined);
     assert.equal(claimWinner(new Error('boom')), undefined);
     assert.equal(claimWinner(null), undefined);
-  });
-
-  void test('a Viewer may not assign others', () => {
-    // `task.assign_other` is member+ (§3.2), so this mirrors task creation.
-    assert.equal(canAssignOthers('viewer', 'p1', [{ project_id: 'p1', role: 'lead' }]), false);
-    assert.equal(canAssignOthers('member', 'p1', [{ project_id: 'p1', role: 'member' }]), true);
-    assert.equal(canAssignOthers('owner', 'p1', []), true);
   });
 });
 

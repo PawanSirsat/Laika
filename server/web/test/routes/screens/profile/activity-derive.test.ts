@@ -99,7 +99,7 @@ void describe('days from the response', () => {
     );
   });
 
-  void test('a source not shared stays null — never read as zero', () => {
+  void test('a source not collected stays null — never read as zero', () => {
     const days = heatDays(
       activity('2026-10-12', 2, {
         github: null,
@@ -177,6 +177,44 @@ void describe('the calendar', () => {
     const layout = calendarLayout(emptyDays('2026-12-20', 51));
     assert.equal(layout.placed[0]?.day.day, '2026-10-31');
     assert.equal(layout.months[0]?.label, 'Nov');
+  });
+
+  void test('a month whose 1st is in the last column gets no label to run off the end (LAI-1017)', () => {
+    // Sun 1 Nov 2026 closes the week of Mon 26 Oct: November is the last
+    // column alone, and October runs to the end instead.
+    const sliver = calendarLayout(emptyDays('2026-11-01', 364));
+    assert.equal(sliver.placed.at(-1)?.column, sliver.columns - 1);
+    assert.deepEqual(sliver.months.at(-1), { label: 'Oct', column: sliver.columns - 5, span: 5 });
+    const spans = sliver.months.reduce((sum, m) => sum + m.span, 0);
+    assert.equal(spans + (sliver.months[0]?.column ?? 0), sliver.columns);
+    // A day later November has two columns, and its label.
+    const room = calendarLayout(emptyDays('2026-11-02', 364));
+    assert.deepEqual(room.months.at(-1), { label: 'Nov', column: room.columns - 2, span: 2 });
+  });
+
+  void test('a 1st on a Monday opens a column alone, and is named once the next week begins', () => {
+    // Mon 1 Mar 2027: the newest column holds that one day.
+    const alone = calendarLayout(emptyDays('2027-03-01', 364));
+    assert.equal(weekdayOf('2027-03-01'), 0);
+    assert.equal(alone.months.at(-1)?.label, 'Feb');
+    assert.equal(alone.months.at(-1)?.column, alone.columns - 5);
+    assert.equal(alone.months.at(-1)?.span, 5);
+    // Mon 8 Mar 2027: March has two columns.
+    const named = calendarLayout(emptyDays('2027-03-08', 364));
+    assert.deepEqual(named.months.at(-1), { label: 'Mar', column: named.columns - 2, span: 2 });
+  });
+
+  void test('across the new year: January waits for its room like any month', () => {
+    // Fri 1 Jan 2027 closes nothing — it shares the week of Mon 28 Dec.
+    const eve = calendarLayout(emptyDays('2027-01-01', 364));
+    assert.equal(eve.months.at(-1)?.label, 'Dec');
+    assert.equal(eve.months.at(-1)?.column, eve.columns - 5);
+    assert.equal(eve.months.at(-1)?.span, 5);
+    const spans = eve.months.reduce((sum, m) => sum + m.span, 0);
+    assert.equal(spans + (eve.months[0]?.column ?? 0), eve.columns);
+    // Mon 4 Jan 2027: January has two columns.
+    const after = calendarLayout(emptyDays('2027-01-04', 364));
+    assert.deepEqual(after.months.at(-1), { label: 'Jan', column: after.columns - 2, span: 2 });
   });
 });
 
@@ -309,15 +347,15 @@ void describe('what a day says', () => {
     assert.equal(agentLabel('gemini-cli'), 'Gemini CLI');
   });
 
-  void test('a source not shared says so instead of a zero', () => {
+  void test('a source not collected says so instead of a zero', () => {
     const lines = dayLines(
       day({ github: null, localCommits: null, prompts: null, sessions: null, local: null }),
     );
     assert.deepEqual(
       lines.filter((l) => l.source !== 'board').map((l) => [l.n, l.text]),
       [
-        [null, 'pushed commits not shared'],
-        [null, 'local activity not shared'],
+        [null, 'pushed commits not collected'],
+        [null, 'local activity not collected'],
       ],
     );
   });

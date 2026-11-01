@@ -52,6 +52,12 @@ void describe('which answers may be reused (client.ts)', () => {
     assert.equal(freshFor('/people/01ABC/activity?range=52w'), 30_000);
     assert.equal(freshFor('/me/local-activity?days=14'), 0);
     assert.equal(freshFor('/me/activity-sharing'), 0);
+    // What the reader may do (LAI-959): every name link on a page asks it, so
+    // they share one answer. A person's day is never reused — each read of it
+    // is logged for them (D-102 rule 3), and it changes as they work.
+    assert.equal(freshFor('/permissions'), 30_000);
+    assert.equal(freshFor('/people/01ABC/time?day=2026-10-22&tz=UTC'), 0);
+    assert.equal(freshFor('/me/analytics-views?limit=20'), 0);
     // The task set is the store's, kept current by the stream, never by age.
     assert.equal(freshFor('/projects/laika-core/tasks?limit=200'), 0);
     assert.equal(freshFor('/projects/laika-core/activity?limit=200'), 0);

@@ -1,0 +1,62 @@
+/* The proposed agent states on /design/states (LAI-536). Tokens only. */
+
+.agent-gallery {
+  margin-top: var(--space-6);
+}
+
+.agent-gallery-wide {
+  grid-column: 1 / -1;
+}
+
+.agent-gallery-stage {
+  gap: var(--space-3);
+  justify-content: flex-start;
+}
+
+.agent-gallery-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-3);
+}
+
+/* A card on its own, not in a lane: the lane is what usually sizes it. */
+.agent-gallery-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
+.agent-gallery-card .card-foot {
+  flex-wrap: wrap;
+}
+
+.agent-gallery-avatar {
+  background: var(--chip-neutral-bg);
+  color: var(--text-primary);
+}
+
+.agent-gallery-legend {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.agent-gallery-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.agent-gallery-person {
+  padding-top: 0.4375rem;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.agent-gallery-launchers {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}

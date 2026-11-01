@@ -12,7 +12,6 @@ import { describe, test } from 'node:test';
 import {
   firstLine,
   mayPromote,
-  mayTriageUnlisted,
   newestFirst,
   openUnlistedCount,
   unlistedState,
@@ -63,27 +62,6 @@ void describe('a row’s state decides what may be done to it', () => {
     // Fails if a future state is added and quietly allowed to promote.
     const states = [row(), row({ promoted_task_id: 't' }), row({ dismissed_at: 1 })];
     assert.equal(states.filter(mayPromote).length, 1);
-  });
-});
-
-void describe('the queue is offered to exactly whom the server allows', () => {
-  void test('owner and admin may triage', () => {
-    // Mirrors `audit_log.export`, which is admin-up — these rows are audit rows.
-    assert.equal(mayTriageUnlisted('owner'), true);
-    assert.equal(mayTriageUnlisted('admin'), true);
-  });
-
-  void test('member and viewer never see it', () => {
-    // Absent, not disabled (LAI-082): every endpoint answers 403 for them, so
-    // an entry would advertise a screen that cannot open.
-    assert.equal(mayTriageUnlisted('member'), false);
-    assert.equal(mayTriageUnlisted('viewer'), false);
-  });
-
-  void test('an unknown role is refused, not admitted', () => {
-    // A new org role must default to hidden rather than inheriting access.
-    assert.equal(mayTriageUnlisted('auditor'), false);
-    assert.equal(mayTriageUnlisted(''), false);
   });
 });
 

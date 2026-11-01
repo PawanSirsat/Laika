@@ -272,13 +272,13 @@ void describe('status says whether telemetry reaches the board', () => {
     assert.match(await statusOf(h), /OpenTelemetry\s+set up, but .* refuses the token \(401\)/);
   });
 
-  void test('set up, but sharing is off (403 local_activity_off)', async () => {
+  void test('set up, but Developer insights are off (403 local_activity_off)', async () => {
     const h = await harness();
     assert.equal(await h.run('on'), 0);
     h.board.otlp = 'off';
-    assert.match(
-      await statusOf(h),
-      /OpenTelemetry\s+set up, but .* refuses it \(403 local_activity_off\)/,
-    );
+    const line = await statusOf(h);
+    assert.match(line, /OpenTelemetry\s+set up, but .* refuses it \(403 local_activity_off\)/);
+    // Said in the organisation's words (D-102 amended, LAI-971).
+    assert.match(line, /Developer insights are off for your organisation/);
   });
 });

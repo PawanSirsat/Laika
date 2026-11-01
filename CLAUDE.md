@@ -340,7 +340,12 @@ on `master`, within an hour of each other.
 ## 3. Logging
 
 After **every** task and at the end of **every** session, append to
-`logs/<session>-<YYYY-MM-DD>.md`:
+**the task's own log file**, `logs/<session>-<YYYY-MM-DD>-<LAI-NNN>.md`
+(owner, 2026-11-01). A task branch writes only its own file, so two PRs never
+conflict on a shared day log and no merge costs another CI run. Session-level
+notes with no task go to `logs/<session>-<YYYY-MM-DD>.md` from the session's
+own long-lived branch only. Day logs written before 2026-11-01 stay as they
+are (append-only records):
 
 - timestamp (ISO-8601)
 - task id
@@ -380,16 +385,17 @@ one:
 
 | Session | Range | Second block (D-036) | Third block (D-068) |
 | --- | --- | --- | --- |
-| CHIEF | `LAI-001` – `LAI-099` — **full** | `LAI-400` – `LAI-499` — **full** | `LAI-700` – `LAI-799` — **full**; then `LAI-800` – `LAI-899` (D-089) |
-| CORE | `LAI-100` – `LAI-199` | `LAI-500` – `LAI-599` | — (given to CHIEF, D-089) |
-| SHELL | `LAI-200` – `LAI-299` | `LAI-600` – `LAI-699` | `LAI-900` – `LAI-999` |
+| CHIEF | `LAI-001` – `LAI-099` — **full** | `LAI-400` – `LAI-499` — **full** | `LAI-700` – `LAI-799` — **full**; then `LAI-800` – `LAI-899` (D-089) — **full**; then `LAI-950` – `LAI-999` (D-100) — **full**; then `LAI-500` – `LAI-599` (D-109) — **full**; then `LAI-1000` – `LAI-1099` (D-120) |
+| CORE | `LAI-100` – `LAI-199` | — (given to CHIEF, D-109: CORE never filed from it) | — (given to CHIEF, D-089) |
+| SHELL | `LAI-200` – `LAI-299` | `LAI-600` – `LAI-699` | `LAI-900` – `LAI-949` (D-100 gave `950`–`999` to CHIEF) |
 
 `LAI-300` – `LAI-399` was reserved for a fourth session (D-017). **D-097 gives
 it to Strelka**, the second machine (see *Two machines* at the end of this
 file); nobody else takes from it. Move to your second block only when your first has no free
 number left, and to the third when the second has none (D-068). CHIEF's
-first three are full, so CHIEF files from `LAI-800` (D-089). A builder CHIEF
-dispatches files from CHIEF's block.
+first three are full, and so are `LAI-800` – `LAI-899` (D-089) and `LAI-950` –
+`LAI-999` (D-100) and `LAI-500` – `LAI-599` (D-109), so CHIEF files from
+`LAI-1000` (D-120). A builder CHIEF dispatches files from CHIEF's block.
 
 Use the lowest unused number **in your own range**, checked across every branch:
 
@@ -398,7 +404,7 @@ Use the lowest unused number **in your own range**, checked across every branch:
     git ls-tree -r --name-only "$ref" .tasks/
   done
   git log --all --name-only --format= -- .tasks/
-  git log --all --format='%s'; } | grep -o 'LAI-[0-9]\{3\}' | sort -u
+  git log --all --format='%s'; } | grep -o 'LAI-[0-9]\{3,\}' | sort -u
 ```
 
 **The `git log` half alone is blind, and it is the same blindness §2 already
@@ -470,13 +476,23 @@ LAI-015 had to clean up.
   their own task file). Never `git add -A` from the repo root — stage explicit
   paths.
 - Never amend, rebase-edit, revert, or force-push another session's commits.
+- **Batch small changes, and size the review to the change** (owner,
+  2026-11-01). Several small fixes that touch the same area ship as **one PR**
+  — one CI run, one deploy — instead of one PR each. A **docs-only or trivial
+  change** (prose, task files, logs, a one-line config value, a test-only
+  wording fix) needs green CI but **no separate review round**; anything that
+  changes behaviour, permissions, data or security still gets an independent
+  review before merge.
 - **A push to `origin/master` is a release** (D-073). GitHub Actions runs the
   gate, builds the arm64 image, and deploys it to production within about
   fifteen minutes. A deploy that comes up unhealthy rolls back by itself, and
   the run goes red. So the local gate before `git push` (§5) is not optional,
   and a red **CI / Deploy** run on master is the next thing to fix — nothing
-  after it deploys until it is green. Branches other than `master` run the
-  gate and deploy nothing.
+  after it deploys until it is green. Pull requests into `master` or an
+  `integration-*` branch, and pushes to `integration-*`, run the gate and deploy
+  nothing; a push to any other branch runs nothing (LAI-990), so the local gate
+  is the only check a work branch gets until its PR opens. A manual run
+  (`workflow_dispatch`) runs the gate only, on any branch, and never deploys.
 
 ### 4.1 GitHub account — personal only
 
@@ -1018,12 +1034,24 @@ Every session working in this repo:
 2. **Mark the card before you work.** Read it with `get_task_context LAI-NNN`,
    then `update_status` to In progress. If it is already In progress and yours,
    call `start_working LAI-NNN` with your branch: it succeeds without changing
-   anything and marks this session's work as that card's. Every card is
-   assigned to Pawan, so `list_ready_tasks` is empty and `start_working` on a
-   card that is not yet In progress answers 409 (LAIKA-474).
+   anything and marks this session's work as that card's. Cards are meant to
+   be assigned to Pawan, so `list_ready_tasks` is empty and `start_working` on a
+   card that is not yet In progress answers 409 (LAIKA-474). **Nothing on the
+   server assigns him for you** (D-114 item 7: a claim never sets the
+   assignee) — see step 3.
 3. **No card? Look first.** `get_task_context LAI-NNN` finds a mirrored card by
-   its task file id; only if there is none, `create_task` in `laika` with
-   `external_ref: LAI-NNN`, before doing the work.
+   its task file id; only if there is none, create it, before doing the work,
+   with **three calls in this order** (2026-11-01, after 28 of 29 agent-made
+   cards came out unassigned and 4 were claimed with no agent selected):
+   1. `create_task` in `laika` with `external_ref: LAI-NNN` **and
+      `assignee: "pawan.sirsat@kvelld.co.za"`** (the human accountable).
+   2. `update_task` with `agent: <your registered agent id>` — **before** the
+      claim. Once a claim is live, changing the selected agent is refused
+      (`claim_held`), so this cannot be fixed afterwards.
+   3. `start_working` with your branch and **your own `session_id`**.
+
+   The task file's `assignee:` frontmatter is the session name (`shell`,
+   `core`), not a person, and nothing copies it to the card.
 4. **Say what happened.** `add_comment` on the card as you go — decisions and
    blockers, while they are fresh.
 5. **Finish into review, never done.** `finish_task` with the commit, branch, PR

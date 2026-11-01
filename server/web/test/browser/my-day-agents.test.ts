@@ -8,7 +8,8 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
-import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { open } from './my-day-clock.ts';
 import { AGENT, at, TODAY, YESTERDAY, viewOf, weekData, weekStub } from './my-day-week.ts';
 
 const LANE = [
@@ -140,9 +141,15 @@ void describe('the AGENTS lane (LAI-833)', () => {
           await lane.getAttribute('aria-label'),
           'Agents: worked 14 min, 12 min of it on a card',
         );
-        const legend = h.page.locator('.dayline-legend');
-        assert.equal(await legend.getByText('Agent working', { exact: true }).count(), 1);
-        assert.equal(await legend.getByText('Agent, no card', { exact: true }).count(), 1);
+        // The lane's column says how long, and how much of it on a card (LAI-888).
+        assert.equal(
+          await h.page.locator('.dayline-label-agents [data-agent-work]').innerText(),
+          '14 min',
+        );
+        assert.match(
+          await h.page.locator('.dayline-label-agents [data-agent-on-card]').innerText(),
+          /^12 min on a card/,
+        );
       } finally {
         await h.close();
       }
@@ -178,10 +185,7 @@ void describe('the AGENTS lane (LAI-833)', () => {
       await h.page.locator('.dayline-row').waitFor({ timeout: 10_000 });
       assert.equal(await h.page.locator('[data-agents-lane]').count(), 0);
       assert.equal(await h.page.locator('.dayline-label-agents').count(), 0);
-      assert.equal(
-        await h.page.locator('.dayline-legend').getByText('Agent working', { exact: true }).count(),
-        0,
-      );
+      assert.equal(await h.page.locator('[data-agent-work]').count(), 0);
     } finally {
       await h.close();
     }

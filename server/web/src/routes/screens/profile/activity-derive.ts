@@ -141,8 +141,8 @@ export interface CalendarLayout {
  * The days as week columns, Monday first: the first column is the week
  * holding the first day, padded above it. A month's label starts at the first
  * column whose Monday-week holds its 1st — the column a reader looks for it in
- * — and runs to the next month's; a label for a sliver at the very start that
- * the next would crowd is dropped rather than overlapped.
+ * — and runs to the next month's; a label for a sliver at either end, one
+ * column too narrow to hold it, is dropped rather than overlapped or overhung.
  */
 export function calendarLayout(days: readonly HeatDay[]): CalendarLayout {
   const lead = days[0]?.weekday ?? 0;
@@ -170,6 +170,12 @@ export function calendarLayout(days: readonly HeatDay[]): CalendarLayout {
   // The opening month gets its own label only with room for one (two columns).
   if (starts.length > 1 && (starts[1]?.column ?? 0) - (starts[0]?.column ?? 0) < 2) {
     starts.shift();
+  }
+  // So does the closing one. A label wider than its one column runs past the
+  // canvas, the scroller grows by the overhang, and scrolled to the newest
+  // week each source's sticky heading is left behind out of view (LAI-1017).
+  if (starts.length > 1 && columns - (starts.at(-1)?.column ?? 0) < 2) {
+    starts.pop();
   }
 
   const months = starts.map((start, i) => ({
@@ -343,7 +349,7 @@ export interface TipLine {
 export function dayLines(day: HeatDay): TipLine[] {
   const lines: TipLine[] = [];
   if (day.github === null) {
-    lines.push({ source: 'github', n: null, text: 'pushed commits not shared' });
+    lines.push({ source: 'github', n: null, text: 'pushed commits not collected' });
   } else {
     lines.push({
       source: 'github',
@@ -353,7 +359,7 @@ export function dayLines(day: HeatDay): TipLine[] {
   }
 
   if (day.local === null) {
-    lines.push({ source: 'local', n: null, text: 'local activity not shared' });
+    lines.push({ source: 'local', n: null, text: 'local activity not collected' });
   } else {
     lines.push({
       source: 'local',

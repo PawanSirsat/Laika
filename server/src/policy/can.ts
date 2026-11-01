@@ -21,16 +21,26 @@
  */
 
 import { ApiError } from '../errors.ts';
-import { type OrgRole, type ProjectRole, type TokenScope } from '../db/enums.ts';
+import {
+  type AgentGrantScope,
+  type AgentStatus,
+  type OrgRole,
+  type ProjectRole,
+  type TaskCreateMinRole,
+  type TokenScope,
+} from '../db/enums.ts';
 import {
   type Action,
+  AGENT_TOKEN_ORG_ACTIONS,
   isReadAction,
   type OrgAction,
+  PINNED_TOKEN_ORG_ACTIONS,
   type ProjectAction,
   SESSION_ONLY_ACTIONS,
   type SystemAction,
 } from './actions.ts';
 import { ORG_ACTIONS, PROJECT_ACTIONS, SYSTEM_ACTIONS } from './actions.ts';
+import { capabilityOf, holdsCapability, implicitProjectRole, type OrgGrants } from './grants.ts';
 
 export { type Action, type OrgAction, type ProjectAction } from './actions.ts';
 
@@ -41,6 +51,28 @@ export interface TokenContext {
   scope: TokenScope;
   /** `null` = every project the user can reach. Otherwise a whitelist. */
   projectIds: readonly string[] | null;
+  /**
+   * When this token stops working, or `null` / absent for never. A token
+   * cannot mint one that outlives it (LAI-563, `services/tokens.ts`).
+   */
+  expiresAt?: number | null | undefined;
+  /**
+   * The registered agent this token is the credential of (D-114, LAI-534), or
+   * absent / `null` for a legacy token. Loaded from `tokens.agent_id` and
+   * nothing else: no header, parameter or body field can put one here.
+   */
+  agent?: AgentContext | null | undefined;
+}
+
+/** A registered agent, as the token that carries it presents it (§4.63). */
+export interface AgentContext {
+  id: string;
+  displayName: string;
+  harness: string;
+  deviceLabel: string | null;
+  status: AgentStatus;
+  /** Project id → the agent's grant there (§4.64). Absent = no access. */
+  grants: ReadonlyMap<string, AgentGrantScope>;
 }
 
 export interface Actor {
@@ -56,6 +88,40 @@ export interface Actor {
   projectRole: ProjectRole | null;
   /** Absent or `null` when the request arrived on a session cookie (§6.1). */
   token?: TokenContext | null;
+  /**
+   * The organisation's grants, every role's (§3, §4.58, LAI-958), loaded by
+   * the caller with the actor. Absent or `null` means the defaults — today's
+   * behaviour — which is what an org whose owner never changed them has.
+   * The whole matrix rather than the actor's own row, so the catalogue can
+   * answer for every role from the actor it already has.
+   */
+  orgGrants?: OrgGrants | null | undefined;
+  /**
+   * Each project's own rules (D-103 items 6 and 7, LAI-976), by project id,
+   * loaded by the caller with the actor as the grants are. A project absent
+   * from the map — or no map at all — has the defaults: members create tasks,
+   * agents may write. `can()` reads the entry for `resource.projectId`, so a
+   * caller cannot ask about one project with another's rules.
+   */
+  projectRules?: ReadonlyMap<string, ProjectRules> | null | undefined;
+}
+
+/** What a space decides for itself (§4.3, D-103). */
+export interface ProjectRules {
+  /** Who may create tasks: `member` (and up) or `lead` only. Viewers never. */
+  taskCreateMinRole: TaskCreateMinRole;
+  /** `false`: an agent token may only read in this project. People are unaffected. */
+  agentsAllowed: boolean;
+}
+
+export const DEFAULT_PROJECT_RULES: ProjectRules = {
+  taskCreateMinRole: 'member',
+  agentsAllowed: true,
+};
+
+export function rulesFor(actor: Actor, projectId: string | undefined): ProjectRules {
+  if (projectId === undefined) return DEFAULT_PROJECT_RULES;
+  return actor.projectRules?.get(projectId) ?? DEFAULT_PROJECT_RULES;
 }
 
 export interface Resource {
@@ -73,12 +139,15 @@ export interface Resource {
   createdBy?: string | null | undefined;
   /** §3.1 "Join a `public` project" — private projects are not joinable. */
   visibility?: 'public' | 'private' | undefined;
-  /** For `user.set_role`: the role being granted. Admins may not grant `owner`. */
+  /**
+   * For `user.invite`: the role the invite grants. Anyone but an owner may
+   * invite only as `member` or `viewer` (D-102 rule 5, LAI-958).
+   */
   targetOrgRole?: OrgRole | undefined;
   /**
-   * For `profile.rate`: the person being rated. §3.1's *"not themselves"* is
-   * this compared with `actor.userId`, and an absent target is a denial
-   * (LAI-743).
+   * For `profile.rate` and `people.analytics.read`: the person being rated or
+   * read. §3.1's *"not themselves"* is this compared with `actor.userId`, and
+   * an absent target is a denial (LAI-743, LAI-957).
    */
   targetUserId?: string | undefined;
 }
@@ -89,6 +158,11 @@ const PROJECT_ACTION_SET: ReadonlySet<string> = new Set(PROJECT_ACTIONS);
 
 function isOrgAction(action: Action): action is OrgAction {
   return ORG_ACTION_SET.has(action);
+}
+
+/** §6.2 (audit H4): the org actions a project-pinned token keeps. */
+function isPinnedTokenOrgAction(action: OrgAction): boolean {
+  return PINNED_TOKEN_ORG_ACTIONS.has(action);
 }
 
 function isProjectAction(action: Action): action is ProjectAction {
@@ -174,15 +248,22 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.local_activity.prune',
   'system.estimate.refit',
   'system.time.prune',
+  'system.idempotency.prune',
+  'system.claim.expire',
+  'system.handoff.recover',
+  'system.handoff.expire',
+  'system.checkpoint.prune',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
+  'system.checkpoint.verify',
 ]);
 
 /** Which of §3.4's grants need a project, and therefore a resolved delivery. */
 const SYSTEM_PROJECT_SCOPED: ReadonlySet<Action> = new Set<Action>([
   'task.write',
   'comment.create',
+  'system.checkpoint.verify',
 ]);
 
 function canSystem(principal: SystemPrincipal, action: Action, resource: Resource): boolean {
@@ -203,17 +284,29 @@ function canSystem(principal: SystemPrincipal, action: Action, resource: Resourc
  * The project role the actor actually has, after the two structural rules in
  * SPEC §3 that are easy to get wrong:
  *
- *  - org `owner` and `admin` hold **implicit `lead`** everywhere and never need a
- *    membership row;
+ *  - an org role holding *Open every project* has an **implicit** project role
+ *    everywhere and never needs a membership row — `lead`, which is what org
+ *    `owner` always and `admin` by default hold (LAI-958);
  *  - an org `viewer` may hold **only** project role `viewer`. A membership row
  *    saying otherwise is data corruption or an escalation attempt, and is capped
- *    here rather than trusted (D-006).
+ *    here rather than trusted (D-006) — and so is the grant.
  */
 export function effectiveProjectRole(actor: Actor): ProjectRole | null {
-  if (actor.orgRole === 'owner' || actor.orgRole === 'admin') return 'lead';
-  if (actor.projectRole === null) return null;
+  const implicit = implicitProjectRole(actor.orgRole, actor.orgGrants);
+  if (implicit === 'lead') return 'lead';
+  if (actor.projectRole === null) return implicit;
   if (actor.orgRole === 'viewer') return 'viewer';
   return actor.projectRole;
+}
+
+/**
+ * Whether the actor's org role holds the capability that decides `action`
+ * (§3's grants, LAI-958). Called only for the actions a capability carries;
+ * every other §3.1 row is answered by its role alone, as before.
+ */
+function granted(actor: Actor, action: OrgAction): boolean {
+  const capability = capabilityOf(action);
+  return capability !== null && holdsCapability(actor.orgRole, actor.orgGrants, capability);
 }
 
 /** SPEC §3.1, row by row. */
@@ -222,35 +315,66 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
   const isAdminUp = orgRole === 'owner' || orgRole === 'admin';
 
   switch (action) {
-    // | Delete org data / transfer ownership | ✓ | — | — | — |
+    // | Delete org data | ✓ | — | — | — |
+    // | Transfer ownership | ✓ (session only) | — | — | — |
+    // | Change org roles | ✓ | — | — | — |
+    // | Set what each role may do | ✓ (session only) | — | — | — |
+    //
+    // Owner only and never grantable (D-102 rules 5 and 6, LAI-958): a role
+    // that could change roles or grants could give itself anything else.
     case 'org.delete':
     case 'org.transfer_ownership':
+    case 'user.set_role':
+    case 'org.permissions.manage':
       return orgRole === 'owner';
 
     // | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
+    //
+    // From here, a row that a capability carries (§3's grants, LAI-958) is
+    // answered by the grant: the owner always, and the Admin cell is the
+    // default — `granted` reads the organisation's actual matrix.
     case 'org.settings.edit':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Create / archive project | ✓ | ✓ | — | — |
+    //
+    // *Create and archive spaces* (D-104 item 6, LAI-985).
     case 'project.create':
     case 'project.archive':
-      return isAdminUp;
+      return granted(actor, action);
 
-    // | Invite users / change org roles | ✓ | ✓ (not to Owner) | — | — |
+    // | Invite users | ✓ | ✓ (as member or viewer) | — | — |
+    //
+    // An invite is a role grant with a delay on it, so only the owner invites
+    // an admin or an owner (D-102 rule 5): a role that may not change roles
+    // must not mint them either. **No `targetOrgRole` is listing or revoking**,
+    // which grants no role and is the grant's alone.
     case 'user.invite':
-      return isAdminUp;
-
-    case 'user.set_role':
-      if (orgRole === 'owner') return true;
-      // The "(not to Owner)" caveat: an Admin may set any role except Owner.
-      // Without this an Admin promotes themselves and the distinction is
-      // decorative.
-      if (orgRole === 'admin') return resource.targetOrgRole !== 'owner';
-      return false;
+      if (!granted(actor, action)) return false;
+      if (orgRole === 'owner' || resource.targetOrgRole === undefined) return true;
+      return resource.targetOrgRole === 'member' || resource.targetOrgRole === 'viewer';
 
     // | Deactivate user | ✓ | ✓ | — | — |
     case 'user.deactivate':
-      return isAdminUp;
+      return granted(actor, action);
+
+    // | Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
+    //
+    // Anyone may end their own sessions; ending somebody else's is the power
+    // to deactivate them, short of doing it (D-104 item 3, LAI-981), so it is
+    // carried with `user.deactivate` by *Deactivate people and reset access*
+    // (LAI-985).
+    case 'user.sign_out':
+      return resource.targetUserId === actor.userId || granted(actor, action);
+
+    // | Issue a password-reset link | ✓ (session only) | ✓ (session only, not for the owner) | — | — |
+    //
+    // D-104 item 4 (LAI-983): a link for the owner is the owner's account, so
+    // only the owner issues one — the `user.invite` shape, on the target's
+    // role. Carried by *Deactivate people and reset access* (LAI-985).
+    case 'user.reset_password':
+      if (!granted(actor, action)) return false;
+      return orgRole === 'owner' || resource.targetOrgRole !== 'owner';
 
     // | View the organisation | ✓ | ✓ | ✓ | ✓ |
     //
@@ -301,10 +425,23 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'token.revoke_own':
       return resource.ownerId === actor.userId;
 
+    // | Read own agents | ✓ | ✓ | ✓ | ✓ |
+    // | Register and manage own agents | ✓ (session only) | … | ✓ (session only) |
+    //
+    // D-114 (LAI-534): **a person's agents are their own**, every role, and
+    // nobody else's — the service reads and writes the caller's own rows only,
+    // as for time entries, so no row lets anyone reach another's agent. What
+    // stops an agent from managing itself or a sibling is `SESSION_ONLY_ACTIONS`.
+    case 'agent.read_own':
+    case 'agent.manage_own':
+      return true;
+
     // | List / revoke **anyone's** token | ✓ | ✓ | — | — |
+    //
+    // *Manage anyone's tokens* (D-104 item 6, LAI-985).
     case 'token.list_any':
     case 'token.revoke_any':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
     //
@@ -335,7 +472,7 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
 
     // | Export audit log | ✓ | ✓ | — | — |
     case 'audit_log.export':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Configure webhooks | ✓ (session only) | ✓ (session only) | — | — |
     case 'webhook.configure':
@@ -352,7 +489,12 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // "session only" is `tokenAllows`'s half, below. **The profile kind is not
     // an input here or anywhere in this file** (D-078): it is a label on the
     // profile, and a test holds every answer equal for a builder and a manager.
+    //
+    // Reading is *See everyone's analytics* (LAI-958); setting the kind is
+    // not part of seeing, and stays the Admin's.
     case 'profile.read':
+      return granted(actor, action);
+
     case 'profile.set_kind':
       return isAdminUp;
 
@@ -370,25 +512,39 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // profile does not, and a borrowed row would hand them a grant nobody
     // reviewed. Today the two answer alike, as D-078 and D-079 both say.
     case 'profile.activity.read':
-      return isAdminUp;
+      return granted(actor, action);
+
+    // | View a member's day, time and shared activity | ✓ (session only, not themselves) | … | — | — |
+    //
+    // D-102 rule 1 (LAI-957): My day and the local activity a person reads
+    // of their own, read for them — *See everyone's analytics*. **Not
+    // themselves**: a person reads their own on `/me`, where nothing is
+    // logged, and a self-read here would write a view log row saying they
+    // looked at themselves. An absent target is a denial, as for a rating.
+    case 'people.analytics.read':
+      return (
+        granted(actor, action) &&
+        resource.targetUserId !== undefined &&
+        resource.targetUserId !== actor.userId
+      );
 
     // | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
     //
     // The organisation's switch of D-079, its own row rather than
     // `org.settings.edit` borrowed: that one a token may hold, and this one
-    // no token may (LAI-751 review).
+    // no token may (LAI-751 review). Granted with it, as one capability.
     case 'org.developer_insights.set':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
-    // | Set own activity sharing | ✓ (session only) | … | ✓ (session only) |
+    // | Set own local-activity scope | ✓ (session only) | … | ✓ (session only) |
     // | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
     // | Read / delete own local activity | ✓ (session only) | … | ✓ (session only) |
     //
     // Every role, because it is **their own record about their own work**
-    // (D-079) — the heartbeat's argument. What stops collection is the two
-    // switches, which the service reads; what stops an agent consenting for
-    // its person is `SESSION_ONLY_ACTIONS`, below. The Viewer's send cell is
+    // (D-079) — the heartbeat's argument. What stops collection is the
+    // organisation's switch alone (D-102 amended), which the service reads;
+    // what stops an agent acting for its person is `SESSION_ONLY_ACTIONS`. The Viewer's send cell is
     // the credential's refusal, exactly as for heartbeats: a Viewer's token is
     // forced `read_only`, and sending is not a read.
     case 'activity_sharing.read_own':
@@ -408,8 +564,11 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // different things. A member reads a project's totals through §3.2's
     // `usage.read_project`, and never a per-person split.
     case 'usage.read_org':
-    case 'usage.read_people':
       return isAdminUp;
+
+    // Per person is *See everyone's analytics* (LAI-958).
+    case 'usage.read_people':
+      return granted(actor, action);
 
     case 'usage.read_own':
       return true;
@@ -439,7 +598,7 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // — a token may hold that one, and an agent must not turn on the drafting
     // of its own person's day.
     case 'org.time.set':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Read own time settings | ✓ | ✓ | ✓ | ✓ |
     // | Set own Draft my time | ✓ (session only) | … | ✓ (session only) |
@@ -510,6 +669,13 @@ function canProjectAction(
     case 'task.assign_sprint':
       return isMemberUp;
 
+    // | Create tasks | ✓ | ✓ (unless space admins only) | — |
+    //
+    // D-103 item 6: the space decides between its members and its leads.
+    // A viewer is below both, so never.
+    case 'task.create':
+      return rulesFor(actor, resource.projectId).taskCreateMinRole === 'lead' ? isLead : isMemberUp;
+
     // | Watch / unwatch a task | ✓ | ✓ | ✓ |
     //
     // Every project role, including `viewer`: anyone who may read a task may
@@ -529,13 +695,64 @@ function canProjectAction(
     case 'task.watch':
       return true;
 
-    // | Create / edit / move any task | ✓ | ✓ | — |
+    // | Edit / move any task | ✓ | ✓ | — |
     case 'task.write':
       return isMemberUp;
 
     // | Claim a task (`start_working`) | ✓ | ✓ | — |
     case 'task.claim':
       return isMemberUp;
+
+    // | Save a checkpoint on a task your agent holds | ✓ | ✓ | — |
+    //
+    // Asked of the owner's role; the agent's grant and token narrow it, and
+    // the service requires a registered agent holding the live claim (§3.2,
+    // §4.70, LAI-545) — facts about other rows, which a pure function is not
+    // given.
+    case 'task.checkpoint.create':
+      return isMemberUp;
+
+    // | Re-tag a checkpoint one of your agents saved | ✓ | ✓ | — |
+    //
+    // Also an agent's act, and it needs no claim: it changes no task, only
+    // which ref is the checkpoint's newest (§3.2, D-116 item 7). That the
+    // caller is an agent of the saving agent's owner is the service's to ask.
+    case 'task.checkpoint.retag':
+      return isMemberUp;
+
+    // | Offer a task your agent holds to another agent | ✓ | ✓ | — |
+    // | Accept a hand-off or recovery offer | ✓ | ✓ | — |
+    // | Decline a hand-off or recovery offer | ✓ | ✓ | — |
+    //
+    // Asked of the owner's role, narrowed by the agent's grant and token.
+    // That the caller is a registered agent, holds the live claim (offer) or
+    // is the offer's receiver (accept, decline) is the service's to ask, with
+    // the project's hand-off policy (§3.2, §4.73).
+    case 'task.handoff.offer':
+    case 'task.handoff.accept':
+    case 'task.handoff.decline':
+      return isMemberUp;
+
+    // | Approve a cross-owner hand-off | ✓ | task's assignee | — |
+    //
+    // `ownerId` is the task's assignee. **Never the receiving agent's owner**
+    // (`approver_is_receiver`) is a fact about another row: the service's.
+    case 'task.handoff.approve':
+      if (isLead) return true;
+      if (role === 'member') return resource.ownerId != null && resource.ownerId === actor.userId;
+      return false;
+
+    // | Cancel a hand-off offer | ✓ | own agent's | — |
+    //
+    // `ownerId` is the owner of the agent whose session sent the offer.
+    case 'task.handoff.cancel':
+      if (isLead) return true;
+      if (role === 'member') return resource.ownerId != null && resource.ownerId === actor.userId;
+      return false;
+
+    // | Edit the project's hand-off policy | ✓ | — | — |
+    case 'project.handoff_policy.edit':
+      return isLead;
 
     // | Assign a task to someone else | ✓ | ✓ | — |
     case 'task.assign_other':
@@ -584,6 +801,14 @@ function canProjectAction(
     case 'budget.set':
       return isLead;
 
+    // | Leave a project | ✓ | ✓ | ✓ |
+    //
+    // D-103 item 5. The last lead is refused by the service (409
+    // `last_lead`), not here: that is a fact about the other rows, which a
+    // pure function is not given.
+    case 'project.leave':
+      return true;
+
     default:
       return assertNever(action);
   }
@@ -606,13 +831,66 @@ function tokenAllows(actor: Actor, action: Action, resource: Resource): boolean 
   // Owner's full, unscoped token — and that is the token that matters.
   if (SESSION_ONLY_ACTIONS.has(action)) return false;
 
+  // §6.2 (audit H4): a token pinned to projects is refused org-wide admin
+  // actions, whatever the user's role. The pin used to be read only against a
+  // project, so an Admin's token pinned to one project still invited, created
+  // projects and edited the organisation — a project filter on an org
+  // credential, which §3.3 says a token never is. The classification is the
+  // one `can()` already dispatches on, never re-derived from the name.
+  if (token.projectIds !== null && isOrgAction(action) && !isPinnedTokenOrgAction(action)) {
+    return false;
+  }
+
   // A token may be pinned to a subset of the user's projects (§4.9). An action
-  // with no project is org-scoped and unaffected by that whitelist.
+  // with no project is org-scoped and answered above; one with a project is
+  // answered by the whitelist.
   if (token.projectIds !== null && resource.projectId !== undefined) {
     if (!token.projectIds.includes(resource.projectId)) return false;
   }
 
+  if (!agentGrantAllows(token, action, resource)) return false;
+
   return effectiveTokenScope(actor, token) === 'full' || isReadAction(action);
+}
+
+/** Why an agent's grant refuses an action, or `null` when it does not (D-114). */
+export type AgentRefusal = 'agent_token' | 'agent_not_granted' | 'agent_read_only';
+
+/**
+ * D-114's agent step, inside the token narrowing: effective access is the
+ * owner's permissions ∩ the agent's grant for the project ∩ the token's scope
+ * and pin. The owner's half is the role decision `can()` already made; the
+ * token's is the rest of `tokenAllows`; this is the grant's.
+ *
+ * - **An agent's token is always pinned** — to the projects its grants name —
+ *   so of the org actions it keeps only {@link AGENT_TOKEN_ORG_ACTIONS}.
+ * - **A project action needs a grant for that project**, and a `read_only`
+ *   grant keeps the reads, as a `read_only` token does.
+ * - **A project action with no project is refused**: there is no grant to read.
+ *
+ * The project's hand-off policy (proposal §4.5) is not read here: it governs
+ * delegation and transfer only, none of which exists yet, and it must never
+ * narrow a read or a comment.
+ */
+export function agentRefusal(
+  token: TokenContext,
+  action: Action,
+  resource: Resource,
+): AgentRefusal | null {
+  const agent = token.agent;
+  if (agent === undefined || agent === null) return null;
+
+  if (isOrgAction(action)) return AGENT_TOKEN_ORG_ACTIONS.has(action) ? null : 'agent_token';
+  if (!isProjectAction(action)) return 'agent_token';
+
+  const grant = resource.projectId === undefined ? undefined : agent.grants.get(resource.projectId);
+  if (grant === undefined) return 'agent_not_granted';
+  if (grant === 'read_only' && !isReadAction(action)) return 'agent_read_only';
+  return null;
+}
+
+function agentGrantAllows(token: TokenContext, action: Action, resource: Resource): boolean {
+  return agentRefusal(token, action, resource) === null;
 }
 
 /**
@@ -672,7 +950,36 @@ export function can(principal: Principal, action: Action, resource: Resource = {
 
   if (!allowed) return false;
 
+  if (!agentsMay(actor, action, resource)) return false;
+
   return tokenAllows(actor, action, resource);
+}
+
+/**
+ * D-103 item 7 (LAI-976): in a space whose agents are off, a token — which is
+ * how an agent acts (§7) — reads and does nothing else. A narrowing, like the
+ * token's own scope, so a person on a web session is never touched by it.
+ */
+export function agentsMay(actor: Actor, action: Action, resource: Resource): boolean {
+  if (actor.token === null || actor.token === undefined) return true;
+  if (!isProjectAction(action)) return true;
+  if (rulesFor(actor, resource.projectId).agentsAllowed) return true;
+  return isReadAction(action);
+}
+
+/**
+ * D-103 item 7 on its own, for a write that no project action authorises
+ * (LAI-976 review). Deactivating someone is `user.deactivate`, an org
+ * action, and it moves their tasks in every space — so the space rule has to
+ * be asked of each space those tasks are in, without asking a role question
+ * the caller's org authority has already answered.
+ */
+export function assertAgentsMay(actor: Actor, action: Action, resource: Resource): void {
+  if (agentsMay(actor, action, resource)) return;
+  throw new ApiError('forbidden', 'This space does not let agents make changes', {
+    action,
+    reason: 'agents_off',
+  });
 }
 
 /**
@@ -703,10 +1010,86 @@ export function assertCan(principal: Principal, action: Action, resource: Resour
     });
   }
 
+  // §6.2's pin (audit H4), said as such for the same reason: the person may,
+  // and the same token unpinned may, so the pin is why not — a caller told
+  // only `forbidden` cannot tell "mint a token without a project list" from
+  // "you may never". Compared against the token unpinned rather than the
+  // person, so a `read_only` pinned token refused a write is told nothing
+  // the pin did not do.
+  if (
+    !isSystem(principal) &&
+    principal.token !== null &&
+    principal.token !== undefined &&
+    principal.token.projectIds !== null &&
+    isOrgAction(action) &&
+    !isPinnedTokenOrgAction(action) &&
+    can({ ...principal, token: { ...principal.token, projectIds: null } }, action, resource)
+  ) {
+    throw new ApiError(
+      'forbidden',
+      'This token is pinned to projects and cannot act on the organisation',
+      { action, reason: 'project_pinned' },
+    );
+  }
+
+  // D-114's agent grant, said as such for the same reason: the person may,
+  // and the same token with no agent may, so the agent's grant is why not. An
+  // agent told only `forbidden` cannot tell "ask your owner for this project"
+  // from "your owner may not either".
+  if (
+    !isSystem(principal) &&
+    principal.token?.agent !== null &&
+    principal.token?.agent !== undefined
+  ) {
+    const refusal = agentRefusal(principal.token, action, resource);
+    if (
+      refusal !== null &&
+      can({ ...principal, token: { ...principal.token, agent: null } }, action, resource)
+    ) {
+      throw new ApiError('forbidden', AGENT_REFUSAL_MESSAGES[refusal], {
+        action,
+        reason: refusal,
+      });
+    }
+  }
+
+  // D-103's two space rules, said as such for the same reason: an agent told
+  // only `forbidden` cannot tell "this space keeps agents out" from "you may
+  // not", and a member cannot tell "space admins only" from either.
+  if (!isSystem(principal)) {
+    const rules = rulesFor(principal, resource.projectId);
+    const relaxed = { ...principal, projectRules: null };
+
+    if (!agentsMay(principal, action, resource) && can(relaxed, action, resource)) {
+      throw new ApiError('forbidden', 'This space does not let agents make changes', {
+        action,
+        reason: 'agents_off',
+      });
+    }
+
+    if (
+      action === 'task.create' &&
+      rules.taskCreateMinRole === 'lead' &&
+      can(relaxed, action, resource)
+    ) {
+      throw new ApiError('forbidden', 'Only space admins may create tasks in this space', {
+        action,
+        reason: 'task_create_min_role',
+        task_create_min_role: rules.taskCreateMinRole,
+      });
+    }
+  }
+
   throw new ApiError('forbidden', 'You do not have permission to perform this action', {
     action,
   });
 }
+
+const AGENT_REFUSAL_MESSAGES: Readonly<Record<AgentRefusal, string>> = {
+  agent_token: "An agent's token cannot do this; its owner can, signed in",
+  agent_not_granted: 'This agent has no access to this project',
+  agent_read_only: 'This agent may only read in this project',
+};
 
 /** Exhaustiveness guard: adding an action without a case fails the build. */
 function assertNever(value: never): false {

@@ -1,3 +1,5 @@
+import type { SelectedAgent } from './selected-agent.ts';
+import type { CheckpointVerification } from './handoffs.ts';
 import { type TaskSize } from './estimates.ts';
 import { request } from './client.ts';
 import { ApiError } from './errors.ts';
@@ -34,6 +36,67 @@ export interface TaskSendBack {
  * store's set does not compile, so a new reader cannot quietly draw an empty
  * description from a list that never carried it.
  */
+/** `TaskLiveClaimView` in `server/src/services/claims.ts`. Shown, decides nothing. */
+export interface TaskLiveClaim {
+  readonly generation: number;
+  readonly state: 'active' | 'paused';
+  readonly agent_id: string;
+  readonly session_id: string;
+  readonly lease_expires_at: number;
+  /** The holding session's. */
+  readonly last_heartbeat_at: number;
+  /**
+   * Its age by the **server's** clock as of the read (LAI-597 review). Aged on
+   * the page's own monotonic clock; never `last_heartbeat_at` against
+   * `Date.now()`. Optional: a view served before it has none, read as 0.
+   */
+  readonly heartbeat_age_ms?: number;
+  /** As of the read; `suspect_after_ms` moves it on the client's own clock. */
+  readonly connection: 'live' | 'suspect';
+  /** Heartbeats write no activity, so no event re-reads the task when this passes. */
+  readonly suspect_after_ms: number;
+  readonly device_label: string | null;
+  /**
+   * What the holding session said ran (D-118, LAI-593) — self-reported, null
+   * where it reported nothing. Optional because a view served before LAI-593
+   * has none, which reads as null.
+   */
+  readonly harness?: string | null;
+  readonly harness_version?: string | null;
+  readonly model?: string | null;
+}
+
+/**
+ * `TaskHandoffView` in `server/src/services/task-handoff.ts` (LAI-1005): the
+ * task's newest save and live hand-off in brief, with the two card states the
+ * **server** derives. The card draws them; it never derives them again.
+ */
+export interface TaskHandoff {
+  readonly checkpoint: {
+    readonly verification: CheckpointVerification;
+    readonly saved_at: number;
+    readonly pending_since: number | null;
+    readonly pending_notice: boolean;
+  } | null;
+  readonly offer: {
+    readonly kind: 'handoff' | 'recovery';
+    readonly state: 'pending_approval' | 'open';
+    readonly requires_approval: boolean;
+  } | null;
+  readonly recovery_available: boolean;
+  readonly save_needs_attention: boolean;
+  /**
+   * §9.1.1's checkpoint warning (LAI-1016): a live claim with no save for
+   * longer than `window_ms`, on the **server's** clock. Shown beside *Working*
+   * or *Connection lost*, never instead of them; decides nothing. Optional
+   * because a view served before LAI-1016 has none, which reads as null.
+   */
+  readonly no_recent_save?: {
+    readonly since: number;
+    readonly window_ms: number;
+  } | null;
+}
+
 export interface TaskSummary {
   readonly id: string;
   /** The display key humans and agents both use — `LAI-42` (§4.5). */
@@ -185,6 +248,26 @@ export interface TaskSummary {
    * `owner/repo#N` (LAI-286).
    */
   readonly external_ref: string | null;
+  /**
+   * The agent meant to do the work, or null (§4.5, D-114 item 7, LAI-535) —
+   * **not** the assignee and not a claim: selecting one opens a work request
+   * and changes nothing else. Its owner rides with it. Optional because a view
+   * served before LAI-535 has none, which reads as null
+   * (`selectedAgentOf`).
+   */
+  readonly selected_agent?: SelectedAgent | null;
+  /**
+   * The task's live agent claim — `active` or `paused` — or null (§6.4,
+   * LAI-568). An expired, released or transferred claim is never here; its
+   * history is the task's activity. Optional because a view served before
+   * LAI-568 has none, which reads as null.
+   */
+  readonly claim?: TaskLiveClaim | null;
+  /**
+   * Saves and hand-off in brief (§6.4, LAI-1005). Optional because a view
+   * served before it has none, which reads as nothing to show.
+   */
+  readonly handoff?: TaskHandoff;
   readonly created_at: number;
   readonly updated_at: number;
 }
@@ -293,6 +376,88 @@ export function listTasks(
   );
 }
 
+/**
+ * What the everyone's-work list takes (`GET /tasks`, LAI-887): the four
+ * filters the server accepts there and nothing else — it answers `422` to
+ * `priority`, `tag` or `ready` rather than ignoring them.
+ */
+export interface AllTasksFilter {
+  /** A project slug: only that space's tasks. */
+  readonly project?: string | undefined;
+  readonly status?: TaskStatus | undefined;
+  /** A user id, or the literal `none` for unassigned. */
+  readonly assignee?: string | undefined;
+  /** A sprint id, or the literal `none` for tasks in no sprint. */
+  readonly sprint?: string | undefined;
+  readonly limit?: number | undefined;
+  readonly cursor?: string | undefined;
+}
+
+/**
+ * A page of tasks from **every project the caller may read** (LAI-887,
+ * LAI-952), slim, in the per-project list's order. Which projects those are is
+ * the server's answer; the client never widens or narrows it.
+ */
+export function listAllTasks(
+  filter: AllTasksFilter = {},
+  signal?: AbortSignal,
+): Promise<Page<TaskSummary>> {
+  const params = new URLSearchParams({ fields: 'slim' });
+  setAllTasksFilters(params, filter);
+  if (filter.limit !== undefined) params.set('limit', String(filter.limit));
+  if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
+  return request<Page<TaskSummary>>(
+    `/tasks?${params.toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/** The four filters `GET /tasks` and `GET /tasks/summary` share. */
+function setAllTasksFilters(params: URLSearchParams, filter: AllTasksFilter): void {
+  if (filter.project !== undefined) params.set('project', filter.project);
+  if (filter.status !== undefined) params.set('status', filter.status);
+  if (filter.assignee !== undefined) params.set('assignee', filter.assignee);
+  if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
+}
+
+/**
+ * One share of the counted work, ranked by the server: `user_id` null is
+ * nobody's, and a final `others` entry holds everyone past the top ten.
+ */
+export interface TasksSummaryAssignee {
+  readonly user_id: string | null;
+  readonly name: string;
+  readonly count: number;
+}
+
+/** The figures for everyone's work under a filter (LAI-974). */
+export interface TasksSummary {
+  readonly total: number;
+  readonly by_status: Readonly<Record<TaskStatus, number>>;
+  readonly by_assignee: readonly TasksSummaryAssignee[];
+  readonly overdue: number;
+  readonly blocked: number;
+  readonly unassigned: number;
+}
+
+/**
+ * Counts over the same tasks `listAllTasks` pages through (LAI-974, LAI-975),
+ * so the Work page's figures are the server's and never a sum of rows the
+ * client happens to hold.
+ */
+export function getTasksSummary(
+  filter: Omit<AllTasksFilter, 'limit' | 'cursor'> = {},
+  signal?: AbortSignal,
+): Promise<TasksSummary> {
+  const params = new URLSearchParams();
+  setAllTasksFilters(params, filter);
+  const query = params.toString();
+  return request<TasksSummary>(
+    `/tasks/summary${query === '' ? '' : `?${query}`}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
 export interface CreateTaskInput {
   readonly title: string;
   readonly priority?: TaskPriority | undefined;
@@ -325,55 +490,6 @@ export function createTask(slug: string, input: CreateTaskInput): Promise<Task> 
       ...(input.parent_task_id === undefined ? {} : { parent_task_id: input.parent_task_id }),
     },
   });
-}
-
-/**
- * May this actor create a task in this project?
- *
- * `task.write` is `member`-or-`lead` (`policy/can.ts`), and the project role is
- * derived the way `effectiveProjectRole` derives it: org `owner`/`admin` hold
- * implicit lead everywhere, an org `viewer` is capped at `viewer` however their
- * membership row reads (D-006), and everyone else takes their membership.
- *
- * A display decision, not enforcement — the server decides, and if the two ever
- * disagree the server is right and this is the bug. It exists so a Viewer is not
- * shown a button that answers 403, which teaches people the app is broken rather
- * than that they lack permission.
- */
-/**
- * May this actor configure the board's columns? (LAI-266)
- *
- * `project.settings.edit` is **lead-only** (SPEC §3.2, *"Edit project settings
- * and `context_md`"*), with org owner/admin holding implicit lead — a strictly
- * narrower rule than `canCreateTask`, which admits members.
- *
- * The same display-only caveat applies as above, and the same consequence: the
- * grip, the `⋯` and the `+ Add column` tile are **absent** for anyone this
- * returns `false` for, not disabled. A control that answers 403 teaches people
- * the app is broken rather than that they lack permission (LAI-082).
- */
-export function canConfigureProject(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  if (orgRole === 'owner' || orgRole === 'admin') return true;
-  if (orgRole === 'viewer') return false;
-
-  return memberships.find((m) => m.project_id === projectId)?.role === 'lead';
-}
-
-export function canCreateTask(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  if (orgRole === 'owner' || orgRole === 'admin') return true;
-  if (orgRole === 'viewer') return false;
-
-  const membership = memberships.find((m) => m.project_id === projectId);
-  if (membership === undefined) return false;
-  return membership.role === 'lead' || membership.role === 'member';
 }
 
 /**
@@ -432,20 +548,6 @@ export function claimWinner(cause: unknown): string | undefined {
   if (typeof details !== 'object' || details === null) return undefined;
   const id = (details as { readonly assignee_id?: unknown }).assignee_id;
   return typeof id === 'string' ? id : undefined;
-}
-
-/**
- * May this actor assign a task to **someone else**?
- *
- * `task.assign_other` is member-or-lead (§3.2). Claiming for yourself is a
- * different action and a Viewer cannot do that either, since it writes.
- */
-export function canAssignOthers(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  return canCreateTask(orgRole, projectId, memberships);
 }
 
 /**
@@ -555,6 +657,12 @@ export interface TaskEdit {
   readonly planned_start?: number | null;
   /** An outside id (LAI-780); the server upper-cases it. `null` clears it. */
   readonly external_ref?: string | null;
+  /**
+   * The agent to send a work request to (LAI-535); `null` withdraws it. Only
+   * the caller's own, active agent granted `full` here is accepted — anything
+   * else is `422` with `details.reason` (`selected-agent.ts`).
+   */
+  readonly selected_agent_id?: string | null;
 }
 
 /**

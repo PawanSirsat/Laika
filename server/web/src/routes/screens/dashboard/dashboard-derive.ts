@@ -1,4 +1,5 @@
-import type { ActivityEvent } from '../../../api/activity.ts';
+import { isGrantsChange, type ActivityEvent } from '../../../api/activity.ts';
+import { WITHHELD_SELECTION } from '../../../api/selected-agent.ts';
 import type { TaskSummary, TaskStatus } from '../../../api/tasks.ts';
 
 /**
@@ -190,12 +191,33 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   'unlisted.dismissed': 'dismissed unlisted work',
   'user.deactivated': 'deactivated a member',
   'user.reactivated': 'reactivated a member',
+  // D-104 items 2 and 3 (LAI-981, LAI-982): org-level, like the two above.
+  'user.signed_out': 'signed a member out everywhere',
+  'org.ownership_transferred': 'transferred ownership of the organisation',
   // The in-process cron (LAI-431). Wording exists for all four because the
   // decision below is about *display*, not vocabulary.
   'heartbeat.pruned': 'pruned old heartbeats',
   'task.stale_flagged': 'flagged this task as stale',
   'invite.expired': 'expired an invite',
   'meeting_review.expired': 'expired a meeting review',
+  // A person picked the agent meant to do a task, or withdrew it (LAI-535,
+  // LAI-538). A work request, not work: "picked", never "assigned".
+  'task.agent_selected': 'picked an agent for a task',
+  // LAI-541's two claim verbs (LAI-543). Shown, not in FEED_SILENT, for the
+  // reason `task.stale_flagged` is: "why did the agent stop" is a question a
+  // person asks, and the expiry is its answer.
+  'task.claim_expired': 'expired an agent’s claim on a task',
+  'task.claim_reclaimed': 'reclaimed a task after its claim expired',
+  // A save and the hand-off's seven verbs (LAI-545, LAI-546, LAI-549). An
+  // offer is not a move: only an accept says the work changed hands.
+  'task.checkpoint_saved': 'saved a checkpoint on a task',
+  'task.handoff_offered': 'offered a task to another agent',
+  'task.handoff_approved': 'approved a hand-off',
+  'task.handoff_accepted': 'accepted a hand-off',
+  'task.handoff_declined': 'declined a hand-off',
+  'task.handoff_cancelled': 'withdrew a hand-off',
+  'task.handoff_expired': 'expired a hand-off nobody accepted',
+  'task.recovered': 'offered a task for recovery',
 };
 
 /**
@@ -238,6 +260,12 @@ export function shownInFeed(type: string): boolean {
 }
 
 export function describeProjectEvent(event: ActivityEvent): string {
+  if (isGrantsChange(event)) return 'changed who can do what';
+  // The server hid the agent (LAI-1011): a withdrawal must not read as a pick,
+  // so the line says what History says. The flag decides, never the nulls.
+  if (event.type === 'task.agent_selected' && event.agent_redacted === true) {
+    return WITHHELD_SELECTION;
+  }
   return PROJECT_LABELS[event.type] ?? event.type;
 }
 

@@ -32,13 +32,20 @@ import {
   ACTOR_KINDS,
   AI_PROVIDERS,
   BUDGET_SCOPES,
+  CAPABILITIES,
   CLAIM_CONFIDENCES,
   CREATED_VIA,
   CHECK_OUTCOMES,
   ESTIMATE_SOURCES,
   EVIDENCE_KINDS,
+  HANDOFF_CLOSED_REASONS,
+  HANDOFF_OFFER_KINDS,
+  HANDOFF_OFFER_STATES,
+  TASK_CLAIM_STATES,
+  CHECKPOINT_VERIFICATIONS,
   EVIDENCE_STATES,
   GITHUB_CHECK_KINDS,
+  GRANTABLE_ROLES,
   LOCAL_ACTIVITY_SCOPES,
   MEETING_REVIEW_STATUSES,
   ORG_ROLES,
@@ -46,7 +53,9 @@ import {
   PLAN_WINDOWS,
   PROFILE_KINDS,
   PROJECT_ROLES,
+  PROJECT_COLORS,
   PROJECT_VISIBILITIES,
+  TASK_CREATE_MIN_ROLES,
   REVIEW_DECISIONS,
   SIZE_LEVELS,
   SPRINT_STATUSES,
@@ -55,9 +64,14 @@ import {
   TOKEN_ALERT_KINDS,
   TOKEN_SCOPES,
   TOKEN_SESSION_SOURCES,
+  AGENT_GRANT_SCOPES,
+  AGENT_SESSION_END_REASONS,
+  AGENT_STATUSES,
   AGENT_TIME_KINDS,
+  ANALYTICS_VIEW_KINDS,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
+  TIME_ENTRY_KINDS,
   TIME_ENTRY_SOURCES,
   TIME_MODES,
   TIME_REVISION_CHANGES,
@@ -121,16 +135,24 @@ export const users = sqliteTable(
      */
     profileKind: text('profile_kind', { enum: PROFILE_KINDS }).notNull().default('builder'),
     /**
-     * The developer's own consent to send local activity counts (§4.1, D-079,
-     * LAI-751). 0 by default. Set only by the person, from a web session —
-     * never by an admin and never with a token, because a token is how an
-     * agent acts and an agent must not be able to switch this on.
+     * What was the developer's own consent to send local activity counts
+     * (§4.1, D-079, LAI-751). 0 by default. **No longer read and no longer
+     * set** (D-102 amended, LAI-963): the organisation's Developer insights
+     * decides collection alone. The column keeps what each person last chose.
      */
     shareLocalActivity: integer('share_local_activity').notNull().default(0),
     /** Which repositories their collector counts in (§4.1, D-079). */
     localActivityScope: text('local_activity_scope', { enum: LOCAL_ACTIVITY_SCOPES })
       .notNull()
       .default('agent-repos'),
+    /**
+     * The latest activity of a session that has since been ended — by
+     * deactivation or a forced sign-out (§4.1, D-104 item 3, LAI-981). Ending
+     * a session deletes its row, and this keeps *when they were last seen*
+     * from going with it. `last_seen_at` on the API is the later of this and
+     * the person's live sessions.
+     */
+    lastSeenAt: integer('last_seen_at'),
 
     // --- required by better-auth's `user` model (LAI-005) ---
     // This table *is* better-auth's user table, remapped: one identity, one row.
@@ -191,10 +213,10 @@ export const orgs = sqliteTable(
      */
     presenceEnabled: integer('presence_enabled').notNull().default(1),
     /**
-     * The org's half of D-079's two switches (§4.2, LAI-751). Default **0**.
-     * With it off nothing local is collected for anybody, whatever each
-     * developer has chosen; with it on, only the developers who turned on
-     * sharing themselves send anything.
+     * The organisation's Developer insights (§4.2, LAI-751). Default **0**.
+     * Since D-102 (amended) it decides alone: off, nothing local is collected
+     * for anybody; on, every connected machine's activity is collected,
+     * whatever its developer once chose.
      */
     developerInsights: integer('developer_insights').notNull().default(0),
     aiProvider: text('ai_provider', { enum: AI_PROVIDERS }),
@@ -265,6 +287,13 @@ export const projects = sqliteTable(
     /** The shared brief served to agents by `get_project_context` (§7.1). */
     contextMd: text('context_md').notNull().default(''),
     /**
+     * The current revision of `context_md` (§4.68, proposal §4.6, LAI-555):
+     * `0` until the first write, then the `revision` of the newest
+     * `project_context_revisions` row, whose `body` is `context_md`. A write
+     * names the revision it replaces, and a stale one is `409`.
+     */
+    contextRevision: integer('context_revision').notNull().default(0),
+    /**
      * Hide finished work from the board once it is this many days old
      * (LAI-266). `null` means never, and is the default.
      *
@@ -279,6 +308,29 @@ export const projects = sqliteTable(
      */
     boardHideDoneDays: integer('board_hide_done_days'),
     archivedAt: integer('archived_at'),
+    /** The design's palette (D-103 item 4); `null` until somebody picks one. */
+    color: text('color', { enum: PROJECT_COLORS }),
+    /** Who may create tasks here (D-103 item 6): `member` (default) or `lead`. */
+    taskCreateMinRole: text('task_create_min_role', { enum: TASK_CREATE_MIN_ROLES })
+      .notNull()
+      .default('member'),
+    /** Whether agent tokens may write here (D-103 item 7). Reads are never refused. */
+    agentsAllowed: integer('agents_allowed', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * Every prefix this project has carried before its current one, as a JSON
+     * array of upper-case strings (D-103 item 3, LAI-976).
+     *
+     * A task stores its `number`, never its key: `LAI-42` is `prefix` and
+     * `number` joined at read time. So a new prefix re-keys every task, and
+     * this list is what keeps `LAI-42` naming the same task afterwards — a key
+     * is resolved against the current prefix first and these second. Unique
+     * across the org with `prefix` (in code: a CHECK cannot see another row),
+     * so an old key can never come to name another project's task.
+     */
+    formerPrefixes: text('former_prefixes', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
     createdAt,
     updatedAt,
   },
@@ -286,7 +338,16 @@ export const projects = sqliteTable(
     uniqueIndex('projects_slug_unique').on(t.slug),
     uniqueIndex('projects_org_prefix_unique').on(t.orgId, t.prefix),
     index('projects_org_id_idx').on(t.orgId),
+    // `loadActor` reads the spaces whose rules are not the defaults on every
+    // request (D-103, LAI-976); this keeps that two searches, never a scan.
+    index('projects_rules_idx').on(t.taskCreateMinRole, t.agentsAllowed),
     check('projects_visibility_check', oneOf('visibility', PROJECT_VISIBILITIES)),
+    check('projects_color_check', oneOfOrNull('color', PROJECT_COLORS)),
+    check(
+      'projects_task_create_min_role_check',
+      oneOf('task_create_min_role', TASK_CREATE_MIN_ROLES),
+    ),
+    check('projects_agents_allowed_check', sql.raw('agents_allowed IN (0, 1)')),
   ],
 );
 
@@ -541,6 +602,22 @@ export const tasks = sqliteTable(
      * recompute that would change nothing costs nothing.
      */
     estimateHash: text('estimate_hash'),
+    /**
+     * The agent intended to do the work (§4.5, D-114 item 7, LAI-535) — **not**
+     * who holds it (`assignee_id`) and not who is working it (a claim,
+     * LAI-541). Selecting one opens a work request in `handoff_offers`; it
+     * claims nothing and starts nothing. `set null`: the selection is a wish,
+     * and a task outlives the agent it was wished on.
+     */
+    selectedAgentId: text('selected_agent_id').references((): AnySQLiteColumn => agents.id, {
+      onDelete: 'set null',
+    }),
+    /**
+     * Completed hand-offs (§4.5, §4.73, LAI-546): an accepted `handoff` or
+     * `recovery` adds one in the accept's transaction; a work request does
+     * not. Compared with the policy's `max_handoffs`. Never decremented.
+     */
+    handoffCount: integer('handoff_count').notNull().default(0),
     createdAt,
     updatedAt,
   },
@@ -562,6 +639,7 @@ export const tasks = sqliteTable(
     index('tasks_estimate_id_idx').on(t.estimateId),
     index('tasks_estimate_at_start_id_idx').on(t.estimateAtStartId),
     index('tasks_size_override_id_idx').on(t.sizeOverrideId),
+    index('tasks_selected_agent_id_idx').on(t.selectedAgentId),
     // A card found by its outside id, and the prefixes of the ids served
     // (LAI-780). Partial: most tasks carry none, and neither read wants them.
     index('tasks_external_ref_idx')
@@ -727,6 +805,31 @@ export const activity = sqliteTable(
     actorKind: text('actor_kind', { enum: ACTOR_KINDS }).notNull(),
     /** *Which* token, for audit (§4.8). */
     actorTokenId: text('actor_token_id'),
+    /**
+     * *Which* registered agent wrote this row (§4.8, D-114 item 4, LAI-535),
+     * read from `tokens.agent_id` by `appendActivity` and from nothing else.
+     * Null for a session, a legacy token, a system actor and **every row
+     * written before the column existed** — never back-filled with a guess.
+     * `restrict` for LAI-135's reason: a `set null` would be an UPDATE.
+     */
+    agentId: text('agent_id').references((): AnySQLiteColumn => agents.id, {
+      onDelete: 'restrict',
+    }),
+    /**
+     * The agent session the row was written under, and what that session
+     * reported about itself **at that moment** (D-118, LAI-586) — a snapshot,
+     * because a heartbeat may change the session's model afterwards and this
+     * row must keep saying what ran when it was written. Read by the activity
+     * writer from the session holding the agent's live claim on the task, or
+     * from the session a claim was just taken under — never from a request.
+     * Null for anything not written by an agent session, and **every row
+     * written before the columns existed: never back-filled**. No foreign key:
+     * the snapshot is the record, and an append-only row cannot be nulled.
+     */
+    agentSessionId: text('agent_session_id'),
+    sessionHarness: text('session_harness'),
+    sessionHarnessVersion: text('session_harness_version'),
+    sessionModel: text('session_model'),
     type: text('type', { enum: ACTIVITY_TYPES }).notNull(),
     payloadJson: text('payload_json').notNull().default('{}'),
     createdAt,
@@ -736,6 +839,7 @@ export const activity = sqliteTable(
     index('activity_task_created_at_idx').on(t.taskId, t.createdAt),
     index('activity_org_created_at_idx').on(t.orgId, t.createdAt),
     index('activity_actor_id_idx').on(t.actorId),
+    index('activity_agent_id_idx').on(t.agentId),
     check('activity_actor_kind_check', oneOf('actor_kind', ACTOR_KINDS)),
     check('activity_type_check', oneOf('type', ACTIVITY_TYPES)),
     // D-022, both directions: a system event has no actor, and a non-system
@@ -785,11 +889,633 @@ export const tokens = sqliteTable(
     expiresAt: integer('expires_at'),
     revokedAt: integer('revoked_at'),
     createdAt,
+    /**
+     * The registered agent this token is the credential of (§4.9, D-114), or
+     * null for a legacy token — which keeps working exactly as before.
+     *
+     * **Cascade, never set null.** A null here means "a person's own token",
+     * the wider credential: setting it null when an agent row went away would
+     * hand that agent's token its owner's whole authority. Agents are revoked,
+     * not deleted, so the cascade runs only when the owner's row itself goes.
+     */
+    agentId: text('agent_id').references((): AnySQLiteColumn => agents.id, {
+      onDelete: 'cascade',
+    }),
   },
   (t) => [
     uniqueIndex('tokens_token_hash_unique').on(t.tokenHash),
     index('tokens_user_id_idx').on(t.userId),
+    index('tokens_agent_id_idx').on(t.agentId),
     check('tokens_scope_check', oneOf('scope', TOKEN_SCOPES)),
+  ],
+);
+
+// ---------------------------------------------------------- §4.63 agents
+
+/**
+ * A registered agent (§4.63, D-114): a named identity owned by one person,
+ * acting through its own tokens and never with more access than its owner.
+ *
+ * `harness` and `device_label` are **self-reported** and shown as such; they
+ * decide nothing. `harness` is an `AGENT_CLIENTS` slug, validated at the API
+ * and deliberately left without a CHECK: the client list grows, and a CHECK
+ * would make every new client a rebuild of a table whose rows `tokens`
+ * cascades from.
+ */
+export const agents = sqliteTable(
+  'agents',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    displayName: text('display_name').notNull(),
+    harness: text('harness').notNull(),
+    deviceLabel: text('device_label'),
+    status: text('status', { enum: AGENT_STATUSES }).notNull().default('active'),
+    createdAt,
+    revokedAt: integer('revoked_at'),
+    /** Stamped on authenticated requests, at most once a minute (§4.63). */
+    lastSeenAt: integer('last_seen_at'),
+  },
+  (t) => [
+    index('agents_org_id_idx').on(t.orgId),
+    index('agents_owner_user_id_idx').on(t.ownerUserId),
+    check('agents_status_check', oneOf('status', AGENT_STATUSES)),
+  ],
+);
+
+// --------------------------------------------- §4.67 recognised_agent_devices
+
+/** The owner's confirmed labels; no row means unrecognised (LAI-590). */
+export const recognisedAgentDevices = sqliteTable(
+  'recognised_agent_devices',
+  {
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Trimmed, lower case; the empty key groups null/blank labels. */
+    labelKey: text('label_key').notNull(),
+    createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.ownerUserId, t.labelKey] })],
+);
+
+// ---------------------------------------------- §4.64 agent_project_grants
+
+/**
+ * What one agent may do in one project (§4.64, D-114). No row is no access:
+ * an agent reaches only the projects it holds a grant for, and a `read_only`
+ * grant keeps the reads. The owner's own role still caps both.
+ */
+export const agentProjectGrants = sqliteTable(
+  'agent_project_grants',
+  {
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    scope: text('scope', { enum: AGENT_GRANT_SCOPES }).notNull(),
+    createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.agentId, t.projectId] }),
+    index('agent_project_grants_project_id_idx').on(t.projectId),
+    check('agent_project_grants_scope_check', oneOf('scope', AGENT_GRANT_SCOPES)),
+  ],
+);
+
+// ---------------------------------------------------- §4.73 handoff_offers
+
+/**
+ * Work offered to an agent (§4.73, proposal §4.4, D-114 item 7). Three kinds:
+ * a **work request** (selecting an agent opens one; LAI-535), a **hand-off**
+ * (the session holding the live claim offers the task on) and a **recovery**
+ * (the system offers a task whose claim expired; LAI-546). An orphan is
+ * offered, never assigned.
+ *
+ * The checkpoint is a link (`ON DELETE SET NULL`) and a snapshot
+ * (`checkpoint_commit_sha`, `note_hash`), so a closed offer still says what
+ * it carried after retention removed the checkpoint (§4.70).
+ *
+ * The two partial unique indexes are the rules: at most one open work request
+ * per task, and **one live hand-off or recovery per task**.
+ */
+export const handoffOffers = sqliteTable(
+  'handoff_offers',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: HANDOFF_OFFER_KINDS }).notNull(),
+    /** The sender's key; null for what the server makes (a work request, a recovery). */
+    idempotencyKey: text('idempotency_key'),
+    /** The sending session, which held the live claim. Null unless a hand-off. */
+    fromSessionId: text('from_session_id').references((): AnySQLiteColumn => agentSessions.id, {
+      onDelete: 'restrict',
+    }),
+    /** The claim the offer moves on from: the sender's live one, or the expired one. */
+    fromClaimGeneration: integer('from_claim_generation'),
+    /** Null means any eligible agent — only an unnamed recovery's case (§4.73). */
+    toAgentId: text('to_agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+    checkpointId: text('checkpoint_id').references((): AnySQLiteColumn => taskCheckpoints.id, {
+      onDelete: 'set null',
+    }),
+    /** Copied when the offer is made and never changed; survives retention. */
+    checkpointCommitSha: text('checkpoint_commit_sha'),
+    /** The sender's reason, at most 500 characters. Untrusted data (D-115 item 7). */
+    reason: text('reason'),
+    /** SHA-256 of the checkpoint's `summary` as offered. */
+    noteHash: text('note_hash'),
+    requiresApproval: integer('requires_approval', { mode: 'boolean' }).notNull().default(false),
+    approvedByUserId: text('approved_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    approvedAt: integer('approved_at'),
+    state: text('state', { enum: HANDOFF_OFFER_STATES }).notNull(),
+    /** Now + the policy's `offer_ttl_minutes`; null for a work request, which never expires. */
+    expiresAt: integer('expires_at'),
+    acceptedSessionId: text('accepted_session_id').references(
+      (): AnySQLiteColumn => agentSessions.id,
+      { onDelete: 'restrict' },
+    ),
+    /** The claim the accept created — so the claim history names its offer. */
+    acceptedClaimId: text('accepted_claim_id').references((): AnySQLiteColumn => taskClaims.id, {
+      onDelete: 'restrict',
+    }),
+    /** The receiver's acknowledgement (D-116 item 8), not proof. */
+    receiverCommitSha: text('receiver_commit_sha'),
+    closedReason: text('closed_reason', { enum: HANDOFF_CLOSED_REASONS }),
+    /** The person behind it: the selector, the sender's owner, or the task's assignee. */
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt,
+    /** When it left a live state; null while it is live. */
+    closedAt: integer('closed_at'),
+  },
+  (t) => [
+    index('handoff_offers_task_id_idx').on(t.taskId),
+    index('handoff_offers_to_agent_state_idx').on(t.toAgentId, t.state),
+    index('handoff_offers_created_by_user_id_idx').on(t.createdByUserId),
+    // Every foreign key is indexed (§4 preamble).
+    index('handoff_offers_from_session_id_idx').on(t.fromSessionId),
+    index('handoff_offers_checkpoint_id_idx').on(t.checkpointId),
+    index('handoff_offers_approved_by_user_id_idx').on(t.approvedByUserId),
+    index('handoff_offers_accepted_session_id_idx').on(t.acceptedSessionId),
+    index('handoff_offers_accepted_claim_id_idx').on(t.acceptedClaimId),
+    // The expiry scan's read.
+    index('handoff_offers_state_expires_idx').on(t.state, t.expiresAt),
+    uniqueIndex('handoff_offers_idempotency_key_idx')
+      .on(t.idempotencyKey)
+      .where(sql`idempotency_key IS NOT NULL`),
+    uniqueIndex('handoff_offers_one_open_work_request')
+      .on(t.taskId)
+      .where(sql`kind = 'work_request' AND state = 'open'`),
+    uniqueIndex('handoff_offers_one_live_handoff')
+      .on(t.taskId)
+      .where(sql`kind IN ('handoff', 'recovery') AND state IN ('pending_approval', 'open')`),
+    check('handoff_offers_kind_check', oneOf('kind', HANDOFF_OFFER_KINDS)),
+    check('handoff_offers_state_check', oneOf('state', HANDOFF_OFFER_STATES)),
+    check(
+      'handoff_offers_closed_reason_check',
+      oneOfOrNull('closed_reason', HANDOFF_CLOSED_REASONS),
+    ),
+    check(
+      'handoff_offers_approval_check',
+      sql`(approved_by_user_id IS NULL) = (approved_at IS NULL)`,
+    ),
+    check('handoff_offers_reason_check', sql`reason IS NULL OR length(reason) <= 500`),
+  ],
+);
+
+// ----------------------------------------- §4.74 project_handoff_policies
+
+/**
+ * A project's hand-off settings (§4.74, proposal §4.5). **No row means the
+ * defaults** — the column defaults below — so an existing project needs no
+ * backfill. It governs who may be offered work or accept a transfer, and
+ * never narrows a read or a comment (D-114 item 3).
+ */
+export const projectHandoffPolicies = sqliteTable(
+  'project_handoff_policies',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    allowOtherOwners: integer('allow_other_owners', { mode: 'boolean' }).notNull().default(false),
+    crossOwnerRequiresApproval: integer('cross_owner_requires_approval', { mode: 'boolean' })
+      .notNull()
+      .default(true),
+    maxHandoffs: integer('max_handoffs').notNull().default(3),
+    offerTtlMinutes: integer('offer_ttl_minutes').notNull().default(30),
+    updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    uniqueIndex('project_handoff_policies_project_id_idx').on(t.projectId),
+    index('project_handoff_policies_updated_by_idx').on(t.updatedBy),
+    check('project_handoff_policies_max_handoffs_check', sql`max_handoffs BETWEEN 0 AND 20`),
+    check('project_handoff_policies_offer_ttl_check', sql`offer_ttl_minutes BETWEEN 5 AND 1440`),
+  ],
+);
+
+// --------------------------------------------------- §4.65 agent_sessions
+
+/**
+ * One running process of a registered agent (§4.65, proposal §4.2, LAI-541).
+ *
+ * Opened by `POST /agent-sessions` or by an agent token's `start_working`,
+ * kept alive by heartbeats, ended by the agent or by revoking it (D-114 item
+ * 2). A session holds claims (§4.66); it never holds a task by itself.
+ * `client_version` and `model` are **self-reported** and decide nothing.
+ */
+export const agentSessions = sqliteTable(
+  'agent_sessions',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    /** The credential that opened it. A rotation does not end it (§4.65). */
+    tokenId: text('token_id')
+      .notNull()
+      .references(() => tokens.id, { onDelete: 'cascade' }),
+    startedAt: integer('started_at').notNull(),
+    lastHeartbeatAt: integer('last_heartbeat_at').notNull(),
+    endedAt: integer('ended_at'),
+    endReason: text('end_reason', { enum: AGENT_SESSION_END_REASONS }),
+    clientVersion: text('client_version'),
+    /**
+     * What actually ran, **self-reported** (D-118, LAI-586): the underlying
+     * harness — `codex` under a manager that registered as `omnigent` — its
+     * version, and the model, which a heartbeat may change. Shown, labelled as
+     * self-reported, and never read by `can()`, the fence or a claim.
+     */
+    harness: text('harness'),
+    harnessVersion: text('harness_version'),
+    model: text('model'),
+    /**
+     * Unwritten (LAI-555): a revision is per project and a session is not, so
+     * delivery is kept per session **and project** in §4.69 instead.
+     */
+    contextRevisionSeen: integer('context_revision_seen'),
+  },
+  (t) => [
+    index('agent_sessions_agent_id_idx').on(t.agentId),
+    index('agent_sessions_token_id_idx').on(t.tokenId),
+    check('agent_sessions_end_reason_check', oneOfOrNull('end_reason', AGENT_SESSION_END_REASONS)),
+    // Both or neither: an ended session says why, and a live one has no reason.
+    check('agent_sessions_end_check', sql`(ended_at IS NULL) = (end_reason IS NULL)`),
+  ],
+);
+
+// ------------------------------------------------------ §4.66 task_claims
+
+/**
+ * An agent session's exclusive hold on a task (§4.66, proposal §4.2, LAI-541).
+ *
+ * **One live row per task** — the partial unique index is the lock. Each new
+ * claim on a task takes the next `generation`, which only goes up, and every
+ * task change the holder makes carries it (`X-Laika-Claim-Generation`,
+ * `claim_generation`); a stale one is `409`. `lease_expires_at` is server
+ * time, renewed by heartbeats; the expiry scan marks a lapsed claim `expired`,
+ * and **nothing ever makes it live again** — reclaiming inserts a new row.
+ */
+export const taskClaims = sqliteTable(
+  'task_claims',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'cascade' }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    generation: integer('generation').notNull(),
+    leaseExpiresAt: integer('lease_expires_at').notNull(),
+    state: text('state', { enum: TASK_CLAIM_STATES }).notNull(),
+    createdAt,
+    /** When it stopped being live; null while it is. */
+    endedAt: integer('ended_at'),
+  },
+  (t) => [
+    uniqueIndex('task_claims_task_generation_idx').on(t.taskId, t.generation),
+    uniqueIndex('task_claims_one_live_per_task')
+      .on(t.taskId)
+      .where(sql`state IN ('active', 'paused')`),
+    index('task_claims_session_id_idx').on(t.sessionId),
+    index('task_claims_agent_id_idx').on(t.agentId),
+    index('task_claims_state_lease_idx').on(t.state, t.leaseExpiresAt),
+    check('task_claims_state_check', oneOf('state', TASK_CLAIM_STATES)),
+    check('task_claims_generation_check', sql`generation >= 1`),
+  ],
+);
+
+// ------------------------------------------ §4.68 project_context_revisions
+
+/**
+ * Every revision of a project's context document (§4.68, proposal §4.6,
+ * LAI-555). **Immutable**: triggers refuse `UPDATE`, an `INSERT OR REPLACE`
+ * over an existing id, and `DELETE` while the project exists. The newest row's
+ * `body` is `projects.context_md`, and its `revision` is
+ * `projects.context_revision`.
+ *
+ * `author_id` and `agent_id` are **copies, no FK**: history says who wrote it,
+ * and a later change to a person or an agent must not rewrite it. Both are
+ * null on revision 1 of a document that existed before revisions did.
+ */
+export const projectContextRevisions = sqliteTable(
+  'project_context_revisions',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    body: text('body').notNull(),
+    authorId: text('author_id'),
+    agentId: text('agent_id'),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('project_context_revisions_project_revision_unique').on(t.projectId, t.revision),
+    check('project_context_revisions_revision_check', sql`revision >= 1`),
+  ],
+);
+
+// ------------------------------------------ §4.69 agent_session_context_deliveries
+
+/**
+ * The context revision Laika last **delivered** to an agent session, per
+ * project (§4.69, proposal §4.6, LAI-555). Delivered means the server sent
+ * that revision — the whole document or a diff ending at it — in answer to a
+ * call naming the session. It never means the agent read or understood it.
+ *
+ * Per project because a session may work in more than one, and a revision
+ * number means nothing without its project — which is why
+ * `agent_sessions.context_revision_seen` stays unwritten.
+ */
+export const agentSessionContextDeliveries = sqliteTable(
+  'agent_session_context_deliveries',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    deliveredAt: integer('delivered_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.projectId] }),
+    index('agent_session_context_deliveries_project_id_idx').on(t.projectId),
+  ],
+);
+
+// ------------------------------------------------- §4.70 task_checkpoints
+
+/** A manifest entry (§4.70): a path and its line counts — **names only**. */
+export interface CheckpointManifestEntry {
+  path: string;
+  added: number;
+  removed: number;
+}
+
+/** The structured continuation note (§4.70, D-115 item 3): five strings. */
+export interface CheckpointSummary {
+  work_done: string;
+  next_step: string;
+  decisions: string;
+  open_questions: string;
+  failing: string;
+}
+
+/**
+ * A save an agent registers **on purpose** inside a task its session holds
+ * (§4.70, D-115, LAI-545). Not a heartbeat and not telemetry (D-005).
+ *
+ * **The saved fields are never changed**: only `verification` and
+ * `verified_at` move, and only from a signed push delivery (§10.1, D-116
+ * item 3) — no API field or tool argument reaches them. There is **no
+ * column** for file contents, a diff, a prompt or a transcript (D-115 item
+ * 4): `manifest` is paths and line counts, `summary` the five-field note.
+ */
+export const taskCheckpoints = sqliteTable(
+  'task_checkpoints',
+  {
+    /** Minted by the helper before its push: the last segment of the tag. */
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'restrict' }),
+    claimGeneration: integer('claim_generation').notNull(),
+    /** `owner/name`, lowercased — the project's configured repo, and no other. */
+    repo: text('repo').notNull(),
+    branch: text('branch').notNull(),
+    /** The first tag, `refs/tags/laika-ckpt/<task>/<id>`. Never changes. */
+    remoteRef: text('remote_ref').notNull(),
+    commitSha: text('commit_sha').notNull(),
+    manifest: text('manifest', { mode: 'json' }).$type<CheckpointManifestEntry[]>().notNull(),
+    summary: text('summary', { mode: 'json' }).$type<CheckpointSummary>(),
+    summaryCommitSha: text('summary_commit_sha'),
+    /** Written by nothing until Phase 4 (proposal §4.6). */
+    contextRevision: integer('context_revision'),
+    createdAt,
+    verifiedAt: integer('verified_at'),
+    /** The newest ref's state (§4.71), copied in the transaction that changes it. */
+    verification: text('verification', { enum: CHECKPOINT_VERIFICATIONS }).notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+  },
+  (t) => [
+    index('task_checkpoints_task_created_idx').on(t.taskId, t.createdAt),
+    index('task_checkpoints_session_id_idx').on(t.sessionId),
+    uniqueIndex('task_checkpoints_idempotency_key_idx').on(t.idempotencyKey),
+    check('task_checkpoints_verification_check', oneOf('verification', CHECKPOINT_VERIFICATIONS)),
+    check('task_checkpoints_generation_check', sql`claim_generation >= 1`),
+    check('task_checkpoints_commit_sha_check', sql`length(commit_sha) = 40`),
+    // A note and the commit it describes come together, or neither does.
+    check('task_checkpoints_summary_check', sql`(summary IS NULL) = (summary_commit_sha IS NULL)`),
+  ],
+);
+
+// -------------------------------------------------- §4.71 checkpoint_refs
+
+/**
+ * Every Git ref a checkpoint has (§4.71, D-116 items 4 and 7): the first tag
+ * at revision 0, and each re-tag `…-r<n>`. **Each ref is judged on its own**,
+ * from its §4.72 transitions; a checkpoint's state is its newest ref's.
+ */
+export const checkpointRefs = sqliteTable(
+  'checkpoint_refs',
+  {
+    id: text('id').primaryKey(),
+    checkpointId: text('checkpoint_id')
+      .notNull()
+      .references(() => taskCheckpoints.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    /** The checkpoint's repo — with `ref`, the name §4.72's deliveries are matched by. */
+    repo: text('repo').notNull(),
+    /** The full ref, `refs/tags/laika-ckpt/<task>/<id>` or `…-r<n>`. */
+    ref: text('ref').notNull(),
+    state: text('state', { enum: CHECKPOINT_VERIFICATIONS }).notNull(),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('checkpoint_refs_checkpoint_revision_idx').on(t.checkpointId, t.revision),
+    uniqueIndex('checkpoint_refs_repo_ref_idx').on(t.repo, t.ref),
+    check('checkpoint_refs_state_check', oneOf('state', CHECKPOINT_VERIFICATIONS)),
+    check('checkpoint_refs_revision_check', sql`revision >= 0`),
+  ],
+);
+
+// --------------------------------------- §4.72 checkpoint_ref_transitions
+
+/**
+ * One row per signed `push` delivery that moved a `laika-ckpt/` ref in a
+ * configured repo (§4.72, D-116 items 4 and 5, D-116a). Append-only.
+ *
+ * **Keyed by the ref's name — `repo` and `ref` — not by a §4.71 row**, so a
+ * delivery that beats its checkpoint's registration (push, then register:
+ * the normal race) is stored durably and counted the moment the ref is
+ * registered. `delivery_id` is unique and written **in the transaction that
+ * applies the transition**, so a delivery that was applied is ignored when it
+ * repeats and one that failed before it was applied is processed when
+ * redelivered.
+ */
+export const checkpointRefTransitions = sqliteTable(
+  'checkpoint_ref_transitions',
+  {
+    id: text('id').primaryKey(),
+    /** `owner/name`, lowercased, as the delivery named it. */
+    repo: text('repo').notNull(),
+    ref: text('ref').notNull(),
+    deliveryId: text('delivery_id').notNull(),
+    beforeSha: text('before_sha').notNull(),
+    afterSha: text('after_sha').notNull(),
+    /** Receipt time, which decides nothing. */
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('checkpoint_ref_transitions_delivery_id_idx').on(t.deliveryId),
+    index('checkpoint_ref_transitions_repo_ref_idx').on(t.repo, t.ref),
+  ],
+);
+
+// ----------------------------------------- §4.75 agent_checkpoint_consents
+
+/**
+ * The owner's consent to **automatic** checkpoints for one agent (§4.75,
+ * D-115 item 2). Manual saves never need it; the server records what is
+ * registered and does not see which kind a save was (§6.4).
+ */
+export const agentCheckpointConsents = sqliteTable(
+  'agent_checkpoint_consents',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    givenByUserId: text('given_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    givenAt: integer('given_at').notNull(),
+    withdrawnAt: integer('withdrawn_at'),
+  },
+  (t) => [uniqueIndex('agent_checkpoint_consents_agent_id_idx').on(t.agentId)],
+);
+
+// ------------------------------------------------------- §4.76 agent_events
+
+/**
+ * The versioned envelope of one hand-off, work-request, recovery or context
+ * event (§4.76, proposal §4.6, LAI-553): one row per `activity` row of those
+ * verbs, written by `appendActivity` **in the same transaction**, so an
+ * envelope exists exactly when its activity row does. `detail_json` is frozen
+ * at that moment — the offer may change later; what it said then does not.
+ * Never updated: `db/agent-events.ts` exports no update.
+ */
+export const agentEvents = sqliteTable(
+  'agent_events',
+  {
+    activityId: text('activity_id')
+      .primaryKey()
+      .references(() => activity.id, { onDelete: 'cascade' }),
+    /** The activity row's sequence — the ordering cursor (§11.5). */
+    seq: integer('seq').notNull(),
+    schemaVersion: integer('schema_version').notNull(),
+    /** The offer it is about, a copy — no FK, so the envelope outlives it. */
+    offerId: text('offer_id'),
+    detailJson: text('detail_json').notNull(),
+  },
+  (t) => [
+    uniqueIndex('agent_events_seq_idx').on(t.seq),
+    index('agent_events_offer_id_idx').on(t.offerId),
+  ],
+);
+
+// ---------------------------------------------- §4.77 agent_event_deliveries
+
+/**
+ * Where one event stands for one receiving agent (§4.77, LAI-553):
+ * `available` from the moment the row exists (written with the event),
+ * `received` when the agent's helper acknowledges it, `presented` when a hook
+ * showed it to the agent. `accepted` is not stored: it is the offer's own
+ * state (§4.73). **None of them claims the model understood anything.**
+ */
+export const agentEventDeliveries = sqliteTable(
+  'agent_event_deliveries',
+  {
+    activityId: text('activity_id')
+      .notNull()
+      .references(() => agentEvents.activityId, { onDelete: 'cascade' }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    /**
+     * A copy of the event's project — an activity row never changes, so the
+     * copy never drifts. A poll reads each project the agent may read now as
+     * its own index range (LAI-553 review 3), so a project it may not read
+     * costs it nothing, however much is waiting there.
+     */
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** A copy of the event's sequence, so an agent's deliveries page in order. */
+    seq: integer('seq').notNull(),
+    availableAt: integer('available_at').notNull(),
+    receivedAt: integer('received_at'),
+    /** The session that acknowledged it, a copy — no FK. */
+    receivedSessionId: text('received_session_id'),
+    presentedAt: integer('presented_at'),
+    presentedSessionId: text('presented_session_id'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.activityId, t.agentId] }),
+    index('agent_event_deliveries_agent_project_seq_idx').on(t.agentId, t.projectId, t.seq),
+    // An `undelivered` poll reads only what is still unreceived (LAI-553
+    // review 2): from cursor 0, it never walks an agent's received history.
+    index('agent_event_deliveries_agent_project_undelivered_idx')
+      .on(t.agentId, t.projectId, t.seq)
+      .where(sql`received_at IS NULL`),
+    index('agent_event_deliveries_project_id_idx').on(t.projectId),
+    check(
+      'agent_event_deliveries_presented_after_received_check',
+      sql`presented_at IS NULL OR received_at IS NOT NULL`,
+    ),
   ],
 );
 
@@ -2153,6 +2879,12 @@ export const orgTimeSettings = sqliteTable(
      * The month close that sets it is LAI-789's.
      */
     closedThrough: text('closed_through'),
+    /**
+     * The organisation's break schedule (D-101, LAI-955): a JSON list of
+     * `{ label, start, end, days }`, wall-clock `HH:MM` with no zone, or null
+     * — no schedule. Display only: nothing that drafts or counts time reads it.
+     */
+    breaks: text('breaks'),
     updatedAt,
   },
   () => [check('org_time_settings_mode_check', oneOf('mode', TIME_MODES))],
@@ -2163,7 +2895,7 @@ export const orgTimeSettings = sqliteTable(
 /**
  * A person's own *Draft my time* (§4.46, D-088 item 5, LAI-787). **No row is
  * off.** Set only by the person, from a web session — never by an admin and
- * never with a token, as `share_local_activity` is.
+ * never with a token, as `share_local_activity` was until D-102 (amended).
  */
 export const userTimeSettings = sqliteTable(
   'user_time_settings',
@@ -2172,6 +2904,12 @@ export const userTimeSettings = sqliteTable(
       .primaryKey()
       .references(() => users.id, { onDelete: 'cascade' }),
     draftMyTime: integer('draft_my_time').notNull().default(0),
+    /**
+     * Where the person is (§4.46, D-106, LAI-895): the IANA zone of a place
+     * from the client's list, so their Timeline's sky — sunrise, sunset — is
+     * theirs. Null until set; the client then falls back to the day's zone.
+     */
+    place: text('place'),
     updatedAt,
   },
   () => [check('user_time_settings_draft_my_time_check', sql.raw('draft_my_time IN (0, 1)'))],
@@ -2313,6 +3051,17 @@ export const timeEntries = sqliteTable(
     sourceRef: text('source_ref'),
     note: text('note'),
     /**
+     * What the person said it was (D-108, LAI-897): a kind from §4.48's
+     * list, a title of up to 120 characters, a description of up to 2000.
+     * Null on a confirmed draft and an import; the person may set them after.
+     * **No CHECK on purpose**: SQLite cannot add one without rebuilding the
+     * table, and this table carries retention triggers and the revisions'
+     * cascade; the API validates every path instead.
+     */
+    kind: text('kind', { enum: TIME_ENTRY_KINDS }),
+    title: text('title'),
+    description: text('description'),
+    /**
      * The work folder's chosen name and its branch, carried from the draft it
      * was confirmed from (D-098 item 5, LAI-866); null for any other entry.
      */
@@ -2380,6 +3129,10 @@ export const timeEntryRevisions = sqliteTable(
     endedAt: integer('ended_at'),
     minutes: integer('minutes').notNull(),
     note: text('note'),
+    /** What the entry said it was then (D-108): copies, no checks. */
+    kind: text('kind'),
+    title: text('title'),
+    description: text('description'),
     createdAt,
   },
   (t) => [
@@ -2450,6 +3203,76 @@ export const timeUndo = sqliteTable(
   ],
 );
 
+// ---------------------------------------------------- §4.61 time_timers
+
+/**
+ * A person's running timer (§4.61, D-110 item 1, LAI-500): one row while it
+ * runs, none when it does not — start inserts, stop and discard delete. The
+ * span the entry will have begins at `started_at` and never moves; the time
+ * counted is `accumulated_ms` plus, while running, now minus `resumed_at`.
+ * Stopping writes a confirmed entry through `insertEntry`, `source: 'manual'`
+ * (`time_entries.source`'s CHECK cannot be widened without a rebuild, and the
+ * title and kind already say what it was). The person's own, on a web
+ * session (`time_entries.write_own`); owners and admins see it with the day.
+ */
+export const timeTimers = sqliteTable(
+  'time_timers',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    kind: text('kind', { enum: TIME_ENTRY_KINDS }),
+    title: text('title'),
+    /** The zone the timer was started in: its entry's day is the start's day there. */
+    tz: text('tz').notNull(),
+    /** The first start — the entry's span begins here. Never moves. */
+    startedAt: integer('started_at').notNull(),
+    /** The start of the current running segment; `started_at` until the first resume. */
+    resumedAt: integer('resumed_at').notNull(),
+    /** Set while paused, null while running. */
+    pausedAt: integer('paused_at'),
+    /** Running milliseconds banked before the current segment. */
+    accumulatedMs: integer('accumulated_ms').notNull().default(0),
+    updatedAt,
+  },
+  () => [
+    check('time_timers_kind_check', oneOfOrNull('kind', TIME_ENTRY_KINDS)),
+    check('time_timers_title_check', sql.raw('title IS NULL OR length(title) <= 120')),
+    check('time_timers_accumulated_check', sql.raw('accumulated_ms >= 0')),
+    check('time_timers_segment_check', sql.raw('resumed_at >= started_at')),
+  ],
+);
+
+// ------------------------------------------------- §4.62 time_day_notes
+
+/**
+ * A person's note on one of their days — the design's *Note for your manager*
+ * (§4.62, D-110 item 2, LAI-501): written with *Confirm day* or alone, one
+ * per person per day, 500 characters; read by the person, and by owners and
+ * admins with the day (`GET /people/:id/time`, D-102). Prose, not time: no
+ * total reads it, and Undo of a confirm leaves it. Pruned with the entries.
+ */
+export const timeDayNotes = sqliteTable(
+  'time_day_notes',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** `YYYY-MM-DD`, the person's local day, as an entry's. */
+    day: text('day').notNull(),
+    note: text('note').notNull(),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.day] }),
+    // §11.6's retention deletes by day alone.
+    index('time_day_notes_day_idx').on(t.day),
+    check('time_day_notes_note_check', sql.raw('length(note) BETWEEN 1 AND 500')),
+  ],
+);
+
 // ---------------------------------------------------- §4.50 agent_time_days
 
 /**
@@ -2507,6 +3330,110 @@ export const agentTimeBuckets = sqliteTable(
     // One person's day is one range of buckets.
     index('agent_time_buckets_user_bucket_idx').on(t.userId, t.bucket),
     check('agent_time_buckets_seconds_check', sql.raw('seconds >= 0 AND seconds <= 300')),
+  ],
+);
+
+// --------------------------------------------------- §4.58 org_role_grants
+
+/**
+ * What the owner has granted each org role (§4.58, D-102 rule 6, LAI-958):
+ * one row per org × grantable role × capability. **No row is the default** —
+ * admin on, member and viewer off — so an organisation whose owner never
+ * opened the screen has no rows and behaves as it always did. Written whole
+ * by `PUT /org/permissions`; read onto every actor by `loadActor`.
+ */
+export const orgRoleGrants = sqliteTable(
+  'org_role_grants',
+  {
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    orgRole: text('org_role', { enum: GRANTABLE_ROLES }).notNull(),
+    capability: text('capability', { enum: CAPABILITIES }).notNull(),
+    granted: integer('granted').notNull(),
+    setBy: text('set_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.orgRole, t.capability] }),
+    index('org_role_grants_set_by_idx').on(t.setBy),
+    check('org_role_grants_org_role_check', oneOf('org_role', GRANTABLE_ROLES)),
+    check('org_role_grants_capability_check', oneOf('capability', CAPABILITIES)),
+    check('org_role_grants_granted_check', sql.raw('granted IN (0, 1)')),
+  ],
+);
+
+// ---------------------------------------------- §4.59 analytics_views
+
+/**
+ * Who looked at a person's analytics, and when (§4.59, D-102 rule 3, D-088
+ * item 7, LAI-957). One row per read an owner or admin made of somebody
+ * else's day, local activity, heatmap or tokens, written in the same
+ * transaction as the read, so a read nobody can see does not happen. The
+ * person reads their own rows on `GET /me/analytics-views`; kept 400 days
+ * (§11.6).
+ */
+export const analyticsViews = sqliteTable(
+  'analytics_views',
+  {
+    id: text('id').primaryKey(),
+    viewerId: text('viewer_id')
+      .notNull()
+      .references(() => users.id),
+    subjectId: text('subject_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: ANALYTICS_VIEW_KINDS }).notNull(),
+    /** `YYYY-MM-DD` — the day read, for My day; `null` for a range. */
+    day: text('day'),
+    viewedAt: integer('viewed_at').notNull(),
+  },
+  (t) => [
+    // The person's list, newest first.
+    index('analytics_views_subject_idx').on(t.subjectId, t.viewedAt, t.id),
+    index('analytics_views_viewer_idx').on(t.viewerId),
+    // §11.6's retention deletes by age alone.
+    index('analytics_views_viewed_at_idx').on(t.viewedAt),
+    check('analytics_views_kind_check', oneOf('kind', ANALYTICS_VIEW_KINDS)),
+  ],
+);
+
+// ---------------------------------------------- §4.60 password_resets
+
+/**
+ * One-time password-reset links an admin issued for somebody (§4.60, D-104
+ * item 4, LAI-983). Laika sends no email, so a person who forgot their
+ * password had no way back; now whoever holds *Manage people* issues a link,
+ * shown once, and hands it over.
+ *
+ * **The rows are the log** — who issued a link for whom, when, and whether it
+ * was used — as `analytics_views` is for reads (§4.59): §4.8 gains no verb.
+ * Only the SHA-256 of the token is stored, as for invites (§4.11).
+ */
+export const passwordResets = sqliteTable(
+  'password_resets',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    expiresAt: integer('expires_at').notNull(),
+    /** When the link set a password. Set once; a used link never works again. */
+    usedAt: integer('used_at'),
+    /** When a newer link for the same person replaced this one unused. */
+    revokedAt: integer('revoked_at'),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('password_resets_token_hash_unique').on(t.tokenHash),
+    index('password_resets_user_id_idx').on(t.userId),
+    index('password_resets_created_by_idx').on(t.createdBy),
   ],
 );
 
@@ -2702,3 +3629,5 @@ export type TimeDraft = typeof timeDrafts.$inferSelect;
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type TimeEntryRevision = typeof timeEntryRevisions.$inferSelect;
 export type TimeBreak = typeof timeBreaks.$inferSelect;
+export type OrgRoleGrant = typeof orgRoleGrants.$inferSelect;
+export type PasswordReset = typeof passwordResets.$inferSelect;

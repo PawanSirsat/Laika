@@ -636,6 +636,38 @@ void describe('a builder’s profile', () => {
       await h.close();
     }
   });
+
+  /**
+   * D-102 amended (LAI-967): a current server sends `enabled` equal to
+   * `org_enabled`, so `enabled: false` beside an organisation that collects is
+   * a stale personal answer. It decides nothing, and the Tokens card's empty
+   * line sends nobody — the person or anyone reading — to a switch that is gone.
+   */
+  for (const [reader, readerRole, line] of [
+    ['an owner', me('u1', 'owner'), /^Nothing has arrived from Bea Builder’s machines yet\.$/],
+    ['the person', me('u2', 'admin'), /^Nothing has arrived from your machines yet: /],
+  ] as const) {
+    void test(`${reader}: a stale personal “off” names no switch on the Tokens card`, async () => {
+      const h = await open('/people?user=u2', {
+        ...BASE,
+        '/api/v1/me': readerRole,
+        '/api/v1/users/u2/profile': BUILDER,
+        '/api/v1/users/u2/usage': {
+          ...quietUsage('u2'),
+          sharing: { org_enabled: true, enabled: false },
+        },
+      });
+      try {
+        const empty = (await section(h.page, 'tokens')).locator('.prof-empty');
+        await until(async () => (await empty.innerText()).includes('Nothing has arrived'));
+        const text = await empty.innerText();
+        assert.match(text, line);
+        assert.doesNotMatch(text, /Share local activity|turned on sharing|Turn on/);
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
 
 // ------------------------------------------------------- v2 cards (LAI-750)
@@ -1320,7 +1352,7 @@ void describe('the ways in are links for owners and admins only', () => {
       '/api/v1/users/u2/profile': BUILDER,
     });
     try {
-      const link = h.page.locator('.org-people a[href="/people?user=u2"]');
+      const link = h.page.locator('.org-people-table a[href="/people?user=u2"]');
       await link.waitFor({ timeout: 20_000 });
       assert.match(await link.innerText(), /Bea Builder/);
       await link.click();
@@ -1341,7 +1373,7 @@ void describe('the ways in are links for owners and admins only', () => {
       const h = await open('/organisation?tab=people', { ...ORG_STUB, '/api/v1/me': me(id, role) });
       try {
         await h.page
-          .locator('.org-people li', { hasText: 'Bea Builder' })
+          .locator('.org-person', { hasText: 'Bea Builder' })
           .waitFor({ timeout: 20_000 });
         assert.equal(
           await h.page.locator('a[href^="/people"]').count(),
@@ -1826,7 +1858,8 @@ async function cardBoxes(page: Page): Promise<{ gap: number; cards: CardBox[] }>
  * The full-width cards that head the page, in order: Activity (LAI-751), then
  * Tokens (LAI-769). The columns start under the last of them.
  */
-const FULL_WIDTH = ['activity', 'tokens'];
+// The Admin panel (LAI-988) sits above them, full width, for a reader who manages the person.
+const FULL_WIDTH = ['admin', 'activity', 'tokens'];
 
 /** The cards below the full-width ones, grouped by the column they sit in, top first. */
 function columnsOf(cards: readonly CardBox[]): CardBox[][] {
@@ -1970,6 +2003,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       assert.equal(columnsOf((await cardBoxes(h.page)).cards).length, 2, 'two columns at 1024');
 
       await assertOneColumn(h.page, [
+        'admin',
         'activity',
         'tokens',
         'delivery',
@@ -2032,6 +2066,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       assert.equal(await h.page.locator('.prof-columns .prof-stats').count(), 0);
 
       await assertOneColumn(h.page, [
+        'admin',
         'activity',
         'tokens',
         'delivery',
@@ -2058,6 +2093,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       const cards = await assertColumns(h.page, 3);
       assert.deepEqual(cards.map((card) => card.name).sort(), [
         'activity',
+        'admin',
         'decisions',
         'projects',
         'rating',
@@ -2065,6 +2101,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
         'tokens',
       ]);
       await assertOneColumn(h.page, [
+        'admin',
         'activity',
         'tokens',
         'review',

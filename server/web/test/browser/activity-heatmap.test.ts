@@ -85,20 +85,23 @@ function activity(
   range: '12w' | '52w',
   sharing: Sharing = { org_enabled: true, enabled: true },
   empty = false,
+  now = NOW,
 ) {
   const days = range === '12w' ? 84 : 364;
-  const start = new Date(NOW - (days - 1) * DAY).toISOString().slice(0, 10);
+  const today = new Date(now).toISOString().slice(0, 10);
+  const start = new Date(now - (days - 1) * DAY).toISOString().slice(0, 10);
   const at = (ago: number) => days - 1 - ago;
   const series = (values: Record<number, number>) => {
     const out = new Array<number>(days).fill(0);
     if (!empty) for (const [ago, n] of Object.entries(values)) out[at(Number(ago))] = n;
     return out;
   };
-  const shown = sharing.org_enabled && sharing.enabled;
+  // LAI-963: the server draws GitHub and Local on the organisation's switch alone.
+  const shown = sharing.org_enabled;
   return {
     range,
     start,
-    end: TODAY,
+    end: today,
     tz: 'UTC',
     sharing,
     series: {
@@ -109,12 +112,13 @@ function activity(
       board_self: series({ 0: 1, 1: 1 }),
       board_agent: series({ 0: 6 }),
     },
-    prompts_by_agent: shown && !empty ? { [TODAY]: { 'claude-code': 18, codex: 5 } } : {},
+    prompts_by_agent: shown && !empty ? { [today]: { 'claude-code': 18, codex: 5 } } : {},
     agents: shown && !empty ? ['claude-code', 'codex'] : [],
   };
 }
 
-function stub(sharing?: Sharing, empty = false, me = ME): ApiStub {
+/** `now` moves the ranges' last day off today, for a calendar shape the clock may not give. */
+function stub(sharing?: Sharing, empty = false, me = ME, now = NOW): ApiStub {
   return {
     '/api/v1/me': me,
     '/api/v1/projects': { data: [], next_cursor: null },
@@ -132,8 +136,8 @@ function stub(sharing?: Sharing, empty = false, me = ME): ApiStub {
       ...PROFILE,
       activity_sharing: sharing ?? { org_enabled: true, enabled: true },
     },
-    '/api/v1/people/u2/activity?range=12w': activity('12w', sharing, empty),
-    '/api/v1/people/u2/activity?range=52w': activity('52w', sharing, empty),
+    '/api/v1/people/u2/activity?range=12w': activity('12w', sharing, empty, now),
+    '/api/v1/people/u2/activity?range=52w': activity('52w', sharing, empty, now),
   };
 }
 
@@ -470,7 +474,7 @@ void describe('the states', () => {
         ['board'],
       );
       assert.equal(await cells(h.page, 'board').count(), 364);
-      assert.match(await h.page.locator('[data-stat="pushed_share"]').innerText(), /not shared/);
+      assert.match(await h.page.locator('[data-stat="pushed_share"]').innerText(), /not collected/);
 
       // A: the same panel, and the board as a single-colour grid.
       await activityCard.locator('input[value="split"]').check();
@@ -482,16 +486,21 @@ void describe('the states', () => {
     }
   });
 
-  void test('a developer who has not shared: named, and only they can turn it on', async () => {
+  /**
+   * D-102 amended (LAI-967): collection follows the organisation's switch
+   * alone, and a current server sends `enabled` equal to `org_enabled`. An
+   * `enabled: false` beside it is a stale personal answer that decides nothing:
+   * GitHub and Local are drawn, and nobody is sent to a switch that is gone.
+   */
+  void test('organisation on: a stale personal “off” hides nothing and names no switch', async () => {
     const h = await open('/people?user=u2', stub({ org_enabled: true, enabled: false }));
     try {
       const activityCard = await card(h.page);
-      assert.match(
-        await activityCard.locator('.hm-off').innerText(),
-        /GitHub and Local are not shown: Bea Builder hasn’t turned on sharing, and only they can\./,
-      );
-      assert.equal(await activityCard.locator('a').count(), 0, 'nothing an admin can turn on');
-      assert.equal(await h.page.locator('.hm-grid').count(), 1);
+      await until(async () => (await cells(h.page, 'github').count()) === 364);
+      assert.equal(await activityCard.locator('.hm-off').count(), 0);
+      assert.doesNotMatch(await activityCard.innerText(), /turned on sharing|only they can/);
+      assert.equal(await cells(h.page, 'github').count(), 364);
+      assert.equal(await cells(h.page, 'local').count(), 364);
       assert.equal(await cells(h.page, 'board').count(), 364);
     } finally {
       await h.close();
@@ -530,7 +539,7 @@ void describe('the states', () => {
       ['shown', stub()],
       ['nothing yet', stub(undefined, true)],
       ['insights off', stub({ org_enabled: false, enabled: true })],
-      ['not sharing', stub({ org_enabled: true, enabled: false })],
+      ['stale personal off', stub({ org_enabled: true, enabled: false })],
     ];
     const moved: string[] = [];
     for (const [state, api] of states) {
@@ -587,90 +596,112 @@ void describe('the states', () => {
 });
 
 void describe('on a phone', () => {
-  void test('opens on 12 weeks; a year scrolls inside the card, months never under the weekdays', async () => {
-    const h = await open('/people?user=u2', stub(), {
-      before: async (page) => {
-        await page.setViewportSize({ width: 390, height: 844 });
-      },
-    });
-    try {
-      const activityCard = await card(h.page);
-      assert.equal(await activityCard.getAttribute('data-range'), '12w');
-      assert.equal(await cells(h.page, 'github').count(), 84);
-
-      await activityCard.locator('input[value="52w"]').check();
-      await until(async () => (await cells(h.page, 'github').count()) === 364);
-      // Each source's heading — its total and its Less…More key — is whole in
-      // view wherever the year is scrolled (LAI-751).
-      for (const end of ['newest', 'oldest']) {
-        if (end === 'oldest') {
-          await h.page.locator('.hm-scroll').evaluate((el) => {
-            el.scrollLeft = 0;
-          });
-        }
-        const cut = await h.page.evaluate(() => {
-          const view = document.querySelector('.hm-scroll')?.getBoundingClientRect();
-          if (view === undefined) return ['no scroller'];
-          return [...document.querySelectorAll('.hm-block-head .hm-total, .hm-block-head .hm-ramp')]
-            .map((el) => ({ el, box: el.getBoundingClientRect() }))
-            .filter(({ box }) => box.left < view.left - 0.5 || box.right > view.right + 0.5)
-            .map(({ el }) => el.closest('.hm-block')?.getAttribute('data-source') ?? '?');
-        });
-        assert.deepEqual(cut, [], `scrolled to the ${end} week: a heading runs out of view`);
-      }
-      await h.page.locator('.hm-scroll').evaluate((el) => {
-        el.scrollLeft = el.scrollWidth;
+  // The clock's today, and a day it may not give: Sun 1 Nov 2026, a month's
+  // 1st alone in the newest week. Its label once ran past the canvas, and
+  // scrolled to that week every heading was left out of view (LAI-1017).
+  for (const [when, now] of [
+    ['', NOW],
+    [', a month’s 1st alone in the newest week', Date.parse('2026-11-01T12:00:00Z')],
+  ] as const) {
+    void test(`opens on 12 weeks; a year scrolls inside the card, months never under the weekdays${when}`, async () => {
+      const h = await open('/people?user=u2', stub(undefined, false, ME, now), {
+        before: async (page) => {
+          await page.setViewportSize({ width: 390, height: 844 });
+          // The page's today is the fixture's: the grid drawn while an answer
+          // is on its way ends on the browser's today, not the pinned one.
+          await page.clock.setFixedTime(now);
+        },
       });
-      const pageOver = await h.page.evaluate(
-        () => document.documentElement.scrollWidth - window.innerWidth,
-      );
-      assert.ok(pageOver <= 0, `the page scrolls sideways by ${String(pageOver)}px`);
+      try {
+        const activityCard = await card(h.page);
+        assert.equal(await activityCard.getAttribute('data-range'), '12w');
+        assert.equal(await cells(h.page, 'github').count(), 84);
 
-      const scroller = h.page.locator('.hm-scroll');
-      const box = await scroller.evaluate((el) => ({
-        width: el.clientWidth,
-        content: el.scrollWidth,
-        left: el.scrollLeft,
-      }));
-      assert.ok(box.content > box.width, 'a year fits a phone — it should scroll');
-      assert.ok(box.left >= box.content - box.width - 2, 'the newest week is not in view');
-
-      // Across the whole year, a step at a time — the push-out moments
-      // included: no month label drawn under the weekday column, and always
-      // at least one month named.
-      const width = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
-      for (let left = 0; left <= width + 37; left += 37) {
-        await scroller.evaluate((el, to) => {
-          el.scrollLeft = to;
-        }, left);
-        await h.page.evaluate(
-          () =>
-            new Promise((done) => {
-              requestAnimationFrame(() => requestAnimationFrame(done));
-            }),
+        await activityCard.locator('input[value="52w"]').check();
+        await until(async () => (await cells(h.page, 'github').count()) === 364);
+        // Measured on the year's answer, not on what stood in for it.
+        await h.page
+          .locator('.prof-card[data-section="activity"][data-range="52w"][aria-busy="false"]')
+          .waitFor();
+        assert.equal(
+          await cells(h.page, 'github').last().getAttribute('data-day'),
+          new Date(now).toISOString().slice(0, 10),
+          'the newest week is not the one this case is about',
         );
-        const seen = await h.page.evaluate(() => {
-          const days = document.querySelector('.hm-corner')?.getBoundingClientRect();
-          const scroll = document.querySelector('.hm-scroll')?.getBoundingClientRect();
-          if (days === undefined || scroll === undefined)
-            return { under: ['no weekday column'], shown: 0 };
-          const drawn = [...document.querySelectorAll('.hm-month-label')]
-            .map((el) => ({ el, text: el.textContent ?? '', box: el.getBoundingClientRect() }))
-            // A label being pushed out is hidden, not drawn half covered.
-            .filter(({ el }) => getComputedStyle(el).visibility !== 'hidden')
-            .filter(({ box }) => box.right > scroll.left && box.left < scroll.right);
-          return {
-            under: drawn.filter(({ box }) => box.left < days.right - 0.5).map(({ text }) => text),
-            shown: drawn.length,
-          };
+        // Each source's heading — its total and its Less…More key — is whole in
+        // view wherever the year is scrolled (LAI-751).
+        for (const end of ['newest', 'oldest']) {
+          if (end === 'oldest') {
+            await h.page.locator('.hm-scroll').evaluate((el) => {
+              el.scrollLeft = 0;
+            });
+          }
+          const cut = await h.page.evaluate(() => {
+            const view = document.querySelector('.hm-scroll')?.getBoundingClientRect();
+            if (view === undefined) return ['no scroller'];
+            return [
+              ...document.querySelectorAll('.hm-block-head .hm-total, .hm-block-head .hm-ramp'),
+            ]
+              .map((el) => ({ el, box: el.getBoundingClientRect() }))
+              .filter(({ box }) => box.left < view.left - 0.5 || box.right > view.right + 0.5)
+              .map(({ el }) => el.closest('.hm-block')?.getAttribute('data-source') ?? '?');
+          });
+          assert.deepEqual(cut, [], `scrolled to the ${end} week: a heading runs out of view`);
+        }
+        await h.page.locator('.hm-scroll').evaluate((el) => {
+          el.scrollLeft = el.scrollWidth;
         });
-        assert.deepEqual(seen.under, [], `at ${String(left)}px: month labels under the weekdays`);
-        assert.ok(seen.shown >= 1, `at ${String(left)}px: no month is named`);
+        const pageOver = await h.page.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth,
+        );
+        assert.ok(pageOver <= 0, `the page scrolls sideways by ${String(pageOver)}px`);
+
+        const scroller = h.page.locator('.hm-scroll');
+        const box = await scroller.evaluate((el) => ({
+          width: el.clientWidth,
+          content: el.scrollWidth,
+          left: el.scrollLeft,
+        }));
+        assert.ok(box.content > box.width, 'a year fits a phone — it should scroll');
+        assert.ok(box.left >= box.content - box.width - 2, 'the newest week is not in view');
+
+        // Across the whole year, a step at a time — the push-out moments
+        // included: no month label drawn under the weekday column, and always
+        // at least one month named.
+        const width = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
+        for (let left = 0; left <= width + 37; left += 37) {
+          await scroller.evaluate((el, to) => {
+            el.scrollLeft = to;
+          }, left);
+          await h.page.evaluate(
+            () =>
+              new Promise((done) => {
+                requestAnimationFrame(() => requestAnimationFrame(done));
+              }),
+          );
+          const seen = await h.page.evaluate(() => {
+            const days = document.querySelector('.hm-corner')?.getBoundingClientRect();
+            const scroll = document.querySelector('.hm-scroll')?.getBoundingClientRect();
+            if (days === undefined || scroll === undefined)
+              return { under: ['no weekday column'], shown: 0 };
+            const drawn = [...document.querySelectorAll('.hm-month-label')]
+              .map((el) => ({ el, text: el.textContent ?? '', box: el.getBoundingClientRect() }))
+              // A label being pushed out is hidden, not drawn half covered.
+              .filter(({ el }) => getComputedStyle(el).visibility !== 'hidden')
+              .filter(({ box }) => box.right > scroll.left && box.left < scroll.right);
+            return {
+              under: drawn.filter(({ box }) => box.left < days.right - 0.5).map(({ text }) => text),
+              shown: drawn.length,
+            };
+          });
+          assert.deepEqual(seen.under, [], `at ${String(left)}px: month labels under the weekdays`);
+          assert.ok(seen.shown >= 1, `at ${String(left)}px: no month is named`);
+        }
+      } finally {
+        await h.close();
       }
-    } finally {
-      await h.close();
-    }
-  });
+    });
+  }
 
   for (const design of ['stacked', 'split']) {
     void test(`twelve weeks fit a phone in ${design}, with nothing wider than the card`, async () => {

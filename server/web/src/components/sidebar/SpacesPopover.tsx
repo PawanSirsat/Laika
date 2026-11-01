@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import type { Space } from '../../routes/spaces.ts';
+import { PinButton } from './PinButton.tsx';
 
 export interface SpacesPopoverProps {
   /** Spaces not already pinned in the sidebar — the prototype's `popSpaces`. */
@@ -10,6 +11,8 @@ export interface SpacesPopoverProps {
   /** Pixel offset of the panel's left edge: past the rail, collapsed or not. */
   readonly left: number;
   readonly onPick: (slug: string) => void;
+  /** Pin a space to the rail (LAI-989). Absent, no row offers it. */
+  readonly onPin?: ((slug: string) => void) | undefined;
   readonly onViewAll: () => void;
   readonly onClose: () => void;
 }
@@ -27,7 +30,14 @@ export interface SpacesPopoverProps {
  * Colour squares are derived per slug (`avatarColor`), never stored — the
  * prototype's per-space colours are fixtures, same rule as avatars.
  */
-export function SpacesPopover({ spaces, left, onPick, onViewAll, onClose }: SpacesPopoverProps) {
+export function SpacesPopover({
+  spaces,
+  left,
+  onPick,
+  onPin,
+  onViewAll,
+  onClose,
+}: SpacesPopoverProps) {
   const { theme } = useTheme();
   const [query, setQuery] = useState('');
 
@@ -112,7 +122,7 @@ export function SpacesPopover({ spaces, left, onPick, onViewAll, onClose }: Spac
             {shown.map((space) => {
               const colour = avatarColor(space.slug, theme);
               return (
-                <li key={space.slug}>
+                <li key={space.slug} className="space-item">
                   <button
                     type="button"
                     className="spaces-pop-row"
@@ -132,6 +142,15 @@ export function SpacesPopover({ spaces, left, onPick, onViewAll, onClose }: Spac
                       <span className="spaces-pop-meta">{space.meta}</span>
                     </span>
                   </button>
+                  {onPin !== undefined && (
+                    <PinButton
+                      name={space.name}
+                      pinned={false}
+                      onToggle={() => {
+                        onPin(space.slug);
+                      }}
+                    />
+                  )}
                 </li>
               );
             })}

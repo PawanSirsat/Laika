@@ -7,15 +7,24 @@ import {
   inArray,
   isNull,
   lt,
+  lte,
   or,
   sql,
   type SQL,
 } from 'drizzle-orm';
+import { recordAgentEvent } from './agent-events.ts';
 import { type Db } from './client.ts';
-import { type ActivityType, type ActorKind } from './enums.ts';
+import { type ActivityType, type ActorKind, LIVE_CLAIM_STATES } from './enums.ts';
 import { newId } from './ids.ts';
 import * as schema from './schema.ts';
-import { activity, boardActivityDays, tokens, type Activity } from './schema.ts';
+import {
+  activity,
+  agentSessions,
+  boardActivityDays,
+  taskClaims,
+  tokens,
+  type Activity,
+} from './schema.ts';
 
 /**
  * The only way into `activity` (SPEC §4.8).
@@ -37,6 +46,12 @@ export interface AppendActivity {
   actorId?: string | null;
   actorKind: ActorKind;
   actorTokenId?: string | null;
+  /**
+   * The agent session the change was made under, when the writer knows it —
+   * a claim just taken, a reclaim. Absent, the session holding the writing
+   * agent's live claim on the task is used, or none (D-118, LAI-586).
+   */
+  agentSessionId?: string | null;
   type: ActivityType;
   payload?: unknown;
   /** Injectable so tests are not at the mercy of clock resolution. */
@@ -58,6 +73,11 @@ export interface AppendActivity {
  * logged, whoever calls this and however.
  */
 export function appendActivity(db: Db, entry: AppendActivity): Activity {
+  const agentId = agentOfToken(db, entry.actorTokenId ?? null);
+  const session =
+    agentId === null
+      ? null
+      : sessionOfAgent(db, agentId, entry.taskId ?? null, entry.agentSessionId ?? null);
   const row = {
     id: newId(),
     orgId: entry.orgId,
@@ -66,17 +86,92 @@ export function appendActivity(db: Db, entry: AppendActivity): Activity {
     actorId: entry.actorId ?? null,
     actorKind: entry.actorKind,
     actorTokenId: entry.actorTokenId ?? null,
+    agentId,
+    agentSessionId: session?.id ?? null,
+    sessionHarness: session?.harness ?? null,
+    sessionHarnessVersion: session?.harnessVersion ?? null,
+    sessionModel: session?.model ?? null,
     type: entry.type,
     payloadJson: JSON.stringify(entry.payload ?? {}),
     createdAt: entry.now ?? Date.now(),
   };
 
   db.transaction((tx) => {
-    tx.insert(activity).values(row).run();
+    const { lastInsertRowid } = tx.insert(activity).values(row).run();
     countOnBoardDay(tx as unknown as Db, row);
+    // The agent half (§4.76, LAI-553): an envelope and its deliveries land
+    // with the row they describe, or not at all.
+    recordAgentEvent(tx as unknown as Db, row, Number(lastInsertRowid));
   });
 
   return row;
+}
+
+/**
+ * The registered agent a token is the credential of, or null (D-114 item 4,
+ * LAI-535). **Read here, from `tokens.agent_id`, and from nothing else** — not
+ * from the caller, so no call site can forget it or name a different agent,
+ * and no request can put one in a header, a parameter or a body. Null for a
+ * session, a legacy token and the system principal.
+ */
+function agentOfToken(db: Db, tokenId: string | null): string | null {
+  if (tokenId === null) return null;
+  const row = db
+    .select({ agentId: tokens.agentId })
+    .from(tokens)
+    .where(eq(tokens.id, tokenId))
+    .get();
+  return row?.agentId ?? null;
+}
+
+/**
+ * The session an agent's row is written under, with what it reported about
+ * itself **at that moment** (D-118, LAI-586): the row keeps the snapshot, so
+ * a model changed by a later heartbeat does not rewrite what this row says
+ * ran. The session named by the writer — it must be this agent's — else the
+ * one holding this agent's live claim on the task, else none: a change made
+ * under no claim was made by no session we can name, and none is guessed.
+ * Like `agentOfToken`, read from the database, never from a request.
+ */
+function sessionOfAgent(
+  db: Db,
+  agentId: string,
+  taskId: string | null,
+  sessionId: string | null,
+): {
+  id: string;
+  harness: string | null;
+  harnessVersion: string | null;
+  model: string | null;
+} | null {
+  let id = sessionId;
+  if (id === null && taskId !== null) {
+    id =
+      db
+        .select({ sessionId: taskClaims.sessionId })
+        .from(taskClaims)
+        .where(
+          and(
+            eq(taskClaims.taskId, taskId),
+            eq(taskClaims.agentId, agentId),
+            inArray(taskClaims.state, [...LIVE_CLAIM_STATES]),
+          ),
+        )
+        .get()?.sessionId ?? null;
+  }
+  if (id === null) return null;
+  return (
+    db
+      .select({
+        id: agentSessions.id,
+        harness: agentSessions.harness,
+        harnessVersion: agentSessions.harnessVersion,
+        model: agentSessions.model,
+      })
+      .from(agentSessions)
+      .where(and(eq(agentSessions.id, id), eq(agentSessions.agentId, agentId)))
+      .get() ?? null
+  );
 }
 
 /**
@@ -212,8 +307,14 @@ export interface ListActivityFilter {
   /** Also return rows with no project — the org-level half of §4.8. */
   includeOrgScoped?: boolean;
   taskId?: string;
+  /** Rows this person wrote, whatever they wrote them with (LAI-886). */
+  actorId?: string;
+  /** One §4.8 verb (LAI-886). */
+  type?: ActivityType;
   /** Unix-ms, inclusive lower bound — the §6.3 `updated_since` semantic. */
   since?: number;
+  /** Unix-ms, inclusive upper bound — `since`'s other end (LAI-886). */
+  until?: number;
   before?: number;
   /** Keyset position for the newest-first order below (§6.3). */
   cursor?: { createdAt: number; seq: number } | null;
@@ -280,7 +381,10 @@ export function listActivity(db: Db, filter: ListActivityFilter): ActivityEvent[
     );
   }
   if (filter.taskId !== undefined) conditions.push(eq(activity.taskId, filter.taskId));
+  if (filter.actorId !== undefined) conditions.push(eq(activity.actorId, filter.actorId));
+  if (filter.type !== undefined) conditions.push(eq(activity.type, filter.type));
   if (filter.since !== undefined) conditions.push(gte(activity.createdAt, filter.since));
+  if (filter.until !== undefined) conditions.push(lte(activity.createdAt, filter.until));
   if (filter.before !== undefined) conditions.push(lt(activity.createdAt, filter.before));
 
   if (filter.projectIds !== undefined) {
@@ -331,7 +435,7 @@ export function listActivity(db: Db, filter: ListActivityFilter): ActivityEvent[
  * This is what the row literally says. For what a client should be shown, use
  * {@link apiPayload} — see there for why the two differ.
  */
-export function readPayload(row: Activity): unknown {
+export function readPayload(row: Pick<Activity, 'payloadJson'>): unknown {
   try {
     return JSON.parse(row.payloadJson);
   } catch {
@@ -449,25 +553,49 @@ export function latestFieldEdit(
  * reader: the channel is known and the client is not, which is `created via api`
  * rather than a blank or an invented "unknown".
  *
+ * **A registered agent's token is named after the agent** (D-114), so the
+ * name here can be the agent's registered name. Each entry carries the agent
+ * and its owner, and the task view withholds the name from a reader who may
+ * not see that agent (LAI-1001); this read decides nothing about who sees it.
+ *
  * Batched because `listTasks` returns up to 200 and a per-task lookup is the
  * N+1 that `commentCounts` and `tagsForTasks` already exist to avoid.
  */
-export function creatingClientNames(db: Db, taskIds: readonly string[]): Map<string, string> {
-  const names = new Map<string, string>();
+export function creatingClientNames(
+  db: Db,
+  taskIds: readonly string[],
+): Map<string, CreatingClient> {
+  const names = new Map<string, CreatingClient>();
   if (taskIds.length === 0) return names;
 
   const rows = db
-    .select({ taskId: activity.taskId, name: tokens.name })
+    .select({
+      taskId: activity.taskId,
+      name: tokens.name,
+      agentId: tokens.agentId,
+      ownerUserId: tokens.userId,
+    })
     .from(activity)
     .innerJoin(tokens, eq(tokens.id, activity.actorTokenId))
     .where(and(eq(activity.type, 'task.created'), inArray(activity.taskId, [...taskIds])))
     .all();
 
   for (const row of rows) {
-    if (row.taskId !== null) names.set(row.taskId, row.name);
+    if (row.taskId !== null) {
+      names.set(row.taskId, { name: row.name, agentId: row.agentId, ownerUserId: row.ownerUserId });
+    }
   }
 
   return names;
+}
+
+/** The token that created a task: its name, and the agent and person it belongs to. */
+export interface CreatingClient {
+  name: string;
+  /** The registered agent the token acts as, or null for a legacy token. */
+  agentId: string | null;
+  /** The token's owner — the agent's owner when `agentId` is set. */
+  ownerUserId: string;
 }
 
 /** The highest sequence written so far, or 0 for an empty table. */

@@ -7,6 +7,8 @@ import { assertCan } from '../policy/can.ts';
 import { agentDay, type AgentDayView } from './agent-time.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
 import { breaksOn, type TimeBreakView } from './time-breaks.ts';
+import { dayNoteOn, type DayNoteView } from './time-day-notes.ts';
+import { timerOf, type TimerView } from './time-timer.ts';
 import {
   draftsOn,
   draftZone,
@@ -16,14 +18,19 @@ import {
   type TimeDraftView,
 } from './time-drafts.ts';
 import { entriesOn, type TimeEntryView } from './time-entries.ts';
-import { getTimeSettings, type TimeSettingsView } from './time-settings.ts';
+import { timeSettingsFor, type TimeSettingsView } from './time-settings.ts';
 
 /**
  * My day (D-088 items 3, 8 and 12, SPEC §6.4, LAI-787): one person's own day —
  * the blocks their machine drafted and what agents proposed, the time they
- * confirmed, their agents' minutes, and the week around it. **Theirs alone, on
- * a web session**: `time_drafts.read_own` and `time_entries.read_own` refuse
- * every token, and nothing here takes a parameter that could name anybody else.
+ * confirmed, their agents' minutes, and the week around it. **Theirs, on a web
+ * session**: `time_drafts.read_own` and `time_entries.read_own` refuse every
+ * token, and `getMyDay` takes no parameter that could name anybody else.
+ *
+ * `dayOf` is the assembly, by subject id, so the one other reader — an owner
+ * or admin reading the same day for the person (D-102 rule 1, LAI-957,
+ * `services/people-analytics.ts`) — gets this exact shape from this exact
+ * code, after its own `can()`.
  *
  * ## One indexed query per section
  *
@@ -81,6 +88,10 @@ export interface MyDayView {
   state: DayState;
   /** Monday to Sunday around `day`. */
   week: WeekDayView[];
+  /** The person's running timer (§4.61, LAI-500), whatever day is open; null when none. */
+  timer: TimerView | null;
+  /** The person's note on the day (§4.62, LAI-501) — prose for whoever reads the day; null when none. */
+  day_note: DayNoteView | null;
 }
 
 function stateOf(day: string, today: string, confirmed: number, drafted: number): DayState {
@@ -107,7 +118,23 @@ export function getMyDay(
 ): MyDayView {
   assertCan(actor, 'time_drafts.read_own');
   assertCan(actor, 'time_entries.read_own');
-  const tz = query.tz ?? draftZone(db, actor.userId);
+  assertCan(actor, 'time_settings.read_own');
+  return dayOf(db, actor.userId, query, now);
+}
+
+/**
+ * One person's day, as `GET /me/time` answers it — **no `can()` here**: each
+ * caller asks its own question first (`getMyDay` the person's, the people
+ * read `people.analytics.read`). Without `tz`, the zone `userId`'s drafts
+ * were made in; without `day`, today there.
+ */
+export function dayOf(
+  db: Db,
+  userId: string,
+  query: { day?: string | undefined; tz?: string | undefined },
+  now: number = Date.now(),
+): MyDayView {
+  const tz = query.tz ?? draftZone(db, userId);
   if (!isTimeZone(tz)) {
     throw new ApiError('unprocessable', 'tz is not a time zone this server knows', {
       reason: 'invalid_tz',
@@ -120,13 +147,15 @@ export function getMyDay(
     throw new ApiError('unprocessable', 'day is a calendar date, YYYY-MM-DD', { field: 'day' });
   }
 
-  const settings = getTimeSettings(db, actor);
-  const drafts = draftsOn(db, actor.userId, day);
-  const entries = entriesOn(db, actor.userId, day);
-  const breaks = breaksOn(db, actor.userId, day);
-  const signalTimes = signalTimesOn(db, actor.userId, day);
-  const held = heldDrafts(db, actor.userId);
-  const agent = agentDay(db, actor.userId, day, tz);
+  const settings = timeSettingsFor(db, userId);
+  const drafts = draftsOn(db, userId, day);
+  const entries = entriesOn(db, userId, day);
+  const breaks = breaksOn(db, userId, day);
+  const signalTimes = signalTimesOn(db, userId, day);
+  const held = heldDrafts(db, userId);
+  const agent = agentDay(db, userId, day, tz);
+  const timer = timerOf(db, userId);
+  const dayNote = dayNoteOn(db, userId, day);
 
   const monday = mondayOf(day);
   const sunday = addDays(monday, 6);
@@ -139,7 +168,7 @@ export function getMyDay(
       .from(timeDrafts)
       .where(
         and(
-          eq(timeDrafts.userId, actor.userId),
+          eq(timeDrafts.userId, userId),
           gte(timeDrafts.day, monday),
           lte(timeDrafts.day, sunday),
           eq(timeDrafts.state, 'pending'),
@@ -158,7 +187,7 @@ export function getMyDay(
       .from(timeEntries)
       .where(
         and(
-          eq(timeEntries.userId, actor.userId),
+          eq(timeEntries.userId, userId),
           gte(timeEntries.day, monday),
           lte(timeEntries.day, sunday),
           isNull(timeEntries.deletedAt),
@@ -194,5 +223,7 @@ export function getMyDay(
       drafts.reduce((n, d) => n + d.minutes, 0),
     ),
     week,
+    timer,
+    day_note: dayNote,
   };
 }

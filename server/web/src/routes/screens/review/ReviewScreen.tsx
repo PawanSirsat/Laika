@@ -4,6 +4,7 @@ import {
   ciLine,
   ciVerdict,
   evidenceSummary,
+  roundAgentName,
   filterQueue,
   getReviewQueue,
   NO_FILTER,
@@ -391,7 +392,7 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
             const open = selected === item.task.id;
             const summary = evidenceSummary(item.round);
             const ci = ciVerdict(item.round);
-            const agent = item.round?.client_name ?? null;
+            const agent = item.round === null ? null : roundAgentName(item.round);
             const deciding = busy === item.task.id;
             return (
               <li
@@ -517,7 +518,8 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
                       </a>
                       {!item.can_decide && (
                         <span className="rev-why">
-                          Only the assignee, a project lead or an admin decides this one.
+                          Only the assignee, a space admin or an organisation admin decides this
+                          one.
                         </span>
                       )}
                     </div>

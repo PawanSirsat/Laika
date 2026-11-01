@@ -570,6 +570,233 @@ describe('a project whitelist narrows which projects', () => {
     expect((await withToken('/api/v1/projects/outside', secret)).status).toBe(403);
     expect((await withCookie('/api/v1/projects/outside', ownerCookie)).status).toBe(200);
   });
+
+  /**
+   * SPEC §6.2 (audit H4): a token pinned to projects is refused org-wide
+   * admin actions, whatever the user's role. Through the real chain, on the
+   * three the audit named — a project, the organisation, an invite — against
+   * the same bodies on an unpinned token of the same Owner, so the `403` is
+   * the pin's. And the every-member read still answers, so the allow-list is
+   * exercised over HTTP and not only in `can()`.
+   */
+  it('is refused org-wide admin actions with project_pinned, and keeps the org read (§6.2, H4)', async () => {
+    const inside = await makeProject('inside');
+    const pinned = await mint({ name: 'pinned', project_ids: [inside] });
+    const unpinned = await mint({ name: 'unpinned' });
+
+    const adminWrites = [
+      {
+        action: 'project.create',
+        path: '/api/v1/projects',
+        method: 'POST',
+        body: { name: 'Nope', slug: 'nope', prefix: 'NOP' },
+        unpinnedStatus: 201,
+      },
+      {
+        action: 'org.settings.edit',
+        path: '/api/v1/org',
+        method: 'PATCH',
+        body: { name: 'Renamed' },
+        unpinnedStatus: 200,
+      },
+      {
+        action: 'user.invite',
+        path: '/api/v1/invites',
+        method: 'POST',
+        body: { email: 'new@example.test', org_role: 'member' },
+        unpinnedStatus: 201,
+      },
+    ] as const;
+
+    for (const write of adminWrites) {
+      const refused = await withToken(write.path, pinned, {
+        method: write.method,
+        body: JSON.stringify(write.body),
+      });
+      expect(refused.status, `${write.method} ${write.path} pinned`).toBe(403);
+      const { error } = (await refused.json()) as {
+        error: { code: string; details: { action: string; reason: string } };
+      };
+      expect(error.code, write.path).toBe('forbidden');
+      expect(error.details, write.path).toMatchObject({
+        action: write.action,
+        reason: 'project_pinned',
+      });
+
+      // The same body on the same Owner's unpinned token: today's answer.
+      const allowed = await withToken(write.path, unpinned, {
+        method: write.method,
+        body: JSON.stringify(write.body),
+      });
+      expect(allowed.status, `${write.method} ${write.path} unpinned`).toBe(write.unpinnedStatus);
+    }
+
+    // The every-member org read is kept by the pin.
+    expect((await withToken('/api/v1/org', pinned)).status).toBe(200);
+  });
+
+  /**
+   * LAI-562: the pin keeps `token.create_own`, so what it mints must stay
+   * inside the pin. Before this, `{ project_ids: null }` from a pinned token
+   * answered `201` with a token reaching every project — and that token then
+   * read `outside`, which is the escape this asserts is gone.
+   */
+  it('mints only inside its own pin, refusing wider with project_pinned (LAI-562)', async () => {
+    const inside = await makeProject('inside');
+    const outside = await makeProject('outside');
+    const pinned = await mint({ name: 'pinned', project_ids: [inside] });
+
+    const asks = [
+      { name: 'unpinned', scope: 'full' },
+      { name: 'wider', scope: 'full', project_ids: [inside, outside] },
+      { name: 'elsewhere', scope: 'read_only', project_ids: [outside] },
+      // Explicit `null` reaches the service by the same road as omitted.
+      { name: 'explicit-null', scope: 'full', project_ids: null },
+    ];
+    for (const body of asks) {
+      const res = await withToken('/api/v1/tokens', pinned, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      expect(res.status, body.name).toBe(403);
+      const { error } = (await res.json()) as {
+        error: { code: string; details: { action: string; reason: string } };
+      };
+      expect(error.code, body.name).toBe('forbidden');
+      expect(error.details, body.name).toMatchObject({
+        action: 'token.create_own',
+        reason: 'project_pinned',
+      });
+    }
+
+    // A subset of the pin is still the pin's to mint, and it works.
+    const res = await withToken('/api/v1/tokens', pinned, {
+      method: 'POST',
+      body: JSON.stringify({ name: 'same', scope: 'full', project_ids: [inside] }),
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const minted = ((await res.json()) as { secret: string }).secret;
+    expect((await withToken('/api/v1/projects/inside', minted)).status).toBe(200);
+    expect((await withToken('/api/v1/projects/outside', minted)).status).toBe(403);
+  });
+
+  /**
+   * LAI-562: no project-id enumeration through a pinned token. An id that
+   * names no project must answer exactly as an existing project outside the
+   * pin does — `403 project_pinned` — and never the existence check's `422`,
+   * which would tell the caller which ids are real. Its own test, so the
+   * guard's order is the only thing that can turn it red.
+   */
+  it('refuses an unknown project id as project_pinned, not 422 (LAI-562)', async () => {
+    const inside = await makeProject('inside');
+    const pinned = await mint({ name: 'pinned', project_ids: [inside] });
+
+    const res = await withToken('/api/v1/tokens', pinned, {
+      method: 'POST',
+      body: JSON.stringify({ name: 'phantom', scope: 'full', project_ids: ['does-not-exist'] }),
+    });
+
+    expect(res.status).toBe(403);
+    const { error } = (await res.json()) as {
+      error: { code: string; details: { action: string; reason: string; project_ids: string[] } };
+    };
+    expect(error.code).toBe('forbidden');
+    expect(error.details).toMatchObject({
+      action: 'token.create_own',
+      reason: 'project_pinned',
+      project_ids: ['does-not-exist'],
+    });
+  });
+
+  /**
+   * LAI-562's second criterion, which holds today without new code:
+   * `token.create_own` is not in `READ_ACTIONS`, so a `read_only` token is
+   * refused minting at all — `full` or `read_only`. Pinned here so a future
+   * edit to that set has to face it.
+   */
+  it('a read_only token cannot mint, so cannot mint a full one (LAI-562)', async () => {
+    const readOnly = await mint({ name: 'ro', scope: 'read_only' });
+
+    for (const scope of ['full', 'read_only']) {
+      const res = await withToken('/api/v1/tokens', readOnly, {
+        method: 'POST',
+        body: JSON.stringify({ name: 'up', scope }),
+      });
+      expect(res.status, scope).toBe(403);
+      const { error } = (await res.json()) as {
+        error: { code: string; details: { action: string } };
+      };
+      expect(error.code, scope).toBe('forbidden');
+      expect(error.details.action, scope).toBe('token.create_own');
+    }
+  });
+});
+
+describe('a token that expires cannot mint one that outlives it (LAI-563, LAI-592)', () => {
+  /**
+   * Expiry was the one way left for a token to widen itself: a token with an
+   * `expires_at` could mint one with none. Refused with a named reason, as the
+   * pin is; asserted against the same body from a session and from a token
+   * that never expires, so the `403` is the expiry's and nothing else's.
+   */
+  it('refuses no expiry or a later one with token_expiry_bounded, and allows its own or earlier', async () => {
+    const own = Date.now() + 60 * 60_000;
+    const shortLived = await mint({ name: 'short', expires_at: own });
+    const forever = await mint({ name: 'forever' });
+
+    const asks = [
+      { name: 'unbounded', scope: 'full' },
+      { name: 'explicit-null', scope: 'full', expires_at: null },
+      { name: 'one-ms-later', scope: 'full', expires_at: own + 1 },
+      { name: 'a-year', scope: 'read_only', expires_at: own + 365 * 24 * 60 * 60_000 },
+    ];
+    for (const body of asks) {
+      const res = await withToken('/api/v1/tokens', shortLived, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      expect(res.status, body.name).toBe(403);
+      const { error } = (await res.json()) as {
+        error: { code: string; details: Record<string, unknown> };
+      };
+      expect(error.code, body.name).toBe('forbidden');
+      expect(error.details, body.name).toEqual({
+        action: 'token.create_own',
+        reason: 'token_expiry_bounded',
+        expires_at: body.expires_at ?? null,
+        max_expires_at: own,
+      });
+
+      // The same body from a token with no expiry, and from the session: minted.
+      for (const [label, send] of [
+        [
+          'forever',
+          (b: string) => withToken('/api/v1/tokens', forever, { method: 'POST', body: b }),
+        ],
+        [
+          'session',
+          (b: string) => withCookie('/api/v1/tokens', ownerCookie, { method: 'POST', body: b }),
+        ],
+      ] as const) {
+        const allowed = await send(JSON.stringify(body));
+        expect(allowed.status, `${body.name} ${label}`).toBe(201);
+      }
+    }
+    // Nothing the refusals asked for was minted: 2 setup tokens + 4 × 2 allowed.
+    expect(h.db.select().from(tokens).all()).toHaveLength(2 + asks.length * 2);
+
+    // Exactly its own expiry, and an earlier one, are the token's to mint.
+    for (const expires_at of [own, own - 30 * 60_000]) {
+      const res = await withToken('/api/v1/tokens', shortLived, {
+        method: 'POST',
+        body: JSON.stringify({ name: `within-${expires_at}`, scope: 'full', expires_at }),
+      });
+      expect(res.status, await res.clone().text()).toBe(201);
+      expect(((await res.json()) as { token: { expires_at: number } }).token.expires_at).toBe(
+        expires_at,
+      );
+    }
+  });
 });
 
 describe('last_used_at (§7.2)', () => {

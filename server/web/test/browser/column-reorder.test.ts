@@ -386,8 +386,13 @@ void describe('the keyboard route', () => {
  * suite asserted `1` and got `0.177275`, which is the kind of failure that
  * looks like a broken feature and is a broken test.
  *
- * Polls until the value stops changing rather than sleeping a guessed 150ms,
- * so it cannot be made flaky by a slower machine or a longer transition.
+ * **It waits for the fade itself to end** — every opacity transition on the
+ * element, read from `getAnimations()` — and then reads the value. It used to
+ * return as soon as two reads 25 ms apart agreed, and a fade that has not
+ * visibly started yet agrees with itself, so its start value came back as
+ * the settled one: `it stays up after blur` failed `'1' !== '0'` on CI. A
+ * `transition-delay` injected by a test reproduces that on every caller that
+ * expects a change, and this version passes it (LAI-595).
  */
 async function settledOpacity(h: Harness, selector: string, index = 0): Promise<string> {
   /*
@@ -399,20 +404,25 @@ async function settledOpacity(h: Harness, selector: string, index = 0): Promise<
    * the time it ran.
    */
   await h.page.locator('.lane-head').first().waitFor({ state: 'attached' });
-  let previous = '';
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const now = await h.page.evaluate(
-      ([sel, i]) => {
-        const el = document.querySelectorAll(sel)[i];
-        return el === undefined ? 'missing' : getComputedStyle(el).opacity;
-      },
-      [selector, index] as const,
-    );
-    if (now === previous) return now;
-    previous = now;
-    await h.page.waitForTimeout(25);
-  }
-  return previous;
+  return h.page.evaluate(
+    async ([sel, i]) => {
+      const el = document.querySelectorAll(sel)[i];
+      if (el === undefined) return 'missing';
+      // `getAnimations()` flushes style first, so the transition the last
+      // hover, focus or blur started is in the list even while it has not
+      // visibly begun. A cancelled one rejects `finished`, and the next pass
+      // sees whatever replaced it.
+      for (let pass = 0; pass < 20; pass += 1) {
+        const fading = el
+          .getAnimations()
+          .filter((a) => a instanceof CSSTransition && a.transitionProperty === 'opacity');
+        if (fading.length === 0) return getComputedStyle(el).opacity;
+        await Promise.allSettled(fading.map((a) => a.finished));
+      }
+      return `still fading at ${getComputedStyle(el).opacity}`;
+    },
+    [selector, index] as const,
+  );
 }
 
 void describe('the head reveals its own chrome', () => {

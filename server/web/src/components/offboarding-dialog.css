@@ -1,0 +1,188 @@
+/* The offboarding dialog (D-104 item 5, LAI-988): the rating dialog's frame. */
+
+.offb-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+}
+
+.offb-dialog {
+  position: fixed;
+  z-index: 41;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  box-sizing: border-box;
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-modal);
+  padding: 1.125rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.offb-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.offb-title {
+  margin: 0;
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-heavy);
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.offb-close {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--text-heading-md);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-chip);
+}
+
+.offb-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-column);
+}
+
+.offb-about,
+.offb-hint {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-muted);
+}
+
+.offb-about p {
+  margin: 0 0 var(--space-1);
+}
+
+.offb-about ul {
+  margin: 0;
+  padding-left: 1.125rem;
+}
+
+.offb-tasks {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--bg-column);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.offb-label {
+  padding: 0 var(--space-1);
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.offb-held {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.offb-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.offb-option input {
+  margin: 0.2rem 0 0;
+  accent-color: var(--accent);
+}
+
+.offb-option > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.offb-option b {
+  font-weight: var(--weight-semibold);
+}
+
+.offb-picker {
+  padding-left: 1.5rem;
+}
+
+.offb-error {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-card);
+  padding: 0.375rem 0.5rem;
+}
+
+.offb-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.offb-cancel,
+.offb-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  border-radius: var(--radius-control);
+  padding: 0.3125rem 0.875rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.offb-cancel {
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+}
+
+.offb-confirm {
+  color: var(--on-accent);
+  background: var(--overdue);
+  border: 1px solid var(--overdue);
+}
+
+.offb-cancel:disabled,
+.offb-confirm:disabled,
+.offb-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.offb-cancel:focus-visible,
+.offb-confirm:focus-visible,
+.offb-close:focus-visible,
+.offb-option input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

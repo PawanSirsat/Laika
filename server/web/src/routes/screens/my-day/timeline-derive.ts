@@ -1,10 +1,11 @@
-import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
+import type { MyDay, TimeDraft, TimeEntry, TimeSettings } from '../../../api/time.ts';
 import { addDays, atClock } from './my-day-derive.ts';
 
 /**
  * My day's lane timeline (LAI-831, the owner's "Laika App v2" design): the
  * day's blocks along the hours, the **gaps** between them, the breaks the
- * person waved away, and the arithmetic of moving an edge.
+ * person waved away, the organisation's scheduled breaks (D-101), and the
+ * arithmetic of moving an edge.
  *
  * **Minutes after the day's midnight**, in the day's own zone (`view.tz`), are
  * the unit throughout; the page turns them back into instants only to write.
@@ -15,21 +16,63 @@ import { addDays, atClock } from './my-day-derive.ts';
  * Pure: the clock is passed in.
  */
 
-/** A gap shorter than this is a breath, not unaccounted time (the owner's design). */
-export const GAP_MIN = 20;
+/**
+ * A gap shorter than this is a breath, not unaccounted time: the owner's My
+ * Day design counts every gap of five minutes or more (`gaps()`, LAI-510).
+ */
+export const GAP_MIN = 5;
 /** Edges move, and lengths change, in steps of this many minutes. */
 export const STEP = 5;
 /** The working day the axis shows when nothing falls outside it: 6 AM to 10 PM. */
 export const AXIS_FROM = 6;
 export const AXIS_TO = 22;
 
-export type Zoom = 'fit' | '1' | '2';
-/** Pixels an hour at each zoom; `fit` is the whole axis in the width there is. */
+/** The scales − and + walk, in order (LAI-890): times the design's 160px an hour. */
+export const ZOOM_STEPS = ['0.5', '0.75', '1', '1.5', '2', '3', '4', '5'] as const;
+export type ZoomLevel = (typeof ZOOM_STEPS)[number];
+export type Zoom = 'fit' | ZoomLevel;
+/** The design's 1×: 160 px an hour (the owner's "Laika App v3" Timeline). */
+export const BASE_PX_PER_HOUR = 160;
+/**
+ * Pixels an hour at each level; `fit` is the whole axis in the width there
+ * is, idle hours folded.
+ */
 export const PX_PER_HOUR: Readonly<Record<Zoom, number | undefined>> = {
   fit: undefined,
-  '1': 110,
-  '2': 220,
+  '0.5': BASE_PX_PER_HOUR * 0.5,
+  '0.75': BASE_PX_PER_HOUR * 0.75,
+  '1': BASE_PX_PER_HOUR,
+  '1.5': BASE_PX_PER_HOUR * 1.5,
+  '2': BASE_PX_PER_HOUR * 2,
+  '3': BASE_PX_PER_HOUR * 3,
+  '4': BASE_PX_PER_HOUR * 4,
+  '5': BASE_PX_PER_HOUR * 5,
 };
+
+/**
+ * The next level in or out of `zoom` (LAI-890): from Fit, in is 1× and out is
+ * nothing; past either end, nothing.
+ */
+export function zoomStep(zoom: Zoom, by: 1 | -1): Zoom | undefined {
+  if (zoom === 'fit') return by > 0 ? '1' : undefined;
+  const at = ZOOM_STEPS.indexOf(zoom);
+  return ZOOM_STEPS[at + by];
+}
+
+/** The YOU row's block height, dragged by its grip (LAI-891): the design's 80px, up to three times it. */
+export const BLOCK_MIN_PX = 80;
+export const BLOCK_MAX_PX = 240;
+/** ↑ and ↓ on the grip move the height by this much. */
+export const BLOCK_STEP_PX = 8;
+export const clampBlockHeight = (px: number): number =>
+  Math.round(Math.max(BLOCK_MIN_PX, Math.min(BLOCK_MAX_PX, px)));
+
+/** `1.5×`, `1×` — or `Fit`. */
+export const zoomLabel = (zoom: Zoom): string => (zoom === 'fit' ? 'Fit' : `${zoom}×`);
+/** An idle stretch at either end of the day this long or longer folds at Fit (LAI-888). */
+export const FOLD_MIN = 45;
+/** How wide a folded stretch is drawn, in px. */
+export const FOLD_PX = 92;
 
 export interface LaneBlock {
   readonly kind: 'confirmed' | 'drafted';
@@ -51,6 +94,63 @@ export interface Span {
 
 export interface BreakSpan extends Span {
   readonly id: string;
+}
+
+/**
+ * One window of the organisation's break schedule on the day (D-101): display
+ * only — never time, never compared with what the person did in it.
+ */
+export interface ScheduledSpan extends Span {
+  readonly label: string;
+}
+
+/** One run of a scheduled window: worked under a block, or not. */
+export interface WorkedRun extends Span {
+  readonly worked: boolean;
+}
+
+/** What the day did inside a scheduled window (LAI-894, D-105). */
+export interface WorkedIn {
+  /** Minutes of the window under a confirmed or drafted block, each minute once. */
+  readonly worked: number;
+  /** The rest of the window. */
+  readonly rest: number;
+  /** The window start to end, each stretch worked or not, adjacent alike merged. */
+  readonly runs: readonly WorkedRun[];
+}
+
+/**
+ * The organisation's window set against the blocks (LAI-894, D-105): how many
+ * of its minutes any block covers — two blocks at once count once — and the
+ * runs across it, for the pill's bar. A block partly outside is clipped to the
+ * window; one that does not touch it is nothing.
+ */
+export function workedIn(blocks: readonly Span[], window: Span): WorkedIn {
+  const length = Math.max(0, window.end - window.start);
+  const cuts = new Set<number>([window.start, window.end]);
+  for (const b of blocks) {
+    if (b.end <= window.start || b.start >= window.end) continue;
+    cuts.add(Math.max(window.start, b.start));
+    cuts.add(Math.min(window.end, b.end));
+  }
+  const points = [...cuts].sort((a, b) => a - b);
+  const runs: WorkedRun[] = [];
+  let worked = 0;
+  for (let i = 0; i + 1 < points.length; i += 1) {
+    const start = points[i] ?? window.start;
+    const end = points[i + 1] ?? window.end;
+    if (end <= start) continue;
+    // Every cut is a block edge, so a stretch is under a block wholly or not at all.
+    const under = blocks.some((b) => b.start < end && b.end > start);
+    if (under) worked += end - start;
+    const last = runs[runs.length - 1];
+    if (last?.worked === under) {
+      runs[runs.length - 1] = { start: last.start, end, worked: under };
+    } else {
+      runs.push({ start, end, worked: under });
+    }
+  }
+  return { worked, rest: length - worked, runs };
 }
 
 /** A signal's time is known to this many minutes and no finer (D-096). */
@@ -87,6 +187,8 @@ export interface DayLine {
   readonly untimed: number;
   readonly gaps: readonly Span[];
   readonly breaks: readonly BreakSpan[];
+  /** The organisation's breaks whose weekday is this day's, in order. */
+  readonly scheduled: readonly ScheduledSpan[];
   /**
    * The SIGNALS lane (LAI-834): the day's prompts, then its commits, each in
    * the five minutes it fell in — only what the server sent (D-096).
@@ -138,11 +240,16 @@ export function clip(span: Span, cuts: readonly Span[]): Span[] {
 
 /**
  * The gaps of a day: stretches of at least {@link GAP_MIN} minutes **between**
- * placed blocks, less every break. Nothing before the first block and nothing
+ * placed blocks, less every break — the person's own and the organisation's
+ * scheduled ones alike (D-101). Nothing before the first block and nothing
  * after the last counts — the day starts when the person did and ends with its
  * last block; an evening is not hours unaccounted (review round 1).
  */
-export function gapsOf(blocks: readonly Span[], breaks: readonly Span[]): Span[] {
+export function gapsOf(
+  blocks: readonly Span[],
+  breaks: readonly Span[],
+  scheduled: readonly Span[] = [],
+): Span[] {
   const sorted = [...blocks].sort((a, b) => a.start - b.start);
   const gaps: Span[] = [];
   let reach: number | undefined;
@@ -152,14 +259,19 @@ export function gapsOf(blocks: readonly Span[], breaks: readonly Span[]): Span[]
     }
     reach = reach === undefined ? block.end : Math.max(reach, block.end);
   }
+  const cuts = [...breaks, ...scheduled];
   return gaps
-    .flatMap((gap) => clip(gap, breaks))
+    .flatMap((gap) => clip(gap, cuts))
     .filter((piece) => piece.end - piece.start >= GAP_MIN);
 }
+
+/** `2026-10-20` → its ISO weekday, 1 (Monday) to 7 (Sunday). */
+const isoDay = (day: string): number => ((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
 
 export function dayLine(
   view: Pick<MyDay, 'day' | 'tz' | 'today' | 'drafts' | 'entries' | 'breaks' | 'signal_times'> & {
     readonly agent?: Pick<MyDay['agent'], 'lane'>;
+    readonly settings?: Pick<TimeSettings, 'breaks'>;
   },
   nowMs: number,
 ): DayLine {
@@ -204,8 +316,24 @@ export function dayLine(
     start: minute(b.started_at),
     end: minute(b.ended_at),
   }));
+  // Each wall-clock window on this weekday, at the instant it names in the
+  // day's own zone (D-101 item 2) — on a clock-change day, where it really falls.
+  const weekday = isoDay(view.day);
+  const scheduled: ScheduledSpan[] = [];
+  if (midnight !== undefined) {
+    for (const w of view.settings?.breaks ?? []) {
+      if (!w.days.includes(weekday)) continue;
+      const a = atClock(view.day, w.start, view.tz);
+      const b = atClock(view.day, w.end, view.tz);
+      if (a === undefined || b === undefined) continue;
+      const start = minute(a);
+      const end = minute(b);
+      if (end > start) scheduled.push({ label: w.label, start, end });
+    }
+    scheduled.sort((x, y) => x.start - y.start);
+  }
   const now = view.day === view.today ? minute(nowMs) : undefined;
-  const gaps = gapsOf(blocks, breaks);
+  const gaps = gapsOf(blocks, breaks, scheduled);
 
   // Placed as sent, never clamped onto the day: one that is not on it is left out.
   const signals: SignalMark[] = [];
@@ -242,9 +370,9 @@ export function dayLine(
     }
   }
 
-  const starts = [...blocks, ...breaks, ...signals, ...agents].map((s) => s.start);
+  const starts = [...blocks, ...breaks, ...scheduled, ...signals, ...agents].map((s) => s.start);
   const ends = [
-    ...[...blocks, ...breaks, ...agents].map((s) => s.end),
+    ...[...blocks, ...breaks, ...scheduled, ...agents].map((s) => s.end),
     ...signals.map((s) => s.start + SIGNAL_MINUTES),
   ];
   if (now !== undefined) {
@@ -266,7 +394,21 @@ export function dayLine(
     // A wall hour the clock skips names the same instant as the next one: once.
     if (hours.at(-1)?.minute !== m) hours.push({ hour, minute: m });
   }
-  return { midnight, length, blocks, untimed, gaps, breaks, signals, agents, now, from, to, hours };
+  return {
+    midnight,
+    length,
+    blocks,
+    untimed,
+    gaps,
+    breaks,
+    scheduled,
+    signals,
+    agents,
+    now,
+    from,
+    to,
+    hours,
+  };
 }
 
 /** Where `minute` sits along an axis from hour `from` to hour `to`, as a percentage. */
@@ -338,69 +480,6 @@ export function stackOf(blocks: readonly Span[]): Stack[] {
   return stacks;
 }
 
-/** A box on the screen, in px. */
-export interface Box {
-  readonly l: number;
-  readonly r: number;
-  readonly t: number;
-  readonly b: number;
-}
-
-/** A count badge inside its block's end, or centred over a block too narrow for it. */
-export type ChipPlace = 'end' | 'centre';
-
-/** A badge as drawn: the key of its block, its width, and its top and bottom. */
-export interface ChipSize {
-  readonly id: string;
-  readonly width: number;
-  readonly top: number;
-  readonly bottom: number;
-}
-
-/** Two boxes share more than half a pixel each way: one would be drawn over the other. */
-const crosses = (a: Box, b: Box): boolean =>
-  Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
-
-/**
- * Where each block's count badge goes, from the boxes as drawn (LAI-860):
- * inside the block's end, `inset` from it, where it fits; centred over the
- * block where it does not. A badge is drawn only when that box clears every
- * other block, every badge already placed and both ends of the track, so a
- * short block with room around it keeps its badge and one among neighbours
- * goes without. Longer blocks are placed first. `blocks` is keyed as the
- * badges are; a badge whose block is not there is left out.
- */
-export function placeChips(
-  chips: readonly ChipSize[],
-  blocks: ReadonlyMap<string, Box>,
-  track: Pick<Box, 'l' | 'r'>,
-  inset: number,
-): Map<string, ChipPlace> {
-  const across = (id: string): number => {
-    const b = blocks.get(id);
-    return b === undefined ? 0 : b.r - b.l;
-  };
-  const order = [...chips].sort(
-    (a, b) =>
-      across(b.id) - across(a.id) || (blocks.get(a.id)?.l ?? 0) - (blocks.get(b.id)?.l ?? 0),
-  );
-  const places = new Map<string, ChipPlace>();
-  const drawn: Box[] = [];
-  for (const chip of order) {
-    const own = blocks.get(chip.id);
-    if (own === undefined) continue;
-    const place: ChipPlace = chip.width <= own.r - own.l - 2 * inset ? 'end' : 'centre';
-    const l = place === 'end' ? own.r - inset - chip.width : (own.l + own.r - chip.width) / 2;
-    const box = { l, r: l + chip.width, t: chip.top, b: chip.bottom };
-    if (box.l < track.l - 0.5 || box.r > track.r + 0.5) continue;
-    if ([...blocks].some(([id, b]) => id !== chip.id && crosses(box, b))) continue;
-    if (drawn.some((d) => crosses(box, d))) continue;
-    places.set(chip.id, place);
-    drawn.push(box);
-  }
-  return places;
-}
-
 /** The nearest step on the clock: 8:42 → 8:40, 8:43 → 8:45. */
 export const snap = (minute: number): number => Math.round(minute / STEP) * STEP;
 
@@ -420,29 +499,56 @@ export interface Limits {
 }
 
 /**
- * The room a block has (review round 1): back to the end of the confirmed
- * block before it, on to the start of the one after it, and never off the
- * day — so a drag or a + cannot lay it over confirmed time, which would count
- * that time twice. A confirmed block that already overlaps it bounds nothing:
- * moving an edge cannot fix that, and the server refuses its confirm.
+ * The free stretch around minute `at` among the confirmed blocks (LAI-897):
+ * from the end of the last confirmed block before it to the start of the
+ * first after, within the day. `undefined` when `at` lies inside one. *Add
+ * time* starts in it, as the last free half hour before now (LAI-502); it
+ * bounds nothing — time may be added over confirmed time (LAI-528).
  */
-export function limitsOf(block: Span, confirmed: readonly Span[], length = 1440): Limits {
-  let lo = 0;
+export function freeAround(
+  at: number,
+  confirmed: readonly Span[],
+  from = 0,
+  length = 1440,
+): Limits | undefined {
+  let lo = from;
   let hi = length;
-  for (const c of confirmed) {
-    if (c.end <= block.start) lo = Math.max(lo, c.end);
-    else if (c.start >= block.end) hi = Math.min(hi, c.start);
+  for (const b of confirmed) {
+    if (b.start <= at && b.end > at) return undefined;
+    if (b.end <= at) lo = Math.max(lo, b.end);
+    if (b.start >= at) hi = Math.min(hi, b.start);
   }
   return { lo, hi };
 }
 
-/** {@link limitsOf} a placed block, among the day's other confirmed blocks. */
-export function limitsIn(line: Pick<DayLine, 'blocks' | 'length'>, block: LaneBlock): Limits {
-  return limitsOf(
-    block,
-    line.blocks.filter((b) => b.kind === 'confirmed' && b.id !== block.id),
-    line.length,
-  );
+/**
+ * A drag from `anchor` to `to` on the empty track (LAI-897): both ends on the
+ * five-minute step, in order, inside `[from, length]` — over confirmed time
+ * too, as the design's range runs (LAI-528, D-113). `undefined` for a drag
+ * that ends up shorter than one step — nothing to add. A drag begun on a block
+ * moves the block and is never a range.
+ */
+export function rangeFromDrag(
+  anchor: number,
+  to: number,
+  from = 0,
+  length = 1440,
+): Span | undefined {
+  const grid = (m: number): number => Math.round(m / STEP) * STEP;
+  const a = Math.max(from, Math.min(length, grid(Math.min(anchor, to))));
+  const b = Math.max(from, Math.min(length, grid(Math.max(anchor, to))));
+  return b - a < STEP ? undefined : { start: a, end: b };
+}
+
+/**
+ * How far a placed block's edges may go: the whole of its day, whatever lies
+ * around it. A draft's always did (the design, LAI-510); **a confirmed block's
+ * did not** — they stopped at its confirmed neighbours, so that no time
+ * counted twice (review round 1 of LAI-831) — until the owner retired that
+ * rule: time recorded at the same time is allowed (LAI-528, D-113).
+ */
+export function limitsIn(line: Pick<DayLine, 'length'>): Limits {
+  return { lo: 0, hi: line.length };
 }
 
 /**
@@ -515,3 +621,259 @@ export function splitPoint(block: Shape): number | undefined {
 
 /** The instant minute `m` of the day names, for a write. */
 export const instantOf = (midnight: number, m: number): number => midnight + m * 60_000;
+
+/** One stretch of the axis as drawn: minutes `t0`–`t1` onto px `p0`–`p1`. */
+export interface Segment {
+  readonly t0: number;
+  readonly t1: number;
+  readonly p0: number;
+  readonly p1: number;
+  /** Idle hours folded to {@link FOLD_PX} (Fit only). */
+  readonly folded: boolean;
+}
+
+/** Minutes after midnight to px along the track, and back (LAI-888). */
+export interface Scale {
+  readonly segments: readonly Segment[];
+  /** The track's width in px. */
+  readonly total: number;
+  readonly pos: (minute: number) => number;
+  readonly at: (px: number) => number;
+  /** `minute` lies strictly inside a folded stretch. */
+  readonly folded: (minute: number) => boolean;
+}
+
+/**
+ * The idle stretches Fit folds (the owner's design, LAI-888): before the
+ * first thing placed on the day and after the last — or after now, on today,
+ * so the now line always stands on an open stretch — each only when it is
+ * {@link FOLD_MIN} minutes or longer. A day with nothing placed folds
+ * nothing: there is nothing to make room for. The organisation's scheduled
+ * breaks (D-101) are never folded away, but alone they place nothing.
+ */
+export function idleEnds(
+  line: Pick<
+    DayLine,
+    'blocks' | 'breaks' | 'scheduled' | 'signals' | 'agents' | 'now' | 'from' | 'to'
+  >,
+): Span[] {
+  const placed = [...line.blocks, ...line.breaks, ...line.signals, ...line.agents];
+  if (placed.length === 0) return [];
+  const starts = [...placed, ...line.scheduled].map((s) => s.start);
+  const ends = [
+    ...[...line.blocks, ...line.breaks, ...line.scheduled, ...line.agents].map((s) => s.end),
+    ...line.signals.map((s) => s.start + SIGNAL_MINUTES),
+  ];
+  const a = line.from * 60;
+  const b = line.to * 60;
+  const first = Math.max(a, Math.min(...starts));
+  const last = Math.min(b, Math.max(...ends, line.now ?? -Infinity));
+  const folds: Span[] = [];
+  if (first - a >= FOLD_MIN) folds.push({ start: a, end: first });
+  if (b - last >= FOLD_MIN && last > first) folds.push({ start: last, end: b });
+  return folds;
+}
+
+/**
+ * Where each minute of the axis is drawn (LAI-888). At 1× and 2× the axis is
+ * linear at {@link PX_PER_HOUR}. At Fit it is `width` px across, with every
+ * stretch in `folds` drawn {@link FOLD_PX} wide and the rest sharing what is
+ * left — however little that is: Fit fits. A stretch that would be narrower
+ * than {@link FOLD_PX} drawn as it is stays as it is. `width` of 0 — not
+ * measured yet — gives a linear Fit at a pixel a minute, which the next
+ * measure replaces.
+ */
+export function buildScale(
+  from: number,
+  to: number,
+  zoom: Zoom,
+  width: number,
+  folds: readonly Span[] = [],
+): Scale {
+  const a = from * 60;
+  const b = to * 60;
+  const pph = PX_PER_HOUR[zoom];
+  const segments: Segment[] = [];
+  if (pph !== undefined || folds.length === 0) {
+    const k = pph === undefined ? (width > 0 ? width / Math.max(1, b - a) : 1) : pph / 60;
+    segments.push({ t0: a, t1: b, p0: 0, p1: (b - a) * k, folded: false });
+  } else {
+    // A fold only where it makes room: on a phone a stretch may be narrower
+    // than FOLD_PX drawn as it is, and folding it would take width from the day.
+    const k0 = width / Math.max(1, b - a);
+    const sorted = [...folds]
+      .map((f) => ({ start: Math.max(a, f.start), end: Math.min(b, f.end) }))
+      .filter((f) => f.end > f.start && (f.end - f.start) * k0 > FOLD_PX)
+      .sort((x, y) => x.start - y.start);
+    const stretches: { readonly t0: number; readonly t1: number; readonly folded: boolean }[] = [];
+    let cursor = a;
+    for (const f of sorted) {
+      if (f.start > cursor) stretches.push({ t0: cursor, t1: f.start, folded: false });
+      stretches.push({ t0: f.start, t1: f.end, folded: true });
+      cursor = f.end;
+    }
+    if (cursor < b) stretches.push({ t0: cursor, t1: b, folded: false });
+    const open = stretches.filter((s) => !s.folded).reduce((n, s) => n + s.t1 - s.t0, 0);
+    const room = width > 0 ? Math.max(1, width - sorted.length * FOLD_PX) : open;
+    const k = open === 0 ? 1 : room / open;
+    let p = 0;
+    for (const s of stretches) {
+      const len = s.folded ? FOLD_PX : (s.t1 - s.t0) * k;
+      segments.push({ t0: s.t0, t1: s.t1, p0: p, p1: p + len, folded: s.folded });
+      p += len;
+    }
+  }
+  const total = segments.at(-1)?.p1 ?? 0;
+  const pos = (minute: number): number => {
+    if (minute <= a) return 0;
+    for (const s of segments) {
+      if (minute <= s.t1) return s.p0 + ((minute - s.t0) / (s.t1 - s.t0)) * (s.p1 - s.p0);
+    }
+    return total;
+  };
+  const at = (px: number): number => {
+    if (px <= 0) return a;
+    for (const s of segments) {
+      if (px <= s.p1) return s.t0 + ((px - s.p0) / Math.max(1e-6, s.p1 - s.p0)) * (s.t1 - s.t0);
+    }
+    return b;
+  };
+  const folded = (minute: number): boolean =>
+    segments.some((s) => s.folded && minute > s.t0 && minute < s.t1);
+  return { segments, total, pos, at, folded };
+}
+
+/** The agent's work inside a span: how long, how much of it on a card, and how many runs. */
+export function agentsDuring(
+  runs: readonly AgentRun[],
+  span: Span,
+): { readonly seconds: number; readonly onCardSeconds: number; readonly runs: number } {
+  let seconds = 0;
+  let onCardSeconds = 0;
+  let count = 0;
+  for (const run of runs) {
+    const overlap = Math.min(span.end, run.end) - Math.max(span.start, run.start);
+    if (overlap <= 0) continue;
+    const share = (run.seconds * overlap) / (run.end - run.start);
+    seconds += share;
+    if (run.onCard) onCardSeconds += share;
+    count += 1;
+  }
+  return { seconds: Math.round(seconds), onCardSeconds: Math.round(onCardSeconds), runs: count };
+}
+
+/** The signals that fell inside a span, by kind. */
+export function signalsDuring(
+  marks: readonly SignalMark[],
+  span: Span,
+): { readonly prompts: number; readonly commits: number } {
+  let prompts = 0;
+  let commits = 0;
+  for (const m of marks) {
+    const mid = m.start + SIGNAL_MINUTES / 2;
+    if (mid < span.start || mid >= span.end) continue;
+    if (m.kind === 'prompt') prompts += m.count;
+    else commits += m.count;
+  }
+  return { prompts, commits };
+}
+
+/**
+ * The day's minutes by kind, for the Timeline's header (the owner's design,
+ * LAI-888): confirmed, drafted on a card or General, drafted on nothing, and
+ * the gaps between. Every block counts, placed or not; gaps are the lane's.
+ */
+export function dayFigures(
+  view: Pick<MyDay, 'drafts' | 'entries'>,
+  gaps: readonly Span[],
+): {
+  readonly confirmed: number;
+  readonly drafted: number;
+  readonly needsCard: number;
+  readonly gaps: number;
+} {
+  return {
+    confirmed: view.entries.reduce((n, e) => n + e.minutes, 0),
+    drafted: view.drafts.reduce((n, d) => n + (needsCard(d) ? 0 : d.minutes), 0),
+    needsCard: view.drafts.reduce((n, d) => n + (needsCard(d) ? d.minutes : 0), 0),
+    gaps: gaps.reduce((n, g) => n + g.end - g.start, 0),
+  };
+}
+
+/* ------------------------------------------------------- drag (LAI-512) */
+
+/**
+ * A block moved whole (the owner's `TimelineV2.dc.html`, LAI-512): its start
+ * lands on the nearest {@link STEP} of the clock and its span comes with it;
+ * its minutes do not change — a block that held less than its span keeps
+ * that. **Never pinned to the day:** a move past midnight goes there, so
+ * {@link checkDrop} can refuse it and the block goes back, as the design's
+ * `check` does. `undefined` when nothing would move.
+ */
+export function moveBlock(block: Shape, toStart: number): Edit | undefined {
+  const span = block.end - block.start;
+  const start = snap(toStart);
+  if (start === block.start) return undefined;
+  return { start, end: start + span, minutes: block.minutes };
+}
+
+/** Why a drop was refused: only a day's edge refuses one now. */
+export type DropCheck = { readonly ok: true } | { readonly ok: false; readonly why: 'midnight' };
+
+/**
+ * Whether `span` may land where it is: on its day, `[0, length]`. Anywhere
+ * on it, over anything — a block moved, an edge dragged or a tray item
+ * dropped over confirmed time is time recorded at the same time (the owner,
+ * LAI-528, D-113). The design's `check` also refused a confirmed block or a
+ * tray item over confirmed time (review round 1 of LAI-831); the owner
+ * retired that, and the server no longer refuses it either.
+ */
+export function checkDrop(span: Span, length = 1440): DropCheck {
+  return span.start < 0 || span.end > length ? { ok: false, why: 'midnight' } : { ok: true };
+}
+
+/**
+ * Where a tray item dropped at minute `at` lands: centred on the pointer, on
+ * the five-minute grid, at least a step long. Like {@link moveBlock}, never
+ * pinned to the day: one that would cross midnight is {@link checkDrop}'s to
+ * refuse (the design's `onExtOver` and `check`).
+ */
+export function trayDropSpan(at: number, minutes: number): Span {
+  const len = Math.max(STEP, minutes);
+  const start = snap(at - len / 2);
+  return { start, end: start + len };
+}
+
+/** The running timer as a block on the day (LAI-512): where it started and how far it has run. */
+export interface TimerSpan extends Span {
+  /** Minutes it has run, paused time left out. */
+  readonly minutes: number;
+  readonly paused: boolean;
+}
+
+/**
+ * The timer drawn on the track (the design's `S.timer`): from the minute it
+ * started to now — three minutes wide at least, so it can be seen and
+ * clicked — only on the day it started. `undefined` on any other day, or
+ * when there is none.
+ */
+export function timerSpan(
+  timer: {
+    readonly started_at: number;
+    readonly resumed_at: number;
+    readonly paused_at: number | null;
+    readonly accumulated_ms: number;
+  } | null,
+  midnight: number | undefined,
+  length: number,
+  nowMs: number,
+): TimerSpan | undefined {
+  if (timer === null || midnight === undefined) return undefined;
+  const start = Math.round((timer.started_at - midnight) / 60_000);
+  if (start < 0 || start >= length) return undefined;
+  const paused = timer.paused_at !== null;
+  const ran = timer.accumulated_ms + (paused ? 0 : Math.max(0, nowMs - timer.resumed_at));
+  const minutes = Math.floor(ran / 60_000);
+  const end = Math.min(length, start + Math.max(minutes, 3));
+  return { start, end, minutes, paused };
+}

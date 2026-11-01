@@ -22,9 +22,15 @@ const PROJECTS = [
   { id: 'p3', slug: 'zebra', name: 'Zebra' },
 ];
 
+/** A reader as `GET /permissions` describes them (LAI-970): org usage, and which spaces. */
+const reader = (readsOrg: boolean, spaces: readonly string[] | 'all') => ({
+  readsOrg,
+  readsSpace: (id: string) => spaces === 'all' || spaces.includes(id),
+});
+
 void describe('the space selector', () => {
   void test('an owner: the whole organisation first, then every space by name', () => {
-    const me = { org_role: 'owner', memberships: [] };
+    const me = reader(true, 'all');
     assert.deepEqual(
       scopeOptions(me, PROJECTS).map((o) => [o.value, o.label]),
       [
@@ -38,7 +44,7 @@ void describe('the space selector', () => {
   });
 
   void test('a member: only the spaces they are in, never the organisation', () => {
-    const me = { org_role: 'member', memberships: [{ project_id: 'p3' }, { project_id: 'p1' }] };
+    const me = reader(false, ['p3', 'p1']);
     assert.deepEqual(
       scopeOptions(me, PROJECTS).map((o) => o.value),
       ['laika', 'zebra'],
@@ -47,15 +53,15 @@ void describe('the space selector', () => {
   });
 
   void test('a member in no space has nothing to choose', () => {
-    const me = { org_role: 'member', memberships: [] };
+    const me = reader(false, []);
     assert.deepEqual(scopeOptions(me, PROJECTS), []);
     assert.equal(defaultScope(me, PROJECTS), undefined);
   });
 });
 
 void describe('the space in the address, ?project= (LAI-814)', () => {
-  const owner = { org_role: 'owner', memberships: [] };
-  const member = { org_role: 'member', memberships: [{ project_id: 'p3' }, { project_id: 'p1' }] };
+  const owner = reader(true, 'all');
+  const member = reader(false, ['p3', 'p1']);
 
   void test('opens the space it names, for a reader offered it', () => {
     assert.equal(scopeFor(owner, PROJECTS, 'atlas'), 'atlas');
@@ -71,7 +77,7 @@ void describe('the space in the address, ?project= (LAI-814)', () => {
     // Atlas is not theirs, and a slug nobody has is nobody's: never a 403.
     assert.equal(scopeFor(member, PROJECTS, 'atlas'), 'laika');
     assert.equal(scopeFor(owner, PROJECTS, 'gone'), '');
-    assert.equal(scopeFor({ org_role: 'member', memberships: [] }, PROJECTS, 'laika'), undefined);
+    assert.equal(scopeFor(reader(false, []), PROJECTS, 'laika'), undefined);
   });
 
   void test('a space’s own view is Insights → Usage & cost with its slug', () => {
@@ -81,7 +87,7 @@ void describe('the space in the address, ?project= (LAI-814)', () => {
 });
 
 void describe('a By space row is a link only to a space the selector offers (LAI-814 review)', () => {
-  const owner = { org_role: 'owner', memberships: [] };
+  const owner = reader(true, 'all');
 
   void test('the offered spaces are the selector’s, All spaces aside', () => {
     assert.deepEqual([...(offeredSpaces(owner, PROJECTS) ?? [])].sort(), [

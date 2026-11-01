@@ -13,6 +13,12 @@ import {
 } from '../../src/policy/actions.ts';
 import { type Actor, can, forcedTokenScope, projectRoleOnJoin } from '../../src/policy/can.ts';
 import { parseMatrix, type Cell } from '../helpers/policy-matrix.ts';
+import { CAPABILITIES } from '../../src/db/enums.ts';
+import {
+  CAPABILITY_ACTIONS,
+  CAPABILITY_LABELS,
+  OWNER_LOCKED_ACTIONS,
+} from '../../src/policy/grants.ts';
 
 /**
  * SPEC §3 against `can()` (LAI-100).
@@ -45,15 +51,29 @@ import { parseMatrix, type Cell } from '../helpers/policy-matrix.ts';
 
 const ORG_MATRIX = '3.1 Org-level permission matrix';
 const PROJECT_MATRIX = '3.2 Project-level permission matrix';
+/** §6.2 carries one prose rule of its own (audit H4); see `PROSE_RULES`. */
+const AUTHORISATION = '6.2 Authorisation';
+/** §4.64 carries D-114's agent narrowing (LAI-534); see `PROSE_RULES`. */
+const AGENT_GRANTS = '4.64 `agent_project_grants`';
 
 // --------------------------------------------------------- the declared link
 
 const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
-  ['Delete org data / transfer ownership', ['org.delete', 'org.transfer_ownership']],
+  // D-104 item 2 (LAI-982) split the row: transferring is session only.
+  ['Delete org data', ['org.delete']],
+  ['Transfer ownership', ['org.transfer_ownership']],
   ['Org settings (AI provider, SMTP, signup mode)', ['org.settings.edit']],
   ['Create / archive project', ['project.create', 'project.archive']],
-  ['Invite users / change org roles', ['user.invite', 'user.set_role']],
+  // D-102 rule 5 (LAI-958) split the row: inviting stays a grant, roles and
+  // grants are the owner's.
+  ['Invite users', ['user.invite']],
+  ['Change org roles', ['user.set_role']],
+  ['Set what each role may do', ['org.permissions.manage']],
   ['Deactivate user', ['user.deactivate']],
+  // D-104 item 3 (LAI-981).
+  ['Sign a person out everywhere', ['user.sign_out']],
+  // D-104 item 4 (LAI-983).
+  ['Issue a password-reset link', ['user.reset_password']],
   ['View member list', ['member_list.read']],
   ['Join a public project', ['project.join_public']],
   [
@@ -61,19 +81,26 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
     ['token.create_own', 'token.read_own', 'token.revoke_own'],
   ],
   ["List / revoke anyone's token", ['token.list_any', 'token.revoke_any']],
+  // D-114 (LAI-534): a person's registered agents.
+  ['Read own agents', ['agent.read_own']],
+  ['Register and manage own agents', ['agent.manage_own']],
   ['Log own unlisted work', ['unlisted.log_own']],
   ['Send own heartbeat', ['heartbeat.send_own']],
   ['Export audit log', ['audit_log.export']],
   ['Configure webhooks', ['webhook.configure']],
   ['View the organisation', ['org.read']],
+  // LAI-953: the row LAI-432 waited on, landed after it was done.
+  ['Presence and capacity', ['presence.read', 'capacity.read']],
   ["View a member's profile", ['profile.read']],
   ["Set a member's profile kind", ['profile.set_kind']],
   ['Rate a member', ['profile.rate']],
   // D-079's rows (LAI-751): the heatmap, and the developer's own side of it.
   ["View a member's activity heatmap", ['profile.activity.read']],
+  // D-102 rule 1 (LAI-957): a person's day and local activity, read for them.
+  ["View a member's day, time and shared activity", ['people.analytics.read']],
   ['Turn Developer insights on or off', ['org.developer_insights.set']],
   ['Read own activity-sharing setting', ['activity_sharing.read_own']],
-  ['Set own activity sharing', ['activity_sharing.set_own']],
+  ['Set own local-activity scope', ['activity_sharing.set_own']],
   ['Send own local activity', ['local_activity.send_own']],
   ['Read and delete own local activity', ['local_activity.read_own', 'local_activity.delete_own']],
   // D-084's rows (LAI-769): token usage, by who may see it.
@@ -104,8 +131,17 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ["Apply or remove a task's tags", ['task.write']],
   ['Rename or delete a tag project-wide', ['project.settings.edit']],
   ['Assign tasks into or out of a sprint', ['task.assign_sprint']],
-  ['Create / edit / move any task', ['task.write']],
+  ['Create tasks', ['task.create']],
+  ['Edit / move any task', ['task.write']],
   ['Claim a task (start_working)', ['task.claim']],
+  ['Save a checkpoint on a task your agent holds', ['task.checkpoint.create']],
+  ['Re-tag a checkpoint one of your agents saved', ['task.checkpoint.retag']],
+  ['Offer a task your agent holds to another agent', ['task.handoff.offer']],
+  ['Approve a cross-owner hand-off', ['task.handoff.approve']],
+  ['Accept a hand-off or recovery offer', ['task.handoff.accept']],
+  ['Decline a hand-off or recovery offer', ['task.handoff.decline']],
+  ['Cancel a hand-off offer', ['task.handoff.cancel']],
+  ["Edit the project's hand-off policy", ['project.handoff_policy.edit']],
   ['Assign a task to someone else', ['task.assign_other']],
   ['Add comment', ['comment.create']],
   ['Edit / delete comment', ['comment.edit', 'comment.delete']],
@@ -116,29 +152,29 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Apply a meeting-diff proposal', ['meeting_proposal.apply']],
   ["Read a project's token totals", ['usage.read_project']],
   ['Set token budgets', ['budget.set']],
+  ['Leave a project', ['project.leave']],
 ]);
 
 /**
  * Actions `can()` has that no §3 row grants.
  *
- * **This list should be empty and is not.** Each entry is a real gap between the
- * code and the document, not a design decision, and the staleness test below
+ * **This list should be empty, and is.** Each entry would be a real gap between
+ * the code and the document, not a design decision, and the staleness test below
  * removes an entry the moment §3 grows a row for it.
  */
-const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
-  // In flight. §3.1 gains a "Presence and capacity" row (✓ ✓ ✓ ✓), written by
-  // CHIEF and applied at merge; the staleness test below drops both the moment
-  // it lands. Re-checked after every merge of `master`, which is when they
-  // expire (LAI-219).
-  ['presence.read', 'LAI-432, in flight: awaiting §3.1\'s "Presence and capacity" row.'],
-  ['capacity.read', 'LAI-432, in flight: awaiting §3.1\'s "Presence and capacity" row.'],
+const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map<Action, string>([
+  [
+    'system.idempotency.prune',
+    "LAI-534 (Codex review of PR #102, round 2): the §11.6 sweep of the idempotency store's expired rows and of its pre-LAI-534 rows, which may hold secrets. CORE's half; CHIEF's §3.4 row retires this entry, and the staleness test below says so the day it lands.",
+  ],
   // Empty, and it should stay that way: an action `can()` allows and §3 never
   // grants is a permission with no written source.
   //
-  // Emptied twice now — LAI-408's `unlisted.log_own` and LAI-417's
-  // `heartbeat.send_own` — both by the staleness test below, on the merge each
-  // entry named as its retirement. The map is the mechanism for a two-owner
-  // change in flight, not a place to park one.
+  // Emptied three times now — LAI-408's `unlisted.log_own`, LAI-417's
+  // `heartbeat.send_own`, and LAI-953's `presence.read` / `capacity.read` (the
+  // row LAI-432 waited on, landed after LAI-432 was done) — each by the
+  // staleness test below. The map is the mechanism for a two-owner change in
+  // flight, not a place to park one.
 ]);
 
 /**
@@ -148,6 +184,10 @@ const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
  * permission, and one nobody wrote down is one nobody checks. Each entry names
  * a phrase that must still be present, so deleting the prose fails this file
  * rather than silently emptying the exemption.
+ *
+ * **Not only §3.** §6.2's token paragraph (audit H4) narrows every org row
+ * for a pinned token, so it is listed here with the section it lives in; the
+ * loop below reads whichever `### ` heading the entry names.
  */
 const PROSE_RULES: readonly {
   readonly section: string;
@@ -161,8 +201,23 @@ const PROSE_RULES: readonly {
   },
   {
     section: PROJECT_MATRIX,
+    phrase: 'agent tokens may read and nothing else',
+    why: "D-103 item 7's per-space switch. Not a cell: it narrows every write row for a token, as a `read_only` token's scope does, and `agentsMay` in `can()` implements it. `space-rules.test.ts` holds it against every project action.",
+  },
+  {
+    section: PROJECT_MATRIX,
     phrase: 'unless the actor is org Owner/Admin',
     why: 'The implicit-lead rule. Not a cell: it changes which *role* §3.2 is read with, and `effectiveProjectRole` implements it. Asserted directly below.',
+  },
+  {
+    section: AUTHORISATION,
+    phrase: 'A token pinned to projects is refused org-wide admin actions',
+    why: "Audit H4. Not a cell: it narrows every §3.1 row for a token whose `project_ids_json` is set, as a `read_only` scope narrows the writes, and `tokenAllows` in `can()` implements it against `PINNED_TOKEN_ORG_ACTIONS`. `can.test.ts`'s H4 table holds it against every `ORG_ACTIONS` entry for a pinned owner and admin, pinned against unpinned; the plain-cell check in this file passes no token, so it is unaffected.",
+  },
+  {
+    section: AGENT_GRANTS,
+    phrase: "An agent's effective access is the intersection",
+    why: "D-114 (LAI-534). Not a cell: it narrows every §3.1 and §3.2 row for a token whose `agent_id` is set — pinned to the agent's grants, `read_only` grants keeping the reads — as H4's pin and a `read_only` scope narrow, and `agentRefusal` in `can()`'s token step implements it. `can.test.ts`'s agent tables hold it against every action; the plain-cell check in this file passes no token, so it is unaffected.",
   },
 ];
 
@@ -207,24 +262,17 @@ function projectActor(role: ProjectRole): Actor {
 
 const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
   [
-    'not to Owner',
+    'as member or viewer',
     {
-      why: 'An Admin may grant any role except Owner — otherwise an Admin promotes themselves and the distinction is decorative.',
+      why: 'An Admin invites, and only as Member or Viewer: an invite is a role grant with a delay on it, and only the Owner grants Admin or Owner (D-102 rule 5, LAI-958).',
       verify: (action: Action) => {
         const admin = orgActor('admin');
-
-        if (action === 'user.set_role') {
-          expect(can(admin, 'user.set_role', { targetOrgRole: 'owner' })).toBe(false);
-          for (const role of ['admin', 'member', 'viewer'] as const) {
-            expect(can(admin, 'user.set_role', { targetOrgRole: role })).toBe(true);
-          }
-          return;
+        for (const role of ['member', 'viewer'] as const) {
+          expect(can(admin, action, { targetOrgRole: role }), role).toBe(true);
         }
-
-        // The other half of the row. Inviting is plain `✓` for an Admin; the
-        // "(not to Owner)" constraint is carried by `user.set_role`, which
-        // `services/invites.ts` also asserts when an invite names a role.
-        expect(can(admin, action, {})).toBe(true);
+        for (const role of ['admin', 'owner'] as const) {
+          expect(can(admin, action, { targetOrgRole: role }), role).toBe(false);
+        }
       },
     },
   ],
@@ -332,6 +380,49 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
     },
   ],
   [
+    'unless space admins only',
+    {
+      why: 'A member creates tasks unless the space has set its minimum to space admins (D-103 item 6, §4.3 `task_create_min_role`); a lead creates either way.',
+      verify: (action: Action) => {
+        const lead = (rule: 'member' | 'lead'): Actor => ({
+          ...projectActor('lead'),
+          projectRules: new Map([['p', { taskCreateMinRole: rule, agentsAllowed: true }]]),
+        });
+        const member = (rule: 'member' | 'lead'): Actor => ({
+          ...projectActor('member'),
+          projectRules: new Map([['p', { taskCreateMinRole: rule, agentsAllowed: true }]]),
+        });
+        expect(can(member('member'), action, { projectId: 'p' })).toBe(true);
+        expect(can(member('lead'), action, { projectId: 'p' })).toBe(false);
+        expect(can(lead('lead'), action, { projectId: 'p' })).toBe(true);
+      },
+    },
+  ],
+  [
+    "task's assignee",
+    {
+      why: 'A member approves a cross-owner hand-off only on a task assigned to them; `ownerId` is the assignee. Never the receiving agent’s owner is the service’s check (`approver_is_receiver`, §3.2, LAI-546).',
+      verify: (action: Action) => {
+        const member = projectActor('member');
+        expect(can(member, action, { projectId: 'p', ownerId: 'me' })).toBe(true);
+        expect(can(member, action, { projectId: 'p', ownerId: 'someone-else' })).toBe(false);
+        expect(can(member, action, { projectId: 'p' })).toBe(false);
+      },
+    },
+  ],
+  [
+    "own agent's or task's assignee",
+    {
+      why: 'A member cancels an offer a session of their own agent sent, or one on a task assigned to them (§4.73); the service passes either as `ownerId` (§3.2, LAI-546). A lead cancels any.',
+      verify: (action: Action) => {
+        const member = projectActor('member');
+        expect(can(member, action, { projectId: 'p', ownerId: 'me' })).toBe(true);
+        expect(can(member, action, { projectId: 'p', ownerId: 'someone-else' })).toBe(false);
+        expect(can(member, action, { projectId: 'p' })).toBe(false);
+      },
+    },
+  ],
+  [
     'own-created',
     {
       why: 'A member may delete a task they created and nobody else’s.',
@@ -343,10 +434,38 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
     },
   ],
   [
+    'themselves',
+    {
+      why: 'Every role may sign itself out everywhere; signing out somebody else is the holders of the deactivate grant (D-104 item 3, LAI-981).',
+      verify: (action: Action, role: string) => {
+        const self = orgActor(role.toLowerCase() as OrgRole);
+        expect(can(self, action, { targetUserId: self.userId }), 'themselves').toBe(true);
+        expect(can(self, action, { targetUserId: 'someone-else' }), 'someone else').toBe(false);
+      },
+    },
+  ],
+  [
     'session only',
     {
       why: 'The role may, and only on a signed-in web session: any personal access token is refused, whatever its scope or project list (D-078, LAI-743). A profile carries private ratings and a token is how an agent acts.',
       verify: (action: Action, role: string) => verifySessionOnly(action, role),
+    },
+  ],
+  [
+    'session only, not for the owner',
+    {
+      why: 'As "session only", and an Admin may not issue a link for the Owner: a reset link for the owner is the owner\'s account (D-104 item 4, LAI-983).',
+      verify: (action: Action, role: string) => {
+        verifySessionOnly(action, role);
+
+        const actor = orgActor(role.toLowerCase() as OrgRole);
+        expect(can(actor, action, { targetOrgRole: 'member' }), 'for a member').toBe(true);
+        expect(can(actor, action, { targetOrgRole: 'owner' }), 'for the owner').toBe(false);
+        expect(
+          can(orgActor('owner'), action, { targetOrgRole: 'owner' }),
+          'owner, for the owner',
+        ).toBe(true);
+      },
     },
   ],
   [
@@ -442,7 +561,7 @@ describe('the parser reads §3, prose and all', () => {
 
   it('keeps qualifiers instead of flattening them to a tick', () => {
     const invite = org.rows.find((row) => row.label.startsWith('Invite users'));
-    expect(invite?.cells.get('Admin')?.qualifier).toBe('not to Owner');
+    expect(invite?.cells.get('Admin')?.qualifier).toBe('as member or viewer');
 
     const comment = project.rows.find((row) => row.label === 'Edit / delete comment');
     expect(comment?.cells.get('Lead')?.qualifier).toBe('own + any');
@@ -652,5 +771,51 @@ describe('the prose rules in §3 are accounted for', () => {
     // And a plain member with no membership gets nothing.
     const outsider: Actor = { userId: 'me', orgRole: 'member', isActive: true, projectRole: null };
     expect(can(outsider, 'project.read', { projectId: 'p' })).toBe(false);
+  });
+});
+
+/**
+ * §3's grants table against `policy/grants.ts` (LAI-958): the capabilities by
+ * name, each one's actions by name, and the owner-locked list — from both
+ * sides, never a count. Read from the text between `## 3.` and `### 3.1`.
+ */
+describe('§3’s grants agree with policy/grants.ts', () => {
+  const spec = readFileSync(join(SERVER_ROOT, '..', 'docs', 'SPEC.md'), 'utf8');
+  const start = spec.indexOf('## 3. Roles and permissions');
+  const end = spec.indexOf('### 3.1', start);
+  const intro = spec.slice(start, end);
+  const known = new Set<string>(ALL_ACTIONS);
+
+  /** `| *Label* | carries |` rows, label → the action names the cell gives. */
+  const rows = new Map(
+    [...intro.matchAll(/^\| \*([^*]+)\* \| (.+) \|$/gm)].map((m) => [
+      m[1]!,
+      [...m[2]!.matchAll(/`([a-z_.]+)`/g)].map((n) => n[1]!).filter((n) => known.has(n)),
+    ]),
+  );
+
+  it('finds the table', () => {
+    expect(start).toBeGreaterThan(-1);
+    expect(rows.size, 'no grants table in §3 — has its format changed?').toBeGreaterThan(0);
+  });
+
+  it('names every capability by its label, and nothing else', () => {
+    expect([...rows.keys()].sort()).toEqual(CAPABILITIES.map((c) => CAPABILITY_LABELS[c]).sort());
+  });
+
+  it('gives each capability exactly the actions policy grants it', () => {
+    for (const capability of CAPABILITIES) {
+      expect([...(rows.get(CAPABILITY_LABELS[capability]) ?? [])].sort(), capability).toEqual(
+        [...CAPABILITY_ACTIONS[capability]].sort(),
+      );
+    }
+  });
+
+  it('lists the owner-locked actions, each by name', () => {
+    const paragraph = intro.slice(intro.indexOf('**Never grantable'));
+    const named = [...paragraph.matchAll(/`([a-z_.]+)`/g)]
+      .map((m) => m[1]!)
+      .filter((n) => known.has(n));
+    expect([...new Set(named)].sort()).toEqual([...OWNER_LOCKED_ACTIONS].sort());
   });
 });

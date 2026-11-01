@@ -13,7 +13,6 @@ import { afterEach, describe, test } from 'node:test';
 import {
   INVITE_REFUSED_REASON,
   acceptInvite,
-  canManageOrg,
   createInvite,
   listInvites,
   previewInvite,
@@ -165,25 +164,5 @@ void describe('managing invites from the organisation screen (LAI-086)', () => {
     await listInvites();
     assert.match(calls[0]?.url ?? '', /\/invites$/);
     assert.equal(calls[0]?.init?.method ?? 'GET', 'GET');
-  });
-});
-
-void describe('canManageOrg matches SPEC §3.1, and the server', () => {
-  void test('Owner and Admin may; Member and Viewer may not', () => {
-    // §3.1 "Invite users / change org roles" is Owner and Admin only.
-    // Confirmed against a running instance: a viewer gets 403 on GET /invites
-    // and 200 on GET /users, which is exactly this split.
-    assert.equal(canManageOrg('owner'), true);
-    assert.equal(canManageOrg('admin'), true);
-    assert.equal(canManageOrg('member'), false);
-    assert.equal(canManageOrg('viewer'), false);
-  });
-
-  void test('an unknown role is refused, not waved through', () => {
-    // A role this build has not heard of is a newer server, and guessing
-    // permissive is the wrong way to be wrong.
-    for (const unknown of ['', 'root', 'superuser', 'OWNER', 'Admin']) {
-      assert.equal(canManageOrg(unknown), false, `${unknown} was allowed`);
-    }
   });
 });

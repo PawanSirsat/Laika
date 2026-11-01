@@ -87,6 +87,20 @@ const STUB: ApiStub = {
     memberships: [{ project_id: 'p1', role: 'lead' }],
   },
   '/api/v1/projects': { data: [FULL_PROJECT], next_cursor: null },
+  // New space shows only to a holder of `project.create` (LAI-978).
+  '/api/v1/permissions': {
+    org_roles: [],
+    project_roles: [],
+    permissions: [],
+    me: {
+      org_role: 'owner',
+      credential: 'session',
+      project_scope: 'all',
+      implicit_project_role: 'lead',
+      actions: ['project.create'],
+      projects: [],
+    },
+  },
   '/api/v1/projects/laika-core': FULL_PROJECT,
   /*
    * Project statuses (LAI-739): three columns, plus a second *to do* column so

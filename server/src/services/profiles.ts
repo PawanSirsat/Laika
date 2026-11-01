@@ -37,7 +37,7 @@ import {
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
-import { sharingOn } from './local-activity.ts';
+import { collectionView } from './local-activity.ts';
 import { percentile } from './metrics.ts';
 import { agentPresenceFor, clientOf, type AgentPresence } from './presence.ts';
 
@@ -309,7 +309,11 @@ export interface ProfileCurrentWork {
   in_review_total: number;
 }
 
-/** The organisation's Developer insights, and this person's own sharing. */
+/**
+ * Whether this person's local activity is collected: `org_enabled` and
+ * `enabled` are both the organisation's Developer insights since D-102
+ * (amended); the person's own switch is no longer read.
+ */
 export interface ProfileActivitySharing {
   org_enabled: boolean;
   enabled: boolean;
@@ -325,7 +329,7 @@ export interface ProfileView {
   /** Every rating they have, however many `ratings` carries. */
   ratings_total: number;
   /**
-   * D-079's two switches for this person, so the page can draw the Activity
+   * D-079's shape, the organisation's switch alone since D-102 (amended), so the page can draw the Activity
    * card in its final shape before `GET /people/:id/activity` answers
    * (LAI-751) — whether their pushed and local work can be shown, never a
    * count of it.
@@ -401,7 +405,7 @@ export function getProfile(
     },
     ratings: ratingsFor(db, userId),
     ratings_total: ratingCount(db, userId),
-    activity_sharing: activitySharing(db, userId),
+    activity_sharing: activitySharing(db),
   };
 
   if (person.profileKind === 'manager') return { ...profile, queue: queueFor(db, userId) };
@@ -426,9 +430,9 @@ export function getProfile(
   };
 }
 
-function activitySharing(db: Db, userId: string): ProfileActivitySharing {
-  const sharing = sharingOn(db, userId);
-  return { org_enabled: sharing.org, enabled: sharing.user };
+/** The organisation's switch alone, in D-079's shape (D-102 amended). */
+function activitySharing(db: Db): ProfileActivitySharing {
+  return collectionView(db);
 }
 
 /**

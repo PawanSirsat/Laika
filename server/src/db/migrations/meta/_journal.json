@@ -330,6 +330,160 @@
       "when": 1792653455313,
       "tag": "0047_work_folder_names",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1792676300034,
+      "tag": "0048_org_role_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1792678308195,
+      "tag": "0049_analytics_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1792680478572,
+      "tag": "0050_org_time_breaks",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1792695950468,
+      "tag": "0051_user_place",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1792699759098,
+      "tag": "0052_space_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1792699760098,
+      "tag": "0053_deactivation_ends_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1792699761098,
+      "tag": "0054_one_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1792699762098,
+      "tag": "0055_more_grantable_capabilities",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1792699763098,
+      "tag": "0056_password_resets",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1792747076556,
+      "tag": "0057_time_entry_kinds",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "6",
+      "when": 1792834035410,
+      "tag": "0058_time_timers",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1792835676609,
+      "tag": "0059_time_day_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1792870006508,
+      "tag": "0060_time_entry_kinds_design",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "6",
+      "when": 1793130358330,
+      "tag": "0061_registered_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1793135026166,
+      "tag": "0062_selected_agent_work_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1793140820600,
+      "tag": "0063_agent_sessions_task_claims",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "6",
+      "when": 1793221012206,
+      "tag": "0064_agent_session_harness_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "6",
+      "when": 1793259883441,
+      "tag": "0065_recognised_agent_devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "6",
+      "when": 1793288580087,
+      "tag": "0066_project_context_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "6",
+      "when": 1793291825067,
+      "tag": "0067_checkpoints",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "6",
+      "when": 1793296471835,
+      "tag": "0068_handoff_offers",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1793441677263,
+      "tag": "0069_agent_events",
+      "breakpoints": true
     }
   ]
 }

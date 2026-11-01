@@ -2,13 +2,14 @@ import type { AgentClient } from './agent-clients.ts';
 import { request } from './client.ts';
 
 /**
- * The developer's side of D-079 (SPEC §6.4, LAI-751): whether they share
- * local activity, which repositories count, what the server holds about them,
- * and erasing it.
+ * The developer's side of D-079 (SPEC §6.4, LAI-751): whether their local
+ * activity is collected — the organisation's switch alone since D-102
+ * (amended, LAI-964) — which repositories count, what the server holds about
+ * them, and erasing it.
  *
- * Every write here is the signed-in person's own consent, so the server takes
- * it from a web session only; the collector on their machine reads the
- * setting with a token and sends counts, and never changes it.
+ * Every write here is the signed-in person's own, so the server takes it from
+ * a web session only; the collector on their machine reads the setting with a
+ * token and sends counts, and never changes it.
  *
  * Every type mirrors `services/local-activity.ts`; `view-type-drift.test.ts`
  * holds the two in step.
@@ -20,8 +21,10 @@ export type LocalActivityScope = (typeof LOCAL_ACTIVITY_SCOPES)[number];
 export interface ActivitySharing {
   /** The organisation's *Developer insights* switch. */
   readonly org_enabled: boolean;
-  /** This person's own switch. */
+  /** Whether this person's local activity is collected — the organisation's switch (D-102 amended). */
   readonly enabled: boolean;
+  /** Always `false`: the person cannot stop collection (D-102 amended). */
+  readonly person_can_opt_out: false;
   readonly scope: LocalActivityScope;
   readonly min_sync_interval_s: number;
 }
@@ -51,9 +54,9 @@ export function getActivitySharing(signal?: AbortSignal): Promise<ActivitySharin
   return request<ActivitySharing>('/me/activity-sharing', signal === undefined ? {} : { signal });
 }
 
+/** The scope alone: `enabled` is the organisation's, and the server refuses it `403` (LAI-963). */
 export function setActivitySharing(change: {
-  readonly enabled?: boolean;
-  readonly scope?: LocalActivityScope;
+  readonly scope: LocalActivityScope;
 }): Promise<ActivitySharing> {
   return request<ActivitySharing>('/me/activity-sharing', { method: 'PUT', body: change });
 }

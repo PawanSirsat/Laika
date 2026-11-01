@@ -26,8 +26,11 @@ export interface UseProjects {
  * first page. It handles them anyway: the shape is part of the contract for
  * every page of this endpoint, and code that only works because of the query it
  * happens to send is code that breaks when someone adds a parameter.
+ *
+ * `archived: 'only'` reads the archived spaces instead (LAI-976), for the
+ * Spaces page's *Archived* chip.
  */
-export function useProjects(): UseProjects {
+export function useProjects(archived?: 'only'): UseProjects {
   const [status, setStatus] = useState<UseProjects['status']>('loading');
   const [projects, setProjects] = useState<readonly Project[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -48,7 +51,7 @@ export function useProjects(): UseProjects {
     const controller = new AbortController();
     setStatus('loading');
 
-    listProjects({ limit: 50 }, controller.signal)
+    listProjects({ limit: 50, archived }, controller.signal)
       .then((page) => {
         apply(page.data, true);
         setNextCursor(page.next_cursor);
@@ -63,13 +66,13 @@ export function useProjects(): UseProjects {
     return () => {
       controller.abort();
     };
-  }, [apply, attempt]);
+  }, [apply, attempt, archived]);
 
   const loadMore = useCallback((): void => {
     if (nextCursor === null || loadingMore) return;
     setLoadingMore(true);
 
-    listProjects({ cursor: nextCursor, limit: 50 })
+    listProjects({ cursor: nextCursor, limit: 50, archived })
       .then((page) => {
         apply(page.data, false);
         setNextCursor(page.next_cursor);
@@ -82,7 +85,7 @@ export function useProjects(): UseProjects {
       .finally(() => {
         setLoadingMore(false);
       });
-  }, [nextCursor, loadingMore, apply]);
+  }, [nextCursor, loadingMore, apply, archived]);
 
   const add = useCallback(
     (project: Project): void => {

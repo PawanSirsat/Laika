@@ -5,7 +5,29 @@ import './drawer.css';
 export const DRAWER_SLOT_ID = 'task-drawer-slot';
 
 export interface TaskDrawerProps {
+  /** The task shown, so closing can find its card when the opener has gone. */
+  readonly taskId: string;
   readonly onClose: () => void;
+}
+
+/**
+ * Where focus goes when the drawer closes (LAI-1021). The opener first — the
+ * card's or the row's "open details" button — if it is still on the page; else
+ * the shown task's own open control, if its card or row is on screen; else the
+ * screen's `<main>`. Never `<body>`, which sent a keyboard reader back to the
+ * top of the document to Tab through the sidebar and every lane.
+ */
+export function drawerReturnTarget(
+  opener: Element | null,
+  taskId: string,
+  doc: Document = document,
+): HTMLElement | null {
+  if (opener instanceof HTMLElement && opener !== doc.body && opener.isConnected) return opener;
+  const row = `[data-task-id="${CSS.escape(taskId)}"]`;
+  return (
+    doc.querySelector<HTMLElement>(`${row} .card-open, ${row} .list-open`) ??
+    doc.querySelector<HTMLElement>('#main')
+  );
 }
 
 /**
@@ -25,13 +47,30 @@ export interface TaskDrawerProps {
  * own `×`, because the design draws that button inside the header beside the
  * task key. Both do the same thing: strip `?task=`.
  */
-export function TaskDrawer({ onClose }: TaskDrawerProps) {
+export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // The task shown at close, not at open: a related-task link swaps it in place.
+  const shown = useRef(taskId);
+  shown.current = taskId;
+
+  // Whatever held focus as the drawer opened is what opened it. Kept once, so
+  // StrictMode's second run of the effect does not record the panel instead.
+  const opener = useRef<Element | null | undefined>(undefined);
 
   useEffect(() => {
+    opener.current ??= document.activeElement;
     // Focus the panel so a keyboard reader is inside the thing that just
     // opened, rather than left where the card was.
     panelRef.current?.focus();
+    return () => {
+      // After the drawer has left the DOM. Only when focus went with it: a
+      // reader who closed it by clicking a sidebar link keeps that link.
+      queueMicrotask(() => {
+        const now = document.activeElement;
+        if (now !== null && now !== document.body && now.isConnected) return;
+        drawerReturnTarget(opener.current ?? null, shown.current)?.focus();
+      });
+    };
   }, []);
 
   useEffect(() => {

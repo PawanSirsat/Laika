@@ -341,9 +341,20 @@ void describe('the board says no', () => {
     assert.deepEqual(w.board.violations, []);
   });
 
-  void test('the daily check finding sharing off stops without sending', async () => {
+  void test('the personal switch no longer stops a sync (D-102 amended, LAI-964)', async () => {
     const w = await world();
     w.board.sharing = { ...w.board.sharing, enabled: false };
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    assert.deepEqual(
+      w.board.requests.filter((r) => !r.url.startsWith('/api/v1/me/time-')).map((r) => r.method),
+      ['GET', 'PUT'],
+    );
+    assert.equal(readState(w.paths)?.collect, true);
+  });
+
+  void test('the daily check finding the organisation’s switch off stops without sending', async () => {
+    const w = await world();
+    w.board.sharing = { ...w.board.sharing, org_enabled: false, enabled: false };
     assert.equal((await sync(w.ctx)).kind, 'off');
     assert.deepEqual(
       w.board.requests.map((r) => r.method),

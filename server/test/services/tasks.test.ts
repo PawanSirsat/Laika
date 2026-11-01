@@ -496,6 +496,8 @@ describe('updateTask (AC2)', () => {
 
   it('records a reassignment as task.assigned, not a status change (§5)', () => {
     const memberId = makeUser('member');
+    // On the project: an assignee who cannot read it is refused (LAI-962).
+    addMember(t.db, actor(adminId), 'laika', memberId, 'member');
     const task = newTask();
 
     updateTask(t.db, actor(adminId), task.id, { assignee_id: memberId });
@@ -1060,6 +1062,7 @@ describe('started_at and completed_at', () => {
         'acceptance_md',
         'assignee_id',
         'blocks',
+        'claim',
         'comment_count',
         'completed_at',
         'created_at',
@@ -1072,6 +1075,8 @@ describe('started_at and completed_at', () => {
         'discovered_from',
         'due_on',
         'external_ref',
+        // LAI-1005: saves and hand-off in brief, in §6.4's shape.
+        'handoff',
         'id',
         'key',
         'number',
@@ -1082,6 +1087,8 @@ describe('started_at and completed_at', () => {
         'priority',
         'project_id',
         'ready',
+        // LAI-535: the agent meant to do it, or null, in §6.4's shape.
+        'selected_agent',
         // LAI-758, D-082: the send-back a task carries, in §6.4's shape.
         'send_back',
         // LAI-771, D-085: the size and forecast in force, in §6.4's shape.

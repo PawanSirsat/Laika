@@ -9,11 +9,19 @@ import {
   updateOrg,
 } from '../../services/orgs.ts';
 import {
+  getOrgPermissions,
+  type OrgPermissionsView,
+  setOrgPermissions,
+} from '../../services/org-permissions.ts';
+import {
   deleteModelPrice,
   getModelPrices,
   setModelPrice,
 } from '../../services/org-model-prices.ts';
+import { type OwnershipTransferView, transferOwnership } from '../../services/users.ts';
+import { getOrgOverview, type OrgOverviewView } from '../../services/org-overview.ts';
 import { type AppEnv } from '../context.ts';
+import { markOneTimeSecret } from '../idempotency.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
@@ -37,7 +45,19 @@ const ModelPriceBody = strictObject({
   cache_read: price,
 });
 
+/**
+ * `PUT /org/permissions` (LAI-958): the whole matrix, role → capability →
+ * on. Which roles and capabilities are valid — and that an owner-locked
+ * action is refused by name — is the service's, so the screen is told the
+ * same thing whichever cell was wrong.
+ */
+const OrgPermissionsBody = strictObject({
+  grants: z.record(z.string(), z.record(z.string(), z.boolean())),
+});
+
 const OrgPatchBody = strictObject({
+  // D-104 item 7 (LAI-984): trimmed, so a name of spaces is refused as empty.
+  name: z.string().trim().min(1).max(80).optional(),
   presence_enabled: z.boolean().optional(),
   developer_insights: z.boolean().optional(),
   ai_provider: z.enum(AI_PROVIDERS).nullable().optional(),
@@ -77,10 +97,26 @@ export interface OrgRouteOptions {
   publicUrl?: string | undefined;
 }
 
+const TransferBody = strictObject({
+  user_id: z.string().min(1),
+  /** The new owner's email, typed. */
+  confirm: z.string().min(1),
+});
+
 export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, serverSecret } = options;
   const publicUrl = options.publicUrl ?? '';
+
+  /**
+   * `GET /api/v1/org/overview` (LAI-986): people seen this week and the open /
+   * in review / blocked / overdue figures over the spaces the caller can read.
+   */
+  app.get('/overview', (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    return c.json<OrgOverviewView>(getOrgOverview(db, actor));
+  });
 
   app.get('/', (c) => {
     const actor = c.get('actor');
@@ -114,6 +150,37 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
   });
 
   /**
+   * `POST /api/v1/org/transfer-ownership` (§6.4, D-104 item 2, LAI-982): the
+   * owner, signed in, hands the organisation to an active admin or member,
+   * confirming with that person's email, and becomes an admin.
+   */
+  app.post('/transfer-ownership', async (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    const body = parseBody(TransferBody, await c.req.json().catch(() => null));
+    return c.json<OwnershipTransferView>(
+      transferOwnership(db, actor, { userId: body.user_id, confirm: body.confirm }),
+    );
+  });
+
+  /**
+   * Who may do what (D-102 rule 6, LAI-958): read by anyone signed in,
+   * replaced whole by the owner on a web session (`org.permissions.manage`).
+   */
+  app.get('/permissions', (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    return c.json<OrgPermissionsView>(getOrgPermissions(db, actor));
+  });
+
+  app.put('/permissions', async (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    const body = parseBody(OrgPermissionsBody, await c.req.json().catch(() => null));
+    return c.json<OrgPermissionsView>(setOrgPermissions(db, actor, body.grants));
+  });
+
+  /**
    * `POST /api/v1/org/github-webhook` (§6.4, §10.1, LAI-753): set or rotate
    * the GitHub webhook secret, and answer it **once**. `201`, because a new
    * secret exists that did not before; no body, because Laika makes it.
@@ -122,7 +189,9 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
     const actor = c.get('actor');
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
 
-    return c.json(rotateGithubWebhookSecret(db, actor, serverSecret, Date.now(), publicUrl), 201);
+    const rotated = rotateGithubWebhookSecret(db, actor, serverSecret, Date.now(), publicUrl);
+    markOneTimeSecret(c);
+    return c.json(rotated, 201);
   });
 
   /** `DELETE /api/v1/org/github-webhook`: clear it, so every delivery is refused. */

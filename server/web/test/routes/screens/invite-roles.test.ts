@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 import { ORG_ROLES, PROJECT_ROLES } from '../../../src/api/invites.ts';
 import {
+  invitableRoles,
   ORG_ROLE_PERMITS,
   PROJECT_ROLE_PERMITS,
   orgRoleLabel,
@@ -93,10 +94,19 @@ void describe('org lines describe org rights, not project rights', () => {
     assert.match(ORG_ROLE_PERMITS.viewer, /read-only/i);
   });
 
-  void test('the Admin line stops short of Owner', () => {
-    // §3.1: Admin may change org roles but "not to Owner". An Admin who thinks
-    // they can promote someone to Owner finds out by being refused.
-    assert.match(ORG_ROLE_PERMITS.admin, /Owner/);
+  void test('the Admin line says only the Owner changes roles (D-102 rule 5)', () => {
+    // LAI-958 made `user.set_role` owner-locked. An Admin who thinks they can
+    // change somebody's role finds out by being refused.
+    assert.match(ORG_ROLE_PERMITS.admin, /Only the Owner changes roles/);
+    assert.doesNotMatch(ORG_ROLE_PERMITS.admin, /change roles below Owner/);
+  });
+});
+
+void describe('invitableRoles mirrors user.invite (LAI-958)', () => {
+  void test('the owner invites as anything but Owner; anyone else as Member or Viewer', () => {
+    assert.deepEqual(invitableRoles('owner'), ['admin', 'member', 'viewer']);
+    assert.deepEqual(invitableRoles('admin'), ['member', 'viewer']);
+    assert.deepEqual(invitableRoles('member'), ['member', 'viewer']);
   });
 });
 

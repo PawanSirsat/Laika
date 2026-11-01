@@ -1,7 +1,9 @@
 /**
  * My day's keys (LAI-831, the owner's design and CHIEF's addition H): on the
  * selected draft, ↵ confirms, G puts it on General, X marks it not work; J
- * and K move to the next and previous; ? opens the sheet that lists them.
+ * and K move to the next and previous draft; ← and → step along every block
+ * on the Timeline (LAI-888, the design's footer); ? opens the sheet that
+ * lists them.
  *
  * **None fires while typing.** A field, a text area, a select or editable
  * text keeps every key, so a note that says "fix the gap" never marks a block
@@ -9,7 +11,18 @@
  * or a link presses *that* — it never confirms behind the reader's back.
  */
 
-export type Shortcut = 'confirm' | 'general' | 'dismiss' | 'next' | 'prev' | 'help' | 'close';
+export type Shortcut =
+  | 'confirm'
+  | 'general'
+  | 'dismiss'
+  | 'next'
+  | 'prev'
+  | 'right'
+  | 'left'
+  | 'help'
+  | 'close'
+  | 'add'
+  | 'timer';
 
 /** What a key event carries that matters here — a real one, or a test's. */
 export interface KeyLike {
@@ -24,8 +37,12 @@ export interface KeyLike {
   } | null;
 }
 
-/** Inputs that take a click, not typing. */
-const PRESSED = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color']);
+/**
+ * Inputs that take a click, not typing. A range is not one of them: its ← →
+ * move its own thumb (the Timeline's zoom slider, LAI-891), so every key on
+ * it is its own.
+ */
+const PRESSED = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'color']);
 
 export function typingIn(target: KeyLike['target']): boolean {
   if (target === null) return false;
@@ -43,6 +60,8 @@ const LETTERS: Readonly<Record<string, Shortcut>> = {
   x: 'dismiss',
   j: 'next',
   k: 'prev',
+  n: 'add',
+  t: 'timer',
 };
 
 export function shortcutFor(event: KeyLike): Shortcut | undefined {
@@ -50,6 +69,8 @@ export function shortcutFor(event: KeyLike): Shortcut | undefined {
   if (typingIn(event.target)) return undefined;
   if (event.key === '?') return 'help';
   if (event.key === 'Escape') return 'close';
+  if (event.key === 'ArrowRight') return 'right';
+  if (event.key === 'ArrowLeft') return 'left';
   if (event.key === 'Enter') {
     const tag = (event.target?.tagName ?? '').toUpperCase();
     return ACTS_ON_ENTER.has(tag) ? undefined : 'confirm';
@@ -57,13 +78,39 @@ export function shortcutFor(event: KeyLike): Shortcut | undefined {
   return LETTERS[event.key.toLowerCase()];
 }
 
-/** The sheet's rows, in the order the design's hint row gives them. */
-export const SHORTCUT_SHEET: readonly (readonly [string, string])[] = [
-  ['↵', 'Confirm the selected draft'],
-  ['G', 'Put it on General'],
-  ['X', 'Mark it not work'],
-  ['J', 'Next draft'],
-  ['K', 'Previous draft'],
-  ['?', 'Show these keys'],
-  ['Esc', 'Close this, or let go of a picked gap'],
+/** The sheet's groups, as the design names them (LAI-504). */
+export const SHORTCUT_GROUPS: readonly {
+  readonly name: string;
+  readonly rows: readonly (readonly [string, string])[];
+}[] = [
+  {
+    name: 'Anywhere on My day',
+    rows: [
+      ['N', 'Add time'],
+      ['T', 'Start or stop the timer'],
+      ['J K', 'Next or previous to review'],
+      ['Esc', 'Close the editor or a menu'],
+      ['?', 'This sheet'],
+    ],
+  },
+  {
+    name: 'On a selected entry',
+    rows: [
+      ['↵', 'Confirm'],
+      ['G', 'Set task to General'],
+      ['X', 'Mark as not work time'],
+    ],
+  },
+  {
+    name: 'On the Timeline',
+    rows: [
+      ['← →', 'Move between blocks'],
+      ['← → on an edge', 'Move that edge 5 min'],
+    ],
+  },
 ];
+
+/** The sheet's rows, flat, for whoever reads them that way. */
+export const SHORTCUT_SHEET: readonly (readonly [string, string])[] = SHORTCUT_GROUPS.flatMap(
+  (g) => g.rows,
+);

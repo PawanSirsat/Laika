@@ -220,7 +220,11 @@ void describe('the board skeleton mirrors the board it replaces', () => {
      */
     const defined = /const mayAddColumn =([\s\S]*?);\n/.exec(screen)?.[1];
     assert.ok(defined !== undefined, 'mayAddColumn is no longer defined in BoardScreen');
-    assert.match(defined, /canConfigureProject/, 'the gate stopped asking the policy');
+    assert.match(
+      defined,
+      /gates\.project\(boardProjectId, 'project\.settings\.edit'\)/,
+      'the gate stopped asking the server',
+    );
     // `isFallbackColumn` is gone with LAI-266's pre-columns fallback (LAI-739):
     // statuses are the server's from the first boot, so there is no fake
     // board for the gate to exclude.

@@ -498,7 +498,9 @@ void describe('laika activity backfill', () => {
     history(w);
     w.board.put = { kind: 'off' };
     assert.equal(await w.run('backfill', '--yes'), 1);
-    assert.match(w.err.join('\n'), /sharing is off/);
+    // The organisation's switch, not a personal one (D-102 amended, LAI-971).
+    assert.match(w.err.join('\n'), /Developer insights are off for your organisation/);
+    assert.doesNotMatch(w.err.join('\n'), /sharing/);
     assert.equal(readState(w.paths)?.collect, false);
   });
 });

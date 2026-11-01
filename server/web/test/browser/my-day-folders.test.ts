@@ -9,7 +9,8 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator } from 'playwright';
-import { closeBrowser, open, setTheme, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, type Harness } from './harness.ts';
+import { open } from './my-day-clock.ts';
 import { TODAY, weekData, weekStub, type DayData } from './my-day-week.ts';
 
 const ACME = { id: 'p9', slug: 'acme', name: 'Acme Billing' };
@@ -44,6 +45,11 @@ async function openDay(): Promise<Harness> {
 }
 
 async function select(h: Harness, row: string): Promise<Locator> {
+  // The lists live on tabs (LAI-505): a row is reached on its own tab.
+  const tab = h.page.locator(`[data-day-tab="${row.startsWith('e') ? 'confirmed' : 'review'}"]`);
+  if ((await tab.count()) === 1 && (await tab.getAttribute('aria-current')) !== 'page') {
+    await tab.click();
+  }
   await h.page.locator(`[data-select="${row}"]`).click();
   const inspector = h.page.locator(`[data-inspector-for="${row}"]`);
   await inspector.waitFor({ timeout: 5_000 });
@@ -75,6 +81,8 @@ void describe('a work folder’s chosen name on My day (LAI-866)', () => {
       const h = await openDay();
       try {
         await setTheme(h.page, theme);
+        // To review is a tab (LAI-505); the day opens on Overview (LAI-514).
+        await h.page.locator('[data-day-tab="review"]').click();
 
         // To settle: the untied block says the name.
         const untied = h.page.locator('[data-settle-row="d2"]');
@@ -108,7 +116,7 @@ void describe('a work folder’s chosen name on My day (LAI-866)', () => {
         const inspector = await select(h, 'd2');
         assert.match(
           await inspector.locator('[data-card-warning]').innerText(),
-          /^Needs a card · Acme\. Pick one, or General if it was general work\.$/,
+          /^No task yet\. Needs a card · Acme\. Pick one, or just pick a kind below\.$/,
         );
         assert.equal(
           (await inspector.locator('[data-drafted-folder]').innerText()).trim(),
@@ -121,6 +129,7 @@ void describe('a work folder’s chosen name on My day (LAI-866)', () => {
         await visible(inspector.locator('[data-drafted-folder]'), 'the folder under Drafted from');
 
         // The confirmed entry shows the name.
+        await h.page.locator('[data-day-tab="confirmed"]').click();
         const entry = h.page.locator('[data-ledger-row="e1"]');
         assert.equal((await entry.locator('[data-entry-folder]').innerText()).trim(), 'Acme');
         await visible(entry.locator('[data-entry-folder]'), 'the entry’s folder');

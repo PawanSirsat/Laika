@@ -1,3 +1,4 @@
+import { stampClaims } from './claim-receipt.ts';
 import { NetworkError, toApiError } from './errors.ts';
 import { sharedCache } from './query-cache.ts';
 import { isSetupRequired } from './session-state.ts';
@@ -97,6 +98,8 @@ const CACHED: readonly RegExp[] = [
   // A profile's heatmap, per person and range (LAI-751): a year of days that
   // changes by the day, asked once per range however often a viewer switches.
   /^\/people\/[^/?]+\/activity\?range=(12w|52w)$/,
+  // What the reader may do (LAI-959): every name link on a page asks it.
+  /^\/permissions$/,
 ];
 
 export function freshFor(path: string): number {
@@ -171,7 +174,12 @@ async function send<T>(path: string, options: RequestOptions): Promise<T> {
     throw toApiError(response.status, {}, requestId);
   }
 
-  if (response.ok) return payload as T;
+  if (response.ok) {
+    // Every live claim is stamped as it arrives (LAI-597 review), shown or not:
+    // its age on this page runs from here, never from when a screen draws it.
+    stampClaims(payload);
+    return payload as T;
+  }
 
   const error = toApiError(response.status, payload, requestId);
 

@@ -44,7 +44,7 @@ export const GROUP_TITLES: Readonly<Record<NavGroup, string | null>> = {
 };
 
 /** The glyph a sidebar entry wears, in the rail and beside its label. */
-export const NAV_ICONS = ['day', 'inbox', 'insights', 'organisation', 'developer'] as const;
+export const NAV_ICONS = ['day', 'inbox', 'work', 'insights', 'organisation', 'developer'] as const;
 export type NavIconName = (typeof NAV_ICONS)[number];
 
 export interface Route {
@@ -239,6 +239,21 @@ export const ROUTES: readonly Route[] = [
     icon: 'inbox',
   },
   /*
+   * **Work** (LAI-952): everyone's work across every space, from `GET /tasks`
+   * (LAI-887). Not gated — every signed-in role has one; the server decides
+   * which spaces' tasks each reader is sent. Its space filter is `?space=`,
+   * not `?project=`, so it is org-level like the pages beside it.
+   */
+  {
+    orgLevel: true,
+    path: '/work',
+    label: 'Work',
+    group: 'HOME',
+    status: 'ready',
+    phase: 'Phase 2',
+    icon: 'work',
+  },
+  /*
    * **Insights** (LAI-796): *Capacity* (LAI-754) and *Usage & cost* (D-084,
    * LAI-769), the two pages that read across every space, as tabs. Not gated —
    * the server decides what each reader is sent, as it did on both pages.
@@ -263,9 +278,9 @@ export const ROUTES: readonly Route[] = [
   },
   /*
    * **Developer access** (LAI-796): connecting an agent and the reader's own
-   * tokens on one page — what Connect (LAI-622) and Tokens were. The full
-   * Connect wizard, every agent and every step, keeps its own address below
-   * and is opened from here.
+   * tokens on one page — what Connect (LAI-622) and Tokens were. Since
+   * LAI-507 the wizard is its first tab (`?tab=connect`), beside Projects,
+   * Activity and Tokens; `/developer/connect` redirects there.
    */
   {
     orgLevel: true,
@@ -275,15 +290,6 @@ export const ROUTES: readonly Route[] = [
     status: 'ready',
     phase: 'Phase 4',
     icon: 'developer',
-  },
-  {
-    orgLevel: true,
-    path: '/developer/connect',
-    label: 'Connect an agent',
-    group: null /* opened from Developer access */,
-    section: '/developer',
-    status: 'ready',
-    phase: 'Phase 4',
   },
 
   /*
@@ -310,8 +316,25 @@ export const ROUTES: readonly Route[] = [
 
   // Reached from a project rather than the nav.
   { path: '/members', label: 'Members', group: null, status: 'ready', phase: 'Phase 2' },
+  /*
+   * **A space's settings** (D-103, LAI-977): General, Members, Access and
+   * Danger zone. The first route with a parameter in its path — the slug is
+   * the address of the thing being configured, not a filter on a view, so it
+   * is not `?project=`. Org-level for the nav's purposes: a link to it names
+   * its space already.
+   */
+  {
+    orgLevel: true,
+    path: '/spaces/:slug/settings',
+    label: 'Space settings',
+    group: null,
+    status: 'ready',
+    phase: 'Phase 2',
+  },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
+  // D-104 item 4 (LAI-988): an admin-issued link sets a new password here.
+  { public: true, path: '/reset-password', label: 'Reset password', group: null, phase: 'Phase 2' },
   {
     public: true,
     path: '/setup',
@@ -389,10 +412,45 @@ export function navSection(path: string): string {
   return matchRoute(path)?.section ?? path;
 }
 
-/** Exact match only. No params yet — the first is `/projects/:slug` in Phase 2. */
+/**
+ * The route a path opens: an exact match first, then a route whose path names
+ * a parameter (`:slug`) matched one segment for one segment. A parameter never
+ * matches an empty segment or a `/`, so `/spaces//settings` is a 404.
+ */
 export function matchRoute(path: string): Route | undefined {
   const normalised = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
-  return ROUTES.find((r) => r.path === normalised);
+  return (
+    ROUTES.find((r) => r.path === normalised) ??
+    ROUTES.find((r) => routeParams(r.path, normalised) !== undefined)
+  );
+}
+
+/**
+ * The parameters `path` fills in `pattern`, or `undefined` when it does not
+ * match. `routeParams('/spaces/:slug/settings', '/spaces/laika/settings')` is
+ * `{ slug: 'laika' }`, decoded.
+ */
+export function routeParams(
+  pattern: string,
+  path: string,
+): Readonly<Record<string, string>> | undefined {
+  if (!pattern.includes('/:')) return undefined;
+  const want = pattern.split('/');
+  const have = path.split('/');
+  if (want.length !== have.length) return undefined;
+  const params: Record<string, string> = {};
+  for (const [i, part] of want.entries()) {
+    const given = have[i] ?? '';
+    if (part.startsWith(':')) {
+      if (given === '') return undefined;
+      try {
+        params[part.slice(1)] = decodeURIComponent(given);
+      } catch {
+        return undefined;
+      }
+    } else if (part !== given) return undefined;
+  }
+  return params;
 }
 
 /** Routes reachable without signing in. */

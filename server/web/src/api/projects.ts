@@ -1,5 +1,6 @@
 import { request } from './client.ts';
 import type { MemberList, Page } from './tasks.ts';
+import type { SpaceColor } from '../theme/space-color.ts';
 
 /**
  * Projects (SPEC §6.4, LAI-010).
@@ -30,6 +31,17 @@ export interface Project {
    */
   readonly repo: string | null;
   readonly visibility: 'public' | 'private';
+  /**
+   * The palette entry the space is painted (D-103 item 4, LAI-976), or `null`
+   * until one is picked — `spaceColor()` then derives one from the slug.
+   */
+  readonly color: SpaceColor | null;
+  /** Who may create tasks here (D-103 item 6): `member` or `lead`. */
+  readonly task_create_min_role: 'member' | 'lead';
+  /** Whether agent tokens may write here (D-103 item 7). */
+  readonly agents_allowed: boolean;
+  /** Prefixes the space carried before `prefix`, oldest first; old keys still resolve (D-103 item 3). */
+  readonly former_prefixes: readonly string[];
   readonly context_md: string;
   /** Days after which finished work leaves the board; `null` never (LAI-266). */
   readonly board_hide_done_days: number | null;
@@ -93,6 +105,11 @@ export interface ListProjectsQuery {
   readonly limit?: number | undefined;
   /** Unix ms. Asking for changes since a point is what produces tombstones. */
   readonly updatedSince?: number | undefined;
+  /**
+   * `include` adds archived spaces, `only` lists nothing else (LAI-976).
+   * Omitted, the list is live spaces only, as it always was.
+   */
+  readonly archived?: 'include' | 'only' | undefined;
 }
 
 export function listProjects(
@@ -103,6 +120,7 @@ export function listProjects(
   if (query.cursor !== undefined) params.set('cursor', query.cursor);
   if (query.limit !== undefined) params.set('limit', String(query.limit));
   if (query.updatedSince !== undefined) params.set('updated_since', String(query.updatedSince));
+  if (query.archived !== undefined) params.set('archived', query.archived);
 
   const search = params.toString();
   return request<Page<ProjectRow>>(
@@ -241,5 +259,47 @@ export function setHideDoneAfter(slug: string, days: number | null): Promise<Pro
   return request<Project>(`/projects/${encodeURIComponent(slug)}`, {
     method: 'PATCH',
     body: { board_hide_done_days: days },
+  });
+}
+
+export type ProjectVisibility = Project['visibility'];
+
+/**
+ * The two visibilities, worded once (LAI-961).
+ *
+ * The create form and View settings both offer them, and a space that reads
+ * one way when it is made and another when it is changed invites the question
+ * of whether they are the same setting.
+ */
+export const VISIBILITY_OPTIONS: readonly { value: ProjectVisibility; label: string }[] = [
+  { value: 'private', label: 'Private — invited members only' },
+  { value: 'public', label: 'Public — anyone in the org can join' },
+];
+
+/**
+ * Change who can see and join a space after it exists (LAI-961).
+ *
+ * The same `project.settings.edit` route as {@link setHideDoneAfter}; it has
+ * taken `visibility` since §6.4 was written, and only the create form asked.
+ */
+export function setProjectVisibility(
+  slug: string,
+  visibility: ProjectVisibility,
+): Promise<Project> {
+  return request<Project>(`/projects/${encodeURIComponent(slug)}`, {
+    method: 'PATCH',
+    body: { visibility },
+  });
+}
+
+/**
+ * Archive or restore a space (D-103 item 10). The same `PATCH` the server has
+ * taken `{archived}` on all along; the Spaces page's *Archived* chip offers
+ * Restore to whoever holds `project.archive`.
+ */
+export function setProjectArchived(slug: string, archived: boolean): Promise<Project> {
+  return request<Project>(`/projects/${encodeURIComponent(slug)}`, {
+    method: 'PATCH',
+    body: { archived },
   });
 }

@@ -10,8 +10,8 @@ import { formatDurationMs } from './duration.ts';
  * **What a reader may not see is not sent.** `by_developer` is `null` for a
  * member and for any token — the server decides it (`can()`'s
  * `usage.read_people`), and this client draws what arrives.
- * {@link mayReadOrgUsage} mirrors §3.1 only to decide which space the page
- * opens on, so a member's first read is a space and never a 403.
+ * `GET /permissions`' `usage.read_org` decides only which space the page
+ * opens on (LAI-970), so a member's first read is a space and never a 403.
  *
  * Every figure is a **floor** — the agents' own session files miss their
  * background calls (D-084 item 9) — and the headline leaves cache reads out
@@ -369,16 +369,6 @@ export function agentsNote(person: TaskUsagePerson): string {
     .sort((a, b) => b.tokens - a.tokens)
     .map((a) => `${agentClientName(a.agent)} ${compactTokens(a.tokens)}`)
     .join(' · ');
-}
-
-/** §3.1 `usage.read_org`: the organisation's figures — owners and admins. */
-export function mayReadOrgUsage(orgRole: string | undefined): boolean {
-  return orgRole === 'owner' || orgRole === 'admin';
-}
-
-/** §3.1 `usage.read_people`: anyone's tokens, per person — owners and admins, signed in. */
-export function mayReadPeopleUsage(orgRole: string | undefined): boolean {
-  return orgRole === 'owner' || orgRole === 'admin';
 }
 
 const UNITS = [

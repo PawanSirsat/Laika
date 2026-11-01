@@ -142,7 +142,8 @@ const CONNECT: ApiStub = {
   },
   '/api/v1/me/activity-sharing': {
     org_enabled: true,
-    enabled: false,
+    enabled: true,
+    person_can_opt_out: false,
     scope: 'agent-repos',
     min_sync_interval_s: 600,
   },
@@ -208,7 +209,7 @@ void describe('Copy on the Connect screen, served over plain HTTP', () => {
       const prompt = setupBlocks('claude-code', {
         origin: h.origin,
         secret: SECRET,
-        project: { slug: ONROUTE.slug, prefix: ONROUTE.prefix, name: ONROUTE.name },
+        insightsOn: true,
       }).find((b) => b.key === 'claude-prompt');
       assert.ok(prompt !== undefined, 'no claude-prompt block');
 
@@ -233,11 +234,11 @@ void describe('Copy on the Connect screen, served over plain HTTP', () => {
   });
 
   void test('the Share local activity command block copies the command', async () => {
-    const h = await open('/developer/connect', CONNECT, { insecure: true });
+    // The panel is Developer access's Activity tab since LAI-507.
+    const h = await open('/developer?tab=activity', CONNECT, { insecure: true });
     const clip = await clipboardOf(h.page);
     try {
       await assertInsecure(h);
-      await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
       // By its block, not its name: the name becomes "Copied the command".
       const button = h.page
         .locator('.conn-block', { has: h.page.locator('#share-command-label') })
@@ -255,7 +256,7 @@ void describe('Copy on the Connect screen, served over plain HTTP', () => {
   });
 
   void test('CONTROL: when both ways fail it says how to copy, selects the text, and never says Copied', async () => {
-    const h = await open('/developer/connect', CONNECT, {
+    const h = await open('/developer?tab=activity', CONNECT, {
       insecure: true,
       before: async (page) => {
         await page.addInitScript(() => {
@@ -267,7 +268,6 @@ void describe('Copy on the Connect screen, served over plain HTTP', () => {
     const clip = await clipboardOf(h.page);
     try {
       await assertInsecure(h);
-      await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
       // By its block, not its name: the name changes once it says what to press.
       const button = h.page
         .locator('.conn-block', { has: h.page.locator('#share-command-label') })

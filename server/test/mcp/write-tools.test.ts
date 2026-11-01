@@ -1194,3 +1194,78 @@ describe('propose_time_entry — an agent proposes, the person confirms (D-088 i
     ).toEqual([]);
   });
 });
+
+describe('an assignee must be able to read the project (LAI-962)', () => {
+  interface Err {
+    error: { code: string; details: Record<string, unknown> };
+  }
+
+  /** Brin, who `otherAgent` puts on `core` and nowhere else. */
+  async function brin(): Promise<string> {
+    await otherAgent();
+    const people = (await (await api('/api/v1/users')).json()) as {
+      data: { id: string; email: string }[];
+    };
+    const id = people.data.find((u) => u.email === 'brin@example.test')?.id;
+    expect(id).toBeDefined();
+    return id!;
+  }
+
+  it('create_task on secret refuses Brin by id, and files no SEC-1', async () => {
+    await project('secret', 'SEC');
+    const outsider = await brin();
+    const client = await connect(await mint());
+
+    const result = await client.callTool({
+      name: 'create_task',
+      arguments: { project: 'secret', title: 'Not theirs', assignee: outsider },
+    });
+
+    expect(result.isError).toBe(true);
+    expect((payload(result) as unknown as Err).error).toMatchObject({
+      code: 'unprocessable',
+      details: { field: 'assignee_id', reason: 'not_on_project', assignee_id: outsider },
+    });
+    const listed = (await (await api('/api/v1/projects/secret/tasks')).json()) as {
+      data: unknown[];
+    };
+    expect(listed.data).toHaveLength(0);
+  });
+
+  it('update_task refuses to reassign SEC-1 to Brin, and leaves it unassigned', async () => {
+    await project('secret', 'SEC');
+    const outsider = await brin();
+    const client = await connect(await mint());
+    const created = await client.callTool({
+      name: 'create_task',
+      arguments: { project: 'secret', title: 'Unassigned' },
+    });
+    expect(created.isError, JSON.stringify(created.structuredContent)).not.toBe(true);
+
+    const result = await client.callTool({
+      name: 'update_task',
+      arguments: { task: 'SEC-1', assignee: outsider },
+    });
+
+    expect(result.isError).toBe(true);
+    expect((payload(result) as unknown as Err).error).toMatchObject({
+      code: 'unprocessable',
+      details: { field: 'assignee_id', reason: 'not_on_project', assignee_id: outsider },
+    });
+    expect(h.db.select().from(tasks).where(eq(tasks.number, 1)).get()?.assigneeId).toBeNull();
+  });
+
+  it('update_task assigns COR-1 to Brin, who is on core', async () => {
+    const outsider = await brin();
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Theirs' } });
+
+    const result = await client.callTool({
+      name: 'update_task',
+      arguments: { task: 'COR-1', assignee: outsider },
+    });
+
+    expect(result.isError, JSON.stringify(result.structuredContent)).not.toBe(true);
+    expect(h.db.select().from(tasks).where(eq(tasks.number, 1)).get()?.assigneeId).toBe(outsider);
+  });
+});

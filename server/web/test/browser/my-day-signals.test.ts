@@ -1,6 +1,6 @@
 /**
  * My day's SIGNALS lane in a real browser (LAI-834, D-096): the day's prompts
- * as dots and commits as ticks, each in the five minutes it fell in, above
+ * as bars and commits as dots (LAI-888), each in the five minutes it fell in, above
  * the blocks — drawn only on a day the server sent them for, with its label
  * on its own row and "You" still on the blocks' row, in both themes.
  */
@@ -8,7 +8,8 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
-import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { open } from './my-day-clock.ts';
 import { at, TODAY, YESTERDAY, viewOf, weekData, weekStub } from './my-day-week.ts';
 
 const SIGNAL_TIMES = {
@@ -144,9 +145,12 @@ void describe('the SIGNALS lane (LAI-834)', () => {
           await lane.getAttribute('aria-label'),
           'Signals: 3 prompts and 3 commits, each in the five minutes it fell in',
         );
-        const legend = h.page.locator('.dayline-legend');
-        assert.equal(await legend.getByText('Prompt', { exact: true }).count(), 1);
-        assert.equal(await legend.getByText('Commit', { exact: true }).count(), 1);
+        // The lane's column names each kind with the day's total (LAI-888).
+        const column = h.page.locator('.dayline-label-signals');
+        assert.equal(await column.getByText('Prompts', { exact: true }).count(), 1);
+        assert.equal(await column.getByText('Commits', { exact: true }).count(), 1);
+        assert.equal(await column.locator('[data-prompt-total]').innerText(), '3');
+        assert.equal(await column.locator('[data-commit-total]').innerText(), '3');
       } finally {
         await h.close();
       }
@@ -159,11 +163,8 @@ void describe('the SIGNALS lane (LAI-834)', () => {
       await h.page.locator('.dayline-row').waitFor({ timeout: 10_000 });
       assert.equal(await h.page.locator('[data-signals-lane]').count(), 0);
       assert.equal(await h.page.locator('.dayline-label-signals').count(), 0);
-      assert.equal(
-        await h.page.locator('.dayline-legend').getByText('Prompt', { exact: true }).count(),
-        0,
-      );
-      const youLabel = await textBox(h.page.locator('.dayline-label'), 'the You label');
+      assert.equal(await h.page.locator('[data-prompt-total]').count(), 0);
+      const youLabel = await textBox(h.page.locator('.dayline-label-you'), 'the You label');
       const rowBox = await boxOf(h.page.locator('.dayline-row'), 'the blocks’ row');
       assert.ok(
         youLabel.y >= rowBox.y && youLabel.y + youLabel.height <= rowBox.y + rowBox.height,
@@ -174,19 +175,24 @@ void describe('the SIGNALS lane (LAI-834)', () => {
     }
   });
 
-  void test('on a phone the lane scrolls sideways with the blocks, never the page', async () => {
+  void test('on a phone the SIG column scrolls with the blocks, down the vertical Timeline, never the page', async () => {
     const h = await open(`/my-day?day=${TODAY}`, stub(), {
       before: async (page) => page.setViewportSize({ width: 390, height: 844 }),
     });
     try {
-      await h.page.locator('[data-signals-lane]').waitFor({ timeout: 20_000 });
+      // A phone's Timeline is the vertical one (LAI-518): SIG is its column.
+      await h.page.locator('[data-mobile-signals]').waitFor({ timeout: 20_000 });
+      assert.ok(
+        (await h.page.locator('[data-mobile-signals] [data-mobile-signal]').count()) > 0,
+        'no signal is drawn',
+      );
       const pageWidth = await h.page.evaluate(() => document.documentElement.scrollWidth);
       assert.ok(pageWidth <= 390, `the page is ${String(pageWidth)}px wide at 390`);
-      const scroller = h.page.locator('[data-dayline-scroller]');
+      const scroller = h.page.locator('[data-timeline-mobile-scroller]');
       const inside = await h.page
-        .locator('[data-signals-lane]')
+        .locator('[data-mobile-signals]')
         .evaluate((lane, box) => box?.contains(lane) ?? false, await scroller.elementHandle());
-      assert.equal(inside, true, 'the lane is not inside the timeline’s own scroller');
+      assert.equal(inside, true, 'SIG is not inside the timeline’s own scroller');
     } finally {
       await h.close();
     }

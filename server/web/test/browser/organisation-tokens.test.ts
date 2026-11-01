@@ -18,10 +18,12 @@
  *   the assertion belongs where the rendered text is.
  */
 
+import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
+  defaultPermissions,
   open,
   refuse,
   until,
@@ -246,6 +248,27 @@ void describe('what the panel shows', () => {
     }
   });
 
+  void test('listing without token.revoke_any shows the tokens and offers no Revoke', async () => {
+    // Two §3.1 actions, asked separately: the list is `token.list_any`, the
+    // button `token.revoke_any` (LAI-970 review).
+    const grants = defaultPermissions(me('u1', 'owner')) as { me: { actions: string[] } };
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/permissions': {
+        ...grants,
+        me: { ...grants.me, actions: grants.me.actions.filter((a) => a !== 'token.revoke_any') },
+      },
+    });
+    try {
+      const row = await openPanel(h, 'Tomas Nel');
+      await until(async () => (await row.locator('.tok-row').count()) === 3);
+      assert.equal(await row.locator('.tok-revoke').count(), 0, 'offered Revoke without the grant');
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('somebody with no tokens says so, rather than showing an empty box', async () => {
     const h = await open('/organisation?tab=security', {
       ...BASE,
@@ -300,25 +323,14 @@ void describe('revoking', () => {
       const row = await openPanel(h, 'Tomas Nel');
       await row.locator('.tok-revoke').first().waitFor({ timeout: 20_000 });
 
-      let asked = '';
-      h.page.on('dialog', (d) => {
-        asked = d.message();
-        void d.dismiss();
-      });
-
       await row
         .locator('.tok-row', { hasText: 'Laptop — Claude Code' })
         .locator('.tok-revoke')
         .click();
+      // The app's own dialog (LAI-522), declined.
+      const asked = await answerConfirm(h.page, false);
+      // The window for the DELETE that must not come.
       await h.page.waitForTimeout(500);
-      // The sleep is the window for the DELETE that must not come; the message
-      // may still be on its way (LAI-715).
-      await until(
-        () =>
-          asked.includes('Laptop — Claude Code') &&
-          asked.includes('Tomas Nel') &&
-          /stops working/i.test(asked),
-      );
 
       assert.match(asked, /Laptop — Claude Code/, 'does not name the token');
       assert.match(asked, /Tomas Nel/, 'does not name whose it is');
@@ -348,11 +360,11 @@ void describe('revoking', () => {
       const row = await openPanel(h, 'Tomas Nel');
       await row.locator('.tok-revoke').first().waitFor({ timeout: 20_000 });
 
-      h.page.on('dialog', (d) => void d.accept());
       await row
         .locator('.tok-row', { hasText: 'Laptop — Claude Code' })
         .locator('.tok-revoke')
         .click();
+      await answerConfirm(h.page, true);
       await h.page.waitForTimeout(700);
       const reads = () =>
         h.calls.filter((c: StubCall) => c.method === 'GET' && c.path === '/api/v1/users/u2/tokens')
@@ -389,11 +401,11 @@ void describe('revoking', () => {
       const row = await openPanel(h, 'Tomas Nel');
       await row.locator('.tok-revoke').first().waitFor({ timeout: 20_000 });
 
-      h.page.on('dialog', (d) => void d.accept());
       await row
         .locator('.tok-row', { hasText: 'Laptop — Claude Code' })
         .locator('.tok-revoke')
         .click();
+      await answerConfirm(h.page, true);
 
       const error = row.locator('.org-error');
       await error.waitFor({ timeout: 20_000 });

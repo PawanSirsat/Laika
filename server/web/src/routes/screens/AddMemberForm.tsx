@@ -4,7 +4,12 @@ import { Button } from '../../components/forms/Button.tsx';
 import { Dropdown } from '../../components/Dropdown.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { listAllUsers, type OrgUser } from '../../api/users.ts';
-import { PROJECT_ROLES, ROLE_SUMMARY, type ProjectRole } from '../../api/members.ts';
+import {
+  PROJECT_ROLES,
+  ROLE_SUMMARY,
+  projectRoleLabel,
+  type ProjectRole,
+} from '../../api/members.ts';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { initials } from '../../theme/initials.ts';
@@ -193,7 +198,11 @@ export function AddMemberForm({ existingIds, busy, onAdd, onCancel }: AddMemberF
             onChange={(value) => {
               setRole(value);
             }}
-            options={PROJECT_ROLES.map((r) => ({ value: r, label: r, title: ROLE_SUMMARY[r] }))}
+            options={PROJECT_ROLES.map((r) => ({
+              value: r,
+              label: projectRoleLabel(r),
+              title: ROLE_SUMMARY[r],
+            }))}
           />
         </label>
 

@@ -30,13 +30,14 @@ import {
   closeBrowser,
   open,
   refuse,
+  reply,
   type ApiStub,
   type StubCall,
   setTheme,
   until,
 } from './harness.ts';
 import { capacityPerson } from './capacity-org.ts';
-import { offered, optionsOf, pick, valueOf } from './dropdown.ts';
+import { optionsOf, pick } from './dropdown.ts';
 
 const user = (id: string, name: string, org_role: string, is_active = true) => ({
   id,
@@ -75,6 +76,20 @@ const BASE: ApiStub = {
 const me = (id: string, org_role: string) => ({
   ...user(id, PEOPLE.find((p) => p.id === id)?.name ?? 'Someone', org_role),
   memberships: [],
+});
+
+const permissions = (org_role: string, actions: readonly string[]) => ({
+  org_roles: [],
+  project_roles: [],
+  permissions: [],
+  me: {
+    org_role,
+    credential: 'session',
+    project_scope: 'all',
+    implicit_project_role: null,
+    actions,
+    projects: [],
+  },
 });
 
 void after(async () => {
@@ -261,59 +276,74 @@ void describe('role management', () => {
     }
   });
 
-  void test('an owner may grant Owner; an admin may not, and it is missing not greyed', async () => {
-    for (const [role, expected] of [
-      ['owner', true],
-      ['admin', false],
-    ] as const) {
-      const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u3', role) });
-      try {
-        await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
-
-        // Tomas is a member, so no option is pinned by his own current role.
-        const select = h.page
-          .locator('.org-person', { hasText: 'Tomas Nel' })
-          .getByRole('combobox');
-        const { labels: options, disabled } = await optionsOf(select);
-
-        assert.ok(options.includes('Member'), `${role}: Member is not offered`);
-        assert.equal(
-          options.includes('Owner'),
-          expected,
-          `${role}: Owner should ${expected ? '' : 'not '}be offered, saw ${options.join(', ')}`,
-        );
-        assert.equal(disabled, 0, `${role}: an option is greyed rather than absent`);
-      } finally {
-        await h.close();
-      }
+  /**
+   * D-104 item 2 (LAI-999, from LAI-987): exactly one owner, handed over by
+   * Transfer ownership — so *Owner* is not in the picker at all, rather than
+   * offered and refused `422 use_transfer`.
+   */
+  void test('the owner may grant Admin, Member or Viewer — never Owner — with nothing greyed', async () => {
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    try {
+      await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
+      const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
+      const { labels: options, disabled } = await optionsOf(select);
+      assert.deepEqual(options, ['Admin', 'Member', 'Viewer']);
+      assert.equal(disabled, 0, 'an option is greyed rather than absent');
+    } finally {
+      await h.close();
     }
   });
 
   /**
-   * An Admin cannot *grant* Owner and can still be looking at one. A control
-   * whose value matches none of its options shows nothing (a `<select>`
-   * rendered blank; the dropdown shows its placeholder), so the row would show
-   * an Owner as having no role at all.
+   * D-102 rule 5 (LAI-958): `user.set_role` is the owner's alone, so an Admin
+   * has **no** role control — absent, not disabled — and reads every role,
+   * an Owner's included, as text. Deactivate stays theirs.
    */
-  void test("an admin sees an owner's actual role even though they cannot grant it", async () => {
+  void test('an admin reads roles as text, an Owner included, and keeps Deactivate', async () => {
     const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u3', 'admin') });
     try {
-      await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
-      const select = h.page
-        .locator('.org-person', { hasText: 'Ada Lovelace' })
-        .getByRole('combobox');
-      assert.equal(await valueOf(select), 'owner', "an owner's row shows no role");
+      await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.org-person').count()) === 4);
+      assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 0);
+      const ada = h.page.locator('.org-person', { hasText: 'Ada Lovelace' });
+      assert.equal(await ada.locator('.org-person-role').innerText(), 'Owner');
       assert.equal(
-        (await select.innerText()).trim(),
-        'Owner',
-        "the owner's row does not say Owner",
-      );
-      assert.ok(
-        (await offered(select)).includes('Owner'),
-        'the current role is not among the options, so the control renders blank',
+        await h.page
+          .locator('.org-person', { hasText: 'Tomas Nel' })
+          .locator('button.org-deactivate')
+          .count(),
+        1,
       );
     } finally {
       await h.close();
+    }
+  });
+
+  void test('invite and deactivate controls follow their live grants; the role picker stays owner-only', async () => {
+    for (const [id, role, actions, invited, deactivates] of [
+      ['u3', 'admin', [], false, false],
+      ['u2', 'member', ['user.invite', 'user.deactivate'], true, true],
+      ['u1', 'owner', ['user.invite', 'user.deactivate', 'user.set_role'], true, true],
+    ] as const) {
+      const h = await open('/organisation?tab=people', {
+        ...BASE,
+        '/api/v1/me': me(id, role),
+        '/api/v1/permissions': permissions(role, actions),
+      });
+      try {
+        await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
+        await until(
+          async () => (await h.page.locator('[data-invite-open]').count()) === (invited ? 1 : 0),
+        );
+        assert.equal(await h.page.locator('[data-invite-open]').count(), invited ? 1 : 0);
+        assert.equal((await h.page.locator('.org-deactivate').count()) > 0, deactivates);
+        assert.equal(
+          (await h.page.locator('.org-person [role="combobox"]').count()) > 0,
+          role === 'owner',
+        );
+      } finally {
+        await h.close();
+      }
     }
   });
 
@@ -329,22 +359,42 @@ void describe('role management', () => {
       );
       // Broad for the same reason: nothing on my own row, whatever it is.
       assert.equal(await mine.locator('button').count(), 0, 'offered a control on my own row');
-      // …and the others still have theirs, or the assertion above is vacuous.
+      // …and the active others still have theirs, or the assertion above is
+      // vacuous; a deactivated person's role is text beside Reactivate (LAI-893).
       await until(
-        async () => (await h.page.locator('.org-person [role="combobox"]').count()) === 3,
+        async () => (await h.page.locator('.org-person [role="combobox"]').count()) === 2,
       );
-      assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 3);
+      assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 2);
+      const off = h.page.locator('.org-person', { hasText: 'Sam Okafor' });
+      assert.equal(await off.locator('[role="combobox"]').count(), 0);
+      assert.equal(await off.locator('.org-reactivate').count(), 1);
     } finally {
       await h.close();
     }
   });
 
-  void test('changing a role PATCHes that person with that role', async () => {
-    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+  /** LAI-999 (from LAI-987): a role change asks first, and offers Undo once the server took it. */
+  void test('changing a role asks first, PATCHes that person with that role, and Undo puts it back', async () => {
+    const h = await open('/organisation?tab=people', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2': user('u2', 'Tomas Nel', 'admin'),
+    });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
       const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
       await pick(select, 'admin');
+
+      const dialog = h.page.locator('[data-confirm-dialog]');
+      await dialog.waitFor({ timeout: 20_000 });
+      assert.match(await dialog.innerText(), /Make Tomas Nel an admin\?/);
+      await h.page.waitForTimeout(300);
+      assert.equal(
+        h.calls.filter((c: StubCall) => c.method === 'PATCH').length,
+        0,
+        'the PATCH went out before the confirmation',
+      );
+      await dialog.locator('[data-confirm-ok] button').click();
 
       await h.page.waitForFunction(
         () => document.querySelectorAll('.org-person').length === 4,
@@ -357,6 +407,12 @@ void describe('role management', () => {
       assert.ok(patch, `no PATCH was sent; saw ${h.calls.map((c) => c.method).join(', ')}`);
       assert.equal(patch.path, '/api/v1/users/u2', 'patched the wrong person');
       assert.deepEqual(patch.body, { org_role: 'admin' });
+
+      await h.page.locator('[data-people-undo] button').click();
+      await until(() => h.calls.filter((c: StubCall) => c.method === 'PATCH').length === 2);
+      const undone = h.calls.filter((c: StubCall) => c.method === 'PATCH')[1];
+      assert.equal(undone?.path, '/api/v1/users/u2');
+      assert.deepEqual(undone?.body, { org_role: 'member' });
     } finally {
       await h.close();
     }
@@ -397,32 +453,50 @@ void describe('deactivation', () => {
     }
   });
 
-  void test('deactivating asks first, and says it is not deletion', async () => {
-    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+  /**
+   * LAI-999: LAI-988's offboarding dialog, not `window.confirm` — it names the
+   * person, says what ends and what is kept, and turns the server's
+   * `409 open_tasks` into the question (D-104 item 5).
+   */
+  void test('deactivating asks first, says it is not deletion, and asks about open tasks', async () => {
+    const sent: unknown[] = [];
+    const h = await open('/organisation?tab=people', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2': (call: StubCall) => {
+        sent.push(call.body);
+        return (call.body as { open_tasks?: unknown }).open_tasks === undefined
+          ? reply(409, {
+              error: {
+                code: 'conflict',
+                message: 'They hold 2 open tasks; say whether to unassign or reassign them',
+                details: { reason: 'open_tasks', count: 2, keys: ['LC-1', 'LC-2'], hidden: 0 },
+              },
+            })
+          : user('u2', 'Tomas Nel', 'member', false);
+      },
+    });
     try {
       await h.page.locator('.org-deactivate').first().waitFor({ timeout: 20_000 });
-
-      let asked = '';
-      h.page.on('dialog', (d) => {
-        asked = d.message();
-        void d.dismiss();
-      });
-
       await h.page
         .locator('.org-person', { hasText: 'Tomas Nel' })
         .locator('.org-deactivate')
         .click();
-      // The sleep is the quiet window for the PATCH that must not go out.
-      await h.page.waitForTimeout(500);
-      await until(() => asked.includes('Tomas Nel') && /not deletion/i.test(asked));
 
+      const dialog = h.page.locator('.offb-dialog');
+      await dialog.waitFor({ timeout: 20_000 });
+      const asked = await dialog.innerText();
       assert.match(asked, /Tomas Nel/, 'the confirmation does not name who');
       assert.match(asked, /not deletion/i, 'does not say the row and history are kept');
-      assert.equal(
-        h.calls.filter((c: StubCall) => c.method === 'PATCH').length,
-        0,
-        'dismissing the confirmation still sent the PATCH',
-      );
+      await h.page.waitForTimeout(300);
+      assert.equal(sent.length, 0, 'deactivated without asking');
+
+      await dialog.locator('[data-action="offboard-confirm"]').click();
+      await until(async () => (await dialog.getAttribute('data-offboarding')) === 'open-tasks');
+      assert.equal(await dialog.locator('input[value="unassign"]').isChecked(), true);
+      await dialog.locator('[data-action="offboard-confirm"]').click();
+      await until(() => sent.length === 2);
+      assert.deepEqual(sent, [{ is_active: false }, { is_active: false, open_tasks: 'unassign' }]);
     } finally {
       await h.close();
     }
@@ -604,27 +678,29 @@ void describe('a refusal', () => {
    * *"Promote somebody else to Owner first"* — the instruction that gets the
    * person unstuck — and a client that renders its own wording loses it.
    */
+  // LAI-999: the owner's row has no picker any more (D-104 item 2), so the
+  // refusal is driven through a member's row; what is asserted is unchanged —
+  // the server's sentence, shown verbatim.
   void test("the server's own words are shown, not a rule the client invented", async () => {
     const MESSAGE =
-      'This is the last active Owner. Promote somebody else to Owner first — an organisation with no Owner cannot be recovered.';
+      'An organisation has exactly one Owner. Use Transfer ownership to hand it over.';
 
     const h = await open('/organisation?tab=people', {
       ...BASE,
-      '/api/v1/me': me('u3', 'admin'),
-      '/api/v1/users/u1': refuse(409, 'conflict', MESSAGE),
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2': refuse(422, 'unprocessable', MESSAGE),
     });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
+      const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
+      await pick(select, 'admin');
+      await h.page.locator('[data-confirm-dialog] [data-confirm-ok] button').click();
 
-      // The client did not pre-empt it: demoting the last owner is offered.
-      const select = h.page
-        .locator('.org-person', { hasText: 'Ada Lovelace' })
-        .getByRole('combobox');
-      await pick(select, 'member');
-
-      const error = h.page.locator('.org-error');
+      const error = h.page.locator('.org-people-error');
       await error.waitFor({ timeout: 20_000 });
       assert.equal(await error.innerText(), MESSAGE, 'the refusal was reworded rather than shown');
+      // No Undo for a change the server refused.
+      assert.equal(await h.page.locator('[data-people-undo]').count(), 0);
     } finally {
       await h.close();
     }

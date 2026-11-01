@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { tagColor } from './tag-colors.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -9,6 +10,20 @@ import { childrenOf, parentOf, subtaskProgress } from '../../../api/subtask-deri
 import type { Theme } from '../../../theme/theme.ts';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { SizeChip } from '../../../components/SizeChip.tsx';
+import { AgentChip } from '../../../components/agent/AgentChip.tsx';
+import {
+  agentDevice,
+  selectedAgentOf,
+  selectedHarness,
+  twinsOnTasks,
+} from '../../../api/selected-agent.ts';
+import {
+  ExecutionStateLine,
+  NoRecentSaveLine,
+} from '../../../components/agent/ExecutionStateLine.tsx';
+import { cardExecutionState, liveClaimDetail } from '../../../components/agent/execution-derive.ts';
+import { handoffState } from '../../../components/agent/handoff-derive.ts';
+import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
 
 export interface TaskCardProps {
   readonly task: TaskSummary;
@@ -90,6 +105,39 @@ export function TaskCard({
   const sprint = task.sprint_id === null ? undefined : sprintLabels?.get(task.sprint_id);
   // `?? null`: a view served before LAI-771 has no `size`, and absent is unsized.
   const size = fields.size ? (task.size ?? null) : null;
+  const agent = fields.agent ? selectedAgentOf(task) : null;
+  // What the agent's work is doing, in words (LAI-543). Rides the `agent`
+  // field: a reader who hid the chip hid the agent, and its state with it.
+  // A live claim is read on this reader's clock, which re-renders the card the
+  // moment its heartbeat goes stale (LAI-597).
+  const now = useClaimClock(fields.agent ? task.claim : null);
+  const execution = fields.agent ? cardExecutionState(task, now) : null;
+  const executionDetail =
+    execution === 'working' || execution === 'connection_lost' ? liveClaimDetail(task) : undefined;
+  // The server's own state for the task's saves (LAI-1005, LAI-1006), the
+  // drawer's rule too. It never coincides with a live claim — the server lets
+  // that speak first — and outranks *Waiting for agent*, as the drawer does.
+  const saveState = fields.handoff ? handoffState(task.handoff) : null;
+  const saveStateId = `card-state-${task.id}`;
+  // §9.1.1's checkpoint warning (LAI-1016), the server's: drawn only under the
+  // live claim's *Working* or *Connection lost* line, never in place of it and
+  // never alone — a card that does not show the claim does not show this.
+  const noRecentSave =
+    fields.handoff &&
+    saveState === null &&
+    (execution === 'working' || execution === 'connection_lost')
+      ? (task.handoff?.no_recent_save ?? null)
+      : null;
+  const noRecentSaveId = `card-no-save-${task.id}`;
+  const openRef = useRef<HTMLButtonElement>(null);
+  const describedBy =
+    [
+      onKeyMove === undefined ? undefined : 'card-move-help',
+      saveState === null ? undefined : saveStateId,
+      noRecentSave === null ? undefined : noRecentSaveId,
+    ]
+      .filter((id): id is string => id !== undefined)
+      .join(' ') || undefined;
 
   return (
     <article
@@ -170,6 +218,31 @@ export function TaskCard({
         </p>
       )}
 
+      {/* One quiet line, words beside a shape — never a colour alone. Only
+          what the task view serves: *Working* and *Connection lost* from its
+          live claim (LAI-568, LAI-597), *Waiting for agent* from its pick. */}
+      {saveState !== null ? (
+        // Lifted like the avatar and the blocker so its meaning shows on hover;
+        // the open button names it for focus (`aria-describedby`).
+        <ExecutionStateLine
+          state={saveState}
+          hint={{
+            id: saveStateId,
+            className: 'card-above card-state-open',
+            // Forwarded to the open control itself, so there is still one
+            // control and one place that opens the card (LAI-424).
+            onActivate: () => {
+              openRef.current?.click();
+            },
+          }}
+        />
+      ) : (
+        execution !== null && <ExecutionStateLine state={execution} detail={executionDetail} />
+      )}
+      {noRecentSave !== null && (
+        <NoRecentSaveLine windowMs={noRecentSave.window_ms} id={noRecentSaveId} />
+      )}
+
       <div className="card-foot">
         {/* Jira's priority icons (LAI-705): an up chevron, an equals sign, a
             down chevron. It replaced a coloured dot whose only difference
@@ -179,15 +252,16 @@ export function TaskCard({
 
         <button
           type="button"
+          ref={openRef}
           className="card-key card-open t-code"
           onClick={() => {
             onOpen(task.id);
           }}
+          aria-describedby={describedBy}
           {...(onKeyMove === undefined
             ? {}
             : {
                 'aria-keyshortcuts': 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight',
-                'aria-describedby': 'card-move-help',
                 onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
                   const direction = event.altKey ? KEY_MOVES[event.key] : undefined;
                   if (direction === undefined) return;
@@ -301,6 +375,21 @@ export function TaskCard({
         )}
 
         <span className="card-spacer" />
+
+        {/* The agent the work is meant for (LAI-538), beside the person and
+            never instead of them. Neutral: the agent colour is the owner's
+            decision (D-020). */}
+        {agent !== null && (
+          <span className="card-agent card-above">
+            <AgentChip
+              client={selectedHarness(agent)}
+              device={agentDevice(agent)}
+              // Told apart from another on this board that shares both (LAI-583).
+              twin={twinsOnTasks(byId).get(agent.id)}
+              owner={agent.owner.name}
+            />
+          </span>
+        )}
 
         {/* The dashed "+" that stood here for an unassigned card is gone
             (LAI-606): it was display-only — claiming lives in the task

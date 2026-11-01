@@ -4,6 +4,7 @@ import type { MeProfile } from '../../../api/me.ts';
 import type { Project } from '../../../api/projects.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
 import { getTask, listTasks, type TaskStatus } from '../../../api/tasks.ts';
+import { useGates } from '../../../api/permissions.ts';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import {
   blockerIds,
@@ -58,6 +59,9 @@ export function usePlate(
   me: MeProfile | undefined,
   readable: readonly Project[] | null | undefined,
 ): PlateLoad {
+  // A space the server says the reader implicitly leads counts as theirs
+  // (LAI-970); until it answers, only their memberships do.
+  const { leads } = useGates(me !== undefined);
   const [load, setLoad] = useState<PlateLoad>({ kind: 'loading' });
   useEffect(() => {
     if (me === undefined || readable === undefined) return;
@@ -70,7 +74,9 @@ export function usePlate(
     const member = new Set(me.memberships.map((m) => m.project_id));
 
     void (async () => {
-      const spaces = readable.filter((p) => p.archived_at === null && member.has(p.id));
+      const spaces = readable.filter(
+        (p) => p.archived_at === null && (member.has(p.id) || leads(p.id)),
+      );
       const pages = await Promise.all(
         spaces.flatMap((space) =>
           OPEN.map((status) =>
@@ -111,7 +117,7 @@ export function usePlate(
     return () => {
       controller.abort();
     };
-  }, [me, readable]);
+  }, [me, leads, readable]);
   return load;
 }
 

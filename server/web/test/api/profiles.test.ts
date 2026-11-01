@@ -1,11 +1,10 @@
 /**
  * `src/api/profiles.ts` — the member profile's client (LAI-743, D-078).
  *
- * Two kinds of thing are worth pinning here. The **requests**: each call goes
- * to the path and method §6.4 names, with the body the server's `strictObject`
- * accepts and nothing else. And the **gate**: `mayOpenProfiles` mirrors §3.1's
- * `profile.read` row for every org role, so a link is offered to exactly the
- * people the server answers — absent, not disabled, for everyone else.
+ * Worth pinning here: the **requests** — each call goes to the path and
+ * method §6.4 names, with the body the server's `strictObject` accepts and
+ * nothing else. Who is offered a profile is the server's `profile.read`
+ * (`GET /permissions`, LAI-970), not a role mirrored here.
  */
 
 import assert from 'node:assert/strict';
@@ -13,15 +12,12 @@ import { describe, test } from 'node:test';
 import {
   attemptKey,
   getProfile,
-  mayOpenProfiles,
-  mayRate,
   PROFILE_KINDS,
   profileHref,
   rateMember,
   RATING_NOTE_MAX,
   setProfileKind,
 } from '../../src/api/profiles.ts';
-import { ORG_ROLES } from '../../src/api/invites.ts';
 
 interface Call {
   readonly url: string;
@@ -79,27 +75,7 @@ void describe('the three requests (§6.4)', () => {
   });
 });
 
-void describe('who is offered a profile (§3.1 profile.read)', () => {
-  void test('owners and admins, and no other role', () => {
-    const offered = ORG_ROLES.filter((role) => mayOpenProfiles(role));
-    assert.deepEqual(offered, ['owner', 'admin']);
-    // Not a vacuous check: the other roles exist and are refused.
-    assert.ok(ORG_ROLES.includes('member') && ORG_ROLES.includes('viewer'));
-  });
-
-  void test('nobody before the session is known', () => {
-    assert.equal(mayOpenProfiles(undefined), false);
-    assert.equal(mayOpenProfiles(''), false);
-  });
-
-  void test('an admin may rate anyone but themselves', () => {
-    const ada = { id: 'u1', org_role: 'admin' };
-    assert.equal(mayRate(ada, 'u2'), true);
-    assert.equal(mayRate(ada, 'u1'), false);
-    assert.equal(mayRate({ id: 'u3', org_role: 'member' }, 'u2'), false);
-    assert.equal(mayRate(undefined, 'u2'), false);
-  });
-
+void describe('where a profile lives', () => {
   void test('the link is a pasteable URL for the one person', () => {
     assert.equal(profileHref('01ABC'), '/people?user=01ABC');
     assert.equal(profileHref('a&b'), '/people?user=a%26b');

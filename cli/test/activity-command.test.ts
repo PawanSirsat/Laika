@@ -152,7 +152,13 @@ const ours = (doc: HooksDoc, event: string): string[] =>
     .flatMap((g) => g.hooks.map((h) => h.command ?? h.bash ?? ''))
     .filter((c) => c.includes(MARKER));
 
-void describe('on, when sharing is off', () => {
+/** D-102 amended (LAI-964): the words the web app shows too. */
+const NOTICE =
+  'Your organisation collects your local activity: per-day counts of your prompts, agent sessions and commits, and your agents’ token counts. The owner and anyone they grant access can see it, and you can see who looked.';
+const noticeCount = (lines: readonly string[]): number =>
+  lines.filter((line) => line.includes(NOTICE)).length;
+
+void describe('on, when the organisation does not collect', () => {
   void test('the organisation switch off: says who can turn it on, installs nothing', async () => {
     const h = await harness();
     const { claude } = fixtures(h.home);
@@ -162,18 +168,11 @@ void describe('on, when sharing is off', () => {
     const text = h.out.join('\n');
     assert.match(text, /Developer insights/);
     assert.match(text, /owner or admin/);
-    assert.match(text, /Share my local activity/);
-    assert.match(text, /never with\s+a token/);
+    // No personal switch to send anyone to (D-102 amended).
+    assert.doesNotMatch(text, /Share my local activity/);
+    assert.equal(noticeCount(h.out), 0);
     assert.equal(readFileSync(claude, 'utf8'), before);
     assert.ok(!existsSync(join(h.home, '.laika', 'activity')));
-  });
-
-  void test('only the developer switch off: no organisation line', async () => {
-    const h = await harness();
-    h.board.sharing = { ...h.board.sharing, enabled: false };
-    assert.equal(await h.run('on'), 1);
-    assert.doesNotMatch(h.out.join('\n'), /Developer insights/);
-    assert.ok(!existsSync(join(h.home, '.claude', 'settings.json')));
   });
 
   void test('a refused token, or no board at all, stops before anything is written', async () => {
@@ -185,6 +184,65 @@ void describe('on, when sharing is off', () => {
     assert.equal(await activity(['on'], none), 1);
     assert.match(h.err.join('\n'), /not connected to a board/);
     assert.ok(!existsSync(join(h.home, '.laika', 'activity')));
+  });
+});
+
+void describe('the organisation collects (D-102 amended, LAI-964)', () => {
+  void test('on: the personal switch is not asked; installs, and says so once', async () => {
+    const h = await harness();
+    // What this person last chose under D-079; an older board might still send it.
+    h.board.sharing = { ...h.board.sharing, org_enabled: true, enabled: false };
+    assert.equal(await h.run('on'), 0, h.err.join('\n'));
+    assert.equal(noticeCount(h.out), 1, h.out.join('\n'));
+    assert.equal(readState(activityPaths(h.home))?.collect, true);
+    assert.doesNotMatch(h.out.join('\n'), /Share my local activity/);
+  });
+
+  void test('status: collection is the organisation’s, said once, with no personal switch', async () => {
+    const h = await harness();
+    assert.equal(await h.run('on'), 0);
+    h.out.length = 0;
+    assert.equal(await h.run('status'), 0);
+    const text = h.out.join('\n');
+    assert.equal(noticeCount(h.out), 1, text);
+    assert.match(text, /Collection\s+by your organisation: on/);
+    assert.doesNotMatch(text, /\byou (on|off)\b/);
+  });
+
+  void test('status: the organisation switched off since — no notice, and it says why', async () => {
+    const h = await harness();
+    assert.equal(await h.run('on'), 0);
+    h.board.sharing = { ...h.board.sharing, org_enabled: false, enabled: false };
+    assert.equal(
+      (await sync({ home: h.home, env: h.io.env, nowMs: () => Date.now(), tz: TZ })).kind,
+      'off',
+    );
+    h.out.length = 0;
+    assert.equal(await h.run('status'), 0);
+    const text = h.out.join('\n');
+    assert.equal(noticeCount(h.out), 0, text);
+    assert.match(text, /Developer insights are off/);
+  });
+
+  void test('sync: sends with the personal switch off, and says so once', async () => {
+    const h = await harness();
+    assert.equal(await h.run('on'), 0);
+    h.board.sharing = { ...h.board.sharing, org_enabled: true, enabled: false };
+    h.out.length = 0;
+    assert.equal(await h.run('sync'), 0, h.err.join('\n'));
+    assert.match(h.out.join('\n'), /^Sent\./m);
+    assert.equal(noticeCount(h.out), 1, h.out.join('\n'));
+    assert.ok(h.board.requests.some((r) => r.method === 'PUT'));
+  });
+
+  void test('sync: the organisation switch off stops it, with no notice', async () => {
+    const h = await harness();
+    assert.equal(await h.run('on'), 0);
+    h.board.sharing = { ...h.board.sharing, org_enabled: false, enabled: false };
+    h.out.length = 0;
+    assert.equal(await h.run('sync'), 0);
+    assert.match(h.out.join('\n'), /Developer insights are off/);
+    assert.equal(noticeCount(h.out), 0);
   });
 });
 
@@ -439,6 +497,9 @@ void describe('status, sync, emails', () => {
     ]);
     assert.match(h.err.join('\n'), /LAIKA_TOKEN/);
     assert.ok(![...h.out, ...h.err].join('\n').includes(TOKEN), 'the token was printed');
+    // D-102 amended (LAI-971): the organisation's switch alone, never a personal one.
+    assert.match(h.err.join(' '), /while your organisation has Developer insights on/);
+    assert.doesNotMatch(h.err.join(' '), /Share my local activity/);
 
     h.out.length = 0;
     assert.equal(await h.run('status'), 0);

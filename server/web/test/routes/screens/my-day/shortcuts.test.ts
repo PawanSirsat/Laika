@@ -29,6 +29,11 @@ void describe('typingIn', () => {
     assert.equal(typingIn({ tagName: 'DIV', isContentEditable: true }), true);
   });
 
+  void test('a range input is: its arrows move its own thumb (LAI-891)', () => {
+    assert.equal(typingIn({ tagName: 'INPUT', type: 'range' }), true);
+    assert.equal(shortcutFor(key('ArrowRight', { tagName: 'INPUT', type: 'range' })), undefined);
+  });
+
   void test('a checkbox, a button or the page is not', () => {
     assert.equal(typingIn({ tagName: 'INPUT', type: 'checkbox' }), false);
     assert.equal(typingIn({ tagName: 'BUTTON' }), false);
@@ -38,6 +43,12 @@ void describe('typingIn', () => {
 });
 
 void describe('shortcutFor', () => {
+  void test('← and → step along the Timeline (LAI-888), and not while typing', () => {
+    assert.equal(shortcutFor(key('ArrowRight')), 'right');
+    assert.equal(shortcutFor(key('ArrowLeft')), 'left');
+    assert.equal(shortcutFor(key('ArrowRight', { tagName: 'INPUT', type: 'text' })), undefined);
+  });
+
   void test('the six keys, in either case', () => {
     assert.equal(shortcutFor(key('Enter')), 'confirm');
     assert.equal(shortcutFor(key('g')), 'general');
@@ -73,5 +84,14 @@ void describe('shortcutFor', () => {
   void test('anything else is not a shortcut', () => {
     assert.equal(shortcutFor(key('a')), undefined);
     assert.equal(shortcutFor(key('ArrowDown')), undefined);
+  });
+});
+
+void describe('the header’s keys (LAI-502)', () => {
+  void test('N adds time and T starts or stops the timer; neither while typing', () => {
+    assert.equal(shortcutFor(key('n')), 'add');
+    assert.equal(shortcutFor(key('T')), 'timer');
+    assert.equal(shortcutFor(key('n', { tagName: 'INPUT', type: 'text' })), undefined);
+    assert.equal(shortcutFor(key('t', { tagName: 'TEXTAREA' })), undefined);
   });
 });

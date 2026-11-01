@@ -31,18 +31,32 @@ function actor(orgRole: OrgRole, projectRole: ProjectRole | null = null): Actor 
 type OrgRow = [OrgAction, boolean, boolean, boolean, boolean];
 
 const ORG_MATRIX: OrgRow[] = [
-  // | Delete org data / transfer ownership | ✓ | — | — | — |
+  // | Delete org data | ✓ | — | — | — |
   ['org.delete', true, false, false, false],
+  // | Transfer ownership | ✓ (session only) | — | — | — |
   ['org.transfer_ownership', true, false, false, false],
   // | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
   ['org.settings.edit', true, true, false, false],
   // | Create / archive project | ✓ | ✓ | — | — |
   ['project.create', true, true, false, false],
   ['project.archive', true, true, false, false],
-  // | Invite users / change org roles | ✓ | ✓ (not to Owner) | — | — |
+  // | Invite users | ✓ | ✓ (as member or viewer) | — | — |
+  // The role half, no role named — listing and revoking. Which roles an
+  // invite may grant is asserted below (D-102 rule 5, LAI-958).
   ['user.invite', true, true, false, false],
+  // | Change org roles | ✓ | — | — | — |
+  ['user.set_role', true, false, false, false],
+  // | Set what each role may do | ✓ (session only) | — | — | — |
+  ['org.permissions.manage', true, false, false, false],
   // | Deactivate user | ✓ | ✓ | — | — |
   ['user.deactivate', true, true, false, false],
+  // | Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
+  // Asked about somebody else, so the cell's tick is the grant's; the
+  // themselves half is asserted in policy-spec-drift's qualifier (LAI-981).
+  ['user.sign_out', true, true, false, false],
+  // | Issue a password-reset link | ✓ (session only) | ✓ (session only, not for the owner) | — | — |
+  // No target named; the owner half is the qualifier's, in policy-spec-drift.
+  ['user.reset_password', true, true, false, false],
   // | View the organisation | ✓ | ✓ | ✓ | ✓ |
   // Its own row rather than folded into `member_list.read` (LAI-222): the
   // response also carries the AI provider block, which is gated field-level on
@@ -60,6 +74,10 @@ const ORG_MATRIX: OrgRow[] = [
   ['token.create_own', true, true, true, true],
   // | List / revoke anyone's token | ✓ | ✓ | — | — |
   ['token.list_any', true, true, false, false],
+  // D-114 (LAI-534): a person's own agents, every role — the service reaches
+  // only the caller's rows, and managing is session only.
+  ['agent.read_own', true, true, true, true],
+  ['agent.manage_own', true, true, true, true],
   ['token.revoke_any', true, true, false, false],
   // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
   // Every role: it is your own record about your own work, creating nothing in
@@ -89,7 +107,7 @@ const ORG_MATRIX: OrgRow[] = [
   ['org.developer_insights.set', true, true, false, false],
   // | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
   ['activity_sharing.read_own', true, true, true, true],
-  // | Set own activity sharing | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+  // | Set own local-activity scope | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
   ['activity_sharing.set_own', true, true, true, true],
   // | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
   // The heartbeat's shape: a Viewer is stopped by the credential, not the role.
@@ -147,23 +165,25 @@ describe('SPEC §3.1 — org-level matrix', () => {
 });
 
 describe('SPEC §3.1 — rows that depend on the resource', () => {
-  it('Admin may set any role except Owner', () => {
-    expect(can(actor('admin'), 'user.set_role', { targetOrgRole: 'admin' })).toBe(true);
-    expect(can(actor('admin'), 'user.set_role', { targetOrgRole: 'member' })).toBe(true);
-    expect(can(actor('admin'), 'user.set_role', { targetOrgRole: 'owner' })).toBe(false);
-  });
-
-  it('Owner may set any role including Owner', () => {
+  it('only the Owner sets roles, any role, Admin included (D-102 rule 5)', () => {
     for (const target of ORG_ROLES) {
       expect(can(actor('owner'), 'user.set_role', { targetOrgRole: target })).toBe(true);
+      for (const role of ['admin', 'member', 'viewer'] as const) {
+        expect(can(actor(role), 'user.set_role', { targetOrgRole: target }), role).toBe(false);
+      }
     }
   });
 
-  it('Member and Viewer may set no roles at all', () => {
+  it('an Admin invites as member or viewer only; the Owner invites any role', () => {
+    for (const target of ORG_ROLES) {
+      expect(can(actor('owner'), 'user.invite', { targetOrgRole: target }), target).toBe(true);
+    }
+    expect(can(actor('admin'), 'user.invite', { targetOrgRole: 'member' })).toBe(true);
+    expect(can(actor('admin'), 'user.invite', { targetOrgRole: 'viewer' })).toBe(true);
+    expect(can(actor('admin'), 'user.invite', { targetOrgRole: 'admin' })).toBe(false);
+    expect(can(actor('admin'), 'user.invite', { targetOrgRole: 'owner' })).toBe(false);
     for (const role of ['member', 'viewer'] as const) {
-      for (const target of ORG_ROLES) {
-        expect(can(actor(role), 'user.set_role', { targetOrgRole: target })).toBe(false);
-      }
+      expect(can(actor(role), 'user.invite', { targetOrgRole: 'member' }), role).toBe(false);
     }
   });
 
@@ -197,6 +217,19 @@ describe('SPEC §3.1 — rows that depend on the resource', () => {
       expect(can(actor(role), 'profile.rate', { targetUserId: 'u2' }), role).toBe(false);
     }
   });
+
+  // | View a member's day, time and shared activity | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
+  it("Owner and Admin read anyone's day but their own; Member and Viewer nobody's (LAI-957)", () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u2' }), role).toBe(true);
+      // `actor()` is `u1`: their own day is `/me`'s.
+      expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u1' }), role).toBe(false);
+      expect(can(actor(role), 'people.analytics.read', {}), role).toBe(false);
+    }
+    for (const role of ['member', 'viewer'] as const) {
+      expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u2' }), role).toBe(false);
+    }
+  });
 });
 
 // ---------------------------------------------------------------- SPEC §3.2
@@ -217,10 +250,25 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // Every role, including viewer — and **not** in `READ_ACTIONS`, which is what
   // refuses a `read_only` token (D-047). See `can.test.ts` for the pair.
   ['task.watch', true, true, true],
-  // | Create / edit / move any task | ✓ | ✓ | — |
+  // | Create tasks | ✓ | ✓ (unless space admins only) | — |
+  // The default; the space's other answer is `space-rules.test.ts` (D-103).
+  ['task.create', true, true, false],
+  // | Edit / move any task | ✓ | ✓ | — |
   ['task.write', true, true, false],
   // | Claim a task (start_working) | ✓ | ✓ | — |
   ['task.claim', true, true, false],
+  // | Save a checkpoint on a task your agent holds | ✓ | ✓ | — |
+  ['task.checkpoint.create', true, true, false],
+  // | Re-tag a checkpoint one of your agents saved | ✓ | ✓ | — |
+  ['task.checkpoint.retag', true, true, false],
+  // | Offer a task your agent holds to another agent | ✓ | ✓ | — |
+  ['task.handoff.offer', true, true, false],
+  // | Accept a hand-off or recovery offer | ✓ | ✓ | — |
+  ['task.handoff.accept', true, true, false],
+  // | Decline a hand-off or recovery offer | ✓ | ✓ | — |
+  ['task.handoff.decline', true, true, false],
+  // | Edit the project's hand-off policy | ✓ | — | — |
+  ['project.handoff_policy.edit', true, false, false],
   // | Assign a task to someone else | ✓ | ✓ | — |
   ['task.assign_other', true, true, false],
   // | Add comment | ✓ | ✓ | — |
@@ -237,6 +285,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // | Set token budgets | ✓ (session only) | — | — |
   // LAI-773: a lead, on a web session; soft, so it refuses nothing to anyone.
   ['budget.set', true, false, false],
+  // | Leave a project | ✓ | ✓ | ✓ |
+  // D-103 item 5; the last lead is the service's 409, not a cell.
+  ['project.leave', true, true, true],
 ];
 
 /** An org `member` so the org role never grants implicit lead. */
@@ -286,6 +337,18 @@ describe('SPEC §3.2 — the `own` cells', () => {
     expect(can(projectActor('viewer'), 'task.delete', OWN)).toBe(false);
   });
 
+  it('| Approve a cross-owner hand-off | ✓ | task’s assignee | — | and | Cancel a hand-off offer | ✓ | own agent’s | — |', () => {
+    // `ownerId` is the task's assignee for approve, the sending agent's owner
+    // for cancel (§3.2, LAI-546).
+    for (const action of ['task.handoff.approve', 'task.handoff.cancel'] as const) {
+      expect(can(projectActor('lead'), action, THEIRS), `lead ${action}`).toBe(true);
+      expect(can(projectActor('member'), action, OWN), `member own ${action}`).toBe(true);
+      expect(can(projectActor('member'), action, THEIRS), `member other ${action}`).toBe(false);
+      expect(can(projectActor('viewer'), action, OWN), `viewer ${action}`).toBe(false);
+      expect(can(projectActor('member'), action, { projectId: 'p1' }), `member none`).toBe(false);
+    }
+  });
+
   it('treats a missing owner id as not-yours rather than as a match', () => {
     // Both undefined must not compare equal — that would make every ownerless
     // resource everyone's.
@@ -317,8 +380,14 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.local_activity.prune', {}],
     ['system.estimate.refit', {}],
     ['system.time.prune', {}],
+    ['system.idempotency.prune', {}],
+    ['system.claim.expire', {}],
+    ['system.handoff.recover', {}],
+    ['system.handoff.expire', {}],
+    ['system.checkpoint.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
+    ['system.checkpoint.verify', { projectId: PROJECT }],
   ];
 
   it('holds each of §3.4’s actions', () => {
@@ -381,14 +450,16 @@ describe('completeness', () => {
     const asserted = new Set<string>([
       ...ORG_MATRIX.map(([a]) => a as string),
       ...PROJECT_MATRIX.map(([a]) => a as string),
-      'user.set_role',
       'project.join_public',
       'token.read_own',
       'token.revoke_own',
       'comment.edit',
       'comment.delete',
       'task.delete',
+      'task.handoff.approve',
+      'task.handoff.cancel',
       'profile.rate',
+      'people.analytics.read',
       // §3.4's own, asserted in full by the describe above.
       ...SYSTEM_ACTIONS,
     ]);

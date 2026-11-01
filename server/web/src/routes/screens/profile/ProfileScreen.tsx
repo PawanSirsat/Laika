@@ -21,8 +21,6 @@ import type { MeProfile } from '../../../api/me.ts';
 import {
   attemptKey,
   getProfile,
-  mayOpenProfiles,
-  mayRate,
   PROFILE_KINDS,
   rateMember,
   setProfileKind,
@@ -37,6 +35,8 @@ import {
   type ProfileReview,
   type ProfileTask,
 } from '../../../api/profiles.ts';
+import { PEOPLE_ANALYTICS } from '../../../api/people-analytics.ts';
+import { useGates } from '../../../api/permissions.ts';
 import { dateTime, timeLabel } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -44,7 +44,11 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { SCREEN_COPY } from '../screen-copy.ts';
 import { ActivityCard } from './ActivityCard.tsx';
+import { AdminPanel } from './AdminPanel.tsx';
 import { InfoTip } from './InfoTip.tsx';
+import { MyDayScreen } from '../my-day/MyDayScreen.tsx';
+import { PersonHours } from './PersonHours.tsx';
+import { PersonLocalActivity } from './PersonLocalActivity.tsx';
 import {
   agentRows,
   barHeights,
@@ -72,7 +76,23 @@ export interface ProfileScreenProps {
   /** `?user=` — whose profile. */
   readonly userId: string | undefined;
   readonly me: MeProfile | undefined;
+  /** `?tab=` — `day` or `hours` (LAI-959); anything else is the overview. */
+  readonly tab?: string | undefined;
+  readonly onTab?: (tab: ProfileTab) => void;
+  /** `?day=` — the day the Day and Hours tabs read; today when absent. */
+  readonly day?: string | undefined;
+  readonly onDay?: (day: string) => void;
+  readonly onNavigate?: (to: string) => void;
 }
+
+/** The profile's sections (LAI-959): the record, and the person's day and hours. */
+export type ProfileTab = 'overview' | 'day' | 'hours';
+
+const TABS: readonly (readonly [ProfileTab, string])[] = [
+  ['overview', 'Overview'],
+  ['day', 'Day'],
+  ['hours', 'Hours'],
+];
 
 type Load =
   | { readonly kind: 'loading' }
@@ -108,9 +128,9 @@ const MEANS = {
   decided30: 'Their accepts and send-backs on work that is not theirs in the last 30 days.',
   decide:
     'Median time from a task’s latest move into Review — or its creation, if it was created there — to their decision on it. Decisions made from outside Review are counted, not measured.',
-  led: 'Projects where their membership role is Lead, not archived.',
+  led: 'Spaces where they are a Space admin, not archived.',
   waiting:
-    'Tasks in Review in the projects they lead that are not theirs — someone else’s, or nobody’s.',
+    'Tasks in Review in the spaces where they are a Space admin that are not theirs — someone else’s, or nobody’s.',
   oldest: 'How long the longest-waiting of those has been in Review.',
 } as const;
 
@@ -160,8 +180,22 @@ function useColumnCount(): ColumnCount {
  * a builder's no queue, so those cards are absent — not empty — and that is all
  * the kind changes. What a figure means is in the (i) beside it.
  */
-export function ProfileScreen({ userId, me }: ProfileScreenProps) {
-  const allowed = mayOpenProfiles(me?.org_role);
+export function ProfileScreen({
+  userId,
+  me,
+  tab,
+  onTab = () => undefined,
+  day,
+  onDay = () => undefined,
+  onNavigate = () => undefined,
+}: ProfileScreenProps) {
+  // *See everyone's analytics* carries the profile and the day alike (§3's
+  // grants, D-102 rule 6): the server's answer, and nothing until it has one
+  // (LAI-970) — a role would show a withdrawn admin what they may not open.
+  const gates = useGates(me !== undefined);
+  const { settled } = gates;
+  const allowed = gates.org('profile.read');
+  const readsDays = gates.org(PEOPLE_ANALYTICS);
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [kindBusy, setKindBusy] = useState(false);
@@ -218,6 +252,15 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
   );
 
   if (me === undefined) return null;
+
+  if (!allowed && !settled) {
+    return (
+      <div className="prof">
+        {header}
+        <LoadingState shape="card" count={4} label="Loading the profile" />
+      </div>
+    );
+  }
 
   if (!allowed) {
     return (
@@ -334,7 +377,7 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
       ratings={profile.ratings}
       total={profile.ratings_total}
       self={me.id === user.id}
-      canRate={mayRate(me, user.id)}
+      canRate={gates.org('profile.rate') && me.id !== user.id}
       now={now}
       buttonRef={rateButton}
       onRate={() => {
@@ -342,6 +385,21 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
       }}
     />
   );
+
+  /**
+   * After the Admin panel changed their role or active state: the profile
+   * again, quietly — the panel stays on screen, so a notice it just showed is
+   * not wiped by a loading state. A failed read is the screen's error.
+   */
+  const refreshProfile = (): void => {
+    getProfile(user.id)
+      .then((next) => {
+        if (shown.current === user.id) setLoad({ kind: 'ready', profile: next });
+      })
+      .catch((cause: unknown) => {
+        if (shown.current === user.id) setLoad({ kind: 'error', error: cause });
+      });
+  };
 
   const manager = user.profile_kind === 'manager';
   const cards: Readonly<Record<ProfileCardId, ReactNode>> = {
@@ -375,39 +433,101 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
     decisions: <DecisionsCard review={profile.review} weeks={weeks} now={now} />,
   };
 
+  // A person's own day is My day's; their Day and Hours are for somebody else.
+  const tabbed = readsDays && me.id !== user.id;
+  const shownTab: ProfileTab = tabbed && (tab === 'day' || tab === 'hours') ? tab : 'overview';
+  const tabHref = (id: ProfileTab): string => {
+    const q = new URLSearchParams({ user: user.id });
+    if (id !== 'overview') q.set('tab', id);
+    return `/people?${q.toString()}`;
+  };
+
   return (
     <div className="prof" data-kind={user.profile_kind}>
       {header}
 
       <ProfileHead profile={profile} busy={kindBusy} error={kindError} onKind={changeKind} />
 
-      <ActivityCard
-        userId={user.id}
-        name={user.name}
-        viewerId={me.id}
-        canManageOrg={mayOpenProfiles(me.org_role)}
-        sharing={profile.activity_sharing}
-      />
+      {tabbed && (
+        <nav className="prof-tabs" aria-label={`${user.name}’s profile`}>
+          {TABS.map(([id, label]) => (
+            <a
+              key={id}
+              href={tabHref(id)}
+              className={id === shownTab ? 'prof-tab prof-tab-active' : 'prof-tab'}
+              aria-current={id === shownTab ? 'page' : undefined}
+              data-profile-tab={id}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                onTab(id);
+              }}
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+      )}
 
-      {/* Their agents' tokens (D-084, LAI-769): full width, like Activity. */}
-      <UsageCard key={user.id} userId={user.id} name={user.name} self={me.id === user.id} />
+      {shownTab === 'day' && (
+        <>
+          <MyDayScreen
+            key={user.id}
+            me={me}
+            user={user.id}
+            embedded={{ name: user.name }}
+            day={day}
+            onDay={onDay}
+            onNavigate={onNavigate}
+          />
+          <PersonLocalActivity key={`held-${user.id}`} userId={user.id} name={user.name} />
+        </>
+      )}
 
-      {/*
-       * The rest flows in columns (LAI-751, owner, 2026-10-16): each column
-       * stacks its cards one gap apart, so a short card is never followed by a
-       * hole the height of its neighbour. Which card goes where is
-       * `columnPlan`'s — chosen, not computed — and one column is the reading
-       * order.
-       */}
-      <div className="prof-columns" data-columns={columns}>
-        {columnPlan(user.profile_kind, columns).map((ids) => (
-          <div key={ids.join('-')} className="prof-column">
-            {ids.map((id) => (
-              <Fragment key={id}>{cards[id]}</Fragment>
+      {shownTab === 'hours' && (
+        <PersonHours key={user.id} userId={user.id} name={user.name} day={day} onDay={onDay} />
+      )}
+
+      {shownTab === 'overview' && (
+        <>
+          {/* Managing this person (D-104, LAI-988): drawn only for what the server grants. */}
+          <AdminPanel
+            key={`admin-${user.id}`}
+            user={user}
+            me={me}
+            gates={gates}
+            onChanged={refreshProfile}
+          />
+
+          <ActivityCard
+            userId={user.id}
+            name={user.name}
+            viewerId={me.id}
+            canManageOrg={gates.org('org.developer_insights.set')}
+            sharing={profile.activity_sharing}
+          />
+
+          {/* Their agents' tokens (D-084, LAI-769): full width, like Activity. */}
+          <UsageCard key={user.id} userId={user.id} name={user.name} self={me.id === user.id} />
+
+          {/*
+           * The rest flows in columns (LAI-751, owner, 2026-10-16): each column
+           * stacks its cards one gap apart, so a short card is never followed by a
+           * hole the height of its neighbour. Which card goes where is
+           * `columnPlan`'s — chosen, not computed — and one column is the reading
+           * order.
+           */}
+          <div className="prof-columns" data-columns={columns}>
+            {columnPlan(user.profile_kind, columns).map((ids) => (
+              <div key={ids.join('-')} className="prof-column">
+                {ids.map((id) => (
+                  <Fragment key={id}>{cards[id]}</Fragment>
+                ))}
+              </div>
             ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
       {rating.open && (
         <RatingDialog
@@ -1061,7 +1181,7 @@ function ReviewCard({
             ...(queue === undefined
               ? []
               : ([
-                  ['Projects led', MEANS.led],
+                  ['Spaces as Space admin', MEANS.led],
                   ['Waiting now', MEANS.waiting],
                   ['Oldest waiting', MEANS.oldest],
                 ] satisfies Def[])),

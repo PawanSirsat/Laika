@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { getMyDay } from '../../services/my-day.ts';
+import { getMySummary } from '../../services/time-summary.ts';
 import { addBreak, removeBreak } from '../../services/time-breaks.ts';
 import {
   confirmDay,
@@ -22,10 +23,15 @@ import {
   deleteEntry,
   listRevisions,
   updateEntry,
+  TIME_ENTRY_KINDS,
 } from '../../services/time-entries.ts';
 import {
+  assertCanSetOrgTime,
   assertDrafting,
+  BREAK_LABEL_MAX,
+  BREAK_WINDOWS_MAX,
   getTimeSettings,
+  setOrgBreaks,
   setOrgTimeMode,
   setTimeSettings,
   TIME_MODES,
@@ -47,6 +53,15 @@ import {
   type SolidtimeOutbox,
   type SolidtimeSetup,
 } from '../../services/time-solidtime.ts';
+import {
+  discardTimer,
+  pauseTimer,
+  resumeTimer,
+  startTimer,
+  stopTimer,
+  TIMER_TITLE_MAX,
+} from '../../services/time-timer.ts';
+import { DAY_NOTE_MAX, dayNoteOn, setDayNote } from '../../services/time-day-notes.ts';
 import { undoChange } from '../../services/time-undo.ts';
 import { UNDO_HEADER } from '../../services/time-undo-log.ts';
 import { TASK_KEY_PATTERN } from '../../services/token-usage.ts';
@@ -88,8 +103,38 @@ const buckets = z
 const folderName = z.string().max(1000);
 const branchName = z.string().max(1000);
 
-const SettingsBody = strictObject({ draft_my_time: z.boolean() });
+/**
+ * The person's own settings: the drafting switch, and where they are (D-106)
+ * — an IANA zone id of at most 64 characters, or null to forget it. Either
+ * field, or both; an empty body is refused.
+ */
+const PLACE = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){1,2}$/;
+const SettingsBody = strictObject({
+  draft_my_time: z.boolean().optional(),
+  place: z.string().max(64).regex(PLACE, 'a place is an IANA zone id').nullable().optional(),
+}).refine((b) => b.draft_my_time !== undefined || b.place !== undefined, {
+  message: 'send draft_my_time, place, or both',
+});
 const OrgTimeBody = strictObject({ mode: z.enum(TIME_MODES) });
+
+/**
+ * The organisation's break schedule (D-101): each field to its shape here —
+ * a wall-clock `HH:MM`, ISO days 1 (Monday) to 7 — and the rules between
+ * them, start before end and no overlap, in the service.
+ */
+const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'a time is HH:MM, 00:00 to 23:59');
+const OrgBreaksBody = strictObject({
+  breaks: z
+    .array(
+      strictObject({
+        label: z.string().trim().min(1).max(BREAK_LABEL_MAX),
+        start: clock,
+        end: clock,
+        days: z.array(z.number().int().min(1).max(7)).min(1),
+      }),
+    )
+    .max(BREAK_WINDOWS_MAX),
+});
 
 /**
  * A collector's upload. **Nothing in it can hold free text**: numbers, a zone,
@@ -164,6 +209,10 @@ const DraftPatchBody = strictObject({
 
 const SplitBody = strictObject({ at: z.number().int().min(0) });
 
+// What the person said an entry was (D-108): a kind from the list, a title, a description.
+const ENTRY_TITLE_MAX = 120;
+const ENTRY_DESCRIPTION_MAX = 2000;
+
 const EntryBody = strictObject({
   day,
   tz: zone,
@@ -171,6 +220,9 @@ const EntryBody = strictObject({
   task: ref.optional(),
   project: slug.optional(),
   note: z.string().max(280).optional(),
+  kind: z.enum(TIME_ENTRY_KINDS).optional(),
+  title: z.string().max(ENTRY_TITLE_MAX).optional(),
+  description: z.string().max(ENTRY_DESCRIPTION_MAX).optional(),
   started_at: z.number().int().min(0).optional(),
   ended_at: z.number().int().min(0).optional(),
 });
@@ -180,9 +232,32 @@ const EntryPatchBody = strictObject({
   task: ref.nullable().optional(),
   project: slug.nullable().optional(),
   note: z.string().max(280).nullable().optional(),
+  kind: z.enum(TIME_ENTRY_KINDS).nullable().optional(),
+  title: z.string().max(ENTRY_TITLE_MAX).nullable().optional(),
+  description: z.string().max(ENTRY_DESCRIPTION_MAX).nullable().optional(),
   day: day.optional(),
   started_at: instantMs.optional(),
   ended_at: instantMs.optional(),
+});
+
+// What a confirmed draft was (D-110, LAI-500): the same three words an entry
+// takes, said at the moment of confirming; left out, the entry gets nulls.
+const ConfirmDraftBody = strictObject({
+  kind: z.enum(TIME_ENTRY_KINDS).optional(),
+  title: z.string().max(ENTRY_TITLE_MAX).optional(),
+  description: z.string().max(ENTRY_DESCRIPTION_MAX).optional(),
+});
+
+// The note for the day (§4.62, LAI-501): with the confirm, or on its own.
+const ConfirmDayBody = strictObject({ note: z.string().max(DAY_NOTE_MAX).optional() });
+const DayNoteBody = strictObject({ note: z.string().max(DAY_NOTE_MAX).nullable() });
+
+// A timer's start (§4.61, LAI-500): its zone, and what it is for — all optional.
+const TimerStartBody = strictObject({
+  tz: zone,
+  task: ref.optional(),
+  kind: z.enum(TIME_ENTRY_KINDS).optional(),
+  title: z.string().max(TIMER_TITLE_MAX).optional(),
 });
 
 // A gap waved away (LAI-831): a span on the person's own day, and nothing else.
@@ -191,7 +266,10 @@ const BreakBody = strictObject({ day, tz: zone, started_at: instantMs, ended_at:
 // Undo names one change: the id that change answered with (LAI-831 review round 1).
 const UndoBody = strictObject({ id: z.string().min(1).max(64) });
 
-const MyDayQuery = strictObject({ day: day.optional(), tz: zone.optional() });
+export const MyDayQuery = strictObject({ day: day.optional(), tz: zone.optional() });
+
+/** A stretch of days for `GET /me/time/summary` (LAI-526); its bounds are the service's. */
+export const SummaryQuery = strictObject({ from: day, to: day });
 
 // The Solidtime bridge (LAI-788). **No field can hold a description**: an
 // entry carries the key the CLI read from it, or none, and a digest.
@@ -338,21 +416,57 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
-  app.post('/time-drafts/:id/confirm', (c) => {
+  app.post('/time-drafts/:id/confirm', async (c) => {
     const actor = requireActor(c);
     const { id } = parseParams(IdParams, c.req.param());
-    return c.json(confirmDraft(db, actor, id, Date.now(), undoable(c)), 201);
+    const said = parseBody(ConfirmDraftBody, (await json(c)) ?? {});
+    return c.json(confirmDraft(db, actor, id, Date.now(), undoable(c), said), 201);
   });
 
-  app.post('/time/days/:day/confirm', (c) => {
+  app.post('/time/days/:day/confirm', async (c) => {
     const actor = requireActor(c);
     const { day: on } = parseParams(DayParams, c.req.param());
-    return c.json({ entries: confirmDay(db, actor, on, Date.now(), undoable(c)) });
+    const { note } = parseBody(ConfirmDayBody, (await json(c)) ?? {});
+    const entries = confirmDay(db, actor, on, Date.now(), undoable(c), note);
+    return c.json({ entries, day_note: dayNoteOn(db, actor.userId, on) });
+  });
+
+  app.put('/time/days/:day/note', async (c) => {
+    const actor = requireActor(c);
+    const { day: on } = parseParams(DayParams, c.req.param());
+    const { note } = parseBody(DayNoteBody, await json(c));
+    return c.json({ day_note: setDayNote(db, actor, on, note) });
   });
 
   app.get('/time', (c) => {
     const actor = requireActor(c);
     return c.json(getMyDay(db, actor, parseQuery(MyDayQuery, c.req.query())));
+  });
+
+  // Overview over a week or a picked range (LAI-526).
+  app.get('/time/summary', (c) => {
+    const actor = requireActor(c);
+    return c.json(getMySummary(db, actor, parseQuery(SummaryQuery, c.req.query())));
+  });
+
+  // The timer (§4.61, LAI-500): one per person, kept here so it survives a reload.
+  app.post('/time/timer', async (c) => {
+    const actor = requireActor(c);
+    return c.json(startTimer(db, actor, parseBody(TimerStartBody, await json(c))), 201);
+  });
+
+  app.post('/time/timer/pause', (c) => c.json(pauseTimer(db, requireActor(c))));
+
+  app.post('/time/timer/resume', (c) => c.json(resumeTimer(db, requireActor(c))));
+
+  app.post('/time/timer/stop', (c) => {
+    const actor = requireActor(c);
+    return c.json(stopTimer(db, actor, Date.now(), undoable(c)), 201);
+  });
+
+  app.delete('/time/timer', (c) => {
+    discardTimer(db, requireActor(c));
+    return c.body(null, 204);
   });
 
   app.post('/time/undo', async (c) => {
@@ -422,7 +536,8 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
 
 /**
  * `PUT /org/time` — the organisation's *Time*, owners and admins on a web
- * session — and the Solidtime bridge's map, people and pull of everyone.
+ * session — its break schedule (D-101), and the Solidtime bridge's map,
+ * people and pull of everyone.
  */
 export function orgTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -431,6 +546,13 @@ export function orgTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   app.put('/time', async (c) => {
     const actor = requireActor(c);
     return c.json(setOrgTimeMode(db, actor, parseBody(OrgTimeBody, await json(c)).mode));
+  });
+
+  app.put('/time/breaks', async (c) => {
+    const actor = requireActor(c);
+    // Permission before the body: a caller who may not set it is told so.
+    assertCanSetOrgTime(actor);
+    return c.json(setOrgBreaks(db, actor, parseBody(OrgBreaksBody, await json(c)).breaks));
   });
 
   // The Solidtime bridge (LAI-788): an owner's or admin's CLI, signed in.

@@ -36,12 +36,14 @@ import { SprintStats } from './board/SprintStats.tsx';
 import { statsScope } from './board/sprint-stats.ts';
 import { useSprintStats } from './board/use-sprint-stats.ts';
 import { useEvents } from '../../api/use-events.ts';
-import { canAssignToSprints, listSprints, type Sprint } from '../../api/sprints.ts';
+import { listSprints, type Sprint } from '../../api/sprints.ts';
 import { everyPage } from '../../api/every-page.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
+import { executionSignal } from '../../components/agent/execution-derive.ts';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard, type BoardPresenter } from '../../api/use-board.ts';
 import { isPriority, isTagName } from '../../api/task-filter.ts';
+import { agentsOnTasks, matchesAgentFilter } from '../../api/selected-agent.ts';
 import {
   flashTasks,
   motionAllowed,
@@ -60,6 +62,7 @@ import {
 import { useProjectStatuses, useStatusEditor } from '../../api/use-statuses.ts';
 import type { ProjectStatus } from '../../api/statuses.ts';
 import { setHideDoneAfter } from '../../api/projects.ts';
+import { spaceSettingsHref } from '../space-settings-url.ts';
 import { BoardInsights } from './board/BoardInsights.tsx';
 import { BoardToolbar } from './board/BoardToolbar.tsx';
 import { DeleteColumnDialog } from './board/DeleteColumnDialog.tsx';
@@ -71,8 +74,6 @@ import { groupNotice, groupSwimlanes, isGroupBy } from './board/group-lanes.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import {
   listMembers,
-  canConfigureProject,
-  canCreateTask,
   type Member,
   type TaskSummary,
   type TaskFilter,
@@ -86,6 +87,7 @@ import './board/board-motion.css';
 import { pickProject } from '../../api/pick-project.ts';
 import { withProjectParam } from '../nav-url.ts';
 import { clockTime } from '../../api/time-label.ts';
+import { useGates } from '../../api/permissions.ts';
 
 export type BoardViewMode = 'kanban' | 'list';
 
@@ -97,6 +99,8 @@ export interface BoardScreenProps {
   readonly onParamsChange: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
   /** The route being rendered — `/board` or `/list` (LAI-270). */
   readonly path?: string;
+  /** In-app navigation, for View settings' link to Space settings (LAI-977). */
+  readonly onNavigate?: ((to: string) => void) | undefined;
 }
 
 /**
@@ -110,7 +114,15 @@ export interface BoardScreenProps {
 /** How long after a drop a `settled` card counts as carried there by hand. */
 const CARRIED_MS = 1000;
 
-export function BoardScreen({ params, onParamsChange, me, path = '/board' }: BoardScreenProps) {
+export function BoardScreen({
+  params,
+  onParamsChange,
+  me,
+  path = '/board',
+  onNavigate,
+}: BoardScreenProps) {
+  // What the server says the reader may do here — denied until it answers (LAI-970).
+  const gates = useGates(me !== undefined);
   const { theme } = useTheme();
 
   /*
@@ -208,6 +220,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const readyParam = params.get('ready');
   const ready = readyParam === null ? undefined : readyParam === 'true';
   const agentOnly = params.get('agent') === 'true';
+  /** `?selected_agent=` (LAI-538): an agent id, `any` or `none`; applied in memory. */
+  const selectedAgentParam = params.get('selected_agent') ?? '';
+  const agentFilter = selectedAgentParam === '' ? undefined : selectedAgentParam;
   /** `?sprint=` as written; `all` and nothing are both every sprint to the query. */
   const sprintParam = params.get('sprint');
   const sprintScope = readSprintScope(params);
@@ -535,6 +550,16 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     () => [...new Set(board.state.all.flatMap((t) => t.tags))].sort(),
     [board.state.all],
   );
+
+  /**
+   * The agents the Agent filter offers (LAI-538): those selected on a task in
+   * the whole set — fetched by nothing, and naming no agent a card does not.
+   */
+  const agentChoices = useMemo(() => agentsOnTasks(board.state.all), [board.state.all]);
+  const agentsById = useMemo(
+    () => new Map(agentChoices.map((agent) => [agent.id, agent])),
+    [agentChoices],
+  );
   const [overflowAt, setOverflowAt] = useState<{ top: number; right: number } | undefined>(
     undefined,
   );
@@ -604,16 +629,17 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
      */
   }, [slug]);
 
-  const mayCreate =
-    me !== undefined &&
-    project !== undefined &&
-    canCreateTask(me.org_role, project.id, me.memberships);
+  /**
+   * **Two questions, not one** (LAI-178). Creating a task is `task.create`,
+   * which a space set to *Space admins only* withholds from members (D-103
+   * item 6, LAI-976); editing, moving and assigning stay `task.write`. One
+   * gate for both offered members a create that answered `403`.
+   */
+  const mayCreate = project !== undefined && gates.project(project.id, 'task.create');
+  const mayWrite = project !== undefined && gates.project(project.id, 'task.write');
 
   /** Lead-only — a narrower rule than creating a task. */
-  const mayConfigure =
-    me !== undefined &&
-    project !== undefined &&
-    canConfigureProject(me.org_role, project.id, me.memberships);
+  const mayConfigure = project !== undefined && gates.project(project.id, 'project.settings.edit');
 
   /*
    * **The add-column tile's gate, one expression for the board and its
@@ -631,9 +657,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    */
   const boardProjectId = project?.id ?? statuses.all[0]?.project_id;
   const mayAddColumn =
-    me !== undefined &&
-    boardProjectId !== undefined &&
-    canConfigureProject(me.org_role, boardProjectId, me.memberships);
+    boardProjectId !== undefined && gates.project(boardProjectId, 'project.settings.edit');
 
   /** `Column 5`, skipping any name already taken. */
 
@@ -650,6 +674,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const matches = useMemo(() => {
     return (task: TaskSummary): boolean => {
       if (agentOnly && task.created_via !== AGENT_VIA) return false;
+      if (!matchesAgentFilter(task, agentFilter)) return false;
       /*
        * Blocked is decided here, not by the server: it needs the dependency
        * graph (LAI-487). **"Cannot tell" stays in**, i.e. `!== false`, not
@@ -670,7 +695,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       if (overdueOnly && !isOverdue(task, Date.now())) return false;
       return matchesSearch(task, needle);
     };
-  }, [needle, agentOnly, blockedOnly, topOnly, overdueOnly, board.byId]);
+  }, [needle, agentOnly, agentFilter, blockedOnly, topOnly, overdueOnly, board.byId]);
 
   /**
    * Cards into lanes, against the project's own columns (LAI-266).
@@ -707,10 +732,15 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    */
   const shownTasks = useMemo(
     () =>
-      needle === '' && !agentOnly && !blockedOnly && !topOnly && !overdueOnly
+      needle === '' &&
+      !agentOnly &&
+      agentFilter === undefined &&
+      !blockedOnly &&
+      !topOnly &&
+      !overdueOnly
         ? visibleTasks.kept
         : visibleTasks.kept.filter(matches),
-    [visibleTasks.kept, needle, agentOnly, blockedOnly, topOnly, overdueOnly, matches],
+    [visibleTasks.kept, needle, agentOnly, agentFilter, blockedOnly, topOnly, overdueOnly, matches],
   );
 
   const collapsedGroups = useMemo(
@@ -802,6 +832,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         membersKnown: slug !== undefined && membersFor === slug,
         sprintsKnown,
         member: (id) => members.get(id)?.name,
+        agents: agentsById,
+        agentsKnown: board.state.all.length > 0 || board.state.status === 'ready',
         sprint: (id) => {
           const found = sprints.find((s) => s.id === id);
           return found === undefined
@@ -819,6 +851,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       sprintsKnown,
       sprints,
       sprintLabels,
+      agentsById,
+      board.state.all,
+      board.state.status,
     ],
   );
 
@@ -1025,6 +1060,17 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           ready={readyParam === 'true'}
           notReady={readyParam === 'false'}
           agentOnly={agentOnly}
+          selectedAgent={agentFilter}
+          agentChoices={agentChoices}
+          // The field is offered once a task in the space has an agent, or
+          // when a link already sets it — never as an empty list.
+          onSelectedAgent={
+            agentChoices.length > 0 || agentFilter !== undefined
+              ? (value) => {
+                  setParam('selected_agent', value);
+                }
+              : undefined
+          }
           tags={knownTags}
           members={[...members.values()]}
           group={group}
@@ -1106,6 +1152,19 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 },
               }
             : {})}
+          {...(slug === undefined
+            ? {}
+            : {
+                spaceSettingsHref: spaceSettingsHref(slug),
+                ...(onNavigate === undefined
+                  ? {}
+                  : {
+                      onOpenSpaceSettings: (href: string) => {
+                        setSettingsAt(undefined);
+                        onNavigate(href);
+                      },
+                    }),
+              })}
           forList={view === 'list'}
           group={group}
           onGroupChange={(next) => {
@@ -1542,6 +1601,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           {view === 'list' ? (
             <ListView
               tasks={tasks}
+              showAgent={agentChoices.length > 0}
               byId={board.byId}
               members={members}
               sprintLabels={sprintLabels}
@@ -1555,11 +1615,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               }}
               canAdd={mayCreate}
               // Editing a task is member+ (§3.2), the gate the drawer uses.
-              mayEdit={mayCreate}
+              mayEdit={mayWrite}
               maySetSprint={
-                me !== undefined &&
-                boardProjectId !== undefined &&
-                canAssignToSprints(me.org_role, boardProjectId, me.memberships)
+                boardProjectId !== undefined && gates.project(boardProjectId, 'task.assign_sprint')
               }
               onOpen={openTaskInUrl}
               onAdd={() => {
@@ -1605,8 +1663,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               fields={prefs.preferences.fields}
               // A reader who may not write tasks cannot drag one — the
               // affordance is absent, not refused (LAI-473, LAI-082).
-              cardsDraggable={mayCreate}
-              {...(mayCreate
+              cardsDraggable={mayWrite}
+              {...(mayWrite
                 ? {
                     onPlace: (
                       id: string,
@@ -1685,7 +1743,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         Reuses `board.move` — the same call the drag uses, so a rejected
         transition behaves identically in both places (LAI-056).
 
-        `mayEdit` shares `mayCreate`: editing a task is member+ (§3.2) and that
+        `mayEdit` is `mayWrite`: editing a task is member+ (§3.2) and that
         permission is already resolved. A Viewer sees tags and gets no way to
         change them, rather than a control that answers 403.
       */}
@@ -1710,30 +1768,33 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         <TaskDrawerContent>
           <TaskDetailPanel
             slug={slug}
+            executionSignal={executionSignal(stream.recent, openTask.id)}
             sprints={sprints}
+            agentsAllowed={project?.agents_allowed}
             /*
              * Assigning to a sprint is member+ (§3.2) — the same rule the
              * Sprints screen uses, asked through the same helper rather than
              * re-derived here.
              */
             maySetSprint={
-              me !== undefined &&
-              boardProjectId !== undefined &&
-              canAssignToSprints(me.org_role, boardProjectId, me.memberships)
+              boardProjectId !== undefined && gates.project(boardProjectId, 'task.assign_sprint')
             }
             statuses={statuses.all}
             meId={me?.id}
             meEmail={me?.email}
-            mayAssign={mayCreate}
-            mayEdit={mayCreate}
+            mayAssign={mayWrite}
+            mayEdit={mayWrite}
+            mayCreate={mayCreate}
             onTagsChanged={() => {
               refresh();
             }}
             onAssigned={refresh}
             onTaskEdited={refresh}
+            onHandoffsChanged={refresh}
             onOpen={openTaskInUrl}
             task={openTask}
             listReadAt={board.state.asOf}
+            listReadOrder={board.state.readOrder}
             byId={board.byId}
             members={members}
             moving={board.movingId === openTask.id}

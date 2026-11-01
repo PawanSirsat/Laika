@@ -77,8 +77,37 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
       { names: ['listProjects'], why: 'the Projects screen pages on purpose, with Load more' },
     ],
     [
+      'routes/screens/work/WorkScreen.tsx',
+      {
+        names: ['listAllTasks'],
+        why: 'everyone’s work pages on purpose, with Load more (LAI-952)',
+      },
+    ],
+    [
       'api/use-events.ts',
       { names: ['listProjectActivity'], why: 'a deliberate recent window behind the live stream' },
+    ],
+    /*
+     * LAI-951: the organisation's whole history is every row ever written, so
+     * Organisation → Activity reads a page and walks `next_cursor` on *Load
+     * more* — the reader asks for each page, and none is passed off as all.
+     */
+    [
+      'routes/screens/organisation/use-org-history.ts',
+      { names: ['listOrgHistory'], why: 'a page per *Load more*, walking `next_cursor`' },
+    ],
+    /*
+     * LAI-959: who looked at a person's time is every look ever logged, kept
+     * 400 days. Since LAI-529 My day shows only who looked in the last 15
+     * minutes, so it walks `next_cursor` only while a page can still reach
+     * into that window — all of the window, none of the rest.
+     */
+    [
+      'routes/screens/my-day/WhoLooked.tsx',
+      {
+        names: ['listAnalyticsViews'],
+        why: 'the newest pages, walking `next_cursor` until one reaches past the window',
+      },
     ],
   ]);
 

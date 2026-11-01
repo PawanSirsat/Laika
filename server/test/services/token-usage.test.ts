@@ -270,12 +270,9 @@ describe('a usage report (PUT /me/local-activity, "usage": true)', () => {
     });
   });
 
-  it('is refused local_activity_off, storing nothing, when either switch is off', () => {
-    for (const [org, user] of [
-      [false, true],
-      [true, false],
-    ] as const) {
-      share(bea, user, org);
+  it("is refused local_activity_off, storing nothing, when the organisation's switch is off", () => {
+    for (const user of [true, false]) {
+      share(bea, user, false);
       const refused = refusal(() =>
         recordTokenUsage(t.db, actor(bea), report([{ day: YESTERDAY, rows: [row()] }]), NOW),
       );
@@ -285,6 +282,14 @@ describe('a usage report (PUT /me/local-activity, "usage": true)', () => {
       });
     }
     expect(stored()).toHaveLength(0);
+  });
+
+  it("is stored with the organisation's switch on and the person's off (D-102 amended)", () => {
+    share(bea, false, true);
+    expect(
+      recordTokenUsage(t.db, actor(bea), report([{ day: YESTERDAY, rows: [row()] }]), NOW),
+    ).toEqual({ accepted_days: 1 });
+    expect(stored()).toHaveLength(1);
   });
 
   it('keeps a task key only for a task the sender can see; any other is unattributed', () => {
@@ -540,8 +545,13 @@ describe('a machine counted once across collectors (review 1, the blocker)', () 
     expect(getActivitySharing(t.db, withToken(bea), undefined, NOW)).not.toHaveProperty(
       'usage_days_elsewhere',
     );
-    // Nor once sharing is off.
-    share(bea, false);
+    // The person's old switch decides nothing (D-102 amended)…
+    share(bea, false, true);
+    expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_B, NOW).usage_days_elsewhere).toEqual(
+      ['2026-10-01', YESTERDAY],
+    );
+    // …but not once the organisation's is off.
+    share(bea, true, false);
     expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_B, NOW)).not.toHaveProperty(
       'usage_days_elsewhere',
     );
@@ -913,19 +923,25 @@ describe('GET /usage by_project — each space’s tokens and cost on the organi
     ]);
   });
 
-  it('leaves out a space the reader cannot read: a token pinned to one space sees that one', () => {
+  it('refuses a token pinned to one space the organisation’s figure, and gives it that space (§6.2, H4)', () => {
     seedSpaces();
     const admin = makeUser('Ada', 'admin');
     const pinned: ResolvedActor = {
       ...actor(admin),
       token: { id: 'tok_pin', scope: 'read_only', projectIds: [projectId] },
     };
-    const view = getUsage(t.db, pinned, { days: 7 }, NOW);
-    // The organisation's figure is still the whole, which the token may read…
-    expect(view.totals.tokens).toBe(WHOLE);
-    // …but no space it cannot open with ?project= is named or counted.
-    expect(listed(view)).toEqual([['laika', LAIKA, 40_000]]);
-    expect(JSON.stringify(view.by_project)).not.toMatch(/vault|Vault|onroute|Onroute/);
+    // Before H4 this token read the whole organisation's figure with the other
+    // spaces left out. The figure is org-wide — the opposite of a pin — so
+    // `usage.read_org` is refused, and the token is told why.
+    expect(refusal(() => getUsage(t.db, pinned, { days: 7 }, NOW))).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'usage.read_org', reason: 'project_pinned' },
+    });
+    // Its own space, asked for by ?project=, is read as a member's is…
+    const view = getUsage(t.db, pinned, { days: 7, project: 'laika' }, NOW);
+    expect(view.totals).toMatchObject({ tokens: LAIKA, cache_read: 40_000 });
+    expect(JSON.stringify(view)).not.toMatch(/vault|Vault|onroute|Onroute/);
+    // …and a space outside the pin is refused as it always was.
     expect(refusal(() => getUsage(t.db, pinned, { days: 7, project: 'vault' }, NOW))).toMatchObject(
       { code: 'forbidden' },
     );
@@ -1008,6 +1024,20 @@ describe('GET /users/:id/usage — the profile card', () => {
     expect(getPersonUsage(t.db, actor(bea), bea, NOW).totals.tokens).toBe(66);
     expect(refusal(() => getPersonUsage(t.db, actor(bea), cal, NOW))).toMatchObject({
       code: 'forbidden',
+    });
+  });
+
+  it('says collection follows the organisation’s switch alone (D-102 amended)', () => {
+    seedUsage();
+    share(bea, false, true);
+    expect(getPersonUsage(t.db, actor(owner), bea, NOW).sharing).toEqual({
+      org_enabled: true,
+      enabled: true,
+    });
+    share(bea, true, false);
+    expect(getPersonUsage(t.db, actor(owner), bea, NOW).sharing).toEqual({
+      org_enabled: false,
+      enabled: false,
     });
   });
 
@@ -1344,7 +1374,7 @@ describe('the task key prefixes a collector may tie tokens to (LAI-770)', () => 
     ]);
   });
 
-  it('is given only to a collector that may send, with both switches on', () => {
+  it('is given only to a collector that may send, with the organisation’s switch on', () => {
     member(bea, projectId);
     share(bea);
     expect(getActivitySharing(t.db, withToken(bea), undefined, NOW)).not.toHaveProperty(
@@ -1353,7 +1383,11 @@ describe('the task key prefixes a collector may tie tokens to (LAI-770)', () => 
     expect(
       getActivitySharing(t.db, withToken(bea, 'read_only'), COLLECTOR_A, NOW),
     ).not.toHaveProperty('task_prefixes');
-    share(bea, false);
+    share(bea, false, true);
+    expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_A, NOW)).toHaveProperty(
+      'task_prefixes',
+    );
+    share(bea, true, false);
     expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_A, NOW)).not.toHaveProperty(
       'task_prefixes',
     );

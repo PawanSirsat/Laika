@@ -1,3 +1,4 @@
+import { agentFilterLabel, type SelectedAgent } from '../../../api/selected-agent.ts';
 import {
   activeFilters,
   readStatus,
@@ -28,6 +29,12 @@ export interface ChipNames {
    */
   readonly membersKnown: boolean;
   readonly sprintsKnown: boolean;
+  /**
+   * The agents selected on the loaded tasks, by id (LAI-538), and whether the
+   * tasks have arrived — until then an id is pending, not unknown.
+   */
+  readonly agents?: ReadonlyMap<string, SelectedAgent> | undefined;
+  readonly agentsKnown?: boolean | undefined;
 }
 
 /** What a chip says for a name that is still loading: neutral, not a verdict. */
@@ -81,6 +88,8 @@ function chipLabel(key: FilterKey, params: URLSearchParams, names: ChipNames): s
       return 'Blocked only';
     case 'agent':
       return 'Agent-created only';
+    case 'selected_agent':
+      return agentFilterLabel(raw, names.agents ?? new Map(), names.agentsKnown === true);
     case 'top':
       return 'Top-level only';
     case 'overdue':

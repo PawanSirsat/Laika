@@ -79,10 +79,9 @@ import { solidtimeCommand, TIME_SOLIDTIME_USAGE } from './time-solidtime.ts';
  * `laika activity on|off|status|sync|emails` (LAI-752, D-079).
  *
  * Local activity is counted on the developer's machine and sent as per-day
- * counts, and only when both switches are on: the organisation's Developer
- * insights and the developer's own "Share my local activity". **Neither can be
- * turned on from here** — the board refuses a token, so an agent cannot switch
- * on its own reporting. `on` only checks the board's answer and installs the
+ * counts, and only while the organisation's Developer insights is on (D-102
+ * amended: there is no personal switch). **It cannot be turned on from here**
+ * — the board refuses a token, so an agent cannot switch on its own reporting. `on` only checks the board's answer and installs the
  * hooks; it does nothing if the answer is no.
  */
 
@@ -171,10 +170,31 @@ const CONSOLE: ActivityIo = {
 export const SKIP_RULE =
   'agent sessions run with OMNIGENT=1 (Omnigent’s sub-agents — its primary session, where you type, is yours), a non-empty CI or a non-empty LAIKA_ACTIVITY_SKIP count nothing as yours — their tokens go marked automated, for the organisation, the space and the task';
 
+/**
+ * What the organisation collects (D-102 amended, LAI-964) — word for word the
+ * web app's `COLLECTED` in `server/web/src/routes/screens/connect/ShareActivity.tsx`.
+ */
+export const COLLECTED =
+  'per-day counts of your prompts, agent sessions and commits, and your agents’ token counts';
+
+/**
+ * Never silent (D-102 amended): collection is the organisation's, so `on`,
+ * `status` and `sync` each say so once while its switch is on. Who can see it
+ * is the owner's grant of *See everyone's analytics* (D-102 rule 6), which a
+ * token cannot read for every role — so the CLI names it in words that stay
+ * true whatever the owner grants, where the web app names the roles (LAI-971).
+ */
+export const COLLECTION_NOTICE = `Your organisation collects your local activity: ${COLLECTED}. The owner and anyone they grant access can see it, and you can see who looked.`;
+
+function printNotice(io: ActivityIo, board: string): void {
+  io.out(COLLECTION_NOTICE);
+  io.out(`What the board holds for you: ${board}/developer · your own time: ${board}/my-day`);
+}
+
 const USAGE = [
   'Usage:',
   '  laika activity on [--agent id] [--yes|--no]',
-  '                                 check sharing is on, then install the counting hooks and',
+  '                                 check your organisation collects, then install the hooks and',
   '                                 Claude Code’s telemetry (~/.claude/settings.json, no token);',
   '                                 --yes/--no answer whether to count 30 days of tokens',
   '  laika activity off             remove the hooks and delete ~/.laika/activity',
@@ -276,27 +296,21 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
     if (answer.status === 401) {
       io.err(`${creds.url} refused the token. Run \`laika init\` to mint a new one.`);
     } else if (answer.status === 404) {
-      io.err(`${creds.url} does not offer local activity sharing yet — it needs a newer Laika.`);
+      io.err(`${creds.url} does not offer local activity collection yet — it needs a newer Laika.`);
     } else {
-      io.err(`Could not ask ${creds.url} whether sharing is on: ${answer.message}.`);
+      io.err(`Could not ask ${creds.url} whether collection is on: ${answer.message}.`);
     }
     io.err('Nothing was installed.');
     return 1;
   }
 
+  // The organisation's switch alone (D-102 amended): the person's own is not asked.
   const sharing = answer.value;
-  if (!sharing.org_enabled || !sharing.enabled) {
-    io.out('Local activity sharing is off, so nothing was installed.');
+  if (!sharing.org_enabled) {
+    io.out('Local activity is not collected, so nothing was installed.');
     io.out('');
-    if (!sharing.org_enabled) {
-      io.out('Your organisation has not turned on Developer insights. An owner or admin');
-      io.out(`turns it on in the web app, on the Organisation screen (${creds.url}).`);
-    }
-    if (!sharing.enabled) {
-      io.out('Turn on "Share my local activity" yourself, signed in to the web app at');
-      io.out(`${creds.url}. It can only be switched on from a browser session — never with`);
-      io.out('a token, so no agent can turn on its own reporting.');
-    }
+    io.out('Your organisation has not turned on Developer insights. An owner or admin');
+    io.out(`turns it on in the web app, on the Organisation screen (${creds.url}).`);
     io.out('');
     io.out('Then run `laika activity on` again.');
     return 1;
@@ -320,6 +334,7 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   const telemetry = installOtel(io.home, creds.url, settingsExisted);
 
   io.out(`Local activity is on for ${creds.url} (scope: ${sharing.scope}).`);
+  printNotice(io, creds.url);
   io.out('');
   printHooks(reports, io);
   printOtel(telemetry, io);
@@ -409,8 +424,8 @@ function otel(io: ActivityIo): number {
   io.err('`laika activity on` already sets this up for every Claude Code on this machine, in');
   io.err('~/.claude/settings.json, with no token written. These lines are for one shell by');
   io.err('hand; $LAIKA_TOKEN must hold your Laika token there.');
-  io.err('The board takes them only while Developer insights and "Share my local activity"');
-  io.err('are both on, adds only what the session files missed, and drops the sessions');
+  io.err('The board takes them only while your organisation has Developer insights on, adds');
+  io.err('only what the session files missed, and drops the sessions');
   io.err('this collector leaves out (automated, or out of your scope) once a sync names them.');
   return 0;
 }
@@ -437,8 +452,8 @@ function off(io: ActivityIo): number {
   printOtel(telemetry, io);
   io.out(`  ✓ deleted ~/.laika/activity`);
   io.out('');
-  io.out('What the board already holds is not deleted by this. To stop the board accepting');
-  io.out('it, or to delete it, use "Share my local activity" in the web app.');
+  io.out('To stop this machine counting, run `laika activity off`; what the board already');
+  io.out('holds stays until you delete it on Developer access in the web app.');
   return reports.some((r) => r.status === 'refused') || telemetry.status === 'refused' ? 1 : 0;
 }
 
@@ -454,11 +469,15 @@ async function status(io: ActivityIo): Promise<number> {
   // here (and applies there) at once.
   const fresh = state.collect ? await currentSharing(context(io)) : undefined;
   const scope = fresh?.scope ?? state.scope;
-  io.out(`Local activity  ${state.collect ? 'on' : 'off — the board says sharing is off'}`);
+  const collected = fresh?.org_enabled ?? state.org_enabled;
+  io.out(
+    `Local activity  ${state.collect ? 'on' : 'off — the board says Developer insights are off'}`,
+  );
   io.out(`Board           ${state.board ?? 'not recorded — run laika activity on again'}`);
   io.out(
-    `Sharing         organisation ${state.org_enabled ? 'on' : 'off'}, you ${state.enabled ? 'on' : 'off'} (checked ${when(state.checked_at)})`,
+    `Collection      by your organisation: ${collected ? 'on' : 'off'} (checked ${when(fresh === undefined ? state.checked_at : Math.floor(io.nowMs() / 1000))})`,
   );
+  if (state.collect && collected && state.board !== undefined) printNotice(io, state.board);
   io.out(
     `Scope           ${scope}${state.collect && fresh === undefined ? ' (as last seen; the board did not answer now)' : ''}`,
   );
@@ -476,7 +495,7 @@ async function status(io: ActivityIo): Promise<number> {
         : last.outcome === 'rate_limited'
           ? 'the board asked to wait (429)'
           : last.outcome === 'off'
-            ? 'the board said sharing is off'
+            ? 'the board said Developer insights are off'
             : last.outcome === 'refused'
               ? 'not sent: the session pointed at another board'
               : `failed${last.status === undefined ? '' : ` (${String(last.status)})`}`;
@@ -527,7 +546,7 @@ async function status(io: ActivityIo): Promise<number> {
   io.out('');
   const snapshot = await previewSnapshot(context(io), scope);
   if (snapshot === undefined) {
-    io.out('Nothing would be sent: collection is off until the board says sharing is on.');
+    io.out('Nothing would be sent: collection is off until your organisation turns it on.');
     return 0;
   }
   io.out('The next sync sends exactly this to PUT /api/v1/me/local-activity:');
@@ -605,7 +624,7 @@ function describe(outcome: SyncOutcome): { line: string; code: number } {
       };
     case 'off':
       return {
-        line: `The board says sharing is off. The local log was cleared; it is checked again after ${when(outcome.recheckAt)}.`,
+        line: `The board says Developer insights are off for your organisation. The local log was cleared; it is checked again after ${when(outcome.recheckAt)}.`,
         code: 0,
       };
     case 'sent': {
@@ -638,7 +657,12 @@ async function runSync(args: readonly string[], io: ActivityIo): Promise<number>
   }
   const outcome = await sync(context(io));
   const { line, code } = describe(outcome);
-  if (!args.includes('--quiet')) (code === 0 ? io.out : io.err)(line);
+  if (!args.includes('--quiet')) {
+    (code === 0 ? io.out : io.err)(line);
+    // Sent means the organisation collects: said once, as `on` and `status` do.
+    const board = readState(activityPaths(io.home))?.board;
+    if (outcome.kind === 'sent' && board !== undefined) printNotice(io, board);
+  }
   // A deadline means something is still stuck (a git on a dead mount); its
   // handle would keep this process alive, so leave without it.
   if (outcome.kind === 'error' && outcome.deadline === true)
@@ -765,7 +789,7 @@ const AGENT_NAMES: Readonly<Record<string, string>> = {
  * The token half of `backfill` (D-084 item 11): the last 30 days already in
  * the agents' session files, counted, shown, and sent once on a yes — the
  * commit look-back's shape (LAI-757). A no is kept: nothing from before
- * sharing went on is sent until a later `backfill` is answered yes.
+ * collection started is sent until a later `backfill` is answered yes.
  */
 async function backfillTokens(
   io: ActivityIo,
@@ -801,7 +825,7 @@ async function backfillTokens(
     ).trim();
     if (!/^y(es)?$/i.test(answer)) {
       setUsageBackfill(paths, 'no');
-      io.out('No token usage from before sharing went on is sent.');
+      io.out('No token usage from before collection started on this machine is sent.');
       io.out('');
       return 0;
     }
@@ -837,7 +861,7 @@ async function backfillTokens(
       : outcome.kind === 'sent'
         ? `Token usage sent: ${String(outcome.days)} ${outcome.days === 1 ? 'day' : 'days'}${outcome.pending > 0 ? ', the rest with the next syncs' : ''}.`
         : outcome.kind === 'off'
-          ? 'Token usage not sent: the board says sharing is off.'
+          ? 'Token usage not sent: Developer insights are off for your organisation.'
           : outcome.kind === 'refused' || outcome.kind === 'error'
             ? `Token usage not sent: ${outcome.message}. It is tried again with a later sync.`
             : 'Token usage goes with the next sync.',
@@ -988,7 +1012,7 @@ async function backfillCommits(
     case 'off':
       writeState(paths, stopCollecting(paths, state, nowS));
       io.err(
-        'The board says sharing is off, so nothing more was sent and the local log was cleared.',
+        'Developer insights are off for your organisation, so nothing more was sent and the local log was cleared.',
       );
       return 1;
     case 'refused':

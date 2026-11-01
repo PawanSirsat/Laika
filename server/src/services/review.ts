@@ -129,10 +129,11 @@ export function listReviewQueue(db: Db, actor: ResolvedActor): ReviewQueueView {
   const page = ordered.slice(0, REVIEW_QUEUE_LIMIT);
 
   const projectOf = new Map(actable.map((p) => [p.id, p]));
-  const views = viewTasks(db, page, new Map(actable.map((p) => [p.id, p.prefix])));
+  const views = viewTasks(db, page, new Map(actable.map((p) => [p.id, p.prefix])), actor.userId);
   const rounds = latestRounds(
     db,
     page.map((r) => r.id),
+    actor.userId,
   );
   // A round CI confirmed is checked already: the cue is for work nothing has.
   const confirmed = (round: RoundView | undefined) =>

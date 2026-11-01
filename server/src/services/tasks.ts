@@ -1,4 +1,22 @@
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, or } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import type Database from 'better-sqlite3';
 import {
   activityActor,
@@ -8,7 +26,13 @@ import {
   type ServiceCaller,
   withProject,
 } from '../auth/resolve-actor.ts';
-import { apiFieldNames, appendActivity, creatingClientNames } from '../db/activity.ts';
+import {
+  apiFieldNames,
+  appendActivity,
+  boardDayOf,
+  type CreatingClient,
+  creatingClientNames,
+} from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import {
   addDependency,
@@ -16,15 +40,32 @@ import {
   DependencyError,
   type DependencyEdges,
 } from '../db/dependencies.ts';
-import { type TaskPriority, type TaskStatus } from '../db/enums.ts';
+import { TASK_STATUSES, type TaskPriority, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction, nextTaskNumber } from '../db/numbering.ts';
 import { backfillTaskPositions, lastPosition } from '../db/backfill.ts';
 import { keyAfter, keyBetween } from '../db/order-key.ts';
 import { CATEGORY_LABELS, statusForCategory, type StatusRef } from '../db/project-statuses.ts';
-import { projects, projectStatuses, taskDependencies, tasks } from '../db/schema.ts';
+import { projects, projectStatuses, taskDependencies, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { assertCan, effectiveProjectRole } from '../policy/can.ts';
+import {
+  assertClaimFence,
+  claimFenceRefusal,
+  claimView,
+  holdsLiveClaim,
+  hasOpenWorkRequest,
+  assertSelectedAgentMayClaim,
+  liveClaim,
+  liveClaimViews,
+  registeredAgent,
+  releaseLiveClaim,
+  requireVisibleTaskToClaim,
+  takeClaim,
+  type TaskClaimView,
+  type TaskLiveClaimView,
+} from './claims.ts';
+import { handoffViews, NO_HANDOFF, type TaskHandoffView } from './task-handoff.ts';
 import { addComment, commentCounts } from './comments.ts';
 import {
   freezeEstimateAtStart,
@@ -36,6 +77,7 @@ import {
   type SizeLevel,
   type SizeView,
 } from './estimates.ts';
+import { canBeMentioned } from './mentions.ts';
 import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
 import {
   ambiguousOutsideId,
@@ -43,14 +85,23 @@ import {
   normaliseOutsideId,
   readableByOutsideId,
 } from './outside-ids.ts';
-import { requireProjectBySlug } from './projects.ts';
+import { canSeeProject, projectIdByKeyPrefix, requireProjectBySlug } from './projects.ts';
 import {
   activeSendBacks,
   evidenceItems,
   recordRound,
+  roundReader as readerOf,
   type EvidenceInput,
   type SendBackView,
 } from './rounds.ts';
+import {
+  assertAgentSelectable,
+  assertSelectionChangeAllowed,
+  moveSelection,
+  namedFor,
+  selectedAgentViews,
+  type SelectedAgentView,
+} from './work-requests.ts';
 import {
   assertTransition,
   isReady,
@@ -218,6 +269,27 @@ export interface TaskSummaryView {
    * one. The *why* is `GET /tasks/:id/estimate`'s, not every list's.
    */
   size: SizeView | null;
+  /**
+   * The agent meant to do the work, or null (§4.5, D-114 item 7, LAI-535) —
+   * **not** the assignee, and not a claim: selecting one opens a work request
+   * and changes nothing else. Its owner rides with it, so "whose agent" never
+   * needs a second read.
+   */
+  selected_agent: SelectedAgentView | null;
+  /**
+   * The session holding the task now, or null (§4.5, §4.66, LAI-568): its
+   * live claim — `active` or `paused` — with the holder's last heartbeat and
+   * whether it is still checking in. An expired, released or transferred
+   * claim is never this; the task's activity is where those are told.
+   */
+  claim: TaskLiveClaimView | null;
+  /**
+   * The task's newest save and live hand-off in brief, with the two states a
+   * card draws from them — *Recovery available* and *Save needs attention* —
+   * derived here once (§6.4, LAI-1005). Never null: a task with neither reads
+   * {@link NO_HANDOFF}.
+   */
+  handoff: TaskHandoffView;
   created_at: number;
   updated_at: number;
 }
@@ -262,16 +334,43 @@ interface ViewContext {
   /** Tags per task (§4.16, LAI-079). */
   readonly tags: ReadonlyMap<string, string[]>;
   /** Named client per task, joined from `activity` → `tokens` (LAI-093). */
-  readonly clients: ReadonlyMap<string, string>;
+  readonly clients: ReadonlyMap<string, CreatingClient>;
+  /**
+   * Who is reading: their user id, or null for a principal with no user. It
+   * decides one thing — whether a creating agent's name is theirs to see.
+   */
+  readonly reader: string | null;
   /** Status name per status id, for every status on the page (LAI-738). */
   readonly statusNames: ReadonlyMap<string, string>;
   /** The send-back each task carries, if any (D-082). */
   readonly sendBacks: ReadonlyMap<string, SendBackView>;
   /** The size in force per task (D-085) — one query whatever the page. */
   readonly sizes: ReadonlyMap<string, SizeView>;
+  /** The selected agent per agent id (LAI-535) — one query whatever the page. */
+  readonly selectedAgents: ReadonlyMap<string, SelectedAgentView>;
+  /** The live claim per task (LAI-568) — one query whatever the page. */
+  readonly claims: ReadonlyMap<string, TaskLiveClaimView>;
+  /** Saves and hand-off in brief per task (LAI-1005) — three queries whatever the page. */
+  readonly handoffs: ReadonlyMap<string, TaskHandoffView>;
 }
 
-function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
+/**
+ * `now` is the read's clock: a claim's `connection` and whether its lease has
+ * lapsed are answers about a moment (LAI-568), so a test can ask about one.
+ */
+function loadViewContext(
+  db: Db,
+  rows: readonly TaskRow[],
+  now: number,
+  reader: string | null,
+  /**
+   * Load each task's `handoff` (LAI-1005). A paged read passes `false` for
+   * the candidate batches and loads it once for the page it returns
+   * ({@link withHandoffs}), so a `ready=` walk does not pay for rows it
+   * throws away.
+   */
+  handoffs = true,
+): ViewContext {
   const edges = dependencyEdges(
     db,
     rows.map((row) => row.id),
@@ -315,7 +414,34 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
     ),
     sendBacks: activeSendBacks(db, rows),
     sizes: sizeViews(db, rows),
+    selectedAgents: selectedAgentViews(db, rows),
+    claims: liveClaimViews(db, ids, now),
+    handoffs: handoffs ? handoffViews(db, rows, now) : new Map(),
+    reader,
   };
+}
+
+/** The selected agent as this reader may see it: its registered name is its owner's (D-120). */
+function selectedFor(
+  view: SelectedAgentView | undefined,
+  reader: string | null,
+): SelectedAgentView | null {
+  return view === undefined ? null : namedFor(view, reader);
+}
+
+/**
+ * The creating client's name as this reader may see it (LAI-1001). A legacy
+ * token's name is shown as before. A registered agent's token is named after
+ * the agent, and that registered name is **its owner's alone** (D-120,
+ * Belka): null for everyone else, even on a task that shows the agent —
+ * which names it by harness and device instead. `created_via` still says it
+ * came through an agent's channel.
+ */
+function creatingClientFor(row: TaskRow, context: ViewContext): string | null {
+  const client = context.clients.get(row.id);
+  if (client === undefined) return null;
+  if (client.agentId === null) return client.name;
+  return context.reader !== null && client.ownerUserId === context.reader ? client.name : null;
 }
 
 function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
@@ -343,7 +469,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     sprint_id: row.sprintId,
     created_by: row.createdBy,
     created_via: row.createdVia,
-    created_by_client: context.clients.get(row.id) ?? null,
+    created_by_client: creatingClientFor(row, context),
     discovered_from: row.discoveredFrom,
     parent_task_id: row.parentTaskId,
     due_on: row.dueOn,
@@ -362,6 +488,12 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     blocks: context.edges.blocks.get(row.id) ?? [],
     send_back: sendBackOf(context.sendBacks.get(row.id)),
     size: context.sizes.get(row.id) ?? null,
+    selected_agent:
+      row.selectedAgentId === null
+        ? null
+        : selectedFor(context.selectedAgents.get(row.selectedAgentId), context.reader),
+    claim: context.claims.get(row.id) ?? null,
+    handoff: context.handoffs.get(row.id) ?? NO_HANDOFF,
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],
     started_at: row.startedAt,
@@ -390,8 +522,10 @@ export function viewTasks(
   db: Db,
   rows: readonly TaskRow[],
   prefixes: ReadonlyMap<string, string>,
+  reader: string | null,
+  now: number = Date.now(),
 ): TaskView[] {
-  const context = loadViewContext(db, rows);
+  const context = loadViewContext(db, rows, now, reader);
   return rows.map((row) => toView(row, prefixes.get(row.projectId) ?? '', context));
 }
 
@@ -434,12 +568,22 @@ export function assertMayCloseReview(
   actor: ServiceCaller,
   task: { assigneeId: string | null; projectId: string },
   to: 'review' | 'done',
+  /**
+   * The caller's agent holds the task's live claim (LAI-541). A claim does not
+   * assign (D-114 item 7), so on a task **nobody is assigned to** the agent
+   * working it answers this rule as an assignee would; the fence has already
+   * checked its generation. On a task another person is assigned to it does
+   * not: the rule is asked of the agent's owner (`actor.userId`), and an agent
+   * is never more than its owner (D-114).
+   */
+  holdsClaim = false,
 ): void {
   if (isSystemPrincipal(actor)) return;
   const scoped = withProject(actor, task.projectId);
-  const isAssignee = task.assigneeId === actor.userId;
-  const isLeadOrAbove =
-    scoped.projectRole === 'lead' || actor.orgRole === 'owner' || actor.orgRole === 'admin';
+  const isAssignee = task.assigneeId === actor.userId || (holdsClaim && task.assigneeId === null);
+  // The effective role: a lead by membership, or by *Open every project*
+  // (§3, LAI-958) — which is what an owner and, by default, an admin hold.
+  const isLeadOrAbove = effectiveProjectRole(scoped) === 'lead';
 
   if (!isAssignee && !isLeadOrAbove) {
     throw new ApiError(
@@ -452,8 +596,14 @@ export function assertMayCloseReview(
 }
 
 /** One task's view, loading only what that task needs. */
-function viewOne(db: Db, row: TaskRow, prefix: string): TaskView {
-  return toView(row, prefix, loadViewContext(db, [row]));
+function viewOne(
+  db: Db,
+  row: TaskRow,
+  prefix: string,
+  now: number,
+  reader: string | null,
+): TaskView {
+  return toView(row, prefix, loadViewContext(db, [row], now, reader));
 }
 
 /** Load a task and the project it belongs to, or 404. */
@@ -524,6 +674,26 @@ function parentRefused(reason: 'self' | 'project' | 'depth', message: string): A
 }
 
 /**
+ * Only somebody who can read the project may hold one of its tasks (LAI-962).
+ *
+ * **Their authority, not the caller's** — `task.assign_other` already asked
+ * whether the caller may hand work out; this asks whether the person receiving
+ * it could even see it. `canBeMentioned` is that predicate, `project.read` on
+ * their own memberships, so org Owners and Admins with no membership row count
+ * (D-006) and a deactivated user or an id naming nobody does not. Reused rather
+ * than restated: a second copy is how the picker and the write would drift.
+ */
+function assertMayHold(db: Db, assigneeId: string, projectId: string): void {
+  if (canBeMentioned(db, assigneeId, projectId)) return;
+
+  throw new ApiError('unprocessable', 'The assignee cannot read this project', {
+    field: 'assignee_id',
+    reason: 'not_on_project',
+    assignee_id: assigneeId,
+  });
+}
+
+/**
  * `n/m done` for a parent (§4.6, D-066): `done` counts the children at `done`,
  * `total` leaves out `cancelled` — dropped work is not undone work. One
  * definition, used by `get_task_context` and mirrored by the client, so the
@@ -590,20 +760,15 @@ function taskIdByKey(db: Db, ref: string): string | undefined {
   const [, prefix, number] = match;
   if (prefix === undefined || number === undefined) return undefined;
 
-  const project = db
-    .select({ id: projects.id })
-    .from(projects)
-    // Prefixes are stored upper-case (§4.3), and a person typing `lai-42` means
-    // the same task as one typing `LAI-42`.
-    .where(eq(projects.prefix, prefix.toUpperCase()))
-    .get();
-
-  if (project === undefined) return undefined;
+  // Case-insensitive — a person typing `lai-42` means `LAI-42` — and a prefix
+  // the project carried before its current one still names it (D-103).
+  const projectId = projectIdByKeyPrefix(db, prefix);
+  if (projectId === undefined) return undefined;
 
   return db
     .select({ id: tasks.id })
     .from(tasks)
-    .where(and(eq(tasks.projectId, project.id), eq(tasks.number, Number(number))))
+    .where(and(eq(tasks.projectId, projectId), eq(tasks.number, Number(number))))
     .get()?.id;
 }
 
@@ -693,11 +858,16 @@ function resolveStatus(db: Db, projectId: string, target: StatusTarget): StatusR
   return { ...match, hidden: match.hidden === 1 };
 }
 
-export function getTask(db: Db, actor: ResolvedActor, taskId: string): TaskView {
+export function getTask(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  now: number = Date.now(),
+): TaskView {
   const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
-  return viewOne(db, task, project.prefix);
+  return viewOne(db, task, project.prefix, now, readerOf(actor));
 }
 
 export interface CreateTaskInput {
@@ -724,6 +894,12 @@ export interface CreateTaskInput {
    * Shaped by `normaliseOutsideId`, stored upper-case.
    */
   external_ref?: string | undefined;
+  /**
+   * The registered agent meant to do it, from the start (LAI-1027) — the
+   * check and the work request `PATCH`'s `selected_agent_id` makes, in the
+   * create's own transaction. Never an assignment and never a claim.
+   */
+  selected_agent_id?: string | undefined;
   created_via?: 'web' | 'mcp' | 'api' | 'webhook' | 'meeting' | undefined;
   now?: number;
 }
@@ -736,7 +912,18 @@ export function createTask(
   input: CreateTaskInput,
 ): TaskView {
   const project = requireProjectBySlug(db, slug);
-  assertCan(withProject(actor, project.id), 'task.write', { projectId: project.id });
+  // `task.create`, not `task.write` (D-103 item 6): the space may keep creating
+  // to its leads. Every path that makes a task — REST, MCP, a meeting review,
+  // a promoted unlisted note — arrives here, so this one check is all of them.
+  assertCan(withProject(actor, project.id), 'task.create', { projectId: project.id });
+  if (input.assignee_id !== undefined) assertMayHold(db, input.assignee_id, project.id);
+  const selectedAgentId = input.selected_agent_id ?? null;
+  if (selectedAgentId !== null) {
+    // Selecting is editing the task (`task.write`, as on `PATCH`), and the
+    // agent is checked exactly as `PATCH` checks it — before anything exists.
+    assertCan(withProject(actor, project.id), 'task.write', { projectId: project.id });
+    assertAgentSelectable(db, actor, project, selectedAgentId);
+  }
 
   const now = input.now ?? Date.now();
   const externalRef =
@@ -798,6 +985,7 @@ export function createTask(
         dueOn: input.due_on ?? null,
         plannedStart: input.planned_start ?? null,
         externalRef,
+        selectedAgentId,
         // Creation is an arrival at Done too (SPEC §4.5, D-093).
         completedAt: initial.category === 'done' ? now : null,
         createdAt: now,
@@ -840,7 +1028,28 @@ export function createTask(
       now,
     });
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, id)).get()!, project.prefix);
+    // The request and its row as `PATCH` writes them, after the create's own
+    // row, so the feed reads *created*, then *asked of that agent*.
+    if (selectedAgentId !== null) {
+      moveSelection(db, actor, id, selectedAgentId, now);
+      appendActivity(db, {
+        orgId: project.orgId,
+        projectId: project.id,
+        taskId: id,
+        ...activityActor(actor),
+        type: 'task.agent_selected',
+        payload: { from: null, to: selectedAgentId },
+        now,
+      });
+    }
+
+    return viewOne(
+      db,
+      db.select().from(tasks).where(eq(tasks.id, id)).get()!,
+      project.prefix,
+      now,
+      readerOf(actor),
+    );
   });
 }
 
@@ -862,6 +1071,8 @@ export interface ListTasksFilter {
   updatedSince?: number | null;
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
+  /** The read's clock, for each task's `claim` (LAI-568). Defaults to now. */
+  now?: number | undefined;
 }
 
 export function listTasks(
@@ -873,11 +1084,35 @@ export function listTasks(
   const project = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
-  const conditions = [eq(tasks.projectId, project.id)];
+  const conditions = [eq(tasks.projectId, project.id), ...sharedConditions(filter)];
 
-  if (filter.status !== undefined) conditions.push(eq(tasks.status, filter.status));
   if (filter.status_id !== undefined) conditions.push(eq(tasks.statusId, filter.status_id));
   if (filter.priority !== undefined) conditions.push(eq(tasks.priority, filter.priority));
+  if (filter.parent !== undefined) {
+    // One more `AND` before the cursor predicate, so paging is unchanged;
+    // §4.13's `tasks(parent_task_id)` index serves it.
+    conditions.push(eq(tasks.parentTaskId, filter.parent));
+  }
+  if (filter.tag !== undefined) {
+    // Resolved to ids first so the filter is an indexed `IN` over the tag side —
+    // §4.13's `task_tags(tag_id)` index exists for exactly this. An unknown tag
+    // yields an empty list, which `inArray` renders as `WHERE false`.
+    conditions.push(inArray(tasks.id, taskIdsWithTag(db, project.id, filter.tag)));
+  }
+
+  return readTaskPage(db, conditions, () => project.prefix, filter, readerOf(actor));
+}
+
+/**
+ * The filters both task lists take: `status`, `assignee`, `sprint` and
+ * `updated_since`, each the same predicate whichever list asks.
+ */
+function sharedConditions(
+  filter: Pick<ListAllTasksFilter, 'status' | 'assignee' | 'sprint' | 'updatedSince'>,
+): SQL[] {
+  const conditions: SQL[] = [];
+
+  if (filter.status !== undefined) conditions.push(eq(tasks.status, filter.status));
   if (filter.assignee !== undefined) {
     // `assignee=none` is the only way to ask for unassigned work over a query
     // string, where every value is a string and "" is indistinguishable from
@@ -893,22 +1128,27 @@ export function listTasks(
       filter.sprint === 'none' ? isNull(tasks.sprintId) : eq(tasks.sprintId, filter.sprint),
     );
   }
-  if (filter.parent !== undefined) {
-    // One more `AND` before the cursor predicate, so paging is unchanged;
-    // §4.13's `tasks(parent_task_id)` index serves it.
-    conditions.push(eq(tasks.parentTaskId, filter.parent));
-  }
-  if (filter.tag !== undefined) {
-    // Resolved to ids first so the filter is an indexed `IN` over the tag side —
-    // §4.13's `task_tags(tag_id)` index exists for exactly this. An unknown tag
-    // yields an empty list, which `inArray` renders as `WHERE false`.
-    conditions.push(inArray(tasks.id, taskIdsWithTag(db, project.id, filter.tag)));
-  }
-
   if (filter.updatedSince !== null && filter.updatedSince !== undefined) {
     conditions.push(gte(tasks.updatedAt, filter.updatedSince));
   }
 
+  return conditions;
+}
+
+/**
+ * One page of tasks matching `conditions`, ordered by `(updated_at, id)` and
+ * one row over the limit so the route can tell whether another page exists.
+ * Shared by the per-project list and the cross-project one (LAI-887), so the
+ * two page, batch and filter `ready` identically.
+ */
+function readTaskPage(
+  db: Db,
+  conditions: readonly SQL[],
+  prefixOf: (projectId: string) => string,
+  filter: Pick<ListTasksFilter, 'ready' | 'limit' | 'cursor' | 'now'>,
+  reader: string | null,
+): TaskView[] {
+  const now = filter.now ?? Date.now();
   // One over the limit, so the route can tell whether another page exists.
   const wanted = filter.limit + 1;
 
@@ -940,11 +1180,11 @@ export function listTasks(
       .limit(size)
       .all();
 
-    const context = loadViewContext(db, rows);
-    return rows.map((row) => toView(row, project.prefix, context));
+    const context = loadViewContext(db, rows, now, reader, false);
+    return rows.map((row) => toView(row, prefixOf(row.projectId), context));
   };
 
-  if (filter.ready === undefined) return read(filter.cursor, wanted);
+  if (filter.ready === undefined) return withHandoffs(db, read(filter.cursor, wanted), now);
 
   // `ready` is derived, so it cannot be a SQL predicate without duplicating the
   // rule (§4.5). Filtering after the query keeps one definition of readiness —
@@ -964,7 +1204,232 @@ export function listTasks(
     cursor = { sortKey: last.updated_at, id: last.id };
   }
 
-  return matched.slice(0, wanted);
+  return withHandoffs(db, matched.slice(0, wanted), now);
+}
+
+/**
+ * The page's `handoff` summaries, loaded **once for the rows returned** — never
+ * per candidate batch (LAI-1005 review). Each view keeps its field order.
+ */
+function withHandoffs(db: Db, page: TaskView[], now: number): TaskView[] {
+  const found = handoffViews(db, page, now);
+  return page.map((view) => ({ ...view, handoff: found.get(view.id) ?? NO_HANDOFF }));
+}
+
+export interface ListAllTasksFilter {
+  /** A project slug: only that project's tasks. */
+  project?: string | undefined;
+  /** A category — every status of it (LAI-738). */
+  status?: TaskStatus | undefined;
+  /** A user id, or `none` for unassigned work. */
+  assignee?: string | undefined;
+  /** A sprint id, or `none` for tasks in no sprint. */
+  sprint?: string | undefined;
+  updatedSince?: number | null;
+  limit: number;
+  cursor: { sortKey: string | number; id: string } | null;
+  /** The read's clock, for each task's `claim` (LAI-568). Defaults to now. */
+  now?: number | undefined;
+}
+
+/**
+ * Everyone's work: tasks from **every project this actor may read**, in the
+ * per-project list's shape and order (`GET /api/v1/tasks`, LAI-887).
+ *
+ * Readable projects are chosen by asking `can()` once per project
+ * (`canSeeProject`, as `listProjects` does) — rather than by a membership join,
+ * because `can()` is the only authority (§3.3): org owners and admins read
+ * every project without a membership row, and a token's project scope narrows
+ * it. `?project=` names one project and is answered exactly as
+ * `GET /projects/:slug/tasks` would be: `404` for no such slug, `403` for one
+ * the caller cannot read.
+ */
+export function listAllTasks(db: Db, actor: ResolvedActor, filter: ListAllTasksFilter): TaskView[] {
+  const scope = allTasksScope(db, actor, filter);
+  if (scope === null) return [];
+
+  return readTaskPage(
+    db,
+    scope.conditions,
+    (id) => scope.prefixes.get(id) ?? '',
+    {
+      limit: filter.limit,
+      cursor: filter.cursor,
+      now: filter.now,
+    },
+    readerOf(actor),
+  );
+}
+
+/**
+ * The set `GET /api/v1/tasks` pages through, as SQL conditions — the readable
+ * projects and the shared filters — or `null` when the caller can read no
+ * project at all. One function so the list and its summary (LAI-974) cannot
+ * count a different set from the one they page.
+ */
+function allTasksScope(
+  db: Db,
+  actor: ResolvedActor,
+  filter: Omit<ListAllTasksFilter, 'limit' | 'cursor'>,
+): { conditions: SQL[]; prefixes: Map<string, string> } | null {
+  let readable: { id: string; prefix: string }[];
+
+  if (filter.project !== undefined) {
+    const project = requireProjectBySlug(db, filter.project);
+    assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
+    readable = [project];
+  } else {
+    readable = db
+      .select({ id: projects.id, prefix: projects.prefix })
+      .from(projects)
+      .all()
+      .filter((p) => canSeeProject(actor, p.id));
+  }
+  if (readable.length === 0) return null;
+
+  return {
+    conditions: [
+      inArray(
+        tasks.projectId,
+        readable.map((p) => p.id),
+      ),
+      ...sharedConditions(filter),
+    ],
+    prefixes: new Map(readable.map((p) => [p.id, p.prefix])),
+  };
+}
+
+/** How many named people `by_assignee` lists before folding the rest into `others`. */
+export const SUMMARY_ASSIGNEES = 10;
+
+/** The categories a task is still open in — not `done`, not `cancelled`. */
+export const OPEN_STATUSES: readonly TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review'];
+
+export interface TaskCountsView {
+  total: number;
+  by_status: Record<TaskStatus, number>;
+  /**
+   * The top {@link SUMMARY_ASSIGNEES} by count — `user_id: null` is unassigned
+   * work — then, only when there are more, one `{ user_id: 'others' }` entry
+   * holding the rest. The counts always sum to `total`.
+   */
+  by_assignee: { user_id: string | null; name: string; count: number }[];
+  /** Open and due before today (UTC) — `countTask`'s rule in presence.ts. */
+  overdue: number;
+  /** Open with a dependency that is not `done` — `projectSummaries`' rule. */
+  blocked: number;
+  unassigned: number;
+}
+
+/**
+ * The figures for exactly the set {@link listAllTasks} pages through
+ * (`GET /api/v1/tasks/summary`, LAI-974): same readable projects through
+ * `can()`, same token scope, same filters, because the conditions come from
+ * the same {@link allTasksScope}. Four queries, whatever the size of the set.
+ *
+ * - **overdue** is presence.ts's `countTask`: an open task whose `due_on` is
+ *   before today's UTC midnight (the board's day, `boardDayOf`).
+ * - **blocked** is projects.ts's `projectSummaries`: an open task with at
+ *   least one dependency that is not `done` — so a **cancelled** blocker still
+ *   blocks, as `isReady` requires `done` and nothing else.
+ */
+export function summariseAllTasks(
+  db: Db,
+  actor: ResolvedActor,
+  filter: Omit<ListAllTasksFilter, 'limit' | 'cursor'>,
+  now: number = Date.now(),
+): TaskCountsView {
+  const byStatus = Object.fromEntries(TASK_STATUSES.map((s) => [s, 0])) as Record<
+    TaskStatus,
+    number
+  >;
+  const counts: TaskCountsView = {
+    total: 0,
+    by_status: byStatus,
+    by_assignee: [],
+    overdue: 0,
+    blocked: 0,
+    unassigned: 0,
+  };
+
+  const scope = allTasksScope(db, actor, filter);
+  if (scope === null) return counts;
+  const where = scope.conditions;
+  const open = inArray(tasks.status, [...OPEN_STATUSES]);
+
+  // 1. Total and by status.
+  for (const row of db
+    .select({ status: tasks.status, total: count() })
+    .from(tasks)
+    .where(and(...where))
+    .groupBy(tasks.status)
+    .all()) {
+    byStatus[row.status] = row.total;
+    counts.total += row.total;
+  }
+
+  // 2. By assignee — every group, ranked here: there is one per person, not
+  //    one per task.
+  const groups = db
+    .select({ userId: tasks.assigneeId, name: users.name, total: count() })
+    .from(tasks)
+    .leftJoin(users, eq(users.id, tasks.assigneeId))
+    .where(and(...where))
+    .groupBy(tasks.assigneeId)
+    .all()
+    .map((g) => ({
+      user_id: g.userId,
+      name: g.userId === null ? 'Unassigned' : (g.name ?? ''),
+      count: g.total,
+    }))
+    .sort(
+      (a, b) =>
+        b.count - a.count ||
+        a.name.localeCompare(b.name) ||
+        (a.user_id ?? '').localeCompare(b.user_id ?? ''),
+    );
+  counts.unassigned = groups.find((g) => g.user_id === null)?.count ?? 0;
+  counts.by_assignee = groups.slice(0, SUMMARY_ASSIGNEES);
+  const rest = groups.slice(SUMMARY_ASSIGNEES);
+  if (rest.length > 0) {
+    counts.by_assignee.push({
+      user_id: 'others',
+      name: 'Others',
+      count: rest.reduce((sum, g) => sum + g.count, 0),
+    });
+  }
+
+  // 3. Overdue.
+  const today = Date.parse(`${boardDayOf(now)}T00:00:00Z`);
+  counts.overdue =
+    db
+      .select({ total: count() })
+      .from(tasks)
+      .where(and(...where, open, lt(tasks.dueOn, today)))
+      .get()?.total ?? 0;
+
+  // 4. Blocked — `EXISTS`, so a task blocked three times over is one task.
+  const blocker = alias(tasks, 'blocker');
+  counts.blocked =
+    db
+      .select({ total: count() })
+      .from(tasks)
+      .where(
+        and(
+          ...where,
+          open,
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(taskDependencies)
+              .innerJoin(blocker, eq(blocker.id, taskDependencies.dependsOnTaskId))
+              .where(and(eq(taskDependencies.taskId, tasks.id), ne(blocker.status, 'done'))),
+          ),
+        ),
+      )
+      .get()?.total ?? 0;
+
+  return counts;
 }
 
 /**
@@ -999,7 +1464,105 @@ export interface UpdateTaskInput {
   size?: SizeLevel | null | undefined;
   /** An outside id (LAI-780), upper-cased; `null` clears it. */
   external_ref?: string | null | undefined;
+  /**
+   * The agent meant to do it (D-114 item 7, LAI-535): an id selects and opens
+   * a work request, `null` withdraws it. Never moves the assignee.
+   */
+  selected_agent_id?: string | null | undefined;
+  /**
+   * The ETag named by PATCH's `If-Match` header ({@link taskVersion}). Absent
+   * keeps the unconditional update every existing caller uses (LAI-571).
+   */
+  expected_version?: string | undefined;
   now?: number;
+}
+
+/**
+ * **A task's version is a digest of the task as a read returns it** (LAI-571),
+ * and `GET /tasks/:id` and `PATCH` send it as `ETag`.
+ *
+ * Derived from what is shown, not stamped by the writers, so no writer can be
+ * forgotten. Two reviews found writers that left a stamped version alone: tags
+ * kept in their own table, a tag renamed or merged, a sprint deleted out from
+ * under its tasks, a blocker whose status moved a dependent's `ready`, a
+ * comment, a recomputed size. Each one changes the view, so each one changes
+ * this. `updated_at` stays what it was, the time of the task's last edit.
+ *
+ * Deterministic because `toView` is. Its keys are in a fixed order, its lists
+ * are sorted, and it reads nothing about the caller. 128 bits of SHA-256, so two
+ * different views share a version with negligible odds.
+ *
+ * **Except the live claim's pulse** (LAI-568): {@link CLAIM_PULSE} moves on
+ * every heartbeat and with the clock, and no write to the task moves it. Left
+ * in, it would make every token stale while an agent works, and that is exactly
+ * when a selection needs one. Who holds the claim, by generation, state,
+ * session, agent and device, stays in, so a claim taken, paused, released or
+ * transferred is a new version. The holder's own writes are the claim fence's
+ * to order (LAI-541), not this.
+ *
+ * **And the checkpoint warning** (LAI-1016): `handoff.no_recent_save` turns on
+ * when the server's clock passes the window, with no write to the task, so it
+ * is left out for the same reason. A save that clears it is a new checkpoint,
+ * which `handoff.checkpoint` already carries.
+ */
+export function taskVersion(view: TaskView): string {
+  const claim = view.claim === null ? null : withoutPulse(view.claim);
+  const { no_recent_save: _clock, ...handoff } = view.handoff;
+  return createHash('sha256')
+    .update(JSON.stringify({ ...view, claim, handoff }))
+    .digest('hex')
+    .slice(0, 32);
+}
+
+/** The version as a strong ETag: what a read sends and `If-Match` takes back. */
+export function taskEtag(view: TaskView): string {
+  return `"${taskVersion(view)}"`;
+}
+
+/**
+ * A row of a task list, carrying the ETag a read of that one task would send
+ * (LAI-571 review, round 3), so a client can make a guarded `PATCH` from a
+ * list without reading each task first. Computed from the full view, so a
+ * slim row's ETag is the full task's, even though the slim row cannot be
+ * hashed back to it.
+ */
+export interface ListedTaskView extends TaskView {
+  etag: string;
+}
+
+/** {@link ListedTaskView}'s slim form (`?fields=slim`, LAI-795). */
+export interface ListedTaskSummaryView extends TaskSummaryView {
+  etag: string;
+}
+
+export function listedTask(view: TaskView): ListedTaskView {
+  return { ...view, etag: taskEtag(view) };
+}
+
+export function listedTaskSummary(view: TaskView): ListedTaskSummaryView {
+  return { ...summaryOf(view), etag: taskEtag(view) };
+}
+
+/**
+ * The live claim's fields that move without a write (LAI-568): the heartbeat,
+ * the lease, the clock — the heartbeat's age, which moves on every read
+ * (LAI-597 review) — and what the session says ran, which any heartbeat may
+ * change (D-118, LAI-593).
+ */
+export const CLAIM_PULSE = [
+  'last_heartbeat_at',
+  'heartbeat_age_ms',
+  'lease_expires_at',
+  'connection',
+  'harness',
+  'harness_version',
+  'model',
+] as const;
+
+function withoutPulse(claim: TaskLiveClaimView): Partial<TaskLiveClaimView> {
+  const kept: Partial<TaskLiveClaimView> = { ...claim };
+  for (const field of CLAIM_PULSE) delete kept[field];
+  return kept;
 }
 
 /**
@@ -1050,7 +1613,18 @@ export function updateTask(
   const reassigning = input.assignee_id !== undefined && input.assignee_id !== task.assigneeId;
   if (reassigning) {
     assertCan(scoped, 'task.assign_other', { projectId: project.id });
+    if (typeof input.assignee_id === 'string') assertMayHold(db, input.assignee_id, project.id);
     changes.assigneeId = input.assignee_id;
+  }
+
+  // The selection is not in `changes`: it writes its own verb, and a reader
+  // asking "when was this asked of that agent" should not open a payload.
+  const selecting =
+    input.selected_agent_id !== undefined && input.selected_agent_id !== task.selectedAgentId;
+  if (selecting) {
+    if (input.selected_agent_id !== null && input.selected_agent_id !== undefined) {
+      assertAgentSelectable(db, actor, project, input.selected_agent_id);
+    }
   }
 
   // **One write, whole or not at all** (LAI-771 review, B1). The tags, the
@@ -1061,6 +1635,43 @@ export function updateTask(
   // first read.
   return db.transaction(
     () => {
+      // The claim fence (LAI-541), under the write lock and before anything
+      // is written, so a stale holder changes nothing at all.
+      assertClaimFence(db, actor, taskId, now);
+      if (selecting) assertSelectionChangeAllowed(db, task, input.selected_agent_id ?? null);
+
+      // **Every input of the view is read again here**, under the lock, and not
+      // taken from `requireTask` above, which ran before it. The project's
+      // prefix makes the key, and a rename that commits between the two reads
+      // would otherwise let a token for `LAI-1` pass on a task now `NEW-1`
+      // (LAI-571 review, round 3). The row is read here for the same reason.
+      const prefix = db
+        .select({ prefix: projects.prefix })
+        .from(projects)
+        .where(eq(projects.id, project.id))
+        .get()!.prefix;
+
+      // The precondition, under the write lock and before anything moves: the
+      // task as a read would show it now must be the task the caller read.
+      // `immediate` holds every other writer off until this commits, so the
+      // check and the write are one step.
+      if (input.expected_version !== undefined) {
+        const current = viewOne(
+          db,
+          db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+          prefix,
+          now,
+          readerOf(actor),
+        );
+        const version = taskVersion(current);
+        if (version !== input.expected_version) {
+          throw new ApiError('conflict', 'The task changed after you read it', {
+            current,
+            etag: taskEtag(current),
+          });
+        }
+      }
+
       // Under the write lock, so two writes cannot both find it free.
       if (typeof changes.externalRef === 'string') {
         assertOutsideIdFree(db, project.id, changes.externalRef, taskId);
@@ -1113,6 +1724,24 @@ export function updateTask(
         });
       }
 
+      if (selecting) {
+        const to = input.selected_agent_id ?? null;
+        db.update(tasks)
+          .set({ selectedAgentId: to, updatedAt: now })
+          .where(eq(tasks.id, taskId))
+          .run();
+        moveSelection(db, actor, taskId, to, now);
+        appendActivity(db, {
+          orgId: project.orgId,
+          projectId: project.id,
+          taskId,
+          ...activityActor(actor),
+          type: 'task.agent_selected',
+          payload: { from: task.selectedAgentId, to },
+          now,
+        });
+      }
+
       // **The size follows what the model reads, and nothing else** (D-085): the
       // text, the tags and the parent. A priority, an assignee or a date never
       // reaches the estimate at all; an edit that leaves the inputs as they were
@@ -1153,7 +1782,9 @@ export function updateTask(
       return viewOne(
         db,
         db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
-        project.prefix,
+        prefix,
+        now,
+        readerOf(actor),
       );
     },
     { behavior: 'immediate' },
@@ -1163,27 +1794,25 @@ export function updateTask(
 /** Where a claim may take a task from (§5, M7, D-082). */
 const CLAIMABLE: readonly TaskStatus[] = [...READY_STATUSES, 'in_progress'];
 
-/**
- * Claim: compare-and-swap (SPEC §5, AC3).
- *
- * The API twin of the file-move lock the build sessions use by hand — getting it
- * wrong puts two agents on one task. The swap runs inside `BEGIN IMMEDIATE` and
- * the `UPDATE` itself carries `assignee_id IS NULL`, so the check and the write
- * cannot be separated by another writer. A loser is told **who** holds it, since
- * "conflict" alone does not tell an agent what to do next.
- */
-export function claimTask(
-  sqlite: Database.Database,
-  db: Db,
-  actor: ResolvedActor,
-  taskId: string,
-  now: number = Date.now(),
+/** What `start_working` and `POST /tasks/:id/claim` answer (§5, LAI-541). */
+export interface StartedWork {
+  task: TaskView;
+  /**
+   * The exclusive claim a registered agent's session now holds (§4.66), whose
+   * `generation` it sends with every change. Null for a person or a legacy
+   * token: they claim by assignee alone, as before.
+   */
+  claim: TaskClaimView | null;
+}
+
+export interface StartWorkingOptions {
+  now?: number;
   /**
    * The branch the work is on, when the agent says (`start_working`'s
    * `branch`, LAI-770): kept on the task, so the board shows where the work
    * is and a branch named for the key ties the session's tokens to it.
    */
-  branch?: string,
+  branch?: string | undefined;
   /**
    * The claimant's own size and confidence (`start_working`'s `estimate`,
    * D-085 item 4, LAI-772): kept best effort after the claim's activity row,
@@ -1192,15 +1821,55 @@ export function claimTask(
    * holder's own call on a task already under way — is not a claim and keeps
    * none.
    */
-  estimate?: ClaimEstimateInput,
-): TaskView {
-  const { project } = requireTask(db, taskId);
+  estimate?: ClaimEstimateInput | undefined;
+  /** A registered agent's session to claim under (§4.65); absent opens one. */
+  sessionId?: string | undefined;
+}
+
+/**
+ * Claim: compare-and-swap (SPEC §5, AC3) — and, for a registered agent, the
+ * exclusive claim (§4.66, LAI-541).
+ *
+ * The API twin of the file-move lock the build sessions use by hand — getting it
+ * wrong puts two agents on one task. The swap runs inside `BEGIN IMMEDIATE` and
+ * the `UPDATE` itself carries `assignee_id IS NULL`, so the check and the write
+ * cannot be separated by another writer. A loser is told **who** holds it, since
+ * "conflict" alone does not tell an agent what to do next.
+ *
+ * ## A registered agent's claim (LAI-541)
+ *
+ * Takes a different path, {@link agentStartWorking}: its session takes the
+ * task's one live claim, and **`assignee_id` is never written** (D-114 item 7).
+ * A person and a legacy token claim by assignee, as above — and a legacy token
+ * cannot claim a task an agent's session holds, or whose claim lapsed (D-114
+ * item 6).
+ */
+export function startWorking(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  options: StartWorkingOptions = {},
+): StartedWork {
+  const now = options.now ?? Date.now();
+  const { estimate } = options;
+  // A task the caller cannot read is answered as one that does not exist
+  // (LAI-586 review) — before `task.claim`, which would say it does.
+  const { project } = requireVisibleTaskToClaim(db, actor, taskId);
   assertCan(withProject(actor, project.id), 'task.claim', { projectId: project.id });
-  const onBranch = branch?.trim() === '' ? undefined : branch?.trim();
+  const onBranch = options.branch?.trim() === '' ? undefined : options.branch?.trim();
+  const agent = registeredAgent(actor);
 
   return immediateTransaction(sqlite, () => {
     const before = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
     const from = statusRow(db, project.id, before.statusId)!;
+
+    if (agent !== null) return agentStartWorking(db, actor, project, before, from, options, now);
+
+    // D-114 item 6: a token with no agent cannot take what a session holds,
+    // or a claim that lapsed and waits for recovery.
+    const refusal = claimFenceRefusal(db, actor, taskId, now);
+    if (refusal !== null) throw refusal;
 
     // The holder's own claim of a task already under way is a **mark, not a
     // move** (LAI-770 review, B2, the owner's decision): a session resuming the
@@ -1216,11 +1885,16 @@ export function claimTask(
           .where(eq(tasks.id, taskId))
           .run();
       }
-      return viewOne(
-        db,
-        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
-        project.prefix,
-      );
+      return {
+        task: viewOne(
+          db,
+          db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+          project.prefix,
+          now,
+          readerOf(actor),
+        ),
+        claim: null,
+      };
     }
     // Held first, so a second claimant still hears **who** has it (AC3).
     if (before.assigneeId !== null) {
@@ -1236,13 +1910,7 @@ export function claimTask(
     // took anything unassigned: a cancelled task came back to life, a done one
     // reopened, and one in review skipped the person's decision — none of
     // which `changeStatus` would have let the same caller do.
-    if (!CLAIMABLE.includes(before.status)) {
-      throw new ApiError(
-        'unprocessable',
-        `Only a task in a backlog, to-do or released in-progress status can be claimed; this one is in ${from.name}`,
-        { from: before.status, to: 'in_progress', allowed_from: CLAIMABLE },
-      );
-    }
+    assertClaimable(before, from);
     // A released task stays in the in-progress status it was in; anything else
     // lands in the project's first visible one (LAI-738).
     const to =
@@ -1293,16 +1961,178 @@ export function claimTask(
       now,
     });
 
-    // What the claimant said, then the forecast work starts under (D-085
-    // items 4–5) — the freeze at the first start only, as `started_at` is.
-    // After the activity row and best effort, so neither can cost the claim
-    // its record (LAI-771 review, B1).
-    if (estimate !== undefined) recordClaimEstimate(db, actor, taskId, estimate, now);
-    if (before.startedAt === null) freezeEstimateAtStart(db, taskId, now);
-    else if (estimate !== undefined) refreshEstimate(db, taskId, now);
+    afterStart(db, actor, taskId, before.startedAt, estimate, now);
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+    return {
+      task: viewOne(
+        db,
+        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+        project.prefix,
+        now,
+        readerOf(actor),
+      ),
+      claim: null,
+    };
   });
+}
+
+/** Where a claim may start from (§5, M7), or `422` naming the status. */
+function assertClaimable(before: TaskRow, from: StatusRef): void {
+  if (CLAIMABLE.includes(before.status)) return;
+  throw new ApiError(
+    'unprocessable',
+    `Only a task in a backlog, to-do or released in-progress status can be claimed; this one is in ${from.name}`,
+    { from: before.status, to: 'in_progress', allowed_from: CLAIMABLE },
+  );
+}
+
+/**
+ * What the claimant said, then the forecast work starts under (D-085 items
+ * 4–5) — the freeze at the first start only, as `started_at` is. After the
+ * activity row and best effort, so neither can cost the claim its record
+ * (LAI-771 review, B1).
+ */
+function afterStart(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  startedAt: number | null,
+  estimate: ClaimEstimateInput | undefined,
+  now: number,
+): void {
+  if (estimate !== undefined) recordClaimEstimate(db, actor, taskId, estimate, now);
+  if (startedAt === null) freezeEstimateAtStart(db, taskId, now);
+  else if (estimate !== undefined) refreshEstimate(db, taskId, now);
+}
+
+/**
+ * A registered agent's `start_working` (§5, §4.66, LAI-541): its session takes
+ * — or resumes — the task's one live claim, and **`assignee_id` is never
+ * written** (D-114 item 7: the assignee, the selected agent and the claim are
+ * three facts, and changing the assignee is always its own explicit act). An
+ * unassigned task stays unassigned; the claim is the lock.
+ *
+ * Whose task it may take: an unassigned one, its owner's, or — only when an
+ * open work request asks this agent for it — somebody else's. From where: §5's
+ * claimable statuses. A task not yet in progress moves there, as any claim
+ * moves it; one already in progress is a claim on work under way, recorded as
+ * `task.updated` with `field: "claim"` (a resume records nothing).
+ */
+function agentStartWorking(
+  db: Db,
+  actor: ResolvedActor,
+  project: typeof projects.$inferSelect,
+  before: TaskRow,
+  from: StatusRef,
+  options: StartWorkingOptions,
+  now: number,
+): StartedWork {
+  const taskId = before.id;
+  const onBranch = options.branch?.trim() === '' ? undefined : options.branch?.trim();
+  const agent = registeredAgent(actor)!;
+
+  // D-119 first (LAI-586 review round 2): an agent that is not the selected
+  // one hears that reason whatever else is true of the task — the assignee
+  // rule below would otherwise answer it with a bare "already claimed".
+  // Visibility and `task.claim` were asked before this function was reached,
+  // so a hidden task still answers as a missing one.
+  assertSelectedAgentMayClaim(db, actor, taskId, agent.id);
+
+  const requested = hasOpenWorkRequest(db, taskId, agent.id);
+  // **The holder's own renewal is not a second claim** (LAI-546 review): a
+  // receiver that accepted a hand-off holds the live claim on a task whose
+  // human assignee is somebody else's, with no work request left — the claim
+  // is the lock, and `takeClaim` asks that it is this session's.
+  const holds = liveClaim(db, taskId)?.agentId === agent.id;
+  if (before.assigneeId !== null && before.assigneeId !== actor.userId && !requested && !holds) {
+    throw new ApiError('conflict', 'That task is already claimed', {
+      assignee_id: before.assigneeId,
+      status: before.status,
+    });
+  }
+  assertClaimable(before, from);
+
+  // The claim before the task moves, so a refusal leaves the task exactly as it was.
+  const taken = takeClaim(db, actor, before, { sessionId: options.sessionId, now });
+
+  if (before.status === 'in_progress') {
+    // A paused claim's renewal writes nothing, its branch included: every
+    // change is refused while the offer is live (§4.73).
+    if (onBranch !== undefined && onBranch !== before.branch && taken.claim.state !== 'paused') {
+      db.update(tasks).set({ branch: onBranch, updatedAt: now }).where(eq(tasks.id, taskId)).run();
+    }
+    if (!taken.resumed) {
+      appendActivity(db, {
+        orgId: project.orgId,
+        projectId: project.id,
+        taskId,
+        ...activityActor(actor),
+        type: 'task.updated',
+        payload: {
+          field: 'claim',
+          from: null,
+          to: { generation: taken.claim.generation, session_id: taken.claim.sessionId },
+        },
+        now,
+      });
+    }
+  } else {
+    const to = statusForCategory(db, project.id, 'in_progress');
+    db.update(tasks)
+      .set({
+        status: 'in_progress',
+        statusId: to.id,
+        startedAt: before.startedAt ?? now,
+        ...(onBranch === undefined ? {} : { branch: onBranch }),
+        updatedAt: now,
+      })
+      .where(eq(tasks.id, taskId))
+      .run();
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId,
+      ...activityActor(actor),
+      type: 'task.status_changed',
+      // No `assignee_id`: a claim does not assign (D-114 item 7).
+      payload: {
+        from: before.status,
+        to: 'in_progress',
+        ...statusPayload(from, to),
+        via: 'claim',
+        claim_generation: taken.claim.generation,
+      },
+      now,
+    });
+    afterStart(db, actor, taskId, before.startedAt, options.estimate, now);
+  }
+
+  return {
+    task: viewOne(
+      db,
+      db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+      project.prefix,
+      now,
+      readerOf(actor),
+    ),
+    claim: claimView(taken.claim),
+  };
+}
+
+/**
+ * {@link startWorking}, answering the task alone — the shape every caller had
+ * before LAI-541, kept so none of them changes.
+ */
+export function claimTask(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  now: number = Date.now(),
+  branch?: string,
+  estimate?: ClaimEstimateInput,
+): TaskView {
+  return startWorking(sqlite, db, actor, taskId, { now, branch, estimate }).task;
 }
 
 export function changeStatus(
@@ -1326,6 +2156,9 @@ export function changeStatus(
   const { task, project } = requireTask(db, taskId);
   const scoped = withProject(actor, project.id);
   assertCan(scoped, 'task.write', { projectId: project.id });
+  // Every move — the holder's finish, a person's accept or send-back — passes
+  // the claim fence first (LAI-541).
+  assertClaimFence(db, actor, taskId, now);
 
   const from = statusRow(db, project.id, task.statusId)!;
   // A bare `done` from an agent is the D-082 refusal even when the task is
@@ -1376,7 +2209,13 @@ export function changeStatus(
       now,
     });
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+    return viewOne(
+      db,
+      db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+      project.prefix,
+      now,
+      readerOf(actor),
+    );
   }
 
   // §5's table, widened for a person and unchanged for a program (LAI-266).
@@ -1405,7 +2244,9 @@ export function changeStatus(
   // resolved to, holding `task.write` and nothing else**. It cannot widen into
   // "the system may do anything" without §3.4 changing, and §3.4 is a document
   // somebody reads. `assertMayCloseReview` returns for it.
-  if (to === 'review' || to === 'done') assertMayCloseReview(actor, task, to);
+  if (to === 'review' || to === 'done') {
+    assertMayCloseReview(actor, task, to, holdsLiveClaim(db, actor, taskId));
+  }
 
   db.update(tasks)
     .set({
@@ -1442,11 +2283,21 @@ export function changeStatus(
     .where(eq(tasks.id, taskId))
     .run();
 
+  // The session the holder finishes under, read before its claim is released
+  // so the row still says what ran (D-118, LAI-586); `appendActivity` keeps it
+  // only if it is the writing agent's own.
+  const underSession =
+    task.status === 'in_progress' ? (liveClaim(db, taskId)?.sessionId ?? null) : null;
+  // Out of `in_progress`, nobody works it under the claim it had (§5,
+  // LAI-541): released, and its generation refused from here on.
+  if (task.status === 'in_progress') releaseLiveClaim(db, taskId, now);
+
   appendActivity(db, {
     orgId: project.orgId,
     projectId: project.id,
     taskId,
     ...activityActor(actor),
+    agentSessionId: underSession,
     type: 'task.status_changed',
     payload: { from: task.status, to, ...statusPayload(from, dest), ...(via ? { via } : {}) },
     now,
@@ -1462,7 +2313,13 @@ export function changeStatus(
     refreshEstimate(db, task.parentTaskId, now);
   }
 
-  return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+  return viewOne(
+    db,
+    db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+    project.prefix,
+    now,
+    readerOf(actor),
+  );
 }
 
 /**
@@ -1561,6 +2418,7 @@ export function addTaskDependency(
 ): TaskView {
   const { project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.dependency.write', { projectId: project.id });
+  assertClaimFence(db, actor, taskId, now);
 
   // Both ends must exist, or a typo silently creates an unsatisfiable blocker.
   requireTask(db, dependsOnTaskId);
@@ -1608,6 +2466,7 @@ export function removeTaskDependency(
 ): TaskView {
   const { project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.dependency.write', { projectId: project.id });
+  assertClaimFence(db, actor, taskId, now);
 
   const removed = db
     .delete(taskDependencies)
@@ -1684,6 +2543,7 @@ export function reorderTask(
   const now = input.now ?? Date.now();
 
   return immediateTransaction(sqlite, () => {
+    assertClaimFence(db, actor, taskId, now);
     // Neighbours from before LAI-472 get places first, so there is an order
     // to read. A no-op on a running server, where the boot backfill has run.
     backfillTaskPositions(db, project.id);
@@ -1742,7 +2602,7 @@ export function reorderTask(
 
     const current = task.position!;
     const alreadyThere = (lower === null || lower < current) && (upper === null || current < upper);
-    if (alreadyThere) return viewOne(db, task, project.prefix);
+    if (alreadyThere) return viewOne(db, task, project.prefix, now, readerOf(actor));
 
     const position = keyBetween(lower, upper);
     db.update(tasks).set({ position, updatedAt: now }).where(eq(tasks.id, taskId)).run();
@@ -1760,6 +2620,12 @@ export function reorderTask(
       now,
     });
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+    return viewOne(
+      db,
+      db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+      project.prefix,
+      now,
+      readerOf(actor),
+    );
   });
 }

@@ -19,8 +19,9 @@
  */
 
 import { withHeaders, type ApiStub, type StubCall } from './harness.ts';
+import { TODAY } from './my-day-clock.ts';
 
-export const TODAY = new Date().toISOString().slice(0, 10);
+export { TODAY };
 const MIDNIGHT = Date.parse(`${TODAY}T00:00:00Z`);
 const at = (minutes: number): number => MIDNIGHT + minutes * 60_000;
 
@@ -128,6 +129,8 @@ export const BUSY_DAY = {
   // LAI-831: no gap waved away; every draft held is today's.
   breaks: [],
   drafts_held: { count: DRAFTS.length, minutes: DRAFTS.reduce((sum, d) => sum + d.minutes, 0) },
+  timer: null,
+  day_note: null,
   agent: {
     minutes: 312,
     keyboard_minutes: 48,

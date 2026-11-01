@@ -26,6 +26,7 @@ import { navHref } from '../../src/routes/nav-url.ts';
 /** Reachable from a screen rather than from the chrome. Each names the screen. */
 const REACHED_FROM: Readonly<Record<string, string>> = {
   '/members': 'the Projects screen — every project card has a Members button',
+  '/spaces/:slug/settings': "a space's ⋯ menu (Space settings) and the gear on its card (LAI-977)",
   '/design/tokens': 'the token reference, linked from `/design/states`',
   '/design/states': 'a development reference, reached by typing the path',
   // The SPACES section is built from the project list rather than from
@@ -41,8 +42,6 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
     'a person — their name on Organisation, a Contributors row or a Capacity card (owners and admins)',
   // A person's own day (LAI-787, D-088): about whoever is signed in, so it
   // sits under their name at the foot of the rail rather than in a group.
-  '/developer/connect':
-    'Developer access — its Connect an agent card opens the wizard, every agent and every step (LAI-796)',
 };
 
 const holds = () => true;

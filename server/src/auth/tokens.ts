@@ -3,9 +3,14 @@ import { eq } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
 import { presenceEnabled } from '../db/orgs.ts';
-import { tokens } from '../db/schema.ts';
+import { agents, tokens } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { agentClientSlug, cleanClientName, isWeakClientName } from './agent-clients.ts';
+import {
+  AGENT_CLIENTS,
+  agentClientSlug,
+  cleanClientName,
+  isWeakClientName,
+} from './agent-clients.ts';
 
 /**
  * Personal access token secrets (SPEC §4.9, §13.1).
@@ -128,7 +133,14 @@ export const PLACEHOLDER_MESSAGE =
   'The Authorization header carries an unexpanded variable placeholder, not a token. Set the variable in the agent’s environment, or check how this client writes environment variables.';
 
 /** Why a presented token was refused. Logged, never returned (§6.1). */
-export type TokenRejection = 'malformed' | 'unknown' | 'expired' | 'revoked' | 'inactive_user';
+export type TokenRejection =
+  | 'malformed'
+  | 'unknown'
+  | 'expired'
+  | 'revoked'
+  | 'inactive_user'
+  // The token's registered agent is revoked (D-114, LAI-534).
+  | 'agent_revoked';
 
 /**
  * A refused token — `401`, with the reason **off the wire**.
@@ -190,10 +202,40 @@ export function findTokenBySecret(
     return { ok: false, reason: 'unknown' };
   }
 
-  if (row.revokedAt !== null) return { ok: false, reason: 'revoked' };
-  if (row.expiresAt !== null && row.expiresAt <= now) return { ok: false, reason: 'expired' };
+  const rejected = lapsed(row, now);
+  if (rejected !== null) return { ok: false, reason: rejected };
 
   return { ok: true, row };
+}
+
+/**
+ * A token already presented once → its row again, or why it no longer holds.
+ *
+ * For a credential that outlives its request — an open event stream (LAI-539,
+ * audit M10). The stream authenticated at connect and keeps the token's **id**,
+ * never its secret, so this looks up by primary key and re-applies the same
+ * revocation and expiry rules as `findTokenBySecret`, through the same
+ * `lapsed`, so the two cannot disagree about what "still valid" means.
+ */
+export function findTokenById(
+  db: Db,
+  id: string,
+  now: number,
+): { ok: true; row: typeof tokens.$inferSelect } | { ok: false; reason: TokenRejection } {
+  const row = db.select().from(tokens).where(eq(tokens.id, id)).get();
+  if (row === undefined) return { ok: false, reason: 'unknown' };
+
+  const rejected = lapsed(row, now);
+  if (rejected !== null) return { ok: false, reason: rejected };
+
+  return { ok: true, row };
+}
+
+/** Revoked, expired, or `null` while the row is still good at `now`. */
+function lapsed(row: typeof tokens.$inferSelect, now: number): TokenRejection | null {
+  if (row.revokedAt !== null) return 'revoked';
+  if (row.expiresAt !== null && row.expiresAt <= now) return 'expired';
+  return null;
 }
 
 /**
@@ -293,6 +335,11 @@ export interface McpUseWrite {
  * - `clientName` is `clientInfo.name` from an `initialize` request, and
  *   `undefined` on every other request. It is cleaned, turned into a slug, and
  *   written **only when it changed**.
+ * - **A registered agent's token takes its harness from the agent** (D-120,
+ *   LAI-1001): `agents.harness` is the slug, whatever the client said and
+ *   whatever the token is called — an agent registered as `Polly` on
+ *   `omnigent` is Omnigent, not `other`. The first-word rule below is for
+ *   unregistered, legacy tokens only.
  *
  * Bookkeeping on the credential that was just presented, the same as
  * `touchTokenUsage`, which is why it lives here and asks `can()` nothing. It
@@ -314,11 +361,14 @@ export function recordMcpUse(
       lastMcpAt: tokens.lastMcpAt,
       lastClient: tokens.lastClient,
       lastClientName: tokens.lastClientName,
+      agentHarness: agents.harness,
     })
     .from(tokens)
+    .leftJoin(agents, eq(agents.id, tokens.agentId))
     .where(eq(tokens.id, tokenId))
     .get();
   if (row === undefined) return { mcp: false, client: false };
+  const registered = AGENT_CLIENTS.find((slug) => slug === row.agentHarness);
 
   const set: Partial<typeof tokens.$inferInsert> = {};
 
@@ -329,11 +379,15 @@ export function recordMcpUse(
   let client = false;
   if (clientName !== undefined) {
     const name = cleanClientName(clientName);
-    const slug = agentClientSlug(name, row.name);
+    const slug = registered ?? agentClientSlug(name, row.name);
     // A weak name (`mcp`, `hermes-probe`) never replaces a client the token
-    // already knows; it only fills a blank or an `other`.
+    // already knows; it only fills a blank or an `other`. A registered
+    // agent's slug is its harness, so only the name itself can be new.
     const known = row.lastClient !== null && row.lastClient !== 'other';
-    const keep = isWeakClientName(name) && known;
+    const keep =
+      isWeakClientName(name) &&
+      known &&
+      (registered === undefined || row.lastClient === registered);
     if (!keep && (name !== row.lastClientName || slug !== row.lastClient)) {
       set.lastClientName = name;
       set.lastClient = slug;

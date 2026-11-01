@@ -18,7 +18,7 @@ export const ACTIVITY_RANGES = ['12w', '52w'] as const;
 export type ActivityRange = (typeof ACTIVITY_RANGES)[number];
 
 export interface ActivitySeries {
-  /** Distinct commits on a remote; `null` unless both switches are on. */
+  /** Distinct commits on a remote; `null` while Developer insights are off (LAI-963). */
   readonly github: readonly number[] | null;
   readonly local_commits: readonly number[] | null;
   readonly prompts: readonly number[] | null;

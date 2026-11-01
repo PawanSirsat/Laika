@@ -9,6 +9,7 @@
  * web session.
  */
 
+import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, setTheme, until, type ApiStub, type StubCall } from './harness.ts';
@@ -188,6 +189,11 @@ void describe('the price table, for everyone who may see the organisation', () =
         .locator('tr[data-model="claude-opus-4-8"]')
         .getByRole('button', { name: 'Reset' })
         .click();
+      // Reset asks first (LAI-522), naming the model.
+      assert.match(
+        await answerConfirm(h.page, true),
+        /Reset claude-opus-4-8 to the table’s price\?/,
+      );
       await until(() => writes.length === 2);
       // Its answer redraws the table: wait until the buttons are back.
       await until(

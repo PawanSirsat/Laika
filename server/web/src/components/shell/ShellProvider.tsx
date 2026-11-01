@@ -4,11 +4,12 @@ import { useSession } from '../../api/use-session.ts';
 import { useSetupStatus } from '../../api/use-setup-status.ts';
 import { useShellContext } from '../../api/use-shell-context.ts';
 import { useUnlistedCount } from '../../api/use-unlisted-count.ts';
+import { useHandoffCounts } from '../../api/use-handoff-counts.ts';
 import { useReviewCount } from '../../api/use-review-count.ts';
 import { useTokenAlerts } from '../../api/token-alerts.ts';
-import { mayTriageUnlisted } from '../../api/unlisted.ts';
 import { showsAppNav } from '../shell-chrome.ts';
 import { ShellProviderContext, type ShellValue } from './shell-context.ts';
+import { useGates } from '../../api/permissions.ts';
 
 /**
  * Whether this instance still has no owner. `undefined` until `/setup/status`
@@ -42,7 +43,10 @@ export function ShellProvider({ children }: ShellProviderProps) {
 
   const signedIn = showsAppNav(session);
   const projectSlug = route.params.get('project') ?? undefined;
-  const { version, sprintCount, orgName, spaceName } = useShellContext(projectSlug, signedIn);
+  const { version, sprintCount, orgName, spaceName, spaceId } = useShellContext(
+    projectSlug,
+    signedIn,
+  );
 
   const { navigate } = route;
   const handleSignOut = useCallback(() => {
@@ -54,8 +58,11 @@ export function ShellProvider({ children }: ShellProviderProps) {
   }, [signOut, navigate]);
 
   const me = session.status === 'authenticated' ? session.user : undefined;
+  // The store is keyed to the user by `setStoreUser`, which the session calls
+  // before it publishes `me` — so this never reads the last person's answer.
+  const gates = useGates(me !== undefined);
   const { open: unlistedOpen, refresh: refreshUnlisted } = useUnlistedCount(
-    me !== undefined && mayTriageUnlisted(me.org_role),
+    me !== undefined && gates.org('audit_log.export'),
   );
   const {
     waiting: reviewWaiting,
@@ -65,6 +72,8 @@ export function ShellProvider({ children }: ShellProviderProps) {
   } = useReviewCount(me !== undefined);
   // Every signed-in person may read their own (a web session; LAI-773).
   const { alerts: tokenAlerts, refresh: refreshTokenAlerts } = useTokenAlerts(me !== undefined);
+  // Every signed-in person may read their own hand-offs (LAI-1009).
+  const { counts: handoffCounts, refresh: refreshHandoffs } = useHandoffCounts(me !== undefined);
 
   const value = useMemo<ShellValue>(
     () => ({
@@ -82,6 +91,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       sprintCount,
       orgName,
       spaceName,
+      spaceId,
       unlistedOpen,
       refreshUnlisted,
       reviewWaiting,
@@ -90,6 +100,8 @@ export function ShellProvider({ children }: ShellProviderProps) {
       refreshReview,
       tokenAlerts,
       refreshTokenAlerts,
+      handoffCounts,
+      refreshHandoffs,
       host: window.location.host,
     }),
     [
@@ -107,6 +119,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       sprintCount,
       orgName,
       spaceName,
+      spaceId,
       unlistedOpen,
       refreshUnlisted,
       reviewWaiting,
@@ -115,6 +128,8 @@ export function ShellProvider({ children }: ShellProviderProps) {
       refreshReview,
       tokenAlerts,
       refreshTokenAlerts,
+      handoffCounts,
+      refreshHandoffs,
     ],
   );
 

@@ -7,22 +7,28 @@ import {
   changeStatus,
   CLAIM_CONFIDENCES,
   CREATED_VIA,
-  claimTask,
   createTask,
   finishTask,
   getTask,
+  listAllTasks,
   listTasks,
   removeTaskDependency,
   reorderTask,
+  startWorking,
   SIZE_LEVELS,
-  summaryOf,
+  summariseAllTasks,
   TASK_LIST_FIELDS,
   TASK_PRIORITIES,
   TASK_STATUSES,
   updateTask,
-  type TaskSummaryView,
+  taskEtag,
+  listedTask,
+  listedTaskSummary,
+  type ListedTaskSummaryView,
+  type ListedTaskView,
   type TaskView,
 } from '../../services/tasks.ts';
+import { reclaimTask, type ReclaimView } from '../../services/claims.ts';
 import { EVIDENCE_LIMITS, listTaskRounds } from '../../services/rounds.ts';
 import { acceptTask, sendBackTask } from '../../services/review.ts';
 import { getTaskEstimate, type TaskEstimateView } from '../../services/estimates.ts';
@@ -76,6 +82,9 @@ const CreateBody = strictObject({
   // An outside id (LAI-780). A sanity bound only: the shape and its length are
   // the service's (`normaliseOutsideId`), so its message is the one read.
   external_ref: z.string().max(120).optional(),
+  // The agent meant to do it, from the start (LAI-1027) — `PATCH`'s check and
+  // work request. Eligibility is the service's, and answers `422` with the reason.
+  selected_agent_id: z.string().min(1).max(64).optional(),
   created_via: z.enum(CREATED_VIA).optional(),
 });
 
@@ -101,7 +110,22 @@ const UpdateBody = strictObject({
   size: z.enum(SIZE_LEVELS).nullable().optional(),
   // An outside id (LAI-780); `null` clears it. Shaped by the service, as above.
   external_ref: z.string().max(120).nullable().optional(),
+  // The agent meant to do it (D-114, LAI-535); `null` withdraws the request.
+  // Eligibility is the service's, and answers `422` with the reason.
+  selected_agent_id: z.string().min(1).max(64).nullable().optional(),
 });
+
+/** One strong ETag exactly as a read sent it. `*`, a weak `W/` tag or a list is not one. */
+function parseIfMatch(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const match = /^"([0-9a-f]{32})"$/.exec(value);
+  if (match === null) {
+    throw ApiError.badRequest('If-Match must be one ETag from a read of this task', {
+      header: 'If-Match',
+    });
+  }
+  return match[1];
+}
 
 // `status` is a category — the project's first visible status of it — and
 // `status_id` one exact status, which is what a board drag sends (LAI-738).
@@ -141,9 +165,51 @@ const ClaimBody = strictObject({
     size: z.enum(SIZE_LEVELS).optional(),
     confidence: z.enum(CLAIM_CONFIDENCES).optional(),
   }).optional(),
+  // A registered agent's session to claim under (§4.65, LAI-541); absent
+  // opens one. Ignored for a person and a legacy token, who hold no claims.
+  session_id: z.string().min(1).max(64).optional(),
 });
 
+/** The reclaim's body (LAI-541): which of the agent's sessions takes it back. */
+const ReclaimBody = strictObject({ session_id: z.string().min(1).max(64).optional() });
+
+/**
+ * Read a body that may be absent: none is `{}`, anything else must be JSON.
+ * The claim's rule, shared with the reclaim beside it.
+ */
+async function optionalJson(c: { req: { text: () => Promise<string> } }): Promise<unknown> {
+  const text = await c.req.text();
+  if (text.trim() === '') return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Not JSON: refused by `parseBody` with the 422 every other body gets.
+    return null;
+  }
+}
+
 const UsageQuery = strictObject({ tz: z.string().min(1).max(64).optional() });
+
+/**
+ * `GET /tasks`'s query (LAI-887). Strict, so a filter this list does not take —
+ * `priority`, `tag`, `ready` — is `422` rather than silently ignored: a list
+ * that answers unfiltered to a filtered question looks right and is not. The
+ * values are checked below with the per-project list's own parsers, so a bad
+ * one gets the same `400` there and here.
+ */
+const AllTasksQuery = strictObject({
+  limit: z.string().optional(),
+  cursor: z.string().optional(),
+  updated_since: z.string().optional(),
+  fields: z.string().optional(),
+  project: z.string().optional(),
+  status: z.string().optional(),
+  assignee: z.string().optional(),
+  sprint: z.string().optional(),
+});
+
+/** `/tasks/summary` takes `/tasks`' filters and nothing that pages (LAI-974). */
+const SummaryQuery = AllTasksQuery.omit({ limit: true, cursor: true, fields: true });
 
 const FinishBody = strictObject({
   summary: z.string().trim().min(1).max(50_000),
@@ -244,10 +310,14 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       id: row.id,
     }));
 
+    // Each row carries its own ETag (LAI-571), from the full view either way.
     if (fields === 'slim') {
-      return c.json({ ...page, data: page.data.map(summaryOf) } satisfies Page<TaskSummaryView>);
+      return c.json({
+        ...page,
+        data: page.data.map(listedTaskSummary),
+      } satisfies Page<ListedTaskSummaryView>);
     }
-    return c.json(page);
+    return c.json({ ...page, data: page.data.map(listedTask) } satisfies Page<ListedTaskView>);
   });
 
   app.post('/:slug/tasks', async (c) => {
@@ -265,31 +335,107 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, sqlite } = options;
 
-  app.get('/:id', (c) => c.json(getTask(db, requireActor(c), c.req.param('id'))));
+  // Everyone's work: every project the caller may read, in the per-project
+  // list's shape and order (LAI-887). An empty filter value reads as absent.
+  app.get('/', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(AllTasksQuery, c.req.query());
+    const { limit, cursor } = parsePageQuery(query);
+    const fields = parseEnum(query.fields, TASK_LIST_FIELDS, 'fields');
+    const given = (raw: string | undefined) => (raw === '' ? undefined : raw);
+
+    const rows = listAllTasks(db, actor, {
+      limit,
+      cursor,
+      updatedSince: parseUpdatedSince(query.updated_since),
+      project: given(query.project),
+      status: parseEnum(query.status, TASK_STATUSES, 'status'),
+      assignee: given(query.assignee),
+      sprint: given(query.sprint),
+    });
+
+    const page: Page<TaskView> = buildPage(rows, limit, (row) => ({
+      sortKey: row.updated_at,
+      id: row.id,
+    }));
+
+    // Each row carries its own ETag (LAI-571), from the full view either way.
+    if (fields === 'slim') {
+      return c.json({
+        ...page,
+        data: page.data.map(listedTaskSummary),
+      } satisfies Page<ListedTaskSummaryView>);
+    }
+    return c.json({ ...page, data: page.data.map(listedTask) } satisfies Page<ListedTaskView>);
+  });
+
+  // The figures for exactly what `GET /` pages through, with the same filters
+  // (LAI-974). Registered before `/:id`, which would otherwise read `summary`
+  // as a task id.
+  app.get('/summary', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(SummaryQuery, c.req.query());
+    const given = (raw: string | undefined) => (raw === '' ? undefined : raw);
+
+    return c.json(
+      summariseAllTasks(db, actor, {
+        updatedSince: parseUpdatedSince(query.updated_since),
+        project: given(query.project),
+        status: parseEnum(query.status, TASK_STATUSES, 'status'),
+        assignee: given(query.assignee),
+        sprint: given(query.sprint),
+      }),
+    );
+  });
+
+  app.get('/:id', (c) => {
+    const task = getTask(db, requireActor(c), c.req.param('id'));
+    c.header('ETag', taskEtag(task));
+    return c.json(task);
+  });
 
   app.patch('/:id', async (c) => {
     const actor = requireActor(c);
     const body = parseBody(UpdateBody, await c.req.json().catch(() => null));
+    const expectedVersion = parseIfMatch(c.req.header('If-Match'));
 
-    return c.json(updateTask(db, actor, c.req.param('id'), body));
+    const task = updateTask(db, actor, c.req.param('id'), {
+      ...body,
+      expected_version: expectedVersion,
+    });
+    c.header('ETag', taskEtag(task));
+    return c.json(task);
   });
 
   app.post('/:id/claim', async (c) => {
     const actor = requireActor(c);
-    const text = await c.req.text();
-    let json: unknown = {};
-    if (text.trim() !== '') {
-      try {
-        json = JSON.parse(text);
-      } catch {
-        // Not JSON: refused below with the 422 every other body gets.
-        json = null;
-      }
-    }
-    const body = parseBody(ClaimBody, json);
+    const body = parseBody(ClaimBody, await optionalJson(c));
 
-    return c.json(
-      claimTask(sqlite, db, actor, c.req.param('id'), Date.now(), body.branch, body.estimate),
+    const started = startWorking(sqlite, db, actor, c.req.param('id'), {
+      branch: body.branch,
+      estimate: body.estimate,
+      sessionId: body.session_id,
+    });
+    // The body stays the task, as it always was; a registered agent's claim
+    // travels in the two headers it sends back (§6.4, LAI-541).
+    if (started.claim !== null) {
+      c.header('X-Laika-Claim-Generation', String(started.claim.generation));
+      c.header('X-Laika-Agent-Session', started.claim.session_id);
+    }
+    return c.json(started.task);
+  });
+
+  /**
+   * The explicit reclaim (§6.4, proposal §4.2, LAI-541): the agent whose
+   * claim expired takes the task back at `generation + 1`. A registered
+   * agent's token only; the old generation stays refused.
+   */
+  app.post('/:id/claim/reclaim', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(ReclaimBody, await optionalJson(c));
+
+    return c.json<ReclaimView>(
+      reclaimTask(sqlite, db, actor, c.req.param('id'), { sessionId: body.session_id }),
     );
   });
 

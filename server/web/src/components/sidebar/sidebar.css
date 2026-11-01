@@ -336,6 +336,56 @@
   margin: 0 0.0625rem;
 }
 
+/*
+ * Pinned spaces (LAI-989). The pin sits over the row's right edge: shown on a
+ * pinned row, and on hover or focus of any other, so an unpinned rail stays
+ * the letter-and-name list it was.
+ */
+.space-item {
+  position: relative;
+}
+
+.space-pin {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.space-item-pinned .space-pin,
+.space-item:hover .space-pin,
+.space-pin:focus-visible {
+  opacity: 1;
+}
+
+.space-pin:hover {
+  background: var(--bg-column);
+  color: var(--text-primary);
+}
+
+.space-pin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The last pinned row and the first recent one: a hairline between them. */
+.space-item-pinned + .space-item:not(.space-item-pinned) {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
 /* More spaces, quieter than a space. */
 .sidebar-link-button {
   color: var(--text-muted);

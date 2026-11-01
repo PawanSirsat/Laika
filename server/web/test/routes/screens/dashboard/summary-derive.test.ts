@@ -7,20 +7,16 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import type { ActivityEvent } from '../../../../src/api/activity.ts';
 import { DAY_MS, startOfUtcDay } from '../../../../src/api/date-only.ts';
 import type { Task } from '../../../../src/api/tasks.ts';
 import { blockedTasks } from '../../../../src/routes/screens/dashboard/dashboard-derive.ts';
 import {
   completedIn,
-  dayHeading,
   fewDated,
   isOpen,
   MAX_PEOPLE,
   priorityBreakdown,
-  REVIEW_WAIT_DAYS,
   splitBlocked,
-  waitingForReview,
   windowCounts,
   workloadByPerson,
 } from '../../../../src/routes/screens/dashboard/summary-derive.ts';
@@ -292,97 +288,6 @@ void describe('priorityBreakdown', () => {
   });
 });
 
-void describe('waitingForReview', () => {
-  const into = (taskId: string, at: number): ActivityEvent => ({
-    id: `e-${taskId}-${String(at)}`,
-    seq: at,
-    type: 'task.status_changed',
-    project_id: 'p1',
-    task_id: taskId,
-    actor_id: 'u1',
-    actor_kind: 'user',
-    actor_token_id: null,
-    payload: { from: 'in_progress', to: 'review' },
-    created_at: at,
-  });
-  const over = (REVIEW_WAIT_DAYS + 1) * DAY_MS;
-  const under = (REVIEW_WAIT_DAYS - 1) * DAY_MS;
-
-  void test('the move into review, when the range holds it, decides the wait', () => {
-    const rows = waitingForReview(
-      [
-        // Moved in long ago, touched yesterday: it has still waited.
-        task({ id: 'long', status: 'review', updated_at: NOW - DAY_MS }),
-        // Quiet for ages, but moved in recently: it has not.
-        task({ id: 'fresh', status: 'review', updated_at: NOW - 50 * DAY_MS }),
-      ],
-      [into('long', NOW - over), into('fresh', NOW - under)],
-      NOW - 30 * DAY_MS,
-      NOW,
-    );
-    assert.deepEqual(
-      rows.map((r) => [r.task.id, r.since]),
-      [['long', NOW - over]],
-    );
-  });
-
-  void test('a move before the range: the earlier of its start and the last touch, never overstated', () => {
-    const rows = waitingForReview(
-      [
-        task({ id: 'old-quiet', status: 'review', updated_at: NOW - 20 * DAY_MS }),
-        task({ id: 'old-touched', status: 'review', updated_at: NOW - DAY_MS }),
-        task({ id: 'not-review', status: 'todo', updated_at: NOW - 20 * DAY_MS }),
-      ],
-      [],
-      NOW - 7 * DAY_MS,
-      NOW,
-    );
-    assert.deepEqual(
-      rows.map((r) => [r.task.id, r.since]),
-      [
-        ['old-quiet', NOW - 20 * DAY_MS],
-        ['old-touched', NOW - 7 * DAY_MS],
-      ],
-    );
-    const day = waitingForReview(
-      [task({ id: 'old-touched', status: 'review', updated_at: NOW - DAY_MS })],
-      [],
-      NOW - DAY_MS,
-      NOW,
-    );
-    assert.deepEqual(day, [], 'with nothing but the range to go on, it cannot see the wait');
-  });
-
-  /*
-   * **The wait does not move with the range** (LAI-832). `GET /review` says
-   * when each task last moved into review, whatever the range — so a task ten
-   * days in review, touched an hour ago, stays on "Last 24 hours".
-   */
-  void test('the review queue’s time of the move decides the wait, whatever the range', () => {
-    const tasks = [task({ id: 'long', status: 'review', updated_at: NOW - 3_600_000 })];
-    const queued = new Map([['long', NOW - 10 * DAY_MS]]);
-    for (const rangeStart of [NOW - DAY_MS, NOW - 7 * DAY_MS, undefined]) {
-      assert.deepEqual(
-        waitingForReview(tasks, [], rangeStart, NOW, queued).map((r) => [r.task.id, r.since]),
-        [['long', NOW - 10 * DAY_MS]],
-        `range from ${String(rangeStart)}`,
-      );
-    }
-  });
-
-  void test('the later of the queue and the range’s own move wins: the queue may be a minute old', () => {
-    // Sent back and delivered again two days ago; the queue was read before.
-    const rows = waitingForReview(
-      [task({ id: 'again', status: 'review', updated_at: NOW - 2 * DAY_MS })],
-      [into('again', NOW - 2 * DAY_MS)],
-      NOW - 7 * DAY_MS,
-      NOW,
-      new Map([['again', NOW - 10 * DAY_MS]]),
-    );
-    assert.deepEqual(rows, [], 'two days is not a five-day wait');
-  });
-});
-
 void describe('splitBlocked', () => {
   void test('to do and in progress are counted; backlog and review are apart', () => {
     const tasks = [
@@ -401,18 +306,5 @@ void describe('splitBlocked', () => {
       split.apart.map((r) => r.task.id),
       ['later', 'waiting'],
     );
-  });
-});
-
-void describe('dayHeading', () => {
-  void test('today, yesterday, then a date', () => {
-    assert.equal(dayHeading(NOW, NOW), 'Today');
-    const yesterday = new Date(NOW);
-    yesterday.setDate(yesterday.getDate() - 1);
-    assert.equal(dayHeading(yesterday.getTime(), NOW), 'Yesterday');
-    const older = new Date(NOW);
-    older.setDate(older.getDate() - 3);
-    const heading = dayHeading(older.getTime(), NOW);
-    assert.ok(heading !== 'Today' && heading !== 'Yesterday' && heading.length > 3, heading);
   });
 });

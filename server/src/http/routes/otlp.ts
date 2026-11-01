@@ -16,9 +16,10 @@ import { type AppEnv } from '../context.ts';
  *
  * - **The developer's own Laika token**, as a bearer header the exporter sends
  *   (`OTEL_EXPORTER_OTLP_METRICS_HEADERS`); a web session works too. Who is
- *   sending, and both of D-084's switches, are asked in a middleware that runs
- *   **before the body limit and before any byte of the body is read** (review):
- *   signed out is `401` and sharing off `403` whatever the exporter sends, a
+ *   sending, and the organisation's switch (D-102 amended), are asked in a
+ *   middleware that runs **before the body limit and before any byte of the
+ *   body is read** (review): signed out is `401` and collection off `403`
+ *   whatever the exporter sends, a
  *   body over the limit included.
  * - **JSON only** (`OTEL_EXPORTER_OTLP_PROTOCOL=http/json`): Laika carries no
  *   protobuf decoder, and a protobuf body is refused `422` naming the setting
@@ -43,7 +44,8 @@ export function otlpRoutes(options: { db: Db }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db } = options;
 
-  // The door first: the actor and the consent, then the size, then the body.
+  // The door first: the actor and the organisation's switch, then the size,
+  // then the body.
   app.use('/v1/metrics', async (c, next) => {
     assertMaySendLocalActivity(db, requireActor(c));
     await next();

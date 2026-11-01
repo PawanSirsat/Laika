@@ -21,6 +21,7 @@ import {
   getRevisions,
   getTimeSettings,
   setDraftMyTime,
+  setOrgBreaks,
   setOrgTimeMode,
   splitDraft,
   TIME_MODES,
@@ -57,6 +58,19 @@ void describe('the calls — the caller’s own, and nothing names anybody else'
         ['GET', '/api/v1/me/time-settings', undefined],
         ['PUT', '/api/v1/me/time-settings', { draft_my_time: false }],
         ['PUT', '/api/v1/org/time', { mode: 'manual' }],
+      ],
+    );
+  });
+
+  void test('the organisation’s break schedule goes whole, as one list (D-101)', async () => {
+    const lunch = { label: 'Lunch', start: '12:00', end: '13:00', days: [1, 2, 3, 4, 5] };
+    await setOrgBreaks([lunch]);
+    await setOrgBreaks([]);
+    assert.deepEqual(
+      sent.map((s) => [s.method, s.url, s.body]),
+      [
+        ['PUT', '/api/v1/org/time/breaks', { breaks: [lunch] }],
+        ['PUT', '/api/v1/org/time/breaks', { breaks: [] }],
       ],
     );
   });

@@ -10,9 +10,9 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { closeBrowser, setTheme, until, type ApiStub } from './harness.ts';
+import { open, TODAY } from './my-day-clock.ts';
 
-const TODAY = new Date().toISOString().slice(0, 10);
 const MIDNIGHT = Date.parse(`${TODAY}T00:00:00Z`);
 const at = (h: number, m = 0): number => MIDNIGHT + (h * 60 + m) * 60_000;
 
@@ -75,6 +75,8 @@ const DAY = {
   // LAI-831: no gap waved away; the one draft held is today's.
   breaks: [],
   drafts_held: { count: 1, minutes: 95 },
+  timer: null,
+  day_note: null,
   agent: { minutes: 54, keyboard_minutes: 12, by_task: [], unattributed_minutes: 0 },
   state: 'drafted',
   week: Array.from({ length: 7 }, (_, i) => {
@@ -160,6 +162,61 @@ const STUB: ApiStub = {
   },
 };
 
+function privatePlateStub(
+  role: 'owner' | 'admin' | 'member' | 'viewer',
+  implicit: 'lead' | null = role === 'owner' || role === 'admin' ? 'lead' : null,
+): ApiStub {
+  const privateProject = {
+    id: 'private-observatory',
+    slug: 'private-observatory',
+    prefix: 'OBS',
+    name: 'Private Observatory',
+    archived_at: null,
+    visibility: 'private',
+    task_counts: { backlog: 0, todo: 0, in_progress: 1, review: 0, done: 0, cancelled: 0 },
+    member_count: 0,
+    members: [],
+  };
+  return {
+    ...STUB,
+    '/api/v1/me': {
+      id: 'u1',
+      email: 'a@example.com',
+      name: 'Ada Lovelace',
+      org_role: role,
+      is_active: true,
+      memberships: [],
+    },
+    '/api/v1/projects': { data: [privateProject], next_cursor: null },
+    '/api/v1/permissions': {
+      org_roles: [],
+      project_roles: [],
+      permissions: [],
+      me: {
+        org_role: role,
+        credential: 'session',
+        project_scope: 'all',
+        implicit_project_role: implicit,
+        actions: [],
+        projects: [],
+      },
+    },
+    '/api/v1/projects/private-observatory/tasks?assignee=u1&status=in_progress': {
+      data: [
+        {
+          ...task('private-task', 'OBS-7', 'Private Observatory migration', 'in_progress'),
+          project_id: 'private-observatory',
+        },
+      ],
+      next_cursor: null,
+    },
+    '/api/v1/projects/private-observatory/tasks?assignee=u1&status=todo': {
+      data: [],
+      next_cursor: null,
+    },
+  };
+}
+
 void after(async () => {
   await closeBrowser();
 });
@@ -171,10 +228,12 @@ void describe('My day after the reference', () => {
       const head = h.page.locator('.screen-page');
       await head.locator('.myday-week').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.screen-page-title').innerText(), 'My day');
-      assert.match(await head.innerText(), /Only you see drafts/);
+      // Who reads drafts, said truthfully (D-102, LAI-968), and the way to who looked.
+      assert.match(await head.innerText(), /Who can see this/);
+      assert.equal(await head.getByRole('button', { name: 'Who can see this' }).count(), 1);
       assert.match(
         await head.locator('.myday-chip-primary').innerText(),
-        /Confirm day · 1 h 35 min/,
+        /Confirm day\s+1 h 35 min/,
         'Confirm day does not say what it confirms',
       );
       await until(
@@ -197,6 +256,9 @@ void describe('My day after the reference', () => {
     const none = { minutes: 0, keyboard_minutes: 0, by_task: [], unattributed_minutes: 0 };
     const h = await open('/my-day', { ...STUB, '/api/v1/me/time': { ...DAY, agent: none } });
     try {
+      // The cards live in the drawer (LAI-511): the header's button opens them.
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-beside-button]').click();
       const hint = h.page.locator('.myday-agent [data-agent-hint]');
       await hint.waitFor({ timeout: 20_000 });
       const text = await hint.innerText();
@@ -224,8 +286,8 @@ void describe('My day after the reference', () => {
       assert.equal(await h.page.locator('.dayline-block.dayline-drafted').count(), 1);
       await until(async () => (await h.page.locator('.dayline-now').count()) === 1);
       assert.equal(await h.page.locator('.dayline-now').count(), 1, 'today has no now line');
-      // The untimed call is not placed somewhere invented; it is counted.
-      assert.match(await h.page.locator('.dayline-untimed').innerText(), /1 block has no set time/);
+      // The untimed call is not placed somewhere invented; it sits in the tray (LAI-505, LAI-512).
+      assert.equal(await h.page.locator('[data-untimed-tray] [data-tray-item]').count(), 1);
 
       // Inside the track, in the order of the day.
       const box = await track.boundingBox();
@@ -238,17 +300,15 @@ void describe('My day after the reference', () => {
       }
       assert.ok(drafted.x < confirmed.x, '08:40 is drawn after 11:30');
 
-      // To settle, then Confirmed, then Add time — the lists the lane pictures.
+      // To review, then Confirmed — the tabs the lane pictures (LAI-505). Add
+      // time is the header's since LAI-502.
       const order = await h.page
         .locator('.myday-main')
         .evaluate((el: Element) => el.textContent ?? '');
-      const drafts = order.indexOf('To settle');
+      const drafts = order.indexOf('To review');
       const confirmedAt = order.indexOf('Confirmed', drafts + 1);
-      const add = order.indexOf('Add time', confirmedAt + 1);
-      assert.ok(
-        drafts > -1 && confirmedAt > drafts && add > confirmedAt,
-        'the lists are out of order',
-      );
+      assert.ok(drafts > -1 && confirmedAt > drafts, 'the lists are out of order');
+      assert.equal(await h.page.locator('[data-add-time]').count(), 1, 'no Add time in the header');
     } finally {
       await h.close();
     }
@@ -257,6 +317,9 @@ void describe('My day after the reference', () => {
   void test('On your plate: in progress, waiting on your review, blocked — each a link', async () => {
     const h = await open('/my-day', STUB);
     try {
+      // The cards live in the drawer (LAI-511): the header's button opens them.
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-beside-button]').click();
       const plate = h.page.locator('.myday-plate');
       await plate.locator('.plate-groups').waitFor({ timeout: 20_000 });
       const group = (id: string) => plate.locator(`[data-plate="${id}"]`);
@@ -286,9 +349,86 @@ void describe('My day after the reference', () => {
     }
   });
 
-  void test('two columns on a laptop, one on a phone, in both themes, never sideways', async () => {
+  void test('On your plate reads Private Observatory through owner/admin implicit lead', async () => {
+    for (const role of ['owner', 'admin'] as const) {
+      const h = await open('/my-day', privatePlateStub(role));
+      try {
+        // The cards live in the drawer (LAI-511): the header's button opens them.
+        await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+        await h.page.locator('[data-beside-button]').click();
+        const progress = h.page.locator('[data-plate="progress"]');
+        await progress.getByText('Private Observatory migration', { exact: true }).waitFor({
+          timeout: 20_000,
+        });
+        assert.match(await progress.innerText(), /Private Observatory migration/);
+        assert.ok(
+          h.calls.some((call) => call.path === '/api/v1/projects/private-observatory/tasks'),
+          `Private Observatory task list was not read for ${role}`,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+  });
+
+  void test('On your plate excludes Private Observatory for a non-member org member/viewer', async () => {
+    for (const role of ['member', 'viewer'] as const) {
+      const h = await open('/my-day', privatePlateStub(role));
+      try {
+        // The cards live in the drawer (LAI-511): the header's button opens them.
+        await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+        await h.page.locator('[data-beside-button]').click();
+        await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
+        assert.equal(
+          await h.page.getByText('Private Observatory migration', { exact: true }).count(),
+          0,
+          `Private Observatory migration was shown to a ${role}`,
+        );
+        assert.equal(
+          h.calls.filter((call) => call.path === '/api/v1/projects/private-observatory/tasks')
+            .length,
+          0,
+          `Private Observatory task list was read for a ${role}`,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+  });
+
+  void test('On your plate follows a withdrawn admin grant and a granted member, with owner unchanged', async () => {
+    for (const [role, implicit, shown] of [
+      ['admin', null, false],
+      ['member', 'lead', true],
+      ['owner', 'lead', true],
+    ] as const) {
+      const h = await open('/my-day', privatePlateStub(role, implicit));
+      try {
+        // The cards live in the drawer (LAI-511): the header's button opens them.
+        await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+        await h.page.locator('[data-beside-button]').click();
+        await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
+        if (shown) {
+          await h.page
+            .getByText('Private Observatory migration', { exact: true })
+            .waitFor({ timeout: 20_000 });
+        }
+        assert.equal(
+          await h.page.getByText('Private Observatory migration', { exact: true }).count(),
+          shown ? 1 : 0,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+  });
+
+  void test('the drawer beside the page on a laptop, a sheet on a phone, in both themes, never sideways', async () => {
     const h = await open('/my-day', STUB);
     try {
+      // The cards live in the drawer (LAI-511): the header's button opens them.
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-beside-button]').click();
       await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
       for (const theme of ['Light', 'Dark']) {
         await h.page.setViewportSize({ width: 1440, height: 900 });
@@ -305,20 +445,32 @@ void describe('My day after the reference', () => {
             { timeout: 5000 },
           );
           const m = await h.page.evaluate(() => {
-            const main = document.querySelector('.myday-main')?.getBoundingClientRect();
-            const side = document.querySelector('.myday-side')?.getBoundingClientRect();
+            const main = document.querySelector('.myday-column')?.getBoundingClientRect();
+            const drawer = document.querySelector('[data-myday-drawer]');
+            const side = drawer?.getBoundingClientRect();
             return {
               overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-              main: main === undefined ? null : { x: main.x, bottom: main.bottom },
-              side: side === undefined ? null : { x: side.x, y: side.y },
+              main: main === undefined ? null : { x: main.x, right: main.right },
+              side:
+                drawer === null || drawer === undefined || side === undefined
+                  ? null
+                  : { x: side.x, bottom: side.bottom, position: getComputedStyle(drawer).position },
             };
           });
           assert.equal(m.overflow, 0, `${theme} at ${String(width)}: page scrolls sideways`);
           assert.ok(m.main !== null && m.side !== null);
           if (width >= 1366) {
-            assert.ok(m.side.x > m.main.x + 200, `${theme} at ${String(width)}: not two columns`);
+            assert.ok(
+              m.side.x >= m.main.right - 1,
+              `${theme} at ${String(width)}: the drawer is not beside the page`,
+            );
           } else {
-            assert.ok(m.side.y >= m.main.bottom - 1, `${theme} at 390: the column is not below`);
+            assert.equal(m.side.position, 'fixed', `${theme} at 390: the drawer is not a sheet`);
+            assert.equal(
+              Math.round(m.side.bottom),
+              height,
+              `${theme} at 390: the sheet is not at the bottom`,
+            );
           }
         }
       }
@@ -369,6 +521,8 @@ void describe('times and durations say their units (LAI-830)', () => {
   void test('a 12-hour clock with AM/PM, and minutes and hours in words', async () => {
     const h = await open('/my-day', { ...STUB, '/api/v1/me/time': OWNER_DAY });
     try {
+      await h.page.locator('[data-day-tab="confirmed"]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-day-tab="confirmed"]').click();
       const confirmed = h.page.locator('.myday-entries');
       await confirmed.locator('[data-entry="o1"]').waitFor({ timeout: 20_000 });
       const row = (id: string) => confirmed.locator(`[data-entry="${id}"]`);
@@ -383,24 +537,35 @@ void describe('times and durations say their units (LAI-830)', () => {
       // The header total: was `entries · 1:09`.
       assert.equal(
         await confirmed.locator('[data-confirmed-caption]').innerText(),
-        '4 entries · 1 h 9 min',
+        '4 · 1 h 9 min',
       );
 
       // The drafted list, Confirm day, the week strip and the bar say the same.
+      await h.page.locator('[data-day-tab="review"]').click();
       const drafted = h.page.locator('[data-draft="d1"]');
+      await drafted.waitFor({ timeout: 5_000 });
       assert.equal(await drafted.locator('.myday-row-time').innerText(), '8:40–10:15 AM');
       assert.equal(await drafted.locator('.myday-row-minutes').innerText(), '1 h 35 min');
       assert.match(
         await h.page.locator('.screen-page .myday-chip-primary').innerText(),
-        /Confirm day · 1 h 35 min/,
+        /Confirm day\s+1 h 35 min/,
       );
       // Today's cell: 75 confirmed and 95 drafted, was `2:50`.
       assert.equal(
         await h.page.locator(`.myday-week-day[data-day="${TODAY}"] .myday-week-figure`).innerText(),
         '2 h 50 min',
       );
+      // Every hour on the 12-hour clock — but not the one under the now pill,
+      // which hides it (LAI-888), so no one hour is asked for by name but 8 AM.
       const ticks = await h.page.locator('.dayline-axis-hour').allInnerTexts();
-      assert.ok(ticks.includes('8 AM') && ticks.includes('12 PM'), `ticks: ${ticks.join(', ')}`);
+      assert.ok(
+        ticks.includes('8 AM') && ticks.some((t) => t.endsWith(' PM')),
+        `ticks: ${ticks.join(', ')}`,
+      );
+      assert.ok(
+        ticks.every((t) => /^\d{1,2} [AP]M$/.test(t)),
+        `a tick is not on the 12-hour clock: ${ticks.join(', ')}`,
+      );
 
       // Nothing on the page is a duration or a clock in the old form.
       const text = await h.page.locator('.myday-main').innerText();
@@ -418,11 +583,18 @@ void describe('times and durations say their units (LAI-830)', () => {
   void test('a typed length says what it understood before anything is saved', async () => {
     const h = await open('/my-day', { ...STUB, '/api/v1/me/time': OWNER_DAY });
     try {
-      const add = h.page.locator('form[aria-label="Add time"]');
-      await add.waitFor({ timeout: 20_000 });
-      // The chips are one click; any other length is typed, and read back.
-      await add.getByRole('button', { name: 'Other…' }).click();
-      const howLong = add.getByLabel('How long, typed');
+      // The inspector names the block on the 12-hour clock (LAI-831: Split in
+      // two cuts at the middle, so no time is typed for it), and its length,
+      // typed, is read back before anything is saved (the form under the list
+      // went with LAI-502).
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('[data-select="d1"]').click();
+      const panel = h.page.locator('[data-inspector-for="d1"]');
+      await panel.waitFor({ timeout: 10_000 });
+      // The head's line (LAI-504): when, how long, where from.
+      assert.match(await panel.locator('.editor-sub').innerText(), /^8:40–10:15 AM · 1 h 35 min/);
+      const howLong = panel.getByLabel('Length, typed');
       for (const [typed, read] of [
         ['45', '45 min'],
         ['45m', '45 min'],
@@ -431,20 +603,94 @@ void describe('times and durations say their units (LAI-830)', () => {
       ] as const) {
         await howLong.fill(typed);
         assert.equal(
-          await add.locator('[data-understood]').innerText(),
+          await panel.locator('[data-understood]').innerText(),
           `Reads as ${read}`,
           `"${typed}" is not shown as understood`,
         );
       }
-      // The inspector names the block on the 12-hour clock (LAI-831: Split in
-      // two cuts at the middle, so no time is typed for it).
-      await h.page.locator('[data-select="d1"]').click();
-      assert.match(
-        await h.page.locator('[data-inspector-for="d1"] .inspector-range').innerText(),
-        /^8:40–10:15 AM$/,
-      );
       // Nothing was sent while typing.
       assert.equal(h.calls.filter((c) => c.method !== 'GET').length, 0, 'typing saved something');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a length typed while the wheel waits to settle is kept as typed (LAI-599)', async () => {
+    // The case above failed on CI reading `1 h 45 min` for `1h 30m`. Typing
+    // `45` scrolls the wheel's columns, and each scroll arms a settle timer
+    // (`SETTLE_MS` in Wheel.tsx). `1h 30m` typed in the frame before that timer
+    // is due moves the Hours column, and the timer can fire before the move's
+    // own scroll is delivered: it then picked the new hour against the old
+    // minutes and wrote that over the field. On a real clock the window is
+    // about a millisecond wide, so this holds the settle timers and fires them
+    // at exactly that moment — after the typed change has moved the column,
+    // before any frame can deliver its scroll.
+    const h = await open('/my-day', { ...STUB, '/api/v1/me/time': OWNER_DAY });
+    try {
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('[data-select="d1"]').click();
+      const panel = h.page.locator('[data-inspector-for="d1"]');
+      await panel.waitFor({ timeout: 10_000 });
+      const howLong = panel.getByLabel('Length, typed');
+      await howLong.fill('1h 35m');
+      await panel.locator('[data-wheel-col="Hours"]').waitFor({ timeout: 5_000 });
+      const seen = await h.page.evaluate(async () => {
+        const input = document.querySelector<HTMLInputElement>('[aria-label="Length, typed"]');
+        const hours = document.querySelector<HTMLElement>('[data-wheel-col="Hours"]');
+        if (input === null || hours === null) return { setup: 'no field or wheel' };
+        // Typed as a person types, over what is there: the field keeps the focus.
+        const type = (text: string): void => {
+          input.select();
+          document.execCommand('insertText', false, text);
+        };
+        const frame = (): Promise<void> =>
+          new Promise((r) => {
+            requestAnimationFrame(() => {
+              setTimeout(r, 0);
+            });
+          });
+        // Hold every settle timer (the wheel's only 90 ms one) instead of running it.
+        const held = new Map<number, () => void>();
+        const realSet = window.setTimeout.bind(window);
+        const realClear = window.clearTimeout.bind(window);
+        let next = 1_000_000;
+        window.setTimeout = ((fn: () => void, ms?: number, ...rest: unknown[]) => {
+          if (ms !== 90) return realSet(fn, ms, ...rest);
+          held.set(++next, fn);
+          return next;
+        }) as typeof window.setTimeout;
+        window.clearTimeout = ((id?: number) => {
+          if (id !== undefined && held.delete(id)) return;
+          realClear(id);
+        }) as typeof window.clearTimeout;
+        try {
+          // Its own scroll, delivered: React's handler, attached first, has armed the timer.
+          const scrolled = new Promise<boolean>((r) => {
+            hours.addEventListener('scroll', () => r(true), { once: true });
+            realSet(() => r(false), 5_000);
+          });
+          type('45');
+          if (!(await scrolled) || held.size === 0) {
+            return { setup: `45 did not scroll Hours and arm its settle (${String(held.size)})` };
+          }
+          const at45 = hours.scrollTop;
+          type('1h 30m');
+          // React commits a typed change in a microtask; no frame runs in between.
+          for (let i = 0; i < 10 && hours.scrollTop === at45; i++) await Promise.resolve();
+          if (hours.scrollTop === at45) return { setup: '1h 30m did not move Hours' };
+          for (const fire of [...held.values()]) fire();
+          held.clear();
+        } finally {
+          window.setTimeout = realSet;
+          window.clearTimeout = realClear;
+        }
+        await frame();
+        await new Promise((r) => setTimeout(r, 250));
+        return { value: input.value };
+      });
+      assert.deepEqual(seen, { value: '1h 30m' }, 'the typed length was overwritten');
+      assert.equal(await panel.locator('[data-understood]').innerText(), 'Reads as 1 h 30 min');
     } finally {
       await h.close();
     }

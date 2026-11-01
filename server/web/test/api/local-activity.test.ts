@@ -51,17 +51,17 @@ void describe('the developer’s requests (§6.4)', () => {
     assert.ok(calls[0]?.url.endsWith('/api/v1/me/activity-sharing'), calls[0]?.url);
   });
 
-  void test('changes it with PUT, sending only what changed', async () => {
-    const calls = stub({ enabled: true });
-    await setActivitySharing({ enabled: true });
+  void test('changes the scope with PUT, and only the scope (D-102 amended, LAI-964)', async () => {
+    const calls = stub({ scope: 'laika-repos' });
     await setActivitySharing({ scope: 'laika-repos' });
     assert.deepEqual(
       calls.map((c) => [c.method, c.body]),
-      [
-        ['PUT', { enabled: true }],
-        ['PUT', { scope: 'laika-repos' }],
-      ],
+      [['PUT', { scope: 'laika-repos' }]],
     );
+    // `enabled` is the organisation's now; the server refuses it 403, so the client cannot send it.
+    // @ts-expect-error — not a field of the change any more.
+    const refused: Parameters<typeof setActivitySharing>[0] = { enabled: true };
+    void refused;
     assert.ok(calls[0]?.url.endsWith('/api/v1/me/activity-sharing'));
   });
 

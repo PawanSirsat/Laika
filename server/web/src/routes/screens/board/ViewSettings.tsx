@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ALWAYS_ON, FIELD_ICONS, FIELD_KEYS, FIELD_LABELS } from './card-fields.ts';
 import { type ColumnWidth, type Density, type ViewPreferences } from './view-preferences.ts';
@@ -14,6 +14,13 @@ export interface ViewSettingsProps {
   /** `null` for "never". Project-wide, so it is not in `preferences`. */
   readonly hideDoneAfterDays: number | null;
   readonly onHideDoneChange?: ((days: number | null) => void) | undefined;
+  /**
+   * Where the space's own settings live (D-103, LAI-977) — visibility, members
+   * and access moved there from this panel, which keeps view options only.
+   * `undefined` until the board knows its space.
+   */
+  readonly spaceSettingsHref?: string | undefined;
+  readonly onOpenSpaceSettings?: ((href: string) => void) | undefined;
   readonly group: string;
   readonly onGroupChange: (group: string) => void;
   /**
@@ -86,6 +93,8 @@ export function ViewSettings({
   onClose,
   hideDoneAfterDays,
   onHideDoneChange,
+  spaceSettingsHref,
+  onOpenSpaceSettings,
   group,
   onGroupChange,
   filters,
@@ -121,7 +130,12 @@ export function ViewSettings({
         aria-label="View settings"
         tabIndex={-1}
         ref={panel}
-        style={{ top: `${String(anchor.top)}px`, right: `${String(anchor.right)}px` }}
+        style={
+          {
+            top: `${String(anchor.top)}px`,
+            '--vs-right': `${String(anchor.right)}px`,
+          } as CSSProperties
+        }
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.stopPropagation();
@@ -203,7 +217,7 @@ export function ViewSettings({
         <section className="vs-section">
           <h3 className="vs-label">Hide done work items</h3>
           {onHideDoneChange === undefined ? (
-            <p className="vs-note">Only a project lead can change this.</p>
+            <p className="vs-note">Only a space admin can change this.</p>
           ) : (
             <div className="vs-radios">
               {HIDE_DONE.map((option) => (
@@ -231,6 +245,30 @@ export function ViewSettings({
             deleted.
           </p>
         </section>
+
+        {spaceSettingsHref !== undefined && (
+          <section className="vs-section vs-space-settings">
+            {/*
+              **A link, not the controls** (D-103): visibility, who may create
+              tasks, agents and members are the space's settings, and they live
+              on its settings page — this panel is how *this board* looks.
+            */}
+            <a
+              className="vs-settings-link"
+              href={spaceSettingsHref}
+              onClick={(event) => {
+                if (onOpenSpaceSettings === undefined) return;
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                onOpenSpaceSettings(spaceSettingsHref);
+              }}
+            >
+              Visibility, members and access <span aria-hidden="true">→</span>
+              <span className="visually-hidden"> — open Space settings</span>
+            </a>
+            <p className="vs-note">These are the space&rsquo;s settings, on its own page.</p>
+          </section>
+        )}
 
         {!forList && (
           <>

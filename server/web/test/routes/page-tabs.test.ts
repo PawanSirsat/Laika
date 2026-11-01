@@ -11,19 +11,31 @@ import {
   ORGANISATION_TABS,
   currentTab,
   inboxCount,
+  refusedTab,
   tabHref,
   visibleTabs,
 } from '../../src/routes/page-tabs.ts';
 import { permissionHolder } from '../../src/routes/nav-permissions.ts';
 
-const admin = permissionHolder('admin');
-const member = permissionHolder('member');
+/**
+ * What `GET /permissions` lists under the default grants (D-102 rule 6) — the
+ * tabs decide from the server's actions, never from a role (LAI-970).
+ */
+const ACTIONS: Readonly<Record<string, readonly string[]>> = {
+  owner: ['org.read', 'audit_log.export', 'token.list_any', 'profile.read'],
+  admin: ['org.read', 'audit_log.export', 'token.list_any', 'profile.read'],
+  member: ['org.read'],
+  viewer: ['org.read'],
+};
+const as = (role: string) => permissionHolder(ACTIONS[role]);
+const admin = as('admin');
+const member = as('member');
 
 void describe('the tabs are the owner’s grouping', () => {
-  void test('Inbox is Review then Unlisted work', () => {
+  void test('Inbox is Review, Hand-offs, then Unlisted work', () => {
     assert.deepEqual(
       INBOX_TABS.map((t) => t.label),
-      ['Review', 'Unlisted work'],
+      ['Review', 'Hand-offs', 'Unlisted work'],
     );
   });
 
@@ -34,10 +46,10 @@ void describe('the tabs are the owner’s grouping', () => {
     );
   });
 
-  void test('Organisation is Overview, People, Integrations, Security', () => {
+  void test('Organisation is Overview, People, Roles & permissions, Integrations, Security, Activity', () => {
     assert.deepEqual(
       ORGANISATION_TABS.map((t) => t.label),
-      ['Overview', 'People', 'Integrations', 'Security'],
+      ['Overview', 'People', 'Roles & permissions', 'Integrations', 'Security', 'Activity'],
     );
   });
 
@@ -53,29 +65,48 @@ void describe('a gated tab is absent, not disabled', () => {
   void test('Unlisted work is offered to an admin and not to a member (LAI-754’s gate)', () => {
     assert.deepEqual(
       visibleTabs(INBOX_TABS, admin).map((t) => t.id),
-      ['review', 'unlisted'],
+      ['review', 'handoffs', 'unlisted'],
     );
     assert.deepEqual(
       visibleTabs(INBOX_TABS, member).map((t) => t.id),
-      ['review'],
+      ['review', 'handoffs'],
     );
   });
 
   void test('Security — everyone’s tokens — is an owner’s or an admin’s', () => {
-    assert.ok(
-      visibleTabs(ORGANISATION_TABS, permissionHolder('owner')).some((t) => t.id === 'security'),
-    );
+    assert.ok(visibleTabs(ORGANISATION_TABS, as('owner')).some((t) => t.id === 'security'));
     assert.ok(visibleTabs(ORGANISATION_TABS, admin).some((t) => t.id === 'security'));
     assert.ok(!visibleTabs(ORGANISATION_TABS, member).some((t) => t.id === 'security'));
-    assert.ok(
-      !visibleTabs(ORGANISATION_TABS, permissionHolder('viewer')).some((t) => t.id === 'security'),
-    );
+    assert.ok(!visibleTabs(ORGANISATION_TABS, as('viewer')).some((t) => t.id === 'security'));
+  });
+
+  void test('Roles & permissions is everyone’s — the endpoint is org.read (LAI-950)', () => {
+    for (const role of ['owner', 'admin', 'member', 'viewer']) {
+      assert.ok(
+        visibleTabs(ORGANISATION_TABS, as(role)).some((t) => t.id === 'roles'),
+        `${role} is not offered Roles & permissions`,
+      );
+    }
+  });
+
+  void test('Activity — the organisation history — is an owner’s or an admin’s (LAI-951)', () => {
+    // The gate `GET /activity/history` uses: §3.1 `audit_log.export`.
+    assert.equal(ORGANISATION_TABS.find((t) => t.id === 'activity')?.requires, 'audit_log.export');
+    for (const role of ['owner', 'admin']) {
+      assert.ok(
+        visibleTabs(ORGANISATION_TABS, as(role)).some((t) => t.id === 'activity'),
+        role,
+      );
+    }
+    for (const role of ['member', 'viewer']) {
+      assert.ok(!visibleTabs(ORGANISATION_TABS, as(role)).some((t) => t.id === 'activity'), role);
+    }
   });
 
   void test('no predicate hides every gated tab rather than revealing it', () => {
     assert.deepEqual(
       visibleTabs(INBOX_TABS).map((t) => t.id),
-      ['review'],
+      ['review', 'handoffs'],
     );
   });
 
@@ -100,6 +131,29 @@ void describe('which tab an address opens', () => {
 
   void test('the first, when it names one this reader is not offered', () => {
     assert.equal(currentTab(INBOX_TABS, new URLSearchParams('tab=unlisted'), member), 'review');
+  });
+});
+
+void describe('an address naming a tab the reader may not open', () => {
+  void test('Activity says so, rather than landing somewhere else (LAI-951)', () => {
+    const params = new URLSearchParams('tab=activity');
+    assert.equal(refusedTab(ORGANISATION_TABS, params, member)?.id, 'activity');
+    // No predicate holds nothing, so it is refused too — never revealed.
+    assert.equal(refusedTab(ORGANISATION_TABS, params)?.id, 'activity');
+    assert.equal(refusedTab(ORGANISATION_TABS, params, admin), undefined);
+  });
+
+  void test('Security and Unlisted work keep landing on the first tab, as they did', () => {
+    assert.equal(
+      refusedTab(ORGANISATION_TABS, new URLSearchParams('tab=security'), member),
+      undefined,
+    );
+    assert.equal(refusedTab(INBOX_TABS, new URLSearchParams('tab=unlisted'), member), undefined);
+  });
+
+  void test('nothing is refused for a tab that does not exist, or none named', () => {
+    assert.equal(refusedTab(ORGANISATION_TABS, new URLSearchParams('tab=nope'), member), undefined);
+    assert.equal(refusedTab(ORGANISATION_TABS, new URLSearchParams(''), member), undefined);
   });
 });
 
@@ -130,5 +184,12 @@ void describe('the Inbox count is the sum of its tabs', () => {
 
   void test('zero is zero — the sidebar draws no badge for it', () => {
     assert.equal(inboxCount(0, 0), 0);
+  });
+
+  void test('hand-offs waiting on the reader add in (LAI-550)', () => {
+    assert.equal(inboxCount(3, 4, 2), 9);
+    assert.equal(inboxCount(3, undefined, 2), 5);
+    assert.equal(inboxCount(undefined, undefined, 2), 2);
+    assert.equal(inboxCount(3, 4, undefined), 7);
   });
 });
