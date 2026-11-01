@@ -18,6 +18,10 @@ import {
   setAgentGrants,
   updateAgent,
 } from '../../services/agents.ts';
+import {
+  getAgentProjectAccess,
+  type ProjectAccessView,
+} from '../../services/agent-project-access.ts';
 import { listOwnWorkRequests } from '../../services/work-requests.ts';
 import { listInbox } from '../../services/handoffs.ts';
 import {
@@ -124,6 +128,9 @@ const ClientReportBody = strictObject({
   capabilities: z.array(z.enum(CLIENT_CAPABILITIES)).max(MAX_CAPABILITIES),
   harness_version: VersionString.optional(),
 });
+
+/** `GET /agents/:id/project-access` (§6.4, LAI-1052): one project, by slug. */
+const ProjectAccessQuery = z.object({ project: z.string().trim().min(1).max(200) });
 
 const RotateBody = strictObject({
   token_id: z.string().min(1).max(64),
@@ -282,6 +289,16 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
     const actor = requireActor(c);
     const body = parseBody(GrantsBody, await c.req.json().catch(() => null));
     return c.json(setAgentGrants(sqlite, db, actor, c.req.param('id'), grantsOf(body.grants)));
+  });
+
+  // One of your tools against one project, signed in (LAI-1052): your
+  // membership and its grant, separately. Changing the grant is the PUT above.
+  app.get('/:id/project-access', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(ProjectAccessQuery, c.req.query());
+    return c.json<ProjectAccessView>(
+      getAgentProjectAccess(db, actor, c.req.param('id'), query.project),
+    );
   });
 
   app.post('/:id/rotate-token', async (c) => {

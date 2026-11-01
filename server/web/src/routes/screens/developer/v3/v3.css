@@ -193,3 +193,112 @@
 .dev-v3-help {
   margin: 0;
 }
+
+/* ------------------------------------------------------- project setup (LAI-1052) */
+
+.dev-setup-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-4) 0 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.dev-setup-legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.dev-setup-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.dev-setup-facts div {
+  display: contents;
+}
+
+.dev-setup-facts dt {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.dev-setup-facts dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.dev-setup-grants {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.dev-setup-grant {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.dev-setup-grant[data-disabled='true'] {
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
+.dev-setup-grant input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dev-setup-grant-why {
+  flex-basis: 100%;
+  padding-left: 1.5rem;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.dev-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.dev-setup-manual summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.dev-setup-manual[open] summary {
+  margin-bottom: var(--space-2);
+}
+
+@media (max-width: 40rem) {
+  .dev-setup-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0 var(--space-2);
+  }
+
+  .dev-setup-facts dd {
+    margin-bottom: var(--space-2);
+  }
+}
+
+.dev-setup-actions .bar-control[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

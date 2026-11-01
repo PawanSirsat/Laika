@@ -3769,6 +3769,11 @@ POST   /api/v1/checkpoints/:id/refs          → 201 { ref, revision, verificati
                                              pushed (`laika agent checkpoint reverify`, D-116 item 7); task.checkpoint.retag
 GET    /api/v1/agents/:id/checkpoint-consent → { given, given_by_user_id, given_at, withdrawn_at } (§4.75; the owner, or the agent's own token)
 PUT    /api/v1/agents/:id/checkpoint-consent DELETE .../checkpoint-consent — give / withdraw (agent.manage_own, session only)
+GET    /api/v1/agents/:id/project-access ?project=<slug> → { agent_id, project: { id, slug, name, prefix, agents_allowed },
+                                             member: { role, can_read, can_write }, grant: { scope|null }, effective: none|read_only|full,
+                                             can_grant: { max: read_only|full|null, reason } } — the owner's membership and the tool's
+                                             grant, separately (Project setup, LAI-1052); agent.read_own, session only. Another
+                                             owner's agent 404 as a missing one; an unreadable project the slug's 404
 POST   /api/v1/tasks/:id/handoff-offers      body { idempotency_key, to_agent_id, checkpoint_id, reason } → 201 offer;
                                              pauses the caller's live claim (§4.73, LAI-546)
 GET    /api/v1/tasks/:id/handoff-offers      every offer on the task, newest first, work requests included
