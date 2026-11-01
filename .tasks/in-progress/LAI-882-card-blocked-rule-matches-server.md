@@ -2,11 +2,12 @@
 id: LAI-882
 title: 'A card, a List row, the Blocked-only filter and the Timeline call a cancelled blocker met; the server and the board''s BLK do not'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p3
 depends-on: [LAI-819]
 discovered-from: LAI-819
-status: backlog
+status: in-progress
+started: 2026-11-01T23:25:00+02:00
 ---
 
 ## Goal
