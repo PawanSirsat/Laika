@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: [LAI-1045]
 started: 2026-11-02T12:00:00+05:30
-status: in-progress
+status: review
+finished: 2026-11-02T13:05:00+05:30
 ---
 
 Slice C1 of the plan `docs/proposals/LAI-1042-developer-access-v3-plan.md`
@@ -55,33 +56,33 @@ explicitly, and the PR targets `LAI-1045-devices-migration` until #202 merges.
 
 ## Acceptance criteria
 
-- [ ] `0071` adds `device_pairing_requests` and rebuilds no table. Only the
+- [x] `0071` adds `device_pairing_requests` and rebuilds no table. Only the
       code's hash is stored.
-- [ ] Create is browser-session only and owner-bound. It returns a code of
+- [x] Create is browser-session only and owner-bound. It returns a code of
       about 8 characters, valid for 10 minutes. There are at most 5 open
       requests per owner.
-- [ ] A device claims once, with a fresh Ed25519 public key. Claim is
+- [x] A device claims once, with a fresh Ed25519 public key. Claim is
       unauthenticated and rate-limited in its own bucket.
-- [ ] Unknown, malformed, expired and finished codes answer byte-identical
+- [x] Unknown, malformed, expired and finished codes answer byte-identical
       `404`s. A code still live but claimed already is `409`
       `pairing_already_claimed`, as plan §E.1 says, so the real device learns
       it was raced.
-- [ ] Of two concurrent claims, exactly one wins.
-- [ ] The browser sees the fingerprint. Approve requires the fingerprint it
+- [x] Of two concurrent claims, exactly one wins.
+- [x] The browser sees the fingerprint. Approve requires the fingerprint it
       saw: a mismatch is `409`. Deny is terminal.
-- [ ] Complete verifies the signature over the server's nonce:
+- [x] Complete verifies the signature over the server's nonce:
       - before approval it is `202`;
       - a wrong signature is `401`;
       - a replay is `409`.
-- [ ] The result is a new paired device, or the key attached to the owner's
+- [x] The result is a new paired device, or the key attached to the owner's
       existing imported device, when the browser chose that explicitly.
-- [ ] A test asserts that the `tokens` row count is unchanged through the
+- [x] A test asserts that the `tokens` row count is unchanged through the
       whole pairing.
-- [ ] Another owner's request is a byte-identical `404`.
-- [ ] Token actors are refused with `session_required`.
-- [ ] Brute force reaches `429` with `Retry-After`.
-- [ ] No new activity verb and no new §3.1 action.
-- [ ] SPEC rows are written.
+- [x] Another owner's request is a byte-identical `404`.
+- [x] Token actors are refused with `session_required`.
+- [x] Brute force reaches `429` with `Retry-After`.
+- [x] No new activity verb and no new §3.1 action.
+- [x] SPEC rows are written.
 - [ ] CI is green on the PR.
 
 ## Dependencies
