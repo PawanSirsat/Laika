@@ -8,6 +8,7 @@ import {
   type AgentCredential,
   asLost,
   beatOnce,
+  credentialFingerprint,
   type Deps,
   endSession,
   findHarness,
@@ -49,12 +50,15 @@ import {
 import {
   type EventDeps,
   mutate as mutateEvents,
+  noteAgent,
   POLL_EVERY_TOOL_CALLS,
   presented,
   readStore,
   releaseStreamSlot,
   renderNotices,
   runEventStream,
+  storeKey,
+  type StoreKey,
   syncOnce,
   takeStreamSlot,
 } from './agent-events.ts';
@@ -628,14 +632,39 @@ export function eventDeps(io: AgentIo): EventDeps {
   };
 }
 
+/**
+ * The session this credential speaks for, or `undefined` (LAI-554 review). A
+ * session file the board opened on **another** credential — a login since
+ * changed — is another identity's: its `session_id` would be refused on every
+ * acknowledgement, and its `agent_id` names the wrong agent. One an older
+ * helper opened says nothing of its credential, and is treated the same.
+ */
+export function ownSession(
+  state: SessionState | undefined,
+  credential: AgentCredential,
+): SessionState | undefined {
+  return state?.credential_fp === credentialFingerprint(credential) ? state : undefined;
+}
+
 /** What a hook prints, and the events whose notice it carries — presented only once printed. */
 export interface HookResult {
   readonly out: string;
   readonly present?: {
+    readonly key: StoreKey;
     readonly ids: readonly string[];
+    /** How many dropped notices the printed block told of. */
+    readonly dropped: number;
     readonly sessionId: string | undefined;
     readonly credential: AgentCredential;
   };
+}
+
+interface EventNotices {
+  readonly key: StoreKey;
+  readonly text: string;
+  readonly ids: string[];
+  readonly dropped: number;
+  readonly sessionId: string | undefined;
 }
 
 /**
@@ -649,24 +678,33 @@ async function eventNotices(
   harness: Harness,
   state: SessionState | undefined,
   credential: AgentCredential,
-): Promise<{ text: string; ids: string[] }> {
-  const sessionId = state?.status === 'live' ? state.session_id : undefined;
+): Promise<EventNotices> {
+  // The store is this credential's; the session counts only if it is too.
+  const key = storeKey(harness, credential);
+  const mine = ownSession(state, credential);
+  const sessionId = mine?.status === 'live' ? mine.session_id : undefined;
+  if (mine?.agent_id !== undefined) noteAgent(io.home, key, mine.agent_id);
   let poll = event === 'session-start' || event === 'prompt';
   if (event === 'tool') {
-    const calls = mutateEvents(io.home, harness, (s) => (s.tool_calls += 1));
+    const calls = mutateEvents(io.home, key, (s) => (s.tool_calls += 1));
     poll = calls % POLL_EVERY_TOOL_CALLS === 0;
   }
   if (poll) {
     const outcome = await syncOnce(
       eventDeps(io),
-      harness,
+      key,
       credential,
       sessionId,
       event === 'session-start' ? 3000 : 2000,
     );
     if (outcome !== 'ok') log(io.home, `events ${harness} sync at ${event}: ${outcome}`);
   }
-  return renderNotices(readStore(io.home, harness).records, state?.agent_id);
+  const store = readStore(io.home, key);
+  return {
+    key,
+    sessionId,
+    ...renderNotices(store.records, mine?.agent_id, store.dropped_unshown),
+  };
 }
 
 /**
@@ -753,7 +791,7 @@ export async function hookResult(
     delete state.notice;
     writeState(io.home, state);
   }
-  let present: { text: string; ids: string[] } = { text: '', ids: [] };
+  let present: EventNotices | undefined;
   if (eventsEnabled(io.env)) {
     try {
       present = await eventNotices(io, event, harness, state, credential);
@@ -762,17 +800,20 @@ export async function hookResult(
     }
   }
   // Shown whole or not at all: a notice cut by the overall cap is not presented.
-  const withEvents = [...notes, ...(present.text === '' ? [] : [present.text])].join('\n\n');
-  const shown = present.text !== '' && withEvents.length <= MAX_CONTEXT;
+  const block = present?.text ?? '';
+  const withEvents = [...notes, ...(block === '' ? [] : [block])].join('\n\n');
+  const shown = present !== undefined && block !== '' && withEvents.length <= MAX_CONTEXT;
   const text = shown ? withEvents : notes.join('\n\n');
   if (text === '') return out('');
   return {
     out: contextOutput(event, text),
-    ...(shown
+    ...(shown && present !== undefined
       ? {
           present: {
+            key: present.key,
             ids: present.ids,
-            sessionId: state?.status === 'live' ? state.session_id : undefined,
+            dropped: present.dropped,
+            sessionId: present.sessionId,
             credential,
           },
         }
@@ -936,17 +977,20 @@ async function child(
   writeState(io.home, state);
   // One event stream per harness (LAI-554), in whichever watcher takes the slot;
   // it stops with the watcher.
+  // Into its own credential's store: a watcher started before a login
+  // changed keeps writing where that identity's notices belong.
   const streaming = new AbortController();
-  const streams = eventsEnabled(io.env) && takeStreamSlot(io.home, harness, self);
+  const events = storeKey(harness, credential);
+  const streams = eventsEnabled(io.env) && takeStreamSlot(io.home, events, self);
   process.on('SIGTERM', () => {
-    if (streams) releaseStreamSlot(io.home, harness, self);
+    if (streams) releaseStreamSlot(io.home, events, self);
     process.exit(0);
   });
   const stream = streams
-    ? runEventStream(eventDeps(io), harness, credential, {
+    ? runEventStream(eventDeps(io), events, credential, {
         signal: streaming.signal,
         sessionId: () => {
-          const current = readState(path);
+          const current = ownSession(readState(path), credential);
           return current?.status === 'live' ? current.session_id : undefined;
         },
       }).then((outcome) => {
@@ -956,7 +1000,7 @@ async function child(
   const outcome = await runWatcher(d, path, credential, self, heartbeatIntervalMs(io.env));
   streaming.abort();
   await stream.catch(() => undefined);
-  if (streams) releaseStreamSlot(io.home, harness, self);
+  if (streams) releaseStreamSlot(io.home, events, self);
   log(io.home, `watcher ${state.session_id ?? ''} stopped: ${outcome}`);
   return 0;
 }
@@ -980,10 +1024,12 @@ export async function agent(argv: readonly string[], io: AgentIo = CONSOLE): Pro
         if (result.present !== undefined) {
           await presented(
             eventDeps(io),
-            harness,
+            result.present.key,
             result.present.credential,
             result.present.ids,
             result.present.sessionId,
+            2000,
+            result.present.dropped,
           );
         }
       }

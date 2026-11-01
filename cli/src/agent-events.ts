@@ -1,9 +1,10 @@
-import { mkdirSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
   type AgentCredential,
   callBoard,
+  credentialFingerprint,
   describe,
   type Fetch,
   type Harness,
@@ -77,9 +78,20 @@ export const NOTICE_MAX = 300;
 /** How often a `PostToolUse` hook polls, in tool calls. */
 export const POLL_EVERY_TOOL_CALLS = 10;
 
-/** Records kept, and event ids remembered for de-duplication. */
-const MAX_RECORDS = 200;
-const MAX_SEEN = 1000;
+/**
+ * Presented records kept for `laika agent events`, newest last. **Only a
+ * presented record whose presentation the board has recorded is ever trimmed.**
+ */
+export const MAX_SHOWN = 200;
+/**
+ * Records not yet presented, kept whole up to this. Past it — a helper that
+ * receives and no hook that shows — the oldest are dropped **and counted** in
+ * {@link EventStore.dropped_unshown}, and the count is itself a notice line,
+ * presented like any other (see {@link renderNotices}). Never silently.
+ */
+export const MAX_PENDING = 1000;
+/** Event ids remembered for de-duplication: more than both of the above together. */
+const MAX_SEEN = 2 * (MAX_SHOWN + MAX_PENDING);
 
 /** §4.76's agent-event verbs: a closed list. Anything else is not rendered. */
 export const EVENT_TYPES = [
@@ -141,9 +153,29 @@ export interface EventRecord {
   readonly at: number;
 }
 
+/**
+ * Whose store this is: one per harness **and credential** (LAI-554). Every
+ * function that reads or writes a store takes one, so a store cannot be
+ * reached without saying whose it is.
+ */
+export interface StoreKey {
+  readonly harness: Harness;
+  /** {@link credentialFingerprint} of the credential the events arrive on. */
+  readonly fp: string;
+}
+
+export const storeKey = (harness: Harness, credential: AgentCredential): StoreKey => ({
+  harness,
+  fp: credentialFingerprint(credential),
+});
+
 export interface EventStore {
   readonly version: 1;
   readonly harness: Harness;
+  /** {@link StoreKey.fp}: a file whose `fp` is not its key's is another identity's, and not read. */
+  readonly fp: string;
+  /** The registered agent this credential is, once a session opened on it has said so. */
+  agent_id?: string;
   /** The last frame id the stream saw: its `Last-Event-ID` on reconnect. */
   stream_cursor?: number;
   records: EventRecord[];
@@ -158,23 +190,44 @@ export interface EventStore {
   refused_at?: number;
   stream_pid?: number;
   stream_started?: string;
+  /** Not-yet-presented records dropped past {@link MAX_PENDING}, not yet told to the agent. */
+  dropped_unshown?: number;
 }
 
-export const storePath = (home: string, harness: Harness): string =>
-  join(sessionsDir(home), `events-${harness}.json`);
+/**
+ * One file per harness and credential: `events-<harness>-<fp>.json`. A login
+ * that changes identity reads and writes a different file, and **the old one
+ * is never deleted** — its unseen notices are still there when that login
+ * returns. (A fingerprint is 16 hex: it cannot name a path outside the folder.)
+ */
+export const storePath = (home: string, key: StoreKey): string =>
+  join(sessionsDir(home), `events-${key.harness}-${key.fp}.json`);
 
-function emptyStore(harness: Harness): EventStore {
-  return { version: 1, harness, records: [], seen: [], context_seen: {}, tool_calls: 0 };
+function emptyStore(key: StoreKey): EventStore {
+  return {
+    version: 1,
+    harness: key.harness,
+    fp: key.fp,
+    records: [],
+    seen: [],
+    context_seen: {},
+    tool_calls: 0,
+  };
 }
 
-export function readStore(home: string, harness: Harness): EventStore {
-  const value = readJson(storePath(home, harness));
-  if (!isRecord(value) || value.version !== 1 || value.harness !== harness) {
-    return emptyStore(harness);
+export function readStore(home: string, key: StoreKey): EventStore {
+  const value = readJson(storePath(home, key));
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    value.harness !== key.harness ||
+    value.fp !== key.fp
+  ) {
+    return emptyStore(key);
   }
   const store = value as unknown as EventStore;
   return {
-    ...emptyStore(harness),
+    ...emptyStore(key),
     ...store,
     records: Array.isArray(store.records) ? store.records : [],
     seen: Array.isArray(store.seen) ? store.seen : [],
@@ -185,7 +238,7 @@ export function readStore(home: string, harness: Harness): EventStore {
 function writeStore(home: string, store: EventStore): void {
   privateDir(join(home, '.laika'));
   privateDir(sessionsDir(home));
-  writePrivate(storePath(home, store.harness), `${JSON.stringify(store)}\n`);
+  writePrivate(storePath(home, store), `${JSON.stringify(store)}\n`);
 }
 
 const PAUSE = new Int32Array(new SharedArrayBuffer(4));
@@ -196,10 +249,10 @@ const PAUSE = new Int32Array(new SharedArrayBuffer(4));
  * a dead holder's and is taken over. Synchronous, and never held across the
  * network.
  */
-export function mutate<T>(home: string, harness: Harness, change: (store: EventStore) => T): T {
+export function mutate<T>(home: string, key: StoreKey, change: (store: EventStore) => T): T {
   privateDir(join(home, '.laika'));
   privateDir(sessionsDir(home));
-  const lock = `${storePath(home, harness)}.lock`;
+  const lock = `${storePath(home, key)}.lock`;
   const until = Date.now() + 3000;
   for (;;) {
     try {
@@ -219,7 +272,7 @@ export function mutate<T>(home: string, harness: Harness, change: (store: EventS
     }
   }
   try {
-    const store = readStore(home, harness);
+    const store = readStore(home, key);
     const result = change(store);
     writeStore(home, store);
     return result;
@@ -314,13 +367,57 @@ export function ingest(store: EventStore, records: readonly EventRecord[]): stri
     added.push(record.event_id);
   }
   store.records.sort((a, b) => a.cursor - b.cursor);
-  // Presented records go first when trimming; an unshown one is kept longest.
-  while (store.records.length > MAX_RECORDS) {
-    const at = store.records.findIndex((r) => r.state === 'presented' && !r.presented_unacked);
-    store.records.splice(at === -1 ? 0 : at, 1);
-  }
-  if (store.seen.length > MAX_SEEN) store.seen = store.seen.slice(-MAX_SEEN);
+  trim(store);
   return added;
+}
+
+/** Still to be shown, or shown with the board not yet told: never trimmed as history. */
+export const pending = (r: EventRecord): boolean =>
+  r.state !== 'presented' || r.presented_unacked === true;
+
+/**
+ * Keep the store bounded **without losing a notice** (LAI-554 review).
+ *
+ * - Only presented records whose presentation the board recorded are trimmed
+ *   as history, oldest first, past {@link MAX_SHOWN}.
+ * - Records still to be shown are kept whole up to {@link MAX_PENDING}. Past
+ *   it, the oldest go in this order: first those never acknowledged as
+ *   received — they also leave `seen`, so the board, which still holds them
+ *   undelivered, brings them back on a later poll — then received ones, each
+ *   **counted** in `dropped_unshown`, which a hook shows as a line of its own.
+ *   One shown but not yet acknowledged is never dropped: its acknowledgement
+ *   is owed.
+ */
+export function trim(store: EventStore): void {
+  const shown = store.records.filter((r) => !pending(r));
+  if (shown.length > MAX_SHOWN) {
+    const cut = new Set(shown.slice(0, shown.length - MAX_SHOWN).map((r) => r.event_id));
+    store.records = store.records.filter((r) => !cut.has(r.event_id));
+  }
+  let excess = store.records.filter(pending).length - MAX_PENDING;
+  if (excess > 0) {
+    const order = [
+      ...store.records.filter((r) => r.state === 'available'),
+      ...store.records.filter((r) => r.state === 'received'),
+    ];
+    const cut = new Set<string>();
+    const unreceived = new Set<string>();
+    for (const r of order) {
+      if (excess <= 0) break;
+      cut.add(r.event_id);
+      if (r.state === 'available') unreceived.add(r.event_id);
+      else store.dropped_unshown = (store.dropped_unshown ?? 0) + 1;
+      excess -= 1;
+    }
+    store.records = store.records.filter((r) => !cut.has(r.event_id));
+    if (unreceived.size > 0) store.seen = store.seen.filter((id) => !unreceived.has(id));
+  }
+  if (store.seen.length > MAX_SEEN) {
+    // Never forget an id the store still holds: de-duplication rests on it.
+    const live = new Set(store.records.map((r) => r.event_id));
+    const old = store.seen.slice(0, store.seen.length - MAX_SEEN).filter((id) => live.has(id));
+    store.seen = [...old, ...store.seen.slice(-MAX_SEEN)];
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -392,10 +489,18 @@ export function noticeLine(record: EventRecord, myAgentId?: string): string {
 export function renderNotices(
   records: readonly EventRecord[],
   myAgentId?: string,
-): { text: string; ids: string[] } {
+  droppedUnshown = 0,
+): { text: string; ids: string[]; dropped: number } {
+  const none = { text: '', ids: [], dropped: 0 };
   const waiting = records.filter((r) => r.state === 'received' && TYPE_SET.has(r.type));
-  if (waiting.length === 0) return { text: '', ids: [] };
-  const lines: string[] = [];
+  // Notices dropped past MAX_PENDING are told, not hidden: one line, first,
+  // since it is the oldest news. A number only, re-checked here.
+  const dropped = posInt(droppedUnshown) ? droppedUnshown : 0;
+  const lines: string[] =
+    dropped > 0
+      ? [`${String(Math.min(dropped, 99_999))} older notices dropped unshown; run laika agent inbox`]
+      : [];
+  if (waiting.length === 0 && lines.length === 0) return none;
   const ids: string[] = [];
   const build = (more: number): string =>
     [
@@ -407,7 +512,7 @@ export function renderNotices(
   for (const record of waiting) {
     const line = noticeLine(record, myAgentId).slice(0, NOTICE_MAX);
     lines.push(line);
-    const rest = waiting.length - lines.length;
+    const rest = waiting.length - ids.length - 1;
     if (build(rest).length > NOTICE_MAX) {
       lines.pop();
       break;
@@ -416,8 +521,8 @@ export function renderNotices(
   }
   const text = build(waiting.length - ids.length);
   // A block of markers and a count alone, or one somehow over the cap, is not shown.
-  if (ids.length === 0 || text.length > NOTICE_MAX) return { text: '', ids: [] };
-  return { text, ids };
+  if ((ids.length === 0 && dropped === 0) || text.length > NOTICE_MAX) return none;
+  return { text, ids, dropped };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -435,23 +540,30 @@ export type SyncOutcome = 'ok' | 'refused' | 'network' | 'error';
 
 const refusedStatus = (status: number): boolean => status === 401;
 
-function markRefused(deps: EventDeps, harness: Harness, where: string): void {
-  mutate(deps.home, harness, (s) => {
+function markRefused(deps: EventDeps, key: StoreKey, where: string): void {
+  mutate(deps.home, key, (s) => {
     s.refused_at = deps.now();
     s.last_sync = `refused (${where})`;
   });
-  log(deps.home, `events ${harness}: credential refused at ${where}; stopped`);
+  log(deps.home, `events ${key.harness}: credential refused at ${where}; stopped`);
 }
 
 /**
  * Acknowledge `ids` as `state`. Returns the ids the board recorded. All or
- * nothing on the board (§6.4), so a batch it refuses with `404` (one event it
- * may no longer read) is retried one by one, and an event refused alone is
- * dropped from the store: the agent may not see it now.
+ * nothing on the board (§6.4), so:
+ *
+ * - **A refusal while naming a session is retried without it** (LAI-554
+ *   review): a session this credential cannot name — another identity's,
+ *   answered `404`, or one since ended, `409` — is no reason to lose the
+ *   acknowledgement, which is true without one.
+ * - A batch still refused is retried one event at a time, without a session.
+ *   An event refused alone with `404` is one the agent may not read now: it
+ *   leaves the store **and `seen`**, so if the access comes back, the board's
+ *   next poll — which holds it undelivered — brings it back as new.
  */
 export async function ack(
   deps: EventDeps,
-  harness: Harness,
+  key: StoreKey,
   credential: AgentCredential,
   ids: readonly string[],
   state: 'received' | 'presented',
@@ -459,7 +571,8 @@ export async function ack(
   timeoutMs = 5000,
 ): Promise<{ recorded: string[]; outcome: SyncOutcome }> {
   if (ids.length === 0) return { recorded: [], outcome: 'ok' };
-  const send = (batch: readonly string[]) =>
+  const session = sessionId !== undefined && isLaikaId(sessionId) ? sessionId : undefined;
+  const send = (batch: readonly string[], withSession: string | undefined) =>
     callBoard(
       deps.fetch,
       credential,
@@ -467,44 +580,39 @@ export async function ack(
       {
         event_ids: batch,
         state,
-        ...(sessionId !== undefined && isLaikaId(sessionId) ? { session_id: sessionId } : {}),
+        ...(withSession === undefined ? {} : { session_id: withSession }),
       },
       {},
       timeoutMs,
     );
+  const refused = (): { recorded: string[]; outcome: SyncOutcome } => {
+    markRefused(deps, key, 'ack');
+    return { recorded, outcome: 'refused' };
+  };
   const recorded: string[] = [];
   for (let i = 0; i < ids.length; i += 100) {
     const batch = ids.slice(i, i + 100);
-    const result = await send(batch);
+    let result = await send(batch, session);
+    if (result.kind === 'http' && !refusedStatus(result.status) && session !== undefined) {
+      result = await send(batch, undefined);
+    }
     if (result.kind === 'ok') {
       recorded.push(...batch);
       continue;
     }
-    if (result.kind === 'http' && refusedStatus(result.status)) {
-      markRefused(deps, harness, 'ack');
-      return { recorded, outcome: 'refused' };
-    }
+    if (result.kind === 'http' && refusedStatus(result.status)) return refused();
     if (result.kind === 'network') return { recorded, outcome: 'network' };
-    // A session that is not open any more: the ack is still true without it.
-    if (result.kind === 'http' && sessionId !== undefined && result.status !== 404) {
-      return ack(deps, harness, credential, batch, state, undefined, timeoutMs).then((r) => ({
-        recorded: [...recorded, ...r.recorded],
-        outcome: r.outcome,
-      }));
-    }
-    const dropped: string[] = [];
+    const unreadable: string[] = [];
     for (const id of batch) {
-      const one = await send([id]);
+      const one = await send([id], undefined);
       if (one.kind === 'ok') recorded.push(id);
-      else if (one.kind === 'http' && one.status === 404) dropped.push(id);
-      else if (one.kind === 'http' && refusedStatus(one.status)) {
-        markRefused(deps, harness, 'ack');
-        return { recorded, outcome: 'refused' };
-      }
+      else if (one.kind === 'http' && one.status === 404) unreadable.push(id);
+      else if (one.kind === 'http' && refusedStatus(one.status)) return refused();
     }
-    if (dropped.length > 0) {
-      mutate(deps.home, harness, (s) => {
-        s.records = s.records.filter((r) => !dropped.includes(r.event_id));
+    if (unreadable.length > 0) {
+      mutate(deps.home, key, (s) => {
+        s.records = s.records.filter((r) => !unreadable.includes(r.event_id));
+        s.seen = s.seen.filter((id) => !unreadable.includes(id));
       });
     }
   }
@@ -512,9 +620,9 @@ export async function ack(
 }
 
 /** Mark records received, in the store, only for ids the board recorded. */
-function markReceived(deps: EventDeps, harness: Harness, ids: readonly string[]): void {
+function markReceived(deps: EventDeps, key: StoreKey, ids: readonly string[]): void {
   if (ids.length === 0) return;
-  mutate(deps.home, harness, (s) => {
+  mutate(deps.home, key, (s) => {
     for (const r of s.records) {
       if (ids.includes(r.event_id) && r.state === 'available') r.state = 'received';
     }
@@ -525,7 +633,7 @@ function markReceived(deps: EventDeps, harness: Harness, ids: readonly string[])
 /** Store what arrived and acknowledge it as received. The shared half of a poll and a frame. */
 export async function receive(
   deps: EventDeps,
-  harness: Harness,
+  key: StoreKey,
   credential: AgentCredential,
   envelopes: readonly unknown[],
   sessionId: string | undefined,
@@ -536,31 +644,31 @@ export async function receive(
     .slice(0, 500)
     .map((e) => asRecord(e, now))
     .filter((r): r is EventRecord => r !== undefined);
-  const unreceived = mutate(deps.home, harness, (s) => {
+  const unreceived = mutate(deps.home, key, (s) => {
     ingest(s, records);
     return s.records.filter((r) => r.state === 'available').map((r) => r.event_id);
   });
   const { recorded, outcome } = await ack(
     deps,
-    harness,
+    key,
     credential,
     unreceived,
     'received',
     sessionId,
     timeoutMs,
   );
-  markReceived(deps, harness, recorded);
+  markReceived(deps, key, recorded);
   return outcome;
 }
 
 /** Task keys for records that lack one: `GET /tasks/:id`, a few per call, validated. */
 async function fillKeys(
   deps: EventDeps,
-  harness: Harness,
+  key: StoreKey,
   credential: AgentCredential,
   deadline: number,
 ): Promise<void> {
-  const missing = readStore(deps.home, harness)
+  const missing = readStore(deps.home, key)
     .records.filter(
       (r) => r.task_id !== null && r.task_key === undefined && r.state !== 'presented',
     )
@@ -585,7 +693,7 @@ async function fillKeys(
     }
   }
   if (keys.size === 0) return;
-  mutate(deps.home, harness, (s) => {
+  mutate(deps.home, key, (s) => {
     for (const r of s.records) {
       if (r.task_id !== null && keys.has(r.task_id)) r.task_key = keys.get(r.task_id)!;
     }
@@ -599,7 +707,7 @@ async function fillKeys(
  */
 export async function syncOnce(
   deps: EventDeps,
-  harness: Harness,
+  key: StoreKey,
   credential: AgentCredential,
   sessionId: string | undefined,
   budgetMs = 10_000,
@@ -620,19 +728,19 @@ export async function syncOnce(
       'GET',
     );
     if (result.kind === 'http' && refusedStatus(result.status)) {
-      markRefused(deps, harness, 'poll');
+      markRefused(deps, key, 'poll');
       return 'refused';
     }
     if (result.kind !== 'ok' || !isRecord(result.body) || !Array.isArray(result.body.data)) {
       outcome = result.kind === 'network' ? 'network' : 'error';
-      mutate(deps.home, harness, (s) => {
+      mutate(deps.home, key, (s) => {
         s.last_sync = `poll ${describe(result)}`;
       });
       break;
     }
     const got = await receive(
       deps,
-      harness,
+      key,
       credential,
       result.body.data,
       sessionId,
@@ -645,24 +753,24 @@ export async function syncOnce(
     after = cursor;
   }
   // `presented` owed from a hook whose acknowledgement did not arrive.
-  const owed = readStore(deps.home, harness)
+  const owed = readStore(deps.home, key)
     .records.filter((r) => r.presented_unacked === true)
     .map((r) => r.event_id);
   if (owed.length > 0 && deadline - deps.now() > 200) {
     const { recorded } = await ack(
       deps,
-      harness,
+      key,
       credential,
       owed,
       'presented',
       sessionId,
       Math.max(200, deadline - deps.now()),
     );
-    clearOwed(deps, harness, recorded);
+    clearOwed(deps, key, recorded);
   }
-  await fillKeys(deps, harness, credential, deadline);
+  await fillKeys(deps, key, credential, deadline);
   if (outcome === 'ok') {
-    mutate(deps.home, harness, (s) => {
+    mutate(deps.home, key, (s) => {
       s.last_sync_at = deps.now();
       s.last_sync = 'ok';
       delete s.refused_at;
@@ -671,9 +779,9 @@ export async function syncOnce(
   return outcome;
 }
 
-function clearOwed(deps: EventDeps, harness: Harness, ids: readonly string[]): void {
+function clearOwed(deps: EventDeps, key: StoreKey, ids: readonly string[]): void {
   if (ids.length === 0) return;
-  mutate(deps.home, harness, (s) => {
+  mutate(deps.home, key, (s) => {
     for (const r of s.records) {
       if (ids.includes(r.event_id)) {
         delete r.presented_unacked;
@@ -691,15 +799,23 @@ function clearOwed(deps: EventDeps, harness: Harness, ids: readonly string[]): v
  */
 export async function presented(
   deps: EventDeps,
-  harness: Harness,
+  key: StoreKey,
   credential: AgentCredential,
   ids: readonly string[],
   sessionId: string | undefined,
   timeoutMs = 2000,
+  droppedShown = 0,
 ): Promise<void> {
-  if (ids.length === 0) return;
+  if (ids.length === 0 && droppedShown <= 0) return;
   // Only a received event can be presented: the board refuses the other order.
-  const moved = mutate(deps.home, harness, (s) => {
+  const moved = mutate(deps.home, key, (s) => {
+    // The dropped-notice line was printed: that many are told. Subtracted, so
+    // a drop counted meanwhile is still told next time.
+    if (droppedShown > 0) {
+      const left = (s.dropped_unshown ?? 0) - droppedShown;
+      if (left > 0) s.dropped_unshown = left;
+      else delete s.dropped_unshown;
+    }
     const out: string[] = [];
     for (const r of s.records) {
       if (ids.includes(r.event_id) && r.state === 'received') {
@@ -712,14 +828,76 @@ export async function presented(
   });
   const { recorded } = await ack(
     deps,
-    harness,
+    key,
     credential,
     moved,
     'presented',
     sessionId,
     timeoutMs,
   );
-  clearOwed(deps, harness, recorded);
+  clearOwed(deps, key, recorded);
+}
+
+/**
+ * This credential's agent is now known — a session the board opened on this
+ * very credential named it. Record it, and **take over what another
+ * credential of the same agent still had to show** (a rotated token, whose
+ * store is a different file): a rotation must not strand a notice. Another
+ * agent's store is never read into this one, and none is deleted. Copied here
+ * first and removed there after, so a crash between leaves a duplicate, never
+ * a loss. Returns how many records were taken over.
+ *
+ * A store whose agent was never learned — no session ever opened on that
+ * credential — cannot be matched, and keeps what it holds.
+ */
+export function noteAgent(home: string, key: StoreKey, agentId: string): number {
+  if (!isLaikaId(agentId)) return 0;
+  const known = readStore(home, key).agent_id;
+  if (known === agentId) return 0;
+  if (known !== undefined) {
+    // A token never changes agent; a file that says otherwise is not trusted with more.
+    log(home, `events ${key.harness}: store names another agent; left as it is`);
+    return 0;
+  }
+  let names: string[];
+  try {
+    names = readdirSync(sessionsDir(home));
+  } catch {
+    names = [];
+  }
+  const pattern = new RegExp(`^events-${key.harness}-([0-9a-f]{16})\\.json$`);
+  const siblings: { key: StoreKey; records: EventRecord[]; store: EventStore }[] = [];
+  for (const name of names) {
+    const fp = pattern.exec(name)?.[1];
+    if (fp === undefined || fp === key.fp) continue;
+    const other: StoreKey = { harness: key.harness, fp };
+    const store = readStore(home, other);
+    if (store.agent_id !== agentId) continue;
+    siblings.push({ key: other, records: store.records.filter(pending), store });
+  }
+  let taken = 0;
+  mutate(home, key, (s) => {
+    s.agent_id = agentId;
+    for (const sib of siblings) {
+      taken += ingest(s, sib.records).length;
+      for (const [project, revision] of Object.entries(sib.store.context_seen)) {
+        if (posInt(revision)) s.context_seen[project] = Math.max(s.context_seen[project] ?? 0, revision);
+      }
+      if (posInt(sib.store.dropped_unshown)) {
+        s.dropped_unshown = (s.dropped_unshown ?? 0) + sib.store.dropped_unshown;
+      }
+    }
+  });
+  for (const sib of siblings) {
+    const moved = new Set(sib.records.map((r) => r.event_id));
+    mutate(home, sib.key, (s) => {
+      // Their ids stay in `seen` there, so that store never takes them up again.
+      s.records = s.records.filter((r) => !moved.has(r.event_id));
+      delete s.dropped_unshown;
+    });
+  }
+  if (taken > 0) log(home, `events ${key.harness}: took over ${String(taken)} from a rotated token`);
+  return taken;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -779,7 +957,7 @@ export interface StreamOptions {
  */
 export async function runEventStream(
   deps: EventDeps,
-  harness: Harness,
+  key: StoreKey,
   credential: AgentCredential,
   options: StreamOptions = {},
 ): Promise<StreamOutcome> {
@@ -788,7 +966,7 @@ export async function runEventStream(
   const stopped = (): boolean =>
     options.signal?.aborted === true || options.shouldStop?.() === true;
   while (!stopped()) {
-    const cursor = readStore(deps.home, harness).stream_cursor;
+    const cursor = readStore(deps.home, key).stream_cursor;
     let response: Response | undefined;
     try {
       response = await deps.fetch(`${credential.url.replace(/\/+$/, '')}/api/v1/events`, {
@@ -806,19 +984,19 @@ export async function runEventStream(
     if (stopped()) break;
     if (response !== undefined && refusedStatus(response.status)) {
       await response.body?.cancel().catch(() => undefined);
-      markRefused(deps, harness, 'connect');
+      markRefused(deps, key, 'connect');
       return 'refused';
     }
     if (response === undefined || !response.ok || response.body === null) {
       await response?.body?.cancel().catch(() => undefined);
       failures += 1;
       // The stream is down: the durable record is still there to poll.
-      const polled = await syncOnce(deps, harness, credential, options.sessionId?.());
+      const polled = await syncOnce(deps, key, credential, options.sessionId?.());
       if (polled === 'refused') return 'refused';
       await deps.sleep(Math.min(maxBackoff, 500 * 2 ** Math.min(failures, 6)));
       continue;
     }
-    const outcome = await readStream(deps, harness, credential, response.body, options);
+    const outcome = await readStream(deps, key, credential, response.body, options);
     if (outcome === 'refused') return 'refused';
     if (outcome === 'ready') failures = 0;
     failures += 1;
@@ -830,7 +1008,7 @@ export async function runEventStream(
 
 async function readStream(
   deps: EventDeps,
-  harness: Harness,
+  key: StoreKey,
   credential: AgentCredential,
   body: ReadableStream<Uint8Array>,
   options: StreamOptions,
@@ -858,7 +1036,7 @@ async function readStream(
       const parsed = parseFrames(buffer);
       buffer = parsed.rest;
       for (const frame of parsed.frames) {
-        const handled = await handleFrame(deps, harness, credential, frame, options);
+        const handled = await handleFrame(deps, key, credential, frame, options);
         options.onFrame?.(frame);
         if (handled === 'refused') return 'refused';
         if (frame.event === 'ready') wasReady = true;
@@ -873,7 +1051,7 @@ async function readStream(
 
 async function handleFrame(
   deps: EventDeps,
-  harness: Harness,
+  key: StoreKey,
   credential: AgentCredential,
   frame: Frame,
   options: StreamOptions,
@@ -889,14 +1067,14 @@ async function handleFrame(
     }
     // Every `error` frame closes the stream (LAI-539); a credential one ends it for good.
     if (code === 'unauthorized' || code === undefined) {
-      markRefused(deps, harness, 'stream');
+      markRefused(deps, key, 'stream');
       return 'refused';
     }
     return 'closing';
   }
   if (frame.event === 'closing') return 'closing';
   if (frame.event === 'ready' || frame.event === 'gap') {
-    const polled = await syncOnce(deps, harness, credential, sessionId);
+    const polled = await syncOnce(deps, key, credential, sessionId);
     return polled === 'refused' ? 'refused' : 'ok';
   }
   const seq = frame.id === undefined ? NaN : Number(frame.id);
@@ -909,12 +1087,12 @@ async function handleFrame(
       envelope = undefined;
     }
     if (envelope !== undefined) {
-      const got = await receive(deps, harness, credential, [envelope], sessionId);
+      const got = await receive(deps, key, credential, [envelope], sessionId);
       if (got === 'refused') return 'refused';
     }
   }
   if (Number.isSafeInteger(seq) && seq > 0) {
-    mutate(deps.home, harness, (s) => {
+    mutate(deps.home, key, (s) => {
       s.stream_cursor = Math.max(s.stream_cursor ?? 0, seq);
     });
   }
@@ -932,10 +1110,10 @@ async function handleFrame(
  */
 export function takeStreamSlot(
   home: string,
-  harness: Harness,
+  key: StoreKey,
   self: { pid: number; started: string },
 ): boolean {
-  return mutate(home, harness, (s) => {
+  return mutate(home, key, (s) => {
     if (
       s.stream_pid !== undefined &&
       s.stream_started !== undefined &&
@@ -952,10 +1130,10 @@ export function takeStreamSlot(
 
 export function releaseStreamSlot(
   home: string,
-  harness: Harness,
+  key: StoreKey,
   self: { pid: number; started: string },
 ): void {
-  mutate(home, harness, (s) => {
+  mutate(home, key, (s) => {
     if (s.stream_pid === self.pid && s.stream_started === self.started) {
       delete s.stream_pid;
       delete s.stream_started;

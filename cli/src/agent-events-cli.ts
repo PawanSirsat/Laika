@@ -5,6 +5,7 @@ import {
   noticeLine,
   readStore,
   runEventStream,
+  storeKey,
   storePath,
   syncOnce,
 } from './agent-events.ts';
@@ -60,10 +61,12 @@ export async function eventsCommand(io: AgentIo, argv: readonly string[]): Promi
     io.err(`laika agent events: no agent token for ${harness}`);
     return 1;
   }
+  // This credential's store: another login's notices are kept in their own.
+  const key = storeKey(harness, credential);
 
   if (sub === 'sync') {
-    const outcome = await syncOnce(eventDeps(io), harness, credential, undefined);
-    const held = readStore(io.home, harness).records;
+    const outcome = await syncOnce(eventDeps(io), key, credential, undefined);
+    const held = readStore(io.home, key).records;
     if (outcome === 'refused') {
       io.err('laika agent events: the board refused this agent’s token (revoked or expired)');
       return 1;
@@ -78,7 +81,7 @@ export async function eventsCommand(io: AgentIo, argv: readonly string[]): Promi
     const stop = new AbortController();
     process.once('SIGINT', () => stop.abort());
     io.out(`listening for ${harness} events; Ctrl-C stops`);
-    const outcome = await runEventStream(eventDeps(io), harness, credential, {
+    const outcome = await runEventStream(eventDeps(io), key, credential, {
       signal: stop.signal,
     });
     if (outcome === 'refused') {
@@ -92,14 +95,19 @@ export async function eventsCommand(io: AgentIo, argv: readonly string[]): Promi
     io.err(`laika agent events: unknown subcommand "${sub}"\n\n${USAGE}`);
     return 1;
   }
-  const store = readStore(io.home, harness);
+  const store = readStore(io.home, key);
   if (store.refused_at !== undefined) {
     io.out(
       `The board refused this agent’s token at ${new Date(store.refused_at).toISOString()}; nothing is received until it is replaced.`,
     );
   }
+  if (store.dropped_unshown !== undefined && store.dropped_unshown > 0) {
+    io.out(
+      `${String(store.dropped_unshown)} older notices were dropped unshown past the local limit; laika agent inbox lists the offers still open`,
+    );
+  }
   if (store.records.length === 0) {
-    io.out(`No events held for ${harness}. (${storePath(io.home, harness)})`);
+    io.out(`No events held for ${harness}. (${storePath(io.home, key)})`);
     return 0;
   }
   io.out(BLOCK_OPEN);

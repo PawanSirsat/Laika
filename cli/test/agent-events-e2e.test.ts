@@ -26,6 +26,7 @@ import {
   NOTICE_MAX,
   readStore,
   runEventStream,
+  storeKey,
   storePath,
   TASK_KEY,
 } from '../src/agent-events.ts';
@@ -179,17 +180,18 @@ void describe('the stream', () => {
     const receiver = await newAgent();
     const { home, deps } = machine();
     const credential = { url: board.url, token: receiver.token };
+    const key = storeKey('claude-code', credential);
     try {
       const frames: Frame[] = [];
       let stop = linked();
-      const first = runEventStream(deps, 'claude-code', credential, {
+      const first = runEventStream(deps, key, credential, {
         signal: stop.signal,
         onFrame: (f) => frames.push(f),
       });
       await until('ready', () => frames.some((f) => f.event === 'ready'));
       await contextChange();
       await until('the context event, received', () =>
-        readStore(home, 'claude-code').records.some(
+        readStore(home, key).records.some(
           (r) => r.type === 'project.context_updated' && r.state === 'received',
         ),
       );
@@ -199,17 +201,17 @@ void describe('the stream', () => {
       // While away: a selection. Then rewind the cursor so the reconnect
       // replays every row, the context event included.
       const task = await selectFor(receiver.id);
-      mutate(home, 'claude-code', (s) => {
+      mutate(home, key, (s) => {
         s.stream_cursor = 1;
       });
       frames.length = 0;
       stop = linked();
-      const second = runEventStream(deps, 'claude-code', credential, {
+      const second = runEventStream(deps, key, credential, {
         signal: stop.signal,
         onFrame: (f) => frames.push(f),
       });
       await until('the selection, received', () =>
-        readStore(home, 'claude-code').records.some(
+        readStore(home, key).records.some(
           (r) => r.type === 'task.agent_selected' && r.state === 'received',
         ),
       );
@@ -219,7 +221,7 @@ void describe('the stream', () => {
       stop.abort();
       assert.equal(await second, 'stopped');
 
-      const store = readStore(home, 'claude-code');
+      const store = readStore(home, key);
       assert.deepEqual(
         store.records.map((r) => r.type).sort(),
         ['project.context_updated', 'task.agent_selected'],
@@ -243,20 +245,21 @@ void describe('the stream', () => {
     const receiver = await newAgent();
     const { home, deps } = machine();
     const credential = { url: board.url, token: receiver.token };
+    const key = storeKey('claude-code', credential);
     try {
       // Made while no helper ran, then a cursor from "another database".
       await selectFor(receiver.id);
-      mutate(home, 'claude-code', (s) => {
+      mutate(home, key, (s) => {
         s.stream_cursor = 9_000_000;
       });
       const frames: Frame[] = [];
       const stop = linked();
-      const run = runEventStream(deps, 'claude-code', credential, {
+      const run = runEventStream(deps, key, credential, {
         signal: stop.signal,
         onFrame: (f) => frames.push(f),
       });
       await until('the missed selection, received', () =>
-        readStore(home, 'claude-code').records.some(
+        readStore(home, key).records.some(
           (r) => r.type === 'task.agent_selected' && r.state === 'received',
         ),
       );
@@ -279,9 +282,10 @@ void describe('the stream', () => {
     const receiver = await newAgent();
     const { home, deps } = machine();
     const credential = { url: board.url, token: receiver.token };
+    const key = storeKey('claude-code', credential);
     try {
       const frames: Frame[] = [];
-      const run = runEventStream(deps, 'claude-code', credential, {
+      const run = runEventStream(deps, key, credential, {
         signal: teardown.signal,
         onFrame: (f) => frames.push(f),
       });
@@ -291,14 +295,14 @@ void describe('the stream', () => {
       await contextChange();
       const outcome = await Promise.race([run, sleep(15_000).then(() => 'timeout' as const)]);
       assert.equal(outcome, 'refused');
-      assert.equal(typeof readStore(home, 'claude-code').refused_at, 'number');
+      assert.equal(typeof readStore(home, key).refused_at, 'number');
       const streams = (): number =>
         board.requests.filter((r) => r.path.startsWith('/api/v1/events')).length;
       const before = streams();
       await sleep(1500);
       assert.equal(streams(), before, 'no reconnect after a refusal');
       assert.ok(
-        !readFileSync(storePath(home, 'claude-code'), 'utf8').includes(receiver.token),
+        !readFileSync(storePath(home, key), 'utf8').includes(receiver.token),
         'the token is not in the store',
       );
     } finally {
