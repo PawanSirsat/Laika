@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: [LAI-1045]
 started: 2026-11-02T12:00:00+05:30
-status: in-progress
+status: review
+finished: 2026-11-02T15:00:00+05:30
 ---
 
 Slice C1 of the plan `docs/proposals/LAI-1042-developer-access-v3-plan.md`
@@ -82,7 +83,7 @@ explicitly, and the PR targets `LAI-1045-devices-migration` until #202 merges.
 - [x] Brute force reaches `429` with `Retry-After`.
 - [x] No new activity verb and no new §3.1 action.
 - [x] SPEC rows are written.
-- [x] CI is green on the PR (#205, run 41355720184 on 382f01e7).
+- [ ] CI is green on the PR, after the review fixes (#205).
 
 ## Dependencies
 
