@@ -54,3 +54,7 @@ existing agent endpoints.
 - SHELL only, `server/web/` only. Not touched: Project setup (LAI-1052),
   pairing (LAI-1050), `laika update` (cli).
 - Belka: one test file at a time, single worker; CI is the full gate.
+- Named cross-area edit (D-033, as LAI-1007 did): the three `UNPAIRED`
+  entries in `server/test/tooling/response-type-coverage.test.ts` this
+  slice's pairs make stale — `DeviceView`, `AgentDetailView`,
+  `AgentSessionView`. Nothing else in that file.
