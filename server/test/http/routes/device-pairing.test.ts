@@ -196,7 +196,9 @@ describe('a pairing, start to finish', () => {
     const key = newKey();
 
     const created = await create(bob.cookie);
-    expect(created.user_code).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/);
+    expect(created.user_code).toMatch(
+      /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/,
+    );
     expect(created.command).toBe(
       `laika device pair --board ${TEST_ORIGIN} --code ${created.user_code}`,
     );
@@ -206,7 +208,7 @@ describe('a pairing, start to finish', () => {
     const row = h.db.select().from(devicePairingRequests).get();
     const stored = JSON.stringify(row);
     expect(stored).not.toContain(created.user_code);
-    expect(stored).not.toContain(created.user_code.replace('-', ''));
+    expect(stored).not.toContain(created.user_code.replaceAll('-', ''));
     expect(row?.codeHash).toMatch(/^[0-9a-f]{64}$/);
 
     // Reading it back never returns the code.
@@ -220,7 +222,7 @@ describe('a pairing, start to finish', () => {
     expect(JSON.stringify(read)).not.toContain(created.user_code);
 
     // Typed in lower case, without the hyphen: the same code.
-    const claimed = await claim(created.user_code.replace('-', '').toLowerCase(), key);
+    const claimed = await claim(created.user_code.replaceAll('-', '').toLowerCase(), key);
     expect(claimed.pairing_id).toBe(created.pairing.id);
     expect(claimed.key_fingerprint).toMatch(/^[0-9a-f]{16}$/);
     // The claim answer holds no secret beyond its own challenge.
@@ -417,7 +419,7 @@ describe('the code', () => {
 
   it('unknown, expired and finished codes are the same 404', async () => {
     const unknown = await post('/api/v1/device-pairing/claim', {
-      code: 'ZZZZ-ZZZZ',
+      code: 'ZZZZ-ZZZZ-ZZZZ-ZZZZ',
       public_key: newKey().publicKey,
     });
     expect(unknown.status).toBe(404);
@@ -726,58 +728,66 @@ describe('the owner’s side', () => {
   });
 });
 
-describe('brute force, and what it cannot lock out', () => {
-  function bogusClaim(i: number, publicKey = newKey().publicKey) {
-    // Never a real code: every one of these is a failed claim.
-    return post('/api/v1/device-pairing/claim', {
-      code: `ZZZZ-${String(i)
-        .padStart(4, '0')
-        .replace(/[^0-9]/g, '0')}`,
-      public_key: publicKey,
-    });
+describe('what an anonymous caller cannot lock out', () => {
+  async function pairForReal(): Promise<void> {
+    const created = await create(bob.cookie, { display_name: `Real ${String(clock)}` });
+    const key = newKey();
+    const claimed = await claim(created.user_code, key);
+    await ok(await approve(bob.cookie, claimed.pairing_id, claimed.key_fingerprint));
+    const done = await ok<{ device_id: string }>(
+      await complete(claimed.pairing_id, signFor(key, claimed.pairing_id, claimed.nonce)),
+    );
+    expect(done.device_id).toMatch(/^[0-9A-Z]{26}$/);
   }
 
-  it('failed claims back off on one shared key, sized at 600 an hour with a burst of 60', async () => {
-    expect(LIMITS.pairingFailures).toEqual({ perMinute: 10, burst: 60 });
-    for (let i = 0; i < 60; i++) expect((await bogusClaim(i)).status).toBe(404);
-
-    // Spent: even a right code waits, with Retry-After, and nothing is read.
-    const created = await create(bob.cookie);
-    const res = await post('/api/v1/device-pairing/claim', {
-      code: created.user_code,
-      public_key: newKey().publicKey,
-    });
-    expect(await refusal(res.clone(), 429)).toEqual({
-      code: 'rate_limited',
-      reason: 'pairing_backoff',
-    });
-    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
-    expect(h.db.select().from(devicePairingRequests).get()?.state).toBe('open');
-
-    // Ten a minute come back.
-    clock += 60_000;
-    await claim(created.user_code, newKey());
+  it('a junk loop at one request a second for twenty minutes blocks no real pairing', async () => {
+    // Every shape of junk, one a second on the simulated clock: unknown
+    // codes, malformed codes, malformed bodies, made-up and junk request ids.
+    const junk = [
+      () =>
+        post('/api/v1/device-pairing/claim', {
+          code: 'ZZZZ-ZZZZ-ZZZZ-ZZZZ',
+          public_key: newKey().publicKey,
+        }),
+      () => post('/api/v1/device-pairing/claim', { code: 'nope', public_key: 'AAAA' }),
+      () => post('/api/v1/device-pairing/claim', { unexpected: true }),
+      () => complete('01M00000000000000000000000', 'AAAA'),
+      () => complete('junk', 'AAAA'),
+    ];
+    const seen = new Set<number>();
+    for (let second = 0; second < 20 * 60; second++) {
+      clock += 1000;
+      const res = await (junk[second % junk.length] ?? junk[0]!)();
+      seen.add(res.status);
+    }
+    // The loop was refused for what it was, and never rate-limited.
+    expect([...seen].sort()).toEqual([404, 422]);
+    await pairForReal();
   });
 
-  it('claims have their own bucket, larger than the failure budget: the 121st is 429', async () => {
-    expect(LIMITS.pairing).toEqual({ perMinute: 20, burst: 120 });
-    // A bad key is refused 422 and is not a failed guess, so only the
-    // claims bucket is spent.
-    const statuses: number[] = [];
+  it('every claim spends one bucket of 6,000 a minute, malformed ones included', async () => {
+    expect(LIMITS.pairing).toEqual({ perMinute: 6000, burst: 6000 });
+    // A malformed body is refused 422, and spends the bucket all the same:
+    // there is no free way to send claims.
+    const statuses = new Map<number, number>();
     let last: Response | undefined;
-    for (let i = 0; i < 121; i++) {
-      last = await post('/api/v1/device-pairing/claim', { code: 'ZZZZ-ZZZZ', public_key: 'AAAA' });
-      statuses.push(last.status);
+    for (let i = 0; i < 6001; i++) {
+      last = await post(
+        '/api/v1/device-pairing/claim',
+        i % 2 === 0 ? { code: 'x', public_key: 'AAAA' } : {},
+      );
+      statuses.set(last.status, (statuses.get(last.status) ?? 0) + 1);
     }
-    expect(statuses).toEqual([...Array<number>(120).fill(422), 429]);
+    expect(Object.fromEntries(statuses)).toEqual({ 422: 6000, 429: 1 });
     expect(Number(last?.headers.get('Retry-After'))).toBeGreaterThan(0);
+    // Holding it empty takes 100 a second: a hundredth of a second refills one.
+    clock += 10;
+    expect((await post('/api/v1/device-pairing/claim', {})).status).toBe(422);
     // Not the session's: a signed-in person is not slowed by it.
     expect((await req('/api/v1/devices', {}, { cookie: bob.cookie })).status).toBe(200);
   });
 
   it('a flood of bogus completes blocks no real claim and no real completion', async () => {
-    // Made-up ids, ULID-shaped and not, and bad signatures on them: none of
-    // it may spend what a real device needs.
     const junk: number[] = [];
     for (let i = 0; i < 150; i++) {
       const id = `01M${String(i).padStart(23, '0')}`;
@@ -787,15 +797,7 @@ describe('brute force, and what it cannot lock out', () => {
     // Ids no request could have share one bucket, which they exhaust — and
     // which no real device's request id ever reaches.
     expect(junk).toEqual([...Array<number>(10).fill(404), ...Array<number>(140).fill(429)]);
-
-    const created = await create(bob.cookie);
-    const key = newKey();
-    const claimed = await claim(created.user_code, key);
-    await ok(await approve(bob.cookie, claimed.pairing_id, claimed.key_fingerprint));
-    const done = await ok<{ device_id: string }>(
-      await complete(claimed.pairing_id, signFor(key, claimed.pairing_id, claimed.nonce)),
-    );
-    expect(done.device_id).toMatch(/^[0-9A-Z]{26}$/);
+    await pairForReal();
   });
 
   it('a thousand distinct paths leave the limiter bounded', async () => {
