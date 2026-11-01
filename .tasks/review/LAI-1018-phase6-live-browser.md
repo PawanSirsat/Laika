@@ -8,7 +8,8 @@ parent: LAIKA-785
 depends-on: []
 discovered-from: LAI-559
 started: 2026-11-01T07:29:30Z
-status: in-progress
+status: review
+finished: 2026-11-01T10:38:05Z
 ---
 
 ## Goal
@@ -20,7 +21,7 @@ light and dark, at 1440 px and 390 px, keyboard only.
 
 ## Acceptance criteria
 
-- [ ] Each screen below is walked in both themes at 1440 and 390 px with the
+- [x] Each screen below is walked in both themes at 1440 and 390 px with the
       keyboard only (Tab, Shift-Tab, arrows, Enter, Escape), checking that
       focus is visible, focus returns to its opener after a dialog closes,
       state is named in text rather than by colour alone, and the page does
@@ -38,12 +39,12 @@ light and dark, at 1440 px and 390 px, keyboard only.
       4. Inbox › Hand-offs tabs (arrow keys, Home / End) and Settings ›
          Access hand-off policy.
       5. Project context History / Compare / Delivered to.
-- [ ] `docs/acceptance/LAI-1018-live-browser.md` gives a PASS / FAIL table per
+- [x] `docs/acceptance/LAI-1018-live-browser.md` gives a PASS / FAIL table per
       check, with screenshot paths under `.polly/evidence/LAI-phase6/`
       (gitignored, tokens masked).
-- [ ] Every real defect is filed as its own task and card; no code is
+- [x] Every real defect is filed as its own task and card; no code is
       changed here.
-- [ ] Only a sandbox card made for this run is changed; nothing is marked Done.
+- [x] Only a sandbox card made for this run is changed; nothing is marked Done.
 
 ## Notes / context
 
@@ -51,3 +52,25 @@ light and dark, at 1440 px and 390 px, keyboard only.
   checks are made by hand from the accessibility tree and the DOM.
 - One browser at a time, no test suites locally (Belka).
 - The board password is read from Keychain inside the script and never printed.
+
+## Result
+
+`docs/acceptance/LAI-1018-live-browser.md`. All five screens were walked in
+all four configs, on production `8469099f` (screen 1 on `37fec80b`; #175
+changed none of its files). Of the six sections, four pass outright. Two
+checks fail: focus is not restored when the task drawer closes (LAI-1021,
+LAIKA-877) or when the Project context panel closes (LAI-1022, LAIKA-878).
+LAI-1023 (LAIKA-879, p3) covers identical "Context" button names.
+
+**Deviation from criterion 1, stated rather than ticked away:** the
+drawer's hand-off *review* dialog (`HandoffOfferDialog`) could not be walked.
+It renders only for a live offer. The only live offer belongs to LAIKA-875,
+another test's sandbox that this walk was told not to touch, and making one
+on LAIKA-876 needs a claim, a pushed `laika-ckpt/` tag and an offer delivered
+to another agent. The *offer* dialog, the unavailable agent options and the
+Connection lost / Save needs attention states, none of which exist live,
+were checked in production's `/design/states` gallery and are labelled as
+component-level evidence.
+
+The only production data changed is LAIKA-876's Backlog position, which
+moved and ended where it started.
