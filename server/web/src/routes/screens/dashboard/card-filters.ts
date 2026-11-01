@@ -193,8 +193,8 @@ export function cardTasks(
 
 /**
  * Blocked tasks judged from the **whole project**, for Open work now's rows —
- * by Needs attention's rule (`splitBlocked`), so "3 blocked" on a person and
- * the Blocked tab count the same thing.
+ * committed work only (`splitBlocked`), so a backlog chain waiting on backlog
+ * is not "blocked" against anyone.
  */
 export function blockedIdsOf(all: readonly TaskSummary[]): ReadonlySet<string> {
   return new Set(splitBlocked(blockedTasks(all)).committed.map((row) => row.task.id));

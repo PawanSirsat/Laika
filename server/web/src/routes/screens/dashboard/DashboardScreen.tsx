@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { staleTasks } from '../../../api/board-derive.ts';
 import { everyPage } from '../../../api/every-page.ts';
 import { listProjects } from '../../../api/projects.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
@@ -24,26 +23,20 @@ import { pickProject } from '../../../api/pick-project.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { useShell } from '../../../components/shell/shell-context.ts';
 import { SpaceSlot, useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import { useDelayed } from '../../../components/use-delayed.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { withProjectParam } from '../../nav-url.ts';
 import { useRoute } from '../../use-route.ts';
-import { ActivityFeed } from './ActivityFeed.tsx';
-import { agentNamesFrom } from '../../../api/selected-agent.ts';
-import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import { Contributors } from './Contributors.tsx';
 import { contributors } from './contributors-derive.ts';
 import {
-  blockedTasks,
   DEFAULT_RANGE,
   RANGES,
   rangeById,
   sinceFor,
   statusBreakdown,
 } from './dashboard-derive.ts';
-import { NeedsAttention } from './NeedsAttention.tsx';
 import { PriorityBreakdown } from './PriorityBreakdown.tsx';
 import { StatCards } from './StatCards.tsx';
 import { StatusOverview } from './StatusOverview.tsx';
@@ -51,8 +44,6 @@ import {
   MAX_PEOPLE,
   completedIn,
   priorityBreakdown,
-  splitBlocked,
-  waitingForReview,
   windowCounts,
   workloadByPerson,
 } from './summary-derive.ts';
@@ -66,14 +57,17 @@ import './dashboard.css';
  *
  * **Jira's project Summary, for a board shared with agents.** Four figures
  * across the top — done, touched, created, due soon — then the status donut
- * beside Contributors (who delivered in the range, and open work now), the
- * activity feed beside what needs attention, and priority beside throughput
- * and cycle time.
+ * beside Contributors (who delivered in the range, and open work now), and
+ * priority beside throughput and cycle time.
+ *
+ * **No activity feed and no Needs attention** (LAI-1025): the owner took both
+ * off the page to make it load faster. The Activity tab keeps the feed and
+ * the stale list; Inbox › Review keeps the review wait.
  *
  * ## Every number is derived from a response
  *
- * Counts come from the task list, the feed from `activity`, done and
- * throughput from `/metrics`. Nothing is a fixture; where a number is not known
+ * Counts come from the task list, Contributors' deliveries from `activity`,
+ * done and throughput from `/metrics`. Nothing is a fixture; where a number is not known
  * yet the page shows a dash, not a guess.
  *
  * ## The range drives the query, and the page never blanks
@@ -86,17 +80,6 @@ export function DashboardScreen() {
   const { params, setParams } = useRoute();
   const { theme } = useTheme();
   /*
-   * **When each task moved into review, at any age** (LAI-832): the shell's
-   * one read of `GET /review`, for the sidebar's badge — asked for nothing
-   * more here. The range's activity sees back only as far as the range, so a
-   * wait read from it alone moved with the range picker.
-   */
-  const { reviewQueue } = useShell();
-  const reviewEntered = useMemo(
-    () => new Map((reviewQueue ?? []).map((item) => [item.task.id, item.waiting_since] as const)),
-    [reviewQueue],
-  );
-  /*
    * **The bar's task filters do nothing here** (LAI-711): Priority, Assignee,
    * Ready and Search narrow a list of cards, and the dashboard summarises the
    * whole space — it never read them, so they sat above it doing nothing. Its
@@ -104,12 +87,6 @@ export function DashboardScreen() {
    * copies back the moment the reader leaves.
    */
   useClaimSpaceFilters();
-  /*
-   * Which agent wrote a feed row, where this reader may name it (LAI-570):
-   * their own agents and those selected on the space's tasks. Above the
-   * early returns, as every hook must be.
-   */
-  const myAgents = useMyAgents();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
   /** The organisation has no project to show — not "loading" for ever. */
@@ -263,9 +240,7 @@ export function DashboardScreen() {
    */
   const clock = Math.max(now, asOf);
   const nameOf = (id: string): string => names.get(id) ?? id;
-  const actorName = (id: string | null): string => (id === null ? 'Laika' : nameOf(id));
   const tasksById = new Map(tasks.map((t) => [t.id, t]));
-  const agentNames = agentNamesFrom(agentsOf(myAgents), tasks);
 
   const window = range.ms === null ? 'all time' : `in the ${range.label.toLowerCase()}`;
   /*
@@ -305,7 +280,6 @@ export function DashboardScreen() {
     include: peopleTaskIds === undefined ? undefined : (id) => peopleTaskIds.has(id),
     assigneeOf: (id) => tasksById.get(id)?.assignee_id,
   });
-  const blocked = splitBlocked(blockedTasks(tasks));
 
   /** "touched in the last 7 days", "· all time", "· 2 filters" — what a card covers. */
   const scopeSuffix = (filter: { readonly allTasks: boolean }, active: number): string => {
@@ -526,25 +500,6 @@ export function DashboardScreen() {
           filters={peopleActive}
           narrowed={peopleActive > 0}
           filter={peopleFilterControl}
-        />
-        <ActivityFeed
-          events={events}
-          tasksById={tasksById}
-          nameOf={actorName}
-          slug={slug}
-          now={clock}
-          rangeLabel={range.label}
-          theme={theme}
-          agentNames={agentNames}
-        />
-        <NeedsAttention
-          blocked={blocked.committed}
-          blockedApart={blocked.apart}
-          stale={staleTasks(tasks)}
-          review={waitingForReview(tasks, events, since, clock, reviewEntered)}
-          nameOf={nameOf}
-          slug={slug}
-          now={clock}
         />
         <PriorityBreakdown counts={priorityBreakdown(tasks)} slug={slug} />
         <Throughput

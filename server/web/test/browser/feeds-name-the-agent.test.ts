@@ -1,6 +1,7 @@
 /**
- * The Dashboard feed and Organisation → Activity name **which** agent wrote a
- * row (LAI-570), with the drawer's rule and the drawer's words (LAI-538):
+ * Organisation → Activity names **which** agent wrote a row (LAI-570), with
+ * the drawer's rule and the drawer's words (LAI-538). The Dashboard's feed did
+ * too until LAI-1025 took it off the page.
  *
  * - an agent the reader may name: *Ada Lovelace via Claude Code · Belka*;
  * - a legacy token, whose rows carry no `agent_id`: *via agent (unregistered
@@ -152,23 +153,6 @@ const COMMON: ApiStub = {
   '/api/v1/presence': { enabled: false, present: [] },
 };
 
-const DASHBOARD: ApiStub = {
-  ...COMMON,
-  '/api/v1/projects/laika-core': CORE,
-  '/api/v1/projects/laika-core/tasks': { data: [], next_cursor: null },
-  '/api/v1/projects/laika-core/members': {
-    members: [
-      { user_id: 'u1', name: 'Ada Lovelace', email: 'u1@example.com', role: 'lead' },
-      { user_id: 'u2', name: 'Grace Hopper', email: 'u2@example.com', role: 'member' },
-    ],
-  },
-  '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
-  '/api/v1/projects/laika-core/mentionable': { users: [{ id: 'u1', name: 'Ada Lovelace' }] },
-  '/api/v1/projects/laika-core/activity': { data: EVENTS, next_cursor: null },
-  '/api/v1/projects/laika-core/metrics': { since: 1, throughput: [], cycle_time: null },
-  '/api/v1/projects/laika-core/tags': { tags: [] },
-};
-
 const person = (id: string, name: string, org_role: string) => ({
   id,
   name,
@@ -202,12 +186,6 @@ const ORGANISATION: ApiStub = {
   '/api/v1/activity/history?limit=50': { data: EVENTS, next_cursor: null },
 };
 
-/** Each row's text, whitespace folded, in the order the screen shows them. */
-const rowTexts = (page: Page, selector: string) =>
-  page
-    .locator(selector)
-    .evaluateAll((els) => els.map((el) => (el.textContent ?? '').replace(/\s+/g, ' ').trim()));
-
 async function shoot(page: Page, name: string, ready: () => Promise<void>): Promise<void> {
   if (SHOTS === undefined) return;
   mkdirSync(SHOTS, { recursive: true });
@@ -226,45 +204,6 @@ async function shoot(page: Page, name: string, ready: () => Promise<void>): Prom
 
 void after(async () => {
   await closeBrowser();
-});
-
-void describe('the Dashboard feed names the agent (LAI-570)', () => {
-  void test('mine by name, a legacy token as unregistered, another’s as a registered agent — in both themes', async () => {
-    const h = await open('/dashboard?project=laika-core', DASHBOARD);
-    try {
-      const rows = '.dash-event .dash-what';
-      await h.page.locator('.dash-event').first().waitFor({ timeout: 20_000 });
-      for (const theme of ['light', 'dark']) {
-        await setTheme(h.page, theme);
-        // `GET /agents` answers after the feed may have drawn: wait for the name.
-        await until(async () => ((await rowTexts(h.page, rows))[0] ?? '').startsWith(NAMED));
-        const [mine, legacy, theirs, persons] = await rowTexts(h.page, rows);
-        assert.ok(mine?.startsWith(NAMED), `${theme}: ${String(mine)}`);
-        assert.ok(legacy?.startsWith(`Ada Lovelace ${LEGACY}`), `${theme}: ${String(legacy)}`);
-        assert.ok(theirs?.startsWith(`Grace Hopper ${UNSEEN}`), `${theme}: ${String(theirs)}`);
-        assert.doesNotMatch(persons ?? '', / via /, `${theme}: a person’s row names an agent`);
-        assert.ok(await h.page.locator('.dash-via').first().isVisible());
-      }
-      // The mark and the hidden words are still there, on agent rows only.
-      assert.equal(await h.page.locator('.dash-event .dash-avatar-bot').count(), 3);
-      assert.equal(
-        await h.page.locator('.dash-event .visually-hidden', { hasText: '(by an agent)' }).count(),
-        3,
-      );
-      // The census reads something: the agent the reader may name is in it.
-      const page = await everything(h.page, 'body');
-      assert.ok(
-        page.some((v) => v.includes('Claude Code · Belka')),
-        'the census read nothing',
-      );
-      assert.deepEqual(leaks(page), [], 'a hidden agent leaked');
-      await shoot(h.page, 'dashboard-feed', async () => {
-        await h.page.locator('.dash-via').first().scrollIntoViewIfNeeded();
-      });
-    } finally {
-      await h.close();
-    }
-  });
 });
 
 void describe('Organisation → Activity names the agent (LAI-570)', () => {

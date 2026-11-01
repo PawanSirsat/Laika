@@ -540,23 +540,10 @@ thead .dash-contrib-n {
   border: 1px solid transparent;
 }
 
-/* The agent mark rides on the avatar, as it does on a card and a presence chip. */
-.dash-avatar-bot {
-  position: absolute;
-  right: -3px;
-  bottom: -3px;
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
-  background: var(--chip-pink);
-  border: 1.5px solid var(--bg-card);
-}
-
 /* ------------------------------------------------- filters and tab buttons */
 
-/* They wrap rather than hold their width: at 14px (LAI-828) Needs attention's
-   three tabs are 369px, and on a phone they pushed the screen 20px sideways. */
-.dash-feed-filters,
+/* They wrap rather than hold their width: at 14px (LAI-828) a card's tabs
+   could push a phone's screen sideways. */
 .dash-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -566,7 +553,6 @@ thead .dash-contrib-n {
   min-width: 0;
 }
 
-.dash-filter,
 .dash-tab {
   display: flex;
   align-items: center;
@@ -584,235 +570,30 @@ thead .dash-contrib-n {
   cursor: pointer;
 }
 
-.dash-filter:hover,
 .dash-tab:hover {
   border-color: var(--border-subtle);
 }
 
-.dash-filter-on,
 .dash-tab-on {
   color: var(--accent);
   background: var(--accent-bg);
   border-color: var(--accent-border);
 }
 
-.dash-filter:focus-visible,
 .dash-tab:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-.dash-filter-count,
-.dash-tab-count {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  color: var(--text-muted);
-}
+/* ------------------------------------------------------------- contributors */
 
-.dash-filter-on .dash-filter-count,
-.dash-tab-on .dash-tab-count {
-  color: var(--accent);
-}
-
-/* ------------------------------------------------------------- the feed card */
-
-/*
- * The feed and Needs attention share a row and a height; both lists scroll
- * inside their cards. Viewport-relative, so a short window does not get a card
- * taller than itself.
- */
-.dash-feed-scroll,
-.dash-attention-scroll {
-  flex: 1;
-  min-height: 0;
-  max-height: min(24.5rem, 46vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  margin: 0 calc(-1 * var(--space-2));
-  padding: 0 var(--space-2);
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-default) transparent;
-}
-
-.dash-feed {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.dash-day {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 0.5rem 0 0.25rem;
-  background: var(--bg-card);
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.dash-event {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  min-width: 0;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: var(--text-body);
-  color: var(--text-primary);
-}
-
-.dash-event:last-child {
-  border-bottom: none;
-}
-
-/* When, first — a fixed mono column, so the times line up. */
-.dash-event .dash-when {
-  flex: none;
-  width: 6rem;
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  line-height: 1;
-  color: var(--text-muted);
-}
-
-.dash-event .dash-what {
-  flex: 1;
-  min-width: 0;
-  font-weight: var(--weight-medium);
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dash-event .dash-actor {
-  font-weight: var(--weight-bold);
-}
-
-/* *via Claude Code · Belka* after the person (LAI-570): the agent acted for them. */
-.dash-event .dash-via {
-  color: var(--text-secondary);
-}
-
-.dash-move {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  color: var(--text-muted);
-}
-
-.dash-event-key {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  line-height: 1;
-  color: var(--text-muted);
-  text-decoration: none;
-}
-
-a.dash-event-key:hover,
-a.dash-event-key:focus-visible {
-  color: var(--accent);
-}
-
-/* -------------------------------------------------------- needs attention */
-
-/* Title, tabs and tools wrap rather than squeeze (LAI-817 added a tab to each). */
-.dash-attention .dash-card-head,
+/* Title, tabs and tools wrap rather than squeeze (LAI-817 added a tab). */
 .dash-people .dash-card-head {
   flex-wrap: wrap;
 }
 
 .dash-people .dash-tabs {
   margin-right: auto;
-}
-
-/* Blocked work not counted — backlog chains, shown apart under the count (D-092). */
-.dash-att-apart {
-  margin: var(--space-3) 0 0.25rem;
-  padding-top: var(--space-2);
-  border-top: 1px dashed var(--border-default);
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.02em;
-  color: var(--text-muted);
-}
-
-.dash-att-list-apart .dash-att-title {
-  color: var(--text-secondary);
-}
-
-.dash-att-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.dash-att-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-areas:
-    'key title'
-    '. meta';
-  column-gap: var(--space-2);
-  row-gap: 0.125rem;
-  padding: 0.5rem 0.25rem;
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-  color: var(--text-primary);
-  text-decoration: none;
-}
-
-.dash-att-list > li:last-child .dash-att-row {
-  border-bottom: none;
-}
-
-.dash-att-row:hover,
-.dash-att-row:focus-visible {
-  background: var(--bg-card-hover);
-}
-
-.dash-att-row:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.dash-key {
-  grid-area: key;
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  color: var(--text-muted);
-}
-
-.dash-att-title {
-  grid-area: title;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-body);
-  font-weight: var(--weight-semibold);
-}
-
-.dash-att-meta {
-  grid-area: meta;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-small);
-  color: var(--text-muted);
-}
-
-.dash-att-quiet {
-  color: var(--chip-orange);
-  font-weight: var(--weight-semibold);
 }
 
 /* -------------------------------------------------------- priority bars */
