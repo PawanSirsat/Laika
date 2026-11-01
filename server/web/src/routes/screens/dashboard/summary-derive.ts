@@ -1,4 +1,3 @@
-import { statusTransition, type ActivityEvent } from '../../../api/activity.ts';
 import { DAY_MS, isOverdue, startOfUtcDay } from '../../../api/date-only.ts';
 import { PRIORITIES, type TaskSummary, type TaskPriority } from '../../../api/tasks.ts';
 import { blockedTasks, type BlockedTask } from './dashboard-derive.ts';
@@ -276,68 +275,8 @@ export function priorityBreakdown(tasks: readonly TaskSummary[]): PriorityCount[
   }));
 }
 
-/** Days in review before the wait is worth a line in Needs attention (D-092 item 4). */
-export const REVIEW_WAIT_DAYS = 5;
-
-export interface ReviewWait {
-  readonly task: TaskSummary;
-  /**
-   * When it went into review. The move itself, from whichever of two places
-   * holds it — the review queue's `waiting_since`, or the range's own
-   * activity — the later of the two when both do. With neither, **at the
-   * latest**: the earlier of the range's start and the task's last touch,
-   * since the move was before both. So a wait is never overstated.
-   */
-  readonly since: number;
-}
-
 /**
- * **Waiting for review more than {@link REVIEW_WAIT_DAYS} days** (LAI-817,
- * D-092 item 4) — longest first.
- *
- * A long wait in review is the reviewer's, not the builder's: it used to
- * surface as "stale" against the person whose work was done.
- *
- * **It does not move with the range** (LAI-832). `queued` is `GET /review`'s
- * answer — when each task last moved into review, at any age — so a task ten
- * days in review and touched this morning stays on "Last 24 hours", where the
- * range's activity alone could see back only a day. The queue covers the
- * spaces where the reader may act (§6.4), and its oldest 200: anything else
- * falls back as above.
- */
-export function waitingForReview(
-  tasks: readonly TaskSummary[],
-  events: readonly ActivityEvent[],
-  rangeStart: number | undefined,
-  now: number,
-  queued: ReadonlyMap<string, number> = new Map(),
-): ReviewWait[] {
-  /** The latest move into review the range holds, per task. */
-  const entered = new Map<string, number>();
-  for (const event of events) {
-    if (event.task_id === null) continue;
-    const move = statusTransition(event);
-    if (move?.to !== 'review' || move.from === 'review') continue;
-    entered.set(event.task_id, Math.max(entered.get(event.task_id) ?? 0, event.created_at));
-  }
-  /** The later of the two exact times, when both are known. */
-  const moved = (id: string): number | undefined => {
-    const a = entered.get(id);
-    const b = queued.get(id);
-    return a === undefined ? b : b === undefined ? a : Math.max(a, b);
-  };
-  return tasks
-    .filter((t) => t.status === 'review')
-    .map((task) => ({
-      task,
-      since: moved(task.id) ?? Math.min(task.updated_at, rangeStart ?? task.updated_at),
-    }))
-    .filter((row) => now - row.since > REVIEW_WAIT_DAYS * DAY_MS)
-    .sort((a, b) => a.since - b.since);
-}
-
-/**
- * **Blocked, as Needs attention counts it** (LAI-817, D-092 item 3): work
+ * **Blocked, as the dashboard counts it** (LAI-817, D-092 item 3): work
  * somebody has committed to — to do or in progress — that waits on unfinished
  * work. Backlog waiting on backlog is a pipeline, not a blockage, and is shown
  * apart with anything else not yet committed. On OnRoute, 19 of the 30 were.
@@ -349,29 +288,4 @@ export function splitBlocked(rows: readonly BlockedTask[]): {
   const isCommitted = (row: BlockedTask): boolean =>
     row.task.status === 'todo' || row.task.status === 'in_progress';
   return { committed: rows.filter(isCommitted), apart: rows.filter((row) => !isCommitted(row)) };
-}
-
-function localDayStart(ms: number): number {
-  const day = new Date(ms);
-  day.setHours(0, 0, 0, 0);
-  return day.getTime();
-}
-
-/**
- * The heading over a day's activity: `Today`, `Yesterday`, then the date.
- *
- * **The reader's own day**, not UTC's. Due dates are date-only and read in UTC
- * (D-066); activity is an instant, and "today" for something that happened at
- * 2am in Pune is Pune's today.
- */
-export function dayHeading(ts: number, now: number): string {
-  const today = localDayStart(now);
-  const day = localDayStart(ts);
-  if (day >= today) return 'Today';
-  if (day >= localDayStart(today - 1)) return 'Yesterday';
-  return new Date(ts).toLocaleDateString(undefined, {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  });
 }

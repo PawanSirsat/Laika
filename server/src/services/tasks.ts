@@ -894,6 +894,12 @@ export interface CreateTaskInput {
    * Shaped by `normaliseOutsideId`, stored upper-case.
    */
   external_ref?: string | undefined;
+  /**
+   * The registered agent meant to do it, from the start (LAI-1027) — the
+   * check and the work request `PATCH`'s `selected_agent_id` makes, in the
+   * create's own transaction. Never an assignment and never a claim.
+   */
+  selected_agent_id?: string | undefined;
   created_via?: 'web' | 'mcp' | 'api' | 'webhook' | 'meeting' | undefined;
   now?: number;
 }
@@ -911,6 +917,13 @@ export function createTask(
   // a promoted unlisted note — arrives here, so this one check is all of them.
   assertCan(withProject(actor, project.id), 'task.create', { projectId: project.id });
   if (input.assignee_id !== undefined) assertMayHold(db, input.assignee_id, project.id);
+  const selectedAgentId = input.selected_agent_id ?? null;
+  if (selectedAgentId !== null) {
+    // Selecting is editing the task (`task.write`, as on `PATCH`), and the
+    // agent is checked exactly as `PATCH` checks it — before anything exists.
+    assertCan(withProject(actor, project.id), 'task.write', { projectId: project.id });
+    assertAgentSelectable(db, actor, project, selectedAgentId);
+  }
 
   const now = input.now ?? Date.now();
   const externalRef =
@@ -972,6 +985,7 @@ export function createTask(
         dueOn: input.due_on ?? null,
         plannedStart: input.planned_start ?? null,
         externalRef,
+        selectedAgentId,
         // Creation is an arrival at Done too (SPEC §4.5, D-093).
         completedAt: initial.category === 'done' ? now : null,
         createdAt: now,
@@ -1013,6 +1027,21 @@ export function createTask(
       },
       now,
     });
+
+    // The request and its row as `PATCH` writes them, after the create's own
+    // row, so the feed reads *created*, then *asked of that agent*.
+    if (selectedAgentId !== null) {
+      moveSelection(db, actor, id, selectedAgentId, now);
+      appendActivity(db, {
+        orgId: project.orgId,
+        projectId: project.id,
+        taskId: id,
+        ...activityActor(actor),
+        type: 'task.agent_selected',
+        payload: { from: null, to: selectedAgentId },
+        now,
+      });
+    }
 
     return viewOne(
       db,
@@ -1470,11 +1499,17 @@ export interface UpdateTaskInput {
  * session, agent and device, stays in, so a claim taken, paused, released or
  * transferred is a new version. The holder's own writes are the claim fence's
  * to order (LAI-541), not this.
+ *
+ * **And the checkpoint warning** (LAI-1016): `handoff.no_recent_save` turns on
+ * when the server's clock passes the window, with no write to the task, so it
+ * is left out for the same reason. A save that clears it is a new checkpoint,
+ * which `handoff.checkpoint` already carries.
  */
 export function taskVersion(view: TaskView): string {
   const claim = view.claim === null ? null : withoutPulse(view.claim);
+  const { no_recent_save: _clock, ...handoff } = view.handoff;
   return createHash('sha256')
-    .update(JSON.stringify({ ...view, claim }))
+    .update(JSON.stringify({ ...view, claim, handoff }))
     .digest('hex')
     .slice(0, 32);
 }
@@ -1603,7 +1638,7 @@ export function updateTask(
       // The claim fence (LAI-541), under the write lock and before anything
       // is written, so a stale holder changes nothing at all.
       assertClaimFence(db, actor, taskId, now);
-      if (selecting) assertSelectionChangeAllowed(db, task);
+      if (selecting) assertSelectionChangeAllowed(db, task, input.selected_agent_id ?? null);
 
       // **Every input of the view is read again here**, under the lock, and not
       // taken from `requireTask` above, which ran before it. The project's

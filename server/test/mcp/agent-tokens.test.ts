@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { activity, orgs, tokens, users } from '../../src/db/schema.ts';
+import { activity, handoffOffers, orgs, tasks, tokens, users } from '../../src/db/schema.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -311,6 +311,97 @@ describe('selecting an agent over MCP (LAI-535)', () => {
     expect(rows[0]).toMatchObject({ actorKind: 'agent', agentId: caller.agent.id });
     expect(JSON.parse(rows[0]!.payloadJson)).toEqual({ from: null, to: worker.agent.id });
 
+    await client.close();
+  });
+
+  it('create_task { agent } selects it in the create: one open request, one row, no assignee (LAI-1027)', async () => {
+    const caller = await register([{ project_id: alpha, scope: 'full' }]);
+    const client = await connect(caller.secret);
+
+    const result = await succeeded(client, 'create_task', {
+      project: 'alpha',
+      title: 'Mine from the start',
+      agent: caller.agent.id,
+    });
+    const view = (result.structuredContent as { task: Record<string, unknown> }).task;
+    expect(view.assignee_id).toBeNull();
+    expect((view.selected_agent as { id: string }).id).toBe(caller.agent.id);
+
+    const taskId = view.id as string;
+    expect(h.db.select().from(handoffOffers).where(eq(handoffOffers.taskId, taskId)).all()).toEqual(
+      [
+        expect.objectContaining({
+          kind: 'work_request',
+          state: 'open',
+          toAgentId: caller.agent.id,
+        }),
+      ],
+    );
+    const rows = h.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.taskId, taskId), eq(activity.type, 'task.agent_selected')))
+      .all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actorKind: 'agent', agentId: caller.agent.id });
+    expect(JSON.parse(rows[0]!.payloadJson)).toEqual({ from: null, to: caller.agent.id });
+
+    await client.close();
+  });
+
+  it('create_task refuses a foreign, read-only or revoked agent as PATCH does, and files nothing (LAI-1027)', async () => {
+    const caller = await register([{ project_id: alpha, scope: 'full' }]);
+    const readOnly = await register([{ project_id: alpha, scope: 'read_only' }]);
+    const revoked = await register([{ project_id: alpha, scope: 'full' }]);
+    await must(`/api/v1/agents/${revoked.agent.id}/revoke`, { method: 'POST' }, bob.cookie, 200);
+    const adas = (await must(
+      '/api/v1/agents',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          display_name: 'Ada’s',
+          harness: 'codex',
+          device_label: 'ada-laptop',
+          grants: [{ project_id: alpha, scope: 'full' }],
+        }),
+      },
+      ownerCookie,
+    )) as unknown as { agent: { id: string } };
+    const missing = '01NOSUCHAGENT0000000000000';
+    const client = await connect(caller.secret);
+
+    const create = async (agent: string) => {
+      const result = await client.callTool({
+        name: 'create_task',
+        arguments: { project: 'alpha', title: 'Refused', agent },
+      });
+      expect(result.isError).toBe(true);
+      return result.structuredContent as ErrorBody & {
+        error: { details: { field?: unknown; selected_agent_id?: unknown } };
+      };
+    };
+
+    const foreign = await create(adas.agent.id);
+    const none = await create(missing);
+    // Missing, not hidden (D-121 item 7): the same envelope, bar the id it echoes.
+    expect(JSON.stringify(foreign).replaceAll(adas.agent.id, '<id>')).toBe(
+      JSON.stringify(none).replaceAll(missing, '<id>'),
+    );
+    expect(none.error).toMatchObject({
+      code: 'unprocessable',
+      details: { field: 'selected_agent_id', reason: 'agent_not_found' },
+    });
+    expect((await create(readOnly.agent.id)).error.details).toMatchObject({
+      field: 'selected_agent_id',
+      reason: 'agent_read_only',
+    });
+    expect((await create(revoked.agent.id)).error.details).toMatchObject({
+      field: 'selected_agent_id',
+      reason: 'agent_revoked',
+    });
+
+    expect(h.db.select().from(tasks).all()).toEqual([]);
+    expect(h.db.select().from(handoffOffers).all()).toEqual([]);
     await client.close();
   });
 

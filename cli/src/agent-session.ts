@@ -18,6 +18,8 @@ import {
 } from 'node:fs';
 import { basename, join } from 'node:path';
 
+import { adapter, type Harness, isHarness } from './agent-adapters.ts';
+
 /**
  * The local helper's engine: an agent session that lives exactly as long as
  * the harness process holding it (proposal §4.2, §4.7; SPEC §9.1.1; LAI-542).
@@ -46,17 +48,8 @@ import { basename, join } from 'node:path';
  * process table as arguments, so the tests drive time and death directly.
  */
 
-export type Harness = 'claude-code' | 'codex';
-export const HARNESSES: readonly Harness[] = ['claude-code', 'codex'];
-
-export const isHarness = (value: string | undefined): value is Harness =>
-  value === 'claude-code' || value === 'codex';
-
-/** The executable name each harness runs as — what `ps -o comm=` prints. */
-const HARNESS_COMM: Readonly<Record<Harness, RegExp>> = {
-  'claude-code': /^claude$/,
-  codex: /^codex/,
-};
+/** The harnesses and their adapters live in one table (LAI-557). */
+export { HARNESSES, isHarness, type Harness } from './agent-adapters.ts';
 
 export const DEFAULT_INTERVAL_MS = 30_000;
 
@@ -148,6 +141,20 @@ export function log(home: string, line: string): void {
 export interface AgentCredential {
   readonly url: string;
   readonly token: string;
+}
+
+/**
+ * Which credential this is, without the credential (LAI-554): 16 hex of the
+ * SHA-256 of its URL and token. A token belongs to one agent for its whole
+ * life, so this names an identity; state kept per fingerprint is never shared
+ * by two. An agent token is a long random secret, so the digest cannot be
+ * turned back into it; it is still never logged.
+ */
+export function credentialFingerprint(credential: AgentCredential): string {
+  return createHash('sha256')
+    .update(`${credential.url.replace(/\/+$/, '')}\n${credential.token}`)
+    .digest('hex')
+    .slice(0, 16);
 }
 
 export function writeCredential(home: string, harness: Harness, credential: AgentCredential): void {
@@ -321,12 +328,16 @@ export function findHarness(
     const info = /^\d+$/.test(named) ? proc(Number(named)) : undefined;
     return info === undefined || info === UNKNOWN || isDeadState(info.state) ? undefined : info;
   }
+  // A harness with no known executable name is never guessed at (LAI-557):
+  // its session is bound by `--pid` or `LAIKA_AGENT_HARNESS_PID` only.
+  const comm = adapter(harness).comm;
+  if (comm === undefined) return undefined;
   let pid = from;
   for (let depth = 0; depth < 16 && pid > 1; depth += 1) {
     const info = proc(pid);
     // Unknown is not good enough to bind a session to.
     if (info === undefined || info === UNKNOWN) return undefined;
-    if (HARNESS_COMM[harness].test(info.comm)) return isDeadState(info.state) ? undefined : info;
+    if (comm.test(info.comm)) return isDeadState(info.state) ? undefined : info;
     pid = info.ppid;
   }
   return undefined;
@@ -393,6 +404,14 @@ export interface SessionState {
    * (LAI-547): the checkpoint helper reads the agent's consent by it.
    */
   agent_id?: string;
+  /**
+   * {@link credentialFingerprint} of the credential the board opened this
+   * session for (LAI-554). A hook running on another credential — a login
+   * since changed — does not speak for this session: its `session_id` and
+   * `agent_id` are another identity's. Absent on a session an older helper
+   * opened, which is treated the same way.
+   */
+  credential_fp?: string;
   /**
    * The start's `Idempotency-Key` (SPEC §6.3), written before the first
    * attempt: every retry of this start sends it, so the board answers a retry
@@ -581,6 +600,9 @@ function records(text: string): Record<string, unknown>[] {
  * | Claude Code | `version` on each `user` / `assistant` line | the input's `model`, else the last `assistant` line's `message.model` |
  * | Codex | `session_meta`'s `payload.cli_version` (the first line) | the input's `model`, else the last `turn_context`'s `payload.model` |
  *
+ * Any other harness (LAI-557) reports only the input's `model`: its
+ * transcript has not been read here, so nothing is guessed from it.
+ *
  * The newest line wins: a model switched mid-session is the one the last
  * reply used. **Nothing found is nothing sent** — a new session's transcript
  * may not exist yet at `SessionStart`, and the version then waits for a later
@@ -600,7 +622,7 @@ export function readSelfReport(
       if (r.type === 'assistant' && isRecord(r.message)) model ??= asModel(r.message.model);
       if (version !== undefined && model !== undefined) break;
     }
-  } else {
+  } else if (harness === 'codex') {
     const meta = ends === undefined ? undefined : records(ends.head)[0];
     if (meta?.type === 'session_meta' && isRecord(meta.payload)) {
       version = asVersion(meta.payload.cli_version);
@@ -947,6 +969,7 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
       state.status = 'live';
       state.session_id = result.body.id;
       if (isLaikaId(result.body.agent_id)) state.agent_id = result.body.agent_id;
+      state.credential_fp = credentialFingerprint(request.credential);
       state.reported = {
         ...(body.harness_version === undefined ? {} : { harness_version: body.harness_version }),
         ...(body.model === undefined ? {} : { model: body.model }),

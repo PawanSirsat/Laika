@@ -6,6 +6,7 @@ import {
   handoffOffers,
   orgs,
   projects,
+  taskClaims,
   tasks,
   tokens,
   users,
@@ -66,6 +67,16 @@ async function refusal(res: Response) {
     field: body.error.details?.field,
     reason: body.error.details?.reason,
   };
+}
+
+const NO_SUCH_AGENT = '01NOSUCHAGENT0000000000000';
+
+/**
+ * A refusal's whole body with the id it echoes replaced, so a foreign agent's
+ * answer can be compared byte for byte with a missing one's (D-121 item 7).
+ */
+async function bodyAsMissing(res: Response, agentId: string) {
+  return { status: res.status, body: (await res.text()).replaceAll(agentId, '<id>') };
 }
 
 interface Registered {
@@ -374,9 +385,20 @@ describe('an agent that cannot be selected is 422 with the reason', () => {
     await expectRefused(await newTask('alpha'), agent.id, 'agent_read_only');
   });
 
-  it('another member’s agent — the hand-off policy’s default (LAI-546 opens it)', async () => {
+  it('another member’s agent is missing, not hidden: the same body as an id that names none (D-121, LAI-1027)', async () => {
     const adas = await register([{ project_id: alpha, scope: 'full' }], ownerCookie, 'Ada’s');
-    await expectRefused(await newTask('alpha'), adas.agent.id, 'agent_other_owner');
+    await expectRefused(await newTask('alpha'), adas.agent.id, 'agent_not_found');
+    expect(
+      await bodyAsMissing(
+        await patch(await newTask('alpha'), { selected_agent_id: adas.agent.id }),
+        adas.agent.id,
+      ),
+    ).toEqual(
+      await bodyAsMissing(
+        await patch(await newTask('alpha'), { selected_agent_id: NO_SUCH_AGENT }),
+        NO_SUCH_AGENT,
+      ),
+    );
   });
 
   it('another organisation’s agent', async () => {
@@ -395,11 +417,11 @@ describe('an agent that cannot be selected is 422 with the reason', () => {
       })
       .run();
     h.db.update(agents).set({ orgId: 'other-org' }).where(eq(agents.id, agent.id)).run();
-    await expectRefused(await newTask('alpha'), agent.id, 'agent_wrong_org');
+    await expectRefused(await newTask('alpha'), agent.id, 'agent_not_found');
   });
 
   it('an id that names no agent', async () => {
-    await expectRefused(await newTask('alpha'), '01NOSUCHAGENT0000000000000', 'agent_not_found');
+    await expectRefused(await newTask('alpha'), NO_SUCH_AGENT, 'agent_not_found');
   });
 
   it('a space whose agents may not write', async () => {
@@ -421,6 +443,175 @@ describe('an agent that cannot be selected is 422 with the reason', () => {
     );
     const res = await patch(taskId, { selected_agent_id: agent.id });
     expect(res.status).toBe(403);
+    expect(offersOf(taskId)).toEqual([]);
+  });
+});
+
+describe('selecting on create (LAI-1027)', () => {
+  function create(body: Record<string, unknown>, auth: Auth = { cookie: bob.cookie }) {
+    return req(
+      '/api/v1/projects/alpha/tasks',
+      { method: 'POST', body: JSON.stringify({ title: 'Work', ...body }) },
+      auth,
+    );
+  }
+
+  const taskCount = () => h.db.select().from(tasks).all().length;
+
+  it('selects the agent in the create: one open request, one row, no assignee', async () => {
+    const { agent } = await register([{ project_id: alpha, scope: 'full' }]);
+
+    const view = await ok(await create({ selected_agent_id: agent.id }), 201);
+    const taskId = view.id as string;
+
+    expect(view).toMatchObject({ assignee_id: null, selected_agent: { id: agent.id } });
+    expect(h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()).toMatchObject({
+      assigneeId: null,
+      selectedAgentId: agent.id,
+    });
+    expect(offersOf(taskId)).toEqual([
+      expect.objectContaining({
+        kind: 'work_request',
+        state: 'open',
+        toAgentId: agent.id,
+        createdByUserId: bob.id,
+      }),
+    ]);
+    const rows = selections(taskId);
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]!.payloadJson)).toEqual({ from: null, to: agent.id });
+  });
+
+  it('an agent’s own token can file its card selected for itself, and then claim it', async () => {
+    const { agent, secret } = await register([{ project_id: alpha, scope: 'full' }]);
+
+    const view = await ok(await create({ selected_agent_id: agent.id }, { bearer: secret }), 201);
+    await ok(
+      await req(`/api/v1/tasks/${view.id as string}/claim`, { method: 'POST' }, { bearer: secret }),
+    );
+
+    expect(offersOf(view.id as string)).toEqual([
+      expect.objectContaining({ state: 'accepted', toAgentId: agent.id }),
+    ]);
+  });
+
+  async function expectCreateRefused(agentId: string, reason: string) {
+    const before = taskCount();
+    expect(await refusal(await create({ selected_agent_id: agentId }))).toEqual({
+      status: 422,
+      code: 'unprocessable',
+      field: 'selected_agent_id',
+      reason,
+    });
+    // Refused means nothing was filed: no task, no request, no row.
+    expect(taskCount()).toBe(before);
+    expect(h.db.select().from(handoffOffers).all()).toEqual([]);
+  }
+
+  it('another member’s agent is refused exactly as an id that names none, and files nothing', async () => {
+    const adas = await register([{ project_id: alpha, scope: 'full' }], ownerCookie, 'Ada’s');
+    await expectCreateRefused(adas.agent.id, 'agent_not_found');
+    expect(
+      await bodyAsMissing(await create({ selected_agent_id: adas.agent.id }), adas.agent.id),
+    ).toEqual(
+      await bodyAsMissing(await create({ selected_agent_id: NO_SUCH_AGENT }), NO_SUCH_AGENT),
+    );
+  });
+
+  it('a read-only grant is refused, and files nothing', async () => {
+    const { agent } = await register([{ project_id: alpha, scope: 'read_only' }]);
+    await expectCreateRefused(agent.id, 'agent_read_only');
+  });
+
+  it('a revoked agent is refused, and files nothing', async () => {
+    const { agent } = await register([{ project_id: alpha, scope: 'full' }]);
+    await ok(
+      await req(`/api/v1/agents/${agent.id}/revoke`, { method: 'POST' }, { cookie: bob.cookie }),
+    );
+    await expectCreateRefused(agent.id, 'agent_revoked');
+  });
+});
+
+describe('selecting the agent that holds the live claim (LAI-1027)', () => {
+  /** A task claimed by `holder` while nothing was selected — the card LAI-1027 found. */
+  async function claimedUnselected(holder: Registered): Promise<string> {
+    const taskId = await newTask('alpha');
+    await ok(
+      await req(`/api/v1/tasks/${taskId}/claim`, { method: 'POST' }, { bearer: holder.secret }),
+    );
+    return taskId;
+  }
+
+  const claimsOf = (taskId: string) =>
+    h.db.select().from(taskClaims).where(eq(taskClaims.taskId, taskId)).all();
+
+  it('is allowed: the claim is untouched, the row is written, the request is accepted', async () => {
+    const holder = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'Holder');
+    const taskId = await claimedUnselected(holder);
+    const before = claimsOf(taskId);
+    expect(before).toEqual([
+      expect.objectContaining({ state: 'active', agentId: holder.agent.id }),
+    ]);
+
+    const view = await ok(await patch(taskId, { selected_agent_id: holder.agent.id }));
+
+    expect((view.selected_agent as { id: string }).id).toBe(holder.agent.id);
+    expect(view.assignee_id).toBeNull();
+    expect(claimsOf(taskId)).toEqual(before);
+    expect(offersOf(taskId)).toEqual([
+      expect.objectContaining({
+        kind: 'work_request',
+        state: 'accepted',
+        toAgentId: holder.agent.id,
+        closedAt: expect.any(Number) as unknown,
+      }),
+    ]);
+    const rows = selections(taskId);
+    expect(rows.map((r) => JSON.parse(r.payloadJson) as unknown)).toEqual([
+      { from: null, to: holder.agent.id },
+    ]);
+
+    // And the holder keeps working under it: its own session renews as before.
+    await ok(
+      await req(
+        `/api/v1/tasks/${taskId}/claim`,
+        { method: 'POST', body: JSON.stringify({ session_id: before[0]!.sessionId }) },
+        { bearer: holder.secret },
+      ),
+    );
+  });
+
+  it('any other agent, or withdrawing, is still claim_held and writes nothing', async () => {
+    const holder = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'Holder');
+    const other = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'Other');
+    const taskId = await claimedUnselected(holder);
+    await ok(await patch(taskId, { selected_agent_id: holder.agent.id }));
+
+    for (const to of [other.agent.id, null]) {
+      expect(await refusal(await patch(taskId, { selected_agent_id: to }))).toEqual({
+        status: 409,
+        code: 'conflict',
+        field: 'selected_agent_id',
+        reason: 'claim_held',
+      });
+    }
+    expect(h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()?.selectedAgentId).toBe(
+      holder.agent.id,
+    );
+    expect(selections(taskId)).toHaveLength(1);
+  });
+
+  it('on a claim with nothing selected, another agent is still claim_held', async () => {
+    const holder = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'Holder');
+    const other = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'Other');
+    const taskId = await claimedUnselected(holder);
+
+    expect(await refusal(await patch(taskId, { selected_agent_id: other.agent.id }))).toEqual({
+      status: 409,
+      code: 'conflict',
+      field: 'selected_agent_id',
+      reason: 'claim_held',
+    });
     expect(offersOf(taskId)).toEqual([]);
   });
 });

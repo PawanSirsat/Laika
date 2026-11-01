@@ -350,10 +350,13 @@ export function liveClaim(db: Db, taskId: string): ClaimRow | undefined {
  * The live claim of each task on a page, keyed by task id — **one query
  * whatever the page size**, as LAI-091 keeps every other part of a task view.
  *
- * An `active` claim whose lease has lapsed is left out before the scan
- * catches it ({@link leaseLapsed}, so the boot grace holds here too): the
- * fence already refuses its generation, and a card must not say *Working*
- * for a claim nobody can use.
+ * A claim whose lease has lapsed — `active` **or `paused`** — is left out
+ * before the scan catches it ({@link leaseLapsed}, so the boot grace holds
+ * here too): the scan expires both, the fence already refuses its
+ * generation, and a card must not say *Working* for a claim nobody can use.
+ * This is also what `agentLens` reads, so a lapsed sender with an open
+ * hand-off stops being named the moment its lease ends, not when the scan
+ * runs (LAI-1012).
  */
 export function liveClaimViews(
   db: Db,
@@ -393,7 +396,7 @@ export function liveClaimViews(
     model,
     deviceLabel,
   } of found) {
-    if (claim.state === 'active' && leaseLapsed(claim.leaseExpiresAt, now)) continue;
+    if (leaseLapsed(claim.leaseExpiresAt, now)) continue;
     views.set(claim.taskId, {
       generation: claim.generation,
       // The query's predicate: only the live states reach here.
@@ -1095,9 +1098,11 @@ function selectedForAnotherAgent(db: Db, claim: Pick<ClaimRow, 'taskId' | 'agent
 
 /**
  * **A claim held by an agent that is not the task's selected agent** (D-119,
- * LAI-586 review). The API cannot make one any more — a claim needs the
- * selection, and the selection cannot change under a live claim — but a claim
- * taken before the rule, or before the selection, can still be live.
+ * LAI-586 review). The API cannot make one any more. A claim does **not**
+ * need a selection — with nothing selected any eligible agent may claim — but
+ * under a live claim the selection can change only to the claim's own holder
+ * (LAI-1027); anyone else needs a hand-off, whose accept moves the selection
+ * and the claim together. A claim taken before the rule can still be live.
  *
  * It is **never renewed and never usable**: `start_working` and the reclaim
  * refuse it `selected_for_another_agent`, and so does the fence for any change

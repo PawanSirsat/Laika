@@ -67,7 +67,7 @@ describe('assertAgentSelectable', () => {
     expect(() => assertAgentSelectable(t.db, owner, project(), agent.id)).not.toThrow();
   });
 
-  it('says "not yours" before "revoked": the first thing the caller cannot fix', () => {
+  it('answers "not yours" as missing, before "revoked" (D-121 item 7, LAI-1027)', () => {
     const agent = register(null);
     revokeAgent(t.sqlite, t.db, owner, agent.id);
 
@@ -75,7 +75,7 @@ describe('assertAgentSelectable', () => {
     const other = { ...owner, userId: newId() };
 
     expect(reasonOf(() => assertAgentSelectable(t.db, other, project(), agent.id))).toBe(
-      'agent_other_owner',
+      'agent_not_found',
     );
     expect(reasonOf(() => assertAgentSelectable(t.db, owner, project(), agent.id))).toBe(
       'agent_revoked',

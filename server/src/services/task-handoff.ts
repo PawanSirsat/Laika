@@ -11,6 +11,7 @@ import {
 } from '../db/enums.ts';
 import { checkpointRefs, handoffOffers, taskCheckpoints, taskClaims } from '../db/schema.ts';
 import { checkpointSettings } from './checkpoints.ts';
+import { leaseLapsed } from './claims.ts';
 
 /**
  * A task's saves and hand-off in one small summary (§6.4, LAI-1005), so a card
@@ -54,6 +55,23 @@ export interface TaskHandoffView {
    * (LAI-548) is not reported here.
    */
   save_needs_attention: boolean;
+  /**
+   * §9.1.1's checkpoint warning (LAI-1016): a **live** claim holds the task and
+   * nothing has been saved for longer than the window — no checkpoint newer
+   * than it, and the claim itself older than it. Null otherwise. Shown,
+   * decides nothing: no offer, no expiry.
+   *
+   * The server cannot see a session's unsaved edits, so this says only what
+   * it knows — how long the holder has gone without a save — and never that
+   * work is pending. A claim younger than the window has not yet had the
+   * chance to save, so it is not warned about.
+   */
+  no_recent_save: {
+    /** The newest checkpoint's `created_at`, or the claim's start when it has none since. */
+    since: number;
+    /** The window it is past, so the words can say how long. */
+    window_ms: number;
+  } | null;
 }
 
 /** What a task with no saves and no hand-off reads — and what a caller who may not see them reads. */
@@ -62,6 +80,7 @@ export const NO_HANDOFF: Readonly<TaskHandoffView> = Object.freeze({
   offer: null,
   recovery_available: false,
   save_needs_attention: false,
+  no_recent_save: null,
 });
 
 /** The facts the two rules read, per task. */
@@ -98,6 +117,30 @@ export function deriveHandoff(facts: HandoffFacts): {
 }
 
 /**
+ * The checkpoint warning's rule, once (LAI-1016), on the server's clock: the
+ * newest claim is live and the later of its start and the task's newest save
+ * (any state) is more than `windowMs` ago.
+ *
+ * An `active` claim whose lease has lapsed is not live, though the expiry scan
+ * has not marked it yet — {@link leaseLapsed}, the one rule the scan and the
+ * task's live claim read (LAI-541). Nothing then holds the task to warn about.
+ */
+export function noRecentSave(facts: {
+  newestClaim: { state: TaskClaimState; createdAt: number; leaseExpiresAt: number } | null;
+  newestSavedAt: number | null;
+  windowMs: number;
+  now: number;
+}): TaskHandoffView['no_recent_save'] {
+  const claim = facts.newestClaim;
+  if (claim === null || !(LIVE_CLAIM_STATES as readonly string[]).includes(claim.state)) {
+    return null;
+  }
+  if (claim.state === 'active' && leaseLapsed(claim.leaseExpiresAt, facts.now)) return null;
+  const since = Math.max(claim.createdAt, facts.newestSavedAt ?? claim.createdAt);
+  return facts.now - since > facts.windowMs ? { since, window_ms: facts.windowMs } : null;
+}
+
+/**
  * Every listed task's summary in **three queries whatever the page size** —
  * claims, checkpoints with their newest ref, live offers — never one per task
  * (LAI-091's rule, which every other part of a task view keeps).
@@ -111,12 +154,17 @@ export function handoffViews(
   if (rows.length === 0) return out;
   const ids = rows.map((r) => r.id);
 
-  const newestClaim = new Map<string, { generation: number; state: TaskClaimState }>();
+  const newestClaim = new Map<
+    string,
+    { generation: number; state: TaskClaimState; createdAt: number; leaseExpiresAt: number }
+  >();
   for (const claim of db
     .select({
       taskId: taskClaims.taskId,
       generation: taskClaims.generation,
       state: taskClaims.state,
+      createdAt: taskClaims.createdAt,
+      leaseExpiresAt: taskClaims.leaseExpiresAt,
     })
     .from(taskClaims)
     .where(inArray(taskClaims.taskId, ids))
@@ -217,10 +265,11 @@ export function handoffViews(
     });
   }
 
-  const { pendingNoticeMs } = checkpointSettings();
+  const { pendingNoticeMs, saveWarningMs } = checkpointSettings();
   for (const row of rows) {
     const save = newest.get(row.id);
     const offer = offers.get(row.id)?.view ?? null;
+    const claim = newestClaim.get(row.id) ?? null;
     const pendingSince = save?.verification === 'pending' ? (save.refAt ?? save.createdAt) : null;
     out.set(row.id, {
       checkpoint:
@@ -235,10 +284,16 @@ export function handoffViews(
       offer,
       ...deriveHandoff({
         status: row.status,
-        newestClaim: newestClaim.get(row.id)?.state ?? null,
+        newestClaim: claim?.state ?? null,
         newestCheckpoint: save?.verification ?? null,
         hasVerified: verified.has(row.id),
         liveOffer: offer,
+      }),
+      no_recent_save: noRecentSave({
+        newestClaim: claim,
+        newestSavedAt: save?.createdAt ?? null,
+        windowMs: saveWarningMs,
+        now,
       }),
     });
   }

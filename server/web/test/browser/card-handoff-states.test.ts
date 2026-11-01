@@ -453,9 +453,22 @@ function world(): World {
       ],
     }),
     '/api/v1/tasks/t5/handoff-offers': { data: [] },
+    // t4's drawer (LAI-1016): held by a live session, its one save uncertain.
+    '/api/v1/projects/laika-core/activity?task_id=t4': { data: [], next_cursor: null },
+    '/api/v1/tasks/t4/checkpoints': {
+      data: [
+        checkpoint('t4', {
+          verification: 'uncertain',
+          verified_at: null,
+          refs: [{ ref: 'refs/tags/laika-ckpt/LC/t4', revision: 0, state: 'uncertain' }],
+        }),
+      ],
+    },
+    '/api/v1/tasks/t4/handoff-offers': { data: [] },
     '/api/v1/agents': { data: [], next_cursor: null },
     ...perTask('t1'),
     ...perTask('t2'),
+    ...perTask('t4'),
     ...perTask('t5'),
     '/api/v1/org': {
       id: 'o',
@@ -775,6 +788,102 @@ void describe('LAI-1006 review fixes', () => {
       assert.match(h.page.url(), /task=t2/);
       // The tooltip survived the fix.
       assert.match((await line.getAttribute('title')) ?? '', /A person has to look/);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the checkpoint warning (LAI-1016)', () => {
+  void test('card and drawer say it under Working, in both themes, and no other card does', async () => {
+    const w = world();
+    const i = w.tasks.findIndex((t) => t.id === 't4');
+    w.tasks[i] = {
+      ...w.tasks[i],
+      handoff: {
+        ...NONE,
+        checkpoint: savedAs('uncertain'),
+        no_recent_save: { since: NOW - 40 * MIN, window_ms: 5 * MIN },
+      },
+    };
+    const h = await open('/board?project=laika-core&task=t4', w.stub, { before: fakeStream });
+    try {
+      const panel = h.page.locator('.drawer [data-exec-panel]');
+      await panel.waitFor({ timeout: 20_000 });
+      await until(async () => (await stateOf(h.page, 't4')) === 'working', 10_000);
+
+      const warning = card(h.page, 't4').locator('[data-no-recent-save]');
+      await warning.waitFor({ timeout: 10_000 });
+      assert.equal(
+        (await warning.locator('.exec-state-label').innerText()).trim(),
+        'No save in the last 5 minutes',
+      );
+      assert.equal(await warning.locator('svg[data-shape="save_needs_attention"]').count(), 1);
+      // Beside the claim's line, never in its place; and on no other card.
+      assert.equal(await stateOf(h.page, 't4'), 'working');
+      assert.equal(await h.page.locator('.card [data-no-recent-save]').count(), 1);
+      // Focus on the card's open button reads it, as it reads the save state.
+      const warningId = await warning.getAttribute('id');
+      const describedBy =
+        (await card(h.page, 't4').locator('.card-open').getAttribute('aria-describedby')) ?? '';
+      assert.ok(warningId !== null && describedBy.split(' ').includes(warningId), describedBy);
+      assert.match(
+        (await warning.textContent()) ?? '',
+        /No save in the last 5 minutes\. The agent holds the task and has not saved a checkpoint in that time\./,
+      );
+
+      const inPanel = panel.locator('[data-no-recent-save]');
+      await inPanel.waitFor({ timeout: 10_000 });
+      assert.match(await inPanel.innerText(), /No save in the last 5 minutes/);
+      assert.equal(await inPanel.getAttribute('role'), 'status');
+      assert.equal(
+        await panel.locator('[data-exec-state]').first().getAttribute('data-exec-state'),
+        'working',
+      );
+
+      // Both themes draw it, in each theme's own ink — words and shape, not a colour alone.
+      const ink: string[] = [];
+      for (const theme of ['light', 'dark']) {
+        await setTheme(h.page, theme);
+        for (const where of [warning, inPanel]) {
+          assert.ok(await where.isVisible(), `${theme}: the warning is drawn`);
+        }
+        ink.push(
+          await warning.locator('.exec-state-label').evaluate((el) => getComputedStyle(el).color),
+        );
+      }
+      assert.notEqual(ink[0], ink[1], 'the label takes each theme’s token');
+      await shoot(h.page, 'card-no-recent-save', '.card[data-task-id="t4"]');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a card that does not show the live claim does not show the warning either', async () => {
+    const w = world();
+    const warned = { since: NOW - 40 * MIN, window_ms: 5 * MIN };
+    // t3 carries the flag with no live claim on the read; t4 has one, but the
+    // reader hid the agent field, and with it the claim's line.
+    for (const id of ['t3', 't4']) {
+      const i = w.tasks.findIndex((t) => t.id === id);
+      w.tasks[i] = { ...w.tasks[i], handoff: { ...NONE, no_recent_save: warned } };
+    }
+    const h = await open('/board?project=laika-core', w.stub, {
+      before: async (page) => {
+        await fakeStream(page);
+        await page.addInitScript(() => {
+          localStorage.setItem(
+            'laika.board-view',
+            JSON.stringify({ 'laika-core': { fields: { agent: false } } }),
+          );
+        });
+      },
+    });
+    try {
+      await card(h.page, 't2').waitFor({ timeout: 20_000 });
+      await until(async () => (await stateOf(h.page, 't2')) === 'save_needs_attention', 10_000);
+      assert.equal(await stateOf(h.page, 't4'), null);
+      assert.equal(await h.page.locator('.card [data-no-recent-save]').count(), 0);
     } finally {
       await h.close();
     }

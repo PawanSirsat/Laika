@@ -364,7 +364,7 @@ export function ContextHistory({ slug, refreshKey, members, agents }: ContextHis
                         />
                       </span>
                     ) : (
-                      r.agent_id !== null && (
+                      (r.agent_id !== null || r.agent_redacted) && (
                         <span className="ctx-revision-agent-anon">through an agent</span>
                       )
                     )}

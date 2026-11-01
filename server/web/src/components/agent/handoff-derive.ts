@@ -103,7 +103,10 @@ export function currentOffer(offers: readonly HandoffOffer[]): HandoffOffer | un
 export function offerAgentName(
   id: string | null,
   agents: ReadonlyMap<string, AgentNaming>,
+  redacted = false,
 ): string {
+  // Withheld by the server (LAI-1012): an agent, never "any eligible agent".
+  if (redacted) return UNNAMED_AGENT;
   if (id === null) return 'any eligible agent';
   const named = agents.get(id);
   return named === undefined ? UNNAMED_AGENT : agentLabel(named);
@@ -121,7 +124,7 @@ export function offerStatusWords(
   offer: HandoffOffer,
   agents: ReadonlyMap<string, AgentNaming>,
 ): string {
-  const to = offerAgentName(offer.to_agent_id, agents);
+  const to = offerAgentName(offer.to_agent_id, agents, offer.to_agent_redacted);
   const kind = offer.kind === 'recovery' ? 'Recovery offer' : 'Hand-off';
   switch (offer.state) {
     case 'pending_approval':
@@ -317,7 +320,8 @@ export const APPROVE_CHECKING = 'Checking whether you own the receiving agent…
 export const APPROVE_UNREAD = 'Could not check whether you own the receiving agent.';
 
 export function approveGate(
-  offer: Pick<HandoffOffer, 'state' | 'to_agent_id'>,
+  offer: Pick<HandoffOffer, 'state' | 'to_agent_id'> &
+    Partial<Pick<HandoffOffer, 'to_agent_redacted'>>,
   reader: {
     readonly holdsApprove: boolean;
     readonly leadsOrAssignee: boolean;
@@ -327,6 +331,9 @@ export function approveGate(
 ): ApproveGate {
   if (offer.state !== 'pending_approval') return { kind: 'hidden' };
   if (!reader.holdsApprove || !reader.leadsOrAssignee) return { kind: 'hidden' };
+  // A withheld receiver is another person's agent — never the reader's own,
+  // which is always shown (LAI-1012) — so the reader may approve it.
+  if (offer.to_agent_redacted === true) return { kind: 'enabled' };
   // An unnamed recovery is named by the approver, which this screen does not do.
   if (offer.to_agent_id === null) return { kind: 'hidden' };
   if (reader.ownAgents === 'loading') return { kind: 'disabled', reason: APPROVE_CHECKING };

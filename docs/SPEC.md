@@ -3445,7 +3445,9 @@ GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
                                              DELETE takes an optional body { open_tasks } as deactivation does (LAI-986)
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
        └ GET answers the document with its `revision`; PATCH takes { context_md, base_revision } — base_revision required, the revision the write replaces; another is 409 `stale_context_revision` with { base_revision, current_revision } and nothing is written (§4.68, LAI-555)
-GET    /api/v1/projects/:slug/context/revisions          newest first, no text: [{ revision, length, author_id, agent_id, created_at }]
+GET    /api/v1/projects/:slug/context/revisions          newest first, no text: [{ revision, length, author_id, agent_id, agent_redacted, created_at }]
+       └ `agent_id` to its owner only: a revision is beside no task, so another person's agent is null with
+         `agent_redacted: true` (D-121 item 7, LAI-1012); the same on `.../revisions/:revision`
 GET    /api/v1/projects/:slug/context/revisions/:revision    one revision with its `body`; one the project has not reached is 404
 GET    /api/v1/projects/:slug/context/diff   ?from=&to= → { from_revision, to_revision, current_revision, diff, added, removed, truncated, hint }; `to` defaults to current, `from` may be 0 (the empty document), from > to is 422
        └ at most 2,000 changed lines (added + removed) are answered; past that `truncated: true`, `diff: ''`, `added` and `removed` null, and `hint` names how to read the revision whole (`.../context/revisions/:to`, or `get_project_context` without `since_revision`). MCP answers the same `context_diff`
@@ -3490,6 +3492,8 @@ POST   /api/v1/tasks/:id/checkpoints         body { id, idempotency_key, repo, b
                                              → 201 checkpoint; the same key again → 200 that checkpoint (§4.70, LAI-545).
                                              The live claim's holder only, with X-Laika-Claim-Generation
 GET    /api/v1/tasks/:id/checkpoints         newest first, each with its refs, `verification`, `pending_since`, `superseded`
+                                             `session_id` and `agent_id` are null with `agent_redacted: true` where the
+                                             saving agent is another person's the task no longer shows (D-121 item 7, LAI-1012)
 POST   /api/v1/checkpoints/:id/refs          → 201 { ref, revision, verification } — registers the next re-tag before it is
                                              pushed (`laika agent checkpoint reverify`, D-116 item 7); task.checkpoint.retag
 GET    /api/v1/agents/:id/checkpoint-consent → { given, given_by_user_id, given_at, withdrawn_at } (§4.75; the owner, or the agent's own token)
@@ -3572,7 +3576,10 @@ parent_task_id, due_on, planned_start, external_ref, selected_agent_id }`.
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set. `POST /projects/:slug/tasks` takes
 the same three optional fields (`parent_task_id`, `due_on`, `planned_start`)
-beside `discovered_from`. Both take `external_ref`, an outside id (§4.5) —
+beside `discovered_from`, and `selected_agent_id` (LAI-1027) — checked as
+`PATCH` checks it, opening the work request and writing the
+`task.agent_selected` row in the create's own transaction, so a refused agent
+files no task. Both take `external_ref`, an outside id (§4.5) —
 anything of another shape is `422` on that field, and one another task of the
 project holds is `422` with `details: { field: 'external_ref', reason:
 'taken', external_ref, task }` — and `PATCH` clears it with `null` (LAI-780).
@@ -3614,12 +3621,19 @@ to do the task and opens a work request for it; `null` withdraws the request,
 and the same id again changes nothing and writes nothing. It never moves
 `assignee_id`. An agent that cannot be selected is `422` with `details: {
 field: 'selected_agent_id', reason, selected_agent_id }`, `reason` one of
-`agent_not_found`, `agent_other_owner`, `agent_wrong_org`, `agent_revoked`,
-`agent_not_granted`, `agent_read_only` or `agents_off`. **Changing it while
-an agent session holds the task's live claim is `409 conflict`, `reason:
-claim_held`** — that change is a hand-off (LAI-546): accepting one sets
-`selected_agent_id` to the receiver in the accept's own transaction (§4.73);
-with no live claim it is free to change (LAI-541). **The selected agent owns the claim** (D-119,
+`agent_not_found`, `agent_revoked`, `agent_not_granted`, `agent_read_only` or
+`agents_off`. **Another person's agent, or one in another organisation, is
+`agent_not_found`**, byte for byte as an id that names no agent (D-121 item 7,
+LAI-1027); `agent_other_owner` and `agent_wrong_org` are no longer answered.
+**Changing it while an agent session holds the task's live claim is `409
+conflict`, `reason: claim_held`** — that change is a hand-off (LAI-546):
+accepting one sets `selected_agent_id` to the receiver in the accept's own
+transaction (§4.73); with no live claim it is free to change (LAI-541). **The
+one change a live claim allows is to the agent that holds it** (LAI-1027): a
+task claimed while nothing was selected can name its holder afterwards. The
+claim is untouched, the `task.agent_selected` row is written as for any
+selection, and the work request is written `accepted`, as the holder's claim
+would have accepted it; `null` or any other agent is still `claim_held`. **The selected agent owns the claim** (D-119,
 LAI-586): *"When a task has a selected agent, only sessions of that agent may
 claim it. Any other agent gets `409 conflict` with reason
 `selected_for_another_agent`, naming the selected agent if the caller may see
@@ -3632,9 +3646,10 @@ selected agent meets the assignee rule as before. The selected agent's claim
 so a request can no longer stay open beside another agent's claim, or beside
 its own reclaimed one. A person and a legacy token
 claim by assignee as before, and reads and comments are never refused for it.
-**A live claim the selection does not back** — taken before D-119, or before
-the selection; the API cannot make one any more — is never renewed and never
-usable: the claim, the reclaim and the fence all answer it
+**A live claim the selection does not back** — the task names another agent;
+only a claim taken before D-119 can be one, since a claim needs no selection
+but a live claim lets the selection move only to its own holder — is never
+renewed and never usable: the claim, the reclaim and the fence all answer it
 `selected_for_another_agent`. It ends at its holder's next heartbeat (reported
 in `lost`) or when its lease lapses, whichever is first, as **`released`**, not
 `expired` — an expired claim waits for its holder's reclaim or for recovery,
@@ -3687,7 +3702,7 @@ from `heartbeat_age_ms` on its own elapsed time and never compares
 holding session's self-reported fields as it last sent them — `null` where it
 sent none, and deciding nothing (LAI-593). Every task read also carries
 `handoff` (LAI-1005), never null: `{ checkpoint, offer, recovery_available,
-save_needs_attention }`. `checkpoint` is the task's newest save, `{
+save_needs_attention, no_recent_save }`. `checkpoint` is the task's newest save, `{
 verification, saved_at, pending_since, pending_notice }` as `GET
 /tasks/:id/checkpoints` reports it, or `null`; `offer` is its newest live
 hand-off or recovery offer, `{ kind, state, requires_approval }`, or `null`.
@@ -3695,7 +3710,13 @@ hand-off or recovery offer, `{ kind, state, requires_approval }`, or `null`.
 newest claim `expired`, and a live recovery offer or a `verified` checkpoint
 lets work continue (§4.73) — and **`save_needs_attention`** is the newest
 checkpoint `uncertain` with no live claim and no recovery available; a
-receiver's failed fetch (LAI-548) is not reported. It names no agent, session
+receiver's failed fetch (LAI-548) is not reported. **`no_recent_save`**
+(LAI-1016) is `{ since, window_ms }` while the task's live claim, `active` or
+`paused`, has gone longer than the §9.1 checkpoint-warning window without a
+save — `since` is the later of the claim's start and its newest checkpoint, on
+server time — and `null` otherwise. The server cannot see local edits, so it
+says only how long the holder has gone without a save, never that work is
+pending; it decides nothing. It names no agent, session
 or commit, and is served under the same *Read tasks* as the checkpoint and
 offer reads, so it shows nothing they would not. A heartbeat answers `{ session,
 claims, lost }`: the live claims it renewed,
@@ -3761,9 +3782,18 @@ state, from_session_id, from_agent_id, from_claim_generation, to_agent_id,
 checkpoint_id, checkpoint_commit_sha, checkpoint: { commit_sha, verification,
 summary, summary_commit_sha } | null, reason, note_hash, requires_approval,
 approved_by_user_id, approved_at, expires_at, accepted_session_id,
-accepted_claim_id, receiver_commit_sha, closed_reason, created_by_user_id,
-created_at, closed_at }` — the column names, unchanged on the wire;
-`checkpoint` is null once retention removed it. An offer retry is matched as
+accepted_claim_id, from_agent_redacted, to_agent_redacted, receiver_commit_sha,
+closed_reason, created_by_user_id, created_at, closed_at }` — the column names,
+unchanged on the wire; `checkpoint` is null once retention removed it. **Its
+agents are named as activity's are** (D-121 item 7, LAI-1012), through the same
+gate: another person's agent only beside a task that shows it as its selected
+agent or its live claim's holder. Otherwise the sender's `from_agent_id` and
+`from_session_id` are null with `from_agent_redacted: true`, and the receiver's
+`to_agent_id`, `accepted_session_id` and `accepted_claim_id` are null with
+`to_agent_redacted: true` — *an agent*, **not** "any eligible agent". The same
+holds on every route and tool that answers an offer: the task's offer history,
+`GET /agents/me/inbox`, `agent_sync`, and the offer, approve, accept, decline
+and cancel answers. An offer retry is matched as
 §4.73 says, before the fence. **Consent** (§4.75): `PUT` gives it, `DELETE`
 withdraws it, both the owner's, signed in; `GET` answers the owner and the
 agent's own token, so the helper knows whether it may save on its own. Giving
@@ -3819,7 +3849,10 @@ person's inbox** (LAI-1009), the one the web Inbox's *Hand-offs* tab reads: an
 agent's token is `403` with `reason: use_agent_inbox` and keeps `GET
 /agents/me/inbox`. Each row is a hand-off or recovery offer with its task (`id`,
 `key`, `title`, project), `from_agent` and `to_agent` as the task's selected
-agent is shown (harness, device, owner), the checkpoint's `verification` and
+agent is shown (harness, device, owner) — **through the same gate** (D-121 item
+7, LAI-1012): another person's agent the task does not show is `null` with
+`from_agent_redacted` or `to_agent_redacted` true, no id, harness, device or
+owner, while `next_action` is still decided on the agents themselves — then the checkpoint's `verification` and
 `saved_at`, the `reason` (untrusted data), `requires_approval`, `approved`,
 `expires_at`, and `next_action` — what the caller can do now (`approve`,
 `name_receiver`, `accept_with_your_agent`, `cancel`, `wait_for_approval`,
@@ -4939,7 +4972,7 @@ matched.
 | `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
-| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
+| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref?, agent? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `agent` is a registered agent's id and is `POST /projects/:slug/tasks`'s `selected_agent_id` (§6.4): a work request opened in the create, never an assignment (LAI-1027). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
 | `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, claim_generation? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date, `size`, `external_ref` or `agent` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085). `agent` is a registered agent's id and is `PATCH`'s `selected_agent_id` (§6.4): a work request, never an assignment (LAI-535) |
 | `start_working` | `{ task, branch?, estimate?, session_id?, reclaim? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409`. **On a registered agent's token** it also takes the task's exclusive claim (§5, §4.66) and answers `claim` — `{ session_id, generation, lease_expires_at, … }` — beside the task, and **never writes the assignee** (§5); `session_id?` names the session to claim under (absent opens one), and the holder's session calling again renews the lease. A second session — the same agent's, or another agent of the same person — is `409`, `reason: claim_held`. **A task with a selected agent** (§4.5) is claimed only by that agent's sessions — another agent is `409`, `reason: selected_for_another_agent`, with or without `reclaim` (D-119, §6.3). **`reclaim: true`** is the explicit reclaim, `POST /tasks/:id/claim/reclaim`'s twin (§9.1, LAI-541): only it gives an agent whose claim expired a claim again, at `generation + 1` |
 | `update_status` | `{ task, status, note?, claim_generation? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
@@ -5727,7 +5760,7 @@ call MCP; agents do.
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
-| **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects`, and the review queue the sidebar's badge already read (`GET /review`, each task's `waiting_since` for the review wait, LAI-832) | all, indirectly via `activity` | ✅ |
+| **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
 | **Calendar** | ? | *none defined* | — | ⛔ **no decision — §14, q10** |
@@ -6001,11 +6034,13 @@ anything missing sends the task back.
   created and due soon** for the chosen range; a **status donut** with the share
   done at its centre; a **donut of open work by person** (*Open work now*, as of
   now whatever the range, D-092 item 2), Unassigned as its own share, each
-  person opening the board filtered to them; activity feed with an
-  **agent/human filter**; **needs attention**, true counts, in three tabs —
-  *Blocked*, *Stale* (the server's flag, §11.6) and *Waiting for review > 5
-  days* (`REVIEW_WAIT_DAYS = 5`); priority breakdown; throughput and cycle
-  time; updates in place on a live change; read-only for Viewer.
+  person opening the board filtered to them; priority breakdown; throughput
+  and cycle time; updates in place on a live change; read-only for Viewer.
+
+  **No activity feed and no *Needs attention*** (LAI-1025, the owner,
+  2026-11-01): both left the page to make it load faster. The project's
+  activity stays on the Activity tab — its Stale panel included — and the
+  review wait on Inbox › Review.
 
   **A person's open work is their load: to do and in progress** (D-092 item 3,
   LAI-832), Capacity's rule — `count: committed(slot.byStatus)`, where
@@ -6015,17 +6050,6 @@ anything missing sends the task back.
   review` on the line below it, and neither is in the count. Backlog and
   *Waiting for review* are
   each one share of the ring, and its centre is every open task.
-
-  **The review wait reads the review queue, not the picked range** (LAI-832).
-  A task's wait starts at `GET /review`'s `waiting_since`, taken from the
-  shell's existing read (the sidebar badge's, so no request of its own), or at
-  the range's own move into review — the later of the two when both hold one
-  — so a task ten days in review stays listed on *Last 24 hours*. With neither
-  it falls back to `Math.min(task.updated_at, rangeStart ?? task.updated_at)`,
-  which does move with the range. **Limit:** `GET /review` answers only the
-  projects where the reader holds `task.write`, and only its oldest 200, so for
-  a project viewer, and for a task beyond the oldest 200 in review, the wait
-  still depends on the range (LAI-850).
 - **Meeting review** — the proposals, tagged **NEW / CHANGED / DEAD /
   DECISION**, each shown **with the transcript quote it was reacting to**;
   per-line accept and reject; apply acts only on accepted items; discard the set.
@@ -6330,7 +6354,7 @@ One interval-driven scheduler in the same process:
   (D-092 item 4, LAI-832): every screen asks `isStale` (`board-derive.ts`) —
   `task.status !== 'done' && task.status !== 'cancelled' &&
   task.stale_flagged_at !== null` — and no screen keeps a rule of its own. The
-  Dashboard's *Stale* tab and the Activity tab's Stale panel call
+  Activity tab's Stale panel calls
   `staleTasks()`, which filters by `isStale`, longest-flagged first; the List's
   amber Updated cell calls `isStale` itself
 - invite expiry, meeting-review expiry (7 days)
