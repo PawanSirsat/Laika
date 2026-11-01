@@ -243,8 +243,6 @@ export function selectTaskAgent(
 /** The server's refusals, by `details.reason` (LAI-535). §6.3's codes are closed, so it is a reason. */
 export const SELECTED_AGENT_REFUSALS = [
   'agent_not_found',
-  'agent_other_owner',
-  'agent_wrong_org',
   'agent_revoked',
   'agent_not_granted',
   'agent_read_only',
@@ -257,9 +255,10 @@ export type SelectedAgentRefusal = (typeof SELECTED_AGENT_REFUSALS)[number];
  * The server's own message is shown for a reason this map does not know.
  */
 export const REFUSAL_WORDS: Readonly<Record<SelectedAgentRefusal, string>> = {
-  agent_not_found: 'That agent no longer exists.',
-  agent_other_owner: 'Only your own agents can be picked for now.',
-  agent_wrong_org: 'That agent belongs to another organisation.',
+  // Another person's agent, or another organisation's, answers this too, byte
+  // for byte as an id that names nothing (D-121 item 7), so the words say
+  // neither "gone" nor "someone else's".
+  agent_not_found: 'That agent can’t be picked here. Pick one of your own agents.',
   agent_revoked: 'That agent is revoked. Register or pick another.',
   agent_not_granted: 'That agent has no access to this space. Grant it under Developer → Agents.',
   agent_read_only: 'That agent may only read in this space. Give it a full grant to do the work.',
@@ -354,9 +353,7 @@ export function ineligibleReason(
 
 /** Short words for a disabled row: the list has no room for the whole sentence. */
 export const INELIGIBLE_SHORT: Readonly<Record<SelectedAgentRefusal, string>> = {
-  agent_not_found: 'No longer exists',
-  agent_other_owner: 'Another member’s agent',
-  agent_wrong_org: 'Another organisation',
+  agent_not_found: 'Not one of yours',
   agent_revoked: 'Revoked',
   agent_not_granted: 'Not granted on this space',
   agent_read_only: 'Read-only on this space',

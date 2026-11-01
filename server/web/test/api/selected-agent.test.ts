@@ -103,6 +103,19 @@ void describe('the refusals mirror the server', () => {
     });
     assert.equal(selectionErrorWords(unknown), 'New reason');
   });
+
+  void test('agent_not_found says neither "gone" nor "someone else’s" (D-121 item 7, LAI-1029)', () => {
+    // Another person's agent answers agent_not_found too, so "no longer
+    // exists" is wrong for it, and naming the owner would leak that it is real.
+    const error = new ApiError('unprocessable', 'No agent with that id', 422, {
+      field: 'selected_agent_id',
+      reason: 'agent_not_found',
+      selected_agent_id: 'ag1',
+    });
+    const words = selectionErrorWords(error);
+    assert.equal(words, REFUSAL_WORDS.agent_not_found);
+    assert.doesNotMatch(words, /no longer|exist|another|member|organisation/i);
+  });
 });
 
 void describe('who the picker offers', () => {
