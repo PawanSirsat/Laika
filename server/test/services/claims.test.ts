@@ -772,13 +772,18 @@ describe('the live claim on a task read (LAI-568)', () => {
     expect(reads(id, T0 + MIN)).toEqual({ single: null, listed: null });
   });
 
-  it('serves a paused claim, which still holds the task', () => {
+  it('serves a paused claim while its lease holds, and not once it lapsed', () => {
     const { id } = claimedOnDevice();
     t.db.update(taskClaims).set({ state: 'paused' }).where(eq(taskClaims.taskId, id)).run();
-    // A paused claim is not lapsed by its lease: the scan expires only `active`.
-    const { single, listed } = reads(id, T0 + LEASE + MIN);
+    const { single, listed } = reads(id, T0 + LEASE - 1);
     expect(single).toMatchObject({ state: 'paused', generation: 1 });
     expect(listed).toEqual(single);
+    // Its lease lapses as an active one's does: the scan expires both live
+    // states, so a read leaves it out before the scan runs (LAI-1012).
+    expect(reads(id, T0 + LEASE)).toEqual({ single: null, listed: null });
+    expect(claimsOf(id)[0]?.state).toBe('paused');
+    expect(expireClaims(t.db, T0 + LEASE).changed).toBe(1);
+    expect(claimsOf(id)[0]?.state).toBe('expired');
   });
 
   it('is suspect while a revoked agent’s claim waits to lapse: its session has ended', () => {
