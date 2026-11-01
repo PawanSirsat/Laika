@@ -16,6 +16,13 @@ import { ProjectSetupTab } from './v3/ProjectSetupTab.tsx';
 import './developer.css';
 import './v3/v3.css';
 
+/**
+ * In `preview`, Project setup's new flow is one query away from the classic
+ * Projects tab, which stays the tab's default (LAI-1052).
+ */
+const PREVIEW_SETUP = 'v3';
+const PREVIEW_SETUP_HREF = `/developer?tab=projects&setup=${PREVIEW_SETUP}`;
+
 export interface DeveloperScreenProps {
   /** How this deployment shows the page (LAI-1048); `classic` is today's. */
   readonly mode: DeveloperAccessMode;
@@ -115,6 +122,28 @@ export function DeveloperScreen({
           </a>
         </aside>
       )}
+      {preview && current === 'projects' && params.get('setup') !== PREVIEW_SETUP && (
+        <aside className="dev-v3-banner" aria-label="Preview">
+          <p>
+            <strong>Try the new Project setup.</strong> It sets up one repository for one of your
+            connected tools. This tab keeps working exactly as it does now.
+          </p>
+          <a href={PREVIEW_SETUP_HREF} onClick={go(PREVIEW_SETUP_HREF)}>
+            Open the preview
+          </a>
+        </aside>
+      )}
+      {preview && current === 'projects' && params.get('setup') === PREVIEW_SETUP && (
+        <aside className="dev-v3-banner" aria-label="Preview">
+          <p>
+            <strong>Preview.</strong> This is the new Project setup, still being built. The classic
+            Projects tab is unchanged.
+          </p>
+          <a href="/developer?tab=projects" onClick={go('/developer?tab=projects')}>
+            Back to Projects
+          </a>
+        </aside>
+      )}
       {preview && isV3OnlyTab(current) && (
         <aside className="dev-v3-banner" aria-label="Preview">
           <p>
@@ -126,7 +155,12 @@ export function DeveloperScreen({
           </a>
         </aside>
       )}
-      {current === 'overview' && <OverviewTab onNavigate={onNavigate} />}
+      {current === 'overview' && (
+        <OverviewTab
+          onNavigate={onNavigate}
+          {...(preview ? { projectsHref: PREVIEW_SETUP_HREF } : {})}
+        />
+      )}
       {current === 'devices' && (
         <DevicesTab me={me} origin={origin} params={params} setParams={setParams} />
       )}
@@ -157,8 +191,13 @@ export function DeveloperScreen({
         </div>
       )}
       {current === 'projects' &&
-        (mode === 'v3' ? (
-          <ProjectSetupTab origin={origin} onNavigate={onNavigate} />
+        (mode === 'v3' || (preview && params.get('setup') === PREVIEW_SETUP) ? (
+          <ProjectSetupTab
+            origin={origin}
+            params={params}
+            setParams={setParams}
+            onNavigate={onNavigate}
+          />
         ) : (
           <div className="dev-body">
             <ProjectsTab origin={origin} />

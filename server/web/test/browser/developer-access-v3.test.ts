@@ -368,15 +368,18 @@ void describe('the tab bars (plan §I)', () => {
     }
   });
 
-  void test('v3: Devices lists devices; Project setup, Activity and Advanced carry what they re-host', async () => {
+  void test('v3: Devices lists devices; Activity and Advanced carry what they re-host; Project setup its flow', async () => {
     const h = await open('/developer?tab=devices', stub('v3', [agentRow({ id: 'a1' })]));
     try {
       // LAI-1054: Devices is its own list now, not the classic Agents tab.
       await h.page.locator('.dv3-device[data-device="d1"]').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('[data-testid="agents-tab"]').count(), 0);
       await h.page.locator('.page-tab[data-tab="projects"]').click();
-      await h.page.locator('.dev-projects .conn-project-block').waitFor({ timeout: 20_000 });
-      assert.match(await h.page.locator('.dev-v3-help').innerText(), /Manage access/);
+      // Project setup is the real flow since LAI-1052 (project-setup.test.ts).
+      await h.page
+        .getByRole('heading', { name: 'Set up a project repository' })
+        .waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.dev-projects-body').count(), 1);
       await h.page.locator('.page-tab[data-tab="activity"]').click();
       await h.page.locator('.dev-sharing').waitFor({ timeout: 20_000 });
       await h.page.locator('.page-tab[data-tab="advanced"]').click();

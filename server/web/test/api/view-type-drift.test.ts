@@ -816,6 +816,13 @@ const PAIRS: readonly Pair[] = [
     client: 'AgentSession',
     clientFile: 'agents.ts',
   },
+  // LAI-1052: one tool against one project, for Project setup (§6.4).
+  {
+    server: 'ProjectAccessView',
+    serverFile: 'services/agent-project-access.ts',
+    client: 'ProjectAccess',
+    clientFile: 'project-access.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [
