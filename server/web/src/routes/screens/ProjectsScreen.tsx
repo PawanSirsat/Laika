@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
@@ -74,6 +74,30 @@ export function ProjectsScreen({
 }: ProjectsScreenProps) {
   /** Which project's context document is open, if any (LAI-412). */
   const [contextFor, setContextFor] = useState<Project | undefined>(undefined);
+  /*
+   * **Focus goes back to the Context button that opened the panel** (LAI-1022).
+   * Closing it left focus on `<body>`, so a keyboard reader lost their place in
+   * the space list. Kept as the element, with the slug to find a re-rendered
+   * one by, and applied once the panel has left the DOM.
+   */
+  const contextOpener = useRef<{ readonly el: Element | null; readonly slug: string } | undefined>(
+    undefined,
+  );
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (contextFor !== undefined || !returnFocus.current) return;
+    returnFocus.current = false;
+    const opener = contextOpener.current;
+    contextOpener.current = undefined;
+    if (opener === undefined) return;
+    const target =
+      opener.el instanceof HTMLElement && opener.el !== document.body && opener.el.isConnected
+        ? opener.el
+        : document.querySelector<HTMLElement>(
+            `[data-action="context"][data-space="${CSS.escape(opener.slug)}"]`,
+          );
+    target?.focus();
+  }, [contextFor]);
   const { theme } = useTheme();
   const list = useProjects();
   const gates = useGates(me !== undefined);
@@ -146,7 +170,10 @@ export function ProjectsScreen({
     onOpen: (space) => {
       onOpen(space.slug);
     },
-    onContext: setContextFor,
+    onContext: (space) => {
+      contextOpener.current = { el: document.activeElement, slug: space.slug };
+      setContextFor(space);
+    },
     onMembers: (space) => {
       onOpenMembers(space.slug);
     },
@@ -457,6 +484,7 @@ export function ProjectsScreen({
                 new Map(contextFor.members.map((m) => [m.user_id, { name: m.name } as Member]))
               }
               onClose={() => {
+                returnFocus.current = true;
                 setContextFor(undefined);
               }}
             />

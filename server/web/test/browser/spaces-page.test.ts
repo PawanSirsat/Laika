@@ -584,3 +584,44 @@ void describe('fits a phone', () => {
     }
   });
 });
+
+void describe('each space’s buttons name it (LAI-1023)', () => {
+  void test('Context and Members say which space, and still read Context and Members', async () => {
+    const h = await open('/projects', stub('owner'));
+    try {
+      await ready(h);
+      for (const view of ['grid', 'list']) {
+        await h.page.goto(`${h.origin}/projects${view === 'list' ? '?view=list' : ''}`);
+        await h.page
+          .locator(view === 'list' ? '.space-row' : '.project-card')
+          .first()
+          .waitFor({ timeout: 20_000 });
+        const named = (word: string) =>
+          h.page
+            .locator('button.space-link', { hasText: new RegExp(`^${word}$`) })
+            .evaluateAll((els) =>
+              els.map((el) => [el.textContent?.trim(), el.getAttribute('aria-label')]),
+            );
+        for (const [word, joiner] of [
+          ['Context', 'for'],
+          ['Members', 'of'],
+        ] as const) {
+          const seen = await named(word);
+          assert.ok(seen.length >= 2, `${view}: fewer than two ${word} buttons`);
+          for (const [text] of seen) assert.equal(text, word, `${view}: the visible label changed`);
+          const labels = seen.map(([, label]) => label);
+          assert.equal(new Set(labels).size, labels.length, `${view}: ${word} names repeat`);
+          assert.ok(
+            labels.includes(`${word} ${joiner} Laika`),
+            `${view}: ${JSON.stringify(labels)}`,
+          );
+        }
+        // And the accessibility tree agrees, not only the attribute.
+        await h.page.getByRole('button', { name: 'Context for Laika', exact: true }).waitFor();
+        await h.page.getByRole('button', { name: 'Context for Bare', exact: true }).waitFor();
+      }
+    } finally {
+      await h.close();
+    }
+  });
+});
