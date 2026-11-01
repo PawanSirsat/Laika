@@ -247,7 +247,10 @@ export function blockBegin(slug: string, revision: number = PROJECT_BLOCK_REVISI
   return `<!-- laika:begin revision=${String(revision)} project=${slug} -->`;
 }
 
-const BEGIN = /<!-- laika:begin revision=(\d+)[^>]*-->/;
+const BEGIN = /<!-- laika:begin revision=(\d+)(?: project=([^\s>]+))?[^>]*-->/;
+
+/** The block's key line, which names the project's current prefix. */
+const TASK_KEYS = /Task keys look like `([^`]+)-42`/;
 
 /**
  * Revision 2: {@link projectBlock} unchanged between the markers, so its first
@@ -275,8 +278,10 @@ export interface ReplacedBlock {
  * to prose.
  *
  * - No file (`null`): `create`, which is `block` already wrapped for the tool.
- * - A marked block at this revision or later: untouched.
- * - A marked block that is older: everything from its begin marker to its end
+ * - A marked block at this revision or later, **for this project** (the same
+ *   `project=` slug, and the same task-key prefix inside): untouched.
+ * - Any other marked block — older, another project's, or a prefix since
+ *   changed: everything from its begin marker to its end
  *   marker is replaced, and nothing else.
  * - Revision 1: the `## Laika` section whose first paragraph carries
  *   {@link BLOCK_MARKER}, up to the next heading of level one or two or the end
@@ -297,8 +302,16 @@ export function replaceLaikaBlock(
     const end = text.indexOf(BLOCK_END, begin.index);
     if (end !== -1) {
       const revision = Number(begin[1]);
-      if (revision >= PROJECT_BLOCK_REVISION) return { text, outcome: 'current', from: null };
       const after = end + BLOCK_END.length;
+      // Current means this revision *and* this project: a block copied from
+      // another repo, or written before a prefix change, is replaced.
+      const sameProject =
+        begin[2] !== undefined &&
+        begin[2] === BEGIN.exec(block)?.[2] &&
+        TASK_KEYS.exec(text.slice(begin.index, after))?.[1] === TASK_KEYS.exec(block)?.[1];
+      if (revision >= PROJECT_BLOCK_REVISION && sameProject) {
+        return { text, outcome: 'current', from: null };
+      }
       return {
         text: text.slice(0, begin.index) + block + text.slice(after),
         outcome: 'updated',
@@ -369,9 +382,12 @@ export function projectSetupPrompt({
 yours to change; everything else in it belongs to the people who wrote it.
 
 1. Read ./${path} first. Do not assume what is in it.
-2. If it has a line starting "<!-- laika:begin revision=" with a revision of
-   ${String(PROJECT_BLOCK_REVISION)} or more, it is already up to date: tell me so and stop.
-3. If it has a Laika block — from "<!-- laika:begin" to "${BLOCK_END}", or,
+2. If it has a marked Laika block — a line starting "<!-- laika:begin" and a
+   later "${BLOCK_END}" line — whose begin line says a revision of
+   ${String(PROJECT_BLOCK_REVISION)} or more and project=${project.slug}, and whose task keys look like
+   \`${project.prefix}-42\`, it is already up to date: tell me so and stop.
+3. Otherwise, if it has a Laika block — from "<!-- laika:begin" to
+   "${BLOCK_END}", whatever its revision or project, or,
    from before the markers existed, the "## Laika" section whose first
    paragraph says "${BLOCK_MARKER}", up to the next heading of the same or a
    higher level or the end of the file — show me the exact old and new text

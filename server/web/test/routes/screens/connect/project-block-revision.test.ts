@@ -132,6 +132,31 @@ void describe('replaceLaikaBlock', () => {
     assert.equal(out.text, `${HUMAN_TOP}\n${BLOCK}\n\n${HUMAN_BOTTOM}`);
   });
 
+  void test('a revision-2 block for another project is replaced, not taken as current', () => {
+    const other = markedProjectBlock(ORIGIN, { slug: 'other', prefix: 'OTH', name: 'Other' });
+    const before = `${HUMAN_TOP}\n${other}\n\n${HUMAN_BOTTOM}`;
+    const out = replaceLaikaBlock(before, BLOCK);
+    assert.equal(out.outcome, 'updated');
+    assert.equal(out.from, 2);
+    assert.equal(out.text, `${HUMAN_TOP}\n${BLOCK}\n\n${HUMAN_BOTTOM}`);
+  });
+
+  void test('a revision-2 block written before a prefix change is replaced', () => {
+    const stale = markedProjectBlock(ORIGIN, { ...PROJECT, prefix: 'OLD' });
+    assert.ok(stale.includes(blockBegin(PROJECT.slug)), 'same slug, so only the prefix differs');
+    const before = `${HUMAN_TOP}\n${stale}\n`;
+    const out = replaceLaikaBlock(before, BLOCK);
+    assert.equal(out.outcome, 'updated');
+    assert.equal(out.text, `${HUMAN_TOP}\n${BLOCK}\n`);
+  });
+
+  void test('a begin marker with no end marker is not a marked block', () => {
+    const before = `${HUMAN_TOP}\n${blockBegin(PROJECT.slug)}\nhalf a block\n`;
+    const out = replaceLaikaBlock(before, BLOCK);
+    assert.equal(out.outcome, 'appended');
+    assert.ok(out.text.startsWith(before));
+  });
+
   void test('a current block is left exactly as it is, human edits inside it included', () => {
     const edited = BLOCK.replace('Mirror work onto it', 'We mirror work onto it');
     const before = `${HUMAN_TOP}\n${edited}\n`;
@@ -162,6 +187,19 @@ void describe('the Project setup prompt', () => {
     assert.match(prompt, /keeping\s+everything already in the file/);
     assert.ok(prompt.includes(BLOCK_MARKER), 'it must name the revision-1 marker');
     assert.ok(prompt.includes(BLOCK_END));
+  });
+
+  void test('up to date means this revision, this project and this prefix, end marker included', () => {
+    assert.match(
+      prompt,
+      /a line starting "<!-- laika:begin" and a\s+later "<!-- laika:end -->" line/,
+    );
+    assert.match(prompt, /revision of\s+2 or more and project=onroute/);
+    assert.match(prompt, /task keys look like\s+`ONR-42`, it is already up to date/);
+    assert.match(
+      prompt,
+      /Otherwise, if it has a Laika block[\s\S]*whatever its revision or project/,
+    );
   });
 
   void test('it never inserts a token, commits, reinstalls Laika or touches MCP config', () => {
