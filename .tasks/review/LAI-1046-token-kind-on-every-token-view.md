@@ -6,8 +6,9 @@ assignee: polly
 priority: p2
 depends-on: []
 discovered-from: LAI-1042
-status: in-progress
+status: review
 started: 2026-11-02T03:05:00Z
+finished: 2026-11-02T03:30:00Z
 ---
 
 ## Goal
@@ -57,11 +58,11 @@ One PR, so no drift guard is ever red. Named cross-area edits:
       longer says "Only you see this."
 - [x] Organisation → Security and the profile admin "Their tokens" group by
       kind and name agent credentials as Tool · Device.
-- [ ] `token.revoke_any` still revokes an agent credential; its confirmation
+- [x] `token.revoke_any` still revokes an agent credential; its confirmation
       says exactly what stops (the plan's §E.4 choice: keep revoke-any, state
       the impact). No change to who may do what.
 - [x] `view-type-drift` green (client mirrors the three fields).
-- [ ] CI green on the PR.
+- [x] CI green on the PR.
 
 ## Notes
 
@@ -81,3 +82,6 @@ One PR, so no drift guard is ever red. Named cross-area edits:
   exception. N2: vacuous assertion in the routes test. N3: profile revoke
   button's aria-label. N4: truncated list must not claim "only live
   credential". N5: pluralise, compute the label once.
+
+Round 1 fixed in `38592561`, `f36fcd34`, `7970ad3e`; CI on the pushed head is
+checked before `finish_task`.
