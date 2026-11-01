@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-1027
-status: in-progress
+status: review
 started: 2026-11-01T16:06:12Z
+finished: 2026-11-01T16:16:54Z
 ---
 
 Owner batch, 2026-11-01 (polly dispatch): the non-blocking notes from the
@@ -35,15 +36,15 @@ paragraph (the one LAI-1027 edited) — two sentences, for items 2 and 3.
 
 ## Acceptance criteria
 
-- [ ] The holder's own token selecting itself: no generation → `409`
+- [x] The holder's own token selecting itself: no generation → `409`
       `stale_claim`; a stale generation → `409` `stale_claim`; the current
       one succeeds, and the claim is untouched.
-- [ ] One helper decides "a claim in force" for the task view and the
+- [x] One helper decides "a claim in force" for the task view and the
       selection rule, built on `leaseLapsed`; a clock test at 1 ms before and
       1 ms after the lease ends shows the selection rule and the task view
       agreeing at both instants.
-- [ ] Owner re-selects a pre-D-119 holder → the holder's change at its
+- [x] Owner re-selects a pre-D-119 holder → the holder's change at its
       current generation succeeds, and the generation is unchanged.
-- [ ] SPEC §6.4 says items 2 and 3.
-- [ ] Each new test mutation-checked: the behaviour broken once, the test red.
+- [x] SPEC §6.4 says items 2 and 3.
+- [x] Each new test mutation-checked: the behaviour broken once, the test red.
 - [ ] CI green on the PR.
