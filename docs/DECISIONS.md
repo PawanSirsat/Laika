@@ -6543,3 +6543,68 @@ D-120; items 2 – 8 are what #141 built. Recorded by LAI-1009.
 8. `device_label` now decides two things — the one-per-pair rule and the
    cloud rule — both of which only constrain the owner's own credentials and
    grant no access.
+
+## D-117 — An optional local launcher may start an owner-approved harness for a hand-off offer on the owner's own device: off by default, within fixed limits; the stop list is lifted for this launcher only (LAI-558)
+
+**Date:** 2026-11-01 · **By:** recorded by the LAI-558 builder on Belka, at the
+owner's instruction · **Status:** approved by Pawan in chat on 2026-11-01
+(*"do this"*: build the launcher exactly within the programme's limits),
+relayed through the polly manager session
+
+The proposal (`docs/proposals/LAI-532-agent-identities-and-handoff.md` §4.7,
+§8) kept the launcher parked behind this decision, separate from D-114 – D-116,
+because "any agent runner" is on the project stop list (LAIKA-516). **The owner's
+instruction lifts the stop list for this launcher and nothing else**: no
+general runner, no server-side execution, no other process starter. Anything
+beyond the items below is still on the stop list.
+
+1. **`laika agent launcher` is a CLI daemon on one device, off by default.** It
+   runs only when the owner has written `~/.laika/launcher.json` on that device
+   with `"enabled": true`, owned by them and writable by no one else. The file
+   lists the **allowed projects** (by id), each with the **exact real path** of
+   the checkout to use, and the **allowed harness commands as fixed argv
+   arrays** with an absolute program path — never a shell string, and never a
+   shell or wrapper (`sh`, `env`, `sudo` …) as the program. A missing file is
+   off; a present but invalid file is refused, never guessed at.
+2. **It reacts only to offers addressed to this device's agents of the config's
+   owner**: hand-off and recovery offers received through the existing event
+   helper (`GET /agents/me/events`, the rows `agent_sync` reads), for an agent
+   whose saved credential is on this device, whose token `/api/v1/me` says
+   belongs to `owner_user_id`, and whose harness and device label match. A work
+   request is refused and audited (LAI-1039 would add it).
+3. **It never accepts.** For an offer it runs the existing `handoff prepare`
+   (fetch, exact-SHA check, fresh worktree) and only on success starts the
+   approved harness in that worktree. **The harness itself runs `laika agent
+   handoff accept`**, so permission, approval, expiry and the claim are the
+   server's normal checks. (LAI-558's criterion "never starts a process for an
+   offer that was not accepted" is met in this order by the owner's
+   instruction: nothing is started for an offer `prepare` refuses — waiting
+   for approval, closed, expired, unverified — and nothing about the task
+   changes until the harness's own accept succeeds.)
+4. **Nothing another agent or person wrote reaches a command line, an
+   environment variable or a prompt.** The argv is the config's, exactly. The
+   prompt, on stdin, is fixed words plus the offer id (a ULID) and the task key
+   (checked against its format). The sender's note is written to a 0600 file
+   inside a nonce-delimited untrusted block, for the harness to read as data.
+5. **Limits.** At most `max_concurrent` runs at once (1 – 4); each is killed
+   after `max_runtime_seconds` (60 s – 24 h: SIGTERM to its process group, then
+   SIGKILL); a cost or token cap is **not** enforced by the launcher — the
+   owner puts the harness's own flag in the argv where it has one, and the
+   config refuses `max_cost_usd` rather than pretend. Every start, exit,
+   timeout, deferral, refusal and stop is a line in
+   `~/.laika/launcher/audit.jsonl` holding ids, reasons and numbers — no
+   token, no URL, no note. `laika agent launcher stop` ends the daemon and every
+   run it started; `status` reports enabled, running, last start and runs now.
+   It refuses to run on git older than 2.41.
+6. **Environment.** A child gets a fixed allowlist (home, path, locale, user,
+   terminal, ssh agent socket, XDG config) plus the run's directory and offer
+   id; **no token of any name**. The agent's token stays in its saved 0600 file
+   (`laika agent login`), which the harness's own `laika agent …` calls read; an
+   inherited `LAIKA_AGENT_TOKEN` is ignored by the launcher.
+7. **The server gains nothing for it.** No endpoint, no status field. The
+   per-device *Launcher* row in *Developer access → Agents → Your devices*
+   needs data the board does not have, so it is filed as LAI-1038 rather than
+   built from a stub.
+8. **It never wakes a machine.** A device that is asleep, shut down or offline
+   starts nothing; its offers wait on the board and recovery works as before
+   (D-115, D-116).

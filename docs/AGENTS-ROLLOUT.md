@@ -95,6 +95,7 @@ repository, in this order.
 | 8 | Install the helper on each device and connect the harness (`cli/README.md`) | each person | — | Claude Code **Tested**; Codex **Documented-not-tested** |
 | 9 | Give **checkpoint consent** per agent if hooks should save on their own (§ 6) | agent's owner | **off** | **Tested** |
 | 10 | Optionally run `laika agent watch` beside the harness | each person | not running | **Tested** with injected readings |
+| 11 | Optionally switch on `laika agent launcher` on a device: write `~/.laika/launcher.json` (allowed projects, exact repo paths, argv arrays, limits), `laika agent launcher check`, then `run` (D-117) | each person, on their own device | **off** (no file) | **Tested** with a real child process; a live offer launched end to end is **Unverified** |
 
 **Legacy tokens.** Tokens made before the release keep working with no agent
 attached, and their rows read "agent (unregistered token)" (D-114 item 6,
@@ -155,6 +156,10 @@ build the checkpoint warning.
 | Watcher: reading interval | 10 s | `--interval-seconds` (1 – 3600) |
 | Watcher: Linux PSI threshold | 10 % | `--psi-percent` (1 – 100) |
 | Watcher: wait for a verified save before offering | 120 s | `--offer-wait-seconds`; offering at all needs `--offer-to` |
+| Launcher | **off** | `~/.laika/launcher.json` with `"enabled": true` (D-117, `cli/README.md`) |
+| Launcher: runs at once | none (required) | `max_concurrent`, 1 – 4 |
+| Launcher: runtime per run | none (required) | `max_runtime_seconds`, 60 – 86400; SIGTERM, then SIGKILL after 10 s |
+| Launcher: poll interval | 30 s | `poll_seconds`, 10 – 3600 |
 
 ## 5. GitHub: the webhook and the checkpoint-tag ruleset
 
@@ -302,6 +307,11 @@ From D-116's *Limitations*, the proposal, and the capability matrices in
     reclaim explicitly until someone accepts.
 11. **Self-reported fields.** Harness, device label, version and model come
     from the client and are shown as self-reported.
+12. **The launcher starts nothing on a device that is off.** It never wakes,
+    powers on or reaches a sleeping laptop; offers wait on the board. It
+    enforces runtime and concurrency, not cost or tokens (D-117 item 5), and
+    it does not launch work requests (LAI-1039). It has no status on the
+    board yet (LAI-1038).
 
 ## 11. Release checklist
 

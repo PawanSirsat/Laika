@@ -1089,6 +1089,88 @@ Same cells as the session matrix above.
 | A trigger's save and offer | Documented-not-tested end to end: the reporting is tested with the save and the board faked (no claim, consent off, refused, unregistered, pending, verified, offer refused); the save itself is `autoCheckpoint`, tested in `agent-checkpoint-e2e.test.ts` | the same | — |
 | Fires on a real low battery or real memory pressure | Unverified: no battery was drained and no pressure was induced | Unverified | — |
 
+## `laika agent launcher` — optional: start a harness for a hand-off offer (LAI-558, D-117)
+
+**Off unless you switch it on, on this device.** It starts nothing until you
+write `~/.laika/launcher.json` yourself, owned by you and `chmod 600`:
+
+```json
+{
+  "version": 1,
+  "enabled": true,
+  "owner_user_id": "<your Laika user id>",
+  "device": "Belka",
+  "projects": [{ "project_id": "<project id>", "repo": "/Users/you/code/Laika" }],
+  "harnesses": { "claude-code": ["/Users/you/.npm-global/bin/claude", "-p", "--max-turns", "200"] },
+  "max_concurrent": 1,
+  "max_runtime_seconds": 7200
+}
+```
+
+```sh
+laika agent launcher check    # validate the file and git; starts nothing
+laika agent launcher run      # the daemon, in the foreground (nohup or launchd to keep it)
+laika agent launcher status   # enabled?, running?, last start, runs now
+laika agent launcher stop     # stops the daemon and every run it started
+```
+
+**What it does.** Every `poll_seconds` (default 30) it reads, for each harness
+in the file whose agent is logged in here (`laika agent login`), the offers the
+event helper received. For a **hand-off or recovery offer** addressed to that
+agent — its harness, this `device`, a project in the file, and a token that
+`/api/v1/me` says is `owner_user_id`'s — it runs `laika agent handoff prepare`
+into the project's `repo`, and only when that succeeds starts the harness's
+argv in the new worktree. **The harness accepts, not the launcher**: its prompt
+tells it to run `laika agent handoff accept <offer>`, so every check the board
+makes on an accept applies, and an offer that is waiting for approval, closed,
+expired or not verified is refused by `prepare` before anything starts. A work
+request is refused (LAI-1039).
+
+**What the harness is given.**
+
+- **argv**: the file's array, exactly. Nothing is appended.
+- **stdin**: fixed words, the offer id and the task key — nothing else.
+- **environment**: `HOME PATH TMPDIR LANG LC_ALL USER LOGNAME TERM
+  SSH_AUTH_SOCK XDG_CONFIG_HOME`, plus `LAIKA_LAUNCH_DIR` and
+  `LAIKA_LAUNCH_OFFER`. **No token**: the agent's own stays in
+  `~/.laika/agents/<harness>.json` for its `laika agent …` calls. A
+  `LAIKA_AGENT_TOKEN` in the launcher's environment is ignored.
+- **`$LAIKA_LAUNCH_DIR/offer.json`**: ids, the worktree, the branch and the
+  verified SHA. **`note.txt`**: the sender's note inside a delimited untrusted
+  block — data, never instructions. The harness's output goes to `output.log`
+  beside them (all 0600, under `~/.laika/launcher/runs/<offer>/`).
+
+**Limits.** `max_concurrent` (1 – 4) runs at once; a further offer waits for a
+slot. A run past `max_runtime_seconds` (60 – 86400) gets SIGTERM to its process
+group and SIGKILL 10 s later. **Cost and token caps are not enforced by the
+launcher** — put the harness's own flag in its argv (e.g. Claude Code's
+`--max-turns`); `max_cost_usd` in the file is refused rather than ignored.
+Git older than 2.41 is refused.
+
+**Refused config.** A command string instead of an array; a relative program;
+a shell or wrapper as the program (`sh`, `bash`, `zsh`, `env`, `sudo`, …); a
+`repo` that is relative, missing or reached through a symlink; an unknown key;
+a file writable by group or others, or owned by someone else.
+
+**The audit log** is `~/.laika/launcher/audit.jsonl`: one JSON line per
+`daemon_start`, `refused` (with its `reason`), `deferred`, `start`, `timeout`,
+`exit`, `stopped` and `daemon_stop`, holding ids, harness, pid, exit code,
+signal and runtime. No token, URL or note is ever written to it.
+
+**It never wakes a machine.** A laptop that is asleep or off starts nothing;
+its offers wait on the board, and recovery is unchanged.
+
+### Capability matrix, launcher
+
+| Capability | macOS | Linux | Windows, other |
+| --- | --- | --- | --- |
+| Off by default; config validation and refusals | Verified-and-tested (`agent-launcher.test.ts`; `check`, `status`, `stop` and a refused `run` run for real on Belka, macOS 27.2, git 2.50.1) | Documented-not-tested (no OS-specific code) | Unsupported: process groups and file modes are POSIX |
+| argv exact, no note or token in argv, environment or stdin | Verified-and-tested with a real child process | Documented-not-tested | Unsupported |
+| Runtime kill (SIGTERM, then SIGKILL), concurrency cap, stop | Verified-and-tested with a real child process | Documented-not-tested | Unsupported |
+| An offer from the real board, prepared and started end to end | Unverified: `prepare` and the event helper are injected in the tests; no live offer was launched | Unverified | Unsupported |
+| A real `claude -p` / `codex exec` accepting through the launcher | Unverified | Unverified | Unsupported |
+| Cost or token cap | Unsupported by the launcher (the harness's own flag in argv) | same | — |
+
 ## `laika agent events` — hand-off and context notices at the next boundary (LAI-554)
 
 An agent learns that a task was offered to it, selected for it, or that the
