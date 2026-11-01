@@ -465,11 +465,85 @@ void describe('closing the drawer gives focus back (LAI-1021)', () => {
   void test('opened from a URL, with no opener, closing lands on the task’s card, not body', async () => {
     const h = await open('/board?project=laika-core&task=t3', STUB);
     try {
+      /*
+       * **Wait for the card, not only the drawer** (LAI-1021, CI run
+       * 41312899348). From a URL the panel can render before the lanes do —
+       * they wait on `/statuses`, the panel does not — and a close in that gap
+       * correctly takes the next fallback, `<main>`. This case is about the
+       * card being on screen; the gap has its own case below.
+       */
       await h.page.locator('.drawer .panel-close').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-task-id="t3"] .card-open').waitFor({ timeout: 20_000 });
       await h.page.keyboard.press('Escape');
       await h.page.locator('.drawer').waitFor({ state: 'detached', timeout: 10_000 });
       await until(async () => (await focused(h)) !== 'body', 2_000);
       assert.equal(await focused(h), 'button.card-key card-open t-code@t3');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('closed before the board has drawn the card, focus goes to <main>, not body', async () => {
+    // The lanes held back on `/statuses`, so the panel is up and the card is not.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const h = await open('/board?project=laika-core&task=t3', STUB, {
+      before: async (page) => {
+        await page.route('**/api/v1/projects/laika-core/statuses', async (route) => {
+          await held;
+          await route.fallback();
+        });
+      },
+    });
+    try {
+      await h.page.locator('.drawer .panel-close').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('[data-task-id="t3"]').count(), 0, 'the card is drawn');
+      await h.page.keyboard.press('Escape');
+      await h.page.locator('.drawer').waitFor({ state: 'detached', timeout: 10_000 });
+      await until(async () => (await focused(h)) !== 'body', 2_000);
+      assert.equal(await focused(h), 'main.shell-main@');
+    } finally {
+      release();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('leaving by a sidebar link keeps focus on that link', async () => {
+    /*
+     * The restore runs only when focus went with the drawer. A reader who
+     * Tabs out to the sidebar and follows a link has put focus somewhere real,
+     * and the drawer closing on the way must not pull it back to a card.
+     */
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await openByKey(h, '[data-task-id="t3"] .card-open');
+      const link = h.page.locator('#sidebar a.sidebar-link:not(.sidebar-link-active)').first();
+      const href = await link.getAttribute('href');
+      assert.ok(
+        href !== null && !href.startsWith('/board'),
+        `a link off the board: ${String(href)}`,
+      );
+      await link.evaluate((el) => {
+        el.dataset.probeLink = '';
+      });
+      await link.focus();
+      await h.page.keyboard.press('Enter');
+      await h.page.waitForURL((url) => !url.pathname.startsWith('/board'), { timeout: 10_000 });
+      await h.page.locator('.drawer').waitFor({ state: 'detached', timeout: 10_000 });
+      // Long enough for the restore's microtask and a frame after it.
+      await h.page.waitForTimeout(300);
+      assert.ok(
+        await h.page.evaluate(
+          () =>
+            document.activeElement instanceof HTMLElement &&
+            'probeLink' in document.activeElement.dataset,
+        ),
+        `focus moved off ${href} to ${await focused(h)}`,
+      );
     } finally {
       await h.close();
     }
