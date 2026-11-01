@@ -2,11 +2,13 @@
 id: LAI-559
 title: 'End-to-end failure matrix + browser/accessibility qualification (both themes, narrow screens, keyboard)'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-551, LAI-553, LAI-555, LAI-557]
 discovered-from:
-status: backlog
+status: review
+started: 2026-10-31T22:04:00+02:00
+finished: 2026-10-31T22:14:00+02:00
 ---
 
 Implements **proposal §1, §7** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -99,3 +101,32 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 None.
+
+## Submission notes (Belka, 2026-10-31)
+
+Submitted as a **partial**, server-side pass. No criterion above is ticked,
+because none is fully met yet.
+
+- **Done.** `docs/acceptance/LAI-559-failure-matrix.md` has 26 rows:
+  - 21 are proven by a cited automated test;
+  - 3 are proven in part, with the remainder UNVERIFIED;
+  - 2 are UNVERIFIED;
+  - 0 product bugs were found.
+- **New test.** `server/test/http/handoff-failure-matrix.test.ts` adds the
+  central demonstration's server half over REST, MCP and signed pushes on a
+  faked clock. It covers Claude Code → Codex recovery and the server half of
+  the stale-note case; nothing else proved those.
+- **Criterion 1 (a pass or a filed task for every case).** Not met: the
+  UNVERIFIED rows have neither yet. Each row names the device or GitHub step
+  it needs.
+- **Criterion 2 (the 9-step demonstration).** Only its server half is proven.
+  The two-device run (Belka + Strelka) is not done.
+- **Criterion 3 (browser and accessibility checks).** Not attempted in this
+  pass; it is matrix row 26.
+- **Criterion 4 (repo-root gate).** CI runs it on the PR. Locally I ran only
+  the single test file, plus `pnpm lint` (exit 0) and `pnpm format` (exit 0),
+  per Belka's no-full-suite rule.
+- **Scope note.** This task is `area: web`, but the polly dispatch asked for a
+  `server/test/` suite and a `docs/acceptance/` file; both are outside SHELL's
+  area under §1. The reviewer should see that crossing.
+
