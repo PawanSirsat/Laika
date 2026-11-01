@@ -46,18 +46,66 @@ export interface Env {
     expireMs: number;
     scanMs: number;
   };
+  /**
+   * The checkpoint windows (§9.1.1, D-115 item 9, LAI-1015), in milliseconds:
+   * `LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS` and
+   * `LAIKA_CHECKPOINT_RETENTION_DAYS`, defaulting to 10 min and 90 days.
+   */
+  readonly checkpoints: {
+    pendingNoticeMs: number;
+    retentionMs: number;
+  };
 }
 
 /** §9.1's defaults, in seconds (LAI-541). */
 const CLAIM_DEFAULT_SECONDS = { heartbeat: 30, suspect: 90, expire: 300, scan: 30 } as const;
 
-function parseSeconds(variable: string, raw: string | undefined, fallback: number): number {
+function parseWhole(
+  variable: string,
+  raw: string | undefined,
+  fallback: number,
+  unit: string,
+  max: number,
+): number {
   if (raw === undefined || raw === '') return fallback;
   // The shape first, as `PORT` does: `Number()` would take `1e3` and ` 30 `.
-  if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 86_400) {
-    throw new EnvError(variable, raw, 'a whole number of seconds between 1 and 86400');
+  if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > max) {
+    throw new EnvError(variable, raw, `a whole number of ${unit} between 1 and ${String(max)}`);
   }
   return Number(raw);
+}
+
+function parseSeconds(variable: string, raw: string | undefined, fallback: number): number {
+  return parseWhole(variable, raw, fallback, 'seconds', 86_400);
+}
+
+/** §9.1.1's 10 minutes and D-115 item 9's 90 days (LAI-1015). */
+const CHECKPOINT_DEFAULTS = { pendingNoticeSeconds: 600, retentionDays: 90 } as const;
+
+/**
+ * `LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS` and
+ * `LAIKA_CHECKPOINT_RETENTION_DAYS` (§11.7). Takes the raw values rather than
+ * the source: `readEnv` reads them before the claim timings are judged, so a
+ * bad claim value still leaves these read — what `env-contract.test.ts`
+ * measures.
+ */
+function parseCheckpointWindows(raw: {
+  pendingNotice: string | undefined;
+  retention: string | undefined;
+}): Env['checkpoints'] {
+  const pendingNotice = parseSeconds(
+    'LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS',
+    raw.pendingNotice,
+    CHECKPOINT_DEFAULTS.pendingNoticeSeconds,
+  );
+  const retention = parseWhole(
+    'LAIKA_CHECKPOINT_RETENTION_DAYS',
+    raw.retention,
+    CHECKPOINT_DEFAULTS.retentionDays,
+    'days',
+    3650,
+  );
+  return { pendingNoticeMs: pendingNotice * 1000, retentionMs: retention * 86_400_000 };
 }
 
 /**
@@ -277,6 +325,10 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const nodeEnv = parseNodeEnv(source.NODE_ENV);
   const port = parsePort(source.PORT);
   const publicUrl = resolvePublicUrl(source, nodeEnv, port);
+  const checkpointRaw = {
+    pendingNotice: source.LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS,
+    retention: source.LAIKA_CHECKPOINT_RETENTION_DAYS,
+  };
 
   return {
     port,
@@ -291,5 +343,6 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
         ? undefined
         : resolve(source.LAIKA_PUBLIC_DIR),
     claims: readClaimTimings(source),
+    checkpoints: parseCheckpointWindows(checkpointRaw),
   };
 }
