@@ -83,3 +83,30 @@ instruction files.
   path, so there is nothing to re-apply; a change during the update fails it.
 - `--dry-run` fetches nothing, so reachability and divergence are checked only
   by a real run.
+
+## Review round 1 (PR #207) — fixed 2026-11-01T22:48:38Z
+
+Reviewer's proposed defaults adopted, in new commits (no force-push):
+
+- **B1** the source is anchored on this machine: a checkout remote (normalised:
+  https / scp / ssh spellings match, user and `.git` ignored) or `--source`.
+  A board over https or loopback may name a fork; only a loopback board a local
+  path. `--allow-http` is accepted only with an anchored source.
+  `--allow-downgrade` is needed for a target that is not a descendant of HEAD.
+- **B2** marker written before any copy; copies removed in a `finally` on every
+  path except an incomplete rollback; removed after recovery; swept at start
+  with no marker; a `.bak` the refresh made is removed on rollback. Tests
+  assert only `state.json` is left.
+- **B3** the marker records original and post-write digests; putting back
+  restores only what still holds what the update wrote, and moves the checkout
+  only from the target (or previous) commit with a clean tree; otherwise
+  "changed since — left alone". Recovery test with hooks on and user edits.
+- **B4** non-loopback boards tested through an injected `fetch`, so the real
+  transport rules decide; each new guard mutation-checked.
+- Cheap items: `GIT_DIR`/`GIT_CONFIG_*` stripped, `protocol.allow=never` +
+  https/ssh (+file where allowed), `transfer.fsckObjects`, `--` before the
+  source, staging worktree from a killed run removed; README gains
+  `laika version` and `laika doctor`.
+- One refinement to the reviewer's rule: a local-path source is allowed from a
+  non-loopback board **when it is the checkout's own remote** (or `--source`),
+  because then this machine, not the board, chose it.
