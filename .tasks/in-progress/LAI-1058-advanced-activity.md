@@ -2,11 +2,12 @@
 id: LAI-1058
 title: 'Developer access V3 slice D5: Advanced (personal credentials), Activity, outside-link terminology'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p1
 depends-on: [LAI-1048, LAI-1046]
 discovered-from: LAI-1042
-status: backlog
+started: 2026-11-02T05:14:35+05:30
+status: in-progress
 ---
 
 ## Why
