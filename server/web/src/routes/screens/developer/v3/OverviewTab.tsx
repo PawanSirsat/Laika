@@ -33,6 +33,8 @@ import './v3.css';
 
 export interface OverviewTabProps {
   readonly onNavigate: (to: string) => void;
+  /** Where *Set up a project* goes; `preview` sends it to the new flow (LAI-1052). */
+  readonly projectsHref?: string;
 }
 
 const STEP_NAMES: Readonly<Record<JourneyStep, string>> = {
@@ -97,7 +99,10 @@ function AppLink({
  * them away (running a command on their machine) finishes elsewhere — and a
  * change is announced through the throttled live region.
  */
-export function OverviewTab({ onNavigate }: OverviewTabProps) {
+export function OverviewTab({
+  onNavigate,
+  projectsHref = OVERVIEW_ADDRESSES.projects,
+}: OverviewTabProps) {
   const [devices, setDevices] = useState<readonly AgentDevice[] | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -161,7 +166,7 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
       ) : state.kind === 'first-run' ? (
         <FirstRun state={state} onNavigate={onNavigate} />
       ) : (
-        <Returning state={state} now={now} onNavigate={onNavigate} />
+        <Returning state={state} now={now} onNavigate={onNavigate} projectsHref={projectsHref} />
       )}
       <section className="dev-card dev-how" aria-labelledby="dev-how-title">
         <div className="dev-card-head">
@@ -269,10 +274,12 @@ function Returning({
   state,
   now,
   onNavigate,
+  projectsHref,
 }: {
   readonly state: Extract<OverviewState, { kind: 'returning' }>;
   readonly now: number;
   readonly onNavigate: (to: string) => void;
+  readonly projectsHref: string;
 }) {
   return (
     <section className="dev-card dev-summary" aria-labelledby="dev-summary-title">
@@ -289,7 +296,7 @@ function Returning({
             Add a tool
           </AppLink>
           <AppLink
-            href={OVERVIEW_ADDRESSES.projects}
+            href={projectsHref}
             className="bar-control bar-control-primary"
             onNavigate={onNavigate}
           >

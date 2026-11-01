@@ -228,6 +228,179 @@ The project is \`${project.slug}\` (${project.name}); its task keys look like
 \`${project.prefix}-42\`.`;
 }
 
+/**
+ * The repository file's template version (plan LAI-1042 §G, LAI-1052). It
+ * counts changes to {@link markedProjectBlock}, and nothing else: it is **not**
+ * `context_revision`, which versions the project brief the board serves over
+ * MCP. The two never share a name, a field or a line on the page.
+ *
+ * Revision 1 is the unmarked block {@link projectBlock} still writes on the
+ * classic Projects tab; revision 2 wraps the same text in begin and end
+ * markers so a later revision can replace exactly it.
+ */
+export const PROJECT_BLOCK_REVISION = 2;
+
+/** The end marker. The begin marker carries the revision and the project. */
+export const BLOCK_END = '<!-- laika:end -->';
+
+export function blockBegin(slug: string, revision: number = PROJECT_BLOCK_REVISION): string {
+  return `<!-- laika:begin revision=${String(revision)} project=${slug} -->`;
+}
+
+const BEGIN = /<!-- laika:begin revision=(\d+)[^>]*-->/;
+
+/**
+ * Revision 2: {@link projectBlock} unchanged between the markers, so its first
+ * line is still `## Laika` and its third still {@link BLOCK_MARKER} — the line
+ * `laika activity`'s *Only repos set up for Laika* scope looks for.
+ */
+export function markedProjectBlock(origin: string, project: ProjectRef): string {
+  return `${blockBegin(project.slug)}
+${projectBlock(origin, project)}
+${BLOCK_END}`;
+}
+
+export type BlockOutcome = 'created' | 'appended' | 'updated' | 'current';
+
+export interface ReplacedBlock {
+  readonly text: string;
+  readonly outcome: BlockOutcome;
+  /** The revision replaced: `1` for the unmarked block, `null` when none was. */
+  readonly from: number | null;
+}
+
+/**
+ * What {@link projectSetupPrompt} asks a tool to do to the instructions file,
+ * as a pure function, so the rules are tested on fixtures rather than trusted
+ * to prose.
+ *
+ * - No file (`null`): `create`, which is `block` already wrapped for the tool.
+ * - A marked block at this revision or later: untouched.
+ * - A marked block that is older: everything from its begin marker to its end
+ *   marker is replaced, and nothing else.
+ * - Revision 1: the `## Laika` section whose first paragraph carries
+ *   {@link BLOCK_MARKER}, up to the next heading of level one or two or the end
+ *   of the file, is replaced.
+ * - Neither: `block` is appended after a blank line, and the rest is kept.
+ *
+ * Everything outside the replaced span is byte-identical to `text`.
+ */
+export function replaceLaikaBlock(
+  text: string | null,
+  block: string,
+  create: string = block,
+): ReplacedBlock {
+  if (text === null) return { text: `${create}\n`, outcome: 'created', from: null };
+
+  const begin = BEGIN.exec(text);
+  if (begin !== null) {
+    const end = text.indexOf(BLOCK_END, begin.index);
+    if (end !== -1) {
+      const revision = Number(begin[1]);
+      if (revision >= PROJECT_BLOCK_REVISION) return { text, outcome: 'current', from: null };
+      const after = end + BLOCK_END.length;
+      return {
+        text: text.slice(0, begin.index) + block + text.slice(after),
+        outcome: 'updated',
+        from: revision,
+      };
+    }
+  }
+
+  const legacy = legacySection(text);
+  if (legacy !== null) {
+    const [start, stop] = legacy;
+    return { text: text.slice(0, start) + block + text.slice(stop), outcome: 'updated', from: 1 };
+  }
+
+  const gap = text === '' ? '' : text.endsWith('\n\n') ? '' : text.endsWith('\n') ? '\n' : '\n\n';
+  return { text: `${text}${gap}${block}\n`, outcome: 'appended', from: null };
+}
+
+/** `[start, end)` of a revision-1 block, trailing blank lines excluded, or `null`. */
+function legacySection(text: string): [number, number] | null {
+  const heading = /^## Laika[ \t]*$/gm;
+  for (let match = heading.exec(text); match !== null; match = heading.exec(text)) {
+    const bodyStart = match.index + match[0].length;
+    const rest = text.slice(bodyStart);
+    const firstParagraph = rest.replace(/^\s*\n/, '').split(/\n[ \t]*\n/)[0] ?? '';
+    if (!firstParagraph.includes(BLOCK_MARKER)) continue;
+    const next = /^#{1,2} /m.exec(rest);
+    let stop = next === null ? text.length : bodyStart + next.index;
+    while (stop > match.index && /\s/.test(text.charAt(stop - 1))) stop -= 1;
+    return [match.index, stop];
+  }
+  return null;
+}
+
+export interface ProjectSetupPromptInput {
+  readonly origin: string;
+  readonly project: ProjectRef;
+  /** The tool's instructions file, from `instructionsTarget` — `CLAUDE.md`, `AGENTS.md`, … */
+  readonly path: string;
+  /** {@link markedProjectBlock}, as it sits in the file (never the wrapper). */
+  readonly block: string;
+  /**
+   * What the tool's file must start with when it is created — Cursor's rule
+   * frontmatter — or `''` when nothing. Never repeated in a file that exists.
+   */
+  readonly preamble?: string;
+}
+
+/**
+ * The Project setup prompt (plan §G, LAI-1052): the revision-2 successor to
+ * {@link projectPrompt}, which the classic tab still uses unchanged.
+ *
+ * It **updates in place**: it reads the file first, touches only the Laika
+ * block — {@link replaceLaikaBlock}'s rules, in words — shows the diff before
+ * any replacement, and leaves every other line as the person wrote it. It
+ * carries no token and asks for none, and it installs, pairs, configures and
+ * commits nothing: the device and the tool were set up once, elsewhere.
+ */
+export function projectSetupPrompt({
+  origin,
+  project,
+  path,
+  block,
+  preamble = '',
+}: ProjectSetupPromptInput): string {
+  return `Set this repository up for the Laika board (${origin}), project \`${project.slug}\`
+(${project.name}), by updating ./${path}. Only the Laika block in that file is
+yours to change; everything else in it belongs to the people who wrote it.
+
+1. Read ./${path} first. Do not assume what is in it.
+2. If it has a line starting "<!-- laika:begin revision=" with a revision of
+   ${String(PROJECT_BLOCK_REVISION)} or more, it is already up to date: tell me so and stop.
+3. If it has a Laika block — from "<!-- laika:begin" to "${BLOCK_END}", or,
+   from before the markers existed, the "## Laika" section whose first
+   paragraph says "${BLOCK_MARKER}", up to the next heading of the same or a
+   higher level or the end of the file — show me the exact old and new text
+   as a diff and wait for me to confirm. Then replace only that block. If I
+   edited lines inside the old block, point them out in the diff so I can
+   keep them.
+4. If there is no Laika block, append the block below at the end, keeping
+   everything already in the file. Create the file only if it does not exist.${
+     preamble === ''
+       ? ''
+       : `
+   A new file starts with these lines, before the block:
+
+${preamble}
+`
+   }
+5. Copy the block exactly. It contains no token and must never gain one: do
+   not add a token, key or password anywhere, and do not ask me for one.
+6. Change nothing else. Do not install, reinstall or update Laika, do not pair
+   a device, do not edit any MCP configuration, and do not commit or push: I
+   will review the change myself.
+7. Report in one line: created the file, appended the block, updated it from
+   revision N, or already up to date.
+
+--- begin block ---
+${block}
+--- end block ---`;
+}
+
 /** The commands for someone who would rather not hand it to an agent. */
 export function manualCommands(): string {
   return `git clone ${PLUGIN_REPO} ${PLUGIN_HOME}
