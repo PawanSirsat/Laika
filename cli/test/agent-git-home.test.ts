@@ -120,7 +120,7 @@ void describe('laika agent git-home (LAI-1034)', () => {
     assert.equal(gitHome(out, [alt], real), 0);
     assert.match(
       out.lines.join('\n'),
-      /Wrote .*\.gitconfig — your git config, and 1 credential helper/,
+      /Wrote .*\.gitconfig — your git config, and \d+ credential helper/,
     );
 
     const run = fill(alt);
@@ -158,7 +158,7 @@ void describe('laika agent git-home (LAI-1034)', () => {
     const { real, alt } = homeWith('xdg-only', join('.config', 'git', 'config'), () => '');
     const out = io();
     assert.equal(gitHome(out, [alt], real), 0);
-    assert.match(out.lines[0] ?? '', /and 1 credential helper/);
+    assert.match(out.lines[0] ?? '', /and \d+ credential helper/);
     const run = fill(alt);
     assert.equal(run.code, 0, run.err);
     assert.match(run.out, /^password=from-the-real-home$/m);
@@ -184,6 +184,98 @@ void describe('laika agent git-home (LAI-1034)', () => {
       ],
     );
   });
+
+  /*
+   * The same helpers, in the same order, under the other HOME as under the
+   * person's (review B2). Each stub writes its name and answers nothing, so
+   * git runs the whole list; `@NAME` in a shape is that stub's path.
+   */
+  const shapes: [string, { xdg?: string; gitconfig?: string }][] = [
+    [
+      'url-then-plain',
+      {
+        gitconfig:
+          '[credential "https://a.test"]\n\thelper = @GH\n[credential]\n\thelper = @STORE\n',
+      },
+    ],
+    [
+      'plain-then-url',
+      {
+        gitconfig:
+          '[credential]\n\thelper = @STORE\n[credential "https://a.test"]\n\thelper = @GH\n',
+      },
+    ],
+    [
+      '[store, "", gh]',
+      {
+        gitconfig: '[credential "https://a.test"]\n\thelper = @STORE\n\thelper =\n\thelper = @GH\n',
+      },
+    ],
+    [
+      'the liveHelpers example',
+      {
+        gitconfig:
+          '[credential "https://a.test"]\n\thelper = @STORE\n[credential]\n\thelper = @CACHE\n' +
+          '[credential "https://a.test"]\n\thelper =\n\thelper = @GH\n[credential]\n\thelper =\n' +
+          '[credential "https://a.test"]\n\thelper = @LATER\n',
+      },
+    ],
+    [
+      'XDG then ~/.gitconfig, interleaved',
+      {
+        xdg: '[credential]\n\thelper = @X1\n[credential "https://a.test"]\n\thelper = @X2\n',
+        gitconfig: '[credential "https://a.test"]\n\thelper = @G1\n[credential]\n\thelper = @G2\n',
+      },
+    ],
+    [
+      'a reset in ~/.gitconfig clears the XDG file’s helpers',
+      {
+        xdg: '[credential "https://a.test"]\n\thelper = @X1\n[credential]\n\thelper = @X2\n',
+        gitconfig:
+          '[credential]\n\thelper =\n[credential "https://a.test"]\n\thelper = "!@G1 --flag"\n',
+      },
+    ],
+  ];
+  for (const [name, shape] of shapes) {
+    void test(`same helpers, same order, as under the person’s HOME: ${name}`, () => {
+      const dir = join(root, 'order', name.replace(/[^a-z0-9]+/gi, '-'));
+      const real = join(dir, 'real');
+      const alt = join(dir, 'alt');
+      mkdirSync(join(real, '.config', 'git'), { recursive: true });
+      mkdirSync(alt, { recursive: true });
+      const log = join(dir, 'ran');
+      const fill = (text: string): string =>
+        text.replace(/@([A-Z0-9]+)/g, (_, stub: string) => {
+          const file = join(real, `stub-${stub}`);
+          writeFileSync(
+            file,
+            `#!/bin/sh\nfor a; do last=$a; done\n[ "$last" = get ] && printf '%s\\n' '${stub}' >> '${log}'\nexit 0\n`,
+            {
+              mode: 0o700,
+            },
+          );
+          return file;
+        });
+      if (shape.xdg !== undefined)
+        writeFileSync(join(real, '.config', 'git', 'config'), fill(shape.xdg));
+      if (shape.gitconfig !== undefined)
+        writeFileSync(join(real, '.gitconfig'), fill(shape.gitconfig));
+
+      const ran = (home: string): string[] => {
+        rmSync(log, { force: true });
+        spawnSync('git', ['credential', 'fill'], {
+          env: gitEnv({ ...process.env, HOME: home, XDG_CONFIG_HOME: undefined }),
+          input: 'protocol=https\nhost=a.test\n\n',
+          encoding: 'utf8',
+        });
+        return existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : [];
+      };
+      const asThePerson = ran(real);
+      assert.ok(asThePerson.length > 0, 'the shape runs no stub at all under the person’s HOME');
+      assert.equal(gitHome(io(), [alt], real), 0);
+      assert.deepEqual(ran(alt), asThePerson, readFileSync(join(alt, '.gitconfig'), 'utf8'));
+    });
+  }
 
   void test('a second run writes nothing', () => {
     const { real, alt } = fixture('again');

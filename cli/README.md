@@ -879,10 +879,16 @@ laika agent git-home ~/.laika/polly-home
 ```
 
 It writes `<dir>/.gitconfig` (0600), and never over a file it did not write.
-The file has an include of your `~/.config/git/config` and `~/.gitconfig`, then
-each credential helper still switched on there, run with `HOME` set to your own
-home. Your home comes from the account database, not from `$HOME`. A helper
-listed before an empty `helper =` is off, and is not written again.
+The file has an include of your `$XDG_CONFIG_HOME/git/config` (by default
+`~/.config/git/config`) and `~/.gitconfig`, for everything that is not a
+credential helper. It then clears each credential section and writes every
+helper still switched on, run with `HOME` set to your own home. The helpers come
+from every file git reads before a repo's own config: the system file, the one
+built into git itself (Apple's git names `osxkeychain` there), then the global
+files. They are written **in the order git reads them**, a section header for
+each run, so the same helpers run in the same order as they do for you. Your
+home comes from the account database, not from `$HOME`. A helper listed before
+an empty `helper =` is off, and is not written again.
 
 Two things are **not** re-homed:
 

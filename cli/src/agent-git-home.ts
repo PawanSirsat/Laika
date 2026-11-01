@@ -57,31 +57,57 @@ interface Helper {
 
 /**
  * Your global config files, in the order git reads them: the XDG file, then
- * `~/.gitconfig`. Each is read by itself with `--includes`, so a helper set
- * only in the XDG file is found too.
+ * `~/.gitconfig`. The written file includes both, for everything that is not a
+ * credential helper.
  */
-export function globalFiles(realHome: string): string[] {
-  return [join(realHome, '.config', 'git', 'config'), join(realHome, '.gitconfig')];
+export function globalFiles(realHome: string, xdgConfigHome?: string): string[] {
+  const xdg =
+    xdgConfigHome !== undefined && isAbsolute(xdgConfigHome)
+      ? xdgConfigHome
+      : join(realHome, '.config');
+  return [join(xdg, 'git', 'config'), join(realHome, '.gitconfig')];
 }
 
-function readHelpers(file: string, realHome: string, path: string | undefined): Helper[] {
+/**
+ * Every helper entry git reads before your repo's own config, resets
+ * included, **in the order git reads them**: the system file, a file built
+ * into git itself (Apple's git ships one naming `osxkeychain`), then the
+ * global ones, includes followed. Read as you, from `/`, so no repo's local
+ * config is in it and git itself gives the order.
+ */
+export function globalHelpers(
+  realHome: string,
+  path: string | undefined,
+  xdgConfigHome?: string,
+): Helper[] {
   let out: string;
   try {
     out = execFileSync(
       'git',
-      ['config', '--file', file, '--includes', '-z', '--get-regexp', '^credential\\..*helper$'],
+      ['config', '--show-scope', '--includes', '-z', '--get-regexp', '^credential\\..*helper$'],
       {
-        env: { PATH: path ?? '/usr/bin:/bin', HOME: realHome, LC_ALL: 'C' },
+        cwd: '/',
+        env: {
+          PATH: path ?? '/usr/bin:/bin',
+          HOME: realHome,
+          LC_ALL: 'C',
+          ...(xdgConfigHome !== undefined && isAbsolute(xdgConfigHome)
+            ? { XDG_CONFIG_HOME: xdgConfigHome }
+            : {}),
+        },
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
       },
     );
   } catch {
-    return []; // no such file, or no helper in it
+    return []; // exit 1: no helper anywhere
   }
   const helpers: Helper[] = [];
-  for (const record of out.split('\0')) {
-    if (record === '') continue;
+  const fields = out.split('\0');
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const scope = fields[i] ?? '';
+    const record = fields[i + 1] ?? '';
+    if (!['system', 'unknown', 'global'].includes(scope)) continue;
     const cut = record.indexOf('\n');
     const key = cut === -1 ? record : record.slice(0, cut);
     const value = cut === -1 ? '' : record.slice(cut + 1);
@@ -93,11 +119,6 @@ function readHelpers(file: string, realHome: string, path: string | undefined): 
     }
   }
   return helpers;
-}
-
-/** Every global helper entry, resets included, in the order git reads them. */
-export function globalHelpers(realHome: string, path: string | undefined): Helper[] {
-  return globalFiles(realHome).flatMap((file) => readHelpers(file, realHome, path));
 }
 
 /**
@@ -127,45 +148,62 @@ export function asYou(value: string, realHome: string): string {
   return `!${home}git credential-${value}`;
 }
 
-function setConfig(file: string, key: string, value: string, path: string | undefined): void {
-  execFileSync('git', ['config', '--file', file, '--add', key, value], {
-    env: { PATH: path ?? '/usr/bin:/bin', LC_ALL: 'C' },
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
+/** A value as git-config text: always quoted, so `;`, `#` and spaces survive. */
+export function configValue(value: string): string {
+  const body = value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\t/g, '\\t');
+  return `"${body}"`;
 }
 
-/** The file's whole text, built through `git config --file` so git does the quoting. */
+/** A section header; a URL subsection escapes `\` and `"` as git requires. */
+function header(url: string | undefined): string {
+  if (url === undefined) return '[credential]';
+  return `[credential "${url.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`;
+}
+
+/**
+ * The file's whole text. Written here rather than through `git config --add`,
+ * which appends each entry to its section's existing block: two sections that
+ * alternate would come out grouped, and git, which keeps one helper list across
+ * every matching section, would run a different list (LAI-1034 review B2). So
+ * every live entry, resets included, goes out in the order git read it, with a
+ * fresh header for each run of one section.
+ */
 export function gitHomeConfig(
   realHome: string,
   helpers: readonly Helper[],
-  path: string | undefined,
-  scratch: string,
+  files: readonly string[] = globalFiles(realHome),
 ): string {
-  writeFileSync(
-    scratch,
-    `${GIT_HOME_MARKER}\n# Your git config, and each credential helper run with HOME=${realHome}.\n`,
-    {
-      mode: 0o600,
-    },
-  );
-  for (const file of globalFiles(realHome)) setConfig(scratch, 'include.path', file, path);
-  const key = (url: string | undefined): string =>
-    url === undefined ? 'credential.helper' : `credential.${url}.helper`;
+  const lines = [
+    GIT_HOME_MARKER,
+    `# Your git config, and each credential helper run with HOME=${realHome}.`,
+    '[include]',
+    ...files.map((file) => `\tpath = ${configValue(file)}`),
+  ];
   const live = liveHelpers(helpers);
-  // Clear what the includes just listed, then the live entries again, re-homed.
-  const urls = [...new Set(live.map((helper) => helper.url))];
-  for (const url of urls) setConfig(scratch, key(url), '', path);
-  for (const helper of live) {
-    if (helper.value !== '')
-      setConfig(scratch, key(helper.url), asYou(helper.value, realHome), path);
+  // Clear what the includes just listed, so this HOME starts from nothing.
+  for (const url of [...new Set(live.map((helper) => helper.url))]) {
+    lines.push(header(url), `\thelper = ""`);
   }
-  return readFileSync(scratch, 'utf8');
+  let open: string | null = null;
+  for (const helper of live) {
+    const at = header(helper.url);
+    if (at !== open) lines.push(at);
+    open = at;
+    const value = helper.value === '' ? '' : asYou(helper.value, realHome);
+    lines.push(`\thelper = ${configValue(value)}`);
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 export function writeGitHome(
   dir: string,
   realHome: string,
   path: string | undefined,
+  xdgConfigHome?: string,
 ): { outcome: GitHomeOutcome; file: string; why?: string; helpers: number } {
   const target = resolve(dir);
   const file = join(target, '.gitconfig');
@@ -189,12 +227,14 @@ export function writeGitHome(
       helpers: 0,
     };
   }
-  const helpers = globalHelpers(realHome, path);
+  const files = globalFiles(realHome, xdgConfigHome);
+  const helpers = globalHelpers(realHome, path, xdgConfigHome);
   const scratch = `${file}.laika-${process.pid}`;
   try {
-    const next = gitHomeConfig(realHome, helpers, path, scratch);
+    const next = gitHomeConfig(realHome, helpers, files);
     const count = liveHelpers(helpers).filter((h) => h.value !== '').length;
     if (next === current) return { outcome: 'unchanged', file, helpers: count };
+    writeFileSync(scratch, next, { mode: 0o600 });
     chmodSync(scratch, 0o600);
     renameSync(scratch, file);
     return { outcome: 'written', file, helpers: count };
@@ -214,14 +254,15 @@ export function gitHome(
       [
         'Usage: laika agent git-home <dir>   make git under HOME=<dir> use your git config and credential helpers',
         '',
-        'Writes <dir>/.gitconfig: an include of your ~/.config/git/config and ~/.gitconfig, then each',
-        'credential helper still switched on there, run with HOME set to yours. Not re-homed: a helper',
+        'Writes <dir>/.gitconfig: an include of your $XDG_CONFIG_HOME/git/config (default ~/.config) and ~/.gitconfig, then each',
+        'credential helper still switched on there, in the order git reads them, run with HOME set to yours.',
+        'Not re-homed: a helper',
         'inside an includeIf block, and ~/ paths in your config (git expands them with HOME=<dir>).',
       ].join('\n'),
     );
     return 1;
   }
-  const result = writeGitHome(dir, realHome, io.env.PATH);
+  const result = writeGitHome(dir, realHome, io.env.PATH, io.env.XDG_CONFIG_HOME);
   if (result.outcome === 'refused') {
     io.err(`laika agent git-home: refused: ${result.why ?? ''}`);
     return 2;
