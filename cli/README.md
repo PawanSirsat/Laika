@@ -597,6 +597,28 @@ Claude Code, which Codex does not document — recognised by `laika-agent-hook` 
 `hooks off` removes exactly those. Codex runs a new hook only after you trust
 it in `/hooks`.
 
+**Other harnesses (LAI-557).** `laika agent` also knows `cursor`,
+`copilot-cli`, `copilot-vscode`, `copilot-cloud`, `gemini-cli` and
+`antigravity` (`cli/src/agent-adapters.ts`, one table). Each one runs on the
+same engine, with **no hooks**: no other harness's hook format has been run on
+a real binary here. So `laika agent hooks on --harness gemini-cli` installs
+nothing. It prints the explicit commands and exits 1:
+
+```
+laika agent login gemini-cli --url https://board.example < agent-token
+laika agent session start --harness gemini-cli --harness-session <id> --pid <gemini's pid>
+laika agent inbox --harness gemini-cli          # the only delivery boundary without hooks
+laika agent checkpoint save --harness gemini-cli --note-file note.json
+laika agent session end --harness gemini-cli --harness-session <id>
+```
+
+`--pid` is required, because the helper never guesses which `node` is the
+harness. The watcher then renews the session while that process lives.
+Nothing reaches the agent mid-turn: it sees new work when one of these runs.
+What each harness documents (hooks, injection, credentials, headless start),
+and what was and was not run on Belka, is in
+[`agent-adapters/CAPABILITIES.md`](agent-adapters/CAPABILITIES.md).
+
 ### How it stays bound to the harness
 
 | Event | What the hook does |
@@ -785,6 +807,38 @@ laika agent handoff decline <offer> --reason "busy"
   `declined` or `needs_attention`.
 
 ### Harness capability matrix
+
+The table below covers Claude Code and Codex. The other harnesses
+(LAI-557) are summarised here; their full cells, versions, the docs read and
+the words relied on are in [`agent-adapters/CAPABILITIES.md`](agent-adapters/CAPABILITIES.md).
+**None of them ran on Belka on 2026-10-31**:
+
+- `cursor-agent` 2026.01.28 answered `Authentication required`.
+- `gemini` 0.49.0 stopped at browser sign-in.
+- Copilot and the Antigravity CLI (`agy`) are not installed.
+
+So none of them has a Verified-and-tested cell.
+
+| Capability | Cursor | Copilot CLI | Copilot in VS Code | Copilot cloud agent | Gemini CLI | Antigravity |
+| --- | --- | --- | --- | --- | --- | --- |
+| Agent credential (`laika agent login <h>`, own 0600 file) | Documented-not-tested | Documented-not-tested | Documented-not-tested | Unsupported as a file (ephemeral `/root`); env token Unverified | Documented-not-tested | Documented-not-tested |
+| Session id / lifecycle | explicit `session start --pid` … `end`; Documented-not-tested | same | same | Unsupported in practice (board behind the cloud firewall) | same | same; the harness has no session-end hook |
+| `laika agent hooks on` | Unsupported by Laika: prints the explicit commands, writes nothing | same | same | same | same | same |
+| Checkpoint | `laika agent checkpoint save` only; automatic saves and `watch` answer `no_hooks` | same | same | same | same | same |
+| Inbox boundary | when `laika agent inbox` / MCP `agent_sync` runs | same | same | same | same | same |
+| Inject at a prompt (if hooks were installed) | Unsupported (`beforeSubmitPrompt` has no context field) | Unsupported (output dropped) | Unverified | Unsupported | Documented-not-tested (`BeforeAgent`) | Documented-not-tested (`PreInvocation` `injectSteps`) |
+| Inject after a tool (if hooks were installed) | Documented-not-tested (`additional_context`) | Documented-not-tested (`additionalContext`) | Unverified | Documented-not-tested | Documented-not-tested (`AfterTool`) | Unsupported (`PostToolUse` returns `{}`) |
+| Context reload | `get_project_context` when the agent calls it | same | same | same | same | same |
+| Event notices fetched (`laika agent events sync` / `listen`) | Documented-not-tested: the LAI-554 engine is harness-independent and uses this harness's own credential; none ran | same | same | Unsupported in practice (board behind the cloud firewall) | same | same |
+| Event stream held by the watcher | Documented-not-tested: an explicit `session start --pid` starts the watcher, which holds the stream; not run | same | same | Unsupported in practice (board behind the cloud firewall) | same | same |
+| Event notice injected at a boundary | **Unsupported** by Laika: the hook entry prints nothing for this harness, so no notice is ever `presented`; read them with `laika agent events` | same | same | Unsupported (same) | same | same |
+| Mid-turn delivery | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported |
+| Headless start | Documented-not-tested (`agent -p`) | Documented-not-tested (`copilot -p`) | Unsupported | Documented-not-tested (`gh agent-task create`) | Documented-not-tested (`gemini -p`) | Documented-not-tested (`agy -p`) |
+
+Nothing recovers automatically for these harnesses. A session whose harness
+dies stops renewing because its PID is gone, and its claims expire. Taking a
+claim back is an explicit `start_working` with `reclaim: true`, exactly as for
+Claude Code.
 
 Cells: **Verified-and-tested** (run on the version shown, against a real
 board), **Documented-not-tested** (in the harness's docs, not run here),
@@ -1124,6 +1178,10 @@ the file refused until a later request succeeds.
 Same cells as the session matrix above. Every Verified-and-tested cell here was
 run against a **real Laika server** (`agent-events-e2e.test.ts`). **No real
 `claude` or `codex` process** saw a notice.
+
+The other harnesses (LAI-557) are in the harness capability matrix above: the
+engine and the watcher's stream are Documented-not-tested for them, and a notice
+is never injected, because Laika installs no hooks for them.
 
 | Capability | Claude Code 2.1.280 | Codex 0.162.1 |
 | --- | --- | --- |
