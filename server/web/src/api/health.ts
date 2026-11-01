@@ -16,6 +16,8 @@ export interface Health {
   readonly status: string;
   readonly version: string;
   readonly uptime_ms: number;
+  /** The git commit the image was built from; `null` when the build did not say (LAI-1043). */
+  readonly build_commit: string | null;
 }
 
 export function getHealth(signal?: AbortSignal): Promise<Health> {

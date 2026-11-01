@@ -16,7 +16,6 @@ import {
 import {
   AGENT_GROUPS,
   canContinue,
-  commandLines,
   footerHint,
   groupedAgents,
   noteAbove,
@@ -25,6 +24,7 @@ import {
   setupModes,
   stepOpen,
 } from '../../../../src/routes/screens/connect/connect-wizard.ts';
+import { commandLines } from '../../../../src/components/wizard/command-lines.ts';
 
 const SECRET = 'lai_ThisIsTheWholeSecretAndMustNotEscape';
 const ORIGIN = 'http://board.example.test:9999';
