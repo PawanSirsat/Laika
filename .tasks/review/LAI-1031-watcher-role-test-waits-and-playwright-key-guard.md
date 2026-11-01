@@ -36,4 +36,4 @@ Named files, one by one (the scope this task grants):
       body red, the new body green.
 - [x] The *Playwright version* step exits non-zero on an empty version;
       nothing else in `deploy.yml` changes.
-- [ ] CI green on the PR.
+- [x] CI green on the PR (#185, all gate jobs at bfca204e).
