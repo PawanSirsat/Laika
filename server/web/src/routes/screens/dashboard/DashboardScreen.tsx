@@ -30,13 +30,7 @@ import { withProjectParam } from '../../nav-url.ts';
 import { useRoute } from '../../use-route.ts';
 import { Contributors } from './Contributors.tsx';
 import { contributors } from './contributors-derive.ts';
-import {
-  DEFAULT_RANGE,
-  RANGES,
-  rangeById,
-  sinceFor,
-  statusBreakdown,
-} from './dashboard-derive.ts';
+import { DEFAULT_RANGE, RANGES, rangeById, sinceFor, statusBreakdown } from './dashboard-derive.ts';
 import { PriorityBreakdown } from './PriorityBreakdown.tsx';
 import { StatCards } from './StatCards.tsx';
 import { StatusOverview } from './StatusOverview.tsx';
