@@ -607,6 +607,9 @@ void describe('on a phone', () => {
       const h = await open('/people?user=u2', stub(undefined, false, ME, now), {
         before: async (page) => {
           await page.setViewportSize({ width: 390, height: 844 });
+          // The page's today is the fixture's: the grid drawn while an answer
+          // is on its way ends on the browser's today, not the pinned one.
+          await page.clock.setFixedTime(now);
         },
       });
       try {
@@ -616,6 +619,15 @@ void describe('on a phone', () => {
 
         await activityCard.locator('input[value="52w"]').check();
         await until(async () => (await cells(h.page, 'github').count()) === 364);
+        // Measured on the year's answer, not on what stood in for it.
+        await h.page
+          .locator('.prof-card[data-section="activity"][data-range="52w"][aria-busy="false"]')
+          .waitFor();
+        assert.equal(
+          await cells(h.page, 'github').last().getAttribute('data-day'),
+          new Date(now).toISOString().slice(0, 10),
+          'the newest week is not the one this case is about',
+        );
         // Each source's heading — its total and its Less…More key — is whole in
         // view wherever the year is scrolled (LAI-751).
         for (const end of ['newest', 'oldest']) {

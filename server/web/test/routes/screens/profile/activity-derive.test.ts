@@ -191,6 +191,31 @@ void describe('the calendar', () => {
     const room = calendarLayout(emptyDays('2026-11-02', 364));
     assert.deepEqual(room.months.at(-1), { label: 'Nov', column: room.columns - 2, span: 2 });
   });
+
+  void test('a 1st on a Monday opens a column alone, and is named once the next week begins', () => {
+    // Mon 1 Mar 2027: the newest column holds that one day.
+    const alone = calendarLayout(emptyDays('2027-03-01', 364));
+    assert.equal(weekdayOf('2027-03-01'), 0);
+    assert.equal(alone.months.at(-1)?.label, 'Feb');
+    assert.equal(alone.months.at(-1)?.column, alone.columns - 5);
+    assert.equal(alone.months.at(-1)?.span, 5);
+    // Mon 8 Mar 2027: March has two columns.
+    const named = calendarLayout(emptyDays('2027-03-08', 364));
+    assert.deepEqual(named.months.at(-1), { label: 'Mar', column: named.columns - 2, span: 2 });
+  });
+
+  void test('across the new year: January waits for its room like any month', () => {
+    // Fri 1 Jan 2027 closes nothing — it shares the week of Mon 28 Dec.
+    const eve = calendarLayout(emptyDays('2027-01-01', 364));
+    assert.equal(eve.months.at(-1)?.label, 'Dec');
+    assert.equal(eve.months.at(-1)?.column, eve.columns - 5);
+    assert.equal(eve.months.at(-1)?.span, 5);
+    const spans = eve.months.reduce((sum, m) => sum + m.span, 0);
+    assert.equal(spans + (eve.months[0]?.column ?? 0), eve.columns);
+    // Mon 4 Jan 2027: January has two columns.
+    const after = calendarLayout(emptyDays('2027-01-04', 364));
+    assert.deepEqual(after.months.at(-1), { label: 'Jan', column: after.columns - 2, span: 2 });
+  });
 });
 
 void describe('how dark a day is', () => {
