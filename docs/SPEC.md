@@ -3050,8 +3050,10 @@ exactly the groups `GET /agents/devices` serves, named as that list names
 them (the newest agent's trimmed label), and links every agent to it. A key
 whose agents are all revoked gets a `revoked` device. Nothing is merged,
 revoked or renamed, no agent is created, and no other row changes. The same
-rule runs at every boot for any agent whose `device_id` is null, and changes
-nothing once all are linked.
+rule runs at every boot for any agent whose `device_id` is null **or stale** —
+linked to a device whose owner or label key is not the agent's own, as a
+relabel by a pre-`0070` build leaves it — and changes nothing once every agent
+is linked to its label's device.
 
 **Registering or relabelling** links the agent to the owner's active device
 for its label, making an `imported` one if there is none; a relabel moves the
