@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { recordMcpUse } from '../auth/tokens.ts';
+import { recordMcpClientReport } from '../services/client-reports.ts';
 import { type Logger } from '../log.ts';
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
@@ -308,6 +309,22 @@ export async function handleMcpRequest(
         );
       } catch (err) {
         context.log?.warn('mcp.record_failed', {
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+      // A registered agent's own word about its client (§4.81, LAI-1056):
+      // the evidence that the tool itself, not a curl, holds the credential.
+      try {
+        const client = server.server.getClientVersion();
+        recordMcpClientReport(
+          context.db,
+          tokenId,
+          context.now?.() ?? Date.now(),
+          client?.name,
+          client?.version,
+        );
+      } catch (err) {
+        context.log?.warn('mcp.client_report_failed', {
           message: err instanceof Error ? err.message : String(err),
         });
       }

@@ -78,7 +78,7 @@ function requireActor(c: Context<AppEnv>) {
  * forward, so signing it would bind a device to an internal address; with no
  * public URL, pairing is refused rather than guessed.
  */
-function boardOrigin(publicUrl: string | undefined): string {
+export function boardOrigin(publicUrl: string | undefined): string {
   if (publicUrl === undefined || publicUrl === '') {
     throw new ApiError('conflict', 'Set LAIKA_PUBLIC_URL to pair devices with this board', {
       reason: 'public_url_unset',

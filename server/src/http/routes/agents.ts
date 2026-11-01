@@ -34,6 +34,18 @@ import {
   readCheckpointConsent,
   setCheckpointConsent,
 } from '../../services/checkpoints.ts';
+import {
+  CLIENT_CAPABILITIES,
+  MAX_CAPABILITIES,
+  reportClient,
+  type ClientReportView,
+} from '../../services/client-reports.ts';
+import {
+  getAgentVerification,
+  reconnectAgent,
+  type AgentVerificationView,
+  type CreatedToolSetupView,
+} from '../../services/tool-setup.ts';
 import { type AppEnv } from '../context.ts';
 import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
@@ -93,6 +105,25 @@ const UpdateBody = strictObject({
 const DeviceBody = strictObject({ device_label: z.string().max(200).nullable() });
 
 const GrantsBody = strictObject({ grants: Grants });
+
+/** Printable, no spaces: a version as a CLI or harness prints it. */
+const VersionString = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[0-9A-Za-z][0-9A-Za-z.+_-]*$/);
+
+/** `POST /agents/me/client-report` (§4.81, LAI-1056): self-reported, closed, capped. */
+const ClientReportBody = strictObject({
+  cli_version: VersionString,
+  cli_commit: z
+    .string()
+    .regex(/^[0-9a-f]{7,40}$/)
+    .optional(),
+  protocol: z.number().int().min(1).max(1000),
+  capabilities: z.array(z.enum(CLIENT_CAPABILITIES)).max(MAX_CAPABILITIES),
+  harness_version: VersionString.optional(),
+});
 
 const RotateBody = strictObject({
   token_id: z.string().min(1).max(64),
@@ -196,6 +227,22 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
     });
   });
 
+  // The calling agent's own CLI says what it is (§4.81, LAI-1056): evidence
+  // for a status word, never for a permission.
+  app.post('/me/client-report', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(ClientReportBody, await c.req.json().catch(() => null));
+    return c.json<ClientReportView>(
+      reportClient(db, actor, {
+        cliVersion: body.cli_version,
+        cliCommit: body.cli_commit,
+        protocol: body.protocol,
+        capabilities: body.capabilities,
+        harnessVersion: body.harness_version,
+      }),
+    );
+  });
+
   // Static device routes precede /:id so 'devices' is never an agent id.
   app.get('/devices', (c) => {
     return c.json({ data: listOwnAgentDevices(db, requireActor(c)) });
@@ -248,6 +295,20 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
     markOneTimeSecret(c);
     return c.json<CreatedAgentToken>(created, 201);
   });
+
+  // A `rotate` exchange on the agent's paired device (§4.80, LAI-1056): the
+  // new credential goes to the device, never through the browser.
+  app.post('/:id/reconnect', (c) =>
+    c.json<CreatedToolSetupView>(
+      reconnectAgent(sqlite, db, requireActor(c), c.req.param('id')),
+      201,
+    ),
+  );
+
+  // What the board saw of this agent's tool, from its own credential only.
+  app.get('/:id/verification', (c) =>
+    c.json<AgentVerificationView>(getAgentVerification(db, requireActor(c), c.req.param('id'))),
+  );
 
   app.post('/:id/revoke', (c) => {
     const actor = requireActor(c);

@@ -57,6 +57,7 @@ import { eventRoutes } from './http/routes/events.ts';
 import { agentRoutes } from './http/routes/agents.ts';
 import { deviceRoutes } from './http/routes/devices.ts';
 import { devicePairingRequestRoutes, devicePairingRoutes } from './http/routes/device-pairing.ts';
+import { deviceToolRoutes, toolSetupRoutes } from './http/routes/tool-setup.ts';
 import { agentSessionRoutes } from './http/routes/agent-sessions.ts';
 import { tokenRoutes, userTokenRoutes } from './http/routes/tokens.ts';
 import { mcpRoutes } from './http/routes/mcp.ts';
@@ -404,6 +405,11 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     const pairing = { db, sqlite: options.sqlite, rateLimiter, publicUrl: options.publicUrl };
     app.route(`${API_BASE}/devices/pairing-requests`, devicePairingRequestRoutes(pairing));
     app.route(`${API_BASE}/device-pairing`, devicePairingRoutes(pairing));
+    // LAI-1056: setting a tool up on a paired device (§4.80). `/:id/tools`
+    // only, so it never answers for `deviceRoutes`' paths.
+    const toolSetup = { db, sqlite: options.sqlite, publicUrl: options.publicUrl };
+    app.route(`${API_BASE}/devices`, deviceToolRoutes(toolSetup));
+    app.route(`${API_BASE}/tool-setup`, toolSetupRoutes(toolSetup));
     // LAI-1045: the owner's devices (§4.78), read only.
     app.route(`${API_BASE}/devices`, deviceRoutes({ db }));
     app.route(`${API_BASE}/agent-sessions`, agentSessionRoutes({ db, sqlite: options.sqlite }));
