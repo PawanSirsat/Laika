@@ -83,7 +83,7 @@ explicitly, and the PR targets `LAI-1045-devices-migration` until #202 merges.
 - [x] Brute force reaches `429` with `Retry-After`.
 - [x] No new activity verb and no new §3.1 action.
 - [x] SPEC rows are written.
-- [ ] CI is green on the PR.
+- [x] CI is green on the PR (#205, run 41355720184 on 382f01e7).
 
 ## Dependencies
 
