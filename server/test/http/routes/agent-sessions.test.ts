@@ -706,6 +706,19 @@ const NOT_FENCED: Record<string, string> = {
     'session only (agent.manage_own); records the owner’s statement about a label, touches no task',
   'POST /api/v1/agents/devices/revoke':
     'session only (agent.manage_own); revokes each agent as /agents/:id/revoke does, its claims lapse',
+  // LAI-1050: pairing a device (§4.79) touches no task and mints nothing.
+  'POST /api/v1/devices/pairing-requests':
+    'session only (agent.manage_own); asks for a pairing code, touches no task',
+  'POST /api/v1/devices/pairing-requests/:id/approve':
+    'session only (agent.manage_own); a decision on a device key, touches no task',
+  'POST /api/v1/devices/pairing-requests/:id/deny':
+    'session only (agent.manage_own); a decision on a device key, touches no task',
+  'DELETE /api/v1/devices/pairing-requests/:id':
+    'session only (agent.manage_own); withdraws a pairing request, touches no task',
+  'POST /api/v1/device-pairing/claim':
+    'no actor — a device presents a code and a key (§4.79); no task, no credential',
+  'POST /api/v1/device-pairing/:id/complete':
+    'no actor — a device proves its key (§4.79); no task, no credential',
   'POST /api/v1/agents/me/events/ack':
     'presence, as a heartbeat is (§4.77, LAI-553): records a delivery state, touches no task',
   'POST /api/v1/tokens': 'a credential, not a task',
