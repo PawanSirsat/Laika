@@ -110,3 +110,13 @@ Reviewer's proposed defaults adopted, in new commits (no force-push):
 - One refinement to the reviewer's rule: a local-path source is allowed from a
   non-loopback board **when it is the checkout's own remote** (or `--source`),
   because then this machine, not the board, chose it.
+
+## Review round 2 should-fixes — 2026-11-01T23:27:27Z
+
+- A matched remote is fetched by its own `git remote get-url` value (a local
+  remote by its resolved path), never the board's spelling.
+- `file://host/…` is refused as a source rather than crashing.
+- `GIT_SSH` / `GIT_SSH_COMMAND` kept; the other overrides still stripped.
+- Recovery test where the user commits on the detached HEAD after the crash.
+- README: a hook file rewritten by a killed run before it was recorded is
+  reported, not restored.
