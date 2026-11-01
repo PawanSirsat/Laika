@@ -57,7 +57,10 @@ export interface ProjectAccessView {
   /** What the tool can actually do there: grant ∩ owner ∩ space. */
   effective: ProjectAccessLevel;
   /** The widest grant the owner may usefully give; `null` gives nothing. */
-  can_grant: { max: AgentGrantScope | null; reason: GrantLimitReason | null };
+  can_grant: {
+    max: AgentGrantScope | null;
+    reason: GrantLimitReason | null;
+  };
 }
 
 export function getAgentProjectAccess(
