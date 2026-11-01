@@ -40,6 +40,11 @@ import { isReservedPath } from '../static.ts';
  * worse than one shared bucket. Per-IP needs a trusted-proxy configuration first;
  * until Laika has one, and until an expensive unauthenticated endpoint exists to
  * protect, sharing is the honest default.
+ *
+ * **A shared anonymous bucket can always be drained**, by whoever sends enough.
+ * Device pairing (LAI-1050) has buckets of its own for that reason, sized so
+ * that draining them takes sustained traffic; keys per address still wait for
+ * the trusted-proxy setting above.
  */
 export function rateLimitMiddleware(limiter: RateLimiter) {
   return createMiddleware<AppEnv>(async (c, next) => {
@@ -111,6 +116,9 @@ export const OTLP_PREFIX = '/api/v1/otlp/';
 /** A device's side of pairing (LAI-1050): claim, and `/:id/complete`. */
 export const PAIRING_PREFIX = '/api/v1/device-pairing/';
 export const PAIRING_CLAIM_PATH = '/api/v1/device-pairing/claim';
+/** `/:id/complete` with a ULID id, as `newId` makes them. */
+export const PAIRING_COMPLETE_PATH =
+  /^\/api\/v1\/device-pairing\/([0-9A-HJKMNP-TV-Z]{26})\/complete$/;
 
 /** A collector's drafted blocks (LAI-787). */
 export const TIME_DRAFTS_PATH = '/api/v1/me/time-drafts';
@@ -157,9 +165,13 @@ export function classify(
   if (path === PAIRING_CLAIM_PATH) {
     return { key: 'pairing:claim', policy: LIMITS.pairing };
   }
+  // A key per request only for a path shaped like one (LAI-1050 review, B2):
+  // the id is the caller's input, and a key made from any string they send is
+  // a map entry made for them. Everything else shares one.
   if (path.startsWith(PAIRING_PREFIX)) {
+    const id = PAIRING_COMPLETE_PATH.exec(path)?.[1];
     return {
-      key: `pairing:complete:${path.slice(PAIRING_PREFIX.length)}`,
+      key: id === undefined ? 'pairing:complete:other' : `pairing:complete:${id}`,
       policy: LIMITS.pairingComplete,
     };
   }

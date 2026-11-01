@@ -201,6 +201,28 @@ describe('rate limiting (SPEC §6.3)', () => {
     expect(limiter.prune(policy)).toBe(50);
     expect(limiter.size).toBe(0);
   });
+
+  it('holds at most its cap, dropping refilled buckets first and then the least used (LAI-1050)', () => {
+    let now = 0;
+    const limiter = new RateLimiter(() => now, 100);
+    const policy = { perMinute: 60, burst: 2 };
+
+    // A thousand keys from outside, none refilled: the map stays at the cap.
+    limiter.take('kept', policy);
+    for (let i = 0; i < 1000; i++) {
+      limiter.take(`flood-${String(i)}`, policy);
+      // Touched every time, so it is never the least recently used.
+      limiter.take('kept', { perMinute: 60, burst: 10_000 });
+    }
+    expect(limiter.size).toBe(100);
+    // Still spent: the bucket that was used survived the flood.
+    expect(limiter.peek('kept', { perMinute: 60, burst: 10_000 }).remaining).toBeLessThan(10_000);
+
+    // Once refilled, the next new key prunes them all by their own policies.
+    now += 60_000;
+    limiter.take('late', policy);
+    expect(limiter.size).toBeLessThanOrEqual(2);
+  });
 });
 
 describe('rate limiting over HTTP', () => {

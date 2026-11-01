@@ -42,7 +42,7 @@ export interface DevicePairingRouteOptions {
   publicUrl?: string | undefined;
 }
 
-/** The one key every failed pairing attempt counts on (plan §E.1). */
+/** The one key every failed claim counts on (plan §E.1); completing never touches it. */
 export const PAIRING_FAILURE_KEY = 'pairing:failures';
 
 const CreateBody = strictObject({
@@ -72,9 +72,19 @@ function requireActor(c: Context<AppEnv>) {
   return actor;
 }
 
-/** The board's origin: the public URL's, or this request's when none is set. */
-function boardOrigin(c: Context<AppEnv>, publicUrl: string | undefined): string {
-  return new URL(publicUrl !== undefined && publicUrl !== '' ? publicUrl : c.req.url).origin;
+/**
+ * The board's origin, which a device signs, from `LAIKA_PUBLIC_URL` only
+ * (LAI-1050 review, N2). A request's own `Host` is what a proxy happened to
+ * forward, so signing it would bind a device to an internal address; with no
+ * public URL, pairing is refused rather than guessed.
+ */
+function boardOrigin(publicUrl: string | undefined): string {
+  if (publicUrl === undefined || publicUrl === '') {
+    throw new ApiError('conflict', 'Set LAIKA_PUBLIC_URL to pair devices with this board', {
+      reason: 'public_url_unset',
+    });
+  }
+  return new URL(publicUrl).origin;
 }
 
 export function devicePairingRequestRoutes(options: DevicePairingRouteOptions): Hono<AppEnv> {
@@ -88,7 +98,7 @@ export function devicePairingRequestRoutes(options: DevicePairingRouteOptions): 
       kind: body.kind,
       displayName: body.display_name,
       deviceId: body.device_id,
-      boardOrigin: boardOrigin(c, options.publicUrl),
+      boardOrigin: boardOrigin(options.publicUrl),
     });
     // The code is shown once; the idempotency store keeps no copy of it.
     markOneTimeSecret(c);
@@ -136,7 +146,7 @@ export function devicePairingRoutes(options: DevicePairingRouteOptions): Hono<Ap
     });
   }
 
-  /** Count a failure, then rethrow what the caller would have been told. */
+  /** Count a failed claim, then rethrow what the caller would have been told. */
   function failed(error: unknown): never {
     rateLimiter.take(PAIRING_FAILURE_KEY, LIMITS.pairingFailures);
     throw error;
@@ -161,26 +171,21 @@ export function devicePairingRoutes(options: DevicePairingRouteOptions): Hono<Ap
     }
   });
 
+  // Completing neither checks nor spends the shared failure key (LAI-1050
+  // review, B1): it would let anyone lock pairing out for the whole board by
+  // posting to made-up ids. An id is a ULID nobody guesses, a signature needs
+  // the device's private key, and each request caps its own bad signatures.
   app.post('/:id/complete', async (c) => {
-    assertNotBackedOff(c);
     const body = parseBody(CompleteBody, await c.req.json().catch(() => null));
-    let outcome;
-    try {
-      outcome = completePairingRequest(sqlite, db, {
-        id: c.req.param('id'),
-        signature: body.signature,
-        boardOrigin: boardOrigin(c, options.publicUrl),
-      });
-    } catch (error) {
-      if (error instanceof ApiError && error.code === 'not_found') failed(error);
-      throw error;
-    }
+    const outcome = completePairingRequest(sqlite, db, {
+      id: c.req.param('id'),
+      signature: body.signature,
+      boardOrigin: boardOrigin(options.publicUrl),
+    });
     if (outcome.kind === 'bad_signature') {
-      failed(
-        new ApiError('unauthorized', 'The signature does not match the device key', {
-          reason: 'device_signature_invalid',
-        }),
-      );
+      throw new ApiError('unauthorized', 'The signature does not match the device key', {
+        reason: 'device_signature_invalid',
+      });
     }
     if (outcome.kind === 'pending') {
       return c.json<{ state: 'claimed' }>({ state: outcome.state }, 202);
