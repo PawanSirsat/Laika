@@ -6,9 +6,8 @@ assignee: polly
 priority: p2
 depends-on: []
 discovered-from: LAI-1042
-status: review
+status: in-progress
 started: 2026-11-02T03:05:00Z
-finished: 2026-11-02T03:40:00Z
 ---
 
 ## Goal
@@ -58,11 +57,11 @@ One PR, so no drift guard is ever red. Named cross-area edits:
       longer says "Only you see this."
 - [x] Organisation → Security and the profile admin "Their tokens" group by
       kind and name agent credentials as Tool · Device.
-- [x] `token.revoke_any` still revokes an agent credential; its confirmation
+- [ ] `token.revoke_any` still revokes an agent credential; its confirmation
       says exactly what stops (the plan's §E.4 choice: keep revoke-any, state
       the impact). No change to who may do what.
 - [x] `view-type-drift` green (client mirrors the three fields).
-- [x] CI green on the PR.
+- [ ] CI green on the PR.
 
 ## Notes
 
@@ -71,3 +70,14 @@ One PR, so no drift guard is ever red. Named cross-area edits:
 - PR #204; CI green on `7f1095ae` (run 41352751810). L6 filed as LAI-1049
   (LAI-1047/1048 were taken by other builders). Revoke choice: plan §E.4 —
   keep `token.revoke_any` as a token revoke, state the impact.
+
+## Review round 1 (PR #204)
+
+- **B1 (blocking):** the impact copy promised a reconnect that does not exist
+  today (rotate refuses a revoked token `409 token_revoked`; re-register is
+  `409 agent_exists_for_harness_device`). Say what is true now; point at
+  Slice C for the real reconnect.
+- N1: SPEC §4.9 — `agent_id` to admins falls under the profile-oversight
+  exception. N2: vacuous assertion in the routes test. N3: profile revoke
+  button's aria-label. N4: truncated list must not claim "only live
+  credential". N5: pluralise, compute the label once.
