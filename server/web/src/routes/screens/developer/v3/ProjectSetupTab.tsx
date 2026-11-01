@@ -291,6 +291,7 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
   const [choice, setChoice] = useState<GrantChoice>('none');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
+  const [saved, setSaved] = useState(false);
   const [report, setReport] = useState<SelfReport | null>(null);
 
   const load = useCallback(() => {
@@ -352,6 +353,7 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
       const next = await getProjectAccess(tool.id, project.slug);
       setAccess({ kind: 'ready', value: next });
       setChoice(currentChoice(next));
+      setSaved(true);
       announce(`${tool.label} now has ${grantLabel(currentChoice(next))} in ${project.name}.`);
     } catch (error: unknown) {
       setSaveError(error);
@@ -432,6 +434,7 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
                 disabled={option.disabled !== undefined || saving}
                 onChange={() => {
                   setChoice(option.value);
+                  setSaved(false);
                 }}
               />
               <span>{option.label}</span>
@@ -463,14 +466,17 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
           <button
             type="button"
             className="bar-control bar-control-primary"
-            disabled={!dirty || saving || !canChange}
+            // aria-disabled, not disabled: the button keeps focus when a save
+            // finishes and it has nothing left to save.
+            aria-disabled={!dirty || saving || !canChange}
             onClick={() => {
+              if (!dirty || saving || !canChange) return;
               void save();
             }}
           >
             {saving ? 'Saving…' : 'Save access'}
           </button>
-          {!dirty && <span className="conn-note">Saved.</span>}
+          {saved && !dirty && <span className="conn-note">Saved.</span>}
         </div>
       </fieldset>
 
