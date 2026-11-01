@@ -90,3 +90,21 @@ until it is green.
 **UI / Playwright.** Out of scope: the board has no launcher data, and §5.1
 forbids a stubbed screen. Filed as LAI-1038 (LAIKA-894). Work requests are
 refused and audited; filed as LAI-1039 (LAIKA-895).
+
+## Review round 1 — fixed (2026-11-01)
+
+PR #190's review failed on two blockers, both fixed on this branch:
+
+- **B1, lock race.** `takePid` removed the pid file before its `wx` create.
+  The exclusive create is now the lock; a dead holder's file is cleared only
+  under a second exclusive lock (`launcher.pid.reap`). Tested with six real
+  processes racing, a stale lock and a live holder.
+- **B2, orphaned runs.** SIGHUP stops like SIGTERM. Each run's pid, start
+  time and deadline are kept in `status.json`. `status` names a leftover,
+  `stop` ends it with the launcher gone, and the next start ends it first.
+  Tested with a real launcher process sent SIGHUP or SIGKILL.
+- The non-blocking items are done as well: the prompt is built before spawn;
+  `isLaikaId` is checked first; the config is opened with O_NOFOLLOW and fstat;
+  `~/.laika` and argv[0] permissions are checked; the process-group comment is
+  corrected and tested (a detached grandchild survives); `SSH_AUTH_SOCK` is
+  opt-in; the shell/wrapper denylist is described as a guard, not a guarantee.

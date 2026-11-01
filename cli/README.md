@@ -1103,9 +1103,13 @@ write `~/.laika/launcher.json` yourself, owned by you and `chmod 600`:
   "projects": [{ "project_id": "<project id>", "repo": "/Users/you/code/Laika" }],
   "harnesses": { "claude-code": ["/Users/you/.npm-global/bin/claude", "-p", "--max-turns", "200"] },
   "max_concurrent": 1,
-  "max_runtime_seconds": 7200
+  "max_runtime_seconds": 7200,
+  "pass_ssh_agent": false
 }
 ```
+
+`~/.laika` must be a real directory (not a symlink) that only you can write,
+and the file is opened without following a symlink.
 
 ```sh
 laika agent launcher check    # validate the file and git; starts nothing
@@ -1131,8 +1135,9 @@ request is refused (LAI-1039).
 - **argv**: the file's array, exactly. Nothing is appended.
 - **stdin**: fixed words, the offer id and the task key — nothing else.
 - **environment**: `HOME PATH TMPDIR LANG LC_ALL USER LOGNAME TERM
-  SSH_AUTH_SOCK XDG_CONFIG_HOME`, plus `LAIKA_LAUNCH_DIR` and
-  `LAIKA_LAUNCH_OFFER`. **No token**: the agent's own stays in
+  XDG_CONFIG_HOME`, plus `LAIKA_LAUNCH_DIR` and `LAIKA_LAUNCH_OFFER`.
+  `SSH_AUTH_SOCK` only with `"pass_ssh_agent": true` — the ssh agent lets the
+  harness sign as you to any host your keys reach, so it is off by default. **No token**: the agent's own stays in
   `~/.laika/agents/<harness>.json` for its `laika agent …` calls. A
   `LAIKA_AGENT_TOKEN` in the launcher's environment is ignored.
 - **`$LAIKA_LAUNCH_DIR/offer.json`**: ids, the worktree, the branch and the
@@ -1148,9 +1153,34 @@ launcher** — put the harness's own flag in its argv (e.g. Claude Code's
 Git older than 2.41 is refused.
 
 **Refused config.** A command string instead of an array; a relative program;
-a shell or wrapper as the program (`sh`, `bash`, `zsh`, `env`, `sudo`, …); a
-`repo` that is relative, missing or reached through a symlink; an unknown key;
-a file writable by group or others, or owned by someone else.
+a program that group or others can write; a shell or wrapper as the program
+(`sh`, `bash`, `zsh`, `env`, `sudo`, …); a `repo` that is relative, missing or
+reached through a symlink; an unknown key; a config that is a symlink, is
+writable by group or others, or is owned by someone else; a `~/.laika` that is
+a symlink or writable by others.
+
+**The shell and wrapper list is a guard against an obvious mistake, not a
+guarantee.** Any program you list — `node`, `python`, a script, the harness
+itself — can run any command it likes. You are trusting every argv you write
+into this file; the launcher only makes sure nobody else's text is added to it.
+
+**One launcher per device.** `run` takes `~/.laika/launcher/launcher.pid` with
+an exclusive create; a second `run` is refused. A pid file whose launcher is
+dead (pid and start time no longer match) is cleared, under a second lock so
+two new launchers cannot both clear it.
+
+**If the launcher dies.** SIGINT, SIGTERM and SIGHUP stop it cleanly, ending
+every run it started. Each run's pid, start time and deadline are kept in
+`~/.laika/launcher/status.json`, so a launcher that was killed or crashed
+leaves a record: `status` names any run still alive, `stop` ends it even with
+the launcher gone, and the next `run` ends it before starting anything. Only a
+process whose start time still matches is signalled, so a reused pid is never
+hit.
+
+**What "ends a run" reaches.** The harness's process group: SIGTERM, then
+SIGKILL. A process the harness moved into a session or group of its own
+(`setsid`, a detached spawn) is outside that group and is **not** ended by the
+launcher — tested, not assumed.
 
 **The audit log** is `~/.laika/launcher/audit.jsonl`: one JSON line per
 `daemon_start`, `refused` (with its `reason`), `deferred`, `start`, `timeout`,
@@ -1167,6 +1197,9 @@ its offers wait on the board, and recovery is unchanged.
 | Off by default; config validation and refusals | Verified-and-tested (`agent-launcher.test.ts`; `check`, `status`, `stop` and a refused `run` run for real on Belka, macOS 27.2, git 2.50.1) | Documented-not-tested (no OS-specific code) | Unsupported: process groups and file modes are POSIX |
 | argv exact, no note or token in argv, environment or stdin | Verified-and-tested with a real child process | Documented-not-tested | Unsupported |
 | Runtime kill (SIGTERM, then SIGKILL), concurrency cap, stop | Verified-and-tested with a real child process | Documented-not-tested | Unsupported |
+| One launcher per device under a concurrent start; a stale lock recovered | Verified-and-tested: six real processes race the lock | Documented-not-tested | Unsupported |
+| SIGHUP stops cleanly; runs left by a SIGKILLed launcher ended by `stop` or the next `run` | Verified-and-tested with a real launcher process | Documented-not-tested | Unsupported |
+| A process the harness detached from its group | Not ended (tested): outside the launcher's reach | same | — |
 | An offer from the real board, prepared and started end to end | Unverified: `prepare` and the event helper are injected in the tests; no live offer was launched | Unverified | Unsupported |
 | A real `claude -p` / `codex exec` accepting through the launcher | Unverified | Unverified | Unsupported |
 | Cost or token cap | Unsupported by the launcher (the harness's own flag in argv) | same | — |

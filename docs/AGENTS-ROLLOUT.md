@@ -160,6 +160,7 @@ build the checkpoint warning.
 | Launcher: runs at once | none (required) | `max_concurrent`, 1 – 4 |
 | Launcher: runtime per run | none (required) | `max_runtime_seconds`, 60 – 86400; SIGTERM, then SIGKILL after 10 s |
 | Launcher: poll interval | 30 s | `poll_seconds`, 10 – 3600 |
+| Launcher: ssh agent to the harness | **off** | `pass_ssh_agent: true` |
 
 ## 5. GitHub: the webhook and the checkpoint-tag ruleset
 

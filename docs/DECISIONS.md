@@ -6563,9 +6563,14 @@ beyond the items below is still on the stop list.
    with `"enabled": true`, owned by them and writable by no one else. The file
    lists the **allowed projects** (by id), each with the **exact real path** of
    the checkout to use, and the **allowed harness commands as fixed argv
-   arrays** with an absolute program path — never a shell string, and never a
-   shell or wrapper (`sh`, `env`, `sudo` …) as the program. A missing file is
-   off; a present but invalid file is refused, never guessed at.
+   arrays** with an absolute program path that only the owner can write —
+   never a shell string. A shell or wrapper (`sh`, `env`, `sudo` …) as the
+   program is refused as an obvious mistake, **not as a guarantee**: any
+   program the owner lists can run any command, and the owner is trusting
+   every argv they write. A missing file is off; a present but invalid file —
+   or one that is a symlink, or in a `~/.laika` others can write — is refused,
+   never guessed at. **One launcher runs per device**: the pid file's exclusive
+   create is the lock.
 2. **It reacts only to offers addressed to this device's agents of the config's
    owner**: hand-off and recovery offers received through the existing event
    helper (`GET /agents/me/events`, the rows `agent_sync` reads), for an agent
@@ -6595,10 +6600,15 @@ beyond the items below is still on the stop list.
    `~/.laika/launcher/audit.jsonl` holding ids, reasons and numbers — no
    token, no URL, no note. `laika agent launcher stop` ends the daemon and every
    run it started; `status` reports enabled, running, last start and runs now.
+   SIGHUP stops it like SIGTERM. Each run's pid, start time and deadline are
+   kept on disk, so a run a dead launcher left is named by `status` and ended
+   by `stop` or the next start. "Ends a run" reaches the harness's process
+   group; a process the harness detached into its own session is outside it.
    It refuses to run on git older than 2.41.
 6. **Environment.** A child gets a fixed allowlist (home, path, locale, user,
-   terminal, ssh agent socket, XDG config) plus the run's directory and offer
-   id; **no token of any name**. The agent's token stays in its saved 0600 file
+   terminal, XDG config) plus the run's directory and offer id; **no token of
+   any name**. The ssh agent socket is passed only when the config sets
+   `pass_ssh_agent: true`. The agent's token stays in its saved 0600 file
    (`laika agent login`), which the harness's own `laika agent …` calls read; an
    inherited `LAIKA_AGENT_TOKEN` is ignored by the launcher.
 7. **The server gains nothing for it.** No endpoint, no status field. The
