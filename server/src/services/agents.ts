@@ -177,9 +177,6 @@ export function registerAgent(
   const deviceLabel = cleanDeviceLabel(input.deviceLabel ?? null);
   const grants = cleanGrants(db, actor, input.grants);
   const requested = input.expiresAt ?? null;
-  // The cloud rule first, so a cloud agent's refusal always names it.
-  if (isCloudDevice(db, actor.userId, deviceLabel)) assertCloudExpiry(requested, now);
-  const expiresAt = futureExpiry(requested, now);
   const orgId = requireOrgId(db);
 
   const row: AgentRow = {
@@ -197,6 +194,10 @@ export function registerAgent(
   };
 
   const created = immediateTransaction(sqlite, () => {
+    // The cloud rule first, so a cloud agent's refusal always names it. Inside
+    // the write lock: the device's kind is read where the link is made.
+    if (isCloudDevice(db, actor.userId, deviceLabel)) assertCloudExpiry(requested, now);
+    const expiresAt = futureExpiry(requested, now);
     assertHarnessDeviceFree(db, actor, harness, deviceLabel, null);
     // §4.78: the device its label names, made if the owner has none active.
     row.deviceId = findOrCreateActiveDevice(db, {
