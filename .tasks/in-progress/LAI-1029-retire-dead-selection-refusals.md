@@ -2,11 +2,12 @@
 id: LAI-1029
 title: 'Retire `agent_other_owner` and `agent_wrong_org`: no server path answers them since LAI-1027'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: [LAI-1027]
 discovered-from: LAI-1027
-status: backlog
+status: in-progress
+started: 2026-11-01T23:35:00+05:30
 ---
 
 ## Goal
