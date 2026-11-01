@@ -28,6 +28,7 @@ import {
   toolStatus,
   withAgent,
   withConfirmed,
+  withRevokedAgents,
 } from '../../../../../src/routes/screens/developer/v3/devices-view.ts';
 
 const NOW = 1_800_000_000_000;
@@ -222,27 +223,36 @@ void describe('deviceLive and deviceCounts: revoked hidden and never counted', (
   });
   const revokedEmpty = device({ id: 'd3', status: 'revoked', agents: [] });
   const pairedEmpty = device({ id: 'd4', origin: 'paired', agents: [] });
+  const importedEmpty = device({ id: 'd5', origin: 'imported', confirmed: false, agents: [] });
 
   void test('which devices list without Show revoked', () => {
     assert.equal(deviceLive(live), true);
     assert.equal(deviceLive(allRevoked), false);
     assert.equal(deviceLive(revokedEmpty), false);
     assert.equal(deviceLive(pairedEmpty), true);
+    // An imported label no agent carries any more is not a device to show.
+    assert.equal(deviceLive(importedEmpty), false);
   });
 
   void test('counts exclude revoked; the toggle counts what it would add', () => {
-    const c = deviceCounts([live, allRevoked, revokedEmpty, pairedEmpty]);
+    const c = deviceCounts([live, allRevoked, revokedEmpty, pairedEmpty, importedEmpty]);
+    // The empty imported label is neither listed nor revoked.
     assert.deepEqual(c, { devices: 2, tools: 1, revoked: 3 });
     assert.equal(devicesSummary(c), '2 devices, 1 tool.');
   });
 });
 
 void describe('needsConfirm', () => {
-  void test('only an active imported device nobody confirmed', () => {
-    assert.equal(needsConfirm({ origin: 'imported', confirmed: false, status: 'active' }), true);
-    assert.equal(needsConfirm({ origin: 'imported', confirmed: true, status: 'active' }), false);
-    assert.equal(needsConfirm({ origin: 'paired', confirmed: false, status: 'active' }), false);
-    assert.equal(needsConfirm({ origin: 'imported', confirmed: false, status: 'revoked' }), false);
+  void test('only an active imported device nobody confirmed, while an agent carries its label', () => {
+    const agents = [agent({ id: 'a1' })];
+    const ask = (over: Partial<Device>) =>
+      needsConfirm({ origin: 'imported', confirmed: false, status: 'active', agents, ...over });
+    assert.equal(ask({}), true);
+    assert.equal(ask({ confirmed: true }), false);
+    assert.equal(ask({ origin: 'paired' }), false);
+    assert.equal(ask({ status: 'revoked' }), false);
+    // Confirming a label no agent carries is a 404 on the server.
+    assert.equal(ask({ agents: [] }), false);
   });
 
   void test('kind in words', () => {
@@ -268,6 +278,12 @@ void describe('disconnectImpact: names exactly what stops', () => {
       NOW,
     );
     assert.equal(impact.credential, 'Its credential lai_abcd… stops working at once.');
+    // Claims lapse; the server never releases them on a revoke.
+    assert.equal(
+      impact.claims,
+      'Any task it holds stays claimed until its claim lapses, then it can be recovered.',
+    );
+    assert.doesNotMatch(`${impact.sessionsLine} ${impact.claims}`, /releas/i);
     assert.match(impact.sessionsLine, /^These 2 sessions end/);
     assert.deepEqual(impact.sessions, [
       'Claude Code 2.1 · claude-opus-5-5, started 5 min ago',
@@ -306,6 +322,18 @@ void describe('what a write changes', () => {
     assert.equal(next?.active_count, 1);
     assert.equal(next?.revoked_count, 1);
     assert.equal(next?.agents[0]?.status, 'revoked');
+  });
+
+  void test('withRevokedAgents changes only the ids the server named, and recounts', () => {
+    const d = device({
+      id: 'd1',
+      agents: [agent({ id: 'a1' }), agent({ id: 'a2', harness: 'codex' })],
+    });
+    const [next] = withRevokedAgents([d], ['a1'], NOW);
+    assert.equal(next?.agents[0]?.status, 'revoked');
+    assert.equal(next?.agents[1]?.status, 'active');
+    assert.equal(next?.active_count, 1);
+    assert.equal(next?.revoked_count, 1);
   });
 
   void test('withConfirmed marks only that device', () => {

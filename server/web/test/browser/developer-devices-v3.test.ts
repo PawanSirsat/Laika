@@ -425,6 +425,12 @@ void describe('V3 Devices: ⋯ actions, keyboard only', () => {
       assert.match(said, /lai_a1xx… stops working/);
       assert.match(said, /This session ends/);
       assert.match(said, /Claude Code 2\.1 · claude-opus-5-5, started 5 min ago/);
+      // Review round 1: claims lapse on a revoke, they are never released.
+      assert.match(
+        said,
+        /Any task it holds stays claimed until its claim lapses, then it can be recovered\./,
+      );
+      assert.doesNotMatch(said, /releas/i);
 
       await h.page.keyboard.press('Escape');
       await dialog.waitFor({ state: 'detached' });
@@ -559,11 +565,144 @@ void describe('V3 Devices: ⋯ actions, keyboard only', () => {
       assert.match(list, /Codex · Belka \(old laptop\)/);
       assert.match(list, /Codex · Belka \(new laptop\)/);
       assert.doesNotMatch(list, /Cursor/, 'a revoked tool is not named as stopping');
+      const said = await dialog.innerText();
+      assert.match(
+        said,
+        /Any task they hold stays claimed until its claim lapses, then it can be recovered\./,
+      );
+      assert.doesNotMatch(said, /releas/i);
       await dialog.getByRole('button', { name: 'Disconnect 3 tools' }).click();
       await until(() => h.calls.some((c) => c.path === '/api/v1/agents/devices/revoke'));
       const sent = h.calls.find((c) => c.path === '/api/v1/agents/devices/revoke');
       assert.equal(sent?.method, 'POST');
       assert.deepEqual(sent?.body, { device_label: 'belka' });
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('V3 Devices: review round 1', () => {
+  void test('disconnecting a device’s last tool moves focus to the list heading', async () => {
+    const h = await open(
+      '/developer?tab=devices',
+      stub('v3', [BELKA, RUNNER], {
+        '/api/v1/agents/a5/revoke': () => ({
+          ...RUNNER.agents[0],
+          status: 'revoked',
+          revoked_at: Date.now(),
+        }),
+      }),
+    );
+    try {
+      await device(h.page, 'd2').waitFor({ timeout: 20_000 });
+      await tool(h.page, 'a5')
+        .getByRole('button', { name: /More actions/ })
+        .click();
+      await h.page.getByRole('menuitem', { name: 'Disconnect tool…' }).click();
+      const dialog = h.page.getByRole('alertdialog').or(h.page.getByRole('dialog'));
+      await dialog.waitFor({ timeout: 10_000 });
+      await dialog.getByRole('button', { name: 'Disconnect tool' }).click();
+      // Runner had one tool: the whole card leaves the list.
+      await device(h.page, 'd2').waitFor({ state: 'detached', timeout: 10_000 });
+      await h.page.waitForFunction(
+        () => document.activeElement?.id === 'dv3-devices-title',
+        undefined,
+        { timeout: 5_000 },
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a secret on screen is blanked when its tool is disconnected', async () => {
+    const h = await open(
+      '/developer?tab=devices',
+      stub('v3', [BELKA], {
+        '/api/v1/agents/a1/rotate-token': () => ({
+          agent: { ...BELKA.agents[0], tokens: [token('t-new', 'a1', 'lai_newx')] },
+          token: token('t-new', 'a1', 'lai_newx'),
+          secret: 'lai_newx_SECRET_ONCE',
+        }),
+        '/api/v1/agents/a1/revoke': () => ({
+          ...BELKA.agents[0],
+          status: 'revoked',
+          revoked_at: Date.now(),
+        }),
+      }),
+    );
+    try {
+      await ready(h.page);
+      // Keep revoked rows on screen, so the row stays and its panel with it.
+      await h.page.getByRole('button', { name: /Show revoked/ }).click();
+      await tool(h.page, 'a1')
+        .getByRole('button', { name: /More actions/ })
+        .click();
+      await h.page.getByRole('menuitem', { name: 'Reconnect (new credential)…' }).click();
+      const dialog = h.page.getByRole('alertdialog').or(h.page.getByRole('dialog'));
+      await dialog.waitFor({ timeout: 10_000 });
+      await dialog.getByRole('button', { name: 'Create new credential' }).click();
+      await h.page.getByTestId('agent-secret').waitFor({ timeout: 10_000 });
+      assert.equal(await h.page.getByTestId('agent-secret').innerText(), 'lai_newx_SECRET_ONCE');
+
+      await tool(h.page, 'a1')
+        .getByRole('button', { name: /More actions/ })
+        .click();
+      await h.page.getByRole('menuitem', { name: 'Disconnect tool…' }).click();
+      await dialog.waitFor({ timeout: 10_000 });
+      await dialog.getByRole('button', { name: 'Disconnect tool' }).click();
+      await h.page.locator('.dv3-tool[data-agent="a1"][data-status="revoked"]').waitFor({
+        timeout: 10_000,
+      });
+      await until(async () => !(await h.page.content()).includes('SECRET_ONCE'));
+      assert.doesNotMatch(await h.page.content(), /SECRET_ONCE/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Disconnect device cannot be chosen again while the first is under way', async () => {
+    const h = await open(
+      '/developer?tab=devices',
+      stub('v3', [BELKA], {
+        '/api/v1/agents/devices/revoke': { revoked_agent_ids: ['a1', 'a2', 'a3'] },
+      }),
+    );
+    try {
+      await ready(h.page);
+      // Hold the session reads the dialog waits for, so the first choice stays out.
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((done) => {
+        release = done;
+      });
+      await h.page.route('**/api/v1/agents/a1', async (route) => {
+        await held;
+        await route.continue();
+      });
+      const menu = device(h.page, 'd1').getByRole('button', { name: 'More actions for Belka' });
+      await menu.click();
+      await h.page.getByRole('menuitem', { name: 'Disconnect device…' }).click();
+      await menu.click();
+      const item = h.page.getByRole('menuitem', { name: 'Disconnect device…' });
+      assert.equal(await item.getAttribute('aria-disabled'), 'true');
+      // Chosen anyway (a script, or a reader past the arrows): it does nothing.
+      await item.dispatchEvent('click');
+      await h.page.keyboard.press('Escape');
+      release();
+      const dialog = h.page.getByRole('alertdialog').or(h.page.getByRole('dialog'));
+      await dialog.waitFor({ timeout: 10_000 });
+      assert.equal(await dialog.count(), 1);
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
+      await dialog.waitFor({ state: 'detached' });
+      // Cancelled: it can be chosen again.
+      await menu.click();
+      assert.equal(
+        await h.page
+          .getByRole('menuitem', { name: 'Disconnect device…' })
+          .getAttribute('aria-disabled'),
+        null,
+      );
+      assert.deepEqual(writes(h.calls), [], 'nothing was revoked');
     } finally {
       await h.close();
     }

@@ -40,6 +40,7 @@ import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
 import { cloudExpiry, cloudExpiryProblem, isCloudDevice, rotatableToken } from '../agent-wizard.ts';
 import { showsConsent } from '../checkpoint-consent.ts';
 import {
+  CLAIMS_LAPSE_MANY,
   CLOUD_NOTE,
   VERSION_UNKNOWN,
   deviceCounts,
@@ -55,6 +56,7 @@ import {
   toolStatus,
   withAgent,
   withConfirmed,
+  withRevokedAgents,
   type Conflict,
 } from './devices-view.ts';
 import '../../tokens/tokens.css';
@@ -111,6 +113,28 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
   const [now, setNow] = useState(() => Date.now());
   const [showRevoked, setShowRevoked] = useState(false);
   const [confirming, setConfirming] = useState<string | undefined>(undefined);
+  /** The device whose disconnect is under way, from its first read to the answer (review round 1). */
+  const [disconnecting, setDisconnecting] = useState<string | undefined>(undefined);
+  const disconnectingRef = useRef<string | undefined>(undefined);
+  /**
+   * Where focus goes once a disconnect took a row away (review round 1): the
+   * device's heading, or — when the device left the list with its last tool —
+   * the list's own heading. Asked for before the write lands, and done in an
+   * effect **after the list that lost the row has committed**: a timer could
+   * run first, focus the heading, and see it unmount under it.
+   */
+  const focusNext = useRef<RefObject<HTMLElement | null> | undefined>(undefined);
+  const focusAfterRemoval = useCallback((heading: RefObject<HTMLElement | null>): void => {
+    focusNext.current = heading;
+  }, []);
+  useEffect(() => {
+    const heading = focusNext.current;
+    if (heading === undefined) return;
+    focusNext.current = undefined;
+    const own = heading.current;
+    const target = own?.isConnected === true ? own : document.getElementById(DEVICES_TITLE);
+    target?.focus();
+  }, [devices]);
   const [deviceErrors, setDeviceErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const [message, announce] = useLiveRegion();
   const addDeviceButton = useRef<HTMLButtonElement | null>(null);
@@ -228,7 +252,14 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
 
   const disconnectDevice = (device: Device, heading: RefObject<HTMLElement | null>): void => {
     const targets = device.agents.filter((agent) => agent.status === 'active');
-    if (targets.length === 0) return;
+    // One at a time: a second choice while the first is still out does nothing.
+    if (targets.length === 0 || disconnectingRef.current !== undefined) return;
+    const settle = (): void => {
+      disconnectingRef.current = undefined;
+      setDisconnecting(undefined);
+    };
+    disconnectingRef.current = device.id;
+    setDisconnecting(device.id);
     setDeviceErrors((errors) => without(errors, device.id));
     void Promise.all(
       targets.map((agent) =>
@@ -242,7 +273,7 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
       const count = targets.length;
       void confirm({
         title: `Disconnect ${device.display_name}?`,
-        body: `${count === 1 ? 'This tool stops' : `These ${String(count)} tools stop`} at once: every credential they hold stops working, their running sessions end and any task they hold is released. They cannot be restored. Tools on other devices and your own tokens are not touched.`,
+        body: `${count === 1 ? 'This tool stops' : `These ${String(count)} tools stop`} at once: every credential they hold stops working and their running sessions end. ${CLAIMS_LAPSE_MANY} They cannot be restored. Tools on other devices and your own tokens are not touched.`,
         detail: (
           <ul className="dv3-dialog-list" data-disconnect-targets>
             {targets.map((agent, i) => {
@@ -266,20 +297,29 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
         danger: true,
         icon: 'warning',
       }).then((yes) => {
-        if (!yes) return;
+        if (!yes) {
+          settle();
+          return;
+        }
         revokeAgentDevice(device.device_label)
           .then(({ revoked_agent_ids }) => {
+            focusAfterRemoval(heading);
+            setDevices((current) =>
+              current === undefined
+                ? current
+                : withRevokedAgents(current, revoked_agent_ids, Date.now()),
+            );
             announce(
               `${device.display_name} disconnected: ${String(revoked_agent_ids.length)} ${revoked_agent_ids.length === 1 ? 'tool' : 'tools'} revoked.`,
             );
             load();
-            heading.current?.focus();
           })
           .catch((cause: unknown) => {
             setDeviceErrors((errors) =>
               new Map(errors).set(device.id, errorText(cause, 'Could not disconnect that device.')),
             );
-          });
+          })
+          .finally(settle);
       });
     });
   };
@@ -310,9 +350,9 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
         />
       )}
 
-      <section className="dev-card dv3-devices" aria-labelledby="dv3-devices-title">
+      <section className="dev-card dv3-devices" aria-labelledby={DEVICES_TITLE}>
         <div className="dev-card-head dv3-devices-head">
-          <h2 className="dev-card-title" id="dv3-devices-title">
+          <h2 className="dev-card-title" id={DEVICES_TITLE} tabIndex={-1}>
             Your devices
           </h2>
           {counts !== undefined && (
@@ -393,7 +433,7 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
                 Every device and tool of yours is revoked.
               </p>
             ) : (
-              <ul className="dv3-device-list" aria-labelledby="dv3-devices-title">
+              <ul className="dv3-device-list" aria-labelledby={DEVICES_TITLE}>
                 {listed.map((device) => (
                   <DeviceCard
                     key={device.id}
@@ -409,6 +449,7 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
                       loadProjects();
                     }}
                     confirming={confirming === device.id}
+                    disconnecting={disconnecting === device.id}
                     error={deviceErrors.get(device.id)}
                     onRecognise={() => {
                       recognise(device);
@@ -417,6 +458,7 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
                       disconnectDevice(device, heading);
                     }}
                     onChanged={put}
+                    onRemoved={focusAfterRemoval}
                     announce={announce}
                     confirm={confirm}
                   />
@@ -455,10 +497,14 @@ interface DeviceCardProps {
   readonly projectsError: unknown;
   readonly onRetryProjects: () => void;
   readonly confirming: boolean;
+  /** Its disconnect is under way: the menu item says so and does nothing. */
+  readonly disconnecting: boolean;
   readonly error: string | undefined;
   readonly onRecognise: () => void;
   readonly onDisconnect: (heading: RefObject<HTMLElement | null>) => void;
   readonly onChanged: (agent: RegisteredAgent) => void;
+  /** A disconnect is about to take a row away: say where focus goes after. */
+  readonly onRemoved: (heading: RefObject<HTMLElement | null>) => void;
   readonly announce: (message: string) => void;
   readonly confirm: ReturnType<typeof useConfirm>;
 }
@@ -474,10 +520,12 @@ function DeviceCard({
   projectsError,
   onRetryProjects,
   confirming,
+  disconnecting,
   error,
   onRecognise,
   onDisconnect,
   onChanged,
+  onRemoved,
   announce,
   confirm,
 }: DeviceCardProps) {
@@ -505,6 +553,7 @@ function DeviceCard({
       projectsError={projectsError}
       onRetryProjects={onRetryProjects}
       onChanged={onChanged}
+      onRemoved={onRemoved}
       announce={announce}
       confirm={confirm}
       heading={heading}
@@ -516,7 +565,7 @@ function DeviceCard({
       id: 'disconnect',
       label: 'Disconnect device…',
       danger: true,
-      disabled: device.active_count === 0,
+      disabled: device.active_count === 0 || disconnecting,
       onSelect: () => {
         onDisconnect(heading);
       },
@@ -649,6 +698,8 @@ interface ToolRowProps {
   readonly projectsError: unknown;
   readonly onRetryProjects: () => void;
   readonly onChanged: (agent: RegisteredAgent) => void;
+  /** A disconnect is about to take a row away: say where focus goes after. */
+  readonly onRemoved: (heading: RefObject<HTMLElement | null>) => void;
   readonly announce: (message: string) => void;
   readonly confirm: ReturnType<typeof useConfirm>;
   /** The device's heading — where focus goes when this row leaves the list. */
@@ -669,6 +720,7 @@ function ToolRow({
   projectsError,
   onRetryProjects,
   onChanged,
+  onRemoved,
   announce,
   confirm,
   heading,
@@ -678,7 +730,12 @@ function ToolRow({
   const [panel, setPanel] = useState<Panel>('none');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const { held: rotated, hold, forget } = useOnceSecret();
+  const { held: rotated, hold, retire, forget } = useOnceSecret();
+  // A revealed secret stops being shown the moment its tool is revoked — here
+  // or by its device's disconnect — as the classic row does (review round 1).
+  useEffect(() => {
+    if (agent.status !== 'active') retire();
+  }, [agent.status, retire]);
   const rowRef = useRef<HTMLLIElement | null>(null);
   const live = liveToken(agent, now);
   const replaceable = rotatableToken(agent, now);
@@ -734,11 +791,10 @@ function ToolRow({
         () => undefined,
       )
       .then((sessions) => {
-        setBusy(false);
         const impact = disconnectImpact(agent, sessions, Date.now());
         return confirm({
           title: `Disconnect ${label}?`,
-          body: `${impact.credential} ${impact.sessionsLine} It cannot be restored. Your other tools and your own tokens are not touched.`,
+          body: `${impact.credential} ${impact.sessionsLine} ${impact.claims} It cannot be restored. Your other tools and your own tokens are not touched.`,
           detail:
             impact.sessions.length === 0 ? undefined : (
               <ul className="dv3-dialog-list" data-disconnect-sessions>
@@ -753,15 +809,22 @@ function ToolRow({
         });
       })
       .then((yes) => {
-        if (!yes) return;
+        if (!yes) {
+          setBusy(false);
+          return;
+        }
         revokeAgent(agent.id)
           .then((next) => {
+            retire();
+            onRemoved(heading);
             onChanged(next);
             announce(`${label} disconnected.`);
-            heading.current?.focus();
           })
           .catch((cause: unknown) => {
             setError(errorText(cause, 'Could not disconnect that tool.'));
+          })
+          .finally(() => {
+            setBusy(false);
           });
       })
       .catch(() => {
@@ -915,6 +978,8 @@ function LastSeen({ at, now }: { readonly at: number | null; readonly now: numbe
     </span>
   );
 }
+
+const DEVICES_TITLE = 'dv3-devices-title';
 
 function without(errors: ReadonlyMap<string, string>, key: string): ReadonlyMap<string, string> {
   if (!errors.has(key)) return errors;

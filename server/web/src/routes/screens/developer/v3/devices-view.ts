@@ -131,17 +131,32 @@ export function deviceTools(device: Pick<Device, 'agents'>): DeviceTools {
 
 /**
  * Whether a device is listed without *Show revoked*: an active device that
- * still has an active tool, or has never had one (paired, nothing added yet).
- * A revoked device, or one every tool of which was revoked, is history.
+ * still has an active tool, or a **paired** one with none yet. An imported
+ * device with no agents (its tools were relabelled away) is an empty label,
+ * not a device anybody added; a revoked device, or one every tool of which
+ * was revoked, is history.
  */
 export function deviceLive(device: Device): boolean {
   if (device.status !== 'active') return false;
-  return device.active_count > 0 || device.agents.length === 0;
+  if (device.active_count > 0) return true;
+  return device.agents.length === 0 && device.origin === 'paired';
 }
 
-/** *Imported device — confirm it's yours*: a device the upgrade made that its owner never claimed. */
-export function needsConfirm(device: Pick<Device, 'origin' | 'confirmed' | 'status'>): boolean {
-  return device.status === 'active' && device.origin === 'imported' && !device.confirmed;
+/**
+ * *Imported device — confirm it's yours*: a device the upgrade made that its
+ * owner never claimed. Only while some agent still carries its label —
+ * `/agents/devices/confirm` confirms a label of the owner's agents, and one
+ * no agent carries is a `404` (review round 1).
+ */
+export function needsConfirm(
+  device: Pick<Device, 'origin' | 'confirmed' | 'status' | 'agents'>,
+): boolean {
+  return (
+    device.status === 'active' &&
+    device.origin === 'imported' &&
+    !device.confirmed &&
+    device.agents.length > 0
+  );
 }
 
 export interface DeviceCounts {
@@ -164,7 +179,7 @@ export function deviceCounts(devices: readonly Device[]): DeviceCounts {
     if (deviceLive(device)) {
       shown += 1;
       tools += device.agents.length - gone;
-    } else if (device.agents.length === 0) {
+    } else if (device.status === 'revoked' && device.agents.length === 0) {
       revoked += 1;
     }
   }
@@ -217,12 +232,27 @@ function agentClientNameOf(slug: string): string {
   return known === 'other' ? slug : agentClientName(known);
 }
 
+/**
+ * What a disconnect does to a task the tool holds (review round 1). **Its
+ * claim is left to lapse, never released**: revoking ends the agent's
+ * sessions and touches no claim (`endSessionsOfRevokedAgent` in
+ * `server/src/services/claims.ts`), and the lapse is what opens recovery.
+ */
+export const CLAIMS_LAPSE =
+  'Any task it holds stays claimed until its claim lapses, then it can be recovered.';
+
+/** The same, for every tool on a device at once. */
+export const CLAIMS_LAPSE_MANY =
+  'Any task they hold stays claimed until its claim lapses, then it can be recovered.';
+
 /** What *Disconnect tool* ends, as its confirmation names it. */
 export interface DisconnectImpact {
   /** The credential, by its prefix. */
   readonly credential: string;
   /** The sentence over the sessions list. */
   readonly sessionsLine: string;
+  /** What happens to a task it holds: {@link CLAIMS_LAPSE}. */
+  readonly claims: string;
   /** Each running session, by what it said ran. */
   readonly sessions: readonly string[];
 }
@@ -246,6 +276,7 @@ export function disconnectImpact(
     return {
       credential,
       sessionsLine: 'Its running sessions could not be read; any it has end too.',
+      claims: CLAIMS_LAPSE,
       sessions: [],
     };
   }
@@ -255,7 +286,8 @@ export function disconnectImpact(
     sessionsLine:
       running.length === 0
         ? 'It has no running session.'
-        : `${running.length === 1 ? 'This session ends' : `These ${String(running.length)} sessions end`}, and any task it holds is released:`,
+        : `${running.length === 1 ? 'This session ends' : `These ${String(running.length)} sessions end`}, listed below.`,
+    claims: CLAIMS_LAPSE,
     sessions: running.map((session) => sessionLine(session, now)),
   };
 }
@@ -276,6 +308,26 @@ export function withAgent(devices: readonly Device[], agent: RegisteredAgent): D
   return devices.map((device) => {
     if (!device.agents.some((a) => a.id === agent.id)) return device;
     const agents = device.agents.map((a) => (a.id === agent.id ? agent : a));
+    const active = agents.filter((a) => a.status === 'active').length;
+    return { ...device, agents, active_count: active, revoked_count: agents.length - active };
+  });
+}
+
+/**
+ * The list after a device disconnect: only the agents the server said it
+ * revoked change, and each device is recounted from its rows.
+ */
+export function withRevokedAgents(
+  devices: readonly Device[],
+  revokedIds: readonly string[],
+  now: number,
+): Device[] {
+  const gone = new Set(revokedIds);
+  return devices.map((device) => {
+    if (!device.agents.some((a) => gone.has(a.id))) return device;
+    const agents = device.agents.map((a): RegisteredAgent =>
+      gone.has(a.id) && a.status === 'active' ? { ...a, status: 'revoked', revoked_at: now } : a,
+    );
     const active = agents.filter((a) => a.status === 'active').length;
     return { ...device, agents, active_count: active, revoked_count: agents.length - active };
   });
