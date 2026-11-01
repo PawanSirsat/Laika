@@ -225,6 +225,17 @@ async function until(check: () => boolean, ms = 8000): Promise<void> {
 
 /* -------------------------------------------------------------------------- */
 
+/**
+ * An executable only its owner can write. Not `process.execPath`: on a CI
+ * runner that binary is group-writable, and the launcher rightly refuses it.
+ */
+function ownProgram(dir: string): string {
+  const program = join(dir, 'harness-bin');
+  if (!existsSync(program)) writeFileSync(program, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  chmodSync(program, 0o755);
+  return program;
+}
+
 void describe('config', () => {
   function writeConfig(home: string, value: unknown, mode = 0o600): void {
     mkdirSync(join(home, '.laika'), { recursive: true });
@@ -234,13 +245,14 @@ void describe('config', () => {
   function valid(home: string): Record<string, unknown> {
     const repo = join(home, 'repo');
     mkdirSync(repo, { recursive: true });
+    const program = ownProgram(home);
     return {
       version: 1,
       enabled: true,
       owner_user_id: OWNER,
       device: 'Belka',
       projects: [{ project_id: PROJECT, repo }],
-      harnesses: { 'claude-code': [process.execPath, '-e', '0'] },
+      harnesses: { 'claude-code': [program, '-e', '0'] },
       max_concurrent: 1,
       max_runtime_seconds: 3600,
     };
@@ -263,7 +275,7 @@ void describe('config', () => {
     const result = loadConfig(home);
     assert.equal(result.kind, 'enabled');
     if (result.kind !== 'enabled') return;
-    assert.deepEqual(result.config.harnesses['claude-code'], [process.execPath, '-e', '0']);
+    assert.deepEqual(result.config.harnesses['claude-code'], [ownProgram(home), '-e', '0']);
     assert.equal(result.config.poll_seconds, 30);
   });
 
@@ -396,9 +408,10 @@ void describe('config', () => {
   });
 
   void test('argvProblem accepts an absolute executable and nothing looser', () => {
-    assert.equal(argvProblem([process.execPath, '-p']), undefined);
+    const program = ownProgram(scratch());
+    assert.equal(argvProblem([program, '-p']), undefined);
     assert.match(argvProblem([]) ?? '', /1 to 32/);
-    assert.match(argvProblem([process.execPath, '']) ?? '', /non-empty/);
+    assert.match(argvProblem([program, '']) ?? '', /non-empty/);
   });
 });
 
