@@ -365,7 +365,14 @@ describe('LAIKA_BUILD_COMMIT, LAIKA_DEVELOPER_ACCESS, LAIKA_CLI_SOURCE_URL (§11
   });
 
   it('refuses a commit that is not 7–40 lowercase hex digits', () => {
-    for (const bad of ['abc12', 'CEA011D6', 'cea011d6 ', 'v1.2.3', 'a'.repeat(41), '${{ github.sha }}']) {
+    for (const bad of [
+      'abc12',
+      'CEA011D6',
+      'cea011d6 ',
+      'v1.2.3',
+      'a'.repeat(41),
+      '${{ github.sha }}',
+    ]) {
       expect(() => readEnv({ ...SECRET, LAIKA_BUILD_COMMIT: bad }), bad).toThrow(
         /^Invalid LAIKA_BUILD_COMMIT: .*Expected a git commit id: 7 to 40 lowercase hex digits\.$/,
       );
@@ -415,7 +422,9 @@ describe('LAIKA_BUILD_COMMIT, LAIKA_DEVELOPER_ACCESS, LAIKA_CLI_SOURCE_URL (§11
       }
       expect(caught, bad).toBeInstanceOf(EnvError);
       const message = (caught as EnvError).message;
-      expect(message).toMatch(/^Invalid LAIKA_CLI_SOURCE_URL: "<redacted>"\. Expected an https:\/\//);
+      expect(message).toMatch(
+        /^Invalid LAIKA_CLI_SOURCE_URL: "<redacted>"\. Expected an https:\/\//,
+      );
       expect(message).not.toContain('supersecret');
     }
   });
