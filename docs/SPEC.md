@@ -3566,8 +3566,24 @@ GET    /api/v1/meeting-reviews/:id           one review with its full proposal s
 POST   /api/v1/meeting-reviews/:id/apply     body { accepted_proposal_ids[] }
 POST   /api/v1/meeting-reviews/:id/discard   reject the whole set without applying anything
 POST   /webhooks/github                      POST /webhooks/transcript
-GET    /api/v1/health
+GET    /api/v1/health                        { status, version, uptime_ms, build_commit } — public
+GET    /api/v1/developer/compatibility       public: the build, the helper protocol and the Developer access switches (LAI-1043)
 ```
+
+**`GET /developer/compatibility` answers before sign-in, like `/health`**
+(LAI-1043). `laika doctor` and a fresh install read it before they hold a
+credential. It reads no data and no actor, so an anonymous caller and a
+signed-in one get the same body, built from §11.7's settings alone:
+`server { version, build_commit }`, `protocol { current, min_client }`,
+`features { developer_access, device_pairing, tool_setup_exchange,
+client_reports, project_setups }` (the mode of `LAIKA_DEVELOPER_ACCESS`, then a
+closed set of booleans, each `false` until its feature ships),
+`cli { min_protocol, target_protocol, min_protocol_for, source { type: 'git',
+url, commit, path } }` and `release_notes { ref, whats_new[] }`. `build_commit`
+is `null` when the image was built without one. Nothing in it is a secret, and
+`LAIKA_CLI_SOURCE_URL` is refused at boot if it carries a user or password. An
+old board answers `404`, which a helper reads as *"this board cannot say"*.
+`/health` gained `build_commit` beside its three original fields, unchanged.
 
 `PATCH /tasks/:id` accepts a partial
 `{ title, description_md, acceptance_md, tags, priority, assignee_id,
@@ -6428,6 +6444,9 @@ compose file or systemd unit.
 | `LAIKA_CLAIM_SCAN_SECONDS` | `30` | §11.6: how often the claim-expiry scan runs |
 | `LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS` | `600` | §9.1.1: a `pending` checkpoint older than this is shown *"Verification pending — no push notice from GitHub yet"*. Whole seconds, 1–86400. The checkpoint helper reads the same variable, so set it in both places (LAI-1015) |
 | `LAIKA_CHECKPOINT_RETENTION_DAYS` | `90` | D-115 item 9, §11.6: how long a task's checkpoints are kept after it reaches `done` or `cancelled`, and how old the §4.72 rows for a ref never registered grow before they are pruned. Whole days, 1–3650 |
+| `LAIKA_BUILD_COMMIT` | unset | the git commit the image was built from, set by the Docker build (`--build-arg LAIKA_BUILD_COMMIT`); served as `build_commit` by `/health` and `/developer/compatibility` (§6.4). 7–40 lowercase hex digits; anything else is a startup failure. Unset is `null` (LAI-1043) |
+| `LAIKA_DEVELOPER_ACCESS` | `classic` | which Developer access the web shows: `classic`, `preview` or `v3`, served as `features.developer_access` (§6.4). Any other value is a startup failure. Rollback is setting it back and restarting; nothing it gates is stored (LAI-1043) |
+| `LAIKA_CLI_SOURCE_URL` | `https://github.com/PawanSirsat/Laika.git` | the git repository a developer's `laika` is cloned from, served as `cli.source.url` (§6.4). `https://` only, and refused at startup if it carries a user or password, since it is served to anyone (LAI-1043) |
 
 **This table is the deployment contract.** Anything the server reads from the
 environment belongs in it, and anything in it must be read. It drifted in both

@@ -5,6 +5,12 @@ export interface HealthBody {
   status: 'ok';
   version: string;
   uptime_ms: number;
+  /**
+   * The git commit the image was built from, `null` when the build did not say
+   * (LAI-1043). Added beside the three original fields, which keep their names
+   * and meaning, so a client reading only those is unaffected.
+   */
+  build_commit: string | null;
 }
 
 /**
@@ -12,9 +18,10 @@ export interface HealthBody {
  *
  * Unauthenticated by design: a health probe that needs a credential is a health
  * probe that reports "unhealthy" whenever auth breaks, which is precisely when
- * you need the rest of the signal. It exposes no data beyond a version string.
+ * you need the rest of the signal. It exposes no data beyond a version string
+ * and the build's commit id.
  */
-export function healthRoutes(version: string): Hono<AppEnv> {
+export function healthRoutes(version: string, buildCommit: string | null = null): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get('/', (c) =>
@@ -22,6 +29,7 @@ export function healthRoutes(version: string): Hono<AppEnv> {
       status: 'ok',
       version,
       uptime_ms: Math.round(process.uptime() * 1000),
+      build_commit: buildCommit,
     }),
   );
 

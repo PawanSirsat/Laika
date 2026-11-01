@@ -344,3 +344,79 @@ describe('LAIKA_CHECKPOINT_* (§11.7, §9.1.1, D-115 item 9, LAI-1015)', () => {
     }
   });
 });
+
+describe('LAIKA_BUILD_COMMIT, LAIKA_DEVELOPER_ACCESS, LAIKA_CLI_SOURCE_URL (§11.7, LAI-1043)', () => {
+  it('defaults to no commit, classic, and this repository', () => {
+    expect(readEnv({ ...SECRET })).toMatchObject({
+      buildCommit: null,
+      developerAccess: 'classic',
+      cliSourceUrl: 'https://github.com/PawanSirsat/Laika.git',
+    });
+    // Empty is unset: a Docker build without the arg sets ENV to "".
+    expect(
+      readEnv({ ...SECRET, LAIKA_BUILD_COMMIT: '', LAIKA_DEVELOPER_ACCESS: '' }),
+    ).toMatchObject({ buildCommit: null, developerAccess: 'classic' });
+  });
+
+  it('keeps a short or full lowercase hex commit', () => {
+    const full = 'cea011d6a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8';
+    expect(readEnv({ ...SECRET, LAIKA_BUILD_COMMIT: 'cea011d' }).buildCommit).toBe('cea011d');
+    expect(readEnv({ ...SECRET, LAIKA_BUILD_COMMIT: full }).buildCommit).toBe(full);
+  });
+
+  it('refuses a commit that is not 7–40 lowercase hex digits', () => {
+    for (const bad of ['abc12', 'CEA011D6', 'cea011d6 ', 'v1.2.3', 'a'.repeat(41), '${{ github.sha }}']) {
+      expect(() => readEnv({ ...SECRET, LAIKA_BUILD_COMMIT: bad }), bad).toThrow(
+        /^Invalid LAIKA_BUILD_COMMIT: .*Expected a git commit id: 7 to 40 lowercase hex digits\.$/,
+      );
+    }
+  });
+
+  it('accepts each Developer access mode', () => {
+    for (const mode of ['classic', 'preview', 'v3'] as const) {
+      expect(readEnv({ ...SECRET, LAIKA_DEVELOPER_ACCESS: mode }).developerAccess).toBe(mode);
+    }
+  });
+
+  it('fails boot on any other Developer access value, naming the three', () => {
+    for (const bad of ['V3', 'new', 'true', ' classic', 'v2']) {
+      let caught: unknown;
+      try {
+        readEnv({ ...SECRET, LAIKA_DEVELOPER_ACCESS: bad });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught, bad).toBeInstanceOf(EnvError);
+      expect((caught as EnvError).message).toBe(
+        `Invalid LAIKA_DEVELOPER_ACCESS: ${JSON.stringify(bad)}. Expected one of 'classic', 'preview', 'v3'.`,
+      );
+    }
+  });
+
+  it('takes an https source URL', () => {
+    expect(
+      readEnv({ ...SECRET, LAIKA_CLI_SOURCE_URL: 'https://git.example.test/laika.git' })
+        .cliSourceUrl,
+    ).toBe('https://git.example.test/laika.git');
+  });
+
+  it('refuses a source URL that is not https or carries credentials, and never echoes it', () => {
+    for (const bad of [
+      'http://git.example.test/laika.git',
+      'git@github.com:PawanSirsat/Laika.git',
+      'https://user:lai_supersecret@git.example.test/laika.git',
+      'https://lai_supersecret@git.example.test/laika.git',
+    ]) {
+      let caught: unknown;
+      try {
+        readEnv({ ...SECRET, LAIKA_CLI_SOURCE_URL: bad });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught, bad).toBeInstanceOf(EnvError);
+      const message = (caught as EnvError).message;
+      expect(message).toMatch(/^Invalid LAIKA_CLI_SOURCE_URL: "<redacted>"\. Expected an https:\/\//);
+      expect(message).not.toContain('supersecret');
+    }
+  });
+});

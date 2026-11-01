@@ -55,7 +55,31 @@ export interface Env {
     pendingNoticeMs: number;
     retentionMs: number;
   };
+  /**
+   * `LAIKA_BUILD_COMMIT` (LAI-1043): the git commit the image was built from,
+   * injected by the Docker build. `null` when unset — a checkout run with
+   * `pnpm dev`, or an image built by hand without the build arg.
+   */
+  readonly buildCommit: string | null;
+  /** `LAIKA_DEVELOPER_ACCESS` (LAI-1043): which Developer access the web shows. */
+  readonly developerAccess: DeveloperAccessMode;
+  /**
+   * `LAIKA_CLI_SOURCE_URL` (LAI-1043): the git repository a developer's `laika`
+   * checkout is cloned from, served by `GET /developer/compatibility`.
+   */
+  readonly cliSourceUrl: string;
 }
+
+/**
+ * `classic` is today's five tabs, `preview` adds the V3 tabs beside them, `v3`
+ * makes them the default (the LAI-1042 plan, §I). Rollback is setting it back
+ * and restarting: nothing it gates is stored.
+ */
+export const DEVELOPER_ACCESS_MODES = ['classic', 'preview', 'v3'] as const;
+export type DeveloperAccessMode = (typeof DEVELOPER_ACCESS_MODES)[number];
+
+/** Where the CLI comes from when `LAIKA_CLI_SOURCE_URL` is unset: this repository. */
+export const DEFAULT_CLI_SOURCE_URL = 'https://github.com/PawanSirsat/Laika.git';
 
 /** §9.1's defaults, in seconds (LAI-541). */
 const CLAIM_DEFAULT_SECONDS = { heartbeat: 30, suspect: 90, expire: 300, scan: 30 } as const;
@@ -321,6 +345,57 @@ function isHttpsUrl(url: string): boolean {
   }
 }
 
+/**
+ * `LAIKA_BUILD_COMMIT`: unset or empty is `null`; otherwise a 7–40 character
+ * lowercase hex commit id, or the server refuses to start. A wrong value here is
+ * a broken build step, and a board that reports a commit it was not built from
+ * would send every developer's `laika update` to the wrong place.
+ */
+function parseBuildCommit(raw: string | undefined): string | null {
+  if (raw === undefined || raw === '') return null;
+  if (!/^[0-9a-f]{7,40}$/.test(raw)) {
+    throw new EnvError('LAIKA_BUILD_COMMIT', raw, 'a git commit id: 7 to 40 lowercase hex digits');
+  }
+  return raw;
+}
+
+function parseDeveloperAccess(raw: string | undefined): DeveloperAccessMode {
+  if (raw === undefined || raw === '') return 'classic';
+  const mode = DEVELOPER_ACCESS_MODES.find((m) => m === raw);
+  if (mode === undefined) {
+    throw new EnvError(
+      'LAIKA_DEVELOPER_ACCESS',
+      raw,
+      `one of ${DEVELOPER_ACCESS_MODES.map((m) => `'${m}'`).join(', ')}`,
+    );
+  }
+  return mode;
+}
+
+/**
+ * `LAIKA_CLI_SOURCE_URL`: an `https://` URL with **no credentials in it**. It is
+ * served to anyone who asks, so a URL carrying a user or a token would publish
+ * that secret; refusing it at boot keeps it out of every response. The value is
+ * redacted from the error for the same reason.
+ */
+function parseCliSourceUrl(raw: string | undefined): string {
+  if (raw === undefined || raw === '') return DEFAULT_CLI_SOURCE_URL;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new EnvError('LAIKA_CLI_SOURCE_URL', '<redacted>', 'an https:// git repository URL');
+  }
+  if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') {
+    throw new EnvError(
+      'LAIKA_CLI_SOURCE_URL',
+      '<redacted>',
+      'an https:// git repository URL with no user or password in it',
+    );
+  }
+  return raw;
+}
+
 export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const nodeEnv = parseNodeEnv(source.NODE_ENV);
   const port = parsePort(source.PORT);
@@ -328,6 +403,13 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const checkpointRaw = {
     pendingNotice: source.LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS,
     retention: source.LAIKA_CHECKPOINT_RETENTION_DAYS,
+  };
+  // Read before the claim timings are judged, as the checkpoint windows are, so
+  // a bad claim value still leaves these read (`env-contract.test.ts`).
+  const buildRaw = {
+    commit: source.LAIKA_BUILD_COMMIT,
+    developerAccess: source.LAIKA_DEVELOPER_ACCESS,
+    cliSourceUrl: source.LAIKA_CLI_SOURCE_URL,
   };
 
   return {
@@ -344,5 +426,8 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
         : resolve(source.LAIKA_PUBLIC_DIR),
     claims: readClaimTimings(source),
     checkpoints: parseCheckpointWindows(checkpointRaw),
+    buildCommit: parseBuildCommit(buildRaw.commit),
+    developerAccess: parseDeveloperAccess(buildRaw.developerAccess),
+    cliSourceUrl: parseCliSourceUrl(buildRaw.cliSourceUrl),
   };
 }
