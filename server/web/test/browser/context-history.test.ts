@@ -1112,3 +1112,56 @@ void describe('Delivered to', () => {
     }
   }
 });
+
+void describe('closing the panel gives focus back (LAI-1022)', () => {
+  const contextButton = (h: Harness) =>
+    h.page.locator('.project-card', { hasText: 'Laika Core' }).locator('[data-action="context"]');
+  const onOpener = (h: Harness) => contextButton(h).evaluate((el) => document.activeElement === el);
+
+  async function openByKey(stub: ApiStub): Promise<Harness> {
+    const h = await open('/projects', stub);
+    await contextButton(h).waitFor({ timeout: 20_000 });
+    await contextButton(h).focus();
+    await h.page.keyboard.press('Enter');
+    await h.page.locator('.ctx-editor').waitFor({ timeout: 20_000 });
+    return h;
+  }
+
+  void test('Close returns focus to the space’s Context button', async () => {
+    const h = await openByKey(world());
+    try {
+      await h.page.locator('.ctx-close').focus();
+      await h.page.keyboard.press('Enter');
+      await h.page.locator('.ctx').waitFor({ state: 'detached', timeout: 10_000 });
+      await until(() => onOpener(h), 2_000);
+      assert.ok(await onOpener(h), 'focus did not return to Context');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('with unsaved edits: Keep editing stays in the panel, Discard returns to Context', async () => {
+    const h = await openByKey(world());
+    try {
+      await h.page.locator('.ctx-editor').fill(`${R2}\nUnsaved.`);
+      await h.page.locator('.ctx-close').click();
+      await answerConfirm(h.page, false);
+      await until(
+        () => h.page.evaluate(() => document.activeElement?.closest('.ctx') !== null),
+        2_000,
+      );
+      assert.ok(
+        await h.page.evaluate(() => document.activeElement?.closest('.ctx') !== null),
+        'Keep editing took focus out of the panel',
+      );
+
+      await h.page.locator('.ctx-close').click();
+      await answerConfirm(h.page, true);
+      await h.page.locator('.ctx').waitFor({ state: 'detached', timeout: 10_000 });
+      await until(() => onOpener(h), 2_000);
+      assert.ok(await onOpener(h), 'Discard changes did not return focus to Context');
+    } finally {
+      await h.close();
+    }
+  });
+});
