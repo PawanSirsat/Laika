@@ -431,13 +431,28 @@ describe('token kind on every view (LAI-1046)', () => {
     );
     expect(del.status).toBe(204);
 
-    const [revoked] = await list(`/api/v1/users/${ownerId}/tokens?kind=agent`, admin.cookie);
-    expect(revoked?.revoked_at).not.toBeNull();
+    const agents = await list(`/api/v1/users/${ownerId}/tokens?kind=agent`, admin.cookie);
+    // The row first: `undefined?.revoked_at` is not null either (review N2).
+    expect(agents.map((t) => t.id)).toEqual([token.id]);
+    expect(typeof agents[0]?.revoked_at).toBe('number');
 
-    // What the admin's confirmation promises (plan §E.4, A13): the tool is
-    // still registered, active, with no live credential.
+    // What the admin's confirmation says (plan §E.4, A13): the tool is still
+    // registered, active, with no live credential…
     const agent = await req(`/api/v1/agents/${agentId}`, {}, ownerCookie);
     expect(agent.status).toBe(200);
     expect(await agent.json()).toMatchObject({ status: 'active' });
+
+    // …and cannot work again from here: a revoked credential cannot be
+    // rotated, so the owner disconnects it and connects it afresh (review B1).
+    const rotate = await req(
+      `/api/v1/agents/${agentId}/rotate-token`,
+      { method: 'POST', body: JSON.stringify({ token_id: token.id }) },
+      ownerCookie,
+    );
+    expect(rotate.status).toBe(409);
+    expect(((await rotate.json()) as { error: unknown }).error).toMatchObject({
+      code: 'conflict',
+      details: { reason: 'token_revoked' },
+    });
   });
 });
