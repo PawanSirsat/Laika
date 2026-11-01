@@ -65,8 +65,6 @@ export interface CompatibilityBody {
   protocol: { current: number; min_client: number };
   features: { developer_access: DeveloperAccessMode } & Record<FeatureName, boolean>;
   cli: {
-    min_protocol: number;
-    target_protocol: number;
     min_protocol_for: Record<FeatureName, number>;
     source: { type: 'git'; url: string; commit: string | null; path: 'cli' };
   };
@@ -87,8 +85,6 @@ export function compatibility(input: CompatibilityInput): CompatibilityBody {
     protocol: { current: PROTOCOL.current, min_client: PROTOCOL.minClient },
     features: { developer_access: input.developerAccess, ...features },
     cli: {
-      min_protocol: PROTOCOL.minClient,
-      target_protocol: PROTOCOL.current,
       min_protocol_for: { ...MIN_PROTOCOL_FOR },
       // The helper ships from the board's own commit: the image does not carry
       // `cli/`, so a developer clones the repository at this commit (plan §A9).

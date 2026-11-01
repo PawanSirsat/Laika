@@ -117,6 +117,21 @@ describe('GET /api/v1/developer/compatibility', () => {
     expect(anonymousText).not.toMatch(/lai_[A-Za-z0-9]/);
   });
 
+  it('answers 409 setup_required before first-boot setup, like every API path but /health and /setup', async () => {
+    h = authHarness({ buildCommit: COMMIT });
+
+    const res = await h.app.request('/api/v1/developer/compatibility');
+
+    expect(res.status, await res.clone().text()).toBe(409);
+    const body = (await res.json()) as {
+      error: { code: string; details: { setup_required?: unknown; setup_path?: unknown } };
+    };
+    expect(body.error.code).toBe('conflict');
+    expect(body.error.details).toMatchObject({ setup_required: true, setup_path: '/setup' });
+    // `/health` stays open on the same un-set-up instance.
+    expect((await h.app.request('/api/v1/health')).status).toBe(200);
+  });
+
   it('is a GET only: another method is 405 method_not_allowed (§6.3)', async () => {
     const { app } = testApp();
 

@@ -3578,10 +3578,14 @@ signed-in one get the same body, built from §11.7's settings alone:
 `features { developer_access, device_pairing, tool_setup_exchange,
 client_reports, project_setups }` (the mode of `LAIKA_DEVELOPER_ACCESS`, then a
 closed set of booleans, each `false` until its feature ships),
-`cli { min_protocol, target_protocol, min_protocol_for, source { type: 'git',
-url, commit, path } }` and `release_notes { ref, whats_new[] }`. `build_commit`
-is `null` when the image was built without one. Nothing in it is a secret, and
-`LAIKA_CLI_SOURCE_URL` is refused at boot if it carries a user or password. An
+`cli { min_protocol_for, source { type: 'git', url, commit, path } }` and
+`release_notes { ref, whats_new[] }`. The protocol range a helper must speak is
+`protocol.min_client` to `protocol.current`; `cli.min_protocol_for` names the
+protocol each feature needs once it is on. `build_commit` is `null` when the
+image was built without one. Nothing in it is a secret, and
+`LAIKA_CLI_SOURCE_URL` is refused at boot if it carries a user, password, query
+or fragment. **Before first-boot setup it answers `409`, like every API path
+but `/health` and `/setup`** (`conflict`, `details.setup_required: true`). An
 old board answers `404`, which a helper reads as *"this board cannot say"*.
 `/health` gained `build_commit` beside its three original fields, unchanged.
 
@@ -6446,7 +6450,7 @@ compose file or systemd unit.
 | `LAIKA_CHECKPOINT_RETENTION_DAYS` | `90` | D-115 item 9, §11.6: how long a task's checkpoints are kept after it reaches `done` or `cancelled`, and how old the §4.72 rows for a ref never registered grow before they are pruned. Whole days, 1–3650 |
 | `LAIKA_BUILD_COMMIT` | unset | the git commit the image was built from, set by the Docker build (`--build-arg LAIKA_BUILD_COMMIT`); served as `build_commit` by `/health` and `/developer/compatibility` (§6.4). 7–40 lowercase hex digits; anything else is a startup failure. Unset is `null` (LAI-1043) |
 | `LAIKA_DEVELOPER_ACCESS` | `classic` | which Developer access the web shows: `classic`, `preview` or `v3`, served as `features.developer_access` (§6.4). Any other value is a startup failure. Rollback is setting it back and restarting; nothing it gates is stored (LAI-1043) |
-| `LAIKA_CLI_SOURCE_URL` | `https://github.com/PawanSirsat/Laika.git` | the git repository a developer's `laika` is cloned from, served as `cli.source.url` (§6.4). `https://` only, and refused at startup if it carries a user or password, since it is served to anyone (LAI-1043) |
+| `LAIKA_CLI_SOURCE_URL` | `https://github.com/PawanSirsat/Laika.git` | the git repository a developer's `laika` is cloned from, served as `cli.source.url` (§6.4). `https://` only, and refused at startup if it carries a user, password, query or fragment, since it is served to anyone (LAI-1043) |
 
 **This table is the deployment contract.** Anything the server reads from the
 environment belongs in it, and anything in it must be read. It drifted in both

@@ -59,8 +59,8 @@ describe('compatibility()', () => {
 
     expect(body.protocol).toEqual({ current: PROTOCOL.current, min_client: PROTOCOL.minClient });
     expect(body.protocol.min_client).toBeLessThanOrEqual(body.protocol.current);
-    expect(body.cli.min_protocol).toBe(body.protocol.min_client);
-    expect(body.cli.target_protocol).toBe(body.protocol.current);
+    // One place says the range (SPEC §6.4): `cli` does not repeat it.
+    expect(Object.keys(body.cli).sort()).toEqual(['min_protocol_for', 'source']);
     expect(Object.keys(body.cli.min_protocol_for).sort()).toEqual([...FEATURE_NAMES].sort());
     // A feature that is off may need a later protocol; none may need one
     // older than the oldest a board accepts.
@@ -90,7 +90,10 @@ describe('compatibility()', () => {
     expect(body.release_notes.ref).toBeNull();
   });
 
-  it('hands out a fresh copy, so a caller cannot change the next response', () => {
+  // The route builds its body once, so this guards a second `compatibility()`
+  // call against an earlier caller's edits to the shared constants, not the
+  // route's cached body.
+  it('returns new objects each call, so editing one result leaves the next unchanged', () => {
     const first = compatibility(INPUT);
     first.cli.min_protocol_for.device_pairing = 99;
     first.release_notes.whats_new.push({ protocol: 99, summary: 'x' });
