@@ -7,7 +7,8 @@ priority: p2
 depends-on: [LAI-1045, LAI-1046, LAI-1048]
 discovered-from: LAI-1042
 started: 2026-11-02T03:59:45+05:30
-status: in-progress
+finished: 2026-11-02T04:27:02+05:30
+status: review
 ---
 
 ## Why
@@ -23,30 +24,30 @@ existing agent endpoints.
 
 ## Acceptance criteria
 
-- [ ] V3/preview Devices tab lists devices from `GET /devices` with their
+- [x] V3/preview Devices tab lists devices from `GET /devices` with their
       tools nested; no second agent list, no Connect-vs-Agents split.
-- [ ] Per device: name, kind (local / cloud, with the 24 h note for cloud),
+- [x] Per device: name, kind (local / cloud, with the 24 h note for cloud),
       *Imported device — confirm it's yours* for an imported unconfirmed
       device (confirm via the existing recognised-device action), last seen.
-- [ ] Per tool row: *Tool · Device*, a status word and a short reason from
+- [x] Per tool row: *Tool · Device*, a status word and a short reason from
       real evidence only (Needs setup, Connected only from a real recent
       authenticated request by that agent, Idle, Offline; never *Ready*),
       a *Version unknown* placeholder, *Working on LAIKA-n* only from live
       claim data an existing API returns, the consent switch.
-- [ ] ⋯ menu per tool: rename (where allowed), project access, rotate,
+- [x] ⋯ menu per tool: rename (where allowed), project access, rotate,
       revoke — existing APIs and confirmations naming exactly what stops.
-- [ ] Legacy duplicate agents of one tool+device: an expandable conflicts
+- [x] Legacy duplicate agents of one tool+device: an expandable conflicts
       section, both intact, no auto-revoke.
-- [ ] Revoked hidden by default behind *Show revoked*, excluded from counts.
-- [ ] Add device / Add tool route to the existing classic registration
+- [x] Revoked hidden by default behind *Show revoked*, excluded from counts.
+- [x] Add device / Add tool route to the existing classic registration
       wizard (`?add=device|tool`) until slice D4.
-- [ ] States: empty, loading, error, 403, session-expired, revoked.
-- [ ] Keyboard-only incl. ⋯ menus, focus return after dialogs, aria-live via
+- [x] States: empty, loading, error, 403, session-expired, revoked.
+- [x] Keyboard-only incl. ⋯ menus, focus return after dialogs, aria-live via
       the shared helper, both themes, 390 px.
-- [ ] Tests: real API data only; imported vs paired; conflicts; revoked
+- [x] Tests: real API data only; imported vs paired; conflicts; revoked
       toggle and counts; status words; ⋯ actions call existing APIs; classic
       mode unchanged; a11y.
-- [ ] Screenshots light+dark, desktop+390 in `.polly/evidence/LAI-1054/`.
+- [x] Screenshots light+dark, desktop+390 in `.polly/evidence/LAI-1054/`.
 
 ## Notes
 
