@@ -83,7 +83,19 @@ export function holdsUp(dependency: Pick<TaskSummary, 'status'>): boolean {
 }
 
 /**
- * Does this task have a dependency that is not done (`holdsUp`)?
+ * Is this task finished — `done` or `cancelled`? Finished work is never
+ * blocked, whatever it once waited on: the server counts open work only
+ * (`services/projects.ts`, `t.status NOT IN ('done', 'cancelled')`), and so do
+ * BLK, the sprint lock, the Timeline and the Dashboard (LAI-1040).
+ */
+function finished(task: Pick<TaskSummary, 'status'>): boolean {
+  return task.status === 'done' || task.status === 'cancelled';
+}
+
+/**
+ * Is this task open and waiting on a dependency that is not done (`holdsUp`)?
+ * A finished task is `false` (LAI-1040): the card drew a lock over done work
+ * and the Blocked-only filter kept it, where BLK did not count it.
  *
  * Resolved against the tasks we hold, because the API returns dependency **ids**
  * and not their statuses. That means a dependency outside the fetched set cannot
@@ -95,7 +107,7 @@ export function blockedState(
   task: TaskSummary,
   byId: ReadonlyMap<string, TaskSummary>,
 ): boolean | undefined {
-  if (task.blocked_by.length === 0) return false;
+  if (finished(task) || task.blocked_by.length === 0) return false;
 
   let unknown = false;
   for (const id of task.blocked_by) {
@@ -126,6 +138,8 @@ export function blockers(
   task: TaskSummary,
   byId: ReadonlyMap<string, TaskSummary>,
 ): readonly TaskSummary[] {
+  // Nothing holds finished work, so a done card names no blocker (LAI-1040).
+  if (finished(task)) return [];
   const found: TaskSummary[] = [];
   for (const id of task.blocked_by) {
     const dependency = byId.get(id);
@@ -157,7 +171,7 @@ export function heldByBlocker(
   task: Pick<TaskSummary, 'status' | 'ready' | 'blocked_by'>,
   byId: ReadonlyMap<string, Pick<TaskSummary, 'status'>>,
 ): boolean {
-  if (task.status === 'done' || task.status === 'cancelled') return false;
+  if (finished(task)) return false;
   for (const id of task.blocked_by) {
     const dependency = byId.get(id);
     if (dependency === undefined ? !task.ready : holdsUp(dependency)) return true;
