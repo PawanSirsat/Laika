@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: [LAI-1045]
 started: 2026-11-02T12:00:00+05:30
-status: in-progress
+status: review
+finished: 2026-11-02T16:10:00+05:30
 ---
 
 Slice C1 of the plan `docs/proposals/LAI-1042-developer-access-v3-plan.md`
@@ -58,7 +59,8 @@ explicitly, and the PR targets `LAI-1045-devices-migration` until #202 merges.
 - [x] `0071` adds `device_pairing_requests` and rebuilds no table. Only the
       code's hash is stored.
 - [x] Create is browser-session only and owner-bound. It returns a code of
-      about 8 characters, valid for 10 minutes. There are at most 5 open
+      16 characters (80 bits, CHIEF on PR #205 round 2; the dispatch said about
+      8), valid for 10 minutes. There are at most 5 open
       requests per owner.
 - [x] A device claims once, with a fresh Ed25519 public key. Claim is
       unauthenticated and rate-limited in its own bucket.
