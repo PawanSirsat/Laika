@@ -121,9 +121,14 @@ export function noRecentSaveWords(windowMs: number): string {
   return `No save in the last ${String(minutes)} minute${minutes === 1 ? '' : 's'}`;
 }
 
-/** What it means, for the panel and a card's hover — and what it does not decide. */
+/**
+ * What it means — drawn in the panel, and read with a card's open button
+ * through `aria-describedby` — and what it does not decide. It says only that
+ * no save was made in the window: the server cannot see unsaved work, so the
+ * words never imply any (LAI-1016 review).
+ */
 export const NO_RECENT_SAVE_MEANING =
-  'The agent holds the task and has not saved a checkpoint. Nothing changes because of it.';
+  'The agent holds the task and has not saved a checkpoint in that time. Nothing changes because of it.';
 
 /** No checkpoint at all: never an automatic path (SPEC §4.73, proposal §4.4). */
 export const NO_CHECKPOINT = 'Automatic recovery unavailable — no saved checkpoint';
