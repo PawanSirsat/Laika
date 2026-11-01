@@ -6,8 +6,9 @@ assignee: polly
 priority: p1
 depends-on: []
 discovered-from: LAI-560
-status: in-progress
+status: review
 started: 2026-11-01T15:58:55Z
+finished: 2026-11-01T16:31:54Z
 ---
 
 ## Goal
@@ -36,7 +37,7 @@ LAI-560). Owner decided: fix it.
       keeps the database it replaces beside it.
 - [x] docs/AGENTS-ROLLOUT.md § 7 says what the rollback now does end to end,
       including what it does not cover.
-- [ ] CI green on the PR.
+- [x] CI green on the PR.
 
 ## Notes
 
@@ -47,7 +48,7 @@ LAI-560). Owner decided: fix it.
   to an image that predates the guard. Reasoning in the log and in
   docs/AGENTS-ROLLOUT.md § 7.
 
-## Review notes (PR #186, round 1) — fixing
+## Review notes (PR #186, round 1) — fixed in b6f3bf05 and the docs commit after it
 
 - B1: restore not atomic, no failure path; `docker rm` before a restore that
   can exit under `set -e` leaves no container and possibly no `laika.db`.
