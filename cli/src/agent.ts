@@ -233,6 +233,7 @@ const USAGE = [
   '  laika agent events [sync|listen] [--harness H]      hand-off and context notices (opt out: LAIKA_AGENT_EVENTS=off)',
   '  laika agent watch [--battery-percent 15] [--memory-seconds 60] [--offer-to AGENT]',
   '                                  opt-in: ask for a checkpoint before battery or memory runs out',
+  '  laika agent launcher check|run|status|stop   optional, off by default (D-117; laika agent launcher --help)',
   '',
   'The token is the agent’s, from the Agents screen — never your own. It is kept',
   'in ~/.laika/agents/<harness>.json (0600), or read from LAIKA_AGENT_TOKEN, and',
@@ -1098,6 +1099,11 @@ export async function agent(argv: readonly string[], io: AgentIo = CONSOLE): Pro
   if (command === 'git-home') {
     const { gitHome } = await import('./agent-git-home.ts');
     return gitHome(io, argv.slice(1));
+  }
+
+  if (command === 'launcher') {
+    const { launcherCommand } = await import('./agent-launcher.ts');
+    return launcherCommand(io, argv.slice(1));
   }
 
   if (command === 'login' || command === 'logout' || command === 'hooks') {
