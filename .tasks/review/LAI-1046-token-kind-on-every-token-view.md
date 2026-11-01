@@ -6,8 +6,9 @@ assignee: polly
 priority: p2
 depends-on: []
 discovered-from: LAI-1042
-status: in-progress
+status: review
 started: 2026-11-02T03:05:00Z
+finished: 2026-11-02T03:40:00Z
 ---
 
 ## Goal
@@ -41,27 +42,32 @@ One PR, so no drift guard is ever red. Named cross-area edits:
 
 ## Acceptance criteria
 
-- [ ] `kind`, `agent_id` and `agent_label` on every `TokenView`: `GET /tokens`,
+- [x] `kind`, `agent_id` and `agent_label` on every `TokenView`: `GET /tokens`,
       `POST /tokens`, `GET /users/:id/tokens`, and the token views an agent's
       register / rotate / read return. A legacy row (no `agent_id`) reads
       `kind: personal`, `agent_id: null`, `agent_label: null`, every other
       field unchanged.
-- [ ] `agent_label` is `<harness> · <device>` (`No device` when blank) and is
+- [x] `agent_label` is `<harness> · <device>` (`No device` when blank) and is
       never the agent's registered `display_name`, for the owner or an admin.
       Tested with a display name that differs from both.
-- [ ] `?kind=personal|agent` on both list endpoints; absent returns all, as
-      today; any other value is `422`. Paging under a filter is keyset-correct.
-- [ ] Developer access → Tokens lists personal tokens only. The name hint no
+- [x] `?kind=personal|agent` on both list endpoints; absent returns all, as
+      today; any other value is `400` (corrected from `422` while in
+      progress: a bad query value is `400` here, as invites' `include_used`).
+      Paging under a filter is keyset-correct.
+- [x] Developer access → Tokens lists personal tokens only. The name hint no
       longer says "Only you see this."
-- [ ] Organisation → Security and the profile admin "Their tokens" group by
+- [x] Organisation → Security and the profile admin "Their tokens" group by
       kind and name agent credentials as Tool · Device.
-- [ ] `token.revoke_any` still revokes an agent credential; its confirmation
+- [x] `token.revoke_any` still revokes an agent credential; its confirmation
       says exactly what stops (the plan's §E.4 choice: keep revoke-any, state
       the impact). No change to who may do what.
-- [ ] `view-type-drift` green (client mirrors the three fields).
-- [ ] CI green on the PR.
+- [x] `view-type-drift` green (client mirrors the three fields).
+- [x] CI green on the PR.
 
 ## Notes
 
 - L6 (an agent token reading its owner's token and agent lists, plan §A14) is
   **not** in scope: filed separately.
+- PR #204; CI green on `7f1095ae` (run 41352751810). L6 filed as LAI-1049
+  (LAI-1047/1048 were taken by other builders). Revoke choice: plan §E.4 —
+  keep `token.revoke_any` as a token revoke, state the impact.
