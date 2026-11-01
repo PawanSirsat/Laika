@@ -6,8 +6,9 @@ assignee: polly
 priority: p2
 depends-on: []
 started: 2026-11-01T20:48:22Z
+finished: 2026-11-01T21:23:48Z
 discovered-from: LAI-1042
-status: in-progress
+status: review
 ---
 
 Plan: `docs/proposals/LAI-1042-developer-access-v3-plan.md` on branch
