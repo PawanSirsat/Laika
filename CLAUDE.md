@@ -340,7 +340,12 @@ on `master`, within an hour of each other.
 ## 3. Logging
 
 After **every** task and at the end of **every** session, append to
-`logs/<session>-<YYYY-MM-DD>.md`:
+**the task's own log file**, `logs/<session>-<YYYY-MM-DD>-<LAI-NNN>.md`
+(owner, 2026-11-01). A task branch writes only its own file, so two PRs never
+conflict on a shared day log and no merge costs another CI run. Session-level
+notes with no task go to `logs/<session>-<YYYY-MM-DD>.md` from the session's
+own long-lived branch only. Day logs written before 2026-11-01 stay as they
+are (append-only records):
 
 - timestamp (ISO-8601)
 - task id
@@ -471,6 +476,13 @@ LAI-015 had to clean up.
   their own task file). Never `git add -A` from the repo root — stage explicit
   paths.
 - Never amend, rebase-edit, revert, or force-push another session's commits.
+- **Batch small changes, and size the review to the change** (owner,
+  2026-11-01). Several small fixes that touch the same area ship as **one PR**
+  — one CI run, one deploy — instead of one PR each. A **docs-only or trivial
+  change** (prose, task files, logs, a one-line config value, a test-only
+  wording fix) needs green CI but **no separate review round**; anything that
+  changes behaviour, permissions, data or security still gets an independent
+  review before merge.
 - **A push to `origin/master` is a release** (D-073). GitHub Actions runs the
   gate, builds the arm64 image, and deploys it to production within about
   fifteen minutes. A deploy that comes up unhealthy rolls back by itself, and
