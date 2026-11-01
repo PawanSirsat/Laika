@@ -268,7 +268,13 @@ void describe('laika doctor — the board', () => {
 
   void test('a board that has not been set up says so', async () => {
     const { url } = await board((_req, res) =>
-      json(res, 409, { error: { code: 'conflict', message: 'not set up' } }),
+      json(res, 409, {
+        error: {
+          code: 'conflict',
+          message: 'not set up',
+          details: { setup_required: true, setup_path: '/setup' },
+        },
+      }),
     );
     const { code, text } = await run(['--board', url], sandbox());
     assert.equal(code, 2, text);
@@ -407,9 +413,97 @@ void describe('laika status — the alias, through the real entry point', () => 
     assert.ok(!out.includes(AGENT_TOKEN) && !out.includes(PERSONAL_TOKEN));
   });
 
-  void test('an unknown option is a usage error', async () => {
-    const { code, text } = await run(['--fix'], sandbox());
+  void test('a usage error exits 64 (EX_USAGE), not a finding’s 1 or 2', async () => {
+    const dir = sandbox();
+    const unknown = await run(['--fix'], dir);
+    assert.equal(unknown.code, 64);
+    assert.match(unknown.text, /unknown option "--fix"/);
+    const bare = await run(['--board'], dir);
+    assert.equal(bare.code, 64);
+    assert.match(bare.text, /--board needs a URL/);
+  });
+});
+
+void describe('laika doctor — a secret in a board URL is never printed or sent', () => {
+  const USERINFO = 'https://bob:lai_SECRETPW@127.0.0.1:9';
+  const QUERY = 'http://127.0.0.1:9/?token=lai_QUERYSECRET';
+  const SECRETS = ['lai_SECRETPW', 'lai_QUERYSECRET', 'bob:', 'token='];
+
+  function refusingFetch(): { fetch: typeof fetch; calls: () => number } {
+    let calls = 0;
+    return {
+      fetch: () => {
+        calls++;
+        return Promise.reject(new Error('must not be called'));
+      },
+      calls: () => calls,
+    };
+  }
+
+  function assertClean(output: string): void {
+    for (const secret of SECRETS) assert.ok(!output.includes(secret), `printed ${secret}`);
+  }
+
+  void test('LAIKA_URL with a user and password: ACTION, not fetched, not printed', async () => {
+    const dir = sandbox();
+    const f = refusingFetch();
+    const text = await run([], dir, { env: { LAIKA_URL: USERINFO }, fetch: f.fetch });
+    const asJson = await run(['--json'], dir, { env: { LAIKA_URL: USERINFO }, fetch: f.fetch });
+    assert.equal(text.code, 1, text.text);
+    assert.match(text.text, /ACTION\s+board\s+LAIKA_URL carries credentials/);
+    assert.match(text.text, /Keep only https:\/\/127\.0\.0\.1:9 there/);
+    assert.equal(f.calls(), 0, 'a URL with credentials was fetched');
+    assertClean(text.text);
+    assertClean(asJson.text);
+    assert.doesNotMatch(text.text, /nothing answered/);
+  });
+
+  void test('~/.laika/env with a token in the query: ACTION, not fetched, not printed', async () => {
+    const dir = sandbox();
+    mkdirSync(join(dir, '.laika'), { recursive: true, mode: 0o700 });
+    writeFileSync(join(dir, '.laika', 'env'), `LAIKA_URL="${QUERY}"\n`, { mode: 0o600 });
+    const f = refusingFetch();
+    const text = await run([], dir, { fetch: f.fetch });
+    const asJson = await run(['--json'], dir, { fetch: f.fetch });
+    assert.equal(text.code, 1, text.text);
+    assert.match(text.text, /LAIKA_URL carries credentials: the board URL from ~\/\.laika\/env/);
+    assert.equal(f.calls(), 0);
+    assertClean(text.text);
+    assertClean(asJson.text);
+  });
+
+  void test('--board with credentials is refused the same way', async () => {
+    const f = refusingFetch();
+    const { code, text } = await run(['--board', QUERY], sandbox(), { fetch: f.fetch });
     assert.equal(code, 1);
-    assert.match(text, /unknown option "--fix"/);
+    assert.equal(f.calls(), 0);
+    assertClean(text);
+  });
+
+  void test('an agent credential saved with a credentialled URL is not sent, and not printed', async () => {
+    const dir = sandbox();
+    plantCredential(dir, USERINFO);
+    const f = refusingFetch();
+    const text = await run(['--board', 'http://127.0.0.1:9'], dir, { fetch: f.fetch });
+    const asJson = await run(['--json', '--board', 'http://127.0.0.1:9'], dir, {
+      fetch: f.fetch,
+    });
+    assert.match(text.text, /ACTION\s+tool claude-code\s+the board URL in .* carries credentials/);
+    // One request per run (two runs): the board's compatibility, never the
+    // agent endpoint with the credential.
+    assert.equal(f.calls(), 2, 'only the two compatibility requests may be made');
+    assertClean(text.text);
+    assertClean(asJson.text);
+    assert.ok(!text.text.includes(AGENT_TOKEN) && !asJson.text.includes(AGENT_TOKEN));
+  });
+
+  void test('a 409 that is not the setup gate is not read as "not set up"', async () => {
+    const { url } = await board((_req, res) =>
+      json(res, 409, { error: { code: 'conflict', message: 'something else', details: {} } }),
+    );
+    const { code, text } = await run(['--board', url], sandbox());
+    assert.equal(code, 2, text);
+    assert.match(text, /Could not check: the board answered 409/);
+    assert.doesNotMatch(text, /set up/);
   });
 });

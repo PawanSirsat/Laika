@@ -33,7 +33,18 @@ import { readEnvFile } from './whoami.ts';
  *
  * `0` everything checked is fine; `1` something needs action; `2` nothing
  * needs action but something could not be checked (the board did not answer,
- * or is too old to say).
+ * or is too old to say); `64` the command line itself was wrong (`EX_USAGE`,
+ * sysexits.h), so a script cannot mistake a typo for a finding.
+ *
+ * ## A URL is printed only as `displayUrl` shows it
+ *
+ * A board URL can carry a secret — `https://bob:lai_…@host`, or
+ * `?token=lai_…` — and it comes from four places a person may have pasted
+ * into: `LAIKA_URL`, `~/.claude/settings.json`, `~/.laika/env` and an agent's
+ * credential file. Every line and every `--json` field shows the URL with its
+ * user, password, query and fragment removed, and a URL that carries any of
+ * them is an ACTION and is **never fetched**: sending it would hand the
+ * secret to whatever answers.
  */
 
 export type Status = 'ok' | 'action' | 'unknown' | 'info' | 'skipped';
@@ -86,6 +97,45 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** `EX_USAGE`: the arguments were wrong, which is not a finding about this machine. */
+export const USAGE_EXIT = 64;
+
+/**
+ * The URL with its user, password, query and fragment removed: what may be
+ * printed. Something that does not parse prints as a placeholder, because the
+ * raw text could be a secret pasted into the wrong field.
+ */
+export function displayUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return '<not a valid URL>';
+  }
+  url.username = '';
+  url.password = '';
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/+$/, '');
+}
+
+/** Whether a board URL carries anything that may be a secret, or does not parse. */
+export function urlProblem(raw: string): 'credentials' | 'invalid' | undefined {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return 'invalid';
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'invalid';
+  if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
+    return 'credentials';
+  }
+  // `new URL` drops an empty `?` or `#`; still not a plain board address.
+  if (raw.includes('?') || raw.includes('#')) return 'credentials';
+  return undefined;
+}
+
 /** Only the fields doctor relies on are checked; anything else is ignored. */
 function asCompatibility(raw: unknown): Compatibility | undefined {
   if (!isRecord(raw)) return undefined;
@@ -111,9 +161,21 @@ export async function fetchCompatibility(
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch {
-    return { kind: 'unreachable', why: `nothing answered at ${board}` };
+    return { kind: 'unreachable', why: `nothing answered at ${displayUrl(board)}` };
   }
-  if (response.status === 409) return { kind: 'not_set_up' };
+  if (response.status === 409) {
+    // Only the setup gate's own 409 means "not set up"; any other conflict is
+    // an answer doctor does not understand.
+    let details: unknown;
+    try {
+      const raw = (await response.json()) as { error?: { details?: unknown } };
+      details = raw.error?.details;
+    } catch {
+      details = undefined;
+    }
+    if (isRecord(details) && details.setup_required === true) return { kind: 'not_set_up' };
+    return { kind: 'unreachable', why: 'the board answered 409' };
+  }
   if (response.status === 404) return { kind: 'unsupported', status: 404 };
   if (!response.ok) {
     return { kind: 'unreachable', why: `the board answered ${String(response.status)}` };
@@ -323,6 +385,14 @@ async function toolChecks(io: DoctorIo, offline: boolean): Promise<Check[]> {
       });
       continue;
     }
+    if (urlProblem(saved.url) !== undefined) {
+      checks.push({
+        name,
+        status: 'action',
+        detail: `the board URL in ${file} carries credentials or is not a valid URL, so the credential was not sent: run laika agent login ${harness}`,
+      });
+      continue;
+    }
     const accepted = await credentialAccepted(saved.url, saved.token, io.fetch);
     const codex = harness === 'codex' && hooks ? '. Codex asks you to trust the hook once' : '';
     checks.push({
@@ -434,13 +504,27 @@ async function boardChecks(
       },
     ];
   }
+  const problem = urlProblem(board.url);
+  if (problem !== undefined) {
+    return [
+      {
+        name: 'board',
+        status: 'action',
+        detail:
+          problem === 'credentials'
+            ? `LAIKA_URL carries credentials: the board URL from ${board.from} has a user, password, query or fragment in it, so it was not used. Keep only ${displayUrl(board.url)} there; credentials belong in the token`
+            : `LAIKA_URL is not a valid http(s) URL: the board URL from ${board.from} could not be used`,
+      },
+    ];
+  }
   const url = normaliseUrl(board.url);
+  const shown = displayUrl(url);
   if (offline)
     return [
       {
         name: 'board',
         status: 'skipped',
-        detail: `${url} (from ${board.from}); not asked (--offline)`,
+        detail: `${shown} (from ${board.from}); not asked (--offline)`,
       },
     ];
 
@@ -453,7 +537,7 @@ async function boardChecks(
       {
         name: 'board',
         status: 'unknown',
-        detail: `Could not check: ${url} has not been set up yet`,
+        detail: `Could not check: ${shown} has not been set up yet`,
       },
     ];
   }
@@ -462,7 +546,7 @@ async function boardChecks(
       {
         name: 'board',
         status: 'unknown',
-        detail: `Version unknown: ${url} does not report compatibility (a board older than this CLI)`,
+        detail: `Version unknown: ${shown} does not report compatibility (a board older than this CLI)`,
       },
     ];
   }
@@ -479,7 +563,7 @@ async function boardChecks(
     {
       name: 'board',
       status: 'ok',
-      detail: `${url} (from ${board.from}): Laika ${body.server.version}, ${build}, protocol ${String(body.protocol.current)}${mode}`,
+      detail: `${shown} (from ${board.from}): Laika ${body.server.version}, ${build}, protocol ${String(body.protocol.current)}${mode}`,
     },
     updateStatus(info, body),
   ];
@@ -513,11 +597,11 @@ export async function doctor(argv: readonly string[], io: DoctorIo = CONSOLE): P
       board = argv[++i];
       if (board === undefined || board === '') {
         io.err(`laika doctor: --board needs a URL. ${USAGE}`);
-        return 1;
+        return USAGE_EXIT;
       }
     } else {
       io.err(`laika doctor: unknown option "${arg ?? ''}". ${USAGE}`);
-      return 1;
+      return USAGE_EXIT;
     }
   }
 
