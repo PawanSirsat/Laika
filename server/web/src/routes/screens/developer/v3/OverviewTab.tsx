@@ -22,7 +22,9 @@ import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import '../../connect/connect.css';
 import {
   OVERVIEW_ADDRESSES,
+  STEP_NAMES,
   overviewState,
+  overviewSummary,
   toolActivity,
   toolAddress,
   type JourneyStep,
@@ -35,12 +37,6 @@ export interface OverviewTabProps {
   readonly onNavigate: (to: string) => void;
 }
 
-const STEP_NAMES: Readonly<Record<JourneyStep, string>> = {
-  device: 'Add a device',
-  tool: 'Add a coding tool',
-  project: 'Set up a project',
-};
-
 const ACTIVITY: Readonly<Record<ToolActivity, { tone: StatusTone; word: string }>> = {
   active: { tone: 'ok', word: 'Active' },
   idle: { tone: 'neutral', word: 'Idle' },
@@ -48,23 +44,18 @@ const ACTIVITY: Readonly<Record<ToolActivity, { tone: StatusTone; word: string }
   'not-connected': { tone: 'waiting', word: 'Not connected yet' },
 };
 
-/** What the live region says about a state — only spoken when it changes. */
-function summary(state: OverviewState): string {
-  if (state.kind === 'returning') {
-    return `${String(state.tools.length)} ${state.tools.length === 1 ? 'tool' : 'tools'} connected to this board.`;
-  }
-  return `Next step: ${STEP_NAMES[state.next]}.`;
-}
-
 /** An in-app link: a real `href`, and a plain click stays in the page. */
 function AppLink({
   href,
   className,
+  primary = false,
   onNavigate,
   children,
 }: {
   readonly href: string;
   readonly className?: string;
+  /** The view's main action — where focus goes when the view changes under it. */
+  readonly primary?: boolean;
   readonly onNavigate: (to: string) => void;
   readonly children: ReactNode;
 }) {
@@ -74,7 +65,12 @@ function AppLink({
     onNavigate(href);
   };
   return (
-    <a href={href} className={className} onClick={onClick}>
+    <a
+      href={href}
+      className={className}
+      onClick={onClick}
+      {...(primary ? { 'data-primary': '' } : {})}
+    >
       {children}
     </a>
   );
@@ -103,6 +99,8 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
   const [now, setNow] = useState(() => Date.now());
   const [message, announce] = useLiveRegion();
   const spoken = useRef<string | undefined>(undefined);
+  const root = useRef<HTMLDivElement | null>(null);
+  const shownKind = useRef<OverviewState['kind'] | undefined>(undefined);
 
   const load = useCallback((signal?: AbortSignal): void => {
     listAgentDevices(signal)
@@ -138,13 +136,29 @@ export function OverviewTab({ onNavigate }: OverviewTabProps) {
   // The first answer is what the page shows; a later one that changes it is news.
   useEffect(() => {
     if (state === undefined) return;
-    const said = summary(state);
+    const said = overviewSummary(state);
     if (spoken.current !== undefined && spoken.current !== said) announce(said);
     spoken.current = said;
   }, [state, announce]);
 
+  /*
+   * A refetch can swap the view under the reader — the journey becomes the
+   * summary the moment their first tool connects — and the link they were on
+   * (*Continue*) goes with it, which leaves focus on `body`. Then focus goes
+   * to the new view's main action. Focus anywhere else is left alone.
+   */
+  useEffect(() => {
+    if (state === undefined) return;
+    const before = shownKind.current;
+    shownKind.current = state.kind;
+    if (before === undefined || before === state.kind) return;
+    const lost = document.activeElement === null || document.activeElement === document.body;
+    if (!lost) return;
+    root.current?.querySelector<HTMLElement>('[data-primary]')?.focus();
+  }, [state]);
+
   return (
-    <div className="dev-body dev-overview" data-testid="dev-overview">
+    <div className="dev-body dev-overview" data-testid="dev-overview" ref={root}>
       <LiveRegion message={message} />
       {error !== null ? (
         <ApiErrorState
@@ -255,6 +269,7 @@ function FirstRun({
           <AppLink
             href={state.resume}
             className="bar-control bar-control-primary dev-journey-continue"
+            primary
             onNavigate={onNavigate}
           >
             Continue
@@ -291,6 +306,7 @@ function Returning({
           <AppLink
             href={OVERVIEW_ADDRESSES.projects}
             className="bar-control bar-control-primary"
+            primary
             onNavigate={onNavigate}
           >
             Set up a project

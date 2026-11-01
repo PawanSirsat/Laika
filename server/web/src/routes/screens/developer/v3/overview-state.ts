@@ -94,6 +94,25 @@ export function toolAddress(agentId: string): string {
   return `/developer?tab=devices&agent=${encodeURIComponent(agentId)}`;
 }
 
+export const STEP_NAMES: Readonly<Record<JourneyStep, string>> = {
+  device: 'Add a device',
+  tool: 'Add a coding tool',
+  project: 'Set up a project',
+};
+
+/**
+ * What the Overview's live region says about a state (LAI-1048, review round
+ * 1). **Only what the board has evidence for**: a tool counts as connected
+ * once its own credential has reached the board (`last_seen_at`), so a tool
+ * that was registered and never used is *on this board*, not *connected*.
+ */
+export function overviewSummary(state: OverviewState): string {
+  if (state.kind === 'first-run') return `Next step: ${STEP_NAMES[state.next]}.`;
+  const total = state.tools.length;
+  const connected = total - state.notConnected;
+  return `${String(total)} ${total === 1 ? 'tool' : 'tools'} on this board, ${String(connected)} connected.`;
+}
+
 export function overviewState(devices: readonly AgentDevice[]): OverviewState {
   const tools = activeTools(devices);
   const connected = tools.filter((agent) => agent.last_seen_at !== null);
