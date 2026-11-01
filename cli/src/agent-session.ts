@@ -143,6 +143,20 @@ export interface AgentCredential {
   readonly token: string;
 }
 
+/**
+ * Which credential this is, without the credential (LAI-554): 16 hex of the
+ * SHA-256 of its URL and token. A token belongs to one agent for its whole
+ * life, so this names an identity; state kept per fingerprint is never shared
+ * by two. An agent token is a long random secret, so the digest cannot be
+ * turned back into it; it is still never logged.
+ */
+export function credentialFingerprint(credential: AgentCredential): string {
+  return createHash('sha256')
+    .update(`${credential.url.replace(/\/+$/, '')}\n${credential.token}`)
+    .digest('hex')
+    .slice(0, 16);
+}
+
 export function writeCredential(home: string, harness: Harness, credential: AgentCredential): void {
   privateDir(join(home, '.laika'));
   privateDir(agentsDir(home));
@@ -390,6 +404,14 @@ export interface SessionState {
    * (LAI-547): the checkpoint helper reads the agent's consent by it.
    */
   agent_id?: string;
+  /**
+   * {@link credentialFingerprint} of the credential the board opened this
+   * session for (LAI-554). A hook running on another credential — a login
+   * since changed — does not speak for this session: its `session_id` and
+   * `agent_id` are another identity's. Absent on a session an older helper
+   * opened, which is treated the same way.
+   */
+  credential_fp?: string;
   /**
    * The start's `Idempotency-Key` (SPEC §6.3), written before the first
    * attempt: every retry of this start sends it, so the board answers a retry
@@ -947,6 +969,7 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
       state.status = 'live';
       state.session_id = result.body.id;
       if (isLaikaId(result.body.agent_id)) state.agent_id = result.body.agent_id;
+      state.credential_fp = credentialFingerprint(request.credential);
       state.reported = {
         ...(body.harness_version === undefined ? {} : { harness_version: body.harness_version }),
         ...(body.model === undefined ? {} : { model: body.model }),
