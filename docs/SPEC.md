@@ -3116,8 +3116,9 @@ mints a token, a session or an agent.**
 Indexes `(owner_user_id, state)`, and **unique `(code_hash)` where `state` is
 `open`, `claimed` or `approved`**: a live code names one request.
 
-**The code** is eight Crockford base32 characters (40 bits), served as
-`XXXX-XXXX` once, in the create answer, which the idempotency store never
+**The code** is sixteen Crockford base32 characters (**80 bits**, CHIEF on
+PR #205), served as `XXXX-XXXX-XXXX-XXXX` once, inside the command the owner
+pastes, in the create answer, which the idempotency store never
 keeps. Case, hyphens and spaces are ignored, and `O`, `I` and `L` read as `0`,
 `1` and `1`. A live request past `expires_at` reads, and is refused, as
 `expired`.
@@ -3590,20 +3591,17 @@ credential is not an org credential with a project filter.
   burst, refilled one a minute**. Approving is a person's and shares the
   session's budget. A repeated idempotency key still spends a token.
   **Device pairing's side has buckets of its own** (§4.79, LAI-1050), apart
-  from the shared anonymous one. Claims share **120 a burst, refilled 20 a
-  minute**. Completing is **40 a minute, a burst of 10, per request id**, for
-  the CLI's two-second poll; a path whose id is not ULID-shaped shares one
-  key. A failed claim — an unknown, malformed, expired or finished code —
-  also spends one shared key of **60, refilled 10 a minute** (600 an hour),
-  and while it is empty every claim is `429`, `reason` `pairing_backoff`,
-  before anything is read. At that rate a guesser holding it empty all day
-  makes 14,400 guesses against a 40-bit code, five live per owner: about
-  6.5e-8 × (owners) expected hits a day. **Completing never spends or reads
-  it**: an id is a ULID nobody guesses, and §4.79 caps each request's bad
-  signatures. Shared anonymous buckets can always be drained by sustained
-  traffic; keys per address wait for a trusted-proxy setting. A limiter
-  holds at most 50,000 buckets, dropping refilled ones first, then the least
-  recently used.
+  from the shared anonymous one. Every claim, well-formed or not, spends one
+  bucket of **6,000 a minute with a burst of 6,000**; there is no failure
+  backoff. It bounds load, not guessing: against an 80-bit code with at most
+  five live per owner, a caller holding it empty all day makes 8.6 million
+  guesses for about 3.6e-17 × (owners) expected hits. Holding it empty takes
+  **100 requests a second, sustained**. Completing is **40 a minute, a burst
+  of 10, per request id**, for the CLI's two-second poll; a path whose id is
+  not ULID-shaped shares one bucket of that size, which no real device uses.
+  Shared anonymous buckets can always be drained by enough traffic; keys per
+  address wait for a trusted-proxy setting. A limiter holds at most 50,000
+  buckets, dropping refilled ones first, then the least recently used.
   **Redeeming a tool setup** (§4.80, LAI-1056) has **10 a minute per exchange
   id**, and a path whose id is not ULID-shaped shares one key: there is no
   shared key to drain, so a flood on one exchange stops no other. A CLI's

@@ -17,7 +17,6 @@ import {
 } from '../../services/device-pairing.ts';
 import { type AppEnv } from '../context.ts';
 import { markOneTimeSecret } from '../idempotency.ts';
-import { LIMITS, type RateLimiter } from '../rate-limit.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
@@ -36,14 +35,9 @@ import { parseBody, strictObject, z } from '../validation.ts';
 export interface DevicePairingRouteOptions {
   db: Db;
   sqlite: Database.Database;
-  /** The limiter the middleware uses, for the shared failure backoff. */
-  rateLimiter: RateLimiter;
   /** `LAIKA_PUBLIC_URL` (§11.7): the origin a completing device signs. */
   publicUrl?: string | undefined;
 }
-
-/** The one key every failed claim counts on (plan §E.1); completing never touches it. */
-export const PAIRING_FAILURE_KEY = 'pairing:failures';
 
 const CreateBody = strictObject({
   kind: z.enum(PAIRING_KINDS),
@@ -56,7 +50,7 @@ const DecideBody = strictObject({
 });
 
 const ClaimBody = strictObject({
-  code: z.string().min(1).max(32),
+  code: z.string().min(1).max(64),
   public_key: z.string().min(1).max(512),
   os: z.string().trim().min(1).max(64).optional(),
   cli_version: z.string().trim().min(1).max(64).optional(),
@@ -132,49 +126,28 @@ export function devicePairingRequestRoutes(options: DevicePairingRouteOptions): 
 }
 
 export function devicePairingRoutes(options: DevicePairingRouteOptions): Hono<AppEnv> {
-  const { db, sqlite, rateLimiter } = options;
+  const { db, sqlite } = options;
   const app = new Hono<AppEnv>();
 
-  /** Refuse while the shared failure budget is spent, before anything is read. */
-  function assertNotBackedOff(c: Context<AppEnv>): void {
-    const decision = rateLimiter.peek(PAIRING_FAILURE_KEY, LIMITS.pairingFailures);
-    if (decision.allowed) return;
-    c.header('Retry-After', String(decision.retryAfterSeconds));
-    throw new ApiError('rate_limited', 'Too many failed pairing attempts', {
-      retry_after_seconds: decision.retryAfterSeconds,
-      reason: 'pairing_backoff',
-    });
-  }
-
-  /** Count a failed claim, then rethrow what the caller would have been told. */
-  function failed(error: unknown): never {
-    rateLimiter.take(PAIRING_FAILURE_KEY, LIMITS.pairingFailures);
-    throw error;
-  }
-
+  // No backoff on failures (CHIEF, PR #205 round 2): an 80-bit code needs
+  // none, and any shared key an anonymous caller can spend is one they can
+  // hold empty. Every claim, well-formed or not, spends `LIMITS.pairing` in
+  // the middleware before it gets here.
   app.post('/claim', async (c) => {
-    assertNotBackedOff(c);
     const body = parseBody(ClaimBody, await c.req.json().catch(() => null));
-    try {
-      return c.json<PairingClaimView>(
-        claimPairingRequest(sqlite, db, {
-          code: body.code,
-          publicKey: body.public_key,
-          os: body.os,
-          cliVersion: body.cli_version,
-        }),
-      );
-    } catch (error) {
-      // A wrong code is the guess this exists to slow; a used one is not.
-      if (error instanceof ApiError && error.code === 'not_found') failed(error);
-      throw error;
-    }
+    return c.json<PairingClaimView>(
+      claimPairingRequest(sqlite, db, {
+        code: body.code,
+        publicKey: body.public_key,
+        os: body.os,
+        cliVersion: body.cli_version,
+      }),
+    );
   });
 
-  // Completing neither checks nor spends the shared failure key (LAI-1050
-  // review, B1): it would let anyone lock pairing out for the whole board by
-  // posting to made-up ids. An id is a ULID nobody guesses, a signature needs
-  // the device's private key, and each request caps its own bad signatures.
+  // Completing is limited per request id (the middleware). An id is a ULID
+  // nobody guesses, a signature needs the device's private key, and each
+  // request caps its own bad signatures, so nothing here is shared.
   app.post('/:id/complete', async (c) => {
     const body = parseBody(CompleteBody, await c.req.json().catch(() => null));
     const outcome = completePairingRequest(sqlite, db, {

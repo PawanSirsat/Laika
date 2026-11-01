@@ -202,26 +202,56 @@ describe('rate limiting (SPEC §6.3)', () => {
     expect(limiter.size).toBe(0);
   });
 
-  it('holds at most its cap, dropping refilled buckets first and then the least used (LAI-1050)', () => {
-    let now = 0;
+  it('holds at most its cap under a flood of new keys (LAI-1050)', () => {
+    const now = 0;
     const limiter = new RateLimiter(() => now, 100);
-    const policy = { perMinute: 60, burst: 2 };
-
-    // A thousand keys from outside, none refilled: the map stays at the cap.
-    limiter.take('kept', policy);
-    for (let i = 0; i < 1000; i++) {
-      limiter.take(`flood-${String(i)}`, policy);
-      // Touched every time, so it is never the least recently used.
-      limiter.take('kept', { perMinute: 60, burst: 10_000 });
-    }
+    for (let i = 0; i < 1000; i++) limiter.take(`flood-${String(i)}`, { perMinute: 60, burst: 2 });
     expect(limiter.size).toBe(100);
-    // Still spent: the bucket that was used survived the flood.
-    expect(limiter.peek('kept', { perMinute: 60, burst: 10_000 }).remaining).toBeLessThan(10_000);
+  });
 
-    // Once refilled, the next new key prunes them all by their own policies.
-    now += 60_000;
-    limiter.take('late', policy);
-    expect(limiter.size).toBeLessThanOrEqual(2);
+  it('evicts the least recently used: a key in use survives a flood (LAI-1050)', () => {
+    const now = 0;
+    const limiter = new RateLimiter(() => now, 100);
+    const kept = { perMinute: 60, burst: 10_000 };
+    limiter.take('kept', kept);
+    for (let i = 0; i < 1000; i++) {
+      limiter.take(`flood-${String(i)}`, { perMinute: 60, burst: 2 });
+      // Touched every time, so it is never the oldest.
+      limiter.take('kept', kept);
+    }
+    // Still there, and still spent: 1,001 taken from 10,000.
+    expect(limiter.take('kept', kept).remaining).toBe(10_000 - 1002);
+    // A key flooded past is gone: it starts again full.
+    expect(limiter.take('flood-0', { perMinute: 60, burst: 2 }).remaining).toBe(1);
+  });
+
+  it('never prunes a bucket that is still spent (LAI-1050)', () => {
+    let now = 0;
+    const limiter = new RateLimiter(() => now);
+    const policy = { perMinute: 60, burst: 60 };
+    limiter.take('spent', policy);
+    // A second later one token is back, and the bucket is full: pruned.
+    now += 999;
+    expect(limiter.prune()).toBe(0);
+    expect(limiter.size).toBe(1);
+    now += 1;
+    expect(limiter.prune()).toBe(1);
+  });
+
+  it('prunes each bucket by its own policy (LAI-1050)', () => {
+    let now = 0;
+    const limiter = new RateLimiter(() => now);
+    // One refills a token a second, the other one a minute.
+    limiter.take('fast', { perMinute: 60, burst: 5 });
+    limiter.take('slow', { perMinute: 1, burst: 5 });
+    now += 1000;
+    expect(limiter.prune()).toBe(1);
+    expect(limiter.size).toBe(1);
+    // The slow one is still spent, so it keeps what it took.
+    expect(limiter.take('slow', { perMinute: 1, burst: 5 }).remaining).toBeLessThan(4);
+    now += 120_000;
+    expect(limiter.prune()).toBe(1);
+    expect(limiter.size).toBe(0);
   });
 });
 

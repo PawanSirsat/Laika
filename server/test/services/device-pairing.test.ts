@@ -71,22 +71,32 @@ function create(now = NOW) {
 }
 
 describe('the user code', () => {
-  it('is eight Crockford characters in two groups', () => {
+  it('is sixteen Crockford characters in four groups: 80 bits', () => {
     const seen = new Set<string>();
     for (let i = 0; i < 200; i++) {
       const code = newUserCode();
-      expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/);
+      expect(code).toMatch(
+        /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/,
+      );
       seen.add(code);
     }
-    // 40 bits: two hundred draws do not repeat.
+    // 80 bits: two hundred draws do not repeat.
     expect(seen.size).toBe(200);
   });
 
   it('reads case, hyphens, spaces and look-alike letters as the same code', () => {
-    expect(normaliseUserCode('ab1c-0def')).toBe('AB1C0DEF');
-    expect(normaliseUserCode(' abIc oDEF ')).toBe('AB1C0DEF');
-    expect(normaliseUserCode('ABLC-ODEF')).toBe('AB1C0DEF');
-    for (const bad of ['', 'ABC', 'ABCDEFGHJ', 'ABCD-EFGU', 'ABCD_EFGH']) {
+    const canonical = 'AB1C0DEFGH1JKMNP';
+    expect(normaliseUserCode('ab1c-0def-gh1j-kmnp')).toBe(canonical);
+    expect(normaliseUserCode(' abIc oDEF ghij KMNP ')).toBe(canonical);
+    expect(normaliseUserCode('ABLC-ODEF-GHLJ-KMNP')).toBe(canonical);
+    for (const bad of [
+      '',
+      'ABCD-EFGH',
+      'AB1C-0DEF-GH1J-KMN',
+      'AB1C-0DEF-GH1J-KMNPQ',
+      'AB1C-0DEF-GH1J-KMNU',
+      'AB1C_0DEF_GH1J_KMNP',
+    ]) {
       expect(normaliseUserCode(bad), bad).toBeNull();
     }
   });

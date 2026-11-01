@@ -302,9 +302,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       ? authMiddleware({ auth: options.auth, db: options.db })
       : anonymousAuth,
   );
-  // One limiter: pairing's failure backoff (LAI-1050) reads the same buckets.
-  const rateLimiter = options.rateLimiter ?? new RateLimiter();
-  app.use('*', rateLimitMiddleware(rateLimiter));
+  app.use('*', rateLimitMiddleware(options.rateLimiter ?? new RateLimiter()));
 
   // After rateLimit, before the routes: an un-set-up instance answers `conflict`
   // for every API path except setup and health (LAI-009 AC1).
@@ -402,7 +400,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // LAI-1050: pairing a device (§4.79). The owner's side is mounted before
     // `/devices`, whose `/:id` would otherwise be asked first; the device's
     // side has no actor, and its own buckets.
-    const pairing = { db, sqlite: options.sqlite, rateLimiter, publicUrl: options.publicUrl };
+    const pairing = { db, sqlite: options.sqlite, publicUrl: options.publicUrl };
     app.route(`${API_BASE}/devices/pairing-requests`, devicePairingRequestRoutes(pairing));
     app.route(`${API_BASE}/device-pairing`, devicePairingRoutes(pairing));
     // LAI-1056: setting a tool up on a paired device (§4.80). `/:id/tools`

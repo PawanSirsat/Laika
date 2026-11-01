@@ -56,40 +56,26 @@ export const LIMITS = {
    */
   otlp: { perMinute: 12, burst: 60 },
   /**
-   * Devices claiming pairing codes (LAI-1050, plan LAI-1042 §E.8): one bucket
-   * for every anonymous claim, **120 at once, then 20 a minute** — sized above
-   * `pairingFailures`, so it is the failure budget, not this, that stops a
-   * guesser. Kept apart from the shared anonymous bucket so a guessing loop
-   * neither spends the sign-in page's budget nor hides in it.
+   * Devices claiming pairing codes (LAI-1050; CHIEF, PR #205 round 2): one
+   * bucket for every anonymous claim, well-formed or not, **6,000 a minute
+   * with a burst of 6,000**. It bounds load, not guessing: a code is 80 bits,
+   * so a guesser holding this bucket empty all day makes 8.6 million guesses
+   * against at most five live codes per owner — an expected 3.6e-17 × U hits
+   * a day on a board of U owners.
    *
-   * **A shared anonymous bucket can always be drained** by anyone willing to
-   * send the traffic; that is what "shared" means. The defence is making it
-   * large enough that draining takes real, sustained load. Keys per address
-   * wait for a trusted-proxy setting (see `rateLimitMiddleware`).
+   * **A shared anonymous bucket can always be drained**; that is what shared
+   * means. This one takes **100 requests a second, sustained**, to hold empty,
+   * which is load the server has to answer for anyway. Keys per address wait
+   * for a trusted-proxy setting (see `rateLimitMiddleware`).
    */
-  pairing: { perMinute: 20, burst: 120 },
+  pairing: { perMinute: 6000, burst: 6000 },
   /**
    * A device polling one pairing request to complete it (LAI-1050): the CLI
-   * asks every two seconds until the owner decides, so per request id.
+   * asks every two seconds until the owner decides, so per request id. A
+   * path with no ULID-shaped id shares one bucket of this size, which no
+   * real device ever uses.
    */
   pairingComplete: { perMinute: 40, burst: 10 },
-  /**
-   * Failed claims — a code that is unknown, malformed, expired or finished —
-   * on one shared key (LAI-1050). **600 an hour, a burst of 60**, spent only
-   * by a failure and checked before every claim.
-   *
-   * The entropy behind the number: a code is 40 bits, and at most five are
-   * live per owner, so one guess hits with probability ≤ 5U / 2^40 on a
-   * board of U owners. A guesser holding this bucket empty all day makes
-   * 600 × 24 = 14,400 guesses, an expected 14,400 × 5U / 1.1e12 ≈ 6.5e-8 × U
-   * hits — about one in 150,000 days on a board of 100 owners, each with
-   * five codes open the whole time. Draining it to lock pairing out takes
-   * 600 failed claims an hour, sustained.
-   *
-   * Completing does **not** spend it (PR #205 review): a request id is a
-   * ULID nobody guesses, and each request caps its own bad signatures.
-   */
-  pairingFailures: { perMinute: 10, burst: 60 },
   /**
    * A device redeeming one tool setup (LAI-1056, plan §E.8): **10 a minute,
    * per exchange id**. A redeem is two calls — the challenge, then the
@@ -146,19 +132,6 @@ export class RateLimiter {
     if (decision.allowed) bucket.tokens -= 1;
     this.store(key, bucket);
     return decision.allowed ? { ...decision, remaining: Math.floor(bucket.tokens) } : decision;
-  }
-
-  /**
-   * Whether `take` would be refused now, without taking anything. For a
-   * bucket only failures spend: every attempt asks, only a failure takes.
-   */
-  peek(key: string, policy: LimitPolicy): RateLimitDecision {
-    if (!this.buckets.has(key)) {
-      return { allowed: true, retryAfterSeconds: 0, remaining: policy.burst ?? policy.perMinute };
-    }
-    const bucket = this.refilled(key, policy);
-    this.store(key, bucket);
-    return decide(bucket);
   }
 
   /**

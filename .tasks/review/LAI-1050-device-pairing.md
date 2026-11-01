@@ -7,7 +7,7 @@ priority: p1
 depends-on: [LAI-1045]
 started: 2026-11-02T12:00:00+05:30
 status: review
-finished: 2026-11-02T15:00:00+05:30
+finished: 2026-11-02T16:10:00+05:30
 ---
 
 Slice C1 of the plan `docs/proposals/LAI-1042-developer-access-v3-plan.md`
@@ -59,7 +59,8 @@ explicitly, and the PR targets `LAI-1045-devices-migration` until #202 merges.
 - [x] `0071` adds `device_pairing_requests` and rebuilds no table. Only the
       code's hash is stored.
 - [x] Create is browser-session only and owner-bound. It returns a code of
-      about 8 characters, valid for 10 minutes. There are at most 5 open
+      16 characters (80 bits, CHIEF on PR #205 round 2; the dispatch said about
+      8), valid for 10 minutes. There are at most 5 open
       requests per owner.
 - [x] A device claims once, with a fresh Ed25519 public key. Claim is
       unauthenticated and rate-limited in its own bucket.
@@ -83,7 +84,7 @@ explicitly, and the PR targets `LAI-1045-devices-migration` until #202 merges.
 - [x] Brute force reaches `429` with `Retry-After`.
 - [x] No new activity verb and no new §3.1 action.
 - [x] SPEC rows are written.
-- [x] CI is green on the PR, after the review fixes (#205, run 41358347845 on ee166fef).
+- [x] CI is green on the PR, after round 2's fix (#205, run 41362214714 on 153a8348).
 
 ## Dependencies
 
@@ -138,3 +139,25 @@ Recorded at the reviewer's request; the server serves what these need.
   time** for a claimed request, with the words *"Approve only if this matches
   your terminal."* It sends back the fingerprint it showed when approving or
   denying.
+
+## Review notes (PR #205, round 2) — sent back on one item
+
+- **R2-B1.** `pairing:claim` (20 a minute, one global key) and the failure
+  key could still be drained by one anonymous client: about one request a
+  second, or one bad code every six seconds, locked pairing out board-wide.
+  That breaks D-124 condition 4, and with 40-bit codes no tuning fixes it.
+- **CHIEF decided on option (a).** The code becomes 16 Crockford base32
+  characters, 80 bits, written `XXXX-XXXX-XXXX-XXXX`; users paste the
+  generated command anyway. Then:
+  - the failure backoff is dropped;
+  - `pairing:claim` is about 6,000 a minute with a burst of about 6,000, so
+    holding it empty takes at least 100 requests a second;
+  - malformed requests spend the same bucket.
+- **Also asked for:**
+  - SPEC §4.79's code paragraph and the §6.3 numbers;
+  - the comments to be literally true;
+  - the tests sized to the old numbers to be updated;
+  - a test that a one-request-a-second junk loop does not block a real claim
+    and completion;
+  - a log note that `0071` was regenerated;
+  - unit tests for the limiter's eviction and prune semantics.
