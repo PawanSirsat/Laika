@@ -119,7 +119,7 @@ export function assertAgentSelectable(
 ): void {
   const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
   // Not theirs, or not in this org: exactly as missing (D-121 item 7).
-  if (agent === undefined || agent.ownerUserId !== actor.userId || agent.orgId !== project.orgId) {
+  if (agent?.ownerUserId !== actor.userId || agent.orgId !== project.orgId) {
     throw refused('agent_not_found', agentId);
   }
   if (agent.status !== 'active') throw refused('agent_revoked', agentId);
