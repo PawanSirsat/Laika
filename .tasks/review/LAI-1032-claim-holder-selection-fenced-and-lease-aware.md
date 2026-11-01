@@ -47,4 +47,4 @@ paragraph (the one LAI-1027 edited) — two sentences, for items 2 and 3.
       current generation succeeds, and the generation is unchanged.
 - [x] SPEC §6.4 says items 2 and 3.
 - [x] Each new test mutation-checked: the behaviour broken once, the test red.
-- [ ] CI green on the PR.
+- [x] CI green on the PR (#188, all gate jobs at 9f27cb35).
