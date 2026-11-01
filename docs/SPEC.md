@@ -5749,7 +5749,7 @@ call MCP; agents do.
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
-| **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects`, and the review queue the sidebar's badge already read (`GET /review`, each task's `waiting_since` for the review wait, LAI-832) | all, indirectly via `activity` | ✅ |
+| **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
 | **Calendar** | ? | *none defined* | — | ⛔ **no decision — §14, q10** |
@@ -6023,11 +6023,13 @@ anything missing sends the task back.
   created and due soon** for the chosen range; a **status donut** with the share
   done at its centre; a **donut of open work by person** (*Open work now*, as of
   now whatever the range, D-092 item 2), Unassigned as its own share, each
-  person opening the board filtered to them; activity feed with an
-  **agent/human filter**; **needs attention**, true counts, in three tabs —
-  *Blocked*, *Stale* (the server's flag, §11.6) and *Waiting for review > 5
-  days* (`REVIEW_WAIT_DAYS = 5`); priority breakdown; throughput and cycle
-  time; updates in place on a live change; read-only for Viewer.
+  person opening the board filtered to them; priority breakdown; throughput
+  and cycle time; updates in place on a live change; read-only for Viewer.
+
+  **No activity feed and no *Needs attention*** (LAI-1025, the owner,
+  2026-11-01): both left the page to make it load faster. The project's
+  activity stays on the Activity tab — its Stale panel included — and the
+  review wait on Inbox › Review.
 
   **A person's open work is their load: to do and in progress** (D-092 item 3,
   LAI-832), Capacity's rule — `count: committed(slot.byStatus)`, where
@@ -6037,17 +6039,6 @@ anything missing sends the task back.
   review` on the line below it, and neither is in the count. Backlog and
   *Waiting for review* are
   each one share of the ring, and its centre is every open task.
-
-  **The review wait reads the review queue, not the picked range** (LAI-832).
-  A task's wait starts at `GET /review`'s `waiting_since`, taken from the
-  shell's existing read (the sidebar badge's, so no request of its own), or at
-  the range's own move into review — the later of the two when both hold one
-  — so a task ten days in review stays listed on *Last 24 hours*. With neither
-  it falls back to `Math.min(task.updated_at, rangeStart ?? task.updated_at)`,
-  which does move with the range. **Limit:** `GET /review` answers only the
-  projects where the reader holds `task.write`, and only its oldest 200, so for
-  a project viewer, and for a task beyond the oldest 200 in review, the wait
-  still depends on the range (LAI-850).
 - **Meeting review** — the proposals, tagged **NEW / CHANGED / DEAD /
   DECISION**, each shown **with the transcript quote it was reacting to**;
   per-line accept and reject; apply acts only on accepted items; discard the set.
@@ -6352,7 +6343,7 @@ One interval-driven scheduler in the same process:
   (D-092 item 4, LAI-832): every screen asks `isStale` (`board-derive.ts`) —
   `task.status !== 'done' && task.status !== 'cancelled' &&
   task.stale_flagged_at !== null` — and no screen keeps a rule of its own. The
-  Dashboard's *Stale* tab and the Activity tab's Stale panel call
+  Activity tab's Stale panel calls
   `staleTasks()`, which filters by `isStale`, longest-flagged first; the List's
   amber Updated cell calls `isStale` itself
 - invite expiry, meeting-review expiry (7 days)
