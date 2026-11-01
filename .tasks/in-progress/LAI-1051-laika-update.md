@@ -2,11 +2,12 @@
 id: LAI-1051
 title: 'Developer access V3 slice E2: laika update moves the CLI checkout to the board''s own commit, staged, verified and rolled back on failure'
 area: cli
-assignee: unclaimed
+assignee: polly
 priority: p2
 depends-on: []
+started: 2026-11-01T22:04:43Z
 discovered-from: LAI-1042
-status: backlog
+status: in-progress
 ---
 
 Plan: `docs/proposals/LAI-1042-developer-access-v3-plan.md` sections F.5, H,
