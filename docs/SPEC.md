@@ -970,9 +970,14 @@ set, else `personal`), `agent_id`, and `agent_label`: the agent's
 `display_name`** (D-120), and `null` for a personal token. Both list endpoints
 take an optional `?kind=personal|agent`; absent is every token, as before, and
 any other value is `400`. The fields are additive, so an older client reads
-the same rows. Revoking an agent's credential through `token.revoke_any` is a
-token revoke and leaves the agent registered (§4.63); the admin screens say so
-before it happens.
+the same rows. Serving `agent_id` and `agent_label` to an owner or admin on
+`GET /users/:id/tokens` falls under the access-oversight exception to
+D-120's owner-only names, stated in the `name` bullets below (`profile.read`,
+which already shows them a person's token names). Revoking an
+agent's credential through `token.revoke_any` is a token revoke and leaves the
+agent registered (§4.63) but unable to work: a revoked credential cannot be
+rotated, so its owner disconnects the tool and connects it afresh. The admin
+screens say so before it happens.
 
 **`name` is wire-visible, and that constrains what renaming means** (added
 2026-09-01, LAI-093). `TaskView.created_by_client` reports the name of the token
