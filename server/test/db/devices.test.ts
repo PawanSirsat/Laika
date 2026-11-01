@@ -527,11 +527,11 @@ describe('backfillAgentDevices, the boot half', () => {
       db.get<{ device_id: string; owner_user_id: string; label_key: string; display_name: string }>(
         sql`SELECT a.device_id, d.owner_user_id, d.label_key, d.display_name
             FROM agents a JOIN devices d ON d.id = a.device_id WHERE a.id = ${id}`,
-      )!;
+      );
     const belkaDevice = linkOf(stays).device_id;
     const bobsStrelka = db.get<{ id: string }>(
       sql`SELECT id FROM devices WHERE owner_user_id = ${bob}`,
-    )!.id;
+    ).id;
 
     // What a pre-0070 build does: writes the label and leaves the link alone.
     db.run(sql`UPDATE agents SET device_label = ' Laptop ' WHERE id = ${relabelled}`);
