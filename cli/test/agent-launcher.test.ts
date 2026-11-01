@@ -88,7 +88,9 @@ function fakeHarness(dir: string): string {
   return script;
 }
 
-function record(over: Partial<EventRecord> & { event_id: string; offer_id: string }): EventRecord {
+function record(
+  over: Partial<EventRecord> & { event_id: string; offer_id: string | null },
+): EventRecord {
   return {
     cursor: 1,
     type: 'task.handoff_offered',
