@@ -5,7 +5,7 @@ area: web
 assignee: shell
 priority: p2
 depends-on: []
-discovered-from: LAI-1030
+discovered-from: LAI-1027
 status: in-progress
 started: 2026-11-01T19:26:17Z
 ---
