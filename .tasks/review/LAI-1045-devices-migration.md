@@ -68,7 +68,7 @@ client sees today**.
       bodies.
 - [x] `GET /agents/devices` and every agent response are unchanged.
 - [x] D-122 and the SPEC rows are written.
-- [ ] CI is green on the PR.
+- [x] CI is green on the PR (#202, run on 74cef22e).
 
 ## Dependencies
 
