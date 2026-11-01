@@ -64,3 +64,12 @@ behind that flag, using existing endpoints only.
   "no device → add=device first" branch of §C's `agent=` row waits for it.
 - Disabled overflow items: `aria-disabled` and focusable, still skipped by the
   arrows (the existing menu test asserts the skip).
+
+## Review round 1 (PR #206)
+
+Fixed in `48e5ced6`: B1 (live region counts as connected only tools seen by
+the board; `overviewSummary()` unit-tested), (a) compatibility read times
+out to classic after 4 s, (b) repeated-parameter alias rows, (c) live region
+announces on a data change, (d) focus moves to the new primary action when
+the view flips under it, (e) OverflowMenu comment softened. Details in the
+log.
