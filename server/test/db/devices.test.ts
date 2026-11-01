@@ -496,6 +496,69 @@ describe('backfillAgentDevices, the boot half', () => {
     ).toEqual({ status: 'active' });
   });
 
+  it('relinks a stale link: a label changed without its device, or a device of another owner', () => {
+    const cut = folderBefore0070();
+    const { db } = dbAt0069(cut.dir);
+    const s = seed(db);
+    const bob = addUser(db, 'bob@example.test');
+    const relabelled = addAgent(db, s.orgId, {
+      owner: s.userId,
+      label: 'Belka',
+      harness: 'codex',
+      at: T,
+    });
+    const stays = addAgent(db, s.orgId, {
+      owner: s.userId,
+      label: 'belka',
+      harness: 'cursor',
+      at: T + 1,
+    });
+    const crossed = addAgent(db, s.orgId, {
+      owner: s.userId,
+      label: 'Strelka',
+      harness: 'codex',
+      at: T + 2,
+    });
+    addAgent(db, s.orgId, { owner: bob, label: 'Strelka', harness: 'codex', at: T + 3 });
+    cut.restore();
+    runMigrations(db, { migrationsFolder: cut.dir });
+
+    const linkOf = (id: string) =>
+      db.get<{ device_id: string; owner_user_id: string; label_key: string; display_name: string }>(
+        sql`SELECT a.device_id, d.owner_user_id, d.label_key, d.display_name
+            FROM agents a JOIN devices d ON d.id = a.device_id WHERE a.id = ${id}`,
+      )!;
+    const belkaDevice = linkOf(stays).device_id;
+    const bobsStrelka = db.get<{ id: string }>(
+      sql`SELECT id FROM devices WHERE owner_user_id = ${bob}`,
+    )!.id;
+
+    // What a pre-0070 build does: writes the label and leaves the link alone.
+    db.run(sql`UPDATE agents SET device_label = ' Laptop ' WHERE id = ${relabelled}`);
+    // And a link to another owner's device, however it came about.
+    db.run(sql`UPDATE agents SET device_id = ${bobsStrelka} WHERE id = ${crossed}`);
+    const untouched = db.all(sql`SELECT id, device_label, status FROM agents ORDER BY id`);
+
+    expect(backfillAgentDevices(db)).toBe(2);
+    expect(linkOf(relabelled)).toMatchObject({
+      owner_user_id: s.userId,
+      label_key: 'laptop',
+      display_name: 'Laptop',
+    });
+    expect(linkOf(crossed)).toMatchObject({ owner_user_id: s.userId, label_key: 'strelka' });
+    // The agent that matched its device kept it; the device left behind keeps its row.
+    expect(linkOf(stays).device_id).toBe(belkaDevice);
+    expect(db.get(sql`SELECT status FROM devices WHERE id = ${belkaDevice}`)).toEqual({
+      status: 'active',
+    });
+    // Only the link moved.
+    expect(db.all(sql`SELECT id, device_label, status FROM agents ORDER BY id`)).toEqual(untouched);
+
+    const settled = deviceShape(db);
+    expect(backfillAgentDevices(db)).toBe(0);
+    expect(deviceShape(db)).toEqual(settled);
+  });
+
   it('skips a database cut back before 0070', () => {
     const cut = folderBefore0070();
     const { db } = dbAt0069(cut.dir);

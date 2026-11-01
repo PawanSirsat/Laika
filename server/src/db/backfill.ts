@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, notLike, sql } from 'drizzle-orm';
 import { readPayload } from './activity.ts';
 import { type Db } from './client.ts';
-import { activity, agents, idempotencyKeys, tasks } from './schema.ts';
+import { activity, agents, devices, idempotencyKeys, tasks } from './schema.ts';
 import { deviceLabelKey } from './device-label.ts';
 import { activeDeviceFor, insertImportedDevice, newestDeviceFor } from './devices.ts';
 import { keysInOrder } from './order-key.ts';
@@ -268,10 +268,17 @@ export function purgeUnversionedIdempotencyKeys(db: Db): number {
 }
 
 /**
- * Link every agent with no `device_id` to its device, and return how many
+ * Link every agent with no `device_id` to its device, and relink every agent
+ * whose linked device no longer matches its label, and return how many
  * (LAI-1045, §4.78). The same rule as migration `0070`, for agents it did not
  * see: one registered between a snapshot restore and a re-upgrade, or by code
  * that did not link.
+ *
+ * A **stale link** is one whose device's owner or label key is not the
+ * agent's own: an agent relabelled by code that wrote `device_label` without
+ * `device_id` (a build rolled back to before 0070 against a database kept at
+ * 0070). `device_label` is the authority (D-122 item 2), so the link follows
+ * it; the device it left keeps its row.
  *
  * - An active device for the agent's (owner, label key) takes it.
  * - Otherwise, if any of the key's unlinked agents is active, an active
@@ -279,8 +286,8 @@ export function purgeUnversionedIdempotencyKeys(db: Db): number {
  * - Otherwise they are all revoked: the key's newest device takes them, or a
  *   revoked one is made, so the name stays free.
  *
- * **Idempotent by construction**: it reads only `device_id IS NULL`, and
- * every agent it reads leaves linked. Nothing is merged, revoked or renamed,
+ * **Idempotent by construction**: it reads only agents that are unlinked or
+ * stale, and every agent it reads leaves linked to its label's device. Nothing is merged, revoked or renamed,
  * and no other column of `agents` is written.
  *
  * A database a cut-back test migrated to before `0070` has no `devices`; it
@@ -295,6 +302,7 @@ export function backfillAgentDevices(db: Db): number {
   // The read is inside the write transaction, so nothing registered between
   // reading and writing can be missed or linked twice.
   return immediateTransaction(db.$client, () => {
+    // The key is computed here, not in SQL: SQLite's lower() is ASCII-only.
     const unlinked = db
       .select({
         id: agents.id,
@@ -305,11 +313,20 @@ export function backfillAgentDevices(db: Db): number {
         createdAt: agents.createdAt,
         revokedAt: agents.revokedAt,
         lastSeenAt: agents.lastSeenAt,
+        deviceId: agents.deviceId,
+        deviceOwner: devices.ownerUserId,
+        deviceKey: devices.labelKey,
       })
       .from(agents)
-      .where(isNull(agents.deviceId))
+      .leftJoin(devices, eq(devices.id, agents.deviceId))
       .orderBy(desc(agents.createdAt), desc(agents.id))
-      .all();
+      .all()
+      .filter(
+        (row) =>
+          row.deviceId === null ||
+          row.deviceOwner !== row.ownerUserId ||
+          row.deviceKey !== deviceLabelKey(row.deviceLabel),
+      );
     if (unlinked.length === 0) return 0;
 
     // Newest first, so each group's first row names the device, as the list does.
