@@ -308,8 +308,19 @@ async function onTopAtCentre(page: Page, id: string): Promise<string | undefined
   });
 }
 
+/**
+ * Let go of whatever is in hand (LAI-511): on a phone the editor is a sheet
+ * over the page, and a tap on the page behind it closes it instead.
+ */
+async function dismiss(page: Page): Promise<void> {
+  if ((await page.locator('[data-myday-drawer]').count()) === 0) return;
+  await page.keyboard.press('Escape');
+  await page.locator('[data-myday-drawer]').waitFor({ state: 'detached', timeout: 5_000 });
+}
+
 /** Click block `id` at its centre as drawn; whether that selected it. */
 async function clickCentre(page: Page, id: string): Promise<boolean> {
+  await dismiss(page);
   const el = page.locator(`[data-block-id="${id}"]`);
   await el.scrollIntoViewIfNeeded();
   const box = await el.boundingBox();
@@ -347,13 +358,16 @@ void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
       if (!ok) problems.push(problem);
     };
     try {
-      for (const width of [1440, 390]) {
+      // 901: the narrowest window with this Timeline. At 900 and under a phone
+      // has the vertical one (LAI-518), and `my-day-phone.test.ts` measures it.
+      for (const width of [1440, 901]) {
         await h.page.setViewportSize({ width, height: 900 });
         await settle(h.page);
         for (const theme of ['light', 'dark']) {
           await setTheme(h.page, theme);
           for (const zoom of ['fit', '1', '2']) {
             const where = `${String(width)} px, ${theme}, zoom ${zoom}`;
+            await dismiss(h.page);
             await h.page.locator(`[data-zoom="${zoom}"]`).click();
 
             // Seen and picked out: each block is the one on top at its own centre.
@@ -444,21 +458,20 @@ void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
             };
             for (const b of picked) selection(b, false);
 
-            // The positive controls: where there is room, chips, labels and edges are drawn.
-            const named = (id: string): Drawn | undefined => blocks.find((b) => b.id === id);
+            // No block draws a count pill: the design keeps a block's counts in
+            // its tooltip (LAI-510), so nothing can run into anything here.
             check(
-              named('zl')?.chipText === '4p 2c',
-              `${where}: the short block standing alone lost its chip`,
+              blocks.every((b) => b.chip === null),
+              `${where}: a block draws a count pill: ${blocks.find((b) => b.chip !== null)?.chipText ?? ''}`,
             );
+            // The positive controls: where there is room, labels and edges are drawn.
+            const named = (id: string): Drawn | undefined => blocks.find((b) => b.id === id);
             if (zoom !== 'fit') {
               check(named('h1')?.label === CARD_B.key, `${where}: the hour lost its label`);
               check(named('k1')?.label === CARD_A.key, `${where}: three at once lost k1's label`);
             }
             if (zoom === '2') {
-              check(named('z10')?.chipText === '12p 2c', `${where}: z10 lost its chip`);
               check(named('z10')?.label === CARD_A.key, `${where}: z10 lost its label`);
-              check(named('z7')?.chipText === '3p 0c', `${where}: z7, with room, lost its chip`);
-              check(named('f1')?.chipText === '1p 5c', `${where}: f1, with room, lost its chip`);
             }
             // Past the floor, only the block is drawn: its own row, clicked above.
             for (const id of PAST_THE_FLOOR) {

@@ -205,11 +205,139 @@ export const ACTIVITY_TYPES = [
   'task.stale_flagged',
   'invite.expired',
   'meeting_review.expired',
+  // D-114 item 7, LAI-535: a task's selected agent set, changed or cleared —
+  // one verb for every direction, as `task.assigned` is for the assignee. Not
+  // `task.updated`: "when was this asked of that agent, and by whom" is the
+  // question, and §4.8's test is that a reader need not open a payload.
+  // Dotted like every verb here; the proposal's `agent_selected` is this one.
+  // Three owners (CLAUDE.md §4.4): §4.8's row, this, and LAI-538's mirror.
+  'task.agent_selected',
+  // Proposal §4.2, LAI-541: an agent session's claim on a task lost its lease
+  // and the expiry scan marked it `expired` — written by the system (§3.4),
+  // because nobody did it. The generation it carried is invalid for good.
+  // Three owners (CLAUDE.md §4.4): §4.8's row, this, and LAI-543's mirror.
+  'task.claim_expired',
+  // Proposal §4.2, LAI-541: the agent whose claim expired took the task back
+  // explicitly, at `generation + 1`. Its own verb, not a quiet new claim:
+  // "who took it back, after what gap" is the question. Three owners as above.
+  'task.claim_reclaimed',
+  // §4.70 (LAI-545): a checkpoint registered on purpose — once per checkpoint.
+  // Verification writes no row; the state is on the checkpoint.
+  'task.checkpoint_saved',
+  // §4.73 (LAI-546): the hand-off's seven verbs — three owners each (LAI-544
+  // the rows, this the enum, LAI-549 the client mirror). Each is its own verb
+  // because "who handed this over, to whom, and when" is the question.
+  'task.handoff_offered',
+  'task.handoff_approved',
+  'task.handoff_accepted',
+  'task.handoff_declined',
+  'task.handoff_cancelled',
+  'task.handoff_expired',
+  'task.recovered',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
 export const TOKEN_SCOPES = ['full', 'read_only'] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
+
+/**
+ * A registered agent's status (§4.63, D-114). `revoked` is terminal: a revoked
+ * agent's tokens are refused before any handler runs, and nothing reactivates it.
+ */
+export const AGENT_STATUSES = ['active', 'revoked'] as const;
+export type AgentStatus = (typeof AGENT_STATUSES)[number];
+
+/**
+ * An agent's grant on one project (§4.64, D-114): the same two words a token's
+ * scope uses, because it narrows the same way — `read_only` keeps the reads.
+ */
+export const AGENT_GRANT_SCOPES = TOKEN_SCOPES;
+export type AgentGrantScope = TokenScope;
+
+/**
+ * What a `handoff_offers` row offers (§4.73): a `work_request` (selecting an
+ * agent, LAI-535), a `handoff` (the live claim's holder offers the task on)
+ * or a `recovery` (the system offers a task whose claim expired; LAI-546).
+ */
+export const HANDOFF_OFFER_KINDS = ['work_request', 'handoff', 'recovery'] as const;
+export type HandoffOfferKind = (typeof HANDOFF_OFFER_KINDS)[number];
+
+/**
+ * An offer's life cycle (§4.73). An offer needing approval starts
+ * `pending_approval`, every other `open`; those two are **live**, the other
+ * four terminal.
+ */
+export const HANDOFF_OFFER_STATES = [
+  'pending_approval',
+  'open',
+  'accepted',
+  'declined',
+  'cancelled',
+  'expired',
+] as const;
+export type HandoffOfferState = (typeof HANDOFF_OFFER_STATES)[number];
+
+/** The live offer states (§4.73): the partial unique index's predicate. */
+export const LIVE_OFFER_STATES = [
+  'pending_approval',
+  'open',
+] as const satisfies readonly HandoffOfferState[];
+
+/**
+ * Why a live offer closed other than by its receiver or the clock (§4.73
+ * `closed_reason`, LAI-546).
+ */
+export const HANDOFF_CLOSED_REASONS = [
+  'withdrawn',
+  'reclaimed',
+  'selection_changed',
+  'task_closed',
+  'agent_revoked',
+] as const;
+export type HandoffClosedReason = (typeof HANDOFF_CLOSED_REASONS)[number];
+
+/**
+ * A claim's life (proposal §4.2, §4.66, LAI-541). `active` and `paused` are
+ * **live** — at most one live claim per task, by a partial unique index — and
+ * the other three are terminal. `expired` is written only by the lease scan
+ * (and by a heartbeat that finds its lease already lapsed), and **nothing
+ * moves a claim out of it**: the explicit reclaim inserts a new row.
+ * `paused` and `transferred` are LAI-546's hand-off states, listed now so
+ * adding them is not a rebuild of a table with rows in it.
+ */
+export const TASK_CLAIM_STATES = [
+  'active',
+  'paused',
+  'released',
+  'expired',
+  'transferred',
+] as const;
+export type TaskClaimState = (typeof TASK_CLAIM_STATES)[number];
+
+/**
+ * A checkpoint ref's state, and the checkpoint's — its newest ref's (§4.70,
+ * §4.71, D-116 item 4, LAI-545). Derived from the **set** of signed push
+ * transitions seen for the ref, never from their arrival order; `uncertain`
+ * and `ref_deleted` never become `verified` again. Only `verified` may be
+ * offered or accepted (D-116 item 6).
+ */
+export const CHECKPOINT_VERIFICATIONS = [
+  'pending',
+  'verified',
+  'ref_deleted',
+  'uncertain',
+] as const;
+export type CheckpointVerification = (typeof CHECKPOINT_VERIFICATIONS)[number];
+
+/** The states that hold a task (§4.66): the partial unique index's predicate. */
+export const LIVE_CLAIM_STATES = ['active', 'paused'] as const satisfies readonly TaskClaimState[];
+
+/**
+ * Why an agent session ended (§4.65, LAI-541): the agent said so, or its
+ * agent was revoked (D-114 item 2: revoking an agent ends its sessions).
+ */
+export const AGENT_SESSION_END_REASONS = ['ended', 'agent_revoked'] as const;
+export type AgentSessionEndReason = (typeof AGENT_SESSION_END_REASONS)[number];
 
 export const AI_PROVIDERS = ['anthropic', 'openai_compatible'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
@@ -397,6 +525,26 @@ export type TimeDraftState = (typeof TIME_DRAFT_STATES)[number];
  */
 export const TIME_ENTRY_SOURCES = ['draft', 'manual', 'import'] as const;
 export type TimeEntrySource = (typeof TIME_ENTRY_SOURCES)[number];
+
+/**
+ * §4.48's `kind` (D-108, LAI-897; the design's eight since LAI-516): what a
+ * typed entry was — building, a meeting, thinking — chosen by the person;
+ * null for a confirmed draft, an import, or an entry nobody typed a kind
+ * for. The Timeline colours a block by it. `work` is what the design calls
+ * *Building*. Migration 0060 mapped the first list onto this one: call →
+ * meeting, planning → thinking, learning → research, other → work.
+ */
+export const TIME_ENTRY_KINDS = [
+  'work',
+  'meeting',
+  'thinking',
+  'research',
+  'pairing',
+  'review',
+  'support',
+  'admin',
+] as const;
+export type TimeEntryKind = (typeof TIME_ENTRY_KINDS)[number];
 
 /** §4.49's `change` (LAI-787): what a revision of an entry recorded. */
 export const TIME_REVISION_CHANGES = ['created', 'edited', 'deleted'] as const;

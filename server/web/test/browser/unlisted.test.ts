@@ -11,6 +11,7 @@
  * triage done here.
  */
 
+import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, reply, until, type ApiStub, type StubCall } from './harness.ts';
@@ -207,11 +208,9 @@ void describe('the compact unlisted page', () => {
     const h = await open('/inbox?tab=unlisted', server([...QUEUE]).stub);
     try {
       await h.page.locator('.unl-line').first().waitFor({ timeout: 20_000 });
-      h.page.once('dialog', (dialog) => {
-        void dialog.accept();
-      });
       await h.page.locator('.unl-line', { hasText: 'A note to dismiss.' }).click();
       await h.page.locator('.unl-dismiss').click();
+      await answerConfirm(h.page, true);
 
       await h.page.waitForFunction(
         () => document.querySelectorAll('.unl-line').length === 2,

@@ -78,6 +78,8 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'token.revoke_own': 'Generate, read and revoke own tokens',
   'token.list_any': "List / revoke anyone's token",
   'token.revoke_any': "List / revoke anyone's token",
+  'agent.read_own': 'Read own agents',
+  'agent.manage_own': 'Register and manage own agents',
   'unlisted.log_own': 'Log own unlisted work',
   'heartbeat.send_own': 'Send own heartbeat',
   'audit_log.export': 'Export audit log',
@@ -118,6 +120,14 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'task.create': 'Create tasks',
   'task.write': 'Edit / move any task',
   'task.claim': 'Claim a task (start_working)',
+  'task.checkpoint.create': 'Save a checkpoint on a task your agent holds',
+  'task.checkpoint.retag': 'Re-tag a checkpoint one of your agents saved',
+  'task.handoff.offer': 'Offer a task your agent holds to another agent',
+  'task.handoff.approve': 'Approve a cross-owner hand-off',
+  'task.handoff.accept': 'Accept a hand-off or recovery offer',
+  'task.handoff.decline': 'Decline a hand-off or recovery offer',
+  'task.handoff.cancel': 'Cancel a hand-off offer',
+  'project.handoff_policy.edit': "Edit the project's hand-off policy",
   'task.assign_other': 'Assign a task to someone else',
   'comment.create': 'Add comment',
   'comment.edit': 'Edit / delete comment',
@@ -161,6 +171,8 @@ const SOMEONE_ELSE = 'someone-else';
  *    (LAI-957).
  *  - `comment.edit`, `comment.delete` — a Lead any comment, a Member their own.
  *  - `task.delete` — a Lead any task, a Member one they created.
+ *  - `task.handoff.approve` — a Lead any, a Member a task assigned to them.
+ *  - `task.handoff.cancel` — a Lead any offer, a Member one their agent sent.
  */
 export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionCondition>>> = {
   'user.invite': {
@@ -217,6 +229,16 @@ export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionC
     text: 'Tasks they created only',
     holds: (userId) => ({ createdBy: userId }),
     fails: () => ({ createdBy: SOMEONE_ELSE }),
+  },
+  'task.handoff.approve': {
+    text: 'Tasks assigned to them only',
+    holds: (userId) => ({ ownerId: userId }),
+    fails: () => ({ ownerId: SOMEONE_ELSE }),
+  },
+  'task.handoff.cancel': {
+    text: 'Offers their own agents sent only',
+    holds: (userId) => ({ ownerId: userId }),
+    fails: () => ({ ownerId: SOMEONE_ELSE }),
   },
 };
 
@@ -275,6 +297,22 @@ export interface PermissionsView {
      */
     projects: ProjectGrants[];
   };
+}
+
+/**
+ * The projects this credential may reach: a token's pin, and for a registered
+ * agent's token its grants as well (D-114) — the agent is pinned to them.
+ */
+function projectScope(actor: ResolvedActor): readonly string[] | null {
+  const token = actor.token;
+  if (token === undefined || token === null) return null;
+  const agent = token.agent;
+  if (agent === undefined || agent === null) return token.projectIds;
+
+  const granted = [...agent.grants.keys()];
+  return token.projectIds === null
+    ? granted
+    : granted.filter((id) => token.projectIds?.includes(id) === true);
 }
 
 /** A project id no real project has; project actions need one to be asked. */
@@ -377,7 +415,7 @@ export function permissionsCatalogue(actor: ResolvedActor | null): PermissionsVi
     ];
   });
 
-  const whitelist = actor.token?.projectIds ?? null;
+  const whitelist = projectScope(actor);
 
   return {
     org_roles: [...ORG_ROLES],

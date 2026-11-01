@@ -86,7 +86,14 @@ const ROUND_2 = {
   task_id: 't1',
   number: 2,
   finished_by: 'u1',
-  client_name: 'codex',
+  // The client's own word, which no screen shows as the agent (D-120).
+  client_name: 'omnigent on Belka',
+  agent: { id: 'ag1', harness: 'omnigent', device_label: 'Belka' } as {
+    id: string;
+    harness: string;
+    device_label: string | null;
+  } | null,
+  by_registered_agent: true,
   summary_md: 'Fixed the lint run',
   commits: [
     { id: 'e1', ...claimed, sha: 'abcdef0123456789abcdef0123456789abcdef01', message: 'fix: lint' },
@@ -109,6 +116,10 @@ const ROUND_1 = {
   ...ROUND_2,
   id: 'r1',
   number: 1,
+  // A legacy token finished round 1: no registered agent to name.
+  client_name: 'codex-mcp-client',
+  agent: null,
+  by_registered_agent: false,
   commits: [],
   branch: null,
   pull_request: null,
@@ -224,7 +235,9 @@ void describe('the Review page', () => {
       assert.match(await worked.innerText(), /PR/);
       assert.match(await worked.innerText(), /✓ 1 passed/);
       assert.match(await worked.innerText(), /✗ 1 failed/);
-      assert.match(await worked.innerText(), /codex/);
+      // The agent as harness and device (D-120), never the client's own word.
+      assert.match(await worked.innerText(), /Omnigent · Belka/);
+      assert.doesNotMatch(await worked.innerText(), /omnigent on Belka/);
       assert.match(await worked.innerText(), /round 2/);
       assert.match(await rows.first().innerText(), /no proof/);
       assert.match(await rows.first().innerText(), /1 d/);
@@ -268,6 +281,16 @@ void describe('the Review page', () => {
       const link = detail.locator('a.ev-link');
       assert.equal(await link.getAttribute('href'), 'https://github.com/PawanSirsat/Laika/pull/42');
       assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
+      // Who finished each round: the registered agent by its pair; the
+      // legacy token's round by its client word, marked unregistered.
+      assert.equal(
+        await detail.locator('.ev-round[data-round="2"] .ev-agent').innerText(),
+        'Omnigent · Belka',
+      );
+      assert.equal(
+        await detail.locator('.ev-round[data-round="1"] .ev-agent').textContent(),
+        'unregistered agent (codex-mcp-client)',
+      );
       // Round 1 is kept, folded.
       const earlier = detail.locator('details.ev-earlier');
       assert.equal(await earlier.getAttribute('open'), null);

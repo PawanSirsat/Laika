@@ -1,4 +1,5 @@
 import { everyPage } from '../../../api/every-page.ts';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
@@ -35,6 +36,7 @@ export interface TokensScreenProps {
  * a personal settings page into an admin surface.
  */
 export function TokensScreen({ me }: TokensScreenProps) {
+  const confirm = useConfirm();
   const [tokens, setTokens] = useState<readonly TokenView[] | undefined>(undefined);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -129,9 +131,18 @@ export function TokensScreen({ me }: TokensScreenProps) {
   };
 
   const revoke = (token: TokenView): void => {
-    if (!window.confirm(`Revoke “${token.name}”? Anything using it stops working immediately.`)) {
-      return;
-    }
+    void confirm({
+      title: `Revoke “${token.name}”?`,
+      body: 'Anything using it — an agent, a script, your editor — stops working immediately, and it cannot be restored. You can mint a new one.',
+      confirmLabel: 'Revoke token',
+      danger: true,
+      icon: 'warning',
+    }).then((yes) => {
+      if (yes) revokeNow(token);
+    });
+  };
+
+  const revokeNow = (token: TokenView): void => {
     revokeToken(token.id)
       .then(() => {
         reload();

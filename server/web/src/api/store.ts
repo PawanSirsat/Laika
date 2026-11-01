@@ -1,3 +1,4 @@
+import { resetAgentWrites } from './agent-writes.ts';
 import { createActivityStore } from './activity-store.ts';
 import { listProjectActivityPage } from './activity.ts';
 import { observeStreams } from './event-stream.ts';
@@ -127,4 +128,7 @@ export function setStoreUser(userId: string | undefined): void {
   taskStore.reset();
   statusStore.reset();
   activityStore.reset();
+  // Agent selections in flight were the last user's (LAI-538): abort them,
+  // and never let one hold a picker in the next session.
+  resetAgentWrites();
 }

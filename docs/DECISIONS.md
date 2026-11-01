@@ -5818,3 +5818,728 @@ re-issue/copy, invite expiry and space, org rename, grant-following gates).
    D-104 owner rules) is kept.
 3. **Gates follow the server's permissions** (LAI-970), never the org role,
    except D-104 item 2's owner-only role picker and transfer.
+
+## D-108 — A typed entry says what it was: a kind, a title, a description; a range is dragged on the Timeline; the block wears the kind's colour (LAI-897)
+
+**Date:** 2026-10-23 · **By:** CHIEF (Belka), on the owner's instruction
+
+The owner, 2026-10-23: *"one feature where I don't need a card: we can also
+manually, in the timeline, by selecting the time, add [an entry]; also we
+can add the title and description for those we don't have a card; also we
+can add the card in that if we want. Also we need the type, like meetings
+and other types, and depending on that the timeline card colour and theme
+change."* Asked, the owner chose eight types and the form beside the
+Timeline.
+
+1. **Eight kinds**, one list on the server (`TIME_ENTRY_KINDS`) mirrored by
+   the web and held equal by a test: `meeting`, `call`, `review`,
+   `planning`, `learning`, `support`, `admin`, `other`. A block on the
+   Timeline is coloured by its kind, in both themes, from tokens named for
+   the kind. A kind is never inferred: a confirmed draft, an import and an
+   entry nobody typed a kind for carry `null` and keep today's look.
+2. **A title and a description** are the person's own words for an entry,
+   120 and 2000 characters; `note` stays as it is, so nothing already
+   written moves. With no card the title stands where the key would be and
+   the description under it; with a card the key stays on top and the
+   colour follows the kind. The web asks for a title only when there is no
+   card; the server does not require one, so the CLI and older bodies still
+   work.
+3. **A drag on an empty stretch of the You row makes a range**, snapped to
+   five minutes and clipped to the free stretch between confirmed blocks
+   (the same bound an edge drag has); a drag that starts on a confirmed
+   block makes nothing. The server's `409 overlaps_confirmed` remains the
+   backstop and is shown as the server said it. A range is never time until
+   the person adds the entry.
+4. **The form opens beside the Timeline**, in the editor panel, with the
+   range in view; a gap's *Add time here* opens the same form. The Add time
+   form under the list carries the same fields.
+5. **Solidtime gets the title, else the note**, for an entry with no card;
+   a card's entry stays `KEY title`. The kind is not sent: Solidtime has no
+   field for it.
+6. **Revisions copy all three**, and a confirmed draft re-confirmed or a
+   Solidtime pull leaves them as they are: those paths never owned them.
+
+
+## D-109 — CHIEF's ids run out at LAI-999; CHIEF files from LAI-500 – LAI-599, CORE's second block, which CORE never used
+
+**Date:** 2026-10-24 · **By:** CHIEF (Belka), on the owner's instruction to
+build the My day redesign (D-110)
+
+The sweep CLAUDE.md §3 prescribes — every local and `origin` ref, the
+`.tasks/` history, every commit subject — found all fifty of `LAI-950` –
+`LAI-999` (D-100) in use on 2026-10-24, two days after D-100 granted them, and
+found **no** id in `LAI-500` – `LAI-599` anywhere. CORE's second block (D-036)
+was never drawn on: CORE's first block stops at `LAI-181`, and the CORE
+worktree was removed on 2026-10-08.
+
+1. **CHIEF files from `LAI-500` – `LAI-599`.** CORE keeps `LAI-100` –
+   `LAI-199`, eighteen of which are free, which is more than CORE has filed
+   since September.
+2. The laptop split is unchanged: Strelka's `LAI-300` – `LAI-399` stays
+   Strelka's; this block is Belka's.
+3. CLAUDE.md §3's id table says so. Nothing else moves.
+
+**Why not four digits:** every id in the repo is three digits, and the
+tooling guards read `LAI-\d{3}` (`schema-spec-drift.test.ts`,
+`policy-spec-drift.test.ts`). A block that exists beats a format change.
+
+## D-110 — My day is rebuilt to the owner's `MyDay.dc.html`: a server-backed timer, a note for your manager, an overview, typed time fields, tabs, a tray, a phone drawer; what was simplified away (LAI-500 – LAI-506)
+
+**Date:** 2026-10-24 · **By:** CHIEF (Belka), on the owner's instruction:
+*"implement this in My day, but first go through the whole page; before
+taking any decision ask me all questions; I want all the features; I already
+simplified things but you simplify more."*
+
+The owner's design is `MyDay.dc.html` in the design project (with
+`support.js` and `timeline-core.js`). Asked twelve questions, the owner chose:
+
+1. **A timer is server-backed** (LAI-500): start with a task, a kind and a
+   title, all optional; pause; resume; stop. One per person, kept in
+   `time_timers` (§4.61), so it survives a reload and shows on every device.
+   Stopping writes a confirmed entry through the same path as `POST
+   /me/time-entries`, `source: 'manual'` — `time_entries.source` carries a
+   CHECK that SQLite cannot widen without a rebuild, and the title and kind
+   already say what it was. A timer that ran past midnight in the person's
+   zone saves as an **untimed** entry on the day it started, the minutes it
+   ran, and the answer says so: the minutes are what is known; a span over
+   two days is not one entry. A stop whose span overlaps confirmed time is
+   refused `409 overlaps_confirmed` and the timer stays; the person edits
+   or discards. Under a minute → `422 timer_too_short`, timer kept. The
+   timer's actions are behind `time_entries.write_own`: a timer is nothing
+   but an own entry in the making, and a new action would distinguish
+   nothing.
+2. **A note for your manager** (LAI-501): one per person per day,
+   `time_day_notes` (§4.62), 500 characters, written with *Confirm day* or
+   alone; read by the person, and by owners and admins through
+   `GET /people/:id/time`, which already answers them the person's own view.
+   Never a plain member's.
+3. **No calendar.** The design's Calendar tab and "On your calendar" hint
+   wait for a calendar source; a later task.
+4. **Overview is Day and Week** from the data the screen already loads; no
+   Range scope and no range endpoint. By type and by task are Day only,
+   because the week payload carries minutes, not kinds, and the tab says so.
+5. **The eight kinds stay** (D-108). The design's off-screen presets map onto
+   them: Brainstorm and Whiteboarding → planning, Reading docs → learning,
+   Helping a teammate → support, Interview → meeting, Call → call.
+6. **Tabs below the Timeline**: Overview · To review · Confirmed, rows
+   grouped Morning / Afternoon / Evening, no paging.
+7. **The task field searches existing tasks** by key or title, over the
+   tasks the person may read, filtered in the browser as the board does; no
+   task is created from the time editor.
+8. **Entries with no set time sit in a tray**; tapping one opens the
+   editor's time picker. No drag-and-drop.
+9. **Typed Start / End / Length**, length chips, *Ends now*, and a
+   free-stretch bar in the editor's WHEN section.
+10. **On a phone** the editor is a bottom drawer and the header is ‹ day ›
+    with a letter week strip; the horizontal Timeline stays.
+11. **Simplified away**, the owner agreeing to each: the *Fill gaps* button
+    (the Gaps figure already opens the first gap), the "Likely thinking time"
+    hint, the *Who can see this* popover (the header's one line stays), and
+    bulk *Assign task* (General stays the one bulk target).
+12. **One task per piece, released as each lands**: LAI-500 timer (server),
+    LAI-501 day note (server), LAI-502 header, LAI-503 confirm summary,
+    LAI-504 editor, LAI-505 lists and overview, LAI-506 phone drawer.
+
+## D-111 — Developer onboarding is one page and two prompts: a machine prompt and a project prompt (LAI-507)
+
+**Date:** 2026-10-24 · **By:** CHIEF (Belka), on the owner's decisions after
+the onboarding analysis of the same day
+
+The owner could not explain the Connect flow to a new developer: a Developer
+access page with a card that previewed a wizard on another address, four
+*optional* entries beside the steps, and one prompt that both installed the
+machine and wrote a block into whatever repo it was pasted in — so every new
+project looked like a fresh install, and nothing on the page said what was
+once per machine and what was once per project.
+
+1. **Developer access is four tabs**: Connect · Projects · Activity · Tokens.
+   The wizard is the Connect tab, embedded; `/developer/connect` and
+   `/connect` redirect to it keeping `?agent=` and `?step=`. The compact card
+   and the wizard's *Optional* rail go.
+2. **Two prompts.** *Set up this machine* installs, checks the board answers,
+   and turns on local activity when the organisation collects it (D-102
+   amended); it writes into no repository and skips the install when `laika
+   whoami` already answers. *Add this project* writes the project block into
+   the agent's instructions file and nothing else. Every block says which it
+   is: *Once per machine* or *Once per project*.
+3. **The project block stays optional.** The board sends the working rules to
+   every agent as MCP instructions; the block adds the project, the key
+   prefix and branch naming. It is required only for the `laika-repos`
+   activity scope.
+4. **Invite a teammate leaves Developer access.** It is Organisation →
+   People's. *What agents can do* folds under the wizard's last step.
+5. The wording that still described a personal *Share my local activity*
+   switch (profile, the `Switch` doc, the root README, SPEC §8 and §11.4.2.1)
+   is corrected: the organisation's switch alone decides (D-102 amended).
+
+**Why one task:** CHIEF built it on the owner's instruction, and the web, docs
+and README halves are named edits of one task rather than four files for four
+halves. Filed as LAI-997, the last id of D-100's block; renumbered to LAI-507
+the same day when `master` turned out to hold another session's LAI-997 —
+the first id used from D-109's block.
+
+## D-112 — My day is the owner's *Laika My Day* design as it is: the editor in a drawer, TimelineV2 and its phone twin, the design's eight kinds, drafts that may lie over confirmed time, and a time wheel (LAI-510 – LAI-518)
+
+**Date:** 2026-10-25 · **By:** CHIEF (Belka), on the owner's instruction:
+*"go through this prototype, understand it, click on everything, check the
+positions and responsiveness … match that, do the same as it is"*, and the
+owner's answers: *"I want as per design, also want drag, I want zoom, also
+want side cards to appear when tapped, kinds I want."* Released on *"perfect,
+push everything on master now"* after the owner reviewed it running locally.
+
+The reference is `docs/design/MyDay.dc.html`, `TimelineV2.dc.html` and
+`TimelineMobileV2.dc.html` (LAI-510). It amends D-110 where the two differ:
+
+1. **The editor is a drawer on the right, closed on load** (LAI-511); it
+   opens on picking a block, a gap, a range, a tray item or *Add time*. Under
+   1280px it folds the app's sidebar; at 900px and under it is a bottom sheet.
+   *Agent time* and *On your plate* open in the same drawer from a header
+   button — the side cards appear when tapped.
+2. **The Timeline is TimelineV2** (LAI-512): blocks drag to move and resize,
+   a tray item drops onto the track, Alt+arrows move a block. The zoom
+   stepper and row height stay beside *Fit · 1× · 2×* (the owner: *I want
+   zoom*). A block's prompts and commits are in its tooltip, not a pill on it.
+3. **A gap is five minutes or more** (the design's `gaps()`), not twenty.
+   A drag that begins on a gap draws a range, as one on empty track does.
+4. **A draft may lie over confirmed time** — dragged, resized or typed —
+   as the design's `check` lets it; only a confirmed block or a tray item is
+   refused there. Confirming a draft where it would count confirmed time
+   twice is still refused, `409 overlaps_confirmed`. This amends the probe of
+   LAI-831's review round 1, which refused the move itself.
+5. **The design's eight kinds replace D-108's** (LAI-516): work, meeting,
+   thinking, research, pairing, review, support, admin. Migration 0060 maps
+   call → meeting, planning → thinking, learning → research, other → work, in
+   place, keeping every row. Overview's *By kind* has no General slice: a
+   block with no kind is *Building*, in the design's order and words.
+6. **Restored from D-110 item 11**: *Fill gaps*, the *Who can see this*
+   popover (truthful to D-102), and bulk *Assign task*. Overview gains the
+   *Range* scope over the week's days (D-110 item 4).
+7. **On a phone** the page is the design's (LAI-518): the bar, the day row,
+   the letter week, the summary with Confirm, and the vertical Timeline.
+8. **Start, End and Length take an iPhone-style time wheel** under the field
+   (the owner's ask the same day), on the five-minute grid; typing still
+   works, and on a phone the wheel is the only way in.
+9. **Not built, filed**: a *Not work time* block kept on the day with *Back
+   to review* (LAI-519), the AGENTS lane per agent with *Expand* (LAI-520),
+   the phone's Viewing list as drawn (LAI-521). No calendar still (D-110
+   item 3).
+
+## D-113 — Time recorded at the same time is allowed: nothing on My day or the server refuses a write for overlapping confirmed time (LAI-528)
+
+**Date:** 2026-10-26 · **By:** CHIEF (Belka), on the owner's instruction
+
+The owner hit *"Overlaps LAIKA-754, 4:41–4:42 PM · moved back"* moving a
+confirmed block on My day — the block in the way was a one-minute confirmed
+entry, about three pixels wide at 1× — and showed the same day's 12–2 AM,
+eight confirmed entries at once from agents working in parallel:
+
+> "then what is this — we are recording the task at the same time,
+> simultaneously, then why is it not allowing the drag and drop. I know it's
+> an issue, resolve that."
+
+The refusal was LAI-831 review round 2's clock rule: every stretch of a
+person's overlapping entries held to its wall clock, `409
+overlaps_confirmed`, enforced by the server on a create, an edit, a confirm,
+*Confirm day*, a timer's stop and an Undo, and mirrored by My day's drop
+check, a confirmed block's edge limits, the editor's typed times and a range
+drawn on the track. Asked which way to resolve it, the owner restated that
+the refusal itself is the issue.
+
+1. **A person's confirmed entries may overlap one another.** None of those
+   writes is refused for it; `409 overlaps_confirmed` is gone, and so is
+   D-112 item 4's refusal of a draft's confirm over confirmed time.
+2. **On My day a block moved or resized, a *No set time* item dropped, a
+   typed Start, End or Length, and a range dragged on the track all land
+   over confirmed time.** Only crossing midnight bounces a drop. This
+   departs from the design's `check` (`TimelineV2.dc.html`), which refused a
+   confirmed block or a tray item there; the owner's instruction is later
+   and specific.
+3. **What still holds**: a block keeps no more minutes than its own span
+   (`422 minutes_over_span`) and a person's day holds at most 1440 minutes
+   (`422 day_full`).
+4. **Consequence, accepted**: overlapping entries each count their own
+   minutes, so a day's confirmed total may exceed the hours its clock covers,
+   and the collector's draft of a session a timer already recorded is no
+   longer refused at confirm — the person sees both and decides.
+
+## D-114 — A registered agent is a named identity owned by one person, acting through its own credential, never with more access than its owner
+
+**Date:** 2026-10-28 · **Status:** approved by the owner on 2026-10-29,
+recorded from Pawan's own GitHub account on PR #99:
+<https://github.com/PawanSirsat/Laika/pull/99#issuecomment-6498255781>
+
+**In one line:** an agent becomes something Laika can name, grant, revoke and
+credit with its actions, and it stays its owner's agent throughout.
+
+**Context.** D-010 makes an agent "that user's token". So two agents run by
+one person cannot be told apart, scoped separately, revoked separately, or
+fenced from each other. Hand-off (LAI-532) needs to know which agent holds a
+task, so the agent has to be something the board can name.
+
+**Decision.**
+
+1. **What Laika records.** Laika keeps **registered agents**. Each one has:
+   - exactly one owner, who is a human user;
+   - a display name;
+   - a harness and a device label, both self-reported and shown as
+     self-reported;
+   - grants per project, each `read_only` or `full`;
+   - a status, `active` or `revoked`.
+2. **Credentials.** Each agent signs in with **its own tokens**.
+   - **Rotating** one token mints a new token and revokes the old one in one
+     step. The agent stays the same agent, and its history is kept.
+   - **Revoking the agent** disables all of its tokens and ends all of its
+     sessions. Every open event stream it holds closes at once.
+   - Neither action touches the owner or the owner's other agents.
+3. **Effective access.** What an agent may do is the **intersection** of:
+   - the owner's current permissions;
+   - the agent's grant for the project;
+   - the token's scope and project pin;
+   - for **delegation and transfer actions only**, the project's hand-off
+     policy.
+
+   The hand-off policy governs who may be selected, offered work, or accept a
+   transfer. It never narrows unrelated permitted actions such as reading a
+   task or commenting on it. `can()` enforces all of this on every REST route
+   and every MCP tool.
+4. **Attribution.** Every action records **both** the owner's `user_id` and
+   the `agent_id`. Laika gets the agent from the token's `agent_id` and nothing
+   else. A request cannot name, claim or assert an agent identity through a
+   header, a parameter or a body field.
+5. **D-010 still holds.** An agent still acts as its owner, under its owner's
+   role. This decision only makes the agent distinguishable, and lets its
+   access be narrowed.
+6. **Legacy tokens.** Tokens issued before this decision keep working, with no
+   agent attached. Their past activity is never back-filled with an invented
+   agent; the UI shows such rows as "agent (unregistered token)". A legacy
+   token:
+   - **cannot impersonate** a registered agent, because there is no field that
+     would let it;
+   - **cannot bypass a session claim**: when a registered agent's session holds
+     a task's active claim, a legacy token's task change is refused exactly
+     like any non-holder's (LAI-541).
+   Agent grants do not narrow a legacy token, because it has no agent; it
+   keeps exactly the access it has today. The rollout plan (LAI-560) proposes
+   a date after which new legacy tokens are discouraged in the UI.
+7. **Three separate facts.** The **human assignee**, the **selected agent**
+   and the **active claim** are kept apart.
+   - Selecting an agent creates a work request. It does not claim the task, it
+     does not start a process, and it does not change the human assignee.
+   - Changing the human assignee is always a separate, explicit act.
+
+**Consequences.**
+
+- A stolen agent token can act as that agent, within that agent's grants. The
+  containment is:
+  - narrow grants;
+  - storing the credential only on the device;
+  - expiry and rotation;
+  - immediate revocation, which also closes streams (LAI-539);
+  - the activity log;
+  - rate limits.
+- `can()` grows an agent-grant step, inside the token-narrowing it already
+  does (LAI-534).
+- The SPEC changes this needs are made by LAI-534 as named crossings: the new
+  §4 tables, §4.9, §4.8, §3 and §6.4.
+
+## D-115 — A checkpoint is work an agent registers on purpose, not a heartbeat; D-005 stands unchanged
+
+**Date:** 2026-10-28 · **Status:** approved by the owner on 2026-10-29,
+recorded from Pawan's own GitHub account on PR #99:
+<https://github.com/PawanSirsat/Laika/pull/99#issuecomment-6498255781>
+
+**In one line:** heartbeats stay `{repo, branch, timestamp}`. A checkpoint is
+a deliberate save, and it carries only what the person taking over the work
+needs.
+
+**Decision.**
+
+1. **Created on purpose.** A checkpoint exists only because an agent or its
+   helper took an explicit action, inside a task the agent has claimed.
+2. **Consent for automatic saves.** **Automatic** checkpointing, where a hook
+   saves after tool activity or at a session boundary, needs **explicit consent
+   at setup**. That consent is recorded on the agent, with who gave it and
+   when. Once given, hooks save without asking each time. Withdrawing it stops
+   the automatic saves; manual checkpoints keep working.
+3. **What a checkpoint holds.**
+   - the repo, the branch and the durable checkpoint ref;
+   - the full commit SHA;
+   - the files changed, with line counts;
+   - a structured continuation note: work done, next step, decisions, open
+     questions, and known failing tests or builds;
+   - the commit that note describes;
+   - the context revision;
+   - the session it came from and its claim generation;
+   - when it was created.
+4. **What it never holds.** The schema has **no field** for source contents,
+   diffs, prompts or transcripts.
+5. **The continuation note is free text, so it is the risk.**
+   - Agents are told not to put secrets or copied sensitive content in it.
+   - The helper checks the note against the same secret patterns it uses for
+     staging, and refuses a note that matches.
+   - This is a **mitigation, not a guarantee**: no automatic check can prove
+     that free text holds nothing sensitive. The note is shown only to people
+     who can read the task.
+6. **Kept apart, and labelled.** The mechanical manifest and the written note
+   are stored separately. A note that describes an older commit is labelled
+   **stale**, and a missing note is labelled **missing**.
+7. **Untrusted data.** Notes, branch names and repo content are never executed,
+   and never promoted into instructions.
+8. **Failed tests are allowed.** A failing test does not invalidate a
+   work-in-progress checkpoint. Its test status is shown as it is.
+9. **Retention.** Two separate things are cleaned up in two separate ways:
+
+   | | **Laika's checkpoint records** | **Git checkpoint tags** |
+   | --- | --- | --- |
+   | What they are | Rows on the server | Refs in the repository |
+   | When they go | A server retention job deletes them 90 days (configurable) after their task reaches Done or Cancelled | **Laika never deletes them** |
+   | What remains | Append-only activity rows that name a checkpoint keep its id and SHA | — |
+   | How they are cleaned up | Automatically, by that job | `laika agent checkpoints prune --dry-run` **lists** the tags past retention. It deletes nothing, in Laika or in Git. An operator deletes them deliberately (D-116). |
+
+**Consequences.** D-005's promise about presence does not change. The new
+data exists only because of a deliberate action or a consent the owner gave.
+It is scoped to one task, and anyone who can read that task can see it.
+
+## D-116 — A checkpoint is proved by signed push deliveries, judged per ref, and acknowledged by the receiver; Laika still never calls GitHub (D-083)
+
+**Date:** 2026-10-28 · **Status:** approved by the owner on 2026-10-29,
+recorded from Pawan's own GitHub account on PR #99:
+<https://github.com/PawanSirsat/Laika/pull/99#issuecomment-6498255781>
+
+**In one line:** signed deliveries tell the server that a commit *was*
+pushed. The supported helper confirms that it is *still* there before
+accepting it. When the server cannot tell what happened to a ref, it says so
+and blocks transfer until the ref is re-tagged.
+
+**Context.** D-083 keeps Laika from calling GitHub, but a checkpoint still has
+to be trustworthy: a receiver must never continue from a commit that never
+reached the remote.
+
+Three GitHub behaviours shape this decision:
+
+- GitHub creates no push event when more than three tags are pushed, or
+  deleted, at once.
+- A redelivery carries the original `X-GitHub-Delivery` id.
+- Failed deliveries are never redelivered automatically, and a person can
+  redeliver them only for 3 days.
+
+Sources:
+<https://docs.github.com/en/webhooks/webhook-events-and-payloads#push>,
+<https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks>,
+<https://docs.github.com/en/webhooks/using-webhooks/handling-failed-webhook-deliveries>,
+<https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-webhooks>.
+
+**Decision.**
+
+1. **Push, then register.**
+   - The helper pushes the work branch.
+   - It then pushes **one** lightweight tag, `laika-ckpt/<LAI-NNN>/<checkpoint-id>`,
+     at the checkpoint commit, **alone in its own `git push`**. GitHub creates
+     no event when more than three tags are pushed at once.
+   - It never creates an annotated tag. For an annotated tag the delivery's
+     `after` is the tag object's SHA, not the commit's, so the checkpoint would
+     become `uncertain` (step 4).
+   - Only then does the helper register the checkpoint. Registration is
+     idempotent by key, so a push that succeeded followed by a registration
+     that failed is simply retried.
+2. **Protecting tags.**
+   - Operators protect checkpoint tags with a tag ruleset that targets
+     `laika-ckpt/**/*` and enables **Restrict updates** and **Restrict
+     deletions**.
+   - The pattern needs `**` because a ruleset's `*` does not match `/`.
+   - A private repository needs GitHub Pro, Team or Enterprise Cloud to use
+     rulesets.
+   - Sources:
+     <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository>,
+     <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets>.
+   - A checkpoint tag is retained for 90 days after its task reaches Done or
+     Cancelled, the same period Laika keeps its own checkpoint records
+     (D-115).
+   - After that, an operator may delete the tag deliberately under the
+     ruleset's bypass. Laika never deletes one.
+3. **Proof.** A checkpoint is `verified` only by signed `push` deliveries for
+   the project's configured repo. It is never verified because an agent says
+   so.
+4. **Judging each ref, not reading arrival order.** Laika keeps every
+   delivered transition `before → after` for each checkpoint ref; the all-zero
+   SHA means "absent". From that set alone:
+
+   | The transitions seen for the ref | State |
+   | --- | --- |
+   | Exactly one, `0000→<checkpoint commit SHA>` | `verified` |
+   | That one, plus exactly one deletion `<checkpoint SHA>→0000` | `ref_deleted` |
+   | No transition yet | `pending` |
+   | Anything else (see below) | `uncertain` |
+
+   "Anything else" covers a ref that ends at a different SHA, an update, a
+   second creation, and a deletion with no creation seen.
+
+   The state depends only on which transitions have been seen, never on the
+   order they arrived in. Two further rules keep it that way:
+   - **`uncertain` is final for that ref.** A later delivery cannot turn it
+     back into `verified`. Only re-tagging (step 6) clears it, and it does so
+     through a new ref.
+   - **One delivery at a time per ref.** Deliveries for the same ref are
+     applied serially, inside one database transaction each, so concurrent
+     handlers cannot bring arrival order back in.
+5. **Repeats.**
+   - Laika records a delivery's `X-GitHub-Delivery` id **in the same
+     transaction** that applies its transition.
+   - A delivery that was recorded is ignored when it repeats.
+   - A delivery that failed before it was applied leaves no record. When it is
+     redelivered (redeliveries reuse the id), it is processed.
+6. **What the UI says.**
+
+   | State | Wording |
+   | --- | --- |
+   | `pending` | **"Verification pending"** |
+   | `pending` for more than 10 minutes (configurable) | **"Verification pending — no push notice from GitHub yet"**, also shown to owners and admins |
+   | `uncertain` | **"Save needs attention — GitHub's notices do not match a single clean save"** |
+
+   A `pending` or `uncertain` checkpoint can be neither offered nor accepted.
+   An automatic recovery offer uses the latest **verified** checkpoint, and
+   shows any newer one beside it as unverified.
+7. **Recovering a checkpoint that cannot be verified.**
+   1. **Redeliver.** A person with admin rights on the GitHub repository uses
+      *Redeliver* on the webhook's recent deliveries. This is possible only for
+      deliveries from the past 3 days. It fixes a delivery GitHub sent but
+      Laika did not apply.
+   2. **Re-tag.** At any time, and the only remedy after 3 days, for a
+      delivery that was never created, or for an `uncertain` ref: the agent,
+      or its owner, runs `laika agent checkpoint reverify <id>`.
+      - It pushes a **new** tag, `laika-ckpt/<LAI-NNN>/<checkpoint-id>-r<n>`,
+        at the same commit, alone in its own push.
+      - The new ref starts from "absent", so its own delivery can verify the
+        checkpoint.
+      - The server never calls GitHub to do this.
+   3. **Which ref counts.** A checkpoint's state is the state of its **newest**
+      ref (`-r<n>` if any), and the receiver fetches that ref.
+
+   As long as the webhook itself works, re-tagging always produces a fresh
+   delivery, so a pushed commit is never left unusable indefinitely. The one
+   case re-tagging cannot fix is a webhook that is down or misconfigured. Then
+   the operator repairs the webhook and re-tags.
+8. **What the receiver's SHA proves.**
+   - The **supported receiver helper**:
+     1. fetches the checkpoint's newest ref;
+     2. refuses locally, before sending anything, if the ref is missing or
+        resolves to a different SHA;
+     3. checks the commit out into a fresh worktree;
+     4. only then sends `verified_commit_sha` with the accept.
+   - The server checks that the submitted SHA equals the checkpoint's. It
+     refuses a mismatch with `422 checkpoint_mismatch`, and a checkpoint that
+     is not verified (`pending` or `uncertain`) with `409
+     checkpoint_unverified`.
+   - The server **cannot independently prove that a fetch happened**, so the
+     submitted SHA is recorded as the **receiver's acknowledgement**, not as
+     proof. The UI labels it "Receiver confirmed commit …".
+   - Fetch-and-check is enforced by the supported helper. Any other client that
+     submits the SHA takes responsibility for having checked it.
+
+**Testing.**
+
+The procedure in step 7 and the rules in steps 2, 4 and 5 are **untested** at
+the time of writing. LAI-545 carries one acceptance criterion for each of
+these:
+
+- (a) redelivery of a delivery that failed before it was applied;
+- (b) re-tagging after the 3-day window;
+- (c) clearing `uncertain` by re-tagging;
+- (d) one tag per push, and a push of four tags producing no event;
+- (e) an annotated tag giving `uncertain`;
+- (f) the ruleset refusing to move or delete a checkpoint tag;
+- (g) deliveries for one ref applied one at a time.
+
+These run against a real configured repository on the owner's account.
+Approving this decision approves the design. The claim that recovery is
+*tested* stands only once those criteria pass and are recorded on LAIKA-797.
+
+**Limitations: what keeping D-083 costs.**
+
+1. **No live check of availability.** The server never checks whether a
+   commit is still there. Only the receiver's helper does, when it accepts.
+2. **Deletions can go unreported.** A deletion or modification is seen only
+   when its delivery arrives, and some never arrive:
+   - GitHub creates no event when more than three tags are deleted at once;
+   - GitHub does not redeliver failed deliveries by itself.
+
+   Until a receiver fetches, the board can show `verified` for a ref that is
+   gone. The receiver's helper catches this (step 8), and the offer then shows
+   "Save needs attention".
+3. **Webhook outage.** While the webhook is down, new checkpoints stay
+   `pending` until someone redelivers them (within 3 days) or re-tags them.
+   Meanwhile, automatic recovery uses older verified checkpoints.
+4. **One repo.** Verification is limited to the project's single configured
+   repo. Any other repo is refused with `422 repo_not_configured`.
+5. **Fetch access is the receiver's own.** It depends on the receiver's Git
+   credentials. Access to Laika grants no access to the repository.
+6. **Protection depends on the plan and on people.**
+   - Tags are protected only if the ruleset exists, which needs a qualifying
+     plan for a private repository.
+   - Anyone with bypass rights can still delete a tag early.
+   - Laika cannot see a missing ruleset. LAI-560's operator checklist checks
+     for one, and step 8 catches the consequence.
+
+## D-116a — A checkpoint ref's state is a function of the set of deliveries seen (clarifies D-116 item 4)
+
+**Date:** 2026-10-29 · **By:** CHIEF (Belka), on the owner's delegation of
+product calls to Belka for the agent hand-off work · **Amends:** D-116 item
+4, whose text is unchanged
+
+**Why.** Codex's review of #143 (round 1, item 9) asked for the rule to be
+stated as a function of the set, so it cannot be read as depending on arrival.
+D-116 item 4 already says order never matters, but its table counts *exactly
+one* deletion, so a deletion notice GitHub sent twice under two delivery ids
+would read as `uncertain`, and it does not say which states are final. LAI-545
+builds against one rule, so the rule is stated here.
+
+**Decision.** For one ref (`repo` and full ref name), with the all-zero SHA
+meaning absent, the state is computed from the **set** of transitions seen,
+whatever order they arrived in:
+
+1. **No transition** → `pending`.
+2. **Exactly one creation `0000…→<checkpoint SHA>`, and nothing else** →
+   `verified`.
+3. **That creation plus one or more deletions `<checkpoint SHA>→0000…`, in
+   any order, and nothing else** → `ref_deleted`. Final: it never becomes
+   `verified` again.
+4. **Anything else** — a second creation, an update, a ref at a different
+   SHA, a deletion with no creation seen, an annotated tag's object SHA →
+   `uncertain`. Final: it never becomes `verified` again.
+
+**"Final" means never `verified` again, and that is all it means.** The set
+only grows, and every set containing a deletion or a foreign transition maps
+to `ref_deleted` or `uncertain`, so no later delivery can make the ref usable.
+Between those two unusable states the set decides: a deletion seen before its
+creation reads `uncertain` until the creation arrives and then `ref_deleted`,
+and a `ref_deleted` ref that later sees a foreign transition becomes
+`uncertain`. Either way the checkpoint cannot be offered or accepted from
+that ref. Re-tagging (D-116
+item 7) remains the only way back, through a new ref. Registering a ref is
+the one change to a checkpoint's state no delivery makes: it makes the new ref
+the newest, so the checkpoint takes that ref's state at that moment, normally
+`pending` (SPEC §4.68, §4.69).
+
+**Consequence.** A redelivered deletion, or two deletion notices, cannot flip
+a ref; nothing a delivery's arrival time says is read. SPEC §4.69 states the
+rule and §4.70 keys deliveries by ref name, so one that arrives before its
+checkpoint is registered still counts.
+
+## D-120 — An agent is exactly `<harness> · <device>`: one active agent per harness per device, labelled by that pair; CHIEF files from LAI-1000 – LAI-1099 (LAI-1000, LAI-1001)
+
+**Date:** 2026-10-29 · **By:** CHIEF (Belka), recording the owner's decision
+given in chat on 2026-10-29 (Pawan, via the polly manager session)
+
+The owner's words, as relayed:
+
+> An agent's identity and label is exactly HARNESS · DEVICE, e.g. "Omnigent ·
+> Belka", "Claude Code · Belka", "Claude Code · Strelka". One agent per harness
+> per device. Another device gets its own agents. No separate free-text agent
+> name in labels (the agent registered as "Polly" must read "Omnigent · Belka"
+> everywhere). Model/version stays on the session line.
+
+1. **Identity.** A registered agent is one harness on one device, and an owner
+   has **at most one active agent per (harness, device)**. The device is
+   compared exactly as the Devices view groups it (SPEC §4.63:
+   `trim().toLowerCase()`, null and blank together). Another device is
+   another agent; another harness on the same device is another agent.
+2. **The server refuses the second one** (LAI-1000): registering, or editing
+   an agent's harness or device onto a pair another of the owner's active
+   agents already has, is `409 conflict`, `reason:
+   agent_exists_for_harness_device`, naming the existing agent — to its
+   owner, the only person who can see it. Revoked agents do not count.
+   Rotating a token is never refused. (The server rule lands with #141,
+   LAI-592, under this reason; this entry first named it
+   `agent_exists_for_device`.)
+3. **Existing duplicates are kept.** No migration revokes, renames or merges
+   an agent; agents that already share a pair keep working and are reported
+   (the Devices view shows them; the owner revokes the one they do not want).
+4. **The label is the pair** (LAI-1001): `<harness> · <device>` everywhere an
+   agent is named. The free-text name is no longer a label — it is at most an
+   optional private note. The model and version stay on the **session** line:
+   *Omnigent · Belka · Claude Code · claude-opus-5-5*.
+
+**What this amends.** D-118 (proposed, `docs/proposals/LAI-532-agent-identity-
+model.md`) already said *one harness on one device* and named its example
+`Polly · Belka`. The owner's display rule replaces that: a manager is labelled
+by its **harness**, so polly reads *Omnigent · Belka*. **LAI-583's
+disambiguation** — adding the registered name where two agents share a harness
+and device — is superseded for new agents, which can no longer collide; it
+stays only as the fallback that keeps a legacy duplicate distinguishable until
+its owner revokes one.
+
+**Ids.** D-109 gave CHIEF `LAI-500` – `LAI-599`; the §3 sweep finds it full on
+2026-10-29. **CHIEF and Belka file from `LAI-1000` – `LAI-1099`.** D-109's
+reason against four digits was the tooling guards; measured today:
+
+- every runtime parser (`TASK_KEY`, `BRANCH_REF`, `TASK_KEY_PATTERN`, the
+  CLI's `TASK_KEY`) takes `\d+` or up to nine digits — four digits parse;
+- `task-file-state.test.ts` keys on the frontmatter `id` and accepts them;
+- the "names a task" checks (`/LAI-\d{3}/.test(reason)`) are unanchored, so
+  `LAI-1000` passes them;
+- **two anchored parsers truncate**: `schema-spec-drift.test.ts`'s
+  `closedTaskIds` (`/^(LAI-\d{3})/`) reads `LAI-1000-….md` in `done/` as
+  `LAI-100`, and its `PLANNED_MARK` would read a *Planned — LAI-1000* mark as
+  `LAI-100`. Harmless for this block today — `LAI-100` – `LAI-109` are all in
+  `done/` already and no §4 section carries a four-digit Planned mark — and
+  filed as LAI-1002 rather than changed silently;
+- **the §3 sweep itself** greps `LAI-[0-9]\{3\}`, which reads `LAI-1000` as
+  `LAI-100` and so cannot see a four-digit id is taken. CLAUDE.md §3 and the
+  `laika-workflow` skill now grep `LAI-[0-9]\{3,\}`.
+
+## D-121 — An agent is one harness on one device, at most one active per owner; a cloud runner is the device `Cloud`, whose tokens live at most a day; every agent is its registering person's (LAI-592)
+
+**Date:** 2026-10-30 · **By:** CHIEF (Belka), recording the owner's approval
+· **Amends:** D-120 · **Status:** approved on Pawan's instruction to proceed
+(2026-10-30), relayed to Belka through the polly manager session
+
+The decision was proposed in the body of PR #141 (LAI-592, card LAIKA-846),
+which merged on 2026-10-29 without the decision ever being written here. The
+text below is that body's *Proposed decision text*, verbatim. Item 1 restates
+D-120; items 2 – 8 are what #141 built. Recorded by LAI-1009.
+
+1. **An agent is exactly `<harness> · <device>`** (D-118; restates D-120), and **an owner
+   holds at most one active agent for each pair.** The device is compared
+   by its normalised key (§4.63: trimmed, lower-cased); an agent with no
+   device label is on one unnamed device. Registering a second, or renaming
+   the harness or relabelling onto a pair another active agent of yours
+   holds, is `409 conflict` with `reason` `agent_exists_for_harness_device`
+   and `agent_id` naming yours. A revoked agent frees its pair. Only your
+   own agents are compared: another person's agent on the same label and
+   harness is no conflict and is never named. Agents that already share a
+   pair before this ships keep working; the rule bites on the next register,
+   rename or relabel.
+2. **A cloud runner is a device like any other, labelled `Cloud`** (the
+   same normalisation; look-alike and compatibility forms — fullwidth,
+   Cyrillic, zero-width — are other labels). No new field.
+3. **A cloud agent's tokens must expire, within 24 hours of minting**
+   (`CLOUD_TOKEN_MAX_TTL_MS`; exactly 24 h is allowed). Registering one,
+   rotating one of its tokens, or relabelling an agent into `Cloud` while a
+   live token breaks the rule is `422 unprocessable` with `reason`
+   `cloud_token_expiry_required` (none, or not in the future) or
+   `cloud_token_expiry_too_long`. A rotation with no `expires_at` carries
+   the old expiry, which must itself pass. Why 24 h: a runner's longest job
+   and a daily schedule both fit, a secret leaked from a runner is dead
+   within a day, and minting is session-only, so a shorter limit would cut
+   long jobs off mid-run.
+4. **No token mints a token that outlives it.** A token with an expiry
+   asking `POST /tokens` for no expiry or a later one is `403 forbidden`,
+   `reason` `token_expiry_bounded` — refused, never clamped, as LAI-562's
+   project pin is. An agent's token, a cloud one included, cannot mint at
+   all (`agent_token`), and registering or rotating is session-only, so a
+   short-lived credential can never produce a longer-lived one.
+5. **An expired cloud token is refused as any expired token is** — `401`,
+   byte-identical body; the agent and the owner's other devices are
+   untouched.
+6. **The owner is the person who registered it**, always the session user;
+   no route, body field or tool registers an agent for anyone else. Every
+   agent read and the device list name them (`owner_display_name`, live
+   `users.name`).
+7. **Another person's agents and devices are missing, not hidden**: every
+   agent route answers a foreign agent — a cloud one included — exactly as
+   an id that does not exist (`404`, same body), and neither list mentions
+   it. Another person's laptop carries that person's own agent, registered
+   by them (D-114).
+8. `device_label` now decides two things — the one-per-pair rule and the
+   cloud rule — both of which only constrain the owner's own credentials and
+   grant no access.

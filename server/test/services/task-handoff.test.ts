@@ -1,0 +1,741 @@
+import { eq } from 'drizzle-orm';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { loadActor, resolveTokenActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
+import { newId } from '../../src/db/ids.ts';
+import { handoffOffers, projects, users } from '../../src/db/schema.ts';
+import { ApiError } from '../../src/errors.ts';
+import { registerAgent } from '../../src/services/agents.ts';
+import {
+  applyCheckpointDelivery,
+  configureCheckpoints,
+  DEFAULT_CHECKPOINT_SETTINGS,
+  listCheckpoints,
+  registerCheckpoint,
+} from '../../src/services/checkpoints.ts';
+import {
+  configureClaims,
+  DEFAULT_CLAIM_TIMINGS,
+  expireClaims,
+  heartbeatAgentSession,
+} from '../../src/services/claims.ts';
+import {
+  acceptHandoff,
+  offerHandoff,
+  putHandoffPolicy,
+  resetHandoffRateLimits,
+} from '../../src/services/handoffs.ts';
+import { addMember } from '../../src/services/projects.ts';
+import {
+  deriveHandoff,
+  NO_HANDOFF,
+  noRecentSave,
+  type TaskHandoffView,
+} from '../../src/services/task-handoff.ts';
+import {
+  changeStatus,
+  createTask,
+  getTask,
+  listTasks,
+  startWorking,
+  summaryOf,
+  taskVersion,
+  updateTask,
+} from '../../src/services/tasks.ts';
+import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+
+/**
+ * LAI-1005 — the saves-and-hand-off summary on every task read (§6.4), on an
+ * injected clock. Every case reads the task **twice** — the list and the
+ * single read — and requires them to agree, so a card and its drawer cannot
+ * be told different things.
+ */
+
+const T0 = 1_800_000_000_000;
+const MIN = 60_000;
+const LEASE = DEFAULT_CLAIM_TIMINGS.expireMs;
+const REPO = 'kvell/laika';
+const ZERO = '0'.repeat(40);
+
+let t: TestDb;
+let s: Seed;
+let owner: ResolvedActor;
+
+beforeEach(() => {
+  t = freshDb();
+  s = seed(t.db, T0);
+  owner = loadActor(t.db, s.userId)!;
+  t.db.update(projects).set({ repo: REPO }).where(eq(projects.id, s.projectId)).run();
+  configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+  resetHandoffRateLimits();
+});
+
+afterEach(() => {
+  configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+  configureCheckpoints(DEFAULT_CHECKPOINT_SETTINGS);
+  t.close();
+});
+
+interface AgentHandle {
+  id: string;
+  actor: ResolvedActor;
+}
+
+let devices = 0;
+function agentOf(person: ResolvedActor, name: string): AgentHandle {
+  const created = registerAgent(t.sqlite, t.db, person, {
+    displayName: name,
+    harness: 'claude-code',
+    deviceLabel: `device-${String(++devices)}`,
+    grants: [{ projectId: s.projectId, scope: 'full' }],
+  });
+  return { id: created.agent.id, actor: resolveTokenActor(t.db, created.secret, T0) };
+}
+
+function person(name: string, role: 'member' | 'lead' | null): ResolvedActor {
+  const id = newId();
+  t.db
+    .insert(users)
+    .values({
+      id,
+      email: `${id}@example.test`,
+      name,
+      orgRole: 'member',
+      createdAt: new Date(T0),
+      updatedAt: new Date(T0),
+    })
+    .run();
+  if (role !== null) addMember(t.db, owner, 'laika', id, role, T0);
+  return loadActor(t.db, id)!;
+}
+
+function task(title = 'Work'): string {
+  return createTask(t.sqlite, t.db, owner, 'laika', { title, now: T0 }).id;
+}
+
+function claim(a: AgentHandle, id: string, now = T0): number {
+  return startWorking(t.sqlite, t.db, a.actor, id, { now }).claim!.generation;
+}
+
+let shaSeed = 0;
+function sha(): string {
+  shaSeed += 1;
+  return shaSeed.toString(16).padStart(40, 'b');
+}
+
+type Verification = 'verified' | 'pending' | 'uncertain' | 'ref_deleted';
+
+/** A save under the holder's claim, driven to `as` by GitHub's notices (§4.71). */
+function save(a: AgentHandle, id: string, generation: number, as: Verification, now = T0) {
+  const commit = sha();
+  const saved = registerCheckpoint(
+    t.sqlite,
+    t.db,
+    { ...a.actor, claimGeneration: generation },
+    id,
+    {
+      id: newId(),
+      idempotencyKey: newId(),
+      repo: REPO,
+      branch: 'LAI-1-work',
+      commitSha: commit,
+      manifest: [{ path: 'src/a.ts', added: 1, removed: 0 }],
+      summary: { work_done: 'Half', next_step: 'Rest' },
+      summaryCommitSha: commit,
+      now,
+    },
+  ).checkpoint;
+  const deliver = (before: string, after: string) => {
+    const outcome = applyCheckpointDelivery(
+      t.sqlite,
+      t.db,
+      { deliveryId: newId(), repo: REPO, ref: saved.remote_ref, before, after },
+      now,
+    );
+    expect(outcome.handled, JSON.stringify(outcome)).toBe(true);
+  };
+  if (as === 'verified' || as === 'ref_deleted') deliver(ZERO, commit);
+  if (as === 'ref_deleted') deliver(commit, ZERO);
+  // An update to another SHA is never a clean single save (D-116a).
+  if (as === 'uncertain') deliver(commit, sha());
+  return saved;
+}
+
+const LIST = { limit: 200, cursor: null };
+
+/** The summary the list and the single read both give — required to be the same. */
+function handoffOf(id: string, now = T0, reader: ResolvedActor = owner): TaskHandoffView {
+  const one = getTask(t.db, reader, id, now).handoff;
+  const listed = listTasks(t.db, reader, 'laika', { ...LIST, now }).find((x) => x.id === id);
+  expect(listed, 'the task is on its list').toBeDefined();
+  expect(listed!.handoff).toEqual(one);
+  // The slim list is the full list less its two texts (LAI-795).
+  expect(summaryOf(listed!).handoff).toEqual(one);
+  return one;
+}
+
+// --------------------------------------------------------------- the rule
+
+describe('recovery_available (§4.73)', () => {
+  it('is true once the claim expired with a verified save — and the recovery offer it opened shows', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    const generation = claim(a, id);
+    save(a, id, generation, 'verified');
+    expireClaims(t.db, T0 + LEASE);
+
+    const summary = handoffOf(id, T0 + LEASE);
+    expect(summary).toEqual({
+      checkpoint: {
+        verification: 'verified',
+        saved_at: T0,
+        pending_since: null,
+        pending_notice: false,
+      },
+      offer: { kind: 'recovery', state: 'open', requires_approval: false },
+      recovery_available: true,
+      save_needs_attention: false,
+      no_recent_save: null,
+    });
+  });
+
+  it('is false while the claim is live, though a verified save exists', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    save(a, id, claim(a, id), 'verified');
+    const summary = handoffOf(id);
+    expect(summary.checkpoint?.verification).toBe('verified');
+    expect(summary.recovery_available).toBe(false);
+  });
+
+  it('is false for an expired claim with no save', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    expireClaims(t.db, T0 + LEASE);
+    expect(handoffOf(id, T0 + LEASE)).toEqual(NO_HANDOFF);
+  });
+
+  for (const only of ['pending', 'uncertain', 'ref_deleted'] as const) {
+    it(`is false for an expired claim whose only save is ${only}`, () => {
+      const a = agentOf(owner, 'A');
+      const id = task();
+      save(a, id, claim(a, id), only);
+      expireClaims(t.db, T0 + LEASE);
+      const summary = handoffOf(id, T0 + LEASE);
+      expect(summary.checkpoint?.verification).toBe(only);
+      expect(summary.offer).toBeNull();
+      expect(summary.recovery_available).toBe(false);
+    });
+  }
+
+  it('is still true when a newer save is unverified: recovery uses the latest verified one', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    const generation = claim(a, id);
+    save(a, id, generation, 'verified');
+    save(a, id, generation, 'pending', T0 + 1);
+    expireClaims(t.db, T0 + LEASE);
+    const summary = handoffOf(id, T0 + LEASE);
+    expect(summary.checkpoint?.verification).toBe('pending');
+    expect(summary.recovery_available).toBe(true);
+  });
+
+  it('is false once the task has left In progress — the expiry is old news', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    save(a, id, claim(a, id), 'verified');
+    expireClaims(t.db, T0 + LEASE);
+    changeStatus(t.db, owner, id, 'todo', T0 + LEASE + 1);
+    expect(handoffOf(id, T0 + LEASE + 1).recovery_available).toBe(false);
+  });
+
+  it('is false again once another agent accepts the recovery — the offer and the flag both go', () => {
+    const a = agentOf(owner, 'A');
+    const b = agentOf(owner, 'B');
+    const id = task();
+    const saved = save(a, id, claim(a, id), 'verified');
+    expireClaims(t.db, T0 + LEASE);
+    expect(handoffOf(id, T0 + LEASE).recovery_available).toBe(true);
+    const recovery = t.db
+      .select()
+      .from(handoffOffers)
+      .where(eq(handoffOffers.taskId, id))
+      .all()
+      .find((o) => o.kind === 'recovery');
+    expect(recovery?.state).toBe('open');
+    acceptHandoff(t.sqlite, t.db, b.actor, recovery!.id, {
+      verifiedCommitSha: saved.commit_sha,
+      now: T0 + LEASE + 1,
+    });
+    const after = handoffOf(id, T0 + LEASE + 1);
+    expect(after.offer).toBeNull();
+    expect(after.recovery_available).toBe(false);
+    // A live claim holds it now: the read says so, beside the summary.
+    expect(getTask(t.db, owner, id, T0 + LEASE + 1).claim?.agent_id).toBe(b.id);
+  });
+});
+
+describe('save_needs_attention — the server’s uncertain only', () => {
+  it('reads the newest save’s uncertain, with nothing holding the task', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    save(a, id, claim(a, id), 'uncertain');
+    expireClaims(t.db, T0 + LEASE);
+    const summary = handoffOf(id, T0 + LEASE);
+    expect(summary.checkpoint).toEqual({
+      verification: 'uncertain',
+      saved_at: T0,
+      pending_since: null,
+      pending_notice: false,
+    });
+    expect(summary.save_needs_attention).toBe(true);
+  });
+
+  it('gives way to a live claim — the card says Working, as the drawer does', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    save(a, id, claim(a, id), 'uncertain');
+    const summary = handoffOf(id);
+    expect(summary.checkpoint?.verification).toBe('uncertain');
+    expect(summary.save_needs_attention).toBe(false);
+  });
+
+  it('gives way to Recovery available', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    const generation = claim(a, id);
+    save(a, id, generation, 'verified');
+    save(a, id, generation, 'uncertain', T0 + 1);
+    expireClaims(t.db, T0 + LEASE);
+    const summary = handoffOf(id, T0 + LEASE);
+    expect(summary.checkpoint?.verification).toBe('uncertain');
+    expect(summary.recovery_available).toBe(true);
+    expect(summary.save_needs_attention).toBe(false);
+  });
+
+  it('is not raised by an older uncertain save under a newer clean one', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    const generation = claim(a, id);
+    save(a, id, generation, 'uncertain');
+    save(a, id, generation, 'pending', T0 + 1);
+    expireClaims(t.db, T0 + LEASE);
+    expect(handoffOf(id, T0 + LEASE).save_needs_attention).toBe(false);
+  });
+});
+
+describe('the newest save as the checkpoint read reports it', () => {
+  it('a pending save carries pending_since, and the notice after §9.1.1’s ten minutes', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    save(a, id, claim(a, id), 'pending');
+
+    const fresh = handoffOf(id, T0 + 10 * MIN);
+    expect(fresh.checkpoint).toEqual({
+      verification: 'pending',
+      saved_at: T0,
+      pending_since: T0,
+      pending_notice: false,
+    });
+    const late = getTask(t.db, owner, id, T0 + 10 * MIN + 1).handoff;
+    expect(late.checkpoint?.pending_notice).toBe(true);
+
+    // Field for field what `GET /tasks/:id/checkpoints` says of the same save.
+    const [read] = listCheckpoints(t.db, owner, id, T0 + 10 * MIN + 1);
+    expect(late.checkpoint).toEqual({
+      verification: read!.verification,
+      saved_at: read!.created_at,
+      pending_since: read!.pending_since,
+      pending_notice: read!.pending_notice,
+    });
+  });
+});
+
+describe('the live offer', () => {
+  it('a hand-off waiting for approval, and nothing once it closes', () => {
+    putHandoffPolicy(t.sqlite, t.db, owner, 'laika', { allow_other_owners: true }, T0);
+    const a = agentOf(owner, 'A');
+    const theirs = agentOf(person('Mira', 'member'), 'Mira’s agent');
+    const id = task();
+    const generation = claim(a, id);
+    const cp = save(a, id, generation, 'verified');
+    offerHandoff(t.sqlite, t.db, { ...a.actor, claimGeneration: generation }, id, {
+      idempotencyKey: newId(),
+      toAgentId: theirs.id,
+      checkpointId: cp.id,
+      reason: 'Out of context',
+      now: T0 + 1,
+    });
+
+    const summary = handoffOf(id, T0 + 1);
+    expect(summary.offer).toEqual({
+      kind: 'handoff',
+      state: 'pending_approval',
+      requires_approval: true,
+    });
+    // The sender still holds its claim, paused: no recovery while it does.
+    expect(summary.recovery_available).toBe(false);
+  });
+});
+
+describe('no_recent_save — §9.1.1’s checkpoint warning (LAI-1016)', () => {
+  const WINDOW = DEFAULT_CHECKPOINT_SETTINGS.saveWarningMs;
+  /**
+   * The default lease is as long as the window, and a claim nobody renews has
+   * lapsed by the time the window passes. A working agent renews it every
+   * heartbeat; these cases stand for that with a lease an hour long, and the
+   * lapse cases below go back to the default.
+   */
+  const HELD = 60 * MIN;
+  beforeEach(() => {
+    configureClaims({ timings: { ...DEFAULT_CLAIM_TIMINGS, expireMs: HELD }, bootedAt: 0 });
+  });
+
+  it('the default window is five minutes', () => {
+    expect(WINDOW).toBe(5 * MIN);
+  });
+
+  it('a live claim with no save: nothing up to the window, the warning just past it', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    expect(handoffOf(id, T0 + WINDOW).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toEqual({
+      since: T0,
+      window_ms: WINDOW,
+    });
+  });
+
+  it('a fresh save clears it, and it returns just past the window from that save', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    const generation = claim(a, id);
+    save(a, id, generation, 'verified', T0 + 4 * MIN);
+    expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + 4 * MIN + WINDOW).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + 4 * MIN + WINDOW + 1).no_recent_save).toEqual({
+      since: T0 + 4 * MIN,
+      window_ms: WINDOW,
+    });
+  });
+
+  for (const as of ['pending', 'uncertain', 'ref_deleted'] as const) {
+    it(`a ${as} save counts as a save — the warning is about saving, not proof`, () => {
+      const a = agentOf(owner, 'A');
+      const id = task();
+      save(a, id, claim(a, id), as, T0 + 4 * MIN);
+      expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toBeNull();
+    });
+  }
+
+  it('says nothing once the claim is not live, however old the save', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    expireClaims(t.db, T0 + HELD);
+    expect(handoffOf(id, T0 + HELD + WINDOW + 1).no_recent_save).toBeNull();
+  });
+
+  it('says nothing once an active lease has lapsed, before the expiry scan has run', () => {
+    configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    // Lapsed at T0 + LEASE; no scan, so the row still says `active`.
+    const at = T0 + Math.max(LEASE, WINDOW) + 1;
+    expect(getTask(t.db, owner, id, at).claim).toBeNull();
+    expect(handoffOf(id, at).no_recent_save).toBeNull();
+  });
+
+  it('a lease renewed by the holder keeps the warning, on the default lease', () => {
+    configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+    const a = agentOf(owner, 'A');
+    const id = task();
+    const held = startWorking(t.sqlite, t.db, a.actor, id, { now: T0 }).claim!;
+    // The holder's session heartbeats inside its lease (§9.1.1) and renews it.
+    heartbeatAgentSession(t.sqlite, t.db, a.actor, held.session_id, T0 + WINDOW - MIN);
+    expect(getTask(t.db, owner, id, T0 + WINDOW + 1).claim?.state).toBe('active');
+    expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toEqual({
+      since: T0,
+      window_ms: WINDOW,
+    });
+  });
+
+  it('a task never claimed says nothing', () => {
+    expect(handoffOf(task(), T0 + WINDOW + 1).no_recent_save).toBeNull();
+  });
+
+  it('the window is configurable, and the summary names the one it used', () => {
+    configureCheckpoints({ saveWarningMs: MIN });
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    expect(handoffOf(id, T0 + MIN).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + MIN + 1).no_recent_save).toEqual({ since: T0, window_ms: MIN });
+  });
+
+  it('the rule alone: a paused claim is live; released or expired is not', () => {
+    const at = (state: 'active' | 'paused' | 'released' | 'expired') =>
+      noRecentSave({
+        newestClaim: { state, createdAt: T0, leaseExpiresAt: T0 + HELD },
+        newestSavedAt: null,
+        windowMs: WINDOW,
+        now: T0 + WINDOW + 1,
+      });
+    expect(at('active')).toEqual({ since: T0, window_ms: WINDOW });
+    expect(at('paused')).toEqual({ since: T0, window_ms: WINDOW });
+    expect(at('released')).toBeNull();
+    expect(at('expired')).toBeNull();
+  });
+
+  it('the rule alone: an active lease that lapsed is not live; a paused claim’s is left to the scan', () => {
+    const at = (state: 'active' | 'paused') =>
+      noRecentSave({
+        newestClaim: { state, createdAt: T0, leaseExpiresAt: T0 + WINDOW },
+        newestSavedAt: null,
+        windowMs: WINDOW,
+        now: T0 + WINDOW + 1,
+      });
+    expect(at('active')).toBeNull();
+    expect(at('paused')).toEqual({ since: T0, window_ms: WINDOW });
+  });
+
+  it('the clock turning it on is not a new version: an If-Match read before still writes', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    const before = getTask(t.db, owner, id, T0 + WINDOW);
+    expect(before.handoff.no_recent_save).toBeNull();
+    const after = getTask(t.db, owner, id, T0 + WINDOW + 1);
+    expect(after.handoff.no_recent_save).not.toBeNull();
+    // Nothing was written in between: the version must not move.
+    expect(taskVersion(after)).toBe(taskVersion(before));
+    const patched = updateTask(t.db, owner, id, {
+      title: 'Renamed',
+      expected_version: taskVersion(before),
+      now: T0 + WINDOW + 1,
+    });
+    expect(patched.title).toBe('Renamed');
+  });
+
+  it('the rule alone: a save older than the claim does not shorten the claim’s grace', () => {
+    // A reclaim or an accepted hand-off starts a new claim over an old save.
+    expect(
+      noRecentSave({
+        newestClaim: { state: 'active', createdAt: T0 + 10 * MIN, leaseExpiresAt: T0 + HELD },
+        newestSavedAt: T0,
+        windowMs: WINDOW,
+        now: T0 + 10 * MIN + WINDOW,
+      }),
+    ).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------- visibility
+
+describe('who sees it', () => {
+  it('names no agent, session, person or commit', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    const saved = save(a, id, claim(a, id), 'verified');
+    expireClaims(t.db, T0 + LEASE);
+    const text = JSON.stringify(handoffOf(id, T0 + LEASE));
+    for (const secret of [a.id, saved.session_id, saved.id, saved.commit_sha, owner.userId]) {
+      expect(text).not.toContain(secret);
+    }
+  });
+
+  it('a project member reads the same summary as the owner', () => {
+    const viewer = person('Ola', 'member');
+    const a = agentOf(owner, 'A');
+    const id = task();
+    save(a, id, claim(a, id), 'uncertain');
+    expireClaims(t.db, T0 + LEASE);
+    expect(handoffOf(id, T0 + LEASE, viewer)).toEqual(handoffOf(id, T0 + LEASE));
+  });
+
+  it('a caller who may not read the task learns nothing — the same answer as for a task with none', () => {
+    const outsider = person('Out', null);
+    const a = agentOf(owner, 'A');
+    const busy = task('Busy');
+    save(a, busy, claim(a, busy), 'verified');
+    expireClaims(t.db, T0 + LEASE);
+    const quiet = task('Quiet');
+
+    const refusalOf = (id: string) => {
+      try {
+        getTask(t.db, outsider, id, T0 + LEASE);
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiError);
+        const e = err as ApiError;
+        return { code: e.code, message: e.message, details: e.details };
+      }
+      throw new Error('expected a refusal');
+    };
+    // Body compared, not only the status: the refusal for a task with saves,
+    // an offer and Recovery available is the refusal for one with none.
+    expect(refusalOf(busy)).toEqual(refusalOf(quiet));
+    expect(refusalOf(busy).code).toBe('forbidden');
+    expect(() => listTasks(t.db, outsider, 'laika', LIST)).toThrow(ApiError);
+  });
+
+  it('a task with nothing reads NO_HANDOFF, on the list and the single read', () => {
+    expect(handoffOf(task())).toEqual(NO_HANDOFF);
+  });
+});
+
+// ------------------------------------------------------------------- cost
+
+describe('cost (LAI-091’s rule)', () => {
+  /**
+   * Every statement **executed** during `run`, by its SQL — not every one
+   * prepared (LAI-1005 review): better-sqlite3 caches nothing for Drizzle,
+   * but a statement prepared once and run per row would pass a prepare count.
+   */
+  function executionsDuring(run: () => void): string[] {
+    const executed: string[] = [];
+    const real = t.sqlite.prepare.bind(t.sqlite) as (source: string) => unknown;
+    (t.sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
+      const statement = real(source);
+      const target = statement as Record<string, (...args: unknown[]) => unknown>;
+      for (const method of ['all', 'get', 'run', 'iterate']) {
+        const original = target[method]!.bind(statement);
+        target[method] = (...args: unknown[]) => {
+          executed.push(source);
+          return original(...args);
+        };
+      }
+      return statement;
+    };
+    try {
+      run();
+    } finally {
+      (t.sqlite as unknown as { prepare: typeof real }).prepare = real;
+    }
+    return executed;
+  }
+
+  const onTable = (sqls: readonly string[], table: string) =>
+    sqls.filter((sql) => sql.includes(`"${table}"`));
+
+  /** Tasks each claimed, saved, expired and offered for recovery — real rows on every one. */
+  function recoverable(a: AgentHandle, count: number): void {
+    for (let i = 0; i < count; i += 1) {
+      const id = task(`r${String(i)}`);
+      save(a, id, claim(a, id), 'verified');
+    }
+    expireClaims(t.db, T0 + LEASE);
+  }
+
+  it('one task and fifty cost the same executions, and each hand-off table is read once', () => {
+    const a = agentOf(owner, 'A');
+    const measure = (): { all: string[]; page: ReturnType<typeof listTasks> } => {
+      let page: ReturnType<typeof listTasks> = [];
+      const all = executionsDuring(() => {
+        page = listTasks(t.db, owner, 'laika', { ...LIST, now: T0 + LEASE });
+      });
+      return { all, page };
+    };
+
+    recoverable(a, 1);
+    const one = measure();
+    expect(one.page).toHaveLength(1);
+
+    recoverable(agentOf(owner, 'B'), 49);
+    const fifty = measure();
+    expect(fifty.page).toHaveLength(50);
+    // Not passing on empty data: every row carries a save and an offer.
+    expect(fifty.page.every((x) => x.handoff.recovery_available && x.handoff.offer !== null)).toBe(
+      true,
+    );
+
+    expect(fifty.all.length).toBe(one.all.length);
+    for (const table of ['task_checkpoints', 'handoff_offers']) {
+      expect(onTable(fifty.all, table)).toHaveLength(1);
+    }
+  });
+
+  it('a ready= walk over several batches still reads the summaries once, for the page it returns', () => {
+    // 120 ready tasks first (unassigned backlog, no blockers), then two held
+    // ones with saves: `ready=false` must walk three batches of 50 to reach
+    // them.
+    for (let i = 0; i < 120; i += 1) task(`ready ${String(i)}`);
+    const a = agentOf(owner, 'A');
+    const held: string[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      const id = task(`held ${String(i)}`);
+      save(a, id, claim(a, id, T0 + 1), 'uncertain', T0 + 1);
+      held.push(id);
+    }
+
+    let page: ReturnType<typeof listTasks> = [];
+    const all = executionsDuring(() => {
+      page = listTasks(t.db, owner, 'laika', { ...LIST, limit: 2, ready: false, now: T0 + 2 });
+    });
+    expect(page.map((x) => x.id)).toEqual(held);
+    expect(page.every((x) => x.handoff.checkpoint?.verification === 'uncertain')).toBe(true);
+    // Several batches really ran: the tasks table was paged more than once …
+    expect(
+      all.filter((sql) => sql.includes('from "tasks"') && sql.includes('limit')).length,
+    ).toBeGreaterThanOrEqual(3);
+    // … and the hand-off tables were each read once, for the returned page.
+    for (const table of ['task_checkpoints', 'handoff_offers', 'checkpoint_refs']) {
+      expect(onTable(all, table), table).toHaveLength(1);
+    }
+    // The single read agrees with the list.
+    for (const view of page) {
+      expect(getTask(t.db, owner, view.id, T0 + 2).handoff).toEqual(view.handoff);
+    }
+  });
+});
+
+// ----------------------------------------------------------- the rule alone
+
+describe('deriveHandoff', () => {
+  const base = {
+    status: 'in_progress' as const,
+    newestClaim: 'expired' as const,
+    newestCheckpoint: null,
+    hasVerified: false,
+    liveOffer: null,
+  };
+
+  it('a live recovery offer is enough, with no verified save left', () => {
+    expect(
+      deriveHandoff({
+        ...base,
+        liveOffer: { kind: 'recovery', state: 'open', requires_approval: false },
+      }).recovery_available,
+    ).toBe(true);
+  });
+
+  it('a verified save is enough with no offer open yet — the scan opens one later', () => {
+    expect(deriveHandoff({ ...base, hasVerified: true })).toEqual({
+      recovery_available: true,
+      save_needs_attention: false,
+    });
+    expect(deriveHandoff({ ...base }).recovery_available).toBe(false);
+  });
+
+  it('a live hand-off offer is not a recovery', () => {
+    expect(
+      deriveHandoff({
+        ...base,
+        liveOffer: { kind: 'handoff', state: 'open', requires_approval: false },
+      }).recovery_available,
+    ).toBe(false);
+  });
+
+  it('a paused claim holds the task: no attention over it', () => {
+    expect(
+      deriveHandoff({ ...base, newestClaim: 'paused', newestCheckpoint: 'uncertain' })
+        .save_needs_attention,
+    ).toBe(false);
+  });
+
+  it('a released claim does not: an uncertain newest save needs attention', () => {
+    expect(
+      deriveHandoff({ ...base, newestClaim: 'released', newestCheckpoint: 'uncertain' }),
+    ).toEqual({ recovery_available: false, save_needs_attention: true });
+  });
+});

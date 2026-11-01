@@ -1,3 +1,5 @@
+import type { SelectedAgent } from './selected-agent.ts';
+import type { CheckpointVerification } from './handoffs.ts';
 import { type TaskSize } from './estimates.ts';
 import { request } from './client.ts';
 import { ApiError } from './errors.ts';
@@ -34,6 +36,67 @@ export interface TaskSendBack {
  * store's set does not compile, so a new reader cannot quietly draw an empty
  * description from a list that never carried it.
  */
+/** `TaskLiveClaimView` in `server/src/services/claims.ts`. Shown, decides nothing. */
+export interface TaskLiveClaim {
+  readonly generation: number;
+  readonly state: 'active' | 'paused';
+  readonly agent_id: string;
+  readonly session_id: string;
+  readonly lease_expires_at: number;
+  /** The holding session's. */
+  readonly last_heartbeat_at: number;
+  /**
+   * Its age by the **server's** clock as of the read (LAI-597 review). Aged on
+   * the page's own monotonic clock; never `last_heartbeat_at` against
+   * `Date.now()`. Optional: a view served before it has none, read as 0.
+   */
+  readonly heartbeat_age_ms?: number;
+  /** As of the read; `suspect_after_ms` moves it on the client's own clock. */
+  readonly connection: 'live' | 'suspect';
+  /** Heartbeats write no activity, so no event re-reads the task when this passes. */
+  readonly suspect_after_ms: number;
+  readonly device_label: string | null;
+  /**
+   * What the holding session said ran (D-118, LAI-593) — self-reported, null
+   * where it reported nothing. Optional because a view served before LAI-593
+   * has none, which reads as null.
+   */
+  readonly harness?: string | null;
+  readonly harness_version?: string | null;
+  readonly model?: string | null;
+}
+
+/**
+ * `TaskHandoffView` in `server/src/services/task-handoff.ts` (LAI-1005): the
+ * task's newest save and live hand-off in brief, with the two card states the
+ * **server** derives. The card draws them; it never derives them again.
+ */
+export interface TaskHandoff {
+  readonly checkpoint: {
+    readonly verification: CheckpointVerification;
+    readonly saved_at: number;
+    readonly pending_since: number | null;
+    readonly pending_notice: boolean;
+  } | null;
+  readonly offer: {
+    readonly kind: 'handoff' | 'recovery';
+    readonly state: 'pending_approval' | 'open';
+    readonly requires_approval: boolean;
+  } | null;
+  readonly recovery_available: boolean;
+  readonly save_needs_attention: boolean;
+  /**
+   * §9.1.1's checkpoint warning (LAI-1016): a live claim with no save for
+   * longer than `window_ms`, on the **server's** clock. Shown beside *Working*
+   * or *Connection lost*, never instead of them; decides nothing. Optional
+   * because a view served before LAI-1016 has none, which reads as null.
+   */
+  readonly no_recent_save?: {
+    readonly since: number;
+    readonly window_ms: number;
+  } | null;
+}
+
 export interface TaskSummary {
   readonly id: string;
   /** The display key humans and agents both use — `LAI-42` (§4.5). */
@@ -185,6 +248,26 @@ export interface TaskSummary {
    * `owner/repo#N` (LAI-286).
    */
   readonly external_ref: string | null;
+  /**
+   * The agent meant to do the work, or null (§4.5, D-114 item 7, LAI-535) —
+   * **not** the assignee and not a claim: selecting one opens a work request
+   * and changes nothing else. Its owner rides with it. Optional because a view
+   * served before LAI-535 has none, which reads as null
+   * (`selectedAgentOf`).
+   */
+  readonly selected_agent?: SelectedAgent | null;
+  /**
+   * The task's live agent claim — `active` or `paused` — or null (§6.4,
+   * LAI-568). An expired, released or transferred claim is never here; its
+   * history is the task's activity. Optional because a view served before
+   * LAI-568 has none, which reads as null.
+   */
+  readonly claim?: TaskLiveClaim | null;
+  /**
+   * Saves and hand-off in brief (§6.4, LAI-1005). Optional because a view
+   * served before it has none, which reads as nothing to show.
+   */
+  readonly handoff?: TaskHandoff;
   readonly created_at: number;
   readonly updated_at: number;
 }
@@ -574,6 +657,12 @@ export interface TaskEdit {
   readonly planned_start?: number | null;
   /** An outside id (LAI-780); the server upper-cases it. `null` clears it. */
   readonly external_ref?: string | null;
+  /**
+   * The agent to send a work request to (LAI-535); `null` withdraws it. Only
+   * the caller's own, active agent granted `full` here is accepted — anything
+   * else is `422` with `details.reason` (`selected-agent.ts`).
+   */
+  readonly selected_agent_id?: string | null;
 }
 
 /**

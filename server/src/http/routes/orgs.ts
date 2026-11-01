@@ -21,6 +21,7 @@ import {
 import { type OwnershipTransferView, transferOwnership } from '../../services/users.ts';
 import { getOrgOverview, type OrgOverviewView } from '../../services/org-overview.ts';
 import { type AppEnv } from '../context.ts';
+import { markOneTimeSecret } from '../idempotency.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
@@ -188,7 +189,9 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
     const actor = c.get('actor');
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
 
-    return c.json(rotateGithubWebhookSecret(db, actor, serverSecret, Date.now(), publicUrl), 201);
+    const rotated = rotateGithubWebhookSecret(db, actor, serverSecret, Date.now(), publicUrl);
+    markOneTimeSecret(c);
+    return c.json(rotated, 201);
   });
 
   /** `DELETE /api/v1/org/github-webhook`: clear it, so every delivery is refused. */

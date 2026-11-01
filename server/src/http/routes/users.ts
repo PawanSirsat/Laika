@@ -12,6 +12,7 @@ import {
 } from '../../services/users.ts';
 import { issueResetLink } from '../../services/password-resets.ts';
 import { type AppEnv } from '../context.ts';
+import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
 import { OpenTasksSchema, parseBody, strictObject, z } from '../validation.ts';
@@ -146,6 +147,7 @@ export function userRoutes(options: { db: Db; publicUrl?: string | undefined }):
    */
   app.post('/:id/reset-link', (c) => {
     const issued = issueResetLink(db, requireActor(c), c.req.param('id'));
+    markOneTimeSecret(c);
     return c.json<ResetLinkView>(
       { url: resetUrlFor(options.publicUrl, issued.token), expires_at: issued.expiresAt },
       201,

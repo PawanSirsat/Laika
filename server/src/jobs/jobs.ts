@@ -2,6 +2,8 @@ import { and, eq, gt, isNotNull, isNull, lt, lte, sql } from 'drizzle-orm';
 import { appendActivity } from '../db/activity.ts';
 import { assertCan, systemPrincipal } from '../policy/can.ts';
 import { type Db } from '../db/client.ts';
+import { purgeUnversionedIdempotencyKeys } from '../db/backfill.ts';
+import { pruneExpired } from '../http/idempotency.ts';
 import { AGENT_BUCKET_MS } from '../services/agent-time.ts';
 import {
   agentTimeBuckets,
@@ -23,6 +25,7 @@ import {
   solidtimeEntries,
   timeBreaks,
   timeDrafts,
+  timeDayNotes,
   timeEntries,
   timeUndo,
 } from '../db/schema.ts';
@@ -261,11 +264,20 @@ export function pruneTime(db: Db, now: number): JobResult {
       .where(lt(timeUndo.createdAt, now - UNDO_WINDOW_MS))
       .run();
     const entries = tx.delete(timeEntries).where(lt(timeEntries.day, entryCutoff)).run();
+    // A day's note goes with its entries (LAI-501).
+    const notes = tx.delete(timeDayNotes).where(lt(timeDayNotes.day, entryCutoff)).run();
     const elsewhere = tx
       .delete(solidtimeEntries)
       .where(and(isNull(solidtimeEntries.entryId), lt(solidtimeEntries.day, entryCutoff)))
       .run();
-    return drafts.changes + breaks.changes + undo.changes + entries.changes + elsewhere.changes;
+    return (
+      drafts.changes +
+      breaks.changes +
+      undo.changes +
+      entries.changes +
+      notes.changes +
+      elsewhere.changes
+    );
   });
   return { changed };
 }
@@ -445,6 +457,22 @@ export function expireMeetingReviews(db: Db, now: number): JobResult {
   }
 
   return { changed: doomed.length };
+}
+
+/**
+ * The idempotency store's retention (§6.3, §11.6; LAI-534 round 2).
+ *
+ * Two deletions. **Expired rows**: §6.3 replays within 24 hours, and a lookup
+ * already treats an older row as unseen, but nothing deleted one, so the
+ * table only grew — and kept every response body it was ever given.
+ * **Rows from before LAI-534's owner format**, which may hold plaintext
+ * secrets (`purgeUnversionedIdempotencyKeys`). Those are first deleted by
+ * `runMigrations`, before the port is bound (round 3); this runs it hourly as
+ * well, which finds nothing once the table is clean.
+ */
+export function pruneIdempotencyKeys(db: Db, now: number): JobResult {
+  assertCan(SYSTEM, 'system.idempotency.prune');
+  return { changed: pruneExpired(db, now) + purgeUnversionedIdempotencyKeys(db) };
 }
 
 /**

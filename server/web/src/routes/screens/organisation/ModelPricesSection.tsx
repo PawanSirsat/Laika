@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { ApiError } from '../../../api/errors.ts';
 import {
   getModelPrices,
@@ -45,6 +46,7 @@ const MODEL = /^[a-z0-9][a-z0-9._:-]{0,63}$/;
  * never $0.
  */
 export function ModelPricesSection() {
+  const confirm = useConfirm();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [editing, setEditing] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState<Record<Field, string>>({
@@ -239,7 +241,22 @@ export function ModelPricesSection() {
                                 className="org-github-done"
                                 disabled={busy}
                                 onClick={() => {
-                                  run(resetModelPrice(entry.model));
+                                  void confirm({
+                                    title:
+                                      entry.table === null
+                                        ? `Remove the price for ${entry.model}?`
+                                        : `Reset ${entry.model} to the table’s price?`,
+                                    body:
+                                      entry.table === null
+                                        ? 'Usage on this model shows no cost until a price is set again. Tokens are untouched.'
+                                        : 'Every cost on the Usage page for this model is counted at the dated table’s price again.',
+                                    confirmLabel:
+                                      entry.table === null ? 'Remove price' : 'Reset price',
+                                    danger: entry.table === null,
+                                    icon: 'warning',
+                                  }).then((yes) => {
+                                    if (yes) run(resetModelPrice(entry.model));
+                                  });
                                 }}
                               >
                                 {entry.table === null ? 'Remove' : 'Reset'}

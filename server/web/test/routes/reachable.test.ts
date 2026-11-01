@@ -42,8 +42,6 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
     'a person — their name on Organisation, a Contributors row or a Capacity card (owners and admins)',
   // A person's own day (LAI-787, D-088): about whoever is signed in, so it
   // sits under their name at the foot of the rail rather than in a group.
-  '/developer/connect':
-    'Developer access — its Connect an agent card opens the wizard, every agent and every step (LAI-796)',
 };
 
 const holds = () => true;

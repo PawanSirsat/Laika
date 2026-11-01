@@ -415,6 +415,6 @@ void describe('an entry from Solidtime is read-only here (LAI-788 review round 1
       ),
     );
     assert.match(src, /canChange\(entry\)/);
-    assert.match(src, /change it in Solidtime/);
+    assert.match(src, /Change it there; the next import updates it here/);
   });
 });

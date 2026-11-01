@@ -50,6 +50,8 @@ export interface BoardState {
   readonly refreshError: unknown;
   /** When `tasks` were last read from the server (unix ms), for "as of". */
   readonly asOf: number | null;
+  /** When the read behind `tasks` started, in the page's order (`read-order.ts`). */
+  readonly readOrder: number;
 }
 
 /** Where a change to the board came from (LAI-707; LAI-708's motion keys on it). */
@@ -155,6 +157,7 @@ const INITIAL: BoardState = {
   refreshing: false,
   refreshError: null,
   asOf: null,
+  readOrder: 0,
 };
 
 /** The same elements in the same order — so an unchanged filter result keeps its identity. */
@@ -189,6 +192,7 @@ function derive(
     refreshing: snapshot.refreshing,
     refreshError: snapshot.refreshError,
     asOf: snapshot.asOf,
+    readOrder: snapshot.readOrder,
   };
 }
 

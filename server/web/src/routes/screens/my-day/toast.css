@@ -1,0 +1,109 @@
+/*
+ * The toast (the owner's `MyDay.dc.html`, LAI-517): a dark pill at the bottom
+ * centre of the page column — not of the window, so it never sits under the
+ * drawer — 24px up, 92px while the bulk bar shows; 20px and 84px on a phone.
+ * The holder is sticky at the column's foot and has no height, so the pill
+ * floats over the page without pushing it.
+ */
+.myday-toasts {
+  position: sticky;
+  bottom: 1.5rem;
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  height: 0;
+  padding: 0 0.75rem;
+  pointer-events: none;
+}
+
+.myday-column:has([data-bulk-count]) .myday-toasts {
+  bottom: 5.75rem;
+}
+
+@media (max-width: 899px) {
+  .myday-toasts {
+    bottom: 1.25rem;
+  }
+
+  .myday-column:has([data-bulk-count]) .myday-toasts {
+    bottom: 5.25rem;
+  }
+}
+
+/* The pill: the page's ink as its ground, the card as its ink, in both themes. */
+.myday-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  max-width: min(36rem, 100%);
+  padding: 0.375rem 0.375rem 0.375rem 0.875rem;
+  border-radius: 0.625rem;
+  background: var(--text-primary);
+  box-shadow: var(--shadow-modal);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--bg-card);
+  pointer-events: auto;
+}
+
+.myday-toast-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+}
+
+.myday-toast-warn .myday-toast-dot {
+  background: var(--chip-orange);
+}
+
+.myday-toast-error .myday-toast-dot {
+  background: var(--overdue);
+}
+
+.myday-toast-text {
+  flex: 1;
+  min-width: 0;
+  text-wrap: pretty;
+}
+
+.myday-toast-undo,
+.myday-toast-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.75rem;
+  margin: 0;
+  border: none;
+  border-radius: 0.375rem;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The design's accent on the pill: the theme's accent, lifted toward the card. */
+.myday-toast-undo {
+  padding: 0 0.625rem;
+  font-weight: var(--weight-heavy);
+  color: color-mix(in srgb, var(--accent) 50%, var(--bg-card));
+}
+
+.myday-toast-close {
+  width: 1.75rem;
+  padding: 0;
+  color: color-mix(in srgb, var(--bg-card) 62%, var(--text-primary));
+}
+
+.myday-toast-undo:hover:not(:disabled),
+.myday-toast-close:hover {
+  background: color-mix(in srgb, var(--bg-card) 14%, transparent);
+}
+
+.myday-toast-undo:disabled {
+  cursor: default;
+  opacity: 0.55;
+}

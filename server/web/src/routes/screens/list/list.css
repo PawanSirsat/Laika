@@ -136,6 +136,73 @@
 .list-col-spr {
   width: 2.875rem;
 }
+/* The agent's mark and device (LAI-538); a long device ellipsises. Drawn
+   only in a space that uses agents. */
+.list-col-agent {
+  width: 6.5rem;
+}
+/*
+ * **With the Agent column the table still fits 1440 beside the sidebar**
+ * (LAI-569). Adding its 6.5rem to the minimum kept SUMMARY's room but made
+ * the table scroll 62px sideways in its card. So in that mode only, every
+ * cell's side padding is 10px instead of 14px, and each fixed column gives
+ * up exactly those 8px: what a cell can hold is unchanged — dates on one line
+ * (LAI-491), `EFFORT ↕` (LAI-794), the agent's device — and SUMMARY gets the
+ * 80px back. The minimum is the old one less those ten columns' 0.5rem.
+ */
+.list-with-agent {
+  min-width: 73.25rem;
+}
+.list.list-with-agent thead th,
+.list.list-with-agent tbody td {
+  padding-left: 0.625rem;
+  padding-right: 0.625rem;
+}
+.list-with-agent .list-col-key {
+  width: 4.125rem;
+}
+.list-with-agent .list-col-status {
+  width: 6rem;
+}
+.list-with-agent .list-col-pri {
+  width: 3.125rem;
+}
+.list-with-agent .list-col-size {
+  width: 5.5rem;
+}
+.list-with-agent .list-col-assignee {
+  width: 8.875rem;
+}
+.list-with-agent .list-col-agent {
+  width: 6rem;
+}
+.list-with-agent .list-col-spr {
+  width: 2.375rem;
+}
+.list-with-agent .list-col-due {
+  width: 6.25rem;
+}
+.list-with-agent .list-col-created,
+.list-with-agent .list-col-updated {
+  width: 8rem;
+}
+.list-agent-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+.list-agent-cell .agent-mark {
+  flex: none;
+}
+.list-agent-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* **Wide enough for the longest date, on one line** (LAI-491). The design's
    84px was sized for `6d`; D-065's labels run to `25 Aug 2025, 01:01` — 18
    mono characters at 10px plus the cell's padding. Both columns hold the same

@@ -15,6 +15,8 @@ import { startScheduler } from './jobs/scheduler.ts';
 import { readEnv } from './env.ts';
 import { createLogger } from './log.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
+import { checkpointSettings, configureCheckpoints } from './services/checkpoints.ts';
+import { configureClaims } from './services/claims.ts';
 import { applyKeepAlive } from './http/keep-alive.ts';
 import { createRuntimeShutdown } from './shutdown.ts';
 import { readVersion } from './version.ts';
@@ -97,6 +99,19 @@ function main(): void {
   // still passed.
   // §11.6's cron. After the port is bound — a job is not a reason to delay
   // serving — and handed to the shutdown path, which stops it with the streams.
+  // §9.1's timings, and the boot grace measured from now (LAI-541): before
+  // the scheduler, whose expiry scan reads both.
+  configureClaims({ timings: env.claims, bootedAt: Date.now() });
+  // §9.1.1's pending notice and D-115's retention (LAI-1015): before the
+  // scheduler too, whose prune job reads the retention.
+  configureCheckpoints(env.checkpoints);
+  // Read back from the service, not from `env`: `build.test.ts` asserts this
+  // record, so it is what notices the line above going missing.
+  const checkpoints = checkpointSettings();
+  log.info('checkpoints.configured', {
+    pending_notice_ms: checkpoints.pendingNoticeMs,
+    retention_ms: checkpoints.retentionMs,
+  });
   const scheduler = startScheduler({
     db,
     sqlite,

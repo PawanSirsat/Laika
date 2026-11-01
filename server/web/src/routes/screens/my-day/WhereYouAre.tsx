@@ -28,8 +28,8 @@ export function WhereYouAre({ settings, tz, pending, run }: WhereYouAreProps) {
       value: DEVICE,
       label:
         fallback === undefined
-          ? `Your device’s zone (${tz}) — not on the list`
-          : `Your device’s zone — ${placeLabel(fallback)}`,
+          ? `Follow my laptop (${tz})`
+          : `Follow my laptop — ${placeLabel(fallback)}`,
     },
     ...PLACES.map((p) => ({ value: p.key, label: placeLabel(p) })),
   ];
@@ -54,7 +54,7 @@ export function WhereYouAre({ settings, tz, pending, run }: WhereYouAreProps) {
             'place',
             () => setPlace(value === DEVICE ? null : value),
             chosen === undefined
-              ? 'Where you are: your device’s zone. The sky follows it.'
+              ? 'Where you are follows your laptop. The sky follows it.'
               : `Where you are: ${placeLabel(chosen)}. The sky on your Timeline follows it.`,
           );
         }}

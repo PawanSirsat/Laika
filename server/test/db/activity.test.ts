@@ -603,9 +603,14 @@ describe('rebuilding the table does not renumber the SSE cursor (LAI-110)', () =
       }
     }
 
-    expect(
-      readActivityAfter(t.db, 0, 100).map((row) => `${String(row.seq)}@${String(row.createdAt)}`),
-    ).toEqual(before);
+    // Read on the driver: the replayed 0008 shape predates `agent_id`
+    // (LAI-535), which a Drizzle select of the whole row would name.
+    const after = t.sqlite
+      .prepare(
+        'SELECT rowid AS seq, created_at AS createdAt FROM activity ORDER BY rowid LIMIT 100',
+      )
+      .all() as { seq: number; createdAt: number }[];
+    expect(after.map((row) => `${String(row.seq)}@${String(row.createdAt)}`)).toEqual(before);
   });
 });
 

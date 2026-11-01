@@ -326,6 +326,12 @@
   z-index: 1;
 }
 
+/* The card's state line (LAI-1006): lifted for its hover title, and a click
+   on it opens the card as the rest of the card does. */
+.card-state-open {
+  cursor: pointer;
+}
+
 /* In flight. The card has NOT moved — the server has not answered yet. */
 .card-moving {
   opacity: 0.6;
@@ -883,6 +889,15 @@
   position: relative;
   flex: none;
   display: flex;
+}
+
+/* The selected agent (LAI-538): shrinks and ellipsises before the avatar
+   would, so a long device name never pushes the person off the card. */
+.card-agent {
+  flex: 0 1 auto;
+  display: flex;
+  min-width: 0;
+  max-width: 10.5rem;
 }
 
 .card-bot {

@@ -93,8 +93,10 @@ export function seed(db: Db, now = Date.now()): Seed {
     `);
   }
 
-  // The same for `projects` and 0051's space settings (LAI-976).
-  if (hasColumn(db, 'projects', 'former_prefixes')) {
+  // The same for `projects`: keyed on its newest column, 0066's
+  // `context_revision` (LAI-555), since a whole-row insert names every column
+  // the schema has — 0051's space settings (LAI-976) included.
+  if (hasColumn(db, 'projects', 'context_revision')) {
     db.insert(projects)
       .values({
         id: projectId,

@@ -35,12 +35,31 @@ export async function pinToday(page: Page): Promise<void> {
   await cdp.send('Emulation.setTimezoneOverride', { timezoneId: 'UTC' });
 }
 
-/** {@link openPage}, with the page pinned to {@link NOW} before its own `before`. */
+/**
+ * The Timeline at 1× and its rows at 80px, as every My day test was written
+ * for — the app opens at 3× both when nothing is kept (LAI-526's ask,
+ * `timeline-prefs.ts`). Kept only when nothing is, so a test that changes
+ * either sees its own change survive a reload; `my-day-timeline-prefs.test.ts`
+ * opens without this to see the defaults.
+ */
+export async function pinOneTimes(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    if (localStorage.getItem('laika.my-day.zoom') === null) {
+      localStorage.setItem('laika.my-day.zoom', '1');
+    }
+    if (localStorage.getItem('laika.my-day.row-height') === null) {
+      localStorage.setItem('laika.my-day.row-height', '80');
+    }
+  });
+}
+
+/** {@link openPage}, with the page pinned to {@link NOW} and 1× before its own `before`. */
 export const open: typeof openPage = (path, stub, options = {}) =>
   openPage(path, stub, {
     ...options,
     before: async (page) => {
       await pinToday(page);
+      await pinOneTimes(page);
       await options.before?.(page);
     },
   });

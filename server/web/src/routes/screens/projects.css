@@ -8,7 +8,10 @@
   padding-bottom: var(--space-6);
 }
 
-.projects > :not(.screen-page) {
+/* The context panel is a fixed slide-over, not a column of the page: a
+   gutter on it pushed its right edge 18 px in and its left edge off a phone
+   (LAI-556). */
+.projects > :not(.screen-page, .ctx) {
   margin-left: 1.125rem;
   margin-right: 1.125rem;
 }

@@ -290,7 +290,7 @@ void describe('transfer ownership (D-104 item 2)', () => {
       const dialog = h.page.locator('[data-confirm-dialog]');
       await dialog.locator('input').fill('u2@example.com');
       await dialog.locator('[data-confirm-ok] button').click();
-      const error = dialog.locator('.org-confirm-error');
+      const error = dialog.locator('[data-confirm-error]');
       await error.waitFor({ timeout: 20_000 });
       assert.equal(await error.innerText(), MESSAGE);
     } finally {

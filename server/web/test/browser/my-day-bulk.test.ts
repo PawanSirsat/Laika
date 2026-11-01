@@ -33,17 +33,20 @@ void after(async () => {
 const row = (h: Harness, id: string) => h.page.locator(`li[data-draft="${id}"]`);
 const tick = (h: Harness, id: string) => row(h, id).locator('input.myday-check');
 const pageBox = (h: Harness) =>
-  h.page.getByRole('checkbox', { name: 'Select every block on this page' });
+  h.page.getByRole('checkbox', { name: 'Select every drafted block' });
 const count = (h: Harness) => h.page.locator('[data-bulk-count]');
 const said = (h: Harness) => h.page.locator('[data-bulk-said]');
 /** The selection bar's Confirm (LAI-831: *Confirm*, as the owner's design names it). */
-const confirmSelected = (h: Harness) =>
-  h.page.locator('.myday-bulk').getByRole('button', { name: 'Confirm', exact: true });
+const confirmSelected = (h: Harness) => h.page.locator('.myday-bulk [data-bulk-confirm]');
+/** The bar's Confirm when some ticked blocks have no task: `Confirm 9`. */
+const confirmSelected9 = confirmSelected;
 
 async function busy(writes?: (call: StubCall) => unknown): Promise<Harness> {
   const h = await open('/my-day', busyStub(writes));
   await h.page.setViewportSize({ width: 1440, height: 900 });
-  await h.page.locator('.myday-drafts [data-pager-label]').waitFor({ timeout: 30_000 });
+  // The day opens on Overview (LAI-514): the drafts are on their tab.
+  await h.page.locator('[data-day-tab="review"]').click();
+  await h.page.locator('.myday-drafts [data-settle-row]').first().waitFor({ timeout: 30_000 });
   return h;
 }
 
@@ -56,92 +59,92 @@ void describe('the column beside the day', () => {
   void test('Agent minutes, then On your plate — bounded, scrolling on its own; the switch in the header', async () => {
     const h = await busy();
     try {
+      // The two cards live in the drawer (LAI-511): the header's button opens
+      // them.
+      await h.page.locator('[data-beside-button]').click();
       await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
       const sides = async () =>
         (
           await h.page
-            .locator('[data-myday-side] > section')
+            .locator('[data-myday-drawer] .myday-drawer-cards > section')
             .evaluateAll((els: Element[]) => els.map((el) => el.className))
         ).map((c) => c.split(' ').find((k: string) => k !== 'myday-card'));
-      // Wait for every section, not just the plate (LAI-715) — *Who looked at
-      // my time* last, under the plate (LAI-959).
-      await until(async () => (await sides()).join('|') === 'myday-agent|myday-plate|myday-looked');
-      assert.deepEqual(await sides(), ['myday-agent', 'myday-plate', 'myday-looked']);
-      // Draft my time sits in the header, as the owner's design has it (LAI-831).
+      // *Who looked* is the header's (LAI-502): two cards stand here.
+      await until(async () => (await sides()).join('|') === 'myday-agent|myday-plate');
+      assert.deepEqual(await sides(), ['myday-agent', 'myday-plate']);
+      // Draft my time sits in the header's Day settings, as the owner's design has it (LAI-502).
+      await h.page.locator('[data-day-settings] > button').click();
       const draftSwitch = h.page
         .locator('.screen-page')
         .getByRole('switch', { name: 'Draft my time' });
       await until(async () => (await draftSwitch.count()) === 1);
       assert.equal(await draftSwitch.count(), 1);
-      // One drafted card, one confirmed — never drawn twice.
-      await until(async () => (await h.page.locator('.myday-entries').count()) === 1);
+      await h.page.keyboard.press('Escape');
+      // One drafted card on its tab, one confirmed on its — never drawn twice (LAI-505).
       assert.equal(await h.page.locator('.myday-drafts').count(), 1);
+      assert.equal(await h.page.locator('.myday-entries').count(), 0);
+      await h.page.locator('[data-day-tab="confirmed"]').click();
+      await until(async () => (await h.page.locator('.myday-entries').count()) === 1);
       assert.equal(await h.page.locator('.myday-entries').count(), 1);
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('.myday-drafts').waitFor({ timeout: 5_000 });
 
       const laptop = await h.page.evaluate(() => {
-        const side = document.querySelector<HTMLElement>('[data-myday-side]');
-        const grid = document.querySelector('.myday-grid')?.getBoundingClientRect();
-        const main = document.querySelector('.myday-main')?.getBoundingClientRect();
+        const drawer = document.querySelector<HTMLElement>('[data-myday-drawer]');
+        const side = document.querySelector<HTMLElement>('[data-myday-drawer] .myday-drawer-body');
         const scroller = document.querySelector<HTMLElement>('.shell-main');
-        if (side === null || grid === undefined || main === undefined || scroller === null) {
-          return null;
-        }
-        const before = side.getBoundingClientRect();
+        if (drawer === null || side === null || scroller === null) return null;
+        const before = drawer.getBoundingClientRect();
         scroller.scrollTop = scroller.scrollHeight;
-        const scrolled = side.getBoundingClientRect();
+        const scrolled = drawer.getBoundingClientRect();
         side.scrollTop = side.scrollHeight;
         return {
           height: before.height,
           scrollHeight: side.scrollHeight,
           clientHeight: side.clientHeight,
           ownScroll: side.scrollTop,
-          gridHeight: grid.height,
-          mainHeight: main.height,
           scrolledTop: scrolled.top,
           scrolledBottom: scrolled.bottom,
-          position: getComputedStyle(side).position,
+          position: getComputedStyle(drawer).position,
           overflowY: getComputedStyle(side).overflowY,
         };
       });
       assert.ok(laptop !== null);
-      assert.ok(laptop.height <= 900 - 32 + 1, `the column is ${String(laptop.height)}px tall`);
+      assert.ok(laptop.height <= 900 + 1, `the drawer is ${String(laptop.height)}px tall`);
       // A scroll of its own whenever it is taller than that: overflow, not the page.
-      assert.equal(laptop.overflowY, 'auto', 'the column does not scroll on its own');
+      assert.equal(laptop.overflowY, 'auto', 'the drawer does not scroll on its own');
       if (laptop.scrollHeight > laptop.clientHeight + 1) {
-        assert.ok(laptop.ownScroll > 0, 'the column is taller than it shows, and does not scroll');
+        assert.ok(laptop.ownScroll > 0, 'the drawer is taller than it shows, and does not scroll');
       }
-      assert.ok(
-        laptop.gridHeight - laptop.mainHeight < 2,
-        `the column runs the page on: ${String(laptop.gridHeight)} > ${String(laptop.mainHeight)}`,
-      );
       assert.equal(laptop.position, 'sticky');
       assert.ok(
         laptop.scrolledTop >= -1 && laptop.scrolledBottom <= 900 + 1,
-        `scrolled to the foot of the page, the column left the viewport: ${JSON.stringify(laptop)}`,
+        `scrolled to the foot of the page, the drawer left the viewport: ${JSON.stringify(laptop)}`,
       );
 
       await h.page.setViewportSize({ width: 390, height: 844 });
       await h.page.waitForFunction(() => document.documentElement.clientWidth === 390);
       const phone = await h.page.evaluate(() => {
-        const side = document.querySelector<HTMLElement>('[data-myday-side]');
-        const main = document.querySelector('.myday-main')?.getBoundingClientRect();
-        if (side === null || main === undefined) return null;
-        const box = side.getBoundingClientRect();
+        const drawer = document.querySelector<HTMLElement>('[data-myday-drawer]');
+        const side = document.querySelector<HTMLElement>('[data-myday-drawer] .myday-drawer-body');
+        if (drawer === null || side === null) return null;
+        const box = drawer.getBoundingClientRect();
         return {
-          top: box.top,
+          bottom: Math.round(box.bottom),
           height: box.height,
-          mainBottom: main.bottom,
+          position: getComputedStyle(drawer).position,
           overflowY: getComputedStyle(side).overflowY,
           sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
       });
       assert.ok(phone !== null);
-      assert.ok(phone.top >= phone.mainBottom - 1, 'on a phone the column is not under the day');
+      assert.equal(phone.position, 'fixed', 'on a phone the drawer is not a sheet');
+      assert.equal(phone.bottom, 844, 'on a phone the sheet is not at the bottom');
       assert.ok(
-        phone.height <= 844 * 0.8 + 1,
-        `on a phone the column is ${String(phone.height)}px`,
+        phone.height <= 844 * 0.86 + 1,
+        `on a phone the sheet is ${String(phone.height)}px`,
       );
-      assert.equal(phone.overflowY, 'auto', 'on a phone the column is not bounded');
+      assert.equal(phone.overflowY, 'auto', 'on a phone the sheet is not bounded');
       assert.equal(phone.sideways, 0, 'the page scrolls sideways on a phone');
     } finally {
       await h.close();
@@ -151,6 +154,7 @@ void describe('the column beside the day', () => {
   void test('On your plate: five of each, the true count, and +N more where the rest live', async () => {
     const h = await busy();
     try {
+      await h.page.locator('[data-beside-button]').click();
       const plate = h.page.locator('.myday-plate');
       await plate.locator('.plate-groups').waitFor({ timeout: 20_000 });
       const group = (id: string) => plate.locator(`[data-plate="${id}"]`);
@@ -201,39 +205,25 @@ void describe('the column beside the day', () => {
 });
 
 void describe('the drafted blocks', () => {
-  void test('page ten at a time, with no scroll of their own; the confirmed ones too', async () => {
+  void test('every block listed, grouped by the part of the day, with no scroll of their own; the confirmed ones too', async () => {
     const h = await busy();
     try {
       const card = h.page.locator('.myday-drafts');
-      const label = card.locator('[data-pager-label]');
-      const prev = card.getByRole('button', { name: '‹ Prev' });
-      const next = card.getByRole('button', { name: 'Next ›' });
       const ids = () =>
         card
           .locator('li[data-draft]')
           .evaluateAll((els) => els.map((el) => el.getAttribute('data-draft')));
-
-      assert.equal(await label.innerText(), '1–10 of 42');
+      // All 42, in the day's order, under their groups (LAI-505).
       assert.deepEqual(
         await ids(),
-        DRAFTS.slice(0, 10).map((d) => d.id),
+        DRAFTS.map((d) => d.id),
       );
-      assert.equal(await prev.isDisabled(), true);
+      const groups = await card
+        .locator('[data-group]')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-group')));
+      assert.deepEqual(groups, ['morning', 'afternoon', 'evening']);
 
-      await next.click();
-      await until(async () => (await label.innerText()) === '11–20 of 42');
-      assert.equal(await label.innerText(), '11–20 of 42');
-      assert.deepEqual(
-        await ids(),
-        DRAFTS.slice(10, 20).map((d) => d.id),
-      );
-
-      for (let i = 0; i < 3; i += 1) await next.click();
-      await until(async () => (await label.innerText()) === '41–42 of 42');
-      assert.equal(await label.innerText(), '41–42 of 42');
-      assert.equal(await next.isDisabled(), true);
-
-      // The page of ten is the bound; a scroll of its own kept the wheel from the page (LAI-311).
+      // No scroll of its own: the wheel always moves the page (LAI-311).
       const area = await card.locator('.myday-scroll').evaluate((el) => ({
         overflow: getComputedStyle(el).overflowY,
         hidden: el.scrollHeight - el.clientHeight,
@@ -241,32 +231,39 @@ void describe('the drafted blocks', () => {
       assert.equal(area.overflow, 'visible', 'the drafted list scrolls on its own');
       assert.ok(area.hidden <= 1, `the drafted list hides ${String(area.hidden)}px`);
 
-      // Fourteen confirmed entries, a page of ten — the owner's design lists them.
+      // Fourteen confirmed entries, on their tab.
+      await h.page.locator('[data-day-tab="confirmed"]').click();
       const entries = h.page.locator('.myday-entries');
+      await entries.waitFor({ timeout: 5_000 });
       assert.equal(
         await entries.locator('[data-confirmed-caption]').innerText(),
-        '14 entries · 1 h 52 min',
+        '14 · 1 h 52 min',
       );
-      assert.equal(await entries.locator('li[data-entry]').count(), 10);
-      assert.equal(await entries.locator('.myday-pager-label').innerText(), '1–10 of 14');
+      assert.equal(await entries.locator('li[data-entry]').count(), 14);
     } finally {
       await h.close();
     }
   });
 
-  void test('select-all takes the page, then offers every page; Shift selects a run; Space ticks one', async () => {
+  void test('the header box takes every block; Shift selects a run; Space ticks one', async () => {
     const h = await busy();
     try {
       await pageBox(h).click();
       await count(h).waitFor({ timeout: 5_000 });
-      // d01–d10 are 15 to 19 minutes, twice over.
-      assert.equal(await count(h).innerText(), '10 selected · 2 h 50 min');
-
-      const everyPage = h.page.getByRole('button', { name: 'Select all 42 drafted' });
-      await everyPage.click();
+      // The box takes the whole list (LAI-505): no pages to offer.
       await until(async () => (await count(h).innerText()).startsWith('42'));
-      assert.equal(await count(h).innerText(), '42 selected · 11 h 51 min');
-      assert.equal(await everyPage.count(), 0, 'every page is selected, and it is still offered');
+      assert.equal(await count(h).innerText(), '42 selected');
+      assert.equal(await h.page.locator('.myday-bulk-sum').innerText(), '11 h 51 min');
+      // The bar floats at the foot of the window (the design, LAI-514).
+      const dock = await h.page.locator('.myday-bulk-dock').evaluate((el) => ({
+        position: getComputedStyle(el).position,
+        bottom: Math.round(el.getBoundingClientRect().bottom),
+      }));
+      assert.equal(dock.position, 'sticky');
+      assert.ok(
+        dock.bottom <= 900 - 19 && dock.bottom >= 900 - 21,
+        `the bar sits at ${String(dock.bottom)}`,
+      );
 
       await h.page.getByRole('button', { name: 'Clear' }).click();
       await until(async () => (await count(h).count()) === 0);
@@ -304,10 +301,14 @@ void describe('confirming in bulk', () => {
   void test('Confirm selected leaves out a block on nothing, names it, and re-reads the day once', async () => {
     const h = await busy();
     try {
-      await pageBox(h).click();
-      assert.equal(
-        await h.page.locator('[data-bulk-needcard]').innerText(),
-        '1 needs a card or General — left out of Confirm',
+      // The first ten, as the page of ten used to be (LAI-505): a run of rows.
+      await tick(h, 'd01').click();
+      await tick(h, 'd10').click({ modifiers: ['Shift'] });
+      // One of the ten has no task: Confirm says how many it will take.
+      assert.equal(await confirmSelected9(h).innerText(), 'Confirm 9');
+      assert.match(
+        (await confirmSelected9(h).getAttribute('title')) ?? '',
+        /^1 with no task yet stay in To review$/,
       );
       const reads = dayReads(h);
 
@@ -325,7 +326,7 @@ void describe('confirming in bulk', () => {
         'Confirmed 9 blocks. Left out, still selected — 1 needs a card or General: 7:00–7:18 AM.',
       );
       // The one left out stays selected, to be put on a card next.
-      assert.equal(await count(h).innerText(), '1 selected · 18 min');
+      assert.equal(await count(h).innerText(), '1 selected');
       assert.equal(await tick(h, 'd04').isChecked(), true);
 
       // One re-read for the whole batch, not one per block.
@@ -348,7 +349,9 @@ void describe('confirming in bulk', () => {
         : defaultWrites(call),
     );
     try {
-      await pageBox(h).click();
+      // The first ten, as the page of ten used to be (LAI-505): a run of rows.
+      await tick(h, 'd01').click();
+      await tick(h, 'd10').click({ modifiers: ['Shift'] });
       await confirmSelected(h).click();
       await said(h).waitFor({ timeout: 20_000 });
       assert.equal(await said(h).getAttribute('role'), 'alert');
@@ -377,9 +380,9 @@ void describe('confirming in bulk', () => {
     );
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
+      await h.page.locator('[data-day-tab="review"]').click();
       await pageBox(h).waitFor({ timeout: 30_000 });
       await pageBox(h).click();
-      await h.page.getByRole('button', { name: 'Select all 36 drafted' }).click();
       await until(async () => (await count(h).innerText()).startsWith('36 '));
       await confirmSelected(h).click();
       await said(h).waitFor({ timeout: 60_000 });
@@ -404,7 +407,9 @@ void describe('confirming in bulk', () => {
         : defaultWrites(call),
     );
     try {
-      await pageBox(h).click();
+      // The first ten, as the page of ten used to be (LAI-505): a run of rows.
+      await tick(h, 'd01').click();
+      await tick(h, 'd10').click({ modifiers: ['Shift'] });
       await confirmSelected(h).click();
       await said(h).waitFor({ timeout: 20_000 });
       assert.equal(
@@ -414,7 +419,7 @@ void describe('confirming in bulk', () => {
       );
       // Only the one left out: the two that changed are not claimed as selected.
       await until(async () => (await count(h).innerText()).startsWith('1 '));
-      assert.equal(await count(h).innerText(), '1 selected · 18 min');
+      assert.equal(await count(h).innerText(), '1 selected');
       assert.equal(await tick(h, 'd02').isChecked(), false);
     } finally {
       await h.close();
@@ -432,9 +437,11 @@ void describe('confirming in bulk', () => {
       await h.page.setViewportSize({ width: 1440, height: 900 });
       const button = h.page.locator('.screen-page .myday-chip-primary');
       await button.waitFor({ timeout: 30_000 });
-      assert.equal(await button.innerText(), 'Confirm day · 10 h 8 min');
+      assert.match(await button.innerText(), /^Confirm day\s+10 h 8 min$/);
       const reads = dayReads(h);
+      // Confirm day opens the summary first (LAI-503); its Confirm sends the day.
       await button.click();
+      await h.page.locator('[data-summary-confirm]').click();
       await said(h).waitFor({ timeout: 20_000 });
       assert.deepEqual(posts(h, '/confirm'), [`/api/v1/me/time/days/${TODAY}/confirm`]);
       assert.equal(await said(h).getAttribute('role'), 'alert');
@@ -456,8 +463,9 @@ void describe('confirming in bulk', () => {
     const h = await busy();
     try {
       const button = h.page.locator('.screen-page .myday-chip-primary');
-      assert.equal(await button.innerText(), 'Confirm 36 ready · 10 h 8 min');
+      assert.match(await button.innerText(), /^Confirm day\s+36 ready · 10 h 8 min$/);
       await button.click();
+      await h.page.locator('[data-summary-confirm]').click();
       await said(h).waitFor({ timeout: 60_000 });
       const sent = posts(h, '/confirm');
       assert.equal(sent.length, 36);
@@ -490,6 +498,7 @@ void describe('confirming in bulk', () => {
     );
     try {
       await h.page.locator('.screen-page .myday-chip-primary').click();
+      await h.page.locator('[data-summary-confirm]').click();
       await said(h).waitFor({ timeout: 60_000 });
       // d01–d19 less the three on nothing, then d20; nothing after it is sent.
       assert.equal(posts(h, '/confirm').length, 17);
@@ -539,10 +548,9 @@ void describe('the bar acts at once, and Undo takes it back (LAI-831)', () => {
         h.calls.filter((c) => c.method === 'PATCH').map((c) => c.path.split('/').pop());
       await tick(h, 'd01').click();
       await tick(h, 'd04').click();
-      await h.page
-        .locator('.myday-bulk')
-        .getByRole('button', { name: 'General', exact: true })
-        .click();
+      // General is *No task* under Assign task (the design, LAI-514).
+      await h.page.locator('.myday-bulk').getByRole('button', { name: 'Assign task' }).click();
+      await h.page.locator('[data-bulk-assign-task="general"]').click();
       await said(h).waitFor({ timeout: 20_000 });
       assert.deepEqual(patches(), ['d01', 'd04']);
       assert.equal(await said(h).innerText(), 'Moved 2 blocks to General.');
@@ -579,7 +587,7 @@ void describe('while a batch runs', () => {
       const progress = h.page.locator('.myday-bulk-progress');
       await progress.waitFor({ timeout: 10_000 });
 
-      const add = h.page.locator('[data-add-submit]');
+      const add = h.page.locator('[data-add-time]');
       const previous = h.page.getByRole('button', { name: 'Previous week' });
       // An earlier day of this week, when there is one (there is none on a Monday).
       const earlier = h.page.locator('.myday-week-day.myday-week-confirmed');
@@ -612,6 +620,7 @@ void describe('names a screen reader can tell apart', () => {
     const drafts = DRAFTS.slice(0, 2).map(untimed);
     const h = await open('/my-day', busyStub(undefined, { ...BUSY_DAY, drafts }));
     try {
+      await h.page.locator('[data-day-tab="review"]').click();
       await h.page.locator('li[data-draft]').first().waitFor({ timeout: 30_000 });
       const expected = [
         'Select block 1 of 2, no set time, 15 min, LAI-1 Search matches keys',
@@ -638,6 +647,8 @@ void describe('names a screen reader can tell apart', () => {
 void describe('every row is connected to its card (LAI-810, the owner)', () => {
   void test('a known card is a link to it in its own space; one the reader cannot see is not', async () => {
     const h = await busy();
+    // Agent time stands in the column only while nothing is in hand (LAI-508).
+    await h.page.keyboard.press('Escape');
     try {
       const link = row(h, 'd01').locator('.myday-row-target a.myday-cardlink');
       assert.equal(await link.getAttribute('href'), '/board?project=atlas&task=t1');
@@ -645,13 +656,13 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       // On nothing: words, never a dead link.
       assert.equal(await row(h, 'd04').locator('.myday-row-target a').count(), 0);
 
-      await h.page.locator('.myday-drafts').getByRole('button', { name: 'Next ›' }).click();
       const hidden = row(h, 'd11').locator('.myday-row-target');
       await hidden.waitFor({ timeout: 5_000 });
       assert.equal(await hidden.locator('a').count(), 0, 'a card the reader cannot see is a link');
       assert.match(await hidden.innerText(), /LAI-758 was named — a card you can’t read/);
 
       // Confirmed entries — imported from Solidtime too — and agent minutes.
+      await h.page.locator('[data-day-tab="confirmed"]').click();
       const entry = (id: string) => h.page.locator(`li[data-entry="${id}"]`);
       await entry('e01').waitFor({ timeout: 5_000 });
       assert.equal(
@@ -664,7 +675,9 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       );
       assert.match(await entry('e02').innerText(), /Solidtime/);
       assert.equal(await entry('e03').locator('a').count(), 0, 'General is a link');
-      // Agent minutes: a link only to a card the reader can read, in its space.
+      // Agent minutes: a link only to a card the reader can read, in its space
+      // — in the drawer, from the header's button (LAI-511).
+      await h.page.locator('[data-beside-button]').click();
       const agent = h.page.locator('.myday-agent');
       assert.equal(
         await agent.locator('a.myday-cardlink').first().getAttribute('href'),
@@ -677,8 +690,8 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       assert.match(await secret.innerText(), /SEC-9 \(not a card you can see\)/);
       assert.doesNotMatch(await agent.innerText(), /Secret plan/);
 
-      // By keyboard, as a link is.
-      await h.page.locator('.myday-drafts').getByRole('button', { name: '‹ Prev' }).click();
+      // By keyboard, as a link is — back on the To review tab (LAI-505).
+      await h.page.locator('[data-day-tab="review"]').click();
       await link.focus();
       await h.page.keyboard.press('Enter');
       await h.page.waitForURL(
@@ -702,36 +715,28 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       const inspector = h.page.locator('[data-inspector-for="d01"]');
       await inspector.waitFor({ timeout: 5_000 });
       assert.match(await inspector.innerText(), /6:00–6:15 AM/);
-      for (const name of [
-        'Not work',
-        'Shorter by 5 minutes',
-        'Longer by 5 minutes',
-        'Split in two',
-      ]) {
+      for (const name of ['Not work time', 'Split in two']) {
         await until(async () => (await inspector.getByRole('button', { name }).count()) === 1);
         assert.equal(await inspector.getByRole('button', { name }).count(), 1, name);
       }
-      // Other card… opens the field, and focus is in it.
-      await inspector.getByRole('button', { name: 'Other card…' }).focus();
-      await h.page.keyboard.press('Enter');
-      await until(() => h.page.evaluate(() => document.activeElement?.tagName === 'INPUT'));
-      assert.equal(
-        await h.page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
-        'Another card’s key',
-      );
+      // Any other card is found by the search (LAI-504, LAI-515).
+      assert.equal(await inspector.locator('[data-task-search]').count(), 1);
 
       // LAI-788: an entry from Solidtime is read here and changed there.
+      await h.page.locator('[data-day-tab="confirmed"]').click();
       await h.page.locator('[data-select="e02"]').click();
       const imported = h.page.locator('[data-inspector-for="e02"]');
       await imported.waitFor({ timeout: 5_000 });
-      assert.match(await imported.innerText(), /change it in Solidtime/);
-      assert.equal(await imported.getByRole('button', { name: 'Delete' }).count(), 0);
-      assert.equal(await imported.getByRole('button', { name: 'Longer by 5 minutes' }).count(), 0);
+      assert.match(await imported.innerText(), /Change it there/);
+      assert.equal(await imported.getByRole('button', { name: 'Delete entry' }).count(), 0);
+      assert.equal(await imported.locator('[data-task-search]').count(), 0);
       await h.page.locator('[data-select="e01"]').click();
       const own = h.page.locator('[data-inspector-for="e01"]');
       await own.waitFor({ timeout: 5_000 });
-      await until(async () => (await own.getByRole('button', { name: 'Delete' }).count()) === 1);
-      assert.equal(await own.getByRole('button', { name: 'Delete' }).count(), 1);
+      await until(
+        async () => (await own.getByRole('button', { name: 'Delete entry' }).count()) === 1,
+      );
+      assert.equal(await own.getByRole('button', { name: 'Delete entry' }).count(), 1);
     } finally {
       await h.close();
     }

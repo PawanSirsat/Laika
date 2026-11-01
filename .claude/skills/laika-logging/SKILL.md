@@ -1,12 +1,14 @@
 ---
 name: laika-logging
-description: Use when finishing a task or ending a session in the Laika repo, to append the required entry to logs/<session>-<YYYY-MM-DD>.md. Gives the exact format and a worked example of what counts as a decision and a discovery.
+description: Use when finishing a task or ending a session in the Laika repo, to append the required entry to logs/<session>-<YYYY-MM-DD>-<LAI-NNN>.md (the task's own log file). Gives the exact format and a worked example of what counts as a decision and a discovery.
 ---
 
 # Laika logging
 
-One log file per session per day: `logs/<session>-<YYYY-MM-DD>.md` — e.g.
-`logs/core-2026-08-24.md`. Append only. **Never open another session's log
+One log file per task per day: `logs/<session>-<YYYY-MM-DD>-<LAI-NNN>.md` —
+e.g. `logs/core-2026-11-02-LAI-1027.md` (since 2026-11-01, so parallel PRs
+never conflict on a shared day log). Notes with no task still go to
+`logs/<session>-<YYYY-MM-DD>.md`, from the session's own branch only. Append only. **Never open another session's log
 file**, not even to read-and-copy the format; the format is right here.
 
 Write an entry after **every** task and at the **end of every session**.

@@ -44,169 +44,60 @@
   color: var(--text-primary);
 }
 
-.dev-card-link {
-  font-size: var(--text-body);
-  font-weight: var(--weight-semibold);
-  color: var(--accent);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.dev-card-link:hover {
-  text-decoration: underline;
-}
-
-.dev-card-link:focus-visible,
-.dev-step-action:focus-visible,
-.dev-agent:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.dev-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.dev-step {
+/* The Connect tab is the wizard itself (LAI-507): the page is as tall as the
+   shell's content area so the wizard's card is the one scroller, as it was on
+   its own page (LAI-741). The other tabs scroll as any page does. */
+.dev-page-connect {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: 1.125rem 1.25rem 1.25rem;
+  height: 100%;
+  min-height: 0;
+}
+
+.dev-page-connect > .connect {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.dev-projects-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) 1.25rem 1.25rem;
+}
+
+.dev-projects-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.dev-projects-fields .conn-field {
+  flex: 1 1 14rem;
   min-width: 0;
 }
 
-.dev-step + .dev-step {
-  border-left: 1px solid var(--border-subtle);
+/* Once per machine / once per project, said beside every block (LAI-507). */
+.conn-chip-scope {
+  border-color: var(--chip-blue-border);
+  background: var(--chip-blue-bg);
+  color: var(--chip-blue);
+  white-space: nowrap;
 }
 
-.dev-step-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  font-size: var(--text-heading-sm);
-  font-weight: var(--weight-bold);
-  color: var(--text-primary);
-}
-
-.dev-step-num {
-  flex: none;
-  width: 1.375rem;
-  height: 1.375rem;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  color: var(--on-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-}
-
-.dev-agents {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-}
-
-.dev-agent {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  height: 2rem;
-  padding: 0 0.625rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: var(--text-body);
-  font-weight: var(--weight-semibold);
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.dev-agent:hover {
-  border-color: var(--border-default);
-}
-
-.dev-agent[aria-pressed='true'] {
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
-  color: var(--accent);
-}
-
-.dev-step-body,
-.dev-step-note {
-  margin: 0;
-  font-size: var(--text-body);
-  line-height: var(--leading-body);
-  color: var(--text-secondary);
-}
-
-.dev-step-note {
-  color: var(--text-muted);
-}
-
-.dev-step-body code {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  color: var(--text-primary);
-}
-
-.dev-step-action {
-  display: inline-flex;
-  align-items: center;
-  height: 2rem;
-  padding: 0 0.875rem;
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-control);
-  background: var(--accent-bg);
-  color: var(--accent);
-  font-size: var(--text-body);
-  font-weight: var(--weight-bold);
-  text-decoration: none;
-}
-
-.dev-step-action:hover {
-  border-color: var(--accent);
-}
-
-/* The start of the setup, as the wizard will show it — ink ground in both themes. */
-.dev-preview {
-  margin: 0;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.75rem 0.875rem;
-  border-radius: var(--radius-card);
-  background: var(--text-primary);
-  color: var(--bg-card);
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  overflow: hidden;
-}
-
-@media (max-width: 1000px) {
-  .dev-steps {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .dev-step + .dev-step {
-    border-left: none;
-    border-top: 1px solid var(--border-subtle);
+@media (max-width: 56rem) {
+  .dev-page-connect {
+    height: auto;
   }
 }
 
+/* A phone: the page's sentence and the rail's intro make way, so the wizard's
+   card still starts high on the screen under the tabs (LAI-742's rule, kept
+   by LAI-507). The tabs say where the reader is. */
 @media (max-width: 600px) {
-  .dev-body {
-    padding: var(--space-4) var(--space-4) var(--space-6);
+  .dev-page-connect .screen-page-desc,
+  .dev-page-connect .conn-rail-intro {
+    display: none;
   }
 }

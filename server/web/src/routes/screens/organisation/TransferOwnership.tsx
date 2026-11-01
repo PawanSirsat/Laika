@@ -6,7 +6,7 @@ import type { MeProfile } from '../../../api/me.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import type { OrgUser } from '../../../api/users.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
-import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
 import { newOwnerCandidates } from './people-derive.ts';
 
 export interface TransferOwnershipProps {

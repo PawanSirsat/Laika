@@ -72,19 +72,37 @@ describe('migrations', () => {
   const EXPECTED_TABLES = [
     'accounts',
     'activity',
+    // LAI-545, D-115 item 2: an owner's consent to automatic saves.
+    'agent_checkpoint_consents',
+    // LAI-553: agent event envelopes and their per-agent deliveries.
+    'agent_event_deliveries',
+    'agent_events',
+    // LAI-534, D-114: what each registered agent may reach.
+    'agent_project_grants',
+    // LAI-555: the context revision last delivered to a session, per project.
+    'agent_session_context_deliveries',
+    // LAI-541: an agent's running processes, and the claims they hold.
+    'agent_sessions',
     // LAI-833: when the agent worked, by session and five minutes.
     'agent_time_buckets',
     // LAI-787, D-088: Claude Code's active time, agent minutes.
     'agent_time_days',
+    // LAI-534, D-114: registered agents.
+    'agents',
     // LAI-957, D-102: who looked at a person's analytics.
     'analytics_views',
     'board_activity_days',
+    // LAI-545, D-116: every ref a checkpoint has, and every push that moved one.
+    'checkpoint_ref_transitions',
+    'checkpoint_refs',
     'comment_mentions',
     'comments',
     // LAI-766, D-083: what GitHub's deliveries said, kept 30 days.
     'github_checks',
     'github_commits',
     'github_pull_requests',
+    // LAI-535: work requests, the §4.4 offer shape (LAI-546 widens it).
+    'handoff_offers',
     'heartbeats',
     'idempotency_keys',
     'invites',
@@ -101,10 +119,16 @@ describe('migrations', () => {
     'password_resets',
     // LAI-773, D-087: a developer's own plan limit.
     'plan_limits',
+    // LAI-555: every revision of a project's context document.
+    'project_context_revisions',
+    // LAI-546, §4.74: a project's hand-off settings; no row is the defaults.
+    'project_handoff_policies',
     'project_memberships',
     'project_statuses',
     'projects',
     'pushed_commit_keys',
+    // LAI-590: the owner's confirmed device labels.
+    'recognised_agent_devices',
     'sessions',
     // LAI-788: the Solidtime bridge's map, people and entries.
     'solidtime_entries',
@@ -112,8 +136,11 @@ describe('migrations', () => {
     'solidtime_projects',
     'sprints',
     'tags',
+    // LAI-545, D-115: a save an agent registered on purpose.
+    'task_checkpoints',
     // LAI-772, D-085: what a claimant said at claim, as append-only history.
     'task_claim_estimates',
+    'task_claims',
     'task_dependencies',
     // LAI-771, D-085: sizes and forecasts, as append-only history.
     'task_estimates',
@@ -128,10 +155,14 @@ describe('migrations', () => {
     'tasks',
     // LAI-831: a gap a person waved away; SPEC §4 is LAI-836.
     'time_breaks',
+    // LAI-501, D-110: a person's note on a day (§4.62).
+    'time_day_notes',
     // LAI-787, D-088: drafts, confirmed entries and their history.
     'time_drafts',
     'time_entries',
     'time_entry_revisions',
+    // LAI-500, D-110: a person's running timer, one row while it runs (§4.61).
+    'time_timers',
     // LAI-831: what Undo puts back, for minutes; SPEC §4 is LAI-836.
     'time_undo',
     // LAI-773: budgets and their alerts, the telemetry match, the arrival rate.

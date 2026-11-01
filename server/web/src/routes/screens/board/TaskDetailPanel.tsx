@@ -18,7 +18,10 @@ import { useTaskDetail } from '../../../api/use-task-detail.ts';
 import { useTaskText } from '../../../api/use-task-text.ts';
 import { useDelayed } from '../../../components/use-delayed.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
-import { describeActor } from './actor-presentation.ts';
+import { actorLine, describeActor, viaLine } from './actor-presentation.ts';
+import { threadOrder, type ThreadItem } from './thread-order.ts';
+import { agentNamesFrom } from '../../../api/selected-agent.ts';
+import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import {
   getTask,
   listWatchers,
@@ -40,11 +43,26 @@ import { CommentComposer } from '../task/CommentComposer.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { ForecastSection } from '../task/ForecastSection.tsx';
 import { TokensSection } from '../task/TokensSection.tsx';
+import { ExecutionPanel } from '../../../components/agent/ExecutionPanel.tsx';
+import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
+import { executionView, hasExecution } from '../../../components/agent/execution-derive.ts';
 import {
-  demoAgentBuild,
-  demoClaimLock,
-  DEMO_HANDOFF_ENABLED,
-} from '../../../demo/agent-runtime.ts';
+  approveGate,
+  currentOffer,
+  PENDING_POLL_MS,
+  pollsForNotice,
+  type ApproveGate,
+  offerStatusWords,
+  panelCheckpointOf,
+  panelState,
+  recoveryOf,
+  saveRows,
+  summaryBehind,
+} from '../../../components/agent/handoff-derive.ts';
+import { HandoffSection } from '../../../components/agent/HandoffSection.tsx';
+import type { HandoffOffer } from '../../../api/handoffs.ts';
+import { useTaskHandoffs } from '../../../api/use-task-handoffs.ts';
+import { usePermissions, holdsProjectAction, implicitlyLeads } from '../../../api/permissions.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { avatarColorSolid } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -54,6 +72,13 @@ import './task-detail.css';
 
 export interface TaskDetailPanelProps {
   readonly slug: string;
+  /**
+   * The newest live frame that changes this task's execution (LAI-543), by
+   * `seq`. When it moves the panel re-reads its activity quietly.
+   */
+  readonly executionSignal?: number | undefined;
+  /** The space's `agents_allowed`, for the Agent row (LAI-538); absent reads as allowed. */
+  readonly agentsAllowed?: boolean | undefined;
   /**
    * The store's copy, which is live and has no description or acceptance
    * (LAI-795). The panel reads those itself — {@link useTaskText}.
@@ -110,6 +135,12 @@ export interface TaskDetailPanelProps {
    */
   readonly onTaskEdited: () => void;
   /**
+   * The drawer's own read of saves and offers is fresher than the task view's
+   * `handoff` summary (LAI-1006 review): re-read the board's list, so the card
+   * and this drawer move together on the server's next summary.
+   */
+  readonly onHandoffsChanged?: (() => void) | undefined;
+  /**
    * Open another task in this same drawer — the parent in the breadcrumb, a
    * subtask row, where this was discovered. The board's `openTaskInUrl`, so it
    * is a history entry Back undoes (LAI-252).
@@ -120,6 +151,8 @@ export interface TaskDetailPanelProps {
    * description is tried again at the next one (LAI-795 review, B1).
    */
   readonly listReadAt?: number | null | undefined;
+  /** When the read behind `task` started, in the page's order (LAI-538). */
+  readonly listReadOrder?: number | undefined;
 }
 
 /**
@@ -148,6 +181,9 @@ function personName(id: string | null, members: ReadonlyMap<string, Member>): st
   return members.get(id)?.name ?? id;
 }
 
+/** How often the execution panel's *Last seen* re-words itself (LAI-597). */
+const LAST_SEEN_TICK_MS = 30_000;
+
 /**
  * The panel a card opens into (SPEC §11.4.2.1).
  *
@@ -161,6 +197,7 @@ function personName(id: string | null, members: ReadonlyMap<string, Member>): st
  */
 export function TaskDetailPanel({
   slug,
+  agentsAllowed,
   task,
   byId,
   members,
@@ -178,11 +215,27 @@ export function TaskDetailPanel({
   mayCreate = false,
   onTagsChanged,
   onTaskEdited,
+  onHandoffsChanged,
   onAssigned,
   onOpen,
   listReadAt = null,
+  listReadOrder = 0,
+  executionSignal,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
+  /*
+   * A claim taken, lapsed or taken back while the drawer is open (LAI-543):
+   * re-read the activity **quietly**, so the panel follows it without a
+   * loading state, a re-render of the thread, or the focus moving. The first
+   * value is what the drawer opened with, which the first read already has.
+   */
+  const { refresh: refreshDetail } = detail;
+  const seenSignal = useRef(executionSignal);
+  useEffect(() => {
+    if (executionSignal === seenSignal.current) return;
+    seenSignal.current = executionSignal;
+    refreshDetail();
+  }, [executionSignal, refreshDetail]);
   /*
    * **The texts, read on open** (LAI-795). Until they land the two sections
    * hold their place rather than drawing an empty description someone could
@@ -306,17 +359,9 @@ export function TaskDetailPanel({
   );
   const panelRef = useRef<HTMLDivElement>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const [handoff, setHandoff] = useState<string | undefined>(undefined);
   const statusRef = useRef<HTMLButtonElement | null>(null);
   const { theme } = useTheme();
   const now = Date.now();
-  /*
-   * The claim's deadline and the agent's build are the only things on this
-   * panel Laika cannot answer — see `demo/agent-runtime.ts`. Both are
-   * `undefined` in a production build, and every reader below treats that as
-   * "no such thing" rather than "not loaded yet".
-   */
-  const claimLock = demoClaimLock(task, now);
 
   /**
    * Who is watching, read once and used twice — the header's Watch button and
@@ -370,7 +415,130 @@ export function TaskDetailPanel({
     detail.status === 'ready'
       ? detail.activity.filter((event) => event.type.startsWith('webhook.'))
       : [];
-  const agentBuild = demoAgentBuild(task.created_by_client, task.id);
+  /**
+   * The reader's own agents, read once for the drawer (LAI-538): the Agent
+   * row's choices, and half of what names an agent in the activity below.
+   */
+  const myAgents = useMyAgents();
+  /**
+   * Agents this reader may see, by id (LAI-538 review): their own, and every
+   * one selected on a task the board holds — this one's included. A row by
+   * any other agent reads *a registered agent*, which is true, not a guess.
+   */
+  const agentNames = useMemo(
+    () => agentNamesFrom(agentsOf(myAgents), [task, ...byId.values()]),
+    [myAgents, task, byId],
+  );
+  /**
+   * Which agent wrote each agent comment, from its `comment.added` row:
+   * `CommentView` carries no `agent_id`, and the activity row does (LAI-535).
+   * A row with none is a legacy token's — *agent (unregistered token)*, never
+   * an agent's name (D-114).
+   */
+  const commentAgents = useMemo(() => {
+    const found = new Map<string, string>();
+    if (detail.status !== 'ready') return found;
+    for (const event of detail.activity) {
+      if (event.type !== 'comment.added') continue;
+      const id = (event.payload as { comment_id?: unknown } | null)?.comment_id;
+      const via = viaLine(event, agentNames);
+      if (typeof id === 'string' && via !== undefined) found.set(id, via);
+    }
+    return found;
+  }, [detail, agentNames]);
+  /**
+   * The execution panel's facts: the task view, its live claim (LAI-597) and
+   * its claim rows (LAI-543). The live claim is read on this reader's clock,
+   * which re-renders the panel when its heartbeat goes stale and every half
+   * minute for *Last seen* — no request either way.
+   */
+  const claimNow = useClaimClock(task.claim, LAST_SEEN_TICK_MS);
+  const execution = useMemo(
+    () =>
+      executionView(task, detail.status === 'ready' ? detail.activity : [], agentNames, claimNow),
+    [task, detail, agentNames, claimNow],
+  );
+  /*
+   * **Saves and hand-offs** (LAI-549): read only for a task an agent has
+   * claimed — nothing else can have either — and re-read quietly with the
+   * activity when a live frame moves them, so a line changes in place and the
+   * focus stays where the reader left it.
+   */
+  const [pollMs, setPollMs] = useState<number | undefined>(undefined);
+  const handoffs = useTaskHandoffs(task.id, hasExecution(execution), pollMs);
+  const { refresh: refreshHandoffs } = handoffs;
+  // Poll only while a save waits for its notice; the server decides when it is late.
+  const polling = pollsForNotice(handoffs.checkpoints);
+  useEffect(() => {
+    setPollMs(polling ? PENDING_POLL_MS : undefined);
+  }, [polling]);
+  const seenHandoffSignal = useRef(executionSignal);
+  useEffect(() => {
+    if (executionSignal === seenHandoffSignal.current) return;
+    seenHandoffSignal.current = executionSignal;
+    refreshHandoffs();
+  }, [executionSignal, refreshHandoffs]);
+  // The drawer's poll saw a save or an offer the summary has not: re-read the
+  // board's list once per distinct read, so a server that still disagrees
+  // cannot make this loop (LAI-1006 review).
+  const behindAsked = useRef<readonly [unknown, unknown] | undefined>(undefined);
+  useEffect(() => {
+    if (handoffs.status !== 'ready') return;
+    if (!summaryBehind(task.handoff, handoffs.checkpoints, handoffs.offers)) {
+      behindAsked.current = undefined;
+      return;
+    }
+    const asked = behindAsked.current;
+    if (asked?.[0] === handoffs.checkpoints && asked[1] === handoffs.offers) return;
+    behindAsked.current = [handoffs.checkpoints, handoffs.offers];
+    onHandoffsChanged?.();
+  }, [handoffs.status, handoffs.checkpoints, handoffs.offers, task.handoff, onHandoffsChanged]);
+  const saves = useMemo(() => saveRows(handoffs.checkpoints), [handoffs.checkpoints]);
+  const offer = useMemo(() => currentOffer(handoffs.offers), [handoffs.offers]);
+  const recovery = useMemo(
+    () =>
+      recoveryOf(
+        { kind: execution.claimExpired ? 'expired' : 'none' },
+        task.claim,
+        saves,
+        handoffs.offers,
+        handoffs.status,
+      ),
+    [execution.claimExpired, task.claim, saves, handoffs.offers, handoffs.status],
+  );
+  /*
+   * Who may approve or withdraw (§3.2, §4.73): the server's grants first, then
+   * the row's own condition — the task's assignee or a lead, and never the
+   * owner of the receiving agent. The server refuses anything else anyway;
+   * this only keeps a control from being offered to someone it would refuse.
+   */
+  const { permissions } = usePermissions();
+  const myAgentIds = useMemo(
+    () => new Set(agentsOf(myAgents).map((agent) => agent.id)),
+    [myAgents],
+  );
+  const projectRole =
+    permissions?.me.projects.find((p) => p.project_id === task.project_id)?.role ?? null;
+  const leads = projectRole === 'lead' || implicitlyLeads(permissions, task.project_id);
+  const isAssignee = meId !== undefined && task.assignee_id === meId;
+  /*
+   * The receiver's owner is known only from the reader's own agents: until
+   * that read succeeds, *Approve* is disabled with a reason, never enabled on
+   * an empty list (LAI-549 review).
+   */
+  const ownAgents: ReadonlySet<string> | 'loading' | 'error' =
+    myAgents.kind === 'ready' ? myAgentIds : myAgents.kind;
+  const approveFor = (o: HandoffOffer): ApproveGate =>
+    approveGate(o, {
+      holdsApprove: holdsProjectAction(permissions, task.project_id, 'task.handoff.approve'),
+      leadsOrAssignee: leads || isAssignee,
+      ownAgents,
+    });
+  const mayCancel = (o: HandoffOffer): boolean =>
+    holdsProjectAction(permissions, task.project_id, 'task.handoff.cancel') &&
+    (leads || isAssignee || (o.from_agent_id !== null && myAgentIds.has(o.from_agent_id)));
+  const orgRole = permissions?.me.org_role;
+  const backlog = statuses.find((s) => s.category === 'backlog' && !s.hidden);
   /**
    * Which tab is showing.
    *
@@ -387,12 +555,10 @@ export function TaskDetailPanel({
    * **All** is the thread and the history in one timeline, oldest first — a
    * conversation's order, with what happened between the messages. Neither
    * list is re-sorted on its own tab; this merge is the only place the two
-   * meet, and it is by `created_at` with the comment first on a tie.
+   * meet, and it is by `created_at` with the comment first on a tie and two
+   * events by `seq` ({@link threadOrder}, LAI-575).
    */
-  const everything: readonly (
-    | { readonly kind: 'comment'; readonly at: number; readonly comment: Comment }
-    | { readonly kind: 'event'; readonly at: number; readonly event: ActivityEvent }
-  )[] =
+  const everything: readonly ThreadItem[] =
     detail.status === 'ready'
       ? [
           ...detail.comments.map((comment) => ({
@@ -405,7 +571,7 @@ export function TaskDetailPanel({
             at: event.created_at,
             event,
           })),
-        ].sort((a, b) => a.at - b.at || (a.kind === 'comment' ? -1 : 1))
+        ].sort(threadOrder)
       : [];
 
   /**
@@ -476,7 +642,15 @@ export function TaskDetailPanel({
               was written *by a tool running as* somebody; the possessive is
               the honest attribution and it is what the design writes.
             */}
-            <span className="cmt-who">{agent ? `${who}'s agent` : who}</span>
+            {/* The person, and the agent they acted through (LAI-538): named
+                where this reader may see it, *agent (unregistered token)* for
+                a legacy token's. An agent comment whose activity row is not
+                loaded says only *an agent* — it is never given a name. */}
+            <span className="cmt-who">
+              {agent || commentAgents.has(comment.id)
+                ? `${who} via ${commentAgents.get(comment.id) ?? 'an agent'}`
+                : who}
+            </span>
             {agent && <span className="cmt-agent">AGENT</span>}
             {comment.edited_at !== null && <span className="cmt-edited">edited</span>}
             {/* The reason a person sent the task back from review (D-082). */}
@@ -512,10 +686,11 @@ export function TaskDetailPanel({
     // Not `personName`: on an activity row a null actor is the system by
     // CHECK constraint, and "someone edited this task" reads as an
     // unidentified human (LAI-411).
-    const actor = describeActor(event, members);
+    const actor = describeActor(event, members, agentNames);
     return (
       <li key={`${event.id}-${String(event.seq)}`} className="panel-event">
-        <span className="panel-event-who">{actor.name}</span>
+        {/* *Pawan via Claude Code · laptop-1* on an agent's row (LAI-538). */}
+        <span className="panel-event-who">{actorLine(actor)}</span>
         {/* The word itself, not a colour — an `agent` and a `system` marker
             must be told apart by someone who cannot separate violet from
             grey (AC3). */}
@@ -523,7 +698,7 @@ export function TaskDetailPanel({
           <span className={`marker marker-${actor.badge}`}>{actor.badge}</span>
         )}
         <span className="panel-event-what">
-          {describeEvent(event)}
+          {describeEvent(event, agentNames)}
           {move !== undefined && (
             <>
               {' '}
@@ -1095,7 +1270,7 @@ export function TaskDetailPanel({
                         {changes.map((event) => (
                           <li key={`${event.id}-${String(event.seq)}`} className="panel-change">
                             <span className="panel-change-who">
-                              {describeActor(event, members).name}
+                              {actorLine(describeActor(event, members, agentNames))}
                             </span>
                             <span className="panel-change-what">
                               {pushSummary(event) ?? describeEvent(event)}
@@ -1142,8 +1317,6 @@ export function TaskDetailPanel({
             mayEdit={mayEdit === true}
             moving={moving}
             watchers={watchers}
-            claimLock={claimLock}
-            agentBuild={agentBuild}
             parent={parent}
             openSubtasks={openSubtasks}
             changesCount={changes.length}
@@ -1153,33 +1326,78 @@ export function TaskDetailPanel({
             onTagsChanged={onTagsChanged}
             onOpen={onOpen}
             statusRef={statusRef}
+            agentsAllowed={agentsAllowed}
+            myAgents={myAgents}
+            readOrder={listReadOrder}
           />
 
-          {DEMO_HANDOFF_ENABLED && (
-            <div className="panel-side-actions">
-              <button
-                type="button"
-                className="panel-action panel-action-primary"
-                onClick={() => {
-                  /*
-                    The refusal lives here, not in `demo/`: it is the screen's
-                    own explanation, and a sentence in that directory reaches
-                    the production bundle — `DEMO_ENABLED` is a runtime value,
-                    so the minifier keeps the text even when the behaviour is
-                    gone.
-                  */
-                  setHandoff(
-                    'Laika has no endpoint that hands a task to a runtime yet, so nothing was queued. This button is part of the imported design.',
-                  );
-                }}
+          {/*
+            **Execution, from real data only** (LAI-543, LAI-597): the agent
+            picked beside the one that last took the work, and that claim as
+            the task's activity records it — an expired one in words. The live
+            claim the read serves says who holds it now and when it last
+            checked in, and *Working* or *Connection lost* on this reader's
+            clock.
+          */}
+          {hasExecution(execution) && (
+            <div className="panel-side-exec">
+              <ExecutionPanel
+                /* The Agent row above carries *Waiting for agent*. */
+                state={panelState(
+                  execution.state === 'waiting_for_agent' ? null : execution.state,
+                  recovery,
+                  saves,
+                  // The task view's summary (LAI-1005): the card's own rule.
+                  task.handoff,
+                )}
+                intended={execution.intended}
+                session={execution.session}
+                lastSeen={execution.lastSeen}
+                lastSeenAt={execution.lastSeenAt}
+                liveSessionId={execution.liveSessionId}
+                sessionLine={execution.sessionLine}
+                sessionHarnessVersion={execution.sessionHarnessVersion}
+                sessionModel={execution.sessionModel}
+                claim={execution.claim}
+                claimExpired={execution.claimExpired}
+                noRecentSaveMs={task.handoff?.no_recent_save?.window_ms}
+                generation={execution.generation}
+                checkpoint={
+                  saves.verified !== null
+                    ? panelCheckpointOf(saves.verified, Date.now())
+                    : saves.count > 0 && handoffs.status === 'ready'
+                      ? null
+                      : undefined
+                }
+                noCheckpointWords="None verified yet"
+                pendingCheckpoint={
+                  saves.newer === undefined ? undefined : panelCheckpointOf(saves.newer, Date.now())
+                }
+                showPendingHint={orgRole === 'owner' || orgRole === 'admin'}
+                handoff={offer === undefined ? undefined : offerStatusWords(offer, agentNames)}
               >
-                <span aria-hidden="true">▷</span> Hand to my agent
-              </button>
-              {handoff !== undefined && (
-                <p className="panel-alert" role="status">
-                  {handoff}
-                </p>
-              )}
+                <HandoffSection
+                  taskKey={task.key}
+                  offer={offer}
+                  recovery={recovery}
+                  checkpoints={handoffs.checkpoints}
+                  agents={agentNames}
+                  approveFor={approveFor}
+                  mayCancel={mayCancel}
+                  onRelease={
+                    mayEdit && backlog !== undefined && task.status !== 'backlog'
+                      ? () => {
+                          onMove(task.id, backlog.id);
+                        }
+                      : undefined
+                  }
+                  onOffer={(answer) => {
+                    handoffs.replaceOffer(answer);
+                    refreshHandoffs();
+                  }}
+                  now={Date.now()}
+                />
+              </ExecutionPanel>
             </div>
           )}
         </div>

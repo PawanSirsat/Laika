@@ -54,4 +54,22 @@ export const STREAM_TYPES: readonly string[] = [
   'task.stale_flagged',
   'invite.expired',
   'meeting_review.expired',
+  // A task's selected agent changed (LAI-535). Dotted like every verb here;
+  // the proposal's `agent_selected` is this one.
+  'task.agent_selected',
+  // An agent's claim lapsed, and the agent took it back (LAI-541, LAI-543).
+  // Both reach the board live, so a card's state changes without a reload.
+  'task.claim_expired',
+  'task.claim_reclaimed',
+  // A save registered on purpose (LAI-545), and the hand-off's seven verbs
+  // (LAI-546). All reach the board live, so the drawer's checkpoint and
+  // hand-off rows follow them without a reload (LAI-549).
+  'task.checkpoint_saved',
+  'task.handoff_offered',
+  'task.handoff_approved',
+  'task.handoff_accepted',
+  'task.handoff_declined',
+  'task.handoff_cancelled',
+  'task.handoff_expired',
+  'task.recovered',
 ];

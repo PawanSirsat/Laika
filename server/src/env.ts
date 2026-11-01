@@ -35,6 +35,123 @@ export interface Env {
    * built the SPA — see LAI-204.
    */
   readonly publicDir: string | undefined;
+  /**
+   * The claim timings of §9.1 (proposal §4.2, LAI-541), in milliseconds —
+   * each its own `LAIKA_CLAIM_*_SECONDS` variable, defaulting to the
+   * proposal's 30 s / 90 s / 5 min / 30 s.
+   */
+  readonly claims: {
+    heartbeatMs: number;
+    suspectMs: number;
+    expireMs: number;
+    scanMs: number;
+  };
+  /**
+   * The checkpoint windows (§9.1.1, D-115 item 9, LAI-1015), in milliseconds:
+   * `LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS` and
+   * `LAIKA_CHECKPOINT_RETENTION_DAYS`, defaulting to 10 min and 90 days.
+   */
+  readonly checkpoints: {
+    pendingNoticeMs: number;
+    retentionMs: number;
+  };
+}
+
+/** §9.1's defaults, in seconds (LAI-541). */
+const CLAIM_DEFAULT_SECONDS = { heartbeat: 30, suspect: 90, expire: 300, scan: 30 } as const;
+
+function parseWhole(
+  variable: string,
+  raw: string | undefined,
+  fallback: number,
+  unit: string,
+  max: number,
+): number {
+  if (raw === undefined || raw === '') return fallback;
+  // The shape first, as `PORT` does: `Number()` would take `1e3` and ` 30 `.
+  if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > max) {
+    throw new EnvError(variable, raw, `a whole number of ${unit} between 1 and ${String(max)}`);
+  }
+  return Number(raw);
+}
+
+function parseSeconds(variable: string, raw: string | undefined, fallback: number): number {
+  return parseWhole(variable, raw, fallback, 'seconds', 86_400);
+}
+
+/** §9.1.1's 10 minutes and D-115 item 9's 90 days (LAI-1015). */
+const CHECKPOINT_DEFAULTS = { pendingNoticeSeconds: 600, retentionDays: 90 } as const;
+
+/**
+ * `LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS` and
+ * `LAIKA_CHECKPOINT_RETENTION_DAYS` (§11.7). Takes the raw values rather than
+ * the source: `readEnv` reads them before the claim timings are judged, so a
+ * bad claim value still leaves these read — what `env-contract.test.ts`
+ * measures.
+ */
+function parseCheckpointWindows(raw: {
+  pendingNotice: string | undefined;
+  retention: string | undefined;
+}): Env['checkpoints'] {
+  const pendingNotice = parseSeconds(
+    'LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS',
+    raw.pendingNotice,
+    CHECKPOINT_DEFAULTS.pendingNoticeSeconds,
+  );
+  const retention = parseWhole(
+    'LAIKA_CHECKPOINT_RETENTION_DAYS',
+    raw.retention,
+    CHECKPOINT_DEFAULTS.retentionDays,
+    'days',
+    3650,
+  );
+  return { pendingNoticeMs: pendingNotice * 1000, retentionMs: retention * 86_400_000 };
+}
+
+/**
+ * `LAIKA_CLAIM_*_SECONDS` (§11.7). One cross-check: a claim that lapses before
+ * its next heartbeat is due would expire while its session is perfectly well,
+ * so the expiry must be longer than the heartbeat.
+ *
+ * All four are read before any is judged, so a bad first one still leaves the
+ * others read — what `env-contract.test.ts` measures.
+ */
+function readClaimTimings(source: NodeJS.ProcessEnv): Env['claims'] {
+  const raw = {
+    heartbeat: source.LAIKA_CLAIM_HEARTBEAT_SECONDS,
+    suspect: source.LAIKA_CLAIM_SUSPECT_SECONDS,
+    expire: source.LAIKA_CLAIM_EXPIRE_SECONDS,
+    scan: source.LAIKA_CLAIM_SCAN_SECONDS,
+  };
+  const heartbeat = parseSeconds(
+    'LAIKA_CLAIM_HEARTBEAT_SECONDS',
+    raw.heartbeat,
+    CLAIM_DEFAULT_SECONDS.heartbeat,
+  );
+  const suspect = parseSeconds(
+    'LAIKA_CLAIM_SUSPECT_SECONDS',
+    raw.suspect,
+    CLAIM_DEFAULT_SECONDS.suspect,
+  );
+  const expire = parseSeconds(
+    'LAIKA_CLAIM_EXPIRE_SECONDS',
+    raw.expire,
+    CLAIM_DEFAULT_SECONDS.expire,
+  );
+  const scan = parseSeconds('LAIKA_CLAIM_SCAN_SECONDS', raw.scan, CLAIM_DEFAULT_SECONDS.scan);
+  if (expire <= heartbeat) {
+    throw new EnvError(
+      'LAIKA_CLAIM_EXPIRE_SECONDS',
+      String(expire),
+      `more seconds than LAIKA_CLAIM_HEARTBEAT_SECONDS (${String(heartbeat)})`,
+    );
+  }
+  return {
+    heartbeatMs: heartbeat * 1000,
+    suspectMs: suspect * 1000,
+    expireMs: expire * 1000,
+    scanMs: scan * 1000,
+  };
 }
 
 const DEFAULT_PORT = 3000;
@@ -208,6 +325,10 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const nodeEnv = parseNodeEnv(source.NODE_ENV);
   const port = parsePort(source.PORT);
   const publicUrl = resolvePublicUrl(source, nodeEnv, port);
+  const checkpointRaw = {
+    pendingNotice: source.LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS,
+    retention: source.LAIKA_CHECKPOINT_RETENTION_DAYS,
+  };
 
   return {
     port,
@@ -221,5 +342,7 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
       source.LAIKA_PUBLIC_DIR === undefined || source.LAIKA_PUBLIC_DIR === ''
         ? undefined
         : resolve(source.LAIKA_PUBLIC_DIR),
+    claims: readClaimTimings(source),
+    checkpoints: parseCheckpointWindows(checkpointRaw),
   };
 }

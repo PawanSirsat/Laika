@@ -11,6 +11,7 @@ import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import { orgs, users } from '../../src/db/schema.ts';
 import {
+  BLIND_ACTIVITY_LENS,
   eventView,
   MAX_REPLAY,
   parseLastEventId,
@@ -148,7 +149,7 @@ describe('org-scoped rows are the audit trail', () => {
 
 describe('the wire shape', () => {
   it('renames §4.8 columns to §6.3 style and parses the payload', () => {
-    const view = eventView(write(laikaId, 'task.created'));
+    const view = eventView(write(laikaId, 'task.created'), BLIND_ACTIVITY_LENS);
 
     expect(view).toMatchObject({
       type: 'task.created',
@@ -173,7 +174,7 @@ describe('the wire shape', () => {
     });
     const rows = readActivityAfter(t.db, 0, 10);
 
-    expect(eventView(rows[rows.length - 1]!).actor_kind).toBe('system');
+    expect(eventView(rows[rows.length - 1]!, BLIND_ACTIVITY_LENS).actor_kind).toBe('system');
   });
 });
 

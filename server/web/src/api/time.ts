@@ -112,6 +112,22 @@ export interface TimeDraft {
   readonly branch?: string | null;
 }
 
+/**
+ * What a typed entry was (D-108, LAI-897): the server's `TIME_ENTRY_KINDS`,
+ * held equal by `entry-kinds.test.ts`. The Timeline colours a block by it.
+ */
+export const ENTRY_KINDS = [
+  'work',
+  'meeting',
+  'thinking',
+  'research',
+  'pairing',
+  'review',
+  'support',
+  'admin',
+] as const;
+export type EntryKind = (typeof ENTRY_KINDS)[number];
+
 export type EntrySource = 'draft' | 'manual' | 'import';
 
 /**
@@ -129,6 +145,10 @@ export interface TimeEntry {
   readonly task: TaskRef | null;
   readonly project: ProjectRef | null;
   readonly note: string | null;
+  /** What the person said it was (D-108): a kind, a title, a description — null until they say. */
+  readonly kind?: EntryKind | null;
+  readonly title?: string | null;
+  readonly description?: string | null;
   /** The work folder's chosen name and branch, from the draft it was confirmed from (D-098). */
   readonly folder?: string | null;
   readonly branch?: string | null;
@@ -148,6 +168,9 @@ export interface TimeRevision {
   readonly task_id: string | null;
   readonly project_id: string | null;
   readonly note: string | null;
+  readonly kind?: EntryKind | null;
+  readonly title?: string | null;
+  readonly description?: string | null;
   readonly started_at: number | null;
   readonly ended_at: number | null;
   readonly created_at: number;
@@ -207,6 +230,32 @@ export interface MyDayWeekDay {
   readonly state: DayState;
 }
 
+/**
+ * The person's running timer (SPEC §4.61, LAI-500). Mirrors
+ * `services/time-timer.ts`' `TimerView`. The time run is `accumulated_ms`
+ * plus, while `paused_at` is null, now minus `resumed_at`.
+ */
+export interface Timer {
+  readonly started_at: number;
+  readonly resumed_at: number;
+  readonly paused_at: number | null;
+  readonly accumulated_ms: number;
+  readonly tz: string;
+  readonly task: TaskRef | null;
+  readonly kind: EntryKind | null;
+  readonly title: string | null;
+}
+
+/**
+ * The person's note on a day (SPEC §4.62, LAI-501) — the design's *Note for
+ * your manager*. Mirrors `services/time-day-notes.ts`' `DayNoteView`.
+ */
+export interface DayNote {
+  readonly day: string;
+  readonly note: string;
+  readonly updated_at: number;
+}
+
 /** `GET /me/time?day=&tz=` — My day. */
 export interface MyDay {
   readonly day: string;
@@ -228,6 +277,10 @@ export interface MyDay {
   readonly state: DayState;
   /** Monday to Sunday of the week holding `day`. */
   readonly week: readonly MyDayWeekDay[];
+  /** The running timer, whatever day is open; null when none (LAI-500). */
+  readonly timer: Timer | null;
+  /** The person's note on the day; null when none (LAI-501). */
+  readonly day_note: DayNote | null;
 }
 
 export interface DraftPatch {
@@ -252,6 +305,9 @@ export interface NewEntry {
   readonly task?: string;
   readonly project?: string;
   readonly note?: string;
+  readonly kind?: EntryKind;
+  readonly title?: string;
+  readonly description?: string;
   readonly started_at?: number;
   readonly ended_at?: number;
 }
@@ -261,6 +317,9 @@ export interface EntryPatch {
   readonly task?: string | null;
   readonly project?: string | null;
   readonly note?: string | null;
+  readonly kind?: EntryKind | null;
+  readonly title?: string | null;
+  readonly description?: string | null;
   readonly day?: string;
   /** An edge moved on the entry's own day (LAI-831): one revision. */
   readonly started_at?: number;
@@ -326,6 +385,72 @@ export function setOrgBreaks(breaks: readonly BreakWindow[]): Promise<TimeSettin
   return request<TimeSettings>('/org/time/breaks', { method: 'PUT', body: { breaks } });
 }
 
+/** One day of a stretch (LAI-526). Mirrors `services/time-summary.ts`' `SummaryDayView`. */
+export interface SummaryDay {
+  readonly day: string;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+}
+
+/** One project's time over a stretch; `project` null for time on none. */
+export interface SummaryProject {
+  readonly project: ProjectRef | null;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+}
+
+/**
+ * One task's time over a stretch; `task` null for time on no task — `untied`
+ * for drafted time nobody has put on anything yet (*No task yet*).
+ */
+export interface SummaryTask {
+  readonly task: TaskRef | null;
+  readonly project: ProjectRef | null;
+  readonly untied: boolean;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+}
+
+/** One kind's time; `kind` null for time nobody named — Building's. */
+export interface SummaryKind {
+  readonly kind: EntryKind | null;
+  readonly minutes: number;
+}
+
+/**
+ * `GET /me/time/summary?from=&to=` (LAI-526): a stretch of at most 92 days —
+ * what Overview draws for a week or a picked range. Mirrors
+ * `services/time-summary.ts`' `TimeSummaryView`.
+ */
+export interface TimeSummary {
+  readonly from: string;
+  readonly to: string;
+  readonly days: number;
+  readonly active_days: number;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+  /** Confirmed time of the meeting kind. */
+  readonly meeting_minutes: number;
+  /** Confirmed time typed or run on a timer — what Laika could not see. */
+  readonly manual_minutes: number;
+  readonly by_day: readonly SummaryDay[];
+  readonly by_project: readonly SummaryProject[];
+  readonly by_task: readonly SummaryTask[];
+  readonly by_kind: readonly SummaryKind[];
+}
+
+/** The longest stretch one summary covers, the server's `SUMMARY_MAX_DAYS`. */
+export const SUMMARY_MAX_DAYS = 92;
+
+export function getTimeSummary(
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<TimeSummary> {
+  const query = new URLSearchParams({ from, to }).toString();
+  return request<TimeSummary>(`/me/time/summary?${query}`, opts(signal));
+}
+
 export function getMyDay(day: string, tz: string, signal?: AbortSignal): Promise<MyDay> {
   const query = new URLSearchParams({ day, tz }).toString();
   return request<MyDay>(`/me/time?${query}`, opts(signal));
@@ -359,22 +484,75 @@ export function dismissDraft(id: string, onUndo?: OnUndo): Promise<void> {
   });
 }
 
-export function confirmDraft(id: string, onUndo?: OnUndo): Promise<TimeEntry> {
+/** What a confirmed draft was, said at the confirm (LAI-500): an entry's three words. */
+export interface ConfirmSaid {
+  readonly kind?: EntryKind;
+  readonly title?: string;
+  readonly description?: string;
+}
+
+export function confirmDraft(id: string, onUndo?: OnUndo, said?: ConfirmSaid): Promise<TimeEntry> {
   return request<TimeEntry>(`/me/time-drafts/${encodeURIComponent(id)}/confirm`, {
     method: 'POST',
+    ...(said === undefined ? {} : { body: said }),
     ...undoable(onUndo),
   });
 }
 
+/** `POST /me/time/timer` (SPEC §4.61, LAI-500): the person's one timer, started. */
+export interface TimerStart {
+  readonly tz: string;
+  readonly task?: string;
+  readonly kind?: EntryKind;
+  readonly title?: string;
+}
+
+export function startTimer(input: TimerStart): Promise<Timer> {
+  return request<Timer>('/me/time/timer', { method: 'POST', body: input });
+}
+
+export function pauseTimer(): Promise<Timer> {
+  return request<Timer>('/me/time/timer/pause', { method: 'POST' });
+}
+
+export function resumeTimer(): Promise<Timer> {
+  return request<Timer>('/me/time/timer/resume', { method: 'POST' });
+}
+
+/** What a stop answers: the entry, and whether the timer ran past midnight (then untimed). */
+export interface TimerStopped {
+  readonly entry: TimeEntry;
+  readonly crossed_midnight: boolean;
+}
+
+export function stopTimer(onUndo?: OnUndo): Promise<TimerStopped> {
+  return request<TimerStopped>('/me/time/timer/stop', { method: 'POST', ...undoable(onUndo) });
+}
+
+export function discardTimer(): Promise<void> {
+  return request<void>('/me/time/timer', { method: 'DELETE' });
+}
+
 /** Confirm day: every unconfirmed block of it, in one click. */
-export function confirmDay(
-  day: string,
-  onUndo?: OnUndo,
-): Promise<{ readonly entries: readonly TimeEntry[] }> {
-  return request<{ readonly entries: readonly TimeEntry[] }>(
-    `/me/time/days/${encodeURIComponent(day)}/confirm`,
-    { method: 'POST', ...undoable(onUndo) },
-  );
+export interface DayConfirmed {
+  readonly entries: readonly TimeEntry[];
+  readonly day_note: DayNote | null;
+}
+
+export function confirmDay(day: string, onUndo?: OnUndo, note?: string): Promise<DayConfirmed> {
+  return request<DayConfirmed>(`/me/time/days/${encodeURIComponent(day)}/confirm`, {
+    method: 'POST',
+    ...(note === undefined ? {} : { body: { note } }),
+    ...undoable(onUndo),
+  });
+}
+
+/** `PUT /me/time/days/:day/note` (LAI-501): the note alone; `null` removes it. */
+export function setDayNote(day: string, note: string | null): Promise<DayNote | null> {
+  return request<{ readonly day_note: DayNote | null }>(
+    `/me/time/days/${encodeURIComponent(day)}/note`,
+    { method: 'PUT', body: { note } },
+  ).then((r) => r.day_note);
 }
 
 /** Every unconfirmed draft of mine, gone. Confirmed entries stay. */

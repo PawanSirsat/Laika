@@ -79,6 +79,44 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/org/time/solidtime/projects': 'laika time map writes it (LAI-788)',
   'api/v1/org/time/solidtime/people': 'laika time people writes it (LAI-788)',
   'api/v1/org/time/solidtime/import': 'laika time pull --all sends everyone’s (LAI-788)',
+  // LAI-535 serves it, LAI-566 names it: an agent reads its own open work
+  // requests. Permanent — the SPA holds a session, never an agent's token.
+  'api/v1/agents/me/work-requests':
+    'agent-token only, a session is `403 not_an_agent`; agents read it through MCP `list_ready_tasks`',
+  // LAI-541 serves them, LAI-567 names them. Permanent for the same reason: an
+  // agent's session and its explicit reclaim are its own token's acts, and the
+  // SPA holds a person's session. A person sees their effect on the card
+  // (LAI-543) and never calls them.
+  'api/v1/agent-sessions':
+    'agent-token only, a session is `403 not_an_agent`; the local helper (LAI-542) and MCP `start_working` call it',
+  'api/v1/agent-sessions/*/heartbeat':
+    'agent-token only, a session is `403 not_an_agent`; the local helper (LAI-542) and MCP `start_working` call it',
+  'api/v1/agent-sessions/*/end':
+    'agent-token only, a session is `403 not_an_agent`; the local helper (LAI-542) and MCP `start_working` call it',
+  'api/v1/tasks/*/claim/reclaim':
+    'agent-token only, a session is `403 not_an_agent`; the local helper (LAI-542) and MCP `start_working` call it',
+  // LAI-545 and LAI-546 serve them, LAI-549 names them. Permanent for the same
+  // reason: re-tagging a save, reading an agent's inbox, and accepting or
+  // declining an offer are a registered agent's acts (§3.2), and the SPA holds
+  // a person's session. A person reads the saves and offers on the task
+  // (`GET /tasks/:id/checkpoints`, `/handoff-offers`) and approves or
+  // withdraws an offer — both called from the task drawer.
+  'api/v1/checkpoints/*/refs':
+    'agent-token only (`task.checkpoint.retag`); `laika agent checkpoint reverify` (D-116 item 7) calls it',
+  'api/v1/agents/me/inbox':
+    'agent-token only, a session is `403 not_an_agent`; MCP `agent_sync` is its twin',
+  'api/v1/handoff-offers/*/accept':
+    'agent-token only, a session is `403 not_an_agent`; `laika agent accept` (LAI-548) and MCP `respond_handoff` call it',
+  'api/v1/handoff-offers/*/decline':
+    'agent-token only, a session is `403 not_an_agent`; MCP `respond_handoff` calls it',
+  // LAI-553 serves them. Permanent for the same reason: an agent's event feed
+  // and its delivery acknowledgements are its own token's acts, and the SPA
+  // holds a person's session. A person sees offers on the task and the
+  // Hand-offs inbox, never the agent's delivery states.
+  'api/v1/agents/me/events':
+    'agent-token only, a session is `403 not_an_agent`; the local helper (LAI-554) polls it and MCP `agent_sync` is its twin',
+  'api/v1/agents/me/events/ack':
+    'agent-token only, a session is `403 not_an_agent`; the local helper (LAI-554) records received and presented with it',
 
   // Built, served, and waiting on a screen. Each names the task, not a reason.
   'api/v1/comments/*': 'LAI-234 — a comment cannot be edited or deleted from the UI',

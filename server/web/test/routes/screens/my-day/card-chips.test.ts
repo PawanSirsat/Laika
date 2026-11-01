@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { cardChips } from '../../../../src/routes/screens/my-day/card-chips.ts';
+import {
+  CHIP_CAP,
+  cardChips,
+  cardChipsWhy,
+} from '../../../../src/routes/screens/my-day/card-chips.ts';
 
 /**
  * The cards offered as chips in the inspector and Add time (LAI-831): the
@@ -32,5 +36,19 @@ void describe('cardChips', () => {
 
   void test('nothing to offer is nothing, never a made-up card', () => {
     assert.deepEqual(cardChips(null, [], []), []);
+  });
+
+  void test('each chip says why it is offered (LAI-515); the block’s own says nothing', () => {
+    assert.deepEqual(
+      cardChipsWhy(card(3), [card(1)], [card(4), card(2)], CHIP_CAP, [card(2), card(1)]).map(
+        (c) => [c.task.key, c.why],
+      ),
+      [
+        ['LAI-3', undefined],
+        ['LAI-1', 'In progress'],
+        ['LAI-2', 'Agent worked on it'],
+        ['LAI-4', 'On your day'],
+      ],
+    );
   });
 });

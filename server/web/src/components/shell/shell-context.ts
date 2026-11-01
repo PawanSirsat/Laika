@@ -1,3 +1,4 @@
+import type { PersonInboxCounts } from '../../api/handoffs.ts';
 import { createContext, useContext } from 'react';
 import type { MeProfile } from '../../api/me.ts';
 import type { SessionState } from '../../api/use-session.ts';
@@ -80,6 +81,14 @@ export interface ShellValue {
   readonly tokenAlerts: readonly TokenAlert[] | undefined;
   /** Re-read them — the Usage page calls it after a dismiss. */
   readonly refreshTokenAlerts: () => void;
+  /**
+   * The person's hand-off counts by view (LAI-1009, LAI-550), live and
+   * unexpired only, for the Inbox badge and its Hand-offs tab; `undefined`
+   * until read.
+   */
+  readonly handoffCounts: PersonInboxCounts | undefined;
+  /** Re-read them — the Hand-offs tab calls it after an approve or a withdraw. */
+  readonly refreshHandoffs: () => void;
   /**
    * The instance the browser is pointed at, read from the location — the
    * prototype's `laika.kvelld.internal` is a fixture and this is correct for

@@ -49,7 +49,12 @@ const space = (slug: string) => ({
   open: 0,
 });
 
-const CAPACITY = {
+/**
+ * Capacity as the page asks for it — built from the clock **at request time**
+ * (LAI-898): a person seen eighteen minutes ago is eighteen minutes ago when
+ * the page renders, however long the SPA took to build first.
+ */
+const capacity = (NOW: number) => ({
   enabled: true,
   people: [
     capacityPerson({
@@ -88,7 +93,7 @@ const CAPACITY = {
       agents: [],
     }),
   ],
-};
+});
 
 const INVITES = [
   {
@@ -137,7 +142,7 @@ function stub(who: { id: string; org_role: string }): ApiStub {
     '/api/v1/projects': { data: [], next_cursor: null },
     '/api/v1/users': { data: PEOPLE, next_cursor: null },
     '/api/v1/org': ORG,
-    '/api/v1/capacity': CAPACITY,
+    '/api/v1/capacity': () => capacity(Date.now()),
     '/api/v1/me': me(who.id, who.org_role),
     '/api/v1/invites': (call: StubCall) => {
       if (call.method !== 'POST') return { data: INVITES, next_cursor: null };

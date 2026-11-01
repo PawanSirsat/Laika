@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { getMyDay } from '../../services/my-day.ts';
+import { getMySummary } from '../../services/time-summary.ts';
 import { addBreak, removeBreak } from '../../services/time-breaks.ts';
 import {
   confirmDay,
@@ -22,6 +23,7 @@ import {
   deleteEntry,
   listRevisions,
   updateEntry,
+  TIME_ENTRY_KINDS,
 } from '../../services/time-entries.ts';
 import {
   assertCanSetOrgTime,
@@ -51,6 +53,15 @@ import {
   type SolidtimeOutbox,
   type SolidtimeSetup,
 } from '../../services/time-solidtime.ts';
+import {
+  discardTimer,
+  pauseTimer,
+  resumeTimer,
+  startTimer,
+  stopTimer,
+  TIMER_TITLE_MAX,
+} from '../../services/time-timer.ts';
+import { DAY_NOTE_MAX, dayNoteOn, setDayNote } from '../../services/time-day-notes.ts';
 import { undoChange } from '../../services/time-undo.ts';
 import { UNDO_HEADER } from '../../services/time-undo-log.ts';
 import { TASK_KEY_PATTERN } from '../../services/token-usage.ts';
@@ -198,6 +209,10 @@ const DraftPatchBody = strictObject({
 
 const SplitBody = strictObject({ at: z.number().int().min(0) });
 
+// What the person said an entry was (D-108): a kind from the list, a title, a description.
+const ENTRY_TITLE_MAX = 120;
+const ENTRY_DESCRIPTION_MAX = 2000;
+
 const EntryBody = strictObject({
   day,
   tz: zone,
@@ -205,6 +220,9 @@ const EntryBody = strictObject({
   task: ref.optional(),
   project: slug.optional(),
   note: z.string().max(280).optional(),
+  kind: z.enum(TIME_ENTRY_KINDS).optional(),
+  title: z.string().max(ENTRY_TITLE_MAX).optional(),
+  description: z.string().max(ENTRY_DESCRIPTION_MAX).optional(),
   started_at: z.number().int().min(0).optional(),
   ended_at: z.number().int().min(0).optional(),
 });
@@ -214,9 +232,32 @@ const EntryPatchBody = strictObject({
   task: ref.nullable().optional(),
   project: slug.nullable().optional(),
   note: z.string().max(280).nullable().optional(),
+  kind: z.enum(TIME_ENTRY_KINDS).nullable().optional(),
+  title: z.string().max(ENTRY_TITLE_MAX).nullable().optional(),
+  description: z.string().max(ENTRY_DESCRIPTION_MAX).nullable().optional(),
   day: day.optional(),
   started_at: instantMs.optional(),
   ended_at: instantMs.optional(),
+});
+
+// What a confirmed draft was (D-110, LAI-500): the same three words an entry
+// takes, said at the moment of confirming; left out, the entry gets nulls.
+const ConfirmDraftBody = strictObject({
+  kind: z.enum(TIME_ENTRY_KINDS).optional(),
+  title: z.string().max(ENTRY_TITLE_MAX).optional(),
+  description: z.string().max(ENTRY_DESCRIPTION_MAX).optional(),
+});
+
+// The note for the day (§4.62, LAI-501): with the confirm, or on its own.
+const ConfirmDayBody = strictObject({ note: z.string().max(DAY_NOTE_MAX).optional() });
+const DayNoteBody = strictObject({ note: z.string().max(DAY_NOTE_MAX).nullable() });
+
+// A timer's start (§4.61, LAI-500): its zone, and what it is for — all optional.
+const TimerStartBody = strictObject({
+  tz: zone,
+  task: ref.optional(),
+  kind: z.enum(TIME_ENTRY_KINDS).optional(),
+  title: z.string().max(TIMER_TITLE_MAX).optional(),
 });
 
 // A gap waved away (LAI-831): a span on the person's own day, and nothing else.
@@ -226,6 +267,9 @@ const BreakBody = strictObject({ day, tz: zone, started_at: instantMs, ended_at:
 const UndoBody = strictObject({ id: z.string().min(1).max(64) });
 
 export const MyDayQuery = strictObject({ day: day.optional(), tz: zone.optional() });
+
+/** A stretch of days for `GET /me/time/summary` (LAI-526); its bounds are the service's. */
+export const SummaryQuery = strictObject({ from: day, to: day });
 
 // The Solidtime bridge (LAI-788). **No field can hold a description**: an
 // entry carries the key the CLI read from it, or none, and a digest.
@@ -372,21 +416,57 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
-  app.post('/time-drafts/:id/confirm', (c) => {
+  app.post('/time-drafts/:id/confirm', async (c) => {
     const actor = requireActor(c);
     const { id } = parseParams(IdParams, c.req.param());
-    return c.json(confirmDraft(db, actor, id, Date.now(), undoable(c)), 201);
+    const said = parseBody(ConfirmDraftBody, (await json(c)) ?? {});
+    return c.json(confirmDraft(db, actor, id, Date.now(), undoable(c), said), 201);
   });
 
-  app.post('/time/days/:day/confirm', (c) => {
+  app.post('/time/days/:day/confirm', async (c) => {
     const actor = requireActor(c);
     const { day: on } = parseParams(DayParams, c.req.param());
-    return c.json({ entries: confirmDay(db, actor, on, Date.now(), undoable(c)) });
+    const { note } = parseBody(ConfirmDayBody, (await json(c)) ?? {});
+    const entries = confirmDay(db, actor, on, Date.now(), undoable(c), note);
+    return c.json({ entries, day_note: dayNoteOn(db, actor.userId, on) });
+  });
+
+  app.put('/time/days/:day/note', async (c) => {
+    const actor = requireActor(c);
+    const { day: on } = parseParams(DayParams, c.req.param());
+    const { note } = parseBody(DayNoteBody, await json(c));
+    return c.json({ day_note: setDayNote(db, actor, on, note) });
   });
 
   app.get('/time', (c) => {
     const actor = requireActor(c);
     return c.json(getMyDay(db, actor, parseQuery(MyDayQuery, c.req.query())));
+  });
+
+  // Overview over a week or a picked range (LAI-526).
+  app.get('/time/summary', (c) => {
+    const actor = requireActor(c);
+    return c.json(getMySummary(db, actor, parseQuery(SummaryQuery, c.req.query())));
+  });
+
+  // The timer (§4.61, LAI-500): one per person, kept here so it survives a reload.
+  app.post('/time/timer', async (c) => {
+    const actor = requireActor(c);
+    return c.json(startTimer(db, actor, parseBody(TimerStartBody, await json(c))), 201);
+  });
+
+  app.post('/time/timer/pause', (c) => c.json(pauseTimer(db, requireActor(c))));
+
+  app.post('/time/timer/resume', (c) => c.json(resumeTimer(db, requireActor(c))));
+
+  app.post('/time/timer/stop', (c) => {
+    const actor = requireActor(c);
+    return c.json(stopTimer(db, actor, Date.now(), undoable(c)), 201);
+  });
+
+  app.delete('/time/timer', (c) => {
+    discardTimer(db, requireActor(c));
+    return c.body(null, 204);
   });
 
   app.post('/time/undo', async (c) => {

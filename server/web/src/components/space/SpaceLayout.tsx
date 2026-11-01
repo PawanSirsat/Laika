@@ -260,6 +260,7 @@ function SpaceFrame({
       */}
         {params.get('task') !== null && (
           <TaskDrawer
+            taskId={params.get('task') ?? ''}
             onClose={() => {
               // `push`ed open, so Back closes it; closing is a replace, or Back
               // from here would step through the open state again.

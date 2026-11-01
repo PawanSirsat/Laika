@@ -7,6 +7,7 @@ import { immediateTransaction } from '../db/numbering.ts';
 import { tags, taskTags } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { assertClaimFenceAll } from './claims.ts';
 import { requireProjectBySlug } from './projects.ts';
 
 /**
@@ -280,6 +281,9 @@ export function renameTag(
     const tag = requireTag(db, project.id, source);
 
     if (tag.name === target) return { name: target, task_count: taskCountFor(db, tag.id) };
+    // Every task carrying it changes the label it shows — or, on a merge, its
+    // tag rows — so each passes the claim fence first (LAI-541).
+    assertClaimFenceAll(db, actor, taskIdsOf(db, tag.id), now);
 
     const collision = db
       .select({ id: tags.id })
@@ -319,6 +323,7 @@ export function deleteTag(
   actor: ResolvedActor,
   slug: string,
   name: string,
+  now: number = Date.now(),
 ): { released: number } {
   const project = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, project.id), 'project.settings.edit', { projectId: project.id });
@@ -326,11 +331,22 @@ export function deleteTag(
   return immediateTransaction(sqlite, () => {
     const tag = requireTag(db, project.id, normaliseTagName(name));
     const released = taskCountFor(db, tag.id);
+    // The tag leaves every task carrying it: each passes the fence (LAI-541).
+    assertClaimFenceAll(db, actor, taskIdsOf(db, tag.id), now);
 
     db.delete(tags).where(eq(tags.id, tag.id)).run();
 
     return { released };
   });
+}
+
+function taskIdsOf(db: Db, tagId: string): string[] {
+  return db
+    .select({ id: taskTags.taskId })
+    .from(taskTags)
+    .where(eq(taskTags.tagId, tagId))
+    .all()
+    .map((r) => r.id);
 }
 
 function taskCountFor(db: Db, tagId: string): number {

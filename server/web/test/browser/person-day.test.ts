@@ -23,7 +23,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { NOW, open } from './my-day-clock.ts';
-import { at, TODAY, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
+import { at, summaryRoutes, TODAY, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
 
 const ADA = {
   id: 'u1',
@@ -63,8 +63,34 @@ const permissions = (role: string, actions: readonly string[]) => ({
 
 const HOLDS = ['people.analytics.read', 'profile.read', 'profile.activity.read'];
 
+/**
+ * Newest first, as the endpoint answers. The pinned clock is 15:00 (LAI-954):
+ * Ada read the day and its local activity 5 minutes ago and Grace 8, inside
+ * LAI-529's 15; Ada's look of 14:02 and yesterday's are not *now*.
+ */
 const LOOKED = {
   data: [
+    {
+      id: 'v5',
+      viewer: { id: 'u1', name: 'Ada Lovelace' },
+      kind: 'time',
+      day: TODAY,
+      viewed_at: at(TODAY, 14, 55),
+    },
+    {
+      id: 'v4',
+      viewer: { id: 'u1', name: 'Ada Lovelace' },
+      kind: 'local_activity',
+      day: null,
+      viewed_at: at(TODAY, 14, 55),
+    },
+    {
+      id: 'v3',
+      viewer: { id: 'u3', name: 'Linus Torvalds' },
+      kind: 'time',
+      day: TODAY,
+      viewed_at: at(TODAY, 14, 52),
+    },
     {
       id: 'v2',
       viewer: { id: 'u1', name: 'Ada Lovelace' },
@@ -74,7 +100,7 @@ const LOOKED = {
     },
     {
       id: 'v1',
-      viewer: { id: 'u1', name: 'Ada Lovelace' },
+      viewer: { id: 'u4', name: 'Margaret Hamilton' },
       kind: 'local_activity',
       day: null,
       viewed_at: at(YESTERDAY, 9, 10),
@@ -99,8 +125,17 @@ function stub(me: typeof ADA, actions: readonly string[]): ApiStub {
     const day = new Date(Date.parse(`${TODAY}T00:00:00Z`) + i * 86_400_000)
       .toISOString()
       .slice(0, 10);
-    routes[`/api/v1/people/u2/time?day=${day}`] = () => viewOf(day, data);
+    routes[`/api/v1/people/u2/time?day=${day}`] = () => ({
+      ...(viewOf(day, data) as Record<string, unknown>),
+      // Grace's note for the day (LAI-503), for whoever reads it.
+      day_note:
+        day === TODAY
+          ? { day, note: 'Two meetings ran long; the rest was heads-down.', updated_at: 1 }
+          : null,
+    });
   }
+  // Her Overview's week and quick picks (LAI-526), on the people route.
+  Object.assign(routes, summaryRoutes(data, [], '/api/v1/people/u2/time/summary'));
   routes['/api/v1/people/u2/local-activity'] = {
     start: YESTERDAY,
     end: TODAY,
@@ -149,8 +184,9 @@ const WRITE_CONTROLS = [
   '[data-confirm-day]',
   '.inspector-confirm',
   '.myday-check',
-  '.myday-switch',
-  'form.myday-add',
+  '[data-day-settings]',
+  '[data-add-time]',
+  '[data-timer-start]',
 ];
 
 after(async () => {
@@ -162,7 +198,12 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
     const h = await openAt(`/my-day?day=${TODAY}`, stub(ADA, HOLDS));
     try {
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      // Nothing is in hand on load (LAI-511): the first block, picked.
+      await h.page.locator('[data-block-select]').first().click();
       await h.page.locator('[data-inspector="draft"]').waitFor({ timeout: 10_000 });
+      // The boxes are on To review's tab (LAI-514).
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('.myday-drafts').waitFor({ timeout: 5_000 });
       for (const selector of WRITE_CONTROLS) {
         assert.ok((await h.page.locator(selector).count()) > 0, `${selector} is not drawn`);
       }
@@ -182,16 +223,32 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
         (await h.page.locator('[data-viewing-banner]').innerText()).includes('Grace Hopper'),
       );
       const banner = await h.page.locator('[data-viewing-banner]').innerText();
-      assert.match(banner, /Viewing Grace Hopper’s day — read only/);
+      assert.match(
+        banner,
+        /Read-only\. You’re viewing Grace Hopper’s day\. Grace can see that you looked/,
+      );
+      // Her note for the day, under the banner (LAI-503).
+      assert.match(
+        await h.page.locator('[data-day-note]').innerText(),
+        /Grace Hopper’s note for .*Two meetings ran long/,
+      );
       assert.match(await h.page.locator('h1').first().innerText(), /Grace Hopper’s day/);
 
-      // Her drafts are there to read …
+      // Her drafts are there to read, on their tab …
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('[data-settle-row]').first().waitFor({ timeout: 5_000 });
       assert.ok((await h.page.locator('[data-settle-row]').count()) > 0, 'no drafted rows drawn');
       // … and nothing to change them with.
       for (const selector of WRITE_CONTROLS) {
         assert.equal(await h.page.locator(selector).count(), 0, `${selector} is drawn`);
       }
-      for (const word of ['Mark as break', 'Add time here', 'Not work', 'Split in two', 'Undo']) {
+      for (const word of [
+        'Mark as break',
+        'Not work time',
+        'Split in two',
+        'Delete entry',
+        'Undo',
+      ]) {
         assert.equal(
           await h.page.getByRole('button', { name: word, exact: true }).count(),
           0,
@@ -221,6 +278,24 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
       assert.ok(paths.includes('/api/v1/people/u2/time'), 'her day was not read');
       assert.ok(!paths.includes('/api/v1/me/time'), 'the reader’s own day was read instead');
       assert.ok(!paths.includes('/api/v1/me/analytics-views'), 'the reader’s own list was read');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('her Overview’s week is read from her summary, on the people route, never the reader’s own', async () => {
+    const h = await openAt(`/my-day?user=u2&day=${TODAY}`, stub(ADA, HOLDS));
+    try {
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-viewing-banner]').waitFor({ timeout: 10_000 });
+      const ov = h.page.locator('[data-overview]');
+      await ov.waitFor({ timeout: 10_000 });
+      await ov.locator('[data-ov-scope="week"]').click();
+      await ov.locator('[data-ov-stat="per-day"]').waitFor({ timeout: 10_000 });
+      const paths = h.calls.map((c) => c.path);
+      assert.ok(paths.includes('/api/v1/people/u2/time/summary'), 'her summary was not read');
+      assert.ok(!paths.includes('/api/v1/me/time/summary'), 'the reader’s own summary was read');
+      assert.equal(await ov.locator('[data-ov-day]').count(), 7);
     } finally {
       await h.close();
     }
@@ -299,21 +374,26 @@ void describe('a reader without it (D-102 rule 6)', () => {
 });
 
 void describe('who looked at my time (D-102 rule 3)', () => {
-  void test('the person’s own My day lists who looked, at what, and when', async () => {
+  void test('the person’s own My day shows who is looking now, one line a person (LAI-529)', async () => {
     const me = { ...GRACE };
     const h = await openAt(`/my-day?day=${TODAY}`, stub(me, ['local_activity.read_own']));
     try {
+      // Who looked is a header button since LAI-502: the eye, with how many people.
+      const eye = h.page.locator('[data-who-looked] > button');
+      await eye.waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('[data-looked-count]').count()) === 1);
+      assert.equal(await h.page.locator('[data-looked-count]').innerText(), '2');
+      await eye.click();
       await h.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
+      // Ada's two looks are one line; her 14:02 look and Margaret's are not now.
       const rows = await h.page.locator('[data-looked]').allInnerTexts();
       assert.equal(rows.length, 2);
-      assert.match(rows[0] ?? '', /Ada Lovelace looked at your day for/);
-      assert.match(rows[0] ?? '', /2:02 PM today/);
-      assert.match(rows[1] ?? '', /Ada Lovelace looked at your shared local activity/);
-      // Who can look, in the words the rest of My day uses (LAI-968).
-      assert.match(
-        await h.page.locator('[data-who-looked]').innerText(),
-        /can be read by owners, admins and anyone the owner lets see everyone’s analytics/,
-      );
+      assert.match(rows[0] ?? '', /Ada Lovelace\s*5 min ago/);
+      assert.match(rows[1] ?? '', /Linus Torvalds\s*8 min ago/);
+      // Nothing else: no kind of read, no list order, no paragraph.
+      const words = await h.page.locator('[data-who-looked] .myday-pop-panel').innerText();
+      assert.match(words, /^Looking now\s/);
+      assert.doesNotMatch(words, /looked at|Newest first|Show more|can be read by|Margaret/);
       assert.ok(h.calls.some((c) => c.path === '/api/v1/me/analytics-views'));
     } finally {
       await h.close();
@@ -329,26 +409,33 @@ void describe('who reads drafts is said on the person’s own day (D-102, LAI-96
         stub({ ...GRACE }, ['local_activity.read_own']),
       );
       try {
-        await h.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
+        await h.page.locator('[data-who-looked] > button').waitFor({ timeout: 20_000 });
         await setTheme(h.page, theme);
+        // The design's one link (LAI-509): its words say who reads drafts.
         const lock = h.page.locator('.screen-page .myday-lock');
-        assert.match(await lock.innerText(), /Drafts: you, owners and admins/);
+        assert.match(await lock.innerText(), /Who can see this/);
+        assert.match((await lock.getAttribute('title')) ?? '', /Drafts: you, owners and admins/);
         assert.match(
           (await lock.getAttribute('title')) ?? '',
           /owners, admins and anyone the owner lets see everyone’s analytics/,
         );
-        const link = lock.getByRole('link', { name: 'who looked' });
+        // A popover since LAI-513: the design's grid of who sees what.
+        const link = h.page
+          .locator('.screen-page')
+          .getByRole('button', { name: 'Who can see this' });
         assert.equal(await link.count(), 1);
         // Readable in both themes: a colour, and not the page's own background.
         const ink = await link.evaluate((el) => getComputedStyle(el).color);
         const ground = await h.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
         assert.notEqual(ink, ground);
+        // The popover's *Who looked* opens Who looked (LAI-502, LAI-513).
         await link.click();
+        const region = h.page.getByRole('region', { name: 'Who can see this' });
+        await region.waitFor({ timeout: 5_000 });
+        assert.match(await region.innerText(), /Drafts[\s\S]*Confirmed[\s\S]*Agent time/);
+        await region.getByRole('button', { name: 'Who looked' }).click();
+        await h.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
         const looked = h.page.locator('[data-who-looked]');
-        await until(async () => {
-          const box = await looked.boundingBox();
-          return box !== null && box.y >= 0 && box.y < 900;
-        });
         const box = await looked.boundingBox();
         assert.ok(box !== null && box.y >= 0 && box.y < 900, `who looked is at ${String(box?.y)}`);
         assert.deepEqual(writes(h), []);
@@ -401,7 +488,7 @@ void describe('a member’s profile: Day and Hours (LAI-959)', () => {
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
       assert.match(
         await h.page.locator('[data-viewing-banner]').innerText(),
-        /Viewing Grace Hopper’s day — read only/,
+        /Read-only\. You’re viewing Grace Hopper’s day/,
       );
       assert.equal(await h.page.locator('[data-confirm-day], .myday-check').count(), 0);
       await h.page
@@ -422,6 +509,7 @@ void describe('a member’s profile: Day and Hours (LAI-959)', () => {
     try {
       await h.page.locator('[data-hours]').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('[data-hours-day]').count(), 7);
+      assert.match(await h.page.locator('[data-hours-note]').innerText(), /Two meetings ran long/);
       const week = viewOf(TODAY) as {
         week: { confirmed_minutes: number; drafted_minutes: number }[];
       };
@@ -471,13 +559,14 @@ void describe('both themes, both widths', () => {
           width,
         );
         try {
-          await own.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
+          await own.page.locator('[data-who-looked] > button').waitFor({ timeout: 20_000 });
           await setTheme(own.page, theme);
           const overflow = await own.page.evaluate(
             () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
           );
           assert.ok(overflow <= 0, `the page scrolls sideways by ${String(overflow)}px`);
-          await own.page.locator('[data-who-looked]').scrollIntoViewIfNeeded();
+          await own.page.locator('[data-who-looked] > button').click();
+          await own.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
           await shoot(own.page, `member-who-looked-${theme}-${String(width)}`);
         } finally {
           await own.close();

@@ -197,6 +197,15 @@ const UNPAIRED = new Map<string, string>([
   // `web/src/api/org.ts` — and the staleness guard below is what noticed, by
   // firing on a *reason* going false rather than on an entry going unnecessary.
   ['AvatarView', 'no client type exists'],
+  // LAI-545: checkpoints are served ahead of their screens — LAI-549 mirrors
+  // them on the client, and the drawer reads them there. The consent left this
+  // group in LAI-1007, which built the owner's switch.
+  ['CheckpointRefRegistered', 'no client type exists'],
+  // LAI-546: the accept is an agent's and has no screen; LAI-550 paired the
+  // policy and LAI-1009's person inbox.
+  ['AcceptedHandoff', 'no client type exists'],
+  // LAI-553: an agent's event feed has no screen; the helper (LAI-554) reads it.
+  ['AgentEventsPage', 'no client type exists'],
   // The meeting-review screen is SHELL's and unbuilt; §11.4.2 lists it. These
   // three leave this group the same way `CapacityView` and `PresenceView` did —
   // when the screen exists, and therefore the mirror.
@@ -220,6 +229,27 @@ const UNPAIRED = new Map<string, string>([
   // LAI-976's leave answer; the Space settings screen (LAI-977) brings the
   // mirror, and this entry leaves the way the rest do.
   ['LeaveProjectView', 'no client type exists'],
+  // LAI-535's selected agent on `TaskView` and the agent's work requests; the
+  // task drawer's Agent field (LAI-538) brings the mirror.
+  ['SelectedAgentView', 'no client type exists'],
+  ['WorkRequestView', 'no client type exists'],
+  // LAI-541's sessions and claims; the execution states (LAI-543) bring the
+  // mirror. Served to an agent, not yet read by the web client.
+  ['AgentSessionView', 'no client type exists'],
+  ['TaskClaimView', 'no client type exists'],
+  ['ReclaimView', 'no client type exists'],
+  // LAI-586's session line (D-118): `GET /agents/:id` with its sessions, and
+  // the session snapshot on an activity row. The agent line in the drawer and
+  // activity (LAI-587) brings the mirror, and these leave the way the rest do.
+  ['AgentDetailView', 'no client type exists'],
+  ['ActivitySessionView', 'no client type exists'],
+  // LAI-571's list rows: `TaskView` and `TaskSummaryView` with each row's
+  // `etag`. The base views stay paired, so every other field is still
+  // compared. The client reads lists as `Task` / `TaskSummary` and ignores the
+  // extra field; SHELL's follow-on (the drawer's agent selection sends
+  // `If-Match`) brings the mirror, and these leave the way the rest do.
+  ['ListedTaskView', 'no client type exists'],
+  ['ListedTaskSummaryView', 'no client type exists'],
 ]);
 
 /**
@@ -243,6 +273,14 @@ const UNPAIRED = new Map<string, string>([
 const RESPONSE_SHAPED = ['Summary', 'Detail', 'Response', 'Payload', 'Result', 'Body'] as const;
 
 const NOT_SERVED = new Map<string, string>([
+  [
+    'AgentEventDetail',
+    'the frozen part of an agent event (§4.76): a JSON column’s type, served only inside AgentEventsPage',
+  ],
+  [
+    'CheckpointSummary',
+    'the five-field continuation note (§4.70): a JSON column’s type, served only inside CheckpointView',
+  ],
   ['BackfillResult', 'what a backfill did, returned to the migration runner and never to a client'],
   ['JobResult', '§11.6 cron bookkeeping — counts the sweep touched, logged rather than served'],
   ['LookupResult', 'the idempotency middleware asking whether it has seen this key'],

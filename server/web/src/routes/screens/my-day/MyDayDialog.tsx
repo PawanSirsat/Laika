@@ -10,6 +10,13 @@ export interface MyDayDialogProps {
   readonly onClose: () => void;
   /** Where focus goes when it closes — the control that opened it. */
   readonly restore?: () => HTMLElement | null | undefined;
+  /**
+   * The owner's framed dialog (Confirm day, LAI-517): the title in a head of
+   * its own with × beside it; the children bring their body and footer.
+   */
+  readonly framed?: boolean;
+  /** A class beside `myday-dialog`, for the dialog's own width and shape. */
+  readonly className?: string;
 }
 
 /**
@@ -17,7 +24,15 @@ export interface MyDayDialogProps {
  * off, and the sheet of keys. Focus goes in, stays in, and comes back to what
  * opened it (`useDialogFocus`); Escape and the scrim close it.
  */
-export function MyDayDialog({ title, label, children, onClose, restore }: MyDayDialogProps) {
+export function MyDayDialog({
+  title,
+  label,
+  children,
+  onClose,
+  restore,
+  framed = false,
+  className,
+}: MyDayDialogProps) {
   const box = useRef<HTMLDivElement | null>(null);
   useDialogFocus(box, { restore });
   return createPortal(
@@ -25,7 +40,7 @@ export function MyDayDialog({ title, label, children, onClose, restore }: MyDayD
       <div className="myday-dialog-scrim" aria-hidden="true" onClick={onClose} />
       <div
         ref={box}
-        className="myday-dialog"
+        className={className === undefined ? 'myday-dialog' : `myday-dialog ${className}`}
         role="dialog"
         aria-modal="true"
         {...(label === undefined
@@ -37,9 +52,25 @@ export function MyDayDialog({ title, label, children, onClose, restore }: MyDayD
           onClose();
         }}
       >
-        <h2 className="myday-dialog-title" id="myday-dialog-title">
-          {title}
-        </h2>
+        {framed ? (
+          <div className="myday-dialog-head">
+            <h2 className="myday-dialog-title" id="myday-dialog-title">
+              {title}
+            </h2>
+            <button
+              type="button"
+              className="myday-dialog-close"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
+        ) : (
+          <h2 className="myday-dialog-title" id="myday-dialog-title">
+            {title}
+          </h2>
+        )}
         {children}
       </div>
     </>,
