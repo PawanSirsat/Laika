@@ -324,6 +324,10 @@ function builtServerEnv(port: number, publicDir: string, dbPath: string): NodeJS
     // every probe reaches the other process. Bound to 127.0.0.1 itself, a
     // child either fails `EADDRINUSE` or is the one 127.0.0.1 reaches.
     HOST: '127.0.0.1',
+    // Not the defaults (LAI-1015), so the boot record below can only show
+    // them if `index.ts` handed them to the checkpoint service.
+    LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS: '900',
+    LAIKA_CHECKPOINT_RETENTION_DAYS: '30',
   };
 }
 
@@ -545,6 +549,23 @@ describe('the built server, run the way the container runs it', () => {
       // warms nothing, but the record says it ran).
       expect(serverLog).toContain('"event":"static.warmed"');
     }, 60_000);
+
+    it('hands the checkpoint windows from the environment to the service (LAI-1015)', (ctx) => {
+      skipIfNotBooted(ctx);
+      // `index.ts` logs what `checkpointSettings()` holds after configuring it,
+      // so this is the check that notices the `configureCheckpoints` call
+      // going missing: the service would still answer 10 min and 90 days.
+      const serverLog = server!.stdout();
+      const record = serverLog
+        .split('\n')
+        .filter((line) => line.startsWith('{'))
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .find((r) => r.event === 'checkpoints.configured');
+      expect(record, serverLog).toMatchObject({
+        pending_notice_ms: 900_000,
+        retention_ms: 30 * 86_400_000,
+      });
+    });
 
     it('serves the committed fallback when no SPA has been built', async (ctx) => {
       skipIfNotBooted(ctx);
