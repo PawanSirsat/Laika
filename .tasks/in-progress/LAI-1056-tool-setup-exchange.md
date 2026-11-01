@@ -46,6 +46,41 @@ the Devices tab (web), `laika update` (cli).
 
 No new activity verb (L4). No new §3.1 action (L5).
 
+## Named cross-area edits (D-033, D-034)
+
+- `docs/SPEC.md`: new §4.80 `tool_setup_exchanges` and §4.81
+  `agent_client_reports`, one paragraph in §6.3 (the redeem bucket), and
+  seven §6.4 endpoint rows. No other section is touched.
+- `server/web/test/api/endpoint-coverage.test.ts`: six `NO_BROWSER_CALLER`
+  entries for the new endpoints, the shape LAI-1050 added for pairing. No
+  other line.
+
+## For CHIEF
+
+- **Redeem is not D-124's fourth case** and does not claim to be: it yields a
+  credential, which condition 1 forbids. It calls
+  `can(owner, 'agent.manage_own')` on the owner who made the exchange,
+  loaded at redeem (`loadActor`), so a deactivated owner, or one whose role
+  no longer allows it, mints nothing; that is one uniform `404`. **The
+  authentication is the device's signature, not a session or a token.** That
+  is a way of acting for the owner that §6.1 ("There is no third path") does
+  not describe. Plan §E.1 already says it needs a named §6.1 paragraph from
+  CHIEF, and this task does not write one.
+- **The challenge step answers before any signature.** A redeem without
+  `signature` returns the exchange's stored challenge. It is not a secret,
+  and `can(owner)` is asked before it is returned.
+- **This is the reconnect path the #204 admin copy points at**:
+  `POST /agents/:id/reconnect` makes a `rotate` exchange, and redeeming it
+  revokes every live token of the agent in the same transaction.
+- **Honest gap:** Omnigent and Hermes send `clientInfo.name = "mcp"`, which
+  names no tool, so `tool_request` never passes for them. Plan §M says
+  Omnigent's Ready "relies on the MCP initialize clientInfo". That evidence
+  does not exist today, and nothing here fakes it.
+- **Not built:** `claims_supported` (the plan puts the capability table in
+  the web, §E.6), a `grants` body on add tool (least privilege: grants go
+  through the existing `PUT /agents/:id/grants` or LAI-1052's per-project
+  route), and `POST /devices/me/report`.
+
 ## Acceptance criteria
 
 - [ ] Migration 0072 adds `tool_setup_exchanges` and `agent_client_reports`,
