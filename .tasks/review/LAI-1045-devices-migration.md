@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: []
 started: 2026-11-02T02:26:39+05:30
-status: in-progress
+status: review
+finished: 2026-11-02T02:45:05+05:30
 ---
 
 Slice B1 of the merged plan `docs/proposals/LAI-1042-developer-access-v3-plan.md`
@@ -45,28 +46,29 @@ client sees today**.
 
 ## Acceptance criteria
 
-- [ ] `0070` adds `devices` and `agents.device_id` with no table rebuild.
+- [x] `0070` adds `devices` and `agents.device_id` with no table rebuild.
       `devices` has a partial unique index on `(owner_user_id, label_key)`
       where `status = 'active'`.
-- [ ] The backfill makes one `imported` device per (owner, label key), named as
+- [x] The backfill makes one `imported` device per (owner, label key), named as
       `GET /agents/devices` names it today, with `confirmed_at` taken from
       `recognised_agent_devices`. It links every agent. A key whose agents are
       all revoked gets a `revoked` device.
-- [ ] Nothing is merged, revoked or renamed, and no agent is created. On a
+- [x] Nothing is merged, revoked or renamed, and no agent is created. On a
       populated, production-shaped database the agents, tokens, grants,
       sessions, claims, consents and activity rows are byte-identical before and
       after, apart from the new `device_id`.
-- [ ] The boot backfill changes nothing the second time it runs, and links an
+- [x] The boot backfill changes nothing the second time it runs, and links an
       agent inserted afterwards with a null `device_id`.
-- [ ] A large-data backfill is timed and the time is recorded.
-- [ ] Rollback is rehearsed by restoring the pre-migration snapshot.
-- [ ] `device_label` stays authoritative for the one-tool-per-device rule. The
+- [x] A large-data backfill is timed and the time is recorded.
+- [x] Rollback is rehearsed by restoring the pre-migration snapshot.
+- [x] `device_label` stays authoritative for the one-tool-per-device rule. The
       24 h rule also applies when the device has `kind = cloud`.
-- [ ] `GET /devices` and `GET /devices/:id` return the caller's own devices
+- [x] `GET /devices` and `GET /devices/:id` return the caller's own devices
       only. Another owner's device and an unknown id get byte-identical `404`
       bodies.
-- [ ] `GET /agents/devices` and every agent response are unchanged.
-- [ ] D-122 and the SPEC rows are written. CI is green on the PR.
+- [x] `GET /agents/devices` and every agent response are unchanged.
+- [x] D-122 and the SPEC rows are written.
+- [ ] CI is green on the PR.
 
 ## Dependencies
 
