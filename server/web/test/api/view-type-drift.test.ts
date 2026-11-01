@@ -796,6 +796,26 @@ const PAIRS: readonly Pair[] = [
     client: 'CheckpointConsent',
     clientFile: 'agents.ts',
   },
+  // LAI-1054: the V3 Devices tab reads the owner's devices, and names the
+  // sessions a disconnect ends from one agent's detail.
+  {
+    server: 'DeviceView',
+    serverFile: 'services/devices.ts',
+    client: 'Device',
+    clientFile: 'devices.ts',
+  },
+  {
+    server: 'AgentDetailView',
+    serverFile: 'services/agents.ts',
+    client: 'AgentDetail',
+    clientFile: 'agents.ts',
+  },
+  {
+    server: 'AgentSessionView',
+    serverFile: 'services/claims.ts',
+    client: 'AgentSession',
+    clientFile: 'agents.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [
