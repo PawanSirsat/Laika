@@ -27,10 +27,12 @@
  * be regenerated to make a red run green — a red run here is a rendering
  * change, which this task said it would not make.
  *
- * It was regenerated once, when the **instrument** changed: the first CI run
- * showed `.conn-line`'s padding is in `ch` (see `capture`). That regeneration
- * was run against the same pre-extraction source (`35ad1314`, in a temporary
- * worktree), not against the refactored page.
+ * It was regenerated when the **instrument** changed, twice, both times
+ * after Linux CI showed a value that comes from font metrics rather than from
+ * the stylesheet: `.conn-line`'s padding is in `ch`, and `getComputedStyle`
+ * reports an `auto` margin as px (see `capture`). Each regeneration was run
+ * against the same pre-extraction source (`35ad1314`, in a temporary
+ * worktree), never against the refactored page.
  */
 
 import assert from 'node:assert/strict';
@@ -200,12 +202,26 @@ async function capture(page: Page, origin: string): Promise<Capture> {
         .map((part) => `${(Number.parseFloat(part) / ch).toFixed(1)}ch`)
         .join(' ');
     };
+    /*
+     * `getComputedStyle` reports a margin as its **used** value, so an `auto`
+     * margin comes back as the px left over in its row — text widths again.
+     * Found by elimination, not read off a dump: the second CI run failed only
+     * the two step-3 scenarios, and the only element they alone have with an
+     * `auto` margin is `.conn-block-tag` (`margin-left: auto`). The Typed OM's
+     * `computedStyleMap()` keeps the computed value: `auto` stays `auto`.
+     */
+    const SIDES = ['margin-top', 'margin-right', 'margin-bottom', 'margin-left'];
+    const margin = (el: Element): string => {
+      const map = el.computedStyleMap();
+      return SIDES.map((side) => String(map.get(side))).join(' ');
+    };
     const walk = (el: Element, path: string): void => {
       const style = getComputedStyle(el);
       const fontSized = el.classList.contains('conn-line');
       lines.push(
         `${path} ${props
           .map((p) => {
+            if (p === 'margin') return `margin:${margin(el)}`;
             const value = style.getPropertyValue(p);
             return `${p}:${fontSized && p === 'padding' ? inCh(el, value) : value}`;
           })
