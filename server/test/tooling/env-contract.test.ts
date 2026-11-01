@@ -22,6 +22,8 @@ import { SERVER_ROOT } from '../../src/paths.ts';
  */
 
 const COMPOSE = join(SERVER_ROOT, '..', 'docker', 'docker-compose.yml');
+const DOCKERFILE = join(SERVER_ROOT, '..', 'docker', 'Dockerfile');
+const DEPLOY = join(SERVER_ROOT, '..', '.github', 'workflows', 'deploy.yml');
 const SPEC = join(SERVER_ROOT, '..', 'docs', 'SPEC.md');
 
 /**
@@ -297,5 +299,28 @@ describe('env contract: server ↔ container', () => {
       .map((name) => `${name} — exempted but compose no longer sets it; remove the entry`);
 
     expect(stale).toEqual([]);
+  });
+});
+
+describe('env contract: the image knows its own commit (LAI-1043)', () => {
+  /**
+   * `LAIKA_BUILD_COMMIT` is set by nobody at runtime: the Docker build bakes
+   * it in from a build arg, and the deploy workflow supplies that arg. Lose
+   * either half and every deployed board reports `build_commit: null` with
+   * the gate green, because nothing else builds the image. This reads both.
+   */
+  it('declares the build arg in the shipped stage and turns it into ENV', () => {
+    const dockerfile = readFileSync(DOCKERFILE, 'utf8');
+    const runtime = dockerfile.slice(dockerfile.search(/^FROM .* AS runtime$/m));
+    expect(runtime.length, 'no runtime stage found in docker/Dockerfile').toBeLessThan(
+      dockerfile.length,
+    );
+    expect(runtime).toMatch(/^ARG LAIKA_BUILD_COMMIT(=.*)?$/m);
+    expect(runtime).toMatch(/^ENV LAIKA_BUILD_COMMIT=\$\{LAIKA_BUILD_COMMIT\}$/m);
+  });
+
+  it('passes the pushed commit as that build arg in the deploy workflow', () => {
+    const deploy = readFileSync(DEPLOY, 'utf8');
+    expect(deploy).toMatch(/^\s*build-args: LAIKA_BUILD_COMMIT=\$\{\{ github\.sha \}\}$/m);
   });
 });

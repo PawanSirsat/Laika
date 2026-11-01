@@ -196,6 +196,8 @@ jobs:
           push: true
           provenance: false
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:sha-${{ github.sha }}
+          # The board reports the commit it was built from (LAI-1043, §11.7).
+          build-args: LAIKA_BUILD_COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

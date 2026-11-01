@@ -58,6 +58,9 @@ function main(): void {
 
   const app = createApp({
     version,
+    buildCommit: env.buildCommit,
+    developerAccess: env.developerAccess,
+    cliSourceUrl: env.cliSourceUrl,
     isStopping: () => stopping,
     logger: log,
     auth,
@@ -75,6 +78,8 @@ function main(): void {
       port: info.port,
       host: env.host,
       version,
+      build_commit: env.buildCommit,
+      developer_access: env.developerAccess,
       node_env: env.nodeEnv,
       pid: process.pid,
     });

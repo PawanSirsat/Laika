@@ -60,6 +60,10 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'webhooks/github': 'GitHub posts here (§9.2); no browser is involved',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
   'api/v1/heartbeats': "the plugin's SessionStart/Stop hooks post this (LAI-418), never the SPA",
+  // LAI-1043: the V3 Developer access screens will read it; until then only
+  // the CLI does.
+  'api/v1/developer/compatibility':
+    'laika doctor reads it (LAI-1043); the Developer access V3 screens do not exist yet',
   'api/v1/tasks/*/finish':
     "finish_task's REST twin (D-082): an agent hands work back for review; a person accepts or sends back instead",
   // LAI-773: Claude Code's own OTLP exporter posts metrics here with the
