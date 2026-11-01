@@ -480,7 +480,11 @@ void describe('tool credentials (LAI-1046)', () => {
       assert.match(asked, /Revoke Claude Code · Belka’s credential\?/);
       assert.match(asked, /only live credential/);
       assert.match(asked, /stops that tool at once/);
-      assert.match(asked, /stays registered with no live credential until Tomas Nel reconnects it/);
+      assert.match(
+        asked,
+        /stays registered but cannot work again: to use it, Tomas Nel disconnects it and connects it afresh/,
+      );
+      assert.doesNotMatch(asked, /reconnect/i);
       assert.ok(!asked.includes(PRIVATE), 'the confirmation named the registered name');
 
       await until(() =>

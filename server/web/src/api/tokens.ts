@@ -105,21 +105,40 @@ export function tokensByKind(tokens: readonly TokenView[]): {
  * sends its `401` and closes (LAI-539), and the session's claims lapse when
  * its heartbeats stop renewing them. When the agent holds another live
  * credential, the tool itself keeps working, and the copy says that instead.
+ *
+ * **There is no reconnect today**, and the copy does not promise one: rotating
+ * a revoked token is `409 token_revoked`, and registering the same tool on the
+ * same device again is `409 agent_exists_for_harness_device` while the agent
+ * is active. The owner's only way back is to disconnect the tool and connect it
+ * afresh. Slice C's reconnect exchange (plan LAI-1042 §E.2) is what changes
+ * this sentence.
+ *
+ * `complete` is false when the list was cut short (`everyPage`'s cap): then
+ * "only live credential" is not known, and the copy says it may have others.
  */
 export function agentRevokeImpact(
   token: TokenView,
   ownerName: string,
   siblings: readonly TokenView[],
   now: number,
+  complete = true,
 ): string {
   const label = tokenAgentLabel(token) ?? token.name;
   const others = siblings.filter(
     (t) => t.id !== token.id && t.agent_id === token.agent_id && tokenState(t, now) === 'active',
   ).length;
   if (others > 0) {
-    return `This is one of ${label}’s credentials. Whatever uses this one stops at once; its other live credential keeps working, so the tool does not stop.`;
+    const them =
+      others === 1
+        ? 'its other live credential keeps'
+        : `its ${String(others)} other live credentials keep`;
+    return `This is one of ${label}’s credentials. Whatever uses this one stops at once; ${them} working, so the tool does not stop.`;
   }
-  return `This is ${label}’s only live credential. Revoking it stops that tool at once: its next request is refused, its open event streams close, and the claims its sessions hold lapse when their lease runs out. Nothing else of ${ownerName}’s changes. The tool stays registered with no live credential until ${ownerName} reconnects it; to remove the tool, they disconnect it.`;
+  const stops = `stops that tool at once: its next request is refused, its open event streams close, and the claims its sessions hold lapse when their lease runs out. Nothing else of ${ownerName}’s changes. The tool stays registered but cannot work again: to use it, ${ownerName} disconnects it and connects it afresh.`;
+  if (!complete) {
+    return `Not all of ${ownerName}’s tokens could be read, so ${label} may have other live credentials. If this is its only one, revoking it ${stops}`;
+  }
+  return `This is ${label}’s only live credential. Revoking it ${stops}`;
 }
 
 /**

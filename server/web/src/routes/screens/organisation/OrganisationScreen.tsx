@@ -206,6 +206,7 @@ export function OrganisationScreen({
               owner.name,
               tokens?.status === 'ready' ? tokens.tokens : [],
               Date.now(),
+              tokens?.status === 'ready' && !tokens.truncated,
             ),
       confirmLabel: 'Revoke token',
       danger: true,

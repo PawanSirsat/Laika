@@ -198,14 +198,28 @@ void describe('what revoking an agent credential stops', () => {
     assert.match(said, /stops that tool at once/);
     assert.match(said, /its open event streams close/);
     assert.match(said, /claims its sessions hold lapse/);
-    assert.match(said, /stays registered with no live credential until Ada reconnects it/);
+    // No reconnect exists yet (review B1): rotate refuses a revoked token and
+    // the same tool on the same device cannot register again while active.
+    assert.match(
+      said,
+      /stays registered but cannot work again: to use it, Ada disconnects it and connects it afresh\.$/,
+    );
+    assert.doesNotMatch(said, /reconnect/i);
     assert.doesNotMatch(said, /Secret registered name/);
   });
 
   void test('another live credential of the same agent: the tool keeps working', () => {
     const one = credential('c1', 'a');
     const two = credential('c2', 'a');
-    assert.match(agentRevokeImpact(one, 'Ada', [one, two], NOW), /the tool does not stop/);
+    assert.match(
+      agentRevokeImpact(one, 'Ada', [one, two], NOW),
+      /; its other live credential keeps working, so the tool does not stop\.$/,
+    );
+    const three = credential('c3', 'a');
+    assert.match(
+      agentRevokeImpact(one, 'Ada', [one, two, three], NOW),
+      /; its 2 other live credentials keep working, so the tool does not stop\.$/,
+    );
   });
 
   void test('a revoked sibling, or another agent’s, does not count', () => {
@@ -213,6 +227,17 @@ void describe('what revoking an agent credential stops', () => {
     const dead = credential('c2', 'a', { revoked_at: NOW - DAY });
     const other = credential('c3', 'b');
     assert.match(agentRevokeImpact(one, 'Ada', [one, dead, other], NOW), /only live credential/);
+  });
+
+  void test('a list cut short never claims "only" (review N4)', () => {
+    const one = credential('c1', 'a');
+    const said = agentRevokeImpact(one, 'Ada', [one], NOW, false);
+    assert.doesNotMatch(said, /only live credential/);
+    assert.match(said, /^Not all of Ada’s tokens could be read, so Claude Code · Belka may have/);
+    assert.match(said, /If this is its only one, revoking it stops that tool at once/);
+    // A sibling seen is still a sibling: the cut does not change that answer.
+    const two = credential('c2', 'a');
+    assert.match(agentRevokeImpact(one, 'Ada', [one, two], NOW, false), /does not stop/);
   });
 });
 

@@ -647,11 +647,23 @@ void describe('access', () => {
       assert.equal(await admin.locator('[data-kind="personal"] [data-token="k1"]').count(), 1);
       assert.doesNotMatch(await admin.innerText(), /Secret registered name/);
 
+      // N3: the button is named as the tool, never by the registered name.
+      assert.equal(
+        await admin
+          .locator('[data-token="k2"] [data-action="revoke-token"]')
+          .getAttribute('aria-label'),
+        'Revoke Codex · Strelka',
+      );
       await admin.locator('[data-token="k2"] [data-action="revoke-token"]').click();
       const impact = admin.locator('[data-token="k2"] [data-impact]');
       await impact.waitFor();
       assert.match(await impact.innerText(), /only live credential/);
-      assert.match(await impact.innerText(), /stays registered/);
+      assert.match(
+        await impact.innerText(),
+        /stays registered but cannot work again: to use it, .+ disconnects it and connects it afresh/,
+      );
+      assert.doesNotMatch(await impact.innerText(), /reconnect/i);
+
       assert.equal(await admin.locator('[data-token="k1"] [data-impact]').count(), 0);
     } finally {
       await h.close();

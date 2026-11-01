@@ -5,7 +5,12 @@ import { listUserTokens, type TokenView } from '../../../api/tokens.ts';
 export type UserTokensState =
   | { readonly status: 'loading' }
   | { readonly status: 'error'; readonly error: unknown }
-  | { readonly status: 'ready'; readonly tokens: readonly TokenView[] };
+  | {
+      readonly status: 'ready';
+      readonly tokens: readonly TokenView[];
+      /** `everyPage` stopped at its cap with more left (LAI-1046, review N4). */
+      readonly truncated: boolean;
+    };
 
 /**
  * One person's tokens, fetched when their panel is opened (LAI-238).
@@ -46,11 +51,11 @@ export function useUserTokens(userId: string | undefined): {
         cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
       ),
     )
-      .then(({ items }) => {
+      .then(({ items, truncated }) => {
         // Every page, not the first (LAI-703); `page.data` is the whole list.
         const page = { data: items };
         if (controller.signal.aborted) return;
-        setState({ status: 'ready', tokens: page.data });
+        setState({ status: 'ready', tokens: page.data, truncated });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
