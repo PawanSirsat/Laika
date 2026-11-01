@@ -65,6 +65,11 @@ export type SprintsState =
       readonly status: 'ready';
       readonly rows: readonly SprintRow[];
       readonly unassigned: readonly TaskSummary[];
+      /**
+       * Every task in the project by id, so a blocker in another sprint, or in
+       * none, is judged rather than unknown (LAI-819).
+       */
+      readonly byId: ReadonlyMap<string, TaskSummary>;
       /** True when a list hit `MAX_PAGES` — the counts below are a floor. */
       readonly truncated: boolean;
     };
@@ -154,6 +159,7 @@ export function useSprints(slug: string | undefined): UseSprints {
         return { sprint, tasks: own, progress: progressFor(own) };
       }),
       unassigned: bySprint.get(null) ?? [],
+      byId: tasks.byId,
       truncated: sprints.cut || tasks.truncated,
     };
   }, [slug, sprints, tasks]);

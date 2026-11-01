@@ -105,7 +105,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Playwright version
         id: pw
-        run: echo "version=$(pnpm --filter @laika/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        # An empty version would key every run to `playwright-Linux-`, one
+        # stale cache shared across upgrades, so a broken probe fails here.
+        run: |
+          version=$(pnpm --filter @laika/web exec playwright --version | awk '{print $2}')
+          test -n "$version" || { echo "::error::could not read the Playwright version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Cache Chromium
         id: pw-cache
         uses: actions/cache@v4
@@ -238,6 +243,7 @@ jobs:
           echo "latest: $now"
 
       - name: Restart production and check it
+        id: restart
         run: .github/deploy/deploy.sh "$ECR_REGISTRY/$ECR_REPOSITORY@$DIGEST"
 
       # Only after a deploy that came up healthy (LAI-720). Everything but the
@@ -272,8 +278,18 @@ jobs:
             --query 'imageIds[].imageDigest' --output text | tr '\t' '\n' | grep . | sort -u | wc -l)"
           echo "images left in ECR: $left (live $DIGEST)"
 
+      # The image, and the database too when this deploy migrated it (LAI-1033):
+      # host-restart.sh restores the pre-migration snapshot this run's boot
+      # took, keeping the migrated file beside it, before it starts the old
+      # image — older code on a newer schema ignores agent grants and claims.
+      #
+      # **Only when retagging or the restart and its checks failed.** A clean-up
+      # that fails after production came up healthy and was checked from
+      # outside leaves it running: rolling a verified deploy back would put
+      # older code on its migrated database, or throw away what was written
+      # since. The run is red either way.
       - name: Roll back to the image this replaced
-        if: failure() && steps.tag.outputs.previous != '' && steps.tag.outputs.previous != 'None' && steps.tag.outputs.previous != env.DIGEST
+        if: failure() && (steps.tag.outcome == 'failure' || steps.restart.outcome == 'failure') && steps.tag.outputs.previous != '' && steps.tag.outputs.previous != 'None' && steps.tag.outputs.previous != env.DIGEST
         env:
           PREVIOUS: ${{ steps.tag.outputs.previous }}
         run: |
@@ -283,4 +299,4 @@ jobs:
             --image-ids imageDigest="$PREVIOUS" --query 'images[0].imageManifest' --output text)"
           aws ecr put-image --repository-name "$ECR_REPOSITORY" --image-tag latest \
             --image-manifest "$manifest" > /dev/null || true
-          .github/deploy/deploy.sh "$ECR_REGISTRY/$ECR_REPOSITORY@$PREVIOUS"
+          .github/deploy/deploy.sh "$ECR_REGISTRY/$ECR_REPOSITORY@$PREVIOUS" rollback

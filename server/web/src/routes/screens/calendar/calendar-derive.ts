@@ -6,6 +6,8 @@
  * maths are invisible until somebody's task is on the wrong day.
  */
 
+import type { TaskSummary } from '../../../api/tasks.ts';
+
 const DAY = 86_400_000;
 
 export interface CalendarDay {
@@ -108,4 +110,55 @@ export function byDay<T>(
     else bucket.push(item);
   }
   return map;
+}
+
+/**
+ * A date-only value — unix-ms at a **UTC** midnight (D-066), as `due_on` and
+ * a sprint's dates are — as the local midnight of the same calendar date
+ * (LAI-819).
+ *
+ * The grid's days are local midnights. `startOfDay` on a UTC midnight files a
+ * task due on the 22nd under the 21st anywhere west of Greenwich, because that
+ * instant is the evening before there.
+ */
+export function localDay(dateOnly: number): number {
+  const d = new Date(dateOnly);
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime();
+}
+
+export interface DuePlacement<T> {
+  /** Open tasks by the local midnight of their due day — only days the grid shows. */
+  readonly byDay: ReadonlyMap<number, readonly T[]>;
+  /** How many of them the grid shows. */
+  readonly placed: number;
+  /** Open tasks due on a day outside the grid. */
+  readonly outside: number;
+  /** Open tasks with a due date at all. */
+  readonly dated: number;
+}
+
+/**
+ * Open tasks on the day they are due, by their real `due_on` (LAI-819).
+ *
+ * The Calendar took its dates from a demo module that a production build
+ * switches off, so production said "0 tasks placed" under a banner claiming
+ * there was no due date to read — while `due_on` had existed since D-066.
+ *
+ * **Open only**: `done` and `cancelled` have no date to keep, the rule a card's
+ * due date follows (`dueState`). The counts say what they are of — `placed` is
+ * what the grid draws, and a date outside the six weeks is counted apart
+ * rather than claimed as placed.
+ */
+export function placeByDue<T extends Pick<TaskSummary, 'due_on' | 'status'>>(
+  tasks: readonly T[],
+  days: readonly Pick<CalendarDay, 'at'>[],
+): DuePlacement<T> {
+  const shown = new Set(days.map((d) => d.at));
+  const open = tasks.filter(
+    (t) => t.due_on !== null && t.status !== 'done' && t.status !== 'cancelled',
+  );
+  const due = byDay(open, (t) => (t.due_on === null ? undefined : localDay(t.due_on)));
+  const visible = new Map([...due].filter(([at]) => shown.has(at)));
+  const placed = [...visible.values()].reduce((n, list) => n + list.length, 0);
+  return { byDay: visible, placed, outside: open.length - placed, dated: open.length };
 }

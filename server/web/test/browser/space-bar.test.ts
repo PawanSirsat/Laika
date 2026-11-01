@@ -184,13 +184,14 @@ void describe('the space bar', () => {
        * Four avatars and `+2`, from six real members — never the design's four
        * fixtures.
        *
-       * **Asserted on the timeline since LAI-293.** The faces are an assignee
-       * filter, so on the *board* they now live in that view's own row and the
-       * bar correctly has none. The property this protects — real members,
-       * clustered, never fixtures — is unchanged; only the view it must be
-       * measured on moved.
+       * **Asserted on the calendar since LAI-725** (on the timeline from
+       * LAI-293 until then). The faces are an assignee filter, so on the
+       * *board* they live in that view's own row, and the Timeline hides them
+       * too, because it never read them. The property this protects — real
+       * members, clustered, never fixtures — is unchanged; only the view it
+       * must be measured on moved, twice.
        */
-      const t = await open('/timeline?project=laika-core', STUB);
+      const t = await open('/calendar?project=laika-core', STUB);
       try {
         await t.page.locator('.space-member').first().waitFor({ timeout: 20_000 });
         await until(async () => (await t.page.locator('.space-member').count()) === 4);
@@ -452,9 +453,11 @@ void describe('the bar does not draw filters a view already owns', () => {
 
   void test('a view with no toolbar keeps the bar’s own filters', async () => {
     // The regression the obvious fix would have caused: deleting the four from
-    // `SpaceTopBar` strips filtering from Timeline, Calendar and Capacity,
-    // which have nowhere else to put it.
-    const h = await open('/timeline?project=laika-core', STUB);
+    // `SpaceTopBar` takes the filter controls off the Calendar, which has no
+    // toolbar of its own. What is asserted is that the controls are drawn
+    // there — not what the Calendar does with them. Measured on the timeline
+    // until LAI-725 hid them there.
+    const h = await open('/calendar?project=laika-core', STUB);
     try {
       await h.page.locator('.space-bar').waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(400);
@@ -462,12 +465,54 @@ void describe('the bar does not draw filters a view already owns', () => {
       assert.equal(
         await h.page.locator('.bt-button', { hasText: 'Filter' }).count(),
         0,
-        'the timeline has a board toolbar — this test is no longer measuring anything',
+        'the calendar has a board toolbar — this test is no longer measuring anything',
       );
       await until(async () => (await h.page.locator('.space-select').count()) >= 2);
       assert.ok(
         (await h.page.locator('.space-select').count()) >= 2,
-        'the timeline lost its filters — the bar is its only place for them',
+        'the calendar lost its filters — the bar is its only place for them',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **The Timeline reads none of the bar's filters, so the bar shows none
+   * there** (LAI-725). It lists a sprint's tasks only when that sprint is
+   * opened (LAI-721, D-074); Search, Priority, Tag, Assignee and Ready-only
+   * sat above it writing URL params nothing read. Same shape as the dashboard
+   * (LAI-711). This test reads the DOM only — `timeline-sprints.test.ts`
+   * asserts what the opened sprint's request carries.
+   *
+   * Read only once the bar has named the space, so a zero is a hidden control
+   * and not a bar that has not rendered yet.
+   */
+  void test('the timeline hides the filters it never read', async () => {
+    const h = await open('/timeline?project=laika-core', STUB);
+    try {
+      await h.page.locator('.space-bar').waitFor({ timeout: 20_000 });
+      // Positive control: the bar is drawn and has named the space.
+      await until(async () => (await h.page.locator('.space-name').innerText()) === 'Laika Core');
+      await h.page.waitForTimeout(400);
+
+      const counts = await h.page.evaluate(() => ({
+        selects: document.querySelectorAll('.space-select').length,
+        search: document.querySelectorAll('.space-search').length,
+        members: document.querySelectorAll('.space-members, .space-member').length,
+        ready: Array.from(document.querySelectorAll('.space-chip')).filter((el) =>
+          el.textContent?.includes('Ready only'),
+        ).length,
+      }));
+      assert.deepEqual(
+        counts,
+        { selects: 0, search: 0, members: 0, ready: 0 },
+        'the timeline still draws a bar filter it does not read',
+      );
+      assert.equal(
+        await h.page.locator('.bt-button', { hasText: 'Filter' }).count(),
+        0,
+        'the timeline grew a board toolbar — hidden is no longer the whole story',
       );
     } finally {
       await h.close();

@@ -3633,7 +3633,13 @@ one change a live claim allows is to the agent that holds it** (LAI-1027): a
 task claimed while nothing was selected can name its holder afterwards. The
 claim is untouched, the `task.agent_selected` row is written as for any
 selection, and the work request is written `accepted`, as the holder's claim
-would have accepted it; `null` or any other agent is still `claim_held`. **The selected agent owns the claim** (D-119,
+would have accepted it; `null` or any other agent is still `claim_held`. The
+holder's own token makes that change under the fence like any other (§6.3):
+without the live generation, or with a stale one, it is `stale_claim`. **A
+claim counts here only while its lease holds** (LAI-1032), the test the task's
+`claim` view uses: once the lease has lapsed, before the scan expires it, the
+selection changes freely, and selecting the former holder opens its request
+rather than accepting it. **The selected agent owns the claim** (D-119,
 LAI-586): *"When a task has a selected agent, only sessions of that agent may
 claim it. Any other agent gets `409 conflict` with reason
 `selected_for_another_agent`, naming the selected agent if the caller may see
@@ -3657,7 +3663,10 @@ and this holder may never reclaim, so `expired` would lock the selected agent
 out. The system records it as `task.updated`, `{ field: 'claim', from: {
 generation, session_id, agent_id }, to: null, reason:
 'selected_for_another_agent' }`. While it is live the selected agent hears
-`claim_held`; it is never taken over.
+`claim_held`; it is never taken over. **A person re-selecting its holder backs
+it again** (LAI-1032) — the one change its live claim allows — and the claim is
+usable from then on at its current generation, renewed by its holder's session
+as before; nothing is re-issued.
 `GET /agents/me/work-requests` is the calling
 agent's open requests, newest first, paged like any list, each `{ id, kind,
 state, task_id, task_key, task_title, project_id, agent_id, requested_by,
@@ -5597,7 +5606,9 @@ that take an `Actor` — which is what lets MCP tools reuse them exactly.
 `synchronous=NORMAL`. Database at `$DATA_DIR/laika.db`.
 
 **All access through Drizzle** — schema, queries, migrations. Migrations are
-generated files, committed, applied on boot, forward-only. Multi-table writes run
+generated files, committed, applied on boot, forward-only. A build refuses to
+start on a database holding a migration newer than any it carries, naming them,
+rather than running older code on a newer schema (LAI-1033). Multi-table writes run
 in a transaction. No raw SQL in handlers; the only exception is the `PRAGMA`s
 above, at startup.
 

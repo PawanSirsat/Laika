@@ -5,12 +5,10 @@ import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import { useProjectStatuses } from '../../../api/use-statuses.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
-import { DemoNotice } from '../../../components/DemoNotice.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
-import { demoDueDate } from '../../../demo/calendar.ts';
-import { byDay, monthWeeks, startOfDay } from './calendar-derive.ts';
+import { localDay, monthWeeks, placeByDue } from './calendar-derive.ts';
 import './calendar.css';
 
 export interface CalendarScreenProps {
@@ -21,17 +19,16 @@ export interface CalendarScreenProps {
 const WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
 /**
- * Tasks laid out by the day they are due (D-059, prototype lines 581–624).
+ * Open tasks laid out by the day they are due (D-059, prototype lines 581–624).
  *
- * **There are no due dates.** `tasks.due_date` does not exist — no column, no
- * endpoint — so every *date* on this screen comes from `demo/calendar.ts` and
- * the screen says so, once, at the top. D-059 chose that over an empty tab;
- * D-032 is what keeps it out of a production build.
+ * **The dates are the tasks' own `due_on`** (D-066, LAI-819). The screen was
+ * built before the field existed and took its dates from a demo module, which
+ * a production build switches off — so production placed nothing, under a
+ * notice saying there was no due date to read. The module is gone; what is on
+ * the grid is what the tasks say.
  *
  * **The sprint bands are real.** Sprints have dates, so the days inside the
- * running sprint are marked from `GET /projects/:slug/sprints` rather than
- * invented — the demo module covers the one field the API does not have, and
- * nothing more.
+ * running sprint are marked from `GET /projects/:slug/sprints`.
  */
 export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
   /*
@@ -88,16 +85,20 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
   }
 
   const weeks = monthWeeks(now);
-  const due = byDay(tasks, (t) => demoDueDate(t, now));
-  const placed = [...due.values()].reduce((n, list) => n + list.length, 0);
+  const due = placeByDue(
+    tasks,
+    weeks.flatMap((w) => w.days),
+  );
 
   /** `S2` for a day inside a sprint, in the design's top-right corner. */
   const sprintOn = (
     at: number,
   ): { readonly tag: string; readonly running: boolean } | undefined => {
     const index = sprints.findIndex(
-      // `starts_on`/`ends_on` are already unix-ms, not ISO strings.
-      (s) => at >= startOfDay(s.starts_on) && at <= startOfDay(s.ends_on),
+      // Date-only UTC midnights, read as the local day they name (LAI-819) —
+      // the same reading a due date gets, so a task due on a sprint's first
+      // day sits inside its band.
+      (s) => at >= localDay(s.starts_on) && at <= localDay(s.ends_on),
     );
     if (index === -1) return undefined;
     const sprint = sprints[index];
@@ -108,13 +109,26 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
   return (
     <div className="cal">
       <SpaceSlot
-        context={`${String(placed)} ${placed === 1 ? 'task' : 'tasks'} placed · ${new Date(
+        context={`${String(due.placed)} open ${due.placed === 1 ? 'task' : 'tasks'} placed · ${new Date(
           now,
         ).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`}
       />
 
-      {/* Said on the screen, as D-032 requires — not only in a comment. */}
-      <DemoNotice what="Laika does not store a due date yet (tasks.due_date), so these dates are placeholders. The calendar becomes real the day the field lands." />
+      {/* Only what is true of this space: nothing dated at all, or dates the
+          six weeks below do not reach (LAI-819). */}
+      {due.dated === 0 ? (
+        <p className="cal-note" role="note">
+          No open task in this space has a due date. Set one in a task’s details and it appears on
+          its day.
+        </p>
+      ) : (
+        due.outside > 0 && (
+          <p className="cal-note" role="note">
+            {due.outside} more open {due.outside === 1 ? 'task is' : 'tasks are'} due outside these
+            six weeks.
+          </p>
+        )
+      )}
 
       <div className="cal-scroll">
         <div className="cal-card">
@@ -133,7 +147,7 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
               <div className="cal-gutter">{week.label}</div>
 
               {week.days.map((day) => {
-                const list = due.get(day.at) ?? [];
+                const list = due.byDay.get(day.at) ?? [];
                 const sprint = sprintOn(day.at);
                 const classes = ['cal-day'];
                 if (!day.inMonth) classes.push('cal-day-out');
@@ -217,7 +231,7 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
               agent-owned
             </span>
             <span className="cal-legend-note">
-              A task appears on the day it is due. Click one to open it.
+              An open task appears on the day it is due. Click one to open it.
             </span>
           </div>
         </div>

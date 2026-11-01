@@ -116,6 +116,37 @@ export function blockers(
 }
 
 /**
+ * Is this task **blocked work**, counted the way the server counts it (LAI-819)?
+ *
+ * Open — not `done`, not `cancelled` — and waiting on at least one dependency
+ * that is not `done`. That is the project card's `blocked_count`
+ * (`services/projects.ts`) and the dependency half of `isReady`
+ * (`task-lifecycle.ts`), so **a cancelled dependency still blocks**: the server
+ * requires `done` and nothing else. `blockedState` above treats cancelled as
+ * met for the card; the figures that *count* blocked work match the server
+ * instead, so the board's BLK and a sprint's lock agree with the project card.
+ *
+ * **Not `!ready`.** `ready` is also false for every assigned task and every
+ * task already moving, so counting it called 95 of a 99-task sprint blocked
+ * where 9 were.
+ *
+ * A dependency outside `byId` cannot be judged. A served `ready: true` still
+ * proves every dependency done (§4.5); otherwise it counts, the Dashboard's
+ * choice (`blockedTasks`), because leaving it out understates silently.
+ */
+export function heldByBlocker(
+  task: Pick<TaskSummary, 'status' | 'ready' | 'blocked_by'>,
+  byId: ReadonlyMap<string, Pick<TaskSummary, 'status'>>,
+): boolean {
+  if (task.status === 'done' || task.status === 'cancelled') return false;
+  for (const id of task.blocked_by) {
+    const dependency = byId.get(id);
+    if (dependency === undefined ? !task.ready : dependency.status !== 'done') return true;
+  }
+  return false;
+}
+
+/**
  * How long this task has been flagged stale, compactly — `9d`, `5h`, `12m`.
  *
  * **This formats a timestamp; it does not decide anything.** Whether a task is

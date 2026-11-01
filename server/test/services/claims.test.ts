@@ -1104,3 +1104,106 @@ describe('LAI-541 review round 2: an agent is never more than its owner on the r
     ).toMatchObject({ status: 'review', assignee_id: null });
   });
 });
+
+/**
+ * Selecting the agent that holds the claim (LAI-1027) — the review notes on
+ * it (LAI-1032): the holder's own token is fenced like any change, only a
+ * claim in force counts, and re-selecting a pre-D-119 holder backs its claim.
+ */
+describe('selecting the claim holder (LAI-1032)', () => {
+  const selected = (id: string) =>
+    t.db.select({ id: tasks.selectedAgentId }).from(tasks).where(eq(tasks.id, id)).get()?.id;
+  const requests = (id: string) =>
+    t.db
+      .select({ state: handoffOffers.state, to: handoffOffers.toAgentId })
+      .from(handoffOffers)
+      .where(eq(handoffOffers.taskId, id))
+      .all();
+
+  it('the holder’s own token selecting itself needs the live generation, as any change does', () => {
+    const a = agent('Holder');
+    const id = task();
+    expect(startWorking(t.sqlite, t.db, a.actor, id, { now: T0 }).claim?.generation).toBe(1);
+    const before = claimsOf(id);
+
+    // The two refusals share a code and a reason; `claim_generation` is what
+    // tells "send the generation" (null) from "that one is no longer valid".
+    for (const generation of [undefined, 2]) {
+      let details: unknown;
+      try {
+        updateTask(t.db, at(a.actor, generation), id, { selected_agent_id: a.id, now: T0 + MIN });
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiError);
+        expect((err as ApiError).code).toBe('conflict');
+        details = (err as ApiError).details;
+      }
+      expect(details).toMatchObject({
+        reason: 'stale_claim',
+        task_id: id,
+        claim_generation: generation ?? null,
+      });
+      expect(selected(id)).toBeNull();
+      expect(requests(id)).toEqual([]);
+    }
+
+    updateTask(t.db, at(a.actor, 1), id, { selected_agent_id: a.id, now: T0 + MIN });
+    expect(selected(id)).toBe(a.id);
+    expect(requests(id)).toEqual([{ state: 'accepted', to: a.id }]);
+    expect(claimsOf(id)).toEqual(before);
+  });
+
+  it('counts the claim only while its lease holds, at the same instant the task view does', () => {
+    const a = agent('Holder');
+    const b = agent('Other');
+    const before = task('Before');
+    const after = task('After');
+    for (const id of [before, after]) startWorking(t.sqlite, t.db, a.actor, id, { now: T0 });
+    const ends = claimsOf(before)[0]!.leaseExpiresAt;
+    expect(ends).toBe(T0 + LEASE);
+
+    // 1 ms before the lease ends: the view shows the claim, and the selection is held.
+    expect(liveClaimViews(t.db, [before], ends - 1).has(before)).toBe(true);
+    expect(
+      refusal(() => updateTask(t.db, owner, before, { selected_agent_id: b.id, now: ends - 1 })),
+    ).toEqual({ code: 'conflict', reason: 'claim_held' });
+    updateTask(t.db, owner, before, { selected_agent_id: a.id, now: ends - 1 });
+    expect(requests(before)).toEqual([{ state: 'accepted', to: a.id }]);
+
+    // 1 ms after: the claim is still `active` in the table — the scan has not
+    // run — but the view shows none, and the selection is free to change.
+    expect(claimsOf(after)[0]!.state).toBe('active');
+    expect(liveClaimViews(t.db, [after], ends + 1).has(after)).toBe(false);
+    updateTask(t.db, owner, after, { selected_agent_id: a.id, now: ends + 1 });
+    // The lapsed holder holds nothing, so its request is opened, not accepted.
+    expect(requests(after)).toEqual([{ state: 'open', to: a.id }]);
+    updateTask(t.db, owner, after, { selected_agent_id: b.id, now: ends + 1 });
+    expect(selected(after)).toBe(b.id);
+  });
+
+  it('re-selecting a pre-D-119 holder makes its claim usable again, at its current generation', () => {
+    const a = agent('Holder');
+    const b = agent('Selected');
+    const id = task();
+    const session = startWorking(t.sqlite, t.db, a.actor, id, { now: T0 }).claim!.session_id;
+    // The shape only a claim taken before D-119 has: the task names another agent.
+    t.db.update(tasks).set({ selectedAgentId: b.id }).where(eq(tasks.id, id)).run();
+    const rename = (title: string, now: number) =>
+      updateTask(t.db, at(a.actor, 1), id, { title, now });
+
+    expect(refusal(() => rename('Unbacked', T0 + MIN))).toEqual({
+      code: 'conflict',
+      reason: 'selected_for_another_agent',
+    });
+
+    updateTask(t.db, owner, id, { selected_agent_id: a.id, now: T0 + 2 * MIN });
+
+    expect(rename('Backed again', T0 + 3 * MIN).title).toBe('Backed again');
+    // And its own session renews it as before — the same claim, not a new one.
+    expect(
+      startWorking(t.sqlite, t.db, a.actor, id, { sessionId: session, now: T0 + 4 * MIN }).claim,
+    ).toMatchObject({ generation: 1, session_id: session, lease_expires_at: T0 + 4 * MIN + LEASE });
+    expect(claimsOf(id)).toEqual([
+      expect.objectContaining({ agentId: a.id, generation: 1, state: 'active' }),
+    ]);
+  });
+});

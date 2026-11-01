@@ -16,10 +16,12 @@ export interface SprintCardProps {
   readonly progress: SprintProgress;
   /** `S1` — the sprint's position in the project, as every other screen labels it. */
   readonly index: number;
-  /** Counted with `board-derive`'s rule, never a second one. */
+  /** Open work held by an unfinished blocker anywhere in the project — the board's BLK. */
   readonly blocked: number;
   readonly wip: number;
   readonly unassigned: number;
+  /** Subtasks inside `progress` — said on the card, so the fraction is not read as top-level work. */
+  readonly subtasks: number;
   readonly canManage: boolean;
   readonly canAssign: boolean;
   readonly busy: boolean;
@@ -103,10 +105,18 @@ export function SprintCard(props: SprintCardProps) {
               {progress.done}/{progress.total}
             </span>
             <span className="sprint-pct">
-              {progress.total === 0 ? 'no tasks' : `${String(progress.percent)}%`}
+              {/* A completed sprint's tasks are counted as they stand **now** —
+                  work finished after its last day included — and it says so
+                  rather than reading as what the sprint delivered (LAI-819). */}
+              {progress.total === 0
+                ? 'no tasks'
+                : `${String(progress.percent)}%${sprint.status === 'completed' ? ' done now' : ''}`}
             </span>
             {props.blocked > 0 && (
-              <span className="sprint-blocked">
+              <span
+                className="sprint-blocked"
+                title={`${String(props.blocked)} blocked by unfinished work`}
+              >
                 <LockIcon />
                 {props.blocked}
               </span>
@@ -130,6 +140,13 @@ export function SprintCard(props: SprintCardProps) {
           <span className="sprint-flow">
             {props.wip} in flight · {props.unassigned} unassigned
           </span>
+          {/* `done/total` counts subtasks as the board's DONE does; the card
+              says so instead of reading as top-level work (LAI-819). */}
+          {props.subtasks > 0 && (
+            <span className="sprint-flow sprint-subtasks">
+              incl. {props.subtasks} {props.subtasks === 1 ? 'subtask' : 'subtasks'}
+            </span>
+          )}
           {line !== null && forecast !== undefined && (
             <span
               className={
