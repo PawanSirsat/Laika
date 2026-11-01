@@ -41,10 +41,13 @@ env:
   INSTANCE_ID: i-0b2fa45c15e1b10cf
 
 jobs:
-  gate:
-    name: Gate — test, lint, format
+  # The gate is split across parallel jobs (LAI-1030): one runner doing lint,
+  # format and three test suites one after another took ~25-42 minutes. Each
+  # test job runs its package's own `test` script, typecheck included, so what
+  # CI runs is still what `pnpm test` runs; the big suites are sharded by file.
+  lint:
+    name: Gate · lint, format
     runs-on: ubuntu-latest
-    # Private-repo runner is 2 CPU / 8 GB; the full gate takes ~36-40 min.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -54,9 +57,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Chromium for the browser tests
-        run: pnpm --filter @laika/web exec playwright install --with-deps chromium
-      # Three steps, three exit codes — the rule in CLAUDE.md §5, kept here.
+      # Two steps, two exit codes — the rule in CLAUDE.md §5, kept here.
       - name: Lint
         # Type-aware eslint outgrows Node's default ~2 GB heap (LAI-574).
         env:
@@ -64,8 +65,100 @@ jobs:
         run: pnpm lint
       - name: Format
         run: pnpm format
+
+  server:
+    name: Gate · server ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `typecheck && vitest run --shard=N/4`: vitest splits the files.
       - name: Test
-        run: pnpm test
+        working-directory: server
+        run: pnpm run test --shard=${{ matrix.shard }}/4
+
+  web:
+    name: Gate · web ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(pnpm --filter @laika/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Cache Chromium
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Chromium for the browser tests
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @laika/web exec playwright install --with-deps chromium
+      - name: Chromium's system libraries
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @laika/web exec playwright install-deps chromium
+      # The package script is `typecheck && node --test "test/**/*.test.ts"`.
+      # Arguments after the glob would reach the tests, not node, so the shard
+      # goes in through NODE_OPTIONS; node splits the sorted file list.
+      - name: Test
+        working-directory: server/web
+        env:
+          NODE_OPTIONS: --test-shard=${{ matrix.shard }}/4
+        run: pnpm run test
+
+  cli:
+    name: Gate · cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Test
+        working-directory: cli
+        run: pnpm run test
+
+  # The one check that means "the gate is green", and the one deploy needs.
+  # `always()` matters: without it a failed shard would leave this job
+  # *skipped*, and a skipped check reads as passing. It runs and goes red.
+  gate:
+    name: Gate — test, lint, format
+    if: always()
+    needs: [lint, server, web, cli]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Every gate job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
+          jq -e 'length == 4 and all(.[]; .result == "success")' <<<"$NEEDS" > /dev/null
 
   build:
     name: Build — arm64 image
