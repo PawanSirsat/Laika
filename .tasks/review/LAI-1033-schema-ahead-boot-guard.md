@@ -6,8 +6,9 @@ assignee: polly
 priority: p1
 depends-on: []
 discovered-from: LAI-560
-status: in-progress
+status: review
 started: 2026-11-01T15:58:55Z
+finished: 2026-11-01T16:12:39Z
 ---
 
 ## Goal
@@ -27,13 +28,22 @@ LAI-560). Owner decided: fix it.
 
 ## Acceptance criteria
 
-- [ ] Boot refuses, non-zero, naming the unknown migrations, when
+- [x] Boot refuses, non-zero, naming the unknown migrations, when
       `__drizzle_migrations` holds a migration newer than every entry in the
       bundled journal; boots when every applied one is known. Tested both ways.
-- [ ] A mutation removing the guard turns the refusal test red.
-- [ ] The CI rollback restores this deploy's `pre-migration-*` snapshot when
+- [x] A mutation removing the guard turns the refusal test red.
+- [x] The CI rollback restores this deploy's `pre-migration-*` snapshot when
       the rolled-back image refuses as schema-ahead; never deletes a backup;
       keeps the database it replaces beside it.
-- [ ] docs/AGENTS-ROLLOUT.md § 7 says what the rollback now does end to end,
+- [x] docs/AGENTS-ROLLOUT.md § 7 says what the rollback now does end to end,
       including what it does not cover.
-- [ ] CI green on the PR.
+- [x] CI green on the PR.
+
+## Notes
+
+- CI green on PR #186 is the fifth criterion. The full gate was not run on
+  Belka (resource rule); every changed and adjacent test file was, one at a time.
+- The restore triggers on "this run's deploy wrote a pre-migration snapshot",
+  not on the old image refusing. Same data loss, and it also covers rolling back
+  to an image that predates the guard. Reasoning in the log and in
+  docs/AGENTS-ROLLOUT.md § 7.
