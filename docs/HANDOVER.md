@@ -81,7 +81,10 @@ loses every encrypted setting.
    3. The runner then checks the instance runs that digest, is freshly healthy
       from outside (`uptime_ms` under five minutes), and serves the web app.
 4. **Rollback.** If any check fails, `latest` is pointed back at the image it
-   replaced, the instance is restarted on it, and the run goes red.
+   replaced, the instance is restarted on it, and the run goes red. If the
+   failed deploy migrated the database, the rollback first copies that run's
+   `pre-migration-*` snapshot over `laika.db` and keeps the migrated file
+   beside it (LAI-1033; `docs/AGENTS-ROLLOUT.md` § 7).
 
 Deploys queue: one at a time, and the newest waiting commit wins. A deploy
 restarts the container, so expect a few seconds of downtime.
