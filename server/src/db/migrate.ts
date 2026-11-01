@@ -450,6 +450,88 @@ export function pendingMigrations(
 }
 
 /**
+ * The first words of the refusal below. **`.github/deploy/host-restart.sh`
+ * greps the container log for this string** to tell a rolled-back image that
+ * refused a newer schema from one that failed for any other reason, and only
+ * then restores the pre-migration snapshot (LAI-1033). Change both or neither.
+ */
+export const SCHEMA_AHEAD_MARKER = 'laika: schema-ahead';
+
+/** An applied migration this build has no file for. */
+export interface UnknownMigration {
+  /** Drizzle's `created_at`: the journal `when` of the build that applied it. */
+  createdAt: number;
+  hash: string;
+}
+
+/**
+ * Which applied migrations are newer than every migration this build carries.
+ *
+ * **Drizzle's migrator cannot see this case.** It applies every journal entry
+ * newer than `MAX(created_at)`; on a database migrated by a newer build that
+ * maximum is past the end of this journal, so it applies nothing and reports
+ * nothing. An older image rolled back onto a newer database therefore boots
+ * on a schema it does not understand — and past 0061 that means agent grants
+ * and claims are ignored and an agent's token is narrowed only by its scope
+ * (docs/AGENTS-ROLLOUT.md § 7, LAI-560). The rows are matched by `created_at`
+ * because that is the key the migrator itself uses; a database a build never
+ * touched has no row past its newest `when`.
+ *
+ * **Only rows past the newest, not every row with no matching entry.** A
+ * rollback always takes a journal back to a prefix of the one that migrated, so
+ * every row it does not know is past its end; a row in the middle with no file
+ * is a different fault, and this guard refusing it would turn a deploy into an
+ * outage over a case nothing here has seen.
+ */
+export function migrationsAhead(
+  sqlite: Database.Database,
+  migrationsFolder: string = MIGRATIONS_FOLDER,
+): UnknownMigration[] {
+  const present = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get('__drizzle_migrations');
+  if (present === undefined) return [];
+
+  const journal = JSON.parse(
+    readFileSync(join(migrationsFolder, 'meta', '_journal.json'), 'utf8'),
+  ) as { entries?: { when?: number }[] };
+  const newest = Math.max(0, ...(journal.entries ?? []).map((e) => e.when ?? 0));
+
+  return (
+    sqlite
+      .prepare(
+        'SELECT created_at AS createdAt, hash FROM "__drizzle_migrations" WHERE created_at > ? ORDER BY created_at',
+      )
+      .all(newest) as { createdAt: number; hash: string }[]
+  ).map((row) => ({ createdAt: Number(row.createdAt), hash: String(row.hash) }));
+}
+
+/**
+ * Refuse to start on a database a newer build has migrated (LAI-1033).
+ *
+ * The error names each unknown migration by when it was generated and by its
+ * hash — the database keeps no tag, and this build has no file to read one
+ * from. `index.ts` writes the message to stderr and exits 1.
+ */
+export function refuseSchemaAhead(
+  sqlite: Database.Database,
+  migrationsFolder: string = MIGRATIONS_FOLDER,
+): void {
+  const ahead = migrationsAhead(sqlite, migrationsFolder);
+  if (ahead.length === 0) return;
+
+  const named = ahead
+    .map((m) => `${new Date(m.createdAt).toISOString()} (hash ${m.hash.slice(0, 12)})`)
+    .join(', ');
+  throw new Error(
+    `${SCHEMA_AHEAD_MARKER}: this database has ${String(ahead.length)} migration(s) this build does not know, ` +
+      `applied by a newer build: ${named}. Refusing to start: older code on a newer schema ignores what ` +
+      `it does not know, including agent grants and claims. Run the build that migrated it, or restore ` +
+      `the pre-migration-* snapshot taken before that build's first boot (docs/AGENTS-ROLLOUT.md § 7).`,
+  );
+}
+
+/**
  * Copy the database, synchronously, before anything changes its shape.
  *
  * **`VACUUM INTO` rather than `Database.backup()`**, which is what the nightly
@@ -517,6 +599,10 @@ export interface RunMigrationsOptions {
 export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void {
   const migrationsFolder = options.migrationsFolder ?? MIGRATIONS_FOLDER;
   const backup = options.backup;
+
+  // **First, before a snapshot or a write.** A newer database has nothing
+  // pending for this build, so nothing below would notice it (LAI-1033).
+  refuseSchemaAhead(db.$client, migrationsFolder);
 
   // D-093 requires a count for the one-off UPDATE. Count around the migrator,
   // before the older boot recovery runs; the SQL file itself stays UPDATE-only.
