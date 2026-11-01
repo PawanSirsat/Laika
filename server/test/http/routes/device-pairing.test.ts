@@ -11,7 +11,7 @@ import {
   tokens,
   users,
 } from '../../../src/db/schema.ts';
-import { RateLimiter } from '../../../src/http/rate-limit.ts';
+import { LIMITS, RateLimiter } from '../../../src/http/rate-limit.ts';
 import { MAX_FAILED_SIGNATURES, MAX_OPEN_PAIRINGS } from '../../../src/services/device-pairing.ts';
 import {
   type AuthHarness,
@@ -34,6 +34,7 @@ const PASSWORD = 'correct-horse-battery-staple';
 
 let h: AuthHarness;
 let clock: number;
+let limiter: RateLimiter;
 let ada: { cookie: string; id: string };
 let bob: { cookie: string; id: string };
 
@@ -160,7 +161,8 @@ async function register(cookie: string, body: Record<string, unknown>): Promise<
 
 beforeEach(async () => {
   clock = Date.now();
-  h = authHarness({ rateLimiter: new RateLimiter(() => clock) });
+  limiter = new RateLimiter(() => clock);
+  h = authHarness({ rateLimiter: limiter });
   const setup = await h.app.request('/api/v1/setup', {
     method: 'POST',
     headers: jsonHeaders(),
@@ -396,7 +398,9 @@ describe('the code', () => {
     ).toEqual({ code: 'conflict', reason: 'pairing_already_claimed' });
   });
 
-  it('of two concurrent claims, exactly one wins', async () => {
+  // The race itself is proved in test/services/device-pairing.test.ts, by a
+  // stale read: requests here run one at a time on one connection.
+  it('of two claims sent at once, exactly one wins', async () => {
     const created = await create(bob.cookie);
     const [a, b] = await Promise.all(
       [newKey(), newKey()].map((key) =>
@@ -722,31 +726,22 @@ describe('the owner’s side', () => {
   });
 });
 
-describe('brute force', () => {
-  it('claims have their own bucket: the eleventh in a burst is 429 with Retry-After', async () => {
-    const statuses: number[] = [];
-    for (let i = 0; i < 11; i++) {
-      const res = await post('/api/v1/device-pairing/claim', {
-        code: `ZZZZ-ZZZ${String(i % 10)}`,
-        public_key: newKey().publicKey,
-      });
-      statuses.push(res.status);
-      if (res.status === 429) {
-        expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
-      }
-    }
-    expect(statuses).toEqual([...Array<number>(10).fill(404), 429]);
-    // Its own bucket: a signed-in person is not slowed by it.
-    expect((await req('/api/v1/devices', {}, { cookie: bob.cookie })).status).toBe(200);
-  });
+describe('brute force, and what it cannot lock out', () => {
+  function bogusClaim(i: number, publicKey = newKey().publicKey) {
+    // Never a real code: every one of these is a failed claim.
+    return post('/api/v1/device-pairing/claim', {
+      code: `ZZZZ-${String(i)
+        .padStart(4, '0')
+        .replace(/[^0-9]/g, '0')}`,
+      public_key: publicKey,
+    });
+  }
 
-  it('failures back off on one shared key, so a right answer waits too', async () => {
-    // Unknown request ids: each is its own polling bucket, so only the
-    // shared failure budget can stop them.
-    for (let i = 0; i < 10; i++) {
-      const res = await complete(`01M0000000000000000000000${String(i)}`, 'AAAA');
-      expect(res.status).toBe(404);
-    }
+  it('failed claims back off on one shared key, sized at 600 an hour with a burst of 60', async () => {
+    expect(LIMITS.pairingFailures).toEqual({ perMinute: 10, burst: 60 });
+    for (let i = 0; i < 60; i++) expect((await bogusClaim(i)).status).toBe(404);
+
+    // Spent: even a right code waits, with Retry-After, and nothing is read.
     const created = await create(bob.cookie);
     const res = await post('/api/v1/device-pairing/claim', {
       code: created.user_code,
@@ -759,15 +754,142 @@ describe('brute force', () => {
     expect(Number(res.headers.get('Retry-After'))).toBeGreaterThan(0);
     expect(h.db.select().from(devicePairingRequests).get()?.state).toBe('open');
 
-    // The backoff refills with time.
+    // Ten a minute come back.
     clock += 60_000;
+    await claim(created.user_code, newKey());
+  });
+
+  it('claims have their own bucket, larger than the failure budget: the 121st is 429', async () => {
+    expect(LIMITS.pairing).toEqual({ perMinute: 20, burst: 120 });
+    // A bad key is refused 422 and is not a failed guess, so only the
+    // claims bucket is spent.
+    const statuses: number[] = [];
+    let last: Response | undefined;
+    for (let i = 0; i < 121; i++) {
+      last = await post('/api/v1/device-pairing/claim', { code: 'ZZZZ-ZZZZ', public_key: 'AAAA' });
+      statuses.push(last.status);
+    }
+    expect(statuses).toEqual([...Array<number>(120).fill(422), 429]);
+    expect(Number(last?.headers.get('Retry-After'))).toBeGreaterThan(0);
+    // Not the session's: a signed-in person is not slowed by it.
+    expect((await req('/api/v1/devices', {}, { cookie: bob.cookie })).status).toBe(200);
+  });
+
+  it('a flood of bogus completes blocks no real claim and no real completion', async () => {
+    // Made-up ids, ULID-shaped and not, and bad signatures on them: none of
+    // it may spend what a real device needs.
+    const junk: number[] = [];
+    for (let i = 0; i < 150; i++) {
+      const id = `01M${String(i).padStart(23, '0')}`;
+      expect((await complete(id, 'AAAA')).status).toBe(404);
+      junk.push((await complete(`junk-${String(i)}`, 'AAAA')).status);
+    }
+    // Ids no request could have share one bucket, which they exhaust — and
+    // which no real device's request id ever reaches.
+    expect(junk).toEqual([...Array<number>(10).fill(404), ...Array<number>(140).fill(429)]);
+
+    const created = await create(bob.cookie);
+    const key = newKey();
+    const claimed = await claim(created.user_code, key);
+    await ok(await approve(bob.cookie, claimed.pairing_id, claimed.key_fingerprint));
+    const done = await ok<{ device_id: string }>(
+      await complete(claimed.pairing_id, signFor(key, claimed.pairing_id, claimed.nonce)),
+    );
+    expect(done.device_id).toMatch(/^[0-9A-Z]{26}$/);
+  });
+
+  it('a thousand distinct paths leave the limiter bounded', async () => {
+    // Junk ids share one key: a thousand of them add one bucket.
+    const before = limiter.size;
+    for (let i = 0; i < 1000; i++) await complete(`x${String(i)}`, 'AAAA');
+    expect(limiter.size - before).toBeLessThanOrEqual(1);
+
+    // ULID-shaped ids do key per request, and the cap holds them.
+    const small = new RateLimiter(() => clock, 200);
+    h.close();
+    h = authHarness({ rateLimiter: small });
+    await ok(
+      await h.app.request('/api/v1/setup', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          org_name: 'Laika',
+          owner_name: 'Ada',
+          owner_email: 'ada@example.test',
+          owner_password: PASSWORD,
+        }),
+      }),
+      201,
+    );
+    for (let i = 0; i < 1000; i++) {
+      await complete(`01M${String(i).padStart(23, '0')}`, 'AAAA');
+    }
+    expect(small.size).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('one key, one device; and a board that knows its address', () => {
+  it('two requests may claim one key, but only the first to finish keeps it', async () => {
+    const key = newKey();
+    const first = await create(bob.cookie, { display_name: 'One' });
+    const second = await create(bob.cookie, { display_name: 'Two' });
+    const a = await claim(first.user_code, key);
+    const b = await claim(second.user_code, key);
+    await ok(await approve(bob.cookie, a.pairing_id, a.key_fingerprint));
+    await ok(await approve(bob.cookie, b.pairing_id, b.key_fingerprint));
+    await ok(await complete(a.pairing_id, signFor(key, a.pairing_id, a.nonce)));
     expect(
-      (
-        await post('/api/v1/device-pairing/claim', {
-          code: created.user_code,
-          public_key: newKey().publicKey,
-        })
-      ).status,
-    ).toBe(200);
+      await refusal(await complete(b.pairing_id, signFor(key, b.pairing_id, b.nonce)), 409),
+    ).toEqual({ code: 'conflict', reason: 'device_key_in_use' });
+    expect(
+      h.db.select().from(devices).where(eq(devices.publicKey, key.publicKey)).all(),
+    ).toHaveLength(1);
+  });
+
+  it('the database refuses a second device with the same key', async () => {
+    const key = newKey();
+    const first = await create(bob.cookie, { display_name: 'One' });
+    const a = await claim(first.user_code, key);
+    await ok(await approve(bob.cookie, a.pairing_id, a.key_fingerprint));
+    await ok(await complete(a.pairing_id, signFor(key, a.pairing_id, a.nonce)));
+    const paired = h.db.select().from(devices).where(eq(devices.publicKey, key.publicKey)).get();
+    expect(() =>
+      h.db
+        .insert(devices)
+        .values({ ...paired!, id: '01M00000000000000000000099', labelKey: 'other' })
+        .run(),
+    ).toThrow(/UNIQUE constraint failed: devices\.public_key/);
+  });
+
+  it('without LAIKA_PUBLIC_URL, pairing is refused rather than signed against a guess', async () => {
+    h.close();
+    h = authHarness({ rateLimiter: limiter, publicUrl: '' });
+    const setup = await h.app.request('/api/v1/setup', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        org_name: 'Laika',
+        owner_name: 'Ada',
+        owner_email: 'ada@example.test',
+        owner_password: PASSWORD,
+      }),
+    });
+    expect(setup.status).toBe(201);
+    const cookie = cookieFrom(setup);
+    expect(
+      await refusal(
+        await post(
+          '/api/v1/devices/pairing-requests',
+          { kind: 'local', display_name: 'Strelka' },
+          { cookie },
+        ),
+        409,
+      ),
+    ).toEqual({ code: 'conflict', reason: 'public_url_unset' });
+    expect(h.db.select().from(devicePairingRequests).all()).toEqual([]);
+    expect(await refusal(await complete('01M00000000000000000000000', 'AAAA'), 409)).toEqual({
+      code: 'conflict',
+      reason: 'public_url_unset',
+    });
   });
 });

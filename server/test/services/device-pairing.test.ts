@@ -13,6 +13,7 @@ import {
   createPairingRequest,
   decidePairingRequest,
   getPairingRequest,
+  markClaimed,
   newUserCode,
   normaliseUserCode,
 } from '../../src/services/device-pairing.ts';
@@ -228,5 +229,33 @@ describe('completing', () => {
         }),
       ),
     ).toEqual({ code: 'not_found', reason: undefined });
+  });
+});
+
+describe('the claim guard', () => {
+  it('a claim made from a stale read of the row changes nothing', () => {
+    // Both callers read the request while it was open; the guard, not the
+    // read, decides. better-sqlite3 runs requests one at a time, so this is
+    // the only way the race can be reached: by holding a stale read.
+    const created = create();
+    const id = created.pairing.id;
+    const claimFor = (key: string, at: number) => ({
+      publicKey: key,
+      keyFingerprint: key.slice(0, 16),
+      claimNonce: `nonce-${String(at)}`,
+      claimedOs: null,
+      claimedCliVersion: null,
+      claimedAt: at,
+    });
+    const first = device().publicKey;
+    const second = device().publicKey;
+    expect(markClaimed(t.db, id, claimFor(first, NOW + 1))).toBe(true);
+    expect(markClaimed(t.db, id, claimFor(second, NOW + 2))).toBe(false);
+    expect(t.db.select().from(devicePairingRequests).get()).toMatchObject({
+      state: 'claimed',
+      publicKey: first,
+      claimNonce: `nonce-${String(NOW + 1)}`,
+      claimedAt: NOW + 1,
+    });
   });
 });
