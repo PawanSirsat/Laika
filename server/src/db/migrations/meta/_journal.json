@@ -484,6 +484,13 @@
       "when": 1793441677263,
       "tag": "0069_agent_events",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "6",
+      "when": 1793566647770,
+      "tag": "0070_devices",
+      "breakpoints": true
     }
   ]
 }

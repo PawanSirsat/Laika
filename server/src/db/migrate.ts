@@ -5,12 +5,13 @@ import type Database from 'better-sqlite3';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import {
+  backfillAgentDevices,
   backfillTaskPositions,
   backfillTaskTimestamps,
   purgeUnversionedIdempotencyKeys,
 } from './backfill.ts';
 import { type Db } from './client.ts';
-import { deviceLabelKey } from './device-label.ts';
+import { deviceDisplayName, deviceLabelKey } from './device-label.ts';
 import { newId } from './ids.ts';
 import { type Logger } from '../log.ts';
 
@@ -651,6 +652,10 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
       db.$client.function('laika_device_label_key', { deterministic: true }, (label) =>
         deviceLabelKey(typeof label === 'string' ? label : null),
       );
+      // LAI-1045's devices take the name the devices list already shows.
+      db.$client.function('laika_device_display_name', { deterministic: true }, (label) =>
+        deviceDisplayName(typeof label === 'string' ? label : null),
+      );
       // LAI-555's revision 1 rows take the id a request would mint.
       db.$client.function('laika_new_id', { deterministic: false }, () => newId());
       migrate(db, { migrationsFolder });
@@ -694,6 +699,10 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
     // timestamp backfill — the keys are computed — and idempotent the same way: it only
     // fills a null.
     backfillTaskPositions(db);
+
+    // Links any agent `0070` did not see to its device (LAI-1045, §4.78).
+    // Idempotent the same way: it only fills a null `device_id`.
+    backfillAgentDevices(db);
 
     // **Idempotency rows written before LAI-534 may hold plaintext secrets**
     // (Codex review of PR #102, round 3). Deleted here, before `index.ts`

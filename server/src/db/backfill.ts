@@ -1,8 +1,11 @@
-import { and, asc, eq, isNotNull, isNull, notLike, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, notLike, sql } from 'drizzle-orm';
 import { readPayload } from './activity.ts';
 import { type Db } from './client.ts';
-import { activity, idempotencyKeys, tasks } from './schema.ts';
+import { activity, agents, idempotencyKeys, tasks } from './schema.ts';
+import { deviceLabelKey } from './device-label.ts';
+import { activeDeviceFor, insertImportedDevice, newestDeviceFor } from './devices.ts';
 import { keysInOrder } from './order-key.ts';
+import { immediateTransaction } from './numbering.ts';
 
 /**
  * Recover `started_at` and `completed_at` from the audit trail (LAI-435).
@@ -262,4 +265,96 @@ export function purgeUnversionedIdempotencyKeys(db: Db): number {
     .delete(idempotencyKeys)
     .where(notLike(idempotencyKeys.actorId, `${IDEMPOTENCY_OWNER_VERSION}:%`))
     .run().changes;
+}
+
+/**
+ * Link every agent with no `device_id` to its device, and return how many
+ * (LAI-1045, §4.78). The same rule as migration `0070`, for agents it did not
+ * see: one registered between a snapshot restore and a re-upgrade, or by code
+ * that did not link.
+ *
+ * - An active device for the agent's (owner, label key) takes it.
+ * - Otherwise, if any of the key's unlinked agents is active, an active
+ *   `imported` device is made for them, named as the devices list names it.
+ * - Otherwise they are all revoked: the key's newest device takes them, or a
+ *   revoked one is made, so the name stays free.
+ *
+ * **Idempotent by construction**: it reads only `device_id IS NULL`, and
+ * every agent it reads leaves linked. Nothing is merged, revoked or renamed,
+ * and no other column of `agents` is written.
+ *
+ * A database a cut-back test migrated to before `0070` has no `devices`; it
+ * is skipped, as there is nothing to link to.
+ */
+export function backfillAgentDevices(db: Db): number {
+  const ready = db.get<{ n: number }>(
+    sql`SELECT count(*) AS n FROM pragma_table_info('agents') WHERE name = 'device_id'`,
+  );
+  if ((ready?.n ?? 0) === 0) return 0;
+
+  const unlinked = db
+    .select({
+      id: agents.id,
+      orgId: agents.orgId,
+      ownerUserId: agents.ownerUserId,
+      deviceLabel: agents.deviceLabel,
+      status: agents.status,
+      createdAt: agents.createdAt,
+      revokedAt: agents.revokedAt,
+      lastSeenAt: agents.lastSeenAt,
+    })
+    .from(agents)
+    .where(isNull(agents.deviceId))
+    .orderBy(desc(agents.createdAt), desc(agents.id))
+    .all();
+  if (unlinked.length === 0) return 0;
+
+  // Newest first, so each group's first row names the device, as the list does.
+  const groups = new Map<string, typeof unlinked>();
+  for (const row of unlinked) {
+    const key = `${row.ownerUserId}\u0000${deviceLabelKey(row.deviceLabel)}`;
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [row]);
+    else group.push(row);
+  }
+
+  immediateTransaction(db.$client, () => {
+    for (const group of groups.values()) {
+      const newest = group[0]!;
+      const labelKey = deviceLabelKey(newest.deviceLabel);
+      const anyActive = group.some((row) => row.status === 'active');
+      const lastSeenAt = group.reduce<number | null>(
+        (max, row) =>
+          row.lastSeenAt === null ? max : Math.max(max ?? row.lastSeenAt, row.lastSeenAt),
+        null,
+      );
+      const device =
+        activeDeviceFor(db, newest.ownerUserId, labelKey) ??
+        (anyActive ? null : newestDeviceFor(db, newest.ownerUserId, labelKey)) ??
+        insertImportedDevice(db, {
+          orgId: newest.orgId,
+          ownerUserId: newest.ownerUserId,
+          label: labelKey === '' ? null : (newest.deviceLabel ?? null),
+          status: anyActive ? 'active' : 'revoked',
+          now: Math.min(...group.map((row) => row.createdAt)),
+          revokedAt: anyActive
+            ? null
+            : Math.max(...group.map((row) => row.revokedAt ?? row.createdAt)),
+          lastSeenAt,
+        });
+      db.update(agents)
+        .set({ deviceId: device.id })
+        .where(
+          and(
+            isNull(agents.deviceId),
+            inArray(
+              agents.id,
+              group.map((row) => row.id),
+            ),
+          ),
+        )
+        .run();
+    }
+  });
+  return unlinked.length;
 }

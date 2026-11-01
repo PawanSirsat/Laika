@@ -4,11 +4,19 @@ import { AGENT_CLIENTS } from '../auth/agent-clients.ts';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { deviceLabelKey } from '../db/device-label.ts';
+import { activeDeviceFor, findOrCreateActiveDevice } from '../db/devices.ts';
 import { type AgentGrantScope, type AgentStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { agentProjectGrants, agents, recognisedAgentDevices, tokens, users } from '../db/schema.ts';
+import {
+  agentProjectGrants,
+  agents,
+  devices,
+  recognisedAgentDevices,
+  tokens,
+  users,
+} from '../db/schema.ts';
 import { type AgentSessionView, endSessionsOfRevokedAgent, recentAgentSessions } from './claims.ts';
 import { closeOffersOfRevokedAgent } from './handoffs.ts';
 import { ApiError } from '../errors.ts';
@@ -52,7 +60,8 @@ import {
  *
  * ## Cloud agents hold short-lived tokens (LAI-592)
  *
- * An agent whose device label is `Cloud`, in any case, runs somewhere its
+ * An agent whose device label is `Cloud`, in any case, or whose device is of
+ * kind `cloud` (§4.78, D-122), runs somewhere its
  * owner does not sit — a hosted runner — so every token it holds must expire
  * within {@link CLOUD_TOKEN_MAX_TTL_MS}. Registering, rotating and relabelling
  * are the only ways a token comes to belong to a cloud agent, and each
@@ -169,16 +178,18 @@ export function registerAgent(
   const grants = cleanGrants(db, actor, input.grants);
   const requested = input.expiresAt ?? null;
   // The cloud rule first, so a cloud agent's refusal always names it.
-  if (isCloudLabel(deviceLabel)) assertCloudExpiry(requested, now);
+  if (isCloudDevice(db, actor.userId, deviceLabel)) assertCloudExpiry(requested, now);
   const expiresAt = futureExpiry(requested, now);
+  const orgId = requireOrgId(db);
 
   const row: AgentRow = {
     id: newId(),
-    orgId: requireOrgId(db),
+    orgId,
     ownerUserId: actor.userId,
     displayName,
     harness,
     deviceLabel,
+    deviceId: null,
     status: 'active',
     createdAt: now,
     revokedAt: null,
@@ -187,6 +198,13 @@ export function registerAgent(
 
   const created = immediateTransaction(sqlite, () => {
     assertHarnessDeviceFree(db, actor, harness, deviceLabel, null);
+    // §4.78: the device its label names, made if the owner has none active.
+    row.deviceId = findOrCreateActiveDevice(db, {
+      orgId,
+      ownerUserId: actor.userId,
+      label: deviceLabel,
+      now,
+    }).id;
     db.insert(agents).values(row).run();
     writeGrants(db, row.id, grants, now);
     return insertToken(db, actor, {
@@ -282,7 +300,7 @@ export function updateAgent(
   // agent's: every live one must already meet the rule.
   // Its life is measured from when it was minted (D-121 item 3), so a token
   // already two days old is refused however little of it is left.
-  if (set.deviceLabel !== undefined && isCloudLabel(set.deviceLabel)) {
+  if (set.deviceLabel !== undefined && isCloudDevice(db, actor.userId, set.deviceLabel)) {
     for (const token of liveTokens(db, row.id, now)) {
       assertCloudExpiry(token.expiresAt, now, token.createdAt);
     }
@@ -298,6 +316,16 @@ export function updateAgent(
           set.deviceLabel === undefined ? row.deviceLabel : set.deviceLabel,
           row.id,
         );
+      }
+      if (set.deviceLabel !== undefined) {
+        // §4.78: a relabel moves the agent to that label's device; the old
+        // device keeps its row.
+        set.deviceId = findOrCreateActiveDevice(db, {
+          orgId: row.orgId,
+          ownerUserId: row.ownerUserId,
+          label: set.deviceLabel,
+          now,
+        }).id;
       }
       db.update(agents).set(set).where(eq(agents.id, row.id)).run();
       if (set.displayName !== undefined) {
@@ -379,7 +407,7 @@ export function rotateAgentToken(
   const carried = old.expiresAt !== null && old.expiresAt > now ? old.expiresAt : null;
   const requested = input.expiresAt === undefined ? carried : (input.expiresAt ?? null);
   // The cloud rule first, so a cloud agent's refusal always names it.
-  if (isCloudLabel(row.deviceLabel)) assertCloudExpiry(requested, now);
+  if (isCloudAgent(db, row)) assertCloudExpiry(requested, now);
   const expiresAt = input.expiresAt === undefined ? carried : futureExpiry(requested, now);
 
   const created = immediateTransaction(sqlite, () => {
@@ -548,7 +576,7 @@ function requireOwnDeviceAgents(db: Db, actor: ResolvedActor, key: string): Agen
 
 // ------------------------------------------------------------------ helpers
 
-function agentView(db: Db, row: AgentRow): AgentView {
+export function agentView(db: Db, row: AgentRow): AgentView {
   const grants = db
     .select({ projectId: agentProjectGrants.projectId, scope: agentProjectGrants.scope })
     .from(agentProjectGrants)
@@ -677,6 +705,29 @@ function futureExpiry(expiresAt: number | null, now: number): number | null {
 
 function isCloudLabel(label: string | null): boolean {
   return deviceLabelKey(label) === deviceLabelKey(CLOUD_DEVICE_LABEL);
+}
+
+/**
+ * D-122 amends D-121 item 2: a cloud agent is one labelled `Cloud` **or** one
+ * whose device is of kind `cloud`. Strictly tighter than the label alone, so
+ * nothing that was refused before is allowed now. `label` is the one the agent
+ * has or is getting; its device is the owner's active one for that label.
+ */
+function isCloudDevice(db: Db, ownerUserId: string, label: string | null): boolean {
+  if (isCloudLabel(label)) return true;
+  return activeDeviceFor(db, ownerUserId, deviceLabelKey(label))?.kind === 'cloud';
+}
+
+/** As {@link isCloudDevice}, for an existing agent: its linked device first. */
+function isCloudAgent(db: Db, row: AgentRow): boolean {
+  if (isCloudLabel(row.deviceLabel)) return true;
+  if (row.deviceId === null) return isCloudDevice(db, row.ownerUserId, row.deviceLabel);
+  const linked = db
+    .select({ kind: devices.kind })
+    .from(devices)
+    .where(eq(devices.id, row.deviceId))
+    .get();
+  return linked?.kind === 'cloud';
 }
 
 /**
