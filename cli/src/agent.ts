@@ -221,6 +221,7 @@ const USAGE = [
   '  laika agent login <harness> [--url URL]             save the agent’s own token (read from stdin)',
   '  laika agent logout <harness>                        forget it',
   '  laika agent hooks on|off [--harness H]              install the session hooks (opt-in)',
+  '  laika agent git-home <dir>                          let git under HOME=<dir> use your git config and credential helpers',
   '  laika agent session start --harness H --harness-session ID [--pid PID]',
   '  laika agent session heartbeat --harness H --harness-session ID',
   '  laika agent session end --harness H --harness-session ID',
@@ -1092,6 +1093,11 @@ export async function agent(argv: readonly string[], io: AgentIo = CONSOLE): Pro
   if (command === 'watch') {
     const { watchCommand } = await import('./agent-watch.ts');
     return watchCommand(io, argv.slice(1));
+  }
+
+  if (command === 'git-home') {
+    const { gitHome } = await import('./agent-git-home.ts');
+    return gitHome(io, argv.slice(1));
   }
 
   if (command === 'login' || command === 'logout' || command === 'hooks') {
