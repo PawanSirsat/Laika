@@ -1360,6 +1360,7 @@ export function TaskDetailPanel({
                 sessionModel={execution.sessionModel}
                 claim={execution.claim}
                 claimExpired={execution.claimExpired}
+                noRecentSaveMs={task.handoff?.no_recent_save?.window_ms}
                 generation={execution.generation}
                 checkpoint={
                   saves.verified !== null

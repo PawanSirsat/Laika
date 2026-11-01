@@ -7,10 +7,17 @@ import { ApiError } from '../../src/errors.ts';
 import { registerAgent } from '../../src/services/agents.ts';
 import {
   applyCheckpointDelivery,
+  configureCheckpoints,
+  DEFAULT_CHECKPOINT_SETTINGS,
   listCheckpoints,
   registerCheckpoint,
 } from '../../src/services/checkpoints.ts';
-import { configureClaims, DEFAULT_CLAIM_TIMINGS, expireClaims } from '../../src/services/claims.ts';
+import {
+  configureClaims,
+  DEFAULT_CLAIM_TIMINGS,
+  expireClaims,
+  heartbeatAgentSession,
+} from '../../src/services/claims.ts';
 import {
   acceptHandoff,
   offerHandoff,
@@ -21,6 +28,7 @@ import { addMember } from '../../src/services/projects.ts';
 import {
   deriveHandoff,
   NO_HANDOFF,
+  noRecentSave,
   type TaskHandoffView,
 } from '../../src/services/task-handoff.ts';
 import {
@@ -30,6 +38,8 @@ import {
   listTasks,
   startWorking,
   summaryOf,
+  taskVersion,
+  updateTask,
 } from '../../src/services/tasks.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
@@ -61,6 +71,7 @@ beforeEach(() => {
 
 afterEach(() => {
   configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+  configureCheckpoints(DEFAULT_CHECKPOINT_SETTINGS);
   t.close();
 });
 
@@ -183,6 +194,7 @@ describe('recovery_available (§4.73)', () => {
       offer: { kind: 'recovery', state: 'open', requires_approval: false },
       recovery_available: true,
       save_needs_attention: false,
+      no_recent_save: null,
     });
   });
 
@@ -363,6 +375,159 @@ describe('the live offer', () => {
     });
     // The sender still holds its claim, paused: no recovery while it does.
     expect(summary.recovery_available).toBe(false);
+  });
+});
+
+describe('no_recent_save — §9.1.1’s checkpoint warning (LAI-1016)', () => {
+  const WINDOW = DEFAULT_CHECKPOINT_SETTINGS.saveWarningMs;
+  /**
+   * The default lease is as long as the window, and a claim nobody renews has
+   * lapsed by the time the window passes. A working agent renews it every
+   * heartbeat; these cases stand for that with a lease an hour long, and the
+   * lapse cases below go back to the default.
+   */
+  const HELD = 60 * MIN;
+  beforeEach(() => {
+    configureClaims({ timings: { ...DEFAULT_CLAIM_TIMINGS, expireMs: HELD }, bootedAt: 0 });
+  });
+
+  it('the default window is five minutes', () => {
+    expect(WINDOW).toBe(5 * MIN);
+  });
+
+  it('a live claim with no save: nothing up to the window, the warning just past it', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    expect(handoffOf(id, T0 + WINDOW).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toEqual({
+      since: T0,
+      window_ms: WINDOW,
+    });
+  });
+
+  it('a fresh save clears it, and it returns just past the window from that save', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    const generation = claim(a, id);
+    save(a, id, generation, 'verified', T0 + 4 * MIN);
+    expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + 4 * MIN + WINDOW).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + 4 * MIN + WINDOW + 1).no_recent_save).toEqual({
+      since: T0 + 4 * MIN,
+      window_ms: WINDOW,
+    });
+  });
+
+  for (const as of ['pending', 'uncertain', 'ref_deleted'] as const) {
+    it(`a ${as} save counts as a save — the warning is about saving, not proof`, () => {
+      const a = agentOf(owner, 'A');
+      const id = task();
+      save(a, id, claim(a, id), as, T0 + 4 * MIN);
+      expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toBeNull();
+    });
+  }
+
+  it('says nothing once the claim is not live, however old the save', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    expireClaims(t.db, T0 + HELD);
+    expect(handoffOf(id, T0 + HELD + WINDOW + 1).no_recent_save).toBeNull();
+  });
+
+  it('says nothing once an active lease has lapsed, before the expiry scan has run', () => {
+    configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    // Lapsed at T0 + LEASE; no scan, so the row still says `active`.
+    const at = T0 + Math.max(LEASE, WINDOW) + 1;
+    expect(getTask(t.db, owner, id, at).claim).toBeNull();
+    expect(handoffOf(id, at).no_recent_save).toBeNull();
+  });
+
+  it('a lease renewed by the holder keeps the warning, on the default lease', () => {
+    configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+    const a = agentOf(owner, 'A');
+    const id = task();
+    const held = startWorking(t.sqlite, t.db, a.actor, id, { now: T0 }).claim!;
+    // The holder's session heartbeats inside its lease (§9.1.1) and renews it.
+    heartbeatAgentSession(t.sqlite, t.db, a.actor, held.session_id, T0 + WINDOW - MIN);
+    expect(getTask(t.db, owner, id, T0 + WINDOW + 1).claim?.state).toBe('active');
+    expect(handoffOf(id, T0 + WINDOW + 1).no_recent_save).toEqual({
+      since: T0,
+      window_ms: WINDOW,
+    });
+  });
+
+  it('a task never claimed says nothing', () => {
+    expect(handoffOf(task(), T0 + WINDOW + 1).no_recent_save).toBeNull();
+  });
+
+  it('the window is configurable, and the summary names the one it used', () => {
+    configureCheckpoints({ saveWarningMs: MIN });
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    expect(handoffOf(id, T0 + MIN).no_recent_save).toBeNull();
+    expect(handoffOf(id, T0 + MIN + 1).no_recent_save).toEqual({ since: T0, window_ms: MIN });
+  });
+
+  it('the rule alone: a paused claim is live; released or expired is not', () => {
+    const at = (state: 'active' | 'paused' | 'released' | 'expired') =>
+      noRecentSave({
+        newestClaim: { state, createdAt: T0, leaseExpiresAt: T0 + HELD },
+        newestSavedAt: null,
+        windowMs: WINDOW,
+        now: T0 + WINDOW + 1,
+      });
+    expect(at('active')).toEqual({ since: T0, window_ms: WINDOW });
+    expect(at('paused')).toEqual({ since: T0, window_ms: WINDOW });
+    expect(at('released')).toBeNull();
+    expect(at('expired')).toBeNull();
+  });
+
+  it('the rule alone: an active lease that lapsed is not live; a paused claim’s is left to the scan', () => {
+    const at = (state: 'active' | 'paused') =>
+      noRecentSave({
+        newestClaim: { state, createdAt: T0, leaseExpiresAt: T0 + WINDOW },
+        newestSavedAt: null,
+        windowMs: WINDOW,
+        now: T0 + WINDOW + 1,
+      });
+    expect(at('active')).toBeNull();
+    expect(at('paused')).toEqual({ since: T0, window_ms: WINDOW });
+  });
+
+  it('the clock turning it on is not a new version: an If-Match read before still writes', () => {
+    const a = agentOf(owner, 'A');
+    const id = task();
+    claim(a, id);
+    const before = getTask(t.db, owner, id, T0 + WINDOW);
+    expect(before.handoff.no_recent_save).toBeNull();
+    const after = getTask(t.db, owner, id, T0 + WINDOW + 1);
+    expect(after.handoff.no_recent_save).not.toBeNull();
+    // Nothing was written in between: the version must not move.
+    expect(taskVersion(after)).toBe(taskVersion(before));
+    const patched = updateTask(t.db, owner, id, {
+      title: 'Renamed',
+      expected_version: taskVersion(before),
+      now: T0 + WINDOW + 1,
+    });
+    expect(patched.title).toBe('Renamed');
+  });
+
+  it('the rule alone: a save older than the claim does not shorten the claim’s grace', () => {
+    // A reclaim or an accepted hand-off starts a new claim over an old save.
+    expect(
+      noRecentSave({
+        newestClaim: { state: 'active', createdAt: T0 + 10 * MIN, leaseExpiresAt: T0 + HELD },
+        newestSavedAt: T0,
+        windowMs: WINDOW,
+        now: T0 + 10 * MIN + WINDOW,
+      }),
+    ).toBeNull();
   });
 });
 

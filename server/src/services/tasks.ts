@@ -1470,11 +1470,17 @@ export interface UpdateTaskInput {
  * session, agent and device, stays in, so a claim taken, paused, released or
  * transferred is a new version. The holder's own writes are the claim fence's
  * to order (LAI-541), not this.
+ *
+ * **And the checkpoint warning** (LAI-1016): `handoff.no_recent_save` turns on
+ * when the server's clock passes the window, with no write to the task, so it
+ * is left out for the same reason. A save that clears it is a new checkpoint,
+ * which `handoff.checkpoint` already carries.
  */
 export function taskVersion(view: TaskView): string {
   const claim = view.claim === null ? null : withoutPulse(view.claim);
+  const { no_recent_save: _clock, ...handoff } = view.handoff;
   return createHash('sha256')
-    .update(JSON.stringify({ ...view, claim }))
+    .update(JSON.stringify({ ...view, claim, handoff }))
     .digest('hex')
     .slice(0, 32);
 }

@@ -81,18 +81,24 @@ const DAY = 24 * 60 * MINUTE;
 export interface CheckpointSettings {
   /** §9.1.1's pending notice: a `pending` checkpoint older than this is labelled. */
   pendingNoticeMs: number;
+  /**
+   * §9.1.1's checkpoint warning: a live claim with no save newer than this is
+   * shown *"No save in the last 5 minutes"* (LAI-1016). Shown, decides nothing.
+   */
+  saveWarningMs: number;
   /** D-115 item 9: how long after Done or Cancelled the rows are kept. */
   retentionMs: number;
 }
 
 export const DEFAULT_CHECKPOINT_SETTINGS: CheckpointSettings = {
   pendingNoticeMs: 10 * MINUTE,
+  saveWarningMs: 5 * MINUTE,
   retentionMs: 90 * DAY,
 };
 
 let settings: CheckpointSettings = { ...DEFAULT_CHECKPOINT_SETTINGS };
 
-/** Both windows are configurable (§9.1.1, D-115 item 9) — and a test injects them. */
+/** Every window is configurable (§9.1.1, D-115 item 9) — and a test injects them. */
 export function configureCheckpoints(next: Partial<CheckpointSettings>): void {
   settings = { ...settings, ...next };
 }
