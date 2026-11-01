@@ -105,7 +105,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Playwright version
         id: pw
-        run: echo "version=$(pnpm --filter @laika/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+        # An empty version would key every run to `playwright-Linux-`, one
+        # stale cache shared across upgrades, so a broken probe fails here.
+        run: |
+          version=$(pnpm --filter @laika/web exec playwright --version | awk '{print $2}')
+          test -n "$version" || { echo "::error::could not read the Playwright version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Cache Chromium
         id: pw-cache
         uses: actions/cache@v4
