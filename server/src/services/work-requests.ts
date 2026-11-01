@@ -5,7 +5,7 @@ import { newId } from '../db/ids.ts';
 import { agentProjectGrants, agents, handoffOffers, projects, tasks, users } from '../db/schema.ts';
 import { AGENT_NOT_FOUND, ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
-import { liveClaim } from './claims.ts';
+import { claimInForce } from './claims.ts';
 
 /**
  * A task's selected agent and the work request it opens (D-114 item 7,
@@ -148,9 +148,19 @@ export function assertAgentSelectable(
  * hands** (LAI-1027): a claim taken while nothing was selected can be backed
  * by its own holder's selection afterwards, and the claim is left exactly as
  * it was. Withdrawing (`to: null`) or naming anyone else is still refused.
+ *
+ * **Only a claim in force counts** (LAI-1032): one whose lease lapsed is not
+ * yet expired by the scan, but the task view already shows no claim and the
+ * fence already refuses its generation, so the selection changes freely —
+ * the same {@link claimInForce} both of those ask.
  */
-export function assertSelectionChangeAllowed(db: Db, task: TaskRow, to: string | null): void {
-  const live = liveClaim(db, task.id);
+export function assertSelectionChangeAllowed(
+  db: Db,
+  task: TaskRow,
+  to: string | null,
+  now: number,
+): void {
+  const live = claimInForce(db, task.id, now);
   if (live === undefined) return;
   if (to !== null && live.agentId === to) return;
   throw new ApiError(
@@ -169,7 +179,8 @@ export function assertSelectionChangeAllowed(db: Db, task: TaskRow, to: string |
  * The new agent may already hold the task's live claim (LAI-1027). Its
  * request is then written **`accepted`**, closed now — what claiming does to
  * an open one (proposal §4.4) — so a request never sits open beside its own
- * agent's claim.
+ * agent's claim. A holder whose lease lapsed holds nothing ({@link
+ * claimInForce}): its request is opened like anyone's.
  */
 export function moveSelection(
   db: Db,
@@ -191,7 +202,7 @@ export function moveSelection(
 
   if (agentId === null) return;
 
-  const held = liveClaim(db, taskId)?.agentId === agentId;
+  const held = claimInForce(db, taskId, now)?.agentId === agentId;
   db.insert(handoffOffers)
     .values({
       id: newId(),
