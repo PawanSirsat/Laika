@@ -12,11 +12,15 @@ status: backlog
 Review finding N3 on PR #205 (LAI-1050), deferred by the reviewer.
 
 `device_pairing_requests.code_hash` is the plain sha256 of the normalised
-8-character code (40 bits), as plan LAI-1042 §D.2 says. Anyone who can read
-the database can therefore recover a live code by brute force offline:
-2^40 sha256 operations is hours on one GPU. A code lives ten minutes, and a
-database reader already holds far more than a pairing code, so this is
-defence in depth, not a hole.
+code, as plan LAI-1042 §D.2 says. When this was filed the code was 8
+characters (40 bits), so anyone who could read the database could recover a
+live code offline in hours.
+
+**Round 2 of the same review made the code 16 characters (80 bits).** 2^80
+sha256 operations is out of reach for anyone, so the offline attack this task
+was filed for no longer exists. What is left is pure defence in depth. CHIEF
+may close this as no longer needed; it is kept so the decision is written
+down rather than lost.
 
 ## Scope (CORE)
 
