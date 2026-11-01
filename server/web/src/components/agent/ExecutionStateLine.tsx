@@ -81,17 +81,33 @@ export function ExecutionStateLine({
 export function NoRecentSaveLine({
   windowMs,
   variant = 'card',
+  id,
 }: {
   readonly windowMs: number;
   readonly variant?: 'card' | 'panel';
+  /**
+   * A card line's id, for the open button's `aria-describedby` — the same path
+   * the card's save state takes (LAI-1006), so focus reaches the meaning too.
+   */
+  readonly id?: string | undefined;
 }) {
   return (
-    <p className={`exec-state exec-state-${variant}`} data-no-recent-save>
+    <p
+      className={`exec-state exec-state-${variant}`}
+      data-no-recent-save
+      id={id}
+      // The panel's line can appear while the drawer is open, on the server's
+      // next read; a status is read out without taking the focus (LAI-597).
+      role={variant === 'panel' ? 'status' : undefined}
+    >
       <StateShape state="save_needs_attention" />
       <span className="exec-state-text">
         <b className="exec-state-label">{noRecentSaveWords(windowMs)}</b>
         {variant === 'panel' && (
           <span className="exec-state-meaning">{NO_RECENT_SAVE_MEANING}</span>
+        )}
+        {variant === 'card' && id !== undefined && (
+          <span className="visually-hidden">. {NO_RECENT_SAVE_MEANING}</span>
         )}
       </span>
     </p>

@@ -19,6 +19,7 @@ import {
   HANDOFF_FILTER_WORDS,
   HANDOFF_KIND_WORDS,
   NO_CHECKPOINT,
+  NO_RECENT_SAVE_MEANING,
   noRecentSaveWords,
   NOTE_WORDS,
   READINESS_WORDS,
@@ -194,5 +195,14 @@ void describe('§9.1.1’s checkpoint warning (LAI-1016)', () => {
     assert.equal(noRecentSaveWords(60_000), 'No save in the last 1 minute');
     assert.equal(noRecentSaveWords(15 * 60_000), 'No save in the last 15 minutes');
     assert.equal(noRecentSaveWords(30_000), 'No save in the last 30 seconds');
+  });
+
+  void test('its meaning holds when an older save exists, and implies no unsaved work', () => {
+    // The task may well have a save, from before the window (LAI-1016 review).
+    assert.equal(
+      NO_RECENT_SAVE_MEANING,
+      'The agent holds the task and has not saved a checkpoint in that time. Nothing changes because of it.',
+    );
+    assert.doesNotMatch(NO_RECENT_SAVE_MEANING, /unsaved|pending|changes? (are|were) lost/i);
   });
 });

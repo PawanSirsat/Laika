@@ -119,14 +119,22 @@ export function TaskCard({
   // that speak first — and outranks *Waiting for agent*, as the drawer does.
   const saveState = fields.handoff ? handoffState(task.handoff) : null;
   const saveStateId = `card-state-${task.id}`;
-  // §9.1.1's checkpoint warning (LAI-1016), the server's: only ever beside a
-  // live claim, so under its *Working* line, never in place of it.
-  const noRecentSave = fields.handoff ? (task.handoff?.no_recent_save ?? null) : null;
+  // §9.1.1's checkpoint warning (LAI-1016), the server's: drawn only under the
+  // live claim's *Working* or *Connection lost* line, never in place of it and
+  // never alone — a card that does not show the claim does not show this.
+  const noRecentSave =
+    fields.handoff &&
+    saveState === null &&
+    (execution === 'working' || execution === 'connection_lost')
+      ? (task.handoff?.no_recent_save ?? null)
+      : null;
+  const noRecentSaveId = `card-no-save-${task.id}`;
   const openRef = useRef<HTMLButtonElement>(null);
   const describedBy =
     [
       onKeyMove === undefined ? undefined : 'card-move-help',
       saveState === null ? undefined : saveStateId,
+      noRecentSave === null ? undefined : noRecentSaveId,
     ]
       .filter((id): id is string => id !== undefined)
       .join(' ') || undefined;
@@ -231,7 +239,9 @@ export function TaskCard({
       ) : (
         execution !== null && <ExecutionStateLine state={execution} detail={executionDetail} />
       )}
-      {noRecentSave !== null && <NoRecentSaveLine windowMs={noRecentSave.window_ms} />}
+      {noRecentSave !== null && (
+        <NoRecentSaveLine windowMs={noRecentSave.window_ms} id={noRecentSaveId} />
+      )}
 
       <div className="card-foot">
         {/* Jira's priority icons (LAI-705): an up chevron, an equals sign, a

@@ -822,10 +822,20 @@ void describe('the checkpoint warning (LAI-1016)', () => {
       // Beside the claim's line, never in its place; and on no other card.
       assert.equal(await stateOf(h.page, 't4'), 'working');
       assert.equal(await h.page.locator('.card [data-no-recent-save]').count(), 1);
+      // Focus on the card's open button reads it, as it reads the save state.
+      const warningId = await warning.getAttribute('id');
+      const describedBy =
+        (await card(h.page, 't4').locator('.card-open').getAttribute('aria-describedby')) ?? '';
+      assert.ok(warningId !== null && describedBy.split(' ').includes(warningId), describedBy);
+      assert.match(
+        (await warning.textContent()) ?? '',
+        /No save in the last 5 minutes\. The agent holds the task and has not saved a checkpoint in that time\./,
+      );
 
       const inPanel = panel.locator('[data-no-recent-save]');
       await inPanel.waitFor({ timeout: 10_000 });
       assert.match(await inPanel.innerText(), /No save in the last 5 minutes/);
+      assert.equal(await inPanel.getAttribute('role'), 'status');
       assert.equal(
         await panel.locator('[data-exec-state]').first().getAttribute('data-exec-state'),
         'working',
@@ -844,6 +854,36 @@ void describe('the checkpoint warning (LAI-1016)', () => {
       }
       assert.notEqual(ink[0], ink[1], 'the label takes each theme’s token');
       await shoot(h.page, 'card-no-recent-save', '.card[data-task-id="t4"]');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a card that does not show the live claim does not show the warning either', async () => {
+    const w = world();
+    const warned = { since: NOW - 40 * MIN, window_ms: 5 * MIN };
+    // t3 carries the flag with no live claim on the read; t4 has one, but the
+    // reader hid the agent field, and with it the claim's line.
+    for (const id of ['t3', 't4']) {
+      const i = w.tasks.findIndex((t) => t.id === id);
+      w.tasks[i] = { ...w.tasks[i], handoff: { ...NONE, no_recent_save: warned } };
+    }
+    const h = await open('/board?project=laika-core', w.stub, {
+      before: async (page) => {
+        await fakeStream(page);
+        await page.addInitScript(() => {
+          localStorage.setItem(
+            'laika.board-view',
+            JSON.stringify({ 'laika-core': { fields: { agent: false } } }),
+          );
+        });
+      },
+    });
+    try {
+      await card(h.page, 't2').waitFor({ timeout: 20_000 });
+      await until(async () => (await stateOf(h.page, 't2')) === 'save_needs_attention', 10_000);
+      assert.equal(await stateOf(h.page, 't4'), null);
+      assert.equal(await h.page.locator('.card [data-no-recent-save]').count(), 0);
     } finally {
       await h.close();
     }
