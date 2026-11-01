@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p2
 depends-on: []
 discovered-from: LAI-1042
-status: in-progress
+status: review
 started: 2026-11-01T20:46:32Z
+finished: 2026-11-01T21:02:44Z
 ---
 
 ## Why
@@ -21,22 +22,22 @@ reuse them without touching the classic Connect page.
 
 ## Acceptance criteria
 
-- [ ] Shared components exist under `server/web/src/components/` for: step rail,
+- [x] Shared components exist under `server/web/src/components/` for: step rail,
       wizard card, selected-tool tiles, code/prompt block with copy control,
       muted help, wizard footer, status chip (word + reason, never colour
       only), and a `⋯` overflow menu.
-- [ ] `ConnectScreen.tsx` renders through the shared components and the
+- [x] `ConnectScreen.tsx` renders through the shared components and the
       current Connect page renders the same: a golden DOM/a11y test captures
       the classic page's markup at each step before and after the refactor.
-- [ ] The overflow menu has keyboard and focus handling (open with
+- [x] The overflow menu has keyboard and focus handling (open with
       Enter/Space/ArrowDown, arrows move, Escape closes and returns focus to
       the trigger, Tab leaves) and reuses the existing focus helper; tests
       prove each.
-- [ ] The status chip uses only existing `--chip-*` / `--accent*` / text
+- [x] The status chip uses only existing `--chip-*` / `--accent*` / text
       tokens: no raw hex, no new token. Both themes covered.
-- [ ] Tool lists come from the existing catalog (`AGENT_GUIDES`); no
+- [x] Tool lists come from the existing catalog (`AGENT_GUIDES`); no
       hard-coded counts are introduced.
-- [ ] `structure.test.ts` `WEB_*` maps are updated for any new file.
+- [x] `structure.test.ts` `WEB_*` maps are updated for any new file.
 
 ## Notes
 
@@ -44,3 +45,15 @@ reuse them without touching the classic Connect page.
 - Plan items not in this slice's dispatched scope (tool-capabilities.ts
   drift test, `live-region.ts`) are left for a later slice.
 - Belka: one test file at a time, single worker; CI is the full gate.
+
+## Done
+
+- Golden: `server/web/test/browser/connect-golden.test.ts` and
+  `golden/connect.json`, taken in `35ad1314` before the refactor; still
+  green after it. Mutation-checked: a markup mutant and a CSS mutant each go red.
+- `structure.test.ts` needed no `WEB_*` entry. Both new `.ts` modules
+  (`command-lines.ts`, `overflow-menu-model.ts`) have mirrored tests; `.tsx`
+  files are not mirrored.
+- The wizard parts keep the `conn-*` classes, and their rules stay in
+  `connect.css`. Moving them is deferred to slice F5. Reasons are in
+  `logs/shell-2026-11-02-LAI-1044.md`.
