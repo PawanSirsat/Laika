@@ -82,6 +82,9 @@ const CreateBody = strictObject({
   // An outside id (LAI-780). A sanity bound only: the shape and its length are
   // the service's (`normaliseOutsideId`), so its message is the one read.
   external_ref: z.string().max(120).optional(),
+  // The agent meant to do it, from the start (LAI-1027) — `PATCH`'s check and
+  // work request. Eligibility is the service's, and answers `422` with the reason.
+  selected_agent_id: z.string().min(1).max(64).optional(),
   created_via: z.enum(CREATED_VIA).optional(),
 });
 

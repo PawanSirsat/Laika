@@ -3576,7 +3576,10 @@ parent_task_id, due_on, planned_start, external_ref, selected_agent_id }`.
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set. `POST /projects/:slug/tasks` takes
 the same three optional fields (`parent_task_id`, `due_on`, `planned_start`)
-beside `discovered_from`. Both take `external_ref`, an outside id (§4.5) —
+beside `discovered_from`, and `selected_agent_id` (LAI-1027) — checked as
+`PATCH` checks it, opening the work request and writing the
+`task.agent_selected` row in the create's own transaction, so a refused agent
+files no task. Both take `external_ref`, an outside id (§4.5) —
 anything of another shape is `422` on that field, and one another task of the
 project holds is `422` with `details: { field: 'external_ref', reason:
 'taken', external_ref, task }` — and `PATCH` clears it with `null` (LAI-780).
@@ -3618,12 +3621,19 @@ to do the task and opens a work request for it; `null` withdraws the request,
 and the same id again changes nothing and writes nothing. It never moves
 `assignee_id`. An agent that cannot be selected is `422` with `details: {
 field: 'selected_agent_id', reason, selected_agent_id }`, `reason` one of
-`agent_not_found`, `agent_other_owner`, `agent_wrong_org`, `agent_revoked`,
-`agent_not_granted`, `agent_read_only` or `agents_off`. **Changing it while
-an agent session holds the task's live claim is `409 conflict`, `reason:
-claim_held`** — that change is a hand-off (LAI-546): accepting one sets
-`selected_agent_id` to the receiver in the accept's own transaction (§4.73);
-with no live claim it is free to change (LAI-541). **The selected agent owns the claim** (D-119,
+`agent_not_found`, `agent_revoked`, `agent_not_granted`, `agent_read_only` or
+`agents_off`. **Another person's agent, or one in another organisation, is
+`agent_not_found`**, byte for byte as an id that names no agent (D-121 item 7,
+LAI-1027); `agent_other_owner` and `agent_wrong_org` are no longer answered.
+**Changing it while an agent session holds the task's live claim is `409
+conflict`, `reason: claim_held`** — that change is a hand-off (LAI-546):
+accepting one sets `selected_agent_id` to the receiver in the accept's own
+transaction (§4.73); with no live claim it is free to change (LAI-541). **The
+one change a live claim allows is to the agent that holds it** (LAI-1027): a
+task claimed while nothing was selected can name its holder afterwards. The
+claim is untouched, the `task.agent_selected` row is written as for any
+selection, and the work request is written `accepted`, as the holder's claim
+would have accepted it; `null` or any other agent is still `claim_held`. **The selected agent owns the claim** (D-119,
 LAI-586): *"When a task has a selected agent, only sessions of that agent may
 claim it. Any other agent gets `409 conflict` with reason
 `selected_for_another_agent`, naming the selected agent if the caller may see
@@ -3636,9 +3646,10 @@ selected agent meets the assignee rule as before. The selected agent's claim
 so a request can no longer stay open beside another agent's claim, or beside
 its own reclaimed one. A person and a legacy token
 claim by assignee as before, and reads and comments are never refused for it.
-**A live claim the selection does not back** — taken before D-119, or before
-the selection; the API cannot make one any more — is never renewed and never
-usable: the claim, the reclaim and the fence all answer it
+**A live claim the selection does not back** — the task names another agent;
+only a claim taken before D-119 can be one, since a claim needs no selection
+but a live claim lets the selection move only to its own holder — is never
+renewed and never usable: the claim, the reclaim and the fence all answer it
 `selected_for_another_agent`. It ends at its holder's next heartbeat (reported
 in `lost`) or when its lease lapses, whichever is first, as **`released`**, not
 `expired` — an expired claim waits for its holder's reclaim or for recovery,
@@ -4961,7 +4972,7 @@ matched.
 | `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
-| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
+| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref?, agent? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `agent` is a registered agent's id and is `POST /projects/:slug/tasks`'s `selected_agent_id` (§6.4): a work request opened in the create, never an assignment (LAI-1027). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
 | `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, claim_generation? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date, `size`, `external_ref` or `agent` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085). `agent` is a registered agent's id and is `PATCH`'s `selected_agent_id` (§6.4): a work request, never an assignment (LAI-535) |
 | `start_working` | `{ task, branch?, estimate?, session_id?, reclaim? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409`. **On a registered agent's token** it also takes the task's exclusive claim (§5, §4.66) and answers `claim` — `{ session_id, generation, lease_expires_at, … }` — beside the task, and **never writes the assignee** (§5); `session_id?` names the session to claim under (absent opens one), and the holder's session calling again renews the lease. A second session — the same agent's, or another agent of the same person — is `409`, `reason: claim_held`. **A task with a selected agent** (§4.5) is claimed only by that agent's sessions — another agent is `409`, `reason: selected_for_another_agent`, with or without `reclaim` (D-119, §6.3). **`reclaim: true`** is the explicit reclaim, `POST /tasks/:id/claim/reclaim`'s twin (§9.1, LAI-541): only it gives an agent whose claim expired a claim again, at `generation + 1` |
 | `update_status` | `{ task, status, note?, claim_generation? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
