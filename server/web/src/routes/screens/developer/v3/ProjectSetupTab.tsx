@@ -13,6 +13,7 @@ import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../../components/LoadingState.tsx';
+import { Spinner } from '../../../../components/Spinner.tsx';
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
 import { Help } from '../../../../components/wizard/Help.tsx';
 import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
@@ -469,12 +470,14 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
             // aria-disabled, not disabled: the button keeps focus when a save
             // finishes and it has nothing left to save.
             aria-disabled={!dirty || saving || !canChange}
+            aria-busy={saving}
             onClick={() => {
               if (!dirty || saving || !canChange) return;
               void save();
             }}
           >
-            {saving ? 'Saving…' : 'Save access'}
+            {saving && <Spinner size="sm" />}
+            Save access
           </button>
           {saved && !dirty && <span className="conn-note">Saved.</span>}
         </div>
