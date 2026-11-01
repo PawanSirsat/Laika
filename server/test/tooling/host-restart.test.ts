@@ -76,7 +76,19 @@ esac`,
   );
   stub(
     'mv',
-    `if [ -e "${state}/rename-fails" ] && [ "$2" = "${join(data, 'laika.db.restoring')}" ]; then echo "mv: stubbed failure" >&2; exit 1; fi; exec /bin/mv "$@"`,
+    `if [ -e "${state}/rename-fails" ] && [ "$2" = "${join(data, 'laika.db.restoring')}" ]; then echo "mv: stubbed failure" >&2; exit 1; fi
+if [ -e "${state}/wal-move-fails" ] && [ "$1" = "${join(data, 'laika.db-wal')}" ]; then echo "mv: stubbed failure" >&2; exit 1; fi
+exec /bin/mv "$@"`,
+  );
+  stub(
+    'ln',
+    `[ -e "${state}/ln-fails" ] && { echo "ln: stubbed failure" >&2; exit 1; }; exec /bin/ln "$@"`,
+  );
+  // The rolled-back name is stamped to the second; a fixed stamp makes two
+  // rollbacks in one second reproducible.
+  stub(
+    'date',
+    `if [ -e "${state}/stamp" ] && [ "$*" = "-u +%Y%m%dT%H%M%SZ" ]; then cat "${state}/stamp"; exit 0; fi; exec /bin/date "$@"`,
   );
   // macOS has no sha256sum; the instance (Amazon Linux) does.
   if (spawnSync('sh', ['-c', 'command -v sha256sum']).status !== 0) {
@@ -166,6 +178,8 @@ function liveSet(): Record<string, string> {
 describe('a restore that fails part way', () => {
   for (const [what, flag] of [
     ['the copy of the snapshot', 'cp-fails'],
+    ['the hard link of the original', 'ln-fails'],
+    ['the -wal move, after the link', 'wal-move-fails'],
     ['the final rename, after -wal and -shm moved', 'rename-fails'],
   ] as const) {
     it(`puts everything back when ${what} fails, starts the old image on it, and stays red`, () => {
@@ -188,6 +202,45 @@ describe('a restore that fails part way', () => {
       expect(readFileSync(snap, 'utf8')).toBe('before the deploy');
     });
   }
+
+  for (const taken of ['', '-wal', '-shm']) {
+    it(`touches nothing when laika.db.rolled-back-<this second>${taken} already exists`, () => {
+      // An earlier rollback in the same second (the reviewer's case): its
+      // kept file must neither be moved over laika.db nor overwritten.
+      writeFileSync(join(state, 'stamp'), '20261101T100000Z');
+      writeFileSync(join(data, 'laika.db'), 'migrated');
+      writeFileSync(join(data, 'laika.db-wal'), 'migrated wal');
+      writeFileSync(join(data, 'laika.db-shm'), 'migrated shm');
+      writeFileSync(
+        join(data, `laika.db.rolled-back-20261101T100000Z${taken}`),
+        'an earlier rollback',
+      );
+      const before = liveSet();
+      deployed('108-1');
+      snapshot('2026-11-01T10-00-00-000Z', 'before the deploy', -30);
+
+      const r = host('rollback', '108-1');
+
+      expect(r.status, r.out).toBe(1);
+      expect(r.out).toContain('restore: FAILED — refused before touching anything');
+      expect(liveSet()).toEqual(before);
+      expect(startedOn()).toBe('migrated');
+    });
+  }
+
+  it('says the restore failed, not that there was no snapshot, when the old image then refuses', () => {
+    writeFileSync(join(data, 'laika.db'), 'migrated');
+    deployed('109-1');
+    snapshot('2026-11-01T10-00-00-000Z', 'before the deploy', -30);
+    writeFileSync(join(state, 'cp-fails'), '');
+    writeFileSync(join(state, 'logs'), `${SCHEMA_AHEAD_MARKER}: this database has 1 migration(s)…`);
+
+    const r = host('rollback', '109-1', false);
+
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('the restore above failed, so the migrated database is still in place');
+    expect(r.out).not.toContain('took no snapshot');
+  });
 
   it('does not fail on a volume with no backups directory', () => {
     writeFileSync(join(data, 'laika.db'), 'live');
