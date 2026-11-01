@@ -2,11 +2,12 @@
 id: LAI-1023
 title: 'Each space''s "Context" button names its space for screen readers'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p3
 depends-on: []
 discovered-from: LAI-1018
-status: backlog
+status: in-progress
+started: 2026-11-01T13:03:17Z
 ---
 
 ## Why

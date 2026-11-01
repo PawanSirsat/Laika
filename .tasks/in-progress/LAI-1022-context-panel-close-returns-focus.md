@@ -2,11 +2,12 @@
 id: LAI-1022
 title: 'Closing the Project context panel returns focus to the space''s Context button, not to the page body'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: []
 discovered-from: LAI-1018
-status: backlog
+status: in-progress
+started: 2026-11-01T13:03:17Z
 ---
 
 ## Why
