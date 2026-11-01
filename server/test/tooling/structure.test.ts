@@ -93,6 +93,10 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/errors.ts', 'covered by test/api.test.ts — the envelope and the wrapper are one subject'],
   ['api/me.ts', 'a single typed GET; asserted through the client in api.test.ts'],
   ['api/use-session.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  [
+    'routes/screens/my-day/use-phone.ts',
+    'a React hook on a media query — no renderer in this package (CONVENTIONS §4); my-day-phone.test.ts drives it in a browser',
+  ],
   ['api/use-setup-status.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-board.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-statuses.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
@@ -115,6 +119,21 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'a React hook — no renderer in this package (CONVENTIONS §4). Its pure half, openUnlistedCount, is tested in test/api/unlisted.test.ts and the sidebar badge in test/browser/capacity.test.ts.',
   ],
   ['api/use-task-detail.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  ['api/use-task-handoffs.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  [
+    'api/use-handoff-counts.ts',
+    // LAI-550. The request it makes is listPersonHandoffs, mirrored in
+    // test/api/handoff-policy.test.ts; the sum it feeds is handoffsWaiting,
+    // and the badge is asserted in a browser.
+    'a React hook — no renderer in this package (CONVENTIONS §4). Its request, listPersonHandoffs, is tested in test/api/handoff-policy.test.ts, the badge sum in test/components/agent/person-handoffs.test.ts, and the sidebar badge in test/browser/inbox-handoffs.test.ts.',
+  ],
+  [
+    'components/agent/use-claim-clock.ts',
+    // LAI-597. The wait it sets, msUntilSuspect, is mirrored in
+    // test/components/agent/execution-derive.test.ts; the flip it causes is
+    // asserted with an injected clock in test/browser/agent-execution.test.ts.
+    'a React hook — no renderer in this package (CONVENTIONS §4). Its pure half, msUntilSuspect, is tested in test/components/agent/execution-derive.test.ts and the card flipping to Connection lost in test/browser/agent-execution.test.ts.',
+  ],
   [
     'api/use-review-count.ts',
     // LAI-758. The count is the queue's length; the queue's pure half is

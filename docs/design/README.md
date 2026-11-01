@@ -189,3 +189,35 @@ and a lunch panel that moves the window for a day (the panel is not built,
 D-105 item 5). `timeline-core.js` was brought level with the project's copy by
 hand: the `LUNCH` fixture constant and its export, nothing else.
 
+
+## 2026-10-25 — the "Laika My Day" design (LAI-510, for LAI-511 – LAI-518)
+
+The owner handed over `Laika My Day.html` on 2026-10-24 23:14 — the bundled
+export (fonts, React and the sub-pages inlined, 1.3 MB; not imported) of the
+same project's current My day page — with *"go through this prototype, click on
+everything, check the positions and responsiveness, then match the design as it
+is"*. The three source files behind it, as fetched from the project on
+2026-10-25, byte for byte (sizes and etags from the project's listing):
+
+| File | Bytes | etag | What it is |
+| --- | --- | --- | --- |
+| `MyDay.dc.html` | 177448 | `1792831014704079` | the My day page: header, week, the embedded Timeline, the tray, the tabs (Overview · To review · Confirmed · Calendar · All), the right drawer (editor, Add time, gap, break, not-work, timer-stopped), the Confirm day dialog, the keys sheet, the bulk bar, the toast, the phone layout, and every scenario (own, viewing, empty, future, drafts off, org off, loading, error) |
+| `TimelineV2.dc.html` | 85388 | `1792831007551309` | the Timeline card My day embeds with `no-footer`: drag to move and resize, a tray drop, Alt+arrow moves, a running timer block, imported and live states, on top of `Timeline.dc.html`'s lanes, lunch and Fit |
+| `TimelineMobileV2.dc.html` | 31356 | `1792831007551309` | the phone Timeline: vertical, SIG / YOU / AGENTS columns, hour labels at the left |
+
+`support.js` and `timeline-core.js` are unchanged (equal to the project's
+copies). The page renders over HTTP with the two scripts beside it, as
+`Timeline.dc.html` does; `window.__dcSetProps('myday', {…})` sets its props
+(`theme`, `device`, `scenario`, `open`, `timer`, `drag`, `bulk`, `pop`,
+`part`), which is how its 55 states were rendered for the comparison.
+
+**Artifacts of the prototype, not to be copied** (§5.1): the Start timer and
+Viewing popovers are clipped by the page's left edge at 1440px (they anchor
+`right: 0` to a button near the edge); the week tiles truncate their words at
+768px; the `Calendar` tab and the *On your calendar* hint have no source
+behind them (D-110 item 3); `imported` (Solidtime) blocks have no import
+behind them. The design computes side cards (`sideDef`) it never draws; the
+owner wants them on a tap (LAI-511).
+
+What differs from master, measured on 2026-10-24 by rendering both, is in
+LAI-511 – LAI-518's Goals.

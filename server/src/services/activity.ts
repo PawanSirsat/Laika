@@ -6,7 +6,8 @@ import { requireOrgId } from '../db/orgs.ts';
 import { projects } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
-import { eventView, type EventView } from './events.ts';
+import { agentReader } from './agent-visibility.ts';
+import { type EventView, eventViews } from './events.ts';
 import { requireProjectBySlug } from './projects.ts';
 
 /**
@@ -94,7 +95,7 @@ export function listProjectActivity(
   const project = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
-  return listActivity(db, {
+  const rows = listActivity(db, {
     orgId: project.orgId,
     projectId: project.id,
     ...(options.taskId === undefined ? {} : { taskId: options.taskId }),
@@ -102,7 +103,8 @@ export function listProjectActivity(
     cursor: toCursor(options.cursor),
     // One over the limit, so the route can tell whether another page exists.
     limit: options.limit + 1,
-  }).map(eventView);
+  });
+  return eventViews(db, agentReader(actor), rows);
 }
 
 /**
@@ -125,7 +127,7 @@ export function listOrgActivity(
 ): EventView[] {
   assertCan(actor, 'member_list.read');
 
-  return listActivity(db, {
+  const rows = listActivity(db, {
     orgId: requireOrgId(db),
     projectIds: visibleProjectIds(db, actor),
     // Org-scoped rows — `token.created`, `member.role_changed` — are the audit
@@ -135,7 +137,8 @@ export function listOrgActivity(
     ...(options.since === undefined ? {} : { since: options.since }),
     cursor: toCursor(options.cursor),
     limit: options.limit + 1,
-  }).map(eventView);
+  });
+  return eventViews(db, agentReader(actor), rows);
 }
 
 export interface OrgHistoryOptions {
@@ -184,7 +187,7 @@ export function listOrgHistory(
   const projectId =
     options.project === undefined ? undefined : requireProjectBySlug(db, options.project).id;
 
-  return listActivity(db, {
+  const rows = listActivity(db, {
     orgId: requireOrgId(db),
     ...(projectId === undefined ? {} : { projectId }),
     ...(options.actor === undefined ? {} : { actorId: options.actor }),
@@ -193,5 +196,6 @@ export function listOrgHistory(
     ...(options.until === undefined ? {} : { until: options.until }),
     cursor: toCursor(options.cursor),
     limit: options.limit + 1,
-  }).map(eventView);
+  });
+  return eventViews(db, agentReader(actor), rows);
 }

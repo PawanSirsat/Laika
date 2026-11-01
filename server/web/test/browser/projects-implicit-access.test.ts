@@ -190,6 +190,7 @@ void describe('Projects effective access', () => {
       },
       [`/api/v1/projects/${MEMBER_SPACE.slug}/context`]: {
         context_md: '',
+        revision: 0,
         length: 0,
         limit: 20_000,
         updated_at: null,

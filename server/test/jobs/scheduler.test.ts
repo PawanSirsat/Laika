@@ -4,9 +4,24 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildJobs, startScheduler, type SchedulerDeps } from '../../src/jobs/scheduler.ts';
 import { newId } from '../../src/db/ids.ts';
-import { heartbeats, localActivityDays, users } from '../../src/db/schema.ts';
+import { eq } from 'drizzle-orm';
+import {
+  activity,
+  handoffOffers,
+  heartbeats,
+  localActivityDays,
+  projects,
+  taskClaims,
+  users,
+} from '../../src/db/schema.ts';
+import { applyCheckpointDelivery, registerCheckpoint } from '../../src/services/checkpoints.ts';
+import { offerHandoff } from '../../src/services/handoffs.ts';
+import { loadActor, resolveTokenActor } from '../../src/auth/resolve-actor.ts';
+import { registerAgent } from '../../src/services/agents.ts';
+import { configureClaims, DEFAULT_CLAIM_TIMINGS } from '../../src/services/claims.ts';
+import { createTask, startWorking } from '../../src/services/tasks.ts';
 import { captureLog, type CapturedLog } from '../helpers/app.ts';
-import { freshDb, seed, type TestDb } from '../helpers/db.ts';
+import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
  * §11.6's one in-process scheduler (LAI-431).
@@ -21,6 +36,7 @@ const NOW = 1_800_000_000_000;
 let t: TestDb;
 let dir: string;
 let log: CapturedLog;
+let seeded: Seed;
 
 /** A timer that never fires by itself — the test decides when a tick happens. */
 function fakeTimers() {
@@ -54,7 +70,7 @@ function deps(extra: Partial<SchedulerDeps> = {}): SchedulerDeps {
 
 beforeEach(() => {
   t = freshDb();
-  seed(t.db);
+  seeded = seed(t.db);
   dir = mkdtempSync(join(tmpdir(), 'laika-cron-'));
   log = captureLog();
 });
@@ -71,12 +87,16 @@ describe('the jobs §11.6 names', () => {
 
     expect(names).toEqual([
       'backup.snapshot',
+      'checkpoint.retention',
+      'claim.expiry',
       'db.vacuum',
       'estimate.refit',
       'heartbeat.retention',
+      'idempotency.retention',
       'invite.expiry',
       'local_activity.retention',
       'meeting_review.expiry',
+      'offer.expiry',
       'task.stale',
       'time.retention',
     ]);
@@ -94,6 +114,14 @@ describe('the jobs §11.6 names', () => {
     const refit = buildJobs(deps()).find((j) => j.name === 'estimate.refit');
     expect(refit?.everyMs).toBe(day);
     expect(refit?.atStart).toBe(true);
+  });
+
+  it('sweeps the idempotency store hourly and once at boot (LAI-534 round 2)', () => {
+    const hour = 60 * 60 * 1000;
+    const job = buildJobs(deps()).find((j) => j.name === 'idempotency.retention');
+    expect(job?.everyMs).toBe(hour);
+    // At boot, so a deploy deletes the pre-LAI-534 rows that may hold secrets.
+    expect(job?.atStart).toBe(true);
   });
 
   it('runs local-activity retention daily (LAI-751)', () => {
@@ -283,6 +311,140 @@ describe('logging', () => {
     // A nightly "deleted 0" in every log for a year is how the one that says
     // 40000 goes unnoticed.
     expect(log.find('cron.job_ran')).toBeUndefined();
+    scheduler.stop();
+  });
+});
+
+describe('claim.expiry across a restart (§9.1, proposal §4.2, LAI-541)', () => {
+  afterEach(() => {
+    configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+  });
+
+  it('runs every scan interval, configurable per deployment', () => {
+    configureClaims({ timings: { ...DEFAULT_CLAIM_TIMINGS, scanMs: 7_000 } });
+    expect(buildJobs(deps()).find((j) => j.name === 'claim.expiry')?.everyMs).toBe(7_000);
+    configureClaims({ timings: DEFAULT_CLAIM_TIMINGS });
+    expect(buildJobs(deps()).find((j) => j.name === 'claim.expiry')?.everyMs).toBe(30_000);
+  });
+
+  it('expires nothing during the boot grace, then everything overdue on the first scan after it', async () => {
+    const s = seeded;
+    const owner = loadActor(t.db, s.userId)!;
+    const { secret } = registerAgent(t.sqlite, t.db, owner, {
+      displayName: 'Restart',
+      harness: 'claude-code',
+      grants: [{ projectId: s.projectId, scope: 'full' }],
+    });
+    const agent = resolveTokenActor(t.db, secret, NOW);
+    const taskId = createTask(t.sqlite, t.db, owner, 'laika', { title: 'Held', now: NOW }).id;
+    startWorking(t.sqlite, t.db, agent, taskId, { now: NOW });
+
+    // The server stops, and comes back twenty minutes later: every lease is overdue.
+    const boot = NOW + 20 * 60_000;
+    configureClaims({ bootedAt: boot });
+    let clock = boot + 1_000;
+    const scheduler = startScheduler(deps({ ...fakeTimers(), now: () => clock }));
+    const state = () =>
+      t.db.select().from(taskClaims).where(eq(taskClaims.taskId, taskId)).get()?.state;
+
+    expect((await scheduler.runOnce('claim.expiry'))?.changed).toBe(0);
+    expect(state()).toBe('active');
+
+    clock = boot + DEFAULT_CLAIM_TIMINGS.heartbeatMs;
+    expect((await scheduler.runOnce('claim.expiry'))?.changed).toBe(1);
+    expect(state()).toBe('expired');
+    scheduler.stop();
+  });
+});
+
+describe('offer.expiry (§11.6, §4.73, LAI-546)', () => {
+  afterEach(() => {
+    configureClaims({ timings: DEFAULT_CLAIM_TIMINGS, bootedAt: 0 });
+  });
+
+  it('runs on the claim scan’s cadence', () => {
+    configureClaims({ timings: { ...DEFAULT_CLAIM_TIMINGS, scanMs: 7_000 } });
+    const jobs = buildJobs(deps());
+    expect(jobs.find((j) => j.name === 'offer.expiry')?.everyMs).toBe(7_000);
+    expect(jobs.find((j) => j.name === 'offer.expiry')?.everyMs).toBe(
+      jobs.find((j) => j.name === 'claim.expiry')?.everyMs,
+    );
+  });
+
+  it('after a restart closes an overdue offer, expires the lapsed sender and opens the recovery', async () => {
+    const s = seeded;
+    const owner = loadActor(t.db, s.userId)!;
+    t.db.update(projects).set({ repo: 'kvell/laika' }).where(eq(projects.id, s.projectId)).run();
+    const register = (name: string) =>
+      registerAgent(t.sqlite, t.db, owner, {
+        displayName: name,
+        harness: 'claude-code',
+        // Sender and receiver are two devices: one agent per harness per device (D-120).
+        deviceLabel: name,
+        grants: [{ projectId: s.projectId, scope: 'full' }],
+      });
+    const sender = register('Sender');
+    const receiver = register('Receiver');
+    const agent = resolveTokenActor(t.db, sender.secret, NOW);
+    const taskId = createTask(t.sqlite, t.db, owner, 'laika', { title: 'Handed', now: NOW }).id;
+    startWorking(t.sqlite, t.db, agent, taskId, { now: NOW });
+    const commit = 'c'.repeat(40);
+    const saved = registerCheckpoint(t.sqlite, t.db, { ...agent, claimGeneration: 1 }, taskId, {
+      id: newId(),
+      idempotencyKey: 'restart-save',
+      repo: 'kvell/laika',
+      branch: 'LAI-1-work',
+      commitSha: commit,
+      manifest: [],
+      now: NOW,
+    }).checkpoint;
+    applyCheckpointDelivery(
+      t.sqlite,
+      t.db,
+      {
+        deliveryId: 'restart',
+        repo: 'kvell/laika',
+        ref: saved.remote_ref,
+        before: '0'.repeat(40),
+        after: commit,
+      },
+      NOW,
+    );
+    const offered = offerHandoff(t.sqlite, t.db, { ...agent, claimGeneration: 1 }, taskId, {
+      idempotencyKey: 'restart-offer',
+      toAgentId: receiver.agent.id,
+      checkpointId: saved.id,
+      reason: 'Leaving',
+      now: NOW,
+    }).offer;
+
+    // Down for an hour: the offer (30 min) and the paused lease (5 min) are both overdue.
+    let clock = NOW + 60 * 60_000;
+    const scheduler = startScheduler(deps({ ...fakeTimers(), now: () => clock }));
+    expect((await scheduler.runOnce('offer.expiry'))?.changed).toBe(1);
+
+    const offers = t.db.select().from(handoffOffers).where(eq(handoffOffers.taskId, taskId)).all();
+    expect(offers.map((o) => [o.id === offered.id ? 'offer' : o.kind, o.state])).toEqual([
+      ['offer', 'expired'],
+      ['recovery', 'open'],
+    ]);
+    expect(t.db.select().from(taskClaims).where(eq(taskClaims.taskId, taskId)).get()?.state).toBe(
+      'expired',
+    );
+    expect(
+      t.db
+        .select()
+        .from(activity)
+        .where(eq(activity.taskId, taskId))
+        .all()
+        .map((r) => r.type)
+        .filter((type) => type !== 'task.created'),
+    ).toEqual(
+      expect.arrayContaining(['task.handoff_expired', 'task.claim_expired', 'task.recovered']),
+    );
+    // Nothing more falls due: the next run changes nothing but the replacement's own time.
+    clock += 1;
+    expect((await scheduler.runOnce('offer.expiry'))?.changed).toBe(0);
     scheduler.stop();
   });
 });

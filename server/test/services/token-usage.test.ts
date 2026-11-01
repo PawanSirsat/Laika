@@ -923,19 +923,25 @@ describe('GET /usage by_project — each space’s tokens and cost on the organi
     ]);
   });
 
-  it('leaves out a space the reader cannot read: a token pinned to one space sees that one', () => {
+  it('refuses a token pinned to one space the organisation’s figure, and gives it that space (§6.2, H4)', () => {
     seedSpaces();
     const admin = makeUser('Ada', 'admin');
     const pinned: ResolvedActor = {
       ...actor(admin),
       token: { id: 'tok_pin', scope: 'read_only', projectIds: [projectId] },
     };
-    const view = getUsage(t.db, pinned, { days: 7 }, NOW);
-    // The organisation's figure is still the whole, which the token may read…
-    expect(view.totals.tokens).toBe(WHOLE);
-    // …but no space it cannot open with ?project= is named or counted.
-    expect(listed(view)).toEqual([['laika', LAIKA, 40_000]]);
-    expect(JSON.stringify(view.by_project)).not.toMatch(/vault|Vault|onroute|Onroute/);
+    // Before H4 this token read the whole organisation's figure with the other
+    // spaces left out. The figure is org-wide — the opposite of a pin — so
+    // `usage.read_org` is refused, and the token is told why.
+    expect(refusal(() => getUsage(t.db, pinned, { days: 7 }, NOW))).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'usage.read_org', reason: 'project_pinned' },
+    });
+    // Its own space, asked for by ?project=, is read as a member's is…
+    const view = getUsage(t.db, pinned, { days: 7, project: 'laika' }, NOW);
+    expect(view.totals).toMatchObject({ tokens: LAIKA, cache_read: 40_000 });
+    expect(JSON.stringify(view)).not.toMatch(/vault|Vault|onroute|Onroute/);
+    // …and a space outside the pin is refused as it always was.
     expect(refusal(() => getUsage(t.db, pinned, { days: 7, project: 'vault' }, NOW))).toMatchObject(
       { code: 'forbidden' },
     );

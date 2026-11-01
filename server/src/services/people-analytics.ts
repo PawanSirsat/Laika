@@ -7,6 +7,7 @@ import { assertCan } from '../policy/can.ts';
 import { readLogged } from './analytics-views.ts';
 import { localActivityOf, type OwnLocalActivityView } from './local-activity.ts';
 import { dayOf, type MyDayView } from './my-day.ts';
+import { summaryOf, type TimeSummaryView } from './time-summary.ts';
 
 /**
  * A person's analytics, read by an owner or admin in the shape the person
@@ -63,6 +64,30 @@ export function getPersonDay(
     'time',
     () => dayOf(db, userId, query, now),
     (view) => view.day,
+    now,
+  );
+}
+
+/**
+ * `GET /people/:id/time/summary?from=&to=` — `GET /me/time/summary`, for that
+ * person (LAI-526): read under `people.analytics.read` and logged as a look at
+ * their time, with no one day to name.
+ */
+export function getPersonSummary(
+  db: Db,
+  actor: ResolvedActor,
+  userId: string,
+  query: { from?: string | undefined; to?: string | undefined },
+  now: number = Date.now(),
+): TimeSummaryView {
+  requirePerson(db, actor, userId);
+  return readLogged(
+    db,
+    actor,
+    userId,
+    'time',
+    () => summaryOf(db, userId, query),
+    () => null,
     now,
   );
 }

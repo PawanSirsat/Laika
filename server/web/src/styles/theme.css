@@ -134,6 +134,35 @@
   --sun: #fbbf24;
   --moon: #a5b4fc;
 
+  /* ---- a typed entry's kind on the Timeline (D-108, LAI-897): ink, fill, border ---- */
+  /* The design's `kindColors` (LAI-516): Work the accent, Meeting blue,
+     Thinking green, Research orange, Pairing the accent's line, Review red,
+     Support blue's line, Admin faint — each with the design's soft fill. */
+  --kind-work: #a78bfa;
+  --kind-work-bg: #261f3d;
+  --kind-work-border: #4c3d7a;
+  --kind-meeting: #7fa6ff;
+  --kind-meeting-bg: #161e33;
+  --kind-meeting-border: #2c3a5e;
+  --kind-thinking: #4ccf98;
+  --kind-thinking-bg: #12271d;
+  --kind-thinking-border: #1f4a35;
+  --kind-research: #f0b45a;
+  --kind-research-bg: #2b2111;
+  --kind-research-border: #5c4419;
+  --kind-pairing: #c4b5fd;
+  --kind-pairing-bg: #2a2342;
+  --kind-pairing-border: #5a4a8f;
+  --kind-review: #ff6b73;
+  --kind-review-bg: #2e1517;
+  --kind-review-border: #5e262b;
+  --kind-support: #9fb6ff;
+  --kind-support-bg: #1b2440;
+  --kind-support-border: #35466f;
+  --kind-admin: #9d9daa;
+  --kind-admin-bg: #232329;
+  --kind-admin-border: #34343d;
+
   /* ---- space colours (D-103 item 4, LAI-978): the eight a space may be
      painted, solid under a white letter in both themes, so a space keeps its
      colour when the theme flips; black lifts to stay a tile on a dark card ---- */
@@ -233,6 +262,33 @@
   --sky-night-body: rgba(79, 91, 184, 0.05);
   --sun: #c27a0a;
   --moon: #4f5bb8;
+
+  /* ---- a typed entry's kind on the Timeline (D-108, LAI-897): ink, fill, border ---- */
+  /* The design's `kindColors` (LAI-516), light. */
+  --kind-work: #7c3aed;
+  --kind-work-bg: #f3eefe;
+  --kind-work-border: #c9b5fb;
+  --kind-meeting: #2158e0;
+  --kind-meeting-bg: #edf2fd;
+  --kind-meeting-border: #c6d5f8;
+  --kind-thinking: #0a6f4c;
+  --kind-thinking-bg: #e3f3ea;
+  --kind-thinking-border: #a9dcc2;
+  --kind-research: #8f5a08;
+  --kind-research-bg: #fff6e5;
+  --kind-research-border: #ecc98a;
+  --kind-pairing: #6d28d9;
+  --kind-pairing-bg: #ede6fe;
+  --kind-pairing-border: #d4c4fc;
+  --kind-review: #c42630;
+  --kind-review-bg: #fdecee;
+  --kind-review-border: #f0b8be;
+  --kind-support: #4a6fcf;
+  --kind-support-bg: #e8eefc;
+  --kind-support-border: #c6d5f8;
+  --kind-admin: #62626e;
+  --kind-admin-bg: #eceef4;
+  --kind-admin-border: #d6d9e3;
 
   --space-black: #171a21;
   --space-violet: #7c3aed;

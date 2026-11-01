@@ -1,0 +1,403 @@
+/*
+ * My day in skeleton (LAI-524): the page it becomes, every bone the size of
+ * what replaces it, under one shimmer. The bones are the column's grey; the
+ * sheen is the card-hover tone, lighter than that grey in both themes, and
+ * fixed to the window so every bone shows the same sweep at once. Tokens only.
+ */
+
+.dsk {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.dsk-bone {
+  display: block;
+  flex: none;
+  height: 0.75rem;
+  border-radius: 0.375rem;
+  background-color: var(--bg-column);
+  background-image: linear-gradient(
+    100deg,
+    transparent 0%,
+    var(--bg-card-hover) 50%,
+    transparent 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 40vw 100%;
+  background-attachment: fixed;
+  animation: dsk-sheen 1.8s ease-in-out infinite;
+}
+
+/* A hint of the accent where the day's colour will be. */
+.dsk-accent {
+  background-color: color-mix(in srgb, var(--accent) 22%, var(--bg-column));
+}
+
+@keyframes dsk-sheen {
+  from {
+    background-position: -40vw 0;
+  }
+
+  to {
+    background-position: 140vw 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsk-bone {
+    animation: none;
+    background-image: none;
+  }
+}
+
+.dsk-gap {
+  flex: 1;
+}
+
+/* ------------------------------------------------- the header's buttons */
+
+.dsk-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.dsk-button {
+  height: 2.25rem;
+  border-radius: var(--radius-control);
+}
+
+.dsk-icon {
+  width: 2.25rem;
+}
+
+/* --------------------------------------------------------------- the week */
+
+.dsk-week {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.dsk-week-nav {
+  height: 2.625rem;
+  border-radius: var(--radius-control);
+}
+
+.dsk-week-days {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+
+.dsk-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.4375rem;
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-card);
+  border-radius: 0.5rem;
+  background: var(--bg-card);
+}
+
+.dsk-tile-on {
+  border-color: var(--accent-border);
+}
+
+.dsk-tile-track {
+  display: block;
+  height: 0.25rem;
+  border-radius: 0.125rem;
+  background: var(--bg-column);
+  overflow: hidden;
+}
+
+/* ----------------------------------------------------------- the cards */
+
+.dsk .dsk-card {
+  padding: 1rem 1.25rem;
+  gap: 1rem;
+}
+
+.dsk-tl-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.dsk-tl-title {
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.dsk-legend,
+.dsk-controls,
+.dsk-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.dsk-legend {
+  gap: 0.875rem;
+}
+
+.dsk-controls {
+  gap: 0.5rem;
+}
+
+/* The lane column, then the track: the Timeline's own grid. */
+.dsk-tl-body {
+  display: grid;
+  grid-template-columns: 9.25rem minmax(0, 1fr);
+  border-top: 1px solid var(--border-subtle);
+  margin: 0 -1.25rem -1rem;
+}
+
+.dsk-lanes {
+  display: grid;
+  grid-template-rows: 1.75rem 4.25rem 5.75rem 3.25rem;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.dsk-lane-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0 1rem 0 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dsk-lane-corner {
+  grid-row: 1;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-column) 45%, transparent);
+}
+
+.dsk-lane-signals {
+  grid-row: 2;
+}
+
+.dsk-lane-you {
+  grid-row: 3;
+}
+
+.dsk-lane-agents {
+  grid-row: 4;
+}
+
+.dsk-lane-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.dsk-lane-agents {
+  border-bottom: 0;
+}
+
+.dsk-track {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1.75rem 4.25rem 5.75rem 3.25rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dsk-axis {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-column) 45%, transparent);
+}
+
+.dsk-signals {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dsk-signal {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  max-width: 0.375rem;
+  margin-right: auto;
+}
+
+.dsk-signal .dsk-bone {
+  border-radius: 1px;
+}
+
+.dsk-you,
+.dsk-agents {
+  position: relative;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dsk-agents {
+  border-bottom: 0;
+}
+
+.dsk-block {
+  position: absolute;
+  top: 0.75rem;
+  bottom: 0.75rem;
+  height: auto;
+  border-radius: var(--radius-control);
+}
+
+.dsk-block-confirmed {
+  background-color: color-mix(in srgb, var(--accent) 34%, var(--bg-column));
+}
+
+.dsk-block-drafted {
+  background-color: color-mix(in srgb, var(--accent) 12%, var(--bg-column));
+  outline: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: -1px;
+}
+
+.dsk-run {
+  position: absolute;
+  top: 50%;
+  height: 1.25rem;
+  margin-top: -0.625rem;
+  border-radius: var(--radius-chip);
+}
+
+/* --------------------------------------------------------- tray and tabs */
+
+.dsk .dsk-tray {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+
+.dsk-tray-words {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-right: 0.5rem;
+}
+
+.dsk-pill {
+  border-radius: var(--radius-control);
+}
+
+.dsk-tabs {
+  display: flex;
+  gap: 1.75rem;
+  padding: 0 0.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dsk-tab {
+  display: flex;
+  align-items: center;
+  height: 2.5rem;
+  border-bottom: 2px solid transparent;
+}
+
+.dsk-tab-on {
+  border-bottom-color: var(--accent);
+}
+
+/* ------------------------------------------------------------- the rows */
+
+.dsk .dsk-list {
+  gap: 0;
+  padding: 0;
+}
+
+.dsk-list-head,
+.dsk-row,
+.dsk-group {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1rem;
+}
+
+.dsk-list-head {
+  height: 3rem;
+}
+
+.dsk-group {
+  height: 1.75rem;
+  background: color-mix(in srgb, var(--bg-column) 45%, transparent);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.dsk-row {
+  height: 2.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.dsk-row-target {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.dsk-row-target .dsk-bone:last-child {
+  flex: 0 1 auto;
+}
+
+/* ------------------------------------------------- narrower than a desk */
+
+@container myday (max-width: 48rem) {
+  .dsk-wide-only {
+    display: none;
+  }
+
+  .dsk-legend {
+    display: none;
+  }
+}
+
+@container myday (max-width: 34rem) {
+  .dsk-tl-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dsk-lanes {
+    display: none;
+  }
+
+  .dsk-week-nav {
+    display: none;
+  }
+
+  .dsk-tile {
+    padding: 0.375rem;
+  }
+
+  .dsk-tile-line {
+    display: none;
+  }
+
+  .dsk-tabs {
+    gap: 1rem;
+  }
+}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import {
@@ -43,6 +44,7 @@ export interface GithubWebhookSectionProps {
  * GitHub does not retry a failed delivery.
  */
 export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectionProps) {
+  const confirm = useConfirm();
   const [issued, setIssued] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -50,15 +52,22 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
   const payloadUrl = webhook.payload_url ?? `${window.location.origin}${GITHUB_WEBHOOK_PATH}`;
 
   const rotate = (): void => {
-    if (
-      webhook.configured &&
-      !window.confirm(
-        'Rotate the GitHub webhook secret? The current one stops working at once: every delivery ' +
-          'from GitHub is refused until you paste the new secret into the webhook on GitHub.',
-      )
-    ) {
+    if (!webhook.configured) {
+      rotateNow();
       return;
     }
+    void confirm({
+      title: 'Rotate the GitHub webhook secret?',
+      body: 'The current one stops working at once: every delivery from GitHub is refused until you paste the new secret into the webhook on GitHub.',
+      confirmLabel: 'Rotate secret',
+      danger: true,
+      icon: 'warning',
+    }).then((yes) => {
+      if (yes) rotateNow();
+    });
+  };
+
+  const rotateNow = (): void => {
     setBusy(true);
     setError(undefined);
     rotateGithubWebhookSecret()
@@ -75,14 +84,17 @@ export function GithubWebhookSection({ webhook, onChanged }: GithubWebhookSectio
   };
 
   const clear = (): void => {
-    if (
-      !window.confirm(
-        'Clear the GitHub webhook secret? Every delivery from GitHub is refused until a new one is ' +
-          'set, so nothing confirms an agent’s proof in the meantime.',
-      )
-    ) {
-      return;
-    }
+    void confirm({
+      title: 'Clear the GitHub webhook secret?',
+      body: 'Every delivery from GitHub is refused until a new one is set, so nothing confirms an agent’s proof in the meantime.',
+      confirmLabel: 'Clear secret',
+      danger: true,
+    }).then((yes) => {
+      if (yes) clearNow();
+    });
+  };
+
+  const clearNow = (): void => {
     setBusy(true);
     setError(undefined);
     clearGithubWebhookSecret()

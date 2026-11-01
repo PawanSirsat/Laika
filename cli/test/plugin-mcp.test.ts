@@ -71,9 +71,13 @@ void describe('the tool surface, from both sides', () => {
     // `tools/list` on 2026-09-01; LAI-611 added the seven project-management
     // tools on 2026-09-20 (assign_task deliberately absent - it folded into
     // update_task.assignee); LAI-787 added propose_time_entry on 2026-10-20
-    // (D-088 item 13: an agent proposes time, a person confirms it).
+    // (D-088 item 13: an agent proposes time, a person confirms it). Phase 3
+    // added four on 2026-10-29: checkpoint_task (LAI-545), and agent_sync,
+    // offer_handoff and respond_handoff (LAI-546) — mirrored here by LAI-549.
     assert.deepEqual(registeredTools(), [
       'add_comment',
+      'agent_sync',
+      'checkpoint_task',
       'create_sprint',
       'create_task',
       'finish_task',
@@ -85,7 +89,9 @@ void describe('the tool surface, from both sides', () => {
       'list_ready_tasks',
       'list_sprints',
       'log_unlisted_work',
+      'offer_handoff',
       'propose_time_entry',
+      'respond_handoff',
       'set_task_sprint',
       'start_working',
       'update_project_context',

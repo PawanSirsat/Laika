@@ -17,6 +17,7 @@ import {
   revokeInvite,
 } from '../../services/invites.ts';
 import { type AppEnv } from '../context.ts';
+import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -158,6 +159,7 @@ export function inviteRoutes(options: InviteRouteOptions): Hono<AppEnv> {
       expiresInDays: body.expires_in_days,
     });
 
+    markOneTimeSecret(c);
     return c.json<CreatedInviteBody>(
       {
         invite: created.invite,
@@ -240,6 +242,7 @@ export function inviteRoutes(options: InviteRouteOptions): Hono<AppEnv> {
       expiresInDays: body.expires_in_days,
     });
 
+    markOneTimeSecret(c);
     return c.json<CreatedInviteBody>(
       {
         invite: created.invite,

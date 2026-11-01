@@ -1,3 +1,4 @@
+import { nextReadOrder } from './read-order.ts';
 import { mergeTasks } from './board-merge.ts';
 import { byIdIndex } from './board-derive.ts';
 import { ApiError } from './errors.ts';
@@ -59,6 +60,12 @@ export interface TaskSetSnapshot {
   readonly refreshError: unknown;
   /** When the set was last read from the server (unix ms). */
   readonly asOf: number | null;
+  /**
+   * When the read behind this set **started**, in the page's own order
+   * (`read-order.ts`); 0 before any read. Unlike `asOf` — when it answered —
+   * this says whether the read began after a given save completed.
+   */
+  readonly readOrder: number;
 }
 
 export type TaskSetOrigin = 'load' | 'refresh' | 'local';
@@ -175,6 +182,7 @@ function loading(slug: string): TaskSetSnapshot {
     refreshing: false,
     refreshError: null,
     asOf: null,
+    readOrder: 0,
   };
 }
 
@@ -213,6 +221,7 @@ export function createTaskStore(deps: TaskStoreDeps): TaskStore {
     const controller = new AbortController();
     const mine = generation;
     const startedEpoch = entry.writeEpoch;
+    const startedOrder = nextReadOrder();
     entry.walk = { controller };
     entry.stale = false;
     entry.again = false;
@@ -247,6 +256,7 @@ export function createTaskStore(deps: TaskStoreDeps): TaskStore {
             refreshing: false,
             refreshError: null,
             asOf: now(),
+            readOrder: startedOrder,
           };
           emit(entry, {
             origin: prev.status === 'ready' ? 'refresh' : 'load',

@@ -129,6 +129,8 @@ export const BUSY_DAY = {
   // LAI-831: no gap waved away; every draft held is today's.
   breaks: [],
   drafts_held: { count: DRAFTS.length, minutes: DRAFTS.reduce((sum, d) => sum + d.minutes, 0) },
+  timer: null,
+  day_note: null,
   agent: {
     minutes: 312,
     keyboard_minutes: 48,

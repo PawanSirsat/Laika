@@ -11,6 +11,8 @@ export interface DraftMyTimeProps {
   readonly pending: string | undefined;
   /** The page's runner: one write, the day re-read after, its word in a toast. */
   readonly run: (key: string, write: () => Promise<unknown>, said: string) => Promise<boolean>;
+  /** Inside *Day settings* (LAI-502): the switch alone, its words drawn by the row. */
+  readonly compact?: boolean | undefined;
 }
 
 const drafts = (n: number): string => `${String(n)} ${n === 1 ? 'draft' : 'drafts'}`;
@@ -25,7 +27,7 @@ const drafts = (n: number): string => `${String(n)} ${n === 1 ? 'draft' : 'draft
  * server's own count, not this day's. With none held there is nothing to lose
  * and nothing is asked.
  */
-export function DraftMyTime({ settings, held, pending, run }: DraftMyTimeProps) {
+export function DraftMyTime({ settings, held, pending, run, compact = false }: DraftMyTimeProps) {
   const [asking, setAsking] = useState(false);
   const toggle = useRef<HTMLDivElement | null>(null);
 
@@ -49,8 +51,11 @@ export function DraftMyTime({ settings, held, pending, run }: DraftMyTimeProps) 
   };
 
   return (
-    <div className="myday-switch" ref={toggle}>
-      <span className="myday-switch-label" id="myday-draft-label">
+    <div className={compact ? 'myday-switch-bare' : 'myday-switch'} ref={toggle}>
+      <span
+        className={compact ? 'myday-visually-hidden' : 'myday-switch-label'}
+        id="myday-draft-label"
+      >
         Draft my time
       </span>
       <Switch

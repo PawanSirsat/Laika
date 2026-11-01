@@ -3,6 +3,7 @@ import { describe, test } from 'node:test';
 import type { MyDayWeekDay } from '../../../../src/api/time.ts';
 import {
   dayLong,
+  shortDay,
   weekTiles,
   weekTotal,
 } from '../../../../src/routes/screens/my-day/week-derive.ts';
@@ -75,5 +76,11 @@ void describe('weekTotal', () => {
 void describe('dayLong', () => {
   void test('the day in words, whatever the reader’s zone', () => {
     assert.equal(dayLong('2026-10-21'), 'Wednesday 21 October');
+  });
+});
+
+void describe('shortDay', () => {
+  void test('the day as the Timeline card’s head says it, whatever the reader’s zone (LAI-513)', () => {
+    assert.equal(shortDay('2026-10-22'), 'Thu 22 Oct');
   });
 });

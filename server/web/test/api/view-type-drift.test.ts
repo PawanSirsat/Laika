@@ -206,6 +206,50 @@ const PAIRS: readonly Pair[] = [
     client: 'ProjectContext',
     clientFile: 'project-context.ts',
   },
+  // The context document's history (§4.68, LAI-555), as LAI-556 reads it.
+  // Their `no client type exists` exemptions in
+  // `server/test/tooling/response-type-coverage.test.ts` left in the same
+  // commit (a named crossing CHIEF authorised).
+  {
+    server: 'ContextRevisionSummaryView',
+    serverFile: 'services/context-revisions.ts',
+    client: 'ContextRevisionSummary',
+    clientFile: 'project-context.ts',
+  },
+  {
+    server: 'ContextRevisionView',
+    serverFile: 'services/context-revisions.ts',
+    client: 'ContextRevision',
+    clientFile: 'project-context.ts',
+  },
+  {
+    server: 'ContextDiffView',
+    serverFile: 'services/context-revisions.ts',
+    client: 'ContextDiff',
+    clientFile: 'project-context.ts',
+  },
+  // Who each revision was delivered to (LAI-1003), as History's *Delivered
+  // to* reads it (LAI-1004). Their self-expiring `no client type exists`
+  // entries in `server/test/tooling/response-type-coverage.test.ts` leave in
+  // the same commit (§4.4 step 2).
+  {
+    server: 'ContextDeliveriesView',
+    serverFile: 'services/context-revisions.ts',
+    client: 'ContextDeliveries',
+    clientFile: 'project-context.ts',
+  },
+  {
+    server: 'ContextDeliveryView',
+    serverFile: 'services/context-revisions.ts',
+    client: 'ContextDelivery',
+    clientFile: 'project-context.ts',
+  },
+  {
+    server: 'ContextDeliveryAgentView',
+    serverFile: 'services/context-revisions.ts',
+    client: 'ContextDeliveryAgent',
+    clientFile: 'project-context.ts',
+  },
   {
     server: 'SetupResultBody',
     serverFile: 'http/routes/setup.ts',
@@ -251,6 +295,64 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/tasks.ts',
     client: 'TaskSummary',
     clientFile: 'tasks.ts',
+  },
+  // LAI-593: the live claim nested in both task views (LAI-568). The task
+  // pairs above see `claim` and nothing inside it, so a field added to the
+  // claim — the session's harness, version and model — was served unseen.
+  {
+    server: 'TaskLiveClaimView',
+    serverFile: 'services/claims.ts',
+    client: 'TaskLiveClaim',
+    clientFile: 'tasks.ts',
+  },
+  // LAI-1005: the saves-and-hand-off summary nested in both task views. The
+  // task pairs see `handoff` and nothing inside it (LAI-1006).
+  {
+    server: 'TaskHandoffView',
+    serverFile: 'services/task-handoff.ts',
+    client: 'TaskHandoff',
+    clientFile: 'tasks.ts',
+  },
+  // LAI-549: a task's saves and hand-off offers, as the drawer reads them
+  // (LAI-545, LAI-546). The ref is paired on its own because the checkpoint
+  // pair sees `refs` and nothing inside it.
+  {
+    server: 'CheckpointView',
+    serverFile: 'services/checkpoints.ts',
+    client: 'Checkpoint',
+    clientFile: 'handoffs.ts',
+  },
+  {
+    server: 'CheckpointRefView',
+    serverFile: 'services/checkpoints.ts',
+    client: 'CheckpointRef',
+    clientFile: 'handoffs.ts',
+  },
+  {
+    server: 'HandoffOfferView',
+    serverFile: 'services/handoffs.ts',
+    client: 'HandoffOffer',
+    clientFile: 'handoffs.ts',
+  },
+  // LAI-550: the Inbox's Hand-offs tab (LAI-1009's person inbox) and the
+  // Access tab's hand-off policy.
+  {
+    server: 'PersonHandoffView',
+    serverFile: 'services/handoffs.ts',
+    client: 'PersonHandoffView',
+    clientFile: 'handoffs.ts',
+  },
+  {
+    server: 'PersonHandoffInbox',
+    serverFile: 'services/handoffs.ts',
+    client: 'PersonHandoffInbox',
+    clientFile: 'handoffs.ts',
+  },
+  {
+    server: 'HandoffPolicyView',
+    serverFile: 'services/handoffs.ts',
+    client: 'HandoffPolicyWire',
+    clientFile: 'handoffs.ts',
   },
   // LAI-975: `GET /tasks/summary`'s figures (LAI-974), which the Work page's
   // strip draws.
@@ -453,6 +555,12 @@ const PAIRS: readonly Pair[] = [
     clientFile: 'review.ts',
   },
   {
+    server: 'RoundAgentView',
+    serverFile: 'services/rounds.ts',
+    client: 'RoundAgent',
+    clientFile: 'review.ts',
+  },
+  {
     server: 'SendBackView',
     serverFile: 'services/rounds.ts',
     client: 'SendBack',
@@ -610,12 +718,83 @@ const PAIRS: readonly Pair[] = [
     client: 'MyDayWeekDay',
     clientFile: 'time.ts',
   },
+  // Overview over a stretch of days (LAI-526).
+  {
+    server: 'TimeSummaryView',
+    serverFile: 'services/time-summary.ts',
+    client: 'TimeSummary',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'SummaryDayView',
+    serverFile: 'services/time-summary.ts',
+    client: 'SummaryDay',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'SummaryProjectView',
+    serverFile: 'services/time-summary.ts',
+    client: 'SummaryProject',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'SummaryTaskView',
+    serverFile: 'services/time-summary.ts',
+    client: 'SummaryTask',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'SummaryKindView',
+    serverFile: 'services/time-summary.ts',
+    client: 'SummaryKind',
+    clientFile: 'time.ts',
+  },
+  // The day's note (LAI-501), served in the day and by `PUT /me/time/days/:day/note`.
+  {
+    server: 'DayNoteView',
+    serverFile: 'services/time-day-notes.ts',
+    client: 'DayNote',
+    clientFile: 'time.ts',
+  },
+  // The running timer (LAI-500), served in the day and by `POST /me/time/timer`.
+  {
+    server: 'TimerView',
+    serverFile: 'services/time-timer.ts',
+    client: 'Timer',
+    clientFile: 'time.ts',
+  },
   // A gap waved away (LAI-831), served in the day and by `POST /me/time-breaks`.
   {
     server: 'TimeBreakView',
     serverFile: 'services/time-breaks.ts',
     client: 'TimeBreak',
     clientFile: 'time.ts',
+  },
+  // LAI-564: the registered agents LAI-537's Agents tab mirrors (D-114).
+  {
+    server: 'AgentView',
+    serverFile: 'services/agents.ts',
+    client: 'RegisteredAgent',
+    clientFile: 'agents.ts',
+  },
+  {
+    server: 'AgentGrantView',
+    serverFile: 'services/agents.ts',
+    client: 'AgentGrant',
+    clientFile: 'agents.ts',
+  },
+  {
+    server: 'CreatedAgentToken',
+    serverFile: 'services/agents.ts',
+    client: 'CreatedAgentToken',
+    clientFile: 'agents.ts',
+  },
+  // LAI-1007: the owner's consent to automatic checkpoints (§4.75, D-115).
+  {
+    server: 'CheckpointConsentView',
+    serverFile: 'services/checkpoints.ts',
+    client: 'CheckpointConsent',
+    clientFile: 'agents.ts',
   },
   // Nested, through a table for the reason given below the profile's.
   ...(

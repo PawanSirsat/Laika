@@ -17,8 +17,6 @@ import {
   AGENT_GROUPS,
   canContinue,
   commandLines,
-  EXTRAS,
-  extrasFor,
   footerHint,
   groupedAgents,
   noteAbove,
@@ -128,7 +126,7 @@ void describe('the token highlight and the hanging lines', () => {
 
   void test('marks exactly the lines holding the real token, and changes no character', () => {
     for (const id of AGENT_GUIDES.map((g) => g.id)) {
-      for (const block of setupBlocks(id, { origin: ORIGIN, secret: SECRET, project: undefined })) {
+      for (const block of setupBlocks(id, { origin: ORIGIN, secret: SECRET, insightsOn: false })) {
         const lines = commandLines(block.text, SECRET);
         assert.equal(join(lines), block.text, `${id}/${block.key}: the text changed`);
         const marked = lines.filter((l) => l.token);
@@ -144,7 +142,7 @@ void describe('the token highlight and the hanging lines', () => {
     const prompt = setupBlocks('claude-code', {
       origin: ORIGIN,
       secret: SECRET,
-      project: undefined,
+      insightsOn: false,
     })[0];
     assert.ok(prompt !== undefined);
     const marked = commandLines(prompt.text, SECRET).filter((l) => l.token);
@@ -158,7 +156,7 @@ void describe('the token highlight and the hanging lines', () => {
     const blocks = setupBlocks('claude-code', {
       origin: ORIGIN,
       secret: undefined,
-      project: undefined,
+      insightsOn: false,
     });
     for (const block of blocks) {
       assert.deepEqual(
@@ -182,7 +180,7 @@ void describe('the token highlight and the hanging lines', () => {
 });
 
 void describe('step 3’s toggle and chips', () => {
-  const ctx = { origin: ORIGIN, secret: SECRET, project: undefined };
+  const ctx = { origin: ORIGIN, secret: SECRET, insightsOn: false };
 
   void test('an agent with both paths offers both; one with one path offers one', () => {
     const both = AGENT_GUIDES.map((g) => g.id).filter(
@@ -214,32 +212,7 @@ void describe('step 3’s toggle and chips', () => {
   });
 });
 
-void describe('the optional entries and the notes (LAI-741)', () => {
-  void test('the extras, Invite only for someone who can invite', () => {
-    assert.deepEqual(
-      EXTRAS.map((e) => e.name),
-      [
-        'Share with your project',
-        'What agents can do',
-        // D-079 (LAI-751); since D-102 amended the organisation's, not a choice (LAI-967).
-        'Share local activity',
-        'Invite a teammate',
-      ],
-    );
-    // LAI-967: the rail line says the organisation collects — nobody's choice any more.
-    const activity = EXTRAS.find((e) => e.id === 'activity')?.line ?? '';
-    assert.match(activity, /^What your organisation collects from your machine/);
-    assert.doesNotMatch(activity, /choice|choose/i);
-    assert.deepEqual(
-      extrasFor(false).map((e) => e.id),
-      ['share', 'tools', 'activity'],
-    );
-    assert.deepEqual(
-      extrasFor(true).map((e) => e.id),
-      ['share', 'tools', 'activity', 'invite'],
-    );
-  });
-
+void describe('the notes (LAI-741)', () => {
   void test('a recommended block’s note introduces it; every other note follows', () => {
     /*
      * Written out per block rather than derived (LAI-742): a loop comparing
@@ -282,7 +255,7 @@ void describe('the optional entries and the notes (LAI-741)', () => {
     );
     for (const guide of AGENT_GUIDES) {
       const actual = Object.fromEntries(
-        setupBlocks(guide.id, { origin: ORIGIN, secret: undefined, project: undefined })
+        setupBlocks(guide.id, { origin: ORIGIN, secret: undefined, insightsOn: false })
           .filter((b) => b.note !== undefined)
           .map((b) => [b.key, noteAbove(b) ? 'above' : 'below']),
       );

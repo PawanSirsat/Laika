@@ -30,29 +30,6 @@ import { draftTarget, rangeLabel } from './my-day-derive.ts';
  */
 
 /** About ten rows a page: a morning's worth, few enough to read. */
-export const PAGE_SIZE = 10;
-
-export interface Paged<T> {
-  readonly items: readonly T[];
-  /** 0-based, clamped into range — a page that emptied shows the last one. */
-  readonly page: number;
-  readonly pages: number;
-  /** `1–10 of 37`. */
-  readonly label: string;
-}
-
-export function pageOf<T>(all: readonly T[], page: number, size: number = PAGE_SIZE): Paged<T> {
-  const pages = Math.max(1, Math.ceil(all.length / size));
-  const at = Math.min(Math.max(0, page), pages - 1);
-  const start = at * size;
-  const items = all.slice(start, start + size);
-  const label =
-    items.length === 0
-      ? `0 of ${String(all.length)}`
-      : `${String(start + 1)}–${String(start + items.length)} of ${String(all.length)}`;
-  return { items, page: at, pages, label };
-}
-
 /**
  * Shift-click: every row from the one clicked last (`anchor`) to this one
  * takes this one's new state, `on`. Without an anchor still in the list it is
@@ -190,9 +167,16 @@ export async function eachBlock(
 /** The writes a batch makes — the real client in the page, a fake in a test. */
 export interface BulkApi {
   readonly confirmDraft: (id: string) => Promise<unknown>;
-  readonly confirmDay: (day: string) => Promise<{ readonly entries: readonly TimeEntry[] }>;
+  readonly confirmDay: (
+    day: string,
+    note?: string,
+  ) => Promise<{ readonly entries: readonly TimeEntry[] }>;
+  /** The note alone (LAI-503), when the day confirms block by block. */
+  readonly setDayNote?: (day: string, note: string | null) => Promise<unknown>;
   readonly dismissDraft: (id: string) => Promise<unknown>;
   readonly toGeneral: (id: string) => Promise<unknown>;
+  /** *Assign task* (the design, LAI-514): the block onto a card, by its key. */
+  readonly toCard?: (id: string, card: string) => Promise<unknown>;
 }
 
 export interface BulkResult {
@@ -205,12 +189,13 @@ export interface BulkResult {
 
 /* ------------------------------------------------------ the selection's bar */
 
-export type BulkKind = 'confirm' | 'general' | 'dismiss';
+export type BulkKind = 'confirm' | 'general' | 'dismiss' | 'assign';
 
-const DONE: Readonly<Record<BulkKind, (n: number) => string>> = {
+const DONE: Readonly<Record<BulkKind, (n: number, card?: string) => string>> = {
   confirm: (n) => `Confirmed ${blocks(n)}.`,
   general: (n) => `Moved ${blocks(n)} to General.`,
   dismiss: (n) => `Marked ${blocks(n)} as not work.`,
+  assign: (n, card) => `Put ${blocks(n)} on ${card ?? 'the task'}.`,
 };
 
 function pick(drafts: readonly TimeDraft[], ids: readonly string[]): TimeDraft[] {
@@ -227,15 +212,16 @@ export function selectionReport(
   chosen: readonly TimeDraft[],
   pass: Pass,
   left: readonly TimeDraft[],
+  card?: string,
 ): string {
   const stale = pass.refused.filter((r) => r.why === 'stale');
   const full = pass.refused.filter((r) => r.why === 'full');
   const other = pass.refused.filter((r) => r.why === 'other');
   const parts: string[] = [];
 
-  if (pass.done.length > 0) parts.push(DONE[kind](pass.done.length));
+  if (pass.done.length > 0) parts.push(DONE[kind](pass.done.length, card));
   else if (pass.refused.length === 0) {
-    parts.push(left.length > 0 ? 'Nothing confirmed.' : DONE[kind](0));
+    parts.push(left.length > 0 ? 'Nothing confirmed.' : DONE[kind](0, card));
   }
   if (full.length > 0) {
     const n = full.length + pass.untried.length;
@@ -277,6 +263,7 @@ export async function runBulk(
   chosen: readonly TimeDraft[],
   api: BulkApi,
   onProgress?: (done: number, total: number) => void,
+  card?: string,
 ): Promise<BulkResult> {
   let ids: readonly string[];
   let left: readonly TimeDraft[] = [];
@@ -291,6 +278,14 @@ export async function runBulk(
     // General on a block already on General is not a change; it is not sent.
     ids = chosen.filter((d) => !d.general).map((d) => d.id);
     write = api.toGeneral;
+  } else if (kind === 'assign') {
+    // The card on a block already on it is not a change; it is not sent.
+    const toCard = api.toCard;
+    if (card === undefined || toCard === undefined) {
+      return { keep: chosen.map((d) => d.id), text: 'No task was picked.', ok: false };
+    }
+    ids = chosen.filter((d) => d.task?.key !== card).map((d) => d.id);
+    write = (id) => toCard(id, card);
   } else {
     ids = chosen.map((d) => d.id);
     write = api.dismissDraft;
@@ -300,33 +295,12 @@ export async function runBulk(
   const kept = pass.refused.filter((r) => r.why !== 'stale').map((r) => r.id);
   return {
     keep: [...kept, ...pass.untried, ...left.map((d) => d.id)],
-    text: selectionReport(kind, chosen, pass, left),
+    text: selectionReport(kind, chosen, pass, left, card),
     ok: pass.refused.length === 0 && left.length === 0,
   };
 }
 
 /* ------------------------------------------------------ the header's button */
-
-/**
- * *Confirm day* refused because a block's stretch would hold more minutes
- * than its clock (`409 overlaps_confirmed`, LAI-831 review round 2): which
- * block, as the page shows it, and the two figures — or `undefined`.
- */
-function clashOf(
-  cause: unknown,
-  all: readonly TimeDraft[],
-): { readonly draft: TimeDraft; readonly stretch: number; readonly would: number } | undefined {
-  if (!(cause instanceof ApiError)) return undefined;
-  const d = cause.details as Record<string, unknown> | null;
-  if (d === null || typeof d !== 'object' || d.reason !== 'overlaps_confirmed') return undefined;
-  const draft = all.find((x) => x.id === d.draft_id);
-  const stretch = d.stretch_minutes;
-  const would = d.would_hold;
-  if (draft === undefined || typeof stretch !== 'number' || typeof would !== 'number') {
-    return undefined;
-  }
-  return { draft, stretch, would };
-}
 
 /**
  * After `POST /me/time/days/:day/confirm`: what came back, against what the
@@ -381,24 +355,24 @@ export async function runConfirmDay(
   day: string,
   api: BulkApi,
   onProgress: (done: number, total: number) => void = () => undefined,
+  note?: string,
 ): Promise<BulkResult> {
   const plan = confirmPlan(all);
+  const shared = note !== undefined && note.trim() !== '' ? ' · note shared' : '';
 
   if (plan.needCard.length === 0) {
     onProgress(0, all.length);
     try {
-      const { entries } = await api.confirmDay(day);
+      const { entries } = await api.confirmDay(day, note);
       onProgress(all.length, all.length);
-      return { keep: [], ...dayReport(all, entries) };
+      const report = dayReport(all, entries);
+      return { keep: [], ...report, text: report.text + shared };
     } catch (cause) {
       onProgress(all.length, all.length);
-      const clash = clashOf(cause, all);
       const text =
         whyRefused(cause) === 'full'
           ? 'Nothing confirmed: the day would hold more than 24 hours of confirmed time. Shorten or dismiss a block, then confirm again.'
-          : clash !== undefined
-            ? `Nothing confirmed: ${nameBlocks([clash.draft])} would count confirmed time twice — its stretch has ${formatDuration(clash.stretch)} of clock and would hold ${formatDuration(clash.would)}. Shorten it or mark it not work, then confirm again.`
-            : `Nothing confirmed: ${failureMessage(cause)}`;
+          : `Nothing confirmed: ${failureMessage(cause)}`;
       return { keep: [], text, ok: false };
     }
   }
@@ -408,6 +382,16 @@ export async function runConfirmDay(
     api.confirmDraft,
     onProgress,
   );
+  // Block by block, the note goes on its own (LAI-503); a note that fails to
+  // save is said with the rest, never silently dropped.
+  let noteSaid = shared;
+  if (note !== undefined && api.setDayNote !== undefined) {
+    try {
+      await api.setDayNote(day, note.trim() === '' ? null : note);
+    } catch {
+      noteSaid = ' · the note was not saved';
+    }
+  }
   const stale = pass.refused.filter((r) => r.why === 'stale');
   const full = pass.refused.filter((r) => r.why === 'full');
   const other = pass.refused.filter((r) => r.why === 'other');
@@ -435,7 +419,7 @@ export async function runConfirmDay(
   const left = all.length - pass.done.length;
   return {
     keep: [],
-    text: `Confirmed ${String(pass.done.length)} of ${blocks(all.length)}; ${String(left)} left drafted — ${reasons.join('; ')}.`,
+    text: `Confirmed ${String(pass.done.length)} of ${blocks(all.length)}; ${String(left)} left drafted — ${reasons.join('; ')}.${noteSaid}`,
     ok: false,
   };
 }

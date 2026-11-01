@@ -29,10 +29,27 @@ import {
 import { deleteTag, listProjectTags, renameTag } from '../../services/tags.ts';
 import { getEstimateAccuracy, type EstimateAccuracyView } from '../../services/estimates.ts';
 import { mentionableUsers } from '../../services/mentions.ts';
+import {
+  type ContextDeliveriesView,
+  type ContextDiffView,
+  type ContextRevisionSummaryView,
+  type ContextRevisionView,
+  diffProjectContext,
+  getContextRevision,
+  listContextDeliveries,
+  listContextRevisions,
+} from '../../services/context-revisions.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince, tombstone, type WithTombstones } from '../updated-since.ts';
-import { OpenTasksSchema, parseBody, strictObject, z } from '../validation.ts';
+import {
+  OpenTasksSchema,
+  parseBody,
+  parseParams,
+  parseQuery,
+  strictObject,
+  z,
+} from '../validation.ts';
 
 /**
  * Projects and memberships (SPEC §6.4). Transport only — every decision lives in
@@ -117,6 +134,28 @@ const UpdateBody = strictObject({
  */
 const ContextBody = strictObject({
   context_md: z.string(),
+  /**
+   * The revision this write replaces (proposal §4.6, LAI-555) — required: a
+   * write that does not say what it read is the silent overwrite revisions
+   * exist to refuse. A stale one is the service's `409`.
+   */
+  base_revision: z.number().int().min(0),
+});
+
+/** A revision number in a path or query: digits only, 0 or more. */
+const RevisionNumber = z
+  .string()
+  .regex(/^\d{1,15}$/, 'a revision number, 0 or more')
+  .transform(Number);
+
+const RevisionParams = z.object({ revision: RevisionNumber });
+
+const DiffQuery = strictObject({ from: RevisionNumber, to: RevisionNumber.optional() });
+
+const DeliveriesQuery = strictObject({
+  revision: RevisionNumber.optional(),
+  limit: z.string().optional(),
+  cursor: z.string().optional(),
 });
 
 const MemberBody = strictObject({
@@ -234,13 +273,62 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
   );
 
   app.patch('/:slug/context', async (c) => {
+    // Who is asking before what they sent: an anonymous caller is `401`, not
+    // a lesson in the body's shape.
+    const actor = requireActor(c);
     const body = parseBody(ContextBody, await c.req.json().catch(() => null));
 
     return c.json(
-      updateProjectContext(db, requireActor(c), c.req.param('slug'), {
+      updateProjectContext(db, actor, c.req.param('slug'), {
         context_md: body.context_md,
+        base_revision: body.base_revision,
       }),
     );
+  });
+
+  // The context document's history (§4.68, LAI-555). Project read, like the
+  // document: the `can()` calls are in the service.
+  app.get('/:slug/context/revisions', (c) =>
+    c.json<ContextRevisionSummaryView[]>(
+      listContextRevisions(db, requireActor(c), c.req.param('slug')),
+    ),
+  );
+
+  app.get('/:slug/context/revisions/:revision', (c) => {
+    const { revision } = parseParams(RevisionParams, { revision: c.req.param('revision') });
+    return c.json<ContextRevisionView>(
+      getContextRevision(db, requireActor(c), c.req.param('slug'), revision),
+    );
+  });
+
+  app.get('/:slug/context/diff', (c) => {
+    const { from, to } = parseQuery(DiffQuery, c.req.query());
+    return c.json<ContextDiffView>(
+      diffProjectContext(db, requireActor(c), c.req.param('slug'), from, to),
+    );
+  });
+
+  // Which revision each agent session was last delivered (§4.69, LAI-1003).
+  // Project read, in the service; the table keeps the latest delivery only,
+  // so the answer says `scope: 'latest_per_session'`.
+  app.get('/:slug/context/deliveries', (c) => {
+    const query = parseQuery(DeliveriesQuery, c.req.query());
+    const { limit, cursor } = parsePageQuery({ limit: query.limit, cursor: query.cursor });
+    const { project, rows } = listContextDeliveries(db, requireActor(c), c.req.param('slug'), {
+      revision: query.revision ?? null,
+      limit,
+      cursor,
+    });
+    const page = buildPage(rows, limit, (row) => ({
+      sortKey: row.delivered_at,
+      id: row.session_id,
+    }));
+    return c.json<ContextDeliveriesView>({
+      scope: 'latest_per_session',
+      revision: query.revision ?? null,
+      current_revision: project.contextRevision,
+      ...page,
+    });
   });
 
   // D-103 item 5: any member leaves; the last space admin is refused 409.

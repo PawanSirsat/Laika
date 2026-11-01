@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="timeline-core.js"></script>
+<style>body{margin:0}button{font-family:inherit}a{color:#6d28d9}a:hover{color:#5b21b6}</style>
+</helmet>
+<div ref="{{ rootRef }}" tabIndex="0" onKeyDown="{{ onKey }}" onMouseDown="{{ onMouseDown }}" role="application" aria-label="Timeline. Left and right arrows move between blocks. Alt plus arrows moves the focused block by 5 minutes, Shift for 15. Enter saves or confirms, G sets General, X marks Not work time." style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:{{ t.card }};border:1px solid {{ t.border }};border-radius:16px;color:{{ t.ink }};outline:none;position:relative;box-shadow:{{ t.shadow }};-webkit-font-smoothing:antialiased">
+
+  <div aria-live="polite" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap">{{ live }}</div>
+  <div style="display:flex;align-items:center;gap:12px 22px;padding:16px 20px 14px;flex-wrap:wrap">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-size:16px;font-weight:700;letter-spacing:-.01em">Timeline</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ t.muted }};white-space:nowrap">Thu 22 Oct</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;flex:1 1 420px;min-width:0">
+      <sc-for list="{{ totals }}" as="x" hint-placeholder-count="4">
+        <span style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:{{ t.ink2 }};white-space:nowrap">
+          <span style="width:16px;height:12px;border-radius:3px;box-sizing:border-box;background:{{ x.bg }};border:{{ x.border }}"></span>
+          <span>{{ x.label }}</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:{{ t.ink }}">{{ x.val }}</span>
+        </span>
+      </sc-for>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div style="display:flex;height:30px;border:1px solid {{ t.chipBorder }};border-radius:9px;overflow:hidden;background:{{ t.btn }}">
+        <button onClick="{{ prev }}" aria-label="Previous block" style="width:30px;border:0;background:transparent;color:{{ t.ink }};font-size:16px;cursor:pointer">‹</button>
+        <button onClick="{{ goNow }}" style="padding:0 10px;border:0;border-left:1px solid {{ t.chipBorder }};border-right:1px solid {{ t.chipBorder }};background:transparent;color:{{ t.ink }};font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:{{ t.now }}"></span>Now</button>
+        <button onClick="{{ next }}" aria-label="Next block" style="width:30px;border:0;background:transparent;color:{{ t.ink }};font-size:16px;cursor:pointer">›</button>
+      </div>
+      <div role="radiogroup" aria-label="Zoom" style="display:flex;gap:2px;padding:2px;background:{{ t.chip }};border:1px solid {{ t.chipBorder }};border-radius:9px">
+        <sc-for list="{{ zooms }}" as="zz" hint-placeholder-count="3">
+          <button role="radio" aria-checked="{{ zz.on }}" onClick="{{ zz.go }}" style="height:24px;padding:0 10px;border:0;border-radius:7px;background:{{ zz.bg }};color:{{ zz.color }};box-shadow:{{ zz.sh }};font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;cursor:pointer">{{ zz.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ ready }}" hint-placeholder-val="{{ false }}">
+  <div style="display:grid;grid-template-columns:148px minmax(0,1fr);border-top:1px solid {{ t.rule }}">
+    <div style="position:relative;height:{{ Hs }}px;border-right:1px solid {{ t.rule }}">
+      <div style="position:absolute;left:0;right:0;top:0;height:28px;display:flex;align-items:center;padding:0 12px 0 14px;font-size:11.5px;color:{{ t.muted }};white-space:nowrap">{{ axisNote }}</div>
+      <div style="position:absolute;left:0;right:0;top:28px;height:1px;background:{{ t.rule }}"></div>
+      <div style="position:absolute;left:0;right:0;top:29px;padding:0 12px 0 14px">
+        <div style="height:26px;display:flex;align-items:center;font-size:10.5px;font-weight:700;letter-spacing:.09em;color:{{ t.muted }}">SIGNALS</div>
+        <div style="height:16px;display:flex;align-items:center;gap:7px;font-size:12px;color:{{ t.ink2 }}"><span style="width:8px;display:flex;justify-content:center"><span style="width:4px;height:10px;border-radius:1px;background:{{ t.sig.p }}"></span></span><span style="flex:1">Prompts</span><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:{{ t.ink }}">{{ sigTot.p }}</span></div>
+        <div style="height:16px;display:flex;align-items:center;gap:7px;font-size:12px;color:{{ t.ink2 }}"><span style="width:8px;display:flex;justify-content:center"><span style="width:8px;height:8px;border-radius:50%;background:{{ t.sig.c }}"></span></span><span style="flex:1">Commits</span><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:{{ t.ink }}">{{ sigTot.c }}</span></div>
+        <div style="height:16px;display:flex;align-items:center;gap:7px;font-size:12px;color:{{ t.ink2 }}"><span style="width:8px;display:flex;justify-content:center"><span style="width:6px;height:6px;transform:rotate(45deg);background:{{ t.sig.m }}"></span></span><span style="flex:1">Marks</span><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:{{ t.ink }}">{{ sigTot.m }}</span></div>
+      </div>
+      <div style="position:absolute;left:0;right:0;top:{{ L1 }}px;height:1px;background:{{ t.rule }}"></div>
+      <div style="position:absolute;left:0;right:0;top:{{ youT }}px;padding:8px 12px 0 14px;display:flex;flex-direction:column;gap:3px">
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:.09em;color:{{ t.ink }}">YOU</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:600;margin-top:4px">{{ youWork }}</div>
+        <div style="font-size:11.5px;line-height:15px;color:{{ t.muted }}">of work · {{ youConf }} confirmed</div>
+      </div>
+      <div style="position:absolute;left:0;right:0;top:{{ L2 }}px;height:1px;background:{{ t.rule }}"></div>
+      <div style="position:absolute;left:0;right:0;top:{{ agT }}px;padding:8px 12px 0 14px;display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:10.5px;font-weight:700;letter-spacing:.09em;color:{{ t.muted }}">AGENTS</span>
+          <button onClick="{{ toggleAgents }}" aria-expanded="{{ expanded }}" style="height:22px;padding:0 7px;border:1px solid {{ t.chipBorder }};border-radius:6px;background:{{ t.btn }};color:{{ t.ink2 }};font-size:11px;font-weight:600;cursor:pointer">{{ expandLabel }}</button>
+        </div>
+        <div style="font-size:12.5px;font-weight:600;color:{{ t.ink }}">{{ agSummary }}</div>
+        <div style="font-size:11.5px;line-height:15px;color:{{ t.muted }}">Beside your day. Never added to your hours.</div>
+      </div>
+    </div>
+
+    <div style="position:relative;min-width:0">
+      <div ref="{{ vpRef }}" onScroll="{{ onScroll }}" style="overflow-x:{{ ovx }};overflow-y:hidden;height:{{ Hs }}px;scrollbar-width:thin">
+        <div onMouseLeave="{{ clearHover }}" onDragOver="{{ onExtOver }}" onDragLeave="{{ onExtLeave }}" onDrop="{{ onExtDrop }}" style="position:relative;width:{{ Wc }}px;height:{{ H }}px">
+          <sc-if value="{{ future.show }}"><div style="position:absolute;left:{{ future.x }}px;width:{{ future.w }}px;top:29px;bottom:0;background:{{ t.future }}"></div></sc-if>
+          <sc-for list="{{ comps }}" as="c" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ c.x }}px;width:{{ c.w }}px;top:0;bottom:0;background:{{ t.comp }};border-left:1px dashed {{ t.faint }};border-right:1px dashed {{ t.faint }};box-sizing:border-box"></div>
+          </sc-for>
+          <sc-for list="{{ hlBands }}" as="h" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ h.x }}px;width:{{ h.w }}px;top:29px;bottom:0;background:{{ t.hl }}"></div>
+          </sc-for>
+          <sc-for list="{{ marks }}" as="mk" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ mk.x0 }}px;top:22px;bottom:0;width:1px;background:{{ mk.bg }};opacity:.6;pointer-events:none;z-index:4"></div>
+            <div style="position:absolute;left:{{ mk.x1 }}px;top:22px;bottom:0;width:1px;background:{{ mk.bg }};opacity:.6;pointer-events:none;z-index:4"></div>
+          </sc-for>
+          <sc-for list="{{ phases }}" as="ph" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ ph.x }}px;width:{{ ph.w }}px;top:0;height:28px;background:{{ ph.axis }};pointer-events:none"></div>
+            <div style="position:absolute;left:{{ ph.x }}px;width:{{ ph.w }}px;top:29px;bottom:0;background:{{ ph.body }};pointer-events:none"></div>
+          </sc-for>
+          <sc-if value="{{ lunch.show }}"><div style="position:absolute;left:{{ lunch.x }}px;width:{{ lunch.w }}px;top:0;bottom:0;background:{{ lunch.band }};border-left:1.5px dashed {{ lunch.edge }};border-right:1.5px dashed {{ lunch.edge }};box-sizing:border-box;pointer-events:none"></div></sc-if>
+          <sc-for list="{{ ticks }}" as="k" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ k.x }}px;top:20px;bottom:0;width:1px;background:{{ t.grid }}"></div>
+          </sc-for>
+          <div style="position:absolute;left:0;right:0;top:28px;height:1px;background:{{ t.rule }}"></div>
+          <div style="position:absolute;left:0;right:0;top:{{ L1 }}px;height:1px;background:{{ t.rule }}"></div>
+          <div style="position:absolute;left:0;right:0;top:{{ L2 }}px;height:1px;background:{{ t.rule }}"></div>
+          <sc-for list="{{ minors }}" as="m" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ m.x }}px;top:{{ m.top }}px;height:{{ m.h }}px;width:1px;background:{{ t.faint }};opacity:.6"></div>
+          </sc-for>
+          <sc-for list="{{ ticks }}" as="k" hint-placeholder-count="0">
+            <sc-if value="{{ k.show }}"><div style="position:absolute;left:{{ k.lx }}px;top:7px;display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:14px;color:{{ t.muted }};white-space:nowrap"><sc-if value="{{ k.sun }}"><span style="display:flex;color:{{ k.ic }}"><svg width="10" height="10" viewBox="0 0 10 10" style="flex-shrink:0"><circle cx="5" cy="5" r="2.2" fill="currentColor"></circle><path d="M5 .6v1.2M5 8.2v1.2M.6 5h1.2M8.2 5h1.2M1.9 1.9l.8.8M7.3 7.3l.8.8M1.9 8.1l.8-.8M7.3 2.7l.8-.8" stroke="currentColor" strokeWidth="1" strokeLinecap="round"></path></svg></span></sc-if><sc-if value="{{ k.moon }}"><span style="display:flex;color:{{ k.ic }}"><svg width="10" height="10" viewBox="0 0 10 10" style="flex-shrink:0"><path d="M8.2 6.4A3.8 3.8 0 0 1 3.6 1.8a3.8 3.8 0 1 0 4.6 4.6z" fill="currentColor"></path></svg></span></sc-if>{{ k.label }}</div></sc-if>
+          </sc-for>
+          <sc-for list="{{ hours }}" as="h" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ h.x }}px;top:{{ h.top }}px;height:16px;display:flex;align-items:center;gap:7px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ t.muted }};white-space:nowrap">
+              <span style="display:flex;align-items:center;gap:3px"><span style="width:3px;height:8px;background:{{ t.sig.p }}"></span>{{ h.p }}</span>
+              <span style="display:flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:50%;background:{{ t.sig.c }}"></span>{{ h.c }}</span>
+              <span style="display:flex;align-items:center;gap:3px"><span style="width:5px;height:5px;transform:rotate(45deg);background:{{ t.sig.m }}"></span>{{ h.m }}</span>
+            </div>
+          </sc-for>
+          <sc-for list="{{ sig }}" as="s" hint-placeholder-count="0">
+            <div onMouseEnter="{{ s.onEnter }}" style="position:absolute;left:{{ s.x }}px;top:{{ s.top }}px;width:{{ s.w }}px;height:48px;opacity:{{ s.op }}">
+              <sc-if value="{{ s.hasP }}"><div style="position:absolute;left:{{ s.pX }}px;top:{{ s.pTop }}px;width:{{ s.pW }}px;height:{{ s.pH }}px;border-radius:1px;background:{{ t.sig.p }}"></div></sc-if>
+              <sc-if value="{{ s.hasC }}"><div style="position:absolute;left:{{ s.cX }}px;top:{{ s.cTop }}px;width:{{ s.cS }}px;height:{{ s.cS }}px;border-radius:50%;background:{{ t.sig.c }}"></div></sc-if>
+              <sc-if value="{{ s.hasM }}"><div style="position:absolute;left:{{ s.mX }}px;top:{{ s.mTop }}px;width:{{ s.mS }}px;height:{{ s.mS }}px;transform:rotate(45deg) scale(.82);background:{{ t.sig.m }}"></div></sc-if>
+              <sc-if value="{{ s.showPN }}"><div style="position:absolute;left:{{ s.pNX }}px;top:2px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:12px;color:{{ t.ink2 }}">{{ s.pN }}</div></sc-if>
+              <sc-if value="{{ s.showCN }}"><div style="position:absolute;left:{{ s.cNX }}px;top:18px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:12px;color:{{ t.ink2 }}">{{ s.cN }}</div></sc-if>
+              <sc-if value="{{ s.showMN }}"><div style="position:absolute;left:{{ s.mNX }}px;top:34px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:12px;color:{{ t.ink2 }}">{{ s.mN }}</div></sc-if>
+            </div>
+          </sc-for>
+          <sc-for list="{{ strips }}" as="g" hint-placeholder-count="0">
+            <div onClick="{{ g.onClick }}" style="position:absolute;left:{{ g.x }}px;width:{{ g.w }}px;top:{{ g.top }}px;height:18px;display:flex;align-items:center;gap:6px;cursor:pointer;box-sizing:border-box;border-left:1.5px solid {{ t.ink2 }};border-right:1.5px solid {{ t.ink2 }};padding:0 6px">
+              <span style="font-size:11px;font-weight:700;color:{{ t.ink2 }};white-space:nowrap;display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:0 4px;border-radius:4px;border:1px solid {{ t.ink2 }};line-height:13px">{{ g.n }}</span>{{ g.label }}</span>
+              <span style="flex:1;height:1.5px;background:{{ t.ink2 }};min-width:6px"></span>
+            </div>
+          </sc-for>
+          <sc-for list="{{ you }}" as="b" hint-placeholder-count="0">
+            <div onPointerDown="{{ b.onDown }}" onMouseEnter="{{ b.onEnter }}" aria-label="{{ b.aria }}" style="position:absolute;left:{{ b.x }}px;top:{{ b.y }}px;width:{{ b.w }}px;height:{{ b.h }}px;box-sizing:border-box;border-radius:{{ b.r }}px;background:{{ b.bg }};border:{{ b.border }};color:{{ b.color }};opacity:{{ b.op }};box-shadow:{{ b.shadow }};outline:{{ b.outline }};outline-offset:1px;cursor:{{ b.cursor }};overflow:hidden;display:flex;flex-direction:column;justify-content:center;align-items:{{ b.align }};padding:{{ b.pad }};gap:2px;z-index:{{ b.z }};transition:box-shadow .12s,opacity .12s">
+              <sc-if value="{{ b.showL1 }}">
+                <div style="display:flex;align-items:center;justify-content:{{ b.jc }};gap:5px;min-width:0;white-space:nowrap">
+                  <sc-if value="{{ b.showIcon }}"><span style="flex-shrink:0;width:16px;height:16px;border-radius:4px;background:{{ b.chip }};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1">{{ b.icon }}</span></sc-if>
+                  <sc-if value="{{ b.showText }}"><span style="font-family:{{ b.tFont }};font-size:{{ b.tsz }}px;font-weight:700;line-height:16px">{{ b.text }}</span></sc-if>
+                  <sc-if value="{{ b.showShare }}"><span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:500;color:{{ b.sub }}">{{ b.share }}</span></sc-if>
+                </div>
+              </sc-if>
+              <sc-if value="{{ b.showTitle }}"><div style="font-size:12px;line-height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:{{ b.sub }};text-align:{{ b.ta }}">{{ b.title }}</div></sc-if>
+              <sc-if value="{{ b.showMeta }}"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:14px;white-space:nowrap;color:{{ b.sub }};text-align:{{ b.ta }}">{{ b.meta }}</div></sc-if>
+              <sc-if value="{{ b.handles }}"><div style="position:absolute;left:1px;top:0;bottom:0;width:9px;cursor:ew-resize;display:flex;align-items:center;justify-content:center"><div style="width:3px;height:22px;max-height:60%;border-radius:2px;background:{{ b.hc }}"></div></div><div style="position:absolute;right:1px;top:0;bottom:0;width:9px;cursor:ew-resize;display:flex;align-items:center;justify-content:center"><div style="width:3px;height:22px;max-height:60%;border-radius:2px;background:{{ b.hc }}"></div></div></sc-if>
+            </div>
+          </sc-for>
+          <sc-for list="{{ bites }}" as="q" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ q.x }}px;top:{{ q.y }}px;width:{{ q.w }}px;height:{{ q.h }}px;box-sizing:border-box;border-radius:{{ q.r }};background:{{ q.bg }};border-top:3px solid {{ q.edge }};pointer-events:none;z-index:{{ q.z }}"></div>
+          </sc-for>
+          <sc-for list="{{ dg.ghosts }}" as="q" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ q.x }}px;top:{{ q.y }}px;width:{{ q.w }}px;height:{{ q.h }}px;box-sizing:border-box;border-radius:8px;border:{{ q.border }};background:{{ q.bg }};pointer-events:none;z-index:{{ q.z }}"></div>
+          </sc-for>
+          <sc-if value="{{ pvBox.show }}">
+            <div onPointerDown="{{ pvBox.onDown }}" aria-label="New time. Drag to move, drag an edge to resize." style="position:absolute;left:{{ pvBox.x }}px;top:{{ pvBox.y }}px;width:{{ pvBox.w }}px;height:80px;box-sizing:border-box;border-radius:8px;border:2px dashed {{ pvBox.bd }};background:{{ pvBox.bg }};z-index:8;cursor:grab;touch-action:none;display:flex;align-items:center;justify-content:center">
+              <div style="position:absolute;left:0;top:0;bottom:0;width:10px;cursor:ew-resize;display:flex;align-items:center;justify-content:center"><div style="width:3px;height:26px;border-radius:2px;background:{{ pvBox.bd }}"></div></div>
+              <div style="position:absolute;right:0;top:0;bottom:0;width:10px;cursor:ew-resize;display:flex;align-items:center;justify-content:center"><div style="width:3px;height:26px;border-radius:2px;background:{{ pvBox.bd }}"></div></div>
+              <span style="font-size:11px;font-weight:700;color:{{ pvBox.bd }};white-space:nowrap;overflow:hidden;padding:0 12px">New</span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ dg.show }}">
+            <div style="position:absolute;left:{{ dg.lx }}px;top:{{ dg.ly }}px;transform:translateX(-50%);height:22px;padding:0 8px;border-radius:6px;background:{{ dg.bg }};color:{{ dg.ink }};font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;line-height:22px;white-space:nowrap;z-index:9;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.18)">{{ dg.label }}</div>
+          </sc-if>
+          <sc-if value="{{ lunch.show }}">
+            <div onClick="{{ lunch.onClick }}" onMouseEnter="{{ lunch.onEnter }}" role="button" aria-label="{{ lunch.aria }}" style="position:absolute;left:{{ lunch.px }}px;width:{{ lunch.pw }}px;top:3px;height:22px;box-sizing:border-box;border-radius:7px;background:{{ lunch.pillBg }};border:1px solid {{ lunch.edge }};color:{{ lunch.ink }};box-shadow:{{ lunch.shadow }};display:flex;align-items:center;gap:5px;padding:0 7px 2px;overflow:hidden;cursor:pointer;z-index:4;white-space:nowrap">
+              <svg width="12" height="12" viewBox="0 0 12 12" style="flex-shrink:0"><path d="M2.5 1v3a1.5 1.5 0 0 0 3 0V1M4 1v10M9.5 11V1c-1.3.6-2 2-2 3.8 0 .9.6 1.4 2 1.4" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"></path></svg>
+              <span style="font-size:11px;font-weight:700">Lunch</span>
+              <sc-if value="{{ lunch.showRange }}"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px">{{ lunch.range }}</span></sc-if>
+              <sc-if value="{{ lunch.showWorked }}"><span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;color:{{ lunch.workInk }}">{{ lunch.workedLabel }}</span></sc-if>
+              <div style="position:absolute;left:0;right:0;bottom:0;height:3px;display:flex">
+                <sc-for list="{{ lunch.segs }}" as="g" hint-placeholder-count="0"><div style="width:{{ g.pct }}%;height:100%;background:{{ g.c }}"></div></sc-for>
+              </div>
+            </div>
+          </sc-if>
+          <sc-for list="{{ ag }}" as="a" hint-placeholder-count="0">
+            <div onClick="{{ a.onClick }}" onMouseEnter="{{ a.onEnter }}" aria-label="{{ a.aria }}" style="position:absolute;left:{{ a.x }}px;top:{{ a.y }}px;width:{{ a.w }}px;height:{{ a.h }}px;box-sizing:border-box;border-radius:6px;background:{{ a.bg }};border:{{ a.border }};color:{{ a.ink }};opacity:{{ a.op }};box-shadow:{{ a.shadow }};cursor:pointer;overflow:hidden;display:flex;flex-direction:column;justify-content:{{ a.justify }};padding:{{ a.pad }};gap:2px;z-index:{{ a.z }};transition:box-shadow .12s,opacity .12s">
+              <div style="display:flex;align-items:center;gap:5px;white-space:nowrap;min-width:0">
+                <sc-if value="{{ a.showChip }}"><span style="flex-shrink:0;height:14px;padding:0 3px;border-radius:3px;background:{{ a.chip }};font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;line-height:14px;color:{{ a.sub }}">›_</span></sc-if>
+                <span style="font-size:{{ a.l1sz }}px;font-weight:700;font-family:{{ a.l1f }}">{{ a.l1 }}</span>
+                <sc-if value="{{ a.showL1b }}"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ a.sub }}">{{ a.l1b }}</span></sc-if>
+              </div>
+              <sc-if value="{{ a.showL2 }}"><div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;white-space:nowrap;color:{{ a.ink }}">{{ a.l2 }}</div></sc-if>
+              <sc-if value="{{ a.showL3 }}"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;white-space:nowrap;color:{{ a.sub }}">{{ a.l3 }}</div></sc-if>
+              <sc-for list="{{ a.spark }}" as="p" hint-placeholder-count="0">
+                <div style="position:absolute;left:{{ p.x }}px;bottom:5px;width:{{ p.w }}px;height:{{ p.h }}px;border-radius:1px;background:{{ p.c }}"></div>
+              </sc-for>
+            </div>
+          </sc-for>
+          <sc-if value="{{ now.show }}">
+            <div style="position:absolute;left:{{ now.lx }}px;top:29px;bottom:0;width:2px;background:{{ t.now }};z-index:5;pointer-events:none"></div>
+            <div style="position:absolute;left:{{ now.px }}px;top:5px;height:18px;padding:0 6px;border-radius:9px;background:{{ t.now }};color:#ffffff;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;line-height:18px;white-space:nowrap;z-index:5">{{ now.label }}</div>
+          </sc-if>
+          <sc-for list="{{ marks }}" as="mk" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ mk.tx }}px;top:5px;transform:translateX(-50%);height:18px;padding:0 7px;border-radius:5px;background:{{ mk.bg }};color:{{ mk.ink }};font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;line-height:18px;white-space:nowrap;z-index:6;pointer-events:none;box-shadow:0 2px 6px rgba(0,0,0,.15)">{{ mk.label }}</div>
+          </sc-for>
+        </div>
+      </div>
+
+      <sc-if value="{{ tip.show }}">
+        <div role="tooltip" style="position:absolute;left:{{ tip.x }}px;top:{{ tip.y }}px;transform:{{ tip.tf }};width:300px;box-sizing:border-box;background:{{ t.tipBg }};color:{{ t.tipInk }};border-radius:12px;padding:12px 14px;box-shadow:0 12px 32px rgba(0,0,0,.28);z-index:30;pointer-events:none;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:2px 7px 2px 4px;border-radius:6px;background:{{ tip.pillBg }};border:{{ tip.pillBorder }};color:{{ tip.pillInk }}"><span style="font-size:10px;width:12px;text-align:center">{{ tip.icon }}</span>{{ tip.pill }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:700;white-space:nowrap">{{ tip.label }}</span>
+          </div>
+          <sc-if value="{{ tip.hasTitle }}"><div style="font-size:13px;font-weight:600;line-height:17px">{{ tip.title }}</div></sc-if>
+          <div style="display:flex;flex-direction:column;gap:4px;border-top:1px solid {{ t.tipRule }};padding-top:8px">
+            <sc-for list="{{ tip.rows }}" as="r" hint-placeholder-count="0">
+              <div style="display:grid;grid-template-columns:82px minmax(0,1fr);gap:8px;font-size:12px;line-height:16px">
+                <span style="color:{{ t.tipMuted }}">{{ r.k }}</span>
+                <span style="font-family:{{ r.f }}">{{ r.v }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <sc-if value="{{ showFoot }}" hint-placeholder-val="{{ false }}">
+  <div style="border-top:1px solid {{ t.rule }};min-height:52px;display:flex;flex-direction:column;justify-content:center">
+    <sc-if value="{{ foot.hint }}">
+      <div style="display:flex;align-items:center;gap:8px 18px;flex-wrap:wrap;padding:12px 20px;font-size:12px;color:{{ t.muted }}">
+        <sc-for list="{{ keys }}" as="k" hint-placeholder-count="5">
+          <span style="display:flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;min-width:12px;text-align:center;padding:1px 6px;border-radius:5px;border:1px solid {{ t.chipBorder }};background:{{ t.chip }};color:{{ t.ink }}">{{ k.k }}</span>{{ k.v }}</span>
+        </sc-for>
+        <span style="margin-left:auto;white-space:nowrap">{{ hintRight }}</span>
+      </div>
+    </sc-if>
+    <sc-if value="{{ foot.block }}">
+      <div style="display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;padding:10px 20px">
+        <span style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:3px 8px 3px 5px;border-radius:6px;background:{{ fb.bg }};border:{{ fb.border }};color:{{ fb.ink }}"><span style="width:12px;text-align:center">{{ fb.icon }}</span>{{ fb.name }}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700">{{ fb.label }}</span>
+        <span style="font-size:13px;color:{{ t.ink2 }};min-width:0">{{ fb.title }}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ t.muted }}">{{ fb.range }}</span>
+        <div style="flex:1"></div>
+        <sc-if value="{{ fb.canConfirm }}"><button onClick="{{ fb.onConfirm }}" style="height:30px;padding:0 10px;border:0;border-radius:8px;background:{{ t.accent }};color:#ffffff;font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:7px">Confirm<span style="font-family:'JetBrains Mono',monospace;font-size:11px;opacity:.85">↵</span></button></sc-if>
+        <button onClick="{{ fb.onGeneral }}" style="height:30px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:7px">General<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ t.muted }}">G</span></button>
+        <button onClick="{{ fb.onNotwork }}" style="height:30px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:7px">Not work<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ t.muted }}">X</span></button>
+        <span style="font-size:12px;color:{{ t.muted }}">Card, length and split in the editor below ↓</span>
+      </div>
+    </sc-if>
+    <sc-if value="{{ foot.fill }}">
+      <div style="display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:10px 20px">
+        <div style="display:flex;flex-direction:column;gap:1px;min-width:180px">
+          <span style="font-size:13px;font-weight:700">{{ ff.title }}</span>
+          <span style="font-size:12px;color:{{ t.muted }}">{{ ff.sub }}</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;flex:1">
+          <sc-for list="{{ ff.sugg }}" as="g" hint-placeholder-count="2">
+            <button onClick="{{ g.go }}" style="height:32px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};cursor:pointer;display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700">{{ g.card }}</span><span style="font-size:11.5px;color:{{ t.muted }}">{{ g.why }}</span></button>
+          </sc-for>
+          <button onClick="{{ ff.onGeneral }}" style="height:32px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px">General<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ t.muted }}">G</span></button>
+          <button onClick="{{ ff.onBreak }}" style="height:32px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;cursor:pointer">Break</button>
+          <button onClick="{{ ff.onNotwork }}" style="height:32px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px">Not work<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ t.muted }}">X</span></button>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ foot.lunch }}">
+      <div style="display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;padding:10px 20px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:3px 8px 3px 6px;border-radius:6px;background:{{ lp.pillBg }};border:1px solid {{ lp.edge }};color:{{ lp.ink }}"><svg width="12" height="12" viewBox="0 0 12 12" style="flex-shrink:0"><path d="M2.5 1v3a1.5 1.5 0 0 0 3 0V1M4 1v10M9.5 11V1c-1.3.6-2 2-2 3.8 0 .9.6 1.4 2 1.4" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"></path></svg>Lunch</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;white-space:nowrap">{{ lp.range }}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:1 1 280px;min-width:220px;max-width:460px">
+          <div style="display:flex;height:10px;border-radius:5px;overflow:hidden">
+            <sc-for list="{{ lp.segs }}" as="g" hint-placeholder-count="2"><div style="width:{{ g.pct }}%;height:100%;background:{{ g.c }};box-sizing:border-box;border-right:2px solid {{ g.bd }}"></div></sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px 14px;flex-wrap:wrap;font-size:12px;color:{{ t.ink2 }}">
+            <span style="display:flex;align-items:center;gap:6px;white-space:nowrap"><span style="width:8px;height:8px;border-radius:2px;background:{{ lp.rest }}"></span><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:{{ t.ink }}">{{ lp.rested }}</span>offline</span>
+            <span style="display:flex;align-items:center;gap:6px;white-space:nowrap"><span style="width:8px;height:8px;border-radius:2px;background:{{ lp.work }}"></span><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:{{ t.ink }}">{{ lp.worked }}</span>worked through</span>
+            <sc-if value="{{ lp.hasCards }}"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:{{ t.muted }}">{{ lp.cards }}</span></sc-if>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
+          <button onClick="{{ lp.onEarlier }}" style="height:30px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap">‹ 15m earlier</button>
+          <button onClick="{{ lp.onLater }}" style="height:30px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap">15m later ›</button>
+          <sc-if value="{{ lp.canMatch }}"><button onClick="{{ lp.onMatch }}" style="height:30px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap">Match my break <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ t.muted }}">{{ lp.matchLabel }}</span></button></sc-if>
+          <sc-if value="{{ lp.canReset }}"><button onClick="{{ lp.onReset }}" style="height:30px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap">Reset</button></sc-if>
+          <button onClick="{{ lp.onClose }}" style="height:30px;padding:0 12px;border:0;border-radius:8px;background:{{ t.accent }};color:#ffffff;font-size:12.5px;font-weight:600;cursor:pointer">Done</button>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ foot.split }}">
+      <div style="display:flex;align-items:center;gap:12px 18px;flex-wrap:wrap;padding:12px 20px">
+        <div style="display:flex;flex-direction:column;gap:2px;min-width:200px;max-width:260px">
+          <span style="font-size:13px;font-weight:700">{{ fs.title }}</span>
+          <span style="font-size:12px;line-height:16px;color:{{ t.muted }};text-wrap:pretty">{{ fs.note }}</span>
+        </div>
+        <div ref="{{ barRef }}" style="flex:1;min-width:300px;display:flex;height:36px;position:relative;touch-action:none">
+          <sc-for list="{{ fs.segs }}" as="g" hint-placeholder-count="3">
+            <div style="width:{{ g.pct }}%;height:100%;box-sizing:border-box;position:relative;padding:0 2px">
+              <div style="height:100%;box-sizing:border-box;border-radius:7px;background:{{ g.bg }};border:{{ g.border }};color:{{ g.ink }};display:flex;align-items:center;justify-content:center;gap:7px;overflow:hidden;white-space:nowrap">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700">{{ g.card }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11px">{{ g.min }}</span>
+              </div>
+              <sc-if value="{{ g.hasHandle }}">
+                <div onPointerDown="{{ g.onDown }}" role="slider" aria-label="{{ g.aria }}" style="position:absolute;right:-8px;top:-5px;bottom:-5px;width:16px;cursor:col-resize;z-index:2;display:flex;justify-content:center"><div style="width:4px;height:100%;border-radius:2px;background:{{ t.ink }};box-shadow:0 0 0 2px {{ t.card }}"></div></div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onClick="{{ fs.onEven }}" style="height:32px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;cursor:pointer">Even split</button>
+          <button onClick="{{ fs.onConfirm }}" style="height:32px;padding:0 12px;border:0;border-radius:8px;background:{{ t.accent }};color:#ffffff;font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:7px">Confirm split<span style="font-family:'JetBrains Mono',monospace;font-size:11px;opacity:.85">↵</span></button>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+  </sc-if>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1376,&quot;height&quot;:520},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;'light'|'dark'&quot;},&quot;zoom&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;fit&quot;,&quot;1x&quot;,&quot;2x&quot;,&quot;close&quot;],&quot;default&quot;:&quot;1x&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;scrollTo&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:650,&quot;tsType&quot;:&quot;number&quot;},&quot;agentsExpanded&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;forceHover&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;forceFocus&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;forceSelected&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;rangeStart&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:735,&quot;tsType&quot;:&quot;number&quot;},&quot;rangeEnd&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:840,&quot;tsType&quot;:&quot;number&quot;}}">
+class Component extends DCLogic {
+  state = { ready: !!window.LaikaTL, zoom: null, viewW: 0, sl: 0, hover: '', sel: null, focusId: '', focusVis: false, expanded: null, ov: {}, shares: null, custom: false, init: false, lunch: null, lunchSel: false, drag: null, live: '' };
+  rootRef = React.createRef(); vpRef = React.createRef(); barRef = React.createRef();
+
+  componentDidMount() {
+    if (!this.state.ready) this._poll = setInterval(() => { if (window.LaikaTL) { clearInterval(this._poll); this.setState({ ready: true }); } }, 40);
+    this._ro = new ResizeObserver(() => this._measure());
+    this._attach();
+  }
+  componentDidUpdate(pp) {
+    this._attach();
+    if (pp && this.state.init) {
+      const pv = this.props.preview, ps = pp.preview, pvCh = !!pv && (!ps || ps.start !== pv.start || ps.end !== pv.end);
+      if (pvCh || (this.props.sel && pp.sel !== this.props.sel)) { const u = pvCh ? pv : (this._us || []).find(x => x.id === this.props.sel); if (u) this.revealSmooth(u); }
+    }
+    const el = this.vpRef.current;
+    if (!this.state.init && this.state.viewW && this._scale && el) {
+      const z = this.zoom(), t = this.props.scrollTo;
+      if (z !== 'fit' && z !== 'close' && t != null) el.scrollLeft = Math.max(0, this._scale.pos(t) - 12);
+      this.setState({ init: true, sl: el.scrollLeft });
+    }
+    if (this._pendingT != null && this._scale && el) { el.scrollLeft = Math.max(0, this._scale.pos(this._pendingT) - this.state.viewW / 2); this._pendingT = null; this.setState({ sl: el.scrollLeft }); }
+  }
+  componentWillUnmount() { clearTimeout(this._bt); clearInterval(this._poll); this._ro && this._ro.disconnect(); this._off && this._off(); }
+  _measure() { const el = this.vpRef.current; if (el && Math.abs(el.clientWidth - this.state.viewW) > 0.5) this.setState({ viewW: el.clientWidth }); }
+  _attach() { const el = this.vpRef.current; if (el && el !== this._obs) { if (this._obs) this._ro.unobserve(this._obs); this._obs = el; this._ro.observe(el); this._measure(); } }
+
+  sty(L, th) {
+    const S = { ...L.styles(th) };
+    S.needs = { ...S.needs, name: 'No task yet' }; S.notwork = { ...S.notwork, name: 'Not work time' };
+    S.imported = th === 'dark' ? { bg: '#2a2540', border: '1px solid #55497e', color: '#e4dcff', sub: '#c3b6ee', chip: '#3a3358', icon: '⇣', name: 'Imported' } : { bg: '#ebe7f5', border: '1px solid #b8acd8', color: '#33255c', sub: '#4d3f78', chip: '#dcd4ef', icon: '⇣', name: 'Imported' };
+    S.timer = { ...S.confirmed, bg: 'repeating-linear-gradient(135deg,#7c3aed 0 7px,#6a2fd6 7px 14px)', icon: '●', name: 'Timer' };
+    return S;
+  }
+  fr(a, b) { const L = window.LaikaTL; return (a >= 720) === (b >= 720) ? L.fmt(a, false) + '–' + L.fmt(b) : L.fmt(a) + '–' + L.fmt(b); }
+  fd(m) { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return h ? (r ? h + ' h ' + r + ' min' : h + ' h') : r + ' min'; }
+  canDrag(u) { return !this.props.readOnly && !!u && !u.imported && !u.group && !u.live && ['drafted', 'needs', 'confirmed'].includes(u.state); }
+  check(d, ovB, added) {
+    const L = window.LaikaTL, r = { ...d, bad: false, reason: '', conflict: null };
+    if (d.range) return r;
+    if (d.start < 0 || d.end > 1440) return { ...r, bad: true, reason: 'Can’t cross midnight' };
+    const all = [...L.units(ovB), ...(added || [])], self = all.find(u => u.id === d.id);
+    if (d.ext || (self && self.state === 'confirmed')) {
+      const c = all.find(u => u.id !== d.id && u.state === 'confirmed' && u.start < d.end && u.end > d.start);
+      if (c) { const lbl = c.card ? (c.card === 'GENERAL' ? (c.title || c.kind || 'Work') : c.card) : 'confirmed time'; return { ...r, bad: true, conflict: c.id, reason: `Overlaps ${lbl}, ${this.fr(c.start, c.end)}` }; }
+    }
+    return r;
+  }
+  down(u, e) {
+    if (e.button !== 0) return; e.stopPropagation();
+    const sc = this._scale, el = this.vpRef.current; if (!sc || !el) return;
+    const rect = e.currentTarget.getBoundingClientRect(), ox = e.clientX - rect.left, x0 = e.clientX;
+    const can = this.canDrag(u), open = (u.state === 'gap' || u.state === 'idle') && !this.props.readOnly;
+    const kind = can ? (rect.width >= 24 && ox < 9 ? 'start' : rect.width >= 24 && ox > rect.width - 9 ? 'end' : 'move') : open ? 'range' : null;
+    const vr = el.getBoundingClientRect(), cx = ev => ev.clientX - vr.left + el.scrollLeft, snap = t => Math.round(t / 5) * 5, X = sc.pos, t0 = snap(sc.at(cx(e)));
+    let moved = false;
+    const mv = ev => {
+      const dx = ev.clientX - x0; if (!moved && Math.abs(dx) < 4) return; moved = true; if (!kind) return;
+      let s = u.start, en = u.end;
+      if (kind === 'move') { s = snap(sc.at(X(u.start) + dx)); en = s + (u.end - u.start); }
+      else if (kind === 'start') s = Math.min(u.end - 5, snap(sc.at(X(u.start) + dx)));
+      else if (kind === 'end') en = Math.max(u.start + 5, snap(sc.at(X(u.end) + dx)));
+      else { const t1 = snap(sc.at(cx(ev))); s = Math.min(t0, t1); en = Math.max(t0, t1, s + 5); }
+      this.setState({ drag: { id: kind === 'range' ? 'range' : u.id, kind, range: kind === 'range', o0: u.start, o1: u.end, start: s, end: en }, hover: '' });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); this._off = null;
+      if (!moved || !kind) { if (u.state !== 'idle') this.pick(u.id); return; }
+      this.drop();
+    };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); this._off = up;
+  }
+  bounce(d0) { this.setState({ drag: { ...d0, dropped: true } }); clearTimeout(this._bt); this._bt = setTimeout(() => this.setState({ drag: null }), 1600); }
+  drop() {
+    const L = window.LaikaTL, d0 = this.state.drag; if (!d0) return;
+    const d = this.check(d0, this._ov(), this.props.added);
+    if (d.range) { this.setState({ drag: null }); this.props.onRange && this.props.onRange({ start: d.start, end: d.end }); return; }
+    if (d.bad) { this.bounce(d0); this.setState({ live: d.reason + '. Moved back.' }); return; }
+    if (d.start === d.o0 && d.end === d.o1) { this.setState({ drag: null }); return; }
+    this.setState({ drag: null, live: 'Saved, ' + this.fr(d.start, d.end) });
+    if (this.props.onCommit) this.props.onCommit({ id: d.id, start: d.start, end: d.end, o0: d.o0, o1: d.o1, kind: d.kind });
+    else this._set({ ov: { ...this._ov(), [d.id]: { ...(this._ov()[d.id] || {}), start: d.start, end: d.end } } });
+  }
+  onExtOver = e => {
+    const x = window.__laikaDrag; if (!x || this.props.readOnly) return; e.preventDefault();
+    const sc = this._scale, el = this.vpRef.current; if (!sc || !el) return;
+    const vr = el.getBoundingClientRect(), t = Math.round((sc.at(e.clientX - vr.left + el.scrollLeft) - x.len / 2) / 5) * 5, d = this.state.drag;
+    if (d && d.ext && d.start === t && !d.dropped) return;
+    this.setState({ drag: { id: x.id, ext: true, kind: 'ext', label: x.label, start: t, end: t + x.len }, hover: '' });
+  };
+  onExtLeave = e => { if (e.currentTarget.contains(e.relatedTarget)) return; if (this.state.drag && this.state.drag.ext && !this.state.drag.dropped) this.setState({ drag: null }); };
+  onExtDrop = e => {
+    const d0 = this.state.drag; if (!d0 || !d0.ext) return; e.preventDefault();
+    const d = this.check(d0, this._ov(), this.props.added);
+    if (d.bad) { this.bounce(d0); return; }
+    this.setState({ drag: null, live: 'Placed at ' + window.LaikaTL.rng(d.start, d.end) });
+    this.props.onDropEntry && this.props.onDropEntry({ id: d.id, start: d.start, end: d.end });
+  };
+  zoom() { return this.state.zoom || this.props.zoom || '1x'; }
+  curSel() { return this.props.sel ?? this.state.sel ?? this.props.forceSelected ?? ''; }
+  _ov() { return this.props.ov ?? this.state.ov; }
+  _shares() { return this.props.shares !== undefined ? this.props.shares : this.state.shares; }
+  _custom() { return this.props.custom ?? this.state.custom; }
+  _set(p) {
+    const cb = this.props.onChange; if (!cb) { this.setState(p); return; }
+    const ctl = {}, loc = {};
+    Object.keys(p).forEach(k => { (['ov', 'shares', 'custom', 'sel'].includes(k) ? ctl : loc)[k] = p[k]; });
+    if (Object.keys(loc).length) this.setState(loc);
+    if (Object.keys(ctl).length) cb(ctl);
+  }
+  setZoom(z) { const el = this.vpRef.current; this._pendingT = (el && this._scale && z !== 'fit') ? this._scale.at(el.scrollLeft + this.state.viewW / 2) : null; this.setState({ zoom: z }); }
+  focusRoot() { const r = this.rootRef.current; if (r && document.activeElement !== r) r.focus({ preventScroll: true }); }
+  pick(id) { this._set({ sel: id, focusId: id, lunchSel: false }); this.focusRoot(); }
+  units() { return window.LaikaTL.units(this._ov()); }
+  reveal(u) {
+    const el = this.vpRef.current; if (!el || !this._scale) return;
+    const x0 = this._scale.pos(u.start), x1 = this._scale.pos(u.end), w = this.state.viewW;
+    if (x0 < el.scrollLeft + 20) el.scrollLeft = x0 - 40; else if (x1 > el.scrollLeft + w - 20) el.scrollLeft = Math.min(x0 - 40, x1 - w + 40);
+  }
+  pvDown = e => {
+    const pv = this.props.preview, sc = this._scale, el = this.vpRef.current; if (!pv || !sc || !el || !this.props.onPreview) return;
+    e.stopPropagation(); e.preventDefault();
+    const r = e.currentTarget.getBoundingClientRect(), ox = e.clientX - r.left, kind = ox < 10 ? 'start' : ox > r.width - 10 ? 'end' : 'move';
+    const vr = el.getBoundingClientRect(), at = x => sc.at(x - vr.left + el.scrollLeft), t0 = at(e.clientX), a0 = pv.start, b0 = pv.end;
+    const mv = ev => { const d = Math.round((at(ev.clientX) - t0) / 5) * 5; let a = a0, b = b0;
+      if (kind === 'start') a = Math.min(b0 - 5, a0 + d); else if (kind === 'end') b = Math.max(a0 + 5, b0 + d); else { a = a0 + d; b = b0 + d; }
+      const cur = this.props.preview; if (cur && (cur.start !== a || cur.end !== b)) this.props.onPreview({ start: a, end: b }); };
+    const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  };
+  revealSmooth(u) {
+    const el = this.vpRef.current; if (!el || !this._scale) return;
+    const x0 = this._scale.pos(u.start), x1 = this._scale.pos(u.end), w = this.state.viewW;
+    if (x0 >= el.scrollLeft + 20 && x1 <= el.scrollLeft + w - 20) return;
+    el.scrollTo({ left: Math.max(0, (x0 + x1) / 2 - w / 2), behavior: 'smooth' });
+  }
+  move(dir) {
+    const us = this.units(); let i = us.findIndex(u => u.id === this.curSel());
+    i = i < 0 ? (dir > 0 ? 0 : us.length - 1) : Math.max(0, Math.min(us.length - 1, i + dir));
+    const u = us[i]; this._set({ sel: u.id, focusId: u.id, focusVis: true }); this.reveal(u);
+  }
+  act(kind, id) {
+    const u = this.units().find(x => x.id === id); if (!u) return;
+    const ov = { ...this._ov() };
+    if (kind === 'confirm') { if (u.state !== 'drafted') return; ov[id] = { ...(ov[id] || {}), state: 'confirmed' }; }
+    if (kind === 'general') ov[id] = { state: 'confirmed', card: 'GENERAL' };
+    if (kind === 'notwork') ov[id] = { state: 'notwork', card: null };
+    if (kind === 'break') ov[id] = { state: 'break', card: null };
+    this._set({ ov });
+  }
+  fill(id, card) { this._set({ ov: { ...this._ov(), [id]: { state: 'confirmed', card } } }); }
+  confirmGroup() { const ov = { ...this._ov() }; window.LaikaTL.GROUP.subs.forEach(s => { const cur = { ...s, ...(ov[s.id] || {}) }; if (cur.state === 'drafted') ov[s.id] = { ...(ov[s.id] || {}), state: 'confirmed' }; }); this._set({ ov }); }
+  onKey = e => {
+    const k = e.key, id = this.curSel();
+    if (e.altKey && (k === 'ArrowRight' || k === 'ArrowLeft')) {
+      e.preventDefault(); const L = window.LaikaTL, added = this.props.added || [];
+      const u = [...this.units(), ...added].find(x => x.id === id); if (!this.canDrag(u)) return;
+      const d0 = this.state.drag && this.state.drag.kbd ? this.state.drag : { id, kind: 'move', kbd: true, o0: u.start, o1: u.end, start: u.start, end: u.end };
+      const sh = (e.shiftKey ? 15 : 5) * (k === 'ArrowRight' ? 1 : -1), n = { ...d0, start: d0.start + sh, end: d0.end + sh }, c = this.check(n, this._ov(), added);
+      this.setState({ drag: n, live: `${this.fr(n.start, n.end)}. ${c.bad ? c.reason + '. ' : ''}Enter to save, Escape to cancel.` }); return;
+    }
+    if (k === 'Enter' && this.state.drag && this.state.drag.kbd) { e.preventDefault(); this.drop(); return; }
+    if (k === 'Escape' && this.state.drag) { this.setState({ drag: null, live: 'Move cancelled' }); return; }
+    if (k === 'ArrowRight' || k === 'ArrowLeft') { e.preventDefault(); this.move(k === 'ArrowRight' ? 1 : -1); return; }
+    if (k === 'Tab') { this.setState({ focusVis: true }); return; }
+    if (!id) return;
+    const u = this.units().find(x => x.id === id);
+    if (k === 'Enter') { e.preventDefault(); if (u && u.group) this.confirmGroup(); else this.act('confirm', id); }
+    else if (k === 'g' || k === 'G') this.act('general', id);
+    else if (k === 'x' || k === 'X') this.act('notwork', id);
+    else if (k === 'Escape') this._set({ sel: '', focusVis: false, lunchSel: false });
+  };
+  startDrag(i, e) {
+    e.preventDefault(); e.stopPropagation();
+    const L = window.LaikaTL, bar = this.barRef.current; if (!bar) return;
+    const bw = bar.getBoundingClientRect().width, g = L.GROUP, total = g.end - g.start;
+    const base = { ...(this._shares() || L.evenShares(g)) }, A = g.subs[i], B = g.subs[i + 1], x0 = e.clientX;
+    const dA = A.end - A.start, dB = B.end - B.start, pair = base[A.id] + base[B.id];
+    const mv = ev => {
+      let a = Math.round(base[A.id] + (ev.clientX - x0) / bw * total);
+      a = Math.max(5, Math.min(dA, pair - 5, a)); let b = pair - a; if (b > dB) { b = dB; a = pair - b; }
+      this._set({ shares: { ...base, [A.id]: a, [B.id]: b }, custom: true });
+    };
+    const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); this._off = null; };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); this._off = up;
+  }
+
+  renderVals() {
+    const L = window.LaikaTL, theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const base = { rootRef: this.rootRef, vpRef: this.vpRef, barRef: this.barRef, onKey: this.onKey, onMouseDown: () => { if (this.state.focusVis) this.setState({ focusVis: false }); } };
+    if (!L) return { ...base, ready: false, t: theme === 'dark' ? { card: '#1a1a21', border: '#2b2b35', ink: '#ececf2' } : { card: '#ffffff', border: '#e4e4ec', ink: '#16161d' }, totals: [], zooms: [] };
+    const T = L.tokens[theme], S = this.sty(L, theme), st = this.state, z = this.zoom();
+    const viewW = Math.max(300, st.viewW || 900);
+    const range = z === 'close' ? [this.props.rangeStart ?? 735, this.props.rangeEnd ?? 840] : null;
+    const sc = L.buildScale(z === 'fit' ? { compress: true, fitLength: viewW, min: 36, groupMin: 170, compW: 92 } : z === 'close' ? { linear: true, k: viewW / (range[1] - range[0]), range } : { linear: true, k: (z === '2x' ? 320 : 160) / 60 });
+    this._scale = sc;
+    const X = sc.pos, Wc = Math.max(sc.total, viewW), inR = (a, b) => b > sc.a && a < sc.b;
+    const drag0 = st.drag || this.props.forceDrag || null, ovB = this._ov(), added = (this.props.added || []).map(a => ({ ...a, manual: true }));
+    const drag = drag0 ? this.check(drag0, ovB, added) : null, live = !!drag && !drag.range && !drag.ext && !(drag.bad && drag.dropped);
+    const ov = live && !added.some(a => a.id === drag.id) ? { ...ovB, [drag.id]: { ...(ovB[drag.id] || {}), start: drag.start, end: drag.end } } : ovB;
+    const addedEff = added.map(a => live && drag.id === a.id ? { ...a, start: drag.start, end: drag.end } : a);
+    const shares = this._shares() || L.evenShares(L.GROUP), us = [...L.units(ov), ...addedEff], custom = this._custom();
+    const selId = this.curSel(), selU = us.find(u => u.id === selId) || null;
+    const isCardU = u => !!u && (u.state === 'confirmed' || u.state === 'drafted') && !!u.card;
+    const selCard = isCardU(selU) ? selU.card : null;
+    const hov = st.hover || this.props.forceHover || '';
+    const focId = st.focusId || this.props.forceFocus || '', focVis = st.focusVis || !!this.props.forceFocus;
+    const expanded = st.expanded ?? !!this.props.agentsExpanded;
+    const SIGT = 29, SIGH = 82, YOUT = SIGT + SIGH + 1, YOUH = 116, AGT = YOUT + YOUH + 1, TT = YOUT + 28;
+    const cls = L.clusters(), gMax = Math.max(...cls.map(c => c.max));
+    const nT = expanded ? Math.max(3, gMax) : 3, TRK = 22, TG = 4, agIn = nT * TRK + (nT - 1) * TG, H = AGT + agIn + 16;
+    const scrollable = sc.total > viewW + 1, Hs = H + (scrollable ? 12 : 0);
+    const geo = {};
+    const sans = "'Plus Jakarta Sans',sans-serif", mono = "'JetBrains Mono',monospace";
+
+    let ranges = [];
+    if (selCard) { us.forEach(u => { if (isCardU(u) && u.card === selCard) ranges.push([u.start, u.end]); }); L.AGENTS.forEach(a => { if (a.card === selCard) ranges.push([a.start, a.end]); }); }
+    else if (selU) ranges.push([selU.start, selU.end]);
+    ranges.sort((a, b) => a[0] - b[0]);
+    const merged = []; ranges.forEach(r => { const m = merged[merged.length - 1]; if (m && r[0] <= m[1]) m[1] = Math.max(m[1], r[1]); else merged.push([...r]); });
+    const hlBands = merged.filter(r => inR(r[0], r[1])).map(r => ({ x: X(Math.max(r[0], sc.a)), w: X(Math.min(r[1], sc.b)) - X(Math.max(r[0], sc.a)) }));
+    const inSel = t => merged.some(r => t >= r[0] && t < r[1]);
+    this._us = us;
+    const pv = this.props.preview, mkU = pv || selU, mkRed = theme === 'dark' ? '#ff6b73' : '#c42630';
+    if (pv && inR(pv.start, pv.end)) hlBands.push({ x: X(Math.max(pv.start, sc.a)), w: X(Math.min(pv.end, sc.b)) - X(Math.max(pv.start, sc.a)) });
+    const marks = mkU && inR(mkU.start, mkU.end) ? [{ x0: X(Math.max(mkU.start, sc.a)), x1: X(Math.min(mkU.end, sc.b)) - 1, tx: X((mkU.start + mkU.end) / 2), label: this.fr(mkU.start, mkU.end) + ' · ' + this.fd(mkU.end - mkU.start), bg: pv && pv.bad ? mkRed : T.accent, ink: theme === 'dark' && !(pv && pv.bad) ? '#140f24' : '#ffffff' }] : [];
+
+    const mk = (u, x0, x1, y, h, kind) => {
+      const w = Math.max(1, x1 - x0), d = u.end - u.start, s = (u.imported ? S.imported : S[u.state]) || S.gap, isC = isCardU(u), gen = u.card === 'GENERAL', mn = isC && !gen;
+      const text = isC ? (gen ? (u.kind || 'Work') : u.card) : u.state === 'needs' ? 'No task yet' : u.state === 'gap' ? (d >= 20 ? 'Add time' : 'Gap') : u.state === 'break' ? (u.label || 'Break') : 'Not work time';
+      const tsz = kind === 'track' ? 11 : (mn ? 11.5 : 12), tw = text.length * 0.63 * tsz, pad = kind === 'full' ? 16 : 10;
+      let showIcon = false, showText = false;
+      if (w >= pad + 21 + tw) { showIcon = true; showText = true; } else if (kind === 'full' && w >= pad + tw) showText = true; else if (w >= 18) showIcon = true;
+      let share = '', showShare = false, title = '', showTitle = false, meta = '', showMeta = false;
+      if (kind === 'track') { share = L.dur(shares[u.id]); showShare = showText && w >= pad + 21 + tw + 12 + share.length * 6.6; }
+      else {
+        title = isC ? (u.title || (gen ? 'Shared time, no card' : L.CARDS[u.card])) : u.state === 'needs' ? (u.hint || '') : (u.state === 'gap' && d >= 20) ? 'Click to fill' : '';
+        showTitle = !!title && showText && w >= 110;
+        const live = u.live ? ' · live' : '', full = L.rng(u.start, u.end) + ' · ' + L.dur(d) + live, short = L.dur(d) + live, bare = L.dur(d);
+        meta = [full, short, bare].find(m => w >= (showText ? pad : 6) + m.length * 6.5) || ''; showMeta = !!meta;
+      }
+      const isSel = selId === u.id, same = !!selCard && isC && u.card === selCard, dim = !!selCard && !same, isHov = hov === u.id, isFoc = focVis && focId === u.id;
+      geo[u.id] = { x: x0, y, w, h };
+      const center = !showText, can = this.canDrag(u), dragging = !!drag && drag.id === u.id && live;
+      return { jc: center ? 'center' : 'flex-start', id: u.id, x: x0, y, w, h, r: kind === 'full' ? 8 : 6, bg: s.bg, border: s.border, color: s.color, sub: s.sub, chip: s.chip, icon: s.icon,
+        showIcon, showText, text, tFont: mn ? mono : sans, tsz, showShare, share, showTitle, title, showMeta, meta, showL1: showIcon || showText, ta: 'left',
+        align: center ? 'center' : 'stretch', pad: center ? '0' : (kind === 'full' ? '6px 8px' : '0 5px'),
+        op: dim ? 0.34 : 1, z: isSel || isHov || isFoc ? 3 : 1,
+        shadow: isSel ? `inset 0 0 0 2px ${T.selRing}, 0 6px 16px ${T.lift}` : same ? `inset 0 0 0 2px ${T.selRing}` : isHov ? `0 4px 14px ${T.lift}` : 'none',
+        outline: isFoc ? `2px solid ${T.focus}` : 'none', cursor: dragging ? 'grabbing' : can ? 'grab' : (u.imported || this.props.readOnly) ? 'not-allowed' : u.state === 'gap' ? 'crosshair' : 'pointer',
+        handles: can && (isSel || isHov || dragging) && w >= 22, hc: u.state === 'confirmed' ? 'rgba(255,255,255,.85)' : s.color, onDown: e => this.down(u, e),
+        aria: `${s.name}${isC ? ' ' + text : ''}, ${L.rng(u.start, u.end)}, ${L.dur(d)}`,
+        onClick: () => this.pick(u.id), onEnter: () => this.setState({ hover: u.id }) };
+    };
+    const idleEl = (b, x0, x1, comp) => {
+      const w = x1 - x0 - 2, d = b.end - b.start, fut = b.state === 'future';
+      const text = fut ? 'Later today' : comp ? 'No activity' : 'No activity until ' + L.fmt(b.end);
+      const showText = w >= text.length * 7.2 + 4;
+      const meta = comp ? L.fmt(b.start, false) + '–' + L.fmt(b.end, false) : '';
+      geo[b.id] = { x: x0, y: TT, w, h: 80 };
+      return { id: b.id, x: x0 + 1, y: TT, w, h: 80, r: 8, bg: 'transparent', border: 'none', color: T.muted, sub: T.muted, chip: 'transparent', icon: '',
+        jc: 'center', showIcon: false, showText, text, tFont: sans, tsz: 12, showShare: false, share: '', showTitle: comp, title: L.dur(d), showMeta: comp && w >= meta.length * 6.5, meta,
+        showL1: showText, ta: 'center', align: 'stretch', pad: '0 4px', op: 1, z: 0, shadow: 'none', outline: 'none', cursor: b.state === 'idle' && !this.props.readOnly ? 'crosshair' : 'default', aria: text,
+        onClick: null, handles: false, onDown: b.state === 'idle' && !this.props.readOnly ? e => this.down(b, e) : null, onEnter: () => this.setState({ hover: comp ? b.id : '' }) };
+    };
+
+    const you = [], strips = [];
+    L.YOU.forEach(b0 => {
+      if (!inR(b0.start, b0.end)) return;
+      const s = Math.max(b0.start, sc.a), e = Math.min(b0.end, sc.b);
+      if (b0.state === 'idle' || b0.state === 'future') { you.push(idleEl(b0, X(s), X(e), sc.segs.some(g => g.comp && g.t0 === b0.start))); return; }
+      if (b0.subs) {
+        const gx0 = X(s) + 1, gx1 = X(e) - 1, n = b0.subs.length, lbl = `cards at once · ${custom ? 'custom split' : 'even split'}`;
+        strips.push({ x: gx0, w: gx1 - gx0, top: YOUT + 6, n, label: gx1 - gx0 >= lbl.length * 6.6 + 50 ? lbl : 'cards', onClick: () => this.pick(b0.subs[0].id) });
+        b0.subs.forEach(s0 => { const u = { ...s0, ...(ov[s0.id] || {}), group: b0.id }; if (!inR(u.start, u.end)) return; you.push(mk(u, X(Math.max(u.start, sc.a)) + 1, X(Math.min(u.end, sc.b)) - 1, TT + u.track * 28, 24, 'track')); });
+        return;
+      }
+      const ub = { ...b0, ...(ov[b0.id] || {}) }; if (ub.state !== 'covered' && inR(ub.start, ub.end)) you.push(mk(ub, X(Math.max(ub.start, sc.a)) + 1, X(Math.min(ub.end, sc.b)) - 1, TT, 80, 'full'));
+    });
+    addedEff.forEach(a => { if (inR(a.start, a.end)) you.push(mk(a, X(Math.max(a.start, sc.a)) + 1, X(Math.min(a.end, sc.b)) - 1, TT, 80, 'full')); });
+    const tm = this.props.timer;
+    if (tm) {
+      const te = tm.start + Math.max(tm.min, 3), b = mk({ id: 'timer', state: 'timer', start: tm.start, end: te }, X(tm.start) + 1, X(te) - 1, TT, 80, 'full');
+      Object.assign(b, { showL1: true, showIcon: b.w >= 22, showText: b.w >= 64, text: tm.card ? (tm.card === 'GENERAL' ? (tm.kind || 'Work') : tm.card) : 'Timer', tFont: mono, tsz: 11.5, showTitle: false, showMeta: b.w >= 40, meta: tm.paused ? 'paused' : L.dur(tm.min) + ' · running', jc: 'flex-start', align: 'stretch', pad: b.w >= 40 ? '6px 8px' : '0', z: 4, handles: false, cursor: 'pointer', aria: 'Timer running, ' + L.dur(tm.min),
+        onDown: e => { e.stopPropagation(); this.props.onTimerClick && this.props.onTimerClick(); } });
+      you.push(b);
+    }
+    if (drag) you.forEach(b => { if (b.id === drag.id && live) { b.z = 6; b.shadow = `0 10px 24px ${T.lift}`; if (drag.bad) b.outline = '2px solid ' + (theme === 'dark' ? '#ff6b73' : '#c42630'); } if (drag.conflict && b.id === drag.conflict) { b.z = 5; b.outline = '2px solid ' + (theme === 'dark' ? '#ff6b73' : '#c42630'); b.op = 1; } });
+
+    const RT = SIGT + 26, sig = [];
+    L.SIG.forEach(s => {
+      if (!inR(s.t, s.t + 5)) return;
+      const x0 = X(s.t), w = X(s.t + 5) - x0; if (w < 2) return;
+      const num = w >= 22, bw = Math.max(2, Math.min(6, w - 3)), ph = Math.min(13, 3 + s.p * 2.4), cs = Math.max(3, Math.min(8, w - 3)), ms = Math.max(3, Math.min(8, w - 3));
+      const lx = sz => num ? Math.max(1, (w - sz - 8) / 2) : (w - sz) / 2;
+      geo['sig:' + s.t] = { x: x0, y: RT, w, h: 48 };
+      sig.push({ x: x0, w, top: RT, hasP: s.p > 0, pH: ph, pTop: 15 - ph, pX: lx(bw), pW: bw, hasC: s.c > 0, cS: cs, cTop: 16 + (16 - cs) / 2, cX: lx(cs), hasM: s.m > 0, mS: ms, mTop: 32 + (16 - ms) / 2, mX: lx(ms),
+        showPN: num && s.p > 0, showCN: num && s.c > 0, showMN: num && s.m > 0, pN: s.p, cN: s.c, mN: s.m, pNX: lx(bw) + bw + 2, cNX: lx(cs) + cs + 2, mNX: lx(ms) + ms + 2,
+        op: merged.length && selCard && !inSel(s.t + 2.5) ? 0.25 : 1, onEnter: () => this.setState({ hover: 'sig:' + s.t }) });
+    });
+    const hours = [];
+    for (let h = Math.ceil(sc.a / 60); h * 60 < sc.b; h++) {
+      const a = h * 60, b = Math.min(a + 60, sc.b); if (sc.inComp(a + 1)) continue;
+      const c = L.sigIn(a, b); if (!c.p && !c.c && !c.m) continue;
+      const x0 = X(a), x1 = X(b), need = (String(c.p).length + String(c.c).length + String(c.m).length) * 6.4 + 54;
+      if (x1 - x0 >= need + 8) hours.push({ x: x0 + 6, top: SIGT + 5, p: c.p, c: c.c, m: c.m });
+    }
+
+    const LT = theme === 'dark'
+      ? { band: 'rgba(63,191,127,.07)', edge: '#2f7350', pill: '#12281c', ink: '#a3e6c1', rest: '#3fbf7f', work: '#a78bfa', workInk: '#c4b5fd', hSolid: 'rgba(255,255,255,.16)', hLight: 'rgba(63,191,127,.24)' }
+      : { band: 'rgba(46,160,98,.07)', edge: '#7cc49c', pill: '#e7f4ec', ink: '#1d5e3c', rest: '#3fa06c', work: '#7c3aed', workInk: '#6d28d9', hSolid: 'rgba(255,255,255,.2)', hLight: 'rgba(46,160,98,.22)' };
+    const LN = st.lunch || L.LUNCH || { start: 720, end: 780 }, lnLen = LN.end - LN.start;
+    const isWork = u => u.state === 'confirmed' || u.state === 'drafted' || u.state === 'needs';
+    const lnRuns = [], lnCards = []; let lnWorked = 0;
+    for (let t = LN.start; t < LN.end; t++) {
+      const ws = us.filter(u => isWork(u) && t >= u.start && t < u.end), w = ws.length > 0; if (w) lnWorked++;
+      ws.forEach(u => { const c = u.card === 'GENERAL' ? (u.kind || 'Work') : (u.card || 'No card'); if (!lnCards.includes(c)) lnCards.push(c); });
+      const r = lnRuns[lnRuns.length - 1]; if (r && r.w === w) r.b = t + 1; else lnRuns.push({ a: t, b: t + 1, w });
+    }
+    const lnRest = lnLen - lnWorked, lnSegs = lnRuns.map(r => ({ pct: (r.b - r.a) / lnLen * 100, c: r.w ? LT.work : LT.rest }));
+    let lunch = { show: false, segs: [] }; const bites = [];
+    if (inR(LN.start, LN.end) && !sc.inComp(LN.start + 1) && !sc.inComp(LN.end - 1)) {
+      const lx0 = X(Math.max(LN.start, sc.a)), lx1 = X(Math.min(LN.end, sc.b)), px = lx0 + 3, pw = Math.max(18, lx1 - lx0 - 6), on = !!st.lunchSel;
+      const range = L.rng(LN.start, LN.end), wl = lnWorked ? (lnRest ? L.dur(lnWorked) + ' worked' : 'worked through') : 'offline', room = pw - 14 - 17 - 38;
+      const showWorked = room >= wl.length * 6.5 + 6, showRange = showWorked && room >= (wl.length + range.length) * 6.5 + 16;
+      geo.lunch = { x: px, y: 3, w: pw, h: 22 };
+      lunch = { show: true, x: lx0, w: lx1 - lx0, px, pw, band: LT.band, edge: LT.edge, pillBg: LT.pill, ink: LT.ink, workInk: lnWorked ? LT.workInk : LT.ink,
+        range, showRange, workedLabel: wl, showWorked, segs: lnSegs,
+        shadow: on ? `0 0 0 2px ${T.selRing}` : hov === 'lunch' ? `0 3px 10px ${T.lift}` : 'none',
+        aria: `Lunch ${range}. ${L.dur(lnRest)} offline, ${L.dur(lnWorked)} worked`,
+        onEnter: () => this.setState({ hover: 'lunch' }),
+        onClick: this.props.readOnly ? null : () => { this._set({ sel: '' }); this.setState({ lunchSel: true, hover: '' }); this.focusRoot(); } };
+      us.forEach(u => {
+        if (!isWork(u) || !(u.start < LN.end && u.end > LN.start)) return; const g0 = geo[u.id]; if (!g0) return;
+        const bx0 = Math.max(lx0, g0.x), bx1 = Math.min(lx1, g0.x + g0.w); if (bx1 - bx0 < 2) return;
+        const R = u.group ? 6 : 8, l = bx0 <= g0.x + 0.5 ? R : 0, r = bx1 >= g0.x + g0.w - 0.5 ? R : 0;
+        bites.push({ x: bx0, y: g0.y, w: bx1 - bx0, h: g0.h, r: `${l}px ${r}px ${r}px ${l}px`, edge: LT.rest, z: drag && drag.id === u.id ? 7 : 2,
+          bg: `repeating-linear-gradient(135deg, ${u.state === 'confirmed' ? LT.hSolid : LT.hLight} 0 3px, transparent 3px 9px)` });
+      });
+    }
+    us.filter(b => b.state === 'break').forEach(br => us.forEach(u => {
+      if (!isWork(u) || u.group || !(u.start < br.end && u.end > br.start)) return; const g0 = geo[u.id]; if (!g0) return;
+      const bx0 = Math.max(X(br.start), g0.x), bx1 = Math.min(X(br.end), g0.x + g0.w); if (bx1 - bx0 < 2) return;
+      bites.push({ x: bx0, y: g0.y, w: bx1 - bx0, h: g0.h, r: '0', edge: LT.rest, z: drag && drag.id === u.id ? 7 : 2, bg: `repeating-linear-gradient(135deg, ${u.state === 'confirmed' ? LT.hSolid : LT.hLight} 0 3px, transparent 3px 9px)` });
+    }));
+    const RED = theme === 'dark' ? '#ff6b73' : '#c42630', dg = { show: false, ghosts: [] };
+    const pvBox = pv && this.props.onPreview && !drag && inR(pv.start, pv.end) ? { show: true, x: X(pv.start) + 1, y: TT, w: Math.max(14, X(pv.end) - X(pv.start) - 2), bd: pv.bad ? RED : T.accent, bg: T.hl, onDown: this.pvDown } : { show: false };
+    if (pv && !drag && !pvBox.show) dg.ghosts.push({ x: X(pv.start) + 1, y: TT, w: Math.max(4, X(pv.end) - X(pv.start) - 2), h: 80, border: `2px dashed ${pv.bad ? RED : T.accent}`, bg: T.hl, z: 6 });
+    if (drag) {
+      const cx = X((drag.start + drag.end) / 2), lab = this.fr(drag.start, drag.end) + ' · ' + this.fd(drag.end - drag.start);
+      if (live && (drag.o0 !== drag.start || drag.o1 !== drag.end)) dg.ghosts.push({ x: X(drag.o0) + 1, y: TT, w: X(drag.o1) - X(drag.o0) - 2, h: 80, border: `1.5px dashed ${T.accent}`, bg: T.hl, z: 0 });
+      if (drag.range || (drag.ext && !drag.dropped)) dg.ghosts.push({ x: X(drag.start) + 1, y: TT, w: Math.max(4, X(drag.end) - X(drag.start) - 2), h: 80, border: `2px ${drag.range ? 'dashed' : 'solid'} ${drag.bad ? RED : T.accent}`, bg: drag.range ? T.hl : T.accentSoft, z: 6 });
+      Object.assign(dg, { show: true, lx: Math.max(90, Math.min(Wc - 90, cx)), ly: YOUT + 3, bg: drag.bad ? RED : T.tipBg, ink: drag.bad ? '#ffffff' : T.tipInk,
+        label: drag.bad ? drag.reason + (drag.dropped ? ' · moved back' : '') : (drag.ext ? (drag.label ? drag.label + ' · ' : '') : drag.range ? 'New time · ' : '') + lab });
+    }
+    const brks = us.filter(u => u.state === 'break' && u.end - u.start >= 15 && u.end > LN.start - 90 && u.start < LN.end + 90).sort((p, q) => (q.end - q.start) - (p.end - p.start));
+    const mb = brks[0], shiftL = d => { const s = Math.max(L.DAY0, Math.min(L.NOW - lnLen, LN.start + d)); this.setState({ lunch: { start: s, end: s + lnLen } }); };
+    const lp = { range: `${L.rng(LN.start, LN.end)} · ${L.dur(lnLen)}`, segs: lnSegs.map(s => ({ ...s, bd: T.card })), rested: L.dur(lnRest), worked: L.dur(lnWorked),
+      cards: lnCards.length ? 'on ' + lnCards.join(' · ') : '', hasCards: lnCards.length > 0, pillBg: LT.pill, edge: LT.edge, ink: LT.ink, rest: LT.rest, work: LT.work,
+      onEarlier: () => shiftL(-15), onLater: () => shiftL(15), canMatch: !!mb && (mb.start !== LN.start || mb.end !== LN.end), matchLabel: mb ? L.rng(mb.start, mb.end) : '',
+      onMatch: () => { if (mb) this.setState({ lunch: { start: mb.start, end: mb.end } }); }, canReset: !!st.lunch, onReset: () => this.setState({ lunch: null }), onClose: () => this.setState({ lunchSel: false }) };
+
+    const DN = theme === 'dark'
+      ? { day: 'rgba(251,191,36,.08)', night: 'rgba(129,140,248,.16)', nightBody: 'rgba(129,140,248,.06)', sun: '#fbbf24', moon: '#a5b4fc' }
+      : { day: '#fff6df', night: '#e6e9fa', nightBody: 'rgba(79,91,184,.05)', sun: '#c27a0a', moon: '#4f5bb8' };
+    const DUSK0 = 1020, DUSK1 = 1080, phases = [];
+    [[L.DAY0, DUSK0, DN.day, 'transparent'], [DUSK0, DUSK1, `linear-gradient(90deg, ${DN.day}, ${DN.night})`, `linear-gradient(90deg, transparent, ${DN.nightBody})`], [DUSK1, L.DAY1, DN.night, DN.nightBody]].forEach(([a, b, ax, bd]) => {
+      if (!inR(a, b)) return; const x0 = X(Math.max(a, sc.a)), x1 = X(Math.min(b, sc.b)); if (x1 - x0 > 0.5) phases.push({ x: x0, w: x1 - x0, axis: ax, body: bd });
+    });
+    const ticks = [], minors = []; let last = -1e9;
+    const NOWT = tm ? Math.max(L.NOW, tm.start + tm.min) : L.NOW, nowIn = NOWT >= sc.a && NOWT <= sc.b, nowX = X(NOWT);
+    const step = z === 'close' ? 15 : 60;
+    for (let h = Math.ceil(sc.a / step); h * step <= sc.b; h++) {
+      const tm = h * step; if (sc.inComp(tm)) continue;
+      const x = X(tm), label = tm % 60 ? L.fmt(tm) : L.hourLabel(tm / 60);
+      const hr = tm % 60 === 0, nt = tm >= DUSK1, iw = hr ? 14 : 0;
+      const show = x - last >= 56 && x + 5 + iw + label.length * 6.7 <= Wc && !(nowIn && x > nowX - 80 && x < nowX + 36) && !(lunch.show && x + 5 + label.length * 6.7 > lunch.px - 4 && x < lunch.px + lunch.pw);
+      ticks.push({ x, lx: x + 5, label, show, sun: hr && !nt, moon: hr && nt, ic: nt ? DN.moon : DN.sun }); if (show) last = x;
+    }
+    if (z !== 'fit') for (let m = Math.ceil(sc.a / 5) * 5; m < sc.b; m += z === 'close' ? 5 : 15) { if (m % (z === 'close' ? 15 : 60)) minors.push({ x: X(m), top: m % 30 ? 24 : 22, h: m % 30 ? 4 : 6 }); }
+    const comps = sc.segs.filter(s => s.comp).map(s => ({ x: s.p0, w: s.p1 - s.p0 }));
+
+    const AT = AGT + 8, AS = T.agent, ag = [];
+    const agEl = (a, c, x0, x1, y, h, kind) => {
+      const w = Math.max(1, x1 - x0), id = a ? a.id : c.id;
+      let l1 = '', l1b = '', l2 = '', l3 = '', spark = [], l1f = sans, l1sz = 12;
+      if (a) {
+        const dd = L.dur(a.end - a.start), dl = dd + (a.live ? ' · running' : '');
+        if (kind === 'full') { l1 = w >= 16 + a.agent.length * 7.4 ? a.agent : ''; l2 = w >= 16 + a.card.length * 7 ? a.card : ''; l3 = [dl, dd].find(m => w >= 16 + m.length * 6.5) || ''; }
+        else { l1sz = 11.5; l1 = [`${a.agent} · ${a.card} · ${dd}`, `${a.agent} · ${a.card}`, a.card].find(o => w >= 34 + o.length * 6.9) || ''; }
+      } else {
+        const names = [...new Set(c.items.map(i => i.agent))], cards = [...new Set(c.items.map(i => i.card))];
+        l1 = `${names.length} agents`; const rr = L.rng(c.start, c.end); l1b = w >= 44 + l1.length * 7.4 + rr.length * 6.5 ? rr : '';
+        let s = ''; for (let i = 0; i < cards.length; i++) { const rest = cards.length - i - 1, cand = (s ? s + ' · ' : '') + cards[i], tail = rest ? ` +${rest}` : ''; if (16 + (cand + tail).length * 6.8 <= w) s = cand; else { s = s + ` +${cards.length - i}`; break; } }
+        l2 = s; l3 = w >= 200 ? `Peak ${c.max} at once · click to expand` : '';
+        for (let t = c.start; t < c.end; t += 5) { const n = L.concAt(c.items, t + 2.5), bx = X(Math.max(t, sc.a)) - x0, bw = X(Math.min(t + 5, sc.b)) - X(Math.max(t, sc.a)) - 1; if (bw > 0.5 && inR(t, t + 5)) spark.push({ x: bx, w: bw, h: 3 + n / c.max * 11, c: AS.spark }); }
+      }
+      const cardsHere = a ? [a.card] : c.items.map(i => i.card), same = !!selCard && cardsHere.includes(selCard), dim = !!selCard && !same, isHov = hov === id;
+      geo[id] = { x: x0, y, w, h };
+      return { id, x: x0, y, w, h, bg: a ? AS.bg : AS.bg2, border: `1px solid ${AS.border}`, ink: AS.ink, sub: AS.sub, chip: AS.chip, op: dim ? 0.34 : 1, z: isHov ? 3 : 1,
+        shadow: same ? `inset 0 0 0 2px ${T.selRing}` : isHov ? `0 4px 14px ${T.lift}` : 'none',
+        justify: kind === 'full' ? (a ? 'center' : 'flex-start') : 'center', pad: kind === 'full' ? (a ? '0 8px' : '7px 8px') : '0 6px',
+        showChip: a && kind === 'full' ? w >= 44 + a.agent.length * 7.4 : w >= 22, l1, l1f, l1sz, l1b, showL1b: !!l1b, l2, showL2: !!l2, l3, showL3: !!l3, spark,
+        aria: a ? `Agent ${a.agent} on ${a.card}, ${L.rng(a.start, a.end)}` : `${l1}, ${L.rng(c.start, c.end)}`,
+        onEnter: () => this.setState({ hover: id }),
+        onClick: a ? () => { const m = us.filter(u => u.card === a.card).sort((p, q) => Math.abs(p.start - a.start) - Math.abs(q.start - a.start))[0]; if (m) this.pick(m.id); } : () => this.setState({ expanded: true, hover: '' }) };
+    };
+    cls.forEach(c => {
+      if (!inR(c.start, c.end)) return;
+      const solo = c.items.length === 1, summary = !solo && !expanded && c.max > 3;
+      if (solo || summary) ag.push(agEl(solo ? c.items[0] : null, c, X(Math.max(c.start, sc.a)) + 1, X(Math.min(c.end, sc.b)) - 1, AT, agIn, 'full'));
+      else L.pack(c.items).forEach(a => { if (inR(a.start, a.end)) ag.push(agEl(a, c, X(Math.max(a.start, sc.a)) + 1, X(Math.min(a.end, sc.b)) - 1, AT + a.track * (TRK + TG), TRK, 'track')); });
+    });
+
+    let tip = { show: false };
+    const g = hov && geo[hov];
+    if (g) {
+      const tx = Math.max(6, Math.min(viewW - 306, g.x - st.sl));
+      if (hov.startsWith('sig:')) {
+        const t0 = +hov.slice(4), s = L.SIG.find(x => x.t === t0);
+        tip = { show: true, x: tx, y: SIGT + SIGH + 4, tf: 'none', pill: 'Signals', icon: '▮', pillBg: 'transparent', pillBorder: `1px solid ${T.tipMuted}`, pillInk: T.tipInk, label: L.rng(t0, t0 + 5), hasTitle: false, title: '',
+          rows: [{ k: 'Prompts', v: String(s.p), f: mono }, { k: 'Commits', v: String(s.c), f: mono }, { k: 'Marks', v: String(s.m), f: mono }] };
+      } else if (hov === 'lunch') {
+        tip = { show: true, x: tx, y: g.y + g.h + 8, tf: 'none', pill: 'Lunch', icon: '‖', pillBg: LT.pill, pillBorder: `1px solid ${LT.edge}`, pillInk: LT.ink, label: L.rng(LN.start, LN.end), hasTitle: true,
+          title: lnWorked ? (lnRest ? `You worked ${L.dur(lnWorked)} of your lunch hour` : 'You worked through lunch') : 'A clean lunch break',
+          rows: [{ k: 'Offline', v: L.dur(lnRest), f: mono }, { k: 'Worked', v: L.dur(lnWorked) + (lnWorked ? ' · stays in your hours' : ''), f: mono }].concat(lnCards.length ? [{ k: 'Cards', v: lnCards.join(' · '), f: mono }] : []).concat([{ k: 'Click', v: 'Move lunch or match your break', f: sans }]) };
+      } else if (hov[0] === 'a') {
+        const a = L.AGENTS.find(x => x.id === hov);
+        tip = { show: true, x: tx, y: g.y - 8, tf: 'translateY(-100%)', pill: 'Agent', icon: '›_', pillBg: AS.bg, pillBorder: `1px solid ${AS.border}`, pillInk: AS.ink, label: a.card, hasTitle: true, title: L.CARDS[a.card],
+          rows: [{ k: 'Agent', v: `${a.agent} · Claude Code builder`, f: sans }, { k: 'Time', v: L.rng(a.start, a.end), f: mono }, { k: 'Length', v: L.dur(a.end - a.start) + (a.live ? ' · still running' : ''), f: mono }, { k: 'Your hours', v: 'Not counted', f: sans }] };
+      } else if (hov[0] === 'c') {
+        const c = cls.find(x => x.id === hov);
+        tip = { show: true, x: tx, y: g.y - 8, tf: 'translateY(-100%)', pill: 'Agents', icon: '›_', pillBg: AS.bg, pillBorder: `1px solid ${AS.border}`, pillInk: AS.ink, label: `${c.items.length} at once`, hasTitle: false, title: '',
+          rows: c.items.map((a, i) => ({ k: i ? '' : 'Running', v: `${a.agent} · ${a.card} · ${L.rng(a.start, a.end)}`, f: mono })).concat([{ k: 'Your hours', v: 'Not counted', f: sans }]) };
+      } else if (hov === 'b0' || hov === 'b15') {
+        const b = L.YOU.find(x => x.id === hov);
+        tip = { show: true, x: tx, y: g.y + g.h + 8, tf: 'none', pill: 'Folded', icon: '≈', pillBg: 'transparent', pillBorder: `1px dashed ${T.tipMuted}`, pillInk: T.tipInk, label: L.dur(b.end - b.start), hasTitle: true, title: hov === 'b0' ? 'No activity before your first prompt' : 'Later today',
+          rows: [{ k: 'Time', v: L.rng(b.start, b.end), f: mono }, { k: 'Why folded', v: 'Fit folds idle stretches over 45m', f: sans }] };
+      } else {
+        const u = us.find(x => x.id === hov);
+        if (u) {
+          const s = S[u.state], isC = isCardU(u), c = L.sigIn(u.start, u.end), ags = L.agentsDuring(u.start, u.end);
+          const rows = [{ k: 'Time', v: L.rng(u.start, u.end), f: mono }, { k: 'Length', v: L.dur(u.end - u.start) + (u.live ? ' · still going' : ''), f: mono }];
+          if (u.group) rows.push({ k: 'Your share', v: `${L.dur(shares[u.id])} of ${L.dur(L.GROUP.end - L.GROUP.start)} · ${custom ? 'custom' : 'even split'}`, f: mono });
+          if (u.state !== 'gap' && u.state !== 'break') rows.push({ k: u.state === 'confirmed' ? 'Built from' : 'Drafted from', v: L.counts(c), f: mono });
+          if (ags.length) ags.slice(0, 5).forEach((a, i) => rows.push({ k: i ? '' : 'Agents', v: `${a.agent} on ${a.card} · ${L.dur(a.ov)}`, f: mono }));
+          else rows.push({ k: 'Agents', v: 'None running', f: sans });
+          tip = { show: true, x: tx, y: g.y + g.h + 8, tf: 'none', pill: s.name, icon: s.icon, pillBg: s.bg, pillBorder: s.border, pillInk: s.color,
+            label: isC ? (u.card === 'GENERAL' ? (u.kind || 'Work') : u.card) : (u.label || ''), hasTitle: true,
+            title: isC ? L.CARDS[u.card] : u.state === 'needs' ? (u.hint || 'Work happened, nothing names a card') : u.state === 'gap' ? 'No activity · click to fill' : u.state === 'break' ? 'Away from the keyboard' : 'Marked as not work', rows };
+        }
+      }
+    }
+
+    const sigTot = L.sigIn(0, 2000), tot = L.totals(ov, shares);
+    addedEff.forEach(a => { if (tot[a.state] != null) tot[a.state] += a.end - a.start; });
+    const names = [...new Set(L.AGENTS.map(a => a.agent))], agDur = L.AGENTS.reduce((s, a) => s + a.end - a.start, 0);
+    const sw = k => ({ bg: S[k].bg, border: S[k].border });
+    const compact = !!this.props.compactFooter;
+    const foot = { hint: !selU || (compact && !selU.group), block: false, fill: false, split: false, lunch: !!st.lunchSel && !selU };
+    if (foot.lunch) foot.hint = false;
+    let fb = {}, ff = { sugg: [] }, fs = { segs: [] };
+    if (selU) {
+      if (selU.group) {
+        foot.split = true; const G = L.GROUP;
+        fs = { title: `Split ${L.rng(G.start, G.end)} · ${L.dur(G.end - G.start)}`,
+          note: custom ? 'Custom split. Drag a handle; the total stays 1h.' : 'Even split: each minute is shared by the cards active in it. Drag a handle to adjust.',
+          segs: G.subs.map((s0, i) => { const u = us.find(x => x.id === s0.id), S0 = S[u.state] || S.gap, pct = shares[s0.id] / (G.end - G.start) * 100;
+            return { card: u.card === 'GENERAL' ? (u.kind || 'Work') : (u.card || S0.name), min: L.dur(shares[s0.id]), pct, bg: S0.bg, border: S0.border, ink: S0.color, hasHandle: i < G.subs.length - 1, aria: `Split between ${s0.card} and ${G.subs[i + 1] ? G.subs[i + 1].card : ''}`, onDown: e => this.startDrag(i, e) }; }),
+          onEven: () => this._set({ shares: null, custom: false }), onConfirm: () => this.confirmGroup() };
+      } else if (compact) {
+      } else if (selU.state === 'gap' || selU.state === 'needs') {
+        foot.fill = true; const c = L.sigIn(selU.start, selU.end);
+        ff = { title: selU.state === 'gap' ? `Fill ${L.rng(selU.start, selU.end)} · ${L.dur(selU.end - selU.start)}` : `Which card was ${L.rng(selU.start, selU.end)}?`,
+          sub: selU.state === 'gap' ? 'No signals in this time.' : L.counts(c) + ', none named a card.',
+          sugg: L.suggestions(selU, us).map(s => ({ card: s.card, why: s.why, go: () => this.fill(selU.id, s.card) })),
+          onGeneral: () => this.act('general', selU.id), onBreak: () => this.act('break', selU.id), onNotwork: () => this.act('notwork', selU.id) };
+      } else {
+        foot.block = true; const S0 = S[selU.state], isC = isCardU(selU);
+        fb = { bg: S0.bg, border: S0.border, ink: S0.color, icon: S0.icon, name: S0.name, label: isC ? (selU.card === 'GENERAL' ? (selU.kind || 'Work') : selU.card) : (selU.label || ''), title: isC ? L.CARDS[selU.card] : '',
+          range: `${L.rng(selU.start, selU.end)} · ${L.dur(selU.end - selU.start)}`, canConfirm: selU.state === 'drafted',
+          onConfirm: () => this.act('confirm', selU.id), onGeneral: () => this.act('general', selU.id), onNotwork: () => this.act('notwork', selU.id) };
+      }
+    }
+
+    if (this.props.noFooter) { foot.hint = false; foot.block = false; foot.fill = false; }
+    if (this.props.readOnly) { foot.split = false; foot.lunch = false; }
+    return { ...base, ready: true, t: T, dg, live: st.live, showFoot: foot.hint || foot.block || foot.fill || foot.split || foot.lunch, onExtOver: this.onExtOver, onExtLeave: this.onExtLeave, onExtDrop: this.onExtDrop, Wc, H, Hs, L1: YOUT - 1, L2: AGT - 1, youT: YOUT, agT: AGT, ovx: scrollable ? 'auto' : 'hidden',
+      axisNote: z === 'fit' ? 'Idle hours folded' : z === 'close' ? 'Close-up' : '',
+      onScroll: e => this.setState({ sl: e.currentTarget.scrollLeft }), clearHover: () => this.setState({ hover: '' }),
+      totals: [{ label: 'Confirmed', val: L.dur(tot.confirmed), ...sw('confirmed') }, { label: 'Drafted', val: L.dur(tot.drafted), ...sw('drafted') }, { label: 'No task yet', val: L.dur(tot.needs), ...sw('needs') }, { label: 'Gaps', val: L.dur(tot.gap), ...sw('gap') }],
+      zooms: [['fit', 'Fit'], ['1x', '1×'], ['2x', '2×']].map(([k, l]) => ({ label: l, on: z === k, go: () => this.setZoom(k), bg: z === k ? T.card : 'transparent', color: z === k ? T.ink : T.muted, sh: z === k ? `0 1px 2px ${T.lift}` : 'none' })),
+      prev: () => this.move(-1), next: () => this.move(1),
+      goNow: () => { const u = us.find(x => x.live); if (u) { this._set({ sel: u.id, focusId: u.id }); const el = this.vpRef.current; if (el && this._scale) el.scrollLeft = this._scale.pos(L.NOW) - viewW * 0.7; } },
+      sigTot, youWork: L.dur(tot.confirmed + tot.drafted + tot.needs), youConf: L.dur(tot.confirmed),
+      agSummary: `${names.length} agents · ${L.dur(agDur)}`, expanded, expandLabel: expanded ? 'Collapse' : 'Expand', toggleAgents: () => this.setState({ expanded: !expanded }),
+      future: { show: L.NOW < sc.b && z !== 'fit', x: X(L.NOW), w: X(sc.b) - X(L.NOW) },
+      comps, phases, hlBands, marks, pvBox, ticks, minors, hours, sig, strips, you, ag, lunch, bites, lp,
+      now: { show: nowIn, lx: nowX - 1, px: nowX - 32, label: L.fmt(NOWT) },
+      tip, foot, fb, ff, fs, hintRight: compact && selU ? 'Editing ' + (selU.card ? (selU.card === 'GENERAL' ? (selU.kind || 'Work') : selU.card) : (L.styles(theme)[selU.state] || {}).name) + ' below ↓' : 'Hover any block for detail · click a gap to fill it',
+      keys: [{ k: '← →', v: 'Move' }, { k: '↵', v: 'Confirm' }, { k: 'G', v: 'No task' }, { k: 'X', v: 'Not work' }, { k: 'Esc', v: 'Clear' }] };
+  }
+}
+</script>
+</body>
+</html>

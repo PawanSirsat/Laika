@@ -249,7 +249,7 @@ void describe('the dashboard is aligned (LAI-711)', () => {
           return (
             at.overflow <= 0 &&
             at.stats.length === 4 &&
-            at.cards.length === 6 &&
+            at.cards.length === 4 &&
             all.every((card) => card.right <= at.viewport) &&
             [...rows.values()].every((b) => Math.max(...b) - Math.min(...b) <= 1) &&
             sorted.every(
@@ -267,7 +267,14 @@ void describe('the dashboard is aligned (LAI-711)', () => {
         const m = await measure();
         assert.ok(m.overflow <= 0, `the page scrolls sideways by ${String(m.overflow)}px`);
         assert.equal(m.stats.length, 4, 'four stat cards');
-        assert.equal(m.cards.length, 6, 'six cards in the grid');
+        assert.equal(m.cards.length, 4, 'four cards in the grid');
+        /*
+         * **No empty cell** (LAI-1025): the feed and Needs attention left the
+         * grid, and the four that stay pair off — two rows of two, not a card
+         * alone beside a hole.
+         */
+        const gridRows = new Set(m.cards.map((card) => Math.round(card.top)));
+        assert.equal(gridRows.size, 2, `the grid's cards sit in ${String(gridRows.size)} rows`);
         for (const card of [...m.stats, ...m.cards]) {
           assert.ok(
             card.right <= m.viewport,
@@ -437,24 +444,41 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
     }
   });
 
-  void test('needs attention counts every task the server flagged stale, not the first five', async () => {
+  void test('no activity feed and no Needs attention, and nothing asked for them (LAI-1025)', async () => {
     const w = world();
     const h = await open('/dashboard?project=laika-core', w.stub);
     try {
       await ready(h.page);
-      const stale = w.tasks.filter((t) => open7(t) && t.stale_flagged_at !== null).length;
-      const quiet = w.tasks.filter((t) => open7(t) && NOW - t.updated_at > 5 * DAY).length;
+      await h.page.locator('.dash-throughput').waitFor({ timeout: 20_000 });
+      const titles = await h.page.locator('.dash-grid .dash-card-title').allInnerTexts();
+      /*
+       * Positive control: the four cards that stay are there, so an empty
+       * grid cannot pass the absences below.
+       */
+      assert.equal(titles.length, 4, JSON.stringify(titles));
+      for (const gone of ['Recent activity', 'Needs attention']) {
+        assert.ok(
+          titles.every((t) => !t.includes(gone)),
+          `${gone} is still on the page: ${JSON.stringify(titles)}`,
+        );
+      }
+      assert.equal(await h.page.locator('.dash-feed, .dash-attention').count(), 0);
+
+      const paths = h.calls.map((c) => c.path);
+      /*
+       * `GET /agents` named the agent on a feed row (LAI-570); nothing left
+       * on the page reads it. The activity read stays — Contributors counts
+       * deliveries from it — and is the control that `calls` saw the load.
+       */
       assert.ok(
-        stale > 5,
-        `the fixture must have more than five stale tasks, has ${String(stale)}`,
+        paths.some((p) => p.startsWith('/api/v1/projects/laika-core/activity')),
+        `the activity read is missing, so the calls were not recorded: ${paths.join(', ')}`,
       );
-      assert.ok(quiet > stale, 'positive control: more is quiet than is flagged');
-      const tab = h.page.locator('.dash-tab', { hasText: 'Stale' });
-      assert.equal(Number(await tab.locator('.dash-tab-count').textContent()), stale);
-      await tab.click();
-      assert.equal(await h.page.locator('.dash-attention .dash-att-row').count(), stale);
-      const blocked = h.page.locator('.dash-tab', { hasText: 'Blocked' });
-      assert.equal(Number(await blocked.locator('.dash-tab-count').textContent()), 1);
+      assert.equal(
+        paths.filter((p) => p.startsWith('/api/v1/agents')).length,
+        0,
+        `the dashboard still asks for /agents: ${paths.join(', ')}`,
+      );
     } finally {
       await h.close();
     }
@@ -462,7 +486,7 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
 });
 
 void describe('every row goes somewhere (LAI-711)', () => {
-  void test('a person opens the board filtered to them; a blocked task opens its drawer', async () => {
+  void test('a person opens the board filtered to them', async () => {
     const w = world();
     const h = await open('/dashboard?project=laika-core', w.stub);
     try {
@@ -473,11 +497,6 @@ void describe('every row goes somewhere (LAI-711)', () => {
       const url = new URL(h.page.url());
       assert.equal(url.searchParams.get('assignee'), 'u2');
       assert.equal(url.searchParams.get('project'), 'laika-core');
-
-      await h.page.goBack();
-      await ready(h.page);
-      await h.page.locator('.dash-attention a.dash-att-row', { hasText: 'LC-2' }).click();
-      await h.page.waitForURL(/task=t2/, { timeout: 5000 });
     } finally {
       await h.close();
     }

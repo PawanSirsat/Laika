@@ -13,6 +13,7 @@
  *   rather than as the success the screen was hoping for.
  */
 
+import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, type ApiStub, setTheme, until } from './harness.ts';
@@ -440,14 +441,9 @@ void describe('discard is separated from apply', () => {
         `only ${String(Math.round(apply.x - (discard.x + discard.width)))}px between discard and apply`,
       );
 
-      let asked = false;
-      h.page.on('dialog', (d) => {
-        asked = true;
-        void d.dismiss();
-      });
       await h.page.locator('.mr-discard').click();
-      await until(() => asked);
-      assert.ok(asked, 'discard threw the set away without asking');
+      // The app's own dialog (LAI-522): it asks, names the set, and Cancel keeps it.
+      assert.match(await answerConfirm(h.page, false), /Discard all \d+ proposals/);
     } finally {
       await h.close();
     }

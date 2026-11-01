@@ -175,19 +175,24 @@ void describe('the SIGNALS lane (LAI-834)', () => {
     }
   });
 
-  void test('on a phone the lane scrolls sideways with the blocks, never the page', async () => {
+  void test('on a phone the SIG column scrolls with the blocks, down the vertical Timeline, never the page', async () => {
     const h = await open(`/my-day?day=${TODAY}`, stub(), {
       before: async (page) => page.setViewportSize({ width: 390, height: 844 }),
     });
     try {
-      await h.page.locator('[data-signals-lane]').waitFor({ timeout: 20_000 });
+      // A phone's Timeline is the vertical one (LAI-518): SIG is its column.
+      await h.page.locator('[data-mobile-signals]').waitFor({ timeout: 20_000 });
+      assert.ok(
+        (await h.page.locator('[data-mobile-signals] [data-mobile-signal]').count()) > 0,
+        'no signal is drawn',
+      );
       const pageWidth = await h.page.evaluate(() => document.documentElement.scrollWidth);
       assert.ok(pageWidth <= 390, `the page is ${String(pageWidth)}px wide at 390`);
-      const scroller = h.page.locator('[data-dayline-scroller]');
+      const scroller = h.page.locator('[data-timeline-mobile-scroller]');
       const inside = await h.page
-        .locator('[data-signals-lane]')
+        .locator('[data-mobile-signals]')
         .evaluate((lane, box) => box?.contains(lane) ?? false, await scroller.elementHandle());
-      assert.equal(inside, true, 'the lane is not inside the timeline’s own scroller');
+      assert.equal(inside, true, 'SIG is not inside the timeline’s own scroller');
     } finally {
       await h.close();
     }

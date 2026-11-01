@@ -575,13 +575,24 @@ describe('the parser itself', () => {
     // of agent time, and a session's split between tasks. LAI-788's are keyed
     // by what Solidtime names — a project, a member, an entry — because the
     // point of each row is to be found again by that id on the next pull.
-    // LAI-833's is a session's five minutes of agent time.
+    // LAI-833's is a session's five minutes of agent time. LAI-500's timer
+    // is keyed by its person: one per person, and the row *is* the timer.
+    // LAI-501's note is keyed by the person's day: one note per day.
+    // LAI-534's grant is keyed by its pair: one per agent per project.
+    // LAI-590's recognised device is keyed by its owner and label: the row is
+    // the owner's statement about that label, nothing more.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
       .sort();
 
     expect(withoutId).toEqual([
+      // LAI-553: keyed by (event, agent), and by the activity row's id.
+      'agent_event_deliveries',
+      'agent_events',
+      'agent_project_grants',
+      // LAI-555: keyed by (session, project).
+      'agent_session_context_deliveries',
       'agent_time_buckets',
       'agent_time_days',
       'board_activity_days',
@@ -594,12 +605,15 @@ describe('the parser itself', () => {
       'org_time_settings',
       'plan_limits',
       'pushed_commit_keys',
+      'recognised_agent_devices',
       'solidtime_entries',
       'solidtime_people',
       'solidtime_projects',
       'task_dependencies',
       'task_round_github',
       'task_tags',
+      'time_day_notes',
+      'time_timers',
       'token_alert_dismissals',
       'token_arrivals',
       'token_session_days',

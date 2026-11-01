@@ -15,7 +15,6 @@ import {
   minutesOf,
   nameBlocks,
   needCardLine,
-  pageOf,
   placed,
   runBulk,
   runConfirmDay,
@@ -112,25 +111,6 @@ function fakeApi(
   };
   return { api, sent };
 }
-
-void describe('paging', () => {
-  const rows = Array.from({ length: 37 }, (_, i) => i + 1);
-
-  void test('ten a page, said as a range of the whole', () => {
-    assert.equal(pageOf(rows, 0).label, '1–10 of 37');
-    assert.deepEqual(pageOf(rows, 0).items, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    assert.equal(pageOf(rows, 1).label, '11–20 of 37');
-    assert.equal(pageOf(rows, 3).label, '31–37 of 37');
-    assert.equal(pageOf(rows, 0).pages, 4);
-  });
-
-  void test('a page past the end shows the last one — the list shrank under it', () => {
-    const shrunk = pageOf(rows.slice(0, 12), 3);
-    assert.equal(shrunk.page, 1);
-    assert.equal(shrunk.label, '11–12 of 12');
-    assert.equal(pageOf([], 2).label, '0 of 0');
-  });
-});
 
 void describe('selecting', () => {
   const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
@@ -340,31 +320,6 @@ void describe('the header’s Confirm day', () => {
     assert.match(
       dayReport(all, [entryOf(draft(1)), entryOf(draft(3, { minutes: 40 }))]).text,
       /The day changed since this page loaded: 55 min was confirmed, not the 30 min shown\.$/,
-    );
-  });
-
-  void test('a stretch over the clock: nothing confirmed, and the block named (review round 2)', async () => {
-    const all = [draft(1), draft(2), draft(3)];
-    const api: BulkApi = {
-      confirmDraft: () => Promise.resolve({}),
-      dismissDraft: () => Promise.resolve(),
-      toGeneral: () => Promise.resolve({}),
-      confirmDay: () =>
-        Promise.reject(
-          new ApiError('conflict', 'That would count confirmed time twice', 409, {
-            reason: 'overlaps_confirmed',
-            draft_id: 'd2',
-            stretch_minutes: 160,
-            would_hold: 190,
-          }),
-        ),
-    };
-    const result = await runConfirmDay(all, '2026-10-20', api);
-    assert.equal(result.ok, false);
-    assert.equal(
-      result.text,
-      'Nothing confirmed: 7:40–7:55 AM would count confirmed time twice — its stretch has ' +
-        '2 h 40 min of clock and would hold 3 h 10 min. Shorten it or mark it not work, then confirm again.',
     );
   });
 

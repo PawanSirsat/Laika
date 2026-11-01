@@ -239,7 +239,7 @@ describe('promote', () => {
     ).toBeNull();
   });
 
-  it('needs task.write in the named project, not just audit access', () => {
+  it('needs task.create in the named project, not just audit access', () => {
     // **The two-check property, isolated.**
     //
     // By role alone the two cannot be separated: `audit_log.export` is Owner and
@@ -247,35 +247,51 @@ describe('promote', () => {
     // anyone passing the first check passes the second. A test using roles would
     // pass whether or not the second check existed.
     //
-    // A **token-narrowed** actor does separate them, and is a real case since
-    // LAI-402: `audit_log.export` carries no `projectId` so the whitelist does
-    // not apply, while `task.write` carries one and is refused.
+    // A **`read_only` token** does separate them: `audit_log.export` is a read
+    // it keeps, and `task.create` in the named project is a write it is
+    // refused. Until audit H4 this used a project-pinned token instead —
+    // `audit_log.export` carried no `projectId`, so the pin did not apply —
+    // and §6.2 now refuses a pinned token that org-wide read outright, which
+    // the last block below holds.
     const id = note();
-    createProject(t.sqlite, t.db, actor(ownerId), {
-      name: 'Other',
-      slug: 'other',
-      prefix: 'OTH',
-    });
 
-    const scoped: ResolvedActor = {
+    const readOnly: ResolvedActor = {
       ...actor(ownerId),
-      token: { id: 'tok', scope: 'full', projectIds: ['some-other-project-id'] },
+      token: { id: 'tok', scope: 'read_only', projectIds: null },
     };
 
-    // Reading the pile still works — the first gate is org-scoped.
-    expect(listUnlisted(t.db, scoped, LIST)).toHaveLength(1);
+    // Reading the pile still works — the first gate is a read.
+    expect(listUnlisted(t.db, readOnly, LIST)).toHaveLength(1);
 
-    // Promoting into a project outside the token's whitelist does not.
+    // Promoting does not, and it is the second check that refuses it.
     try {
-      promoteUnlisted(t.sqlite, t.db, scoped, id, { projectSlug: 'laika', title: 'Out of scope' });
-      expect.unreachable('the token is not scoped to that project');
+      promoteUnlisted(t.sqlite, t.db, readOnly, id, { projectSlug: 'laika', title: 'Read only' });
+      expect.unreachable('a read_only token cannot create a task');
     } catch (error) {
       expect((error as ApiError).code).toBe('forbidden');
+      expect((error as ApiError).details).toMatchObject({ action: 'task.create' });
     }
 
     expect(
       t.db.select().from(unlistedWork).where(eq(unlistedWork.id, id)).get()?.promotedTaskId,
     ).toBeNull();
+
+    // A token pinned to projects never reaches the second check: the pile is
+    // org-wide history, refused to it by §6.2 (H4) and said as the pin's.
+    const pinned: ResolvedActor = {
+      ...actor(ownerId),
+      token: { id: 'tok_pin', scope: 'full', projectIds: ['some-other-project-id'] },
+    };
+    try {
+      listUnlisted(t.db, pinned, LIST);
+      expect.unreachable('a pinned token is refused the org-wide pile');
+    } catch (error) {
+      expect((error as ApiError).code).toBe('forbidden');
+      expect((error as ApiError).details).toMatchObject({
+        action: 'audit_log.export',
+        reason: 'project_pinned',
+      });
+    }
   });
 
   it('refuses to promote something already dismissed', () => {

@@ -19,8 +19,9 @@ void describe('every old address has a new home', () => {
     ['/unlisted', '', '/inbox?tab=unlisted'],
     ['/capacity', '', '/insights?tab=capacity'],
     ['/usage', '', '/insights?tab=usage'],
-    ['/tokens', '', '/developer'],
-    ['/connect', '', '/developer/connect'],
+    ['/tokens', '', '/developer?tab=tokens'],
+    ['/connect', '', '/developer?tab=connect'],
+    ['/developer/connect', '', '/developer?tab=connect'],
   ];
 
   for (const [from, search, to] of cases) {
@@ -49,10 +50,11 @@ void describe('every old address has a new home', () => {
     }
   });
 
-  void test('the table is exactly the six pages that moved', () => {
+  void test('the table is exactly the seven pages that moved', () => {
     assert.deepEqual(Object.keys(REDIRECTS).sort(), [
       '/capacity',
       '/connect',
+      '/developer/connect',
       '/review',
       '/tokens',
       '/unlisted',
@@ -63,7 +65,12 @@ void describe('every old address has a new home', () => {
 
 void describe('the query travels with the redirect', () => {
   void test('Connect keeps ?agent=, which a lead sends to set the page to the team’s agent', () => {
-    assert.equal(redirectFor('/connect', '?agent=codex'), '/developer/connect?agent=codex');
+    assert.equal(redirectFor('/connect', '?agent=codex'), '/developer?tab=connect&agent=codex');
+    // The wizard's own old address keeps the step as well (LAI-507).
+    assert.equal(
+      redirectFor('/developer/connect', '?agent=codex&step=2'),
+      '/developer?tab=connect&agent=codex&step=2',
+    );
   });
 
   void test('Usage keeps whatever it was given', () => {
@@ -79,11 +86,11 @@ void describe('the query travels with the redirect', () => {
   });
 
   void test('a trailing slash is the same old address', () => {
-    assert.equal(redirectFor('/tokens/', ''), '/developer');
+    assert.equal(redirectFor('/tokens/', ''), '/developer?tab=tokens');
   });
 
   void test('a search with or without its ? is read the same', () => {
-    assert.equal(redirectFor('/connect', 'agent=cursor'), '/developer/connect?agent=cursor');
+    assert.equal(redirectFor('/connect', 'agent=cursor'), '/developer?tab=connect&agent=cursor');
   });
 });
 

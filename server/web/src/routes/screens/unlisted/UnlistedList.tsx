@@ -1,4 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { useState } from 'react';
 import {
   dismissUnlisted,
@@ -48,6 +49,7 @@ interface PromotionResult {
  * LAI-439 until LAI-754 took it off.
  */
 export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedListProps) {
+  const confirm = useConfirm();
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const [promoting, setPromoting] = useState<UnlistedWork | undefined>(undefined);
   const [slug, setSlug] = useState('');
@@ -81,13 +83,18 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
   };
 
   const dismiss = (row: UnlistedWork): void => {
-    if (
-      !window.confirm(
-        `Dismiss this note from ${row.repo}? It stays on record — turn on “Show dismissed” to find it again.`,
-      )
-    ) {
-      return;
-    }
+    void confirm({
+      title: 'Dismiss this note?',
+      body: 'It stays on record — turn on “Show dismissed” to find it again.',
+      confirmLabel: 'Dismiss',
+      icon: 'warning',
+      detail: row.repo,
+    }).then((yes) => {
+      if (yes) dismissNow(row);
+    });
+  };
+
+  const dismissNow = (row: UnlistedWork): void => {
     dismissUnlisted(row.id)
       .then(() => {
         onChanged();

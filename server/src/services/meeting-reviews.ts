@@ -16,7 +16,7 @@ import { immediateTransaction } from '../db/numbering.ts';
 import { meetingReviews, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
-import { updateProjectContext } from './projects.ts';
+import { reviseProjectContext } from './projects.ts';
 import {
   type ProviderClient,
   ProviderResponseError,
@@ -516,14 +516,11 @@ function applyProposal(
         throw unusable(proposal, 'a `decision` proposal with nothing to record appends nothing');
       }
 
-      const current = db
-        .select({ context: projects.contextMd })
-        .from(projects)
-        .where(eq(projects.id, project.id))
-        .get();
-
-      updateProjectContext(db, actor, project.slug, {
-        context_md: appendDecision(current?.context ?? '', text, now),
+      // An append computed inside the write (LAI-555): no revision to name,
+      // and nothing between the read and the write to lose.
+      reviseProjectContext(db, actor, project.slug, {
+        baseRevision: null,
+        next: (current) => appendDecision(current, text, now),
         now,
       });
 

@@ -930,3 +930,21 @@
     margin-right: var(--space-4);
   }
 }
+
+/* The agent hand-off policy (LAI-550): its own card under Access & rules,
+   its body padded as a row is. */
+.ss-handoff {
+  margin-top: var(--space-5);
+}
+
+.ss-handoff-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+}
+
+.ss-handoff-body > .ss-help,
+.ss-handoff-body > .ss-field-error {
+  margin: 0;
+}

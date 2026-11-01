@@ -85,6 +85,8 @@ void describe('the sky on the Timeline', () => {
     const writes: StubCall[] = [];
     const h = await myDay(null, writes);
     try {
+      // Where you are sits in the header's Day settings (LAI-502).
+      await h.page.locator('[data-day-settings] > button').click();
       const control = h.page.locator('[data-where-you-are]');
       await control.waitFor();
       assert.equal(await h.page.locator('[data-sky]').count(), 0);

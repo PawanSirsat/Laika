@@ -29,24 +29,28 @@ function shifted(event: ChangeEvent<HTMLInputElement>): boolean {
 }
 
 /**
- * What a block is on: its key, General, a space, or *Needs a card* — and the
- * line under it. A block from a folder the person named says the name (D-098):
- * *Needs a card · Acme*, or a space's line with it.
+ * What a block is on: its key, General, a space, or *No task yet* — and the
+ * words beside it, on the same line as the design draws them. A block from a
+ * folder the person named says the name (D-098).
  */
 function target(draft: TimeDraft): {
   readonly label: string;
   readonly line: string;
   readonly ready: boolean;
+  readonly mono: boolean;
 } {
   const folder = folderOf(draft);
-  if (draft.task !== null) return { label: draft.task.key, line: draft.task.title, ready: true };
+  if (draft.task !== null)
+    return { label: draft.task.key, line: draft.task.title, ready: true, mono: true };
   if (draft.project !== null)
     return {
       label: draft.project.name,
       line: folder === undefined ? 'A space, no card' : `A space, no card · ${folder}`,
       ready: true,
+      mono: false,
     };
-  if (draft.general) return { label: 'General', line: 'No card, on purpose', ready: true };
+  if (draft.general)
+    return { label: 'General', line: 'No card, on purpose', ready: true, mono: false };
   return {
     label: needsACard(draft),
     line:
@@ -56,14 +60,23 @@ function target(draft: TimeDraft): {
           ? 'Pick a card, or General'
           : 'Nothing named a card',
     ready: false,
+    mono: false,
   };
 }
 
+/** The source pill, as the design names it: where the block came from. */
+const SOURCES: Readonly<Record<TimeDraft['source'], string>> = {
+  collector: 'Collector',
+  agent: 'Agent',
+};
+
 /**
- * One block still to settle (LAI-810; the owner's design, LAI-831): a box to
- * tick it for a bulk action, when, how long, what it is on — its card a link
- * to it — the line under that, and where it came from. **The row selects the
- * block**; what to do with it is in the inspector, and the keys.
+ * One block still to review (LAI-810; the owner's design, LAI-514): a box to
+ * tick it for a bulk action, a swatch, when, how long, what it is on — its
+ * card a link to it — with the words beside it, and where it came from as a
+ * pill at the right. On a phone the time and length move under the label.
+ * **The row selects the block**; what to do with it is in the editor, and
+ * the keys.
  */
 export function DraftRow({
   draft,
@@ -136,18 +149,24 @@ export function DraftRow({
         <span className="myday-row-minutes">{duration(draft.minutes)}</span>
       </button>
       <span className="myday-row-target">
-        <span className={on.ready ? 'myday-row-key' : 'myday-row-key myday-row-needs'}>
+        <span
+          className={[
+            'myday-row-key',
+            on.mono ? 'myday-row-key-mono' : '',
+            on.ready ? '' : 'myday-row-needs',
+          ]
+            .filter((c) => c !== '')
+            .join(' ')}
+        >
           {draft.task === null ? (
             on.label
           ) : (
             <CardLink task={draft.task} slug={draft.project?.slug} onNavigate={onNavigate} />
           )}
         </span>
-        {draft.task === null && <span className="myday-row-line">{on.line}</span>}
+        <span className="myday-row-line">{on.line}</span>
       </span>
-      <span className={`myday-source myday-source-${draft.source}`}>
-        {draft.source === 'agent' ? 'agent' : 'collector'}
-      </span>
+      <span className={`myday-source myday-source-${draft.source}`}>{SOURCES[draft.source]}</span>
     </li>
   );
 }

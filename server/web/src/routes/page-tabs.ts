@@ -27,9 +27,13 @@ export interface PageTab {
   readonly refusedByAddress?: true;
 }
 
-/** Work handed back for a person, then work nobody filed (admin-up, §4.14). */
+/**
+ * Work handed back for a person, hand-offs between agents that concern them
+ * (LAI-550), then work nobody filed (admin-up, §4.14).
+ */
 export const INBOX_TABS: readonly PageTab[] = [
   { id: 'review', label: 'Review' },
+  { id: 'handoffs', label: 'Hand-offs' },
   { id: 'unlisted', label: 'Unlisted work', requires: 'audit_log.export' },
 ];
 
@@ -54,6 +58,21 @@ export const ORGANISATION_TABS: readonly PageTab[] = [
   { id: 'integrations', label: 'Integrations' },
   { id: 'security', label: 'Security', requires: 'token.list_any' },
   { id: 'activity', label: 'Activity', requires: 'audit_log.export', refusedByAddress: true },
+];
+
+/**
+ * Developer access (LAI-507): connecting an agent — the four-step wizard —
+ * then the reader's registered agents (LAI-537, D-114), what is once per
+ * project, what the organisation collects from the machine, and the reader's
+ * tokens. Nothing is gated: every tab is about the reader. The order is the
+ * order a new developer meets them.
+ */
+export const DEVELOPER_TABS: readonly PageTab[] = [
+  { id: 'connect', label: 'Connect' },
+  { id: 'agents', label: 'Agents' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'activity', label: 'Activity' },
+  { id: 'tokens', label: 'Tokens' },
 ];
 
 /**
@@ -117,15 +136,19 @@ export function tabHref(path: string, id: string): string {
 }
 
 /**
- * The sidebar's Inbox count: what waits on Review plus what waits on Unlisted
- * work. `undefined` for a count that is not this reader's or not read yet, so
- * a reader who may not triage unlisted work counts Review alone — and nothing
- * read at all is no badge rather than a zero that was never measured.
+ * The sidebar's Inbox count: what waits on Review, on Hand-offs (LAI-550) and
+ * on Unlisted work. `undefined` for a count that is not this reader's or not
+ * read yet, so a reader who may not triage unlisted work counts the others
+ * alone — and nothing read at all is no badge rather than a zero that was
+ * never measured.
  */
 export function inboxCount(
   reviewWaiting: number | undefined,
   unlistedOpen: number | undefined,
+  handoffsWaiting?: number,
 ): number | undefined {
-  if (reviewWaiting === undefined && unlistedOpen === undefined) return undefined;
-  return (reviewWaiting ?? 0) + (unlistedOpen ?? 0);
+  if (reviewWaiting === undefined && unlistedOpen === undefined && handoffsWaiting === undefined) {
+    return undefined;
+  }
+  return (reviewWaiting ?? 0) + (unlistedOpen ?? 0) + (handoffsWaiting ?? 0);
 }

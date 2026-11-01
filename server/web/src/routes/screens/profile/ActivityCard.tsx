@@ -963,8 +963,8 @@ function ActivityDefinitions() {
           <dt>Local</dt>
           <dd>
             Prompts sent to agents, agent sessions started and commits not pushed yet, by the
-            machine’s own date. Only while the organisation’s Developer insights and their own
-            sharing are both on.
+            machine’s own date. Only while the organisation’s Developer insights are on, and only
+            from a machine where <code>laika activity on</code> was run.
           </dd>
         </div>
         <div>

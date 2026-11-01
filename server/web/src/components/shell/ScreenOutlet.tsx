@@ -1,3 +1,5 @@
+import { HandoffsTab } from '../../routes/screens/inbox/HandoffsTab.tsx';
+import { handoffsWaiting } from '../agent/person-handoffs.ts';
 import { useEffect, type ComponentType } from 'react';
 import { useShell } from './shell-context.ts';
 import { SpaceLayout } from '../space/SpaceLayout.tsx';
@@ -19,7 +21,6 @@ import { ProfileScreen } from '../../routes/screens/profile/ProfileScreen.tsx';
 import { ReviewScreen } from '../../routes/screens/review/ReviewScreen.tsx';
 import { SprintsScreen } from '../../routes/screens/sprints/SprintsScreen.tsx';
 import { TimelineScreen } from '../../routes/screens/timeline/TimelineScreen.tsx';
-import { ConnectScreen } from '../../routes/screens/connect/ConnectScreen.tsx';
 import { DeveloperScreen } from '../../routes/screens/developer/DeveloperScreen.tsx';
 import { InboxScreen } from '../../routes/screens/inbox/InboxScreen.tsx';
 import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx';
@@ -31,10 +32,11 @@ import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSe
 import { routeParams } from '../../routes/route-table.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import {
+  currentTab,
+  DEVELOPER_TABS,
   INBOX_TABS,
   INSIGHTS_TABS,
   ORGANISATION_TABS,
-  currentTab,
   refusedTab,
   visibleTabs,
 } from '../../routes/page-tabs.ts';
@@ -301,21 +303,10 @@ function ReviewRoute() {
   return <ReviewScreen onNavigate={navigate} onChanged={refreshReview} />;
 }
 
-function ConnectRoute() {
-  const {
-    me,
-    route: { params, setParams },
-  } = useShell();
-  // `?agent=` carries the chosen coding agent (LAI-737), so a link can open
-  // the page already set to the team's agent.
-  return (
-    <ConnectScreen me={me} origin={window.location.origin} params={params} setParams={setParams} />
-  );
-}
-
 /**
- * Inbox (LAI-796): Review and Unlisted work as tabs. The counts are the
- * shell's — the same two numbers the sidebar adds up for Inbox's badge.
+ * Inbox (LAI-796): Review, Hand-offs (LAI-550) and Unlisted work as tabs. The
+ * counts are the shell's — the same numbers the sidebar adds up for Inbox's
+ * badge.
  */
 function InboxRoute() {
   const {
@@ -323,6 +314,8 @@ function InboxRoute() {
     me,
     reviewWaiting,
     unlistedOpen,
+    handoffCounts,
+    refreshHandoffs,
   } = useShell();
   const { permissions } = usePermissions(me !== undefined);
   const holds = permissionHolder(permissions?.me.actions);
@@ -331,10 +324,25 @@ function InboxRoute() {
     <InboxScreen
       tabs={visibleTabs(INBOX_TABS, holds)}
       current={tab}
-      counts={{ review: reviewWaiting, unlisted: unlistedOpen }}
+      counts={{
+        review: reviewWaiting,
+        handoffs: handoffsWaiting(handoffCounts),
+        unlisted: unlistedOpen,
+      }}
       onNavigate={navigate}
     >
-      {tab === 'unlisted' ? <UnlistedRoute /> : <ReviewRoute />}
+      {tab === 'unlisted' ? (
+        <UnlistedRoute />
+      ) : tab === 'handoffs' ? (
+        <HandoffsTab
+          meId={me?.id}
+          counts={handoffCounts}
+          onChanged={refreshHandoffs}
+          onNavigate={navigate}
+        />
+      ) : (
+        <ReviewRoute />
+      )}
     </InboxScreen>
   );
 }
@@ -355,13 +363,28 @@ function InsightsRoute() {
   );
 }
 
-/** Developer access (LAI-796): Connect's card and the reader's tokens. */
+/**
+ * Developer access (LAI-796; five tabs since LAI-537): Connect, Agents, Projects,
+ * Activity, Tokens. `?agent=` and `?step=` still carry the wizard's state,
+ * which is why the route hands the whole query down.
+ */
 function DeveloperRoute() {
   const {
     me,
-    route: { navigate },
+    route: { params, setParams, navigate },
   } = useShell();
-  return <DeveloperScreen me={me} origin={window.location.origin} onNavigate={navigate} />;
+  const tab = currentTab(DEVELOPER_TABS, params);
+  return (
+    <DeveloperScreen
+      me={me}
+      origin={window.location.origin}
+      tabs={visibleTabs(DEVELOPER_TABS)}
+      current={tab}
+      params={params}
+      setParams={setParams}
+      onNavigate={navigate}
+    />
+  );
 }
 
 function OrganisationRoute() {
@@ -475,7 +498,6 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/insights': { Component: InsightsRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },
   '/developer': { Component: DeveloperRoute, layout: 'plain' },
-  '/developer/connect': { Component: ConnectRoute, layout: 'plain' },
   '/members': { Component: MembersRoute, layout: 'plain' },
   '/spaces/:slug/settings': { Component: SpaceSettingsRoute, layout: 'plain' },
   '/people': { Component: ProfileRoute, layout: 'plain' },

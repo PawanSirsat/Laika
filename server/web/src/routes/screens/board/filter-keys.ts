@@ -24,6 +24,9 @@ export const FILTER_KEYS = [
   'ready',
   'blocked',
   'agent',
+  // The selected agent (LAI-538): an agent id, `any` or `none`. Not `agent`,
+  // which is *agent-created* and keeps that meaning.
+  'selected_agent',
   'top',
   'overdue',
 ] as const;
@@ -215,6 +218,10 @@ export function activeFilters(
 
   if (readBlocked(params)) found.push({ key: 'blocked', label: 'Blocked only' });
   if (params.get('agent') === 'true') found.push({ key: 'agent', label: 'Agent-created' });
+  const selectedAgent = params.get('selected_agent');
+  if (selectedAgent !== null && selectedAgent !== '') {
+    found.push({ key: 'selected_agent', label: 'Agent' });
+  }
   if (readTop(params)) found.push({ key: 'top', label: 'Top-level only' });
   if (readOverdue(params)) found.push({ key: 'overdue', label: 'Overdue' });
 
