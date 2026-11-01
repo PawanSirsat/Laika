@@ -155,7 +155,9 @@ function summary(sprintId: string | undefined): string {
       : startsIn > 0
         ? `STARTS in ${String(startsIn)}d`
         : `LEFT ${String(Math.max(0, Math.round((current.ends_on - MIDNIGHT) / DAY) + 1))}`;
-  return `DONE ${String(done)}/${String(inScope.length)} BLK ${String(blocked)} ${left}`;
+  // Cancelled work is in neither done nor the total (LAI-1040, SPEC §11.4.3).
+  const total = inScope.filter((t) => t.status !== 'cancelled').length;
+  return `DONE ${String(done)}/${String(total)} BLK ${String(blocked)} ${left}`;
 }
 
 const page = (rows: readonly Row[]) => ({ data: rows, next_cursor: null });
