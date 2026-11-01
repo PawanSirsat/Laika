@@ -776,8 +776,25 @@ file. The rules below are the ones that are true of every line of code.
   an action such as `deployment.read` to give it a `can()` call — that is the
   warning sign above.
 
-  **All three cases are exhaustive as written.** They are the only three, they are named
-  here with their instances, and a fourth one is a decision, not a judgement call
+  **The fourth narrow case is a proof-of-possession step with no actor** (D-124),
+  the shape of a password-reset link: a caller who is nobody presents a
+  one-time secret, or a signature from a key already bound to the request, and
+  the handler reads and writes only the one row that secret or key names. Its
+  instances are the device side of pairing, `POST /api/v1/device-pairing/claim`
+  and `POST /api/v1/device-pairing/:id/complete` (LAI-1050). All four
+  conditions are required: (1) the secret is short-lived, single-use and stored
+  only as a hash, or the signature is checked against a key already stored on
+  that row, and it never resolves to or mints an actor — no token, session,
+  agent or activity row at any step; (2) the handler touches nothing but the
+  named row, plus the one effect a signed-in owner already approved on it
+  through a `can()`-checked route; (3) a miss, and anything the caller cannot
+  prove, is one uniform answer that says nothing about other rows; (4) the
+  route has rate-limit buckets of its own that cannot be used to lock everyone
+  else out. A handler that reaches a second resource, or yields a credential,
+  is not this case.
+
+  **All four cases are exhaustive as written.** They are the only four, they are named
+  here with their instances, and a fifth one is a decision, not a judgement call
   — if you think you have found one, that is a task for CHIEF. **"It only reads
   the actor's own row" is not this case**: a row is data, the actor object is not,
   and the moment a handler goes to the database it is back under the rule.

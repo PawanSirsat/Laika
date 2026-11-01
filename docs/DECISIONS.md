@@ -6676,3 +6676,34 @@ default), relayed through the polly manager session
 4. **No new §3.1 action** (plan §L5): devices are owner records under
    `agent.read_own` / `agent.manage_own`. Another owner's device is the same
    `404` as one that does not exist. **No new §4.8 verb** (plan §L4).
+
+## D-124 — A proof-of-possession step with no actor is the fourth named exception to "every endpoint calls `can()`" (LAI-1053)
+
+**Date:** 2026-11-02 · **Decided by:** Pawan (owner), on the standing instruction to continue
+Developer Access V3; recorded by CHIEF.
+
+**In one line:** the device side of pairing authorises by possession of a one-time code and then
+of a bound key, never by an actor, so it skips `can()` under four stated conditions.
+
+**Context.** LAI-1050 (PR #205) adds device pairing. The owner creates, approves, denies and
+cancels requests through browser-session, `can()`-checked routes. The device has no actor: it
+claims a request with a short-lived code, then proves possession of the key it submitted by
+signing a server challenge. Inventing an action for a caller who is nobody would be the warning
+sign CLAUDE.md §5 describes. Review confirmed the shape matches the password-reset link.
+
+**Decision.** CLAUDE.md §5 gains a fourth case with these conditions, all required:
+1. The secret is short-lived, single-use and stored only as a hash, or the signature is checked
+   against a key already stored on that row. It never resolves to or mints an actor: no token,
+   session, agent or activity row at any step.
+2. The handler touches only the named row, plus the one effect a signed-in owner already
+   approved on it through a `can()`-checked route.
+3. A miss, and anything the caller cannot prove, is one uniform answer that says nothing about
+   other rows.
+4. The route has rate-limit buckets of its own that cannot be used to lock everyone else out.
+
+Instances: `POST /api/v1/device-pairing/claim`, `POST /api/v1/device-pairing/:id/complete`.
+A further instance is a new decision.
+
+**Consequences.** Condition 4 is why review sent LAI-1050 back: a single shared anonymous
+failure bucket could be drained by any caller to block pairing for the whole board.
+
