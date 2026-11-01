@@ -464,6 +464,27 @@ void describe('a changed identity drops nothing (review: login changed under a s
     assert.deepEqual(sent.at(-1), { event_ids: [e.event_id], state: 'received' });
   });
 
+  void test('an event the agent may no longer read leaves the store and seen, so it can come back', async () => {
+    const key = storeKey('claude-code', B);
+    const e = envelope();
+    const deps: EventDeps = {
+      home,
+      now: () => 0,
+      sleep: () => Promise.resolve(),
+      // A grant removed: every acknowledgement of it is 404.
+      fetch: () => Promise.resolve(new Response('{}', { status: 404 })),
+    };
+    assert.equal(await receive(deps, key, B, [e], undefined), 'ok');
+    const store = readStore(home, key);
+    assert.ok(!store.records.some((r) => r.event_id === e.event_id));
+    assert.ok(!store.seen.includes(e.event_id as string), 'forgotten, not remembered as seen');
+    assert.deepEqual(
+      mutate(home, key, (s) => ingest(s, [asRecord(e, 0)!])),
+      [e.event_id],
+      'the access back, the next poll takes it up as new',
+    );
+  });
+
   void test('a rotated token takes over what the old one still had to show; another agent’s is left alone', () => {
     const agent = id();
     const a = storeKey('claude-code', A);

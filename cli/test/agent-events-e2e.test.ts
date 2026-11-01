@@ -30,7 +30,12 @@ import {
   storePath,
   TASK_KEY,
 } from '../src/agent-events.ts';
-import { logPath, writeCredential } from '../src/agent-session.ts';
+import {
+  credentialFingerprint,
+  logPath,
+  writeCredential,
+  writeState,
+} from '../src/agent-session.ts';
 import { must, type RealBoard, startRealBoard } from './support/real-board.ts';
 
 let board: RealBoard;
@@ -365,6 +370,93 @@ void describe('the hook', () => {
       assert.deepEqual(await run(), []);
       const log = readFileSync(logPath(home), 'utf8');
       assert.ok(!log.includes(receiver.token), 'the token is not in the log');
+    } finally {
+      teardown.abort();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  void test('a login that changes agent under a live session file loses none of the new agent’s notices', async () => {
+    const a = await newAgent();
+    const b = await newAgent();
+    const { home } = machine();
+    const harnessSession = 'hook-554-identity';
+    const run = async (): Promise<string> => {
+      const out: string[] = [];
+      const io: AgentIo = {
+        out: (line) => out.push(line),
+        err: () => undefined,
+        home,
+        env: { LAIKA_AGENT_HARNESS_PID: 'none' },
+        stdin: () =>
+          JSON.stringify({ session_id: harnessSession, hook_event_name: 'UserPromptSubmit' }),
+        isTTY: false,
+      };
+      assert.equal(await agent(['hook', 'prompt', 'claude-code'], io), 0);
+      if (out.length === 0) return '';
+      return (JSON.parse(out[0]!) as { hookSpecificOutput: { additionalContext: string } })
+        .hookSpecificOutput.additionalContext;
+    };
+    try {
+      // Agent A is logged in and has a live session on the board, recorded as
+      // the helper records one. Its harness pid is one that is not running,
+      // so no watcher is started.
+      const credentialA = { url: board.url, token: a.token };
+      writeCredential(home, 'claude-code', credentialA);
+      const opened = await must(await api('POST', '/api/v1/agent-sessions', {}, a.token), 201);
+      writeState(home, {
+        version: 1,
+        harness: 'claude-code',
+        harness_session_id: harnessSession,
+        url: board.url,
+        status: 'live',
+        session_id: String(opened.id),
+        agent_id: a.id,
+        credential_fp: credentialFingerprint(credentialA),
+        harness_pid: 2_000_000_000,
+        harness_started: 'Thu Jan  1 00:00:00 1970',
+        started_at: Date.now(),
+        beats: 0,
+        failures: 0,
+        claims: [],
+        noticed: [],
+      });
+
+      // One context change reaches both agents under one event id; A sees it.
+      await contextChange();
+      assert.match(await run(), /^Project context changed: r\d+;/m);
+      assert.deepEqual(
+        (await boardEvents(a.token)).map((e) => e.delivery.state),
+        ['presented'],
+      );
+
+      // The login changes to agent B. A's session file is still there.
+      const credentialB = { url: board.url, token: b.token };
+      writeCredential(home, 'claude-code', credentialB);
+      const task = await selectFor(b.id);
+
+      const context = await run();
+      const block = context.slice(context.indexOf(BLOCK_OPEN));
+      assert.ok(block.length <= NOTICE_MAX, String(block.length));
+      assert.match(block, /^Project context changed: r\d+;/m, 'the event A saw is still new to B');
+      assert.match(
+        block,
+        new RegExp(`^${task.key}: agent selection changed; run laika agent inbox$`, 'm'),
+        'acknowledged without A’s session, never dropped',
+      );
+      // The board agrees, for B: both presented. A's record is unchanged.
+      assert.deepEqual(
+        (await boardEvents(b.token)).map((e) => [e.type, e.delivery.state]).sort(),
+        [
+          ['project.context_updated', 'presented'],
+          ['task.agent_selected', 'presented'],
+        ],
+      );
+      assert.deepEqual(
+        readStore(home, storeKey('claude-code', credentialA)).records.map((r) => r.state),
+        ['presented'],
+        'A’s own store is kept, not overwritten or deleted',
+      );
     } finally {
       teardown.abort();
       rmSync(home, { recursive: true, force: true });
