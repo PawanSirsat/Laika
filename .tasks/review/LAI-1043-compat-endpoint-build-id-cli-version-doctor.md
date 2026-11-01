@@ -40,8 +40,12 @@ defaults to `classic`.
       the minimum protocol per feature, `whats_new`), and `release_notes`.
       It contains no secret, token, email, path on disk or database value; a
       test asserts the server secret and a minted token's value never appear.
-- [x] The route reads no data (no database, no actor) and is mounted before the
-      setup gate's refusal applies, like `/health`. Its `can()` position is
+- [ ] The route reads no data (no database, no actor) and is mounted before the
+      setup gate's refusal applies, like `/health`. **Not met as written**: it
+      reads no data and no actor, but the setup gate still answers `409`
+      before first boot (see *Notes at review*). Widening the gate was left
+      out to keep the change small; it is one line in `setup-gate.ts` if
+      wanted. Its `can()` position is
       recorded in the PR: it is the health shape, not a third §5 exception.
 - [x] Docker build takes `ARG LAIKA_BUILD_COMMIT` into `ENV`; the deploy
       workflow passes `github.sha`.
