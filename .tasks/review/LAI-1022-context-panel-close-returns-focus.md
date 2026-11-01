@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p2
 depends-on: []
 discovered-from: LAI-1018
-status: in-progress
+status: review
 started: 2026-11-01T13:03:17Z
+finished: 2026-11-01T13:17:27Z
 ---
 
 ## Why
@@ -29,9 +30,19 @@ Evidence: `.polly/evidence/LAI-phase6/s5-*`; the record is
 
 ## Acceptance criteria
 
-- [ ] Closing the panel (Close, and "Close without saving?" → yes) returns
+- [x] Closing the panel (Close, and "Close without saving?" → yes) returns
       focus to the "Context" button of the space whose panel it was, in both
       themes, at desktop and 390 px.
-- [ ] Cancelling "Close without saving?" leaves focus inside the panel, as now.
-- [ ] A web test opens the panel by keyboard, closes it, and asserts the
+- [x] Cancelling "Close without saving?" leaves focus inside the panel, as now.
+- [x] A web test opens the panel by keyboard, closes it, and asserts the
       opener has focus. The test goes red when the restore is removed.
+
+## Build notes (shell/belka)
+
+- `ProjectsScreen` keeps the Context button that opened the panel and refocuses
+  it after the panel unmounts; if that element was re-rendered away it finds
+  `[data-action="context"][data-space=<slug>]` (added in `SpaceActions`).
+- Tests: `test/browser/context-history.test.ts` "closing the panel gives focus
+  back (LAI-1022)" — Close by keyboard; dirty → Keep editing stays in the
+  panel → Discard returns to Context. Desktop, default theme only (the logic
+  reads neither). Red with the refocus removed (2/2 fail).
