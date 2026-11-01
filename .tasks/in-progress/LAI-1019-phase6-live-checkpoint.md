@@ -2,11 +2,12 @@
 id: LAI-1019
 title: 'Phase 6 live checkpoint on production: real GitHub verification, ref deletion, reverify, claim expiry and recovery offer (one device)'
 area: docs
-assignee: unclaimed
+assignee: polly
 priority: p1
 depends-on: []
 discovered-from: LAI-551
-status: backlog
+status: in-progress
+started: 2026-11-01T07:31:15Z
 ---
 
 ## Goal
