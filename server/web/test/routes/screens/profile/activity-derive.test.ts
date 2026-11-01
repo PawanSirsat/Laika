@@ -178,6 +178,19 @@ void describe('the calendar', () => {
     assert.equal(layout.placed[0]?.day.day, '2026-10-31');
     assert.equal(layout.months[0]?.label, 'Nov');
   });
+
+  void test('a month whose 1st is in the last column gets no label to run off the end (LAI-1017)', () => {
+    // Sun 1 Nov 2026 closes the week of Mon 26 Oct: November is the last
+    // column alone, and October runs to the end instead.
+    const sliver = calendarLayout(emptyDays('2026-11-01', 364));
+    assert.equal(sliver.placed.at(-1)?.column, sliver.columns - 1);
+    assert.deepEqual(sliver.months.at(-1), { label: 'Oct', column: sliver.columns - 5, span: 5 });
+    const spans = sliver.months.reduce((sum, m) => sum + m.span, 0);
+    assert.equal(spans + (sliver.months[0]?.column ?? 0), sliver.columns);
+    // A day later November has two columns, and its label.
+    const room = calendarLayout(emptyDays('2026-11-02', 364));
+    assert.deepEqual(room.months.at(-1), { label: 'Nov', column: room.columns - 2, span: 2 });
+  });
 });
 
 void describe('how dark a day is', () => {
