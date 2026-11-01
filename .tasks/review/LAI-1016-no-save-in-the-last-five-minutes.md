@@ -65,3 +65,26 @@ the words beside the warning triangle, never in place of the claim's state.
 
 **Docs half for CHIEF.** SPEC §6.4's `handoff` shape should name
 `no_recent_save`.
+
+## Review round 1 fixes (CORE on Belka, 2026-11-01)
+
+Against the review of head `367a542e`, after merging `origin/master` (#176):
+
+- **B1**: `taskVersion` leaves `handoff.no_recent_save` out, the same way it
+  leaves out the claim's pulse. Test: the version is unchanged across the
+  window with no write, and a `PATCH` with the earlier `If-Match` succeeds.
+  The `pending_notice` problem has the same shape and is filed as LAI-1020
+  (card LAIKA-874), not fixed here.
+- **B2**: an `active` claim whose lease has lapsed (`leaseLapsed`, from
+  `claims.ts`) gets no warning, even before the expiry scan runs. The default
+  lease is as long as the window, so the warning tests now renew the lease as
+  a working agent's heartbeat would.
+- **B3**: the meaning now reads *"…has not saved a checkpoint in that time.
+  Nothing changes because of it."*
+- **Non-blocking**:
+  - The comment is fixed.
+  - The card shows the warning only under a shown *Working* / *Connection
+    lost* line.
+  - The panel line has `role="status"`.
+  - The card line is in the open button's `aria-describedby`.
+
