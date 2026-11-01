@@ -3061,6 +3061,8 @@ input.
 
 Indexes `(owner_user_id)`, and **unique `(owner_user_id, label_key)` where
 `status = 'active'`**: two active devices of one owner never share a name.
+And **unique `(public_key)` where it is not null** (LAI-1050): one key is
+never proof for two devices, revoked ones included.
 
 **Upgrade (`0070`) makes one `imported` device per owner and label key**,
 exactly the groups `GET /agents/devices` serves, named as that list names
@@ -3142,7 +3144,14 @@ Ed25519 signature over `laika-pair-v1\n<id>\n<nonce>\n<board origin>` — the
 board's origin being `LAIKA_PUBLIC_URL`'s — **before** it says anything about
 the state: a bad one is `401`, `device_signature_invalid`; a good one is `202
 { state: 'claimed' }` until the owner approves, `200` once, and `409`
-`pairing_<state>` after.
+`pairing_<state>` after. **Five bad signatures cancel a request**, so anyone
+who holds its id — the device that claimed it, or whoever it told — can end
+it that way; they cannot complete it, and the owner starts again. Completing
+re-checks that no device holds the key (`409`, `device_key_in_use`), since
+two requests may claim one key before either finishes. **Both sides need
+`LAIKA_PUBLIC_URL`**: without it, creating and completing are `409`
+`public_url_unset`, rather than signing an origin a proxy happened to
+forward.
 
 Completing an approved request makes a device of `origin` `paired`, with the
 key, `paired_at` and `confirmed_at` — the owner approved it — or sets the key
@@ -3479,12 +3488,20 @@ credential is not an org credential with a project filter.
   burst, refilled one a minute**. Approving is a person's and shares the
   session's budget. A repeated idempotency key still spends a token.
   **Device pairing's side has buckets of its own** (§4.79, LAI-1050), apart
-  from the shared anonymous one: claims share **10 a burst, refilled one every
-  10 seconds**; completing is **40 a minute, a burst of 10, per request**, for
-  the CLI's two-second poll. Every failure — an unknown code, an unknown
-  request, a bad signature — also spends one shared key of **10, refilled two a
-  minute**, and while it is empty every claim and completion is `429`, `reason`
-  `pairing_backoff`, before anything is read.
+  from the shared anonymous one. Claims share **120 a burst, refilled 20 a
+  minute**. Completing is **40 a minute, a burst of 10, per request id**, for
+  the CLI's two-second poll; a path whose id is not ULID-shaped shares one
+  key. A failed claim — an unknown, malformed, expired or finished code —
+  also spends one shared key of **60, refilled 10 a minute** (600 an hour),
+  and while it is empty every claim is `429`, `reason` `pairing_backoff`,
+  before anything is read. At that rate a guesser holding it empty all day
+  makes 14,400 guesses against a 40-bit code, five live per owner: about
+  6.5e-8 × (owners) expected hits a day. **Completing never spends or reads
+  it**: an id is a ULID nobody guesses, and §4.79 caps each request's bad
+  signatures. Shared anonymous buckets can always be drained by sustained
+  traffic; keys per address wait for a trusted-proxy setting. A limiter
+  holds at most 50,000 buckets, dropping refilled ones first, then the least
+  recently used.
   `429` with `Retry-After`, never below one second.
 
   **Writes share the general budget; there is no separate write limit** (D-021).
