@@ -329,7 +329,10 @@ void describe('a notice not yet presented is never trimmed (review: >200 events)
     const records = Array.from({ length: 250 }, () => at(envelope()));
     ingest(store, records);
     assert.equal(store.records.length, 250, 'nothing unshown was trimmed');
-    assert.ok(store.records.some((r) => r.event_id === records[0]!.event_id), 'the oldest is kept');
+    assert.ok(
+      store.records.some((r) => r.event_id === records[0]!.event_id),
+      'the oldest is kept',
+    );
     assert.equal(renderNotices(store.records).ids[0], records[0]!.event_id);
   });
 

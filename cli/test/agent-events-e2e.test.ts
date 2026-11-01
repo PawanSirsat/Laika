@@ -445,13 +445,10 @@ void describe('the hook', () => {
         'acknowledged without A’s session, never dropped',
       );
       // The board agrees, for B: both presented. A's record is unchanged.
-      assert.deepEqual(
-        (await boardEvents(b.token)).map((e) => [e.type, e.delivery.state]).sort(),
-        [
-          ['project.context_updated', 'presented'],
-          ['task.agent_selected', 'presented'],
-        ],
-      );
+      assert.deepEqual((await boardEvents(b.token)).map((e) => [e.type, e.delivery.state]).sort(), [
+        ['project.context_updated', 'presented'],
+        ['task.agent_selected', 'presented'],
+      ]);
       assert.deepEqual(
         readStore(home, storeKey('claude-code', credentialA)).records.map((r) => r.state),
         ['presented'],

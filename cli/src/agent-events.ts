@@ -498,7 +498,9 @@ export function renderNotices(
   const dropped = posInt(droppedUnshown) ? droppedUnshown : 0;
   const lines: string[] =
     dropped > 0
-      ? [`${String(Math.min(dropped, 99_999))} older notices dropped unshown; run laika agent inbox`]
+      ? [
+          `${String(Math.min(dropped, 99_999))} older notices dropped unshown; run laika agent inbox`,
+        ]
       : [];
   if (waiting.length === 0 && lines.length === 0) return none;
   const ids: string[] = [];
@@ -826,15 +828,7 @@ export async function presented(
     }
     return out;
   });
-  const { recorded } = await ack(
-    deps,
-    key,
-    credential,
-    moved,
-    'presented',
-    sessionId,
-    timeoutMs,
-  );
+  const { recorded } = await ack(deps, key, credential, moved, 'presented', sessionId, timeoutMs);
   clearOwed(deps, key, recorded);
 }
 
@@ -881,7 +875,8 @@ export function noteAgent(home: string, key: StoreKey, agentId: string): number 
     for (const sib of siblings) {
       taken += ingest(s, sib.records).length;
       for (const [project, revision] of Object.entries(sib.store.context_seen)) {
-        if (posInt(revision)) s.context_seen[project] = Math.max(s.context_seen[project] ?? 0, revision);
+        if (posInt(revision))
+          s.context_seen[project] = Math.max(s.context_seen[project] ?? 0, revision);
       }
       if (posInt(sib.store.dropped_unshown)) {
         s.dropped_unshown = (s.dropped_unshown ?? 0) + sib.store.dropped_unshown;
@@ -896,7 +891,8 @@ export function noteAgent(home: string, key: StoreKey, agentId: string): number 
       delete s.dropped_unshown;
     });
   }
-  if (taken > 0) log(home, `events ${key.harness}: took over ${String(taken)} from a rotated token`);
+  if (taken > 0)
+    log(home, `events ${key.harness}: took over ${String(taken)} from a rotated token`);
   return taken;
 }
 
