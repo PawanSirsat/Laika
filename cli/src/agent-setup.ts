@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { AgentIo } from './agent.ts';
 import { type AgentHookReport, installAgentHooks, removeAgentHooks } from './agent-hooks.ts';
+import { adapter, HOOK_HARNESSES } from './agent-adapters.ts';
 import {
   credentialPath,
   type Harness,
@@ -104,14 +105,25 @@ async function login(io: AgentIo, argv: readonly string[]): Promise<number> {
   writeCredential(io.home, harness, { url, token });
   io.out(`Saved the agent token for ${harness} in ${credentialPath(io.home, harness)} (0600).`);
   io.out(
-    `Next: \`laika agent hooks on --harness ${harness}\` to open a session per ${harness} session.`,
+    adapter(harness).hooks
+      ? `Next: \`laika agent hooks on --harness ${harness}\` to open a session per ${harness} session.`
+      : `Next: \`laika agent session start --harness ${harness} --harness-session <id> --pid <pid>\` — ${adapter(harness).name} has no verified hooks (cli/agent-adapters/CAPABILITIES.md).`,
   );
+  if (adapter(harness).agentHarness !== harness) {
+    io.out(
+      `On the Agents screen this agent's harness is "${adapter(harness).agentHarness}" (the board has no "${harness}").`,
+    );
+  }
   return 0;
 }
 
 function printReport(io: AgentIo, r: AgentHookReport): void {
   const mark =
-    r.status === 'refused' ? '!' : r.status === 'installed' || r.status === 'removed' ? '✓' : '·';
+    r.status === 'refused' || r.status === 'unsupported'
+      ? '!'
+      : r.status === 'installed' || r.status === 'removed'
+        ? '✓'
+        : '·';
   io.out(`  ${mark} ${r.harness}: ${r.summary}`);
   for (const line of r.detail ?? []) io.out(`      ${line}`);
 }
@@ -138,17 +150,19 @@ export async function setup(io: AgentIo, argv: readonly string[]): Promise<numbe
     io.err(`laika agent hooks: on|off [--harness ${HARNESSES.join('|')}]`);
     return 1;
   }
-  const harnesses: readonly Harness[] = named === undefined ? HARNESSES : [named];
+  // Unnamed means every harness hooks can be installed for; one named
+  // without a verified adapter is answered with its explicit commands.
+  const harnesses: readonly Harness[] = named === undefined ? HOOK_HARNESSES : [named];
   const reports = harnesses.map((h) =>
     mode === 'on' ? installAgentHooks(io.home, AGENT_HOOK_SCRIPT, h) : removeAgentHooks(io.home, h),
   );
   io.out(mode === 'on' ? 'Agent-session hooks:' : 'Removing agent-session hooks:');
   for (const r of reports) printReport(io, r);
-  if (mode === 'on') {
+  if (mode === 'on' && reports.some((r) => r.status !== 'unsupported')) {
     io.out('');
     io.out('Each harness session opens a Laika agent session with the agent’s own token,');
     io.out('renewed every 30 s while that harness process runs, and closed when it ends.');
     io.out('Nothing happens for a harness with no `laika agent login`.');
   }
-  return reports.some((r) => r.status === 'refused') ? 1 : 0;
+  return reports.some((r) => r.status === 'refused' || r.status === 'unsupported') ? 1 : 0;
 }

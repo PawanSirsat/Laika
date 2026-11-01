@@ -10,6 +10,7 @@ import {
   paths,
   replaceFile,
 } from './activity-hooks.ts';
+import { adapter, explicitCommands } from './agent-adapters.ts';
 import { shellQuote } from './agents.ts';
 import type { Harness } from './agent-session.ts';
 
@@ -22,6 +23,7 @@ import type { Harness } from './agent-session.ts';
  * | --- | --- | --- |
  * | Claude Code | `~/.claude/settings.json` (merged) | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SessionEnd` |
  * | Codex CLI | `~/.codex/hooks.json` (merged) | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SessionEnd` (advisory) |
+ * | every other harness (LAI-557) | none: `unsupported`, the explicit commands printed | — |
  *
  * `PreToolUse`, `PostToolUse` and `Stop` also drive automatic checkpoints
  * (LAI-547), which save nothing until the agent's owner consents on the
@@ -51,7 +53,7 @@ export type AgentHookEvent =
 
 export interface AgentHookReport {
   readonly harness: Harness;
-  readonly status: 'installed' | 'unchanged' | 'refused' | 'removed' | 'absent';
+  readonly status: 'installed' | 'unchanged' | 'refused' | 'removed' | 'absent' | 'unsupported';
   readonly summary: string;
   readonly detail?: readonly string[];
 }
@@ -108,8 +110,12 @@ function withoutOurs(hooks: Record<string, unknown>): Record<string, unknown> {
   return next;
 }
 
-export const hookFile = (home: string, harness: Harness): string =>
-  harness === 'claude-code' ? paths.claude(home) : paths.codex(home);
+/** Only for a harness whose adapter has hooks: Claude Code's or Codex's file. */
+export function hookFile(home: string, harness: Harness): string {
+  if (harness === 'claude-code') return paths.claude(home);
+  if (harness === 'codex') return paths.codex(home);
+  throw new Error(`${harness} has no hook file`);
+}
 
 function manual(path: string, groups: Record<string, Group>): string[] {
   return [
@@ -122,7 +128,24 @@ function manual(path: string, groups: Record<string, Group>): string[] {
   ];
 }
 
+/**
+ * A harness with no verified hook format (LAI-557): nothing is read or
+ * written — not its config, not Claude Code's or Codex's — and the explicit
+ * commands are printed instead.
+ */
+function unsupported(harness: Harness, mode: 'on' | 'off'): AgentHookReport {
+  return mode === 'on'
+    ? {
+        harness,
+        status: 'unsupported',
+        summary: 'no verified hook adapter — nothing installed',
+        detail: explicitCommands(harness),
+      }
+    : { harness, status: 'absent', summary: 'no hook adapter — nothing to remove' };
+}
+
 export function installAgentHooks(home: string, script: string, harness: Harness): AgentHookReport {
+  if (!adapter(harness).hooks) return unsupported(harness, 'on');
   const path = hookFile(home, harness);
   const groups = agentHookGroups(script, harness);
 
@@ -173,6 +196,7 @@ export function installAgentHooks(home: string, script: string, harness: Harness
 }
 
 export function removeAgentHooks(home: string, harness: Harness): AgentHookReport {
+  if (!adapter(harness).hooks) return unsupported(harness, 'off');
   const path = hookFile(home, harness);
   if (!existsSync(path)) return { harness, status: 'absent', summary: 'nothing installed' };
   const parsed = parseConfig(path);

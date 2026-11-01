@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
+import { adapter } from './agent-adapters.ts';
 import {
   type AgentCredential,
   type ApiResult,
@@ -471,7 +472,7 @@ export async function resolveTarget(
 function onlyHarness(deps: CheckpointDeps): Harness {
   const saved = HARNESSES.filter((h) => readCredential(deps.home, h, deps.env) !== undefined);
   if (saved.length === 1 && saved[0] !== undefined) return saved[0];
-  throw new Refusal('name the harness: --harness claude-code|codex', 'bad_arguments');
+  throw new Refusal(`name the harness: --harness ${HARNESSES.join('|')}`, 'bad_arguments');
 }
 
 const noCredential = (harness: Harness): Refusal =>
@@ -1493,7 +1494,9 @@ export type AutoOutcome =
   | 'consent_unknown'
   | 'busy'
   | 'refused'
-  | 'nothing';
+  | 'nothing'
+  /** A harness with no verified hooks (LAI-557): nothing reports its tools, so nothing saves for it. */
+  | 'no_hooks';
 
 /**
  * What an automatic save came to, **with the record it made or matched**
@@ -1529,6 +1532,10 @@ export async function autoCheckpointResult(
   credential: AgentCredential,
   quietMs = 30_000,
 ): Promise<AutoResult> {
+  // No hook marks this harness's tools as running, so "quiet" could not be
+  // told from "unwatched": an automatic save is never made for it, and the
+  // caller says so rather than "nothing to save" (LAI-557).
+  if (!adapter(harness).hooks) return { outcome: 'no_hooks' };
   const activity = readActivity(deps.home, harness, harnessSessionId);
   if (activity.mutations < 1 || activity.cwd === undefined) return { outcome: 'nothing' };
   const session: SessionState | undefined = readState(
