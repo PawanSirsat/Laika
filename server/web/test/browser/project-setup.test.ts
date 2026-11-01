@@ -251,6 +251,36 @@ void describe('Project setup, v3', () => {
     }
   });
 
+  void test('a grant made elsewhere after the page loaded survives Save (the merge re-reads)', async () => {
+    const world: World = {
+      agents: [agentRow({ id: 'a1', grants: [{ project_id: 'p9', scope: 'read_only' }] })],
+      puts: [],
+    };
+    const h = await open('/developer?tab=projects', stub('v3', world));
+    try {
+      await h.page.locator('.dev-setup-facts').waitFor({ timeout: 20_000 });
+      // Another tab, or the Devices screen, gives the tool p8 meanwhile.
+      world.agents = world.agents.map((a) => ({
+        ...a,
+        grants: [...a.grants, { project_id: 'p8', scope: 'full' }],
+      }));
+      await h.page.getByRole('radio', { name: 'Read only' }).check();
+      await h.page.getByRole('button', { name: 'Save access' }).click();
+      await h.page.getByText('Saved.').waitFor({ timeout: 20_000 });
+      assert.deepEqual(world.puts, [
+        {
+          grants: [
+            { project_id: 'p9', scope: 'read_only' },
+            { project_id: 'p8', scope: 'full' },
+            { project_id: 'p1', scope: 'read_only' },
+          ],
+        },
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the Overview’s Set up a project lands here', async () => {
     const world: World = { agents: [agentRow({ id: 'a1' })], puts: [] };
     const h = await open('/developer', stub('v3', world));

@@ -228,11 +228,18 @@ describe('GET /agents/:id/project-access', () => {
     await project('gamma', 'GAM');
 
     const hidden = await access(tool.agent.id, 'gamma', { cookie: bob.cookie });
-    const missing = await access(tool.agent.id, 'nope', { cookie: bob.cookie });
+    const missing = await access(tool.agent.id, 'nopes', { cookie: bob.cookie });
     expect(hidden.status).toBe(404);
     expect(missing.status).toBe(404);
-    expect(await hidden.json()).toMatchObject({ error: { code: 'not_found' } });
-    expect(await missing.json()).toMatchObject({ error: { code: 'not_found' } });
+    // The message names the slug asked for, so each body is compared with its
+    // own slug taken out; everything else must be the same bytes.
+    const normalise = async (res: Response, slug: string) =>
+      (await res.text())
+        .replaceAll(`"${slug}"`, '"<slug>"')
+        .replaceAll(`\\"${slug}\\"`, '\\"<slug>\\"');
+    const hiddenBody = await normalise(hidden, 'gamma');
+    expect(hiddenBody).toBe(await normalise(missing, 'nopes'));
+    expect(JSON.parse(hiddenBody)).toMatchObject({ error: { code: 'not_found' } });
   });
 
   it('needs a signed-in session: the agent’s own token is refused', async () => {
