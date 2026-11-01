@@ -345,13 +345,16 @@ void describe('the tab bars (plan §I)', () => {
     }
   });
 
-  void test('v3: Devices, Project setup, Activity and Advanced each carry what they re-host', async () => {
+  void test('v3: Devices, Activity and Advanced carry what they re-host; Project setup its flow', async () => {
     const h = await open('/developer?tab=devices', stub('v3', [agentRow({ id: 'a1' })]));
     try {
       await h.page.locator('[data-testid="agents-tab"]').waitFor({ timeout: 20_000 });
       await h.page.locator('.page-tab[data-tab="projects"]').click();
-      await h.page.locator('.dev-projects .conn-project-block').waitFor({ timeout: 20_000 });
-      assert.match(await h.page.locator('.dev-v3-help').innerText(), /Manage access/);
+      // Project setup is the real flow since LAI-1052 (project-setup.test.ts).
+      await h.page
+        .getByRole('heading', { name: 'Set up a project repository' })
+        .waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.dev-projects-body').count(), 1);
       await h.page.locator('.page-tab[data-tab="activity"]').click();
       await h.page.locator('.dev-sharing').waitFor({ timeout: 20_000 });
       await h.page.locator('.page-tab[data-tab="advanced"]').click();
