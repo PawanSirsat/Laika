@@ -2,11 +2,12 @@
 id: LAI-1040
 title: 'The board''s DONE total counts cancelled work the Sprints card leaves out, and the card''s unassigned counts finished work'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p3
 depends-on: [LAI-882]
 discovered-from: LAI-882
-status: backlog
+status: in-progress
+started: 2026-11-02T00:10:00+02:00
 ---
 
 ## Goal
@@ -32,6 +33,15 @@ disagreements. They are not about "blocked", so they are not LAI-882's.
    `sprintFigures` (`sprint-derive.ts`) counts `assignee_id === null` over
    every task, done and cancelled included. A finished task nobody was
    assigned to is not work waiting for an owner.
+
+## Started before its dependency is done
+
+`depends-on: [LAI-882]`, and LAI-882 is in review (PR #193), not in
+`.tasks/done/` on `master`. CHIEF directed this start while #193 is in
+review. This file exists only on LAI-882's branch, so this branch
+(`LAI-1040-sprint-counts-agree-on-cancelled`) is cut from
+`LAI-882-card-blocked-rule-matches-server` with `origin/master` merged in, and
+its PR carries LAI-882's commits until #193 merges.
 
 ## Acceptance criteria
 
