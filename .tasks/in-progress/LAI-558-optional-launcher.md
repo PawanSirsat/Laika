@@ -2,11 +2,12 @@
 id: LAI-558
 title: 'Optional local launcher, disabled by default, + settings/status UI — PARKED pending D-117'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-548]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-11-01T22:20:00+02:00
 ---
 
 Implements **proposal §4.7 (`laika agent launcher`), §8 (Launcher)** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
