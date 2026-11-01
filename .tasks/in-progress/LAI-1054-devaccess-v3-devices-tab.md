@@ -2,11 +2,12 @@
 id: LAI-1054
 title: 'Developer access V3 slice D3: the Devices tab, devices first with their tools nested'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: [LAI-1045, LAI-1046, LAI-1048]
 discovered-from: LAI-1042
-status: backlog
+started: 2026-11-02T03:59:45+05:30
+status: in-progress
 ---
 
 ## Why
