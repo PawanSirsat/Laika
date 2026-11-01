@@ -26,6 +26,11 @@
  * of it. It was taken on the commit **before** the extraction, and must not
  * be regenerated to make a red run green — a red run here is a rendering
  * change, which this task said it would not make.
+ *
+ * It was regenerated once, when the **instrument** changed: the first CI run
+ * showed `.conn-line`'s padding is in `ch` (see `capture`). That regeneration
+ * was run against the same pre-extraction source (`35ad1314`, in a temporary
+ * worktree), not against the refactored page.
  */
 
 import assert from 'node:assert/strict';
@@ -106,7 +111,7 @@ function stub(): ApiStub {
   };
 }
 
-/** Kept to what the stylesheet decides; nothing that depends on font metrics. */
+/** Kept to what the stylesheet decides; the one font-sized value is normalised in `capture`. */
 const STYLE_PROPS = [
   'display',
   'position',
@@ -174,9 +179,38 @@ async function capture(page: Page, origin: string): Promise<Capture> {
     const root = document.querySelector('.connect');
     if (root === null) throw new Error('no .connect on the page');
     const lines: string[] = [];
+    /*
+     * One rule here is sized by the font itself: `.conn-line` pads by
+     * `calc((var(--lead) + 2) * 1ch)`, and `1ch` is the mono font's glyph
+     * width — so the px value differs between macOS and the Linux runner
+     * while the rule is identical (CI measured it: steps 3–4, and only they,
+     * failed on styles with the markup unchanged). Such an element's padding
+     * is recorded in `ch`, measured against a probe in its own font, to one
+     * decimal: leads are whole columns, and the probe's own width is rounded
+     * to layout units (it reads 2.003ch for 2ch on macOS).
+     */
+    const inCh = (el: Element, px: string): string => {
+      const probe = document.createElement('span');
+      probe.style.cssText = 'position:absolute;visibility:hidden;width:1ch;padding:0;';
+      el.append(probe);
+      const ch = probe.getBoundingClientRect().width;
+      probe.remove();
+      return px
+        .split(' ')
+        .map((part) => `${(Number.parseFloat(part) / ch).toFixed(1)}ch`)
+        .join(' ');
+    };
     const walk = (el: Element, path: string): void => {
       const style = getComputedStyle(el);
-      lines.push(`${path} ${props.map((p) => `${p}:${style.getPropertyValue(p)}`).join(';')}`);
+      const fontSized = el.classList.contains('conn-line');
+      lines.push(
+        `${path} ${props
+          .map((p) => {
+            const value = style.getPropertyValue(p);
+            return `${p}:${fontSized && p === 'padding' ? inCh(el, value) : value}`;
+          })
+          .join(';')}`,
+      );
       [...el.children].forEach((child, i) => {
         walk(child, `${path}>${child.tagName.toLowerCase()}[${String(i)}]`);
       });
