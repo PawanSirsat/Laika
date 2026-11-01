@@ -164,20 +164,18 @@ void describe('an agent credential is named as its agent (D-120)', () => {
 
   void test('a personal token, or a reply without the field, has none', () => {
     assert.equal(tokenAgentLabel(token({})), null);
-    const old = { ...token({}) } as Partial<TokenView>;
-    delete old.agent_label;
-    assert.equal(tokenAgentLabel(old as TokenView), null);
+    const { agent_label: _dropped, ...old } = token({});
+    assert.equal(tokenAgentLabel(old as unknown as TokenView), null);
   });
 });
 
 void describe('tokensByKind', () => {
   void test('splits in order, and a row without kind counts as personal', () => {
-    const old = { ...token({ id: 'old' }) } as Partial<TokenView>;
-    delete old.kind;
+    const { kind: _dropped, ...old } = token({ id: 'old' });
     const all = [
       token({ id: 'p1' }),
       credential('c1', 'a'),
-      old as TokenView,
+      old as unknown as TokenView,
       credential('c2', 'b'),
     ];
     const { personal, agent } = tokensByKind(all);
