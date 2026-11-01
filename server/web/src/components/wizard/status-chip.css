@@ -1,0 +1,76 @@
+/*
+ * StatusChip (LAI-1044). Existing tokens only: the `--chip-*` families and
+ * `--overdue`, which already carry both themes. No new token, no raw colour.
+ */
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0.125rem var(--space-2);
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-pill);
+  background: var(--chip-neutral-bg);
+  color: var(--text-primary);
+  font-size: var(--text-small);
+  line-height: 1.4;
+}
+
+.status-chip-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--chip-neutral);
+}
+
+.status-chip-word {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.status-chip-sep,
+.status-chip-reason {
+  color: var(--text-secondary);
+}
+
+.status-chip-reason {
+  overflow-wrap: anywhere;
+}
+
+.status-chip[data-tone='ok'] {
+  border-color: var(--chip-green-border);
+  background: var(--chip-green-bg);
+}
+
+.status-chip[data-tone='ok'] .status-chip-dot {
+  background: var(--chip-green);
+}
+
+.status-chip[data-tone='waiting'] {
+  border-color: var(--chip-blue-border);
+  background: var(--chip-blue-bg);
+}
+
+.status-chip[data-tone='waiting'] .status-chip-dot {
+  background: var(--chip-blue);
+}
+
+.status-chip[data-tone='warn'] {
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+}
+
+.status-chip[data-tone='warn'] .status-chip-dot {
+  background: var(--chip-orange);
+}
+
+.status-chip[data-tone='danger'] {
+  border-color: var(--overdue-border);
+  background: var(--blocked-bg);
+}
+
+.status-chip[data-tone='danger'] .status-chip-dot {
+  background: var(--overdue);
+}
