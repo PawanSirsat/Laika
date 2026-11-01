@@ -494,6 +494,82 @@ void describe('the Overview (LAI-1048)', () => {
     }
   });
 
+  void test('a change on refetch is announced, and focus moves to the new main action (review round 1)', async () => {
+    const now = Date.now();
+    const later = [
+      agentRow({ id: 'a1', harness: 'omnigent', last_seen_at: now - 60_000 }),
+      agentRow({ id: 'a2', harness: 'codex', device_label: 'Strelka', created_at: 2 }),
+    ];
+    let reads = 0;
+    const h = await open(
+      '/developer',
+      stub('v3', [], {
+        '/api/v1/agents/devices': () => {
+          reads += 1;
+          return { data: reads === 1 ? [] : devicesOf(later) };
+        },
+      }),
+    );
+    try {
+      const region = h.page.locator('[data-testid="dev-overview"] > p[aria-live="polite"]');
+      await h.page.getByRole('link', { name: 'Continue' }).waitFor({ timeout: 20_000 });
+      // Mounted empty: the first answer is what the page shows, not news.
+      assert.equal(await region.getAttribute('role'), 'status');
+      assert.equal((await region.textContent()) ?? '', '');
+
+      await h.page.getByRole('link', { name: 'Continue' }).focus();
+      // The reader comes back to the tab: the Overview reads again.
+      await h.page.evaluate(() => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await h.page.locator('.dev-summary').waitFor({ timeout: 20_000 });
+      assert.ok(reads >= 2, 'the Overview did not read again');
+
+      await h.page.waitForFunction(
+        (el) => el?.textContent === '2 tools on this board, 1 connected.',
+        await region.elementHandle(),
+        { timeout: 10_000 },
+      );
+      // Continue went with the journey; focus is on the summary's main action, not body.
+      await h.page.waitForFunction(
+        () => document.activeElement?.textContent === 'Set up a project',
+        undefined,
+        { timeout: 10_000 },
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a change on refetch leaves focus alone when it was somewhere else', async () => {
+    let reads = 0;
+    const h = await open(
+      '/developer',
+      stub('v3', [], {
+        '/api/v1/agents/devices': () => {
+          reads += 1;
+          return {
+            data: reads === 1 ? [] : devicesOf([agentRow({ id: 'a1', last_seen_at: Date.now() })]),
+          };
+        },
+      }),
+    );
+    try {
+      await h.page.getByRole('link', { name: 'Continue' }).waitFor({ timeout: 20_000 });
+      await h.page.locator('.page-tab[data-tab="activity"]').focus();
+      await h.page.evaluate(() => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await h.page.locator('.dev-summary').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.evaluate(() => document.activeElement?.getAttribute('data-tab')),
+        'activity',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('an old link with a tool opens the wizard on that tool', async () => {
     const h = await open('/connect?agent=codex', stub('v3'));
     try {

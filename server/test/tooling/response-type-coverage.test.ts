@@ -197,6 +197,9 @@ const UNPAIRED = new Map<string, string>([
   // `web/src/api/org.ts` — and the staleness guard below is what noticed, by
   // firing on a *reason* going false rather than on an entry going unnecessary.
   ['AvatarView', 'no client type exists'],
+  // LAI-1045: `GET /devices` is served ahead of the V3 Devices screen; plan
+  // LAI-1042 slice B3 writes the client's `DeviceView` and pairs it.
+  ['DeviceView', 'no client type exists'],
   // LAI-1043: served ahead of the Developer access V3 screens that read it;
   // `laika doctor` is its only reader until then.
   ['CompatibilityBody', 'no client type exists'],

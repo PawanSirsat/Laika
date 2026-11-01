@@ -33,10 +33,11 @@ export interface OverflowMenuProps {
  * click anywhere outside it — and so does focus leaving it any other way
  * (LAI-1048), such as a screen reader's own cursor moving past it.
  *
- * **A disabled item is `aria-disabled`, not `disabled`** (LAI-1048): it stays
- * in the accessibility tree and is announced as unavailable, rather than
- * vanishing from it, and choosing it does nothing. The arrows still pass over
- * it, as they did.
+ * **A disabled item is `aria-disabled`, not `disabled`** (LAI-1048): a screen
+ * reader reads it as unavailable, script can focus it, and choosing it does
+ * nothing. The arrows still pass over it, as they did, so a keyboard reader
+ * moving through the menu does not land on it — it is reached by reading the
+ * menu, not by arrowing to it.
  */
 export function OverflowMenu({ label, items }: OverflowMenuProps) {
   const [open, setOpen] = useState(false);

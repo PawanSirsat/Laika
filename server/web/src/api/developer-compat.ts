@@ -36,17 +36,79 @@ export function developerAccessMode(body: unknown): DeveloperAccessMode {
   return DEVELOPER_ACCESS_MODES.find((known) => known === mode) ?? 'classic';
 }
 
+/**
+ * How long Developer access waits for the answer before showing classic
+ * (LAI-1048, review round 1). The page draws nothing until the mode is known,
+ * so a request that hangs would otherwise hold the whole page on its loading
+ * card, in every mode.
+ */
+export const MODE_TIMEOUT_MS = 4_000;
+
+export interface ModeTimer {
+  readonly set: (run: () => void, ms: number) => unknown;
+  readonly clear: (handle: unknown) => void;
+}
+
+const REAL_TIMER: ModeTimer = {
+  set: (run, ms) => setTimeout(run, ms),
+  clear: (handle) => {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
+};
+
+/**
+ * `answer`, or `classic` if it has not settled within `ms` — and `onTimeout`,
+ * so the caller can abort the request it no longer waits for. A failed answer
+ * is `classic` too. Never rejects.
+ */
+export function modeWithin(
+  answer: Promise<DeveloperAccessMode>,
+  ms: number,
+  onTimeout: () => void = () => undefined,
+  timer: ModeTimer = REAL_TIMER,
+): Promise<DeveloperAccessMode> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const handle = timer.set(() => {
+      if (settled) return;
+      settled = true;
+      onTimeout();
+      resolve('classic');
+    }, ms);
+    answer.then(
+      (mode) => {
+        if (settled) return;
+        settled = true;
+        timer.clear(handle);
+        resolve(mode);
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        timer.clear(handle);
+        resolve('classic');
+      },
+    );
+  });
+}
+
 let asked: Promise<DeveloperAccessMode> | undefined;
 let known: DeveloperAccessMode | undefined;
 
-/** The mode, read once for the page's life; a failure settles as `classic`. */
+/** The mode, read once for the page's life; a failure or a timeout settles as `classic`. */
 export function loadDeveloperAccessMode(): Promise<DeveloperAccessMode> {
-  asked ??= request<DeveloperCompatibility>('/developer/compatibility')
-    .then(developerAccessMode, () => 'classic' as const)
-    .then((mode) => {
+  if (asked === undefined) {
+    const controller = new AbortController();
+    const answer = request<DeveloperCompatibility>('/developer/compatibility', {
+      signal: controller.signal,
+    }).then(developerAccessMode);
+    asked = modeWithin(answer, MODE_TIMEOUT_MS, () => {
+      controller.abort();
+    }).then((mode) => {
       known = mode;
       return mode;
     });
+  }
   return asked;
 }
 

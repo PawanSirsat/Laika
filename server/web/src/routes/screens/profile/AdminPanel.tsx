@@ -20,9 +20,12 @@ import type { Gates } from '../../../api/permissions.ts';
 import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import { dateTime } from '../../../api/time-label.ts';
 import {
+  agentRevokeImpact,
   lastUsedLabel,
   listUserTokens,
   revokeUserToken,
+  tokenAgentLabel,
+  tokensByKind,
   tokenState,
   type TokenView,
 } from '../../../api/tokens.ts';
@@ -565,60 +568,89 @@ function TokensBlock({
         (live.length === 0 ? (
           <p className="prof-admin-muted">No working tokens.</p>
         ) : (
-          <ul className="prof-admin-list">
-            {live.map((token) => (
-              <li key={token.id} className="prof-admin-item" data-token={token.id}>
-                <span className="prof-admin-item-main">
-                  <span className="prof-admin-item-name">{token.name}</span>
-                  <span className="prof-admin-item-meta">
-                    <code>{token.prefix}…</code> ·{' '}
-                    {token.scope === 'read_only' ? 'Read only' : 'Full'} ·{' '}
-                    {lastUsedLabel(token.last_used_at, now)}
-                  </span>
-                </span>
-                {mayRevoke &&
-                  (asking === token.id ? (
-                    <Confirm
-                      question={`Revoke ${token.name}?`}
-                      yes="Revoke"
-                      danger
-                      busy={busy}
-                      onYes={() => {
-                        setBusy(true);
-                        setError(undefined);
-                        revokeUserToken(user.id, token.id)
-                          .then(() => {
-                            setAttempt((n) => n + 1);
-                          })
-                          .catch((cause: unknown) => {
-                            setError(said(cause));
-                          })
-                          .finally(() => {
-                            setBusy(false);
-                            setAsking(undefined);
-                          });
-                      }}
-                      onNo={() => {
-                        setAsking(undefined);
-                      }}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className="prof-admin-btn prof-admin-btn-quiet"
-                      data-action="revoke-token"
-                      aria-label={`Revoke ${token.name}`}
-                      disabled={busy}
-                      onClick={() => {
-                        setAsking(token.id);
-                      }}
-                    >
-                      Revoke
-                    </button>
-                  ))}
-              </li>
-            ))}
-          </ul>
+          // Grouped by kind, as Organisation → Security is (LAI-1046).
+          (
+            [
+              ['personal', 'Personal tokens'],
+              ['agent', 'Tool credentials (Tool · Device)'],
+            ] as const
+          ).map(([kind, heading]) => {
+            const group = tokensByKind(live)[kind];
+            if (group.length === 0) return null;
+            return (
+              <div key={kind} data-kind={kind}>
+                <p className="prof-admin-muted">{heading}</p>
+                <ul className="prof-admin-list">
+                  {group.map((token) => {
+                    // Once per row (review N5): the name, the question and the button.
+                    const label = tokenAgentLabel(token);
+                    return (
+                      <li key={token.id} className="prof-admin-item" data-token={token.id}>
+                        <span className="prof-admin-item-main">
+                          <span className="prof-admin-item-name">{label ?? token.name}</span>
+                          <span className="prof-admin-item-meta">
+                            {token.kind === 'agent' && 'Tool credential · '}
+                            <code>{token.prefix}…</code> ·{' '}
+                            {token.scope === 'read_only' ? 'Read only' : 'Full'} ·{' '}
+                            {lastUsedLabel(token.last_used_at, now)}
+                          </span>
+                        </span>
+                        {asking === token.id && token.kind === 'agent' && (
+                          <p className="prof-admin-muted" data-impact>
+                            {agentRevokeImpact(token, user.name, live, now, !load.truncated)}
+                          </p>
+                        )}
+                        {mayRevoke &&
+                          (asking === token.id ? (
+                            <Confirm
+                              question={
+                                label === null
+                                  ? `Revoke ${token.name}?`
+                                  : `Revoke ${label}’s credential?`
+                              }
+                              yes="Revoke"
+                              danger
+                              busy={busy}
+                              onYes={() => {
+                                setBusy(true);
+                                setError(undefined);
+                                revokeUserToken(user.id, token.id)
+                                  .then(() => {
+                                    setAttempt((n) => n + 1);
+                                  })
+                                  .catch((cause: unknown) => {
+                                    setError(said(cause));
+                                  })
+                                  .finally(() => {
+                                    setBusy(false);
+                                    setAsking(undefined);
+                                  });
+                              }}
+                              onNo={() => {
+                                setAsking(undefined);
+                              }}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              className="prof-admin-btn prof-admin-btn-quiet"
+                              data-action="revoke-token"
+                              aria-label={`Revoke ${label ?? token.name}`}
+                              disabled={busy}
+                              onClick={() => {
+                                setAsking(token.id);
+                              }}
+                            >
+                              Revoke
+                            </button>
+                          ))}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })
         ))}
       {load.kind === 'ready' && load.truncated && (
         <p className="prof-admin-muted">Only the first pages are shown.</p>

@@ -67,6 +67,9 @@ import {
   AGENT_GRANT_SCOPES,
   AGENT_SESSION_END_REASONS,
   AGENT_STATUSES,
+  DEVICE_KINDS,
+  DEVICE_ORIGINS,
+  DEVICE_STATUSES,
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
   TIME_DRAFT_SOURCES,
@@ -910,6 +913,54 @@ export const tokens = sqliteTable(
   ],
 );
 
+// --------------------------------------------------------- §4.78 devices
+
+/**
+ * A device an owner's agents run on (§4.78, LAI-1045). Until LAI-1045 a device
+ * was only a normalised label; this gives it a server id that pairing (plan
+ * slice C) can later bind a key to.
+ *
+ * `agents.device_label` stays the authority for D-120's one tool per device
+ * and the cloud rule's label half; `services/devices.ts` keeps `device_id` in
+ * step with it. Devices are revoked, never deleted.
+ */
+export const devices = sqliteTable(
+  'devices',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    displayName: text('display_name').notNull(),
+    /** `deviceLabelKey` of the name; the empty key is the unnamed device. */
+    labelKey: text('label_key').notNull(),
+    kind: text('kind', { enum: DEVICE_KINDS }).notNull(),
+    origin: text('origin', { enum: DEVICE_ORIGINS }).notNull(),
+    /** Not secret. Set by pairing only; an imported device has none. */
+    publicKey: text('public_key'),
+    keyFingerprint: text('key_fingerprint'),
+    confirmedAt: integer('confirmed_at'),
+    pairedAt: integer('paired_at'),
+    status: text('status', { enum: DEVICE_STATUSES }).notNull(),
+    revokedAt: integer('revoked_at'),
+    lastSeenAt: integer('last_seen_at'),
+    createdAt,
+  },
+  (t) => [
+    index('devices_owner_user_id_idx').on(t.ownerUserId),
+    // Two active devices of one owner never share a name; a revoked one frees it.
+    uniqueIndex('devices_owner_label_key_active_unique')
+      .on(t.ownerUserId, t.labelKey)
+      .where(sql`status = 'active'`),
+    check('devices_kind_check', oneOf('kind', DEVICE_KINDS)),
+    check('devices_origin_check', oneOf('origin', DEVICE_ORIGINS)),
+    check('devices_status_check', oneOf('status', DEVICE_STATUSES)),
+  ],
+);
+
 // ---------------------------------------------------------- §4.63 agents
 
 /**
@@ -935,6 +986,12 @@ export const agents = sqliteTable(
     displayName: text('display_name').notNull(),
     harness: text('harness').notNull(),
     deviceLabel: text('device_label'),
+    /**
+     * The device row for `device_label` (§4.78). Null until linked: the boot
+     * backfill links an agent an older client registered. No cascade — a
+     * device is revoked, never deleted, and a cascade would take credentials.
+     */
+    deviceId: text('device_id').references(() => devices.id),
     status: text('status', { enum: AGENT_STATUSES }).notNull().default('active'),
     createdAt,
     revokedAt: integer('revoked_at'),
@@ -944,6 +1001,7 @@ export const agents = sqliteTable(
   (t) => [
     index('agents_org_id_idx').on(t.orgId),
     index('agents_owner_user_id_idx').on(t.ownerUserId),
+    index('agents_device_id_idx').on(t.deviceId),
     check('agents_status_check', oneOf('status', AGENT_STATUSES)),
   ],
 );

@@ -831,6 +831,18 @@
   margin: 0;
 }
 
+/* Personal tokens, then tool credentials (LAI-1046). */
+.org-tokens-group + .org-tokens-group {
+  margin-top: var(--space-3);
+}
+
+.org-tokens-group-head {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
 .org-tokens-empty {
   margin: 0;
   font-size: var(--text-body);

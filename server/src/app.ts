@@ -55,6 +55,7 @@ import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts
 import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
 import { eventRoutes } from './http/routes/events.ts';
 import { agentRoutes } from './http/routes/agents.ts';
+import { deviceRoutes } from './http/routes/devices.ts';
 import { agentSessionRoutes } from './http/routes/agent-sessions.ts';
 import { tokenRoutes, userTokenRoutes } from './http/routes/tokens.ts';
 import { mcpRoutes } from './http/routes/mcp.ts';
@@ -394,6 +395,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/tokens`, tokenRoutes({ db, sqlite: options.sqlite }));
     // D-114 (LAI-534): a person's registered agents and their credentials.
     app.route(`${API_BASE}/agents`, agentRoutes({ db, sqlite: options.sqlite }));
+    // LAI-1045: the owner's devices (§4.78), read only.
+    app.route(`${API_BASE}/devices`, deviceRoutes({ db }));
     app.route(`${API_BASE}/agent-sessions`, agentSessionRoutes({ db, sqlite: options.sqlite }));
     app.route(
       `${API_BASE}/invites`,

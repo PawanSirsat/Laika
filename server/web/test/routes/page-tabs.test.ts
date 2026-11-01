@@ -311,6 +311,18 @@ void describe('old Developer access addresses in V3 (LAI-1048, plan §C)', () =>
     );
   });
 
+  void test('a repeated parameter travels with every value, in order (review round 1)', () => {
+    assert.equal(alias('v3', 'tab=tokens&x=1&x=2'), 'tab=advanced&x=1&x=2');
+    assert.equal(alias('v3', 'tab=agents&agent=a1&x=1&x=2'), 'tab=devices&agent=a1&x=1&x=2');
+    assert.equal(alias('v3', 'tab=connect&x=1&x=2'), 'tab=overview&x=1&x=2');
+    // The wizard's own two are spent: only the first `agent` becomes the tool,
+    // and no stray copy of `agent` or `step` rides along.
+    assert.equal(
+      alias('v3', 'tab=connect&agent=codex&agent=cursor&step=2&step=3&x=1&x=2'),
+      'tab=devices&add=tool&tool=codex&x=1&x=2',
+    );
+  });
+
   void test('an empty ?agent= is no tool: plain Connect is the Overview', () => {
     assert.equal(alias('v3', 'tab=connect&agent='), 'tab=overview&agent=');
   });

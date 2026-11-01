@@ -251,3 +251,208 @@ describe('the admin paths (§3.1 — Owner and Admin only)', () => {
     expect(await res.text()).toContain('ada@example.test');
   });
 });
+
+describe('token kind on every view (LAI-1046)', () => {
+  // Deliberately unlike both halves of the label: a leak shows up as this string.
+  const PRIVATE_NAME = 'Secret registered name';
+
+  interface View {
+    id: string;
+    name: string;
+    kind: string;
+    agent_id: string | null;
+    agent_label: string | null;
+    revoked_at: number | null;
+  }
+
+  async function register(
+    deviceLabel: string | null,
+    cookie = ownerCookie,
+  ): Promise<{ agentId: string; token: View }> {
+    const res = await req(
+      '/api/v1/agents',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          display_name: PRIVATE_NAME,
+          harness: 'claude-code',
+          device_label: deviceLabel,
+          grants: [],
+        }),
+      },
+      cookie,
+    );
+    expect(res.status, await res.clone().text()).toBe(201);
+    const body = (await res.json()) as { agent: { id: string }; token: View };
+    return { agentId: body.agent.id, token: body.token };
+  }
+
+  async function list(path: string, cookie = ownerCookie): Promise<View[]> {
+    const res = await req(path, {}, cookie);
+    expect(res.status, await res.clone().text()).toBe(200);
+    return ((await res.json()) as { data: View[] }).data;
+  }
+
+  it('reads a legacy token as personal, with every older field as it was', async () => {
+    const res = await mint({ name: 'script', scope: 'full' });
+    expect(res.status).toBe(201);
+    const { token } = (await res.json()) as { token: Record<string, unknown> };
+
+    expect(token).toMatchObject({ kind: 'personal', agent_id: null, agent_label: null });
+    expect(Object.keys(token).sort()).toEqual(
+      [
+        'agent_id',
+        'agent_label',
+        'created_at',
+        'expires_at',
+        'id',
+        'kind',
+        'last_client',
+        'last_client_name',
+        'last_mcp_at',
+        'last_used_at',
+        'name',
+        'prefix',
+        'project_ids',
+        'revoked_at',
+        'scope',
+      ].sort(),
+    );
+  });
+
+  it('labels an agent credential harness · device on register, list and rotate', async () => {
+    const { agentId, token } = await register('Belka');
+    expect(token).toMatchObject({
+      kind: 'agent',
+      agent_id: agentId,
+      agent_label: 'claude-code · Belka',
+    });
+
+    const [listed] = await list('/api/v1/tokens');
+    expect(listed).toMatchObject({
+      id: token.id,
+      kind: 'agent',
+      agent_label: 'claude-code · Belka',
+    });
+
+    const rotated = await req(
+      `/api/v1/agents/${agentId}/rotate-token`,
+      { method: 'POST', body: JSON.stringify({ token_id: token.id }) },
+      ownerCookie,
+    );
+    expect(rotated.status, await rotated.clone().text()).toBe(201);
+    const body = (await rotated.json()) as { token: View; agent: { tokens: View[] } };
+    expect(body.token).toMatchObject({ kind: 'agent', agent_id: agentId });
+    expect(body.agent.tokens.map((t) => t.agent_label)).toEqual([
+      'claude-code · Belka',
+      'claude-code · Belka',
+    ]);
+  });
+
+  it('labels a blank device No device', async () => {
+    const { token } = await register('   ');
+    expect(token.agent_label).toBe('claude-code · No device');
+  });
+
+  it('filters by ?kind=, and absent or empty is every token, as before', async () => {
+    await mint({ name: 'script', scope: 'full' });
+    const { token } = await register('Belka');
+
+    expect((await list('/api/v1/tokens?kind=personal')).map((t) => t.name)).toEqual(['script']);
+    expect((await list('/api/v1/tokens?kind=agent')).map((t) => t.id)).toEqual([token.id]);
+    expect(await list('/api/v1/tokens')).toHaveLength(2);
+    expect(await list('/api/v1/tokens?kind=')).toHaveLength(2);
+  });
+
+  it('400s an unknown kind, naming it, on both lists', async () => {
+    for (const path of ['/api/v1/tokens?kind=agents', `/api/v1/users/${ownerId}/tokens?kind=x`]) {
+      const res = await req(path, {}, ownerCookie);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: unknown }).error).toMatchObject({
+        code: 'bad_request',
+        message: 'kind must be personal or agent',
+      });
+    }
+  });
+
+  it('pages a filtered list without letting the other kind in', async () => {
+    await mint({ name: 'p1', scope: 'full' });
+    await register('Belka');
+    await mint({ name: 'p2', scope: 'full' });
+    await register('Strelka');
+    await mint({ name: 'p3', scope: 'full' });
+
+    const names: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const query: string = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
+      const res = await req(`/api/v1/tokens?kind=personal&limit=1${query}`, {}, ownerCookie);
+      expect(res.status).toBe(200);
+      const page = (await res.json()) as { data: View[]; next_cursor: string | null };
+      names.push(...page.data.map((t) => `${t.kind}:${t.name}`));
+      cursor = page.next_cursor;
+    } while (cursor !== null);
+
+    expect(names).toEqual(['personal:p3', 'personal:p2', 'personal:p1']);
+  });
+
+  it('shows an admin the label and kind, never the registered name, and filters there too', async () => {
+    await mint({ name: 'script', scope: 'full' });
+    const { agentId, token } = await register('Belka');
+    const admin = await join('admin-kind@example.test', 'admin');
+
+    const all = await list(`/api/v1/users/${ownerId}/tokens`, admin.cookie);
+    const agent = all.find((t) => t.id === token.id);
+    expect(agent).toMatchObject({
+      kind: 'agent',
+      agent_id: agentId,
+      agent_label: 'claude-code · Belka',
+    });
+    expect(all.map((t) => t.agent_label).join('|')).not.toContain(PRIVATE_NAME);
+
+    expect(
+      (await list(`/api/v1/users/${ownerId}/tokens?kind=agent`, admin.cookie)).map((t) => t.id),
+    ).toEqual([token.id]);
+    expect(
+      (await list(`/api/v1/users/${ownerId}/tokens?kind=personal`, admin.cookie)).map(
+        (t) => t.kind,
+      ),
+    ).toEqual(['personal']);
+  });
+
+  it('lets an admin revoke an agent credential; the agent stays registered with none live', async () => {
+    const { agentId, token } = await register('Belka');
+    const admin = await join('admin-revoke@example.test', 'admin');
+
+    const del = await req(
+      `/api/v1/users/${ownerId}/tokens/${token.id}`,
+      { method: 'DELETE' },
+      admin.cookie,
+    );
+    expect(del.status).toBe(204);
+
+    const agents = await list(`/api/v1/users/${ownerId}/tokens?kind=agent`, admin.cookie);
+    // The row first: `undefined?.revoked_at` is not null either (review N2).
+    expect(agents.map((t) => t.id)).toEqual([token.id]);
+    expect(typeof agents[0]?.revoked_at).toBe('number');
+
+    // What the admin's confirmation says (plan §E.4, A13): the tool is still
+    // registered, active, with no live credential…
+    const agent = await req(`/api/v1/agents/${agentId}`, {}, ownerCookie);
+    expect(agent.status).toBe(200);
+    expect(await agent.json()).toMatchObject({ status: 'active' });
+
+    // …and cannot work again from here: a revoked credential cannot be
+    // rotated, so the owner disconnects it and connects it afresh (review B1).
+    const rotate = await req(
+      `/api/v1/agents/${agentId}/rotate-token`,
+      { method: 'POST', body: JSON.stringify({ token_id: token.id }) },
+      ownerCookie,
+    );
+    expect(rotate.status).toBe(409);
+    expect(((await rotate.json()) as { error: unknown }).error).toMatchObject({
+      code: 'conflict',
+      details: { reason: 'token_revoked' },
+    });
+  });
+});

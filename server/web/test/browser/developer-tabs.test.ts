@@ -134,6 +134,53 @@ void describe('the tabs (LAI-507, LAI-537)', () => {
     }
   });
 
+  void test('Tokens asks for personal tokens only, and its name hint is true (LAI-1046)', async () => {
+    // Only a request carrying `kind=personal` is answered with this row: the
+    // plain key answers an empty list, so the row on screen is the proof.
+    const h = await open(
+      '/developer?tab=tokens',
+      stub(false, {
+        '/api/v1/tokens?kind=personal': {
+          data: [
+            {
+              id: 't1',
+              name: 'deploy script',
+              prefix: 'lai_abcd',
+              scope: 'full',
+              project_ids: null,
+              last_used_at: null,
+              last_mcp_at: null,
+              last_client: null,
+              last_client_name: null,
+              expires_at: null,
+              revoked_at: null,
+              created_at: 1,
+              kind: 'personal',
+              agent_id: null,
+              agent_label: null,
+            },
+          ],
+          next_cursor: null,
+        },
+      }),
+    );
+    try {
+      await h.page.locator('.dev-tokens .tok-row', { hasText: 'deploy script' }).waitFor({
+        timeout: 20_000,
+      });
+      await h.page
+        .locator('.screen-page-actions')
+        .getByRole('button', { name: /New token/ })
+        .click();
+      const hint = h.page.locator('.tok-hint').first();
+      await hint.waitFor({ timeout: 10_000 });
+      assert.doesNotMatch(await hint.innerText(), /Only you see this/);
+      assert.match(await hint.innerText(), /anyone who can read a task this token creates/);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the wizard’s old address redirects into the tab, step and agent kept', async () => {
     const h = await open('/developer/connect?agent=codex&step=2', stub(false));
     try {

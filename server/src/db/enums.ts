@@ -248,6 +248,24 @@ export const AGENT_STATUSES = ['active', 'revoked'] as const;
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
 
 /**
+ * A device (§4.78, LAI-1045). `cloud` is a hosted runner: its agents' tokens
+ * live at most a day, as an agent labelled `Cloud` does (D-122).
+ */
+export const DEVICE_KINDS = ['local', 'cloud'] as const;
+export type DeviceKind = (typeof DEVICE_KINDS)[number];
+
+/**
+ * How a device came to exist (§4.78). `imported` was made from agents' device
+ * labels and holds no key; `paired` proved a key (plan slice C).
+ */
+export const DEVICE_ORIGINS = ['imported', 'paired'] as const;
+export type DeviceOrigin = (typeof DEVICE_ORIGINS)[number];
+
+/** A device's status (§4.78). `revoked` is terminal and frees its name. */
+export const DEVICE_STATUSES = ['active', 'revoked'] as const;
+export type DeviceStatus = (typeof DEVICE_STATUSES)[number];
+
+/**
  * An agent's grant on one project (§4.64, D-114): the same two words a token's
  * scope uses, because it narrows the same way — `read_only` keeps the reads.
  */

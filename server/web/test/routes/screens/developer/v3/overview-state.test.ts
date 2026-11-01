@@ -12,6 +12,7 @@ import {
   OFFLINE_MS,
   OVERVIEW_ADDRESSES,
   overviewState,
+  overviewSummary,
   toolActivity,
   toolAddress,
 } from '../../../../../src/routes/screens/developer/v3/overview-state.ts';
@@ -116,5 +117,40 @@ void describe('toolActivity', () => {
     assert.equal(toolActivity({ last_seen_at: now - ACTIVE_MS - 1 }, now), 'idle');
     assert.equal(toolActivity({ last_seen_at: now - OFFLINE_MS }, now), 'idle');
     assert.equal(toolActivity({ last_seen_at: now - OFFLINE_MS - 1 }, now), 'offline');
+  });
+});
+
+void describe('overviewSummary: what the live region says (review round 1)', () => {
+  void test('first run names the next step', () => {
+    assert.equal(overviewSummary(overviewState([])), 'Next step: Add a device.');
+    assert.equal(
+      overviewSummary(overviewState([device('Belka', [agent({ id: 'a1' })])])),
+      'Next step: Add a coding tool.',
+    );
+  });
+
+  void test('returning counts as connected only the tools the board has heard from', () => {
+    // The browser test's returning fixture: a1 seen, a2 never.
+    const s = overviewState([
+      device('Belka', [agent({ id: 'a1', last_seen_at: 10 })]),
+      device('Strelka', [agent({ id: 'a2', created_at: 2 })]),
+    ]);
+    assert.equal(overviewSummary(s), '2 tools on this board, 1 connected.');
+    assert.doesNotMatch(overviewSummary(s), /2 tools connected/);
+  });
+
+  void test('one tool, seen, is one tool and one connected', () => {
+    const s = overviewState([device('Belka', [agent({ id: 'a1', last_seen_at: 10 })])]);
+    assert.equal(overviewSummary(s), '1 tool on this board, 1 connected.');
+  });
+
+  void test('revoked agents are in neither number', () => {
+    const s = overviewState([
+      device('Belka', [
+        agent({ id: 'a1', last_seen_at: 10 }),
+        agent({ id: 'gone', status: 'revoked', last_seen_at: 9 }),
+      ]),
+    ]);
+    assert.equal(overviewSummary(s), '1 tool on this board, 1 connected.');
   });
 });

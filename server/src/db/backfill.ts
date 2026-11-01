@@ -1,8 +1,11 @@
-import { and, asc, eq, isNotNull, isNull, notLike, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, notLike, sql } from 'drizzle-orm';
 import { readPayload } from './activity.ts';
 import { type Db } from './client.ts';
-import { activity, idempotencyKeys, tasks } from './schema.ts';
+import { activity, agents, devices, idempotencyKeys, tasks } from './schema.ts';
+import { deviceLabelKey } from './device-label.ts';
+import { activeDeviceFor, insertImportedDevice, newestDeviceFor } from './devices.ts';
 import { keysInOrder } from './order-key.ts';
+import { immediateTransaction } from './numbering.ts';
 
 /**
  * Recover `started_at` and `completed_at` from the audit trail (LAI-435).
@@ -262,4 +265,125 @@ export function purgeUnversionedIdempotencyKeys(db: Db): number {
     .delete(idempotencyKeys)
     .where(notLike(idempotencyKeys.actorId, `${IDEMPOTENCY_OWNER_VERSION}:%`))
     .run().changes;
+}
+
+/**
+ * Link every agent with no `device_id` to its device, and relink every agent
+ * whose linked device no longer matches its label, and return how many
+ * (LAI-1045, §4.78). The same rule as migration `0070`, for agents it did not
+ * see: one registered between a snapshot restore and a re-upgrade, or by code
+ * that did not link.
+ *
+ * A **stale link** is one whose device's owner or label key is not the
+ * agent's own: an agent relabelled by code that wrote `device_label` without
+ * `device_id` (a build rolled back to before 0070 against a database kept at
+ * 0070). `device_label` is the authority (D-122 item 2), so the link follows
+ * it; the device it left keeps its row.
+ *
+ * - An active device for the agent's (owner, label key) takes it.
+ * - Otherwise, if any of the key's unlinked agents is active, an active
+ *   `imported` device is made for them, named as the devices list names it.
+ * - Otherwise they are all revoked: the key's newest device takes them, or a
+ *   revoked one is made, so the name stays free.
+ *
+ * **Idempotent by construction**: it reads only agents that are unlinked or
+ * stale, and every agent it reads leaves linked to its label's device. Nothing is merged, revoked or renamed,
+ * and no other column of `agents` is written.
+ *
+ * A database a cut-back test migrated to before `0070` has no `devices`; it
+ * is skipped, as there is nothing to link to.
+ */
+export function backfillAgentDevices(db: Db): number {
+  const ready = db.get<{ n: number }>(
+    sql`SELECT count(*) AS n FROM pragma_table_info('agents') WHERE name = 'device_id'`,
+  );
+  if ((ready?.n ?? 0) === 0) return 0;
+
+  // The read is inside the write transaction, so nothing registered between
+  // reading and writing can be missed or linked twice.
+  return immediateTransaction(db.$client, () => {
+    // The key is computed here, not in SQL: SQLite's lower() is ASCII-only.
+    const unlinked = db
+      .select({
+        id: agents.id,
+        orgId: agents.orgId,
+        ownerUserId: agents.ownerUserId,
+        deviceLabel: agents.deviceLabel,
+        status: agents.status,
+        createdAt: agents.createdAt,
+        revokedAt: agents.revokedAt,
+        lastSeenAt: agents.lastSeenAt,
+        deviceId: agents.deviceId,
+        deviceOwner: devices.ownerUserId,
+        deviceKey: devices.labelKey,
+      })
+      .from(agents)
+      .leftJoin(devices, eq(devices.id, agents.deviceId))
+      .orderBy(desc(agents.createdAt), desc(agents.id))
+      .all()
+      .filter(
+        (row) =>
+          row.deviceId === null ||
+          row.deviceOwner !== row.ownerUserId ||
+          row.deviceKey !== deviceLabelKey(row.deviceLabel),
+      );
+    if (unlinked.length === 0) return 0;
+
+    // Newest first, so each group's first row names the device, as the list does.
+    const groups = new Map<string, typeof unlinked>();
+    for (const row of unlinked) {
+      const key = `${row.ownerUserId}\u0000${deviceLabelKey(row.deviceLabel)}`;
+      const group = groups.get(key);
+      if (group === undefined) groups.set(key, [row]);
+      else group.push(row);
+    }
+
+    for (const group of groups.values()) {
+      linkGroup(db, group);
+    }
+    return unlinked.length;
+  });
+}
+
+interface UnlinkedAgent {
+  id: string;
+  orgId: string;
+  ownerUserId: string;
+  deviceLabel: string | null;
+  status: 'active' | 'revoked';
+  createdAt: number;
+  revokedAt: number | null;
+  lastSeenAt: number | null;
+}
+
+/** Link one (owner, label key) group, newest first, to its device. */
+function linkGroup(db: Db, group: UnlinkedAgent[]): void {
+  const newest = group[0]!;
+  const labelKey = deviceLabelKey(newest.deviceLabel);
+  const anyActive = group.some((row) => row.status === 'active');
+  const lastSeenAt = group.reduce<number | null>(
+    (max, row) => (row.lastSeenAt === null ? max : Math.max(max ?? row.lastSeenAt, row.lastSeenAt)),
+    null,
+  );
+  const device =
+    activeDeviceFor(db, newest.ownerUserId, labelKey) ??
+    (anyActive ? null : newestDeviceFor(db, newest.ownerUserId, labelKey)) ??
+    insertImportedDevice(db, {
+      orgId: newest.orgId,
+      ownerUserId: newest.ownerUserId,
+      label: labelKey === '' ? null : (newest.deviceLabel ?? null),
+      status: anyActive ? 'active' : 'revoked',
+      now: Math.min(...group.map((row) => row.createdAt)),
+      revokedAt: anyActive ? null : Math.max(...group.map((row) => row.revokedAt ?? row.createdAt)),
+      lastSeenAt,
+    });
+  db.update(agents)
+    .set({ deviceId: device.id })
+    .where(
+      inArray(
+        agents.id,
+        group.map((row) => row.id),
+      ),
+    )
+    .run();
 }
