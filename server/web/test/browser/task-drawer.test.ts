@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub } from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -405,6 +405,71 @@ void describe('the task drawer', () => {
         Math.abs(seen.select - seen.pick) <= 1,
         `the select stops short of its box: ${JSON.stringify(seen)}`,
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('closing the drawer gives focus back (LAI-1021)', () => {
+  /** What holds focus, as a selector-ish string a failure can be read from. */
+  const focused = (h: Awaited<ReturnType<typeof open>>) =>
+    h.page.evaluate(() => {
+      const el = document.activeElement;
+      if (el === null || el === document.body) return 'body';
+      const row = el.closest<HTMLElement>('[data-task-id]')?.dataset.taskId ?? '';
+      return `${el.tagName.toLowerCase()}.${el.className}@${row}`;
+    });
+
+  /** Keyboard to the opener, Enter, and wait for the panel. */
+  async function openByKey(h: Awaited<ReturnType<typeof open>>, opener: string) {
+    const button = h.page.locator(opener);
+    await button.waitFor({ timeout: 20_000 });
+    await button.focus();
+    await h.page.keyboard.press('Enter');
+    await h.page.locator('.drawer .panel-close').waitFor({ timeout: 10_000 });
+  }
+
+  for (const [where, path, opener, expected] of [
+    [
+      'a board card',
+      '/board',
+      '[data-task-id="t3"] .card-open',
+      'button.card-key card-open t-code@t3',
+    ],
+    ['a list row', '/list', '[data-task-id="t3"] .list-open', 'button.list-open@t3'],
+  ] as const) {
+    void test(`from ${where}: Escape and × both return focus to its open button`, async () => {
+      const h = await open(`${path}?project=laika-core`, STUB);
+      try {
+        await h.page.setViewportSize({ width: 1440, height: 900 });
+
+        await openByKey(h, opener);
+        await h.page.keyboard.press('Escape');
+        await h.page.locator('.drawer').waitFor({ state: 'detached', timeout: 10_000 });
+        await until(async () => (await focused(h)) !== 'body', 2_000);
+        assert.equal(await focused(h), expected, 'Escape left focus elsewhere');
+
+        await openByKey(h, opener);
+        await h.page.locator('.drawer .panel-close').focus();
+        await h.page.keyboard.press('Enter');
+        await h.page.locator('.drawer').waitFor({ state: 'detached', timeout: 10_000 });
+        await until(async () => (await focused(h)) !== 'body', 2_000);
+        assert.equal(await focused(h), expected, '× left focus elsewhere');
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('opened from a URL, with no opener, closing lands on the task’s card, not body', async () => {
+    const h = await open('/board?project=laika-core&task=t3', STUB);
+    try {
+      await h.page.locator('.drawer .panel-close').waitFor({ timeout: 20_000 });
+      await h.page.keyboard.press('Escape');
+      await h.page.locator('.drawer').waitFor({ state: 'detached', timeout: 10_000 });
+      await until(async () => (await focused(h)) !== 'body', 2_000);
+      assert.equal(await focused(h), 'button.card-key card-open t-code@t3');
     } finally {
       await h.close();
     }

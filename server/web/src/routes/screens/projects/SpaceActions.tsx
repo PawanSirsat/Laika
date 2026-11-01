@@ -159,11 +159,20 @@ export function SpaceActions({
       </button>
     ) : null;
   }
+  /*
+   * **Named for their space, read as their word** (LAI-1023). Every row's
+   * buttons said only "Context" and "Members", so a screen reader's list of
+   * buttons held five of each and no way to tell them apart. The name starts
+   * with the visible word, so a voice user saying "Context" still reaches it.
+   */
   return (
     <>
       <button
         type="button"
         className="space-link"
+        data-action="context"
+        data-space={space.slug}
+        aria-label={`Context for ${space.name}`}
         onClick={() => {
           handlers.onContext(space);
         }}
@@ -173,6 +182,7 @@ export function SpaceActions({
       <button
         type="button"
         className="space-link"
+        aria-label={`Members of ${space.name}`}
         onClick={() => {
           handlers.onMembers(space);
         }}

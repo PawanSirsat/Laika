@@ -2,11 +2,13 @@
 id: LAI-1023
 title: 'Each space''s "Context" button names its space for screen readers'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p3
 depends-on: []
 discovered-from: LAI-1018
-status: backlog
+status: review
+started: 2026-11-01T13:03:17Z
+finished: 2026-11-01T13:17:27Z
 ---
 
 ## Why
@@ -22,8 +24,15 @@ apart (2.4.9, AAA). The same holds for the row's "Members" button.
 
 ## Acceptance criteria
 
-- [ ] Each space's "Context" button has an accessible name that includes the
+- [x] Each space's "Context" button has an accessible name that includes the
       space, such as "Context for Laika". The visible text stays "Context".
-- [ ] The same for "Members", if it shares the pattern.
-- [ ] A web test asserts two spaces' Context buttons have different
+- [x] The same for "Members", if it shares the pattern.
+- [x] A web test asserts two spaces' Context buttons have different
       accessible names.
+
+## Build notes (shell/belka)
+
+- `SpaceActions`: `aria-label="Context for <space>"` and `"Members of <space>"`;
+  visible text unchanged and the name starts with it (WCAG 2.5.3).
+- Test: `test/browser/spaces-page.test.ts` "each space's buttons name it
+  (LAI-1023)", grid and list views. Red with either label removed.
