@@ -2,7 +2,7 @@ import { useId, useState, type ReactNode } from 'react';
 import type { AgentClient } from '../../api/agent-clients.ts';
 import { dateTime } from '../../api/time-label.ts';
 import { AgentChip, type AgentChipProps } from './AgentChip.tsx';
-import { ExecutionStateLine } from './ExecutionStateLine.tsx';
+import { ExecutionStateLine, NoRecentSaveLine } from './ExecutionStateLine.tsx';
 import {
   CLAIM_EXPIRED_WORDS,
   NO_CHECKPOINT,
@@ -118,6 +118,12 @@ export interface ExecutionPanelProps {
   readonly handoff?: string | undefined;
   /** `task_claims.generation`. */
   readonly generation: number | null;
+  /**
+   * §9.1.1's checkpoint warning (LAI-1016): the window the server found the
+   * live claim past, from the task view's `handoff.no_recent_save`. `undefined`
+   * says nothing.
+   */
+  readonly noRecentSaveMs?: number | undefined;
 }
 
 /**
@@ -144,11 +150,15 @@ export function ExecutionPanel({
   generation,
   claim,
   claimExpired = false,
+  noRecentSaveMs,
   children,
 }: ExecutionPanelProps) {
   return (
     <section className="exec-panel" aria-label="Agent execution" data-exec-panel>
       {state !== null && <ExecutionStateLine state={state} variant="panel" />}
+      {noRecentSaveMs !== undefined && (
+        <NoRecentSaveLine windowMs={noRecentSaveMs} variant="panel" />
+      )}
       {claimExpired && <ClaimExpiredLine />}
       <dl className="exec-facts">
         <div>

@@ -17,7 +17,10 @@ import {
   selectedHarness,
   twinsOnTasks,
 } from '../../../api/selected-agent.ts';
-import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
+import {
+  ExecutionStateLine,
+  NoRecentSaveLine,
+} from '../../../components/agent/ExecutionStateLine.tsx';
 import { cardExecutionState, liveClaimDetail } from '../../../components/agent/execution-derive.ts';
 import { handoffState } from '../../../components/agent/handoff-derive.ts';
 import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
@@ -116,11 +119,22 @@ export function TaskCard({
   // that speak first — and outranks *Waiting for agent*, as the drawer does.
   const saveState = fields.handoff ? handoffState(task.handoff) : null;
   const saveStateId = `card-state-${task.id}`;
+  // §9.1.1's checkpoint warning (LAI-1016), the server's: drawn only under the
+  // live claim's *Working* or *Connection lost* line, never in place of it and
+  // never alone — a card that does not show the claim does not show this.
+  const noRecentSave =
+    fields.handoff &&
+    saveState === null &&
+    (execution === 'working' || execution === 'connection_lost')
+      ? (task.handoff?.no_recent_save ?? null)
+      : null;
+  const noRecentSaveId = `card-no-save-${task.id}`;
   const openRef = useRef<HTMLButtonElement>(null);
   const describedBy =
     [
       onKeyMove === undefined ? undefined : 'card-move-help',
       saveState === null ? undefined : saveStateId,
+      noRecentSave === null ? undefined : noRecentSaveId,
     ]
       .filter((id): id is string => id !== undefined)
       .join(' ') || undefined;
@@ -224,6 +238,9 @@ export function TaskCard({
         />
       ) : (
         execution !== null && <ExecutionStateLine state={execution} detail={executionDetail} />
+      )}
+      {noRecentSave !== null && (
+        <NoRecentSaveLine windowMs={noRecentSave.window_ms} id={noRecentSaveId} />
       )}
 
       <div className="card-foot">
