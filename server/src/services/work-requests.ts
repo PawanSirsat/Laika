@@ -32,6 +32,13 @@ import { liveClaim } from './claims.ts';
  * selected_agent_id }`, the shape `assignee_id`'s `not_on_project` already
  * uses (§6.4): §6.3's codes are closed (D-021), and the reason is what tells a
  * caller what to fix.
+ *
+ * **Another person's agent is missing, not hidden** (D-121 item 7, LAI-1027):
+ * one owned by somebody else, or sitting in another organisation, is refused
+ * byte for byte as an id that names no agent, so a selection cannot be used to
+ * learn that an id is real. `agent_other_owner` and `agent_wrong_org` stay in
+ * the list below only because the web client mirrors it exactly; nothing
+ * answers them any more.
  */
 
 export const SELECTED_AGENT_REFUSALS = [
@@ -111,9 +118,10 @@ export function assertAgentSelectable(
   agentId: string,
 ): void {
   const agent = db.select().from(agents).where(eq(agents.id, agentId)).get();
-  if (agent === undefined) throw refused('agent_not_found', agentId);
-  if (agent.ownerUserId !== actor.userId) throw refused('agent_other_owner', agentId);
-  if (agent.orgId !== project.orgId) throw refused('agent_wrong_org', agentId);
+  // Not theirs, or not in this org: exactly as missing (D-121 item 7).
+  if (agent === undefined || agent.ownerUserId !== actor.userId || agent.orgId !== project.orgId) {
+    throw refused('agent_not_found', agentId);
+  }
   if (agent.status !== 'active') throw refused('agent_revoked', agentId);
 
   const grant = db
@@ -131,14 +139,20 @@ export function assertAgentSelectable(
 
 /**
  * Changing the selected agent while a session holds the task's live claim
- * must go through a hand-off (proposal §3) — LAI-546's. Until hand-offs
- * exist it is refused: `409 conflict`, `reason: claim_held`, the fence's
- * own reason (LAI-541), naming the agent that holds it. A task with no live
- * claim — never claimed, released, or expired — changes freely.
+ * must go through a hand-off (proposal §3, LAI-546): `409 conflict`,
+ * `reason: claim_held`, the fence's own reason (LAI-541), naming the agent
+ * that holds it. A task with no live claim — never claimed, released, or
+ * expired — changes freely.
+ *
+ * **Selecting the agent that already holds the claim is not a change of
+ * hands** (LAI-1027): a claim taken while nothing was selected can be backed
+ * by its own holder's selection afterwards, and the claim is left exactly as
+ * it was. Withdrawing (`to: null`) or naming anyone else is still refused.
  */
-export function assertSelectionChangeAllowed(db: Db, task: TaskRow): void {
+export function assertSelectionChangeAllowed(db: Db, task: TaskRow, to: string | null): void {
   const live = liveClaim(db, task.id);
   if (live === undefined) return;
+  if (to !== null && live.agentId === to) return;
   throw new ApiError(
     'conflict',
     'An agent session holds this task; changing the agent needs a hand-off',
@@ -151,6 +165,11 @@ export function assertSelectionChangeAllowed(db: Db, task: TaskRow): void {
  * transaction: cancel the open work request, if any, and open one for the new
  * agent. `null` withdraws. The caller has already decided the selection
  * changes and that the agent is eligible.
+ *
+ * The new agent may already hold the task's live claim (LAI-1027). Its
+ * request is then written **`accepted`**, closed now — what claiming does to
+ * an open one (proposal §4.4) — so a request never sits open beside its own
+ * agent's claim.
  */
 export function moveSelection(
   db: Db,
@@ -172,16 +191,17 @@ export function moveSelection(
 
   if (agentId === null) return;
 
+  const held = liveClaim(db, taskId)?.agentId === agentId;
   db.insert(handoffOffers)
     .values({
       id: newId(),
       taskId,
       kind: 'work_request',
       toAgentId: agentId,
-      state: 'open',
+      state: held ? 'accepted' : 'open',
       createdByUserId: actor.userId,
       createdAt: now,
-      closedAt: null,
+      closedAt: held ? now : null,
     })
     .run();
 }

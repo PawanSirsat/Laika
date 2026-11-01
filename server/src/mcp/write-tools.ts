@@ -199,7 +199,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Create a task',
       description:
-        'File a task on a project. If no task covers the work you are about to do, create one before starting it. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight.',
+        'File a task on a project. If no task covers the work you are about to do, create one before starting it. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight. Pass `agent` — your own registered agent’s id — to select it in the same call, before you claim.',
       inputSchema: z.strictObject({
         project: PROJECT_REF,
         title: TASK_FIELDS.title,
@@ -222,6 +222,14 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         planned_start: DATE_ONLY.optional(),
         size: TASK_FIELDS.size.optional(),
         external_ref: TASK_FIELDS.external_ref.optional(),
+        agent: z
+          .string()
+          .min(1)
+          .max(64)
+          .optional()
+          .describe(
+            'Select a registered agent (its id) to do this task from the start — a work request, as `update_task`’s `agent`; it does not assign or claim it. Only your own agents, active and granted full access here.',
+          ),
       }),
     },
     ({
@@ -240,6 +248,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       planned_start,
       size,
       external_ref,
+      agent,
     }) => {
       try {
         const now = clock();
@@ -267,6 +276,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           ...(planned_start === undefined ? {} : { planned_start }),
           ...(size === undefined ? {} : { size }),
           ...(external_ref === undefined ? {} : { external_ref }),
+          ...(agent === undefined ? {} : { selected_agent_id: agent }),
           // §7.1: an agent's task says so. Not a default the service guesses.
           created_via: 'mcp',
           now,

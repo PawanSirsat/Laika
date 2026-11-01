@@ -1098,9 +1098,11 @@ function selectedForAnotherAgent(db: Db, claim: Pick<ClaimRow, 'taskId' | 'agent
 
 /**
  * **A claim held by an agent that is not the task's selected agent** (D-119,
- * LAI-586 review). The API cannot make one any more — a claim needs the
- * selection, and the selection cannot change under a live claim — but a claim
- * taken before the rule, or before the selection, can still be live.
+ * LAI-586 review). The API cannot make one any more. A claim does **not**
+ * need a selection — with nothing selected any eligible agent may claim — but
+ * under a live claim the selection can change only to the claim's own holder
+ * (LAI-1027); anyone else needs a hand-off, whose accept moves the selection
+ * and the claim together. A claim taken before the rule can still be live.
  *
  * It is **never renewed and never usable**: `start_working` and the reclaim
  * refuse it `selected_for_another_agent`, and so does the fence for any change
