@@ -1128,7 +1128,10 @@ argv in the new worktree. **The harness accepts, not the launcher**: its prompt
 tells it to run `laika agent handoff accept <offer>`, so every check the board
 makes on an accept applies, and an offer that is waiting for approval, closed,
 expired or not verified is refused by `prepare` before anything starts. A work
-request is refused (LAI-1039).
+request is refused (LAI-1039). **The agent must be known**: when the event
+helper has not yet learned which agent this credential is, the launcher asks
+the board whose inbox holds the offer and goes on only if it is that agent's;
+otherwise the offer is refused (`agent_unresolved`).
 
 **What the harness is given.**
 
@@ -1137,7 +1140,8 @@ request is refused (LAI-1039).
 - **environment**: `HOME PATH TMPDIR LANG LC_ALL USER LOGNAME TERM
   XDG_CONFIG_HOME`, plus `LAIKA_LAUNCH_DIR` and `LAIKA_LAUNCH_OFFER`.
   `SSH_AUTH_SOCK` only with `"pass_ssh_agent": true` — the ssh agent lets the
-  harness sign as you to any host your keys reach, so it is off by default. **No token**: the agent's own stays in
+  harness sign as you to any host your keys reach, so it is off by default.
+  **No token**: the agent's own stays in
   `~/.laika/agents/<harness>.json` for its `laika agent …` calls. A
   `LAIKA_AGENT_TOKEN` in the launcher's environment is ignored.
 - **`$LAIKA_LAUNCH_DIR/offer.json`**: ids, the worktree, the branch and the
@@ -1153,7 +1157,9 @@ launcher** — put the harness's own flag in its argv (e.g. Claude Code's
 Git older than 2.41 is refused.
 
 **Refused config.** A command string instead of an array; a relative program;
-a program that group or others can write; a shell or wrapper as the program
+a program that group or others can write, that is owned by neither you nor
+root, or whose folder — or, through a symlink, whose target's folder — group or
+others can write; a shell or wrapper as the program
 (`sh`, `bash`, `zsh`, `env`, `sudo`, …); a `repo` that is relative, missing or
 reached through a symlink; an unknown key; a config that is a symlink, is
 writable by group or others, or is owned by someone else; a `~/.laika` that is
@@ -1165,17 +1171,25 @@ itself — can run any command it likes. You are trusting every argv you write
 into this file; the launcher only makes sure nobody else's text is added to it.
 
 **One launcher per device.** `run` takes `~/.laika/launcher/launcher.pid` with
-an exclusive create; a second `run` is refused. A pid file whose launcher is
-dead (pid and start time no longer match) is cleared, under a second lock so
-two new launchers cannot both clear it.
+an exclusive create, written whole; a second `run` is refused. A pid file whose
+launcher is dead — judged by pid and start time, never by age — is cleared
+under a *break* lock named for that dead holder (`launcher.pid.reap-…`), which
+itself holds a pid and start time. Under it the file is read again and removed
+only if it still names that holder, so two new launchers cannot both clear it,
+and a breaker that died holding its lock is cleared the same way. An
+unreadable lock file is never guessed at: remove it yourself.
 
 **If the launcher dies.** SIGINT, SIGTERM and SIGHUP stop it cleanly, ending
 every run it started. Each run's pid, start time and deadline are kept in
 `~/.laika/launcher/status.json`, so a launcher that was killed or crashed
-leaves a record: `status` names any run still alive, `stop` ends it even with
-the launcher gone, and the next `run` ends it before starting anything. Only a
-process whose start time still matches is signalled, so a reused pid is never
-hit.
+leaves a record: `status` names any run still alive and ends one past its
+`deadline`; `stop` ends every one even with the launcher gone; the next `run`
+ends them before starting anything. `status` and `stop` take the launcher's
+lock while they do it, so a launcher starting at that moment is never
+mistaken for a dead one. Only a process whose start time still matches is
+signalled, so a reused pid is never hit — and a record that cannot be checked
+(no start time, or no process table) is **kept and shown by `status`**, never
+signalled and never erased.
 
 **What "ends a run" reaches.** The harness's process group: SIGTERM, then
 SIGKILL. A process the harness moved into a session or group of its own

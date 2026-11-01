@@ -74,6 +74,7 @@ const launcher = startLauncher(
       );
       return Promise.resolve(0);
     },
+    addressee: () => Promise.resolve(record.to?.agent_id),
     note: () => Promise.resolve('<<<UNTRUSTED-NOTE n\n(no note)\nUNTRUSTED-NOTE n>>>'),
     spawn,
     stopped: () => stopped,

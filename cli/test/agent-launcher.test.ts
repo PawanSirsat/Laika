@@ -10,11 +10,13 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -47,6 +49,7 @@ import {
   STOP_SIGNALS,
   statusPath,
   takePid,
+  launcherDir,
 } from '../src/agent-launcher.ts';
 import { readProc, writeCredential } from '../src/agent-session.ts';
 
@@ -190,6 +193,7 @@ function rig(records: () => readonly EventRecord[], over: Partial<LauncherDeps> 
       );
       return Promise.resolve(0);
     },
+    addressee: () => Promise.resolve(AGENT),
     note: () => Promise.resolve(`<<<UNTRUSTED-NOTE n\n${NOTE}\nUNTRUSTED-NOTE n>>>`),
     spawn,
     stopped: () => stopped,
@@ -832,7 +836,7 @@ void describe('the single-instance lock', () => {
     );
     const results = await contend(home, 6);
     assert.equal(results.filter((r) => r === 'won').length, 1, JSON.stringify(results));
-    assert.equal(existsSync(`${pidPath(home)}.reap`), false, 'the reap lock is released');
+    assert.deepEqual(lockLeftovers(home), [], 'no break lock or temp file is left');
   });
 
   void test('a live holder is never displaced, and its file is untouched', () => {
@@ -938,5 +942,246 @@ void describe('runs a launcher leaves behind', () => {
       await second.exited;
       if (alive(pid)) process.kill(pid, 'SIGKILL');
     }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* LAI-1041: the round-2 review's six items                                   */
+/* -------------------------------------------------------------------------- */
+
+/** Files beside the pid file other than the pid file itself: break locks, temps. */
+function lockLeftovers(home: string): string[] {
+  return readdirSync(launcherDir(home)).filter(
+    (f) => f.startsWith('launcher.pid') && f !== 'launcher.pid',
+  );
+}
+
+const breakLock = (home: string, pid: number, started: string): string =>
+  `${pidPath(home)}.reap-${String(pid)}-${createHash('sha256').update(started).digest('hex').slice(0, 12)}`;
+
+async function deadPid(): Promise<number> {
+  const dead = spawn(process.execPath, ['-e', '0']);
+  await new Promise((r) => dead.on('exit', r));
+  return dead.pid!;
+}
+
+/**
+ * A detached process that ignores SIGTERM, standing in for a leftover run.
+ * Resolves only once its handler is installed, so a SIGTERM cannot beat it.
+ */
+async function sleeper(): Promise<{ pid: number; started: string }> {
+  const child = spawn(
+    process.execPath,
+    [
+      '-e',
+      "process.on('SIGTERM', () => undefined); process.stdout.write('ready\\n'); setTimeout(() => undefined, 60000)",
+    ],
+    { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
+  );
+  await new Promise<void>((resolve) => child.stdout.once('data', () => resolve()));
+  child.stdout.destroy();
+  child.unref();
+  const pid = child.pid!;
+  const info = readProc(pid);
+  assert.ok(info !== 'unknown' && info !== undefined, 'the sleeper is in the process table');
+  return { pid, started: info.started };
+}
+
+function recordRuns(home: string, runs: Record<string, unknown>[]): void {
+  mkdirSync(launcherDir(home), { recursive: true });
+  writeFileSync(statusPath(home), JSON.stringify({ version: 1, live: true, running: runs }));
+}
+
+function cliIo(home: string): { io: Parameters<typeof launcherCommand>[0]; out: string[] } {
+  const out: string[] = [];
+  return {
+    out,
+    io: { out: (x: string) => out.push(x), err: (x: string) => out.push(x), home, env: {} },
+  };
+}
+
+void describe('1. the break lock is judged by liveness, not age', () => {
+  const OLD = 'Mon Jan  1 00:00:00 2001';
+
+  void test('a breaker that died holding its break lock does not block the next launcher', async () => {
+    const home = scratch();
+    mkdirSync(launcherDir(home), { recursive: true });
+    const holder = await deadPid();
+    writeFileSync(pidPath(home), JSON.stringify({ pid: holder, started: OLD }));
+    // Fresh, so no age rule could clear it: only its holder being dead can.
+    writeFileSync(
+      breakLock(home, holder, OLD),
+      JSON.stringify({ pid: await deadPid(), started: OLD }),
+    );
+    assert.equal(takePid(home), true);
+    assert.equal(
+      (JSON.parse(readFileSync(pidPath(home), 'utf8')) as { pid: number }).pid,
+      process.pid,
+    );
+    assert.deepEqual(lockLeftovers(home), []);
+  });
+
+  void test('a live breaker keeps its break lock, and the pid file is not touched', async () => {
+    const home = scratch();
+    mkdirSync(launcherDir(home), { recursive: true });
+    const holder = await deadPid();
+    const body = JSON.stringify({ pid: holder, started: OLD });
+    writeFileSync(pidPath(home), body);
+    const me = readProc(process.pid);
+    assert.ok(me !== 'unknown' && me !== undefined);
+    writeFileSync(
+      breakLock(home, holder, OLD),
+      JSON.stringify({ pid: process.pid, started: me.started }),
+    );
+    assert.equal(takePid(home), false);
+    assert.equal(readFileSync(pidPath(home), 'utf8'), body);
+  });
+
+  void test('an unreadable lock is never guessed at', () => {
+    const home = scratch();
+    mkdirSync(launcherDir(home), { recursive: true });
+    writeFileSync(pidPath(home), 'not json');
+    assert.equal(takePid(home), false);
+    assert.equal(readFileSync(pidPath(home), 'utf8'), 'not json');
+  });
+});
+
+void describe('2. a leftover past its deadline is ended', () => {
+  void test('status ends a leftover past its deadline, and names one that is not', async () => {
+    const home = scratch();
+    const late = await sleeper();
+    const early = await sleeper();
+    try {
+      recordRuns(home, [
+        { offer_id: ids(40), pid: late.pid, started: late.started, deadline: Date.now() - 1000 },
+        {
+          offer_id: ids(41),
+          pid: early.pid,
+          started: early.started,
+          deadline: Date.now() + 3_600_000,
+        },
+      ]);
+      const { io, out } = cliIo(home);
+      await launcherCommand(io, ['status']);
+      await until(() => !alive(late.pid), 15_000);
+      assert.equal(alive(early.pid), true, 'not yet due: left running');
+      assert.match(out.join('\n'), /Ended 1 leftover run\(s\) past their deadline/);
+      assert.match(out.join('\n'), new RegExp(`Leftover run .*pid ${String(early.pid)}`));
+      const reaped = auditLines(home).filter((l) => l.event === 'reaped');
+      assert.deepEqual(
+        reaped.map((l) => [l.pid, l.reason]),
+        [[late.pid, 'past_deadline']],
+      );
+      assert.equal(existsSync(pidPath(home)), false, 'status gave the lock back');
+    } finally {
+      for (const p of [late.pid, early.pid]) if (alive(p)) process.kill(p, 'SIGKILL');
+    }
+  });
+});
+
+void describe('3. stop holds the lock while it reaps', () => {
+  void test('a launcher starting during stop’s reap cannot take the lock', async () => {
+    const home = scratch();
+    const run = await sleeper(); // Ignores SIGTERM: the reap waits its full grace.
+    try {
+      recordRuns(home, [{ offer_id: ids(42), pid: run.pid, started: run.started, deadline: 0 }]);
+      const { io } = cliIo(home);
+      const stopping = launcherCommand(io, ['stop']);
+      await until(() => existsSync(pidPath(home)), 5000);
+      const [result] = await contend(home, 1);
+      assert.equal(result, 'lost', 'stop holds the lock');
+      assert.equal(await stopping, 0);
+      assert.equal(alive(run.pid), false);
+      assert.equal(existsSync(pidPath(home)), false, 'and gives it back');
+    } finally {
+      if (alive(run.pid)) process.kill(run.pid, 'SIGKILL');
+    }
+  });
+});
+
+void describe('4. a leftover that cannot be checked is kept, not erased', () => {
+  void test('no start time: not signalled, still recorded, and status says so', async () => {
+    const home = scratch();
+    const run = await sleeper();
+    const gone = await deadPid();
+    try {
+      recordRuns(home, [
+        { offer_id: ids(43), pid: run.pid, started: '', deadline: 0 },
+        { offer_id: ids(44), pid: gone, started: 'Mon Jan  1 00:00:00 2001', deadline: 0 },
+      ]);
+      const { io, out } = cliIo(home);
+      assert.equal(await launcherCommand(io, ['stop']), 0);
+      assert.equal(alive(run.pid), true, 'never signalled without a start time');
+      const s = JSON.parse(readFileSync(statusPath(home), 'utf8')) as {
+        running: { pid: number }[];
+      };
+      assert.deepEqual(
+        s.running.map((r) => r.pid),
+        [run.pid],
+        'the unknown one is kept; the dead one is cleared',
+      );
+      out.length = 0;
+      await launcherCommand(io, ['status']);
+      assert.match(out.join('\n'), new RegExp(`pid ${String(run.pid)}.*could not be checked`));
+    } finally {
+      if (alive(run.pid)) process.kill(run.pid, 'SIGKILL');
+    }
+  });
+});
+
+void describe('5. argv[0]: its owner and its folder', () => {
+  void test('refused in a folder others can write', () => {
+    const dir = join(scratch(), 'open');
+    mkdirSync(dir);
+    chmodSync(dir, 0o777);
+    const program = ownProgram(dir);
+    assert.match(argvProblem([program]) ?? '', /holds argv\[0\], is writable by group or others/);
+  });
+
+  void test('refused through a symlink whose target sits in a folder others can write', () => {
+    const home = scratch();
+    const open = join(home, 'open');
+    mkdirSync(open);
+    const target = ownProgram(open);
+    chmodSync(open, 0o777);
+    const safe = join(home, 'safe');
+    mkdirSync(safe, { mode: 0o755 });
+    symlinkSync(target, join(safe, 'harness'));
+    assert.match(argvProblem([join(safe, 'harness')]) ?? '', /open, which holds argv\[0\]/);
+  });
+
+  void test('refused when owned by neither you nor root', () => {
+    const program = ownProgram(scratch());
+    assert.equal(argvProblem([program]), undefined);
+    const other = (process.getuid?.() ?? 0) + 1;
+    assert.match(argvProblem([program], other) ?? '', /owned by neither you nor root/);
+  });
+});
+
+void describe('6. an agent id not yet known is resolved, or the offer refused', () => {
+  void test('judge never passes an unknown agent', () => {
+    const r = record({ event_id: ids(45), offer_id: ids(46) });
+    assert.equal(
+      judge(r, 'claude-code', undefined, config({ argv: [process.execPath] })),
+      'agent_unknown',
+    );
+  });
+
+  void test('resolved to another agent: refused, never prepared', async () => {
+    const r = rig(() => [record({ event_id: ids(47), offer_id: ids(48) })], {
+      addressee: () => Promise.resolve(ids(49)),
+    });
+    await startLauncher({ ...r.deps, maxTicks: 1 }, config({ argv: [process.execPath] })).finished;
+    assert.deepEqual(r.prepared, []);
+    assert.equal(auditLines(r.home).find((l) => l.event === 'refused')?.reason, 'other_agent');
+  });
+
+  void test('not in this agent’s inbox: refused, never prepared', async () => {
+    const r = rig(() => [record({ event_id: ids(50), offer_id: ids(51) })], {
+      addressee: () => Promise.resolve(undefined),
+    });
+    await startLauncher({ ...r.deps, maxTicks: 1 }, config({ argv: [process.execPath] })).finished;
+    assert.deepEqual(r.prepared, []);
+    assert.equal(auditLines(r.home).find((l) => l.event === 'refused')?.reason, 'agent_unresolved');
   });
 });

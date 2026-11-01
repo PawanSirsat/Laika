@@ -1,11 +1,12 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   accessSync,
   appendFileSync,
   closeSync,
   constants,
-  existsSync,
   fstatSync,
+  linkSync,
   lstatSync,
   openSync,
   readFileSync,
@@ -14,7 +15,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 
 import { type EventRecord, readStore, storeKey, syncOnce, TASK_KEY } from './agent-events.ts';
 import {
@@ -339,7 +340,10 @@ export function loadConfig(
 }
 
 /** Why an argv array is not one the launcher will run, or `undefined`. */
-export function argvProblem(argv: unknown): string | undefined {
+export function argvProblem(
+  argv: unknown,
+  uid: number | undefined = process.getuid?.(),
+): string | undefined {
   if (!Array.isArray(argv)) return 'the command must be an argv array, never a string';
   if (argv.length === 0 || argv.length > 32) return 'the argv must have 1 to 32 items';
   for (const word of argv) {
@@ -358,8 +362,27 @@ export function argvProblem(argv: unknown): string | undefined {
     accessSync(program, constants.X_OK);
     // Anyone who can rewrite the program chooses what runs.
     if ((st.mode & 0o022) !== 0) return `${program} is writable by group or others`;
+    if (uid !== undefined && st.uid !== uid && st.uid !== 0) {
+      return `${program} is owned by neither you nor root`;
+    }
   } catch {
     return `${program} is not an executable file`;
+  }
+  // Anyone who can write its folder can replace it — the link's and the target's.
+  let target: string;
+  try {
+    target = realpathSync(program);
+  } catch {
+    return `${program} cannot be resolved`;
+  }
+  for (const folder of new Set([dirname(program), dirname(target)])) {
+    try {
+      if ((statSync(folder).mode & 0o022) !== 0) {
+        return `${folder}, which holds argv[0], is writable by group or others`;
+      }
+    } catch {
+      return `${folder} cannot be read`;
+    }
   }
   return undefined;
 }
@@ -542,6 +565,12 @@ export interface LauncherDeps {
     repoDir: string;
     remote?: string;
   }) => Promise<number>;
+  /**
+   * The agent an offer in this credential's own inbox is addressed to, or
+   * `undefined` when it is not there. Used when the event store does not yet
+   * know which agent the credential is.
+   */
+  readonly addressee: (credential: AgentCredential, offerId: string) => Promise<string | undefined>;
   /** The sender's note as a delimited untrusted block, for the data file. */
   readonly note: (offerId: string, credential: AgentCredential) => Promise<string>;
   readonly spawn: typeof spawn;
@@ -583,7 +612,9 @@ export function judge(
   if (record.to === null) return 'not_addressed_to_an_agent';
   if (record.to.harness !== harness) return 'other_harness';
   if (deviceKey(record.to.device) !== deviceKey(config.device)) return 'other_device';
-  if (agentId !== undefined && record.to.agent_id !== agentId) return 'other_agent';
+  // Not known yet is not a pass: the caller resolves it, or the offer is refused.
+  if (agentId === undefined) return 'agent_unknown';
+  if (record.to.agent_id !== agentId) return 'other_agent';
   if (
     record.project_id === null ||
     !config.projects.some((p) => p.project_id === record.project_id)
@@ -873,7 +904,20 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
             memory.handledEvents.add(record.event_id);
             continue;
           }
-          const verdict = judge(record, harness, agentId, config);
+          let verdict = judge(record, harness, agentId, config);
+          if (verdict === 'agent_unknown' && record.offer_id !== null) {
+            // Ask the board whose inbox holds it, then decide on that.
+            let resolved: string | undefined;
+            try {
+              resolved = await deps.addressee(credential, record.offer_id);
+            } catch {
+              resolved = undefined;
+            }
+            verdict =
+              resolved === undefined
+                ? 'agent_unresolved'
+                : judge(record, harness, resolved, config);
+          }
           if (verdict === 'not_an_offer') {
             memory.handledEvents.add(record.event_id);
             continue;
@@ -972,67 +1016,118 @@ export function runningLauncher(home: string, proc: ProcReader = readProc): PidF
   return file !== undefined && stillThere(file.pid, file.started, proc) ? file : undefined;
 }
 
-/** A lock file this old with nobody able to read it is a crash, not a write in progress. */
-export const STALE_LOCK_MS = 10_000;
+interface Holder {
+  readonly pid: number;
+  readonly started: string;
+}
 
-function ageMs(path: string): number | undefined {
+function readHolder(path: string): Holder | undefined | 'unreadable' {
+  let text: string;
   try {
-    return Date.now() - statSync(path).mtimeMs;
+    text = readFileSync(path, 'utf8');
   } catch {
     return undefined;
   }
+  try {
+    const value = JSON.parse(text) as unknown;
+    if (isRecord(value) && typeof value.pid === 'number' && typeof value.started === 'string') {
+      return { pid: value.pid, started: value.started };
+    }
+  } catch {
+    // Not JSON.
+  }
+  return 'unreadable';
 }
 
-/** Create `path` exclusively. `false` only when it already exists. */
-function createExclusive(path: string, content: string): boolean {
+/**
+ * Create `path` holding `content`, exclusively and whole: written to a temp
+ * file first and hard-linked into place, so it never exists half-written.
+ * `false` only when `path` already exists.
+ */
+function createWhole(path: string, content: string): boolean {
+  const temp = `${path}.${String(process.pid)}-${randomTag()}.tmp`;
+  writeFileSync(temp, content, { mode: 0o600, flag: 'wx' });
   try {
-    writeFileSync(path, content, { mode: 0o600, flag: 'wx' });
+    linkSync(temp, path);
     return true;
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === 'EEXIST') return false;
     throw cause;
+  } finally {
+    rmSync(temp, { force: true });
   }
 }
 
+let tagCount = 0;
+const randomTag = (): string => `${String(Date.now())}-${String((tagCount += 1))}`;
+
+/** How deep a chain of dead breakers may be cleared: each level is one crash mid-clear. */
+const MAX_BREAK_DEPTH = 3;
+
 /**
- * Take the single-instance lock. **The exclusive create is the lock**: the pid
- * file is never removed before it. Only when the create fails, and the holder
- * it names is gone, is the file removed and the create tried once more — and
- * that is done under a second exclusive lock, so two launchers that both find
- * the holder dead cannot each remove the other's fresh lock.
+ * Take a lock file that names its holder (`{pid, started}`). **The exclusive
+ * create is the lock.** When it is held by a process that is gone — judged by
+ * pid and start time, never by age — the file is cleared under a *break* lock
+ * named for that exact holder: only one contender can hold the break lock for
+ * a given dead holder, and under it the file is read again and removed only if
+ * it still names that holder. So a contender that judged an old holder dead
+ * cannot remove a lock someone else has since taken. A breaker that died
+ * holding its break lock is cleared the same way, a level down.
  */
+export function acquireLock(
+  path: string,
+  me: Holder,
+  proc: ProcReader = readProc,
+  depth = 0,
+): boolean {
+  const body = `${JSON.stringify(me)}\n`;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (createWhole(path, body)) return true;
+    const holder = readHolder(path);
+    if (holder === undefined) continue; // Released between the create and the read.
+    // An unreadable lock was not written by a launcher (they write whole): never guessed at.
+    if (holder === 'unreadable') return false;
+    if (stillThere(holder.pid, holder.started, proc)) return false;
+    if (depth >= MAX_BREAK_DEPTH) return false;
+    const key = createHash('sha256').update(holder.started).digest('hex').slice(0, 12);
+    const breaker = `${path}.reap-${String(holder.pid)}-${key}`;
+    if (!acquireLock(breaker, me, proc, depth + 1)) return false;
+    try {
+      const again = readHolder(path);
+      if (again !== undefined) {
+        if (
+          again === 'unreadable' ||
+          again.pid !== holder.pid ||
+          again.started !== holder.started
+        ) {
+          return false;
+        }
+        rmSync(path, { force: true });
+      }
+      return createWhole(path, body);
+    } finally {
+      rmSync(breaker, { force: true });
+    }
+  }
+  return false;
+}
+
+function ownIdentity(proc: ProcReader): Holder {
+  const me = proc(process.pid);
+  return { pid: process.pid, started: me === UNKNOWN || me === undefined ? '' : me.started };
+}
+
+/** Take the single-instance lock (`launcher.pid`). See {@link acquireLock}. */
 export function takePid(home: string, proc: ProcReader = readProc): boolean {
   privateDir(join(home, '.laika'));
   privateDir(launcherDir(home));
-  const path = pidPath(home);
-  const me = proc(process.pid);
-  const started = me === UNKNOWN || me === undefined ? '' : me.started;
-  const body = `${JSON.stringify({ pid: process.pid, started })}\n`;
-  if (createExclusive(path, body)) return true;
+  return acquireLock(pidPath(home), ownIdentity(proc), proc);
+}
 
-  const reap = `${path}.reap`;
-  if (!createExclusive(reap, `${String(process.pid)}\n`)) {
-    // Left by a launcher that died mid-reap: cleared only once clearly old.
-    const age = ageMs(reap);
-    if (age === undefined || age < STALE_LOCK_MS) return false;
-    rmSync(reap, { force: true });
-    if (!createExclusive(reap, `${String(process.pid)}\n`)) return false;
-  }
-  try {
-    if (!existsSync(path)) return createExclusive(path, body);
-    const holder = readPid(home);
-    if (holder === undefined) {
-      // Unreadable: a holder may be between its create and its write.
-      const age = ageMs(path);
-      if (age === undefined || age < STALE_LOCK_MS) return false;
-    } else if (stillThere(holder.pid, holder.started, proc)) {
-      return false;
-    }
-    rmSync(path, { force: true });
-    return createExclusive(path, body);
-  } finally {
-    rmSync(reap, { force: true });
-  }
+/** Give the lock back, if it is still this process's. */
+export function releasePid(home: string): void {
+  const file = readPid(home);
+  if (file?.pid === process.pid) rmSync(pidPath(home), { force: true });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1044,6 +1139,20 @@ export interface Leftover {
   readonly pid: number;
   readonly started: string;
   readonly deadline: number | undefined;
+  /** The record as `status.json` holds it, kept verbatim when it is not cleared. */
+  readonly raw: Record<string, unknown>;
+}
+
+/**
+ * What a recorded run is now. `unknown` — no start time, or the process table
+ * could not be read — is neither signalled nor forgotten.
+ */
+export function leftoverState(
+  r: Leftover,
+  proc: ProcReader = readProc,
+): 'alive' | 'dead' | 'unknown' {
+  if (r.started === '') return probeKill(r.pid) === 'absent' ? 'dead' : 'unknown';
+  return liveness(r.pid, r.started, proc);
 }
 
 /** The runs `status.json` records as running, whoever wrote it. */
@@ -1058,30 +1167,41 @@ export function recordedRuns(home: string): Leftover[] {
       pid: r.pid as number,
       started: typeof r.started === 'string' ? r.started : '',
       deadline: typeof r.deadline === 'number' ? r.deadline : undefined,
+      raw: r,
     }));
 }
 
 /** Recorded runs still alive as the process that was recorded (start time matched). */
 export function liveLeftovers(home: string, proc: ProcReader = readProc): Leftover[] {
   // Without a start time the pid may be anyone's now: never treated as ours.
-  return recordedRuns(home).filter(
-    (r) => r.started !== '' && liveness(r.pid, r.started, proc) === 'alive',
-  );
+  return recordedRuns(home).filter((r) => leftoverState(r, proc) === 'alive');
 }
 
 /**
- * End every run a launcher that is no longer running left behind: SIGTERM to
- * its process group, SIGKILL after `graceMs`. Each is audited `reaped`, and
- * the status file is cleared of them. **Call only while no launcher runs** —
- * at start, holding the lock, or from `stop` once the launcher is gone.
+ * End the runs a launcher that is no longer running left behind: SIGTERM to
+ * the process group, SIGKILL after `graceMs`, each audited `reaped`. With
+ * `pastDeadlineOnly`, only runs past their recorded `deadline` are ended.
+ *
+ * **What is cleared from `status.json` is only what is known to be gone.** A
+ * run whose state is unknown (no start time, or no process table), one not
+ * yet due, or one that outlived its SIGKILL stays recorded, so `status` keeps
+ * showing it. **Call only holding the lock** — at start, or from `stop` /
+ * `status` after taking it — so a launcher that has just started is never
+ * reaped or its status file overwritten.
  */
 export async function reapLeftovers(
   home: string,
   proc: ProcReader = readProc,
   graceMs = 10_000,
   now: () => number = Date.now,
+  pastDeadlineOnly = false,
 ): Promise<number> {
-  const live = liveLeftovers(home, proc);
+  const recorded = recordedRuns(home);
+  const due = recorded.filter(
+    (r) =>
+      leftoverState(r, proc) === 'alive' &&
+      (!pastDeadlineOnly || (r.deadline !== undefined && now() >= r.deadline)),
+  );
   const signal = (pid: number, sig: NodeJS.Signals): void => {
     try {
       process.kill(-pid, sig);
@@ -1093,31 +1213,34 @@ export async function reapLeftovers(
       }
     }
   };
-  for (const r of live) signal(r.pid, 'SIGTERM');
+  for (const r of due) signal(r.pid, 'SIGTERM');
   const end = Date.now() + graceMs;
-  while (live.some((r) => liveness(r.pid, r.started, proc) === 'alive') && Date.now() < end) {
+  while (due.some((r) => leftoverState(r, proc) === 'alive') && Date.now() < end) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  for (const r of live) {
-    if (liveness(r.pid, r.started, proc) === 'alive') signal(r.pid, 'SIGKILL');
+  for (const r of due) {
+    if (leftoverState(r, proc) === 'alive') signal(r.pid, 'SIGKILL');
     audit(home, now(), {
       event: 'reaped',
       ...(r.offer_id === '' ? {} : { offer_id: r.offer_id }),
       pid: r.pid,
+      ...(pastDeadlineOnly ? { reason: 'past_deadline' } : {}),
     });
   }
-  if (recordedRuns(home).length > 0) {
+  if (recorded.length > 0) {
+    if (due.length > 0) await new Promise((resolve) => setTimeout(resolve, 100));
+    const kept = recorded.filter((r) => leftoverState(r, proc) !== 'dead').map((r) => r.raw);
     const s = readJson(statusPath(home));
     try {
       writePrivate(
         statusPath(home),
-        `${JSON.stringify({ ...(isRecord(s) ? s : {}), live: false, running: [] }, null, 2)}\n`,
+        `${JSON.stringify({ ...(isRecord(s) ? s : {}), live: false, running: kept }, null, 2)}\n`,
       );
     } catch {
       // The audit lines are the record.
     }
   }
-  return live.length;
+  return due.length;
 }
 
 /** The signals that stop the launcher (and its runs) cleanly. */
@@ -1223,6 +1346,12 @@ function realDeps(io: LauncherIo, stopped: () => boolean): LauncherDeps {
       return readStore(io.home, key).records;
     },
     prepare: (args) => prepare(handoffIo(true), args),
+    addressee: async (credential, offerId) => {
+      const offer = await findOffer(handoffIo(true), credential, offerId);
+      return typeof offer === 'string' || offer.to_agent_id === null
+        ? undefined
+        : offer.to_agent_id;
+    },
     note: async (offerId, credential) => {
       const offer = await findOffer(handoffIo(true), credential, offerId);
       return typeof offer === 'string'
@@ -1234,7 +1363,7 @@ function realDeps(io: LauncherIo, stopped: () => boolean): LauncherDeps {
   };
 }
 
-function status(io: LauncherIo): number {
+async function status(io: LauncherIo): Promise<number> {
   const result = loadConfig(io.home);
   describeConfig(io, result);
   const live = runningLauncher(io.home);
@@ -1251,11 +1380,29 @@ function status(io: LauncherIo): number {
       );
     }
   }
-  if (live === undefined) {
-    for (const r of liveLeftovers(io.home)) {
-      io.out(
-        `Leftover run from a launcher that is gone: pid ${String(r.pid)}${r.offer_id === '' ? '' : ` offer ${r.offer_id}`} — \`laika agent launcher stop\` ends it`,
-      );
+  if (live === undefined && recordedRuns(io.home).length > 0) {
+    // A leftover past its deadline is ended here too — under the lock, so a
+    // launcher starting now is never mistaken for a dead one.
+    if (takePid(io.home)) {
+      try {
+        const ended = await reapLeftovers(io.home, readProc, 10_000, Date.now, true);
+        if (ended > 0) io.out(`Ended ${String(ended)} leftover run(s) past their deadline.`);
+      } finally {
+        releasePid(io.home);
+      }
+    }
+    for (const r of recordedRuns(io.home)) {
+      const state = leftoverState(r);
+      const what = `pid ${String(r.pid)}${r.offer_id === '' ? '' : ` offer ${r.offer_id}`}`;
+      if (state === 'alive') {
+        io.out(
+          `Leftover run from a launcher that is gone: ${what} — \`laika agent launcher stop\` ends it`,
+        );
+      } else if (state === 'unknown') {
+        io.out(
+          `Recorded run ${what} could not be checked (${r.started === '' ? 'no start time recorded' : 'no process table'}); not signalled — check it yourself`,
+        );
+      }
     }
   }
   return result.kind === 'invalid' ? 1 : 0;
@@ -1264,8 +1411,19 @@ function status(io: LauncherIo): number {
 async function stop(io: LauncherIo): Promise<number> {
   const live = runningLauncher(io.home);
   if (live === undefined) {
-    // Nobody will end what a dead launcher left running: this does.
-    const reaped = await reapLeftovers(io.home);
+    // Nobody will end what a dead launcher left running: this does — holding
+    // the lock, so a launcher that starts meanwhile is neither reaped nor has
+    // its status file overwritten.
+    if (!takePid(io.home)) {
+      io.err('laika agent launcher: a launcher is starting; run stop again');
+      return 1;
+    }
+    let reaped: number;
+    try {
+      reaped = await reapLeftovers(io.home);
+    } finally {
+      releasePid(io.home);
+    }
     io.out(
       reaped === 0
         ? 'The launcher is not running.'
@@ -1289,7 +1447,7 @@ export async function launcherCommand(io: LauncherIo, argv: readonly string[]): 
     io.out(LAUNCHER_USAGE);
     return sub === undefined ? 1 : 0;
   }
-  if (sub === 'status') return status(io);
+  if (sub === 'status') return await status(io);
   if (sub === 'stop') return await stop(io);
   if (sub !== 'check' && sub !== 'run') {
     io.err(`laika agent launcher: unknown subcommand "${sub}"\n\n${LAUNCHER_USAGE}`);
@@ -1331,7 +1489,6 @@ export async function launcherCommand(io: LauncherIo, argv: readonly string[]): 
     return 0;
   } finally {
     removeSignals();
-    const file = readPid(io.home);
-    if (file?.pid === process.pid) rmSync(pidPath(io.home), { force: true });
+    releasePid(io.home);
   }
 }
