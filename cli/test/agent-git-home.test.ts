@@ -13,6 +13,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -92,14 +93,14 @@ function homeWith(
   return { real, alt, offRan, off };
 }
 
-function io(): AgentIo & { lines: string[] } {
+function io(env: Record<string, string | undefined> = {}): AgentIo & { lines: string[] } {
   const lines: string[] = [];
   return {
     lines,
     out: (line) => lines.push(line),
     err: (line) => lines.push(line),
     home: root,
-    env: process.env,
+    env: { ...process.env, XDG_CONFIG_HOME: undefined, ...env },
     stdin: () => '',
     readHookInput: () => Promise.resolve(undefined),
     isTTY: false,
@@ -152,6 +153,21 @@ void describe('laika agent git-home (LAI-1034)', () => {
     assert.match(run.out, /^password=from-the-real-home$/m);
     // Not run for the lookup, nor handed the answer to keep (`store`).
     assert.equal(existsSync(offRan), false, 'the switched-off helper ran');
+  });
+
+  void test('an absolute $XDG_CONFIG_HOME is where the XDG file is read and included from', () => {
+    const { real, alt } = homeWith('xdg-set', join('.config', 'git', 'config'), () => '');
+    const elsewhere = join(root, 'xdg-set', 'elsewhere');
+    mkdirSync(join(elsewhere, 'git'), { recursive: true });
+    renameSync(join(real, '.config', 'git', 'config'), join(elsewhere, 'git', 'config'));
+    assert.equal(gitHome(io({ XDG_CONFIG_HOME: elsewhere }), [alt], real), 0);
+    assert.match(
+      readFileSync(join(alt, '.gitconfig'), 'utf8'),
+      new RegExp(`path = "${elsewhere}/git/config"`),
+    );
+    const run = fill(alt);
+    assert.equal(run.code, 0, run.err);
+    assert.match(run.out, /^password=from-the-real-home$/m);
   });
 
   void test('a helper set only in ~/.config/git/config is re-homed too', () => {
