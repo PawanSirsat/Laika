@@ -18,6 +18,8 @@ import { RateLimiter } from './http/rate-limit.ts';
 import { requestId } from './http/middleware/request-id.ts';
 import { createSecurityHeaders } from './http/middleware/security-headers.ts';
 import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-headers.ts';
+import { DEFAULT_CLI_SOURCE_URL, type DeveloperAccessMode } from './env.ts';
+import { developerRoutes } from './http/routes/developer.ts';
 import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes, meWatchRoutes } from './http/routes/me.ts';
 import { permissionsRoutes } from './http/routes/permissions.ts';
@@ -111,6 +113,12 @@ export const API_BASE = '/api/v1';
 
 export interface CreateAppOptions {
   version: string;
+  /** `LAIKA_BUILD_COMMIT` (§11.7, LAI-1043); absent is `null`. */
+  buildCommit?: string | null;
+  /** `LAIKA_DEVELOPER_ACCESS` (§11.7, LAI-1043); absent is `classic`. */
+  developerAccess?: DeveloperAccessMode;
+  /** `LAIKA_CLI_SOURCE_URL` (§11.7, LAI-1043); absent is this repository. */
+  cliSourceUrl?: string;
   /**
    * Whether shutdown has begun (§11.2, LAI-214). A request on a **reused
    * keep-alive connection** can still reach a closing server, and answering
@@ -311,7 +319,18 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
 
   // Routes before the static handler: whoever matches first wins, and the SPA
   // fallback must never shadow an API path.
-  app.route(`${API_BASE}/health`, healthRoutes(options.version));
+  app.route(`${API_BASE}/health`, healthRoutes(options.version, options.buildCommit ?? null));
+  // Public and built from deployment settings only (LAI-1043), so beside
+  // `/health` rather than behind the `db` guard below.
+  app.route(
+    `${API_BASE}/developer`,
+    developerRoutes({
+      version: options.version,
+      buildCommit: options.buildCommit ?? null,
+      developerAccess: options.developerAccess ?? 'classic',
+      cliSourceUrl: options.cliSourceUrl ?? DEFAULT_CLI_SOURCE_URL,
+    }),
+  );
   app.route(`${API_BASE}/me`, meRoutes());
   // Who may do what, as `can()` answers it (LAI-885). Beside `/me`: it reads
   // only the actor auth already resolved, and takes no `db` of its own.

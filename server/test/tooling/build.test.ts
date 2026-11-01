@@ -328,8 +328,17 @@ function builtServerEnv(port: number, publicDir: string, dbPath: string): NodeJS
     // them if `index.ts` handed them to the checkpoint service.
     LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS: '900',
     LAIKA_CHECKPOINT_RETENTION_DAYS: '30',
+    // Not the defaults either (LAI-1043), so `/health` and
+    // `/developer/compatibility` can only show them if `index.ts` handed them
+    // to `createApp`.
+    LAIKA_BUILD_COMMIT: BUILT_COMMIT,
+    LAIKA_DEVELOPER_ACCESS: 'preview',
+    LAIKA_CLI_SOURCE_URL: BUILT_CLI_SOURCE,
   };
 }
+
+const BUILT_COMMIT = 'b0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9';
+const BUILT_CLI_SOURCE = 'https://git.example.test/laika-fork.git';
 
 /**
  * How many ports a boot tries before it reports the boot as failed (LAI-598).
@@ -565,6 +574,25 @@ describe('the built server, run the way the container runs it', () => {
         pending_notice_ms: 900_000,
         retention_ms: 30 * 86_400_000,
       });
+    });
+
+    it('hands LAIKA_BUILD_COMMIT to /health (LAI-1043)', async (ctx) => {
+      skipIfNotBooted(ctx);
+      const body = (await (await fetch(`${server!.baseUrl}/api/v1/health`)).json()) as {
+        build_commit: unknown;
+      };
+      expect(body.build_commit).toBe(BUILT_COMMIT);
+    });
+
+    it('answers /developer/compatibility 409 setup_required before first boot (LAI-1043)', async (ctx) => {
+      skipIfNotBooted(ctx);
+      const res = await fetch(`${server!.baseUrl}/api/v1/developer/compatibility`);
+      const body = (await res.json()) as {
+        error: { code: string; details: { setup_required?: unknown } };
+      };
+      expect(res.status).toBe(409);
+      expect(body.error.code).toBe('conflict');
+      expect(body.error.details.setup_required).toBe(true);
     });
 
     it('serves the committed fallback when no SPA has been built', async (ctx) => {
@@ -950,3 +978,48 @@ async function waitForHealth(
     `built server never became healthy on port ${String(port)}: waited ${waited} over ${String(attempts)} attempts, against a budget of ${String(HEALTH_BUDGET_MS)}ms (LAI-768)\n\nserver output:\n${output()}`,
   );
 }
+
+describe('the built server hands the Developer access settings to the app (LAI-1043)', () => {
+  /**
+   * Its own server, because reading `/developer/compatibility` needs first-boot
+   * setup, and the shared server above is the un-set-up one. Every value in
+   * `builtServerEnv` here is a non-default, so a missing pass-through in
+   * `index.ts` shows as the default instead.
+   */
+  it(
+    'serves the commit, mode and CLI source the environment set',
+    async (ctx) => {
+      skipIfBuildFailed(ctx);
+      const publicDir = mkdtempSync(join(tmpdir(), 'laika-public-compat-'));
+      try {
+        await withBuiltServer(publicDir, async (base) => {
+          const setup = await fetch(`${base}/api/v1/setup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Origin: base },
+            body: JSON.stringify({
+              org_name: 'Laika',
+              owner_name: 'Ada',
+              owner_email: 'ada@example.test',
+              owner_password: 'correct-horse-battery-staple',
+            }),
+          });
+          expect(setup.status, await setup.clone().text()).toBe(201);
+
+          const res = await fetch(`${base}/api/v1/developer/compatibility`);
+          expect(res.status).toBe(200);
+          const body = (await res.json()) as {
+            server: { build_commit: unknown };
+            features: { developer_access: unknown };
+            cli: { source: { url: unknown; commit: unknown } };
+          };
+          expect(body.server.build_commit).toBe(BUILT_COMMIT);
+          expect(body.features.developer_access).toBe('preview');
+          expect(body.cli.source).toMatchObject({ url: BUILT_CLI_SOURCE, commit: BUILT_COMMIT });
+        });
+      } finally {
+        rmSync(publicDir, { recursive: true, force: true });
+      }
+    },
+    HEALTH_BUDGET_MS + 20_000,
+  );
+});

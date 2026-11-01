@@ -73,3 +73,28 @@ client sees today**.
 ## Dependencies
 
 None in `.tasks/`. The plan (LAI-1042) merged to master in PR #198 without a task file; it is the brief, not a dependency the claim check can read.
+
+## Review follow-ups (PR #202, after the pass)
+
+The review passed. These non-blocking items were added as small extra
+commits; the acceptance criteria above are unchanged.
+
+- Item 1: the boot backfill also relinks a **stale** link, meaning a device
+  whose owner or label key is not the agent's own (a relabel by a pre-0070
+  build). There is a test and a mutation. SPEC §4.78 says so.
+- Item 5: the unlinked-agents read is inside the backfill's transaction.
+- Item 6: `registerAgent` reads the cloud device inside its transaction.
+
+## Left for later slices
+
+- **Device status on revoke.** A device whose agents are all revoked after
+  upgrade stays `active`. Only the upgrade marks a revoked-only key
+  `revoked`. Device revoke and merge (slice C) should decide this.
+- **`display_name` drift.** A device keeps the name it was made with. A
+  later relabel of its agents with different case or padding does not rename
+  it, while `/agents/devices` names the group after the newest agent. That
+  belongs to device rename (slice C).
+- **`revoked_at` on legacy devices.** On upgrade it is the newest agent
+  `revoked_at` on the key. The boot backfill falls back to `created_at` when
+  an agent has none. Legacy data only; revisit with device revoke.
+

@@ -127,6 +127,14 @@ RUN chmod 0755 /usr/local/bin/laika-entrypoint
 RUN mkdir -p /data && chown node:node /data
 VOLUME ["/data"]
 
+# The commit this image was built from (LAI-1043, SPEC §11.7), served by
+# /health and /developer/compatibility. CI passes `github.sha`; a hand build
+# without the arg leaves it empty, which the server reads as "unknown".
+# Declared this late so a new commit invalidates only this layer, never the
+# install or build stages above.
+ARG LAIKA_BUILD_COMMIT=""
+ENV LAIKA_BUILD_COMMIT=${LAIKA_BUILD_COMMIT}
+
 USER node
 EXPOSE 3000
 

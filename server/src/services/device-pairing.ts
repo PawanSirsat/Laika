@@ -38,6 +38,12 @@ import { assertCan } from '../policy/can.ts';
  *
  * **Owner records under the agent actions** (plan §L5): no §3.1 row and no
  * §4.8 verb (plan §L4) — the request row is the record.
+ *
+ * **The device's two steps call no `can()`**: there is no actor to ask about,
+ * as `consumeResetLink` has none. Holding the code, and then the private key,
+ * is the whole authorisation, and each reads and writes only the one request
+ * it names. Inventing a §3.1 action to wrap them would be the warning sign
+ * CLAUDE.md §5 names; whether this is a fourth exception is CHIEF's call.
  */
 
 /** The kinds a pairing may ask for: a device's own (§4.78). */
