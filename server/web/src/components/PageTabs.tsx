@@ -58,6 +58,7 @@ export function PageTabs({
                 }}
               >
                 {tab.label}
+                {tab.badge !== undefined && <span className="page-tab-badge">{tab.badge}</span>}
                 {count !== undefined && (
                   <span className="page-tab-count">
                     {count}

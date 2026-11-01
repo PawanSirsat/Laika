@@ -1,3 +1,5 @@
+import type { DeveloperAccessMode } from '../api/developer-compat.ts';
+
 /**
  * The tabs of the pages that hold several screens (LAI-796).
  *
@@ -25,6 +27,12 @@ export interface PageTab {
    * not-allowed state rather than the first tab (LAI-951) — see `refusedTab`.
    */
   readonly refusedByAddress?: true;
+  /**
+   * A short word drawn after the label — *Preview* on the V3 Developer access
+   * tabs while the flag is `preview` (LAI-1048). It is part of the link's
+   * text, so a screen reader hears it too.
+   */
+  readonly badge?: string;
 }
 
 /**
@@ -74,6 +82,103 @@ export const DEVELOPER_TABS: readonly PageTab[] = [
   { id: 'activity', label: 'Activity' },
   { id: 'tokens', label: 'Tokens' },
 ];
+
+/**
+ * The V3 tabs (plan §B, §C): the device holds the tools, and a project is set
+ * up on its own. `projects` and `activity` keep the classic ids, so a link to
+ * either means the same place in every mode.
+ */
+export const DEVELOPER_V3_TABS: readonly PageTab[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'projects', label: 'Project setup' },
+  { id: 'devices', label: 'Devices' },
+  { id: 'activity', label: 'Activity' },
+  { id: 'advanced', label: 'Advanced' },
+];
+
+/** The V3 tabs classic does not have — the ones `preview` adds, marked. */
+const V3_ONLY = new Set(['overview', 'devices', 'advanced']);
+
+/** Whether `id` is a tab only the V3 Developer access has. */
+export function isV3OnlyTab(id: string): boolean {
+  return V3_ONLY.has(id);
+}
+
+/**
+ * The Developer access tabs a mode offers. **Preview keeps every classic tab
+ * and its order**, Connect still first and so still the default, and adds the
+ * V3-only tabs after them, each marked *Preview*.
+ */
+export function developerTabs(mode: DeveloperAccessMode): readonly PageTab[] {
+  if (mode === 'v3') return DEVELOPER_V3_TABS;
+  if (mode === 'classic') return DEVELOPER_TABS;
+  return [
+    ...DEVELOPER_TABS,
+    ...DEVELOPER_V3_TABS.filter((tab) => V3_ONLY.has(tab.id)).map((tab) => ({
+      ...tab,
+      badge: 'Preview',
+    })),
+  ];
+}
+
+/**
+ * Where an old Developer access address lives in V3 (plan §C) — the new query,
+ * or `undefined` when the address needs no change. **Only `v3` moves
+ * anything**: `classic` and `preview` keep every old tab where it was.
+ *
+ * Applied as a `replace`, after `redirects.ts` has already turned `/connect`
+ * and `/tokens` into `?tab=connect` and `?tab=tokens`. Every target is a V3
+ * id with no alias of its own, so applying it twice changes nothing — there is
+ * no loop to fall into.
+ *
+ * - `connect` is the Overview, unless it carried the wizard's state: `?agent=`
+ *   (a tool to set up) or `?step=` (somewhere past choosing it). Then it is
+ *   Devices with *Add a tool* open, the tool kept as `tool`.
+ * - `agents` is Devices; `?agent=<id>` names a row there and travels as is.
+ * - `tokens` is Advanced.
+ *
+ * Everything else in the query is kept, in its order.
+ */
+export function developerAlias(
+  mode: DeveloperAccessMode,
+  params: URLSearchParams,
+): URLSearchParams | undefined {
+  if (mode !== 'v3') return undefined;
+  const tab = params.get('tab');
+  if (tab !== 'connect' && tab !== 'agents' && tab !== 'tokens') return undefined;
+
+  const next = new URLSearchParams();
+  const rest = [...params].filter(([key]) => key !== 'tab');
+
+  if (tab === 'agents') {
+    next.set('tab', 'devices');
+    for (const [key, value] of rest) next.append(key, value);
+    return next;
+  }
+  if (tab === 'tokens') {
+    next.set('tab', 'advanced');
+    for (const [key, value] of rest) next.append(key, value);
+    return next;
+  }
+
+  const agent = params.get('agent');
+  const wizard = (agent !== null && agent !== '') || params.has('step');
+  if (!wizard) {
+    next.set('tab', 'overview');
+    for (const [key, value] of rest) next.append(key, value);
+    return next;
+  }
+  next.set('tab', 'devices');
+  next.set('add', 'tool');
+  if (agent !== null && agent !== '') next.set('tool', agent);
+  for (const [key, value] of rest) {
+    // The wizard's own two are spent: the tool travels as `tool`, and V3's
+    // Add a tool has no numbered steps to land on.
+    if (key === 'agent' || key === 'step' || key === 'add' || key === 'tool') continue;
+    next.append(key, value);
+  }
+  return next;
+}
 
 /**
  * A space's settings (D-103, LAI-977), in the owner's order. Every reader of
