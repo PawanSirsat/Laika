@@ -1,3 +1,4 @@
+import { holdsUp } from '../../../api/board-derive.ts';
 import { isGrantsChange, type ActivityEvent } from '../../../api/activity.ts';
 import { WITHHELD_SELECTION } from '../../../api/selected-agent.ts';
 import type { TaskSummary, TaskStatus } from '../../../api/tasks.ts';
@@ -76,7 +77,8 @@ export interface BlockedTask {
  * unready for ever. Treating cancelled as satisfied here would produce a
  * dashboard that disagrees with the `ready` flag on the board, and the board is
  * the one the server computes. If that rule is wrong it is wrong in
- * `task-lifecycle.ts`, and this should not paper over it.
+ * `task-lifecycle.ts`, and this should not paper over it. The test is
+ * `holdsUp`, the one every surface shares (LAI-882).
  *
  * ## Blocked is narrower than `ready === false`
  *
@@ -100,7 +102,7 @@ export function blockedTasks(tasks: readonly TaskSummary[]): BlockedTask[] {
         // which would understate the count and is the silent direction to be
         // wrong in.
         if (dep === undefined) unknown.push(id);
-        else if (dep.status !== 'done') blockedBy.push(dep);
+        else if (holdsUp(dep)) blockedBy.push(dep);
       }
 
       return { task, blockedBy, unknown };
