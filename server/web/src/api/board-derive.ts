@@ -63,7 +63,39 @@ export function statusLabel(status: TaskStatus): string {
 }
 
 /**
- * Does this task have a dependency that is not finished?
+ * Is this dependency still holding up the task that waits on it?
+ *
+ * **The one rule for "blocked", and it is the server's** (LAI-882): a dependency
+ * holds until it is `done`, and nothing else releases it — `isReady`
+ * (`task-lifecycle.ts`) and the project card's `blocked_count`
+ * (`services/projects.ts`) both read `<> 'done'`, so a **cancelled** dependency
+ * still blocks. Cancelling a blocker does not deliver what it was for; someone
+ * has to remove the dependency.
+ *
+ * Every surface that judges a dependency asks this — the card, the List, the
+ * Blocked-only filter and the Timeline through `blockedState` and `blockers`,
+ * BLK and a sprint's lock through `heldByBlocker`, the Dashboard through
+ * `blockedTasks` — so none of them can call a task blocked that another calls
+ * free. They differed on cancelled until LAI-882.
+ */
+export function holdsUp(dependency: Pick<TaskSummary, 'status'>): boolean {
+  return dependency.status !== 'done';
+}
+
+/**
+ * Is this task finished — `done` or `cancelled`? Finished work is never
+ * blocked, whatever it once waited on: the server counts open work only
+ * (`services/projects.ts`, `t.status NOT IN ('done', 'cancelled')`), and so do
+ * BLK, the sprint lock, the Timeline and the Dashboard (LAI-1040).
+ */
+function finished(task: Pick<TaskSummary, 'status'>): boolean {
+  return task.status === 'done' || task.status === 'cancelled';
+}
+
+/**
+ * Is this task open and waiting on a dependency that is not done (`holdsUp`)?
+ * A finished task is `false` (LAI-1040): the card drew a lock over done work
+ * and the Blocked-only filter kept it, where BLK did not count it.
  *
  * Resolved against the tasks we hold, because the API returns dependency **ids**
  * and not their statuses. That means a dependency outside the fetched set cannot
@@ -75,7 +107,7 @@ export function blockedState(
   task: TaskSummary,
   byId: ReadonlyMap<string, TaskSummary>,
 ): boolean | undefined {
-  if (task.blocked_by.length === 0) return false;
+  if (finished(task) || task.blocked_by.length === 0) return false;
 
   let unknown = false;
   for (const id of task.blocked_by) {
@@ -84,7 +116,7 @@ export function blockedState(
       unknown = true;
       continue;
     }
-    if (dependency.status !== 'done' && dependency.status !== 'cancelled') return true;
+    if (holdsUp(dependency)) return true;
   }
 
   return unknown ? undefined : false;
@@ -106,11 +138,13 @@ export function blockers(
   task: TaskSummary,
   byId: ReadonlyMap<string, TaskSummary>,
 ): readonly TaskSummary[] {
+  // Nothing holds finished work, so a done card names no blocker (LAI-1040).
+  if (finished(task)) return [];
   const found: TaskSummary[] = [];
   for (const id of task.blocked_by) {
     const dependency = byId.get(id);
     if (dependency === undefined) continue;
-    if (dependency.status !== 'done' && dependency.status !== 'cancelled') found.push(dependency);
+    if (holdsUp(dependency)) found.push(dependency);
   }
   return found;
 }
@@ -119,12 +153,11 @@ export function blockers(
  * Is this task **blocked work**, counted the way the server counts it (LAI-819)?
  *
  * Open — not `done`, not `cancelled` — and waiting on at least one dependency
- * that is not `done`. That is the project card's `blocked_count`
+ * that `holdsUp`. That is the project card's `blocked_count`
  * (`services/projects.ts`) and the dependency half of `isReady`
- * (`task-lifecycle.ts`), so **a cancelled dependency still blocks**: the server
- * requires `done` and nothing else. `blockedState` above treats cancelled as
- * met for the card; the figures that *count* blocked work match the server
- * instead, so the board's BLK and a sprint's lock agree with the project card.
+ * (`task-lifecycle.ts`), so the board's BLK and a sprint's lock agree with the
+ * project card — and, since LAI-882, with the card's own lock, which
+ * `blockedState` draws by the same `holdsUp`.
  *
  * **Not `!ready`.** `ready` is also false for every assigned task and every
  * task already moving, so counting it called 95 of a 99-task sprint blocked
@@ -138,10 +171,10 @@ export function heldByBlocker(
   task: Pick<TaskSummary, 'status' | 'ready' | 'blocked_by'>,
   byId: ReadonlyMap<string, Pick<TaskSummary, 'status'>>,
 ): boolean {
-  if (task.status === 'done' || task.status === 'cancelled') return false;
+  if (finished(task)) return false;
   for (const id of task.blocked_by) {
     const dependency = byId.get(id);
-    if (dependency === undefined ? !task.ready : dependency.status !== 'done') return true;
+    if (dependency === undefined ? !task.ready : holdsUp(dependency)) return true;
   }
   return false;
 }

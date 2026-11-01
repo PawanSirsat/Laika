@@ -107,7 +107,27 @@ export interface SprintProgress {
 }
 
 /**
- * Progress from the project's real tasks (§4.5 statuses).
+ * Done over total, the one rule every surface draws a sprint's progress by
+ * (LAI-1040): **`cancelled` counts in neither** — SPEC §11.4.3's words for the
+ * Timeline's bars. `progressFor` (the Sprints card, and the Timeline from
+ * tasks), `countsProgress` (the Timeline from `task_counts`) and `countStats`
+ * (the board toolbar's DONE) all end here, so 8 done and 2 cancelled read 8/8
+ * on each; the toolbar read 8/10 until LAI-1040.
+ *
+ * `total` is every task, cancelled included; `done` never includes cancelled.
+ */
+export function progressOf(counts: {
+  readonly done: number;
+  readonly total: number;
+  readonly cancelled: number;
+}): SprintProgress {
+  const total = counts.total - counts.cancelled;
+  const done = counts.done;
+  return { done, total, percent: total === 0 ? 0 : Math.round((done / total) * 100) };
+}
+
+/**
+ * Progress from the project's real tasks (§4.5 statuses), by `progressOf`.
  *
  * `cancelled` counts as neither done nor outstanding: it is work that will not
  * happen, so leaving it in the denominator makes a finished sprint read as
@@ -115,11 +135,11 @@ export interface SprintProgress {
  * the reason `total` is not simply "tasks whose `sprint_id` is this one".
  */
 export function progressFor(tasks: readonly TaskSummary[]): SprintProgress {
-  const counted = tasks.filter((t) => t.status !== 'cancelled');
-  const done = counted.filter((t) => t.status === 'done').length;
-  const total = counted.length;
-
-  return { done, total, percent: total === 0 ? 0 : Math.round((done / total) * 100) };
+  return progressOf({
+    done: tasks.filter((t) => t.status === 'done').length,
+    total: tasks.length,
+    cancelled: tasks.filter((t) => t.status === 'cancelled').length,
+  });
 }
 
 export interface SprintFigures {
@@ -127,6 +147,10 @@ export interface SprintFigures {
   readonly blocked: number;
   /** The in-progress lane. */
   readonly wip: number;
+  /**
+   * Open work — not `done`, not `cancelled` — with nobody on it (LAI-1040). A
+   * finished task with no assignee is not waiting for an owner.
+   */
   readonly unassigned: number;
   /**
    * Subtasks among the work `progressFor` counts. `done/total` includes them —
@@ -151,7 +175,9 @@ export function sprintFigures(
   return {
     blocked: tasks.filter((t) => heldByBlocker(t, byId)).length,
     wip: tasks.filter((t) => t.status === 'in_progress').length,
-    unassigned: tasks.filter((t) => t.assignee_id === null).length,
+    unassigned: tasks.filter(
+      (t) => t.assignee_id === null && t.status !== 'done' && t.status !== 'cancelled',
+    ).length,
     subtasks: tasks.filter((t) => t.parent_task_id !== null && t.status !== 'cancelled').length,
   };
 }

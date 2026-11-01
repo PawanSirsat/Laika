@@ -1,7 +1,7 @@
 import type { Sprint, SprintTaskCounts } from '../../../api/sprints.ts';
 import type { TaskSummary } from '../../../api/tasks.ts';
 import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
-import { daysLeft } from '../sprints/sprint-derive.ts';
+import { daysLeft, progressOf } from '../sprints/sprint-derive.ts';
 
 /**
  * The timeline's layout arithmetic (SPEC §11.4.3, LAI-721).
@@ -271,7 +271,7 @@ export function todayLabel(now: number): string {
 
 /**
  * Done over total from the sprint list's `task_counts` (LAI-721) — the
- * Sprints screen's rule (`progressFor`): `cancelled` is in neither, because
+ * Sprints screen's rule (`progressOf`, LAI-1040): `cancelled` is in neither, because
  * work that will not happen must not hold a finished sprint short of done.
  */
 export function countsProgress(counts: SprintTaskCounts): {
@@ -279,9 +279,11 @@ export function countsProgress(counts: SprintTaskCounts): {
   readonly total: number;
   readonly percent: number;
 } {
-  const done = counts.by_status.done;
-  const total = counts.total - counts.by_status.cancelled;
-  return { done, total, percent: total === 0 ? 0 : Math.round((done / total) * 100) };
+  return progressOf({
+    done: counts.by_status.done,
+    total: counts.total,
+    cancelled: counts.by_status.cancelled,
+  });
 }
 
 /**
