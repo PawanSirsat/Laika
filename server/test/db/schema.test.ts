@@ -74,6 +74,8 @@ describe('migrations', () => {
     'activity',
     // LAI-545, D-115 item 2: an owner's consent to automatic saves.
     'agent_checkpoint_consents',
+    // LAI-1056: what an agent's own client said it is; self-reported.
+    'agent_client_reports',
     // LAI-553: agent event envelopes and their per-agent deliveries.
     'agent_event_deliveries',
     'agent_events',
@@ -184,6 +186,8 @@ describe('migrations', () => {
     // LAI-773 review B1: the zone a person's usage reports state.
     'token_usage_zones',
     'tokens',
+    // LAI-1056: a tool set up on a paired device; no secret column.
+    'tool_setup_exchanges',
     'unlisted_work',
     // LAI-787, D-088: a person's own Draft my time.
     'user_time_settings',
