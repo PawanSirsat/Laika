@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: [LAI-1050]
 started: 2026-11-02T16:30:00+05:30
-status: in-progress
+status: review
+finished: 2026-11-02T17:30:00+05:30
 ---
 
 Slice C2 of `docs/proposals/LAI-1042-developer-access-v3-plan.md` (§D.2
@@ -14,7 +15,11 @@ tables 4 and 5, §E.2, §E.3, §E.7, §H, §J slice C, §K, §L2, §L4, §L5).
 
 **The dependency deviates from the claim rule.** LAI-1050 (PR #205) is in
 review, not in `done/`. The owner's dispatch stacks this branch on
-`LAI-1050-device-pairing`; the PR targets it until #205 merges.
+`LAI-1050-device-pairing`. #205 has since merged into `master`
+(`db8d2eb0`), and so has #209 (LAI-1052). `origin/master` is merged in, the
+PR targets `master`, and the migration stays `0072`, next after `0071`.
+Nothing here uses the pairing failure key or `RateLimiter.peek`, which #205
+removed.
 
 **Out of scope here:** project setup (E.5, `project_repo_setups`, LAI-1052),
 the Devices tab (web), `laika update` (cli).
@@ -83,19 +88,19 @@ No new activity verb (L4). No new §3.1 action (L5).
 
 ## Acceptance criteria
 
-- [ ] Migration 0072 adds `tool_setup_exchanges` and `agent_client_reports`,
+- [x] Migration 0072 adds `tool_setup_exchanges` and `agent_client_reports`,
       additive only; no secret column.
-- [ ] Add tool: reuse one active agent, register when none, `409` on
+- [x] Add tool: reuse one active agent, register when none, `409` on
       duplicates, `404` byte-identical for another owner's device, session only.
-- [ ] Redeem: once; replay `409`; wrong device key `401`; expiry `409`; cloud
+- [x] Redeem: once; replay `409`; wrong device key `401`; expiry `409`; cloud
       token at most 24 h; rotate atomic, so the old token dies in the same
       transaction while identity, grants and history are kept.
-- [ ] No plaintext token at rest; the secret appears in no response but the
+- [x] No plaintext token at rest; the secret appears in no response but the
       single redeem.
-- [ ] Rate limit per exchange: a flood against one exchange cannot stop
+- [x] Rate limit per exchange: a flood against one exchange cannot stop
       another from redeeming.
-- [ ] Evidence comes only from the agent's own credential; another tool's
+- [x] Evidence comes only from the agent's own credential; another tool's
       request, or a personal token, does not count.
-- [ ] Client report: strict schema and caps; agent token only; old clients
+- [x] Client report: strict schema and caps; agent token only; old clients
       unaffected.
-- [ ] SPEC rows for the new routes and tables.
+- [x] SPEC rows for the new routes and tables.
