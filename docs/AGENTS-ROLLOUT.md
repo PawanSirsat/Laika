@@ -243,20 +243,39 @@ end, with `.github/deploy/host-restart.sh` doing the instance half:
    migrations are pending, its boot copies the database to
    `/data/backups/pre-migration-<ISO time>.sqlite` before it applies any
    (LAI-468) and then migrates.
-2. **A check fails**: the 90-second health wait, the digest, the outside
-   health or the web app. So does any later step of the deploy job, including
-   the ECR clean-up; that is how CI's rollback has always been triggered.
+2. **Retagging or the restart fails**, including its checks: the 90-second
+   health wait, the digest, the outside health, the web app. **A later step
+   failing does not roll back** (since LAI-1033's review). If the ECR
+   clean-up fails after production came up healthy and passed the outside
+   checks, production stays on the new image and the run is red. Rolling a
+   verified deploy back would put older code on its migrated database or
+   discard what was written since.
 3. **The rollback step** points `latest` back at the previous digest and runs
    `deploy.sh <previous> rollback`. On the instance, before it starts the
    previous image:
    - If `deploy-started-at` names **this** run and a `pre-migration-*`
      snapshot has been written since, the deploy migrated the database. The
-     script moves `laika.db` and its `-wal` and `-shm` aside to
-     `/data/laika.db.rolled-back-<UTC time>` (plus the same `-wal` and `-shm`
-     suffixes), and copies the **oldest** such snapshot over `laika.db`. That
-     is the one the first boot took; a crash-looped boot takes a second one of
-     a half-migrated file. The step log prints the snapshot's path and sha256.
+     **oldest** such snapshot is restored: that is the one the first boot
+     took, because a crash-looped boot takes a second one of a half-migrated
+     file. The restore runs in four steps, and **`laika.db` is never
+     missing**:
+     1. The snapshot is copied to `laika.db.restoring`.
+     2. The live file gets a second name, `laika.db.rolled-back-<UTC time>`,
+        by hard link.
+     3. Its `-wal` and `-shm` move to the same name plus those suffixes.
+     4. The copy is renamed over `laika.db` in one step.
+
+     The step log prints the snapshot's path and sha256.
+   - **If any of those steps fails**, it is undone, and the files are exactly
+     as they were. The step log says `restore: FAILED`, the previous image
+     starts on the database as it was (no worse than before LAI-1033), and
+     the step stays red. Restore by hand.
    - Otherwise nothing was migrated, and the database is not touched.
+   - **Before any of this, on a deploy or a rollback:** if `laika.db` is
+     missing while `laika.db.rolled-back-*` files exist, the script refuses
+     and starts nothing. A missing file would otherwise make the server create
+     an empty one, come up healthy and go green on no data. Put the right
+     file back at `/data/laika.db` by hand.
    (**Tested**: `server/test/tooling/host-restart.test.ts`, with docker, aws
    and curl stubbed. **Not yet run on production.**)
 4. The previous image starts on the restored file, which it knows all of, and
@@ -298,6 +317,10 @@ agent and no session (**Read**, at `71dd4217`).
 - **A revert pushed to `master`.** That is a new deploy, not a rollback. The
   older image refuses the newer database and the deploy goes red, so restore
   by hand around it, as described above.
+- **`deploy.sh` run by hand.** Without Actions, each call gets its own run id
+  (`local-<UTC time>-<pid>`, printed as `run:`). So a manual rollback
+  restores nothing unless `LAIKA_DEPLOY_RUN` is set to the id its deploy
+  printed.
 
 ## 8. Retention and pruning
 
