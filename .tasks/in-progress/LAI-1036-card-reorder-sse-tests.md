@@ -2,11 +2,12 @@
 id: LAI-1036
 title: 'Card reorder reconciles over SSE, and a second viewer sees it (tests, LAI-473 follow-up)'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p3
 depends-on: [LAI-473]
 discovered-from: LAI-473
-status: backlog
+status: in-progress
+started: 2026-11-01T16:24:25Z
 ---
 
 ## Why
