@@ -5,13 +5,16 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { HOOK_HARNESSES, type Harness } from './agent-adapters.ts';
 import { AGENT_MARKER, hookFile } from './agent-hooks.ts';
@@ -33,20 +36,31 @@ import { CLI_DIR, tildePath } from './version.ts';
  * `laika update` — move this machine's Laika checkout to the commit the
  * connected board was built from (LAI-1051, the LAI-1042 plan §F.5, §H, §L3).
  *
- * ## The board names the target, never a branch
+ * ## The board names the commit; this machine names where it comes from
  *
  * The target is `cli.source.commit` from the board's public compatibility
- * answer, fetched from `cli.source.url` (a self-hoster's fork when the board
- * sets `LAIKA_CLI_SOURCE_URL`). "Newest master" is never the answer: the board
- * runs one commit, and the helper that matches it is that commit.
+ * answer. "Newest master" is never the answer: the board runs one commit, and
+ * the helper that matches it is that commit.
+ *
+ * **Where it is fetched from is anchored on this machine**, because the
+ * staging self-check runs the fetched `cli/bin/laika`: whoever picks the
+ * repository picks code this machine executes. So the board's `cli.source.url`
+ * is used only when it is (normalised) one of the checkout's own remotes, or
+ * when the board is https or loopback and names a fork. `--source <url>` names
+ * it on this machine instead. A board over plain http off loopback is refused
+ * for an update unless `--allow-http`, and even then only with an anchored
+ * source: an on-path attacker can change the commit, but only to one the
+ * anchored repository published.
  *
  * ## What is trusted (L3)
  *
- * The full 40-character commit id **is** the pin. The board is asked over TLS
- * (or on loopback), the commit must be reachable from a branch or tag the
- * source advertises (`ls-remote`, then fetched by tip, which every git host
- * allows), and `rev-parse` must give back exactly the advertised id. A branch
- * name is never trusted. Signed release tags are the follow-up hardening.
+ * The full 40-character commit id **is** the pin. It must be reachable from a
+ * branch or tag the source advertises (`ls-remote`, then fetched by tip, which
+ * every git host allows), `rev-parse` must give back exactly the advertised id,
+ * and it must be a descendant of `HEAD` unless `--allow-downgrade`. Git runs
+ * with only https and ssh allowed (and local paths for a loopback board or an
+ * anchored local remote), `transfer.fsckObjects`, and none of the caller's
+ * `GIT_DIR`-style overrides. Signed release tags are the follow-up hardening.
  *
  * ## What it refuses rather than risks
  *
@@ -54,22 +68,32 @@ import { CLI_DIR, tildePath } from './version.ts';
  * one whose `HEAD` the source does not have (local commits). Nothing is ever
  * stashed, reset, cleaned or forced.
  *
- * ## The order, and why each step is where it is
+ * ## The order
  *
- * 1. **Recover** an interrupted earlier run (an `in-flight.json` left behind).
- * 2. **Ask the board**, check the checkout, **fetch and verify** the target.
- * 3. **Back up**: the previous commit, and every file the refresh may write.
+ * 1. **Recover** an interrupted earlier run (`in-flight.json` left behind); with
+ *    none, sweep any backup copy or staging tree an older run left.
+ * 2. **Ask the board**, check the checkout, anchor the source, **fetch and
+ *    verify** the target.
+ * 3. **Mark, then back up**: `in-flight.json` is written *before* anything is
+ *    copied, so no copy can outlive a crash unrecorded.
  * 4. **Stage**: a detached worktree at the target; `laika version --json` and
  *    `laika doctor --offline --json` must run there. Nothing has changed yet.
- * 5. **Switch**: `checkout --detach <commit>`, with `in-flight.json` written
- *    first, so a kill between here and step 7 is put back on the next run.
+ * 5. **Switch**: `checkout --detach <commit>`.
  * 6. **Refresh**: the new checkout's own `laika agent hooks on` for each tool
- *    whose hooks were already on (marker-based, so an identical install is a
- *    no-op). MCP entries carry the board URL and an env-var name, never a
+ *    whose hooks were already on. The digest after each is written to the
+ *    marker. MCP entries hold the board URL and an env-var name, never a
  *    checkout path, so nothing in them changes: they are hashed before and
  *    after, and a difference is a failure.
- * 7. **Verify** from the switched checkout; any failure from 5 on **rolls
- *    back**: the previous commit, then the backed-up files, each one named.
+ * 7. **Verify** from the switched checkout. Any failure from 4 on **rolls
+ *    back**, each item named.
+ *
+ * ## Putting back never overwrites somebody else's change
+ *
+ * The checkout moves back only while `HEAD` is still the target (or the
+ * previous commit) and the tree is clean. A file is restored only while its
+ * digest is still the one this run wrote; anything else is "changed since —
+ * left alone". A `.bak` the refresh created is removed only while it still
+ * holds the original bytes.
  *
  * ## What it never touches
  *
@@ -77,8 +101,9 @@ import { CLI_DIR, tildePath } from './version.ts';
  * and any repository's instruction files are not opened for writing, copied or
  * printed. The one secret-bearing file it may copy is `~/.claude/settings.json`
  * (when `laika init` put a token there, and only when its hooks are on): the
- * copy is `0600` in a `0700` directory, and is deleted once the update is
- * verified.
+ * copy is `0600` in a `0700` directory and is deleted on **every** way out —
+ * success, refusal, rollback, exception and recovery — except an incomplete
+ * rollback, where the marker and the copy are kept on purpose for the next run.
  *
  * ## Exit codes
  *
@@ -135,10 +160,23 @@ const CONSOLE: UpdateIo = {
 };
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
+const SCP = /^([\w.-]+)@([\w.-]+):(?!\/\/)(.+)$/;
 
 /** `~/.laika/update/` — backups, staging and the in-flight marker. */
 export const updateDir = (home: string): string => join(home, '.laika', 'update');
 export const inFlightPath = (home: string): string => join(updateDir(home), 'in-flight.json');
+
+export interface BackedUpFile {
+  readonly path: string;
+  readonly copy: string;
+  readonly mode: number;
+  /** sha256 of the file before the update. */
+  readonly original: string;
+  /** sha256 after this run wrote it; `null` until the refresh has run. */
+  readonly post: string | null;
+  /** Whether `<path>.bak` existed before the refresh (which may create one). */
+  readonly bakExisted: boolean;
+}
 
 /** What a run leaves behind so a later one can put things back. */
 export interface InFlight {
@@ -148,11 +186,8 @@ export interface InFlight {
   readonly branch: string | null;
   readonly target: string;
   readonly backup: string;
-  readonly files: readonly {
-    readonly path: string;
-    readonly copy: string;
-    readonly mode: number;
-  }[];
+  readonly staging: string;
+  readonly files: readonly BackedUpFile[];
 }
 
 class Refusal extends Error {
@@ -167,17 +202,59 @@ class Refusal extends Error {
 /* git                                                                         */
 /* -------------------------------------------------------------------------- */
 
-function gitEnv(
+const GIT_OVERRIDES = new Set([
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_COMMON_DIR',
+  'GIT_NAMESPACE',
+  'GIT_CEILING_DIRECTORIES',
+  'GIT_SSH',
+  'GIT_SSH_COMMAND',
+  'GIT_PROXY_COMMAND',
+  'GIT_EXEC_PATH',
+  'GIT_TEMPLATE_DIR',
+]);
+
+/**
+ * The caller's environment without anything that points git somewhere else:
+ * `GIT_DIR` and friends, and every `GIT_CONFIG*` (which can carry `-c`
+ * settings). Used for git and for the checkout's own CLI alike.
+ */
+export function cleanEnv(
   env: Readonly<Record<string, string | undefined>>,
 ): Record<string, string | undefined> {
+  const clean: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (GIT_OVERRIDES.has(key) || key.startsWith('GIT_CONFIG')) continue;
+    clean[key] = value;
+  }
   // Never stop to ask for a password: a fetch that needs one fails, and says so.
-  return { ...env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'true', SSH_ASKPASS: 'true' };
+  return { ...clean, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: 'true', SSH_ASKPASS: 'true' };
+}
+
+/** `-c` settings for every command that talks to the source. */
+function transportConfig(allowLocal: boolean): string[] {
+  return [
+    '-c',
+    'protocol.allow=never',
+    '-c',
+    'protocol.https.allow=always',
+    '-c',
+    'protocol.ssh.allow=always',
+    ...(allowLocal ? ['-c', 'protocol.file.allow=always'] : []),
+    '-c',
+    'transfer.fsckObjects=true',
+  ];
 }
 
 function makeGit(run: Runner, env: Readonly<Record<string, string | undefined>>, cwd: string) {
-  const genv = gitEnv(env);
+  const genv = cleanEnv(env);
   return {
-    run: (args: readonly string[]): RunResult => run('git', ['-C', cwd, ...args], { env: genv }),
+    run: (args: readonly string[], config: readonly string[] = []): RunResult =>
+      run('git', [...config, '-C', cwd, ...args], { env: genv }),
     ok(args: readonly string[]): boolean {
       return this.run(args).code === 0;
     },
@@ -202,16 +279,20 @@ function why(result: RunResult): string {
 /* The source                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/** A local path or `file:` URL: this machine's own disk. */
+export function isLocalSource(url: string): boolean {
+  return isAbsolute(url) || url.startsWith('file:');
+}
+
 /**
  * Whether a source is one git authenticates in transit. `https:`, `ssh:` and
  * scp-style `user@host:path` are; a local path or `file:` is this machine's own
- * disk. `http:` and `git:` are refused: anyone on the path could substitute a
- * repository, and only the commit id would stand between them and this machine.
+ * disk (allowed only where the caller says). `http:` and `git:` are refused.
  */
 export function sourceProblem(url: string): string | undefined {
   if (url === '' || url.startsWith('-')) return 'is not a repository address';
   if (isAbsolute(url)) return undefined;
-  if (/^[\w.-]+@[\w.-]+:(?!\/\/)/.test(url)) return undefined;
+  if (SCP.test(url)) return undefined;
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -231,34 +312,127 @@ export function sourceProblem(url: string): string | undefined {
   return `uses ${parsed.protocol.replace(/:$/, '')}://, which git does not authenticate`;
 }
 
+const trimRepo = (path: string): string =>
+  path
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .replace(/\.git$/, '');
+
+/**
+ * One repository, however it is spelt: `https://github.com/A/B.git`,
+ * `git@github.com:A/B` and `ssh://git@github.com/A/B/` are the same key. The
+ * user part and the port are dropped (both authenticated transports reach the
+ * same host); a local path is resolved, against `base` when relative.
+ */
+export function sourceKey(url: string, base: string = process.cwd()): string | undefined {
+  if (url === '' || url.startsWith('-')) return undefined;
+  const scp = SCP.exec(url);
+  if (scp !== null) return `${(scp[2] ?? '').toLowerCase()}/${trimRepo(scp[3] ?? '')}`;
+  let parsed: URL | undefined;
+  try {
+    parsed = new URL(url);
+  } catch {
+    parsed = undefined;
+  }
+  if (parsed === undefined || /^[a-z]:$/i.test(parsed.protocol)) {
+    return `local:${resolve(base, url).replace(/\/+$/, '')}`;
+  }
+  if (parsed.protocol === 'file:') {
+    return `local:${resolve(fileURLToPath(parsed)).replace(/\/+$/, '')}`;
+  }
+  if (['https:', 'ssh:', 'http:', 'git:'].includes(parsed.protocol)) {
+    return `${parsed.hostname.toLowerCase()}/${trimRepo(parsed.pathname)}`;
+  }
+  return undefined;
+}
+
 /** The source as it may be printed: a URL without credentials, a path with `~`. */
 function shownSource(url: string, home: string): string {
   if (isAbsolute(url)) return tildePath(url, home);
-  if (/^[\w.-]+@[\w.-]+:(?!\/\/)/.test(url)) return url;
+  if (SCP.test(url)) return url;
   return url.startsWith('file:') ? url : displayUrl(url);
 }
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
-/**
- * Plain `http:` off loopback means the commit pin itself travels unprotected,
- * and it is the whole of the trust (L3). Asking (`--check`, `--dry-run`) is
- * allowed with a warning; acting on it takes `--allow-http`, said out loud.
- */
-export function boardTransportProblem(url: string): string | undefined {
+export type Transport = 'https' | 'loopback' | 'http';
+
+export function boardTransport(url: string): Transport {
   const parsed = new URL(url);
-  if (parsed.protocol === 'https:') return undefined;
-  if (LOOPBACK.has(parsed.hostname)) return undefined;
-  return `${displayUrl(url)} is plain http, so the commit it names could have been changed on the way`;
+  if (parsed.protocol === 'https:') return 'https';
+  return LOOPBACK.has(parsed.hostname) ? 'loopback' : 'http';
 }
 
-interface SourceTips {
-  readonly tips: readonly string[];
+/** The checkout's remotes, by name, with their keys. */
+function remotes(git: Git, checkout: string): { name: string; key: string }[] {
+  const names = (git.out(['remote']) ?? '').split('\n').filter((n) => n.trim() !== '');
+  const found: { name: string; key: string }[] = [];
+  for (const name of names) {
+    const url = git.out(['remote', 'get-url', '--', name]);
+    const key = url === undefined ? undefined : sourceKey(url, checkout);
+    if (key !== undefined) found.push({ name, key });
+  }
+  return found;
+}
+
+interface Anchor {
+  /** What is fetched from. */
+  readonly url: string;
+  /** How this machine vouches for it, or `null` when only the board does. */
+  readonly by: string | null;
+}
+
+/**
+ * Where to fetch from, and who vouches for it (B1). `--source` wins; the
+ * board's URL is anchored when it matches a remote; otherwise only a board
+ * reached over https or loopback may name a fork.
+ */
+function anchorSource(
+  git: Git,
+  checkout: string,
+  target: Target,
+  userSource: string | undefined,
+  home: string,
+): Anchor {
+  if (userSource !== undefined) {
+    const problem = sourceProblem(userSource);
+    if (problem !== undefined) {
+      throw new Refusal(
+        `Refused: --source ${problem}${problem === 'carries credentials' ? '' : ` (${shownSource(userSource, home)})`}. Nothing was changed.`,
+        1,
+      );
+    }
+    return { url: userSource, by: '--source' };
+  }
+  const advertised = target.source;
+  const problem = sourceProblem(advertised);
+  if (problem !== undefined) {
+    throw new Refusal(
+      `Refused: the CLI source the board names ${problem}${problem === 'carries credentials' ? '' : ` (${shownSource(advertised, home)})`}. Nothing was changed.`,
+      1,
+    );
+  }
+  const key = sourceKey(advertised, checkout);
+  const match = remotes(git, checkout).find((r) => r.key === key);
+  if (match !== undefined) return { url: advertised, by: `remote ${match.name}` };
+  if (target.transport === 'http') {
+    throw new Refusal(
+      `Refused: the board is plain http and names a source this checkout has no remote for (${shownSource(advertised, home)}), so anyone on the way could have chosen it. Pass --source <url> to name the repository yourself. Nothing was changed.`,
+      1,
+    );
+  }
+  if (isLocalSource(advertised) && target.transport !== 'loopback') {
+    throw new Refusal(
+      `Refused: the board names a path on this machine (${shownSource(advertised, home)}) as the CLI source; only a board on this machine may do that. Pass --source to name it yourself. Nothing was changed.`,
+      1,
+    );
+  }
+  return { url: advertised, by: null };
 }
 
 /** Every branch and tag tip the source advertises, peeled to commits. */
-function listTips(git: Git, source: string): SourceTips {
-  const result = git.run(['ls-remote', '--heads', '--tags', source]);
+function listTips(git: Git, source: string, config: readonly string[]): string[] {
+  const result = git.run(['ls-remote', '--heads', '--tags', '--', source], config);
   if (result.code !== 0) {
     throw new Refusal(`Could not check: the source did not answer (${why(result)})`, 2);
   }
@@ -270,23 +444,32 @@ function listTips(git: Git, source: string): SourceTips {
     const name = ref.replace(/\^\{\}$/, '');
     if (ref.endsWith('^{}') || !byRef.has(name)) byRef.set(name, sha);
   }
-  return { tips: [...new Set(byRef.values())] };
+  return [...new Set(byRef.values())];
 }
 
 /** Fetch the tips by id into the object store only: no ref, no FETCH_HEAD. */
-function fetchTips(git: Git, source: string, tips: readonly string[]): void {
+function fetchTips(
+  git: Git,
+  source: string,
+  tips: readonly string[],
+  config: readonly string[],
+): void {
   const missing = tips.filter((sha) => !git.ok(['cat-file', '-e', `${sha}^{commit}`]));
   for (let i = 0; i < missing.length; i += 100) {
     const batch = missing.slice(i, i + 100);
-    const result = git.run([
-      'fetch',
-      '--quiet',
-      '--no-tags',
-      '--no-write-fetch-head',
-      '--no-recurse-submodules',
-      source,
-      ...batch,
-    ]);
+    const result = git.run(
+      [
+        'fetch',
+        '--quiet',
+        '--no-tags',
+        '--no-write-fetch-head',
+        '--no-recurse-submodules',
+        '--',
+        source,
+        ...batch,
+      ],
+      config,
+    );
     if (result.code !== 0) {
       throw new Refusal(`Could not check: fetching from the source failed (${why(result)})`, 2);
     }
@@ -314,12 +497,24 @@ function mcpFiles(home: string): string[] {
   return [join(home, '.claude.json'), ...Object.values(USER_CONFIG).map((f) => f(home))];
 }
 
-function digest(path: string): string {
+export function digest(path: string): string {
   try {
     return createHash('sha256').update(readFileSync(path)).digest('hex');
   } catch {
     return 'absent';
   }
+}
+
+/** Written atomically, `0600`: a half-written marker would be worse than none. */
+export function saveState(path: string, state: InFlight, exclusive = false): void {
+  const body = `${JSON.stringify(state, null, 2)}\n`;
+  if (exclusive) {
+    writeFileSync(path, body, { mode: 0o600, flag: 'wx' });
+    return;
+  }
+  const temp = `${path}.${String(process.pid)}.tmp`;
+  writeFileSync(temp, body, { mode: 0o600 });
+  renameSync(temp, path);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -334,7 +529,7 @@ function laika(
   args: readonly string[],
 ): RunResult {
   return run('sh', [join(checkout, 'cli', 'bin', 'laika'), ...args], {
-    env: { ...env, HOME: home },
+    env: { ...cleanEnv(env), HOME: home },
   });
 }
 
@@ -383,55 +578,106 @@ function runtimeDependencies(checkout: string): string[] {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Rollback and recovery                                                       */
+/* Putting back                                                                */
 /* -------------------------------------------------------------------------- */
 
-/** Put the checkout and the backed-up files back; one line per thing restored. */
-function putBack(git: Git, state: InFlight, home: string): { done: string[]; failed: string[] } {
+interface PutBack {
+  readonly done: string[];
+  /** Not ours to undo any more: reported, not failures. */
+  readonly leftAlone: string[];
+  readonly failed: string[];
+}
+
+/**
+ * Put the checkout and the backed-up files back — but only what is still as
+ * this run left it (B3). Anything changed since is reported and left alone.
+ */
+function putBack(git: Git, state: InFlight, home: string): PutBack {
   const done: string[] = [];
+  const leftAlone: string[] = [];
   const failed: string[] = [];
   const short = state.previous.slice(0, 7);
+
   const head = git.out(['rev-parse', 'HEAD']);
   const on = git.out(['symbolic-ref', '--quiet', '--short', 'HEAD']) ?? null;
   if (head !== state.previous || on !== state.branch) {
-    const branchAt =
-      state.branch === null ? undefined : git.out(['rev-parse', `refs/heads/${state.branch}`]);
-    const args =
-      state.branch !== null && branchAt === state.previous
-        ? ['checkout', '--quiet', state.branch]
-        : ['checkout', '--quiet', '--detach', state.previous];
-    const result = git.run(args);
-    if (result.code === 0) {
-      done.push(
-        `the checkout is back at ${short}${args.length === 3 ? ` on ${String(state.branch)}` : ' (detached)'}`,
+    const clean = git.out(['status', '--porcelain', '--untracked-files=normal']);
+    if (head !== state.target && head !== state.previous) {
+      leftAlone.push(
+        `the checkout has moved since (HEAD is now ${head?.slice(0, 7) ?? 'unknown'}) — left alone; it was at ${short}`,
+      );
+    } else if (clean !== '') {
+      leftAlone.push(
+        `the checkout has local changes since — left alone at ${head.slice(0, 7)}; it was at ${short}${state.branch === null ? '' : ` on ${state.branch}`}`,
       );
     } else {
-      failed.push(`could not check out ${short} again (${why(result)})`);
-    }
-  }
-  for (const file of state.files) {
-    try {
-      if (digest(file.path) !== digest(file.copy)) {
-        copyFileSync(file.copy, file.path);
-        chmodSync(file.path, file.mode);
-        done.push(`restored ${tildePath(file.path, home)} from the backup`);
+      const branchAt =
+        state.branch === null ? undefined : git.out(['rev-parse', `refs/heads/${state.branch}`]);
+      const args =
+        state.branch !== null && branchAt === state.previous
+          ? ['checkout', '--quiet', state.branch]
+          : ['checkout', '--quiet', '--detach', state.previous];
+      const result = git.run(args);
+      if (result.code === 0) {
+        done.push(
+          `the checkout is back at ${short}${args.length === 3 ? ` on ${String(state.branch)}` : ' (detached)'}`,
+        );
+      } else {
+        failed.push(`could not check out ${short} again (${why(result)})`);
       }
-    } catch (cause) {
-      failed.push(
-        `could not restore ${tildePath(file.path, home)} (${cause instanceof Error ? cause.message : String(cause)})`,
-      );
     }
   }
-  return { done, failed };
+
+  for (const file of state.files) {
+    const shown = tildePath(file.path, home);
+    const current = digest(file.path);
+    if (current !== file.original) {
+      if (file.post !== null && current === file.post) {
+        try {
+          if (digest(file.copy) !== file.original) throw new Error('the backup copy is not intact');
+          copyFileSync(file.copy, file.path);
+          chmodSync(file.path, file.mode);
+          done.push(`restored ${shown} from the backup`);
+        } catch (cause) {
+          failed.push(
+            `could not restore ${shown} (${cause instanceof Error ? cause.message : String(cause)})`,
+          );
+        }
+      } else {
+        leftAlone.push(
+          `${shown} changed since the update wrote it — left alone; run laika agent hooks on to re-apply the hooks if they are wrong`,
+        );
+      }
+    }
+    // A `.bak` the refresh made holds the original bytes, which may include a token.
+    const bak = `${file.path}.bak`;
+    if (!file.bakExisted && existsSync(bak)) {
+      if (digest(bak) === file.original) {
+        rmSync(bak, { force: true });
+        done.push(`removed ${tildePath(bak, home)}, which the refresh had made`);
+      } else {
+        leftAlone.push(`${tildePath(bak, home)} is not the one the refresh made — left alone`);
+      }
+    }
+  }
+  return { done, leftAlone, failed };
 }
 
 function removeStaging(git: Git, staging: string): string | undefined {
-  if (!existsSync(staging)) return undefined;
-  // Never --force: a staging tree with changes in it is reported, not deleted.
-  const result = git.run(['worktree', 'remove', staging]);
-  if (result.code !== 0) return `the staging copy at ${staging} was left in place (${why(result)})`;
+  if (existsSync(staging)) {
+    // Never --force: a staging tree with changes in it is reported, not deleted.
+    const result = git.run(['worktree', 'remove', '--', staging]);
+    if (result.code !== 0) {
+      return `the staging copy at ${staging} was left in place (${why(result)})`;
+    }
+  }
   git.run(['worktree', 'prune']);
   return undefined;
+}
+
+/** Remove the copies (which may hold a token) and, unless kept, the marker. */
+function dropCopies(state: InFlight): void {
+  for (const file of state.files) rmSync(file.copy, { force: true });
 }
 
 function readInFlight(home: string): InFlight | 'unreadable' | undefined {
@@ -439,13 +685,26 @@ function readInFlight(home: string): InFlight | 'unreadable' | undefined {
   if (!existsSync(path)) return undefined;
   try {
     const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<InFlight>;
+    const filesOk =
+      Array.isArray(raw.files) &&
+      raw.files.every(
+        (f: Partial<BackedUpFile>) =>
+          typeof f.path === 'string' &&
+          typeof f.copy === 'string' &&
+          typeof f.mode === 'number' &&
+          typeof f.original === 'string' &&
+          (f.post === null || typeof f.post === 'string') &&
+          typeof f.bakExisted === 'boolean',
+      );
     if (
       typeof raw.checkout !== 'string' ||
       typeof raw.previous !== 'string' ||
       !FULL_SHA.test(raw.previous) ||
+      typeof raw.target !== 'string' ||
       typeof raw.backup !== 'string' ||
+      typeof raw.staging !== 'string' ||
       (raw.branch !== null && typeof raw.branch !== 'string') ||
-      !Array.isArray(raw.files)
+      !filesOk
     ) {
       return 'unreadable';
     }
@@ -453,6 +712,13 @@ function readInFlight(home: string): InFlight | 'unreadable' | undefined {
   } catch {
     return 'unreadable';
   }
+}
+
+function report(io: UpdateIo, result: PutBack, to: 'out' | 'err'): void {
+  const say = to === 'out' ? io.out : io.err;
+  for (const line of result.done) say(`  ✓ ${line}`);
+  for (const line of result.leftAlone) say(`  · ${line}`);
+  for (const line of result.failed) io.err(`  ! ${line}`);
 }
 
 function recover(io: UpdateIo, run: Runner): number {
@@ -464,41 +730,72 @@ function recover(io: UpdateIo, run: Runner): number {
     return 1;
   }
   const git = makeGit(run, io.env, state.checkout);
-  io.out('An earlier laika update was interrupted. Putting things back as they were:');
-  const { done, failed } = putBack(git, state, io.home);
-  for (const line of done) io.out(`  ✓ ${line}`);
-  if (done.length === 0 && failed.length === 0) io.out('  · nothing had changed');
-  const staging = removeStaging(git, join(state.backup, 'staging'));
-  if (staging !== undefined) failed.push(staging);
-  if (failed.length > 0) {
-    for (const line of failed) io.err(`  ! ${line}`);
-    io.err(`  ${marker} is kept, so the next run tries again.`);
+  io.out('An earlier laika update was interrupted. Putting back what it changed:');
+  const result = putBack(git, state, io.home);
+  const staging = removeStaging(git, state.staging);
+  if (staging !== undefined) result.failed.push(staging);
+  report(io, result, 'out');
+  if (result.done.length === 0 && result.leftAlone.length === 0 && result.failed.length === 0) {
+    io.out('  · nothing had changed');
+  }
+  if (result.failed.length > 0) {
+    io.err(`  ${marker} and its backup are kept, so the next run tries again.`);
     return 1;
   }
+  dropCopies(state);
   rmSync(inFlightPath(io.home), { force: true });
   io.out('');
   io.out('Run laika update again to retry.');
   return 1;
 }
 
+/**
+ * With no marker, nothing should be under `~/.laika/update/` but each run's
+ * `state.json`. A copy or a staging tree there is from a run that died before
+ * this version wrote its marker first: remove it.
+ */
+function sweep(io: UpdateIo, git: Git | undefined): void {
+  const dir = updateDir(io.home);
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const sub = join(dir, entry);
+    let names: string[];
+    try {
+      names = readdirSync(sub);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (name.endsWith('-hooks')) rmSync(join(sub, name), { force: true });
+    }
+    if (git !== undefined && names.includes('staging')) {
+      const left = removeStaging(git, join(sub, 'staging'));
+      if (left !== undefined) io.err(`  · ${left}`);
+    }
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* The command                                                                 */
 /* -------------------------------------------------------------------------- */
 
-const USAGE = 'Usage: laika update [--check] [--dry-run] [--board <url>] [--allow-http]';
+const USAGE =
+  'Usage: laika update [--check] [--dry-run] [--board <url>] [--source <url>] [--allow-http] [--allow-downgrade]';
 
 interface Target {
   readonly board: string;
+  readonly transport: Transport;
   readonly body: Compatibility;
   readonly commit: string;
   readonly source: string;
 }
 
-async function askBoard(
-  io: UpdateIo,
-  flag: string | undefined,
-  http: 'refuse' | 'warn',
-): Promise<Target> {
+async function askBoard(io: UpdateIo, flag: string | undefined): Promise<Target> {
   const picked = pickBoard(io, flag);
   if (picked.url === undefined) {
     throw new Refusal(
@@ -513,16 +810,7 @@ async function askBoard(
     );
   }
   const board = normaliseUrl(picked.url);
-  const transport = boardTransportProblem(board);
-  if (transport !== undefined) {
-    if (http === 'refuse') {
-      throw new Refusal(
-        `Refused: ${transport}. Put the board behind https, or pass --allow-http to accept that risk for this run. Nothing was changed.`,
-        1,
-      );
-    }
-    io.err(`Warning: ${transport}.`);
-  }
+  const transport = boardTransport(board);
 
   const result = await fetchCompatibility(board, io.fetch);
   const shown = displayUrl(board);
@@ -551,14 +839,7 @@ async function askBoard(
     );
   }
   const source = typeof body.cli.source.url === 'string' ? body.cli.source.url : '';
-  const problem = sourceProblem(source);
-  if (problem !== undefined) {
-    throw new Refusal(
-      `Refused: the CLI source the board names ${problem}${problem === 'carries credentials' ? '' : ` (${shownSource(source, io.home)})`}. Nothing was changed.`,
-      1,
-    );
-  }
-  return { board, body, commit, source };
+  return { board, transport, body, commit, source };
 }
 
 function checkLine(target: Target, head: string | null): string {
@@ -577,38 +858,47 @@ function checkLine(target: Target, head: string | null): string {
   return `Update available: the board runs ${target.commit.slice(0, 7)}, this checkout ${head === null ? 'an unknown commit' : head.slice(0, 7)}. Run: laika update`;
 }
 
+interface Options {
+  board?: string;
+  source?: string;
+  check: boolean;
+  dryRun: boolean;
+  allowHttp: boolean;
+  allowDowngrade: boolean;
+}
+
 export async function update(argv: readonly string[], io: UpdateIo = CONSOLE): Promise<number> {
-  let board: string | undefined;
-  let check = false;
-  let dryRun = false;
-  let allowHttp = false;
+  const options: Options = { check: false, dryRun: false, allowHttp: false, allowDowngrade: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--check') check = true;
-    else if (arg === '--dry-run') dryRun = true;
-    else if (arg === '--allow-http') allowHttp = true;
-    else if (arg === '--board') {
-      board = argv[++i];
-      if (board === undefined || board === '') {
-        io.err(`laika update: --board needs a URL. ${USAGE}`);
+    if (arg === '--check') options.check = true;
+    else if (arg === '--dry-run') options.dryRun = true;
+    else if (arg === '--allow-http') options.allowHttp = true;
+    else if (arg === '--allow-downgrade') options.allowDowngrade = true;
+    else if (arg === '--board' || arg === '--source') {
+      const value = argv[++i];
+      if (value === undefined || value === '') {
+        io.err(`laika update: ${arg} needs a URL. ${USAGE}`);
         return USAGE_EXIT;
       }
+      if (arg === '--board') options.board = value;
+      else options.source = value;
     } else {
       io.err(`laika update: unknown option "${arg ?? ''}". ${USAGE}`);
       return USAGE_EXIT;
     }
   }
-  if (check && dryRun) {
+  if (options.check && options.dryRun) {
     io.err(`laika update: --check and --dry-run are separate questions. ${USAGE}`);
     return USAGE_EXIT;
   }
 
   const run = io.run ?? realRun;
   const interrupted = existsSync(inFlightPath(io.home));
-  if (interrupted && !check && !dryRun) return recover(io, run);
+  if (interrupted && !options.check && !options.dryRun) return recover(io, run);
 
   try {
-    return await go(io, run, board, { check, dryRun, interrupted, allowHttp });
+    return await go(io, run, options, interrupted);
   } catch (cause) {
     if (cause instanceof Refusal) {
       io.err(cause.message);
@@ -621,34 +911,43 @@ export async function update(argv: readonly string[], io: UpdateIo = CONSOLE): P
 async function go(
   io: UpdateIo,
   run: Runner,
-  boardFlag: string | undefined,
-  mode: { check: boolean; dryRun: boolean; interrupted: boolean; allowHttp: boolean },
+  options: Options,
+  interrupted: boolean,
 ): Promise<number> {
   const cliDir = io.cliDir ?? CLI_DIR;
   const top = makeGit(run, io.env, cliDir).out(['rev-parse', '--show-toplevel']);
   const head = top === undefined ? undefined : makeGit(run, io.env, top).out(['rev-parse', 'HEAD']);
+  const asking = options.check || options.dryRun;
 
-  if (mode.interrupted) {
+  if (interrupted) {
     io.err(
       `An earlier laika update was interrupted (${tildePath(inFlightPath(io.home), io.home)}); run laika update to put things back first.`,
     );
+  } else if (!asking) {
+    sweep(io, top === undefined ? undefined : makeGit(run, io.env, top));
   }
 
-  const target = await askBoard(
-    io,
-    boardFlag,
-    mode.check || mode.dryRun || mode.allowHttp ? 'warn' : 'refuse',
-  );
+  const target = await askBoard(io, options.board);
+  const plainHttp = `${displayUrl(target.board)} is plain http, so the commit it names could have been changed on the way`;
+  if (target.transport === 'http' && (asking || options.allowHttp))
+    io.err(`Warning: ${plainHttp}.`);
 
-  if (mode.check) {
+  if (options.check) {
     const line = checkLine(target, head ?? null);
     io.out(line);
     return line.startsWith('Update required') ? 1 : 0;
   }
 
+  if (target.transport === 'http' && !options.dryRun && !options.allowHttp) {
+    throw new Refusal(
+      `Refused: ${plainHttp}. Put the board behind https, or pass --allow-http, which is accepted only with a source this checkout already has as a remote or one you name with --source. Nothing was changed.`,
+      1,
+    );
+  }
+
   if (top === undefined || head === undefined) {
     throw new Refusal(
-      `Refused: ${tildePath(cliDir, io.home)} is not inside a git checkout, so there is nothing laika update can move. Clone it: git clone ${shownSource(target.source, io.home)} ~/laika`,
+      `Refused: ${tildePath(cliDir, io.home)} is not inside a git checkout, so there is nothing laika update can move. Clone it: git clone <the Laika repository> ~/laika`,
       1,
     );
   }
@@ -674,17 +973,27 @@ async function go(
     );
   }
 
+  const anchor = anchorSource(git, checkout, target, options.source, io.home);
+  const allowLocal =
+    isLocalSource(anchor.url) && (target.transport === 'loopback' || anchor.by !== null);
+  if (isLocalSource(anchor.url) && !allowLocal) {
+    throw new Refusal('Refused: a local path as the source needs a board on this machine.', 1);
+  }
+  const config = transportConfig(allowLocal);
+
   const branch = git.out(['symbolic-ref', '--quiet', '--short', 'HEAD']) ?? null;
-  const source = shownSource(target.source, io.home);
+  const source = shownSource(anchor.url, io.home);
+  const vouched =
+    anchor.by === null ? 'named by the board, which is https or loopback' : `matches ${anchor.by}`;
   const plan = [
     `  board    ${displayUrl(target.board)} — Laika ${target.body.server.version}, protocol ${String(target.body.protocol.current)}`,
-    `  source   ${source}`,
+    `  source   ${source} (${anchor.by === '--source' ? 'named with --source' : vouched})`,
     `  from     ${head.slice(0, 7)}${branch === null ? ' (detached)' : ` on ${branch}`} in ${shown}`,
     `  to       ${target.commit} (detached; your branches are left where they are)`,
   ];
   const hookHarnesses = HOOK_HARNESSES.filter((h) => hooksOn(io.home, h));
 
-  if (mode.dryRun) {
+  if (options.dryRun) {
     io.out('laika update --dry-run — nothing is fetched or written.');
     io.out('');
     for (const line of plan) io.out(line);
@@ -693,7 +1002,9 @@ async function go(
     io.out(
       `  1. fetch the source's branch and tag tips and check ${target.commit.slice(0, 7)} is one of them or behind one`,
     );
-    io.out('  2. refuse if this checkout has commits the source does not');
+    io.out(
+      `  2. refuse if this checkout has commits the source does not, or if ${target.commit.slice(0, 7)} is not ahead of ${head.slice(0, 7)}${options.allowDowngrade ? ' (--allow-downgrade: a step back is allowed)' : ''}`,
+    );
     io.out(
       `  3. back up the previous commit${hookHarnesses.length > 0 ? ` and ${hookHarnesses.map((h) => tildePath(hookFile(io.home, h), io.home)).join(', ')}` : ''} under ${tildePath(updateDir(io.home), io.home)}/`,
     );
@@ -711,6 +1022,10 @@ async function go(
     io.out(
       'Never touched: ~/.laika/env, ~/.laika/agents/, ~/.laika/device/, MCP entries, consent, grants.',
     );
+    if (target.transport === 'http' && !options.allowHttp) {
+      io.out('');
+      io.out('A real run is refused while the board is plain http, unless --allow-http.');
+    }
     return 0;
   }
 
@@ -720,10 +1035,10 @@ async function go(
   io.out('');
 
   // Fetch and verify: reachable from what the source advertises, exactly the id.
-  const { tips } = listTips(git, target.source);
+  const tips = listTips(git, anchor.url, config);
   if (tips.length === 0)
     throw new Refusal('Could not check: the source advertises no branch or tag', 2);
-  fetchTips(git, target.source, tips);
+  fetchTips(git, anchor.url, tips, config);
   if (!reachableFrom(git, target.commit, tips)) {
     throw new Refusal(
       `Refused: ${target.commit.slice(0, 7)} is not on any branch or tag of ${source}, so it is not a commit that source published. Nothing was changed.`,
@@ -746,144 +1061,221 @@ async function go(
       1,
     );
   }
+  if (!options.allowDowngrade && !git.ok(['merge-base', '--is-ancestor', head, target.commit])) {
+    throw new Refusal(
+      `Refused: ${target.commit.slice(0, 7)} is not ahead of ${head.slice(0, 7)}, so this would move ${shown} back or sideways. Pass --allow-downgrade if that is what you want. Nothing was changed.`,
+      1,
+    );
+  }
 
-  // Back up.
+  return switchTo(io, run, git, {
+    checkout,
+    shown,
+    head,
+    branch,
+    target: target.commit,
+    hookHarnesses,
+  });
+}
+
+interface SwitchPlan {
+  readonly checkout: string;
+  readonly shown: string;
+  readonly head: string;
+  readonly branch: string | null;
+  readonly target: string;
+  readonly hookHarnesses: readonly Harness[];
+}
+
+/** Steps 3–7: marker first, then backup, stage, switch, refresh, verify. */
+function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): number {
   const stamp = (io.now?.() ?? new Date()).toISOString().replace(/[:.]/g, '-');
   const backup = join(updateDir(io.home), stamp);
   mkdirSync(backup, { recursive: true, mode: 0o700 });
   chmodSync(updateDir(io.home), 0o700);
   chmodSync(backup, 0o700);
-  const files = hookHarnesses.map((harness, i) => {
-    const path = hookFile(io.home, harness);
-    const copy = join(backup, `${String(i)}-${harness}-hooks`);
-    const mode = statSync(path).mode & 0o777;
-    copyFileSync(path, copy);
-    chmodSync(copy, 0o600);
-    return { path, copy, mode, harness };
-  });
-  const state: InFlight = {
-    checkout,
-    previous: head,
-    branch,
-    target: target.commit,
+  const marker = inFlightPath(io.home);
+  let state: InFlight = {
+    checkout: p.checkout,
+    previous: p.head,
+    branch: p.branch,
+    target: p.target,
     backup,
-    files: files.map(({ path, copy, mode }) => ({ path, copy, mode })),
+    staging: join(backup, 'staging'),
+    files: p.hookHarnesses.map((harness, i) => {
+      const path = hookFile(io.home, harness);
+      return {
+        path,
+        copy: join(backup, `${String(i)}-${harness}-hooks`),
+        mode: statSync(path).mode & 0o777,
+        original: digest(path),
+        post: null,
+        bakExisted: existsSync(`${path}.bak`),
+      };
+    }),
   };
-  writeFileSync(join(backup, 'state.json'), `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
-  io.out(`  ✓ backed up to ${tildePath(backup, io.home)}/`);
-  const mcpBefore = mcpFiles(io.home).map((p) => [p, digest(p)] as const);
-  const hooksBefore = new Map(files.map((f) => [f.harness, digest(f.path)]));
+  // The marker before any copy: nothing can be copied that a crash leaves unrecorded.
+  saveState(marker, state, true);
 
-  // Stage.
-  const staging = join(backup, 'staging');
-  const added = git.run(['worktree', 'add', '--quiet', '--detach', staging, target.commit]);
-  if (added.code !== 0) {
-    throw new Refusal(
-      `Failed: could not make the staging copy (${why(added)}). Nothing was changed.`,
-      1,
-    );
-  }
-  const deps = runtimeDependencies(staging);
-  const staged =
-    deps.length > 0
-      ? `the target needs runtime dependencies installed (${deps.join(', ')}), which laika update does not do yet`
-      : selfCheck(run, io.env, io.home, staging, target.commit);
-  if (staged !== undefined) {
-    const left = removeStaging(git, staging);
-    io.err(`  ! the staging self-check failed: ${staged}`);
-    if (left !== undefined) io.err(`  ! ${left}`);
-    io.err('');
-    io.err(
-      `Failed before switching: ${shown} is still at ${head.slice(0, 7)}, and nothing else was changed.`,
-    );
-    return 1;
-  }
-  io.out('  ✓ staged and self-checked: laika version and laika doctor --offline run at the target');
-
-  // Switch. The marker goes first: a kill from here on is put back next run.
-  writeFileSync(inFlightPath(io.home), `${JSON.stringify(state, null, 2)}\n`, {
-    mode: 0o600,
-    flag: 'wx',
-  });
-  const failures: string[] = [];
-  const switched = git.run(['checkout', '--quiet', '--detach', target.commit]);
-  if (switched.code !== 0) failures.push(`git checkout failed (${why(switched)})`);
-
-  // Refresh: hooks only where they were on, with the new CLI's own installer.
-  let codexChanged = false;
-  if (failures.length === 0) {
-    for (const file of files) {
-      const result = laika(run, io.env, io.home, checkout, [
-        'agent',
-        'hooks',
-        'on',
-        '--harness',
-        file.harness,
-      ]);
-      if (result.code !== 0) {
-        failures.push(
-          `re-applying the ${file.harness} hooks failed (laika agent hooks on exited ${String(result.code)})`,
+  // Kept only when a rollback could not finish: the next run needs them.
+  let keep = false;
+  try {
+    for (const file of state.files) {
+      copyFileSync(file.path, file.copy);
+      chmodSync(file.copy, 0o600);
+      if (digest(file.copy) !== file.original) {
+        throw new Refusal(
+          `Failed: ${tildePath(file.path, io.home)} changed while it was being backed up. Nothing was changed.`,
+          1,
         );
-        break;
       }
-      const changed = digest(file.path) !== hooksBefore.get(file.harness);
-      if (file.harness === 'codex' && changed) codexChanged = true;
-      io.out(
-        `  ✓ ${file.harness} session hooks ${changed ? 're-applied' : 'already current'} in ${tildePath(file.path, io.home)}`,
+    }
+    writeFileSync(join(backup, 'state.json'), `${JSON.stringify(state, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    io.out(`  ✓ backed up to ${tildePath(backup, io.home)}/`);
+    const mcpBefore = mcpFiles(io.home).map((path) => [path, digest(path)] as const);
+
+    // Stage.
+    const added = git.run(['worktree', 'add', '--quiet', '--detach', state.staging, p.target]);
+    if (added.code !== 0) {
+      throw new Refusal(
+        `Failed: could not make the staging copy (${why(added)}). Nothing was changed.`,
+        1,
       );
     }
-  }
-  if (failures.length === 0) {
-    const moved = mcpBefore.filter(([p, d]) => digest(p) !== d).map(([p]) => tildePath(p, io.home));
-    if (moved.length > 0)
-      failures.push(`an MCP config changed during the update: ${moved.join(', ')}`);
-  }
-
-  // Verify from the switched checkout.
-  if (failures.length === 0) {
-    const verified = selfCheck(run, io.env, io.home, checkout, target.commit);
-    if (verified !== undefined)
-      failures.push(`the switched checkout failed its check: ${verified}`);
-  }
-
-  if (failures.length > 0) {
-    for (const line of failures) io.err(`  ! ${line}`);
-    io.err('');
-    io.err('Rolling back:');
-    const { done, failed } = putBack(git, state, io.home);
-    for (const line of done) io.err(`  ✓ ${line}`);
-    const left = removeStaging(git, staging);
-    if (left !== undefined) failed.push(left);
-    if (failed.length > 0) {
-      for (const line of failed) io.err(`  ! ${line}`);
+    const deps = runtimeDependencies(state.staging);
+    const staged =
+      deps.length > 0
+        ? `the target needs runtime dependencies installed (${deps.join(', ')}), which laika update does not do yet`
+        : selfCheck(run, io.env, io.home, state.staging, p.target);
+    if (staged !== undefined) {
+      const left = removeStaging(git, state.staging);
+      io.err(`  ! the staging self-check failed: ${staged}`);
+      if (left !== undefined) io.err(`  ! ${left}`);
+      io.err('');
       io.err(
-        `The rollback is incomplete; ${tildePath(inFlightPath(io.home), io.home)} is kept so the next laika update tries again.`,
+        `Failed before switching: ${p.shown} is still at ${p.head.slice(0, 7)}, and nothing else was changed.`,
       );
       return 1;
     }
-    rmSync(inFlightPath(io.home), { force: true });
-    io.err(`Rolled back: ${shown} is at ${head.slice(0, 7)} again, as before the update.`);
-    return 1;
+    io.out(
+      '  ✓ staged and self-checked: laika version and laika doctor --offline run at the target',
+    );
+
+    // Switch.
+    const failures: string[] = [];
+    const switched = git.run(['checkout', '--quiet', '--detach', p.target]);
+    if (switched.code !== 0) failures.push(`git checkout failed (${why(switched)})`);
+
+    // Refresh: hooks only where they were on, with the new CLI's own installer.
+    let codexChanged = false;
+    if (failures.length === 0) {
+      for (const [i, file] of state.files.entries()) {
+        const harness = p.hookHarnesses[i];
+        if (harness === undefined) continue;
+        const result = laika(run, io.env, io.home, p.checkout, [
+          'agent',
+          'hooks',
+          'on',
+          '--harness',
+          harness,
+        ]);
+        const post = digest(file.path);
+        state = {
+          ...state,
+          files: state.files.map((f, j) => (j === i ? { ...f, post } : f)),
+        };
+        saveState(marker, state);
+        if (result.code !== 0) {
+          failures.push(
+            `re-applying the ${harness} hooks failed (laika agent hooks on exited ${String(result.code)})`,
+          );
+          break;
+        }
+        const changed = post !== file.original;
+        if (harness === 'codex' && changed) codexChanged = true;
+        io.out(
+          `  ✓ ${harness} session hooks ${changed ? 're-applied' : 'already current'} in ${tildePath(file.path, io.home)}`,
+        );
+      }
+    }
+    if (failures.length === 0) {
+      const moved = mcpBefore
+        .filter(([path, before]) => digest(path) !== before)
+        .map(([path]) => tildePath(path, io.home));
+      if (moved.length > 0)
+        failures.push(`an MCP config changed during the update: ${moved.join(', ')}`);
+    }
+
+    // Verify from the switched checkout.
+    if (failures.length === 0) {
+      const verified = selfCheck(run, io.env, io.home, p.checkout, p.target);
+      if (verified !== undefined)
+        failures.push(`the switched checkout failed its check: ${verified}`);
+    }
+
+    if (failures.length > 0) {
+      for (const line of failures) io.err(`  ! ${line}`);
+      io.err('');
+      io.err('Rolling back:');
+      const result = putBack(git, state, io.home);
+      const left = removeStaging(git, state.staging);
+      if (left !== undefined) result.failed.push(left);
+      report(io, result, 'err');
+      if (result.failed.length > 0) {
+        keep = true;
+        io.err(
+          `The rollback is incomplete; ${tildePath(marker, io.home)} and its backup are kept so the next laika update tries again.`,
+        );
+        return 1;
+      }
+      io.err(
+        result.leftAlone.length > 0
+          ? 'Rolled back what was still as the update left it; the rest is listed above.'
+          : `Rolled back: ${p.shown} is at ${p.head.slice(0, 7)} again, as before the update.`,
+      );
+      return 1;
+    }
+
+    const left = removeStaging(git, state.staging);
+    if (left !== undefined) io.out(`  · ${left}`);
+    io.out('  ✓ the switched checkout passes laika version and laika doctor --offline');
+    io.out('');
+    io.out(
+      `Updated: ${p.shown} is at ${p.target.slice(0, 7)}, the commit the board was built from.`,
+    );
+    io.out(
+      `To go back: git -C ${p.shown} checkout ${p.branch ?? `--detach ${p.head.slice(0, 7)}`}`,
+    );
+    io.out('');
+    io.out(
+      'Restart Claude Code (quit, then start it with laika-claude) so it loads the updated plugin.',
+    );
+    if (codexChanged)
+      io.out(
+        'Codex runs a changed hook only after you trust it again: start codex and open /hooks.',
+      );
+    io.out('Then run laika doctor to check this machine against the board.');
+    return 0;
+  } catch (cause) {
+    if (cause instanceof Refusal) {
+      removeStaging(git, state.staging);
+      throw cause;
+    }
+    // Something unexpected: put back what is still ours, then let it surface.
+    io.err('');
+    io.err('Something went wrong mid-update. Rolling back:');
+    const result = putBack(git, state, io.home);
+    const left = removeStaging(git, state.staging);
+    if (left !== undefined) result.failed.push(left);
+    report(io, result, 'err');
+    if (result.failed.length > 0) keep = true;
+    throw cause;
+  } finally {
+    if (!keep) {
+      dropCopies(state);
+      rmSync(marker, { force: true });
+    }
   }
-
-  const left = removeStaging(git, staging);
-  if (left !== undefined) io.out(`  · ${left}`);
-  // The copies may hold a token (settings.json); verified, they are not needed.
-  for (const file of files) rmSync(file.copy, { force: true });
-  rmSync(inFlightPath(io.home), { force: true });
-
-  io.out('  ✓ the switched checkout passes laika version and laika doctor --offline');
-  io.out('');
-  io.out(
-    `Updated: ${shown} is at ${target.commit.slice(0, 7)}, the commit the board was built from.`,
-  );
-  io.out(`To go back: git -C ${shown} checkout ${branch ?? `--detach ${head.slice(0, 7)}`}`);
-  io.out('');
-  io.out(
-    'Restart Claude Code (quit, then start it with laika-claude) so it loads the updated plugin.',
-  );
-  if (codexChanged)
-    io.out('Codex runs a changed hook only after you trust it again: start codex and open /hooks.');
-  io.out('Then run laika doctor to check this machine against the board.');
-  return 0;
 }

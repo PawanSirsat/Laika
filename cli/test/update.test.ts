@@ -4,15 +4,19 @@
  * Every case runs against real git repositories in a temp directory, built
  * from a copy of this checkout's own `cli/` and `plugin/scripts/`, so the
  * staging self-check and the hook refresh run the real CLI rather than a
- * stand-in. The board is a stub on a loopback port.
+ * stand-in. The board is a stub on a loopback port, or — for a board that is
+ * *not* on this machine — an injected `fetch` answering for a non-loopback URL,
+ * so the real transport rules decide.
  *
  * What matters most is asserted on every path: the credential, device and
- * env files are byte-identical afterwards, and no token reaches the output.
+ * env files are byte-identical afterwards, no token reaches the output, and no
+ * backup copy outlives the run that made it.
  */
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
+  copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -30,9 +34,14 @@ import { fileURLToPath } from 'node:url';
 import { after, afterEach, before, describe, test } from 'node:test';
 
 import {
-  boardTransportProblem,
-  type Runner,
+  boardTransport,
+  cleanEnv,
+  digest,
+  type InFlight,
   inFlightPath,
+  type Runner,
+  saveState,
+  sourceKey,
   sourceProblem,
   update,
   updateDir,
@@ -102,7 +111,7 @@ afterEach(async () => {
 
 interface World {
   readonly dir: string;
-  /** The repository the board names as `cli.source.url`. */
+  /** The repository the board names as `cli.source.url`: the checkout's origin. */
   readonly source: string;
   /** This machine's checkout, `main` at `a`, cloned before `b` existed. */
   readonly checkout: string;
@@ -125,6 +134,13 @@ function world(): World {
   const home = join(dir, 'home');
   mkdirSync(home, { recursive: true });
   return { dir, source, checkout, home, a, b };
+}
+
+/** A fork of the source with one commit only it has. */
+function fork(w: World): { path: string; commit: string } {
+  const path = join(w.dir, 'fork');
+  cpSync(w.source, path, { recursive: true });
+  return { path, commit: commit(path, 'F: only in the fork', { 'cli/FORK.md': 'fork\n' }) };
 }
 
 /** Credentials, a device key and MCP config with somebody else's server in it. */
@@ -175,16 +191,24 @@ function plant(w: World, boardUrl: string): void {
   );
 }
 
+const settingsPath = (w: World): string => join(w.home, '.claude', 'settings.json');
+
 /** Turn the session hooks on with the checkout's own CLI, as a user would have. */
 function hooksOn(w: World): void {
   execFileSync(
     'sh',
     [join(w.checkout, 'cli', 'bin', 'laika'), 'agent', 'hooks', 'on', '--harness', 'claude-code'],
-    {
-      env: { ...GIT_ENV, HOME: w.home },
-      stdio: 'ignore',
-    },
+    { env: { ...GIT_ENV, HOME: w.home }, stdio: 'ignore' },
   );
+}
+
+/** Hooks on, but installed from an older place, so the refresh will rewrite them. */
+function staleHooks(w: World): void {
+  hooksOn(w);
+  const path = settingsPath(w);
+  writeFileSync(path, readFileSync(path, 'utf8').replaceAll(w.checkout, '/old/laika'));
+  rmSync(`${path}.bak`, { force: true });
+  assert.match(readFileSync(path, 'utf8'), /\/old\/laika/, 'setup: the hooks are stale');
 }
 
 /** Every file under `~/.laika` except the update's own directory, with its bytes. */
@@ -206,11 +230,46 @@ function protectedFiles(w: World): Map<string, string> {
   return files;
 }
 
+/** Everything left under `~/.laika/update/`, relative, sorted. */
+function leftovers(w: World): string[] {
+  const dir = updateDir(w.home);
+  if (!existsSync(dir)) return [];
+  const found: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const sub = join(dir, entry);
+    try {
+      for (const name of readdirSync(sub)) found.push(`${entry}/${name}`);
+    } catch {
+      found.push(entry);
+    }
+  }
+  return found.sort();
+}
+
+/** No backup copy (which may hold a token), marker or staging tree anywhere. */
+function assertOnlyStateFiles(w: World): void {
+  for (const path of leftovers(w)) assert.match(path, /\/state\.json$/, `left behind: ${path}`);
+}
+
 interface BoardOptions {
   readonly status?: number;
   readonly commit?: string | null;
   readonly source?: string;
   readonly features?: Record<string, unknown>;
+}
+
+function compatBody(w: World, options: BoardOptions): unknown {
+  const commitId = options.commit === undefined ? w.b : options.commit;
+  return {
+    server: { version: '0.1.0', build_commit: commitId },
+    protocol: { current: 1, min_client: 1 },
+    features: { developer_access: 'classic', device_pairing: false, ...options.features },
+    cli: {
+      min_protocol_for: { device_pairing: 2 },
+      source: { type: 'git', url: options.source ?? w.source, commit: commitId, path: 'cli' },
+    },
+    release_notes: { ref: commitId, whats_new: [] },
+  };
 }
 
 async function board(w: World, options: BoardOptions = {}): Promise<string> {
@@ -220,20 +279,8 @@ async function board(w: World, options: BoardOptions = {}): Promise<string> {
       res.end(JSON.stringify({ error: { code: 'not_found', message: 'Not found' } }));
       return;
     }
-    const commitId = options.commit === undefined ? w.b : options.commit;
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(
-      JSON.stringify({
-        server: { version: '0.1.0', build_commit: commitId },
-        protocol: { current: 1, min_client: 1 },
-        features: { developer_access: 'classic', device_pairing: false, ...options.features },
-        cli: {
-          min_protocol_for: { device_pairing: 2 },
-          source: { type: 'git', url: options.source ?? w.source, commit: commitId, path: 'cli' },
-        },
-        release_notes: { ref: commitId, whats_new: [] },
-      }),
-    );
+    res.end(JSON.stringify(compatBody(w, options)));
   });
   await new Promise<void>((resolve) => server?.listen(0, '127.0.0.1', () => resolve()));
   const address = server.address();
@@ -241,23 +288,46 @@ async function board(w: World, options: BoardOptions = {}): Promise<string> {
   return `http://127.0.0.1:${String(address.port)}`;
 }
 
+/** A board that is not on this machine: `fetch` answers for it in-process. */
+function remoteBoard(w: World, options: BoardOptions = {}): typeof fetch {
+  return (input) => {
+    assert.ok(typeof input === 'string', 'doctor fetches a string URL');
+    assert.match(input, /\/api\/v1\/developer\/compatibility$/);
+    return Promise.resolve(
+      new Response(JSON.stringify(compatBody(w, options)), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+  };
+}
+
+const HTTP_BOARD = 'http://203.0.113.5';
+const HTTPS_BOARD = 'https://board.example';
+
 interface Run {
   readonly code: number;
   readonly out: string;
   readonly err: string;
 }
 
-async function run(w: World, argv: readonly string[], runner?: Runner): Promise<Run> {
+interface RunOptions {
+  readonly runner?: Runner;
+  readonly fetch?: typeof fetch;
+  readonly env?: Record<string, string>;
+}
+
+async function run(w: World, argv: readonly string[], options: RunOptions = {}): Promise<Run> {
   const out: string[] = [];
   const err: string[] = [];
   const code = await update(argv, {
     out: (line) => out.push(line),
     err: (line) => err.push(line),
     home: w.home,
-    env: { ...GIT_ENV, HOME: w.home },
-    fetch: (input, init) => fetch(input, init),
+    env: { ...GIT_ENV, HOME: w.home, ...options.env },
+    fetch: options.fetch ?? ((input, init) => fetch(input, init)),
     cliDir: join(w.checkout, 'cli'),
-    ...(runner === undefined ? {} : { run: runner }),
+    ...(options.runner === undefined ? {} : { run: options.runner }),
   });
   const result = { code, out: out.join('\n'), err: err.join('\n') };
   // No path through laika update prints a credential.
@@ -268,6 +338,8 @@ async function run(w: World, argv: readonly string[], runner?: Runner): Promise<
 const head = (w: World): string => git(w.checkout, 'rev-parse', 'HEAD');
 const onBranch = (w: World): string =>
   git(w.checkout, 'symbolic-ref', '--quiet', '--short', 'HEAD');
+const worktrees = (w: World): number =>
+  git(w.checkout, 'worktree', 'list', '--porcelain').match(/^worktree /gm)?.length ?? 0;
 const hasObject = (w: World, sha: string): boolean => {
   try {
     git(w.checkout, 'cat-file', '-e', `${sha}^{commit}`);
@@ -298,39 +370,83 @@ function spy(
   };
 }
 
+/** The switched checkout's own `laika version` (not staging's) answers `answer`. */
+const switchedVersionAnswers = (w: World, answer: 'throw' | number): Runner =>
+  spy((program, args) => {
+    const switched =
+      program === 'sh' &&
+      args[0] === join(w.checkout, 'cli', 'bin', 'laika') &&
+      args[1] === 'version';
+    if (!switched) return 'real';
+    if (answer === 'throw') throw new Error('the process blew up');
+    return { code: answer };
+  });
+
+/**
+ * What a run killed after the switch and the hook refresh leaves behind — the
+ * same marker, copy and digests `laika update` writes — without the run.
+ */
+function crashAfterRefresh(w: World): void {
+  const path = settingsPath(w);
+  const backup = join(updateDir(w.home), '2026-11-02T00-00-00-000Z');
+  mkdirSync(backup, { recursive: true, mode: 0o700 });
+  const copy = join(backup, '0-claude-code-hooks');
+  const original = digest(path);
+  copyFileSync(path, copy);
+  const state: InFlight = {
+    checkout: w.checkout,
+    previous: w.a,
+    branch: 'main',
+    target: w.b,
+    backup,
+    staging: join(backup, 'staging'),
+    files: [{ path, copy, mode: 0o644, original, post: null, bakExisted: false }],
+  };
+  saveState(inFlightPath(w.home), state, true);
+  git(w.checkout, 'fetch', '--quiet', w.source, w.b);
+  git(w.checkout, 'checkout', '--quiet', '--detach', w.b);
+  hooksOn(w);
+  rmSync(`${path}.bak`, { force: true });
+  saveState(inFlightPath(w.home), {
+    ...state,
+    files: state.files.map((f) => ({ ...f, post: digest(path) })),
+  });
+  assert.notEqual(digest(path), original, 'setup: the refresh rewrote the hooks');
+}
+
 void describe('laika update — the happy path', () => {
   void test('moves the checkout to exactly the board’s commit, and touches no credential', async () => {
     const w = world();
     const url = await board(w);
     plant(w, url);
     hooksOn(w);
-    const settings = readFileSync(join(w.home, '.claude', 'settings.json'), 'utf8');
+    const settings = readFileSync(settingsPath(w), 'utf8');
     assert.match(settings, /laika-agent-hook/, 'setup: the hooks are on');
     const before = protectedFiles(w);
 
-    const r = await run(w, ['--board', url]);
+    // GIT_DIR and GIT_CONFIG_* from the caller must not redirect anything.
+    const r = await run(w, ['--board', url], {
+      env: {
+        GIT_DIR: join(w.dir, 'elsewhere'),
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'core.hooksPath',
+        GIT_CONFIG_VALUE_0: '/nowhere',
+      },
+    });
 
     assert.equal(r.code, 0, r.err);
     assert.equal(head(w), w.b);
+    assert.match(r.out, /source +.*\(matches remote origin\)/);
     assert.match(r.out, new RegExp(`Updated: .* is at ${w.b.slice(0, 7)}`));
-    // Detached: the user's branch is left where it was.
-    assert.equal(git(w.checkout, 'rev-parse', 'refs/heads/main'), w.a);
-    // Byte-identical: env, agent credential, device key, MCP configs.
+    assert.equal(git(w.checkout, 'rev-parse', 'refs/heads/main'), w.a, 'branch left alone');
     assert.deepEqual(protectedFiles(w), before);
-    // Hooks re-applied with the new CLI: identical, so the file is unchanged.
     assert.match(r.out, /claude-code session hooks already current/);
-    assert.equal(readFileSync(join(w.home, '.claude', 'settings.json'), 'utf8'), settings);
-    // Restart and verification advice.
+    assert.equal(readFileSync(settingsPath(w), 'utf8'), settings);
     assert.match(r.out, /Restart Claude Code .*laika-claude/);
-    // Nothing left behind but the record of what it moved from.
     assert.equal(existsSync(inFlightPath(w.home)), false);
-    const [stamp, ...more] = readdirSync(updateDir(w.home));
-    assert.equal(more.length, 0);
-    assert.deepEqual(readdirSync(join(updateDir(w.home), String(stamp))), ['state.json']);
-    assert.equal(
-      git(w.checkout, 'worktree', 'list', '--porcelain').match(/^worktree /gm)?.length,
-      1,
-    );
+    assert.equal(leftovers(w).length, 1);
+    assertOnlyStateFiles(w);
+    assert.equal(worktrees(w), 1);
   });
 
   void test('a second run is "Up to date", exit 0, and writes nothing', async () => {
@@ -338,45 +454,196 @@ void describe('laika update — the happy path', () => {
     const url = await board(w);
     plant(w, url);
     assert.equal((await run(w, ['--board', url])).code, 0);
-    const backups = readdirSync(updateDir(w.home));
+    const backups = leftovers(w);
 
     const r = await run(w, ['--board', url]);
     assert.equal(r.code, 0);
     assert.match(r.out, /^Up to date: /);
-    assert.deepEqual(readdirSync(updateDir(w.home)), backups);
+    assert.deepEqual(leftovers(w), backups);
   });
 
-  void test('takes the source the board names (a fork), not the checkout’s origin', async () => {
+  void test('a fork the user names with --source is used instead of the board’s', async () => {
     const w = world();
-    const fork = join(w.dir, 'fork');
-    cpSync(w.source, fork, { recursive: true });
-    const forkOnly = commit(fork, 'F: only in the fork', { 'cli/FORK.md': 'fork\n' });
-    const url = await board(w, { commit: forkOnly, source: fork });
+    const f = fork(w);
+    const url = await board(w, { commit: f.commit });
     plant(w, url);
 
-    const r = await run(w, ['--board', url]);
+    const r = await run(w, ['--board', url, '--source', f.path]);
     assert.equal(r.code, 0, r.err);
-    assert.equal(head(w), forkOnly);
-    assert.equal(git(w.checkout, 'remote', 'get-url', 'origin'), w.source, 'origin is left alone');
+    assert.equal(head(w), f.commit);
+    assert.match(r.out, /\(named with --source\)/);
+    assert.equal(git(w.checkout, 'remote', 'get-url', 'origin'), w.source, 'origin left alone');
   });
 
-  void test('re-applies hooks that are on but out of date, and says to trust nothing new for Claude', async () => {
+  void test('a fork the board names is taken only because the board is on this machine', async () => {
+    const w = world();
+    const f = fork(w);
+    const url = await board(w, { commit: f.commit, source: f.path });
+    plant(w, url);
+    const r = await run(w, ['--board', url]);
+    assert.equal(r.code, 0, r.err);
+    assert.equal(head(w), f.commit);
+    assert.match(r.out, /named by the board, which is https or loopback/);
+  });
+
+  void test('one repository has one key however it is spelt', () => {
+    const key = sourceKey('https://github.com/PawanSirsat/Laika.git');
+    assert.equal(sourceKey('git@github.com:PawanSirsat/Laika'), key);
+    assert.equal(sourceKey('ssh://git@GitHub.com/PawanSirsat/Laika/'), key);
+    assert.equal(sourceKey('https://PawanSirsat@github.com/PawanSirsat/Laika.git'), key);
+    assert.notEqual(sourceKey('https://github.com/attacker/Laika.git'), key);
+    assert.notEqual(sourceKey('https://github.com.evil.example/PawanSirsat/Laika.git'), key);
+    assert.equal(sourceKey('/srv/laika/.'), sourceKey('file:///srv/laika'));
+    assert.equal(sourceKey('../laika', '/srv/x'), 'local:/srv/laika');
+  });
+
+  void test('re-applies hooks that are on but out of date, keeping other settings', async () => {
     const w = world();
     const url = await board(w);
     plant(w, url);
-    // Hooks installed from an older place: the command names another script path.
-    const path = join(w.home, '.claude', 'settings.json');
-    hooksOn(w);
-    writeFileSync(path, readFileSync(path, 'utf8').replaceAll(w.checkout, '/old/laika'));
+    staleHooks(w);
     const before = protectedFiles(w);
 
     const r = await run(w, ['--board', url]);
     assert.equal(r.code, 0, r.err);
     assert.match(r.out, /claude-code session hooks re-applied/);
-    const after = readFileSync(path, 'utf8');
+    const after = readFileSync(settingsPath(w), 'utf8');
     assert.doesNotMatch(after, /\/old\/laika/);
-    assert.match(after, /"theme": "dark"/, 'other settings kept');
+    assert.match(after, /"theme": "dark"/);
     assert.deepEqual(protectedFiles(w), before);
+    assertOnlyStateFiles(w);
+  });
+
+  void test('a step back is refused unless --allow-downgrade', async () => {
+    const w = world();
+    const url = await board(w);
+    plant(w, url);
+    assert.equal((await run(w, ['--board', url])).code, 0);
+    await new Promise<void>((resolve) => server?.close(() => resolve()));
+    const back = await board(w, { commit: w.a });
+
+    const refused = await run(w, ['--board', back]);
+    assert.equal(refused.code, 1);
+    assert.match(refused.err, /is not ahead of .* Pass --allow-downgrade/);
+    assert.equal(head(w), w.b);
+
+    const allowed = await run(w, ['--board', back, '--allow-downgrade']);
+    assert.equal(allowed.code, 0, allowed.err);
+    assert.equal(head(w), w.a);
+  });
+});
+
+void describe('laika update — a board that is not on this machine', () => {
+  void test('plain http: a real update is refused and nothing changes', async () => {
+    const w = world();
+    plant(w, HTTP_BOARD);
+    const before = protectedFiles(w);
+    const r = await run(w, ['--board', HTTP_BOARD], { fetch: remoteBoard(w) });
+    assert.equal(r.code, 1);
+    assert.match(r.err, /^Refused: http:\/\/203\.0\.113\.5 is plain http/m);
+    assert.equal(head(w), w.a);
+    assert.equal(hasObject(w, w.b), false, 'nothing was fetched');
+    assert.equal(existsSync(updateDir(w.home)), false);
+    assert.deepEqual(protectedFiles(w), before);
+  });
+
+  void test('plain http: --check and --dry-run warn, and change nothing', async () => {
+    const w = world();
+    plant(w, HTTP_BOARD);
+    const check = await run(w, ['--board', HTTP_BOARD, '--check'], { fetch: remoteBoard(w) });
+    assert.equal(check.code, 0);
+    assert.match(check.err, /^Warning: .* is plain http/);
+    assert.match(check.out, /^Update available/);
+
+    const dry = await run(w, ['--board', HTTP_BOARD, '--dry-run'], { fetch: remoteBoard(w) });
+    assert.equal(dry.code, 0, dry.err);
+    assert.match(dry.err, /^Warning: .* is plain http/);
+    assert.match(dry.out, /A real run is refused while the board is plain http/);
+    assert.equal(head(w), w.a);
+    assert.equal(existsSync(updateDir(w.home)), false);
+  });
+
+  void test('plain http + --allow-http proceeds when the source is the checkout’s own remote', async () => {
+    const w = world();
+    plant(w, HTTP_BOARD);
+    const r = await run(w, ['--board', HTTP_BOARD, '--allow-http'], { fetch: remoteBoard(w) });
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.err, /^Warning: .* is plain http/);
+    assert.match(r.out, /\(matches remote origin\)/);
+    assert.equal(head(w), w.b);
+  });
+
+  void test('plain http + --allow-http refuses a source the board chose (the MITM case)', async () => {
+    const w = world();
+    const f = fork(w);
+    plant(w, HTTP_BOARD);
+    const before = protectedFiles(w);
+    const r = await run(w, ['--board', HTTP_BOARD, '--allow-http'], {
+      fetch: remoteBoard(w, { commit: f.commit, source: f.path }),
+    });
+    assert.equal(r.code, 1);
+    assert.match(r.err, /names a source this checkout has no remote for/);
+    assert.equal(head(w), w.a);
+    assert.equal(hasObject(w, f.commit), false, 'nothing was fetched from it');
+    assert.equal(existsSync(updateDir(w.home)), false);
+    assert.deepEqual(protectedFiles(w), before);
+  });
+
+  void test('plain http + --allow-http + --source takes the source the user named', async () => {
+    const w = world();
+    const f = fork(w);
+    plant(w, HTTP_BOARD);
+    const r = await run(w, ['--board', HTTP_BOARD, '--allow-http', '--source', f.path], {
+      fetch: remoteBoard(w, { commit: f.commit, source: 'https://attacker.example/x.git' }),
+    });
+    assert.equal(r.code, 0, r.err);
+    assert.equal(head(w), f.commit);
+  });
+
+  void test('https: a board may name a fork, but not a path on this machine', async () => {
+    const w = world();
+    const f = fork(w);
+    plant(w, HTTPS_BOARD);
+    const r = await run(w, ['--board', HTTPS_BOARD], {
+      fetch: remoteBoard(w, { commit: f.commit, source: f.path }),
+    });
+    assert.equal(r.code, 1);
+    assert.match(r.err, /names a path on this machine .* only a board on this machine may do that/);
+    assert.equal(head(w), w.a);
+
+    // The checkout's own (local) remote is anchored, so it is allowed.
+    const ok = await run(w, ['--board', HTTPS_BOARD], { fetch: remoteBoard(w) });
+    assert.equal(ok.code, 0, ok.err);
+    assert.equal(head(w), w.b);
+  });
+
+  void test('transport and environment rules', () => {
+    assert.equal(boardTransport('https://laika.example'), 'https');
+    assert.equal(boardTransport('http://127.0.0.1:3000'), 'loopback');
+    assert.equal(boardTransport('http://localhost:3000'), 'loopback');
+    assert.equal(boardTransport(HTTP_BOARD), 'http');
+    assert.match(String(sourceProblem('http://git.example/laika.git')), /does not authenticate/);
+    assert.match(String(sourceProblem('git://git.example/laika.git')), /does not authenticate/);
+    assert.match(String(sourceProblem('--upload-pack=evil')), /not a repository address/);
+    assert.equal(sourceProblem('https://github.com/PawanSirsat/Laika.git'), undefined);
+    assert.equal(sourceProblem('git@github.com:PawanSirsat/Laika.git'), undefined);
+    const env = cleanEnv({
+      PATH: '/bin',
+      GIT_DIR: '/x',
+      GIT_WORK_TREE: '/x',
+      GIT_INDEX_FILE: '/x',
+      GIT_OBJECT_DIRECTORY: '/x',
+      GIT_CONFIG_GLOBAL: '/x',
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'core.sshCommand',
+      GIT_CONFIG_PARAMETERS: "'a.b=c'",
+    });
+    assert.deepEqual(Object.keys(env).sort(), [
+      'GIT_ASKPASS',
+      'GIT_TERMINAL_PROMPT',
+      'PATH',
+      'SSH_ASKPASS',
+    ]);
   });
 });
 
@@ -413,7 +680,6 @@ void describe('laika update — refusals change nothing', () => {
 
   void test('a commit the source never published is refused, even when the source has the object', async () => {
     const w = world();
-    // A commit in the source's object store that no branch or tag points to.
     git(w.source, 'checkout', '--quiet', '-b', 'side');
     const dangling = commit(w.source, 'D: dangling', { 'cli/D.md': 'd\n' });
     git(w.source, 'checkout', '--quiet', 'main');
@@ -494,10 +760,10 @@ void describe('laika update — refusals change nothing', () => {
 
   void test('a source that cannot be reached is "Could not check", exit 2, nothing changed', async () => {
     const w = world();
-    const url = await board(w, { source: join(w.dir, 'gone') });
+    const url = await board(w);
     plant(w, url);
     const before = protectedFiles(w);
-    const r = await run(w, ['--board', url]);
+    const r = await run(w, ['--board', url, '--source', join(w.dir, 'gone')]);
     assert.equal(r.code, 2);
     assert.match(r.err, /^Could not check: the source did not answer/);
     assert.equal(head(w), w.a);
@@ -505,30 +771,17 @@ void describe('laika update — refusals change nothing', () => {
     assert.deepEqual(protectedFiles(w), before);
   });
 
-  void test('a plain-http or credential-bearing source is refused, and the credential is not printed', async () => {
+  void test('a credential-bearing source is refused, and the credential is not printed', async () => {
     const w = world();
     const url = await board(w, { source: `https://bob:${AGENT_TOKEN}@git.example/laika.git` });
     plant(w, url);
     const r = await run(w, ['--board', url]); // run() asserts no lai_ in the output
     assert.equal(r.code, 1);
     assert.match(r.err, /^Refused: the CLI source the board names carries credentials/);
-
-    assert.match(String(sourceProblem('http://git.example/laika.git')), /does not authenticate/);
-    assert.match(String(sourceProblem('git://git.example/laika.git')), /does not authenticate/);
-    assert.match(String(sourceProblem('--upload-pack=evil')), /not a repository address/);
-    assert.equal(sourceProblem('https://github.com/PawanSirsat/Laika.git'), undefined);
-    assert.equal(sourceProblem('git@github.com:PawanSirsat/Laika.git'), undefined);
-  });
-
-  void test('a board over plain http off loopback: --check warns, an update needs --allow-http', () => {
-    assert.match(String(boardTransportProblem('http://52.72.203.206')), /is plain http/);
-    assert.equal(boardTransportProblem('https://laika.example'), undefined);
-    assert.equal(boardTransportProblem('http://127.0.0.1:3000'), undefined);
-    assert.equal(boardTransportProblem('http://localhost:3000'), undefined);
   });
 });
 
-void describe('laika update — failures roll back', () => {
+void describe('laika update — failures roll back, and leave no copy behind', () => {
   void test('a target that fails its staging self-check leaves the checkout as it was', async () => {
     const w = world();
     const broken = commit(w.source, 'X: a broken CLI', {
@@ -536,7 +789,9 @@ void describe('laika update — failures roll back', () => {
     });
     const url = await board(w, { commit: broken });
     plant(w, url);
+    staleHooks(w);
     const before = protectedFiles(w);
+    const settings = readFileSync(settingsPath(w), 'utf8');
 
     const r = await run(w, ['--board', url]);
     assert.equal(r.code, 1);
@@ -545,88 +800,163 @@ void describe('laika update — failures roll back', () => {
     assert.equal(head(w), w.a);
     assert.equal(onBranch(w), 'main');
     assert.equal(git(w.checkout, 'status', '--porcelain'), '');
-    assert.equal(
-      git(w.checkout, 'worktree', 'list', '--porcelain').match(/^worktree /gm)?.length,
-      1,
-    );
+    assert.equal(worktrees(w), 1);
     assert.equal(existsSync(inFlightPath(w.home)), false);
+    assert.equal(readFileSync(settingsPath(w), 'utf8'), settings);
+    assertOnlyStateFiles(w);
     assert.deepEqual(protectedFiles(w), before);
   });
 
-  void test('a failure after the switch puts the commit and the hook file back, and says so', async () => {
+  void test('a failure after the switch puts the commit, the hook file and the .bak back', async () => {
     const w = world();
     const url = await board(w);
     plant(w, url);
-    hooksOn(w);
-    const path = join(w.home, '.claude', 'settings.json');
-    // Out of date, so the refresh rewrites it before the failure.
-    writeFileSync(path, readFileSync(path, 'utf8').replaceAll(w.checkout, '/old/laika'));
-    const settings = readFileSync(path, 'utf8');
+    staleHooks(w);
+    const settings = readFileSync(settingsPath(w), 'utf8');
+    assert.equal(existsSync(`${settingsPath(w)}.bak`), false, 'setup: no .bak yet');
     const before = protectedFiles(w);
 
-    // The switched checkout's own check fails (the staging one passes).
-    const staging = `${updateDir(w.home)}/`;
-    const runner = spy((program, args) =>
-      program === 'sh' &&
-      args[0]?.startsWith(w.checkout) &&
-      args[1] === 'version' &&
-      !args[0].startsWith(staging)
-        ? { code: 7 }
-        : 'real',
-    );
-    const r = await run(w, ['--board', url], runner);
+    const r = await run(w, ['--board', url], { runner: switchedVersionAnswers(w, 7) });
 
     assert.equal(r.code, 1);
     assert.match(r.err, /the switched checkout failed its check: laika version exited 7/);
-    assert.match(r.err, /Rolling back:/);
     assert.match(r.err, /the checkout is back at .* on main/);
     assert.match(r.err, /restored ~\/\.claude\/settings\.json from the backup/);
+    assert.match(r.err, /removed ~\/\.claude\/settings\.json\.bak, which the refresh had made/);
     assert.equal(head(w), w.a);
     assert.equal(onBranch(w), 'main');
-    assert.equal(readFileSync(path, 'utf8'), settings);
+    assert.equal(readFileSync(settingsPath(w), 'utf8'), settings);
+    assert.equal(existsSync(`${settingsPath(w)}.bak`), false);
     assert.deepEqual(protectedFiles(w), before);
     assert.equal(existsSync(inFlightPath(w.home)), false);
+    assert.equal(leftovers(w).length, 1);
+    assertOnlyStateFiles(w);
+    assert.equal(worktrees(w), 1);
   });
 
-  void test('an interrupted switch is put back by the next run, which then updates cleanly', async () => {
+  void test('an exception mid-update rolls back, removes the copy, then surfaces', async () => {
     const w = world();
     const url = await board(w);
     plant(w, url);
+    staleHooks(w);
+    const settings = readFileSync(settingsPath(w), 'utf8');
+
+    await assert.rejects(
+      run(w, ['--board', url], { runner: switchedVersionAnswers(w, 'throw') }),
+      /the process blew up/,
+    );
+    assert.equal(head(w), w.a);
+    assert.equal(onBranch(w), 'main');
+    assert.equal(readFileSync(settingsPath(w), 'utf8'), settings);
+    assert.equal(existsSync(inFlightPath(w.home)), false);
+    assertOnlyStateFiles(w);
+    assert.equal(worktrees(w), 1);
+  });
+});
+
+void describe('laika update — recovering a run that was killed', () => {
+  void test('puts back the checkout and the hook file, removes the copy, then updates cleanly', async () => {
+    const w = world();
+    const url = await board(w);
+    plant(w, url);
+    staleHooks(w);
+    const settings = readFileSync(settingsPath(w), 'utf8');
     const before = protectedFiles(w);
+    crashAfterRefresh(w);
 
-    // The process dies right after git switches the checkout.
-    const killed = spy((program, args) => {
-      if (program === 'git' && args.includes('checkout') && args.includes(w.b)) {
-        git(w.checkout, 'checkout', '--quiet', '--detach', w.b);
-        throw new Error('killed');
-      }
-      return 'real';
-    });
-    await assert.rejects(run(w, ['--board', url], killed), /killed/);
-    assert.equal(head(w), w.b, 'setup: the switch happened');
-    assert.equal(existsSync(inFlightPath(w.home)), true);
-
-    // --check and --dry-run report it but do not act.
+    // --check reports it and does not act.
     const check = await run(w, ['--board', url, '--check']);
     assert.match(check.err, /An earlier laika update was interrupted/);
     assert.equal(head(w), w.b);
 
     const recovered = await run(w, ['--board', url]);
     assert.equal(recovered.code, 1);
-    assert.match(recovered.out, /An earlier laika update was interrupted/);
     assert.match(recovered.out, /the checkout is back at .* on main/);
+    assert.match(recovered.out, /restored ~\/\.claude\/settings\.json from the backup/);
     assert.equal(head(w), w.a);
     assert.equal(onBranch(w), 'main');
+    assert.equal(readFileSync(settingsPath(w), 'utf8'), settings);
     assert.equal(existsSync(inFlightPath(w.home)), false);
-    assert.equal(
-      git(w.checkout, 'worktree', 'list', '--porcelain').match(/^worktree /gm)?.length,
-      1,
-    );
+    assertOnlyStateFiles(w);
 
     const again = await run(w, ['--board', url]);
     assert.equal(again.code, 0, again.err);
     assert.equal(head(w), w.b);
     assert.deepEqual(protectedFiles(w), before);
+  });
+
+  void test('leaves alone a hook file and a checkout the user changed after the crash', async () => {
+    const w = world();
+    const url = await board(w);
+    plant(w, url);
+    staleHooks(w);
+    crashAfterRefresh(w);
+    // After the crash the user edits the settings and works in the checkout.
+    const edited = readFileSync(settingsPath(w), 'utf8').replace(
+      '"theme": "dark"',
+      '"theme": "light"',
+    );
+    writeFileSync(settingsPath(w), edited);
+    writeFileSync(join(w.checkout, 'cli', 'mine.txt'), 'work\n');
+
+    const r = await run(w, ['--board', url]);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /settings\.json changed since the update wrote it — left alone/);
+    assert.match(r.out, /the checkout has local changes since — left alone/);
+    assert.equal(readFileSync(settingsPath(w), 'utf8'), edited);
+    assert.equal(head(w), w.b);
+    assert.equal(readFileSync(join(w.checkout, 'cli', 'mine.txt'), 'utf8'), 'work\n');
+    assert.equal(existsSync(inFlightPath(w.home)), false);
+    assertOnlyStateFiles(w);
+  });
+
+  void test('a run killed during staging: the staging worktree is removed, nothing else moved', async () => {
+    const w = world();
+    const url = await board(w);
+    plant(w, url);
+    const backup = join(updateDir(w.home), '2026-11-02T00-00-00-000Z');
+    mkdirSync(backup, { recursive: true });
+    const staging = join(backup, 'staging');
+    git(w.checkout, 'fetch', '--quiet', w.source, w.b);
+    git(w.checkout, 'worktree', 'add', '--quiet', '--detach', staging, w.b);
+    saveState(
+      inFlightPath(w.home),
+      {
+        checkout: w.checkout,
+        previous: w.a,
+        branch: 'main',
+        target: w.b,
+        backup,
+        staging,
+        files: [],
+      },
+      true,
+    );
+    assert.equal(worktrees(w), 2);
+
+    const r = await run(w, ['--board', url]);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /nothing had changed/);
+    assert.equal(worktrees(w), 1);
+    assert.equal(existsSync(staging), false);
+    assert.equal(head(w), w.a);
+    assert.equal(existsSync(inFlightPath(w.home)), false);
+  });
+
+  void test('with no marker, an orphaned copy or staging tree is swept at start', async () => {
+    const w = world();
+    const url = await board(w);
+    plant(w, url);
+    const old = join(updateDir(w.home), '2026-01-01T00-00-00-000Z');
+    mkdirSync(old, { recursive: true });
+    writeFileSync(join(old, '0-claude-code-hooks'), `{"env":{"LAIKA_TOKEN":"${PERSONAL_TOKEN}"}}`);
+    git(w.checkout, 'worktree', 'add', '--quiet', '--detach', join(old, 'staging'), w.a);
+    assert.equal(worktrees(w), 2);
+
+    const r = await run(w, ['--board', url]);
+    assert.equal(r.code, 0, r.err);
+    assertOnlyStateFiles(w);
+    assert.equal(worktrees(w), 1);
   });
 });
 
