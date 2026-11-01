@@ -2,10 +2,11 @@
 id: LAI-1045
 title: 'Developer access V3 slice B1: devices table, agents.device_id, deterministic backfill, owner-only device reads'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
-status: backlog
+started: 2026-11-02T02:26:39+05:30
+status: in-progress
 ---
 
 Slice B1 of the merged plan `docs/proposals/LAI-1042-developer-access-v3-plan.md`
