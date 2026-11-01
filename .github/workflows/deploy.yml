@@ -272,6 +272,10 @@ jobs:
             --query 'imageIds[].imageDigest' --output text | tr '\t' '\n' | grep . | sort -u | wc -l)"
           echo "images left in ECR: $left (live $DIGEST)"
 
+      # The image, and the database too when this deploy migrated it (LAI-1033):
+      # host-restart.sh restores the pre-migration snapshot this run's boot
+      # took, keeping the migrated file beside it, before it starts the old
+      # image — older code on a newer schema ignores agent grants and claims.
       - name: Roll back to the image this replaced
         if: failure() && steps.tag.outputs.previous != '' && steps.tag.outputs.previous != 'None' && steps.tag.outputs.previous != env.DIGEST
         env:
@@ -283,4 +287,4 @@ jobs:
             --image-ids imageDigest="$PREVIOUS" --query 'images[0].imageManifest' --output text)"
           aws ecr put-image --repository-name "$ECR_REPOSITORY" --image-tag latest \
             --image-manifest "$manifest" > /dev/null || true
-          .github/deploy/deploy.sh "$ECR_REGISTRY/$ECR_REPOSITORY@$PREVIOUS"
+          .github/deploy/deploy.sh "$ECR_REGISTRY/$ECR_REPOSITORY@$PREVIOUS" rollback
