@@ -77,10 +77,13 @@ function task(over: Partial<Task> & { id: string }): Task {
 /** The server's rule, as `isReady` and `blocked_count` state it. */
 const serverBlocks = (dependency: TaskStatus): boolean => dependency !== 'done';
 
-/** Every surface's answer for one open task waiting on one dependency. */
-function surfaces(dependencyStatus: TaskStatus): Record<string, boolean> {
+/** Every surface's answer for a task in `waitingStatus` waiting on one dependency. */
+function surfaces(
+  dependencyStatus: TaskStatus,
+  waitingStatus: TaskStatus = 'todo',
+): Record<string, boolean> {
   const dependency = task({ id: '1', status: dependencyStatus });
-  const waiting = task({ id: '2', status: 'todo', blocked_by: ['1'] });
+  const waiting = task({ id: '2', status: waitingStatus, blocked_by: ['1'] });
   const tasks = [dependency, waiting];
   const byId = byIdIndex(tasks);
   const row = listRows({
@@ -113,6 +116,20 @@ void describe('every surface calls the same tasks blocked, the server’s way (L
       const expected = serverBlocks(status);
       for (const [surface, blocked] of Object.entries(surfaces(status))) {
         assert.equal(blocked, expected, `${surface} disagrees with the server on ${status}`);
+      }
+    });
+  }
+
+  for (const finished of ['done', 'cancelled'] as const) {
+    void test(`a ${finished} task is blocked nowhere, whatever it waited on (LAI-1040)`, () => {
+      // The server counts open work only (`projects.ts`: `t.status NOT IN
+      // ('done', 'cancelled')`), and BLK, the sprint lock, the Timeline and the
+      // Dashboard skip finished work. The card drew a lock and "blocked by" on
+      // a done task, and the Blocked-only filter kept it.
+      for (const dependency of ALL_STATUSES) {
+        for (const [surface, blocked] of Object.entries(surfaces(dependency, finished))) {
+          assert.equal(blocked, false, `${surface}: a ${finished} task waiting on ${dependency}`);
+        }
       }
     });
   }
