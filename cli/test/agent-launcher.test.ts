@@ -127,6 +127,8 @@ interface Rig {
   readonly home: string;
   readonly deps: LauncherDeps;
   readonly prepared: string[];
+  /** The token each prepare was handed. */
+  readonly tokens: string[];
   stop: () => void;
 }
 
@@ -136,6 +138,7 @@ function rig(records: () => readonly EventRecord[], over: Partial<LauncherDeps> 
   mkdirSync(worktree);
   writeCredential(home, 'claude-code', { url: 'http://board.invalid', token: TOKEN });
   const prepared: string[] = [];
+  const tokens: string[] = [];
   let stopped = false;
   const deps: LauncherDeps = {
     home,
@@ -151,6 +154,7 @@ function rig(records: () => readonly EventRecord[], over: Partial<LauncherDeps> 
     poll: () => Promise.resolve(records()),
     prepare: (args) => {
       prepared.push(args.offerId);
+      tokens.push(args.credential.token);
       mkdirSync(handoffsDir(home), { recursive: true });
       writeFileSync(
         join(handoffsDir(home), `${args.offerId}.json`),
@@ -183,6 +187,7 @@ function rig(records: () => readonly EventRecord[], over: Partial<LauncherDeps> 
     home,
     deps,
     prepared,
+    tokens,
     stop: () => {
       stopped = true;
     },
@@ -502,6 +507,8 @@ void describe('the loop', () => {
       /UNTRUSTED-NOTE[\s\S]*NOTE_SENTINEL/,
     );
     assert.deepEqual(r.prepared, [offer], 'prepared once although the event came on every poll');
+    // The saved agent file, never an inherited LAIKA_AGENT_TOKEN.
+    assert.deepEqual(r.tokens, [TOKEN]);
     const events = auditLines(r.home).map((l) => l.event);
     assert.deepEqual(events, ['daemon_start', 'start', 'exit', 'daemon_stop']);
     const text = readFileSync(auditPath(r.home), 'utf8');
