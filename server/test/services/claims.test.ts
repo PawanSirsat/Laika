@@ -1126,15 +1126,22 @@ describe('selecting the claim holder (LAI-1032)', () => {
     expect(startWorking(t.sqlite, t.db, a.actor, id, { now: T0 }).claim?.generation).toBe(1);
     const before = claimsOf(id);
 
+    // The two refusals share a code and a reason; `claim_generation` is what
+    // tells "send the generation" (null) from "that one is no longer valid".
     for (const generation of [undefined, 2]) {
-      expect(
-        refusal(() =>
-          updateTask(t.db, at(a.actor, generation), id, {
-            selected_agent_id: a.id,
-            now: T0 + MIN,
-          }),
-        ),
-      ).toEqual({ code: 'conflict', reason: 'stale_claim' });
+      let details: unknown;
+      try {
+        updateTask(t.db, at(a.actor, generation), id, { selected_agent_id: a.id, now: T0 + MIN });
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiError);
+        expect((err as ApiError).code).toBe('conflict');
+        details = (err as ApiError).details;
+      }
+      expect(details).toMatchObject({
+        reason: 'stale_claim',
+        task_id: id,
+        claim_generation: generation ?? null,
+      });
       expect(selected(id)).toBeNull();
       expect(requests(id)).toEqual([]);
     }
