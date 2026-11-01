@@ -4,6 +4,7 @@ title: Record public deployment metadata as the third can() exception (D-123)
 area: docs
 assignee: chief
 status: review
+started: 2026-11-02T00:00:00Z
 finished: 2026-11-02T00:00:00Z
 priority: p1
 depends-on: []
