@@ -6,6 +6,57 @@ PATH by `plugin/scripts/install.sh` from a Laika checkout.
 If you need a change here, write a task file in `.tasks/backlog/` with
 `area: cli`.
 
+## `laika update` — the checkout the board was built from (LAI-1051)
+
+```
+laika update [--check] [--dry-run] [--board <url>] [--allow-http]
+```
+
+Moves this Laika checkout to **the commit the connected board was built
+from** — `cli.source.commit` in the board's `GET /api/v1/developer/compatibility`
+answer, fetched from `cli.source.url` (a fork, when the board sets
+`LAIKA_CLI_SOURCE_URL`). Never "newest master", and never npm: the package is
+private and the checkout is the distribution.
+
+| Flag | What it does |
+| --- | --- |
+| `--check` | One line: **Up to date**, **Update available**, **Update required for** *feature*, **Version unknown** or **Could not check**. Fetches and writes nothing. |
+| `--dry-run` | The plan: board, source, from, to, and which hooks would be re-applied. Fetches and writes nothing. |
+| `--board <url>` | The board to ask; otherwise the one `laika doctor` would find. |
+| `--allow-http` | Act on a board reached over plain http off loopback. Without it the update is refused there, because the commit id is the whole of the trust and would travel unprotected. `--check` and `--dry-run` only warn. |
+
+**What it checks before touching anything.** The board must name a full
+40-character commit (a short id, or none, is *Version unknown* — no change).
+The commit must be on a branch or tag the source advertises (`git ls-remote`,
+then fetched by tip) and resolve to exactly that id. The checkout must have **no
+local changes**, tracked or untracked, and **no commits the source does not
+have**. Either is refused with the reason; nothing is stashed, reset or forced.
+
+**The order.** Back up the previous commit (and the hook files it may rewrite)
+under `~/.laika/update/<timestamp>/` → check the target out in a staging
+worktree and run `laika version --json` and `laika doctor --offline --json`
+there → `git checkout --detach <commit>` (your branches stay where they are) →
+re-apply the session hooks with the new CLI, only for tools whose hooks were
+already on → check again from the switched checkout. Any failure after the
+switch **rolls back**: the previous commit, then each backed-up file, each named
+in the output. A run killed mid-switch leaves `~/.laika/update/in-flight.json`,
+and the next `laika update` puts things back before anything else.
+
+**Never touched:** `~/.laika/env`, `~/.laika/agents/*`, `~/.laika/device/*`,
+MCP entries (they hold the board URL and a variable name, not a checkout path;
+they are hashed before and after, and a change is a failure), consent, grants,
+and any repository's instruction files. The one copy that may hold a token is
+`~/.claude/settings.json` when `laika init` put one there and its hooks are on:
+the copy is `0600` in a `0700` directory and is deleted once the update is
+verified.
+
+Afterwards, restart Claude Code with `laika-claude`; if the Codex hooks
+changed, open `/hooks` in Codex to trust them again; then `laika doctor`.
+
+Exit codes: `0` updated or up to date; `1` refused, or failed and rolled back;
+`2` no safe target could be picked (the board did not answer, or does not say);
+`64` a wrong option. Signed release tags are the follow-up hardening (plan L3).
+
 ## `laika connect <agent>`
 
 Points a coding agent at the board's MCP endpoint (`<LAIKA_URL>/mcp`).
