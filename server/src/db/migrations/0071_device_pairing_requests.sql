@@ -26,4 +26,5 @@ CREATE TABLE `device_pairing_requests` (
 );
 --> statement-breakpoint
 CREATE INDEX `device_pairing_requests_owner_state_idx` ON `device_pairing_requests` (`owner_user_id`,`state`);--> statement-breakpoint
-CREATE UNIQUE INDEX `device_pairing_requests_code_hash_live_unique` ON `device_pairing_requests` (`code_hash`) WHERE state IN ('open', 'claimed', 'approved');
+CREATE UNIQUE INDEX `device_pairing_requests_code_hash_live_unique` ON `device_pairing_requests` (`code_hash`) WHERE state IN ('open', 'claimed', 'approved');--> statement-breakpoint
+CREATE UNIQUE INDEX `devices_public_key_unique` ON `devices` (`public_key`) WHERE public_key IS NOT NULL;

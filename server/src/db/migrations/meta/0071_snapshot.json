@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "91163c5e-a1f0-4dd2-8fa9-91d3cd41fc28",
+  "id": "aea0f073-04d4-4c1e-a32a-046589af1064",
   "prevId": "56367fcd-5653-4a60-8355-8666f2e25b37",
   "tables": {
     "accounts": {
@@ -1964,6 +1964,12 @@
           "columns": ["owner_user_id", "label_key"],
           "isUnique": true,
           "where": "status = 'active'"
+        },
+        "devices_public_key_unique": {
+          "name": "devices_public_key_unique",
+          "columns": ["public_key"],
+          "isUnique": true,
+          "where": "public_key IS NOT NULL"
         }
       },
       "foreignKeys": {

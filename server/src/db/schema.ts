@@ -956,6 +956,11 @@ export const devices = sqliteTable(
     uniqueIndex('devices_owner_label_key_active_unique')
       .on(t.ownerUserId, t.labelKey)
       .where(sql`status = 'active'`),
+    // One key, one device (LAI-1050, N1), revoked ones included: a key that
+    // was paired once is never proof for a second device.
+    uniqueIndex('devices_public_key_unique')
+      .on(t.publicKey)
+      .where(sql`public_key IS NOT NULL`),
     check('devices_kind_check', oneOf('kind', DEVICE_KINDS)),
     check('devices_origin_check', oneOf('origin', DEVICE_ORIGINS)),
     check('devices_status_check', oneOf('status', DEVICE_STATUSES)),

@@ -388,30 +388,16 @@ export function claimPairingRequest(
     if (row.state !== 'open') {
       throw conflict('This code has been used', 'pairing_already_claimed');
     }
-    // A fresh key: one a device already holds is never paired twice.
-    const used = db
-      .select({ id: devices.id })
-      .from(devices)
-      .where(eq(devices.publicKey, input.publicKey))
-      .get();
-    if (used !== undefined) {
-      throw conflict('That key belongs to a paired device', 'device_key_in_use');
-    }
-    // Conditional on `open`, so of two claims exactly one moves it.
-    const moved = db
-      .update(devicePairingRequests)
-      .set({
-        state: 'claimed',
-        publicKey: input.publicKey,
-        keyFingerprint: fingerprint,
-        claimNonce: nonce,
-        claimedOs: input.os ?? null,
-        claimedCliVersion: input.cliVersion ?? null,
-        claimedAt: now,
-      })
-      .where(and(eq(devicePairingRequests.id, row.id), eq(devicePairingRequests.state, 'open')))
-      .run();
-    if (moved.changes !== 1) throw conflict('This code has been used', 'pairing_already_claimed');
+    assertKeyFree(db, input.publicKey);
+    const moved = markClaimed(db, row.id, {
+      publicKey: input.publicKey,
+      keyFingerprint: fingerprint,
+      claimNonce: nonce,
+      claimedOs: input.os ?? null,
+      claimedCliVersion: input.cliVersion ?? null,
+      claimedAt: now,
+    });
+    if (!moved) throw conflict('This code has been used', 'pairing_already_claimed');
     return {
       pairing_id: row.id,
       nonce,
@@ -419,6 +405,45 @@ export function claimPairingRequest(
       expires_at: row.expiresAt,
     };
   });
+}
+
+/** A fresh key: one a device holds already is never paired again (N1). */
+function assertKeyFree(db: Db, publicKey: string): void {
+  const used = db
+    .select({ id: devices.id })
+    .from(devices)
+    .where(eq(devices.publicKey, publicKey))
+    .get();
+  if (used !== undefined) {
+    throw conflict('That key belongs to a paired device', 'device_key_in_use');
+  }
+}
+
+/**
+ * Move a request from `open` to `claimed`, **only if it is still `open`**,
+ * and say whether this call moved it. The condition is the guard: a caller
+ * whose read of the row is stale — another claim won in between — changes
+ * nothing, so of two claims exactly one wins. Exported for the test that
+ * proves it with a stale read.
+ */
+export function markClaimed(
+  db: Db,
+  id: string,
+  claim: {
+    publicKey: string;
+    keyFingerprint: string;
+    claimNonce: string;
+    claimedOs: string | null;
+    claimedCliVersion: string | null;
+    claimedAt: number;
+  },
+): boolean {
+  const moved = db
+    .update(devicePairingRequests)
+    .set({ state: 'claimed', ...claim })
+    .where(and(eq(devicePairingRequests.id, id), eq(devicePairingRequests.state, 'open')))
+    .run();
+  return moved.changes === 1;
 }
 
 /**
@@ -534,6 +559,11 @@ export function completePairingRequest(
     const state = effectiveState(row, now);
     if (state === 'claimed') return { kind: 'pending', state };
     assertState(row, now, 'approved');
+
+    // Re-asked here, not only at claim: two requests may claim one key
+    // before either completes, and the first to finish keeps it (N1). The
+    // partial unique index on `devices.public_key` is the floor under this.
+    assertKeyFree(db, row.publicKey);
 
     let deviceId: string;
     if (row.deviceId !== null) {
