@@ -283,7 +283,10 @@ end, with `.github/deploy/host-restart.sh` doing the instance half:
 
 **Nothing is deleted.** The snapshot is copied, not moved. The migrated
 database is kept beside it, and the nightly prune never reaches it, because it
-removes only `backups/laika-*.sqlite`.
+removes only `backups/laika-*.sqlite`. **`/data/laika.db.rolled-back-*` files
+are never pruned by anything.** An operator removes them once the restored
+database is confirmed good. A restore refuses to start while its own
+same-second name is taken (LAI-1037).
 
 **What it loses:** anything written by the new image between its migration
 and the rollback. Usually nothing, because a failed deploy has not been
