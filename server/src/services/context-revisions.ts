@@ -12,6 +12,7 @@ import {
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { can } from '../policy/can.ts';
+import { type AgentReader, agentLens, agentReader } from './agent-visibility.ts';
 import { requireOwnOpenSession } from './claims.ts';
 import { requireReadableProjectBySlug } from './projects.ts';
 import { resolveTaskRef } from './tasks.ts';
@@ -38,7 +39,14 @@ export interface ContextRevisionSummaryView {
   length: number;
   /** Null on a revision 1 that existed before revisions did (§4.68). */
   author_id: string | null;
+  /**
+   * The registered agent whose token wrote it — to its owner only. A revision
+   * belongs to no task, so no task can show another person's agent here
+   * (D-121 item 7, LAI-1012): to anyone else it is null with `agent_redacted`.
+   */
   agent_id: string | null;
+  /** An agent wrote it and this reader may not see which: *an agent*. */
+  agent_redacted: boolean;
   created_at: number;
 }
 
@@ -72,14 +80,31 @@ function readableProject(db: Db, actor: ResolvedActor, slug: string) {
   return requireReadableProjectBySlug(db, actor, slug);
 }
 
-function summary(row: typeof projectContextRevisions.$inferSelect): ContextRevisionSummaryView {
-  return {
-    revision: row.revision,
-    length: row.body.length,
-    author_id: row.authorId,
-    agent_id: row.agentId,
-    created_at: row.createdAt,
-  };
+type RevisionRow = typeof projectContextRevisions.$inferSelect;
+
+/** Revisions as `reader` may see them: each agent through the one gate, beside no task. */
+function summaries(
+  db: Db,
+  reader: AgentReader,
+  rows: readonly RevisionRow[],
+): ContextRevisionSummaryView[] {
+  const lens = agentLens(
+    db,
+    reader,
+    [],
+    rows.flatMap((r) => (r.agentId === null ? [] : [r.agentId])),
+  );
+  return rows.map((row) => {
+    const hidden = row.agentId !== null && !lens.visible(null, row.agentId);
+    return {
+      revision: row.revision,
+      length: row.body.length,
+      author_id: row.authorId,
+      agent_id: hidden ? null : row.agentId,
+      agent_redacted: hidden,
+      created_at: row.createdAt,
+    };
+  });
 }
 
 /** `GET /projects/:slug/context/revisions` — newest first, no text. */
@@ -89,13 +114,13 @@ export function listContextRevisions(
   slug: string,
 ): ContextRevisionSummaryView[] {
   const project = readableProject(db, actor, slug);
-  return db
+  const rows = db
     .select()
     .from(projectContextRevisions)
     .where(eq(projectContextRevisions.projectId, project.id))
     .orderBy(desc(projectContextRevisions.revision))
-    .all()
-    .map(summary);
+    .all();
+  return summaries(db, agentReader(actor), rows);
 }
 
 /**
@@ -147,7 +172,7 @@ export function getContextRevision(
     )
     .get();
   if (row === undefined) throw ApiError.notFound(`No context revision ${String(revision)}`);
-  return { ...summary(row), body: row.body };
+  return { ...summaries(db, agentReader(actor), [row])[0]!, body: row.body };
 }
 
 /**
