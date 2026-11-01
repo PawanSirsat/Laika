@@ -586,7 +586,7 @@ function agentView(db: Db, row: AgentRow): AgentView {
 }
 
 /** The caller's own agent, or `404` — another person's is not disclosed. */
-function requireOwnAgent(db: Db, actor: ResolvedActor, agentId: string): AgentRow {
+export function requireOwnAgent(db: Db, actor: ResolvedActor, agentId: string): AgentRow {
   const row = db
     .select()
     .from(agents)
