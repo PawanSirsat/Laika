@@ -1184,7 +1184,7 @@ describe('selecting the claim holder (LAI-1032)', () => {
     const a = agent('Holder');
     const b = agent('Selected');
     const id = task();
-    startWorking(t.sqlite, t.db, a.actor, id, { now: T0 });
+    const session = startWorking(t.sqlite, t.db, a.actor, id, { now: T0 }).claim!.session_id;
     // The shape only a claim taken before D-119 has: the task names another agent.
     t.db.update(tasks).set({ selectedAgentId: b.id }).where(eq(tasks.id, id)).run();
     const rename = (title: string, now: number) =>
@@ -1198,6 +1198,10 @@ describe('selecting the claim holder (LAI-1032)', () => {
     updateTask(t.db, owner, id, { selected_agent_id: a.id, now: T0 + 2 * MIN });
 
     expect(rename('Backed again', T0 + 3 * MIN).title).toBe('Backed again');
+    // And its own session renews it as before — the same claim, not a new one.
+    expect(
+      startWorking(t.sqlite, t.db, a.actor, id, { sessionId: session, now: T0 + 4 * MIN }).claim,
+    ).toMatchObject({ generation: 1, session_id: session, lease_expires_at: T0 + 4 * MIN + LEASE });
     expect(claimsOf(id)).toEqual([
       expect.objectContaining({ agentId: a.id, generation: 1, state: 'active' }),
     ]);
