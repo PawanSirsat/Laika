@@ -3,12 +3,14 @@ import type Database from 'better-sqlite3';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import {
+  TOKEN_KINDS,
   TOKEN_SCOPES,
   createToken,
   listOwnTokens,
   listTokensFor,
   revokeOwnToken,
   revokeTokenFor,
+  type TokenKind,
   type TokenView,
 } from '../../services/tokens.ts';
 import { type AppEnv } from '../context.ts';
@@ -54,6 +56,21 @@ function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) 
   return actor;
 }
 
+/**
+ * `?kind=personal|agent` (LAI-1046). Absent or empty is every token, exactly as
+ * before the filter existed, so an old client is unchanged; anything else is a
+ * `400`, as `include_used` is on invites — a misspelt filter silently ignored
+ * would list agent credentials to a screen that asked for none.
+ */
+function parseKind(raw: string | undefined): TokenKind | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  const kind = TOKEN_KINDS.find((k) => k === raw);
+  if (kind === undefined) {
+    throw ApiError.badRequest('kind must be personal or agent', { kind: raw });
+  }
+  return kind;
+}
+
 function tokenPage(rows: TokenView[], limit: number): Page<TokenView> {
   return buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id }));
 }
@@ -66,8 +83,9 @@ export function tokenRoutes(options: TokenRouteOptions): Hono<AppEnv> {
   app.get('/', (c) => {
     const actor = requireActor(c);
     const { limit, cursor } = parsePageQuery(c.req.query());
+    const kind = parseKind(c.req.query('kind'));
 
-    return c.json(tokenPage(listOwnTokens(db, actor, { limit, cursor }), limit));
+    return c.json(tokenPage(listOwnTokens(db, actor, { limit, cursor, kind }), limit));
   });
 
   app.post('/', async (c) => {
@@ -111,8 +129,11 @@ export function userTokenRoutes(options: TokenRouteOptions): Hono<AppEnv> {
   app.get('/:id/tokens', (c) => {
     const actor = requireActor(c);
     const { limit, cursor } = parsePageQuery(c.req.query());
+    const kind = parseKind(c.req.query('kind'));
 
-    return c.json(tokenPage(listTokensFor(db, actor, c.req.param('id'), { limit, cursor }), limit));
+    return c.json(
+      tokenPage(listTokensFor(db, actor, c.req.param('id'), { limit, cursor, kind }), limit),
+    );
   });
 
   app.delete('/:id/tokens/:tokenId', (c) => {
