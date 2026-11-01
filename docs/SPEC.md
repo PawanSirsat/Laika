@@ -3687,7 +3687,7 @@ from `heartbeat_age_ms` on its own elapsed time and never compares
 holding session's self-reported fields as it last sent them — `null` where it
 sent none, and deciding nothing (LAI-593). Every task read also carries
 `handoff` (LAI-1005), never null: `{ checkpoint, offer, recovery_available,
-save_needs_attention }`. `checkpoint` is the task's newest save, `{
+save_needs_attention, no_recent_save }`. `checkpoint` is the task's newest save, `{
 verification, saved_at, pending_since, pending_notice }` as `GET
 /tasks/:id/checkpoints` reports it, or `null`; `offer` is its newest live
 hand-off or recovery offer, `{ kind, state, requires_approval }`, or `null`.
@@ -3695,7 +3695,13 @@ hand-off or recovery offer, `{ kind, state, requires_approval }`, or `null`.
 newest claim `expired`, and a live recovery offer or a `verified` checkpoint
 lets work continue (§4.73) — and **`save_needs_attention`** is the newest
 checkpoint `uncertain` with no live claim and no recovery available; a
-receiver's failed fetch (LAI-548) is not reported. It names no agent, session
+receiver's failed fetch (LAI-548) is not reported. **`no_recent_save`**
+(LAI-1016) is `{ since, window_ms }` while the task's live claim, `active` or
+`paused`, has gone longer than the §9.1 checkpoint-warning window without a
+save — `since` is the later of the claim's start and its newest checkpoint, on
+server time — and `null` otherwise. The server cannot see local edits, so it
+says only how long the holder has gone without a save, never that work is
+pending; it decides nothing. It names no agent, session
 or commit, and is served under the same *Read tasks* as the checkpoint and
 offer reads, so it shows nothing they would not. A heartbeat answers `{ session,
 claims, lost }`: the live claims it renewed,

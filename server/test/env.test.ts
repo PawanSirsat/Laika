@@ -287,10 +287,15 @@ describe('LAIKA_CHECKPOINT_* (§11.7, §9.1.1, D-115 item 9, LAI-1015)', () => {
   });
 
   it('defaults to the service’s own 10 min and 90 days', () => {
-    expect(readEnv({ ...SECRET }).checkpoints).toEqual(DEFAULT_CHECKPOINT_SETTINGS);
+    expect(readEnv({ ...SECRET }).checkpoints).toEqual({
+      pendingNoticeMs: DEFAULT_CHECKPOINT_SETTINGS.pendingNoticeMs,
+      retentionMs: DEFAULT_CHECKPOINT_SETTINGS.retentionMs,
+    });
+    // The save warning (LAI-1016) is not an env variable: it keeps its default.
     expect(DEFAULT_CHECKPOINT_SETTINGS).toEqual({
       pendingNoticeMs: 600_000,
       retentionMs: 90 * 86_400_000,
+      saveWarningMs: 300_000,
     });
   });
 
@@ -300,6 +305,7 @@ describe('LAIKA_CHECKPOINT_* (§11.7, §9.1.1, D-115 item 9, LAI-1015)', () => {
     expect(checkpointSettings()).toEqual({
       pendingNoticeMs: 900_000,
       retentionMs: DEFAULT_CHECKPOINT_SETTINGS.retentionMs,
+      saveWarningMs: DEFAULT_CHECKPOINT_SETTINGS.saveWarningMs,
     });
   });
 
@@ -309,6 +315,7 @@ describe('LAIKA_CHECKPOINT_* (§11.7, §9.1.1, D-115 item 9, LAI-1015)', () => {
     expect(checkpointSettings()).toEqual({
       pendingNoticeMs: DEFAULT_CHECKPOINT_SETTINGS.pendingNoticeMs,
       retentionMs: 30 * 86_400_000,
+      saveWarningMs: DEFAULT_CHECKPOINT_SETTINGS.saveWarningMs,
     });
   });
 

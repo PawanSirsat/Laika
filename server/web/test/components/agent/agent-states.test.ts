@@ -19,6 +19,8 @@ import {
   HANDOFF_FILTER_WORDS,
   HANDOFF_KIND_WORDS,
   NO_CHECKPOINT,
+  NO_RECENT_SAVE_MEANING,
+  noRecentSaveWords,
   NOTE_WORDS,
   READINESS_WORDS,
   RECEIVER_MUST_ACCEPT,
@@ -181,5 +183,26 @@ void describe('the gallery stays the gallery', () => {
     const card = await readFile(`${SRC}routes/screens/board/TaskCard.tsx`, 'utf8');
     assert.match(card, /const byAgent = task\.created_via === 'mcp';/);
     assert.match(card, /title=\{`Written by \$\{assignee\.name\}'s agent`\}/);
+  });
+});
+
+void describe('§9.1.1’s checkpoint warning (LAI-1016)', () => {
+  void test('says SPEC’s words at the default window, verbatim', () => {
+    assert.equal(noRecentSaveWords(5 * 60_000), 'No save in the last 5 minutes');
+  });
+
+  void test('follows the window the server used, not a default', () => {
+    assert.equal(noRecentSaveWords(60_000), 'No save in the last 1 minute');
+    assert.equal(noRecentSaveWords(15 * 60_000), 'No save in the last 15 minutes');
+    assert.equal(noRecentSaveWords(30_000), 'No save in the last 30 seconds');
+  });
+
+  void test('its meaning holds when an older save exists, and implies no unsaved work', () => {
+    // The task may well have a save, from before the window (LAI-1016 review).
+    assert.equal(
+      NO_RECENT_SAVE_MEANING,
+      'The agent holds the task and has not saved a checkpoint in that time. Nothing changes because of it.',
+    );
+    assert.doesNotMatch(NO_RECENT_SAVE_MEANING, /unsaved|pending|changes? (are|were) lost/i);
   });
 });
