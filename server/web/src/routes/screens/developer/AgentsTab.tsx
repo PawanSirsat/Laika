@@ -71,6 +71,17 @@ import './agents.css';
 export interface AgentsTabProps {
   readonly me: MeProfile | undefined;
   readonly origin: string;
+  /**
+   * Open with the wizard showing — Developer access V3's Devices tab, reached
+   * as `?add=device` or `?add=tool` (LAI-1048). Read once, at mount.
+   */
+  readonly openWizard?: boolean | undefined;
+  /** The tool the wizard starts on, an `AGENT_GUIDES` id; unknown ids are ignored. */
+  readonly initialGuide?: string | undefined;
+  /** An agent whose row to bring into view and focus once the list is in (`?agent=`). */
+  readonly focusAgentId?: string | undefined;
+  /** Told when the wizard closes, so an address that opened it can stop saying so. */
+  readonly onWizardClosed?: (() => void) | undefined;
 }
 
 /**
@@ -97,7 +108,14 @@ export interface AgentsTabProps {
  * `TokensScreen` measured: blanked through state first, so React's retained
  * tree does not keep it, then unmounted.
  */
-export function AgentsTab({ me, origin }: AgentsTabProps) {
+export function AgentsTab({
+  me,
+  origin,
+  openWizard = false,
+  initialGuide,
+  focusAgentId,
+  onWizardClosed,
+}: AgentsTabProps) {
   const gates = useGates(me !== undefined);
   // §3.1: managing is a web session's, which this page always is — but the
   // server is the one that says so, through the permissions it reports.
@@ -109,7 +127,7 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
   const [projects, setProjects] = useState<readonly Project[] | undefined>(undefined);
   const [projectsError, setProjectsError] = useState<unknown>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [wizard, setWizard] = useState(false);
+  const [wizard, setWizard] = useState(openWizard);
   /**
    * The agent the open wizard registered, whose secret the wizard still
    * shows. Its row offers no rotate or revoke meanwhile (review round 1): a
@@ -253,7 +271,16 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
     setWizard(false);
     setWizardAgent(undefined);
     reload();
+    onWizardClosed?.();
   };
+
+  // `?agent=<id>`: the row, once — after the list that holds it has arrived.
+  const focused = useRef(false);
+  useEffect(() => {
+    if (focused.current || focusAgentId === undefined || agents === undefined) return;
+    focused.current = true;
+    goToAgent(focusAgentId);
+  }, [agents, focusAgentId]);
 
   const viewer = me?.org_role === 'viewer';
 
@@ -330,6 +357,7 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
 
       {wizard && (
         <RegisterWizard
+          initialGuide={initialGuide}
           me={me}
           origin={origin}
           projects={projects}
@@ -561,9 +589,11 @@ interface WizardProps {
   /** Registration answered after this wizard closed or unmounted. Never carries the secret. */
   readonly onAbandoned: (agent: RegisteredAgent) => void;
   readonly onClose: () => void;
+  readonly initialGuide?: string | undefined;
 }
 
 function RegisterWizard({
+  initialGuide,
   me,
   origin,
   projects,
@@ -579,7 +609,10 @@ function RegisterWizard({
   onClose,
 }: WizardProps) {
   const [step, setStep] = useState<AgentStep>(1);
-  const [guideId, setGuideId] = useState(AGENT_GUIDES[0]?.id ?? 'claude-code');
+  const [guideId, setGuideId] = useState(
+    () =>
+      AGENT_GUIDES.find((g) => g.id === initialGuide)?.id ?? AGENT_GUIDES[0]?.id ?? 'claude-code',
+  );
   const guide = guideFor(guideId);
   const [device, setDevice] = useState('');
   const [deviceTouched, setDeviceTouched] = useState(false);
