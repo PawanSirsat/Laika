@@ -69,8 +69,11 @@ repository match). A **fork** the board names (`LAIKA_CLI_SOURCE_URL`) is
 accepted only from a board over https or on loopback; a **path on this
 machine** only from a loopback board. Anything else needs `--source`. Git runs
 with only https and ssh allowed (local paths only in those two cases),
-`transfer.fsckObjects` on, and none of the caller's `GIT_DIR` / `GIT_CONFIG_*`
-overrides.
+`transfer.fsckObjects` on, and none of the caller's `GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY` or `GIT_CONFIG_*` overrides.
+`GIT_SSH` and `GIT_SSH_COMMAND` are kept, so an ssh remote that needs them
+still works. When the board's source matches a remote, the fetch uses that
+remote's own URL, never the board's spelling of it.
 
 **What it checks before touching anything.** The board must name a full
 40-character commit (a short id, or none, is *Version unknown* — no change).
@@ -93,7 +96,9 @@ failure after the switch **rolls back**, each item named in the output.
 checkout only while it is still at the target (or the previous commit) and
 clean, a file only while it still holds what the update wrote, and a `.bak`
 the refresh made only while it still holds the original. Anything else is
-reported as *changed since — left alone*.
+reported as *changed since — left alone*. A hook file that a killed run had
+rewritten before it could record what it wrote is likewise **reported, not
+restored**: run `laika agent hooks on` to put the hooks right.
 
 **Never touched:** `~/.laika/env`, `~/.laika/agents/*`, `~/.laika/device/*`,
 MCP entries (they hold the board URL and a variable name, not a checkout path;

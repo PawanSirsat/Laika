@@ -486,6 +486,33 @@ void describe('laika update — the happy path', () => {
     assert.match(r.out, /named by the board, which is https or loopback/);
   });
 
+  void test('a source matching a remote is fetched from the remote’s own URL, not the board’s', async () => {
+    // The match ignores user and port, so the board's spelling must never be used:
+    // ssh://x@github.com:2222/… would match origin and reach someone else's server.
+    assert.equal(
+      sourceKey('ssh://x@github.com:2222/PawanSirsat/Laika'),
+      sourceKey('https://github.com/PawanSirsat/Laika.git'),
+    );
+    const w = world();
+    const advertised = `file://${w.source}/`;
+    const url = await board(w, { source: advertised });
+    plant(w, url);
+    const sources: string[] = [];
+    const runner = spy((program, args) => {
+      if (program === 'git' && (args.includes('ls-remote') || args.includes('fetch'))) {
+        sources.push(args[args.indexOf('--') + 1] ?? '');
+      }
+      return 'real';
+    });
+
+    const r = await run(w, ['--board', url], { runner });
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /\(matches remote origin\)/);
+    assert.ok(sources.length >= 2, 'ls-remote and fetch were seen');
+    for (const fetched of sources) assert.equal(fetched, w.source);
+    assert.equal(head(w), w.b);
+  });
+
   void test('one repository has one key however it is spelt', () => {
     const key = sourceKey('https://github.com/PawanSirsat/Laika.git');
     assert.equal(sourceKey('git@github.com:PawanSirsat/Laika'), key);
@@ -637,13 +664,37 @@ void describe('laika update — a board that is not on this machine', () => {
       GIT_CONFIG_COUNT: '1',
       GIT_CONFIG_KEY_0: 'core.sshCommand',
       GIT_CONFIG_PARAMETERS: "'a.b=c'",
+      GIT_SSH: '/usr/bin/ssh',
+      GIT_SSH_COMMAND: 'ssh -i ~/.ssh/laika',
     });
+    // GIT_SSH and GIT_SSH_COMMAND are how a person reaches an ssh remote: kept.
     assert.deepEqual(Object.keys(env).sort(), [
       'GIT_ASKPASS',
+      'GIT_SSH',
+      'GIT_SSH_COMMAND',
       'GIT_TERMINAL_PROMPT',
       'PATH',
       'SSH_ASKPASS',
     ]);
+    assert.equal(env.GIT_SSH_COMMAND, 'ssh -i ~/.ssh/laika');
+  });
+
+  void test('a file: URL with a host is refused, not a crash', async () => {
+    assert.equal(
+      String(sourceProblem('file://evil.example/srv/laika')),
+      'is a file: URL with a host',
+    );
+    assert.equal(sourceProblem('file:///srv/laika'), undefined);
+    assert.equal(sourceKey('file://evil.example/srv/laika'), undefined);
+
+    const w = world();
+    const url = await board(w, { source: 'file://evil.example/srv/laika' });
+    plant(w, url);
+    const r = await run(w, ['--board', url]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /^Refused: the CLI source the board names is a file: URL with a host/);
+    assert.equal(head(w), w.a);
+    assert.equal(existsSync(updateDir(w.home)), false);
   });
 });
 
@@ -906,6 +957,25 @@ void describe('laika update — recovering a run that was killed', () => {
     assert.equal(readFileSync(settingsPath(w), 'utf8'), edited);
     assert.equal(head(w), w.b);
     assert.equal(readFileSync(join(w.checkout, 'cli', 'mine.txt'), 'utf8'), 'work\n');
+    assert.equal(existsSync(inFlightPath(w.home)), false);
+    assertOnlyStateFiles(w);
+  });
+
+  void test('leaves the checkout where the user moved it after the crash, even with a clean tree', async () => {
+    const w = world();
+    const url = await board(w);
+    plant(w, url);
+    staleHooks(w);
+    crashAfterRefresh(w);
+    // The user commits on the detached HEAD: the tree is clean, HEAD is neither
+    // the target nor the previous commit.
+    const theirs = commit(w.checkout, 'U: the user’s own commit', { 'cli/USER.md': 'u\n' });
+    assert.equal(git(w.checkout, 'status', '--porcelain'), '', 'setup: clean tree');
+
+    const r = await run(w, ['--board', url]);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /the checkout has moved since \(HEAD is now [0-9a-f]{7}\) — left alone/);
+    assert.equal(head(w), theirs);
     assert.equal(existsSync(inFlightPath(w.home)), false);
     assertOnlyStateFiles(w);
   });

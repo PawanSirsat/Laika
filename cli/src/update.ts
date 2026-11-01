@@ -211,8 +211,6 @@ const GIT_OVERRIDES = new Set([
   'GIT_COMMON_DIR',
   'GIT_NAMESPACE',
   'GIT_CEILING_DIRECTORIES',
-  'GIT_SSH',
-  'GIT_SSH_COMMAND',
   'GIT_PROXY_COMMAND',
   'GIT_EXEC_PATH',
   'GIT_TEMPLATE_DIR',
@@ -222,6 +220,10 @@ const GIT_OVERRIDES = new Set([
  * The caller's environment without anything that points git somewhere else:
  * `GIT_DIR` and friends, and every `GIT_CONFIG*` (which can carry `-c`
  * settings). Used for git and for the checkout's own CLI alike.
+ *
+ * `GIT_SSH` and `GIT_SSH_COMMAND` are kept: they are how a person reaches an
+ * ssh remote at all (a key, a jump host), and they choose how to connect,
+ * not what is fetched — the commit is still pinned and checked.
  */
 export function cleanEnv(
   env: Readonly<Record<string, string | undefined>>,
@@ -299,7 +301,12 @@ export function sourceProblem(url: string): string | undefined {
   } catch {
     return 'is not a repository address';
   }
-  if (parsed.protocol === 'file:') return undefined;
+  if (parsed.protocol === 'file:') {
+    // `file://host/path` names another machine's share, not this disk.
+    return parsed.host === '' || parsed.host === 'localhost'
+      ? undefined
+      : 'is a file: URL with a host';
+  }
   if (parsed.protocol === 'https:' || parsed.protocol === 'ssh:') {
     if (parsed.password !== '' || (parsed.protocol === 'https:' && parsed.username !== '')) {
       return 'carries credentials';
@@ -338,7 +345,11 @@ export function sourceKey(url: string, base: string = process.cwd()): string | u
     return `local:${resolve(base, url).replace(/\/+$/, '')}`;
   }
   if (parsed.protocol === 'file:') {
-    return `local:${resolve(fileURLToPath(parsed)).replace(/\/+$/, '')}`;
+    try {
+      return `local:${resolve(fileURLToPath(parsed)).replace(/\/+$/, '')}`;
+    } catch {
+      return undefined; // `file://host/…`: not a path on this machine.
+    }
   }
   if (['https:', 'ssh:', 'http:', 'git:'].includes(parsed.protocol)) {
     return `${parsed.hostname.toLowerCase()}/${trimRepo(parsed.pathname)}`;
@@ -363,14 +374,21 @@ export function boardTransport(url: string): Transport {
   return LOOPBACK.has(parsed.hostname) ? 'loopback' : 'http';
 }
 
-/** The checkout's remotes, by name, with their keys. */
-function remotes(git: Git, checkout: string): { name: string; key: string }[] {
+interface Remote {
+  readonly name: string;
+  readonly key: string;
+  /** What `git remote get-url` says: the one this machine configured. */
+  readonly url: string;
+}
+
+/** The checkout's remotes, by name, with their keys and their own URLs. */
+function remotes(git: Git, checkout: string): Remote[] {
   const names = (git.out(['remote']) ?? '').split('\n').filter((n) => n.trim() !== '');
-  const found: { name: string; key: string }[] = [];
+  const found: Remote[] = [];
   for (const name of names) {
     const url = git.out(['remote', 'get-url', '--', name]);
     const key = url === undefined ? undefined : sourceKey(url, checkout);
-    if (key !== undefined) found.push({ name, key });
+    if (url !== undefined && key !== undefined) found.push({ name, key, url });
   }
   return found;
 }
@@ -414,7 +432,13 @@ function anchorSource(
   }
   const key = sourceKey(advertised, checkout);
   const match = remotes(git, checkout).find((r) => r.key === key);
-  if (match !== undefined) return { url: advertised, by: `remote ${match.name}` };
+  if (match !== undefined) {
+    // Fetch from the remote's own URL, never the board's string: the match
+    // ignores the user and the port, so `ssh://x@github.com:2222/…` from an
+    // on-path attacker would match origin and then reach their server.
+    const url = match.key.startsWith('local:') ? match.key.slice('local:'.length) : match.url;
+    return { url, by: `remote ${match.name}` };
+  }
   if (target.transport === 'http') {
     throw new Refusal(
       `Refused: the board is plain http and names a source this checkout has no remote for (${shownSource(advertised, home)}), so anyone on the way could have chosen it. Pass --source <url> to name the repository yourself. Nothing was changed.`,
