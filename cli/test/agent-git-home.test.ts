@@ -8,12 +8,20 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 
-import { asYou, gitHome, GIT_HOME_MARKER } from '../src/agent-git-home.ts';
+import { asYou, gitHome, GIT_HOME_MARKER, liveHelpers } from '../src/agent-git-home.ts';
 import type { AgentIo } from '../src/agent.ts';
 import { GIT_ENV_ALLOW, gitEnv } from '../src/checkpoint-git.ts';
 
@@ -51,6 +59,37 @@ function fill(home: string): { code: number | null; out: string; err: string } {
     encoding: 'utf8',
   });
   return { code: run.status, out: run.stdout, err: run.stderr };
+}
+
+/**
+ * A home with its config in `file` (relative to it): a helper that answers,
+ * named after `before` — entries git reads ahead of it in the same section.
+ */
+function homeWith(
+  name: string,
+  file: string,
+  before: (helpers: { off: string; offRan: string }) => string,
+): { real: string; alt: string; offRan: string; off: string } {
+  const real = join(root, name, 'real');
+  const alt = join(root, name, 'alt');
+  mkdirSync(join(real, '.config', 'git'), { recursive: true });
+  mkdirSync(alt, { recursive: true });
+  const offRan = join(root, name, 'off-helper-ran');
+  // A `store`-like helper the person switched off: it must never run again.
+  const off = join(real, 'switched-off-helper');
+  writeFileSync(off, `#!/bin/sh\nprintf '%s\\n' "$1" >> '${offRan}'\n`, { mode: 0o700 });
+  const on = join(real, 'answering-helper');
+  writeFileSync(
+    on,
+    `#!/bin/sh\n[ "$1" = get ] || exit 0\n[ "$HOME" = '${real}' ] || exit 0\n` +
+      `printf 'username=ada\\npassword=from-the-real-home\\n'\n`,
+    { mode: 0o700 },
+  );
+  writeFileSync(
+    join(real, file),
+    `[credential "https://example.test"]\n${before({ off, offRan })}\thelper = !'${on}'\n`,
+  );
+  return { real, alt, offRan, off };
 }
 
 function io(): AgentIo & { lines: string[] } {
@@ -98,6 +137,52 @@ void describe('laika agent git-home (LAI-1034)', () => {
       encoding: 'utf8',
     });
     assert.equal(name.stdout.trim(), 'Ada');
+  });
+
+  void test('a helper switched off by an empty helper = stays off: [store, "", gh] keeps only gh', () => {
+    const { real, alt, offRan, off } = homeWith('switched-off', '.gitconfig', (h) => {
+      return `\thelper = '${h.off}'\n\thelper =\n`;
+    });
+    assert.equal(gitHome(io(), [alt], real), 0);
+    const written = readFileSync(join(alt, '.gitconfig'), 'utf8');
+    assert.ok(!written.includes(off), `the switched-off helper was written again:\n${written}`);
+
+    const run = fill(alt);
+    assert.equal(run.code, 0, run.err);
+    assert.match(run.out, /^password=from-the-real-home$/m);
+    // Not run for the lookup, nor handed the answer to keep (`store`).
+    assert.equal(existsSync(offRan), false, 'the switched-off helper ran');
+  });
+
+  void test('a helper set only in ~/.config/git/config is re-homed too', () => {
+    const { real, alt } = homeWith('xdg-only', join('.config', 'git', 'config'), () => '');
+    const out = io();
+    assert.equal(gitHome(out, [alt], real), 0);
+    assert.match(out.lines[0] ?? '', /and 1 credential helper/);
+    const run = fill(alt);
+    assert.equal(run.code, 0, run.err);
+    assert.match(run.out, /^password=from-the-real-home$/m);
+  });
+
+  void test('only entries after their section’s last reset live, in git’s order', () => {
+    const at = 'https://a.test';
+    assert.deepEqual(
+      liveHelpers([
+        { url: at, value: 'store' },
+        { url: undefined, value: 'cache' },
+        { url: at, value: '' },
+        { url: at, value: 'gh' },
+        { url: undefined, value: '' },
+        { url: at, value: 'later' },
+      ]),
+      [
+        { url: at, value: '' },
+        { url: at, value: 'gh' },
+        // Kept where git reads it: it still clears `gh` for a.test, as it did.
+        { url: undefined, value: '' },
+        { url: at, value: 'later' },
+      ],
+    );
   });
 
   void test('a second run writes nothing', () => {

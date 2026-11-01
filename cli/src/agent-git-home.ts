@@ -34,6 +34,12 @@ import { shellQuote } from './agents.ts';
  * goes to git over the credential protocol, never on a command line or into
  * the environment.
  *
+ * **Not re-homed:** a helper inside an `includeIf` block (it is read only
+ * where its condition holds; outside a matching repo it is not seen here),
+ * and a `~/…` path inside your own config, which git expands with the HOME it
+ * runs under, so through this file it names `<dir>/…`, not your home. Use
+ * absolute paths there.
+ *
  * Your home comes from the account database (`os.userInfo()`), not from
  * `$HOME`, so the command gives the same answer when run from inside the
  * other HOME. A `.gitconfig` this command did not write is never replaced.
@@ -49,13 +55,21 @@ interface Helper {
   readonly value: string;
 }
 
-/** Your global credential helpers, in the order git reads them, read with HOME as yours. */
-export function globalHelpers(realHome: string, path: string | undefined): Helper[] {
+/**
+ * Your global config files, in the order git reads them: the XDG file, then
+ * `~/.gitconfig`. Each is read by itself with `--includes`, so a helper set
+ * only in the XDG file is found too.
+ */
+export function globalFiles(realHome: string): string[] {
+  return [join(realHome, '.config', 'git', 'config'), join(realHome, '.gitconfig')];
+}
+
+function readHelpers(file: string, realHome: string, path: string | undefined): Helper[] {
   let out: string;
   try {
     out = execFileSync(
       'git',
-      ['config', '--global', '--includes', '-z', '--get-regexp', '^credential\\..*helper$'],
+      ['config', '--file', file, '--includes', '-z', '--get-regexp', '^credential\\..*helper$'],
       {
         env: { PATH: path ?? '/usr/bin:/bin', HOME: realHome, LC_ALL: 'C' },
         encoding: 'utf8',
@@ -63,7 +77,7 @@ export function globalHelpers(realHome: string, path: string | undefined): Helpe
       },
     );
   } catch {
-    return []; // exit 1: no helper is configured
+    return []; // no such file, or no helper in it
   }
   const helpers: Helper[] = [];
   for (const record of out.split('\0')) {
@@ -79,6 +93,26 @@ export function globalHelpers(realHome: string, path: string | undefined): Helpe
     }
   }
   return helpers;
+}
+
+/** Every global helper entry, resets included, in the order git reads them. */
+export function globalHelpers(realHome: string, path: string | undefined): Helper[] {
+  return globalFiles(realHome).flatMap((file) => readHelpers(file, realHome, path));
+}
+
+/**
+ * The entries still alive. An empty `helper =` clears every helper read
+ * before it, so an entry above its own section's last reset never runs, and
+ * is dropped rather than written again: a helper you switched off stays off
+ * (LAI-1034 review B1). What is left keeps git's order, the last resets
+ * included, so a reset in one section still clears what another set before it.
+ */
+export function liveHelpers(helpers: readonly Helper[]): Helper[] {
+  const lastReset = new Map<string | undefined, number>();
+  helpers.forEach((helper, i) => {
+    if (helper.value === '') lastReset.set(helper.url, i);
+  });
+  return helpers.filter((helper, i) => i >= (lastReset.get(helper.url) ?? -1));
 }
 
 /**
@@ -114,17 +148,16 @@ export function gitHomeConfig(
       mode: 0o600,
     },
   );
-  setConfig(scratch, 'include.path', join(realHome, '.config', 'git', 'config'), path);
-  setConfig(scratch, 'include.path', join(realHome, '.gitconfig'), path);
-  const urls: (string | undefined)[] = [];
-  for (const helper of helpers) if (!urls.includes(helper.url)) urls.push(helper.url);
-  for (const url of urls) {
-    const key = url === undefined ? 'credential.helper' : `credential.${url}.helper`;
-    setConfig(scratch, key, '', path); // clears what the include just listed
-    for (const helper of helpers) {
-      if (helper.url === url && helper.value !== '')
-        setConfig(scratch, key, asYou(helper.value, realHome), path);
-    }
+  for (const file of globalFiles(realHome)) setConfig(scratch, 'include.path', file, path);
+  const key = (url: string | undefined): string =>
+    url === undefined ? 'credential.helper' : `credential.${url}.helper`;
+  const live = liveHelpers(helpers);
+  // Clear what the includes just listed, then the live entries again, re-homed.
+  const urls = [...new Set(live.map((helper) => helper.url))];
+  for (const url of urls) setConfig(scratch, key(url), '', path);
+  for (const helper of live) {
+    if (helper.value !== '')
+      setConfig(scratch, key(helper.url), asYou(helper.value, realHome), path);
   }
   return readFileSync(scratch, 'utf8');
 }
@@ -160,7 +193,7 @@ export function writeGitHome(
   const scratch = `${file}.laika-${process.pid}`;
   try {
     const next = gitHomeConfig(realHome, helpers, path, scratch);
-    const count = helpers.filter((h) => h.value !== '').length;
+    const count = liveHelpers(helpers).filter((h) => h.value !== '').length;
     if (next === current) return { outcome: 'unchanged', file, helpers: count };
     chmodSync(scratch, 0o600);
     renameSync(scratch, file);
@@ -178,7 +211,13 @@ export function gitHome(
   const dir = argv[0];
   if (dir === undefined || dir.startsWith('-') || argv.length > 1) {
     io.err(
-      'Usage: laika agent git-home <dir>   make git under HOME=<dir> use your git config and credential helpers',
+      [
+        'Usage: laika agent git-home <dir>   make git under HOME=<dir> use your git config and credential helpers',
+        '',
+        'Writes <dir>/.gitconfig: an include of your ~/.config/git/config and ~/.gitconfig, then each',
+        'credential helper still switched on there, run with HOME set to yours. Not re-homed: a helper',
+        'inside an includeIf block, and ~/ paths in your config (git expands them with HOME=<dir>).',
+      ].join('\n'),
     );
     return 1;
   }
