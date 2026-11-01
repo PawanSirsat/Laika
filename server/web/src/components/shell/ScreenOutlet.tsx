@@ -33,7 +33,8 @@ import { routeParams } from '../../routes/route-table.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import {
   currentTab,
-  DEVELOPER_TABS,
+  developerAlias,
+  developerTabs,
   INBOX_TABS,
   INSIGHTS_TABS,
   ORGANISATION_TABS,
@@ -41,8 +42,10 @@ import {
   visibleTabs,
 } from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
+import { LoadingState } from '../LoadingState.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
 import { usePermissions } from '../../api/permissions.ts';
+import { useDeveloperAccessMode } from '../../api/developer-compat.ts';
 import { Button } from '../forms/Button.tsx';
 import '../states.css';
 
@@ -367,18 +370,34 @@ function InsightsRoute() {
  * Developer access (LAI-796; five tabs since LAI-537): Connect, Agents, Projects,
  * Activity, Tokens. `?agent=` and `?step=` still carry the wizard's state,
  * which is why the route hands the whole query down.
+ *
+ * **Which tabs depends on the deployment** (LAI-1048): the mode comes from
+ * `GET /developer/compatibility`, read once, and the page waits for it rather
+ * than drawing classic and then swapping. In `v3` an old tab id is moved to its
+ * new home first (`developerAlias`), as a `replace`, so Back never lands on an
+ * address that only bounces forward.
  */
 function DeveloperRoute() {
   const {
     me,
     route: { params, setParams, navigate },
   } = useShell();
-  const tab = currentTab(DEVELOPER_TABS, params);
+  const mode = useDeveloperAccessMode();
+  const moved = mode === undefined ? undefined : developerAlias(mode, params)?.toString();
+  useEffect(() => {
+    if (moved !== undefined) setParams(new URLSearchParams(moved));
+  }, [moved, setParams]);
+  if (mode === undefined || moved !== undefined) {
+    return <LoadingState shape="card" count={1} label="Loading Developer access" />;
+  }
+  const tabs = developerTabs(mode);
+  const tab = currentTab(tabs, params);
   return (
     <DeveloperScreen
+      mode={mode}
       me={me}
       origin={window.location.origin}
-      tabs={visibleTabs(DEVELOPER_TABS)}
+      tabs={visibleTabs(tabs)}
       current={tab}
       params={params}
       setParams={setParams}
