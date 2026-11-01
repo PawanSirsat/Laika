@@ -97,40 +97,42 @@ this_deploys_snapshot() {
 # **`$DB` is never missing.** The snapshot is copied to a temporary name
 # first; the original gets a second name by hard link; and the copy is renamed
 # over `$DB` in one step. Every step checks its own result rather than relying
-# on `set -e` — which a function called from `if` does not have — and the
-# caller undoes whatever happened if any of them fails.
+# on `set -e` — which a function called from `if` does not have — and records
+# what it did only once it has succeeded, so the undo reverses this run's
+# steps and nothing else (LAI-1037).
+did_copy=no
+did_link=no
+moved=""
 restore() {
   local snapshot="$1" suffix
   cp -p "$snapshot" "$DB.restoring" || return 1
+  did_copy=yes
   if [ -e "$DB" ]; then
     ln "$DB" "$aside" || return 1
+    did_link=yes
     echo "restore: kept $DB as $aside"
   fi
   # A -wal or -shm left beside the restored file would replay over it.
   for suffix in -wal -shm; do
     if [ -e "$DB$suffix" ]; then
       mv "$DB$suffix" "$aside$suffix" || return 1
+      moved="$moved $suffix"
       echo "restore: kept $DB$suffix as $aside$suffix"
     fi
   done
   mv -f "$DB.restoring" "$DB" || return 1
 }
 
-# Back to exactly the files there were. The temporary copy is ours to remove;
-# nothing else is removed.
+# Back to exactly the files there were, reversing only what `restore` did.
 undo_restore() {
   local suffix
-  for suffix in -wal -shm; do
-    if [ -e "$aside$suffix" ]; then mv -f "$aside$suffix" "$DB$suffix" || true; fi
-  done
-  # `$aside` is a hard link to `$DB` until the final rename, which is the last
-  # step, so on any failure it is the same file: a rename onto it would do
-  # nothing, and removing the second name removes no data. Were it a different
-  # file, it would be the original, and it goes back.
-  if [ -e "$aside" ]; then
+  for suffix in $moved; do mv -f "$aside$suffix" "$DB$suffix" || true; done
+  # The final rename is the last step, so on any failure the link this run
+  # made is a second name for `$DB` itself: removing it removes no data.
+  if [ "$did_link" = yes ]; then
     if [ "$aside" -ef "$DB" ]; then rm -f "$aside"; else mv -f "$aside" "$DB" || true; fi
   fi
-  rm -f "$DB.restoring"
+  if [ "$did_copy" = yes ]; then rm -f "$DB.restoring"; fi
 }
 
 restore_failed=no
@@ -140,7 +142,19 @@ if [ "$MODE" = rollback ]; then
     aside="$DB.rolled-back-$(date -u +%Y%m%dT%H%M%SZ)"
     echo "restore: the failed deploy migrated the database; restoring $snapshot"
     echo "restore: snapshot sha256 $({ sha256sum "$snapshot" || echo unreadable; } | cut -d' ' -f1)"
-    if restore "$snapshot"; then
+    # **Nothing this restore would write may exist already** — an earlier
+    # rollback in the same second, or a copy a crash left behind. `mv` would
+    # overwrite a kept -wal or -shm without a word.
+    taken=""
+    for name in "$aside" "$aside-wal" "$aside-shm" "$DB.restoring"; do
+      if [ -e "$name" ]; then taken="$taken $name"; fi
+    done
+    if [ -n "$taken" ]; then
+      restore_failed=yes
+      echo "restore: FAILED — refused before touching anything: already exists:$taken." \
+        "Starting the previous image on the database as it is. Restore $snapshot" \
+        "by hand (docs/AGENTS-ROLLOUT.md § 7)."
+    elif restore "$snapshot"; then
       echo "restore: $DB is now $snapshot"
     else
       undo_restore
@@ -174,9 +188,15 @@ if [ "$healthy" != yes ]; then
   logs="$(docker logs --tail 40 laika 2>&1 || true)"
   echo "$logs"
   if grep -qF "$SCHEMA_AHEAD_MARKER" <<<"$logs"; then
-    echo "schema-ahead: this image refuses the database because a newer build migrated it" \
-      "and this deploy took no snapshot to restore. Restore by hand:" \
-      "docs/AGENTS-ROLLOUT.md § 7, Full rollback."
+    if [ "$restore_failed" = yes ]; then
+      echo "schema-ahead: this image refuses the database because a newer build migrated it," \
+        "and the restore above failed, so the migrated database is still in place." \
+        "Restore $snapshot by hand: docs/AGENTS-ROLLOUT.md § 7, Full rollback."
+    else
+      echo "schema-ahead: this image refuses the database because a newer build migrated it" \
+        "and this run took no snapshot to restore. Restore by hand:" \
+        "docs/AGENTS-ROLLOUT.md § 7, Full rollback."
+    fi
   fi
   exit 1
 fi
