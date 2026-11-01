@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: []
 started: 2026-11-01T08:56:00Z
-status: in-progress
+status: review
+finished: 2026-11-01T09:00:00Z
 ---
 
 ## Why
@@ -34,12 +35,12 @@ whose 1st falls in the newest week.
 
 ## Acceptance criteria
 
-- [ ] `calendarLayout` drops the closing month's label when it has fewer
+- [x] `calendarLayout` drops the closing month's label when it has fewer
       than two columns, as it already does for the opening month; the month
       before runs to the end.
-- [ ] A unit test pins it: 1 Nov 2026 (no November label, October to the
+- [x] A unit test pins it: 1 Nov 2026 (no November label, October to the
       end) and 2 Nov 2026 (November, two columns). Red without the fix.
-- [ ] The phone browser test runs on the wall clock and again pinned to
+- [x] The phone browser test runs on the wall clock and again pinned to
       2026-11-01, so the case is covered every day. Red without the fix.
       The assertion is not weakened.
 
