@@ -1,6 +1,11 @@
 import { isAbsolute } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { EnvError, readEnv } from '../src/env.ts';
+import {
+  checkpointSettings,
+  configureCheckpoints,
+  DEFAULT_CHECKPOINT_SETTINGS,
+} from '../src/services/checkpoints.ts';
 
 /**
  * The two variables §11.7 makes mandatory, so cases that are about something else
@@ -273,5 +278,62 @@ describe('LAIKA_CLAIM_*_SECONDS (§11.7, §9.1.1, LAI-541)', () => {
     expect(() =>
       readEnv({ ...SECRET, LAIKA_CLAIM_HEARTBEAT_SECONDS: '60', LAIKA_CLAIM_EXPIRE_SECONDS: '60' }),
     ).toThrow(/LAIKA_CLAIM_EXPIRE_SECONDS/);
+  });
+});
+
+describe('LAIKA_CHECKPOINT_* (§11.7, §9.1.1, D-115 item 9, LAI-1015)', () => {
+  afterEach(() => {
+    configureCheckpoints(DEFAULT_CHECKPOINT_SETTINGS);
+  });
+
+  it('defaults to the service’s own 10 min and 90 days', () => {
+    expect(readEnv({ ...SECRET }).checkpoints).toEqual(DEFAULT_CHECKPOINT_SETTINGS);
+    expect(DEFAULT_CHECKPOINT_SETTINGS).toEqual({
+      pendingNoticeMs: 600_000,
+      retentionMs: 90 * 86_400_000,
+    });
+  });
+
+  it('takes the pending notice from its variable, and it reaches checkpointSettings()', () => {
+    const env = readEnv({ ...SECRET, LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS: '900' });
+    configureCheckpoints(env.checkpoints);
+    expect(checkpointSettings()).toEqual({
+      pendingNoticeMs: 900_000,
+      retentionMs: DEFAULT_CHECKPOINT_SETTINGS.retentionMs,
+    });
+  });
+
+  it('takes the retention from its variable, and it reaches checkpointSettings()', () => {
+    const env = readEnv({ ...SECRET, LAIKA_CHECKPOINT_RETENTION_DAYS: '30' });
+    configureCheckpoints(env.checkpoints);
+    expect(checkpointSettings()).toEqual({
+      pendingNoticeMs: DEFAULT_CHECKPOINT_SETTINGS.pendingNoticeMs,
+      retentionMs: 30 * 86_400_000,
+    });
+  });
+
+  it('refuses a malformed value with an EnvError naming the variable', () => {
+    const cases: [string, string][] = [
+      ['LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS', '0'],
+      ['LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS', '10m'],
+      ['LAIKA_CHECKPOINT_PENDING_NOTICE_SECONDS', '86401'],
+      ['LAIKA_CHECKPOINT_RETENTION_DAYS', '0'],
+      ['LAIKA_CHECKPOINT_RETENTION_DAYS', '1.5'],
+      ['LAIKA_CHECKPOINT_RETENTION_DAYS', '3651'],
+    ];
+    for (const [variable, value] of cases) {
+      let thrown: unknown;
+      try {
+        readEnv({ ...SECRET, [variable]: value });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, `${variable}=${value}`).toBeInstanceOf(EnvError);
+      expect((thrown as EnvError).message).toBe(
+        `Invalid ${variable}: ${JSON.stringify(value)}. Expected a whole number of ${
+          variable.endsWith('_DAYS') ? 'days between 1 and 3650' : 'seconds between 1 and 86400'
+        }.`,
+      );
+    }
   });
 });
