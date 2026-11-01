@@ -62,7 +62,7 @@
   cursor: pointer;
 }
 
-.overflow-menu-item:hover:not(:disabled),
+.overflow-menu-item:hover:not([aria-disabled='true']),
 .overflow-menu-item:focus-visible {
   background: var(--bg-card-hover);
   outline: none;
@@ -76,7 +76,7 @@
   color: var(--overdue);
 }
 
-.overflow-menu-item:disabled {
+.overflow-menu-item[aria-disabled='true'] {
   color: var(--text-muted);
   cursor: not-allowed;
 }

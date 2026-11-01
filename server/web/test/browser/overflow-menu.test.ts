@@ -161,6 +161,52 @@ void describe('the overflow menu (LAI-1044)', () => {
     }
   });
 
+  void test('focus leaving it any other way closes it, and leaves focus where it went (LAI-1048)', async () => {
+    const h = await gallery();
+    try {
+      await focusButton(h.page);
+      await h.page.keyboard.press('ArrowDown');
+      await menu(h.page).waitFor();
+      // Not Tab, not a click: focus moved by something else, as a screen
+      // reader's cursor or a script would move it.
+      await h.page.getByRole('button', { name: 'After the menu' }).evaluate((el) => {
+        (el as HTMLElement).focus();
+      });
+      await menu(h.page).waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await focused(h.page), 'button:After the menu');
+      assert.equal(
+        await h.page.getByRole('button', { name: BUTTON }).getAttribute('aria-expanded'),
+        'false',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a disabled item is announced as such, stays in the menu, and does nothing (LAI-1048)', async () => {
+    const h = await gallery();
+    try {
+      await h.page.getByRole('button', { name: BUTTON }).click();
+      await menu(h.page).waitFor();
+      const rename = h.page.getByRole('menuitem', { name: 'Rename' });
+      assert.equal(await rename.getAttribute('aria-disabled'), 'true');
+      assert.equal(
+        await rename.getAttribute('disabled'),
+        null,
+        'natively disabled, so not focusable',
+      );
+      await rename.evaluate((el) => {
+        (el as HTMLElement).focus();
+      });
+      assert.equal(await focused(h.page), 'menuitem:Rename', 'the disabled item cannot take focus');
+      await rename.dispatchEvent('click');
+      assert.equal(await menu(h.page).count(), 1, 'choosing a disabled item closed the menu');
+      assert.equal(await h.page.locator('[data-chosen]').innerText(), 'Nothing chosen yet');
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a click outside closes it', async () => {
     const h = await gallery();
     try {

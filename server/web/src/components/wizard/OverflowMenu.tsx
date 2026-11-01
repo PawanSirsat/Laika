@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react';
 import { menuKey, openingIndex } from './overflow-menu-model.ts';
 import './overflow-menu.css';
 
@@ -30,7 +30,13 @@ export interface OverflowMenuProps {
  * The keys are `overflow-menu-model.ts`'s. Focus goes into the menu on open,
  * moves with the arrows, and goes back to the button on `Escape` or on a
  * choice — never to `body`. `Tab` closes the menu and moves on, and so does a
- * click anywhere outside it.
+ * click anywhere outside it — and so does focus leaving it any other way
+ * (LAI-1048), such as a screen reader's own cursor moving past it.
+ *
+ * **A disabled item is `aria-disabled`, not `disabled`** (LAI-1048): it stays
+ * in the accessibility tree and is announced as unavailable, rather than
+ * vanishing from it, and choosing it does nothing. The arrows still pass over
+ * it, as they did.
  */
 export function OverflowMenu({ label, items }: OverflowMenuProps) {
   const [open, setOpen] = useState(false);
@@ -73,6 +79,15 @@ export function OverflowMenu({ label, items }: OverflowMenuProps) {
     };
   }, [open]);
 
+  /* Focus moving to anything outside the menu and its button closes it, in place. */
+  const onBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    if (!open) return;
+    const to = event.relatedTarget as Node | null;
+    if (to !== null && wrapRef.current?.contains(to) === true) return;
+    setOpen(false);
+    setActive(undefined);
+  };
+
   const onButtonKey = (event: KeyboardEvent<HTMLButtonElement>): void => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -109,7 +124,7 @@ export function OverflowMenu({ label, items }: OverflowMenuProps) {
   };
 
   return (
-    <div className="overflow-menu" ref={wrapRef}>
+    <div className="overflow-menu" ref={wrapRef} onBlur={onBlur}>
       <button
         type="button"
         className="overflow-menu-button"
@@ -142,11 +157,12 @@ export function OverflowMenu({ label, items }: OverflowMenuProps) {
                 className="overflow-menu-item"
                 data-danger={item.danger === true}
                 tabIndex={i === active ? 0 : -1}
-                disabled={item.disabled === true}
+                {...(item.disabled === true ? { 'aria-disabled': true } : {})}
                 ref={(el) => {
                   itemRefs.current[i] = el;
                 }}
                 onClick={() => {
+                  if (item.disabled === true) return;
                   close(true);
                   item.onSelect();
                 }}
