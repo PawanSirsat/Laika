@@ -84,7 +84,13 @@ export function TokensScreen({ me }: TokensScreenProps) {
 
   const reload = (signal?: AbortSignal): void => {
     everyPage((cursor) =>
-      listTokens(signal, cursor === undefined ? { limit: 200 } : { limit: 200, cursor }),
+      listTokens(
+        signal,
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        // Personal only (LAI-1046): an agent's credential is managed with its
+        // agent, and listing it here made it look like an anonymous token.
+        'personal',
+      ),
     )
       .then(({ items }) => {
         // Every page, not the first (LAI-703); `page.data` is the whole list.
@@ -230,7 +236,10 @@ export function TokensScreen({ me }: TokensScreenProps) {
                 setName(event.target.value);
               }}
             />
-            <span className="tok-hint">What is it for? Only you see this.</span>
+            <span className="tok-hint">
+              What is it for? Shown to you, your organisation’s owners and admins, and anyone who
+              can read a task this token creates.
+            </span>
           </label>
 
           <div className="tok-field">

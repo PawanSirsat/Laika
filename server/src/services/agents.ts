@@ -607,7 +607,7 @@ export function agentView(db: Db, row: AgentRow): AgentView {
     device_label: row.deviceLabel,
     status: row.status,
     grants: grants.map((g) => ({ project_id: g.projectId, scope: g.scope })),
-    tokens: own.map(tokenView),
+    tokens: own.map((token) => tokenView(token, row)),
     created_at: row.createdAt,
     revoked_at: row.revokedAt,
     last_seen_at: row.lastSeenAt,

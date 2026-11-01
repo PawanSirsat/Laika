@@ -58,7 +58,9 @@
   color: var(--text-muted);
 }
 
-.tok-state {
+/* Says an agent's credential is one, in words, not in colour (LAI-1046). */
+.tok-state,
+.tok-kind {
   font-family: var(--font-mono);
   font-size: var(--text-small);
   text-transform: uppercase;

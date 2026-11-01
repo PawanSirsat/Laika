@@ -11,9 +11,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  agentRevokeImpact,
   forcedTokenScope,
   lastUsedLabel,
+  listTokens,
+  listUserTokens,
   mayChooseScope,
+  tokenAgentLabel,
+  tokensByKind,
   tokenState,
   type TokenView,
 } from '../../src/api/tokens.ts';
@@ -34,6 +39,9 @@ function token(patch: Partial<TokenView>): TokenView {
     last_mcp_at: null,
     last_client: null,
     last_client_name: null,
+    kind: 'personal',
+    agent_id: null,
+    agent_label: null,
     expires_at: null,
     revoked_at: null,
     created_at: NOW - DAY,
@@ -122,5 +130,152 @@ void describe('last used says something, never a dash', () => {
     );
     for (const label of used) assert.match(label, /^Used /);
     assert.ok(!lastUsedLabel(null, NOW).startsWith('Used '));
+  });
+});
+
+// ------------------------------------------------------------------ kind (LAI-1046)
+
+function credential(id: string, agentId: string, patch: Partial<TokenView> = {}): TokenView {
+  return token({
+    id,
+    name: 'Secret registered name',
+    kind: 'agent',
+    agent_id: agentId,
+    agent_label: 'claude-code · Belka',
+    ...patch,
+  });
+}
+
+void describe('an agent credential is named as its agent (D-120)', () => {
+  void test('the harness slug reads as the product, the device as sent', () => {
+    assert.equal(tokenAgentLabel(credential('t', 'a')), 'Claude Code · Belka');
+    assert.equal(
+      tokenAgentLabel(credential('t', 'a', { agent_label: 'mystery · No device' })),
+      'Other harness · No device',
+    );
+  });
+
+  void test('a device with the separator in it keeps it', () => {
+    assert.equal(
+      tokenAgentLabel(credential('t', 'a', { agent_label: 'codex · ci · runner' })),
+      'Codex · ci · runner',
+    );
+  });
+
+  void test('a personal token, or a reply without the field, has none', () => {
+    assert.equal(tokenAgentLabel(token({})), null);
+    const { agent_label: _dropped, ...old } = token({});
+    assert.equal(tokenAgentLabel(old as unknown as TokenView), null);
+  });
+});
+
+void describe('tokensByKind', () => {
+  void test('splits in order, and a row without kind counts as personal', () => {
+    const { kind: _dropped, ...old } = token({ id: 'old' });
+    const all = [
+      token({ id: 'p1' }),
+      credential('c1', 'a'),
+      old as unknown as TokenView,
+      credential('c2', 'b'),
+    ];
+    const { personal, agent } = tokensByKind(all);
+    assert.deepEqual(
+      personal.map((t) => t.id),
+      ['p1', 'old'],
+    );
+    assert.deepEqual(
+      agent.map((t) => t.id),
+      ['c1', 'c2'],
+    );
+  });
+});
+
+void describe('what revoking an agent credential stops', () => {
+  void test('its only live credential: the tool stops, and stays registered', () => {
+    const only = credential('c1', 'a');
+    const said = agentRevokeImpact(only, 'Ada', [only], NOW);
+    assert.match(said, /^This is Claude Code · Belka’s only live credential\./);
+    assert.match(said, /stops that tool at once/);
+    assert.match(said, /its open event streams close/);
+    assert.match(said, /claims its sessions hold lapse/);
+    // No reconnect exists yet (review B1): rotate refuses a revoked token and
+    // the same tool on the same device cannot register again while active.
+    assert.match(
+      said,
+      /stays registered but cannot work again: to use it, Ada disconnects it and connects it afresh\.$/,
+    );
+    assert.doesNotMatch(said, /reconnect/i);
+    assert.doesNotMatch(said, /Secret registered name/);
+  });
+
+  void test('another live credential of the same agent: the tool keeps working', () => {
+    const one = credential('c1', 'a');
+    const two = credential('c2', 'a');
+    assert.match(
+      agentRevokeImpact(one, 'Ada', [one, two], NOW),
+      /; its other live credential keeps working, so the tool does not stop\.$/,
+    );
+    const three = credential('c3', 'a');
+    assert.match(
+      agentRevokeImpact(one, 'Ada', [one, two, three], NOW),
+      /; its 2 other live credentials keep working, so the tool does not stop\.$/,
+    );
+  });
+
+  void test('a revoked sibling, or another agent’s, does not count', () => {
+    const one = credential('c1', 'a');
+    const dead = credential('c2', 'a', { revoked_at: NOW - DAY });
+    const other = credential('c3', 'b');
+    assert.match(agentRevokeImpact(one, 'Ada', [one, dead, other], NOW), /only live credential/);
+  });
+
+  void test('a list cut short never claims "only" (review N4)', () => {
+    const one = credential('c1', 'a');
+    const said = agentRevokeImpact(one, 'Ada', [one], NOW, false);
+    assert.doesNotMatch(said, /only live credential/);
+    assert.match(said, /^Not all of Ada’s tokens could be read, so Claude Code · Belka may have/);
+    assert.match(said, /If this is its only one, revoking it stops that tool at once/);
+    // A sibling seen is still a sibling: the cut does not change that answer.
+    const two = credential('c2', 'a');
+    assert.match(agentRevokeImpact(one, 'Ada', [one, two], NOW, false), /does not stop/);
+  });
+});
+
+void describe('?kind= on the two lists', () => {
+  const realFetch = globalThis.fetch;
+
+  function stub(): string[] {
+    const urls: string[] = [];
+    globalThis.fetch = ((input: string | URL) => {
+      urls.push(input instanceof URL ? input.href : input);
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [], next_cursor: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    }) as unknown as typeof fetch;
+    return urls;
+  }
+
+  void test('absent sends no kind, as before; set, it follows the page', async () => {
+    const urls = stub();
+    try {
+      await listTokens(undefined, {});
+      await listTokens(undefined, { limit: 200 }, 'personal');
+      await listTokens(undefined, {}, 'agent');
+      await listUserTokens('u 1', undefined, { cursor: 'c' }, 'agent');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    assert.deepEqual(
+      urls.map((u) => u.replace(/^.*\/api\/v1/, '')),
+      [
+        '/tokens',
+        '/tokens?limit=200&kind=personal',
+        '/tokens?kind=agent',
+        '/users/u%201/tokens?cursor=c&kind=agent',
+      ],
+    );
   });
 });
