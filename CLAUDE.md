@@ -1022,12 +1022,24 @@ Every session working in this repo:
 2. **Mark the card before you work.** Read it with `get_task_context LAI-NNN`,
    then `update_status` to In progress. If it is already In progress and yours,
    call `start_working LAI-NNN` with your branch: it succeeds without changing
-   anything and marks this session's work as that card's. Every card is
-   assigned to Pawan, so `list_ready_tasks` is empty and `start_working` on a
-   card that is not yet In progress answers 409 (LAIKA-474).
+   anything and marks this session's work as that card's. Cards are meant to
+   be assigned to Pawan, so `list_ready_tasks` is empty and `start_working` on a
+   card that is not yet In progress answers 409 (LAIKA-474). **Nothing on the
+   server assigns him for you** (D-114 item 7: a claim never sets the
+   assignee) — see step 3.
 3. **No card? Look first.** `get_task_context LAI-NNN` finds a mirrored card by
-   its task file id; only if there is none, `create_task` in `laika` with
-   `external_ref: LAI-NNN`, before doing the work.
+   its task file id; only if there is none, create it, before doing the work,
+   with **three calls in this order** (2026-11-01, after 28 of 29 agent-made
+   cards came out unassigned and 4 were claimed with no agent selected):
+   1. `create_task` in `laika` with `external_ref: LAI-NNN` **and
+      `assignee: "pawan.sirsat@kvelld.co.za"`** (the human accountable).
+   2. `update_task` with `agent: <your registered agent id>` — **before** the
+      claim. Once a claim is live, changing the selected agent is refused
+      (`claim_held`), so this cannot be fixed afterwards.
+   3. `start_working` with your branch and **your own `session_id`**.
+
+   The task file's `assignee:` frontmatter is the session name (`shell`,
+   `core`), not a person, and nothing copies it to the card.
 4. **Say what happened.** `add_comment` on the card as you go — decisions and
    blockers, while they are fresh.
 5. **Finish into review, never done.** `finish_task` with the commit, branch, PR
