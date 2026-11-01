@@ -50,3 +50,14 @@
 .page-tab-active .page-tab-count {
   color: var(--accent);
 }
+
+/* A tab's marker word, such as *Preview* (LAI-1048). A word, never colour alone. */
+.page-tab-badge {
+  padding: 0 0.375rem;
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-pill);
+  background: var(--chip-neutral-bg);
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+}

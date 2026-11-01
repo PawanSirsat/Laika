@@ -5,7 +5,13 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import type { DeveloperAccessMode } from '../../src/api/developer-compat.ts';
+import { redirectFor } from '../../src/routes/redirects.ts';
 import {
+  DEVELOPER_TABS,
+  developerAlias,
+  developerTabs,
+  isV3OnlyTab,
   INBOX_TABS,
   INSIGHTS_TABS,
   ORGANISATION_TABS,
@@ -191,5 +197,155 @@ void describe('the Inbox count is the sum of its tabs', () => {
     assert.equal(inboxCount(3, undefined, 2), 5);
     assert.equal(inboxCount(undefined, undefined, 2), 2);
     assert.equal(inboxCount(3, 4, undefined), 7);
+  });
+});
+
+// ------------------------------------------------------------------ Developer access V3 (LAI-1048)
+
+void describe('Developer access tabs by mode (LAI-1048, plan §C, §I)', () => {
+  const ids = (mode: DeveloperAccessMode) => developerTabs(mode).map((t) => t.id);
+  const labels = (mode: DeveloperAccessMode) =>
+    developerTabs(mode).map((t) => (t.badge === undefined ? t.label : `${t.label} [${t.badge}]`));
+
+  void test('classic is the five tabs, unchanged and unmarked', () => {
+    assert.deepEqual(labels('classic'), ['Connect', 'Agents', 'Projects', 'Activity', 'Tokens']);
+    assert.equal(developerTabs('classic'), DEVELOPER_TABS);
+  });
+
+  void test('preview keeps the classic five first, then the V3-only tabs, each marked', () => {
+    assert.deepEqual(labels('preview'), [
+      'Connect',
+      'Agents',
+      'Projects',
+      'Activity',
+      'Tokens',
+      'Overview [Preview]',
+      'Devices [Preview]',
+      'Advanced [Preview]',
+    ]);
+  });
+
+  void test('v3 is Overview, Project setup, Devices, Activity, Advanced', () => {
+    assert.deepEqual(labels('v3'), [
+      'Overview',
+      'Project setup',
+      'Devices',
+      'Activity',
+      'Advanced',
+    ]);
+  });
+
+  void test('the default tab is Connect in classic and preview, Overview in v3', () => {
+    const none = new URLSearchParams();
+    assert.equal(currentTab(developerTabs('classic'), none), 'connect');
+    assert.equal(currentTab(developerTabs('preview'), none), 'connect');
+    assert.equal(currentTab(developerTabs('v3'), none), 'overview');
+  });
+
+  void test('an unknown tab falls back to the default in every mode', () => {
+    const bogus = new URLSearchParams('tab=nonsense');
+    assert.equal(currentTab(developerTabs('classic'), bogus), 'connect');
+    assert.equal(currentTab(developerTabs('preview'), bogus), 'connect');
+    assert.equal(developerAlias('v3', bogus), undefined);
+    assert.equal(currentTab(developerTabs('v3'), bogus), 'overview');
+  });
+
+  void test('preview opens the V3-only tabs by id, and classic does not', () => {
+    for (const id of ['overview', 'devices', 'advanced']) {
+      const asked = new URLSearchParams(`tab=${id}`);
+      assert.equal(currentTab(developerTabs('preview'), asked), id);
+      assert.equal(currentTab(developerTabs('classic'), asked), 'connect');
+      assert.equal(isV3OnlyTab(id), true);
+    }
+    assert.equal(isV3OnlyTab('projects'), false);
+    assert.equal(isV3OnlyTab('activity'), false);
+  });
+
+  void test('ids are unique in every mode', () => {
+    for (const mode of ['classic', 'preview', 'v3'] as const) {
+      assert.equal(new Set(ids(mode)).size, ids(mode).length, mode);
+    }
+  });
+});
+
+void describe('old Developer access addresses in V3 (LAI-1048, plan §C)', () => {
+  const alias = (mode: DeveloperAccessMode, query: string) =>
+    developerAlias(mode, new URLSearchParams(query))?.toString();
+
+  /** Every §C row: what the v3 address becomes. `undefined` means it stays. */
+  const ROWS: readonly (readonly [string, string | undefined])[] = [
+    ['tab=connect', 'tab=overview'],
+    ['tab=connect&agent=codex', 'tab=devices&add=tool&tool=codex'],
+    ['tab=connect&step=2', 'tab=devices&add=tool'],
+    ['tab=connect&agent=claude-code&step=3', 'tab=devices&add=tool&tool=claude-code'],
+    ['tab=agents', 'tab=devices'],
+    ['tab=agents&agent=01ABC', 'tab=devices&agent=01ABC'],
+    ['tab=tokens', 'tab=advanced'],
+    ['tab=projects', undefined],
+    ['tab=activity', undefined],
+    ['tab=overview', undefined],
+    ['tab=devices&add=tool', undefined],
+    ['tab=advanced', undefined],
+    ['', undefined],
+  ];
+
+  for (const [from, to] of ROWS) {
+    void test(`v3: ?${from} → ${to === undefined ? 'unchanged' : `?${to}`}`, () => {
+      assert.equal(alias('v3', from), to);
+    });
+  }
+
+  void test('classic and preview move nothing at all', () => {
+    for (const [from] of ROWS) {
+      assert.equal(alias('classic', from), undefined, from);
+      assert.equal(alias('preview', from), undefined, from);
+    }
+  });
+
+  void test('the rest of the query travels, in order', () => {
+    assert.equal(alias('v3', 'tab=tokens&utm=x&b=2'), 'tab=advanced&utm=x&b=2');
+    assert.equal(alias('v3', 'tab=connect&utm=x'), 'tab=overview&utm=x');
+    assert.equal(
+      alias('v3', 'tab=connect&agent=codex&step=2&utm=x'),
+      'tab=devices&add=tool&tool=codex&utm=x',
+    );
+  });
+
+  void test('a repeated parameter travels with every value, in order (review round 1)', () => {
+    assert.equal(alias('v3', 'tab=tokens&x=1&x=2'), 'tab=advanced&x=1&x=2');
+    assert.equal(alias('v3', 'tab=agents&agent=a1&x=1&x=2'), 'tab=devices&agent=a1&x=1&x=2');
+    assert.equal(alias('v3', 'tab=connect&x=1&x=2'), 'tab=overview&x=1&x=2');
+    // The wizard's own two are spent: only the first `agent` becomes the tool,
+    // and no stray copy of `agent` or `step` rides along.
+    assert.equal(
+      alias('v3', 'tab=connect&agent=codex&agent=cursor&step=2&step=3&x=1&x=2'),
+      'tab=devices&add=tool&tool=codex&x=1&x=2',
+    );
+  });
+
+  void test('an empty ?agent= is no tool: plain Connect is the Overview', () => {
+    assert.equal(alias('v3', 'tab=connect&agent='), 'tab=overview&agent=');
+  });
+
+  void test('no loop: an alias applied to its own answer changes nothing', () => {
+    for (const [from, to] of ROWS) {
+      if (to === undefined) continue;
+      assert.equal(alias('v3', to), undefined, `${from} → ${to} moves again`);
+      // …and the answer is a tab v3 actually has.
+      const tab = new URLSearchParams(to).get('tab');
+      assert.equal(currentTab(developerTabs('v3'), new URLSearchParams(to)), tab);
+    }
+  });
+
+  void test('the path redirects feed the aliases: /connect and /tokens land in V3', () => {
+    const connect = redirectFor('/connect', '?agent=codex');
+    const tokens = redirectFor('/tokens', '');
+    const deep = redirectFor('/developer/connect', '?step=2&agent=cursor');
+    assert.equal(connect, '/developer?tab=connect&agent=codex');
+    assert.equal(tokens, '/developer?tab=tokens');
+    const query = (url: string | undefined) => url?.slice(url.indexOf('?') + 1) ?? '';
+    assert.equal(alias('v3', query(connect)), 'tab=devices&add=tool&tool=codex');
+    assert.equal(alias('v3', query(tokens)), 'tab=advanced');
+    assert.equal(alias('v3', query(deep)), 'tab=devices&add=tool&tool=cursor');
   });
 });
