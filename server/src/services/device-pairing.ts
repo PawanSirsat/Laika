@@ -59,7 +59,15 @@ export const MAX_FAILED_SIGNATURES = 5;
 const LIVE_STATES = ['open', 'claimed', 'approved'] as const satisfies DevicePairingState[];
 /** Crockford base32: no I, L, O or U, so a code survives being read aloud. */
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-const CODE_LENGTH = 8;
+/**
+ * Sixteen characters, 80 bits (CHIEF, PR #205 round 2). At 40 bits a guesser
+ * had to be rate-limited, and any shared limit an anonymous client can hold
+ * empty locks pairing out for the board. At 80 bits no limit is needed for
+ * the guessing; the claim bucket only bounds load.
+ */
+const CODE_LENGTH = 16;
+/** Characters per group as the code is shown: `XXXX-XXXX-XXXX-XXXX`. */
+const CODE_GROUP = 4;
 const NOT_FOUND = 'No such pairing request';
 /** The one answer for a code that is unknown, expired or finished. */
 const CODE_NOT_FOUND = 'No pairing request has that code';
@@ -109,20 +117,22 @@ export interface PairingCompleteView {
   board_origin: string;
 }
 
-/** `XXXX-XXXX`: 40 random bits. */
+/** `XXXX-XXXX-XXXX-XXXX`: 80 random bits, five per character. */
 export function newUserCode(): string {
-  const bytes = randomBytes(5);
+  const bytes = randomBytes((CODE_LENGTH * 5) / 8);
   let bits = 0n;
   for (const byte of bytes) bits = (bits << 8n) | BigInt(byte);
   let code = '';
   for (let i = CODE_LENGTH - 1; i >= 0; i--) {
     code += CROCKFORD[Number((bits >> BigInt(i * 5)) & 31n)];
   }
-  return `${code.slice(0, 4)}-${code.slice(4)}`;
+  const groups: string[] = [];
+  for (let i = 0; i < CODE_LENGTH; i += CODE_GROUP) groups.push(code.slice(i, i + CODE_GROUP));
+  return groups.join('-');
 }
 
 /**
- * A code as typed, to its canonical eight characters, or `null`. Case,
+ * A code as typed, to its canonical sixteen characters, or `null`. Case,
  * hyphens and spaces are ignored, and the letters Crockford reads as digits
  * are read as them.
  */
@@ -275,7 +285,7 @@ export function createPairingRequest(
       }
     }
 
-    // A live code names one request. 40 bits make a clash all but impossible;
+    // A live code names one request. 80 bits make a clash all but impossible;
     // the unique index makes it impossible, and this makes it a retry.
     for (;;) {
       const userCode = newUserCode();
@@ -349,9 +359,9 @@ export interface ClaimPairingInput {
  * request's id and the challenge to sign.
  *
  * Unknown, malformed, expired and finished codes are one `404`, so a guess
- * learns nothing; the route counts each toward the shared backoff. A code
- * claimed already is `409`, so the real device can tell its owner it was
- * raced — the browser shows the fingerprint that won.
+ * learns nothing — and at 80 bits a guess is all it is. A code claimed
+ * already is `409`, so the real device can tell its owner it was raced; the
+ * browser shows the fingerprint that won.
  */
 export function claimPairingRequest(
   sqlite: Database.Database,
