@@ -595,13 +595,37 @@ void describe('the states', () => {
   });
 });
 
+/**
+ * A loaded runner, made certain (LAI-1035). Chromium fires an element's
+ * `scroll` event at its next rendered frame, and the card hides a pushed-out
+ * month label from that event. Under `page.clock` a `requestAnimationFrame` is
+ * a 16 ms timer, not a frame, so a wait counted in them can end before the
+ * frame — and read the labels as the last position left them. This holds
+ * every `.hm-scroll` scroll event 100 ms, for every listener, as a slow frame
+ * does.
+ */
+const HOLD_SCROLL_EVENTS = `(() => {
+  const late = new WeakSet();
+  window.addEventListener('scroll', (event) => {
+    const target = event.target;
+    if (late.has(event) || !(target instanceof Element) || !target.classList.contains('hm-scroll')) return;
+    event.stopImmediatePropagation();
+    setTimeout(() => {
+      const again = new Event('scroll');
+      late.add(again);
+      target.dispatchEvent(again);
+    }, 100);
+  }, true);
+})();`;
+
 void describe('on a phone', () => {
   // The clock's today, and a day it may not give: Sun 1 Nov 2026, a month's
   // 1st alone in the newest week. Its label once ran past the canvas, and
   // scrolled to that week every heading was left out of view (LAI-1017).
-  for (const [when, now] of [
-    ['', NOW],
-    [', a month’s 1st alone in the newest week', Date.parse('2026-11-01T12:00:00Z')],
+  for (const [when, now, late] of [
+    ['', NOW, false],
+    [', a month’s 1st alone in the newest week', Date.parse('2026-11-01T12:00:00Z'), false],
+    [', with the scroll event a frame late', NOW, true],
   ] as const) {
     void test(`opens on 12 weeks; a year scrolls inside the card, months never under the weekdays${when}`, async () => {
       const h = await open('/people?user=u2', stub(undefined, false, ME, now), {
@@ -610,6 +634,7 @@ void describe('on a phone', () => {
           // The page's today is the fixture's: the grid drawn while an answer
           // is on its way ends on the browser's today, not the pinned one.
           await page.clock.setFixedTime(now);
+          if (late) await page.addInitScript(HOLD_SCROLL_EVENTS);
         },
       });
       try {
@@ -670,14 +695,27 @@ void describe('on a phone', () => {
         // at least one month named.
         const width = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
         for (let left = 0; left <= width + 37; left += 37) {
-          await scroller.evaluate((el, to) => {
-            el.scrollLeft = to;
-          }, left);
-          await h.page.evaluate(
-            () =>
-              new Promise((done) => {
-                requestAnimationFrame(() => requestAnimationFrame(done));
+          // The card settles from the scroll event, which comes with a frame;
+          // under page.clock two requestAnimationFrames are 32 ms of timers,
+          // not two frames (LAI-1035). So wait for the event itself — the
+          // card's listener runs first, being the older — and then for the
+          // frame its settle was booked on. A step that moves nothing (the
+          // overshoot past the end) fires no event and has nothing to settle.
+          await scroller.evaluate(
+            (el, to) =>
+              new Promise<void>((done) => {
+                const frames = (): void => {
+                  requestAnimationFrame(() => requestAnimationFrame(() => done()));
+                };
+                const from = el.scrollLeft;
+                el.addEventListener('scroll', frames, { once: true });
+                el.scrollLeft = to;
+                if (el.scrollLeft === from) {
+                  el.removeEventListener('scroll', frames);
+                  frames();
+                }
               }),
+            left,
           );
           const seen = await h.page.evaluate(() => {
             const days = document.querySelector('.hm-corner')?.getBoundingClientRect();
