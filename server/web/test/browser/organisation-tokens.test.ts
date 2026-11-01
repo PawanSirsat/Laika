@@ -416,6 +416,84 @@ void describe('revoking', () => {
   });
 });
 
+/**
+ * Agent credentials are grouped and named as the tool (LAI-1046), and revoking
+ * one says what stops before it does — `token.revoke_any` revokes the token,
+ * never the agent (plan LAI-1042 §E.4).
+ */
+void describe('tool credentials (LAI-1046)', () => {
+  const PRIVATE = 'Secret registered name';
+  const WITH_AGENT: ApiStub = {
+    ...BASE,
+    '/api/v1/me': me('u1', 'owner'),
+    '/api/v1/users/u2/tokens': {
+      data: [
+        token('t1', 'Laptop — Claude Code', {
+          kind: 'personal',
+          agent_id: null,
+          agent_label: null,
+        }),
+        token('t9', PRIVATE, { kind: 'agent', agent_id: 'a1', agent_label: 'claude-code · Belka' }),
+      ],
+      next_cursor: null,
+    },
+    '/api/v1/users/u2/tokens/t9': null,
+  };
+
+  void test('groups by kind and names the credential Tool · Device', async () => {
+    const h = await open('/organisation?tab=security', WITH_AGENT);
+    try {
+      const row = await openPanel(h, 'Tomas Nel');
+      const tools = row.locator('.org-tokens-group[data-kind="agent"]');
+      await tools.waitFor({ timeout: 20_000 });
+      const personal = row.locator('.org-tokens-group[data-kind="personal"]');
+
+      assert.match(await personal.innerText(), /Personal tokens[\s\S]*Laptop — Claude Code/);
+      assert.doesNotMatch(
+        await personal.innerText(),
+        /Belka/,
+        'a credential in the personal group',
+      );
+      const toolText = await tools.innerText();
+      assert.match(toolText, /Tool credentials/);
+      assert.match(toolText, /Claude Code · Belka/, 'not named as the tool');
+      assert.match(toolText, /Tool credential/i);
+      assert.doesNotMatch(toolText, /Laptop/, 'a personal token in the tool group');
+      assert.ok(
+        !(await row.locator('.org-tokens').innerText()).includes(PRIVATE),
+        'the registered name was rendered',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('revoking its only credential says the tool stops and stays registered', async () => {
+    const h = await open('/organisation?tab=security', WITH_AGENT);
+    try {
+      const row = await openPanel(h, 'Tomas Nel');
+      const tool = row.locator('.org-tokens-group[data-kind="agent"] .tok-row');
+      await tool.waitFor({ timeout: 20_000 });
+      await tool.locator('.tok-revoke').click();
+      const asked = await answerConfirm(h.page, true);
+
+      assert.match(asked, /Revoke Claude Code · Belka’s credential\?/);
+      assert.match(asked, /only live credential/);
+      assert.match(asked, /stops that tool at once/);
+      assert.match(asked, /stays registered with no live credential until Tomas Nel reconnects it/);
+      assert.ok(!asked.includes(PRIVATE), 'the confirmation named the registered name');
+
+      await until(() =>
+        h.calls.some(
+          (c: StubCall) => c.method === 'DELETE' && c.path === '/api/v1/users/u2/tokens/t9',
+        ),
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('both themes', () => {
   void test('the panel renders in light and dark', async () => {
     const h = await open('/organisation?tab=security', {
