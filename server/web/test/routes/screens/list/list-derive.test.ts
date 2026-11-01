@@ -163,6 +163,17 @@ void describe('the List row', () => {
     assert.equal(freed.blocked, false);
   });
 
+  void test('a cancelled blocker still holds it, as the server and BLK say (LAI-882)', () => {
+    const cancelled = task({ id: 'a', key: 'LC-1', status: 'cancelled' });
+    const waiting = task({ id: 'b', key: 'LC-6', blocked_by: [cancelled.id] });
+    const { rows } = rowsFor([cancelled, waiting]);
+
+    const row = rows.find((r) => r.key === 'LC-6');
+    assert.ok(row !== undefined);
+    assert.equal(row.blocked, true);
+    assert.equal(row.blockedBy, 'blocked by LC-1');
+  });
+
   void test('claims nothing about a blocker outside the loaded page', () => {
     /*
      * `blockedState` answers `undefined` for a dependency it cannot see, and

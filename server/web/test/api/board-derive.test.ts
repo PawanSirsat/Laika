@@ -78,11 +78,19 @@ void describe('blockedState', () => {
     assert.equal(blockedState(t, byIdIndex([t, dep])), true);
   });
 
-  void test('done and cancelled blocked_by do not block', () => {
+  void test('a done blocked_by does not block', () => {
     const done = task({ id: '2', status: 'done' });
+    const t = task({ id: '1', blocked_by: ['2'] });
+    assert.equal(blockedState(t, byIdIndex([t, done])), false);
+  });
+
+  void test('a cancelled blocked_by still blocks — the server requires done (LAI-882)', () => {
+    // `isReady` and the project card's `blocked_count` read `<> 'done'`, and
+    // the board's BLK follows them. A card that called this met drew no lock
+    // over a task BLK counted.
     const cancelled = task({ id: '3', status: 'cancelled' });
-    const t = task({ id: '1', blocked_by: ['2', '3'] });
-    assert.equal(blockedState(t, byIdIndex([t, done, cancelled])), false);
+    const t = task({ id: '1', blocked_by: ['3'] });
+    assert.equal(blockedState(t, byIdIndex([t, cancelled])), true);
   });
 
   void test('one unfinished dependency among finished ones still blocks', () => {
@@ -354,7 +362,7 @@ void describe('blockers — which dependency is holding this up (LAI-066)', () =
     );
   });
 
-  void test('cancelled counts as met, exactly as blockedState treats it', () => {
+  void test('a cancelled dependency is named, exactly as blockedState counts it (LAI-882)', () => {
     // The two must agree. If `blockedState` says blocked and `blockers` returns
     // nothing, the card renders a blocked banner naming nobody — which is the
     // vague message this task exists to remove.
@@ -362,8 +370,11 @@ void describe('blockers — which dependency is holding this up (LAI-066)', () =
     const t = task({ id: '2', blocked_by: ['1'] });
     const index = byIdIndex([cancelled, t]);
 
-    assert.deepEqual(blockers(t, index), []);
-    assert.equal(blockedState(t, index), false);
+    assert.deepEqual(
+      blockers(t, index).map((d) => d.id),
+      ['1'],
+    );
+    assert.equal(blockedState(t, index), true);
   });
 
   void test('a dependency the board has not loaded is not invented', () => {
@@ -427,7 +438,7 @@ void describe('heldByBlocker — blocked work, as the server counts it (LAI-819)
     const t = task({ id: '2', blocked_by: ['1'] });
     const index = byIdIndex([cancelled, t]);
     assert.equal(heldByBlocker(t, index), true);
-    assert.equal(blockedState(t, index), false, 'the card’s rule is unchanged');
+    assert.equal(blockedState(t, index), true, 'the card’s lock agrees with BLK (LAI-882)');
   });
 
   void test('finished work is never blocked work', () => {
