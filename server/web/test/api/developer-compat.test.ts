@@ -1,6 +1,7 @@
 /**
  * Reading the Developer access mode off `GET /developer/compatibility`
- * (LAI-1048, plan §I): only the three names, and anything else is classic.
+ * (LAI-1048, plan §I): only the three names, and anything else is the fallback,
+ * `v3` since LAI-1076.
  */
 
 import assert from 'node:assert/strict';
@@ -9,6 +10,7 @@ import {
   boardBuildOf,
   DEVELOPER_ACCESS_MODES,
   developerAccessMode,
+  FALLBACK_MODE,
   modeWithin,
   type DeveloperAccessMode,
   type ModeTimer,
@@ -25,12 +27,16 @@ void describe('developerAccessMode', () => {
     assert.deepEqual([...DEVELOPER_ACCESS_MODES], ['classic', 'preview', 'v3']);
   });
 
-  void test('an unknown or missing mode is classic, never a half-built page', () => {
+  void test('the fallback is v3, the server default (LAI-1076)', () => {
+    assert.equal(FALLBACK_MODE, 'v3');
+  });
+
+  void test('an unknown or missing mode is the fallback, never a half-built page', () => {
     for (const odd of ['V3', 'beta', '', 3, null, undefined, true]) {
-      assert.equal(developerAccessMode(body(odd)), 'classic', String(odd));
+      assert.equal(developerAccessMode(body(odd)), 'v3', String(odd));
     }
     for (const broken of [null, undefined, 'v3', 42, {}, { features: null }, { features: 'v3' }]) {
-      assert.equal(developerAccessMode(broken), 'classic', JSON.stringify(broken));
+      assert.equal(developerAccessMode(broken), 'v3', JSON.stringify(broken));
     }
   });
 });
@@ -65,7 +71,7 @@ void describe('modeWithin: a hung compatibility request cannot hold the page (re
     assert.equal(t.cleared, true);
   });
 
-  void test('no answer by the deadline is classic, and the request is told to stop', async () => {
+  void test('no answer by the deadline is v3, and the request is told to stop', async () => {
     const t = handTimer();
     let aborted = false;
     const never = new Promise<DeveloperAccessMode>(() => undefined);
@@ -78,7 +84,7 @@ void describe('modeWithin: a hung compatibility request cannot hold the page (re
       t.timer,
     );
     t.fire();
-    assert.equal(await pending, 'classic');
+    assert.equal(await pending, 'v3');
     assert.equal(aborted, true);
   });
 
@@ -90,23 +96,24 @@ void describe('modeWithin: a hung compatibility request cannot hold the page (re
     });
     const pending = modeWithin(slow, 4000, undefined, t.timer);
     t.fire();
-    late('v3');
-    assert.equal(await pending, 'classic');
+    // A late answer that differs from the fallback, so keeping it would show.
+    late('classic');
+    assert.equal(await pending, 'v3');
   });
 
-  void test('a failed request is classic at once', async () => {
+  void test('a failed request is v3 at once', async () => {
     const t = handTimer();
     assert.equal(
       await modeWithin(Promise.reject(new Error('500')), 4000, undefined, t.timer),
-      'classic',
+      'v3',
     );
     assert.equal(t.cleared, true);
   });
 
-  void test('with the real clock, a request that never answers settles as classic', async () => {
+  void test('with the real clock, a request that never answers settles as v3', async () => {
     const started = Date.now();
     const mode = await modeWithin(new Promise<DeveloperAccessMode>(() => undefined), 50);
-    assert.equal(mode, 'classic');
+    assert.equal(mode, 'v3');
     assert.ok(Date.now() - started >= 45, 'settled before the deadline');
   });
 });
