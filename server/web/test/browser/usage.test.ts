@@ -685,6 +685,8 @@ void describe('an owner', () => {
       const text = await card.innerText();
       assert.match(text, /at least/i);
       assert.match(text, /Claude Code/);
+      // LLM tokens, so the word is not read as a credential (LAI-1058).
+      assert.match(text, /LLM tokens/i);
       assert.match(text, /claude-opus-5-5/);
       assert.match(text, /tied to a task/i);
       assert.match(text, /Cursor.*no token data/s);

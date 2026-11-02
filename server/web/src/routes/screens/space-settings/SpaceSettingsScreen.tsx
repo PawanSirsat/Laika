@@ -209,7 +209,13 @@ export function SpaceSettingsScreen({
           />
         ) : current === 'access' ? (
           <>
-            <AccessTab project={project} orgName={orgName} mayEdit={mayEdit} onSaved={saved} />
+            <AccessTab
+              project={project}
+              orgName={orgName}
+              mayEdit={mayEdit}
+              onSaved={saved}
+              onNavigate={onNavigate}
+            />
             <HandoffPolicySection
               slug={project.slug}
               mayEdit={gates.project(project.id, 'project.handoff_policy.edit')}

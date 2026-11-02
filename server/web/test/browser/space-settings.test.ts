@@ -614,8 +614,11 @@ void describe('Access', () => {
         async () =>
           (await h.page.locator('[data-create="lead"]').getAttribute('aria-checked')) === 'true',
       );
-      // Agent sessions.
-      const agents = h.page.getByRole('switch', { name: 'Agent sessions' });
+      // Coding tools may work here (was *Agent sessions*, LAI-1058).
+      const agents = h.page.getByRole('switch', { name: 'Coding tools may work here' });
+      // The help's wording per mode is the next test's; this board has no
+      // compatibility endpoint, so it is classic.
+      await h.page.getByRole('link', { name: 'Developer access · Projects' }).waitFor();
       await agents.click();
       await until(async () => (await agents.getAttribute('aria-checked')) === 'false');
       // Public asks first.
@@ -647,6 +650,58 @@ void describe('Access', () => {
     }
   });
 
+  /**
+   * The switch stops **every** token writing here, a personal credential for
+   * scripts too (`agentsMay`, D-103 item 7), and the help says so in every
+   * mode. Per-tool grants are named only where V3 sets them, and the link
+   * names the tab as that mode's bar does (LAI-1058).
+   */
+  for (const [mode, label, href, perTool] of [
+    ['classic', 'Developer access · Projects', '/developer?tab=projects', false],
+    ['preview', 'Developer access · Project setup', '/developer?tab=projects&setup=v3', true],
+    ['v3', 'Developer access · Project setup', '/developer?tab=projects', true],
+  ] as const) {
+    void test(`${mode}: the switch's help says what it stops, and links to ${label}`, async () => {
+      const h = await open(
+        `${SETTINGS}?tab=access`,
+        stub(ME, {
+          '/api/v1/developer/compatibility': {
+            server: { version: '0.1.0', build_commit: null },
+            protocol: { current: 1, min_client: 1 },
+            features: {
+              developer_access: mode,
+              device_pairing: false,
+              tool_setup_exchange: false,
+              client_reports: false,
+              project_setups: false,
+            },
+            cli: {},
+            release_notes: { ref: null, whats_new: [] },
+          },
+        }),
+      );
+      try {
+        await settled(h);
+        const link = h.page.getByRole('link', { name: label });
+        await link.waitFor({ timeout: 10_000 });
+        assert.equal(await link.getAttribute('href'), href);
+        const help = (await h.page.locator('#ss-agents-help').innerText()).replace(/\s+/g, ' ');
+        assert.match(
+          help,
+          /While this is off, any token — including a personal credential for scripts — can read but not change anything here\./,
+        );
+        if (perTool) {
+          assert.match(help, /Each registered tool also needs its own project access — set in /);
+        } else {
+          assert.doesNotMatch(help, /its own project access/);
+          assert.match(help, /To point a tool at this space’s repository, see /);
+        }
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
   void test('a refused change says so beside the control, and the control keeps the stored value', async () => {
     const h = await open(
       `${SETTINGS}?tab=access`,
@@ -659,12 +714,14 @@ void describe('Access', () => {
     );
     try {
       await settled(h);
-      await h.page.getByRole('switch', { name: 'Agent sessions' }).click();
+      await h.page.getByRole('switch', { name: 'Coding tools may work here' }).click();
       const error = h.page.locator('[data-error="agents_allowed"]');
       await error.waitFor({ timeout: 5_000 });
       assert.equal(await error.innerText(), 'Not saved: You may not change this space');
       assert.equal(
-        await h.page.getByRole('switch', { name: 'Agent sessions' }).getAttribute('aria-checked'),
+        await h.page
+          .getByRole('switch', { name: 'Coding tools may work here' })
+          .getAttribute('aria-checked'),
         'true',
       );
     } finally {
