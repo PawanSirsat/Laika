@@ -164,7 +164,13 @@ export function DeveloperScreen({
         />
       )}
       {current === 'devices' && (
-        <DevicesTab me={me} origin={origin} params={params} setParams={setParams} />
+        <DevicesTab
+          me={me}
+          origin={origin}
+          params={params}
+          setParams={setParams}
+          preview={preview}
+        />
       )}
       {current === 'advanced' && (
         <div className="dev-body">

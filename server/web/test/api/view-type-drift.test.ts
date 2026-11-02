@@ -816,6 +816,38 @@ const PAIRS: readonly Pair[] = [
     client: 'AgentSession',
     clientFile: 'agents.ts',
   },
+  // LAI-1061: Add device's pairing request, and Add tool's exchange and
+  // per-tool verification (§4.79, §4.80).
+  {
+    server: 'DevicePairingView',
+    serverFile: 'services/device-pairing.ts',
+    client: 'DevicePairing',
+    clientFile: 'device-pairing.ts',
+  },
+  {
+    server: 'CreatedPairingView',
+    serverFile: 'services/device-pairing.ts',
+    client: 'CreatedPairing',
+    clientFile: 'device-pairing.ts',
+  },
+  {
+    server: 'ToolSetupView',
+    serverFile: 'services/tool-setup.ts',
+    client: 'ToolSetup',
+    clientFile: 'tool-setup.ts',
+  },
+  {
+    server: 'CreatedToolSetupView',
+    serverFile: 'services/tool-setup.ts',
+    client: 'CreatedToolSetup',
+    clientFile: 'tool-setup.ts',
+  },
+  {
+    server: 'AgentVerificationView',
+    serverFile: 'services/tool-setup.ts',
+    client: 'AgentVerification',
+    clientFile: 'tool-setup.ts',
+  },
   // LAI-1052: one tool against one project, for Project setup (§6.4).
   {
     server: 'ProjectAccessView',
