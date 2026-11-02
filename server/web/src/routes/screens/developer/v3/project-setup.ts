@@ -423,9 +423,32 @@ export function recordFinding(record: ProjectSetup): string {
   return `${where}${revision} in ${file}${problems.length === 0 ? '' : ` — ${problems.join(', ')}`}`;
 }
 
-/** The command that checks this repository from the reader's device. */
-export function projectCheckCommand(projectSlug: string): string {
-  return `laika project check --project ${projectSlug}`;
+/**
+ * The `--harness` `laika project check` takes for a tool, by the slug the
+ * board knows it as: `cli/src/agent-adapters.ts`'s `ADAPTERS` read backwards
+ * (`harness` → `agentHarness`), so a value here is one the CLI accepts. Only a
+ * slug exactly one adapter registers under: `other` is both Copilot CLI and
+ * Copilot cloud, and a tool with no adapter has no credential file to pick.
+ */
+export const CLI_HARNESS: Readonly<Partial<Record<AgentClient, string>>> = {
+  'claude-code': 'claude-code',
+  codex: 'codex',
+  cursor: 'cursor',
+  vscode: 'copilot-vscode',
+  'gemini-cli': 'gemini-cli',
+  antigravity: 'antigravity',
+  omnigent: 'omnigent',
+};
+
+/**
+ * The command that checks this repository from the reader's device, for the
+ * tool picked in step 1 (LAI-1084). Without `--harness`, a device with two
+ * tools set up checks the file, records nothing and still exits 0, so step 3
+ * would stay *Not recorded* however often the reader ran it.
+ */
+export function projectCheckCommand(projectSlug: string, client: AgentClient): string {
+  const harness = CLI_HARNESS[client];
+  return `laika project check --project ${projectSlug}${harness === undefined ? '' : ` --harness ${harness}`}`;
 }
 
 /**

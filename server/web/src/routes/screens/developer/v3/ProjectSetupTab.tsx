@@ -1233,7 +1233,7 @@ function ReviewStep({
   const ids = useId();
   const [recording, setRecording] = useState(false);
   const [recordError, setRecordError] = useState<unknown>(null);
-  const checkCommand = projectCheckCommand(project.slug);
+  const checkCommand = projectCheckCommand(project.slug, tool.client);
   const [cliSource, setCliSource] = useState<CliSource | undefined>(undefined);
   const hint = cliMatchHint(cliSource);
 
