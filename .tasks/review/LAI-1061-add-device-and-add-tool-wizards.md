@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p2
 depends-on: [LAI-1050, LAI-1054, LAI-1056]
 discovered-from: LAI-1042
-status: in-progress
+status: review
 started: 2026-11-02T05:47:54+05:30
+finished: 2026-11-02T06:18:43+05:30
 ---
 
 ## Why
@@ -28,50 +29,50 @@ only shows the commands the plan's CLI contract (§F) names.
 
 ## Acceptance criteria
 
-- [ ] **Add device**: local or cloud and a friendly name, no tool asked.
+- [x] **Add device**: local or cloud and a friendly name, no tool asked.
       Creates a pairing request; shows the fresh-install bootstrap from the
       board's own `cli.source` (clone at the board's commit,
       `install.sh --no-credential`, `laika device pair --code …`) or the
       existing-install form; never `npx`.
-- [ ] A live wait on `GET /devices/pairing-requests/:id`, polling with
+- [x] A live wait on `GET /devices/pairing-requests/:id`, polling with
       backoff, announced through the throttled live region.
-- [ ] Once claimed: fingerprint, OS, CLI version and claim time, *Approve
+- [x] Once claimed: fingerprint, OS, CLI version and claim time, *Approve
       only if this matches your terminal*, Approve / Deny echoing the
       fingerprint shown. *Device paired* only once the server reports
       `completed` — never on a click.
-- [ ] Expired, already-claimed (tell the person to deny), `public_url_unset`,
+- [x] Expired, already-claimed (tell the person to deny), `public_url_unset`,
       `429`, `too_many_open_pairings`, `device_name_taken` and other errors
       each say what happened and what to do.
-- [ ] Pair an existing imported device, by explicit choice (`device_id`).
-- [ ] **Add tool**: a paired device, then a tool from a catalog held in the
+- [x] Pair an existing imported device, by explicit choice (`device_id`).
+- [x] **Add tool**: a paired device, then a tool from a catalog held in the
       web (plan §E.6's recommended alternative) with an honest mode per tool
       — automatic / MCP only / manual / unverified, per §M — and no
       hard-coded count. `POST /devices/:id/tools`; the exact
       `laika tool add … --exchange …` command the server returns, no secret.
-- [ ] Checks from `GET /agents/:id/verification`: device paired, credential
+- [x] Checks from `GET /agents/:id/verification`: device paired, credential
       installed, the tool's own request, session hooks and claims only where
       the tool has them, each saying what evidence is missing. Tool-specific
       notes (Claude Code restart, Codex `/hooks` trust, Omnigent credential
       only, Antigravity manual).
-- [ ] Status words per plan §H — Needs setup / Connected / Ready / Idle /
+- [x] Status words per plan §H — Needs setup / Connected / Ready / Idle /
       Offline, *Version unknown* — and *Ready* only when the tool's required
       capabilities are evidenced. Another tool's request never ticks this one.
-- [ ] `409 agent_duplicates_need_resolution` routes to the device's
+- [x] `409 agent_duplicates_need_resolution` routes to the device's
       conflicts section. Checkpoint consent offered at the end, default off,
       for tools that have checkpoints. After the first tool, the primary next
       action is *Set up a project*.
-- [ ] Wiring: Devices *+ Add device* / *+ Add tool*, Overview's journey,
+- [x] Wiring: Devices *+ Add device* / *+ Add tool*, Overview's journey,
       Advanced's *Upgrade connection* (`?add=tool&tool=`), and the legacy
       `?tab=connect&agent=` alias open these wizards in v3/preview. A tool
       row's *Reconnect* uses `POST /agents/:id/reconnect` and the same
       command and checks on a paired device; classic is untouched.
-- [ ] Keyboard only, focus moves and returns, dialogs trap focus, both
+- [x] Keyboard only, focus moves and returns, dialogs trap focus, both
       themes, 390 px; loading / error / 403 / session-expired / 409 / expired
       states.
-- [ ] Tests: never *paired* before completion; fingerprint echo sent; no
+- [x] Tests: never *paired* before completion; fingerprint echo sent; no
       secret in DOM, URL or storage; commands carry no secret and no `npx`;
       *Ready* only with evidence; per-tool isolation; classic untouched; a11y.
-- [ ] Screenshots light and dark, desktop and 390 px (first run, pairing
+- [x] Screenshots light and dark, desktop and 390 px (first run, pairing
       wait, fingerprint approve, add-tool command, checks partial, ready) in
       `.polly/evidence/LAI-1061/`.
 
@@ -79,12 +80,24 @@ only shows the commands the plan's CLI contract (§F) names.
 
 - SHELL only, `server/web/` only. Not touched: `cli/`, Advanced and Activity
   (LAI-1058), the master-red test fixes (LAI-1059), classic Connect/Agents.
-- Named cross-area edit (D-033): the `NO_BROWSER_CALLER` entries in
-  `server/web/test/api/endpoint-coverage.test.ts` this slice makes stale —
-  the pairing-request, `devices/*/tools`, `tool-setup/*`,
-  `agents/*/reconnect` and `agents/*/verification` lines. That file is in
-  `server/web/` and SHELL's anyway; named because LAI-1050 and LAI-1056
-  wrote them.
+- Named cross-area edit (D-033): the five `UNPAIRED` rows in
+  `server/test/tooling/response-type-coverage.test.ts` this slice makes stale
+  by pairing them in `view-type-drift.test.ts` — `CreatedPairingView`,
+  `DevicePairingView`, `CreatedToolSetupView`, `ToolSetupView`,
+  `AgentVerificationView`. Nothing else in that file; the device's own views
+  (`PairingClaimView`, `PairingCompleteView`, `ToolRedeemView`) and
+  `ClientReportView`, `CompatibilityBody` stay unpaired.
+- Also stale and removed (SHELL's file, named because LAI-1050 and LAI-1056
+  wrote them): the `NO_BROWSER_CALLER` entries in
+  `server/web/test/api/endpoint-coverage.test.ts` for the pairing requests,
+  `devices/*/tools`, `tool-setup/*`, `agents/*/reconnect` and
+  `agents/*/verification`.
+- LAI-1056 merged into master (e5d64957 / #211) while this was in flight;
+  master was merged in and the client follows its final verification shape
+  (`HARNESS_EVIDENCE` evidence kind, `required_capabilities`,
+  `revokes_on_redeem`). PR base is `master`.
+- The compatibility manifest still serves `features.device_pairing` and
+  `tool_setup_exchange` as `false`; the UI does not gate on them.
 - Belka: one test file at a time, single worker; CI is the full gate.
 - Id: LAI-1060 was taken by the CLI slice minutes before this filing; this
   branch's first local commits said LAI-1060 and were renamed before any
