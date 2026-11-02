@@ -584,7 +584,6 @@ export function AddToolWizard({
             ))}
           </ul>
         )}
-
       </div>
     );
     hint = 'Existing tools and projects are not changed.';
@@ -616,8 +615,7 @@ export function AddToolWizard({
               )}
             </p>
             <p className="dv3w-quiet">
-              {current?.reason ?? 'Not read from the board yet'} · on{' '}
-              {setup.device.display_name}
+              {current?.reason ?? 'Not read from the board yet'} · on {setup.device.display_name}
             </p>
           </div>
         </div>

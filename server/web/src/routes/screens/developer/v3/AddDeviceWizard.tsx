@@ -417,7 +417,9 @@ export function AddDeviceWizard({
                   </span>
                   <span>
                     <strong className="dx-option-name">My computer</strong>
-                    <span className="dx-option-sub">A Mac, Windows or Linux machine you work on</span>
+                    <span className="dx-option-sub">
+                      A Mac, Windows or Linux machine you work on
+                    </span>
                   </span>
                 </label>
                 <label className="dx-option">
@@ -524,8 +526,8 @@ export function AddDeviceWizard({
       <div className="dv3w-stack">
         <NoteBlock tone="accent" title="Device pairing only">
           <p>
-            This gives the device an identity of its own. It does not register Claude Code, Codex
-            or any other tool — you add those next.
+            This gives the device an identity of its own. It does not register Claude Code, Codex or
+            any other tool — you add those next.
           </p>
         </NoteBlock>
         {code === undefined ? (
