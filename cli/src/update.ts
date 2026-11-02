@@ -16,10 +16,13 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { HOOK_HARNESSES, type Harness } from './agent-adapters.ts';
+import { ADAPTERS, HARNESSES, HOOK_HARNESSES, type Harness } from './agent-adapters.ts';
 import { AGENT_MARKER, hookFile } from './agent-hooks.ts';
+import { readCredential } from './agent-session.ts';
 import { USER_CONFIG } from './agents.ts';
 import { normaliseUrl } from './api.ts';
+import { type Helper, reportOutcome, sendClientReport } from './client-report.ts';
+import { boardOriginOf } from './device.ts';
 import {
   type Compatibility,
   displayUrl,
@@ -86,6 +89,13 @@ import { CLI_DIR, tildePath } from './version.ts';
  *    after, and a difference is a failure.
  * 7. **Verify** from the switched checkout. Any failure from 4 on **rolls
  *    back**, each item named.
+ * 8. **Report** (LAI-1068): when the board's manifest says `client_reports`,
+ *    each installed tool credential for this board sends the board one client
+ *    report with its own token, so the Devices tab shows the new version
+ *    without waiting for the tool to reconnect. Version, commit and protocol
+ *    are the **new** checkout's, from its `laika version --json` in step 7 —
+ *    this process is still the old CLI. A report that fails is one line; it
+ *    never changes the exit code and never rolls anything back.
  *
  * ## Putting back never overwrites somebody else's change
  *
@@ -98,8 +108,11 @@ import { CLI_DIR, tildePath } from './version.ts';
  * ## What it never touches
  *
  * `~/.laika/env`, `~/.laika/agents/*`, `~/.laika/device/*`, consent, grants
- * and any repository's instruction files are not opened for writing, copied or
- * printed. The one secret-bearing file it may copy is `~/.claude/settings.json`
+ * and any repository's instruction files are not written, copied or printed.
+ * `~/.laika/agents/*` is the one of them it **opens, read-only**, and only
+ * after a successful update: each credential's URL decides whether it belongs
+ * to this board, and its token goes in that one report's `Authorization`
+ * header to that board (step 8) — nowhere else. The one secret-bearing file it may copy is `~/.claude/settings.json`
  * (when `laika init` put a token there, and only when its hooks are on): the
  * copy is `0600` in a `0700` directory and is deleted on **every** way out —
  * success, refusal, rollback, exception and recovery — except an incomplete
@@ -562,32 +575,45 @@ function laika(
  * and `doctor --offline --json` must run and answer (`0`, `1` or `2` — a
  * finding about this machine is not a broken build).
  */
+type SelfCheck =
+  | { readonly ok: false; readonly problem: string }
+  /** `helper` is what `laika version --json` said, when it said all of it. */
+  | { readonly ok: true; readonly helper: Helper | undefined };
+
+const failed = (problem: string): SelfCheck => ({ ok: false, problem });
+
 function selfCheck(
   run: Runner,
   env: Readonly<Record<string, string | undefined>>,
   home: string,
   checkout: string,
   target: string,
-): string | undefined {
+): SelfCheck {
   const version = laika(run, env, home, checkout, ['version', '--json']);
-  if (version.code !== 0) return `laika version exited ${String(version.code)}`;
-  let commit: unknown;
+  if (version.code !== 0) return failed(`laika version exited ${String(version.code)}`);
+  let said: { version?: unknown; commit?: unknown; protocol?: unknown };
   try {
-    commit = (JSON.parse(version.stdout) as { commit?: unknown }).commit;
+    said = JSON.parse(version.stdout) as typeof said;
   } catch {
-    return 'laika version --json did not print JSON';
+    return failed('laika version --json did not print JSON');
   }
-  if (commit !== target) return `laika version reports commit ${String(commit)}, not ${target}`;
+  if (said.commit !== target) {
+    return failed(`laika version reports commit ${String(said.commit)}, not ${target}`);
+  }
 
   const doctor = laika(run, env, home, checkout, ['doctor', '--offline', '--json']);
-  if (![0, 1, 2].includes(doctor.code)) return `laika doctor exited ${String(doctor.code)}`;
+  if (![0, 1, 2].includes(doctor.code)) return failed(`laika doctor exited ${String(doctor.code)}`);
   try {
     const body = JSON.parse(doctor.stdout) as { checks?: unknown };
-    if (!Array.isArray(body.checks)) return 'laika doctor --json printed no checks';
+    if (!Array.isArray(body.checks)) return failed('laika doctor --json printed no checks');
   } catch {
-    return 'laika doctor --json did not print JSON';
+    return failed('laika doctor --json did not print JSON');
   }
-  return undefined;
+  const helper =
+    typeof said.version === 'string' && typeof said.protocol === 'number'
+      ? { version: said.version, commit: target, protocol: said.protocol }
+      : undefined;
+  return { ok: true, helper };
 }
 
 function runtimeDependencies(checkout: string): string[] {
@@ -1044,7 +1070,7 @@ async function go(
     io.out('  7. check the result, and roll everything back if anything failed');
     io.out('');
     io.out(
-      'Never touched: ~/.laika/env, ~/.laika/agents/, ~/.laika/device/, MCP entries, consent, grants.',
+      'Never written: ~/.laika/env, ~/.laika/agents/, ~/.laika/device/, MCP entries, consent, grants.',
     );
     if (target.transport === 'http' && !options.allowHttp) {
       io.out('');
@@ -1099,6 +1125,8 @@ async function go(
     branch,
     target: target.commit,
     hookHarnesses,
+    board: target.board,
+    clientReports: target.body.features.client_reports === true,
   });
 }
 
@@ -1109,10 +1137,45 @@ interface SwitchPlan {
   readonly branch: string | null;
   readonly target: string;
   readonly hookHarnesses: readonly Harness[];
+  /** The board the target came from, and whether its manifest takes client reports. */
+  readonly board: string;
+  readonly clientReports: boolean;
 }
 
-/** Steps 3–7: marker first, then backup, stage, switch, refresh, verify. */
-function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): number {
+const problemOf = (check: SelfCheck): string | undefined => (check.ok ? undefined : check.problem);
+
+/**
+ * Step 8: one client report per installed tool credential whose board is this
+ * one, with that credential's own token. Never fails the update: every
+ * outcome is a line, and a throw is caught here.
+ */
+async function reportUpdate(io: UpdateIo, board: string, helper: Helper): Promise<void> {
+  const origin = boardOriginOf(board);
+  for (const harness of HARNESSES) {
+    // `{}`: the saved file only, never a token from this process's environment.
+    const saved = readCredential(io.home, harness, {});
+    if (saved === undefined || urlProblem(saved.url) !== undefined) continue;
+    if (origin === undefined || boardOriginOf(saved.url) !== origin) continue;
+    const name = ADAPTERS[harness].name;
+    let outcome: string;
+    try {
+      const hooks = ADAPTERS[harness].hooks && hooksOn(io.home, harness);
+      outcome = reportOutcome(
+        await sendClientReport(io, normaliseUrl(saved.url), saved.token, helper, hooks),
+      );
+    } catch {
+      outcome = 'failed';
+    }
+    io.out(
+      outcome === 'sent'
+        ? `  ✓ told the board ${name} now runs ${helper.commit === null ? helper.version : helper.commit.slice(0, 7)}`
+        : `  · could not tell the board ${name}'s new version (${outcome}); the update stands`,
+    );
+  }
+}
+
+/** Steps 3–8: marker first, then backup, stage, switch, refresh, verify, report. */
+async function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): Promise<number> {
   const stamp = (io.now?.() ?? new Date()).toISOString().replace(/[:.]/g, '-');
   const backup = join(updateDir(io.home), stamp);
   mkdirSync(backup, { recursive: true, mode: 0o700 });
@@ -1172,7 +1235,7 @@ function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): number {
     const staged =
       deps.length > 0
         ? `the target needs runtime dependencies installed (${deps.join(', ')}), which laika update does not do yet`
-        : selfCheck(run, io.env, io.home, state.staging, p.target);
+        : problemOf(selfCheck(run, io.env, io.home, state.staging, p.target));
     if (staged !== undefined) {
       const left = removeStaging(git, state.staging);
       io.err(`  ! the staging self-check failed: ${staged}`);
@@ -1233,10 +1296,11 @@ function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): number {
     }
 
     // Verify from the switched checkout.
+    let helper: Helper | undefined;
     if (failures.length === 0) {
       const verified = selfCheck(run, io.env, io.home, p.checkout, p.target);
-      if (verified !== undefined)
-        failures.push(`the switched checkout failed its check: ${verified}`);
+      if (verified.ok) helper = verified.helper;
+      else failures.push(`the switched checkout failed its check: ${verified.problem}`);
     }
 
     if (failures.length > 0) {
@@ -1265,6 +1329,7 @@ function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): number {
     const left = removeStaging(git, state.staging);
     if (left !== undefined) io.out(`  · ${left}`);
     io.out('  ✓ the switched checkout passes laika version and laika doctor --offline');
+    if (p.clientReports && helper !== undefined) await reportUpdate(io, p.board, helper);
     io.out('');
     io.out(
       `Updated: ${p.shown} is at ${p.target.slice(0, 7)}, the commit the board was built from.`,
