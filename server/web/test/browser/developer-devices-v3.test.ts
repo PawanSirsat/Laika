@@ -185,6 +185,8 @@ function stub(mode: Mode, devices: readonly Device[], over: ApiStub = {}): ApiSt
   for (const a of agents) {
     perAgent[`/api/v1/agents/${a.id}/checkpoint-consent`] = NO_CONSENT;
     perAgent[`/api/v1/agents/${a.id}`] = { ...a, sessions: [] };
+    // No client report: the row's helper status is *Version unknown* (LAI-1065).
+    perAgent[`/api/v1/agents/${a.id}/verification`] = { agent_id: a.id, client_report: null };
   }
   return {
     '/api/v1/me': ME,
@@ -259,12 +261,12 @@ void describe('V3 Devices: what the server sent, and nothing else', () => {
       await ready(h.page);
       assert.equal(await tool(h.page, 'a1').getAttribute('data-status'), 'connected');
       assert.match(
-        await tool(h.page, 'a1').locator('.status-chip').innerText(),
+        await tool(h.page, 'a1').locator('.dv3-tool-main .status-chip').innerText(),
         /Connected[\s\S]*Seen/,
       );
       assert.equal(await tool(h.page, 'a5').getAttribute('data-status'), 'needs-setup');
       assert.match(
-        await tool(h.page, 'a5').locator('.status-chip').innerText(),
+        await tool(h.page, 'a5').locator('.dv3-tool-main .status-chip').innerText(),
         /Needs setup[\s\S]*never used/,
       );
       assert.equal(await h.page.locator('.dv3-tool[data-status="connected"]').count(), 1);
