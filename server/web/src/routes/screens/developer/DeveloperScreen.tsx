@@ -1,10 +1,10 @@
-import { useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { EmbeddedScreen, ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { PageTabs } from '../../../components/PageTabs.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import { useGates } from '../../../api/permissions.ts';
 import type { DeveloperAccessMode } from '../../../api/developer-compat.ts';
-import { isV3OnlyTab, type PageTab } from '../../page-tabs.ts';
+import { ADVANCED_ACTIVITY_SECTION, isV3OnlyTab, type PageTab } from '../../page-tabs.ts';
 import { ConnectScreen } from '../connect/ConnectScreen.tsx';
 import { ShareActivity } from '../connect/ShareActivity.tsx';
 import { TokensScreen } from '../tokens/TokensScreen.tsx';
@@ -16,6 +16,7 @@ import { OverviewTab } from './v3/OverviewTab.tsx';
 import { ProjectSetupTab } from './v3/ProjectSetupTab.tsx';
 import './developer.css';
 import './v3/v3.css';
+import './v3/design.css';
 
 /**
  * In `preview`, Project setup's new flow is one query away from the classic
@@ -23,6 +24,10 @@ import './v3/v3.css';
  */
 const PREVIEW_SETUP = 'v3';
 const PREVIEW_SETUP_HREF = `/developer?tab=projects&setup=${PREVIEW_SETUP}`;
+
+/** The page's sentence in the owner's design (LAI-1078). */
+const V3_DESCRIPTION =
+  'Pair your computer once, connect your coding tools, then set up each project repository. Project setup is where work becomes connected.';
 
 export interface DeveloperScreenProps {
   /** How this deployment shows the page (LAI-1048); `classic` is today's. */
@@ -62,9 +67,10 @@ export interface DeveloperScreenProps {
  * - **`preview`** keeps it, Connect still the default, and adds Overview,
  *   Devices and Advanced after the classic tabs, each marked *Preview*, with
  *   a banner on Connect pointing at them and one on each saying it is one.
- * - **`v3`** is Overview · Project setup · Devices · Activity · Advanced,
- *   Overview first. The old tab ids are aliases (`developerAlias`), applied
- *   before this renders.
+ * - **`v3`** is Overview · Project setup · Devices · Advanced, Overview
+ *   first, in the owner's design (LAI-1078). The old tab ids are aliases
+ *   (`developerAlias`), applied before this renders; *Activity* is the second
+ *   card on Advanced, and `?section=activity` scrolls to it.
  *
  * `projects` and `activity` are one id in every mode, so they render the same
  * content everywhere: Project setup re-hosts Projects, Activity moves as is.
@@ -99,7 +105,7 @@ export function DeveloperScreen({
         title="Developer access"
         description={
           v3Here
-            ? 'Connect your devices and coding tools to this board, then set up each project repository.'
+            ? V3_DESCRIPTION
             : 'A token lets a tool act as you — point your coding agent at this board, or call the API. It carries your permissions, so treat it like your password.'
         }
         onActionsSlot={setSlot}
@@ -173,10 +179,18 @@ export function DeveloperScreen({
         />
       )}
       {current === 'advanced' && (
-        <div className="dev-body">
+        <div className="dx dev-advanced-page">
           <div className="dev-card dev-tokens dev-advanced">
             <AdvancedTab me={me} onNavigate={onNavigate} />
           </div>
+          {mode === 'v3' && (
+            <ActivityCard
+              v3
+              canSetInsights={gates.org('org.developer_insights.set')}
+              origin={origin}
+              focus={params.get('section') === ADVANCED_ACTIVITY_SECTION}
+            />
+          )}
         </div>
       )}
       {current === 'connect' && (
@@ -204,21 +218,12 @@ export function DeveloperScreen({
         ))}
       {current === 'activity' && (
         <div className="dev-body">
-          <section className="dev-card dev-sharing" aria-labelledby="dev-sharing-title">
-            <div className="dev-card-head">
-              <h2 className="dev-card-title" id="dev-sharing-title">
-                Share local activity
-              </h2>
-              <span className="conn-chip conn-chip-scope">
-                {mode === 'v3' ? 'Once per device' : 'Once per machine'}
-              </span>
-            </div>
-            <ShareActivity
-              canSetInsights={gates.org('org.developer_insights.set')}
-              origin={origin}
-              {...(mode === 'v3' ? { setupTabName: 'Project setup' } : {})}
-            />
-          </section>
+          <ActivityCard
+            v3={mode === 'v3'}
+            canSetInsights={gates.org('org.developer_insights.set')}
+            origin={origin}
+            focus={false}
+          />
         </div>
       )}
       {current === 'tokens' && (
@@ -231,5 +236,56 @@ export function DeveloperScreen({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * *Share local activity* (D-079, D-102 amended): its own tab in classic and
+ * preview, and Advanced's second card in `v3` (LAI-1078), where an address
+ * naming it (`?section=activity`, which the old `?tab=activity` becomes)
+ * scrolls it into view and puts focus on its title.
+ */
+function ActivityCard({
+  v3,
+  canSetInsights,
+  origin,
+  focus,
+}: {
+  readonly v3: boolean;
+  readonly canSetInsights: boolean;
+  readonly origin: string;
+  readonly focus: boolean;
+}) {
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    if (!focus) return;
+    titleRef.current?.scrollIntoView({ block: 'start' });
+    titleRef.current?.focus({ preventScroll: true });
+  }, [focus]);
+  return (
+    <section
+      className="dev-card dev-sharing"
+      aria-labelledby="dev-sharing-title"
+      id={v3 ? ADVANCED_ACTIVITY_SECTION : undefined}
+    >
+      <div className="dev-card-head">
+        <h2
+          className="dev-card-title"
+          id="dev-sharing-title"
+          ref={titleRef}
+          tabIndex={v3 ? -1 : undefined}
+        >
+          Share local activity
+        </h2>
+        <span className="conn-chip conn-chip-scope">
+          {v3 ? 'Once per device' : 'Once per machine'}
+        </span>
+      </div>
+      <ShareActivity
+        canSetInsights={canSetInsights}
+        origin={origin}
+        {...(v3 ? { setupTabName: 'Project setup' } : {})}
+      />
+    </section>
   );
 }
