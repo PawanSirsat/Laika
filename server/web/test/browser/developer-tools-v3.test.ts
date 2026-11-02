@@ -114,7 +114,7 @@ const agentRow = (
   grants,
   tokens: [token(id)],
   created_at: 1,
-  revoked_at: null,
+  revoked_at: null as number | null,
   last_seen_at: seen,
 });
 
