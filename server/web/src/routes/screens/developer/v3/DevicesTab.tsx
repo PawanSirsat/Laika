@@ -2,7 +2,6 @@ import type { Ref } from 'react';
 import type { Device } from '../../../../api/devices.ts';
 import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../../components/LoadingState.tsx';
-import { DesignChip } from './DesignChip.tsx';
 import { DxIcon } from './DxIcon.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
@@ -13,10 +12,13 @@ import {
   deviceLine,
   deviceLive,
   everyDeviceRevoked,
+  needsConfirm,
   revokedDevice,
   type DeviceCounts,
 } from './devices-view.ts';
+import { HintChip, StatusLegendLink } from './StatusLegend.tsx';
 import { BoardUpdateNote, DeviceVersionChip } from './ToolUpdate.tsx';
+import { deviceChipDescription, deviceChipKey } from './status-vocabulary.ts';
 
 export const DEVICES_TITLE = 'dv3-devices-title';
 
@@ -87,16 +89,19 @@ export function DevicesTab({
         titleId={DEVICES_TITLE}
         sub="A device is your computer. Add it once; then add its coding tools."
         actions={
-          canManage && !wizard ? (
-            <button
-              type="button"
-              ref={addButton}
-              className="dx-btn dx-btn-primary"
-              onClick={onAddDevice}
-            >
-              + Add device
-            </button>
-          ) : undefined
+          <>
+            <StatusLegendLink from="devices" />
+            {canManage && !wizard && (
+              <button
+                type="button"
+                ref={addButton}
+                className="dx-btn dx-btn-primary"
+                onClick={onAddDevice}
+              >
+                + Add device
+              </button>
+            )}
+          </>
         }
       />
 
@@ -237,9 +242,20 @@ function DeviceRecord({
         </span>
       </div>
       <div className="dx-record-end">
-        <DesignChip tone={chip.tone}>{chip.word}</DesignChip>
+        <span data-device-chip={deviceChipKey(device, needsConfirm(device))}>
+          <HintChip
+            word={chip.word}
+            tone={chip.tone}
+            description={deviceChipDescription(
+              device,
+              deviceChipKey(device, needsConfirm(device)),
+              now,
+            )}
+          />
+        </span>
         {device.status === 'active' && (
           <DeviceVersionChip
+            name={device.display_name}
             agentIds={device.agents
               .filter((agent) => agent.status === 'active')
               .map((agent) => agent.id)}

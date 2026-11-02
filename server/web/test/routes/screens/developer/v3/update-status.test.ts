@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  AFTER_UPDATE,
   boardBehindNote,
   type ClientReport,
   deviceUpdateSummary,
@@ -657,5 +658,13 @@ void describe('reportedHelper — the version a tool reported (LAI-1083)', () =>
     assert.equal(reportedHelper(null), undefined);
     assert.equal(reportedHelper('failed'), undefined);
     assert.equal(reportedHelper(undefined), undefined);
+  });
+});
+
+void describe('after the update (review round 1, N4)', () => {
+  void test('laika update sends the version report, even when current (LAI-1085); so does reconnecting', () => {
+    assert.match(AFTER_UPDATE, /laika doctor/);
+    assert.match(AFTER_UPDATE, /laika update sends that report, even when it is already current/);
+    assert.match(AFTER_UPDATE, /so does reconnecting the tool/);
   });
 });

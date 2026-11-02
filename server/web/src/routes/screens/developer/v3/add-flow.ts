@@ -29,6 +29,12 @@ export interface Bootstrap {
   readonly text: string;
   /** Said under the block when the board does not know its own commit. */
   readonly versionNote: string | undefined;
+  /**
+   * The device already has a helper: it must be brought up to date before it
+   * pairs, by the *Update your Laika CLI* guide the step shows above the
+   * block — not by a command in it (review round 1, N3).
+   */
+  readonly updateFirst: boolean;
 }
 
 /**
@@ -39,7 +45,11 @@ export interface Bootstrap {
  *   link the helper without asking for any token (`--no-credential`), then
  *   pair — through the checkout's own `laika`, since the shell that ran the
  *   installer has not re-read its `PATH` yet.
- * - **Installed**: update the helper to the board's commit, then pair.
+ * - **Installed**: the pair command alone, with `updateFirst`. A helper old
+ *   enough to need updating may have no `laika update` either (#200, #207) —
+ *   `git -C ~/laika fetch && laika update` failed on exactly the CLI that
+ *   needed it, and named no `--board` or `--allow-http` — so the update is the
+ *   guide's, which covers a CLI with or without it (review round 1, N3).
  */
 export function bootstrapCommands(
   source: CliSource | undefined,
@@ -47,10 +57,7 @@ export function bootstrapCommands(
   installed: boolean,
 ): Bootstrap {
   if (installed) {
-    return {
-      text: [`git -C ${CHECKOUT} fetch && laika update`, pairCommand].join('\n'),
-      versionNote: undefined,
-    };
+    return { text: pairCommand, versionNote: undefined, updateFirst: true };
   }
   const pair = pairCommand.startsWith('laika ')
     ? `${CHECKOUT}/cli/bin/${pairCommand}`
@@ -61,6 +68,7 @@ export function bootstrapCommands(
       text: pair,
       versionNote:
         'This board does not say where its helper comes from, so only the pairing line is shown. Install the helper from your Laika repository first.',
+      updateFirst: false,
     };
   }
   const clone =
@@ -73,6 +81,7 @@ export function bootstrapCommands(
       source.commit === null
         ? `Version unknown: this board does not know which commit it was built from. Keep the helper current with \`git -C ${CHECKOUT} pull\`.`
         : undefined,
+    updateFirst: false,
   };
 }
 

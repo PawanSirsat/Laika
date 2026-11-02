@@ -591,10 +591,15 @@ void describe('V3 Devices: conflicts and revoked', () => {
       await tool(h.page, 'a4').waitFor({ timeout: 5_000 });
       await tool(h.page, 'a9').waitFor({ timeout: 5_000 });
       assert.equal(await tool(h.page, 'a4').getAttribute('data-status'), 'revoked');
-      // A revoked row offers its details and nothing else.
+      // A revoked row offers its details and nothing else. Its status chip is a
+      // button too, one that only explains the status (LAI-1086), never an action.
+      assert.equal(
+        await tool(h.page, 'a4').getByRole('button', { name: 'Revoked', exact: true }).count(),
+        1,
+      );
       assert.deepEqual(
         await tool(h.page, 'a4')
-          .locator('button, a')
+          .locator('button:not(.dv3-hint-anchor), a')
           .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label'))),
         ['Details for Cursor · Belka'],
       );
