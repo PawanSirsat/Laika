@@ -46,6 +46,15 @@ Run the gate first.
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 
+/** `text` with any run of whitespace between its words, so a re-wrap cannot fail it. */
+const phrase = (text: string) =>
+  new RegExp(
+    text
+      .split(/\s+/)
+      .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('\\s+'),
+  );
+
 void describe('the revision-2 block', () => {
   void test('keeps the BLOCK_MARKER line byte-identical, on line 3 of the block proper', () => {
     const lines = BLOCK.split('\n');
@@ -209,52 +218,132 @@ void describe('the Project setup prompt', () => {
     assert.match(prompt, /do not edit any MCP configuration/);
   });
 
-  void test('before it appends, it looks for a hand-written Laika section and asks (LAI-1084)', () => {
+  /** The text between two markers of the prompt, both required. */
+  const between = (from: RegExp, to: RegExp) => {
+    const a = prompt.search(from);
+    const b = prompt.search(to);
+    assert.ok(a !== -1 && b > a, `${String(from)} … ${String(to)} not found in order`);
+    return prompt.slice(a, b);
+  };
+
+  void test('a hand-written Laika section is clearly about the board, never a mention (LAI-1084)', () => {
     // OnRoute's CLAUDE.md had `## Laika board ritual`: no markers, no
     // BLOCK_MARKER line. The prompt appended a second block beside it.
-    const look = prompt.indexOf(
-      'look for a section someone wrote by\n   hand about this Laika board',
+    const definition = between(/A hand-written Laika section has/, /^1\. Read/m);
+    assert.match(
+      definition,
+      phrase('A hand-written Laika section has no Laika markers and is clearly about the Laika board'),
     );
-    const append = prompt.indexOf('append the block below');
-    assert.ok(look !== -1, 'the detection step is missing');
-    assert.ok(look < append, 'it must look before it appends');
-    const step = prompt.slice(look, append);
     for (const sign of [
-      'a heading that mentions\n   Laika',
-      'laika_whoami',
-      'get_project_context',
-      'start_working',
-      'finish_task',
-      ORIGIN,
-      '`ONR-42`',
+      phrase('its heading names Laika'),
+      /laika_whoami/,
+      /get_project_context/,
+      /start_working/,
+      /finish_task/,
+      phrase(ORIGIN),
+      phrase('task keys like `ONR-42`'),
     ]) {
-      assert.ok(step.includes(sign), `it names ${sign}`);
+      assert.match(definition, sign);
     }
-    assert.match(step, /show it to me and offer to replace\s+that whole section/);
-    assert.match(step, /Ask which of its\s+lines I want to keep/);
-    assert.match(step, /Show me the diff and wait for me to confirm/);
-    assert.match(step, /If I\s+say no, change nothing and stop/);
-    assert.match(prompt, /Never add a second Laika section to a file that has one/);
-    assert.match(prompt, /replaced a hand-written Laika section/);
+    // A mention under a heading about something else is asked about, not replaced.
+    assert.match(
+      definition,
+      phrase('Mentions inside a section whose heading is about something else'),
+    );
+    assert.match(definition, phrase('show me those lines and ask what I want done with them'));
+    assert.match(
+      definition,
+      phrase('never replace a section whose heading is about something else'),
+    );
+  });
+
+  void test('the opening names the one thing besides the block it may change (LAI-1084)', () => {
+    assert.match(
+      prompt,
+      phrase(
+        'Only the Laika block in that file, or, with my confirmation, a hand-written Laika section, is yours to change; everything else in it belongs to the people who wrote it.',
+      ),
+    );
+  });
+
+  void test('before it appends, it offers to replace every hand-written section, and waits', () => {
+    const step = between(/^4\. Otherwise, before you append/m, /^5\. /m);
+    assert.match(step, phrase('look for hand-written Laika sections'));
+    assert.match(step, phrase('If you find one or more, show me each one'));
+    assert.match(step, phrase('replace the first with the block below and fold the others into it'));
+    assert.match(
+      step,
+      phrase('Ask which of their lines I want to keep, show me the diff and wait for me to confirm.'),
+    );
+    assert.match(step, phrase('If I say a section is not about this board, leave it as it is'));
+    assert.ok(
+      prompt.search(/^4\. /m) < prompt.search(phrase('append the block below at the end')),
+      'it must look before it appends',
+    );
+    assert.match(prompt, phrase('Never add a second Laika section to a file that has one.'));
+  });
+
+  void test('a current block beside a hand-written section is offered the fold first (LAI-1084)', () => {
+    // OnRoute today: a current marked block *and* its old hand-written section.
+    const step = between(/^2\. If it has a marked Laika block/m, /^3\. /m);
+    const fold = step.search(phrase('offer to fold it into the block and remove the duplicate'));
+    const stop = step.search(phrase('If there are none, tell me it is up to date and stop.'));
+    assert.match(
+      step,
+      phrase(
+        'it is already up to date. Before you tell me so, look for hand-written Laika sections elsewhere in the file. For each one',
+      ),
+    );
+    assert.ok(fold !== -1 && stop > fold, 'the fold is offered before it stops as up to date');
+    assert.match(step, phrase('show me the diff and wait for me to confirm'));
+    // An older block being replaced offers the same, in one diff.
+    assert.match(
+      between(/^3\. /m, /^4\. /m),
+      phrase('Offer, in the same diff, to fold any hand-written Laika section elsewhere'),
+    );
+    // Lines kept, never a second Laika heading.
+    assert.match(prompt, phrase('keep lines, not headings'));
+    assert.match(
+      prompt,
+      phrase(
+        "drop the section's old Laika heading unless I ask for it, so the file ends up with one Laika heading.",
+      ),
+    );
+  });
+
+  void test('a no changes nothing, and every outcome has its own words', () => {
+    assert.match(prompt, phrase('If I say no to a change you offered, change nothing at all.'));
+    const report = between(/^9\. Report in one line/m, /--- begin block ---/);
+    for (const outcome of [
+      'created the file',
+      'appended the block',
+      'updated it from revision N',
+      'replaced a hand-written Laika section',
+      'folded N hand-written Laika sections into the block',
+      'already up to date',
+      'you said no and I changed nothing',
+    ]) {
+      assert.match(report, phrase(outcome));
+    }
   });
 
   void test('and it gave up none of the guarantees it had before LAI-1084', () => {
+    // Quoted from the prompt as it was before LAI-1084 (ec91f053), matched
+    // across any re-wrap. Two of its phrases changed on purpose: "Only the
+    // Laika block … is yours to change" now names the confirmed exception,
+    // and "up to date: tell me so and stop" now looks for a duplicate first.
     for (const guarantee of [
-      // Inspect first; only the Laika block is the tool's to change.
-      /Read \.\/CLAUDE\.md first\. Do not assume what is in it\./,
-      /Only the Laika block in that file is\s+yours to change/,
-      // Up to date: this revision, this project, this prefix — unchanged.
-      /whose begin line says a revision of\s+2 or more and project=onroute, and whose task keys look like\s+`ONR-42`, it is already up to date: tell me so and stop\./,
-      // A marked or revision-1 block: shown as a diff, confirmed, replaced alone.
-      /show me the exact old and new text\s+as a diff and wait for me to confirm\. Then replace only that block\./,
-      /keeping everything already in the file\. Create the file only if it\s+does not exist\./,
-      // No token, no install, no MCP config, no commit, nothing else.
-      /Change nothing else\./,
-      /It contains no token and must never gain one/,
-      /do not ask me for one/,
-      /Do not install, reinstall or update Laika, do not pair\s+a device, do not edit any MCP configuration, and do not commit or push/,
+      'Read ./CLAUDE.md first. Do not assume what is in it.',
+      'everything else in it belongs to the people who wrote it.',
+      'a line starting "<!-- laika:begin" and a later "<!-- laika:end -->" line',
+      'whose begin line says a revision of 2 or more and project=onroute, and whose task keys look like `ONR-42`, it is already up to date',
+      'show me the exact old and new text as a diff and wait for me to confirm. Then replace only that block.',
+      'If I edited lines inside the old block, point them out in the diff so I can keep them.',
+      'keeping everything already in the file. Create the file only if it does not exist.',
+      'Copy the block exactly. It contains no token and must never gain one: do not add a token, key or password anywhere, and do not ask me for one.',
+      'Change nothing else. Do not install, reinstall or update Laika, do not pair a device, do not edit any MCP configuration, and do not commit or push: I will review the change myself.',
     ]) {
-      assert.match(prompt, guarantee);
+      assert.match(prompt, phrase(guarantee));
     }
   });
 
