@@ -4,16 +4,23 @@
  *
  * - Every old address of plan §C lands where that mode says, as a `replace`
  *   (history does not grow), with the rest of the query kept.
- * - The Overview is worked out from `/agents/devices` alone: first run, a
- *   half-finished tool, and a returning reader with no funnel.
- * - Its states: loading, error, `403`, and an expired session.
- * - Keyboard only, a phone's width in both themes, and the wizard parts drawn
- *   with Connect's sheet.
+ * - The Overview is worked out from `GET /devices` — the Devices tab's read —
+ *   and the reader's setup records (LAI-1079): one next step per state, the
+ *   journey, the connection status and the repository setups.
+ * - Its states: an error for either read, `403`, and an expired session.
+ * - Keyboard only, a phone's width in both themes, and the Overview drawn
+ *   with the design kit's sheet.
  */
 
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
+import {
+  OVERVIEW_ADDRESSES,
+  toolAddress,
+} from '../../src/routes/screens/developer/v3/overview-state.ts';
 import { closeBrowser, open, refuse, setTheme, type ApiStub, type Harness } from './harness.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
@@ -138,6 +145,8 @@ function stub(mode: Mode | 'absent', agents: readonly Agent[] = [], over: ApiStu
     '/api/v1/agents': { data: agents, next_cursor: null },
     '/api/v1/agents/devices': { data: devicesOf(agents) },
     '/api/v1/devices': { data: v3DevicesOf(agents) },
+    // The reader's setup records across every project (LAI-1077): none.
+    '/api/v1/project-setups': { data: [] },
     '/api/v1/org': {
       id: 'org1',
       name: 'Kvell Dynamics',
@@ -397,127 +406,491 @@ void describe('the tab bars (plan §I)', () => {
   });
 });
 
-void describe('the Overview (LAI-1048)', () => {
-  void test('first run: three steps, the first current, and Continue opens the wizard', async () => {
-    const h = await open('/developer', stub('v3'));
+/*
+ * The Overview's fixtures (LAI-1079). `GET /devices` as the server answers
+ * it — a paired device may have no tool at all, which `v3DevicesOf` cannot
+ * say — tools with a live credential where they are meant to be connected,
+ * and the reader's setup records across every project (`GET /project-setups`
+ * with no project, LAI-1077).
+ */
+const LIVE_TOKEN = {
+  id: 't1',
+  name: 'agent',
+  prefix: 'lai_abcd',
+  scope: 'full',
+  project_ids: null,
+  last_used_at: null,
+  last_mcp_at: null,
+  last_client: null,
+  last_client_name: null,
+  kind: 'agent',
+  agent_id: null as string | null,
+  agent_label: null,
+  expires_at: null,
+  revoked_at: null,
+  created_at: 1,
+};
+
+type Tool = Omit<Agent, 'tokens'> & { tokens: (typeof LIVE_TOKEN)[] };
+
+/** A tool on the board: a live credential, seen a minute ago unless `last_seen_at` says not. */
+const tool = (over: Partial<AgentRow> & { id: string }): Tool => ({
+  ...agentRow({ last_seen_at: Date.now() - 60_000, ...over }),
+  tokens: [{ ...LIVE_TOKEN, id: `t-${over.id}`, agent_id: over.id }],
+});
+
+const deviceRow = (
+  id: string,
+  name: string,
+  tools: readonly Tool[],
+  origin: 'paired' | 'imported' = 'paired',
+) => {
+  const active = tools.filter((t) => t.status === 'active').length;
+  return {
+    id,
+    display_name: name,
+    device_label: name.toLowerCase(),
+    kind: 'local',
+    origin,
+    status: 'active',
+    confirmed: true,
+    confirmed_at: 1,
+    paired_at: origin === 'paired' ? 1 : null,
+    key_fingerprint: null,
+    last_seen_at: null,
+    active_count: active,
+    revoked_count: tools.length - active,
+    agents: tools,
+    created_at: 1,
+    revoked_at: null,
+  };
+};
+
+type DeviceRow = ReturnType<typeof deviceRow>;
+
+const setupRecord = (over: Record<string, unknown> & { id: string }) => ({
+  agent_id: 'a1',
+  device_label: 'Belka',
+  project_id: 'p1',
+  project_slug: 'onroute',
+  repo_label: null,
+  instructions_path: 'CLAUDE.md',
+  block_found: true,
+  template_revision: 2,
+  project_match: null,
+  prefix_match: null,
+  source: 'self_reported_browser',
+  checked_at: Date.now() - 60_000,
+  ...over,
+});
+
+const localCheck = (over: Record<string, unknown> & { id: string }) =>
+  setupRecord({
+    source: 'local_check',
+    repo_label: 'onroute-app',
+    project_match: true,
+    prefix_match: true,
+    ...over,
+  });
+
+/** The v3 stub, with these devices and setup records. */
+function overview(
+  devices: readonly DeviceRow[],
+  setups: readonly ReturnType<typeof setupRecord>[] = [],
+  over: ApiStub = {},
+): ApiStub {
+  return stub('v3', [], {
+    '/api/v1/devices': { data: devices },
+    '/api/v1/project-setups': { data: setups },
+    ...over,
+  });
+}
+
+/** Each state the hero has (LAI-1079), as the evidence run and the 390 checks draw it. */
+const STATES = {
+  fresh: () => overview([]),
+  'device-only': () => overview([deviceRow('d1', 'Belka', [])]),
+  'tool-never-seen': () =>
+    overview([
+      deviceRow('d1', 'Belka', [tool({ id: 'a1', harness: 'codex', last_seen_at: null })]),
+    ]),
+  'connected-no-setup': () =>
+    overview(
+      [
+        deviceRow('d1', 'Belka', [
+          tool({ id: 'a1', harness: 'omnigent', grants: [{ project_id: 'p1', scope: 'full' }] }),
+        ]),
+        deviceRow(
+          'd2',
+          'Strelka',
+          [
+            tool({
+              id: 'a2',
+              harness: 'codex',
+              device_label: 'Strelka',
+              last_seen_at: null,
+              created_at: 2,
+            }),
+            tool({ id: 'a3', device_label: 'Strelka', last_seen_at: null, created_at: 3 }),
+          ],
+          'imported',
+        ),
+      ],
+      [],
+    ),
+  'all-done': () =>
+    overview(
+      [
+        deviceRow('d1', 'Belka', [
+          tool({ id: 'a1', grants: [{ project_id: 'p1', scope: 'full' }] }),
+          tool({
+            id: 'a2',
+            harness: 'codex',
+            created_at: 2,
+            grants: [{ project_id: 'p1', scope: 'full' }],
+          }),
+        ]),
+      ],
+      [
+        localCheck({ id: 's1' }),
+        setupRecord({ id: 's2', agent_id: 'a2', instructions_path: 'AGENTS.md' }),
+        localCheck({
+          id: 's3',
+          project_id: 'p2',
+          project_slug: 'atlas',
+          repo_label: 'atlas-web',
+          template_revision: 1,
+        }),
+      ],
+    ),
+} as const;
+
+type OverviewStateName = keyof typeof STATES;
+
+const hero = (page: Page) => page.locator('[data-testid="dev-overview"] .dx-hero');
+
+/** The hero, once it has drawn: its kind, eyebrow, title and links. */
+async function readHero(page: Page) {
+  const h = hero(page);
+  await h.waitFor({ timeout: 20_000 });
+  const links = await h
+    .locator('.dx-actions a')
+    .evaluateAll((els) => els.map((el) => [el.textContent ?? '', el.getAttribute('href') ?? '']));
+  return {
+    kind: (await h.getAttribute('data-hero')) ?? '',
+    eyebrow: await h.locator('.dx-eyebrow').innerText(),
+    title: await h.locator('.dx-hero-title').innerText(),
+    links,
+  };
+}
+
+/** The journey's rows: step, state, the line, and its one action. */
+async function readJourney(page: Page) {
+  const card = page.locator('[data-journey]');
+  return {
+    chip: await card.locator('.dx-card-head .dx-chip').innerText(),
+    rows: await card.locator('.dx-flow-row').evaluateAll((els) =>
+      els.map((el) => {
+        const action = el.querySelector('.dx-btn');
+        return {
+          step: el.getAttribute('data-step') ?? '',
+          state: el.getAttribute('data-state') ?? '',
+          line: el.querySelector('.dx-flow-line')?.textContent ?? '',
+          action: action?.childNodes[0]?.textContent ?? '',
+          href: action?.getAttribute('href') ?? null,
+          disabled: action instanceof HTMLButtonElement ? action.disabled : false,
+          why: action?.getAttribute('title') ?? null,
+        };
+      }),
+    ),
+  };
+}
+
+/** Connection status, row by row: what is counted, the names, the chip. */
+const readStatus = (page: Page) =>
+  page
+    .locator('[data-status] .dx-stat')
+    .evaluateAll((els) =>
+      els.map((el) =>
+        [
+          el.getAttribute('data-stat') ?? '',
+          el.querySelector('.dx-stat-count')?.textContent ?? '',
+          el.querySelector('.dx-stat-names')?.textContent ?? '',
+          el.querySelector('.dx-chip')?.textContent ?? '',
+        ].join(' | '),
+      ),
+    );
+
+/** Your repository setups, row by row: title, line and chip — or the action on the first. */
+const readSetups = (page: Page) =>
+  page
+    .locator('[data-setups] .dx-record')
+    .evaluateAll((els) =>
+      els.map((el) =>
+        [
+          el.getAttribute('data-setup') ?? '',
+          el.querySelector('.dx-record-title')?.textContent ?? '',
+          el.querySelector('.dx-record-sub')?.textContent ?? '',
+          el.querySelector('.dx-chip')?.textContent ??
+            `${el.querySelector('a')?.textContent ?? ''} ${el.querySelector('a')?.getAttribute('href') ?? ''}`,
+        ].join(' | '),
+      ),
+    );
+
+/** Where *Manage tools* goes. */
+const TOOLS_HREF = OVERVIEW_ADDRESSES.tools;
+
+const NEW_SETUP_ROW =
+  'new | Set up a new repository | Choose a Laika project and one of your tools, then copy the prompt into it. | Set up repository → /developer?tab=projects';
+
+void describe('the Overview (LAI-1048, LAI-1079)', () => {
+  void test('fresh: start here, add a device — by keyboard — and nothing else is offered yet', async () => {
+    const h = await open('/developer', STATES.fresh());
     try {
-      const rail = h.page.getByRole('navigation', { name: 'Getting started' });
-      await rail.waitFor({ timeout: 20_000 });
-      const steps = await rail
-        .locator('.conn-step')
-        .evaluateAll((els) =>
-          els.map((el) => `${el.getAttribute('data-state') ?? ''}:${el.textContent?.trim() ?? ''}`),
-        );
-      assert.equal(steps.length, 3);
-      assert.match(steps[0] ?? '', /^current:1Step 1: Add a deviceNot yet$/);
-      assert.match(steps[2] ?? '', /^todo:.*Set up a project/);
-      assert.equal(await rail.locator('.conn-rail-step').nth(2).isDisabled(), true);
-      // The step pairs a computer; tools come next (LAI-1071).
-      const next = await h.page.locator('.dev-journey-next').innerText();
-      assert.match(next, /Pair the computer you work on with this board/);
-      assert.doesNotMatch(next, /Register the first coding tool/);
-      // No summary for someone who has nothing yet.
-      assert.equal(await h.page.getByRole('link', { name: 'Set up a project' }).count(), 0);
+      assert.deepEqual(await readHero(h.page), {
+        kind: 'no-device',
+        eyebrow: 'START HERE',
+        title: 'Start by connecting your device',
+        links: [['Add a device →', OVERVIEW_ADDRESSES.addDevice]],
+      });
+      assert.deepEqual(await readJourney(h.page), {
+        chip: '0 of 3 complete',
+        rows: [
+          {
+            step: 'device',
+            state: 'active',
+            line: 'Pair your laptop or a cloud runner, once',
+            action: 'Start',
+            href: OVERVIEW_ADDRESSES.addDevice,
+            disabled: false,
+            why: null,
+          },
+          {
+            step: 'tool',
+            state: 'pending',
+            line: 'Give the tool its own credential, then check it connects',
+            action: 'Start',
+            href: null,
+            disabled: true,
+            why: 'Add a device first',
+          },
+          {
+            step: 'project',
+            state: 'pending',
+            line: 'A prompt for the repository’s instructions file · no token in it',
+            action: 'Start',
+            href: null,
+            disabled: true,
+            why: 'Connect a tool first',
+          },
+        ],
+      });
+      // A locked step says why in words, not only by being greyed out.
+      assert.equal(
+        await h.page.locator('[data-step="tool"] button').getAttribute('title'),
+        'Add a device first',
+      );
+      assert.match(
+        (await h.page.locator('[data-step="tool"] button .visually-hidden').textContent()) ?? '',
+        /Add a device first/,
+      );
+      assert.deepEqual(await readStatus(h.page), [
+        'devices | 0 devices | No paired devices | Not added',
+        'tools | 0 tools | No tools yet | Not added',
+        'setups | 0 repositories set up | Project prompts and instructions files | Next step',
+      ]);
+      assert.deepEqual(await readSetups(h.page), [NEW_SETUP_ROW]);
+      assert.equal(await h.page.locator('[data-note="attention"]').count(), 0);
+      // "How this works" is gone; the distinction card says the same, honestly.
+      const distinction = h.page.locator('[data-distinction]');
+      assert.match(
+        await distinction.innerText(),
+        /IMPORTANT DISTINCTION\s+Access ≠ repository setup/,
+      );
+      assert.match(await distinction.innerText(), /never carries a credential/);
+      assert.equal(
+        await distinction
+          .getByRole('link', { name: 'Explore project setup →' })
+          .getAttribute('href'),
+        '/developer?tab=projects',
+      );
+      assert.equal(
+        await distinction.getByRole('link', { name: 'Advanced' }).getAttribute('href'),
+        '/developer?tab=advanced',
+      );
+      assert.equal(await h.page.getByText('How this works').count(), 0);
 
-      const go = h.page.getByRole('link', { name: 'Continue' });
-      assert.equal(await go.getAttribute('href'), '/developer?tab=devices&add=device');
-
-      // Keyboard only: Tab until Continue has focus, then Enter.
+      // Keyboard only: Tab until the hero's action has focus, then Enter.
       await h.page.locator('body').focus();
       for (let i = 0; i < 60; i++) {
         await h.page.keyboard.press('Tab');
         const onIt = await h.page.evaluate(
-          () => document.activeElement?.textContent === 'Continue',
+          () => document.activeElement?.textContent === 'Add a device →',
         );
         if (onIt) break;
       }
       assert.equal(
         await h.page.evaluate(() => document.activeElement?.textContent),
-        'Continue',
-        'Continue is not reachable by Tab',
+        'Add a device →',
+        'Add a device is not reachable by Tab',
       );
       await h.page.keyboard.press('Enter');
       // The V3 Add device wizard (LAI-1061), not the classic registration one.
       await h.page.locator('[data-wizard="device"]').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.agents-wizard').count(), 0);
-      assert.equal(here(h.page), '/developer?tab=devices&add=device');
-
-      // Cancel: the address forgets the wizard, and focus is on the button
-      // that stands for it on the Devices tab (LAI-1054).
-      await h.page.getByRole('button', { name: 'Cancel' }).click();
-      await h.page.locator('[data-wizard="device"]').waitFor({ state: 'detached' });
-      assert.equal(here(h.page), '/developer?tab=devices');
-      await h.page.waitForFunction(
-        () => document.activeElement?.textContent?.trim() === '+ Add device',
-        undefined,
-        { timeout: 10_000 },
-      );
+      assert.equal(here(h.page), OVERVIEW_ADDRESSES.addDevice);
     } finally {
       await h.close();
     }
   });
 
-  void test('a tool registered but never heard from: step 2, and Continue goes to its row', async () => {
-    const h = await open('/developer', stub('v3', [agentRow({ id: 'a1', harness: 'codex' })]));
+  void test('a paired device with no tool counts as a device, and the tool is next', async () => {
+    const h = await open('/developer', STATES['device-only']());
     try {
-      const rail = h.page.getByRole('navigation', { name: 'Getting started' });
-      await rail.waitFor({ timeout: 20_000 });
-      assert.equal(await rail.locator('.conn-step[data-state="done"]').count(), 1);
-      assert.match(
-        await rail.locator('.conn-step[data-state="current"]').innerText(),
-        /Add a coding tool[\s\S]*Registered, not connected yet/,
+      assert.deepEqual(await readHero(h.page), {
+        kind: 'no-tool',
+        eyebrow: 'START HERE',
+        title: 'Connect a coding tool',
+        links: [['Add your first tool →', OVERVIEW_ADDRESSES.addTool]],
+      });
+      const journey = await readJourney(h.page);
+      assert.equal(journey.chip, '1 of 3 complete');
+      assert.deepEqual(
+        journey.rows.map((r) => [r.step, r.state, r.line, r.action, r.href, r.disabled]),
+        [
+          ['device', 'done', '1 device · Belka', 'Manage', OVERVIEW_ADDRESSES.devices, false],
+          [
+            'tool',
+            'active',
+            'Give the tool its own credential, then check it connects',
+            'Start',
+            OVERVIEW_ADDRESSES.addTool,
+            false,
+          ],
+          [
+            'project',
+            'pending',
+            'A prompt for the repository’s instructions file · no token in it',
+            'Start',
+            null,
+            true,
+          ],
+        ],
       );
-      assert.match(await h.page.locator('.dev-journey-next').innerText(), /Codex · Belka/);
-      await h.page.getByRole('link', { name: 'Continue' }).click();
-      await h.page.locator('.dv3-tool[data-agent="a1"]').waitFor({ timeout: 20_000 });
-      assert.equal(here(h.page), '/developer?tab=devices&agent=a1');
-      await h.page.waitForFunction(() => document.activeElement?.id === 'tool-a1', undefined, {
-        timeout: 10_000,
+      assert.deepEqual((await readStatus(h.page)).slice(0, 2), [
+        'devices | 1 device | Belka | Paired',
+        'tools | 0 tools | No tools yet | Not added',
+      ]);
+      // The Devices tab's read, not the old one that skipped a device with no tool.
+      assert.ok(h.calls.some((c) => c.path === '/api/v1/devices'));
+      assert.equal(h.calls.filter((c) => c.path === '/api/v1/agents/devices').length, 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a tool registered but never heard from: finish connecting it, at its row', async () => {
+    const h = await open('/developer', STATES['tool-never-seen']());
+    try {
+      assert.deepEqual(await readHero(h.page), {
+        kind: 'finish-tool',
+        eyebrow: 'YOUR NEXT STEP',
+        title: 'Finish connecting Codex · Belka',
+        links: [['Continue setup →', toolAddress('a1')]],
+      });
+      assert.equal(
+        await hero(h.page).locator('.dx-hero-sub').innerText(),
+        'Credential created, never used. Finish its setup on Belka; this page moves on once it has connected.',
+      );
+      const journey = await readJourney(h.page);
+      assert.deepEqual(journey.rows[1], {
+        step: 'tool',
+        state: 'active',
+        line: 'Codex · Belka registered, not connected yet',
+        action: 'Start',
+        href: toolAddress('a1'),
+        disabled: false,
+        why: null,
+      });
+      assert.equal(journey.rows[2]?.why, 'Connect a tool first');
+      assert.deepEqual(
+        (await readStatus(h.page))[1],
+        'tools | 1 tool | Codex · Belka | 1 needs setup',
+      );
+      // The hero is already about it: no second mention under it.
+      assert.equal(await h.page.locator('[data-note="attention"]').count(), 0);
+
+      await hero(h.page).getByRole('link', { name: 'Continue setup →' }).click();
+      await h.page.waitForURL((url) => `${url.pathname}${url.search}` === toolAddress('a1'), {
+        timeout: 20_000,
       });
     } finally {
       await h.close();
     }
   });
 
-  void test('returning: no funnel, Set up a project first, every tool with its word', async () => {
-    const now = Date.now();
-    const agents = [
-      agentRow({
-        id: 'a1',
-        harness: 'omnigent',
-        last_seen_at: now - 60_000,
-        grants: [{ project_id: 'p1', scope: 'full' }],
-      }),
-      agentRow({ id: 'a2', harness: 'codex', device_label: 'Strelka', created_at: 2 }),
-    ];
-    const h = await open('/developer', stub('v3', agents));
+  void test('connected, no setup: set up a project, or manage tools; the rest is attention', async () => {
+    const h = await open('/developer', STATES['connected-no-setup']());
     try {
-      await h.page.locator('.dev-summary').waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.getByRole('navigation', { name: 'Getting started' }).count(), 0);
-      const actions = await h.page.locator('.dev-summary-actions a').allInnerTexts();
-      assert.deepEqual(actions, ['Add a tool', 'Set up a project']);
-      assert.match(
-        (await h.page.getByRole('link', { name: 'Set up a project' }).getAttribute('class')) ?? '',
-        /bar-control-primary/,
-      );
-      const facts = await h.page.locator('.dev-summary-facts > div').allInnerTexts();
+      assert.deepEqual(await readHero(h.page), {
+        kind: 'no-setup',
+        eyebrow: 'YOUR NEXT STEP',
+        title: 'Set up your project repository',
+        links: [
+          ['Set up a project →', '/developer?tab=projects'],
+          ['Manage tools', TOOLS_HREF],
+        ],
+      });
+      // Tools not connected yet are named under the hero, each linking to its row.
+      const note = h.page.locator('[data-note="attention"]');
+      assert.equal(await note.getAttribute('data-tone'), 'warn');
       assert.deepEqual(
-        facts.map((f) => f.replace(/\s+/g, ' ').trim()),
-        ['Devices 2', 'Tools 2', 'Projects they can reach 1'],
+        await note
+          .locator('li')
+          .evaluateAll((els) =>
+            els.map((el) => [
+              el.textContent ?? '',
+              el.querySelector('a')?.getAttribute('href') ?? '',
+            ]),
+          ),
+        [
+          ['Claude Code · Strelka: credential created, never used', toolAddress('a3')],
+          ['Codex · Strelka: credential created, never used', toolAddress('a2')],
+        ],
       );
-      const rows = (await h.page.locator('.dev-summary-tools li').allInnerTexts()).map((r) =>
-        r.replace(/\s+/g, ' ').trim(),
+      // The note sits directly under the hero, in the hero's column.
+      assert.equal(
+        await note.evaluate((el) => el.previousElementSibling?.classList.contains('dx-hero')),
+        true,
       );
-      assert.equal(rows.length, 2);
-      assert.match(rows[0] ?? '', /^Codex · Strelka Not connected yet · No request from it yet$/);
-      assert.match(rows[1] ?? '', /^Omnigent · Belka Active · Last seen 1 min ago$/);
-      assert.match(
-        await h.page.locator('.dev-summary-note').innerText(),
-        /One tool has not connected/,
+      const journey = await readJourney(h.page);
+      assert.equal(journey.chip, '2 of 3 complete');
+      assert.deepEqual(
+        journey.rows.map((r) => [r.state, r.line, r.action, r.href]),
+        [
+          ['done', '2 devices · Belka, Strelka', 'Manage', OVERVIEW_ADDRESSES.devices],
+          ['done', '3 tools registered, 1 connected', 'Manage', TOOLS_HREF],
+          [
+            'active',
+            'A prompt for the repository’s instructions file · no token in it',
+            'Start',
+            '/developer?tab=projects',
+          ],
+        ],
+      );
+      assert.deepEqual(await readStatus(h.page), [
+        'devices | 2 devices | Belka, Strelka | 1 imported',
+        'tools | 3 tools | Claude Code · Strelka, Codex · Strelka, Omnigent · Belka | 2 need setup',
+        'setups | 0 repositories set up | Project prompts and instructions files | Next step',
+      ]);
+      // Never Ready, never a claim beyond the evidence.
+      assert.doesNotMatch(
+        await h.page.locator('[data-testid="dev-overview"]').innerText(),
+        /\bReady\b/,
       );
 
-      await h.page.getByRole('link', { name: 'Set up a project' }).click();
-      await h.page.locator('.dev-projects').waitFor({ timeout: 20_000 });
+      await hero(h.page).getByRole('link', { name: 'Set up a project →' }).click();
+      await h.page.waitForURL(/tab=projects/, { timeout: 20_000 });
       assert.equal(here(h.page), '/developer?tab=projects');
       assert.equal(await active(h.page), 'projects');
     } finally {
@@ -525,45 +898,152 @@ void describe('the Overview (LAI-1048)', () => {
     }
   });
 
+  void test('all done: set up another repository, and each setup with the word its records support', async () => {
+    const h = await open('/developer', STATES['all-done']());
+    try {
+      assert.deepEqual(await readHero(h.page), {
+        kind: 'all-done',
+        eyebrow: 'YOUR NEXT STEP',
+        title: 'Set up another repository',
+        links: [
+          ['Set up a repository →', '/developer?tab=projects'],
+          ['Manage tools', TOOLS_HREF],
+        ],
+      });
+      const journey = await readJourney(h.page);
+      assert.equal(journey.chip, '3 of 3 complete');
+      assert.deepEqual(journey.rows[2], {
+        step: 'project',
+        state: 'done',
+        line: '3 repository setups · 1 checked',
+        action: 'Open',
+        href: '/developer?tab=projects',
+        disabled: false,
+        why: null,
+      });
+      assert.deepEqual(
+        (await readStatus(h.page))[2],
+        'setups | 3 repositories set up | 1 checked, 1 not verified, 1 to update | Recorded',
+      );
+      // The project's name where the list has it, its slug where it does not;
+      // Checked only from laika project check; the reader's word is not verified.
+      await h.page.getByText('OnRoute · onroute-app').waitFor({ timeout: 20_000 });
+      assert.deepEqual(await readSetups(h.page), [
+        NEW_SETUP_ROW,
+        'checked | OnRoute · onroute-app | Claude Code · Belka · CLAUDE.md | Checked',
+        'recorded | OnRoute | Codex · Belka · AGENTS.md · not verified | Recorded by you',
+        'update-available | atlas · atlas-web | Claude Code · Belka · CLAUDE.md | Update available',
+      ]);
+      assert.equal(
+        await h.page.locator('[data-setups] .dx-section-heading').innerText(),
+        'Your repository setups',
+      );
+      // The setups list is the full width under both columns.
+      const [list, columns] = await Promise.all([
+        h.page.locator('[data-setups]').boundingBox(),
+        h.page.locator('.dx-columns').boundingBox(),
+      ]);
+      assert.ok(list !== null && columns !== null);
+      assert.ok(list.y >= columns.y + columns.height, 'the setups list is not under the columns');
+      assert.equal(Math.round(list.width), Math.round(columns.width));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a helper the board needs updated is named under the hero, from its own report', async () => {
+    const h = await open(
+      '/developer',
+      overview(
+        [
+          deviceRow('d1', 'Belka', [
+            tool({ id: 'a1' }),
+            tool({ id: 'a2', harness: 'codex', created_at: 2 }),
+          ]),
+        ],
+        [setupRecord({ id: 's1' })],
+        {
+          // The board needs protocol 1; a1's helper speaks 0, a2's 1.
+          '/api/v1/agents/a1/verification': {
+            agent_id: 'a1',
+            client_report: { protocol: 0, cli_commit: null },
+          },
+          '/api/v1/agents/a2/verification': {
+            agent_id: 'a2',
+            client_report: { protocol: 1, cli_commit: null },
+          },
+        },
+      ),
+    );
+    try {
+      const note = h.page.locator('[data-note="attention"]');
+      await note.waitFor({ timeout: 20_000 });
+      assert.deepEqual(
+        await note
+          .locator('li')
+          .evaluateAll((els) =>
+            els.map((el) => [
+              el.textContent ?? '',
+              el.querySelector('a')?.getAttribute('href') ?? '',
+            ]),
+          ),
+        [['Claude Code · Belka: update required', toolAddress('a1')]],
+      );
+      assert.ok(h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a change on refetch is announced, and focus moves to the new main action (review round 1)', async () => {
-    const now = Date.now();
     const later = [
-      agentRow({ id: 'a1', harness: 'omnigent', last_seen_at: now - 60_000 }),
-      agentRow({ id: 'a2', harness: 'codex', device_label: 'Strelka', created_at: 2 }),
+      deviceRow('d1', 'Belka', [tool({ id: 'a1', harness: 'omnigent' })]),
+      deviceRow('d2', 'Strelka', [
+        tool({
+          id: 'a2',
+          harness: 'codex',
+          device_label: 'Strelka',
+          last_seen_at: null,
+          created_at: 2,
+        }),
+      ]),
     ];
     let reads = 0;
     const h = await open(
       '/developer',
-      stub('v3', [], {
-        '/api/v1/agents/devices': () => {
+      overview([], [], {
+        '/api/v1/devices': () => {
           reads += 1;
-          return { data: reads === 1 ? [] : devicesOf(later) };
+          return { data: reads === 1 ? [] : later };
         },
       }),
     );
     try {
       const region = h.page.locator('[data-testid="dev-overview"] > p[aria-live="polite"]');
-      await h.page.getByRole('link', { name: 'Continue' }).waitFor({ timeout: 20_000 });
+      const add = hero(h.page).getByRole('link', { name: 'Add a device →' });
+      await add.waitFor({ timeout: 20_000 });
       // Mounted empty: the first answer is what the page shows, not news.
       assert.equal(await region.getAttribute('role'), 'status');
       assert.equal((await region.textContent()) ?? '', '');
 
-      await h.page.getByRole('link', { name: 'Continue' }).focus();
+      await add.focus();
       // The reader comes back to the tab: the Overview reads again.
       await h.page.evaluate(() => {
         document.dispatchEvent(new Event('visibilitychange'));
       });
-      await h.page.locator('.dev-summary').waitFor({ timeout: 20_000 });
+      await h.page.locator('.dx-hero[data-hero="no-setup"]').waitFor({ timeout: 20_000 });
       assert.ok(reads >= 2, 'the Overview did not read again');
 
       await h.page.waitForFunction(
-        (el) => el?.textContent === '2 tools on this board, 1 connected.',
+        (el) =>
+          el?.textContent ===
+          'Next step: Set up your project repository. 2 tools on this board, 1 connected.',
         await region.elementHandle(),
         { timeout: 10_000 },
       );
-      // Continue went with the journey; focus is on the summary's main action, not body.
+      // The link went with the old step; focus is on the new main action, not body.
       await h.page.waitForFunction(
-        () => document.activeElement?.textContent === 'Set up a project',
+        () => document.activeElement?.textContent === 'Set up a project →',
         undefined,
         { timeout: 10_000 },
       );
@@ -576,22 +1056,20 @@ void describe('the Overview (LAI-1048)', () => {
     let reads = 0;
     const h = await open(
       '/developer',
-      stub('v3', [], {
-        '/api/v1/agents/devices': () => {
+      overview([], [], {
+        '/api/v1/devices': () => {
           reads += 1;
-          return {
-            data: reads === 1 ? [] : devicesOf([agentRow({ id: 'a1', last_seen_at: Date.now() })]),
-          };
+          return { data: reads === 1 ? [] : [deviceRow('d1', 'Belka', [tool({ id: 'a1' })])] };
         },
       }),
     );
     try {
-      await h.page.getByRole('link', { name: 'Continue' }).waitFor({ timeout: 20_000 });
+      await hero(h.page).getByRole('link', { name: 'Add a device →' }).waitFor({ timeout: 20_000 });
       await h.page.locator('.page-tab[data-tab="advanced"]').focus();
       await h.page.evaluate(() => {
         document.dispatchEvent(new Event('visibilitychange'));
       });
-      await h.page.locator('.dev-summary').waitFor({ timeout: 20_000 });
+      await h.page.locator('.dx-hero[data-hero="no-setup"]').waitFor({ timeout: 20_000 });
       assert.equal(
         await h.page.evaluate(() => document.activeElement?.getAttribute('data-tab')),
         'advanced',
@@ -600,6 +1078,52 @@ void describe('the Overview (LAI-1048)', () => {
       await h.close();
     }
   });
+
+  for (const theme of ['light', 'dark']) {
+    void test(`${theme}: two columns at 1440, one at 390 with no sideways scroll, in every state`, async () => {
+      for (const name of Object.keys(STATES) as OverviewStateName[]) {
+        const h = await open('/developer', STATES[name]());
+        try {
+          await h.page.setViewportSize({ width: 1440, height: 900 });
+          await setTheme(h.page, theme);
+          await hero(h.page).waitFor({ timeout: 20_000 });
+          const wide = await Promise.all([
+            hero(h.page).boundingBox(),
+            h.page.locator('[data-status]').boundingBox(),
+          ]);
+          assert.ok(wide[0] !== null && wide[1] !== null);
+          assert.ok(
+            wide[1].x > wide[0].x + wide[0].width,
+            `${name}: status is not right of the hero at 1440`,
+          );
+          // Drawn in this theme's tokens: the hero's ring is the accent border.
+          const ring = await hero(h.page).evaluate((el) => {
+            const probe = document.createElement('span');
+            probe.style.color = 'var(--accent-border)';
+            el.append(probe);
+            const want = getComputedStyle(probe).color;
+            probe.remove();
+            return { got: getComputedStyle(el).borderTopColor, want };
+          });
+          assert.equal(ring.got, ring.want, `${name}: the hero is not drawn in the kit`);
+
+          await h.page.setViewportSize({ width: 390, height: 844 });
+          const narrow = await Promise.all([
+            hero(h.page).boundingBox(),
+            h.page.locator('[data-status]').boundingBox(),
+          ]);
+          assert.ok(narrow[0] !== null && narrow[1] !== null);
+          assert.ok(narrow[1].y > narrow[0].y, `${name}: status is not under the hero at 390`);
+          const sideways = await h.page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          );
+          assert.ok(sideways <= 0, `${name} scrolls sideways by ${String(sideways)}px in ${theme}`);
+        } finally {
+          await h.close();
+        }
+      }
+    });
+  }
 
   void test('an old link with a tool opens the wizard on that tool', async () => {
     const h = await open('/connect?agent=codex', stub('v3'));
@@ -616,12 +1140,12 @@ void describe('the Overview (LAI-1048)', () => {
 });
 
 void describe('the Overview’s states', () => {
-  void test('loading, then an error with a retry that works', async () => {
+  void test('an error with a retry that works', async () => {
     let calls = 0;
     const h = await open(
       '/developer',
-      stub('v3', [], {
-        '/api/v1/agents/devices': () => {
+      overview([], [], {
+        '/api/v1/devices': () => {
           calls += 1;
           return calls === 1 ? refuse(503, 'unavailable', 'Try again shortly.') : { data: [] };
         },
@@ -629,10 +1153,33 @@ void describe('the Overview’s states', () => {
     );
     try {
       await h.page.getByText('Could not load your devices').waitFor({ timeout: 20_000 });
+      assert.equal(await hero(h.page).count(), 0);
       await h.page.getByRole('button', { name: 'Try again' }).click();
-      await h.page
-        .getByRole('navigation', { name: 'Getting started' })
-        .waitFor({ timeout: 20_000 });
+      assert.equal((await readHero(h.page)).kind, 'no-device');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the setups read failing is its own error, never an empty list', async () => {
+    let calls = 0;
+    const h = await open(
+      '/developer',
+      overview([deviceRow('d1', 'Belka', [tool({ id: 'a1' })])], [], {
+        '/api/v1/project-setups': () => {
+          calls += 1;
+          return calls === 1
+            ? refuse(503, 'unavailable', 'Try again shortly.')
+            : { data: [setupRecord({ id: 's1' })] };
+        },
+      }),
+    );
+    try {
+      await h.page.getByText('Could not load your repository setups').waitFor({ timeout: 20_000 });
+      // Not "Set up your project repository" on a read that never arrived.
+      assert.equal(await hero(h.page).count(), 0);
+      await h.page.getByRole('button', { name: 'Try again' }).click();
+      assert.equal((await readHero(h.page)).kind, 'all-done');
     } finally {
       await h.close();
     }
@@ -641,7 +1188,7 @@ void describe('the Overview’s states', () => {
   void test('403 is the permission state, never an empty journey', async () => {
     const h = await open(
       '/developer',
-      stub('v3', [], { '/api/v1/agents/devices': refuse(403, 'forbidden', 'Not yours.') }),
+      overview([], [], { '/api/v1/devices': refuse(403, 'forbidden', 'Not yours.') }),
     );
     try {
       await h.page.locator('.state-forbidden').waitFor({ timeout: 20_000 });
@@ -649,7 +1196,8 @@ void describe('the Overview’s states', () => {
         await h.page.locator('.state-forbidden').innerText(),
         /You do not have access to your devices/,
       );
-      assert.equal(await h.page.getByRole('navigation', { name: 'Getting started' }).count(), 0);
+      assert.equal(await hero(h.page).count(), 0);
+      assert.equal(await h.page.locator('[data-journey]').count(), 0);
     } finally {
       await h.close();
     }
@@ -658,7 +1206,7 @@ void describe('the Overview’s states', () => {
   void test('an expired session goes to sign-in', async () => {
     const h = await open(
       '/developer',
-      stub('v3', [], { '/api/v1/agents/devices': refuse(401, 'unauthorized', 'Signed out.') }),
+      overview([], [], { '/api/v1/devices': refuse(401, 'unauthorized', 'Signed out.') }),
     );
     try {
       await h.page.waitForURL(/\/login/, { timeout: 20_000 });
@@ -669,24 +1217,29 @@ void describe('the Overview’s states', () => {
 });
 
 void describe('look and fit', () => {
-  void test('the wizard parts on the Overview are drawn with Connect’s sheet', async () => {
-    const h = await open('/developer', stub('v3'));
+  void test('the Overview is drawn with the design kit’s sheet', async () => {
+    const h = await open('/developer', STATES['device-only']());
     try {
-      const step = h.page.locator('.conn-step[data-state="current"] .conn-step-n');
-      await step.waitFor({ timeout: 20_000 });
-      const look = await step.evaluate((el) => {
-        const css = getComputedStyle(el);
-        const button = el.closest('.conn-rail-step');
+      const done = h.page.locator('.dx-flow-n[data-state="done"]');
+      await done.waitFor({ timeout: 20_000 });
+      const look = await h.page.evaluate(() => {
+        const css = (selector: string) => {
+          const el = document.querySelector(selector);
+          return el === null ? null : getComputedStyle(el);
+        };
         return {
-          display: button === null ? '' : getComputedStyle(button).display,
-          radius: css.borderTopLeftRadius,
-          width: css.width,
-          background: css.backgroundColor,
+          columns: css('.dx-columns')?.display ?? '',
+          step: css('.dx-flow-n[data-state="done"]')?.width ?? '',
+          primary: css('.dx-hero .dx-btn-primary')?.backgroundColor ?? '',
+          chip: css('[data-journey] .dx-chip')?.borderTopLeftRadius ?? '',
         };
       });
-      assert.equal(look.display, 'flex', 'the rail step is unstyled');
-      assert.equal(look.width, '32px', 'the step number is unstyled');
-      assert.notEqual(look.background, 'rgba(0, 0, 0, 0)', 'the current step has no fill');
+      assert.equal(look.columns, 'grid', 'the two columns are unstyled');
+      assert.equal(look.step, '34px', 'the step number is unstyled');
+      assert.notEqual(look.primary, 'rgba(0, 0, 0, 0)', 'the primary action has no fill');
+      assert.notEqual(look.chip, '0px', 'the chip is not a pill');
+      // A finished step is a tick, not its number.
+      assert.equal(await done.locator('svg').count(), 1);
     } finally {
       await h.close();
     }
@@ -720,3 +1273,52 @@ void describe('look and fit', () => {
     });
   }
 });
+
+const EVIDENCE = process.env.LAIKA_EVIDENCE_DIR;
+
+void describe(
+  'evidence: the Overview in each state, light and dark, 1440 and 390 px',
+  { skip: EVIDENCE === undefined },
+  () => {
+    void test('screenshots', async () => {
+      const dir = EVIDENCE ?? '';
+      mkdirSync(dir, { recursive: true });
+      for (const theme of ['light', 'dark'] as const) {
+        for (const width of [1440, 390] as const) {
+          for (const name of Object.keys(STATES) as OverviewStateName[]) {
+            const h = await open('/developer', STATES[name]());
+            try {
+              await h.page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+              await setTheme(h.page, theme);
+              await hero(h.page).waitFor({ timeout: 20_000 });
+              if (name === 'all-done') {
+                await h.page.getByText('OnRoute · onroute-app').waitFor({ timeout: 20_000 });
+              }
+              // The theme's colours ease in; the picture is of where they land.
+              await h.page.evaluate(() =>
+                Promise.all(document.getAnimations().map((a) => a.finished)),
+              );
+              // The app scrolls inside its shell, so a full-page shot stops at the
+              // first screen: the viewport grows by what is scrolled out of it.
+              const hidden = await h.page.evaluate(() => {
+                let el = document.querySelector('[data-testid="dev-overview"]')?.parentElement;
+                while (el != null && el.scrollHeight <= el.clientHeight) el = el.parentElement;
+                return el == null ? 0 : el.scrollHeight - el.clientHeight;
+              });
+              const size = h.page.viewportSize();
+              if (size !== null && hidden > 0) {
+                await h.page.setViewportSize({ width, height: size.height + hidden });
+              }
+              await h.page.screenshot({
+                path: join(dir, `overview-${name}-${theme}-${String(width)}.png`),
+                fullPage: true,
+              });
+            } finally {
+              await h.close();
+            }
+          }
+        }
+      }
+    });
+  },
+);
