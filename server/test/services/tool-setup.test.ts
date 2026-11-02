@@ -4,11 +4,20 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { toolRedeemMessage } from '../../src/auth/device-signature.ts';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
-import { agents, devices, tokens, toolSetupExchanges } from '../../src/db/schema.ts';
+import {
+  agentClientReports,
+  agents,
+  devices,
+  tokens,
+  toolSetupExchanges,
+} from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { CLOUD_TOKEN_MAX_TTL_MS } from '../../src/services/agents.ts';
+import { recordMcpClientReport } from '../../src/services/client-reports.ts';
+import { insertToken } from '../../src/services/tokens.ts';
 import {
   EXCHANGE_TTL_MS,
+  getAgentVerification,
   MAX_OPEN_EXCHANGES,
   addToolToDevice,
   cancelToolSetup,
@@ -75,25 +84,31 @@ function pairedDevice(name: string, kind: 'local' | 'cloud' = 'local') {
   return { id, privateKey: pair.privateKey };
 }
 
+/**
+ * A signed redeem, with the challenge read from the row: before a signature,
+ * a setup that is no longer open is a 404 (§6.1), and these tests want the
+ * signed answer for that state.
+ */
 function redeem(exchangeId: string, device: { id: string; privateKey: KeyObject }, now = NOW) {
-  const first = redeemToolSetup(t.sqlite, t.db, {
-    id: exchangeId,
-    deviceId: device.id,
-    boardOrigin: ORIGIN,
-    now,
-  });
-  if (first.kind !== 'challenge') throw new Error(`expected a challenge, got ${first.kind}`);
+  const challenge =
+    t.db.select().from(toolSetupExchanges).where(eq(toolSetupExchanges.id, exchangeId)).get()
+      ?.challenge ?? 'missing';
   return redeemToolSetup(t.sqlite, t.db, {
     id: exchangeId,
     deviceId: device.id,
     signature: sign(
       null,
-      toolRedeemMessage(exchangeId, device.id, first.challenge, ORIGIN),
+      toolRedeemMessage(exchangeId, device.id, challenge, ORIGIN),
       device.privateKey,
     ).toString('base64url'),
     boardOrigin: ORIGIN,
     now,
   });
+}
+
+/** The unsigned half: the challenge, or the refusal. */
+function ask(exchangeId: string, deviceId: string, now = NOW) {
+  return redeemToolSetup(t.sqlite, t.db, { id: exchangeId, deviceId, boardOrigin: ORIGIN, now });
 }
 
 describe('the exchange', () => {
@@ -111,6 +126,12 @@ describe('the exchange', () => {
       code: 'conflict',
       reason: 'exchange_expired',
     });
+    // Unsigned, an expired setup is the uniform 404; it gives no challenge.
+    expect(refusal(() => ask(created.exchange.id, device.id, NOW + EXCHANGE_TTL_MS))).toEqual({
+      code: 'not_found',
+      reason: undefined,
+    });
+    expect(ask(created.exchange.id, device.id, NOW + EXCHANGE_TTL_MS - 1).kind).toBe('challenge');
     expect(redeem(created.exchange.id, device, NOW + EXCHANGE_TTL_MS - 1).kind).toBe('redeemed');
   });
 
@@ -215,5 +236,71 @@ describe('cloud', () => {
     const outcome = redeem(created.exchange.id, device);
     if (outcome.kind !== 'redeemed') throw new Error('expected a redeem');
     expect(outcome.body.token.expires_at).toBeNull();
+  });
+});
+
+describe('a generic MCP client (D-125)', () => {
+  it('needs the MCP request and the report naming the harness from the same live token', () => {
+    const agentId = newId();
+    t.db
+      .insert(agents)
+      .values({
+        id: agentId,
+        orgId: s.orgId,
+        ownerUserId: s.userId,
+        displayName: 'Polly',
+        harness: 'omnigent',
+        status: 'active',
+        createdAt: NOW,
+      })
+      .run();
+    const mint = () =>
+      insertToken(t.db, owner, {
+        name: 'Polly',
+        scope: 'full',
+        projectIds: null,
+        expiresAt: null,
+        agentId,
+        now: NOW,
+      }).token.id;
+    const a = mint();
+    const b = mint();
+    const cliFrom = (tokenId: string) =>
+      t.db
+        .insert(agentClientReports)
+        .values({
+          agentId,
+          source: 'cli',
+          tokenId,
+          cliVersion: '0.9.0',
+          protocol: 2,
+          capabilitiesJson: JSON.stringify(['client_report', 'tool_setup_exchange']),
+          harness: 'omnigent',
+          reportedAt: NOW,
+        })
+        .onConflictDoUpdate({
+          target: [agentClientReports.agentId, agentClientReports.source],
+          set: { tokenId },
+        })
+        .run();
+
+    expect(recordMcpClientReport(t.db, a, NOW, 'mcp', '1.0')).toBe(true);
+    cliFrom(b);
+    const fromTwo = getAgentVerification(t.db, owner, agentId, NOW);
+    expect(fromTwo.checks.tool_request.state).toBe('fail');
+
+    cliFrom(a);
+    const fromOne = getAgentVerification(t.db, owner, agentId, NOW);
+    expect(fromOne.checks.tool_request).toMatchObject({
+      state: 'pass',
+      detail: { evidence: 'client_report', mcp_client_name: 'generic' },
+    });
+    expect(fromOne.checks.required_capabilities.state).toBe('pass');
+
+    // Once that token is revoked, its word is no evidence for the tool now.
+    t.db.update(tokens).set({ revokedAt: NOW }).where(eq(tokens.id, a)).run();
+    const revoked = getAgentVerification(t.db, owner, agentId, NOW);
+    expect(revoked.checks.tool_request.state).toBe('fail');
+    expect(revoked.checks.required_capabilities.state).toBe('fail');
   });
 });

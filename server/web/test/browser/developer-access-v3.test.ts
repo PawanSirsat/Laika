@@ -107,6 +107,28 @@ function devicesOf(agents: readonly Agent[]) {
   });
 }
 
+/** The same agents as `GET /devices` serves them (LAI-1045): one device per label. */
+function v3DevicesOf(agents: readonly Agent[]) {
+  return devicesOf(agents).map((d, i) => ({
+    id: `d${String(i + 1)}`,
+    display_name: d.display_name,
+    device_label: d.device_label,
+    kind: d.device_label === 'cloud' ? 'cloud' : 'local',
+    origin: 'imported',
+    status: 'active',
+    confirmed: true,
+    confirmed_at: null,
+    paired_at: null,
+    key_fingerprint: null,
+    last_seen_at: d.last_seen_at,
+    active_count: d.active_count,
+    revoked_count: d.revoked_count,
+    agents: d.agents,
+    created_at: 1,
+    revoked_at: null,
+  }));
+}
+
 function stub(mode: Mode | 'absent', agents: readonly Agent[] = [], over: ApiStub = {}): ApiStub {
   return {
     '/api/v1/me': ME,
@@ -115,6 +137,7 @@ function stub(mode: Mode | 'absent', agents: readonly Agent[] = [], over: ApiStu
     '/api/v1/presence': { enabled: true, present: [] },
     '/api/v1/agents': { data: agents, next_cursor: null },
     '/api/v1/agents/devices': { data: devicesOf(agents) },
+    '/api/v1/devices': { data: v3DevicesOf(agents) },
     '/api/v1/org': {
       id: 'org1',
       name: 'Kvell Dynamics',
@@ -345,10 +368,12 @@ void describe('the tab bars (plan §I)', () => {
     }
   });
 
-  void test('v3: Devices, Activity and Advanced carry what they re-host; Project setup its flow', async () => {
+  void test('v3: Devices lists devices; Activity and Advanced carry what they re-host; Project setup its flow', async () => {
     const h = await open('/developer?tab=devices', stub('v3', [agentRow({ id: 'a1' })]));
     try {
-      await h.page.locator('[data-testid="agents-tab"]').waitFor({ timeout: 20_000 });
+      // LAI-1054: Devices is its own list now, not the classic Agents tab.
+      await h.page.locator('.dv3-device[data-device="d1"]').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('[data-testid="agents-tab"]').count(), 0);
       await h.page.locator('.page-tab[data-tab="projects"]').click();
       // Project setup is the real flow since LAI-1052 (project-setup.test.ts).
       await h.page
@@ -358,16 +383,17 @@ void describe('the tab bars (plan §I)', () => {
       await h.page.locator('.page-tab[data-tab="activity"]').click();
       await h.page.locator('.dev-sharing').waitFor({ timeout: 20_000 });
       await h.page.locator('.page-tab[data-tab="advanced"]').click();
-      await h.page.locator('.dev-advanced .tokens').waitFor({ timeout: 20_000 });
-      // *New token* sits in Advanced itself, not in the page header.
+      await h.page.locator('.dev-advanced .dev-adv').waitFor({ timeout: 20_000 });
+      // *New personal credential* sits in Advanced itself, not in the page
+      // header (LAI-1058; developer-advanced.test.ts has the rest).
       await h.page
-        .locator('.dev-advanced-actions')
-        .getByRole('button', { name: /New token/ })
+        .locator('.dev-advanced')
+        .getByRole('button', { name: /New personal credential/ })
         .waitFor({ timeout: 10_000 });
       assert.equal(
         await h.page
           .locator('.screen-page-actions')
-          .getByRole('button', { name: /New token/ })
+          .getByRole('button', { name: /New (token|personal credential)/ })
           .count(),
         0,
       );
@@ -416,13 +442,15 @@ void describe('the Overview (LAI-1048)', () => {
       await h.page.locator('.agents-wizard').waitFor({ timeout: 20_000 });
       assert.equal(here(h.page), '/developer?tab=devices&add=device');
 
-      // Cancel: the address forgets the wizard, and focus is on Register.
+      // Cancel: the address forgets the wizard, and focus is on the button
+      // that stands for it on the Devices tab (LAI-1054).
       await h.page.getByRole('button', { name: 'Cancel' }).click();
       await h.page.locator('.agents-wizard').waitFor({ state: 'detached' });
       assert.equal(here(h.page), '/developer?tab=devices');
-      assert.equal(
-        await h.page.evaluate(() => document.activeElement?.textContent?.trim()),
-        '+ Register an agent',
+      await h.page.waitForFunction(
+        () => document.activeElement?.textContent?.trim() === '+ Add device',
+        undefined,
+        { timeout: 10_000 },
       );
     } finally {
       await h.close();
@@ -441,9 +469,9 @@ void describe('the Overview (LAI-1048)', () => {
       );
       assert.match(await h.page.locator('.dev-journey-next').innerText(), /Codex · Belka/);
       await h.page.getByRole('link', { name: 'Continue' }).click();
-      await h.page.locator('[data-testid="agents-tab"] .agents-list').waitFor({ timeout: 20_000 });
+      await h.page.locator('.dv3-tool[data-agent="a1"]').waitFor({ timeout: 20_000 });
       assert.equal(here(h.page), '/developer?tab=devices&agent=a1');
-      await h.page.waitForFunction(() => document.activeElement?.id === 'agent-a1', undefined, {
+      await h.page.waitForFunction(() => document.activeElement?.id === 'tool-a1', undefined, {
         timeout: 10_000,
       });
     } finally {

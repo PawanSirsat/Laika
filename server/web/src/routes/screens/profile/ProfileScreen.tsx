@@ -1360,8 +1360,8 @@ function AgentsCard({
       name="agents"
       title={
         rows.length === 0
-          ? 'Agents used'
-          : `Agents used · ${countLabel(rows.length, 'type', 'types')}`
+          ? 'Tools used'
+          : `Tools used · ${countLabel(rows.length, 'type', 'types')}`
       }
       caption={
         !online.enabled

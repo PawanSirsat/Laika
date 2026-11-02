@@ -3,7 +3,8 @@ import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { PageTabs } from '../../../components/PageTabs.tsx';
 import { useProjects } from '../../../api/use-projects.ts';
-import type { PageTab } from '../../page-tabs.ts';
+import { DEVELOPER_ACTIVITY_HREF, ownTokensHref, type PageTab } from '../../page-tabs.ts';
+import { useDeveloperAccessMode } from '../../../api/developer-compat.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { invitableRoles } from '../invite-roles.ts';
@@ -42,6 +43,8 @@ import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import { useGates } from '../../../api/permissions.ts';
 import './organisation.css';
+
+const ACTIVITY_HREF = DEVELOPER_ACTIVITY_HREF;
 
 export interface OrganisationScreenProps {
   readonly me: MeProfile;
@@ -119,6 +122,8 @@ export function OrganisationScreen({
   const confirm = useConfirm();
   // The server's answer, denied until it has one (LAI-970) — never the role.
   const gates = useGates();
+  // Advanced in preview and v3, Tokens in classic (LAI-1058, plan §B.7).
+  const ownTokens = ownTokensHref(useDeveloperAccessMode());
   const canInvite = gates.org('user.invite');
   const canDeactivate = gates.org('user.deactivate');
   const canSetInsights = gates.org('org.developer_insights.set');
@@ -447,7 +452,20 @@ export function OrganisationScreen({
                         and agents’ token counts. They appear on that person’s profile as activity,
                         and each person is told so on Developer access and Connect — never prompt
                         text, file or repository names, branches or commit messages. Off stops it
-                        for everyone at once.
+                        for everyone at once.{' '}
+                        <a
+                          className="org-fact-link"
+                          href={ACTIVITY_HREF}
+                          onClick={(event) => {
+                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                              return;
+                            }
+                            event.preventDefault();
+                            onNavigate(ACTIVITY_HREF);
+                          }}
+                        >
+                          What developers see: Developer access · Activity
+                        </a>
                       </span>
                       {insightsError !== undefined && (
                         <span className="org-fact-error" role="alert">
@@ -674,13 +692,13 @@ export function OrganisationScreen({
                     {person.id === me.id ? (
                       <a
                         className="org-person-role"
-                        href="/developer"
+                        href={ownTokens}
                         onClick={(event) => {
                           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
                             return;
                           }
                           event.preventDefault();
-                          onNavigate('/developer');
+                          onNavigate(ownTokens);
                         }}
                       >
                         On Developer access

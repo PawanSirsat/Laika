@@ -59,16 +59,24 @@ export function collectionManager(permissions: OrgPermissions | undefined): stri
   return `the owner, ${granted.slice(0, -1).join(', ')} and ${granted.at(-1) ?? ''}`;
 }
 
-const SCOPES: Readonly<Record<LocalActivityScope, { label: string; hint: string }>> = {
-  'agent-repos': {
-    label: 'Every repo where I use an agent',
-    hint: 'Any repository on this machine where you run a connected agent. Nothing scans your disk.',
-  },
-  'laika-repos': {
-    label: 'Only repos set up for Laika',
-    hint: 'Only repositories carrying the project block from Developer access’s Projects tab.',
-  },
-};
+/**
+ * The scope choices. `setupTabName` is where the project block comes from:
+ * the Projects tab in classic, Project setup in V3 (LAI-1058, plan §B.5).
+ */
+function scopes(
+  setupTabName: string,
+): Readonly<Record<LocalActivityScope, { label: string; hint: string }>> {
+  return {
+    'agent-repos': {
+      label: 'Every repo where I use an agent',
+      hint: 'Any repository on this machine where you run a connected agent. Nothing scans your disk.',
+    },
+    'laika-repos': {
+      label: 'Only repos set up for Laika',
+      hint: `Only repositories carrying the project block from Developer access’s ${setupTabName}.`,
+    },
+  };
+}
 
 type State =
   | { readonly kind: 'loading' }
@@ -100,12 +108,16 @@ function said(cause: unknown, fallback: string): string {
 export function ShareActivity({
   canSetInsights,
   origin = window.location.origin,
+  setupTabName = 'Projects tab',
 }: {
   /** `org.developer_insights.set`, as the server reports it — offered the Organisation link. */
   readonly canSetInsights: boolean;
   /** This board's address, for the OpenTelemetry block (LAI-773). */
   readonly origin?: string;
+  /** What the project block's tab is called here; Project setup in V3 (LAI-1058). */
+  readonly setupTabName?: string;
 }) {
+  const SCOPES = scopes(setupTabName);
   const confirm = useConfirm();
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [busy, setBusy] = useState(false);
