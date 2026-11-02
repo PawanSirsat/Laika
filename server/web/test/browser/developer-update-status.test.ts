@@ -27,6 +27,7 @@ import {
   closeBrowser,
   open,
   refuse,
+  navigateInApp,
   setTheme,
   until,
   type ApiStub,
@@ -50,23 +51,31 @@ const me = (orgRole: string) => ({
   memberships: [{ project_id: 'p1', role: 'member' }],
 });
 
-/** Project setup is switched on and needs protocol 3; the board speaks 3. */
-const compat = (mode: Mode) => ({
+type Board = 'p2' | 'p3';
+
+/**
+ * `p2` is the board #216 (LAI-1062) serves: protocol 2, `min_client` 1,
+ * pairing, tool setup and client reports on, each needing 2; project setup
+ * off. On it a protocol-1 helper is *required*, never *available*. `p3` is a
+ * later board, protocol 3 with the same features, which is where a
+ * protocol-2 helper is *Update available*.
+ */
+const compat = (mode: Mode, board: Board = 'p2') => ({
   server: { version: '0.1.0', build_commit: BOARD },
-  protocol: { current: 3, min_client: 1 },
+  protocol: { current: board === 'p2' ? 2 : 3, min_client: 1 },
   features: {
     developer_access: mode,
-    device_pairing: false,
-    tool_setup_exchange: false,
+    device_pairing: true,
+    tool_setup_exchange: true,
     client_reports: true,
-    project_setups: true,
+    project_setups: false,
   },
   cli: {
     min_protocol_for: {
       device_pairing: 2,
       tool_setup_exchange: 2,
       client_reports: 2,
-      project_setups: 3,
+      project_setups: 2,
     },
     source: {
       type: 'git',
@@ -79,7 +88,8 @@ const compat = (mode: Mode) => ({
     ref: BOARD,
     whats_new: [
       { protocol: 1, summary: 'laika agent login, session hooks, laika connect and checkpoints.' },
-      { protocol: 3, summary: 'Project setup from the board.' },
+      { protocol: 2, summary: 'laika device pair, laika tool add and client reports.' },
+      ...(board === 'p3' ? [{ protocol: 3, summary: 'A later helper.' }] : []),
     ],
   },
 });
@@ -149,7 +159,7 @@ const deviceRow = (agents: Agent[]) => ({
 const report = (over: object = {}) => ({
   cli_version: '0.1.0',
   cli_commit: BOARD,
-  protocol: 3,
+  protocol: 2,
   capabilities: ['client_report', 'doctor', 'update'],
   harness_version: null,
   harness: null,
@@ -167,16 +177,22 @@ const NO_CONSENT = { given: false, given_by_user_id: null, given_at: null, withd
 
 interface StubOver {
   readonly mode?: Mode;
+  readonly board?: Board;
   readonly orgRole?: string;
   readonly agents?: Agent[];
   readonly reports?: Readonly<Record<string, unknown>>;
   readonly routes?: ApiStub;
 }
 
+/**
+ * On the protocol-2 board: a1 runs the board's commit; a2 the board's
+ * protocol on another commit (older, newer or a fork — the page cannot tell);
+ * a3 is a protocol-1 helper.
+ */
 const DEFAULT_REPORTS: Readonly<Record<string, unknown>> = {
   a1: verification('a1', report()),
   a2: verification('a2', report({ cli_commit: OLDER })),
-  a3: verification('a3', report({ cli_commit: OLDER, protocol: 2 })),
+  a3: verification('a3', report({ cli_commit: OLDER, protocol: 1 })),
   a4: verification('a4', null),
   a5: refuse(500, 'internal', 'later'),
 };
@@ -198,7 +214,7 @@ function stub(over: StubOver = {}): ApiStub {
     '/api/v1/agents': { data: agents, next_cursor: null },
     '/api/v1/agents/devices': { data: [] },
     '/api/v1/devices': { data: [deviceRow(agents)] },
-    '/api/v1/developer/compatibility': compat(over.mode ?? 'v3'),
+    '/api/v1/developer/compatibility': compat(over.mode ?? 'v3', over.board),
     ...perAgent,
     ...over.routes,
   };
@@ -241,11 +257,12 @@ void describe('V3 Devices: each tool’s helper update status', () => {
       await settled(h.page);
       const expect: [string, string, RegExp][] = [
         ['a1', 'up-to-date', /Up to date[\s\S]*Runs the helper this board offers, cea011d/],
-        ['a2', 'available', /Update available[\s\S]*offers helper cea011d; this one runs 19f8587/],
+        // Review round 1, B1: another commit at the board's protocol is no update.
+        ['a2', 'up-to-date', /Up to date[\s\S]*on helper 19f8587; this board offers cea011d/],
         [
           'a3',
           'required',
-          /Update required for project setup[\s\S]*needs helper protocol 3; this one speaks 2/,
+          /Update required for pairing devices, adding tools without a secret, version reports[\s\S]*needs helper protocol 2; this one speaks 1/,
         ],
         ['a4', 'unknown', /Version unknown[\s\S]*has not reported a version/],
         ['a5', 'unchecked', /Could not check[\s\S]*version report could not be read/],
@@ -273,7 +290,7 @@ void describe('V3 Devices: each tool’s helper update status', () => {
       assert.equal(await line.getAttribute('data-device-update'), 'required');
       assert.equal(
         await line.innerText(),
-        'Helper updates: 1 update required, 1 update available, 1 could not check, 1 version unknown, 1 up to date',
+        'Helper updates: 1 update required, 1 could not check, 1 version unknown, 2 up to date',
       );
     } finally {
       await h.close();
@@ -284,12 +301,27 @@ void describe('V3 Devices: each tool’s helper update status', () => {
     const h = await openTab();
     try {
       await settled(h.page);
-      for (const id of ['a2', 'a3']) {
-        assert.equal(await tool(h.page, id).locator('[data-update-how]').count(), 1, id);
-      }
-      for (const id of ['a1', 'a4', 'a5']) {
+      assert.equal(await tool(h.page, 'a3').locator('[data-update-how]').count(), 1);
+      // a2 runs another commit at the board's protocol: `laika update` would
+      // refuse a target that is not ahead of it, so nothing is offered.
+      for (const id of ['a1', 'a2', 'a4', 'a5']) {
         assert.equal(await tool(h.page, id).locator('[data-update-how]').count(), 0, id);
       }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Update available: a protocol older than the board’s, which still works, offers the update', async () => {
+    const h = await openTab({ board: 'p3' });
+    try {
+      await settled(h.page);
+      assert.equal(await update(h.page, 'a2').getAttribute('data-update'), 'available');
+      assert.match(
+        await update(h.page, 'a2').locator('.status-chip').innerText(),
+        /Update available[\s\S]*This board speaks helper protocol 3; this one speaks 2\. What it does now keeps working/,
+      );
+      assert.equal(await tool(h.page, 'a2').locator('[data-update-how]').count(), 1);
     } finally {
       await h.close();
     }
@@ -359,7 +391,7 @@ void describe('V3 Devices: the update command, What’s new, and after', () => {
     const h = await openTab();
     try {
       await settled(h.page);
-      const how = tool(h.page, 'a2').locator('[data-update-how]');
+      const how = tool(h.page, 'a3').locator('[data-update-how]');
       await how.locator('summary').focus();
       await h.page.keyboard.press('Enter');
       const text = await how.locator('pre').innerText();
@@ -405,7 +437,7 @@ void describe('V3 Devices: the update command, What’s new, and after', () => {
       assert.equal(await lines.count(), 2);
       assert.match(
         await lines.nth(1).innerText(),
-        /Protocol 3[\s\S]*New for this tool[\s\S]*Project setup/,
+        /Protocol 2[\s\S]*New for this tool[\s\S]*laika device pair/,
       );
       assert.doesNotMatch(await lines.nth(0).innerText(), /New for this tool/);
     } finally {
@@ -418,10 +450,10 @@ void describe('V3 Devices: the update command, What’s new, and after', () => {
     const h = await openTab(
       {
         reports: {
-          a2: () =>
+          a3: () =>
             verification(
-              'a2',
-              updated ? report({ reported_at: NOW }) : report({ cli_commit: OLDER }),
+              'a3',
+              updated ? report({ reported_at: NOW }) : report({ cli_commit: OLDER, protocol: 1 }),
             ),
         },
       },
@@ -429,17 +461,95 @@ void describe('V3 Devices: the update command, What’s new, and after', () => {
     );
     try {
       await settled(h.page);
-      const how = tool(h.page, 'a2').locator('[data-update-how]');
+      const how = tool(h.page, 'a3').locator('[data-update-how]');
       await how.locator('summary').click();
       await how.locator('.copy-button').click();
       await how.locator('[data-watching]').waitFor();
       updated = true;
       await h.page.clock.fastForward(16_000);
       await until(
-        async () => (await update(h.page, 'a2').getAttribute('data-update')) === 'up-to-date',
+        async () => (await update(h.page, 'a3').getAttribute('data-update')) === 'up-to-date',
       );
       await until(async () => (await live(h.page).innerText()).includes('Up to date'));
-      assert.match(await live(h.page).innerText(), /Codex · Belka: Up to date\./);
+      assert.match(await live(h.page).innerText(), /Omnigent · Belka: Up to date\./);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * The watch's clock (review round 1, N1): 15 s, doubling to a 2-minute cap,
+ * given up after 30 minutes with no new report — and nothing left running
+ * once the tab is gone. Driven by Playwright's clock; each read is awaited
+ * before the clock moves again, because the next wait is set only once the
+ * read answers.
+ */
+void describe('V3 Devices: the watch’s backoff, limit and unmount', () => {
+  const reads = (h: Harness) =>
+    h.calls.filter((c) => c.path === '/api/v1/agents/a3/verification').length;
+
+  async function watching(h: Harness): Promise<void> {
+    await settled(h.page);
+    const how = tool(h.page, 'a3').locator('[data-update-how]');
+    await how.locator('summary').click();
+    await how.locator('.copy-button').click();
+    await how.locator('[data-watching]').waitFor();
+  }
+
+  /** Move the clock `ms`, then wait for the read that should (or should not) follow. */
+  async function step(h: Harness, ms: number, expect: number): Promise<void> {
+    await h.page.clock.runFor(ms);
+    await until(() => reads(h) >= expect, 5_000);
+    assert.equal(reads(h), expect, `after ${String(ms)} ms`);
+  }
+
+  void test('15 s, 30 s, 60 s, then never more than 2 minutes; given up after 30 minutes', async () => {
+    const h = await openTab({}, { before: withClipboard(async (page) => page.clock.install()) });
+    try {
+      await watching(h);
+      const start = reads(h);
+      let n = start;
+      await step(h, 14_000, n);
+      await step(h, 1_000, (n += 1)); // 15 s
+      await step(h, 30_000, (n += 1)); // +30 s
+      await step(h, 60_000, (n += 1)); // +60 s
+      await step(h, 119_000, n); // the 120 s wait has not run out
+      await step(h, 1_000, (n += 1)); // +120 s
+      await step(h, 119_000, n); // capped: the next wait is 120 s again, not 240 s
+      await step(h, 1_000, (n += 1));
+      // Run out the 30 minutes; the read that lands past the limit is the last.
+      for (
+        let i = 0;
+        i < 20 && (await tool(h.page, 'a3').locator('[data-watching]').count()) > 0;
+        i++
+      ) {
+        await h.page.clock.runFor(120_000);
+        await until(() => reads(h) > n, 5_000);
+        n = reads(h);
+      }
+      assert.equal(await tool(h.page, 'a3').locator('[data-watching]').count(), 0);
+      // Reads at 15, 45 and 105 s, then every 120 s until one lands at or past
+      // 1800 s (105 + 120·15 = 1905 s): 3 + 15 = 18, and the last one stops it.
+      assert.equal(n - start, 18);
+      await h.page.clock.runFor(10 * 60_000);
+      await new Promise((done) => setTimeout(done, 500));
+      assert.equal(reads(h), n, 'a read after the watch gave up');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('leaving the tab clears the watch: no read after unmount', async () => {
+    const h = await openTab({}, { before: withClipboard(async (page) => page.clock.install()) });
+    try {
+      await watching(h);
+      const before = reads(h);
+      await navigateInApp(h.page, '/developer?tab=advanced');
+      await h.page.locator('.dv3-device').first().waitFor({ state: 'detached' });
+      await h.page.clock.runFor(10 * 60_000);
+      await new Promise((done) => setTimeout(done, 500));
+      assert.equal(reads(h), before, 'the watch kept reading after the tab unmounted');
     } finally {
       await h.close();
     }
@@ -555,8 +665,17 @@ void describe(
       };
       for (const theme of ['light', 'dark'] as const) {
         for (const width of [1440, 390] as const) {
+          // A protocol-3 board, so every status shows at once: a1 on the
+          // board's commit, a2 a protocol-2 helper, a3 a protocol-1 one.
           const h = await openTab(
-            { orgRole: 'owner', reports: { ...DEFAULT_REPORTS } },
+            {
+              orgRole: 'owner',
+              board: 'p3',
+              reports: {
+                a1: verification('a1', report({ protocol: 3 })),
+                a2: verification('a2', report({ cli_commit: OLDER, protocol: 2 })),
+              },
+            },
             { insecure: true },
           );
           try {
@@ -578,6 +697,18 @@ void describe(
             }
           } finally {
             await h.close();
+          }
+          // The protocol-2 board: a2 on another commit is Up to date, with no update offered.
+          const p2 = await openTab({}, { insecure: true });
+          try {
+            await p2.page.setViewportSize({ width, height: 900 });
+            await setTheme(p2.page, theme);
+            await settled(p2.page);
+            await tool(p2.page, 'a2').screenshot({
+              path: join(dir, `up-to-date-other-commit-${theme}-${String(width)}.png`),
+            });
+          } finally {
+            await p2.close();
           }
         }
       }

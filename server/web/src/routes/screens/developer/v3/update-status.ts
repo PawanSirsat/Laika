@@ -176,9 +176,11 @@ export const VERSION_UNKNOWN_REASON =
  * - **Update required for** *feature*: a feature the board has switched on
  *   needs a newer protocol than the helper reported — or the helper is below
  *   the oldest protocol the board accepts.
- * - **Up to date**: the helper runs the commit the board offers, or — when
- *   either side does not know its commit — speaks the board's protocol.
- * - **Update available**: everything else that reported; what it does now
+ * - **Up to date**: the helper speaks the board's protocol or a newer one,
+ *   whatever commit it runs. The same commit as the board's is said so; a
+ *   different one is named beside the board's, with no update offered.
+ * - **Update available**: the helper speaks a protocol the board accepts
+ *   (at least `min_client`) but older than the board's; what it does now
  *   keeps working.
  */
 export function updateStatus(
@@ -247,16 +249,8 @@ export function updateStatus(
       'up-to-date',
       'Up to date',
       'ok',
-      `Its helper speaks protocol ${String(speaks)}, newer than this board’s ${String(board.current)}`,
+      `This one speaks helper protocol ${String(speaks)}, newer than this board’s ${String(board.current)}`,
       { aheadOfBoard: true },
-    );
-  }
-  if (offered !== null && runs !== null && HEX.test(runs)) {
-    return status(
-      'available',
-      'Update available',
-      'waiting',
-      `This board offers helper ${shortCommit(offered)}; this one runs ${shortCommit(runs)}. What it does now keeps working`,
     );
   }
   if (speaks < board.current) {
@@ -267,11 +261,28 @@ export function updateStatus(
       `This board speaks helper protocol ${String(board.current)}; this one speaks ${String(speaks)}. What it does now keeps working`,
     );
   }
+  /*
+   * The board's protocol, on another commit (review round 1, B1). The page
+   * cannot tell whether that commit is behind the board's, ahead of it or on
+   * a fork — and `laika update` refuses a target that is not ahead of the
+   * checkout (`cli/src/update.ts`), so offering it would hand out a command
+   * that fails. The protocol is what the board needs (plan §H: "or protocol
+   * current"), so this is *Up to date*, naming both commits, with no update
+   * offered. `laika update --check` on the device can still say more.
+   */
+  if (offered !== null && runs !== null && HEX.test(runs)) {
+    return status(
+      'up-to-date',
+      'Up to date',
+      'ok',
+      `This one speaks this board’s helper protocol, ${String(board.current)}, on helper ${shortCommit(runs)}; this board offers ${shortCommit(offered)}`,
+    );
+  }
   return status(
     'up-to-date',
     'Up to date',
     'ok',
-    `Speaks this board’s helper protocol, ${String(board.current)}`,
+    `This one speaks this board’s helper protocol, ${String(board.current)}`,
   );
 }
 

@@ -331,7 +331,15 @@ export function ToolUpdate({ agentId, label }: ToolUpdateProps) {
   );
 }
 
-/** What the helper said it is — self-reported, so said as it said it. Times only with presence on. */
+/**
+ * What the helper said it is — self-reported, so said as it said it.
+ *
+ * **The time is hidden by the server, not here.** While the organisation has
+ * presence off, `GET /agents/:id/verification` answers `reported_at: null`
+ * whatever was stored (`getAgentVerification` in
+ * `server/src/services/tool-setup.ts`), so a null is drawn as no time at all —
+ * never *never*, never a guess.
+ */
 function ReportFacts({ report, now }: { readonly report: ClientReport; readonly now: number }) {
   const parts: string[] = [];
   if (report.cli_version !== null) parts.push(`laika ${report.cli_version}`);

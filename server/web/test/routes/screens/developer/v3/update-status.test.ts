@@ -157,13 +157,41 @@ void describe('each status, from the two answers', () => {
     assert.match(s.reason, /cea011d/);
   });
 
-  void test('Update available: another commit at the board’s protocol, and old work keeps working', () => {
+  void test('another commit at the board’s protocol is Up to date, naming both, with no update offered (review round 1, B1)', () => {
+    // OLDER could be behind the board's commit, ahead of it, or on a fork; the
+    // page cannot tell, and `laika update` refuses a target not ahead of HEAD.
     const s = updateStatus(manifest(), report({ cli_commit: OLDER }));
+    assert.equal(s.key, 'up-to-date');
+    assert.equal(s.word, 'Up to date');
+    assert.match(s.reason, /on helper 19f8587; this board offers cea011d/);
+    assert.equal(offersUpdate(s.key), false);
+  });
+
+  void test('a newer or forked commit at the board’s protocol is never an update', () => {
+    const FORK = 'abcdef0123456789abcdef0123456789abcdef01';
+    for (const runs of [FORK, OLDER, FORK.slice(0, 7)]) {
+      const s = updateStatus(manifest(), report({ cli_commit: runs }));
+      assert.equal(s.key, 'up-to-date', runs);
+      assert.equal(offersUpdate(s.key), false, runs);
+    }
+  });
+
+  void test('Update available: a protocol the board accepts but older than its own, and old work keeps working', () => {
+    const s = updateStatus(manifest({ current: 3 }), report({ cli_commit: OLDER, protocol: 2 }));
     assert.equal(s.key, 'available');
     assert.equal(s.word, 'Update available');
-    assert.match(s.reason, /offers helper cea011d; this one runs 19f8587/);
+    assert.match(s.reason, /This board speaks helper protocol 3; this one speaks 2/);
     assert.match(s.reason, /keeps working/);
     assert.equal(offersUpdate(s.key), true);
+  });
+
+  void test('the reasons say the protocol the same way, whichever side is ahead (N3)', () => {
+    const level = updateStatus(manifest(), report({ cli_commit: null }));
+    const ahead = updateStatus(manifest(), report({ cli_commit: null, protocol: 3 }));
+    const behind = updateStatus(manifest({ current: 3 }), report({ cli_commit: null }));
+    assert.equal(level.reason, 'This one speaks this board’s helper protocol, 2');
+    assert.equal(ahead.reason, 'This one speaks helper protocol 3, newer than this board’s 2');
+    assert.match(behind.reason, /^This board speaks helper protocol 3; this one speaks 2\./);
   });
 
   void test('with no commit on either side, the protocol decides', () => {
@@ -321,7 +349,7 @@ void describe('a device and the board', () => {
     );
     assert.equal(deviceUpdateSummary([s(report())]), 'Helper up to date');
     assert.equal(
-      deviceUpdateSummary([s(null), s(report({ cli_commit: OLDER })), s(report())]),
+      deviceUpdateSummary([s(null), s(report({ cli_commit: OLDER, protocol: 1 })), s(report())]),
       'Helper updates: 1 update available, 1 version unknown, 1 up to date',
     );
     assert.equal(deviceUpdateSummary([]), undefined);
@@ -346,5 +374,58 @@ void describe('a device and the board', () => {
     assert.equal(sameCommit(BOARD, BOARD.slice(0, 9)), true);
     assert.equal(sameCommit(BOARD, OLDER), false);
     assert.equal(sameCommit('main', 'main'), false);
+  });
+});
+
+/**
+ * The board #216 (LAI-1062) serves: protocol 2, `min_client` 1, pairing, tool
+ * setup and client reports switched on, each needing 2; project setup off.
+ */
+function protocol2Board(): UpdateManifest {
+  return manifest({
+    current: 2,
+    minClient: 1,
+    features: { device_pairing: true, tool_setup_exchange: true, client_reports: true },
+    minFor: { device_pairing: 2, tool_setup_exchange: 2, client_reports: 2, project_setups: 2 },
+    notes: [
+      { protocol: 1, summary: 'laika agent login, session hooks, laika connect and checkpoints.' },
+      { protocol: 2, summary: 'laika device pair, laika tool add and client reports.' },
+    ],
+  });
+}
+
+void describe('against the protocol-2 board', () => {
+  const board = protocol2Board();
+
+  void test('a protocol-1 helper: required for each switched-on feature, never for project setup', () => {
+    const s = updateStatus(board, report({ cli_commit: OLDER, protocol: 1 }));
+    assert.equal(s.key, 'required');
+    assert.equal(
+      s.word,
+      'Update required for pairing devices, adding tools without a secret, version reports',
+    );
+    assert.doesNotMatch(s.word, /project setup/);
+    assert.equal(offersUpdate(s.key), true);
+    assert.deepEqual(
+      whatsNew(board, report({ protocol: 1 })).map((l) => l.newForTool),
+      [false, true],
+    );
+  });
+
+  void test('a protocol-2 helper: Up to date on the board’s commit, and on any other', () => {
+    assert.equal(
+      updateStatus(board, report()).reason,
+      'Runs the helper this board offers, cea011d',
+    );
+    const other = updateStatus(board, report({ cli_commit: OLDER }));
+    assert.equal(other.key, 'up-to-date');
+    assert.equal(offersUpdate(other.key), false);
+  });
+
+  void test('no report is Version unknown; a newer helper is Up to date and ahead', () => {
+    assert.equal(updateStatus(board, null).key, 'unknown');
+    const ahead = updateStatus(board, report({ cli_commit: OLDER, protocol: 3 }));
+    assert.equal(ahead.key, 'up-to-date');
+    assert.equal(ahead.aheadOfBoard, true);
   });
 });
