@@ -799,7 +799,10 @@ void describe('Project setup, v3', () => {
       assert.ok(asked() >= 2, `the hint never asked the board (${String(asked())} reads)`);
       await h.page.waitForTimeout(300);
       const text = (await hint.innerText()).replace(/\s+/g, ' ').trim();
-      assert.match(text, /^This needs a Laika CLI that matches this board\. Check with laika version\./);
+      assert.match(
+        text,
+        /^This needs a Laika CLI that matches this board\. Check with laika version\./,
+      );
       assert.doesNotMatch(text, /commit/);
     } finally {
       await h.close();

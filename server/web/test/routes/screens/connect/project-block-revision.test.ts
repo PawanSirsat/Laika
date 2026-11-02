@@ -212,7 +212,9 @@ void describe('the Project setup prompt', () => {
   void test('before it appends, it looks for a hand-written Laika section and asks (LAI-1084)', () => {
     // OnRoute's CLAUDE.md had `## Laika board ritual`: no markers, no
     // BLOCK_MARKER line. The prompt appended a second block beside it.
-    const look = prompt.indexOf('look for a section someone wrote by\n   hand about this Laika board');
+    const look = prompt.indexOf(
+      'look for a section someone wrote by\n   hand about this Laika board',
+    );
     const append = prompt.indexOf('append the block below');
     assert.ok(look !== -1, 'the detection step is missing');
     assert.ok(look < append, 'it must look before it appends');

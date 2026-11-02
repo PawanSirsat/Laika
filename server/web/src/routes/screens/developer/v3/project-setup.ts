@@ -470,8 +470,9 @@ export interface CliMatchHint {
 }
 
 export function cliMatchHint(source: CliSource | undefined): CliMatchHint {
+  const commit = source?.commit ?? null;
   return {
-    commit: source === undefined || source.commit === null ? null : source.commit.slice(0, 7),
+    commit: commit === null ? null : commit.slice(0, 7),
     version: 'laika version',
     pull: 'git -C <your Laika checkout> pull --ff-only',
     update: 'laika update',
