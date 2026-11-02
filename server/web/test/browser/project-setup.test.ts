@@ -499,9 +499,10 @@ void describe('Project setup, v3', () => {
       await card(h.page, 3).waitFor({ timeout: 5_000 });
       assert.equal(param(h.page, 'step'), '3');
       await h.page.locator('[data-status="not-recorded"]').waitFor({ timeout: 20_000 });
+      // With the tool from step 1: two tools on a device and no --harness record nothing.
       assert.match(
         await h.page.locator('[data-step="record"]').innerText(),
-        /laika project check --project onroute/,
+        /laika project check --project onroute --harness claude-code/,
       );
       assert.equal(await finishButton(h.page).getAttribute('aria-disabled'), 'true');
       assert.equal(
@@ -736,6 +737,70 @@ void describe('Project setup, v3', () => {
       await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
       await h.page.waitForTimeout(400);
       assert.equal(reads(), before);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('under the command: which CLI it needs, naming the board’s commit (LAI-1084)', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [], setups: [] };
+    const commit = '0123456789abcdef0123456789abcdef01234567';
+    const h = await open(
+      '/developer?tab=projects&step=3',
+      stub('v3', world, {
+        '/api/v1/developer/compatibility': {
+          ...compat('v3'),
+          cli: {
+            source: {
+              type: 'git',
+              url: 'https://github.com/PawanSirsat/Laika.git',
+              commit,
+              path: 'cli',
+            },
+          },
+        },
+      }),
+    );
+    try {
+      const hint = h.page.locator('[data-way="check"] [data-note="cli-match"]');
+      await hint.waitFor({ timeout: 20_000 });
+      await until(async () => (await hint.innerText()).includes('0123456'));
+      assert.equal(
+        (await hint.innerText()).replace(/\s+/g, ' ').trim(),
+        'This needs a Laika CLI that matches this board (commit 0123456). Check with laika version. If that says unknown command, your CLI predates this board: update the Laika checkout it runs from with git -C <your Laika checkout> pull --ff-only, then run laika version again. Newer CLIs update with laika update.',
+      );
+      // Directly under the command it is about.
+      assert.equal(
+        await hint.evaluate((el) => el.previousElementSibling?.textContent?.includes('--harness')),
+        true,
+      );
+      assert.deepEqual(await hint.locator('code').allInnerTexts(), [
+        '0123456',
+        'laika version',
+        'git -C <your Laika checkout> pull --ff-only',
+        'laika version',
+        'laika update',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a board that does not say its commit: the same hint, naming none', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [], setups: [] };
+    const h = await open('/developer?tab=projects&step=3', stub('v3', world));
+    try {
+      const hint = h.page.locator('[data-way="check"] [data-note="cli-match"]');
+      await hint.waitFor({ timeout: 20_000 });
+      // The page read the answer twice: once for the mode, once for this hint.
+      const asked = () =>
+        h.calls.filter((c) => c.path === '/api/v1/developer/compatibility').length;
+      await until(() => asked() >= 2);
+      assert.ok(asked() >= 2, `the hint never asked the board (${String(asked())} reads)`);
+      await h.page.waitForTimeout(300);
+      const text = (await hint.innerText()).replace(/\s+/g, ' ').trim();
+      assert.match(text, /^This needs a Laika CLI that matches this board\. Check with laika version\./);
+      assert.doesNotMatch(text, /commit/);
     } finally {
       await h.close();
     }
