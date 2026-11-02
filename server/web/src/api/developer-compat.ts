@@ -24,20 +24,28 @@ export type DeveloperAccessMode = 'classic' | 'preview' | 'v3';
 export const DEVELOPER_ACCESS_MODES: readonly DeveloperAccessMode[] = ['classic', 'preview', 'v3'];
 
 /**
- * The mode a compatibility answer names. **Anything unreadable is `classic`**
- * (plan §I): an older board without the endpoint, a failed request, or a mode
- * this build does not know all show today's screens, never a half-built one.
+ * The mode shown when the answer cannot say one: `v3`, the server's own
+ * default (LAI-1076, owner decision 2026-11-02). It was `classic` while V3
+ * was opt-in (plan §I). A deployment that wants classic says so with
+ * `LAIKA_DEVELOPER_ACCESS=classic`, and that answer is read as given.
+ */
+export const FALLBACK_MODE: DeveloperAccessMode = 'v3';
+
+/**
+ * The mode a compatibility answer names. **Anything unreadable is
+ * {@link FALLBACK_MODE}**: a board without the endpoint, a failed request, or a
+ * mode this build does not know all show what an unset flag would.
  */
 export function developerAccessMode(body: unknown): DeveloperAccessMode {
-  if (typeof body !== 'object' || body === null) return 'classic';
+  if (typeof body !== 'object' || body === null) return FALLBACK_MODE;
   const features = (body as { features?: unknown }).features;
-  if (typeof features !== 'object' || features === null) return 'classic';
+  if (typeof features !== 'object' || features === null) return FALLBACK_MODE;
   const mode = (features as { developer_access?: unknown }).developer_access;
-  return DEVELOPER_ACCESS_MODES.find((known) => known === mode) ?? 'classic';
+  return DEVELOPER_ACCESS_MODES.find((known) => known === mode) ?? FALLBACK_MODE;
 }
 
 /**
- * How long Developer access waits for the answer before showing classic
+ * How long Developer access waits for the answer before showing the fallback
  * (LAI-1048, review round 1). The page draws nothing until the mode is known,
  * so a request that hangs would otherwise hold the whole page on its loading
  * card, in every mode.
@@ -57,9 +65,9 @@ const REAL_TIMER: ModeTimer = {
 };
 
 /**
- * `answer`, or `classic` if it has not settled within `ms` — and `onTimeout`,
- * so the caller can abort the request it no longer waits for. A failed answer
- * is `classic` too. Never rejects.
+ * `answer`, or {@link FALLBACK_MODE} if it has not settled within `ms` — and
+ * `onTimeout`, so the caller can abort the request it no longer waits for. A
+ * failed answer is the fallback too. Never rejects.
  */
 export function modeWithin(
   answer: Promise<DeveloperAccessMode>,
@@ -73,7 +81,7 @@ export function modeWithin(
       if (settled) return;
       settled = true;
       onTimeout();
-      resolve('classic');
+      resolve(FALLBACK_MODE);
     }, ms);
     answer.then(
       (mode) => {
@@ -86,7 +94,7 @@ export function modeWithin(
         if (settled) return;
         settled = true;
         timer.clear(handle);
-        resolve('classic');
+        resolve(FALLBACK_MODE);
       },
     );
   });
@@ -95,7 +103,7 @@ export function modeWithin(
 let asked: Promise<DeveloperAccessMode> | undefined;
 let known: DeveloperAccessMode | undefined;
 
-/** The mode, read once for the page's life; a failure or a timeout settles as `classic`. */
+/** The mode, read once for the page's life; a failure or a timeout settles as the fallback. */
 export function loadDeveloperAccessMode(): Promise<DeveloperAccessMode> {
   if (asked === undefined) {
     const controller = new AbortController();
@@ -112,7 +120,7 @@ export function loadDeveloperAccessMode(): Promise<DeveloperAccessMode> {
   return asked;
 }
 
-/** `undefined` until the answer is in — a screen waits rather than guessing classic. */
+/** `undefined` until the answer is in — a screen waits rather than guessing a mode. */
 export function useDeveloperAccessMode(): DeveloperAccessMode | undefined {
   const [mode, setMode] = useState<DeveloperAccessMode | undefined>(known);
   useEffect(() => {

@@ -285,6 +285,18 @@ export function defaultPermissions(me: StubMe): unknown {
   };
 }
 const PERMISSIONS_PATH = '/api/v1/permissions';
+
+/**
+ * What a stub that does not name `GET /developer/compatibility` is answered
+ * (LAI-1076). The fallback for an unreadable answer became `v3` with the
+ * server default, and the fixtures written before that drew the **classic**
+ * screens through it — screens that stay until V3 has run in production. So
+ * the harness says `classic` for them, and only the mode: the rest of the body
+ * is absent, as it was from a 404. A test of V3 names its mode; a test of the
+ * fallback itself names the endpoint and refuses it.
+ */
+export const DEFAULT_COMPATIBILITY = { features: { developer_access: 'classic' } } as const;
+const COMPATIBILITY_PATH = '/api/v1/developer/compatibility';
 const ME_PATH = '/api/v1/me';
 
 /**
@@ -664,6 +676,12 @@ function serve(
         ) {
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify(defaultPermissions(lastMe)));
+          return;
+        }
+
+        if (chosen === undefined && req.method === 'GET' && path === COMPATIBILITY_PATH) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(DEFAULT_COMPATIBILITY));
           return;
         }
 

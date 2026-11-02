@@ -72,8 +72,10 @@ export interface Env {
 
 /**
  * `classic` is today's five tabs, `preview` adds the V3 tabs beside them, `v3`
- * makes them the default (the LAI-1042 plan, §I). Rollback is setting it back
- * and restarting: nothing it gates is stored.
+ * makes them the default (the LAI-1042 plan, §I). Unset is `v3` (LAI-1076,
+ * owner decision 2026-11-02); `classic` and `preview` stay accepted as the
+ * opt-out. Rollback is setting `classic` and restarting: nothing it gates is
+ * stored.
  */
 export const DEVELOPER_ACCESS_MODES = ['classic', 'preview', 'v3'] as const;
 export type DeveloperAccessMode = (typeof DEVELOPER_ACCESS_MODES)[number];
@@ -360,7 +362,7 @@ function parseBuildCommit(raw: string | undefined): string | null {
 }
 
 function parseDeveloperAccess(raw: string | undefined): DeveloperAccessMode {
-  if (raw === undefined || raw === '') return 'classic';
+  if (raw === undefined || raw === '') return 'v3';
   const mode = DEVELOPER_ACCESS_MODES.find((m) => m === raw);
   if (mode === undefined) {
     throw new EnvError(

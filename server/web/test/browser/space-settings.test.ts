@@ -616,8 +616,8 @@ void describe('Access', () => {
       );
       // Coding tools may work here (was *Agent sessions*, LAI-1058).
       const agents = h.page.getByRole('switch', { name: 'Coding tools may work here' });
-      // The help's wording per mode is the next test's; this board has no
-      // compatibility endpoint, so it is classic.
+      // The help's wording per mode is the next test's; this stub does not
+      // name the compatibility endpoint, so the harness answers classic.
       await h.page.getByRole('link', { name: 'Developer access · Projects' }).waitFor();
       await agents.click();
       await until(async () => (await agents.getAttribute('aria-checked')) === 'false');
