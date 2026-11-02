@@ -6,6 +6,7 @@ import { ADAPTERS, HARNESSES, type Harness } from './agent-adapters.ts';
 import { AGENT_MARKER, hookFile } from './agent-hooks.ts';
 import { credentialPath } from './agent-session.ts';
 import { detectAgents } from './agents.ts';
+import { entryKind, readClaudeLaika } from './claude-mcp.ts';
 import { normaliseUrl } from './api.ts';
 import { readSettings } from './config.ts';
 import { PROTOCOL } from './protocol.ts';
@@ -428,6 +429,48 @@ async function toolChecks(io: DoctorIo, offline: boolean): Promise<Check[]> {
   return checks;
 }
 
+/**
+ * What Claude Code's `mcpServers.laika` sends (LAI-1074): this tool's
+ * credential through `tool add`'s `headersHelper`, or something else — a token
+ * written into the file, or an environment variable — which then decides who
+ * Claude Code acts as, `laika-claude` included. Never prints a token.
+ */
+export function claudeMcpCheck(home: string, toolCredential: boolean): Check | undefined {
+  const entry = readClaudeLaika(home);
+  if (entry === undefined) return undefined;
+  const name = 'claude mcp';
+  const where = 'mcpServers.laika in ~/.claude.json';
+  const fix =
+    "to use this tool's credential, quit Claude Code, run `claude mcp remove laika --scope user`, then reconnect the tool (Developer access → Devices → ⋯ → Reconnect) and run the command it shows";
+  const kind = entryKind(entry);
+  switch (kind.kind) {
+    case 'tool':
+      return {
+        name,
+        status: 'ok',
+        detail: `${where} reads this tool's credential (~/.laika/agents/claude-code.json)`,
+      };
+    case 'literal':
+      return {
+        name,
+        status: 'action',
+        detail: `${where} holds a token written into the file: Claude Code acts as that token, laika-claude too, and anything that reads the file can copy it — ${fix}`,
+      };
+    case 'env':
+      return {
+        name,
+        status: toolCredential ? 'action' : 'info',
+        detail: `${where} sends \${${kind.variable}} from the environment, not this tool's credential: Claude Code acts as whoever that names, laika-claude too${toolCredential ? ` — ${fix}` : ''}`,
+      };
+    case 'other':
+      return {
+        name,
+        status: 'info',
+        detail: `${where} does not read this tool's credential and names no token this check can see`,
+      };
+  }
+}
+
 function legacyChecks(io: DoctorIo): Check[] {
   const checks: Check[] = [];
   const envFile = join(io.home, '.laika', 'env');
@@ -460,6 +503,11 @@ function legacyChecks(io: DoctorIo): Check[] {
       detail: '~/.claude/settings.json is not valid JSON: fix or move it',
     });
   }
+  const claude = claudeMcpCheck(
+    io.home,
+    readCredentialFile(io.home, 'claude-code')?.source === 'tool-add',
+  );
+  if (claude !== undefined) checks.push(claude);
   const mcp = detectAgents(io.home);
   checks.push({
     name: 'mcp entries',

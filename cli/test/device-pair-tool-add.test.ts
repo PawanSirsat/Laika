@@ -3,12 +3,14 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from 'node:crypto';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createServer, type Server, type ServerResponse } from 'node:http';
@@ -16,6 +18,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { after, afterEach, describe, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { holdsEntry } from '../src/claude-mcp.ts';
+import { CLAUDE_HEADERS_HELPER, claudeToolEntry } from '../src/tool-add.ts';
 
 /**
  * `laika device pair` and `laika tool add` (LAI-1060), run as the real CLI in
@@ -881,14 +886,21 @@ void describe('laika tool add', () => {
     assertNoLeak(home, [run, doc2, again], '.laika/agents/claude-code.json');
   });
 
-  void test('claude-code: an existing mcpServers.laika is kept byte for byte, and the entry printed', async () => {
+  void test('claude-code: a kept literal-token laika entry decides who Claude Code acts as, laika-claude too (LAI-1074 N1)', async () => {
     const home = sandbox();
     const s = await board();
     await paired(home, s);
+    // What `claude mcp add … --header "Authorization: Bearer $LAIKA_TOKEN"` leaves:
+    // the person's own token, written into the file.
+    const personal = 'lai_PERSONALliteral0123456789';
     const mine = `${JSON.stringify(
       {
         mcpServers: {
-          laika: { type: 'http', url: 'http://board.test/mcp', headers: { A: 'mine' } },
+          laika: {
+            type: 'http',
+            url: 'http://board.test/mcp',
+            headers: { Authorization: `Bearer ${personal}` },
+          },
         },
       },
       null,
@@ -904,11 +916,171 @@ void describe('laika tool add', () => {
       '--no-hooks',
     ]);
     assert.equal(run.code, 0, run.stdout + run.stderr);
+    // Kept byte for byte, never backed up or rewritten.
     assert.equal(readFileSync(join(home, '.claude.json'), 'utf8'), mine);
     assert.ok(!existsSync(join(home, '.claude.json.bak')));
-    assert.match(run.stdout, /already has an mcpServers\.laika entry — kept as it is/);
-    assert.match(run.stdout, /"headersHelper": /);
+    assert.match(run.stdout, /already has its own mcpServers\.laika — kept as it is/);
+    assert.match(
+      run.stdout,
+      /That entry, not this tool’s credential, decides who Claude Code acts as/,
+    );
+    assert.match(run.stdout, /under `laika-claude` too/);
+    // How to switch, exactly.
+    assert.match(run.stdout, /claude mcp remove laika --scope user/);
+    assert.ok(
+      run.stdout.includes(
+        `claude mcp add-json laika --scope user '${JSON.stringify(claudeToolEntry(s.url))}'`,
+      ),
+      'the switch command is not the tool entry',
+    );
+    // Nothing claims this tool's credential is in use.
+    assert.doesNotMatch(run.stdout, /Its Laika MCP entry uses this tool's own credential/);
+    assert.doesNotMatch(run.stdout, /`laika-claude`, which uses this\s+tool's own credential/);
+    assert.match(run.stdout, /act as whoever your\s+own mcpServers\.laika entry says/);
+    // Neither token is printed.
+    assert.ok(!run.stdout.includes('lai_') && !run.stderr.includes('lai_'), 'a token was printed');
+    assert.ok(!mine.includes(SECRET));
+  });
+
+  void test('claude-code: an entry an older tool add wrote is brought up to date, not kept', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    // PR #225's helper: no empty-token guard.
+    const older = {
+      type: 'http',
+      url: `${s.url}/mcp`,
+      headersHelper:
+        `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$HOME/.laika/agents/claude-code.json")" && ` +
+        `printf '{"Authorization":"Bearer %s"}' "$t"`,
+    };
+    write(home, '.claude.json', `${JSON.stringify({ mcpServers: { laika: older } }, null, 2)}\n`);
+    const run = await laika(home, [
+      'tool',
+      'add',
+      'claude-code',
+      '--exchange',
+      'EX1',
+      '--no-hooks',
+    ]);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    const doc = JSON.parse(readFileSync(join(home, '.claude.json'), 'utf8')) as {
+      mcpServers: { laika: unknown };
+    };
+    assert.deepEqual(doc.mcpServers.laika, claudeToolEntry(s.url));
+    assert.match(run.stdout, /✓ mcp: mcpServers\.laika updated in/);
+    assert.doesNotMatch(run.stdout, /kept as it is/);
     assertNoLeak(home, [run], '.laika/agents/claude-code.json');
+  });
+
+  void test('claude-code: says to quit Claude Code first; a symlinked ~/.claude.json stays a symlink (LAI-1074 N4)', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    const before = `${JSON.stringify({ numStartups: 3, mcpServers: { other: { type: 'stdio', command: 'x' } } }, null, 2)}\n`;
+    write(home, 'dotfiles/claude.json', before);
+    symlinkSync(join(home, 'dotfiles', 'claude.json'), join(home, '.claude.json'));
+
+    const run = await laika(home, [
+      'tool',
+      'add',
+      'claude-code',
+      '--exchange',
+      'EX1',
+      '--no-hooks',
+    ]);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    // Said before anything is written: the plan comes first.
+    const quit = run.stdout.indexOf('quit Claude Code: this rewrites ~/.claude.json');
+    assert.ok(quit >= 0, 'no quit-first line');
+    assert.ok(quit < run.stdout.indexOf('✓ credential saved'), 'quit-first came after the writes');
+
+    assert.ok(lstatSync(join(home, '.claude.json')).isSymbolicLink(), 'the symlink was replaced');
+    const target = readFileSync(join(home, 'dotfiles', 'claude.json'), 'utf8');
+    const doc = JSON.parse(target) as { numStartups: number; mcpServers: Record<string, unknown> };
+    assert.deepEqual(doc.mcpServers.laika, claudeToolEntry(s.url));
+    assert.deepEqual(doc.mcpServers.other, { type: 'stdio', command: 'x' });
+    assert.equal(doc.numStartups, 3);
+    assert.equal(readFileSync(join(home, 'dotfiles', 'claude.json.bak'), 'utf8'), before);
+    assert.match(run.stdout, /through the symlink ~\/\.claude\.json/);
+    assertNoLeak(home, [run], '.laika/agents/claude-code.json');
+  });
+
+  void test('claude-code: a symlink that leads nowhere is left alone, with the step by hand', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    symlinkSync(join(home, 'nowhere', 'claude.json'), join(home, '.claude.json'));
+    const run = await laika(home, [
+      'tool',
+      'add',
+      'claude-code',
+      '--exchange',
+      'EX1',
+      '--no-hooks',
+    ]);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    assert.ok(lstatSync(join(home, '.claude.json')).isSymbolicLink());
+    assert.ok(!existsSync(join(home, 'nowhere')), 'it created the target');
+    assert.match(run.stdout, /is a symlink to a file that does not exist, so it was left alone/);
+    assert.match(run.stdout, /MCP set up by hand/);
+    assert.doesNotMatch(run.stdout, /Its Laika MCP entry uses this tool's own credential/);
+    // files() walks with stat, which a dangling link fails; read the output instead.
+    assert.ok(!run.stdout.includes('lai_') && !run.stderr.includes('lai_'), 'a token was printed');
+  });
+
+  void test('the read-back: holdsEntry is true only for exactly the entry (LAI-1074 N4)', () => {
+    const home = sandbox();
+    const entry = claudeToolEntry('http://board.test');
+    const path = join(home, 'c.json');
+    writeFileSync(path, JSON.stringify({ mcpServers: { laika: entry } }));
+    assert.equal(holdsEntry(path, entry), true);
+    // A running Claude Code wrote its own copy over ours: the entry is gone.
+    writeFileSync(path, JSON.stringify({ numStartups: 9, mcpServers: { other: {} } }));
+    assert.equal(holdsEntry(path, entry), false);
+    writeFileSync(path, JSON.stringify({ mcpServers: { laika: { ...entry, extra: 'x' } } }));
+    assert.equal(holdsEntry(path, entry), false);
+    writeFileSync(path, '{ not json');
+    assert.equal(holdsEntry(path, entry), false);
+    assert.equal(holdsEntry(join(home, 'missing.json'), entry), false);
+  });
+
+  void test('the helper prints nothing and fails with no token (LAI-1074 N3)', async () => {
+    const home = sandbox();
+    const runHelper = (): Promise<{ code: number | null; out: string }> =>
+      new Promise((resolve) => {
+        const child = spawn('/bin/sh', ['-c', CLAUDE_HEADERS_HELPER], {
+          env: { HOME: home, PATH: '/usr/bin:/bin' },
+        });
+        let out = '';
+        child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString('utf8')));
+        child.on('close', (code) => {
+          resolve({ code, out });
+        });
+      });
+    // No credential file at all.
+    let r = await runHelper();
+    assert.equal(r.out, '');
+    assert.notEqual(r.code, 0);
+    // A file with an empty token.
+    write(home, '.laika/agents/claude-code.json', '{\n  "url": "http://b",\n  "token": ""\n}\n');
+    r = await runHelper();
+    assert.equal(r.out, '');
+    assert.notEqual(r.code, 0);
+    // A file with no token line.
+    write(home, '.laika/agents/claude-code.json', '{\n  "url": "http://b"\n}\n');
+    r = await runHelper();
+    assert.equal(r.out, '');
+    assert.notEqual(r.code, 0);
+    // And a real one still works.
+    write(
+      home,
+      '.laika/agents/claude-code.json',
+      '{\n  "url": "http://b",\n  "token": "lai_abc"\n}\n',
+    );
+    r = await runHelper();
+    assert.equal(r.code, 0);
+    assert.deepEqual(JSON.parse(r.out), { Authorization: 'Bearer lai_abc' });
   });
 
   void test('cursor: MCP set up by hand, with the exact entry and a variable from its own credential', async () => {
