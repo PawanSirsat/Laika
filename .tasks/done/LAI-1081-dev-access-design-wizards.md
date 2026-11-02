@@ -6,7 +6,7 @@ assignee: shell/belka
 priority: p2
 depends-on: [LAI-1078, LAI-1080]
 discovered-from: LAI-1075
-status: review
+status: done
 started: 2026-11-02T11:07:36+05:30
 finished: 2026-11-02T13:47:42+05:30
 ---
