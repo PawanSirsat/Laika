@@ -482,7 +482,10 @@ void describe('Project setup, v3', () => {
       created_at: 1,
       revoked_at: null,
     };
-    const h = await open('/developer', stub('v3', world, { '/api/v1/devices': { data: [device] } }));
+    const h = await open(
+      '/developer',
+      stub('v3', world, { '/api/v1/devices': { data: [device] } }),
+    );
     try {
       await h.page.getByRole('link', { name: 'Set up a project →', exact: true }).click();
       await h.page.locator('.dev-setup').waitFor({ timeout: 20_000 });
