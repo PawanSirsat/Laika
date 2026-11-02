@@ -2,11 +2,12 @@
 id: LAI-1059
 title: 'master CI red: the device-pairing bucket test times out, and a switched model is lost before it reaches the board'
 area: core
-assignee: unclaimed
+assignee: polly
 priority: p1
 depends-on: []
 discovered-from: LAI-1050
-status: backlog
+status: in-progress
+started: 2026-11-02T00:08:34Z
 ---
 
 ## Why
