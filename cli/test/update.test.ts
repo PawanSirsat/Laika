@@ -259,7 +259,16 @@ interface BoardOptions {
   /** `protocol.current`; 1 (a board from before LAI-1062) unless set. */
   readonly current?: number;
   readonly minProtocolFor?: Record<string, number>;
+  /** What `POST /agents/me/client-report` answers (LAI-1068); 200 unless set. */
+  readonly reportStatus?: number;
 }
+
+/** Every client report the board received in this test, with its headers. */
+interface Report {
+  readonly auth: string | undefined;
+  readonly body: Record<string, unknown>;
+}
+let reports: Report[] = [];
 
 function compatBody(w: World, options: BoardOptions): unknown {
   const commitId = options.commit === undefined ? w.b : options.commit;
@@ -276,7 +285,21 @@ function compatBody(w: World, options: BoardOptions): unknown {
 }
 
 async function board(w: World, options: BoardOptions = {}): Promise<string> {
+  reports = [];
   server = createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/api/v1/agents/me/client-report') {
+      let raw = '';
+      req.on('data', (chunk: Buffer) => (raw += chunk.toString('utf8')));
+      req.on('end', () => {
+        reports.push({
+          auth: req.headers.authorization,
+          body: JSON.parse(raw) as Record<string, unknown>,
+        });
+        res.writeHead(options.reportStatus ?? 200, { 'content-type': 'application/json' });
+        res.end('{}');
+      });
+      return;
+    }
     if (req.url !== '/api/v1/developer/compatibility' || options.status === 404) {
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: { code: 'not_found', message: 'Not found' } }));
@@ -1030,6 +1053,99 @@ void describe('laika update — recovering a run that was killed', () => {
     assert.equal(r.code, 0, r.err);
     assertOnlyStateFiles(w);
     assert.equal(worktrees(w), 1);
+  });
+});
+
+void describe('laika update — the client report after an update (LAI-1068)', () => {
+  /** A board build whose CLI says protocol 7, so the report can only have read the new checkout. */
+  function protocolSevenBuild(w: World): string {
+    return commit(w.source, 'C: a build at protocol 7', {
+      'cli/src/protocol.ts': 'export const PROTOCOL = 7;\n',
+    });
+  }
+
+  void test('client_reports on: one report per credential for this board, from the new checkout', async () => {
+    const w = world();
+    const c = protocolSevenBuild(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    // A credential for another board is not this board's to hear about.
+    writeFileSync(
+      join(w.home, '.laika', 'agents', 'codex.json'),
+      `${JSON.stringify({ url: 'http://other.invalid', token: 'lai_OTHERBOARDTOKEN' })}\n`,
+      { mode: 0o600 },
+    );
+    const before = protectedFiles(w);
+    // Every POST this update makes, wherever it was aimed.
+    const posted: string[] = [];
+
+    const r = await run(w, ['--board', url], {
+      fetch: (input, init) => {
+        if (init?.method === 'POST')
+          posted.push(input instanceof Request ? input.url : input.toString());
+        return fetch(input, init);
+      },
+    });
+    assert.equal(r.code, 0, r.err);
+    assert.equal(head(w), c);
+    assert.deepEqual(
+      posted,
+      [`${url}/api/v1/agents/me/client-report`],
+      'a token went to a board it does not belong to',
+    );
+    assert.doesNotMatch(r.out, /Codex/);
+    assert.equal(reports.length, 1, 'one report, for claude-code only');
+    const [report] = reports;
+    assert.ok(report !== undefined);
+    assert.equal(report.auth, `Bearer ${AGENT_TOKEN}`, 'not the credential’s own token');
+    assert.equal(report.body.cli_commit, c, 'the commit is not the new checkout’s');
+    assert.equal(report.body.protocol, 7, 'the protocol is the running CLI’s, not the new one’s');
+    assert.equal(typeof report.body.cli_version, 'string');
+    assert.ok(Array.isArray(report.body.capabilities));
+    assert.match(r.out, new RegExp(`✓ told the board Claude Code now runs ${c.slice(0, 7)}`));
+    assert.deepEqual(protectedFiles(w), before, 'a credential file was written');
+  });
+
+  void test('client_reports off: nothing is sent and nothing is said about it', async () => {
+    const w = world();
+    const url = await board(w, { features: { client_reports: false } });
+    plant(w, url);
+    const r = await run(w, ['--board', url]);
+    assert.equal(r.code, 0, r.err);
+    assert.equal(head(w), w.b);
+    assert.deepEqual(reports, []);
+    assert.doesNotMatch(r.out, /told the board|could not tell the board/);
+  });
+
+  void test('a refused report is one line; the update stands, exit 0', async () => {
+    const w = world();
+    const url = await board(w, { features: { client_reports: true }, reportStatus: 500 });
+    plant(w, url);
+    const r = await run(w, ['--board', url]);
+    assert.equal(r.code, 0, r.err);
+    assert.equal(head(w), w.b, 'the update was rolled back over a report');
+    assert.equal(reports.length, 1);
+    assert.match(
+      r.out,
+      /· could not tell the board Claude Code's new version \(500\); the update stands/,
+    );
+    assert.match(r.out, new RegExp(`Updated: .* is at ${w.b.slice(0, 7)}`));
+    assert.doesNotMatch(r.err, /Rolling back/);
+  });
+
+  void test('a board that does not answer the report: the update stands, exit 0', async () => {
+    const w = world();
+    const url = await board(w, { features: { client_reports: true } });
+    plant(w, url);
+    const r = await run(w, ['--board', url], {
+      fetch: (input, init) =>
+        init?.method === 'POST'
+          ? Promise.reject(new Error('connection refused'))
+          : fetch(input, init),
+    });
+    assert.equal(r.code, 0, r.err);
+    assert.equal(head(w), w.b);
+    assert.match(r.out, /could not tell the board Claude Code's new version \(unreachable\)/);
   });
 });
 

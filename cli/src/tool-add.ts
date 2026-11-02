@@ -6,6 +6,7 @@ import { type AgentHookReport, installAgentHooks } from './agent-hooks.ts';
 import { ADAPTERS, type Harness } from './agent-adapters.ts';
 import { credentialPath, isRecord, writeCredential, writePrivate } from './agent-session.ts';
 import { AGENT_HOOK_SCRIPT } from './agent-setup.ts';
+import { reportOutcome, sendClientReport } from './client-report.ts';
 import { apply, prepare, rcFileFor } from './connect.ts';
 import {
   commonRefusal,
@@ -486,19 +487,9 @@ function nextSteps(harness: Harness, hooksOn: boolean): string[] {
   }
 }
 
-/** Closed: the board refuses a capability it does not know (§4.81). */
-const BASE_CAPABILITIES = [
-  'device_pairing',
-  'tool_setup_exchange',
-  'client_report',
-  'doctor',
-  'update',
-] as const;
-
 /**
- * What this helper is, sent with the tool's own token (§4.81). Evidence for a
- * status word on the board, never a permission; a failure is reported and
- * does not undo the setup.
+ * What this helper is, sent with the tool's own token (§4.81, `client-report.ts`).
+ * A failure is reported and does not undo the setup.
  */
 async function clientReport(
   io: ToolAddIo,
@@ -507,25 +498,18 @@ async function clientReport(
   hooksOn: boolean,
 ): Promise<void> {
   const info = versionInfo();
-  const body = {
-    cli_version: /^[0-9A-Za-z][0-9A-Za-z.+_-]*$/.test(info.version) ? info.version : 'unknown',
-    ...(info.commit !== null && /^[0-9a-f]{7,40}$/.test(info.commit)
-      ? { cli_commit: info.commit }
-      : {}),
-    protocol: PROTOCOL,
-    capabilities: [
-      ...BASE_CAPABILITIES,
-      ...(hooksOn ? (['session_hooks', 'claims', 'checkpoints'] as const) : []),
-    ],
-  };
-  const answer = await postJson(io, `${url}/api/v1/agents/me/client-report`, body, {
-    Authorization: `Bearer ${token}`,
-  });
-  if (answer.kind === 'json' && answer.status === 200) {
-    io.out('  ✓ reported this helper’s version to the board');
-  } else {
-    io.out(
-      `  · could not report this helper’s version (${answer.kind === 'unreachable' ? 'unreachable' : String(answer.status)}); the setup stands`,
-    );
-  }
+  const outcome = reportOutcome(
+    await sendClientReport(
+      io,
+      url,
+      token,
+      { version: info.version, commit: info.commit, protocol: PROTOCOL },
+      hooksOn,
+    ),
+  );
+  io.out(
+    outcome === 'sent'
+      ? '  ✓ reported this helper’s version to the board'
+      : `  · could not report this helper’s version (${outcome}); the setup stands`,
+  );
 }
