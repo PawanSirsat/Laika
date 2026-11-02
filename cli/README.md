@@ -126,8 +126,8 @@ board with `project_setups` off, or needing a newer protocol, gets nothing and
 you are told which (`laika update`, or ask your admin to update the board).
 
 Exit codes: `0` current, `1` needs action (no block, an older revision, another
-project or prefix), `2` could not record (the board did not answer or refused),
-`64` usage.
+project or prefix), `2` could not record (the board did not answer or refused,
+or several tools are set up here and no `--harness` says which), `64` usage.
 
 ## `laika version` — which CLI this is (LAI-1043)
 

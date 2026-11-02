@@ -58,7 +58,8 @@ import { displayUrl, urlProblem, USAGE_EXIT } from './doctor.ts';
  * there to record it); `1` something needs action — no block, an older
  * revision, or a block naming another project or prefix; `2` nothing needs
  * action locally but the record could not be made (the board did not answer,
- * refused, or is too old to take it); `64` the command line itself was wrong
+ * refused, or is too old to take it, or several tools are set up here and no
+ * `--harness` says which); `64` the command line itself was wrong
  * (`EX_USAGE`, as `laika doctor`).
  */
 
@@ -515,8 +516,10 @@ export async function projectCheck(
         why: 'no tool credential on this machine — nothing recorded (laika tool add sets one up)',
       };
     } else if (choice.kind === 'several') {
+      // Not `skipped`: credentials are here and the record was expected, so a
+      // script or agent must not read this as done (exit 2, LAI-1084).
       outcome = {
-        kind: 'skipped',
+        kind: 'failed',
         why: `several tools are set up here (${choice.harnesses.join(', ')}) — pass --harness to record`,
       };
     } else if (urlProblem(choice.credential.url) !== undefined) {

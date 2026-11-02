@@ -562,15 +562,37 @@ void describe('laika project check', () => {
     assert.match(r.out, /this tool has no access to "onroute"/);
   });
 
-  void test('several tools here and no --harness: records nothing and says why', async () => {
+  void test('several tools here and no --harness: records nothing, says why, exit 2 (LAI-1084)', async () => {
     const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
     const r = await run([], {
       cwd: dir,
       home: home({ 'claude-code': BOARD, codex: BOARD }),
     });
-    assert.equal(r.code, 0);
+    // Not 0: a script or agent following the page must not read this as recorded.
+    assert.equal(r.code, 2);
     assert.equal(r.sent.length, 0);
     assert.match(r.out, /several tools are set up here \(claude-code, codex\) — pass --harness/);
+  });
+
+  void test('several tools here, no --harness and no block: needs action still wins, exit 1', async () => {
+    const dir = repo({ 'CLAUDE.md': '# Notes\n' });
+    const r = await run([], {
+      cwd: dir,
+      home: home({ 'claude-code': BOARD, codex: BOARD }),
+    });
+    assert.equal(r.code, 1, r.out);
+    assert.equal(r.sent.length, 0);
+  });
+
+  void test('several tools here and --harness names one: recorded, exit 0', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run(['--harness', 'codex'], {
+      cwd: dir,
+      home: home({ 'claude-code': BOARD, codex: BOARD }),
+    });
+    assert.equal(r.code, 0, r.out);
+    assert.equal(r.sent.length, 1);
+    assert.equal(r.sent[0]?.url, `${BOARD}/api/v1/project-setups`);
   });
 
   void test('a credential URL carrying a secret is never fetched', async () => {
