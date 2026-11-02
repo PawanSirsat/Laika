@@ -10,12 +10,21 @@ import type { ProjectSetup } from '../../../../../src/api/project-setups.ts';
 import {
   connectedTools,
   currentChoice,
+  doneSummary,
+  GRANT_MEANINGS,
   grantOptions,
+  hasRecord,
+  levelChip,
+  parseStep,
   projectCheckCommand,
+  recordChip,
   recordFinding,
   recordSource,
   recordState,
   setupEvidence,
+  setupRow,
+  stepNumber,
+  verificationWords,
   withOneGrant,
 } from '../../../../../src/routes/screens/developer/v3/project-setup.ts';
 
@@ -240,5 +249,163 @@ void describe('what the records say (LAI-1066)', () => {
 
   void test('the command to run names the project', () => {
     assert.equal(projectCheckCommand('onroute'), 'laika project check --project onroute');
+  });
+});
+
+void describe('the wizard’s address (LAI-1082)', () => {
+  void test('a step is 1, 2, 3 or done; anything else opens at the start', () => {
+    assert.deepEqual(['1', '2', '3', 'done', null, '', '4', 'Done', ' 2'].map(parseStep), [
+      1,
+      2,
+      3,
+      'done',
+      1,
+      1,
+      1,
+      1,
+      1,
+    ]);
+    assert.deepEqual(
+      [1, 2, 3, 'done'].map((s) => stepNumber(parseStep(String(s)))),
+      [1, 2, 3, 4],
+    );
+  });
+});
+
+void describe('the authorization row (LAI-1082)', () => {
+  void test('the chip names the level in words', () => {
+    assert.deepEqual(levelChip('full'), { word: 'Full access', tone: 'ok' });
+    assert.deepEqual(levelChip('read_only'), { word: 'Read only', tone: 'accent' });
+    assert.deepEqual(levelChip('none'), { word: 'No access', tone: 'warn' });
+  });
+
+  void test('no tile’s second line says another option’s name, so each radio is found by its own', () => {
+    const names = grantOptions(access()).map((o) => o.label.toLowerCase());
+    for (const [value, line] of Object.entries(GRANT_MEANINGS)) {
+      const own = grantOptions(access())
+        .find((o) => o.value === value)
+        ?.label.toLowerCase();
+      for (const name of names.filter((n) => n !== own)) {
+        assert.ok(!line.toLowerCase().includes(name), `${value}'s line names ${name}`);
+      }
+    }
+  });
+});
+
+void describe('done and the setups list say no more than the records (LAI-1082)', () => {
+  const now = Date.UTC(2026, 9, 21);
+  const self = setup({
+    id: 's2',
+    source: 'self_reported_browser',
+    repo_label: null,
+    project_match: null,
+    prefix_match: null,
+  });
+
+  void test('a record of either kind finishes the wizard; none does not', () => {
+    assert.equal(hasRecord(setupEvidence([], 'a1')), false);
+    assert.equal(hasRecord(setupEvidence([self], 'a1')), true);
+    assert.equal(hasRecord(setupEvidence([setup({ id: 's1' })], 'a1')), true);
+    // Another tool's record is not this tool's.
+    assert.equal(hasRecord(setupEvidence([setup({ id: 's1', agent_id: 'a2' })], 'a1')), false);
+  });
+
+  void test('Verification says Checked only for a local check of the current block', () => {
+    assert.match(
+      verificationWords(setupEvidence([setup({ id: 's1' })], 'a1'), now),
+      /^Checked on Belka at \d+ Oct, \d+:\d\d [AP]M$/,
+    );
+    assert.equal(
+      verificationWords(setupEvidence([setup({ id: 's1', checked_at: null })], 'a1'), now),
+      'Checked on Belka',
+    );
+    assert.equal(
+      verificationWords(setupEvidence([self], 'a1'), now),
+      'Recorded by you — not verified',
+    );
+    assert.equal(
+      verificationWords(
+        setupEvidence([setup({ id: 's1', template_revision: 1 }), self], 'a1'),
+        now,
+      ),
+      'Update available',
+    );
+    assert.equal(
+      verificationWords(
+        setupEvidence([setup({ id: 's1', block_found: false, template_revision: null })], 'a1'),
+        now,
+      ),
+      'No block found',
+    );
+    assert.equal(verificationWords(setupEvidence([], 'a1'), now), 'Not recorded');
+  });
+
+  const summary = (records: ProjectSetup[], effective: 'none' | 'read_only' | 'full') =>
+    doneSummary({
+      evidence: setupEvidence(records, 'a1'),
+      effective,
+      toolName: 'Claude Code',
+      projectName: 'OnRoute',
+      path: 'CLAUDE.md',
+    });
+
+  void test('the done note follows the grant in effect, and a missing block is not set up', () => {
+    const full = summary([self], 'full');
+    assert.equal(full.eyebrow, 'Repository set up');
+    assert.match(full.body, /^With Full access, Claude Code can .+ in OnRoute, as you\./);
+    assert.match(summary([self], 'read_only').body, /^With Read only, it reads .+ changes nothing/);
+    const none = summary([self], 'none');
+    assert.equal(none.title, 'Grant required');
+    assert.equal(none.tone, 'warn');
+    const missing = summary(
+      [setup({ id: 's1', block_found: false, template_revision: null })],
+      'full',
+    );
+    assert.equal(missing.eyebrow, 'Not set up yet');
+    assert.equal(missing.title, 'No Laika block found');
+    assert.equal(
+      summary([setup({ id: 's1', prefix_match: false })], 'full').title,
+      'An update is available',
+    );
+  });
+
+  void test('a list row: Checked for a current local check, the reader’s word never', () => {
+    assert.deepEqual(recordChip(setup({ id: 's1' })), { word: 'Checked', tone: 'ok' });
+    assert.deepEqual(recordChip(self), { word: 'Recorded by you', tone: 'neutral' });
+    assert.deepEqual(recordChip(setup({ id: 's1', template_revision: 1 })), {
+      word: 'Update available',
+      tone: 'warn',
+    });
+    assert.deepEqual(recordChip(setup({ id: 's1', block_found: false, template_revision: null })), {
+      word: 'No block found',
+      tone: 'warn',
+    });
+    assert.deepEqual(recordChip({ ...self, block_found: false }), {
+      word: 'No block found',
+      tone: 'warn',
+    });
+  });
+
+  void test('a list row names the project, repository, tool and who said it', () => {
+    const agents = [
+      agent({ id: 'a1' }),
+      agent({ id: 'a2', harness: 'codex', device_label: 'Strelka', status: 'revoked' }),
+    ];
+    assert.deepEqual(setupRow(setup({ id: 's1' }), agents, 'OnRoute'), {
+      title: 'OnRoute · onroute-app',
+      sub: 'Claude Code · Belka · CLAUDE.md · checked on Belka',
+      chip: { word: 'Checked', tone: 'ok' },
+      toolId: 'a1',
+    });
+    const mine = setupRow(self, agents, undefined);
+    assert.equal(mine.title, 'onroute');
+    assert.equal(mine.sub, 'Claude Code · Belka · CLAUDE.md · your word, not verified');
+    // A disconnected tool, or one gone altogether, cannot be reopened.
+    const revoked = setupRow(setup({ id: 's3', agent_id: 'a2' }), agents, 'OnRoute');
+    assert.match(revoked.sub, /^Codex · Strelka · disconnected · /);
+    assert.equal(revoked.toolId, null);
+    const gone = setupRow(setup({ id: 's4', agent_id: null }), agents, 'OnRoute');
+    assert.match(gone.sub, /^A tool no longer connected · /);
+    assert.equal(gone.toolId, null);
   });
 });

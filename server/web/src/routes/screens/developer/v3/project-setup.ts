@@ -45,6 +45,14 @@ export interface ToolChoice {
 
 const NO_DEVICE = 'Unnamed device';
 
+/** `Claude Code · Belka`: the tool from the catalogue, then its device. */
+export function toolLabel(agent: RegisteredAgent): string {
+  const client = agentHarness(agent);
+  const toolName = client === 'other' ? agent.display_name : agentClientName(client);
+  const device = agent.device_label?.trim() ?? '';
+  return `${toolName} · ${device === '' ? NO_DEVICE : device}`;
+}
+
 /**
  * The reader's active tools, by label. Revoked ones are left out: they reach
  * nothing and can be given nothing (§H: counts exclude revoked).
@@ -54,17 +62,199 @@ export function connectedTools(agents: readonly RegisteredAgent[], now: number):
     .filter((agent) => agent.status === 'active')
     .map((agent) => {
       const client = agentHarness(agent);
-      const toolName = client === 'other' ? agent.display_name : agentClientName(client);
-      const device = agent.device_label?.trim() ?? '';
       return {
         id: agent.id,
-        label: `${toolName} · ${device === '' ? NO_DEVICE : device}`,
+        label: toolLabel(agent),
         client,
-        toolName,
+        toolName: client === 'other' ? agent.display_name : agentClientName(client),
         status: AGENT_STATE_LABELS[agentState(agent, now)],
       };
     })
     .sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
+}
+
+// -------------------------------------------------------------- the wizard
+
+/**
+ * Where the wizard is (LAI-1082): `?step=1|2|3|done` beside `?project=` and
+ * `?tool=`. Anything else is step 1, so an old or hand-typed address opens at
+ * the start rather than on nothing.
+ */
+export type SetupStep = 1 | 2 | 3 | 'done';
+
+export function parseStep(value: string | null): SetupStep {
+  if (value === '2') return 2;
+  if (value === '3') return 3;
+  if (value === 'done') return 'done';
+  return 1;
+}
+
+/** The rail's number for a step: *done* is past the third. */
+export function stepNumber(step: SetupStep): number {
+  return step === 'done' ? 4 : step;
+}
+
+export type ChipTone = 'ok' | 'warn' | 'accent' | 'neutral';
+
+export interface Chip {
+  readonly word: string;
+  readonly tone: ChipTone;
+}
+
+/**
+ * The tool's grant here as the authorization row's chip. The word is the
+ * level; the tone only repeats it.
+ */
+export function levelChip(choice: GrantChoice): Chip {
+  if (choice === 'full') return { word: 'Full access', tone: 'ok' };
+  if (choice === 'read_only') return { word: 'Read only', tone: 'accent' };
+  return { word: 'No access', tone: 'warn' };
+}
+
+/**
+ * Each grant's second line on its tile. No line uses another option's name,
+ * so each radio is found by its own name alone.
+ */
+export const GRANT_MEANINGS: Readonly<Record<GrantChoice, string>> = {
+  none: 'It cannot see this project.',
+  read_only: 'It reads tasks and the brief, and changes nothing.',
+  full: 'It creates and changes tasks here, as you.',
+};
+
+/**
+ * Whether a record exists for this tool at all — checked or the reader's
+ * word. The wizard finishes on any record, and says which kind it is.
+ */
+export function hasRecord(evidence: SetupEvidence): boolean {
+  return evidence.checks.length > 0 || evidence.self !== null;
+}
+
+/**
+ * The done card's *Verification* tile, in the strongest words the records
+ * allow (§4.82): *Checked* only from a `laika project check` that found the
+ * current block, and the reader's own word always says it is not verified.
+ */
+export function verificationWords(evidence: SetupEvidence, now: number): string {
+  if (evidence.overall === 'update-available') return 'Update available';
+  if (evidence.overall === 'missing') return 'No block found';
+  if (evidence.overall === 'not-recorded') return 'Not recorded';
+  const current = evidence.checks.filter((record) => recordState(record) === 'current');
+  const latest = current.at(-1);
+  if (latest === undefined) return 'Recorded by you — not verified';
+  const device = latest.device_label?.trim() ?? '';
+  const at = latest.checked_at === null ? '' : ` at ${dateTime(latest.checked_at, now)}`;
+  return `Checked on ${device === '' ? NO_DEVICE.toLowerCase() : device}${at}`;
+}
+
+export interface DoneSummary {
+  readonly eyebrow: string;
+  /** The orb's and the note's tone: `ok` reads as set up, `warn` as not yet. */
+  readonly tone: 'ok' | 'accent' | 'warn';
+  readonly title: string;
+  readonly body: string;
+}
+
+/**
+ * What the done card may say, from the records and the grant in effect. It
+ * never says more than both allow: a block not found is not *set up*, and a
+ * tool with no access here can do nothing in the project, block or not.
+ */
+export function doneSummary(input: {
+  readonly evidence: SetupEvidence;
+  readonly effective: GrantChoice;
+  readonly toolName: string;
+  readonly projectName: string;
+  readonly path: string;
+}): DoneSummary {
+  const { evidence, effective, toolName, projectName, path } = input;
+  if (evidence.overall === 'missing') {
+    return {
+      eyebrow: 'Not set up yet',
+      tone: 'warn',
+      title: 'No Laika block found',
+      body: `laika project check found no Laika block in ${path}. Paste the prompt from step 2 in the repository, then run the check again.`,
+    };
+  }
+  if (evidence.overall === 'update-available') {
+    return {
+      eyebrow: 'Repository set up',
+      tone: 'warn',
+      title: 'An update is available',
+      body: `A record is older than instructions template revision ${String(PROJECT_BLOCK_REVISION)}, or names another project or task-key prefix. Paste the prompt from step 2 again — it replaces only the block.`,
+    };
+  }
+  if (effective === 'none') {
+    return {
+      eyebrow: 'Repository set up',
+      tone: 'warn',
+      title: 'Grant required',
+      body: `${toolName} has no access to ${projectName}, so it cannot reach this project’s tasks yet. Give it access in step 1.`,
+    };
+  }
+  if (effective === 'read_only') {
+    return {
+      eyebrow: 'Repository set up',
+      tone: 'accent',
+      title: `${toolName} can read ${projectName} from this repository`,
+      body: 'With Read only, it reads the project’s tasks and brief, and changes nothing on the board.',
+    };
+  }
+  return {
+    eyebrow: 'Repository set up',
+    tone: 'accent',
+    title: 'Your repository can now follow Laika’s workflow',
+    body: `With Full access, ${toolName} can read and create tasks, comment, update status and move its work to Review in ${projectName}, as you. A person still marks work Done.`,
+  };
+}
+
+// ------------------------------------------------------------- setups list
+
+/**
+ * One record as a line in *Your repository setups*: what it is about, who
+ * said it, and its chip — *Checked* only for a local check that found the
+ * current block, the reader's own word always *Recorded by you* and *not
+ * verified*.
+ */
+export function recordChip(record: ProjectSetup): Chip {
+  const state = recordState(record);
+  if (state === 'update-available') return { word: 'Update available', tone: 'warn' };
+  if (state === 'missing') return { word: 'No block found', tone: 'warn' };
+  return record.source === 'local_check'
+    ? { word: 'Checked', tone: 'ok' }
+    : { word: 'Recorded by you', tone: 'neutral' };
+}
+
+export interface SetupRow {
+  readonly title: string;
+  readonly sub: string;
+  readonly chip: Chip;
+  /** The tool to reopen the setup with, or `null` when it is no longer connected. */
+  readonly toolId: string | null;
+}
+
+export function setupRow(
+  record: ProjectSetup,
+  agents: readonly RegisteredAgent[],
+  projectName: string | undefined,
+): SetupRow {
+  const agent = agents.find((a) => a.id === record.agent_id);
+  const active = agent?.status === 'active';
+  const tool =
+    agent === undefined
+      ? 'A tool no longer connected'
+      : `${toolLabel(agent)}${active ? '' : ' · disconnected'}`;
+  const name = projectName ?? record.project_slug;
+  const device = record.device_label?.trim() ?? '';
+  const said =
+    record.source === 'local_check'
+      ? `checked on ${device === '' ? NO_DEVICE.toLowerCase() : device}`
+      : 'your word, not verified';
+  return {
+    title: record.repo_label === null ? name : `${name} · ${record.repo_label}`,
+    sub: `${tool} · ${record.instructions_path ?? 'instructions file'} · ${said}`,
+    chip: recordChip(record),
+    toolId: active ? (agent?.id ?? null) : null,
+  };
 }
 
 /**
