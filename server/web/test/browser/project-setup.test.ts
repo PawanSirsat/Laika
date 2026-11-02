@@ -260,7 +260,10 @@ void describe('Project setup, v3', () => {
       );
       const checked = await h.page.locator('[data-source="local_check"]').innerText();
       assert.match(checked, /Checked by laika project check on Belka at /);
-      assert.match(checked, /onroute-app: instructions template revision 1 in CLAUDE\.md/);
+      assert.match(
+        checked,
+        /onroute-app: as of the last check, instructions template revision 1 in CLAUDE\.md/,
+      );
       const mine = await h.page.locator('[data-source="self_reported_browser"]').innerText();
       assert.match(mine, /Recorded by you at .+ — not verified/);
       assert.doesNotMatch(mine, /Checked/);

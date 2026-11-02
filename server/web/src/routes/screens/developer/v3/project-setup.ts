@@ -208,9 +208,15 @@ export function recordSource(record: ProjectSetup, now: number): string {
   return `Recorded by you${at} — not verified`;
 }
 
-/** What one record found, in words: the repository, revision and any mismatch. */
+/**
+ * What one record found, in words: the repository, revision and any mismatch.
+ * A local check's project and prefix match are worked out when it is recorded,
+ * so it says *as of the last check*: a prefix changed since shows only once
+ * `laika project check` runs again.
+ */
 export function recordFinding(record: ProjectSetup): string {
-  const where = record.repo_label === null ? '' : `${record.repo_label}: `;
+  const asOf = record.source === 'local_check' ? 'as of the last check, ' : '';
+  const where = `${record.repo_label === null ? '' : `${record.repo_label}: `}${asOf}`;
   const file = record.instructions_path ?? 'the instructions file';
   if (!record.block_found) return `${where}no Laika block in ${file}`;
   const revision =

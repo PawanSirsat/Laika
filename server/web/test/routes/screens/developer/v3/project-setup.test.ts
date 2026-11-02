@@ -219,13 +219,18 @@ void describe('what the records say (LAI-1066)', () => {
   void test('the finding names the revision and any mismatch, never context_revision', () => {
     assert.equal(
       recordFinding(setup({ id: 's1', template_revision: 1, project_match: false })),
-      'onroute-app: instructions template revision 1 in CLAUDE.md — it names another project',
+      'onroute-app: as of the last check, instructions template revision 1 in CLAUDE.md — it names another project',
     );
     assert.equal(
       recordFinding(setup({ id: 's2', block_found: false, template_revision: null })),
-      'onroute-app: no Laika block in CLAUDE.md',
+      'onroute-app: as of the last check, no Laika block in CLAUDE.md',
     );
     assert.doesNotMatch(recordFinding(setup({ id: 's3' })), /context/i);
+    // The reader's own word is not a check, so it does not say one ran.
+    assert.equal(
+      recordFinding(setup({ id: 's4', source: 'self_reported_browser', repo_label: null })),
+      'instructions template revision 2 in CLAUDE.md',
+    );
   });
 
   void test('the command to run names the project', () => {
