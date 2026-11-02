@@ -4,7 +4,6 @@ import type { Device } from '../../../../api/devices.ts';
 import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../../components/LoadingState.tsx';
 import { AgentMark } from '../../../../components/agent-mark/AgentMark.tsx';
-import { DesignChip } from './DesignChip.tsx';
 import { DxIcon } from './DxIcon.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
@@ -19,7 +18,15 @@ import {
   type DeviceCounts,
   type ListedTool,
 } from './devices-view.ts';
+import { HintChip, StatusLegendLink } from './StatusLegend.tsx';
 import { UpdateChip, useReportedHelper, useUpdateStatus, useVerification } from './ToolUpdate.tsx';
+import {
+  DUPLICATE,
+  TOOL_STATUS,
+  duplicateDescription,
+  toolChipDescription,
+} from './status-vocabulary.ts';
+import { catalogTool } from './tool-catalog.ts';
 
 export const TOOLS_TITLE = 'dv3-tools-title';
 
@@ -117,16 +124,19 @@ export function ToolsTab({
         titleId={TOOLS_TITLE}
         sub="Each coding tool has its own Laika credential: you see which one did what, and can disconnect it alone."
         actions={
-          canManage && !wizard ? (
-            <button
-              type="button"
-              ref={addButton}
-              className="dx-btn dx-btn-primary"
-              onClick={onAddTool}
-            >
-              + Add tool
-            </button>
-          ) : undefined
+          <>
+            <StatusLegendLink from="tools" />
+            {canManage && !wizard && (
+              <button
+                type="button"
+                ref={addButton}
+                className="dx-btn dx-btn-primary"
+                onClick={onAddTool}
+              >
+                + Add tool
+              </button>
+            )}
+          </>
         }
       />
 
@@ -214,7 +224,8 @@ function ToolRecord({
   readonly onNavigate: (href: string) => void;
 }) {
   const { agent, label, inConflict } = listed;
-  const status = listedStatus(agent, useVerification(agent.id), now);
+  const verification = useVerification(agent.id);
+  const status = listedStatus(agent, verification, now);
   const update = useUpdateStatus(agent.id);
   const helper = useReportedHelper(agent.id);
   const action = toolAction(listed, status);
@@ -244,10 +255,30 @@ function ToolRecord({
       </div>
       <div className="dx-record-end">
         <span data-readiness={status.key} data-evidence={status.evidence}>
-          <DesignChip tone={chipTone(status.tone)}>{status.word}</DesignChip>
+          <HintChip
+            word={TOOL_STATUS[status.key].word}
+            tone={chipTone(status.tone)}
+            description={toolChipDescription({
+              label,
+              status,
+              agent,
+              verification,
+              tool: catalogTool(agent.harness),
+              deviceName: listed.device.display_name,
+              now,
+            })}
+          />
         </span>
-        {active && <UpdateChip status={update} />}
-        {inConflict && <DesignChip tone="warn">Duplicate</DesignChip>}
+        {active && <UpdateChip status={update} label={label} />}
+        {inConflict && (
+          <span data-duplicate="">
+            <HintChip
+              word={DUPLICATE.word}
+              tone={DUPLICATE.tone}
+              description={duplicateDescription(label)}
+            />
+          </span>
+        )}
         {action === 'set-up-project' && (
           <a
             className="dx-btn dx-btn-sm"

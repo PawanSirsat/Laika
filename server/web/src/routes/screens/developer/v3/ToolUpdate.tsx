@@ -14,7 +14,9 @@ import { getAgentVerification, type AgentVerification } from '../../../../api/to
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
 import { DesignChip } from './DesignChip.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
+import { HintChip } from './StatusLegend.tsx';
 import { UpdateCliHelp } from './UpdateCliGuide.tsx';
+import { deviceVersionDescription, updateChipDescription } from './status-vocabulary.ts';
 import { guideFor, versionUnknownHint } from './update-cli.ts';
 import {
   AFTER_UPDATE,
@@ -269,12 +271,27 @@ export function useReportedHelper(agentId: string): string | undefined {
  * unknown* or *Could not check*. Its reason and the command are in the tool's
  * details.
  */
-export function UpdateChip({ status }: { readonly status: UpdateStatus | undefined }) {
+export function UpdateChip({
+  status,
+  label,
+}: {
+  readonly status: UpdateStatus | undefined;
+  /** `<tool> · <device>`: given, the chip explains itself for this row (LAI-1086). */
+  readonly label?: string;
+}) {
   const chip = versionChip(status?.key);
-  if (chip === undefined) return null;
+  if (chip === undefined || status === undefined) return null;
   return (
     <span data-update-chip={chip.key}>
-      <DesignChip tone={chip.tone}>{chip.word}</DesignChip>
+      {label === undefined ? (
+        <DesignChip tone={chip.tone}>{chip.word}</DesignChip>
+      ) : (
+        <HintChip
+          word={chip.word}
+          tone={chip.tone}
+          description={updateChipDescription(label, status)}
+        />
+      )}
     </span>
   );
 }
@@ -284,14 +301,30 @@ export function UpdateChip({ status }: { readonly status: UpdateStatus | undefin
  * active tools, *Helpers up to date* when every one is. The count of each is
  * the device's details (`DeviceUpdate`).
  */
-export function DeviceVersionChip({ agentIds }: { readonly agentIds: readonly string[] }) {
+export function DeviceVersionChip({
+  agentIds,
+  name,
+}: {
+  readonly agentIds: readonly string[];
+  /** The device's name: its chip's description says it (LAI-1086). */
+  readonly name: string;
+}) {
   const updates = useUpdates();
   if (updates === undefined || agentIds.length === 0) return null;
-  const chip = versionChip(worstUpdate(agentIds.map((id) => updates.status(id))), agentIds.length);
-  if (chip === undefined) return null;
+  const statuses = agentIds.map((id) => updates.status(id));
+  const chip = versionChip(worstUpdate(statuses), agentIds.length);
+  if (chip === undefined || chip.key === 'checking') return null;
   return (
     <span data-device-version={chip.key}>
-      <DesignChip tone={chip.tone}>{chip.word}</DesignChip>
+      <HintChip
+        word={chip.word}
+        tone={chip.tone}
+        description={deviceVersionDescription(
+          name,
+          deviceUpdateSummary(statuses) ?? chip.word,
+          chip.key,
+        )}
+      />
     </span>
   );
 }

@@ -1,0 +1,97 @@
+/*
+ * What every status means (LAI-1086): the chip that explains itself, and the
+ * legend. Existing tokens only, so both themes come from theme.css. The
+ * tooltip opens under its chip, aligned to the row's end, and is never wider
+ * than the screen less its gutters — 390 px never scrolls sideways.
+ */
+
+.dv3-hint {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.dv3-hint-anchor {
+  display: inline-flex;
+  border-radius: var(--radius-pill);
+  cursor: help;
+}
+
+.dv3-hint-anchor:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dv3-hint-tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2rem));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  font-size: var(--text-small);
+  font-weight: normal;
+  line-height: var(--leading-small);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.dv3-hint:hover:not([data-hidden]) > .dv3-hint-tip,
+.dv3-hint:focus-within:not([data-hidden]) > .dv3-hint-tip {
+  display: block;
+}
+
+.dv3-legend-link {
+  white-space: nowrap;
+}
+
+.dv3-legend {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.dv3-legend-entry {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.dv3-legend-entry dt {
+  display: flex;
+}
+
+.dv3-legend-entry dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.dv3-legend-meaning,
+.dv3-legend-todo {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  overflow-wrap: anywhere;
+}
+
+.dv3-legend-meaning {
+  color: var(--text-primary);
+}
+
+.dv3-legend-todo {
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+}
+
+.dv3-legend-todo-label {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}

@@ -1,5 +1,6 @@
 import type { AgentVerification } from '../../../../api/tool-setup.ts';
 import type { StatusTone } from '../../../../components/wizard/StatusChip.tsx';
+import { ALL_UP_TO_DATE, UPDATE_STATUS } from './status-vocabulary.ts';
 
 /**
  * Whether a tool's local helper needs updating (LAI-1065, plan LAI-1042 §H,
@@ -430,15 +431,15 @@ export function versionChip(key: UpdateKey | undefined, tools = 1): VersionChip 
     case 'checking':
       return undefined;
     case 'up-to-date':
-      return { key, word: tools > 1 ? 'Helpers up to date' : 'Helper up to date', tone: 'ok' };
+      return { key, word: tools > 1 ? ALL_UP_TO_DATE : UPDATE_STATUS[key].word, tone: 'ok' };
     case 'available':
-      return { key, word: 'Update available', tone: 'accent' };
+      return { key, word: UPDATE_STATUS[key].word, tone: 'accent' };
     case 'required':
-      return { key, word: 'Update required', tone: 'danger' };
+      return { key, word: UPDATE_STATUS[key].word, tone: 'danger' };
     case 'unknown':
-      return { key, word: 'Version unknown', tone: 'neutral' };
+      return { key, word: UPDATE_STATUS[key].word, tone: 'neutral' };
     case 'unchecked':
-      return { key, word: 'Could not check', tone: 'neutral' };
+      return { key, word: UPDATE_STATUS[key].word, tone: 'neutral' };
   }
 }
 
