@@ -4,11 +4,20 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { toolRedeemMessage } from '../../src/auth/device-signature.ts';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
-import { agents, devices, tokens, toolSetupExchanges } from '../../src/db/schema.ts';
+import {
+  agentClientReports,
+  agents,
+  devices,
+  tokens,
+  toolSetupExchanges,
+} from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { CLOUD_TOKEN_MAX_TTL_MS } from '../../src/services/agents.ts';
+import { recordMcpClientReport } from '../../src/services/client-reports.ts';
+import { insertToken } from '../../src/services/tokens.ts';
 import {
   EXCHANGE_TTL_MS,
+  getAgentVerification,
   MAX_OPEN_EXCHANGES,
   addToolToDevice,
   cancelToolSetup,
@@ -215,5 +224,71 @@ describe('cloud', () => {
     const outcome = redeem(created.exchange.id, device);
     if (outcome.kind !== 'redeemed') throw new Error('expected a redeem');
     expect(outcome.body.token.expires_at).toBeNull();
+  });
+});
+
+describe('a generic MCP client (D-125)', () => {
+  it('needs the MCP request and the report naming the harness from the same live token', () => {
+    const agentId = newId();
+    t.db
+      .insert(agents)
+      .values({
+        id: agentId,
+        orgId: s.orgId,
+        ownerUserId: s.userId,
+        displayName: 'Polly',
+        harness: 'omnigent',
+        status: 'active',
+        createdAt: NOW,
+      })
+      .run();
+    const mint = () =>
+      insertToken(t.db, owner, {
+        name: 'Polly',
+        scope: 'full',
+        projectIds: null,
+        expiresAt: null,
+        agentId,
+        now: NOW,
+      }).token.id;
+    const a = mint();
+    const b = mint();
+    const cliFrom = (tokenId: string) =>
+      t.db
+        .insert(agentClientReports)
+        .values({
+          agentId,
+          source: 'cli',
+          tokenId,
+          cliVersion: '0.9.0',
+          protocol: 2,
+          capabilitiesJson: JSON.stringify(['client_report', 'tool_setup_exchange']),
+          harness: 'omnigent',
+          reportedAt: NOW,
+        })
+        .onConflictDoUpdate({
+          target: [agentClientReports.agentId, agentClientReports.source],
+          set: { tokenId },
+        })
+        .run();
+
+    expect(recordMcpClientReport(t.db, a, NOW, 'mcp', '1.0')).toBe(true);
+    cliFrom(b);
+    const fromTwo = getAgentVerification(t.db, owner, agentId, NOW);
+    expect(fromTwo.checks.tool_request.state).toBe('fail');
+
+    cliFrom(a);
+    const fromOne = getAgentVerification(t.db, owner, agentId, NOW);
+    expect(fromOne.checks.tool_request).toMatchObject({
+      state: 'pass',
+      detail: { evidence: 'client_report', mcp_client_name: 'generic' },
+    });
+    expect(fromOne.checks.required_capabilities.state).toBe('pass');
+
+    // Once that token is revoked, its word is no evidence for the tool now.
+    t.db.update(tokens).set({ revokedAt: NOW }).where(eq(tokens.id, a)).run();
+    const revoked = getAgentVerification(t.db, owner, agentId, NOW);
+    expect(revoked.checks.tool_request.state).toBe('fail');
+    expect(revoked.checks.required_capabilities.state).toBe('fail');
   });
 });

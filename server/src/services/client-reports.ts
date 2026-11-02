@@ -50,6 +50,8 @@ export interface ClientReportInput {
   protocol: number;
   capabilities: readonly ClientCapability[];
   harnessVersion?: string | undefined;
+  /** The harness the CLI says it runs as (D-125): a generic MCP client's only name. */
+  harness?: string | undefined;
 }
 
 export interface ClientReportView {
@@ -60,6 +62,7 @@ export interface ClientReportView {
   protocol: number | null;
   capabilities: string[];
   harness_version: string | null;
+  harness: string | null;
   /** Null while the org has presence off (§4.2). */
   reported_at: number | null;
   self_reported: true;
@@ -93,6 +96,7 @@ export function reportClient(
     protocol: input.protocol,
     capabilitiesJson: JSON.stringify(capabilities),
     harnessVersion: input.harnessVersion ?? null,
+    harness: input.harness ?? null,
     reportedAt: presenceEnabled(db) ? now : null,
   };
   db.insert(agentClientReports)
@@ -111,6 +115,7 @@ export function reportClient(
     protocol: values.protocol,
     capabilities,
     harness_version: values.harnessVersion,
+    harness: values.harness,
     reported_at: values.reportedAt,
     self_reported: true,
   };
@@ -163,8 +168,11 @@ export function recordMcpClientReport(
     existing?.tokenId === tokenId &&
     existing.clientName === name &&
     existing.clientVersion === version &&
-    (reportedAt === null ||
-      (existing.reportedAt !== null && now - existing.reportedAt < LAST_USED_THROTTLE_MS));
+    // With presence off, a row still carrying a time from when it was on is
+    // rewritten without it (PR #211 review, B1): never left showing a time.
+    (reportedAt === null
+      ? existing.reportedAt === null
+      : existing.reportedAt !== null && now - existing.reportedAt < LAST_USED_THROTTLE_MS);
   if (unchanged) return false;
 
   const values = {

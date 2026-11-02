@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d17604c4-56f0-4d43-8603-c4016eddb082",
+  "id": "52c7d2a7-7378-407c-832d-7bf530cf1ef0",
   "prevId": "aea0f073-04d4-4c1e-a32a-046589af1064",
   "tables": {
     "accounts": {
@@ -458,6 +458,13 @@
         },
         "harness_version": {
           "name": "harness_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "harness": {
+          "name": "harness",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

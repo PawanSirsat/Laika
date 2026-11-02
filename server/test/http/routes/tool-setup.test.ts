@@ -55,6 +55,7 @@ interface Created {
   agent: { id: string; harness: string; device_label: string | null; tokens: unknown[] };
   exchange: { id: string; state: string; purpose: string; device_id: string };
   command: string;
+  revokes_on_redeem: string[];
 }
 
 interface Redeemed {
@@ -166,7 +167,10 @@ async function challengeOf(exchangeId: string, deviceId: string): Promise<string
 }
 
 async function redeem(exchangeId: string, device: { id: string; key: Key }): Promise<Response> {
-  const challenge = await challengeOf(exchangeId, device.id);
+  const asked = await post(`/api/v1/tool-setup/${exchangeId}/redeem`, { device_id: device.id });
+  // A setup that is no longer open refuses the challenge itself (N4).
+  if (asked.status !== 200) return asked;
+  const { challenge } = (await asked.json()) as { challenge: string };
   return post(`/api/v1/tool-setup/${exchangeId}/redeem`, {
     device_id: device.id,
     signature: signRedeem(device.key, exchangeId, device.id, challenge),
@@ -262,21 +266,18 @@ describe('adding a tool', () => {
   it('reuses the one active agent for the device and harness, and withdraws the older setup', async () => {
     const device = await pair(bob.cookie);
     const first = await ok<Created>(await addTool(bob.cookie, device.id), 201);
+    const firstChallenge = await challengeOf(first.exchange.id, device.id);
     const second = await ok<Created>(await addTool(bob.cookie, device.id), 201);
 
     expect(second.agent.id).toBe(first.agent.id);
     expect(h.db.select().from(agents).where(eq(agents.ownerUserId, bob.id)).all()).toHaveLength(1);
+    // Even signed with the challenge it was given, the older one is withdrawn.
     expect(
       (
         await refusal(
           await post(`/api/v1/tool-setup/${first.exchange.id}/redeem`, {
             device_id: device.id,
-            signature: signRedeem(
-              device.key,
-              first.exchange.id,
-              device.id,
-              await challengeOf(first.exchange.id, device.id),
-            ),
+            signature: signRedeem(device.key, first.exchange.id, device.id, firstChallenge),
           }),
           409,
         )
@@ -313,6 +314,29 @@ describe('adding a tool', () => {
     expect(body.error.details.reason).toBe('agent_duplicates_need_resolution');
     expect([...body.error.details.agent_ids].sort()).toEqual([...ids].sort());
     expect(h.db.select().from(toolSetupExchanges).all()).toEqual([]);
+  });
+
+  it('reuses an agent linked to the device even when its label has drifted (N3)', async () => {
+    const device = await pair(bob.cookie);
+    const orgId = h.db.select().from(orgs).get()?.id ?? '';
+    const id = newId();
+    h.db
+      .insert(agents)
+      .values({
+        id,
+        orgId,
+        ownerUserId: bob.id,
+        displayName: 'Claude, old name',
+        harness: 'claude-code',
+        deviceLabel: 'Strelka (old)',
+        deviceId: device.id,
+        status: 'active',
+        createdAt: Date.now(),
+      })
+      .run();
+    const created = await ok<Created>(await addTool(bob.cookie, device.id), 201);
+    expect(created.agent.id).toBe(id);
+    expect(h.db.select().from(agents).where(eq(agents.ownerUserId, bob.id)).all()).toHaveLength(1);
   });
 
   it('answers another owner’s device exactly as one that does not exist', async () => {
@@ -410,10 +434,9 @@ describe('redeeming', () => {
       await req('/api/v1/tokens', {}, { cookie: bob.cookie }),
       await post(`/api/v1/tool-setup/${created.exchange.id}/redeem`, { device_id: device.id }),
     ];
-    for (const res of reads) {
-      expect(res.status, await res.clone().text()).toBeLessThan(300);
-      expect(await res.text()).not.toContain(redeemed.secret);
-    }
+    // The last is a spent setup asked again: refused (N4), and still no secret.
+    expect(reads.map((res) => res.status)).toEqual([200, 200, 200, 200, 200, 409]);
+    for (const res of reads) expect(await res.text()).not.toContain(redeemed.secret);
   });
 
   it('refuses a signature from another key, and cancels the setup after five', async () => {
@@ -477,6 +500,45 @@ describe('redeeming', () => {
     expect(wrongDevice.status).toBe(404);
     expect(unknown.status).toBe(404);
     expect(await wrongDevice.text()).toBe(await unknown.text());
+  });
+
+  it('an unsigned request on a spent setup is refused, not given the challenge (N4)', async () => {
+    const device = await pair(bob.cookie);
+    const { created } = await install(bob.cookie, device);
+    const res = await post(`/api/v1/tool-setup/${created.exchange.id}/redeem`, {
+      device_id: device.id,
+    });
+    const text = await res.clone().text();
+    expect(await refusal(res, 409)).toEqual({ code: 'conflict', reason: 'exchange_redeemed' });
+    const row = h.db.select().from(toolSetupExchanges).get();
+    expect(text).not.toContain(row?.challenge ?? 'missing');
+  });
+
+  it('a device revoked since the setup was made mints nothing', async () => {
+    const device = await pair(bob.cookie);
+    const created = await ok<Created>(await addTool(bob.cookie, device.id), 201);
+    h.db.update(devices).set({ status: 'revoked', revokedAt: Date.now() }).run();
+    expect(await refusal(await redeem(created.exchange.id, device), 409)).toEqual({
+      code: 'conflict',
+      reason: 'device_revoked',
+    });
+    expect(h.db.select().from(tokens).where(eq(tokens.userId, bob.id)).all()).toEqual([]);
+  });
+
+  it('an agent moved to another device since is the same 404 as no setup (N1)', async () => {
+    const device = await pair(bob.cookie);
+    const other = await pair(bob.cookie, 'Belka');
+    const created = await ok<Created>(await addTool(bob.cookie, device.id), 201);
+    const challenge = await challengeOf(created.exchange.id, device.id);
+    h.db.update(agents).set({ deviceId: other.id }).where(eq(agents.id, created.agent.id)).run();
+    const moved = await post(`/api/v1/tool-setup/${created.exchange.id}/redeem`, {
+      device_id: device.id,
+      signature: signRedeem(device.key, created.exchange.id, device.id, challenge),
+    });
+    const unknown = await post(`/api/v1/tool-setup/${newId()}/redeem`, { device_id: device.id });
+    expect(moved.status).toBe(404);
+    expect(await moved.text()).toBe(await unknown.text());
+    expect(h.db.select().from(tokens).where(eq(tokens.userId, bob.id)).all()).toEqual([]);
   });
 
   it('an expired setup mints nothing', async () => {
@@ -581,6 +643,9 @@ describe('reconnecting', () => {
       201,
     );
     expect(again.exchange.purpose).toBe('rotate');
+    // The answer says, before the command is copied, what redeeming revokes.
+    expect(again.revokes_on_redeem).toEqual([first.token.id]);
+    expect(created.revokes_on_redeem).toEqual([]);
     expect(again.agent.id).toBe(created.agent.id);
     // Until the device redeems, the old credential still works.
     expect((await req('/api/v1/me', {}, { bearer: first.secret })).status).toBe(200);
@@ -711,7 +776,9 @@ describe('verification evidence', () => {
     const unknown = await req(`/api/v1/agents/${newId()}/verification`, {}, { cookie: ada.cookie });
     expect(sibling.status).toBe(404);
     expect(foreign.status).toBe(404);
-    expect(await foreign.text()).toBe(await unknown.text());
+    const unknownBody = await unknown.text();
+    expect(await foreign.text()).toBe(unknownBody);
+    expect(await sibling.text()).toBe(unknownBody);
   });
 });
 
@@ -792,5 +859,106 @@ describe('client reports', () => {
     await initialize(redeemed.secret, 'claude-code');
     const seen = await verification(created.agent.id, { cookie: bob.cookie });
     expect(seen.checks.tool_request).toMatchObject({ state: 'pass', at: null });
+  });
+
+  it('a time stamped while presence was on is not shown once it is off (B1)', async () => {
+    const device = await pair(bob.cookie);
+    const { created, redeemed } = await install(bob.cookie, device);
+    await initialize(redeemed.secret, 'claude-code');
+    await ok(await post('/api/v1/agents/me/client-report', report, { bearer: redeemed.secret }));
+    let seen = await verification(created.agent.id, { cookie: bob.cookie });
+    expect(seen.checks.tool_request?.at).not.toBeNull();
+    expect(seen.client_report?.reported_at).not.toBeNull();
+
+    h.db.update(orgs).set({ presenceEnabled: 0 }).run();
+    // Read at once, before anything is written: the read gates it.
+    seen = await verification(created.agent.id, { cookie: bob.cookie });
+    expect(seen.checks.tool_request).toMatchObject({ state: 'pass', at: null });
+    expect(seen.client_report?.reported_at).toBeNull();
+
+    // The same name again, inside the throttle: the stored time goes too.
+    await initialize(redeemed.secret, 'claude-code');
+    const row = h.db
+      .select()
+      .from(agentClientReports)
+      .where(eq(agentClientReports.source, 'mcp_initialize'))
+      .get();
+    expect(row?.reportedAt).toBeNull();
+  });
+});
+
+describe('a client whose MCP name is generic (D-125)', () => {
+  const omnigentReport = {
+    cli_version: '0.9.0',
+    protocol: 2,
+    harness: 'omnigent',
+    capabilities: ['tool_setup_exchange', 'client_report'],
+  };
+
+  it('passes only with an MCP request and a report naming the harness, from one token', async () => {
+    const device = await pair(bob.cookie);
+    const { created, redeemed } = await install(bob.cookie, device, 'omnigent');
+
+    // `mcp` alone names no tool.
+    await initialize(redeemed.secret, 'mcp');
+    let seen = await verification(created.agent.id, { cookie: bob.cookie });
+    expect(seen.checks.tool_request).toMatchObject({
+      state: 'fail',
+      detail: { mcp_client_name: 'generic', evidence: null, client_slug: 'other' },
+    });
+
+    // A report naming another harness is no evidence either.
+    await ok(
+      await post(
+        '/api/v1/agents/me/client-report',
+        { ...omnigentReport, harness: 'hermes' },
+        { bearer: redeemed.secret },
+      ),
+    );
+    seen = await verification(created.agent.id, { cookie: bob.cookie });
+    expect(seen.checks.tool_request?.state).toBe('fail');
+
+    // Named, but without the capabilities Ready needs.
+    await ok(
+      await post(
+        '/api/v1/agents/me/client-report',
+        { ...omnigentReport, capabilities: ['client_report'] },
+        { bearer: redeemed.secret },
+      ),
+    );
+    seen = await verification(created.agent.id, { cookie: bob.cookie });
+    expect(seen.checks.tool_request).toMatchObject({
+      state: 'pass',
+      detail: { evidence: 'client_report', self_reported: true },
+    });
+    expect(seen.checks.required_capabilities).toMatchObject({
+      state: 'fail',
+      detail: { missing: ['tool_setup_exchange'] },
+    });
+
+    await ok(
+      await post('/api/v1/agents/me/client-report', omnigentReport, { bearer: redeemed.secret }),
+    );
+    seen = await verification(created.agent.id, { cookie: bob.cookie });
+    expect(seen.checks.required_capabilities?.state).toBe('pass');
+  });
+
+  it('a report naming the harness does not pass a specific client without its own name', async () => {
+    const device = await pair(bob.cookie);
+    const { created, redeemed } = await install(bob.cookie, device);
+    await initialize(redeemed.secret, 'mcp');
+    await ok(
+      await post(
+        '/api/v1/agents/me/client-report',
+        { ...omnigentReport, harness: 'claude-code' },
+        { bearer: redeemed.secret },
+      ),
+    );
+    const seen = await verification(created.agent.id, { cookie: bob.cookie });
+    expect(seen.checks.tool_request).toMatchObject({
+      state: 'fail',
+      detail: { mcp_client_name: 'specific' },
+    });
+    expect(seen.checks.required_capabilities?.state).toBe('pass');
   });
 });

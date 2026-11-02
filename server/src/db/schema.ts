@@ -1131,6 +1131,8 @@ export const agentClientReports = sqliteTable(
     protocol: integer('protocol'),
     capabilitiesJson: text('capabilities_json'),
     harnessVersion: text('harness_version'),
+    /** `cli`: the harness the CLI says it runs as — an `AGENT_CLIENTS` slug (D-125). */
+    harness: text('harness'),
     /** `clientInfo.name`, cleaned, and the slug it names on its own. */
     clientName: text('client_name'),
     clientSlug: text('client_slug'),
