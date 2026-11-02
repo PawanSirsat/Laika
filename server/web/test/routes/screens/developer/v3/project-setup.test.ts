@@ -186,11 +186,16 @@ void describe('what the records say (LAI-1066)', () => {
     assert.equal(evidence.overall, 'update-available');
   });
 
-  void test('only checks that found nothing is No block found', () => {
+  void test('a check that found no block leads over the reader’s word (LAI-1073)', () => {
     const none = setup({ id: 's1', block_found: false, template_revision: null });
     assert.equal(setupEvidence([none], 'a1').overall, 'missing');
     const self = setup({ id: 's2', source: 'self_reported_browser' });
-    assert.equal(setupEvidence([none, self], 'a1').overall, 'current');
+    assert.equal(setupEvidence([none, self], 'a1').overall, 'missing');
+    // A check that did find the current block, in another repository, wins.
+    const found = setup({ id: 's3', repo_label: 'other' });
+    assert.equal(setupEvidence([none, found, self], 'a1').overall, 'current');
+    // The reader's word alone is current.
+    assert.equal(setupEvidence([self], 'a1').overall, 'current');
   });
 
   void test('a local check says it was checked, where and when; the reader’s word says not verified', () => {

@@ -390,6 +390,8 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
     ? projectSetupPrompt({ origin, project, path: target.path, block, preamble })
     : undefined;
   const evidence = records.kind === 'ready' ? setupEvidence(records.value, tool.id) : null;
+  // The board refuses a record naming a tool with no grant here (LAI-1073).
+  const granted = value.grant.scope !== null;
   const checkCommand = projectCheckCommand(project.slug);
 
   const record = async () => {
@@ -609,7 +611,7 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
                 <StatusChip
                   tone="warn"
                   word="Update available"
-                  reason={`a record below is older than instructions template revision ${String(PROJECT_BLOCK_REVISION)}, or names another project. Paste the prompt again — it replaces only the block.`}
+                  reason={`a record below is older than instructions template revision ${String(PROJECT_BLOCK_REVISION)}, or names another project or task-key prefix. Paste the prompt again — it replaces only the block.`}
                 />
               ) : evidence.overall === 'missing' ? (
                 <StatusChip
@@ -659,10 +661,11 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
           <button
             type="button"
             className="bar-control"
-            aria-disabled={recording || records.kind !== 'ready'}
+            aria-disabled={recording || records.kind !== 'ready' || !granted}
+            aria-describedby={granted ? undefined : `${ids}-record-needs-access`}
             aria-busy={recording}
             onClick={() => {
-              if (recording || records.kind !== 'ready') return;
+              if (recording || records.kind !== 'ready' || !granted) return;
               void record();
             }}
           >
@@ -671,6 +674,16 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
           </button>
           <span className="conn-note">Self-reported. Laika does not check the file.</span>
         </div>
+        {!granted && (
+          <p
+            className="conn-note"
+            id={`${ids}-record-needs-access`}
+            data-note="record-needs-access"
+          >
+            Give {tool.label} access to {project.name} first: a record names a tool that can work
+            here.
+          </p>
+        )}
       </fieldset>
     </>
   );

@@ -1,0 +1,40 @@
+---
+id: LAI-1073
+title: 'Project setup records: privacy and consistency edge cases from the #221 review'
+area: server
+assignee: polly
+priority: p2
+depends-on: []
+discovered-from: LAI-1066
+status: review
+started: 2026-11-02T07:47:23+0530
+finished: 2026-11-02T07:54:15+0530
+---
+
+## Why
+
+Review of PR #221 (LAI-1066) found edge cases where a local path or a username
+could reach the board, and two inconsistencies. Batched in one follow-up.
+Multi-owner (§4.4) with named cross-area edits: `server/` (CORE), `cli/` and
+`server/web/` (SHELL), and SPEC §4.82 (CHIEF).
+
+## Acceptance criteria
+
+- [x] `normaliseRemote` treats a Windows local path (`C:\Users\bob\repo`), a
+      single-letter host, or any backslash as local → `undefined`; the label
+      never carries a path.
+- [x] `POST /project-setups` refuses a `repo_label` outside a character
+      allow-list (no `/`, `\`, `~`, `:`, control characters), so no
+      path-like label is ever stored.
+- [x] When the repository top is the user's home directory, the folder-name
+      label is not used; a neutral label is.
+- [x] A personal token sending a local-check body gets `403 not_an_agent`,
+      not `422`.
+- [x] A browser record naming an agent requires that agent's grant on the
+      project, consistent with what the agent itself could record; SPEC
+      §4.82 says so.
+- [x] Web: *Update available* text mentions a prefix mismatch; a local check
+      that found no block leads the headline over a browser record.
+- [x] CLI: an explicit test that a symlinked instructions file is read and
+      neither it nor its target is changed.
+- [x] Tests for each.

@@ -222,6 +222,59 @@ const facts = async (page: Page) =>
   );
 
 void describe('Project setup, v3', () => {
+  void test('a check that found no block leads; a tool with no access cannot be recorded (LAI-1073)', async () => {
+    const base = {
+      agent_id: 'a1',
+      device_label: 'Belka',
+      project_id: 'p1',
+      project_slug: 'onroute',
+      instructions_path: 'CLAUDE.md',
+      checked_at: Date.now() - 60_000,
+    };
+    const world: World = {
+      agents: [agentRow({ id: 'a1' })],
+      puts: [],
+      setups: [
+        {
+          ...base,
+          id: 's1',
+          repo_label: 'onroute-app',
+          block_found: false,
+          template_revision: null,
+          project_match: null,
+          prefix_match: null,
+          source: 'local_check',
+        },
+        {
+          ...base,
+          id: 's2',
+          repo_label: null,
+          block_found: true,
+          template_revision: 2,
+          project_match: null,
+          prefix_match: null,
+          source: 'self_reported_browser',
+        },
+      ],
+    };
+    const h = await open('/developer?tab=projects', stub('v3', world));
+    try {
+      await h.page.locator('[data-step="record"] [data-status]').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('[data-step="record"] [data-status]').getAttribute('data-status'),
+        'missing',
+      );
+      // No grant here: the button says why and records nothing.
+      const button = h.page.getByRole('button', { name: 'I’ve added it' });
+      assert.equal(await button.getAttribute('aria-disabled'), 'true');
+      await h.page.locator('[data-note="record-needs-access"]').waitFor();
+      await button.click({ force: true });
+      assert.equal(world.posts, undefined);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a laika project check record is shown apart from the reader’s word, and drives Update available', async () => {
     const local = {
       id: 's1',
@@ -257,6 +310,10 @@ void describe('Project setup, v3', () => {
       assert.equal(
         await h.page.locator('[data-step="record"] [data-status]').getAttribute('data-status'),
         'update-available',
+      );
+      assert.match(
+        await h.page.locator('[data-step="record"] [data-status]').innerText(),
+        /names another project or task-key prefix/,
       );
       const checked = await h.page.locator('[data-source="local_check"]').innerText();
       assert.match(checked, /Checked by laika project check on Belka at /);

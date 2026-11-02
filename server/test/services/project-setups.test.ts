@@ -2,7 +2,13 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
-import { agents, orgs, projectRepoSetups, projects } from '../../src/db/schema.ts';
+import {
+  agentProjectGrants,
+  agents,
+  orgs,
+  projectRepoSetups,
+  projects,
+} from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { listProjectSetups, recordProjectSetup } from '../../src/services/project-setups.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
@@ -30,7 +36,7 @@ afterEach(() => {
   t.close();
 });
 
-function agent(status: 'active' | 'revoked' = 'active'): string {
+function agent(status: 'active' | 'revoked' = 'active', granted = true): string {
   const id = newId();
   t.db
     .insert(agents)
@@ -46,6 +52,12 @@ function agent(status: 'active' | 'revoked' = 'active'): string {
       ...(status === 'revoked' ? { revokedAt: NOW } : {}),
     })
     .run();
+  if (granted) {
+    t.db
+      .insert(agentProjectGrants)
+      .values({ agentId: id, projectId: s.projectId, scope: 'read_only', createdAt: NOW })
+      .run();
+  }
   return id;
 }
 
@@ -123,6 +135,27 @@ describe('the browser’s record', () => {
     expect(thrown).toBeInstanceOf(ApiError);
     expect((thrown as ApiError).code).toBe('forbidden');
     expect(t.db.select().from(projectRepoSetups).all()).toEqual([]);
+  });
+});
+
+describe('a browser record names only a tool with access here (LAI-1073)', () => {
+  it('refuses a tool with no grant on the project, as its own token would be', () => {
+    const id = agent('active', false);
+    let thrown: unknown;
+    try {
+      recordProjectSetup(t.db, owner, browser(id), NOW);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect((thrown as ApiError).code).toBe('forbidden');
+    expect((thrown as ApiError).details).toMatchObject({ reason: 'agent_not_granted' });
+    expect(t.db.select().from(projectRepoSetups).all()).toEqual([]);
+  });
+
+  it('takes a read-only grant: the tool could record a check itself', () => {
+    const id = agent();
+    expect(recordProjectSetup(t.db, owner, browser(id), NOW).agent_id).toBe(id);
   });
 });
 

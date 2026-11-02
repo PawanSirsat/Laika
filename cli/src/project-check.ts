@@ -1,6 +1,14 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, openSync, closeSync, readSync, readdirSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readdirSync,
+  readSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -85,6 +93,29 @@ const READ_BYTES = 256 * 1024;
 
 const LABEL_MAX = 90;
 
+/**
+ * The board's `REPO_LABEL_PATTERN` (`server/src/http/routes/project-setups.ts`):
+ * a name, never a path — no `/`, `\`, `~`, `:`, nor a control character.
+ */
+export const LABEL_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} ._+()#&,'@-]*$/u;
+
+/** What a repository is called when its own name could say who you are. */
+export const NEUTRAL_LABEL = 'repository';
+
+/**
+ * A folder or remote name as a label the board accepts: anything outside the
+ * allow-list becomes `-`, leading punctuation goes, and what is left is cut
+ * to length. Nothing usable left → {@link NEUTRAL_LABEL}.
+ */
+export function cleanLabel(raw: string): string {
+  const cleaned = raw
+    .replace(/[^\p{L}\p{N} ._+()#&,'@-]/gu, '-')
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .slice(0, LABEL_MAX)
+    .trim();
+  return LABEL_PATTERN.test(cleaned) ? cleaned : NEUTRAL_LABEL;
+}
+
 export type Block =
   | { readonly found: false }
   | {
@@ -145,6 +176,9 @@ export function detectBlock(text: string): Block {
 export function normaliseRemote(raw: string): string | undefined {
   const text = raw.trim();
   if (text === '') return undefined;
+  // A backslash is a Windows path (`C:\Users\bob\repo`, `\\server\share`),
+  // never a remote URL: it would carry a username, so it is never sent.
+  if (text.includes('\\')) return undefined;
   let host: string;
   let path: string;
   const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/\/)(.+)$/.exec(text);
@@ -158,7 +192,8 @@ export function normaliseRemote(raw: string): string | undefined {
     if (url.protocol === 'file:') return undefined;
     host = url.hostname;
     path = url.pathname;
-  } else if (scp !== null) {
+  } else if (scp !== null && (scp[1] ?? '').length > 1) {
+    // A one-letter "host" is a drive (`C:/Users/bob/repo`), not a server.
     host = scp[1] ?? '';
     path = scp[2] ?? '';
   } else {
@@ -278,6 +313,9 @@ function parseArgs(argv: readonly string[]): Args | string {
         if (v === undefined || v === '' || v.length > LABEL_MAX) {
           return `--label needs a name of 1–${String(LABEL_MAX)} characters`;
         }
+        if (!LABEL_PATTERN.test(v)) {
+          return "--label is a name, not a path: letters, digits, spaces and . _ - + ( ) # & , ' @";
+        }
         args.label = v;
         break;
       }
@@ -292,6 +330,15 @@ function parseArgs(argv: readonly string[]): Args | string {
     }
   }
   return args;
+}
+
+/** Whether two paths are the same folder, symlinks resolved. */
+function samePath(a: string, b: string): boolean {
+  try {
+    return realpathSync(a) === realpathSync(b);
+  } catch {
+    return resolve(a) === resolve(b);
+  }
 }
 
 function head(path: string): string | undefined {
@@ -429,10 +476,18 @@ export async function projectCheck(
 
   const slug = args.project ?? (block.found ? (block.project ?? undefined) : undefined);
   const remote = normaliseRemote(io.git(top, ['config', '--get', 'remote.origin.url']) ?? '');
-  const label = (
+  // The folder's own name only when it cannot be the person's: the home
+  // directory is named after its user, so a repository there is neutral.
+  const atHome = samePath(top, io.home);
+  const label =
     args.label ??
-    (remote === undefined ? basename(top) : (remote.split('/').pop() ?? basename(top)))
-  ).slice(0, LABEL_MAX);
+    cleanLabel(
+      remote !== undefined
+        ? (remote.split('/').pop() ?? NEUTRAL_LABEL)
+        : atHome
+          ? NEUTRAL_LABEL
+          : basename(top),
+    );
   const repoKey = createHash('sha256')
     .update(remote ?? `label:${label}`)
     .digest('hex');

@@ -14,22 +14,27 @@ import { execFileSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
+  lstatSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
 import {
   BLOCK_END,
+  cleanLabel,
   type CheckIo,
   detectBlock,
   INSTRUCTIONS_FILE,
+  LABEL_PATTERN,
+  NEUTRAL_LABEL,
   normaliseRemote,
   PROJECT_BLOCK_REVISION,
   projectCheck,
@@ -322,11 +327,53 @@ void describe('normaliseRemote: one string per repository, never a path', () => 
     }
   });
 
+  void test('a Windows path is local, never a host and a path (LAI-1073)', () => {
+    for (const raw of [
+      'C:\\Users\\bob\\repo',
+      'C:/Users/bob/repo',
+      'c:repo',
+      '\\\\server\\share\\bob\\repo',
+      'git@github.com:bob\\repo',
+    ]) {
+      assert.equal(normaliseRemote(raw), undefined, raw);
+    }
+    // A real two-letter-or-more host still is one.
+    assert.equal(normaliseRemote('gh:Example/repo'), 'gh/Example/repo');
+  });
+
   void test('a local or file remote is not a remote: undefined, so it is never sent', () => {
     assert.equal(normaliseRemote('/Users/bob/src/onroute'), undefined);
     assert.equal(normaliseRemote('file:///Users/bob/src/onroute'), undefined);
     assert.equal(normaliseRemote('../onroute'), undefined);
     assert.equal(normaliseRemote(''), undefined);
+  });
+});
+
+void describe('cleanLabel: a name the board accepts, never a path (LAI-1073)', () => {
+  void test('path characters become dashes; nothing usable is the neutral label', () => {
+    assert.equal(cleanLabel('onroute-app'), 'onroute-app');
+    assert.equal(cleanLabel('Projekt Müller (2)'), 'Projekt Müller (2)');
+    assert.equal(cleanLabel('my repo/x'), 'my repo-x');
+    assert.equal(cleanLabel('~bob'), 'bob');
+    assert.equal(cleanLabel('C:\\Users\\bob'), 'C--Users-bob');
+    assert.equal(cleanLabel('...'), NEUTRAL_LABEL);
+    assert.equal(cleanLabel(''), NEUTRAL_LABEL);
+    for (const raw of ['a/b', 'x:y', '\\\\s\\t', '~', 'tab\there', 'x'.repeat(200)]) {
+      const label = cleanLabel(raw);
+      assert.match(label, LABEL_PATTERN, raw);
+      assert.ok(label.length <= 90, raw);
+    }
+  });
+
+  void test('the CLI and the board accept the same labels', () => {
+    const route = readFileSync(
+      fileURLToPath(new URL('../../server/src/http/routes/project-setups.ts', import.meta.url)),
+      'utf8',
+    );
+    assert.ok(
+      route.includes(`export const REPO_LABEL_PATTERN = ${String(LABEL_PATTERN)};`),
+      'REPO_LABEL_PATTERN and LABEL_PATTERN differ',
+    );
   });
 });
 
@@ -546,6 +593,59 @@ void describe('laika project check', () => {
       r.sent[0]?.body.repo_key,
       createHash('sha256').update('label:My repo').digest('hex'),
     );
+  });
+
+  void test('a Windows-path remote is local: the folder’s name, no path, sent (LAI-1073)', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') }, 'C:\\Users\\bob\\onroute');
+    const r = await run([], { cwd: dir, home: home({ 'claude-code': BOARD }) });
+    assert.equal(r.code, 0, r.out);
+    const label = String(r.sent[0]?.body.repo_label);
+    assert.doesNotMatch(label, /Users|bob|\\|\//);
+    assert.match(label, LABEL_PATTERN);
+    assert.equal(
+      r.sent[0]?.body.repo_key,
+      createHash('sha256').update(`label:${label}`).digest('hex'),
+    );
+  });
+
+  void test('a repository at the home directory gets the neutral label, never the username (LAI-1073)', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') }, null);
+    mkdirSync(join(dir, '.laika', 'agents'), { recursive: true });
+    writeFileSync(
+      join(dir, '.laika', 'agents', 'claude-code.json'),
+      JSON.stringify({ url: BOARD, token: AGENT_TOKEN }),
+    );
+    const r = await run([], { cwd: dir, home: dir });
+    assert.equal(r.code, 0, r.out);
+    assert.equal(r.sent[0]?.body.repo_label, NEUTRAL_LABEL);
+    assert.equal(r.out.includes(basename(dir)), false, 'the home folder’s name was printed');
+  });
+
+  void test('--label must be a name, not a path', async () => {
+    const dir = repo({});
+    for (const label of ['~/src/x', 'a/b', 'C:\\x']) {
+      const r = await run(['--label', label], { cwd: dir });
+      assert.equal(r.code, 64, label);
+    }
+  });
+
+  void test('a symlinked instructions file is read, and neither it nor its target changes', async () => {
+    const elsewhere = tempDir('laika-pc-target-');
+    writeFileSync(join(elsewhere, 'shared.md'), marked(2, 'onroute', 'ONR'));
+    const dir = repo({});
+    symlinkSync(join(elsewhere, 'shared.md'), join(dir, 'CLAUDE.md'));
+    const link = lstatSync(join(dir, 'CLAUDE.md'));
+    const target = tree(elsewhere);
+
+    const r = await run([], { cwd: dir, home: home({ 'claude-code': BOARD }) });
+    assert.equal(r.code, 0, r.out);
+    assert.equal(r.sent[0]?.body.template_revision, 2);
+    assert.equal(r.sent[0]?.body.instructions_path, 'CLAUDE.md');
+    // The link is still a link, untouched, and the file it points at is too.
+    const after = lstatSync(join(dir, 'CLAUDE.md'));
+    assert.ok(after.isSymbolicLink());
+    assert.equal(after.mtimeMs, link.mtimeMs);
+    assert.deepEqual(tree(elsewhere), target);
   });
 
   void test('the tool’s own file wins over another file’s block', async () => {
