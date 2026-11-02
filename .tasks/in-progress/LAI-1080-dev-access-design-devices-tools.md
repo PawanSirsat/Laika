@@ -2,11 +2,12 @@
 id: LAI-1080
 title: 'Developer access design: one-line Devices and Tools lists, with Device and Tool details panels'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: [LAI-1078]
 discovered-from: LAI-1075
-status: backlog
+status: in-progress
+started: 2026-11-02T11:10:39+05:30
 ---
 
 ## Why
