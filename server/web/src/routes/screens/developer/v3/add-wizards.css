@@ -1,35 +1,33 @@
 /*
- * Add device and Add tool (LAI-1061). They are Connect's wizard parts —
- * `StepRail`, `WizardCard`, `CodeBlock`, `ToolTile` — styled by
- * `connect/connect.css`, set inside the Devices tab. Only what that sheet
- * cannot know is here: the wizard sits in a tab, not a page of its own
- * height, and the steps' own content. Existing tokens only.
+ * Add device and Add tool (LAI-1061), in the owner's design since LAI-1081:
+ * Connect's wizard parts — `StepRail`, `WizardCard`, `CodeBlock`, `ToolTile` —
+ * inside `DesignWizard`'s frame (`design.css`). Only the steps' own content is
+ * here. Rules that touch a shared `conn-*` part are scoped under `.dx-wizard`,
+ * which classic Connect never draws (its golden test pins it). Tokens only.
  */
 
 .dv3w {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
   margin-bottom: var(--space-5);
 }
 
-/* Connect's wizard is exactly the page's height; in a tab it is as tall as it needs. */
-.dv3w .dv3w-grid {
-  flex: none;
-  grid-template-rows: auto;
+/* The tool tiles: the design's two-line tiles, three to a row in a card. */
+.dx-wizard .conn-agents {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.dv3w .conn-wizard-card {
-  height: auto;
-  max-height: none;
-}
-
-/* Side by side only where Connect's sheet puts them so; stacked, its order stands. */
-@media (min-width: 56.01rem) {
-  .dv3w .conn-wizard-card {
-    grid-row: 1;
+@media (max-width: 75rem) {
+  .dx-wizard .conn-agents {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-.dv3w .conn-card-scroll {
-  overflow: visible;
+@media (max-width: 600px) {
+  .dx-wizard .conn-agents {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .dv3w-stack {

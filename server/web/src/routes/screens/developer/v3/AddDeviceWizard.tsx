@@ -16,8 +16,6 @@ import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
 import { Help } from '../../../../components/wizard/Help.tsx';
 import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
 import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
-import { StepRail } from '../../../../components/wizard/StepRail.tsx';
-import { WizardCard } from '../../../../components/wizard/WizardCard.tsx';
 import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import {
   POLL_FIRST_MS,
@@ -30,6 +28,11 @@ import {
   type Refusal,
 } from './add-flow.ts';
 import { CLOUD_NOTE } from './devices-view.ts';
+import { DesignWizard } from './DesignWizard.tsx';
+import { DetailTiles } from './DetailTiles.tsx';
+import { DxIcon } from './DxIcon.tsx';
+import { NoteBlock } from './NoteBlock.tsx';
+import { SectionTitle } from './SectionTitle.tsx';
 import '../../connect/connect.css';
 import './add-wizards.css';
 
@@ -49,15 +52,28 @@ export interface AddDeviceWizardProps {
 
 type Step = 1 | 2 | 3 | 4;
 
+/** The card's title per step; the fourth is the third rail step, finished. */
 const STEP_NAMES: Readonly<Record<Step, string>> = {
-  1: 'Name the device',
-  2: 'Run it on the device',
-  3: 'Check the key',
-  4: 'Paired',
+  1: 'Name your device',
+  2: 'Pair the device',
+  3: 'Approve & finish',
+  4: 'Device paired',
 };
 
 /**
- * *Add device* (LAI-1061, plan LAI-1042 §E.1, §F.3, §F.6). Four steps, each
+ * The rail's three steps, as the owner's design draws them (LAI-1081). The
+ * board's four states fold into them: checking the key and *Paired* are both
+ * the third — approve, then finish.
+ */
+const RAIL: readonly { readonly n: 1 | 2 | 3; readonly name: string; readonly sub: string }[] = [
+  { n: 1, name: 'Name your device', sub: 'Name and type' },
+  { n: 2, name: 'Pair the device', sub: 'A one-use code' },
+  { n: 3, name: 'Approve & finish', sub: 'Check its key here' },
+];
+
+/**
+ * *Add device* (LAI-1061, plan LAI-1042 §E.1, §F.3, §F.6), in the owner's
+ * design since LAI-1081: three rail steps over the board's four states, each
  * moved on **by the board's answer, never by a click**:
  *
  * 1. **Name** it and say whether it is a laptop or a cloud runner — or choose
@@ -325,7 +341,7 @@ export function AddDeviceWizard({
       </p>
     );
     primary = (
-      <button type="button" className="conn-continue" onClick={startAgain}>
+      <button type="button" className="dx-btn dx-btn-primary" onClick={startAgain}>
         Start again
       </button>
     );
@@ -334,36 +350,47 @@ export function AddDeviceWizard({
       <div className="dv3w-stack">
         {pairable.length > 0 && (
           <fieldset className="dv3w-set">
-            <legend className="conn-label">Which device?</legend>
-            <label className="dv3w-option">
-              <input
-                type="radio"
-                name={`${ids}-which`}
-                checked={chosen === undefined}
-                onChange={() => {
-                  setExisting(undefined);
-                }}
-              />
-              <span>A new device</span>
-            </label>
-            {pairable.map((d) => (
-              <label key={d.id} className="dv3w-option">
+            <legend className="dx-label">Which device?</legend>
+            <div className="dx-options">
+              <label className="dx-option">
                 <input
                   type="radio"
                   name={`${ids}-which`}
-                  checked={chosen?.id === d.id}
+                  checked={chosen === undefined}
                   onChange={() => {
-                    setExisting(d.id);
+                    setExisting(undefined);
                   }}
                 />
+                <span className="dx-icon">
+                  <DxIcon name="device" />
+                </span>
                 <span>
-                  {d.display_name}{' '}
-                  <span className="dv3w-quiet">
-                    — imported, {d.kind === 'cloud' ? 'Cloud' : 'Local'}
-                  </span>
+                  <strong className="dx-option-name">A new device</strong>
+                  <span className="dx-option-sub">Name it on this step</span>
                 </span>
               </label>
-            ))}
+              {pairable.map((d) => (
+                <label key={d.id} className="dx-option">
+                  <input
+                    type="radio"
+                    name={`${ids}-which`}
+                    checked={chosen?.id === d.id}
+                    onChange={() => {
+                      setExisting(d.id);
+                    }}
+                  />
+                  <span className="dx-icon">
+                    <DxIcon name={d.kind === 'cloud' ? 'cloud' : 'device'} />
+                  </span>
+                  <span>
+                    <strong className="dx-option-name">{d.display_name}</strong>
+                    <span className="dx-option-sub">
+                      Imported · {d.kind === 'cloud' ? 'Cloud' : 'Local'}, not paired yet
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
             <Help>
               An imported device came from the names your tools reported. Pairing one gives it a key
               of its own; its tools keep working as they are.
@@ -374,33 +401,43 @@ export function AddDeviceWizard({
         {chosen === undefined && (
           <>
             <fieldset className="dv3w-set">
-              <legend className="conn-label">What kind of device?</legend>
-              <label className="dv3w-option">
-                <input
-                  type="radio"
-                  name={`${ids}-kind`}
-                  checked={kind === 'local'}
-                  onChange={() => {
-                    setKind('local');
-                  }}
-                />
-                <span>
-                  Local <span className="dv3w-quiet">— a laptop or desktop you work on</span>
-                </span>
-              </label>
-              <label className="dv3w-option">
-                <input
-                  type="radio"
-                  name={`${ids}-kind`}
-                  checked={kind === 'cloud'}
-                  onChange={() => {
-                    setKind('cloud');
-                  }}
-                />
-                <span>
-                  Cloud <span className="dv3w-quiet">— a runner or remote machine</span>
-                </span>
-              </label>
+              <legend className="dx-label">Where will Laika run?</legend>
+              <div className="dx-options">
+                <label className="dx-option">
+                  <input
+                    type="radio"
+                    name={`${ids}-kind`}
+                    checked={kind === 'local'}
+                    onChange={() => {
+                      setKind('local');
+                    }}
+                  />
+                  <span className="dx-icon">
+                    <DxIcon name="device" />
+                  </span>
+                  <span>
+                    <strong className="dx-option-name">My computer</strong>
+                    <span className="dx-option-sub">A Mac, Windows or Linux machine you work on</span>
+                  </span>
+                </label>
+                <label className="dx-option">
+                  <input
+                    type="radio"
+                    name={`${ids}-kind`}
+                    checked={kind === 'cloud'}
+                    onChange={() => {
+                      setKind('cloud');
+                    }}
+                  />
+                  <span className="dx-icon">
+                    <DxIcon name="cloud" />
+                  </span>
+                  <span>
+                    <strong className="dx-option-name">Cloud runner</strong>
+                    <span className="dx-option-sub">A hosted or temporary environment</span>
+                  </span>
+                </label>
+              </div>
               {kind === 'cloud' && <Help tone="info">{CLOUD_NOTE}</Help>}
             </fieldset>
 
@@ -432,31 +469,37 @@ export function AddDeviceWizard({
         )}
 
         <fieldset className="dv3w-set">
-          <legend className="conn-label">Is Laika’s helper already installed on it?</legend>
-          <label className="dv3w-option">
-            <input
-              type="radio"
-              name={`${ids}-installed`}
-              checked={!installed}
-              onChange={() => {
-                setInstalled(false);
-              }}
-            />
-            <span>No, install it</span>
-          </label>
-          <label className="dv3w-option">
-            <input
-              type="radio"
-              name={`${ids}-installed`}
-              checked={installed}
-              onChange={() => {
-                setInstalled(true);
-              }}
-            />
-            <span>
-              Yes <span className="dv3w-quiet">— there is a checkout at ~/laika</span>
-            </span>
-          </label>
+          <legend className="dx-label">Is Laika’s helper already installed on it?</legend>
+          <div className="dx-options">
+            <label className="dx-option">
+              <input
+                type="radio"
+                name={`${ids}-installed`}
+                checked={!installed}
+                onChange={() => {
+                  setInstalled(false);
+                }}
+              />
+              <span>
+                <strong className="dx-option-name">No, install it</strong>
+                <span className="dx-option-sub">The next step installs it, with no token</span>
+              </span>
+            </label>
+            <label className="dx-option">
+              <input
+                type="radio"
+                name={`${ids}-installed`}
+                checked={installed}
+                onChange={() => {
+                  setInstalled(true);
+                }}
+              />
+              <span>
+                <strong className="dx-option-name">Yes</strong>
+                <span className="dx-option-sub">There is a checkout at ~/laika</span>
+              </span>
+            </label>
+          </div>
         </fieldset>
       </div>
     );
@@ -464,7 +507,7 @@ export function AddDeviceWizard({
     primary = (
       <button
         type="button"
-        className="conn-continue"
+        className="dx-btn dx-btn-primary"
         disabled={!nameValid || busy}
         aria-busy={busy || undefined}
         onClick={create}
@@ -479,6 +522,12 @@ export function AddDeviceWizard({
         : bootstrapCommands(source, code.command, installed);
     body = (
       <div className="dv3w-stack">
+        <NoteBlock tone="accent" title="Device pairing only">
+          <p>
+            This gives the device an identity of its own. It does not register Claude Code, Codex
+            or any other tool — you add those next.
+          </p>
+        </NoteBlock>
         {code === undefined ? (
           <Help tone="warn">
             The pairing code is shown once, when it is made. If your terminal already has it, carry
@@ -527,24 +576,23 @@ export function AddDeviceWizard({
             ))}
           </p>
         </div>
-        <dl className="dv3-facts dv3w-facts">
-          <div>
-            <dt>System</dt>
-            <dd>{claim.os ?? 'Not said'}</dd>
-          </div>
-          <div>
-            <dt>Helper</dt>
-            <dd>{claim.cli_version ?? 'Version unknown'}</dd>
-          </div>
-          <div>
-            <dt>Claimed</dt>
-            <dd>
-              <time dateTime={at.iso} title={at.full}>
-                {at.text}
-              </time>
-            </dd>
-          </div>
-        </dl>
+        <DetailTiles
+          items={[
+            { label: 'Device', value: pairing.display_name, id: 'device' },
+            { label: 'System', value: claim.os ?? 'Not said', id: 'system' },
+            { label: 'Helper', value: claim.cli_version ?? 'Version unknown', id: 'helper' },
+            {
+              label: 'Claimed',
+              value: (
+                <time dateTime={at.iso} title={at.full}>
+                  {at.text}
+                </time>
+              ),
+              id: 'claimed',
+            },
+            { label: 'Tool credentials', value: 'None created', id: 'credentials' },
+          ]}
+        />
         {pairing.state === 'claimed' ? (
           <>
             <Help tone="warn">
@@ -555,7 +603,7 @@ export function AddDeviceWizard({
             <div className="dv3w-actions">
               <button
                 type="button"
-                className="bar-control bar-control-primary"
+                className="dx-btn dx-btn-primary"
                 disabled={busy}
                 aria-busy={busy || undefined}
                 onClick={() => {
@@ -566,7 +614,7 @@ export function AddDeviceWizard({
               </button>
               <button
                 type="button"
-                className="bar-control dv3w-deny"
+                className="dx-btn dv3w-deny"
                 disabled={busy}
                 onClick={() => {
                   decide(false);
@@ -592,12 +640,34 @@ export function AddDeviceWizard({
   } else if (step === 4 && pairing !== undefined) {
     body = (
       <div className="dv3w-stack">
-        <StatusChip tone="ok" word="Paired" reason={`${pairing.display_name} holds its own key`} />
-        {pairing.claimed !== null && (
-          <p className="dv3-note">
-            Key fingerprint <code>{pairing.claimed.key_fingerprint}</code>
-          </p>
-        )}
+        <div className="dx-status-head">
+          <span className="dx-orb">
+            <DxIcon name="check" />
+          </span>
+          <div>
+            <StatusChip
+              tone="ok"
+              word="Paired"
+              reason={`${pairing.display_name} holds its own key`}
+            />
+          </div>
+        </div>
+        <DetailTiles
+          items={[
+            { label: 'Device', value: pairing.display_name, id: 'device' },
+            { label: 'Type', value: pairing.kind === 'cloud' ? 'Cloud runner' : 'Local computer' },
+            ...(pairing.claimed === null
+              ? []
+              : [
+                  {
+                    label: 'Key fingerprint',
+                    value: <code>{pairing.claimed.key_fingerprint}</code>,
+                    id: 'fingerprint',
+                  },
+                ]),
+            { label: 'Tool credentials', value: 'None yet', id: 'credentials' },
+          ]}
+        />
         <Help>
           Next, add the coding tools you use on it. Each gets its own credential, fetched by the
           device — never shown in this browser.
@@ -609,7 +679,7 @@ export function AddDeviceWizard({
       pairing.device_id === null ? null : (
         <button
           type="button"
-          className="conn-continue"
+          className="dx-btn dx-btn-primary"
           onClick={() => {
             if (pairing.device_id !== null) onAddTool(pairing.device_id);
           }}
@@ -638,67 +708,76 @@ export function AddDeviceWizard({
     );
     hint = 'Start again for a new code.';
     primary = (
-      <button type="button" className="conn-continue" onClick={startAgain}>
+      <button type="button" className="dx-btn dx-btn-primary" onClick={startAgain}>
         Start again
       </button>
     );
   }
 
   const lines: Readonly<Record<Step, string>> = {
-    1: 'A laptop, a desktop or a cloud runner. You add its coding tools after it is paired.',
-    2: `Paste this into a terminal on ${displayName || 'the device'}.`,
-    3: `${displayName} claimed the code with this key.`,
+    1: 'The computer is separate from the coding tools you add to it afterwards.',
+    2: `Run the pairing step in a terminal on ${displayName || 'the device'}. No coding tool needs to be open.`,
+    3: `${displayName} claimed the code with this key. Approve it before its first tool.`,
     4: `${displayName} is paired with this board.`,
   };
+  const railStep: 1 | 2 | 3 = step === 4 ? 3 : step;
+  const pairedDone = step === 4 && !ended;
 
   return (
     <section className="dv3w" aria-label="Add a device" data-wizard="device" data-step={step}>
       <LiveRegion message={message} />
-      <div className="conn-wizard dv3w-grid">
-        <StepRail
-          label="Pairing steps"
-          intro="Pair a device once; then add its coding tools."
-          current={step}
-          steps={([1, 2, 3, 4] as const).map((n) => ({
-            n,
-            name: STEP_NAMES[n],
-            sub: n < step ? 'Done' : n === step ? 'Now' : 'Not yet',
-            done: n < step,
-            open: n === step,
-            lockedReason: n > step ? 'Each step opens when the board moves on' : undefined,
-          }))}
-          onSelect={() => undefined}
-        />
-        <WizardCard
-          step={step}
-          total={4}
-          title={ended ? 'Not paired' : STEP_NAMES[step]}
-          line={lines[step]}
-          titleId={`${ids}-title`}
-          titleRef={titleRef}
-          footer={
-            <footer className="conn-card-foot">
-              <button type="button" className="conn-outline conn-back" onClick={close}>
-                {step === 4 || ended ? 'Done' : pairing === undefined ? 'Cancel' : 'Cancel pairing'}
+      <SectionTitle
+        title="Add device"
+        titleId={`${ids}-section`}
+        actions={
+          <button type="button" className="dx-btn dx-btn-sm" onClick={close}>
+            Back to devices
+          </button>
+        }
+      />
+      <DesignWizard
+        railTitle="Connect a device"
+        railIntro="Set up your computer once."
+        railLabel="Pairing steps"
+        current={railStep}
+        steps={RAIL.map(({ n, name: stepName, sub }) => ({
+          n,
+          name: stepName,
+          sub: n < railStep || (n === 3 && pairedDone) ? 'Done' : n === railStep ? 'Now' : sub,
+          done: n < railStep || (n === 3 && pairedDone),
+          open: n === railStep,
+          lockedReason: n > railStep ? 'Each step opens when the board moves on' : undefined,
+        }))}
+        onSelect={() => undefined}
+        step={railStep}
+        total={3}
+        kind="Device"
+        title={ended ? 'Not paired' : STEP_NAMES[step]}
+        line={lines[step]}
+        titleId={`${ids}-title`}
+        titleRef={titleRef}
+        note={hint}
+        actions={
+          <>
+            <button type="button" className="dx-btn" onClick={close}>
+              {step === 4 || ended ? 'Done' : pairing === undefined ? 'Cancel' : 'Cancel pairing'}
+            </button>
+            {primary}
+          </>
+        }
+      >
+        {body}
+        {refusal !== undefined && (
+          <div className="dv3w-error" role="alert">
+            <p>{refusal.message}</p>
+            {refusal.startAgain && (
+              <button type="button" className="dx-btn dx-btn-sm" onClick={startAgain}>
+                Start again
               </button>
-              <p className="conn-foot-hint">{hint}</p>
-              {primary}
-            </footer>
-          }
-        >
-          {body}
-          {refusal !== undefined && (
-            <div className="dv3w-error" role="alert">
-              <p>{refusal.message}</p>
-              {refusal.startAgain && (
-                <button type="button" className="bar-control" onClick={startAgain}>
-                  Start again
-                </button>
-              )}
-            </div>
-          )}
-        </WizardCard>
-      </div>
+            )}
+          </div>
+        )}
+      </DesignWizard>
     </section>
   );
 }

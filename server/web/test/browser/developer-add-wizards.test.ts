@@ -224,7 +224,20 @@ void describe('Add device: paired only when the board says so', () => {
       );
       assert.equal(
         await page.evaluate(() => document.activeElement?.textContent),
-        'Name the device',
+        'Name your device',
+      );
+      // The owner's design's frame (LAI-1081): three rail steps, the eyebrow names the kind.
+      assert.deepEqual(
+        await wizard(page, 'device')
+          .getByRole('navigation', { name: 'Pairing steps' })
+          .locator('.conn-rail-name')
+          .allTextContents(),
+        ['Step 1: Name your device', 'Step 2: Pair the device', 'Step 3: Approve & finish'],
+      );
+      assert.equal(
+        // The text, not innerText: the eyebrow is drawn in capitals.
+        await wizard(page, 'device').locator('.conn-eyebrow').textContent(),
+        'Step 1 of 3 · Device',
       );
       assert.doesNotMatch(await wizard(page, 'device').innerText(), /Claude Code|Codex/);
 
@@ -494,6 +507,10 @@ void describe('Add tool: the command, and checks from evidence', () => {
       assert.match(page.url(), /exchange=x1/);
       assert.match(await wizard(page, 'tool').innerText(), /laika-claude/);
       await assertNothingKept(page);
+      // The checks are step 3's (LAI-1081): configure on the device, then verify.
+      assert.equal(await wizard(page, 'tool').locator('[data-check]').count(), 0);
+      await page.getByRole('button', { name: /^I ran it/ }).click();
+      await until(async () => (await step(page, 'tool')) === '3');
 
       const readiness = () =>
         wizard(page, 'tool').locator('[data-readiness]').getAttribute('data-readiness');
@@ -529,8 +546,7 @@ void describe('Add tool: the command, and checks from evidence', () => {
       await until(async () => (await readiness()) === 'ready', 25_000);
       assert.equal(await wizard(page, 'tool').getAttribute('data-status'), 'ready');
 
-      await page.getByRole('button', { name: /^Continue/ }).click();
-      await until(async () => (await step(page, 'tool')) === '3');
+      assert.equal(await step(page, 'tool'), '3');
       assert.match(await wizard(page, 'tool').innerText(), /Off until you turn it on/);
       const consent = wizard(page, 'tool').getByRole('switch');
       await consent.waitFor({ timeout: 10_000 });
@@ -649,7 +665,7 @@ void describe('Add tool: the command, and checks from evidence', () => {
         .locator('.conn-step')
         .first()
         .evaluate((el) => `${el.getAttribute('data-state') ?? ''}:${el.textContent?.trim() ?? ''}`);
-      assert.match(railStep1, /^done:.*Choose the tool.*Claude Code · Belka$/);
+      assert.match(railStep1, /^done:.*Choose tool.*Claude Code · Belka$/);
       assert.doesNotMatch(railStep1, /Not yet/);
       assert.equal(
         await wizard(page, 'tool').locator('pre').innerText(),
