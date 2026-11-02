@@ -5,8 +5,9 @@ area: shell
 assignee: shell/belka
 priority: p2
 depends-on: [LAI-1082]
-status: in-progress
+status: review
 started: 2026-11-02T17:02:36+05:30
+finished: 2026-11-02T17:19:41+05:30
 ---
 
 ## Why
@@ -26,7 +27,7 @@ Two gaps found while using V3 Project setup on the OnRoute project (owner,
 
 ## Acceptance criteria
 
-- [ ] V3's `projectSetupPrompt` tells the tool to look for any section clearly
+- [x] V3's `projectSetupPrompt` tells the tool to look for any section clearly
       about the Laika board before it appends: a heading that mentions Laika,
       or text that mentions `laika_whoami`, `get_project_context`,
       `start_working`, `finish_task`, the board's address, or this project's
@@ -34,12 +35,12 @@ Two gaps found while using V3 Project setup on the OnRoute project (owner,
       replace it with the single marked block (keeping any lines a person
       wants), shows the diff and waits for confirmation. It never appends a
       second Laika section.
-- [ ] Every earlier guarantee is kept: no token, no commit, no MCP config
+- [x] Every earlier guarantee is kept: no token, no commit, no MCP config
       change, only the Laika block changes, and the revision/project/prefix
       up-to-date rule is unchanged.
-- [ ] Classic `projectPrompt` stays byte-identical, and its existing CONTROL
+- [x] Classic `projectPrompt` stays byte-identical, and its existing CONTROL
       hash test still passes.
-- [ ] Under the *Check it from your device* command there is one short hint:
+- [x] Under the *Check it from your device* command there is one short hint:
       the check needs a Laika CLI that matches this board (it names the
       board's helper commit from `GET /developer/compatibility` when the
       answer has one, with no build strings written into the code). It says
@@ -47,8 +48,21 @@ Two gaps found while using V3 Project setup on the OnRoute project (owner,
       older than the board: run `git -C <your Laika checkout> pull --ff-only`,
       then `laika version`. Newer CLIs use `laika update`. No new colours,
       existing tokens only, both themes.
-- [ ] Tests: the prompt has the detection instruction and still has every
+- [x] Tests: the prompt has the detection instruction and still has every
       earlier guarantee; the hint's words (unit) and its rendering (browser).
+
+### Added by the owner mid-task (2026-11-02, a live run on Belka)
+
+- [x] The page's check command carries `--harness <the tool picked in step 1>`,
+      using the harness ids the CLI accepts, secret-free and shell-safe.
+      Without it, a device with two tools set up records nothing and step 3
+      stays *Not recorded*. A tool the CLI cannot name for certain (`other`,
+      or one with no adapter) gets no `--harness` rather than a wrong one.
+- [x] The CLI's ambiguous `--harness` case: exit non-zero **unless an
+      existing test or contract pins exit 0**. One does:
+      `cli/test/project-check.test.ts` ("several tools here and no
+      --harness: records nothing and says why") asserts `r.code === 0`. Per
+      the owner's rule, the CLI keeps 0 and is unchanged. See Notes.
 
 ## Notes
 
@@ -58,3 +72,10 @@ Two gaps found while using V3 Project setup on the OnRoute project (owner,
   redesign of the V3 Developer access screens starts in parallel, so restyle
   nothing.
 - Board card: LAIKA-937.
+- **Classic mode is unchanged.** `projectPrompt` and `projectBlock` are not
+  touched, and `project-block-revision.test.ts`'s CONTROL hashes still pass.
+- **The exit-code pin is worth a decision.** `project-check.ts`'s own exit
+  doc says `0` means current *"and recorded, when a credential was there to
+  record it"*, so the ambiguous case contradicts that doc, and `2` (*could
+  not record*) fits it. Switching costs one line in `project-check.ts` and one
+  assertion in that test. It is the owner's call, so it was not made here.
