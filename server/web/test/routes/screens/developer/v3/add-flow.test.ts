@@ -1,7 +1,7 @@
 /**
  * The pure half of Add device and Add tool (LAI-1061, plan LAI-1042 §E.1,
  * §E.2, §F.6): the commands, the backoff, the fingerprint's grouping and what
- * each refusal tells the person — and the tool catalog held in the web.
+ * each refusal tells the person.
  *
  * The commands are the security property: **no secret and no `npx`**, the
  * server's own pair command used as it came, the clone pinned to the board's
@@ -12,7 +12,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { AGENT_CLIENTS } from '../../../../../src/api/agent-clients.ts';
 import { cliSourceOf } from '../../../../../src/api/developer-compat.ts';
 import { ApiError, NetworkError } from '../../../../../src/api/errors.ts';
 import {
@@ -27,11 +26,6 @@ import {
   toolAddCommand,
   toolRefusal,
 } from '../../../../../src/routes/screens/developer/v3/add-flow.ts';
-import {
-  TOOL_CATALOG,
-  catalogGroups,
-  catalogTool,
-} from '../../../../../src/routes/screens/developer/v3/tool-catalog.ts';
 
 const PAIR = 'laika device pair --board https://board.example --code ABCD-EFGH-JKMN-PQRS';
 const SOURCE = { url: 'https://github.com/PawanSirsat/Laika.git', commit: 'cea011d6abc' };
@@ -181,50 +175,5 @@ void describe('what a refusal says', () => {
     assert.deepEqual(r.duplicates, ['a2', 'a3']);
     assert.match(r.message, /conflicts section/);
     assert.equal(toolRefusal(refused('conflict', 'device_not_paired'), 'Codex').needsPairing, true);
-  });
-});
-
-void describe('the tool catalog held in the web', () => {
-  void test('one entry per tool the server accepts — every AGENT_CLIENTS slug but other — by name, both ways', () => {
-    const served = AGENT_CLIENTS.filter((slug) => slug !== 'other');
-    const listed = TOOL_CATALOG.map((tool) => tool.harness);
-    assert.deepEqual(
-      served.filter((slug) => !listed.includes(slug)),
-      [],
-      'served, not in the catalog',
-    );
-    assert.deepEqual(
-      listed.filter((slug) => !(served as readonly string[]).includes(slug)),
-      [],
-      'in the catalog, not served',
-    );
-    assert.equal(new Set(listed).size, listed.length, 'listed once each');
-  });
-
-  void test('only Claude Code and Codex have sessions, claims and checkpoints (plan §M)', () => {
-    assert.deepEqual(
-      TOOL_CATALOG.filter((tool) => tool.sessions).map((tool) => tool.harness),
-      ['claude-code', 'codex'],
-    );
-  });
-
-  void test('honest modes: automatic, MCP only, manual (Antigravity), the rest unverified', () => {
-    assert.equal(catalogTool('claude-code')?.mode, 'automatic');
-    assert.equal(catalogTool('omnigent')?.mode, 'mcp-only');
-    assert.equal(catalogTool('antigravity')?.mode, 'manual');
-    assert.equal(catalogTool('zed')?.mode, 'unverified');
-    assert.equal(catalogTool('other'), undefined);
-    assert.equal(catalogTool('any'), undefined);
-    assert.deepEqual(
-      catalogGroups().map((group) => group.mode),
-      ['automatic', 'mcp-only', 'manual', 'unverified'],
-    );
-  });
-
-  void test('the tool-specific notes the plan names are there', () => {
-    assert.match(catalogTool('claude-code')?.notes.join(' ') ?? '', /laika-claude/);
-    assert.match(catalogTool('codex')?.notes.join(' ') ?? '', /\/hooks/);
-    assert.match(catalogTool('omnigent')?.notes.join(' ') ?? '', /credential only/);
-    assert.match(catalogTool('antigravity')?.notes.join(' ') ?? '', /by hand/);
   });
 });

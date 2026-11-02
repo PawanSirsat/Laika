@@ -438,13 +438,15 @@ void describe('the Overview (LAI-1048)', () => {
         'Continue is not reachable by Tab',
       );
       await h.page.keyboard.press('Enter');
-      await h.page.locator('.agents-wizard').waitFor({ timeout: 20_000 });
+      // The V3 Add device wizard (LAI-1061), not the classic registration one.
+      await h.page.locator('[data-wizard="device"]').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.agents-wizard').count(), 0);
       assert.equal(here(h.page), '/developer?tab=devices&add=device');
 
       // Cancel: the address forgets the wizard, and focus is on the button
       // that stands for it on the Devices tab (LAI-1054).
       await h.page.getByRole('button', { name: 'Cancel' }).click();
-      await h.page.locator('.agents-wizard').waitFor({ state: 'detached' });
+      await h.page.locator('[data-wizard="device"]').waitFor({ state: 'detached' });
       assert.equal(here(h.page), '/developer?tab=devices');
       await h.page.waitForFunction(
         () => document.activeElement?.textContent?.trim() === '+ Add device',
@@ -603,9 +605,11 @@ void describe('the Overview (LAI-1048)', () => {
   void test('an old link with a tool opens the wizard on that tool', async () => {
     const h = await open('/connect?agent=codex', stub('v3'));
     try {
-      await h.page.locator('.agents-wizard').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-wizard="tool"]').waitFor({ timeout: 20_000 });
       assert.equal(here(h.page), '/developer?tab=devices&add=tool&tool=codex');
-      assert.match(await h.page.locator('.agents-wizard').innerText(), /Codex/);
+      // No device is paired here, so the tool is kept for after pairing (LAI-1061).
+      await h.page.locator('[data-kept-tool="codex"]').waitFor({ timeout: 20_000 });
+      assert.match(await h.page.locator('[data-wizard="tool"]').innerText(), /Codex is kept/);
     } finally {
       await h.close();
     }

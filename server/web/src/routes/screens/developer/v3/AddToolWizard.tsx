@@ -153,13 +153,17 @@ export function AddToolWizard({
     [devices, onExchange],
   );
 
-  // A reconnect, or an exchange to resume: once the devices are in, once.
+  // A reconnect, or an exchange to resume: once the devices are in, once — and
+  // only what the address said when the wizard opened. The exchange this page
+  // makes goes into the address too, and is not one to resume.
+  const opened = useRef({ resumeExchange, reconnectId }).current;
   const started = useRef(false);
   useEffect(() => {
     if (started.current || devices === undefined) return;
-    if (resumeExchange !== undefined) {
+    const { resumeExchange: resume, reconnectId: reconnecting } = opened;
+    if (resume !== undefined) {
       started.current = true;
-      getToolSetup(resumeExchange)
+      getToolSetup(resume)
         .then((exchange) => {
           const agent = devices.flatMap((d) => d.agents).find((a) => a.id === exchange.agent_id);
           if (agent === undefined) throw new ApiError('not_found', 'No such tool setup', 404);
@@ -169,10 +173,10 @@ export function AddToolWizard({
           onExchange(undefined);
           setRefusal(toolRefusal(cause, 'this tool'));
         });
-    } else if (reconnectId !== undefined) {
+    } else if (reconnecting !== undefined) {
       started.current = true;
       setBusy(true);
-      reconnectAgent(reconnectId)
+      reconnectAgent(reconnecting)
         .then(begin)
         .catch((cause: unknown) => {
           setRefusal(toolRefusal(cause, 'this tool'));
@@ -181,7 +185,7 @@ export function AddToolWizard({
           setBusy(false);
         });
     }
-  }, [devices, resumeExchange, reconnectId, begin, onExchange]);
+  }, [devices, opened, begin, onExchange]);
 
   const add = (): void => {
     if (device === undefined || tool === undefined) return;
@@ -287,6 +291,11 @@ export function AddToolWizard({
             <strong>Pair a device first.</strong> A tool is added to a device this board knows by
             its key, so its credential can be fetched there and nowhere else.
           </p>
+          {tool !== undefined && (
+            <p data-kept-tool={tool.harness}>
+              {tool.name} is kept: once the device is paired, you add it there.
+            </p>
+          )}
           {unpaired.length > 0 && (
             <Help>
               {unpaired.map((d) => d.display_name).join(', ')}{' '}
