@@ -17,6 +17,14 @@ export interface ProjectSetupRouteOptions {
 
 const ProjectSlug = z.string().trim().min(1).max(200);
 
+/**
+ * A repository's label is a name the person chose, never a path (LAI-1073):
+ * letters and digits in any script, spaces, and `. _ - + ( ) # & , ' @` —
+ * no `/`, `\`, `~`, `:` and no control character, so a label that is really
+ * `C:\Users\bob\repo` or `~/src/x` is refused rather than stored.
+ */
+export const REPO_LABEL_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} ._+()#&,'@-]*$/u;
+
 /** A revision of the instructions template (`PROJECT_BLOCK_REVISION`). */
 const TemplateRevision = z.number().int().min(1).max(1000);
 
@@ -46,7 +54,7 @@ const LocalCheckBody = strictObject({
   project_slug: ProjectSlug,
   /** SHA-256 of the normalised remote URL (or of the label), lower-case hex. */
   repo_key: z.string().regex(/^[0-9a-f]{64}$/),
-  repo_label: z.string().trim().min(1).max(REPO_LABEL_MAX),
+  repo_label: z.string().trim().min(1).max(REPO_LABEL_MAX).regex(REPO_LABEL_PATTERN),
   instructions_path: InstructionsPath.nullable(),
   block_found: z.boolean(),
   template_revision: TemplateRevision.nullable(),
@@ -78,6 +86,14 @@ export function projectSetupRoutes(options: ProjectSetupRouteOptions): Hono<AppE
   app.post('/', async (c) => {
     const actor = requireActor(c);
     const raw: unknown = await c.req.json().catch(() => null);
+    // A personal token is neither the agent nor the owner signed in, whatever
+    // body it sends: refused before either body is read (LAI-1073), so a
+    // local-check body gets `403 not_an_agent`, not a validation `422`.
+    if (actor.token !== null && actor.token !== undefined && registeredAgent(actor) === null) {
+      throw new ApiError('forbidden', 'Only a registered agent’s token records a local check', {
+        reason: 'not_an_agent',
+      });
+    }
     if (registeredAgent(actor) !== null) {
       const body = parseBody(LocalCheckBody, raw);
       return c.json<ProjectSetupView>(

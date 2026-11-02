@@ -256,6 +256,24 @@ describe('a local check, on the agent’s own token', () => {
     ]);
   });
 
+  it('keeps a label in any script, with spaces and ordinary punctuation', async () => {
+    const tool = await register(bob.cookie, [{ project_id: alpha, scope: 'full' }]);
+    for (const [i, label] of [
+      'onroute-app',
+      'Projekt Müller (2)',
+      'web_v2.1',
+      'Kvell & Co',
+    ].entries()) {
+      const made = await ok<Setup>(
+        await post(localCheck({ repo_key: String(i).repeat(64), repo_label: label }), {
+          bearer: tool.secret,
+        }),
+        201,
+      );
+      expect(made.repo_label).toBe(label);
+    }
+  });
+
   it('replaces its own record for the same repository rather than piling them up', async () => {
     const tool = await register(bob.cookie, [{ project_id: alpha, scope: 'full' }]);
     const first = await ok<Setup>(
@@ -313,6 +331,22 @@ describe('a local check, on the agent’s own token', () => {
         422,
       );
       expect(refused.code, path).toBe('unprocessable');
+    }
+    // A label is a name, never a path (LAI-1073).
+    for (const label of [
+      'C:\\Users\\bob\\repo',
+      '\\Users\\bob\\repo',
+      '~/src/laika',
+      'src/laika',
+      'host:repo',
+      'tab\there',
+      '.hidden',
+    ]) {
+      const refused = await refusal(
+        await post(localCheck({ repo_label: label }), { bearer: tool.secret }),
+        422,
+      );
+      expect(refused.code, label).toBe('unprocessable');
     }
     const notAHash = await refusal(
       await post(localCheck({ repo_key: '/Users/bob/src/laika' }), { bearer: tool.secret }),
@@ -457,6 +491,35 @@ describe('the browser’s record, the owner signed in', () => {
       403,
     );
     expect([refused.code, refused.reason]).toEqual(['forbidden', 'not_an_agent']);
+  });
+
+  it('refuses a personal token a local-check body with 403, not a validation 422 (LAI-1073)', async () => {
+    const personal = await ok<{ secret: string }>(
+      await req(
+        '/api/v1/tokens',
+        { method: 'POST', body: JSON.stringify({ name: 'mine', scope: 'full' }) },
+        { cookie: bob.cookie },
+      ),
+      201,
+    );
+    for (const body of [localCheck(), {}, { anything: true }]) {
+      const refused = await refusal(await post(body, { bearer: personal.secret }), 403);
+      expect([refused.code, refused.reason]).toEqual(['forbidden', 'not_an_agent']);
+    }
+    expect(h.db.select().from(projectRepoSetups).all()).toEqual([]);
+  });
+
+  it('refuses a record naming a tool with no grant on the project (LAI-1073)', async () => {
+    const tool = await register(bob.cookie, []);
+    const refused = await refusal(
+      await post(
+        { agent_id: tool.agent.id, project_slug: 'alpha', template_revision: 2 },
+        { cookie: bob.cookie },
+      ),
+      403,
+    );
+    expect([refused.code, refused.reason]).toEqual(['forbidden', 'agent_not_granted']);
+    expect(h.db.select().from(projectRepoSetups).all()).toEqual([]);
   });
 
   it('refuses a local check from a session: only the agent’s token reads a file', async () => {

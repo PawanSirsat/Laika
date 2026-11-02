@@ -4,7 +4,7 @@ import { type Db } from '../db/client.ts';
 import { type ProjectSetupSource } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { presenceEnabled } from '../db/orgs.ts';
-import { agents, projectRepoSetups } from '../db/schema.ts';
+import { agentProjectGrants, agents, projectRepoSetups } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { requireActiveAgent, requireOwnAgent } from './agents.ts';
@@ -127,7 +127,7 @@ export function recordProjectSetup(
       ? (agent?.id ?? null)
       : input.agentId === null
         ? null
-        : requireActiveAgent(db, actor, input.agentId).id;
+        : requireGrantedAgent(db, actor, input.agentId, project.id);
 
   const checkedAt = presenceEnabled(db) ? now : null;
   const values =
@@ -199,6 +199,36 @@ export function recordProjectSetup(
   });
 
   return toView(db, row, project.slug, checkedAt !== null);
+}
+
+/**
+ * The owner's agent, active, **with a grant on the project** (LAI-1073): a
+ * browser record about a tool says no more than that tool could record for
+ * itself, and its own token is refused outside its grants. Refused the same
+ * way, `403 agent_not_granted`; the owner already knows the agent's grants.
+ */
+function requireGrantedAgent(
+  db: Db,
+  actor: ResolvedActor,
+  agentId: string,
+  projectId: string,
+): string {
+  const row = requireActiveAgent(db, actor, agentId);
+  const granted = db
+    .select({ scope: agentProjectGrants.scope })
+    .from(agentProjectGrants)
+    .where(and(eq(agentProjectGrants.agentId, row.id), eq(agentProjectGrants.projectId, projectId)))
+    .get();
+  if (granted === undefined) {
+    throw new ApiError(
+      'forbidden',
+      'This tool has no access to this project; give it access first',
+      {
+        reason: 'agent_not_granted',
+      },
+    );
+  }
+  return row.id;
 }
 
 /**
