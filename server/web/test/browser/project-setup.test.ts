@@ -814,10 +814,11 @@ void describe('Project setup, v3', () => {
     };
     const urls: string[] = [];
     const h = await open('/developer?tab=projects', stub('v3', world), {
-      before: async (page) => {
+      before: (page) => {
         page.on('request', (request) => {
           if (request.url().includes('/api/v1/project-setups')) urls.push(request.url());
         });
+        return Promise.resolve();
       },
     });
     try {
