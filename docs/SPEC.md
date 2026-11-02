@@ -3885,10 +3885,15 @@ signed-in one get the same body, built from §11.7's settings alone:
 `server { version, build_commit }`, `protocol { current, min_client }`,
 `features { developer_access, device_pairing, tool_setup_exchange,
 client_reports, project_setups }` (the mode of `LAIKA_DEVELOPER_ACCESS`, then a
-closed set of booleans, each `false` until its feature ships),
+closed set of booleans, each `true` exactly when this build mounts every route
+that feature names — `POST /device-pairing/claim` and `/:id/complete`,
+`POST /tool-setup/:id/redeem`, `POST /agents/me/client-report` — and
+`project_setups` `false` until a server-side project setup record exists;
+LAI-1062),
 `cli { min_protocol_for, source { type: 'git', url, commit, path } }` and
 `release_notes { ref, whats_new[] }`. The protocol range a helper must speak is
-`protocol.min_client` to `protocol.current`; `cli.min_protocol_for` names the
+`protocol.min_client` to `protocol.current` — today `1` to `2`: protocol 2 is
+the three features above, and a protocol-1 helper keeps working; `cli.min_protocol_for` names the
 protocol each feature needs once it is on. `build_commit` is `null` when the
 image was built without one. Nothing in it is a secret, and
 `LAIKA_CLI_SOURCE_URL` is refused at boot if it carries a user, password, query

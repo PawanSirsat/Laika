@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { type CompatibilityBody } from '../../../src/http/routes/developer.ts';
+import { FEATURE_NAMES, FEATURE_ROUTES } from '../../../src/services/developer-compat.ts';
 import { TEST_VERSION, testApp } from '../../helpers/app.ts';
 import {
   type AuthHarness,
@@ -38,7 +39,8 @@ describe('GET /api/v1/developer/compatibility', () => {
     const body = await read(await app.request('/api/v1/developer/compatibility'));
 
     expect(body.server).toEqual({ version: TEST_VERSION, build_commit: COMMIT });
-    expect(body.protocol).toEqual({ current: 1, min_client: 1 });
+    // Protocol 2 is current; a protocol-1 helper is still accepted (LAI-1062).
+    expect(body.protocol).toEqual({ current: 2, min_client: 1 });
     expect(body.features.developer_access).toBe('preview');
     expect(body.cli.source).toEqual({
       type: 'git',
@@ -141,6 +143,87 @@ describe('GET /api/v1/developer/compatibility', () => {
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
       'method_not_allowed',
     );
+  });
+});
+
+/** First-boot setup, so every API path answers rather than `409`. */
+async function setUp(harness: AuthHarness): Promise<void> {
+  const setup = await harness.app.request('/api/v1/setup', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      org_name: 'Laika',
+      owner_name: 'Ada',
+      owner_email: 'ada@example.test',
+      owner_password: PASSWORD,
+      project_name: 'Laika',
+      project_prefix: 'LAI',
+    }),
+  });
+  expect(setup.status, await setup.clone().text()).toBe(201);
+}
+
+describe('GET /api/v1/developer/compatibility — features (LAI-1062)', () => {
+  it('says device pairing, the tool setup exchange and client reports are on, project setups off', async () => {
+    h = authHarness();
+    await setUp(h);
+
+    const body = await read(await h.app.request('/api/v1/developer/compatibility'));
+
+    expect(body.features).toEqual({
+      developer_access: 'classic',
+      device_pairing: true,
+      tool_setup_exchange: true,
+      client_reports: true,
+      project_setups: false,
+    });
+  });
+
+  // The other direction: a flag that is `true` never stands without its
+  // routes, whatever the derivation does. A route *removed* turns its flag off,
+  // so it is the pinned `true`s above, and the 404 check below, that go red.
+  it('mounts every route of every feature it reports on', async () => {
+    h = authHarness();
+    await setUp(h);
+    const mounted = new Set(h.app.routes.map((route) => `${route.method} ${route.path}`));
+
+    const { features } = await read(await h.app.request('/api/v1/developer/compatibility'));
+
+    for (const name of FEATURE_NAMES) {
+      if (!features[name]) continue;
+      expect(FEATURE_ROUTES[name].length, name).toBeGreaterThan(0);
+      for (const route of FEATURE_ROUTES[name]) expect(mounted.has(route), route).toBe(true);
+    }
+  });
+
+  // The device's side of each feature answers as itself, not as the SPA
+  // fallback or a 404: an empty body is refused by the route's own validation.
+  it('answers each named route with Laika JSON, not a 404', async () => {
+    h = authHarness();
+    await setUp(h);
+    const id = '01M6CTJSC90GV0R511PPMG7NBH';
+
+    for (const path of [
+      '/api/v1/device-pairing/claim',
+      `/api/v1/device-pairing/${id}/complete`,
+      `/api/v1/tool-setup/${id}/redeem`,
+      '/api/v1/agents/me/client-report',
+    ]) {
+      const res = await h.app.request(path, { method: 'POST', headers: jsonHeaders(), body: '{}' });
+      expect(res.status, path).not.toBe(404);
+      expect(res.headers.get('content-type'), path).toMatch(/^application\/json/);
+      expect(((await res.json()) as { error?: { code?: unknown } }).error?.code, path).toEqual(
+        expect.any(String),
+      );
+    }
+  });
+
+  it('reports every feature off on an app that mounts none of their routes', async () => {
+    const { app } = testApp();
+
+    const { features } = await read(await app.request('/api/v1/developer/compatibility'));
+
+    for (const name of FEATURE_NAMES) expect(features[name], name).toBe(false);
   });
 });
 

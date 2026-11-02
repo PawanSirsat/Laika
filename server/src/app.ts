@@ -328,6 +328,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       buildCommit: options.buildCommit ?? null,
       developerAccess: options.developerAccess ?? 'classic',
       cliSourceUrl: options.cliSourceUrl ?? DEFAULT_CLI_SOURCE_URL,
+      // Read on the first request, when every route below is mounted (LAI-1062).
+      servedRoutes: () => app.routes.map((route) => `${route.method} ${route.path}`),
     }),
   );
   app.route(`${API_BASE}/me`, meRoutes());
