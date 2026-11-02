@@ -6,8 +6,9 @@ assignee: polly
 priority: p2
 depends-on: []
 discovered-from: LAI-1066
-status: in-progress
+status: review
 started: 2026-11-02T07:47:23+0530
+finished: 2026-11-02T07:54:15+0530
 ---
 
 ## Why
@@ -19,21 +20,21 @@ Multi-owner (§4.4) with named cross-area edits: `server/` (CORE), `cli/` and
 
 ## Acceptance criteria
 
-- [ ] `normaliseRemote` treats a Windows local path (`C:\Users\bob\repo`), a
+- [x] `normaliseRemote` treats a Windows local path (`C:\Users\bob\repo`), a
       single-letter host, or any backslash as local → `undefined`; the label
       never carries a path.
-- [ ] `POST /project-setups` refuses a `repo_label` outside a character
+- [x] `POST /project-setups` refuses a `repo_label` outside a character
       allow-list (no `/`, `\`, `~`, `:`, control characters), so no
       path-like label is ever stored.
-- [ ] When the repository top is the user's home directory, the folder-name
+- [x] When the repository top is the user's home directory, the folder-name
       label is not used; a neutral label is.
-- [ ] A personal token sending a local-check body gets `403 not_an_agent`,
+- [x] A personal token sending a local-check body gets `403 not_an_agent`,
       not `422`.
-- [ ] A browser record naming an agent requires that agent's grant on the
+- [x] A browser record naming an agent requires that agent's grant on the
       project, consistent with what the agent itself could record; SPEC
       §4.82 says so.
-- [ ] Web: *Update available* text mentions a prefix mismatch; a local check
+- [x] Web: *Update available* text mentions a prefix mismatch; a local check
       that found no block leads the headline over a browser record.
-- [ ] CLI: an explicit test that a symlinked instructions file is read and
+- [x] CLI: an explicit test that a symlinked instructions file is read and
       neither it nor its target is changed.
-- [ ] Tests for each.
+- [x] Tests for each.
