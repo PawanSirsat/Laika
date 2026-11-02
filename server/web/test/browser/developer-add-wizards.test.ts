@@ -928,6 +928,11 @@ void describe('an open wizard stands in place of its list (LAI-1081)', () => {
         const page = h.page;
         const list = page.locator('.dv3-list');
         await list.waitFor({ timeout: 20_000 });
+        const verifications = () =>
+          h.calls.filter((c) => c.path === '/api/v1/agents/a1/verification').length;
+        await until(() => verifications() > 0);
+        await page.waitForTimeout(300);
+        const asked = verifications();
         await page.getByRole('button', { name: open_ }).click();
         await wizard(page, which).waitFor({ timeout: 20_000 });
         assert.equal(await list.count(), 0);
@@ -938,6 +943,9 @@ void describe('an open wizard stands in place of its list (LAI-1081)', () => {
           async () =>
             (await page.evaluate(() => document.activeElement?.textContent?.trim())) === open_,
         );
+        // Opened and closed with nothing changed: nothing is asked of the board again.
+        await page.waitForTimeout(500);
+        assert.equal(verifications(), asked);
       } finally {
         await h.close();
       }

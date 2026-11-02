@@ -817,6 +817,17 @@ void describe('V3 Tools: the details panel’s actions', () => {
         name: 'Close without copying the new credential?',
       });
 
+      // Reloading meanwhile gets the browser's own warning; staying keeps it.
+      const warned = new Promise<string>((resolve) => {
+        h.page.once('dialog', (d) => {
+          resolve(d.type());
+          void d.dismiss();
+        });
+      });
+      void h.page.reload().catch(() => undefined);
+      assert.equal(await warned, 'beforeunload');
+      assert.equal(await secret.innerText(), 'lai_newx_SECRET_ONCE');
+
       // Escape asks; Keep it open keeps the panel, its address and the secret.
       await h.page.keyboard.press('Escape');
       await ask.waitFor({ timeout: 10_000 });
