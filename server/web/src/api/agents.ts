@@ -90,8 +90,33 @@ export function listAgents(
   );
 }
 
-export function getAgent(id: string, signal?: AbortSignal): Promise<RegisteredAgent> {
-  return request<RegisteredAgent>(
+/**
+ * One session an agent ran (D-118, LAI-586), as `GET /agents/:id` lists its
+ * most recent. Everything but the stamps is **self-reported** and decides
+ * nothing. Mirrors `AgentSessionView` in `server/src/services/claims.ts`.
+ */
+export interface AgentSession {
+  readonly id: string;
+  readonly agent_id: string;
+  readonly started_at: number;
+  readonly last_heartbeat_at: number;
+  readonly ended_at: number | null;
+  readonly end_reason: 'ended' | 'agent_revoked' | null;
+  readonly client_version: string | null;
+  readonly harness: string | null;
+  readonly harness_version: string | null;
+  readonly model: string | null;
+  /** `suspect` past §9.1's suspect interval without a heartbeat. Shown, decides nothing. */
+  readonly connection: 'live' | 'suspect' | 'ended';
+}
+
+/** `GET /agents/:id`: the agent and its most recent sessions, newest first. */
+export interface AgentDetail extends RegisteredAgent {
+  readonly sessions: readonly AgentSession[];
+}
+
+export function getAgent(id: string, signal?: AbortSignal): Promise<AgentDetail> {
+  return request<AgentDetail>(
     `/agents/${encodeURIComponent(id)}`,
     signal === undefined ? {} : { signal },
   );

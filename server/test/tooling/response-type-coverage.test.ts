@@ -197,9 +197,6 @@ const UNPAIRED = new Map<string, string>([
   // `web/src/api/org.ts` — and the staleness guard below is what noticed, by
   // firing on a *reason* going false rather than on an entry going unnecessary.
   ['AvatarView', 'no client type exists'],
-  // LAI-1045: `GET /devices` is served ahead of the V3 Devices screen; plan
-  // LAI-1042 slice B3 writes the client's `DeviceView` and pairs it.
-  ['DeviceView', 'no client type exists'],
   // LAI-1050: pairing is served ahead of the V3 pairing screen and the CLI's
   // `laika device pair`; plan LAI-1042 slices C3 and D write their types.
   ['CreatedPairingView', 'no client type exists'],
@@ -247,13 +244,12 @@ const UNPAIRED = new Map<string, string>([
   ['WorkRequestView', 'no client type exists'],
   // LAI-541's sessions and claims; the execution states (LAI-543) bring the
   // mirror. Served to an agent, not yet read by the web client.
-  ['AgentSessionView', 'no client type exists'],
   ['TaskClaimView', 'no client type exists'],
   ['ReclaimView', 'no client type exists'],
-  // LAI-586's session line (D-118): `GET /agents/:id` with its sessions, and
-  // the session snapshot on an activity row. The agent line in the drawer and
-  // activity (LAI-587) brings the mirror, and these leave the way the rest do.
-  ['AgentDetailView', 'no client type exists'],
+  // LAI-586's session line (D-118): the session snapshot on an activity row.
+  // The agent line in the drawer and activity (LAI-587) brings the mirror.
+  // `AgentDetailView` and `AgentSessionView` left this group, and `DeviceView`
+  // the one above, in LAI-1054, whose V3 Devices tab mirrors and pairs them.
   ['ActivitySessionView', 'no client type exists'],
   // LAI-571's list rows: `TaskView` and `TaskSummaryView` with each row's
   // `etag`. The base views stay paired, so every other field is still

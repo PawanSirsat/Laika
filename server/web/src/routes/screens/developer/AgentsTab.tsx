@@ -82,6 +82,12 @@ export interface AgentsTabProps {
   readonly focusAgentId?: string | undefined;
   /** Told when the wizard closes, so an address that opened it can stop saying so. */
   readonly onWizardClosed?: (() => void) | undefined;
+  /**
+   * The wizard and nothing else — no list, no *Your devices* (LAI-1054). V3's
+   * Devices tab lists the devices itself and borrows only the wizard until
+   * its own Add device and Add tool (plan slice D4) exist. Classic never sets it.
+   */
+  readonly wizardOnly?: boolean | undefined;
 }
 
 /**
@@ -115,6 +121,7 @@ export function AgentsTab({
   initialGuide,
   focusAgentId,
   onWizardClosed,
+  wizardOnly = false,
 }: AgentsTabProps) {
   const gates = useGates(me !== undefined);
   // §3.1: managing is a web session's, which this page always is — but the
@@ -319,34 +326,38 @@ export function AgentsTab({
 
   return (
     <div className="dev-card agents" data-testid="agents-tab" data-reads-settled={readsSettled}>
-      <div className="dev-card-head">
-        <h2 className="dev-card-title" id="agents-title">
-          Registered agents
-        </h2>
-        {agents !== undefined && (
-          <span className="conn-chip conn-chip-scope">
-            {agents.length} {agents.length === 1 ? 'agent' : 'agents'}
-          </span>
-        )}
-        {canManage && !wizard && (
-          <button
-            type="button"
-            ref={registerButton}
-            className="bar-control bar-control-primary"
-            onClick={() => {
-              setWizard(true);
-            }}
-          >
-            + Register an agent
-          </button>
-        )}
-      </div>
+      {!wizardOnly && (
+        <div className="dev-card-head">
+          <h2 className="dev-card-title" id="agents-title">
+            Registered agents
+          </h2>
+          {agents !== undefined && (
+            <span className="conn-chip conn-chip-scope">
+              {agents.length} {agents.length === 1 ? 'agent' : 'agents'}
+            </span>
+          )}
+          {canManage && !wizard && (
+            <button
+              type="button"
+              ref={registerButton}
+              className="bar-control bar-control-primary"
+              onClick={() => {
+                setWizard(true);
+              }}
+            >
+              + Register an agent
+            </button>
+          )}
+        </div>
+      )}
 
-      <p className="agents-intro">
-        An agent is its own identity on this board: it acts as you, never with more than you can
-        reach, through a credential of its own — so you can see which agent did what, narrow it to
-        some projects, and rotate or revoke it without touching your own tokens.
-      </p>
+      {!wizardOnly && (
+        <p className="agents-intro">
+          An agent is its own identity on this board: it acts as you, never with more than you can
+          reach, through a credential of its own — so you can see which agent did what, narrow it to
+          some projects, and rotate or revoke it without touching your own tokens.
+        </p>
+      )}
 
       {!canManage && gates.settled && (
         <p className="agents-note" role="note">
@@ -399,57 +410,61 @@ export function AgentsTab({
         </p>
       )}
 
-      <DevicesSection
-        canManage={canManage}
-        generation={devicesGen}
-        onRevoked={() => {
-          reload();
-        }}
-      />
+      {!wizardOnly && (
+        <>
+          <DevicesSection
+            canManage={canManage}
+            generation={devicesGen}
+            onRevoked={() => {
+              reload();
+            }}
+          />
 
-      {loadError !== null ? (
-        <ApiErrorState
-          error={loadError}
-          resource="your agents"
-          scope="organisation"
-          onRetry={() => {
-            setLoadError(null);
-            reload();
-          }}
-        />
-      ) : agents === undefined ? (
-        <LoadingState shape="row" count={3} label="Loading your agents" />
-      ) : agents.length === 0 ? (
-        <EmptyState
-          headline="No agents registered yet"
-          body="Register one to give a coding agent its own credential, narrowed to the projects you choose."
-        />
-      ) : (
-        <ul className="agents-list" aria-labelledby="agents-title">
-          {agents.map((agent) => (
-            <AgentRow
-              key={agent.id}
-              agent={agent}
-              label={labelOf(agent)}
-              duplicate={twins.has(agent.id) && agent.status === 'active'}
-              rotateAsked={rotateAsk === agent.id}
-              onRotateAsked={() => {
-                setRotateAsk(undefined);
+          {loadError !== null ? (
+            <ApiErrorState
+              error={loadError}
+              resource="your agents"
+              scope="organisation"
+              onRetry={() => {
+                setLoadError(null);
+                reload();
               }}
-              now={now}
-              me={me}
-              projects={projects}
-              projectsError={projectsError}
-              onRetryProjects={retryProjects}
-              viewer={viewer}
-              canManage={canManage}
-              heldByWizard={agent.id === wizardAgent}
-              onChanged={put}
-              onRevoke={revoke}
-              confirmRotate={confirm}
             />
-          ))}
-        </ul>
+          ) : agents === undefined ? (
+            <LoadingState shape="row" count={3} label="Loading your agents" />
+          ) : agents.length === 0 ? (
+            <EmptyState
+              headline="No agents registered yet"
+              body="Register one to give a coding agent its own credential, narrowed to the projects you choose."
+            />
+          ) : (
+            <ul className="agents-list" aria-labelledby="agents-title">
+              {agents.map((agent) => (
+                <AgentRow
+                  key={agent.id}
+                  agent={agent}
+                  label={labelOf(agent)}
+                  duplicate={twins.has(agent.id) && agent.status === 'active'}
+                  rotateAsked={rotateAsk === agent.id}
+                  onRotateAsked={() => {
+                    setRotateAsk(undefined);
+                  }}
+                  now={now}
+                  me={me}
+                  projects={projects}
+                  projectsError={projectsError}
+                  onRetryProjects={retryProjects}
+                  viewer={viewer}
+                  canManage={canManage}
+                  heldByWizard={agent.id === wizardAgent}
+                  onChanged={put}
+                  onRevoke={revoke}
+                  confirmRotate={confirm}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );
@@ -458,7 +473,7 @@ export function AgentsTab({
 // ------------------------------------------------------------------ the secret
 
 /** A reveal's copy of the answer: the one object that carries the plaintext. */
-interface HeldSecret {
+export interface HeldSecret {
   readonly agent: RegisteredAgent;
   readonly token: CreatedAgentToken['token'];
   secret: string;
@@ -489,7 +504,7 @@ interface HeldSecret {
  * (measured). It stays as defence for a reference no walk can see, such as a
  * closure, and makes no stronger claim than that.
  */
-function useOnceSecret() {
+export function useOnceSecret() {
   const [held, setHeldState] = useState<HeldSecret | undefined>(undefined);
   const box = useRef<HeldSecret | undefined>(undefined);
   const scrub = (): void => {
@@ -528,7 +543,7 @@ function useOnceSecret() {
   return { held, hold, retire, forget } as const;
 }
 
-function SecretPanel({
+export function SecretPanel({
   created,
   label,
   title,
@@ -1291,7 +1306,7 @@ function GrantEditor({
   );
 }
 
-function grantSummary(
+export function grantSummary(
   grants: readonly AgentGrant[],
   projects: readonly Project[] | undefined,
 ): string {
@@ -1601,7 +1616,7 @@ function AgentRow({
   );
 }
 
-function RenameForm({
+export function RenameForm({
   agent,
   onSaved,
   onCancel,
@@ -1679,7 +1694,7 @@ function RenameForm({
   );
 }
 
-function AccessForm({
+export function AccessForm({
   agent,
   projects,
   projectsError,
