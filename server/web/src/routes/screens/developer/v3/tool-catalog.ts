@@ -13,8 +13,11 @@ import { AGENT_CLIENT_NAMES, type AgentClient } from '../../../../api/agent-clie
  *
  * - **`automatic`**: `laika tool add` installs the credential, the MCP entry
  *   and the session hooks. Sessions, claims and automatic checkpoints work.
- * - **`mcp-only`**: the credential and the MCP entry; the tool reads and
- *   writes tasks, but opens no session and saves no checkpoint.
+ *   (Claude Code's entry is a user-scope `mcpServers.laika` in `~/.claude.json`
+ *   that reads the tool's credential file; Codex's reads its own variable.)
+ * - **`mcp-only`**: `laika tool add` installs the credential; the MCP entry is
+ *   **set up by hand**, and the helper prints the exact step (LAI-1072). The
+ *   tool reads and writes tasks, but opens no session and saves no checkpoint.
  * - **`manual`**: the tool's configuration would have to hold the token
  *   itself, which `laika tool add` never writes, so it refuses the tool and
  *   the person connects it by hand.
@@ -86,9 +89,9 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     sessions: true,
     tested: true,
     notes: [
-      'Quit Claude Code and start it again with `laika-claude`. Plain `claude` gets no Laika tools.',
+      'Quit Claude Code and start it again — `laika-claude` for Laika’s commands too, or plain `claude`. Its Laika MCP entry in `~/.claude.json` reads this tool’s own credential. If that file already has a `laika` server, `laika tool add` keeps it and prints the entry to use instead.',
     ],
-    firstRequest: `Start Claude Code with \`laika-claude\`, then ${WHOAMI}.`,
+    firstRequest: `Start Claude Code again, then ${WHOAMI}.`,
   },
   {
     harness: 'codex',
@@ -111,7 +114,8 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     sessions: false,
     tested: false,
     notes: [
-      'Start Cursor from a terminal, so it inherits the credential’s environment. For cursor-agent, run `cursor-agent mcp enable laika` once.',
+      'MCP set up by hand. `laika tool add` prints the exact step: a line for your shell’s rc file that sets `LAIKA_AGENT_TOKEN_CURSOR` from this tool’s credential, and the `laika` entry for `~/.cursor/mcp.json`, with `"Authorization": "Bearer ${env:LAIKA_AGENT_TOKEN_CURSOR}"`.',
+      'Start Cursor from a terminal, so it inherits that variable. For cursor-agent, run `cursor-agent mcp enable laika` once.',
     ],
     firstRequest: `Start Cursor from a terminal, then ${WHOAMI}.`,
   },
@@ -122,7 +126,10 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     mode: 'mcp-only',
     sessions: false,
     tested: false,
-    notes: ['Sign in to Gemini itself first; Laika cannot do that for you.'],
+    notes: [
+      'MCP set up by hand. `laika tool add` prints the exact step: a line for your shell’s rc file that sets `LAIKA_AGENT_TOKEN_GEMINI_CLI` from this tool’s credential, and the `laika` entry for `~/.gemini/settings.json`, with `"Authorization": "Bearer ${LAIKA_AGENT_TOKEN_GEMINI_CLI}"`.',
+      'Sign in to Gemini itself first; Laika cannot do that for you.',
+    ],
     firstRequest: `Start \`gemini\`, then ${WHOAMI}.`,
   },
   {
@@ -132,7 +139,10 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     mode: 'mcp-only',
     sessions: false,
     tested: false,
-    notes: ['Start VS Code from a terminal, so it inherits the credential’s environment.'],
+    notes: [
+      'MCP set up by hand. `laika tool add` prints the exact step: a line for your shell’s rc file that sets `LAIKA_AGENT_TOKEN_COPILOT_VSCODE` from this tool’s credential, and a `code --add-mcp` command for the `laika` server, with `"Authorization": "Bearer ${env:LAIKA_AGENT_TOKEN_COPILOT_VSCODE}"`.',
+      'Start VS Code from a terminal, so it inherits that variable.',
+    ],
     firstRequest: `Start VS Code from a terminal, then ${WHOAMI} in Copilot chat.`,
   },
   {
@@ -143,7 +153,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     sessions: false,
     tested: false,
     notes: [
-      'Omnigent holds the credential only: Laika sees its requests, but it opens no session and saves no checkpoint. Its Laika entry lives in each Omnigent agent’s own folder.',
+      'Omnigent holds the credential only: Laika sees its requests, but it opens no session and saves no checkpoint. MCP set up by hand: its Laika entry lives in each Omnigent agent’s own folder (`laika connect omnigent --dir <agent folder>` prints it).',
     ],
     firstRequest: `Run an Omnigent agent that has Laika, and ${WHOAMI}.`,
   },
@@ -195,7 +205,8 @@ export const MODE_WORDS: Readonly<Record<SetupMode, string>> = {
 /** What a mode means, said once beside the word. */
 export const MODE_MEANING: Readonly<Record<SetupMode, string>> = {
   automatic: 'Credential, MCP entry and session hooks. Sessions, claims and checkpoints.',
-  'mcp-only': 'Reads and writes tasks; no session claims or automatic checkpoints.',
+  'mcp-only':
+    'Credential installed; MCP set up by hand — `laika tool add` prints the exact step. Reads and writes tasks; no session claims or automatic checkpoints.',
   manual: 'The helper cannot set it up safely; you connect it by hand.',
   unverified: 'Not tested with Laika, and the helper has no setup for it: by hand.',
 };

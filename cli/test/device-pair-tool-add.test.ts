@@ -808,6 +808,129 @@ void describe('laika tool add', () => {
     assert.ok(!existsSync(join(home, '.codex', 'hooks.json')), '--no-hooks installed hooks');
   });
 
+  void test('claude-code: an MCP entry that reads the tool credential; other servers byte-identical; doctor sees it (LAI-1072)', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    write(home, '.laika/env', PERSONAL_ENV);
+    // Claude Code's own file, as it writes it: other state and another server.
+    const other = { type: 'stdio', command: 'other-mcp', args: ['--flag'], env: { A: 'b' } };
+    const claudeJson = {
+      numStartups: 7,
+      mcpServers: { other },
+      projects: { '/x': { hasTrustDialogAccepted: true } },
+    };
+    const before = `${JSON.stringify(claudeJson, null, 2)}\n`;
+    write(home, '.claude.json', before);
+    // The other server's exact bytes, as they sit at depth 2 in the file.
+    const otherBytes = `"other": ${JSON.stringify(other, null, 2).split('\n').join('\n    ')}`;
+    assert.ok(before.includes(otherBytes));
+
+    const run = await laika(home, ['tool', 'add', 'claude-code', '--exchange', 'EX1']);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    const after = readFileSync(join(home, '.claude.json'), 'utf8');
+    const doc = JSON.parse(after) as typeof claudeJson & {
+      mcpServers: Record<string, Record<string, string>>;
+    };
+    // The other server, byte for byte; everything else kept; the original backed up.
+    assert.ok(after.includes(otherBytes), 'the other MCP server changed');
+    assert.deepEqual(doc.mcpServers.other, other);
+    assert.equal(doc.numStartups, 7);
+    assert.deepEqual(doc.projects, claudeJson.projects);
+    assert.equal(readFileSync(join(home, '.claude.json.bak'), 'utf8'), before);
+    const laikaEntry = doc.mcpServers.laika;
+    assert.ok(laikaEntry !== undefined, 'no laika MCP entry');
+    assert.equal(laikaEntry.type, 'http');
+    assert.equal(laikaEntry.url, `${s.url}/mcp`);
+    assert.ok(!after.includes('lai_'), 'a token is in ~/.claude.json');
+    assert.ok(!after.includes('.laika/env'), 'the entry reads the personal token');
+    assert.match(laikaEntry.headersHelper ?? '', /\.laika\/agents\/claude-code\.json/);
+    assert.match(run.stdout, /✓ mcp: mcpServers\.laika added in .*\.claude\.json/);
+
+    // Run the helper the way Claude Code does — a shell, from ~/.claude — and
+    // read the header it gives: the tool's own credential, not the personal one.
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    const header = await new Promise<string>((resolve) => {
+      const child = spawn('/bin/sh', ['-c', laikaEntry.headersHelper ?? 'false'], {
+        cwd: join(home, '.claude'),
+        env: { HOME: home, PATH: '/usr/bin:/bin' },
+      });
+      let out = '';
+      child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString('utf8')));
+      child.on('close', () => {
+        resolve(out);
+      });
+    });
+    assert.deepEqual(JSON.parse(header), { Authorization: `Bearer ${SECRET}` });
+
+    // The browser's real check name; never the one that does not exist.
+    assert.match(run.stdout, /the browser ticks "Claude Code connected"/);
+    assert.doesNotMatch(run.stdout, /Tool request seen/);
+    assert.doesNotMatch(run.stdout, /plain `claude` gets no/);
+
+    // Doctor reports the entry.
+    const doc2 = await laika(home, ['doctor', '--offline']);
+    assert.match(doc2.stdout, /a laika MCP entry for claude-code/);
+    assert.doesNotMatch(doc2.stdout, /no tool on this machine has a laika MCP entry/);
+
+    // A Reconnect (a new exchange): the entry is the same, nothing rewritten.
+    const again = await laika(home, ['tool', 'add', 'claude-code', '--exchange', 'EX2']);
+    assert.equal(again.code, 0, again.stdout + again.stderr);
+    assert.equal(readFileSync(join(home, '.claude.json'), 'utf8'), after);
+    assert.match(again.stdout, /already has this tool's laika entry/);
+    assertNoLeak(home, [run, doc2, again], '.laika/agents/claude-code.json');
+  });
+
+  void test('claude-code: an existing mcpServers.laika is kept byte for byte, and the entry printed', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    const mine = `${JSON.stringify(
+      {
+        mcpServers: {
+          laika: { type: 'http', url: 'http://board.test/mcp', headers: { A: 'mine' } },
+        },
+      },
+      null,
+      2,
+    )}\n`;
+    write(home, '.claude.json', mine);
+    const run = await laika(home, [
+      'tool',
+      'add',
+      'claude-code',
+      '--exchange',
+      'EX1',
+      '--no-hooks',
+    ]);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    assert.equal(readFileSync(join(home, '.claude.json'), 'utf8'), mine);
+    assert.ok(!existsSync(join(home, '.claude.json.bak')));
+    assert.match(run.stdout, /already has an mcpServers\.laika entry — kept as it is/);
+    assert.match(run.stdout, /"headersHelper": /);
+    assertNoLeak(home, [run], '.laika/agents/claude-code.json');
+  });
+
+  void test('cursor: MCP set up by hand, with the exact entry and a variable from its own credential', async () => {
+    const home = sandbox();
+    const s = await board({ agentHarness: 'cursor' });
+    await paired(home, s);
+    const run = await laika(home, ['tool', 'add', 'cursor', '--exchange', 'EX1']);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    assert.match(
+      run.stdout,
+      /MCP set up by hand — Cursor reads this tool's credential through LAIKA_AGENT_TOKEN_CURSOR/,
+    );
+    assert.match(run.stdout, /\.laika\/agents\/cursor\.json/);
+    assert.match(run.stdout, /~\/\.cursor\/mcp\.json/);
+    assert.ok(run.stdout.includes(`"url": "${s.url}/mcp"`));
+    assert.ok(run.stdout.includes('"Authorization": "Bearer ${env:LAIKA_AGENT_TOKEN_CURSOR}"'));
+    assert.match(run.stdout, /the browser ticks "Cursor connected"/);
+    assert.ok(!existsSync(join(home, '.cursor')), 'tool add wrote Cursor config');
+    assert.ok(!existsSync(join(home, '.claude.json')), 'tool add wrote Claude config for Cursor');
+    assertNoLeak(home, [run], '.laika/agents/cursor.json');
+  });
+
   void test('antigravity is refused before anything is redeemed', async () => {
     const home = sandbox();
     const s = await board();

@@ -253,7 +253,7 @@ void describe('the checklist says what is missing', () => {
     );
     assert.match(lines[1]?.detail ?? '', /run the command on Belka/);
     assert.match(lines[1]?.detail ?? '', /nothing secret is shown here/);
-    assert.match(lines[2]?.detail ?? '', /laika-claude/);
+    assert.match(lines[2]?.detail ?? '', /Start Claude Code again, then ask it to call/);
     assert.match(lines[3]?.detail ?? '', /hooks open one/);
   });
 

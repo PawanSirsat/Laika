@@ -115,3 +115,41 @@ void describe('a command only for a tool the CLI sets up (#213)', () => {
     }
   });
 });
+
+void describe('what the MCP entry is, said the same on both sides (LAI-1072)', () => {
+  /** The CLI's harness name for a board slug: VS Code is `copilot-vscode` there. */
+  const cliHarness = (slug: string): string => (slug === 'vscode' ? 'copilot-vscode' : slug);
+
+  void test('every tool planFor leaves to MCP by hand says "MCP set up by hand", with its own variable', () => {
+    const { named } = cliPlans();
+    const manual = TOOL_CATALOG.filter((tool) => named.get(tool.harness) === 'mcp-manual');
+    assert.deepEqual(
+      manual.map((tool) => tool.harness),
+      ['cursor', 'gemini-cli', 'vscode'],
+    );
+    for (const tool of manual) {
+      const notes = tool.notes.join(' ');
+      assert.match(notes, /MCP set up by hand/, tool.harness);
+      // `tokenVar()` in cli/src/tool-add.ts: LAIKA_AGENT_TOKEN_ and the harness in capitals.
+      const variable = `LAIKA_AGENT_TOKEN_${cliHarness(tool.harness)
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '_')}`;
+      assert.ok(notes.includes(variable), `${tool.harness} names no ${variable}`);
+      assert.match(notes, /`laika tool add` prints the exact step/, tool.harness);
+    }
+  });
+
+  void test('Claude Code is automatic and no longer says plain claude gets no Laika tools', () => {
+    const claude = catalogTool('claude-code');
+    assert.equal(claude?.mode, 'automatic');
+    const notes = claude?.notes.join(' ') ?? '';
+    assert.doesNotMatch(notes, /gets no Laika tools/);
+    assert.match(notes, /MCP entry in `~\/\.claude\.json` reads this tool’s own credential/);
+    // The CLI really writes it: planFor's Claude Code is `full`, and tool add calls claudeMcp.
+    const source = readFileSync(
+      new URL('../../../../../../../cli/src/tool-add.ts', import.meta.url),
+      'utf8',
+    );
+    assert.match(source, /if \(target === 'claude-code'\) mcpOn = claudeMcp\(/);
+  });
+});

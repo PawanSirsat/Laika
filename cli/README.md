@@ -87,10 +87,10 @@ credential is for another board than `~/.laika/env`. A version report
 
 | Tool | What `tool add` does |
 | --- | --- |
-| Claude Code | credential; hooks (unless `--no-hooks`); `laika-claude` then uses this credential instead of your personal token — only because `tool add` wrote it (`"source": "tool-add"`), never for a file `laika agent login` wrote. Restart Claude Code with `laika-claude` |
+| Claude Code | credential; hooks (unless `--no-hooks`); `mcpServers.laika` in `~/.claude.json` (user scope) whose `headersHelper` reads the token from `~/.laika/agents/claude-code.json` at each connect — no token in the config, and a Reconnect needs no edit (LAI-1072). Every other key and server is kept, the original backed up once as `~/.claude.json.bak`; an existing `mcpServers.laika` is **kept** and the entry to use printed. `laika-claude` also uses this credential instead of your personal token — only because `tool add` wrote it (`"source": "tool-add"`), never for a file `laika agent login` wrote. Restart Claude Code (`laika-claude` or `claude`) |
 | Codex | credential; hooks; `[mcp_servers.laika]` in `~/.codex/config.toml` reading `LAIKA_AGENT_TOKEN_CODEX`, exported by one rc line from the credential file. An existing `[mcp_servers.laika]` is **kept** and the one-line edit printed. Trust the hooks in `/hooks` |
 | Omnigent | credential only: no hooks, no sessions. Its MCP sidecar is written by hand |
-| Cursor, Gemini CLI, VS Code | credential; MCP only, configured by hand (Documented-not-tested) |
+| Cursor, Gemini CLI, VS Code | credential; **MCP set up by hand** — it prints the exact step: an rc line exporting `LAIKA_AGENT_TOKEN_<TOOL>` from the tool's credential file, and the `laika` entry for the tool's MCP config (Documented-not-tested) |
 | Antigravity | **refused before redeeming**: its config takes only an inline token, and `tool add` never writes a token into a config. Set it up by hand |
 | anything else | refused before redeeming: no CLI harness, so "Set up by hand" |
 
