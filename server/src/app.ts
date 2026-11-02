@@ -117,7 +117,7 @@ export interface CreateAppOptions {
   version: string;
   /** `LAIKA_BUILD_COMMIT` (§11.7, LAI-1043); absent is `null`. */
   buildCommit?: string | null;
-  /** `LAIKA_DEVELOPER_ACCESS` (§11.7, LAI-1043); absent is `classic`. */
+  /** `LAIKA_DEVELOPER_ACCESS` (§11.7, LAI-1043); absent is `v3` (LAI-1076). */
   developerAccess?: DeveloperAccessMode;
   /** `LAIKA_CLI_SOURCE_URL` (§11.7, LAI-1043); absent is this repository. */
   cliSourceUrl?: string;
@@ -327,7 +327,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     developerRoutes({
       version: options.version,
       buildCommit: options.buildCommit ?? null,
-      developerAccess: options.developerAccess ?? 'classic',
+      developerAccess: options.developerAccess ?? 'v3',
       cliSourceUrl: options.cliSourceUrl ?? DEFAULT_CLI_SOURCE_URL,
       // Read on the first request, when every route below is mounted (LAI-1062).
       servedRoutes: () => app.routes.map((route) => `${route.method} ${route.path}`),

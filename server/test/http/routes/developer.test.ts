@@ -51,12 +51,12 @@ describe('GET /api/v1/developer/compatibility', () => {
     expect(body.release_notes.ref).toBe(COMMIT);
   });
 
-  it('defaults to classic and a null commit when the deployment says neither', async () => {
+  it('defaults to v3 (LAI-1076) and a null commit when the deployment says neither', async () => {
     const { app } = testApp();
 
     const body = await read(await app.request('/api/v1/developer/compatibility'));
 
-    expect(body.features.developer_access).toBe('classic');
+    expect(body.features.developer_access).toBe('v3');
     expect(body.server.build_commit).toBeNull();
     expect(body.cli.source.commit).toBeNull();
     expect(body.release_notes.ref).toBeNull();
@@ -171,7 +171,7 @@ describe('GET /api/v1/developer/compatibility — features (LAI-1062)', () => {
     const body = await read(await h.app.request('/api/v1/developer/compatibility'));
 
     expect(body.features).toEqual({
-      developer_access: 'classic',
+      developer_access: 'v3',
       device_pairing: true,
       tool_setup_exchange: true,
       client_reports: true,

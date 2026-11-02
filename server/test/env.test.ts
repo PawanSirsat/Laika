@@ -346,16 +346,16 @@ describe('LAIKA_CHECKPOINT_* (§11.7, §9.1.1, D-115 item 9, LAI-1015)', () => {
 });
 
 describe('LAIKA_BUILD_COMMIT, LAIKA_DEVELOPER_ACCESS, LAIKA_CLI_SOURCE_URL (§11.7, LAI-1043)', () => {
-  it('defaults to no commit, classic, and this repository', () => {
+  it('defaults to no commit, v3 (LAI-1076), and this repository', () => {
     expect(readEnv({ ...SECRET })).toMatchObject({
       buildCommit: null,
-      developerAccess: 'classic',
+      developerAccess: 'v3',
       cliSourceUrl: 'https://github.com/PawanSirsat/Laika.git',
     });
     // Empty is unset: a Docker build without the arg sets ENV to "".
     expect(
       readEnv({ ...SECRET, LAIKA_BUILD_COMMIT: '', LAIKA_DEVELOPER_ACCESS: '' }),
-    ).toMatchObject({ buildCommit: null, developerAccess: 'classic' });
+    ).toMatchObject({ buildCommit: null, developerAccess: 'v3' });
   });
 
   it('keeps a short or full lowercase hex commit', () => {
