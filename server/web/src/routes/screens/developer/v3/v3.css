@@ -321,6 +321,28 @@
   overflow-wrap: anywhere;
 }
 
+/* LAI-1066: one line per record, its source first — never colour alone. */
+.dev-setup-records {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dev-setup-records li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.dev-setup-record-source {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
 .dev-setup-grants {
   display: flex;
   flex-direction: column;

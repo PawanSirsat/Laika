@@ -2,7 +2,8 @@
  * Developer access V3 → Project setup (LAI-1052, plan §G), in a real browser.
  *
  * - The flow: project → connected tool → access as two facts → grant → the
- *   tool's prompt → *I've added it*, recorded as the reader's word.
+ *   tool's prompt → *I've added it*, recorded on the board as the reader's
+ *   word; a `laika project check` record shown apart from it (LAI-1066).
  * - A grant changes one project through the existing `PUT /agents/:id/grants`,
  *   every other grant carried over.
  * - Its states: no tools, no projects, a `403`, an error, a viewer.
@@ -112,6 +113,9 @@ const accessFor = (agent: Agent, role: 'member' | 'viewer' = 'member', agentsAll
 interface World {
   agents: Agent[];
   puts: unknown[];
+  /** `GET /project-setups` answers these; a `POST` appends to them. */
+  setups?: Record<string, unknown>[];
+  posts?: unknown[];
 }
 
 function stub(
@@ -155,6 +159,31 @@ function stub(
       min_sync_interval_s: 600,
     },
     '/api/v1/developer/compatibility': compat(mode),
+    '/api/v1/project-setups': (call: StubCall) => {
+      world.setups ??= [];
+      if (call.method === 'POST') {
+        (world.posts ??= []).push(call.body);
+        const body = call.body as { agent_id: string; template_revision: number };
+        const made = {
+          id: `s${String(world.setups.length + 1)}`,
+          agent_id: body.agent_id,
+          device_label: 'Belka',
+          project_id: 'p1',
+          project_slug: 'onroute',
+          repo_label: null,
+          instructions_path: 'CLAUDE.md',
+          block_found: true,
+          template_revision: body.template_revision,
+          project_match: null,
+          prefix_match: null,
+          source: 'self_reported_browser',
+          checked_at: Date.now(),
+        };
+        world.setups.push(made);
+        return made;
+      }
+      return { data: world.setups };
+    },
   };
   for (const agent of world.agents) {
     routes[`/api/v1/agents/${agent.id}`] = () => world.agents.find((a) => a.id === agent.id);
@@ -193,6 +222,78 @@ const facts = async (page: Page) =>
   );
 
 void describe('Project setup, v3', () => {
+  void test('a laika project check record is shown apart from the reader’s word, and drives Update available', async () => {
+    const local = {
+      id: 's1',
+      agent_id: 'a1',
+      device_label: 'Belka',
+      project_id: 'p1',
+      project_slug: 'onroute',
+      repo_label: 'onroute-app',
+      instructions_path: 'CLAUDE.md',
+      block_found: true,
+      template_revision: 1,
+      project_match: null,
+      prefix_match: true,
+      source: 'local_check',
+      checked_at: Date.now() - 60_000,
+    };
+    const self = {
+      ...local,
+      id: 's2',
+      repo_label: null,
+      template_revision: 2,
+      prefix_match: null,
+      source: 'self_reported_browser',
+    };
+    const world: World = {
+      agents: [agentRow({ id: 'a1', grants: [{ project_id: 'p1', scope: 'full' }] })],
+      puts: [],
+      setups: [local, self],
+    };
+    const h = await open('/developer?tab=projects', stub('v3', world));
+    try {
+      await h.page.locator('[data-step="record"] [data-status]').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('[data-step="record"] [data-status]').getAttribute('data-status'),
+        'update-available',
+      );
+      const checked = await h.page.locator('[data-source="local_check"]').innerText();
+      assert.match(checked, /Checked by laika project check on Belka at /);
+      assert.match(checked, /onroute-app: instructions template revision 1 in CLAUDE\.md/);
+      const mine = await h.page.locator('[data-source="self_reported_browser"]').innerText();
+      assert.match(mine, /Recorded by you at .+ — not verified/);
+      assert.doesNotMatch(mine, /Checked/);
+      await evidence(h.page, 'project-setup-records');
+
+      // Presence off: the server sends no time, and the page shows none.
+      world.setups = [
+        { ...local, template_revision: 2, checked_at: null },
+        { ...self, checked_at: null },
+      ];
+      await h.page.reload();
+      await h.page.locator('[data-step="record"] [data-status="current"]').waitFor({
+        timeout: 20_000,
+      });
+      assert.equal(
+        (
+          await h.page.locator('[data-source="local_check"] .dev-setup-record-source').innerText()
+        ).trim(),
+        'Checked by laika project check on Belka',
+      );
+      assert.equal(
+        (
+          await h.page
+            .locator('[data-source="self_reported_browser"] .dev-setup-record-source')
+            .innerText()
+        ).trim(),
+        'Recorded by you — not verified',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the whole flow: two facts, a one-project grant, the prompt, a self-report', async () => {
     const world: World = {
       agents: [agentRow({ id: 'a1', grants: [{ project_id: 'p9', scope: 'read_only' }] })],
@@ -235,17 +336,31 @@ void describe('Project setup, v3', () => {
         .filter({ hasText: 'now has Full in OnRoute' })
         .waitFor({ timeout: 5_000 });
 
-      // Nothing recorded is said as such; the reader's word is theirs.
+      // Nothing recorded is said as such, with the command that finds out.
       await h.page.locator('[data-status="not-recorded"]').waitFor();
       assert.match(
-        await h.page.locator('[data-note="project-check"]').innerText(),
-        /laika project check.*not available yet/s,
+        await h.page.locator('[data-step="record"]').innerText(),
+        /laika project check --project onroute/,
       );
+      // The reader's word goes to the board, and comes back as theirs.
       await h.page.getByRole('button', { name: 'I’ve added it' }).click();
       const recorded = await h.page.locator('[data-status="current"]').innerText();
       assert.match(recorded, /Recorded by you/);
       assert.match(recorded, /not verified/);
       assert.doesNotMatch(recorded, /\bVerified\b/);
+      assert.deepEqual(world.posts, [
+        {
+          agent_id: 'a1',
+          project_slug: 'onroute',
+          template_revision: 2,
+          instructions_path: 'CLAUDE.md',
+        },
+      ]);
+      assert.match(
+        await h.page.locator('[data-source="self_reported_browser"]').innerText(),
+        /Recorded by you at .+ — not verified/,
+      );
+      assert.equal(await h.page.locator('[data-source="local_check"]').count(), 0);
     } finally {
       await h.close();
     }
