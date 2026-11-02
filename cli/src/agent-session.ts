@@ -82,6 +82,15 @@ export function sessionFileKey(harnessSessionId: string): string {
 export const statePath = (home: string, harness: Harness, harnessSessionId: string): string =>
   join(sessionsDir(home), `${harness}-${sessionFileKey(harnessSessionId)}.json`);
 
+/**
+ * Where the hooks keep what the harness said about itself, beside the state
+ * and **written by the hooks only** (LAI-1059). The watcher writes the whole
+ * state from a copy it read before its heartbeat went out, so a model a hook
+ * put in the state meanwhile was written back over and never sent. Not
+ * `.json`, so {@link listStates} never reads it as a session.
+ */
+export const selfPath = (path: string): string => `${path}.self`;
+
 /* -------------------------------------------------------------------------- */
 /* Private files                                                              */
 /* -------------------------------------------------------------------------- */
@@ -463,9 +472,9 @@ export interface SessionState {
   notice?: string;
   end_reason?: string;
   /**
-   * What the harness last said about itself, as {@link readSelfReport} read
-   * it (D-118, LAI-588). Absent when it could not be told; a value once read
-   * is kept until a different one is read, never cleared by not knowing.
+   * What the harness said about itself at the start, as {@link readSelfReport}
+   * read it (D-118, LAI-588). What a hook read since is in {@link selfPath},
+   * and {@link selfReportOf} reads the two together.
    */
   self?: SelfReport;
   /** What the board was last told of {@link self}: a heartbeat sends only what differs. */
@@ -653,24 +662,41 @@ export function readSelfReport(
 }
 
 /**
- * Keep what a hook read about the harness in the session's state, for the
+ * What the harness last said about itself: the start's, then whatever a hook
+ * read since. Absent when it could not be told; a value once read is kept
+ * until a different one is read, never cleared by not knowing.
+ */
+export function selfReportOf(path: string, state = readState(path)): SelfReport {
+  const noted = readJson(selfPath(path));
+  // Read back through the same checks as the transcript: it goes to the board.
+  const version = isRecord(noted) ? asVersion(noted.harness_version) : undefined;
+  const model = isRecord(noted) ? asModel(noted.model) : undefined;
+  return {
+    ...state?.self,
+    ...(version === undefined ? {} : { harness_version: version }),
+    ...(model === undefined ? {} : { model }),
+  };
+}
+
+/**
+ * Keep what a hook read about the harness beside the session's state, for the
  * watcher's next heartbeat to send. A field not read now keeps its old value.
- * Writes only when something changed.
+ * Writes only when something changed, and never the state itself: that is the
+ * watcher's to write (see {@link selfPath}).
  */
 export function noteSelfReport(home: string, path: string, report: SelfReport): void {
   const state = readState(path);
   if (state === undefined) return;
-  const next: SelfReport = { ...state.self, ...report };
-  if (next.harness_version === state.self?.harness_version && next.model === state.self?.model) {
-    return;
-  }
-  state.self = next;
-  writeState(home, state);
+  const known = selfReportOf(path, state);
+  const next: SelfReport = { ...known, ...report };
+  if (next.harness_version === known.harness_version && next.model === known.model) return;
+  privateDir(sessionsDir(home));
+  writePrivate(selfPath(path), `${JSON.stringify(next)}\n`);
 }
 
 /** The fields of {@link SelfReport} the board has not been told yet. */
-function unreported(state: SessionState): SelfReport {
-  const self = state.self ?? {};
+function unreported(path: string, state: SessionState): SelfReport {
+  const self = selfReportOf(path, state);
   const told = state.reported ?? {};
   return {
     ...(self.harness_version !== undefined && self.harness_version !== told.harness_version
@@ -1119,7 +1145,7 @@ export async function beatOnce(
   // A model switched mid-session, or a version first read after the start:
   // only what the board has not been told, and no body when that is nothing.
   // An omitted field keeps what the session last said (SPEC §6.4).
-  const changed = unreported(state);
+  const changed = unreported(path, state);
   const result = await callBoard(
     deps.fetch,
     credential,
