@@ -735,7 +735,9 @@ void describe('V3 Devices: states', () => {
     try {
       await h.page.getByText('No devices yet').waitFor({ timeout: 20_000 });
       await h.page.getByRole('button', { name: 'Add a device' }).click();
-      await h.page.locator('.agents-wizard').waitFor({ timeout: 20_000 });
+      // The V3 Add device wizard (LAI-1061), not the classic registration one.
+      await h.page.locator('[data-wizard="device"]').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.agents-wizard').count(), 0);
       assert.match(h.page.url(), /add=device/);
       // The wizard alone: the classic list does not come with it.
       assert.equal(await h.page.locator('.agents-list').count(), 0);

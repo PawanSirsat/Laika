@@ -125,31 +125,16 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   // LAI-1045 serves the owner's devices ahead of their screen. The V3 Devices
   // tab (LAI-1054) reads the list; one device alone has no caller yet.
   'api/v1/devices/*': 'LAI-1045 — the V3 Devices screen (plan LAI-1042 slice D) is not built',
-  // LAI-1050 serves pairing ahead of its screen and its CLI: the V3 pairing
-  // screen (plan LAI-1042 slice D) is the owner's caller, `laika device pair`
-  // (slice C3) the device's. Named by LAI-1050 (D-033).
-  'api/v1/devices/pairing-requests':
-    'LAI-1050 — the V3 pairing screen (plan LAI-1042 slice D) is not built',
-  'api/v1/devices/pairing-requests/*':
-    'LAI-1050 — the V3 pairing screen (plan LAI-1042 slice D) is not built',
-  'api/v1/devices/pairing-requests/*/approve':
-    'LAI-1050 — the V3 pairing screen (plan LAI-1042 slice D) is not built',
-  'api/v1/devices/pairing-requests/*/deny':
-    'LAI-1050 — the V3 pairing screen (plan LAI-1042 slice D) is not built',
+  // LAI-1050 serves pairing; the V3 Add device wizard (LAI-1061) is the
+  // owner's caller, and `laika device pair` (slice C3) the device's — the two
+  // the browser never makes. Named by LAI-1050 (D-033).
   'api/v1/device-pairing/claim':
     'a device calls it with no session (LAI-1050); `laika device pair` (plan LAI-1042 slice C3)',
   'api/v1/device-pairing/*/complete':
     'a device calls it with no session (LAI-1050); `laika device pair` (plan LAI-1042 slice C3)',
-  // LAI-1056 serves tool setup ahead of its screen and its CLI: the V3 Devices
-  // screen (plan LAI-1042 slice D) is the owner's caller, `laika tool add` and
-  // `laika doctor` (slice C3) the device's and the agent's. Named by LAI-1056
-  // (D-033).
-  'api/v1/devices/*/tools': 'LAI-1056 — the V3 Devices screen (plan LAI-1042 slice D) is not built',
-  'api/v1/tool-setup/*': 'LAI-1056 — the V3 Devices screen (plan LAI-1042 slice D) is not built',
-  'api/v1/agents/*/reconnect':
-    'LAI-1056 — the V3 Devices screen (plan LAI-1042 slice D) is not built',
-  'api/v1/agents/*/verification':
-    'LAI-1056 — the V3 Devices screen (plan LAI-1042 slice D) is not built',
+  // LAI-1056 serves tool setup; the V3 Add tool wizard (LAI-1061) is the
+  // owner's caller, and `laika tool add` and `laika doctor` (slice C3) the
+  // device's and the agent's. Named by LAI-1056 (D-033).
   'api/v1/tool-setup/*/redeem':
     'a paired device calls it with no session (LAI-1056); `laika tool add` (plan LAI-1042 slice C3)',
   'api/v1/agents/me/client-report':
