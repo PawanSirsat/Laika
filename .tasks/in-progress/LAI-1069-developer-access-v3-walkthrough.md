@@ -2,11 +2,12 @@
 id: LAI-1069
 title: 'Developer access V3: a recorded local walkthrough, and the board build on Organisation Overview'
 area: web
-assignee: unclaimed
+assignee: polly (Belka)
 priority: p1
 depends-on: [LAI-1061, LAI-1062, LAI-1064]
 discovered-from: LAI-1042
-status: backlog
+status: in-progress
+started: 2026-11-02T07:35:00+02:00
 ---
 
 Slice F of `docs/proposals/LAI-1042-developer-access-v3-plan.md` (F4's
