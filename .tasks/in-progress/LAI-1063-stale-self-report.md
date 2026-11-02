@@ -2,11 +2,12 @@
 id: LAI-1063
 title: 'A resumed harness reports the old process''s model: a stale `<state>.self` overrides the new start'
 area: shell
-assignee: unclaimed
+assignee: polly
 priority: p2
 depends-on: []
 discovered-from: LAI-1059
-status: backlog
+status: in-progress
+started: 2026-11-02T01:02:06Z
 ---
 
 ## Why
