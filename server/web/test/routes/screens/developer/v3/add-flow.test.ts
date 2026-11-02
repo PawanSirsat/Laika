@@ -46,9 +46,16 @@ void describe('the bootstrap a device runs', () => {
     assert.equal(versionNote, undefined);
   });
 
-  void test('installed: update, then the server’s pair command as it came', () => {
-    const { text } = bootstrapCommands(SOURCE, PAIR, true);
-    assert.deepEqual(text.split('\n'), ['git -C ~/laika fetch && laika update', PAIR]);
+  void test('installed: the server’s pair command as it came, after the update guide', () => {
+    const { text, updateFirst } = bootstrapCommands(SOURCE, PAIR, true);
+    assert.equal(text, PAIR);
+    assert.equal(updateFirst, true);
+    // Review round 1, N3: no `laika update` an old helper cannot run, and no
+    // update command missing --board / --allow-http — the guide gives those.
+    assert.doesNotMatch(text, /laika update|git -C/);
+    for (const source of [SOURCE, { url: SOURCE.url, commit: null }, undefined]) {
+      assert.equal(bootstrapCommands(source, PAIR, false).updateFirst, false);
+    }
   });
 
   void test('a board that does not know its commit says Version unknown, never a guessed branch', () => {

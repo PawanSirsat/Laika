@@ -542,9 +542,17 @@ export function AddDeviceWizard({
         ) : (
           <>
             <UpdateCliHelp summary={WIZARD_SUMMARY} place="add-device" />
+            {commands.updateFirst && (
+              <Help>
+                <span data-update-first="">
+                  Bring its Laika helper up to date first: the line above has the commands, for a
+                  helper with <code>laika update</code> and for one without it. Then pair:
+                </span>
+              </Help>
+            )}
             <CodeBlock
               label={
-                installed ? 'On the device: update, then pair' : 'On the device: install, then pair'
+                commands.updateFirst ? 'On the device: pair' : 'On the device: install, then pair'
               }
               labelId={`${ids}-bootstrap`}
               text={commands.text}
