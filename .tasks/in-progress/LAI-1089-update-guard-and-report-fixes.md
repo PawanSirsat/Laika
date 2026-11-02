@@ -2,11 +2,12 @@
 id: LAI-1089
 title: 'laika update: the MCP guard compares only Laika''s entries; skipped credential files, a dirty checkout and origin edges are said and tested'
 area: cli
-assignee: unclaimed
+assignee: shell/belka
 priority: p1
 depends-on: [LAI-1085]
 discovered-from: LAI-1085
-status: backlog
+status: in-progress
+started: 2026-11-02T12:38:09Z
 ---
 
 ## Why
