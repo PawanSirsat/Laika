@@ -310,23 +310,32 @@ void describe('V3 Tools: each tool’s helper update status', () => {
     const h = await openTab();
     try {
       await settled(h.page);
-      const expect: [string, string, RegExp][] = [
-        ['a1', 'up-to-date', /Up to date[\s\S]*Runs the helper this board offers, cea011d/],
+      const expect: [string, string, string, RegExp][] = [
+        ['a1', 'up-to-date', 'Up to date', /Runs the helper this board offers, cea011d/],
         // Review round 1, B1: another commit at the board's protocol is no update.
-        ['a2', 'up-to-date', /Up to date[\s\S]*on helper 19f8587; this board offers cea011d/],
+        ['a2', 'up-to-date', 'Up to date', /on helper 19f8587; this board offers cea011d/],
         [
           'a3',
           'required',
-          /Update required for pairing devices, adding tools without a secret, version reports[\s\S]*version reports need helper protocol 2; this one speaks 1/,
+          'Update required for pairing devices, adding tools without a secret, version reports',
+          /version reports need helper protocol 2; this one speaks 1/,
         ],
-        ['a4', 'unknown', /Version unknown[\s\S]*has not reported a version/],
-        ['a5', 'unchecked', /Could not check[\s\S]*version report could not be read/],
+        ['a4', 'unknown', 'Version unknown', /has not reported a version/],
+        ['a5', 'unchecked', 'Could not check', /version report could not be read/],
       ];
-      for (const [id, key, words] of expect) {
+      for (const [id, key, word, why] of expect) {
         assert.equal(await tool(h.page, id).getAttribute('data-update'), key, id);
         await details(h.page, id);
         assert.equal(await update(h.page, id).getAttribute('data-update'), key, id);
-        assert.match(await update(h.page, id).locator('.status-chip').innerText(), words, id);
+        // The word is the note's title, its reason the line under it (LAI-1080).
+        assert.equal(await update(h.page, id).locator('.dx-note-title').innerText(), word, id);
+        assert.match(await update(h.page, id).locator('[data-update-reason]').innerText(), why, id);
+        // Warm only where there is something to update to.
+        assert.equal(
+          await update(h.page, id).locator('.dx-note').getAttribute('data-tone'),
+          key === 'required' ? 'warn' : 'neutral',
+          id,
+        );
         // The connection status is its own, on the row and in the details, unchanged.
         assert.equal(await tool(h.page, id).getAttribute('data-status'), 'connected', id);
         assert.equal(await panelOf(h.page, id).getAttribute('data-status'), 'connected', id);
@@ -393,7 +402,7 @@ void describe('V3 Tools: each tool’s helper update status', () => {
         'Update available',
       );
       assert.match(
-        await update(h.page, 'a2').locator('.status-chip').innerText(),
+        await update(h.page, 'a2').locator('.dx-note').innerText(),
         /Update available[\s\S]*This board speaks helper protocol 3; this one speaks 2\. What it does now keeps working/,
       );
       assert.equal(await panelOf(h.page, 'a2').locator('[data-update-how]').count(), 1);

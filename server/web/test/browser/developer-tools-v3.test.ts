@@ -590,6 +590,20 @@ void describe(
           ready: (page) =>
             page.locator('.side-panel [data-update="required"]').waitFor({ timeout: 20_000 }),
         },
+        {
+          // The same panel scrolled to its helper, every disclosure open.
+          name: 'tool-details-helper',
+          path: '/developer?tab=tools&agent=a3',
+          api: stub(),
+          ready: async (page) => {
+            const helper = page.locator('.side-panel .dv3-update[data-update="required"]');
+            await helper.waitFor({ timeout: 20_000 });
+            for (const summary of await helper.locator('summary').all()) await summary.click();
+            await helper.evaluate((el) => {
+              el.scrollIntoView({ block: 'start' });
+            });
+          },
+        },
       ];
       for (const theme of ['light', 'dark'] as const) {
         for (const width of [1440, 390] as const) {
