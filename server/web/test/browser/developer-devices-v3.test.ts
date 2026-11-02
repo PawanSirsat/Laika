@@ -585,10 +585,48 @@ void describe('V3 Devices: ⋯ actions, keyboard only', () => {
 });
 
 void describe('V3 Devices: review round 1', () => {
-  void test('disconnecting a device’s last tool moves focus to the list heading', async () => {
+  void test('disconnecting an imported device’s last tool moves focus to the list heading', async () => {
+    // An imported device whose tools are all revoked is history (LAI-1070 keeps this).
+    const solo = deviceRow({
+      id: 'd4',
+      name: 'Solo',
+      agents: [agentRow({ id: 'a7', harness: 'codex', device_label: 'Solo' })],
+    });
     const h = await open(
       '/developer?tab=devices',
-      stub('v3', [BELKA, RUNNER], {
+      stub('v3', [BELKA, solo], {
+        '/api/v1/agents/a7/revoke': () => ({
+          ...solo.agents[0],
+          status: 'revoked',
+          revoked_at: Date.now(),
+        }),
+      }),
+    );
+    try {
+      await device(h.page, 'd4').waitFor({ timeout: 20_000 });
+      await tool(h.page, 'a7')
+        .getByRole('button', { name: /More actions/ })
+        .click();
+      await h.page.getByRole('menuitem', { name: 'Disconnect tool…' }).click();
+      const dialog = h.page.getByRole('alertdialog').or(h.page.getByRole('dialog'));
+      await dialog.waitFor({ timeout: 10_000 });
+      await dialog.getByRole('button', { name: 'Disconnect tool' }).click();
+      // Solo had one tool: the whole card leaves the list.
+      await device(h.page, 'd4').waitFor({ state: 'detached', timeout: 10_000 });
+      await h.page.waitForFunction(
+        () => document.activeElement?.id === 'dv3-devices-title',
+        undefined,
+        { timeout: 5_000 },
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a paired device stays listed after its only tool is disconnected (LAI-1070)', async () => {
+    const h = await open(
+      '/developer?tab=devices',
+      stub('v3', [RUNNER], {
         '/api/v1/agents/a5/revoke': () => ({
           ...RUNNER.agents[0],
           status: 'revoked',
@@ -605,13 +643,23 @@ void describe('V3 Devices: review round 1', () => {
       const dialog = h.page.getByRole('alertdialog').or(h.page.getByRole('dialog'));
       await dialog.waitFor({ timeout: 10_000 });
       await dialog.getByRole('button', { name: 'Disconnect tool' }).click();
-      // Runner had one tool: the whole card leaves the list.
-      await device(h.page, 'd2').waitFor({ state: 'detached', timeout: 10_000 });
+      await tool(h.page, 'a5').waitFor({ state: 'detached', timeout: 10_000 });
+      // Still paired and active: the card stays, with the way to its next tool.
+      const card = device(h.page, 'd2');
+      assert.equal(await card.count(), 1, 'the paired device left the list');
+      assert.match(await card.innerText(), /No tools yet — Add a tool/);
+      assert.match(await tab(h.page).innerText(), /1 device · 0 tools/);
+      assert.equal(await h.page.getByText('Every device and tool of yours is revoked.').count(), 0);
+      // Focus stays on the device it happened on.
       await h.page.waitForFunction(
-        () => document.activeElement?.id === 'dv3-devices-title',
+        () => document.activeElement?.classList.contains('dv3-device-name') === true,
         undefined,
         { timeout: 5_000 },
       );
+      await card.getByRole('button', { name: 'Add a tool' }).click();
+      await h.page.waitForURL(/add=tool/, { timeout: 5_000 });
+      const url = new URL(h.page.url());
+      assert.equal(url.searchParams.get('device'), 'd2');
     } finally {
       await h.close();
     }
