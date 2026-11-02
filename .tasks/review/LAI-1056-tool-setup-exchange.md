@@ -144,8 +144,9 @@ FAIL on one blocker; the security core passed.
 - **N3:** add tool matches an agent by `device_id` or by label key. Tested
   with a drifted label.
 - **N4:**
-  - an unsigned redeem of a non-open setup is `409 exchange_<state>`, and
-    never returns the challenge;
+  - an unsigned redeem of a setup that is not open is the uniform `404`,
+    as SPEC §6.1 has it (CHIEF's decision, round 1 follow-up), and never
+    returns the challenge;
   - the `device_revoked` branch is tested;
   - the sibling `404` body is compared with the unknown one;
   - `revokes_on_redeem` lists the tokens a redeem revokes, and is empty for
@@ -161,10 +162,3 @@ FAIL on one blocker; the security core passed.
 - **Named edits:** SPEC §6.1, the sentence and the verbatim paragraph;
   `docs/DECISIONS.md` D-125.
 - Eight mutants, one per fix, each went red in its own test.
-
-**A tension for CHIEF:** the verbatim §6.1 paragraph says "Refusals before
-the signature are one `404`", but N4 makes an unsigned request on a spent,
-expired or cancelled setup a `409`. That request names both ids, the
-exchange's and its device's, so a caller who is not the device learns one
-thing: the state of an exchange whose ids they already hold. Either the
-sentence or N4 should give way; this PR does what each asked.
