@@ -7,6 +7,7 @@ import {
   type AgentGrantScope,
   type RegisteredAgent,
 } from '../../../../api/agents.ts';
+import type { CliSource } from '../../../../api/developer-compat.ts';
 import type { ProjectAccess } from '../../../../api/project-access.ts';
 import type { ProjectSetup } from '../../../../api/project-setups.ts';
 import { dateTime } from '../../../../api/time-label.ts';
@@ -15,7 +16,7 @@ import {
   type AgentChoice,
   type InstructionsTarget,
 } from '../../connect/connect-agents.ts';
-import { PROJECT_BLOCK_REVISION } from '../../connect/connect-copy.ts';
+import { PLUGIN_HOME, PROJECT_BLOCK_REVISION } from '../../connect/connect-copy.ts';
 
 /**
  * Developer access V3 → Project setup, as data (LAI-1052, plan §G, §H).
@@ -422,7 +423,68 @@ export function recordFinding(record: ProjectSetup): string {
   return `${where}${revision} in ${file}${problems.length === 0 ? '' : ` — ${problems.join(', ')}`}`;
 }
 
-/** The command that checks this repository from the reader's device. */
-export function projectCheckCommand(projectSlug: string): string {
-  return `laika project check --project ${projectSlug}`;
+/**
+ * The `--harness` `laika project check` takes for a tool, by the slug the
+ * board knows it as: `cli/src/agent-adapters.ts`'s `ADAPTERS` read backwards
+ * (`harness` → `agentHarness`), so a value here is one the CLI accepts. Only a
+ * slug exactly one adapter registers under: `other` is both Copilot CLI and
+ * Copilot cloud, and a tool with no adapter has no credential file to pick.
+ */
+export const CLI_HARNESS: Readonly<Partial<Record<AgentClient, string>>> = {
+  'claude-code': 'claude-code',
+  codex: 'codex',
+  cursor: 'cursor',
+  vscode: 'copilot-vscode',
+  'gemini-cli': 'gemini-cli',
+  antigravity: 'antigravity',
+  omnigent: 'omnigent',
+};
+
+/**
+ * The command that checks this repository from the reader's device, for the
+ * tool picked in step 1 (LAI-1084). Without `--harness`, a device with two
+ * tools set up checks the file but records nothing (and exits 2, *could not
+ * record*), so step 3 would stay *Not recorded* however often the reader ran
+ * it.
+ */
+export function projectCheckCommand(projectSlug: string, client: AgentClient): string {
+  const harness = CLI_HARNESS[client];
+  return `laika project check --project ${projectSlug}${harness === undefined ? '' : ` --harness ${harness}`}`;
+}
+
+/**
+ * The hint under that command (LAI-1084). A CLI older than the board answers
+ * `laika: unknown command "project"`, and one that old may have no
+ * `laika version` or no `laika update` either, so the way forward is the
+ * checkout itself: `git -C` on {@link PLUGIN_HOME}, where the machine prompt
+ * clones it. Every command is pasteable as it stands: no `<placeholder>`,
+ * which a shell would read as a redirect.
+ */
+export interface CliMatchHint {
+  /**
+   * The board's helper commit (`cli.source.commit`), seven characters as
+   * `laika version` prints its own, or `null` when the board does not say:
+   * an older board, or a build that does not know its commit.
+   */
+  readonly commit: string | null;
+  readonly version: string;
+  /**
+   * For a CLI with no `laika version`, or whose `laika update` is unknown:
+   * the checkout it runs from, moved on.
+   */
+  readonly pull: string;
+  /** Where {@link pull} assumes the checkout is, for "if you cloned it elsewhere". */
+  readonly home: string;
+  readonly update: string;
+}
+
+export function cliMatchHint(source: CliSource | undefined): CliMatchHint {
+  const commit = source?.commit ?? null;
+  return {
+    commit: commit === null ? null : commit.slice(0, 7),
+    version: 'laika version',
+    pull: `git -C ${PLUGIN_HOME} pull --ff-only`,
+    home: PLUGIN_HOME,
+    update: 'laika update',
+  };
 }

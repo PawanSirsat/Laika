@@ -58,7 +58,9 @@ import { displayUrl, urlProblem, USAGE_EXIT } from './doctor.ts';
  * there to record it); `1` something needs action — no block, an older
  * revision, or a block naming another project or prefix; `2` nothing needs
  * action locally but the record could not be made (the board did not answer,
- * refused, or is too old to take it); `64` the command line itself was wrong
+ * refused, or is too old to take it; several tools are set up here and no
+ * `--harness` says which; or `--harness` names a tool with no credential here
+ * while others have one); `64` the command line itself was wrong
  * (`EX_USAGE`, as `laika doctor`).
  */
 
@@ -381,13 +383,18 @@ type CredentialChoice =
       readonly harness: Harness | null;
       readonly credential: AgentCredential;
     }
-  | { readonly kind: 'none' }
-  | { readonly kind: 'several'; readonly harnesses: readonly Harness[] };
+  | { readonly kind: 'none'; readonly harness?: Harness }
+  | { readonly kind: 'several'; readonly harnesses: readonly Harness[] }
+  /** `--harness` named a tool with no credential here, while others have one. */
+  | { readonly kind: 'not-here'; readonly harness: Harness; readonly others: readonly Harness[] };
 
 function chooseCredential(io: CheckIo, harness: Harness | undefined): CredentialChoice {
   if (harness !== undefined) {
     const credential = readCredential(io.home, harness, io.env);
-    return credential === undefined ? { kind: 'none' } : { kind: 'found', harness, credential };
+    if (credential !== undefined) return { kind: 'found', harness, credential };
+    // Names only: which tools have a credential file here, never what is in one.
+    const others = savedHarnesses(io.home).filter((h) => h !== harness);
+    return others.length === 0 ? { kind: 'none', harness } : { kind: 'not-here', harness, others };
   }
   const token = io.env.LAIKA_AGENT_TOKEN;
   const url = io.env.LAIKA_AGENT_URL;
@@ -512,11 +519,22 @@ export async function projectCheck(
     if (choice.kind === 'none') {
       outcome = {
         kind: 'skipped',
-        why: 'no tool credential on this machine — nothing recorded (laika tool add sets one up)',
+        why:
+          choice.harness === undefined
+            ? 'no tool credential on this machine — nothing recorded (laika tool add sets one up)'
+            : `no credential for ${choice.harness} on this machine — nothing recorded (laika tool add sets one up)`,
+      };
+    } else if (choice.kind === 'not-here') {
+      // As `several`: a credential is here and a record was asked for (exit 2).
+      outcome = {
+        kind: 'failed',
+        why: `no credential for ${choice.harness} on this machine (it has: ${choice.others.join(', ')}) — nothing recorded; pass --harness with one of those, or laika tool add sets one up`,
       };
     } else if (choice.kind === 'several') {
+      // Not `skipped`: credentials are here and the record was expected, so a
+      // script or agent must not read this as done (exit 2, LAI-1084).
       outcome = {
-        kind: 'skipped',
+        kind: 'failed',
         why: `several tools are set up here (${choice.harnesses.join(', ')}) — pass --harness to record`,
       };
     } else if (urlProblem(choice.credential.url) !== undefined) {
