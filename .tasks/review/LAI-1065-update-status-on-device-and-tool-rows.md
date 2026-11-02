@@ -71,8 +71,13 @@ task's, not that one's: `da0e2577` (the stack merge), `abeed4a3` (filing),
   current". *Update available* is only `min_client ≤ protocol < current`.
   The test that pinned the old behaviour is reversed; a fork/newer-commit
   case is added.
-- **N1**: clock-driven browser tests: 15/30/60 s, then a 120 s cap, 18 reads
-  and stop at the 30-minute limit, and no read after the tab unmounts.
+- **N1**: the watch is `watchForReport` in `update-status.ts`, on an
+  injected clock. Unit tests fire each timer and check the waits (15/30/60 s,
+  then the 120 s cap), 18 reads and a stop at the 30-minute limit, a failed
+  read retried, and `cancel` clearing the pending wait and ignoring a read in
+  flight. A browser test checks that leaving the tab stops it. A first
+  browser-clock version failed on CI (`2de5de4f`, web 3/4): the next wait is
+  set only after the page handles a read, which a test cannot observe.
 - **N3**: one wording for the protocol on every side; `ReportFacts` says the
   time is hidden server-side.
 - Fixtures mirror the protocol-2 board #216 serves.

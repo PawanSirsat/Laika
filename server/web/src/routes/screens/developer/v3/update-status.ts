@@ -432,6 +432,74 @@ export function boardBehindNote(
   return 'A tool’s helper is newer than this board. The board is updated by whoever runs this instance; your devices update themselves with laika update.';
 }
 
+// ------------------------------------------------------------------ the watch
+
+/** First wait after a copy, then doubled up to the cap; given up after the limit. */
+export const WATCH_FIRST_MS = 15_000;
+export const WATCH_CAP_MS = 120_000;
+export const WATCH_LIMIT_MS = 30 * 60_000;
+
+export interface WatchClock {
+  readonly now: () => number;
+  readonly set: (run: () => void, ms: number) => unknown;
+  readonly clear: (handle: unknown) => void;
+}
+
+export interface Watch {
+  /** Stop: the pending wait is cleared, and a read still on its way is ignored. */
+  readonly cancel: () => void;
+}
+
+/**
+ * After *Copy update command*: read the tool's report again, 15 s later, then
+ * after twice the last wait up to 2 minutes, until `read` finds a new one or
+ * 30 minutes have passed (review round 1, N1). `onEnd` gets what was found,
+ * or `undefined` when it gave up; never after `cancel`.
+ *
+ * The next wait is set only once a read has answered, so reads never overlap.
+ * The clock is passed in, so `node --test` drives every step.
+ */
+export function watchForReport<T>(
+  read: () => Promise<T | undefined>,
+  clock: WatchClock,
+  onEnd: (found: T | undefined) => void,
+): Watch {
+  const started = clock.now();
+  let handle: unknown;
+  let done = false;
+  const finish = (found: T | undefined): void => {
+    done = true;
+    onEnd(found);
+  };
+  const tick = (wait: number): void => {
+    handle = clock.set(() => {
+      handle = undefined;
+      void read()
+        .catch(() => undefined)
+        .then((found) => {
+          if (done) return;
+          if (found !== undefined) {
+            finish(found);
+            return;
+          }
+          if (clock.now() - started >= WATCH_LIMIT_MS) {
+            finish(undefined);
+            return;
+          }
+          tick(Math.min(wait * 2, WATCH_CAP_MS));
+        });
+    }, wait);
+  };
+  tick(WATCH_FIRST_MS);
+  return {
+    cancel: () => {
+      done = true;
+      if (handle !== undefined) clock.clear(handle);
+      handle = undefined;
+    },
+  };
+}
+
 /** What the live region says when a polled report changed a row. */
 export function updateAnnouncement(label: string, next: UpdateStatus): string {
   return `${label}: ${next.word}.`;

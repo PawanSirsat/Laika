@@ -24,12 +24,15 @@ import {
   updateCommand,
   updateManifestOf,
   updateStatus,
+  watchForReport,
   whatsNew,
   worstUpdate,
   type ClientReport,
   type Read,
   type UpdateManifest,
   type UpdateStatus,
+  type Watch,
+  type WatchClock,
 } from './update-status.ts';
 import '../../connect/connect.css';
 import './update-status.css';
@@ -47,10 +50,13 @@ import './update-status.css';
  * region.
  */
 
-/** First wait after a copy, then doubled up to the cap; given up after the limit. */
-export const WATCH_FIRST_MS = 15_000;
-export const WATCH_CAP_MS = 120_000;
-export const WATCH_LIMIT_MS = 30 * 60_000;
+const REAL_CLOCK: WatchClock = {
+  now: () => Date.now(),
+  set: (run, ms) => setTimeout(run, ms),
+  clear: (handle) => {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
+};
 
 interface UpdatesValue {
   readonly manifest: Read<UpdateManifest>;
@@ -85,16 +91,16 @@ export function UpdatesProvider({ agentIds, origin, announce, children }: Update
   const [now, setNow] = useState(() => Date.now());
   const asked = useRef(new Set<string>());
   const live = useRef(true);
-  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const watches = useRef(new Map<string, Watch>());
   const manifestRef = useRef<Read<UpdateManifest>>(undefined);
   manifestRef.current = manifest;
 
   useEffect(() => {
     live.current = true;
-    const pending = timers.current;
+    const pending = watches.current;
     return () => {
       live.current = false;
-      for (const timer of pending.values()) clearTimeout(timer);
+      for (const w of pending.values()) w.cancel();
       pending.clear();
     };
   }, []);
@@ -169,47 +175,33 @@ export function UpdatesProvider({ agentIds, origin, announce, children }: Update
 
   const watch = useCallback(
     (agentId: string, label: string): void => {
-      if (timers.current.has(agentId)) return;
+      if (watches.current.has(agentId)) return;
       const was = reportsRef.current.get(agentId);
       const before = was === undefined || was === 'failed' ? undefined : reportKey(was);
-      const started = Date.now();
       setWatched((set) => new Set(set).add(agentId));
-      const stop = (): void => {
-        timers.current.delete(agentId);
-        if (live.current) {
+      const w = watchForReport<ClientReport | null>(
+        () =>
+          readReport(agentId).then((value) =>
+            value !== 'failed' && value !== undefined && reportKey(value) !== before
+              ? value
+              : undefined,
+          ),
+        REAL_CLOCK,
+        (found) => {
+          watches.current.delete(agentId);
+          if (!live.current) return;
           setWatched((set) => {
             const next = new Set(set);
             next.delete(agentId);
             return next;
           });
-        }
-      };
-      const tick = (wait: number): void => {
-        timers.current.set(
-          agentId,
-          setTimeout(() => {
-            void readReport(agentId).then((value) => {
-              if (!live.current) return;
-              const changed =
-                value !== 'failed' && value !== undefined && reportKey(value) !== before;
-              if (changed) {
-                put(agentId, value);
-                setNow(Date.now());
-                const m = manifestRef.current;
-                announce(updateAnnouncement(label, updateStatus(m, value)));
-                stop();
-                return;
-              }
-              if (Date.now() - started >= WATCH_LIMIT_MS) {
-                stop();
-                return;
-              }
-              tick(Math.min(wait * 2, WATCH_CAP_MS));
-            });
-          }, wait),
-        );
-      };
-      tick(WATCH_FIRST_MS);
+          if (found === undefined) return;
+          put(agentId, found);
+          setNow(Date.now());
+          announce(updateAnnouncement(label, updateStatus(manifestRef.current, found)));
+        },
+      );
+      watches.current.set(agentId, w);
     },
     [announce, put, readReport],
   );

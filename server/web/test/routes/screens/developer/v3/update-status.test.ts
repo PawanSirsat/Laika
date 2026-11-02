@@ -19,8 +19,13 @@ import {
   updateCommand,
   updateManifestOf,
   updateStatus,
+  WATCH_CAP_MS,
+  WATCH_FIRST_MS,
+  WATCH_LIMIT_MS,
+  watchForReport,
   whatsNew,
   worstUpdate,
+  type WatchClock,
   type ClientReport,
   type Read,
   type UpdateManifest,
@@ -429,5 +434,159 @@ void describe('against the protocol-2 board', () => {
     const ahead = updateStatus(board, report({ cli_commit: OLDER, protocol: 3 }));
     assert.equal(ahead.key, 'up-to-date');
     assert.equal(ahead.aheadOfBoard, true);
+  });
+});
+
+/**
+ * The watch after *Copy update command* (review round 1, N1), on a clock the
+ * test owns: each wait is read off the timer it set, and a timer runs only
+ * when the test fires it.
+ */
+function fakeClock() {
+  let t = 0;
+  let id = 0;
+  const timers = new Map<number, { at: number; ms: number; run: () => void }>();
+  const clock: WatchClock = {
+    now: () => t,
+    set: (run, ms) => {
+      id += 1;
+      timers.set(id, { at: t + ms, ms, run });
+      return id;
+    },
+    clear: (handle) => {
+      timers.delete(handle as number);
+    },
+  };
+  return {
+    clock,
+    pending: () => timers.size,
+    /** Fire the one pending timer: move the clock to it, run it, let its read answer. */
+    async fire(): Promise<number> {
+      const [key, timer] = [...timers.entries()][0] ?? [];
+      assert.ok(key !== undefined && timer !== undefined, 'a timer is pending');
+      timers.delete(key);
+      t = timer.at;
+      timer.run();
+      await new Promise((done) => setImmediate(done));
+      return timer.ms;
+    },
+  };
+}
+
+void describe('the watch after a copy', () => {
+  void test('15 s, 30 s, 60 s, then 2 minutes each; gives up past 30 minutes, after 18 reads', async () => {
+    const f = fakeClock();
+    let reads = 0;
+    const ended: unknown[] = [];
+    watchForReport(
+      () => {
+        reads += 1;
+        return Promise.resolve(undefined);
+      },
+      f.clock,
+      (found) => ended.push(found),
+    );
+    const waits: number[] = [];
+    while (f.pending() > 0) waits.push(await f.fire());
+    assert.deepEqual(waits.slice(0, 6), [
+      WATCH_FIRST_MS,
+      30_000,
+      60_000,
+      WATCH_CAP_MS,
+      WATCH_CAP_MS,
+      WATCH_CAP_MS,
+    ]);
+    assert.ok(
+      waits.every((ms) => ms <= WATCH_CAP_MS),
+      'never past the cap',
+    );
+    // Reads at 15, 45 and 105 s, then every 120 s until one lands at or past
+    // the limit (105 + 120·15 = 1905 s ≥ 1800 s): 3 + 15 = 18.
+    assert.equal(WATCH_LIMIT_MS, 1_800_000);
+    assert.equal(reads, 18);
+    assert.equal(
+      waits.reduce((a, b) => a + b, 0),
+      1_905_000,
+    );
+    assert.deepEqual(ended, [undefined]);
+    assert.equal(f.pending(), 0, 'nothing left running once it gave up');
+  });
+
+  void test('stops at the first new report and hands it over', async () => {
+    const f = fakeClock();
+    let reads = 0;
+    const ended: unknown[] = [];
+    watchForReport(
+      () => {
+        reads += 1;
+        return Promise.resolve(reads === 3 ? 'new report' : undefined);
+      },
+      f.clock,
+      (found) => ended.push(found),
+    );
+    while (f.pending() > 0) await f.fire();
+    assert.equal(reads, 3);
+    assert.deepEqual(ended, ['new report']);
+  });
+
+  void test('a read that fails is not news: it waits and reads again', async () => {
+    const f = fakeClock();
+    let reads = 0;
+    watchForReport(
+      () => {
+        reads += 1;
+        return reads === 1 ? Promise.reject(new Error('offline')) : Promise.resolve('ok');
+      },
+      f.clock,
+      () => undefined,
+    );
+    await f.fire();
+    assert.equal(f.pending(), 1);
+    assert.equal(await f.fire(), 30_000);
+    assert.equal(reads, 2);
+  });
+
+  void test('cancel clears the pending wait: no read, no end, nothing left running', async () => {
+    const f = fakeClock();
+    let reads = 0;
+    let ended = false;
+    const w = watchForReport(
+      () => {
+        reads += 1;
+        return Promise.resolve(undefined);
+      },
+      f.clock,
+      () => {
+        ended = true;
+      },
+    );
+    await f.fire();
+    assert.equal(f.pending(), 1);
+    w.cancel();
+    assert.equal(f.pending(), 0);
+    assert.equal(reads, 1);
+    assert.equal(ended, false);
+  });
+
+  void test('cancel while a read is on its way: its answer sets no new wait', async () => {
+    const f = fakeClock();
+    let answer: (v: string | undefined) => void = () => undefined;
+    let ended = false;
+    const w = watchForReport(
+      () =>
+        new Promise<string | undefined>((done) => {
+          answer = done;
+        }),
+      f.clock,
+      () => {
+        ended = true;
+      },
+    );
+    await f.fire();
+    w.cancel();
+    answer('late');
+    await new Promise((done) => setImmediate(done));
+    assert.equal(f.pending(), 0);
+    assert.equal(ended, false);
   });
 });

@@ -479,13 +479,14 @@ void describe('V3 Devices: the update command, What’s new, and after', () => {
 });
 
 /**
- * The watch's clock (review round 1, N1): 15 s, doubling to a 2-minute cap,
- * given up after 30 minutes with no new report — and nothing left running
- * once the tab is gone. Driven by Playwright's clock; each read is awaited
- * before the clock moves again, because the next wait is set only once the
- * read answers.
+ * Review round 1, N1: the watch's waits, cap and limit are unit-tested on an
+ * injected clock (`watchForReport` in update-status.test.ts). In a browser,
+ * the next wait is set only once the page has handled a read, which a test
+ * cannot observe, so stepping Playwright's clock across each boundary raced
+ * on a loaded CI runner. What only a browser shows stays here: leaving the
+ * tab stops the watch.
  */
-void describe('V3 Devices: the watch’s backoff, limit and unmount', () => {
+void describe('V3 Devices: the watch stops with the tab', () => {
   const reads = (h: Harness) =>
     h.calls.filter((c) => c.path === '/api/v1/agents/a3/verification').length;
 
@@ -496,49 +497,6 @@ void describe('V3 Devices: the watch’s backoff, limit and unmount', () => {
     await how.locator('.copy-button').click();
     await how.locator('[data-watching]').waitFor();
   }
-
-  /** Move the clock `ms`, then wait for the read that should (or should not) follow. */
-  async function step(h: Harness, ms: number, expect: number): Promise<void> {
-    await h.page.clock.runFor(ms);
-    await until(() => reads(h) >= expect, 5_000);
-    assert.equal(reads(h), expect, `after ${String(ms)} ms`);
-  }
-
-  void test('15 s, 30 s, 60 s, then never more than 2 minutes; given up after 30 minutes', async () => {
-    const h = await openTab({}, { before: withClipboard(async (page) => page.clock.install()) });
-    try {
-      await watching(h);
-      const start = reads(h);
-      let n = start;
-      await step(h, 14_000, n);
-      await step(h, 1_000, (n += 1)); // 15 s
-      await step(h, 30_000, (n += 1)); // +30 s
-      await step(h, 60_000, (n += 1)); // +60 s
-      await step(h, 119_000, n); // the 120 s wait has not run out
-      await step(h, 1_000, (n += 1)); // +120 s
-      await step(h, 119_000, n); // capped: the next wait is 120 s again, not 240 s
-      await step(h, 1_000, (n += 1));
-      // Run out the 30 minutes; the read that lands past the limit is the last.
-      for (
-        let i = 0;
-        i < 20 && (await tool(h.page, 'a3').locator('[data-watching]').count()) > 0;
-        i++
-      ) {
-        await h.page.clock.runFor(120_000);
-        await until(() => reads(h) > n, 5_000);
-        n = reads(h);
-      }
-      assert.equal(await tool(h.page, 'a3').locator('[data-watching]').count(), 0);
-      // Reads at 15, 45 and 105 s, then every 120 s until one lands at or past
-      // 1800 s (105 + 120·15 = 1905 s): 3 + 15 = 18, and the last one stops it.
-      assert.equal(n - start, 18);
-      await h.page.clock.runFor(10 * 60_000);
-      await new Promise((done) => setTimeout(done, 500));
-      assert.equal(reads(h), n, 'a read after the watch gave up');
-    } finally {
-      await h.close();
-    }
-  });
 
   void test('leaving the tab clears the watch: no read after unmount', async () => {
     const h = await openTab({}, { before: withClipboard(async (page) => page.clock.install()) });
