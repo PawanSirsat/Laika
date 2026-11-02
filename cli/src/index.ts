@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { activity, time } from './activity.ts';
+import { withBoardNotice } from './board-notice.ts';
 import { connect } from './connect.ts';
 import { device } from './device.ts';
 import { doctor } from './doctor.ts';
@@ -89,7 +90,10 @@ async function main(argv: readonly string[]): Promise<number> {
   return 1;
 }
 
-main(process.argv.slice(2))
+// The one-line *your CLI is behind this board* notice comes after the
+// command, on stderr, for a person at a terminal only (LAI-1086).
+const argv = process.argv.slice(2);
+withBoardNotice(argv, () => main(argv))
   .then((code) => {
     process.exitCode = code;
   })

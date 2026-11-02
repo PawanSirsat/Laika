@@ -555,7 +555,9 @@ export interface AgentVerificationView {
      * MCP `initialize` on a live token of **this** agent naming this harness,
      * or — for a harness whose MCP client name is generic — one on a live
      * token plus a CLI report **from that same token** naming the harness.
-     * Another tool's name fails it.
+     * Another tool's name fails it — except for a generic harness, whose
+     * request's client name is not read: a manager's workers call on its
+     * credential under their own names (D-118, LAI-589; SPEC §4.81, LAI-1088).
      */
     tool_request: VerificationCheck<{
       /** What the evidence is: the MCP client's own name, or the CLI's report. */
