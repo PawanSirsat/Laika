@@ -893,16 +893,20 @@
     display: none;
   }
 
+  /* Connect's list is a flex column; the strip is the same list as a row. */
   .dx-rail-card .conn-steps {
-    display: grid;
-    grid-auto-columns: minmax(0, 1fr);
-    grid-auto-flow: column;
+    flex-direction: row;
     gap: 0.3125rem;
+  }
+
+  .dx-rail-card .conn-step {
+    flex: 1 1 0;
   }
 
   .dx-rail-card .conn-rail-step {
     flex-direction: column;
     gap: 0.3125rem;
+    height: 100%;
     padding: 0.5625rem 0.25rem;
     text-align: center;
   }
