@@ -76,6 +76,10 @@ interface StubOptions {
   features?: Record<string, unknown>;
   /** Overrides on the manifest's `protocol`. */
   protocol?: { current?: number; min_client?: number };
+  /** Tokens `GET /api/v1/me` answers `200` for, besides the minted one (LAI-1088). */
+  liveTokens?: readonly string[];
+  /** Of those, the ones redeeming revokes — the redeemed agent's own. */
+  revokedOnRedeem?: readonly string[];
   /** The device and tool routes answer as an old board's SPA does: `200`, HTML. */
   noDeviceRoutes?: boolean;
 }
@@ -179,6 +183,7 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
   const verified: string[] = [];
   const nonce = randomBytes(16).toString('base64url');
   const challenges = new Map<string, string>();
+  const live = new Set(options.liveTokens ?? []);
   let polls = 0;
   let origin = '';
   const stub: Stub = {
@@ -286,6 +291,7 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
           return;
         }
         verified.push(`redeem ${exchange}`);
+        for (const token of options.revokedOnRedeem ?? []) live.delete(token);
         json(res, 201, {
           agent: {
             id: AGENT_ID,
@@ -297,6 +303,13 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
           secret: SECRET,
           board_origin: origin,
         });
+        return;
+      }
+
+      if (req.method === 'GET' && path === '/api/v1/me') {
+        const auth = req.headers.authorization ?? '';
+        const token = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
+        json(res, token === SECRET || live.has(token) ? 200 : 401, {});
         return;
       }
 
@@ -736,6 +749,8 @@ void describe('laika tool add', () => {
     assert.ok(sent.capabilities.includes('tool_setup_exchange'));
     // LAI-1066: `laika project check` exists, so the report says so.
     assert.ok(sent.capabilities.includes('project_check'));
+    // LAI-1088: the report names the tool, as the board's generic rule needs.
+    assert.equal((sent as { harness?: string }).harness, 'claude-code');
     assert.match(run.stdout, /laika-claude/);
 
     // Again, with a new exchange: the backups are not taken a second time.
@@ -750,6 +765,58 @@ void describe('laika tool add', () => {
 
     for (const r of s.received) assert.ok(!r.body.includes('PRIVATE'), 'a key went in a body');
     assertNoLeak(home, [run, again], '.laika/agents/claude-code.json');
+  });
+
+  void test('omnigent: a manager’s own credential file holding the old token gets the new one; others untouched (LAI-1088)', async () => {
+    const OLD = 'lai_OLDomnigentPOLLY';
+    const OTHER = 'lai_OTHERcodexTOKEN';
+    const STALE = 'lai_STALEoutsideLINK';
+    const s = await board({
+      agentHarness: 'omnigent',
+      liveTokens: [OLD, OTHER, STALE],
+      revokedOnRedeem: [OLD, STALE],
+    });
+    const home = sandbox();
+    await paired(home, s);
+    // Belka's shape (LAI-589): Omnigent reads polly.json, not omnigent.json.
+    const polly = `${JSON.stringify({ url: s.url, token: OLD })}\n`;
+    write(home, '.laika/agents/polly.json', polly);
+    const codex = `${JSON.stringify({ url: s.url, token: OTHER })}\n`;
+    write(home, '.laika/agents/codex.json', codex);
+    // A symlink is never followed out of the directory, nor written through.
+    const outside = `${JSON.stringify({ url: s.url, token: STALE })}\n`;
+    write(home, 'elsewhere/creds.json', outside);
+    symlinkSync(join(home, 'elsewhere', 'creds.json'), join(home, '.laika', 'agents', 'link.json'));
+    // Another board's file is never asked about.
+    write(home, '.laika/agents/other-board.json', '{"url":"http://other.test","token":"lai_X"}\n');
+    s.received.length = 0;
+
+    const run = await laika(home, ['tool', 'add', 'omnigent', '--exchange', 'EX9']);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+
+    const pollyPath = join(home, '.laika', 'agents', 'polly.json');
+    assert.deepEqual(JSON.parse(readFileSync(pollyPath, 'utf8')), { url: s.url, token: SECRET });
+    assert.equal(mode(pollyPath), 0o600);
+    assert.equal(readFileSync(`${pollyPath}.bak`, 'utf8'), polly);
+    assert.match(run.stdout, /also updated ~\/\.laika\/agents\/polly\.json/);
+    // Another tool's working credential, the symlink's target and another
+    // board's file are exactly as they were; nothing else got a backup.
+    assert.equal(readFileSync(join(home, '.laika', 'agents', 'codex.json'), 'utf8'), codex);
+    assert.equal(readFileSync(join(home, 'elsewhere', 'creds.json'), 'utf8'), outside);
+    assert.ok(!existsSync(join(home, '.laika', 'agents', 'codex.json.bak')));
+    assert.ok(!existsSync(join(home, '.laika', 'agents', 'link.json.bak')));
+    // Tokens went only to this board, and only as a bearer on GET /me.
+    const asked = s.received.filter((r) => r.path === '/api/v1/me');
+    assert.ok(asked.some((r) => r.auth === `Bearer ${OLD}`), 'polly.json was never asked about');
+    assert.ok(!asked.some((r) => r.auth === `Bearer ${STALE}`), 'a symlink was followed');
+    assert.ok(!asked.some((r) => r.auth === 'Bearer lai_X'), 'another board’s token was sent');
+    // The report names Omnigent, so the board's generic rule can pass.
+    const report = s.received.find((r) => r.path === '/api/v1/agents/me/client-report');
+    assert.ok(report !== undefined, 'no client report was sent');
+    assert.equal((JSON.parse(report.body) as { harness?: string }).harness, 'omnigent');
+    for (const out of [run.stdout, run.stderr]) {
+      for (const token of [OLD, OTHER, STALE, SECRET]) assert.ok(!out.includes(token));
+    }
   });
 
   void test('codex: its own variable, other servers kept, one rc line that really exports it', async () => {

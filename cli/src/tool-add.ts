@@ -1,15 +1,29 @@
-import { appendFileSync, copyFileSync, existsSync, readFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { type AgentHookReport, installAgentHooks } from './agent-hooks.ts';
 import { ADAPTERS, type Harness } from './agent-adapters.ts';
 import { claudeJsonPath, holdsEntry, isToolEntry } from './claude-mcp.ts';
-import { credentialPath, isRecord, writeCredential, writePrivate } from './agent-session.ts';
+import {
+  agentsDir,
+  credentialPath,
+  isRecord,
+  writeCredential,
+  writePrivate,
+} from './agent-session.ts';
 import { AGENT_HOOK_SCRIPT } from './agent-setup.ts';
 import { reportOutcome, sendClientReport } from './client-report.ts';
 import { apply, prepare, rcFileFor } from './connect.ts';
 import {
+  boardOriginOf,
   commonRefusal,
   type DeviceIo,
   featureGate,
@@ -281,6 +295,10 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
     io.err(`laika tool add: ${asked}`);
     return 1;
   }
+  // Other credential files for this board that work now (LAI-1088): any of them
+  // that stops working once the exchange is redeemed held this agent's token,
+  // and is brought along instead of being left with a revoked one.
+  const siblings = await liveSiblings(io, origin, plan.harness);
   const signature = signWith(key, toolRedeemMessage(exchange, deviceId, asked.challenge, origin));
   const redeemed = redeemAnswer(
     await postJson(io, redeemUrl, { device_id: deviceId, signature }),
@@ -317,6 +335,7 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   }
   const target = plan.harness;
   saveCredential(io, target, redeemed, deviceId);
+  await bringAlong(io, siblings, redeemed);
 
   const installed: AgentHookReport[] = [];
   let mcp: ClaudeMcp = target === 'codex' ? 'tool' : 'none';
@@ -332,7 +351,13 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
 
   const hooksOn = installed.some((r) => r.status === 'installed' || r.status === 'unchanged');
   if (gate.features === undefined || gate.features.client_reports === true) {
-    await clientReport(io, redeemed.boardOrigin, redeemed.secret, hooksOn);
+    await clientReport(
+      io,
+      redeemed.boardOrigin,
+      redeemed.secret,
+      hooksOn,
+      ADAPTERS[target].agentHarness,
+    );
   } else {
     io.out('  · the board does not take client reports yet; the setup stands');
   }
@@ -366,6 +391,95 @@ function saveCredential(
   }
   writeCredential(io.home, harness, { url: redeemed.boardOrigin, token: redeemed.secret }, extra);
   io.out(`  ✓ credential saved in ~/.laika/agents/${harness}.json (0600)`);
+}
+
+/** Another credential file under `~/.laika/agents/`, and the token it holds. */
+interface Sibling {
+  readonly name: string;
+  readonly path: string;
+  readonly token: string;
+}
+
+/**
+ * Credential files beside this tool's own whose token works on this board
+ * right now (LAI-1088). A manager such as Omnigent can read its token from a
+ * file of its own (`polly.json`, LAI-589) rather than `<harness>.json`;
+ * redeeming revokes every live token of the agent, so such a file would be
+ * left holding a revoked one and everything reading it would get `401`.
+ *
+ * Only plain files directly in the directory, for this board's URL, are
+ * asked about — never a symlink, never a backup — and each token goes only to
+ * this board, in the `Authorization` header of a `GET /api/v1/me`.
+ */
+async function liveSiblings(io: ToolAddIo, origin: string, harness: Harness): Promise<Sibling[]> {
+  const dir = agentsDir(io.home);
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const found: Sibling[] = [];
+  for (const name of names.sort()) {
+    if (!name.endsWith('.json') || name === `${harness}.json`) continue;
+    const path = join(dir, name);
+    try {
+      if (!lstatSync(path).isFile()) continue;
+    } catch {
+      continue;
+    }
+    let saved: unknown;
+    try {
+      saved = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    } catch {
+      continue;
+    }
+    if (!isRecord(saved) || typeof saved.token !== 'string' || saved.token === '') continue;
+    if (typeof saved.url !== 'string' || boardOriginOf(saved.url) !== boardOriginOf(origin)) {
+      continue;
+    }
+    if ((await tokenAnswers(io, origin, saved.token)) === 200) {
+      found.push({ name, path, token: saved.token });
+    }
+  }
+  return found;
+}
+
+/** What `GET /api/v1/me` answers this token with: the status, or `0` unreachable. */
+async function tokenAnswers(io: ToolAddIo, origin: string, token: string): Promise<number> {
+  try {
+    const response = await io.fetch(`${origin}/api/v1/me`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.status;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Each sibling whose token the board now refuses (`401`) held this agent's
+ * previous credential — redeeming revokes only this agent's — so it gets the
+ * new one, its other fields kept, the old file kept as `<name>.bak`. A token
+ * still working, or a board not answering, leaves the file as it was.
+ */
+async function bringAlong(
+  io: ToolAddIo,
+  siblings: readonly Sibling[],
+  redeemed: Redeemed,
+): Promise<void> {
+  for (const sibling of siblings) {
+    if ((await tokenAnswers(io, redeemed.boardOrigin, sibling.token)) !== 401) continue;
+    const before = readFileSync(sibling.path, 'utf8');
+    const saved = JSON.parse(before) as Record<string, unknown>;
+    const next = `${JSON.stringify({ ...saved, token: redeemed.secret }, null, 2)}\n`;
+    writePrivate(`${sibling.path}.bak`, before);
+    writePrivate(sibling.path, next);
+    io.out(
+      `  ✓ also updated ~/.laika/agents/${sibling.name}, which held this tool’s previous credential (0600)`,
+    );
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -697,6 +811,7 @@ async function clientReport(
   url: string,
   token: string,
   hooksOn: boolean,
+  harness: string,
 ): Promise<void> {
   const info = versionInfo();
   const outcome = reportOutcome(
@@ -706,6 +821,7 @@ async function clientReport(
       token,
       { version: info.version, commit: info.commit, protocol: PROTOCOL },
       hooksOn,
+      harness,
     ),
   );
   io.out(
