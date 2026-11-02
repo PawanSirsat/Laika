@@ -2,11 +2,12 @@
 id: LAI-1078
 title: 'Developer access design: visual kit, side panel, Tools tab, Advanced holds Activity, aliases'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: []
 discovered-from: LAI-1075
-status: backlog
+status: in-progress
+started: 2026-11-02T10:23:59+05:30
 ---
 
 ## Why
