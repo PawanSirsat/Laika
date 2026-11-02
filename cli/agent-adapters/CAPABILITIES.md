@@ -137,6 +137,21 @@ differently.
 | MCP resource subscriptions (`subscriptions/listen` → `notifications/resources/updated`, MCP 2026-07-28) | Unverified: not in its hooks docs | Unverified | Unverified: `cursor.com/docs/mcp.md` does not mention subscriptions | Unverified: not in the Copilot CLI or cloud MCP docs | Unverified | Unverified | Unverified: not in `mcp-server.md` | Unverified: not in `docs/mcp.md` |
 | Mid-turn delivery | Unsupported (no harness interrupts a running turn) | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported |
 
+## Credential only: Omnigent (LAI-1060)
+
+`laika tool add omnigent` keeps Omnigent's own token in
+`~/.laika/agents/omnigent.json` and does nothing else. Omnigent's workers are
+Claude Code, Codex and the like, and they open their sessions through their own
+harness's hooks, so the identity here is the credential. `laika agent session`
+refuses `--harness omnigent`; `laika agent hooks on --harness omnigent` says so
+and writes nothing.
+
+| Capability | Omnigent |
+| --- | --- |
+| Agent credential for the helper | Documented-not-tested: `laika tool add omnigent` or `laika agent login omnigent`, own file; the shared code is tested, no Omnigent run |
+| Board MCP credential in the harness's own config | Documented-not-tested: `<agent-dir>/tools/mcp/laika.yaml` (`laika connect omnigent --dir`), written by hand; a `${VAR}` the Omnigent server cannot see stops every turn |
+| Sessions, hooks, automatic checkpoints | **Unsupported** by Laika: refused, never installed |
+
 ## The words each cell relies on
 
 Quoted from the pages above, 2026-10-31.

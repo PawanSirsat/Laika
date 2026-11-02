@@ -529,18 +529,24 @@ export const envFilePath = (home: string): string => join(home, '.laika', 'env')
 /**
  * `~/.laika/env` in the format `plugin/scripts/install.sh` writes, so either can
  * read what the other wrote. Directory 0700, file 0600 — and both are narrowed
- * even when they already exist, as install.sh does.
+ * even when they already exist, as install.sh does. An existing file is backed
+ * up first.
  */
-export function writeEnvFile(home: string, url: string, token: string): void {
+export function writeEnvFile(home: string, url: string, token: string, now = Date.now()): void {
   const path = envFilePath(home);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   chmodSync(dirname(path), 0o700);
-  writePrivately(
-    path,
+  const content =
     '# Laika settings for laika-claude and laika connect. Personal — do not share or commit.\n' +
-      `LAIKA_URL="${url}"\n` +
-      `LAIKA_TOKEN="${token}"\n`,
-  );
+    `LAIKA_URL="${url}"\n` +
+    `LAIKA_TOKEN="${token}"\n`;
+  // The person's own token is never replaced unkept (LAI-1060, plan §A8): a
+  // different file goes to `env.bak-<ms>`, 0600, before the new one lands.
+  const before = readIfThere(path);
+  if (before !== undefined && before !== content) {
+    writePrivately(`${path}.bak-${String(now)}`, before);
+  }
+  writePrivately(path, content);
 }
 
 /** The rc file `install.sh` picks from `$SHELL`. */
