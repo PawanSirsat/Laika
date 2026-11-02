@@ -2,11 +2,12 @@
 id: LAI-1087
 title: 'Project setup: the step rail reads on one line a step beside the aside'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: [LAI-1082]
 discovered-from: LAI-1082
-status: backlog
+status: in-progress
+started: 2026-11-02T17:25:32+05:30
 ---
 
 ## Why
