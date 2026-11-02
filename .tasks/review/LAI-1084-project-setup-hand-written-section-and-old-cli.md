@@ -99,3 +99,28 @@ Switch the ambiguous-harness case to exit `2`, as recommended. Done:
       its exit, and nothing reads the JSON's `record.kind`.
 - [x] The PR notes that `307f0315`'s type `style(web)` should have been
       `chore(web)`. It stands, because pushed commits are not rewritten.
+
+## Review round 2 — review of PR #237 at 38077c37: PASS, with fixes in this PR
+
+- [x] N1: `project-setup.ts`'s comment on `projectCheckCommand` says the
+      no-`--harness` case exits 2, not 0.
+- [x] N2: a hand-written Laika section must be *clearly about the Laika
+      board*. Mentions under a heading about something else are shown and
+      asked about, and such a section is never replaced.
+- [x] N3: the opening reads "Only the Laika block in that file, or, with my
+      confirmation, a hand-written Laika section, is yours to change".
+- [x] N4: a current block beside hand-written Laika sections offers to fold
+      each one in (diff and confirm) before it reports up to date. Step 3
+      offers the same in its diff, and step 4 handles one or more. Kept lines
+      carry no second Laika heading. There are explicit outcomes for *folded
+      N sections* and *you said no and I changed nothing*.
+- [x] N5: `--harness X` with no credential for X, while other tools have one,
+      names X and those tools (names only) and exits 2. With no credential at
+      all it still exits 0, as the README documents.
+- [x] N6: the "guarantees it had before" test matches each phrase across line
+      wraps. All nine phrases were checked against the prompt at `ec91f053`
+      as well as the current one.
+- [x] Nit: the hint shows `git -C ~/laika pull --ff-only` (`PLUGIN_HOME`),
+      says "if you cloned Laika somewhere other than ~/laika, use that
+      folder", and covers a `laika update` that is unknown. A test checks
+      that no command carries `<`, `>` or other shell metacharacters.
