@@ -10,6 +10,10 @@ Everything in plan slices A–F is merged to `master` and deployed. Production s
 serves the **classic** screens because `LAIKA_DEVELOPER_ACCESS` defaults to
 `classic`. Switching is a deploy setting (see Rollout).
 
+**Since LAI-1076 (owner decision, 2026-11-02) the default is `v3`.** A board
+whose environment does not set `LAIKA_DEVELOPER_ACCESS` serves V3 from the
+first deploy that carries it; see Rollout for going back.
+
 ## What was merged
 
 | Slice | PR | Task | What |
@@ -63,10 +67,23 @@ grants, tokens, consent, claims and history; legacy duplicates are kept and show
 
 ## Rollout and rollback
 
-1. Set `LAIKA_DEVELOPER_ACCESS=preview` and restart: new tabs appear beside classic.
-2. When satisfied, set `v3`. Classic links redirect.
-3. Rollback is setting the variable back to `classic` and restarting. No data change.
-   Database rollback after a failed deploy uses the snapshot restore (LAI-1033).
+`v3` is the default (LAI-1076): a board with `LAIKA_DEVELOPER_ACCESS` unset
+serves V3, and classic links redirect. The web reads a compatibility answer
+it cannot get, or cannot read, as `v3` too.
+
+1. **Rollback:** set `LAIKA_DEVELOPER_ACCESS=classic` in the board's
+   environment (production: `/opt/laika/.env` on the instance, read by
+   `--env-file` in `.github/deploy/host-restart.sh`) and restart the container.
+   The classic screens come back. No data change: nothing the flag gates is
+   stored.
+2. `LAIKA_DEVELOPER_ACCESS=preview` and a restart shows the V3 tabs beside
+   classic, for a side-by-side check.
+3. Removing the variable, or setting `v3`, and restarting returns to V3.
+4. Database rollback after a failed deploy is separate and uses the snapshot
+   restore (LAI-1033).
+
+The classic screens stay in the build until V3 has run in production; deleting
+them is a later cleanup.
 
 ## Known limits and unverified items
 
