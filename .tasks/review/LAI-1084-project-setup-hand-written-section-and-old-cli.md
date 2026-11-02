@@ -63,6 +63,7 @@ Two gaps found while using V3 Project setup on the OnRoute project (owner,
       `cli/test/project-check.test.ts` ("several tools here and no
       --harness: records nothing and says why") asserts `r.code === 0`. Per
       the owner's rule, the CLI keeps 0 and is unchanged. See Notes.
+      *Superseded by review round 1 below: CHIEF chose exit `2`.*
 
 ## Notes
 
@@ -79,3 +80,22 @@ Two gaps found while using V3 Project setup on the OnRoute project (owner,
   record it"*, so the ambiguous case contradicts that doc, and `2` (*could
   not record*) fits it. Switching costs one line in `project-check.ts` and one
   assertion in that test. It is the owner's call, so it was not made here.
+
+## Review round 1 — CHIEF's decision (2026-11-02, on Pawan's delegation)
+
+Switch the ambiguous-harness case to exit `2`, as recommended. Done:
+
+- [x] `cli/src/project-check.ts`: the case is now a `failed` record, so it
+      exits `2` through the existing mapping. *Needs action* (`1`) still
+      wins, and the message is unchanged word for word. The exit-code comment
+      names the case.
+- [x] `cli/test/project-check.test.ts`: the pinned test asserts `2`. Two
+      more tests: with no block, *needs action* still wins (`1`); and with
+      `--harness codex` on a two-tool device, the check records (`0`).
+- [x] `cli/README.md`'s exit-code line names the case.
+- [x] No caller relies on exit `0` for it. `cli/src/index.ts` is the only
+      dispatcher of `projectCheck`, and it returns the code as is. No hook,
+      `laika doctor` path, plugin script or web page runs the command or reads
+      its exit, and nothing reads the JSON's `record.kind`.
+- [x] The PR notes that `307f0315`'s type `style(web)` should have been
+      `chore(web)`. It stands, because pushed commits are not rewritten.
