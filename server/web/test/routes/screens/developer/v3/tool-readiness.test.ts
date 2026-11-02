@@ -347,3 +347,79 @@ void describe('presence off', () => {
     assert.match(r.reason, /does not record when/);
   });
 });
+
+void describe('a tool whose MCP client names no tool (LAI-1088)', () => {
+  // Omnigent's shape on Belka: its workers called on its credential, the last
+  // one Codex; no report naming Omnigent; an imported, unpaired device.
+  const omnigent = (paired: boolean): AgentVerification => {
+    const v = verification({
+      harness: 'omnigent',
+      request: { slug: 'codex', state: 'fail' },
+      missing: ['tool_setup_exchange', 'client_report'],
+    });
+    return paired ? v : { ...v, checks: { ...v.checks, device_paired: fail({ device_id: null }) } };
+  };
+  const line = (v: AgentVerification, id: string) => {
+    const found = checkLines(v, tool('omnigent'), 'Belka').find((l) => l.id === id);
+    assert.ok(found, id);
+    return found;
+  };
+
+  void test('its status reason names the missing report, not a call that did happen', () => {
+    const r = readiness(omnigent(false), tool('omnigent'));
+    assert.equal(r.word, 'Connected');
+    assert.equal(
+      r.reason,
+      'The credential is in use; the helper has not yet reported that it is Omnigent’s',
+    );
+    assert.doesNotMatch(r.reason, /has not called it yet/);
+  });
+
+  void test('a worker’s request is expected, and the check says what is missing and how', () => {
+    const request = line(omnigent(false), 'tool_request');
+    assert.equal(request.state, 'fail');
+    assert.match(request.detail, /^Omnigent runs other tools as its workers/);
+    assert.match(request.detail, /the last one named Codex/);
+    assert.match(request.detail, /helper’s report from this credential saying it is Omnigent/);
+    assert.match(
+      request.detail,
+      /Pair Belka first, then Reconnect Omnigent from here and run the command on Belka: `laika tool add` sends it\.$/,
+    );
+    assert.doesNotMatch(request.detail, /does not count/);
+  });
+
+  void test('on a paired device, Reconnect is the whole step', () => {
+    const request = line(omnigent(true), 'tool_request');
+    assert.match(request.detail, /Reconnect Omnigent from here and run the command on Belka/);
+    assert.doesNotMatch(request.detail, /Pair Belka first/);
+    const caps = line(omnigent(true), 'required_capabilities');
+    assert.doesNotMatch(caps.detail, /Pair Belka first/);
+  });
+
+  void test('Helper reports names a step that sends the report', () => {
+    const caps = line(omnigent(false), 'required_capabilities');
+    assert.equal(caps.state, 'fail');
+    assert.equal(
+      caps.detail,
+      'Not yet reported: tool_setup_exchange, client_report. The helper sends this as `laika tool add` sets Omnigent up: Pair Belka first, then Reconnect Omnigent from here and run the command on Belka. A helper older than this board needs `laika update` first.',
+    );
+  });
+
+  void test('an existing tool on an imported device keeps working; pairing is for Reconnect', () => {
+    const paired = line(omnigent(false), 'device_paired');
+    assert.equal(paired.state, 'fail');
+    assert.equal(
+      paired.detail,
+      'Belka has no key of its own yet — it came from what your tools reported. Omnigent keeps working; pairing Belka is what lets Reconnect fetch a new credential without showing it here.',
+    );
+  });
+
+  void test('a tool whose client names itself still refuses another tool’s request', () => {
+    const v = verification({ harness: 'claude-code', request: { slug: 'codex', state: 'fail' } });
+    const request = checkLines(v, tool('claude-code'), 'Belka').find(
+      (l) => l.id === 'tool_request',
+    );
+    assert.match(request?.detail ?? '', /named Codex, not Claude Code, so it does not count/);
+    assert.match(readiness(v, tool('claude-code')).reason, /Claude Code itself has not called/);
+  });
+});

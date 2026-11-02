@@ -72,6 +72,16 @@ export function ownToolRequest(v: AgentVerification): boolean {
   return false;
 }
 
+/**
+ * A tool whose MCP client names no tool (D-125: Omnigent, Hermes). It runs
+ * other tools as its workers, and their requests on its credential carry
+ * their own names (LAI-589, D-118) — expected, never a sign of a mix-up. Its
+ * own identity is the helper's report from the same credential.
+ */
+export function namesNoTool(v: AgentVerification): boolean {
+  return v.checks.tool_request.detail.mcp_client_name === 'generic';
+}
+
 /** The capabilities the CLI must report for this harness, all reported. */
 function capabilitiesMet(v: AgentVerification): boolean {
   return v.checks.required_capabilities.state === 'pass';
@@ -129,7 +139,9 @@ export function readiness(v: AgentVerification, tool: ToolCapability): Readiness
       key: 'connected',
       word: 'Connected',
       tone: 'waiting',
-      reason: `The credential reached the board; ${tool.name} itself has not called it yet`,
+      reason: namesNoTool(v)
+        ? `The credential is in use; the helper has not yet reported that it is ${tool.name}’s`
+        : `The credential reached the board; ${tool.name} itself has not called it yet`,
     };
   }
   if (!capabilitiesMet(v)) {
@@ -198,6 +210,12 @@ export function checkLines(
   deviceName: string,
 ): readonly CheckLine[] {
   const { checks, now } = v;
+  const devicePaired = checks.device_paired.state === 'pass';
+  // Reconnect fetches a new credential by the device's own key only once the
+  // device is paired; until then it is the browser's rotate (LAI-1088).
+  const reconnectHow = devicePaired
+    ? `Reconnect ${tool.name} from here and run the command on ${deviceName}`
+    : `Pair ${deviceName} first, then Reconnect ${tool.name} from here and run the command on ${deviceName}`;
   const lines: CheckLine[] = [
     checks.device_paired.state === 'pass'
       ? {
@@ -210,7 +228,9 @@ export function checkLines(
           id: 'device_paired',
           label: 'Device paired',
           state: 'fail',
-          detail: `${deviceName} is not paired. Pair it before adding a tool.`,
+          // Only an existing tool on an imported device reaches this line: the
+          // Add tool wizard adds tools to paired devices only (LAI-1088).
+          detail: `${deviceName} has no key of its own yet — it came from what your tools reported. ${tool.name} keeps working; pairing ${deviceName} is what lets Reconnect fetch a new credential without showing it here.`,
         },
   ];
 
@@ -243,6 +263,13 @@ export function checkLines(
     const version =
       request.detail.client_version === null ? '' : ` ${request.detail.client_version}`;
     requestDetail = `It called the board on its own credential${request.at === null ? '' : ` ${ago(request.at, now)}`}, naming itself ${named}${version}. That name is the tool’s own word for itself.`;
+  } else if (namesNoTool(v)) {
+    const client = other === null ? null : asAgentClient(other);
+    const worker =
+      other === null || other === v.harness
+        ? ''
+        : ` — the last one named ${client === null ? other : AGENT_CLIENT_NAMES[client]} —`;
+    requestDetail = `${tool.name} runs other tools as its workers, and their requests on its credential${worker} are expected: its MCP client names no tool. What is missing is the helper’s report from this credential saying it is ${tool.name}. ${reconnectHow}: \`laika tool add\` sends it.`;
   } else if (other !== null && other !== v.harness) {
     const client = asAgentClient(other);
     const otherName = client === null ? other : AGENT_CLIENT_NAMES[client];
@@ -273,7 +300,7 @@ export function checkLines(
             id: 'required_capabilities',
             label: 'Helper reports',
             state: 'fail',
-            detail: `Not yet reported: ${caps.detail.missing.join(', ')}. The helper sends this after \`laika tool add\`; an older helper needs \`laika update\`.`,
+            detail: `Not yet reported: ${caps.detail.missing.join(', ')}. The helper sends this as \`laika tool add\` sets ${tool.name} up: ${reconnectHow}. A helper older than this board needs \`laika update\` first.`,
           },
     );
   }
