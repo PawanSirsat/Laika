@@ -3,7 +3,8 @@ import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { PageTabs } from '../../../components/PageTabs.tsx';
 import { useProjects } from '../../../api/use-projects.ts';
-import { DEVELOPER_LINKS, type PageTab } from '../../page-tabs.ts';
+import { DEVELOPER_ACTIVITY_HREF, ownTokensHref, type PageTab } from '../../page-tabs.ts';
+import { useDeveloperAccessMode } from '../../../api/developer-compat.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { invitableRoles } from '../invite-roles.ts';
@@ -43,8 +44,7 @@ import type { MeProfile } from '../../../api/me.ts';
 import { useGates } from '../../../api/permissions.ts';
 import './organisation.css';
 
-const OWN_TOKENS_HREF = DEVELOPER_LINKS.ownTokens;
-const ACTIVITY_HREF = DEVELOPER_LINKS.activity;
+const ACTIVITY_HREF = DEVELOPER_ACTIVITY_HREF;
 
 export interface OrganisationScreenProps {
   readonly me: MeProfile;
@@ -122,6 +122,8 @@ export function OrganisationScreen({
   const confirm = useConfirm();
   // The server's answer, denied until it has one (LAI-970) — never the role.
   const gates = useGates();
+  // Advanced in preview and v3, Tokens in classic (LAI-1058, plan §B.7).
+  const ownTokens = ownTokensHref(useDeveloperAccessMode());
   const canInvite = gates.org('user.invite');
   const canDeactivate = gates.org('user.deactivate');
   const canSetInsights = gates.org('org.developer_insights.set');
@@ -690,13 +692,13 @@ export function OrganisationScreen({
                     {person.id === me.id ? (
                       <a
                         className="org-person-role"
-                        href={OWN_TOKENS_HREF}
+                        href={ownTokens}
                         onClick={(event) => {
                           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
                             return;
                           }
                           event.preventDefault();
-                          onNavigate(OWN_TOKENS_HREF);
+                          onNavigate(ownTokens);
                         }}
                       >
                         On Developer access

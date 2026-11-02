@@ -164,12 +164,12 @@ void describe('who is offered it', () => {
   });
 
   /**
-   * The own-row link is a classic tab id (LAI-1058): Tokens in classic and
-   * preview, and `developerAlias` takes it to Advanced in v3.
+   * The own-row link names this mode's tab (LAI-1058, plan §B.7): Tokens in
+   * classic, Advanced in preview and v3.
    */
   for (const [mode, lands] of [
     ['classic', '/developer?tab=tokens'],
-    ['preview', '/developer?tab=tokens'],
+    ['preview', '/developer?tab=advanced'],
     ['v3', '/developer?tab=advanced'],
   ] as const) {
     void test(`${mode}: my own row links to my tokens, which land on ${lands}`, async () => {
@@ -196,7 +196,7 @@ void describe('who is offered it', () => {
           .locator('.org-person', { hasText: 'Ada Lovelace' })
           .getByRole('link', { name: 'On Developer access' });
         await link.waitFor({ timeout: 20_000 });
-        assert.equal(await link.getAttribute('href'), '/developer?tab=tokens');
+        assert.equal(await link.getAttribute('href'), lands);
         await link.click();
         await until(() => new URL(h.page.url()).pathname === '/developer', 10_000);
         await until(() => {

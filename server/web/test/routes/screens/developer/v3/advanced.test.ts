@@ -12,7 +12,12 @@ import {
   isLegacyToolToken,
   upgradeHref,
 } from '../../../../../src/routes/screens/developer/v3/advanced.ts';
-import { DEVELOPER_LINKS, developerAlias } from '../../../../../src/routes/page-tabs.ts';
+import {
+  DEVELOPER_ACTIVITY_HREF,
+  developerAlias,
+  ownTokensHref,
+  projectSetupLink,
+} from '../../../../../src/routes/page-tabs.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = 1_800_000_000_000;
@@ -89,21 +94,55 @@ void describe('legacy tool tokens (plan §B.6)', () => {
 });
 
 void describe('links into Developer access from outside it (plan §B.7)', () => {
-  const land = (mode: 'classic' | 'preview' | 'v3', href: string): string => {
+  type Mode = 'classic' | 'preview' | 'v3';
+  /** Where `href` lands once the mode's aliases have run. */
+  const land = (mode: Mode, href: string): URLSearchParams => {
     const query = new URL(href, 'http://x').searchParams;
-    return (developerAlias(mode, query) ?? query).get('tab') ?? '';
+    return developerAlias(mode, query) ?? query;
   };
 
-  void test('own tokens: Tokens in classic and preview, Advanced in v3', () => {
-    assert.equal(land('classic', DEVELOPER_LINKS.ownTokens), 'tokens');
-    assert.equal(land('preview', DEVELOPER_LINKS.ownTokens), 'tokens');
-    assert.equal(land('v3', DEVELOPER_LINKS.ownTokens), 'advanced');
+  void test('own tokens: Tokens in classic, Advanced in preview and v3, and nothing moves it again', () => {
+    const expected: Record<Mode, string> = {
+      classic: '/developer?tab=tokens',
+      preview: '/developer?tab=advanced',
+      v3: '/developer?tab=advanced',
+    };
+    for (const mode of ['classic', 'preview', 'v3'] as const) {
+      assert.equal(ownTokensHref(mode), expected[mode], mode);
+      assert.equal(
+        developerAlias(mode, new URL(expected[mode], 'http://x').searchParams),
+        undefined,
+      );
+    }
+    // Not known yet reads as classic, as an unreadable manifest does.
+    assert.equal(ownTokensHref(undefined), '/developer?tab=tokens');
   });
 
-  void test('activity and project setup are one id in every mode', () => {
+  void test('project setup: named as the mode names it; per-tool grants only where V3 sets them', () => {
+    assert.deepEqual(projectSetupLink('classic'), {
+      href: '/developer?tab=projects',
+      label: 'Developer access · Projects',
+      perTool: false,
+    });
+    assert.deepEqual(projectSetupLink(undefined), projectSetupLink('classic'));
+    assert.deepEqual(projectSetupLink('preview'), {
+      href: '/developer?tab=projects&setup=v3',
+      label: 'Developer access · Project setup',
+      perTool: true,
+    });
+    assert.deepEqual(projectSetupLink('v3'), {
+      href: '/developer?tab=projects',
+      label: 'Developer access · Project setup',
+      perTool: true,
+    });
     for (const mode of ['classic', 'preview', 'v3'] as const) {
-      assert.equal(land(mode, DEVELOPER_LINKS.activity), 'activity', mode);
-      assert.equal(land(mode, DEVELOPER_LINKS.projectSetup), 'projects', mode);
+      assert.equal(land(mode, projectSetupLink(mode).href).get('tab'), 'projects', mode);
+    }
+  });
+
+  void test('activity is one id in every mode', () => {
+    for (const mode of ['classic', 'preview', 'v3'] as const) {
+      assert.equal(land(mode, DEVELOPER_ACTIVITY_HREF).get('tab'), 'activity', mode);
     }
   });
 });

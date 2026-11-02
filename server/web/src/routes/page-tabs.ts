@@ -181,21 +181,47 @@ export function developerAlias(
 }
 
 /**
- * Where pages outside Developer access link into it (LAI-1058, plan §B.7).
- *
- * **Classic tab ids, on purpose.** `developerAlias` moves `tokens` to Advanced
- * in `v3` and leaves every one alone in `classic` and `preview`, so one
- * address lands right in every mode; `projects` and `activity` are the same id
- * everywhere.
+ * Where pages outside Developer access link into it (LAI-1058, plan §B.7),
+ * per mode. A mode not yet known reads as `classic`, as an unreadable
+ * manifest does (plan §I).
  */
-export const DEVELOPER_LINKS = {
-  /** The reader's own tokens: Tokens in classic, Advanced in V3. */
-  ownTokens: '/developer?tab=tokens',
-  /** What a developer's machine shares, and the history held for them. */
-  activity: '/developer?tab=activity',
-  /** Where a tool is given a project: Projects in classic, Project setup in V3. */
-  projectSetup: '/developer?tab=projects',
-} as const;
+export const DEVELOPER_ACTIVITY_HREF = '/developer?tab=activity';
+
+/** The reader's own tokens: Tokens in classic, Advanced in preview and v3. */
+export function ownTokensHref(mode: DeveloperAccessMode | undefined): string {
+  return mode === 'preview' || mode === 'v3' ? '/developer?tab=advanced' : '/developer?tab=tokens';
+}
+
+export interface ProjectSetupLink {
+  readonly href: string;
+  /** Names the tab as this mode's bar does. */
+  readonly label: string;
+  /** Whether per-tool project grants are set there — V3's Project setup only. */
+  readonly perTool: boolean;
+}
+
+/**
+ * Where a repository is set up for a tool. Classic's tab is *Projects*;
+ * preview's new flow is one query away from it (LAI-1052); v3's tab is
+ * *Project setup*.
+ */
+export function projectSetupLink(mode: DeveloperAccessMode | undefined): ProjectSetupLink {
+  if (mode === 'v3') {
+    return {
+      href: '/developer?tab=projects',
+      label: 'Developer access · Project setup',
+      perTool: true,
+    };
+  }
+  if (mode === 'preview') {
+    return {
+      href: '/developer?tab=projects&setup=v3',
+      label: 'Developer access · Project setup',
+      perTool: true,
+    };
+  }
+  return { href: '/developer?tab=projects', label: 'Developer access · Projects', perTool: false };
+}
 
 /**
  * A space's settings (D-103, LAI-977), in the owner's order. Every reader of
