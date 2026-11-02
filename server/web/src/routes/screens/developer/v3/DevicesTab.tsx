@@ -31,6 +31,7 @@ import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import { AddDeviceWizard } from './AddDeviceWizard.tsx';
 import { AddToolWizard } from './AddToolWizard.tsx';
 import { pairedDevice } from './add-flow.ts';
+import { catalogTool } from './tool-catalog.ts';
 import { AccessForm, RenameForm, SecretPanel, grantSummary, useOnceSecret } from '../AgentsTab.tsx';
 import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
 import { cloudExpiry, cloudExpiryProblem, isCloudDevice, rotatableToken } from '../agent-wizard.ts';
@@ -418,6 +419,9 @@ export function DevicesTab({ me, params, setParams, preview = false }: DevicesTa
           onResolveConflict={(agentId) => {
             closeWizard(false, { agent: agentId });
           }}
+          onOpenAdvanced={() => {
+            setParams(new URLSearchParams({ tab: 'advanced' }), { push: true });
+          }}
           onSetUpProject={(agentId) => {
             const next = new URLSearchParams({ tab: 'projects', tool: agentId });
             if (preview) next.set('setup', 'v3');
@@ -626,7 +630,7 @@ function DeviceCard({
           : `${agentLabel(agent)} (${twins.get(agent.id) ?? ''})`
       }
       cloud={cloud || isCloudDevice(agent.device_label)}
-      paired={pairedDevice(device)}
+      paired={pairedDevice(device) && catalogTool(agent.harness)?.cliSetup === true}
       inConflict={inConflict}
       now={now}
       me={me}
@@ -773,9 +777,10 @@ interface ToolRowProps {
   readonly label: string;
   readonly cloud: boolean;
   /**
-   * Its device is paired: *Reconnect* is an exchange the device redeems
-   * (LAI-1061), and no secret reaches this page. Otherwise it is the
-   * browser-shown rotate, for a device that has no key to redeem with.
+   * Its device is paired **and** `laika tool add` can set this tool up:
+   * *Reconnect* is an exchange the device redeems (LAI-1061), and no secret
+   * reaches this page. Otherwise it is the browser-shown rotate — for a device
+   * with no key to redeem with, or a tool the helper refuses.
    */
   readonly paired: boolean;
   /** One of a legacy duplicate pair: the only place *Rename* is offered (D-120). */

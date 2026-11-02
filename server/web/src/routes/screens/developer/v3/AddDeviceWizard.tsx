@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { loadCliSource, type CliSource } from '../../../../api/developer-compat.ts';
 import {
   approvePairingRequest,
@@ -25,6 +25,7 @@ import {
   fingerprintGroups,
   nextPollDelay,
   pairingFinished,
+  pairingNotBehind,
   pairingRefusal,
   type Refusal,
 } from './add-flow.ts';
@@ -117,12 +118,28 @@ export function AddDeviceWizard({
     };
   }, []);
 
+  const signature =
+    pairing === undefined ? '' : `${pairing.state}:${pairing.claimed?.key_fingerprint ?? ''}`;
+  const lastSignature = useRef(signature);
+  /**
+   * The state on screen, ahead of React's: a poll answer behind it — one that
+   * set out before an Approve or a Deny landed — is ignored, so a decision
+   * never flickers back to the Approve buttons.
+   */
+  const shown = useRef<DevicePairing['state'] | undefined>(undefined);
+  const show = useCallback((next: DevicePairing): void => {
+    if (!pairingNotBehind(shown.current, next.state)) return;
+    shown.current = next.state;
+    lastSignature.current = `${next.state}:${next.claimed?.key_fingerprint ?? ''}`;
+    setPairing(next);
+  }, []);
+
   // Resume `?pairing=`: read it once; the code is not shown again.
   useEffect(() => {
     if (resumeId === undefined || pairing !== undefined) return;
     const controller = new AbortController();
     getPairingRequest(resumeId, controller.signal)
-      .then(setPairing)
+      .then(show)
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setResumeError(pairingRefusal(cause, ''));
@@ -130,14 +147,12 @@ export function AddDeviceWizard({
     return () => {
       controller.abort();
     };
-  }, [resumeId, pairing]);
+  }, [resumeId, pairing, show]);
 
   // Ask the board again until the request finishes, backing off while nothing moves.
   const pairingId = pairing?.id;
   const finished = pairing === undefined || pairingFinished(pairing.state);
-  const signature =
-    pairing === undefined ? '' : `${pairing.state}:${pairing.claimed?.key_fingerprint ?? ''}`;
-  const lastSignature = useRef(signature);
+
   useEffect(() => {
     if (pairingId === undefined || finished) return;
     const controller = new AbortController();
@@ -146,12 +161,20 @@ export function AddDeviceWizard({
     const tick = (): void => {
       getPairingRequest(pairingId, controller.signal)
         .then((next) => {
+          if (!pairingNotBehind(shown.current, next.state)) {
+            delay = nextPollDelay(delay, false, false);
+            timer = setTimeout(tick, delay);
+            return;
+          }
           const sig = `${next.state}:${next.claimed?.key_fingerprint ?? ''}`;
           const moved = sig !== lastSignature.current;
           lastSignature.current = sig;
           setPollTrouble(undefined);
           setNow(Date.now());
-          if (moved) setPairing(next);
+          if (moved) {
+            shown.current = next.state;
+            setPairing(next);
+          }
           if (pairingFinished(next.state)) return;
           delay = nextPollDelay(delay, moved, false);
           timer = setTimeout(tick, delay);
@@ -222,9 +245,9 @@ export function AddDeviceWizard({
     )
       .then((created) => {
         changed.current = true;
-        lastSignature.current = `${created.pairing.state}:`;
         setCode({ command: created.command });
-        setPairing(created.pairing);
+        shown.current = undefined;
+        show(created.pairing);
         setNow(Date.now());
         onRequest(created.pairing.id);
       })
@@ -243,13 +266,12 @@ export function AddDeviceWizard({
     setRefusal(undefined);
     (approve ? approvePairingRequest : denyPairingRequest)(pairing.id, shown)
       .then((next) => {
-        lastSignature.current = `${next.state}:${next.claimed?.key_fingerprint ?? ''}`;
-        setPairing(next);
+        show(next);
       })
       .catch((cause: unknown) => {
         setRefusal(pairingRefusal(cause, pairing.display_name));
         // The answer may say why: read the request as it is now.
-        getPairingRequest(pairing.id).then(setPairing, () => undefined);
+        getPairingRequest(pairing.id).then(show, () => undefined);
       })
       .finally(() => {
         setBusy(false);
@@ -257,6 +279,7 @@ export function AddDeviceWizard({
   };
 
   const startAgain = (): void => {
+    shown.current = undefined;
     setPairing(undefined);
     setCode(undefined);
     setRefusal(undefined);

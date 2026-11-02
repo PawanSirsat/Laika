@@ -15,10 +15,14 @@ import { AGENT_CLIENT_NAMES, type AgentClient } from '../../../../api/agent-clie
  *   and the session hooks. Sessions, claims and automatic checkpoints work.
  * - **`mcp-only`**: the credential and the MCP entry; the tool reads and
  *   writes tasks, but opens no session and saves no checkpoint.
- * - **`manual`**: the credential is installed; the tool's own configuration
- *   cannot be written safely, so the last step is by hand.
- * - **`unverified`**: no row in either CLI matrix. The board accepts it, and
- *   nobody has checked that `laika tool add` configures it.
+ * - **`manual`**: the tool's configuration would have to hold the token
+ *   itself, which `laika tool add` never writes, so it refuses the tool and
+ *   the person connects it by hand.
+ * - **`unverified`**: no row in either CLI matrix, and `laika tool add` has
+ *   no setup for it (it refuses the slug). The board accepts it; the person
+ *   connects it by hand.
+ *
+ * `cliSetup` is what decides whether a command is printed at all.
  *
  * **Nothing here is evidence.** It says what a tool *can* show; only
  * `GET /agents/:id/verification` says what it *did*. *Ready* needs both.
@@ -40,6 +44,13 @@ export interface ToolCapability {
   readonly sessions: boolean;
   /** The adapter is **Verified-and-tested** in the CLI matrix, not only documented. */
   readonly tested: boolean;
+  /**
+   * `laika tool add <slug>` sets it up (`cli/src/tool-add.ts` `planFor`
+   * answers anything but `refused`). When false the CLI refuses the slug, so
+   * the wizard prints no command and shows the manual step instead.
+   * `tool-catalog.test.ts` holds this to `planFor` for every slug.
+   */
+  readonly cliSetup: boolean;
   /** What the person still does by hand, in the order they meet it. */
   readonly notes: readonly string[];
   /** How to make the tool's first request, for the *tool connected* check. */
@@ -57,8 +68,9 @@ function unverified(harness: CatalogTool): ToolCapability {
     mode: 'unverified',
     sessions: false,
     tested: false,
+    cliSetup: false,
     notes: [
-      `${name(harness)} is not in Laika’s tested tools: the command installs its credential, and you add Laika to ${name(harness)}’s own MCP settings by hand.`,
+      `\`laika tool add\` has no setup for ${name(harness)} yet and refuses it, so no command is shown. Until it has one, connect ${name(harness)} by hand: a personal token from Advanced, in ${name(harness)}’s own MCP settings. That token acts as you, not as a tool of its own.`,
     ],
     firstRequest: `Open ${name(harness)} and ${WHOAMI}.`,
   };
@@ -69,6 +81,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
   {
     harness: 'claude-code',
     name: name('claude-code'),
+    cliSetup: true,
     mode: 'automatic',
     sessions: true,
     tested: true,
@@ -80,6 +93,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
   {
     harness: 'codex',
     name: name('codex'),
+    cliSetup: true,
     mode: 'automatic',
     sessions: true,
     tested: false,
@@ -92,6 +106,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
   {
     harness: 'cursor',
     name: name('cursor'),
+    cliSetup: true,
     mode: 'mcp-only',
     sessions: false,
     tested: false,
@@ -103,6 +118,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
   {
     harness: 'gemini-cli',
     name: name('gemini-cli'),
+    cliSetup: true,
     mode: 'mcp-only',
     sessions: false,
     tested: false,
@@ -112,6 +128,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
   {
     harness: 'vscode',
     name: name('vscode'),
+    cliSetup: true,
     mode: 'mcp-only',
     sessions: false,
     tested: false,
@@ -121,6 +138,7 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
   {
     harness: 'omnigent',
     name: name('omnigent'),
+    cliSetup: true,
     mode: 'mcp-only',
     sessions: false,
     tested: false,
@@ -132,11 +150,12 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
   {
     harness: 'antigravity',
     name: name('antigravity'),
+    cliSetup: false,
     mode: 'manual',
     sessions: false,
     tested: false,
     notes: [
-      'Antigravity takes its token only written into its own config, which `laika tool add` will not do. The command installs the credential and prints the last step for you to do by hand.',
+      'Antigravity reads no environment variables, so its config would have to hold the token itself — which `laika tool add` never writes, so it refuses Antigravity and no command is shown. Connect it by hand: a personal token from Advanced, in `~/.gemini/config/mcp_config.json`. That token acts as you, not as a tool of its own.',
       'Beta: remote headers have been reported answered Unauthorized (antigravity-cli issue 233).',
     ],
     firstRequest: `Finish Antigravity’s config by hand, then ${WHOAMI}.`,
@@ -177,8 +196,8 @@ export const MODE_WORDS: Readonly<Record<SetupMode, string>> = {
 export const MODE_MEANING: Readonly<Record<SetupMode, string>> = {
   automatic: 'Credential, MCP entry and session hooks. Sessions, claims and checkpoints.',
   'mcp-only': 'Reads and writes tasks; no session claims or automatic checkpoints.',
-  manual: 'The credential is installed; you finish the tool’s own config by hand.',
-  unverified: 'Not tested with Laika: the credential is installed, the rest is by hand.',
+  manual: 'The helper cannot set it up safely; you connect it by hand.',
+  unverified: 'Not tested with Laika, and the helper has no setup for it: by hand.',
 };
 
 /** The picker's groups, each with what its mode means. */

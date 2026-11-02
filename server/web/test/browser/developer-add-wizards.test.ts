@@ -18,6 +18,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import {
   closeBrowser,
+  defaultPermissions,
   open,
   refuse,
   reply,
@@ -697,6 +698,190 @@ void describe('around the wizards', () => {
       assert.equal(await h.page.locator('[data-wizard]').count(), 0);
       assert.match(h.page.url(), /tab=connect/);
       assert.equal(h.calls.filter((c) => c.path.startsWith('/api/v1/devices/')).length, 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+const exchangeRow = (state: string, redeemed: boolean) => ({
+  id: 'x1',
+  state,
+  purpose: 'install',
+  agent_id: 'a1',
+  device_id: 'd1',
+  created_at: NOW,
+  expires_at: NOW + 600_000,
+  redeemed_at: redeemed ? NOW : null,
+});
+
+const notYet = {
+  agent_id: 'a1',
+  harness: 'claude-code',
+  status: 'active',
+  now: NOW,
+  last_seen_at: null,
+  checks: {
+    device_paired: { state: 'pass', at: NOW, detail: { device_id: 'd1' } },
+    credential_installed: {
+      state: 'fail',
+      at: null,
+      detail: { token_id: null, via_exchange: false },
+    },
+    credential_used: { state: 'fail', at: null, detail: null },
+    tool_request: {
+      state: 'fail',
+      at: null,
+      detail: {
+        evidence: null,
+        mcp_client_name: 'specific',
+        client_slug: null,
+        client_name: null,
+        client_version: null,
+        self_reported: true,
+      },
+    },
+    required_capabilities: { state: 'pass', at: null, detail: { required: [], missing: [] } },
+    session_hooks: { state: 'fail', at: null, detail: { harness: null } },
+  },
+  client_report: null,
+};
+
+const toolCreated = () =>
+  reply(201, {
+    agent: agentRow('a1', 'claude-code', 'Belka', []),
+    exchange: exchangeRow('open', false),
+    command: 'laika tool add claude-code --exchange x1',
+    revokes_on_redeem: [],
+  });
+
+void describe('review round 1 (PR #215)', () => {
+  void test('a poll answer behind the decision is ignored: no Approve after approving', async () => {
+    const h = await open(
+      '/developer?tab=devices&add=device&pairing=p1',
+      stub('v3', [], {
+        // A board slow to show the decision keeps answering `claimed`.
+        '/api/v1/devices/pairing-requests/p1': pairingView('claimed', true),
+        '/api/v1/devices/pairing-requests/p1/approve': pairingView('approved', true),
+      }),
+    );
+    try {
+      const page = h.page;
+      await until(async () => (await step(page, 'device')) === '3', 20_000);
+      await page.getByRole('button', { name: 'Approve Belka' }).click();
+      await until(async () =>
+        (await wizard(page, 'device').innerText()).includes('Waiting for Belka to finish'),
+      );
+      const reads = () =>
+        h.calls.filter((c) => c.path === '/api/v1/devices/pairing-requests/p1').length;
+      const before = reads();
+      await until(() => reads() > before, 15_000);
+      assert.ok(reads() > before, 'no poll ran after the approval');
+      assert.equal(await page.getByRole('button', { name: 'Approve Belka' }).count(), 0);
+      assert.match(await wizard(page, 'device').innerText(), /Waiting for Belka to finish/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an exchange that expired unredeemed stops the polling and offers a new command', async () => {
+    const h = await open(
+      '/developer?tab=devices&add=tool&tool=claude-code',
+      stub('v3', [deviceRow('d1', 'Belka', true)], {
+        '/api/v1/devices/d1/tools': toolCreated,
+        '/api/v1/tool-setup/x1': exchangeRow('expired', false),
+        '/api/v1/agents/a1/verification': notYet,
+      }),
+    );
+    try {
+      const page = h.page;
+      await wizard(page, 'tool').waitFor({ timeout: 20_000 });
+      await page.getByRole('button', { name: /Get the command/ }).click();
+      await until(async () =>
+        (await wizard(page, 'tool').innerText()).includes('This command expired'),
+      );
+      assert.ok(await page.getByRole('button', { name: 'Get a new command' }).isVisible());
+      const reads = () => h.calls.filter((c) => c.path === '/api/v1/agents/a1/verification').length;
+      const settled = reads();
+      // Nothing should happen, so this is a window, not a wait: two poll gaps.
+      await page.waitForTimeout(8_000);
+      assert.equal(reads(), settled, 'the wizard kept polling an ended exchange');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('closing Add tool with an open exchange asks, then cancels it', async () => {
+    const h = await open(
+      '/developer?tab=devices&add=tool&tool=claude-code',
+      stub('v3', [deviceRow('d1', 'Belka', true)], {
+        '/api/v1/devices/d1/tools': toolCreated,
+        '/api/v1/tool-setup/x1': (call: StubCall) =>
+          call.method === 'DELETE' ? reply(200, {}) : exchangeRow('open', false),
+        '/api/v1/agents/a1/verification': notYet,
+      }),
+    );
+    try {
+      const page = h.page;
+      await wizard(page, 'tool').waitFor({ timeout: 20_000 });
+      await page.getByRole('button', { name: /Get the command/ }).click();
+      await until(async () => (await step(page, 'tool')) === '2');
+      await page.getByRole('button', { name: 'Done' }).click();
+      const dialog = page.getByRole('alertdialog');
+      await dialog.waitFor({ timeout: 10_000 });
+      assert.match(await dialog.innerText(), /Cancel this tool setup\?/);
+      await dialog.getByRole('button', { name: 'Cancel setup' }).click();
+      await wizard(page, 'tool').waitFor({ state: 'detached', timeout: 10_000 });
+      assert.ok(writes(h.calls).includes('DELETE /api/v1/tool-setup/x1'));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a session that cannot manage tools is told why Get the command is off', async () => {
+    const perms = defaultPermissions(ME) as {
+      me: { actions: string[] };
+    };
+    perms.me.actions = perms.me.actions.filter((a) => a !== 'agent.manage_own');
+    const h = await open(
+      '/developer?tab=devices&add=tool&tool=claude-code',
+      stub('v3', [deviceRow('d1', 'Belka', true)], { '/api/v1/permissions': perms }),
+    );
+    try {
+      const page = h.page;
+      const go = page.getByRole('button', { name: /Get the command/ });
+      await go.waitFor({ timeout: 20_000 });
+      await until(async () => await go.isDisabled());
+      assert.equal(await go.isDisabled(), true);
+      const hintId = await go.getAttribute('aria-describedby');
+      assert.ok(hintId !== null);
+      assert.match(
+        await page.locator(`[id="${hintId}"]`).innerText(),
+        /needs a signed-in browser session/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a tool the helper refuses gets the manual step, never a laika tool add command', async () => {
+    const h = await open(
+      '/developer?tab=devices&add=tool&tool=zed',
+      stub('v3', [deviceRow('d1', 'Belka', true)]),
+    );
+    try {
+      const page = h.page;
+      await wizard(page, 'tool').locator('[data-manual="zed"]').waitFor({ timeout: 20_000 });
+      const text = await wizard(page, 'tool').innerText();
+      assert.match(text, /has no setup for Zed yet and refuses it/);
+      assert.match(text, /personal token from Advanced/);
+      assert.match(text, /cannot set up Zed, so there is no command/);
+      assert.equal(await wizard(page, 'tool').locator('pre').count(), 0);
+      assert.equal(await page.getByRole('button', { name: /Get the command/ }).isDisabled(), true);
+      await page.getByRole('button', { name: 'Open Advanced' }).click();
+      await until(() => page.url().includes('tab=advanced'));
+      assert.match(page.url(), /tab=advanced/);
+      assert.equal(writes(h.calls).filter((w) => w.includes('/tools')).length, 0);
     } finally {
       await h.close();
     }

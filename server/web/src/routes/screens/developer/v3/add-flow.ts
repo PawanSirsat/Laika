@@ -1,6 +1,7 @@
 import type { CliSource } from '../../../../api/developer-compat.ts';
 import type { PairingState } from '../../../../api/device-pairing.ts';
 import type { Device } from '../../../../api/devices.ts';
+import type { ToolSetup } from '../../../../api/tool-setup.ts';
 import { ApiError, NetworkError } from '../../../../api/errors.ts';
 
 /**
@@ -94,6 +95,37 @@ export function toolAddCommand(harness: string, exchangeId: string): string {
 export function pairingFinished(state: PairingState): boolean {
   return (
     state === 'completed' || state === 'denied' || state === 'expired' || state === 'cancelled'
+  );
+}
+
+/**
+ * How far along a request is. The finished states all rank above the live
+ * ones, so a decision is never undone by an answer that set out before it.
+ */
+const PAIRING_ORDER: Readonly<Record<PairingState, number>> = {
+  open: 0,
+  claimed: 1,
+  approved: 2,
+  completed: 3,
+  denied: 3,
+  expired: 3,
+  cancelled: 3,
+};
+
+/**
+ * Whether a poll answer may replace what is on screen: only if it is not
+ * behind it. A read that left before Approve can land after it and say
+ * `claimed`; taking it would bring the Approve button back for a moment.
+ */
+export function pairingNotBehind(current: PairingState | undefined, next: PairingState): boolean {
+  return current === undefined || PAIRING_ORDER[next] >= PAIRING_ORDER[current];
+}
+
+/** An exchange that closed without being redeemed: nothing more will come of it. */
+export function exchangeEnded(exchange: Pick<ToolSetup, 'state' | 'redeemed_at'>): boolean {
+  return (
+    (exchange.state === 'expired' || exchange.state === 'cancelled') &&
+    exchange.redeemed_at === null
   );
 }
 
