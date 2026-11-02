@@ -80,6 +80,8 @@ interface StubOptions {
   liveTokens?: readonly string[];
   /** Of those, the ones redeeming revokes — the redeemed agent's own. */
   revokedOnRedeem?: readonly string[];
+  /** The `board_origin` the redeem answers with, when not this stub's own. */
+  redeemOrigin?: string;
   /** The device and tool routes answer as an old board's SPA does: `200`, HTML. */
   noDeviceRoutes?: boolean;
 }
@@ -301,7 +303,7 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
           },
           token: { id: '01JTOKEN', prefix: SECRET.slice(0, 8) },
           secret: SECRET,
-          board_origin: origin,
+          board_origin: options.redeemOrigin ?? origin,
         });
         return;
       }
@@ -820,6 +822,51 @@ void describe('laika tool add', () => {
     for (const out of [run.stdout, run.stderr]) {
       for (const token of [OLD, OTHER, STALE, SECRET]) assert.ok(!out.includes(token));
     }
+  });
+
+  void test('a redeem that names another board brings nothing along, and no token goes there (LAI-1088 review)', async () => {
+    const OLD = 'lai_OLDomnigentPOLLY';
+    const s = await board({
+      agentHarness: 'omnigent',
+      liveTokens: [OLD],
+      revokedOnRedeem: [OLD],
+      redeemOrigin: 'http://elsewhere.test',
+    });
+    const home = sandbox();
+    await paired(home, s);
+    const polly = `${JSON.stringify({ url: s.url, token: OLD })}\n`;
+    write(home, '.laika/agents/polly.json', polly);
+    s.received.length = 0;
+
+    const run = await laika(home, ['tool', 'add', 'omnigent', '--exchange', 'EX8']);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    assert.equal(readFileSync(join(home, '.laika', 'agents', 'polly.json'), 'utf8'), polly);
+    assert.ok(!existsSync(join(home, '.laika', 'agents', 'polly.json.bak')));
+    assert.match(
+      run.stdout,
+      /the board named another address; no other credential file was touched/,
+    );
+    // The only board that ever saw polly.json's token is the paired one, once, before.
+    const asked = s.received.filter((r) => r.auth === `Bearer ${OLD}`);
+    assert.equal(asked.length, 1);
+    assert.ok(!run.stdout.includes(OLD) && !run.stderr.includes(OLD));
+  });
+
+  void test('the plan says another credential file may be updated, and when', async () => {
+    const s = await board({ agentHarness: 'omnigent' });
+    const home = sandbox();
+    await paired(home, s);
+    const run = await laika(home, ['tool', 'add', 'omnigent', '--exchange', 'EX7', '--dry-run']);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    assert.match(
+      run.stdout,
+      /also +another credential file for this board, only if this setup revokes its token/,
+    );
+    assert.match(
+      run.stdout,
+      /untouched +~\/\.laika\/env, every other tool’s credential, every repository/,
+    );
+    assert.doesNotMatch(run.stdout, /other tools’ credentials/);
   });
 
   void test('codex: its own variable, other servers kept, one rc line that really exports it', async () => {

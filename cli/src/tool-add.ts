@@ -242,7 +242,10 @@ function describe(plan: Exclude<ToolPlan, { kind: 'refused' }>, hooks: boolean):
   }
   if (plan.kind === 'full' && hooks)
     lines.push(`  hooks       laika agent hooks on --harness ${h}`);
-  lines.push('  untouched   ~/.laika/env, other tools’ credentials, every repository');
+  lines.push(
+    '  also        another credential file for this board, only if this setup revokes its token',
+  );
+  lines.push('  untouched   ~/.laika/env, every other tool’s credential, every repository');
   return lines;
 }
 
@@ -335,7 +338,7 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   }
   const target = plan.harness;
   saveCredential(io, target, redeemed, deviceId);
-  await bringAlong(io, siblings, redeemed);
+  await bringAlong(io, siblings, origin, redeemed);
 
   const installed: AgentHookReport[] = [];
   let mcp: ClaudeMcp = target === 'codex' ? 'tool' : 'none';
@@ -460,25 +463,44 @@ async function tokenAnswers(io: ToolAddIo, origin: string, token: string): Promi
 
 /**
  * Each sibling whose token the board now refuses (`401`) held this agent's
- * previous credential — redeeming revokes only this agent's — so it gets the
- * new one, its other fields kept, the old file kept as `<name>.bak`. A token
- * still working, or a board not answering, leaves the file as it was.
+ * previous credential — redeeming revokes only this agent's, and the two
+ * answers are seconds apart — so it gets the new one, its other fields kept,
+ * the old file kept as `<name>.bak`. A token still working, any other answer,
+ * or a board not answering leaves the file as it was.
+ *
+ * **Only ever the paired board** (review round 1): the tokens go to `origin`,
+ * the board this machine was paired with, never to the origin a redeem answer
+ * names — and if that answer names another board, nothing is brought along.
  */
 async function bringAlong(
   io: ToolAddIo,
   siblings: readonly Sibling[],
+  origin: string,
   redeemed: Redeemed,
 ): Promise<void> {
+  if (siblings.length === 0) return;
+  if (boardOriginOf(redeemed.boardOrigin) !== boardOriginOf(origin)) {
+    io.out('  · the board named another address; no other credential file was touched');
+    return;
+  }
   for (const sibling of siblings) {
-    if ((await tokenAnswers(io, redeemed.boardOrigin, sibling.token)) !== 401) continue;
-    const before = readFileSync(sibling.path, 'utf8');
-    const saved = JSON.parse(before) as Record<string, unknown>;
-    const next = `${JSON.stringify({ ...saved, token: redeemed.secret }, null, 2)}\n`;
-    writePrivate(`${sibling.path}.bak`, before);
-    writePrivate(sibling.path, next);
-    io.out(
-      `  ✓ also updated ~/.laika/agents/${sibling.name}, which held this tool’s previous credential (0600)`,
-    );
+    if ((await tokenAnswers(io, origin, sibling.token)) !== 401) continue;
+    try {
+      const before = readFileSync(sibling.path, 'utf8');
+      const saved = JSON.parse(before) as unknown;
+      // Read again, so a file changed since it was asked about is left alone.
+      if (!isRecord(saved) || saved.token !== sibling.token) continue;
+      const next = `${JSON.stringify({ ...saved, token: redeemed.secret }, null, 2)}\n`;
+      writePrivate(`${sibling.path}.bak`, before);
+      writePrivate(sibling.path, next);
+      io.out(
+        `  ✓ also updated ~/.laika/agents/${sibling.name}, which held this tool’s previous credential (0600)`,
+      );
+    } catch {
+      io.out(
+        `  ! could not update ~/.laika/agents/${sibling.name}: it still holds this tool’s revoked credential; copy the new one from the tool’s own file there`,
+      );
+    }
   }
 }
 
