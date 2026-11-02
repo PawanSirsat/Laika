@@ -161,7 +161,10 @@ function stub(mode: Mode | 'absent', agents: readonly Agent[] = [], over: ApiStu
       collectors: 0,
       oldest_day: null,
     },
-    ...(mode === 'absent' ? {} : { '/api/v1/developer/compatibility': compat(mode) }),
+    // A board without the endpoint: refused, so the harness's own classic
+    // answer for an unnamed path (LAI-1076) does not stand in for it.
+    '/api/v1/developer/compatibility':
+      mode === 'absent' ? refuse(404, 'not_found', 'no such route') : compat(mode),
     ...over,
   };
 }
@@ -288,7 +291,7 @@ void describe('every old address lands, in each mode (plan §C)', () => {
     }
   });
 
-  void test('a board without the endpoint, or a mode it does not know, is classic', async () => {
+  void test('a board without the endpoint, or a mode it does not know, is v3 (LAI-1076)', async () => {
     for (const s of [
       stub('absent'),
       stub('classic', [], { '/api/v1/developer/compatibility': refuse(500, 'internal', 'down') }),
@@ -296,17 +299,17 @@ void describe('every old address lands, in each mode (plan §C)', () => {
         '/api/v1/developer/compatibility': { features: { developer_access: 'v4' } },
       }),
     ]) {
-      const h = await open('/connect', s);
+      const h = await open('/developer', s);
       try {
-        await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
+        await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
         assert.deepEqual(await tabs(h.page), [
-          'Connect',
-          'Agents',
-          'Projects',
+          'Overview',
+          'Project setup',
+          'Devices',
           'Activity',
-          'Tokens',
+          'Advanced',
         ]);
-        assert.equal(here(h.page), '/developer?tab=connect');
+        assert.equal(await h.page.locator('.conn-wizard-card').count(), 0);
       } finally {
         await h.close();
       }
