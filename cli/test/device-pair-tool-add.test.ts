@@ -815,7 +815,11 @@ void describe('laika tool add', () => {
     const run = await laika(home, ['tool', 'add', 'antigravity', '--exchange', 'EX1']);
     assert.equal(run.code, 1);
     assert.match(run.stderr, /Antigravity expands no environment variables/);
-    assert.match(run.stderr, /Set up by hand/);
+    assert.match(
+      run.stderr,
+      /create a personal token under Developer access →\n {2}Advanced, and add it in the tool's own MCP settings/,
+    );
+    assert.doesNotMatch(run.stderr, /Set up by hand/, 'V3 has no "Set up by hand"');
     assert.deepEqual(s.received, [], 'it talked to the board');
     assert.deepEqual(files(home), before, 'it wrote something');
   });
@@ -828,6 +832,8 @@ void describe('laika tool add', () => {
     const run = await laika(home, ['tool', 'add', 'windsurf', '--exchange', 'EX1']);
     assert.equal(run.code, 1);
     assert.match(run.stderr, /MCP only, configured by hand/);
+    assert.match(run.stderr, /personal token under Developer access →/);
+    assert.doesNotMatch(run.stderr, /Set up by hand/);
     assert.deepEqual(s.received, []);
   });
 
@@ -874,6 +880,11 @@ void describe('laika tool add', () => {
     assert.equal(run.code, 1);
     assert.match(run.stderr, /made for antigravity, not claude-code/);
     assert.match(run.stderr, /nothing was saved/);
+    assert.match(
+      run.stderr,
+      /personal token from Developer access → Advanced in its own MCP settings/,
+    );
+    assert.doesNotMatch(run.stderr, /by hand from its own row/);
     assert.deepEqual(
       files(home).filter((p) => !p.startsWith('.laika/device/')),
       [],

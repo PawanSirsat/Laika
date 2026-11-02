@@ -87,9 +87,15 @@ export const CODEX_TOKEN_VAR = 'LAIKA_AGENT_TOKEN_CODEX';
 export const CODEX_RC_MARKER =
   "# Laika — Codex's own agent token for its MCP entry (laika tool add codex)";
 
+/**
+ * Where a refused tool goes instead — the web's Add tool wizard says the same
+ * (`tool-catalog.ts`, LAI-1061): a personal token, in the tool's own MCP
+ * settings. V3 has no "Set up by hand" for a tool.
+ */
 const SET_UP_BY_HAND = [
-  'Set it up by hand instead: in the browser, cancel this setup and use',
-  '"Set up by hand" for this tool. Nothing was redeemed, so no token exists.',
+  'Connect it by hand instead: create a personal token under Developer access →',
+  "Advanced, and add it in the tool's own MCP settings. That token acts as you,",
+  'not as a tool of its own. Nothing was redeemed, so no token exists.',
 ];
 
 export function planFor(slug: string): ToolPlan {
@@ -248,8 +254,8 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
       `laika tool add: this setup was made for ${redeemed.agentHarness}, not ${slug}, and ` +
         `${redeemed.agentHarness} cannot be set up here — nothing was saved.`,
     );
-    io.err('  The token it minted is unused; disconnect that tool in the browser, or set it up');
-    io.err('  by hand from its own row.');
+    io.err('  The token it minted is unused; disconnect that tool in the browser, and connect');
+    io.err('  it with a personal token from Developer access → Advanced in its own MCP settings.');
     return 1;
   }
   if (minted.harness !== plan.harness) {

@@ -195,7 +195,7 @@ export function reasonOf(body: unknown): string | undefined {
 export function commonRefusal(answer: Answer, origin: string): string | undefined {
   if (answer.kind === 'unreachable') return `nothing answered at ${origin} (${answer.message})`;
   if (answer.kind === 'other') {
-    return `${origin} does not support device pairing yet (it answered ${String(answer.status)} without Laika's JSON) — use "Set up by hand" in the browser`;
+    return `${origin} does not support device pairing yet (it answered ${String(answer.status)} without Laika's JSON) — ask your admin to update the board, or connect your tools with a personal token`;
   }
   const reason = reasonOf(answer.body);
   if (reason === 'public_url_unset') {
