@@ -104,9 +104,8 @@ export function guideFor(key: UpdateKey | undefined): boolean {
 
 /**
  * *Version unknown*, and how to make it known: `laika update` on that device
- * sends the board its helper's version report. Worded for LAI-1085, which
- * makes it send one even when the helper is already current; until that
- * lands, it sends one when it updates.
+ * sends the board its helper's version report — even when the helper is
+ * already current, since LAI-1085 (#238).
  */
 export function versionUnknownHint(device = 'that device'): string {
   return `To make its version appear, run laika update on ${device}: it reports the helper’s version to this board, even when it is already current.`;
