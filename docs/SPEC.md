@@ -3272,8 +3272,14 @@ Omnigent and Hermes do), it is an MCP request on a live token of this agent
 **plus a `cli` report from that same token** naming the harness, and it says
 `evidence: 'client_report'`. Both are self-reported. **Another tool's request,
 a personal token's, a rotated-away token's, a curl and a config file never
-pass it**, and `other` never does. While the org has presence off, every time
-this read takes from these rows is `null`, whatever is stored.
+pass it**, and `other` never does — with one case read differently, by D-118:
+for a harness whose client sends a generic name, the request's client name is
+**not read at all**, because a manager such as Omnigent runs other tools as its
+workers on its own credential (LAI-589) and their requests carry their own
+names. There the CLI's report from the same token is the whole of the identity
+(LAI-1088: `laika tool add` sends it naming the harness). While the org has
+presence off, every time this read takes from these rows is `null`, whatever is
+stored.
 
 ### 4.82 `project_repo_setups`
 
