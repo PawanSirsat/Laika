@@ -29,6 +29,11 @@ import { versionInfo } from './version.ts';
  *
  * The code is on the command line. It is not a credential: single use, ten
  * minutes, and it grants nothing until a person approves the fingerprint.
+ *
+ * It does not ask `GET /developer/compatibility` first (plan §F.3 step 1):
+ * that answer still says `device_pairing: false` on boards that serve it
+ * (LAI-1062). An old board is told by its answer instead — no Laika JSON
+ * means "does not support device pairing yet".
  */
 
 export interface DeviceIo {
