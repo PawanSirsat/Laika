@@ -41,6 +41,9 @@ board by its answer (no Laika JSON → "does not support device pairing yet").
   the unmerged `LAI-1060-cli-pair-tool-add` branch, at `.tasks/backlog/`. It is
   added here at `.tasks/in-progress/`; whoever merges both deletes the
   `backlog/` copy, which is the one furthest back.
+- **Named cross-area edit (D-033): `docs/SPEC.md` §6.4**, the
+  `GET /developer/compatibility` paragraph only — the sentence on `features`
+  and the one on the protocol range. Named in the polly dispatch's scope.
 - **`depends-on: LAI-1056` deviation.** LAI-1056 sits in `.tasks/review/` on
   `master`, not `done/`, but its code is merged (PR #211) and every route this
   task reports on is mounted on `master`. Claimed on the orchestrator's
