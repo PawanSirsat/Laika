@@ -2,11 +2,13 @@
 id: LAI-1062
 title: 'The compatibility manifest says device_pairing and tool_setup_exchange are off while both routes serve'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-1056]
 discovered-from: LAI-1060
-status: backlog
+status: review
+started: 2026-11-02T00:57:59Z
+finished: 2026-11-02T01:03:22Z
 ---
 
 `server/src/services/developer-compat.ts` builds `features` as every name in
@@ -30,6 +32,23 @@ board by its answer (no Laika JSON → "does not support device pairing yet").
 
 ## Acceptance
 
-- [ ] The manifest's features match the routes this build serves.
+- [x] The manifest's features match the routes this build serves.
 - [ ] LAI-1060's CLI note (`cli/src/device.ts` header) is revisited by SHELL
       once this lands: gate on the manifest, keep the answer-based fallback.
+      **Not CORE's to tick: filed as LAI-1064 (SHELL), with the CLI's
+      `PROTOCOL` 1 → 2 that this change makes due.**
+
+## Claim notes
+
+- **Re-filed here (CLAUDE.md §2/§3 two-copy rule).** This file existed only on
+  the unmerged `LAI-1060-cli-pair-tool-add` branch, at `.tasks/backlog/`. It is
+  added here at `.tasks/in-progress/`; whoever merges both deletes the
+  `backlog/` copy, which is the one furthest back.
+- **Named cross-area edit (D-033): `docs/SPEC.md` §6.4**, the
+  `GET /developer/compatibility` paragraph only — the sentence on `features`
+  and the one on the protocol range. Named in the polly dispatch's scope.
+- **`depends-on: LAI-1056` deviation.** LAI-1056 sits in `.tasks/review/` on
+  `master`, not `done/`, but its code is merged (PR #211) and every route this
+  task reports on is mounted on `master`. Claimed on the orchestrator's
+  direction (polly dispatch, board card LAIKA-916).
+
