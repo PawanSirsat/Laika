@@ -1,5 +1,6 @@
 import type { AgentVerification } from '../../../../api/tool-setup.ts';
 import type { StatusTone } from '../../../../components/wizard/StatusChip.tsx';
+import { ALL_UP_TO_DATE, UPDATE_STATUS } from './status-vocabulary.ts';
 
 /**
  * Whether a tool's local helper needs updating (LAI-1065, plan LAI-1042 §H,
@@ -364,12 +365,13 @@ export const ALLOW_HTTP_WHY =
   'This board is reached over plain http, so the commit it names could be changed on the way. laika update refuses to act on it unless you add --allow-http, and even then fetches only from a repository your checkout already has as a remote.';
 
 /**
- * After the update (§H): what to run, and when the row changes. Today a
- * helper reports its version when a tool is set up or reconnected
- * (`laika tool add`), so the row is honest about that.
+ * After the update (§H): what to run, and when the row changes. A helper
+ * reports its version when `laika update` runs — even when it is already
+ * current, since LAI-1085 (#238) — and when a tool is set up or reconnected
+ * (`laika tool add`), so the row says both.
  */
 export const AFTER_UPDATE =
-  'Then run laika doctor on that device to confirm it. This row changes when the tool’s helper next reports its version to the board — reconnecting the tool sends one.';
+  'Then run laika doctor on that device to confirm it. This row changes when the tool’s helper next reports its version to the board: laika update sends that report, even when it is already current, and so does reconnecting the tool.';
 
 // ------------------------------------------------------------------ a device
 
@@ -430,15 +432,15 @@ export function versionChip(key: UpdateKey | undefined, tools = 1): VersionChip 
     case 'checking':
       return undefined;
     case 'up-to-date':
-      return { key, word: tools > 1 ? 'Helpers up to date' : 'Helper up to date', tone: 'ok' };
+      return { key, word: tools > 1 ? ALL_UP_TO_DATE : UPDATE_STATUS[key].word, tone: 'ok' };
     case 'available':
-      return { key, word: 'Update available', tone: 'accent' };
+      return { key, word: UPDATE_STATUS[key].word, tone: 'accent' };
     case 'required':
-      return { key, word: 'Update required', tone: 'danger' };
+      return { key, word: UPDATE_STATUS[key].word, tone: 'danger' };
     case 'unknown':
-      return { key, word: 'Version unknown', tone: 'neutral' };
+      return { key, word: UPDATE_STATUS[key].word, tone: 'neutral' };
     case 'unchecked':
-      return { key, word: 'Could not check', tone: 'neutral' };
+      return { key, word: UPDATE_STATUS[key].word, tone: 'neutral' };
   }
 }
 

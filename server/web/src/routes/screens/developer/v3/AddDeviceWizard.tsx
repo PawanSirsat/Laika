@@ -13,6 +13,8 @@ import { ApiError } from '../../../../api/errors.ts';
 import { timeLabel } from '../../../../api/time-label.ts';
 import { useConfirm } from '../../../../components/ConfirmProvider.tsx';
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
+import { UpdateCliHelp } from './UpdateCliGuide.tsx';
+import { WIZARD_SUMMARY } from './update-cli.ts';
 import { Help } from '../../../../components/wizard/Help.tsx';
 import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
 import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
@@ -539,9 +541,18 @@ export function AddDeviceWizard({
           <p className="dv3w-quiet">Reading where this board’s helper comes from…</p>
         ) : (
           <>
+            <UpdateCliHelp summary={WIZARD_SUMMARY} place="add-device" />
+            {commands.updateFirst && (
+              <Help>
+                <span data-update-first="">
+                  Bring its Laika helper up to date first: the line above has the commands, for a
+                  helper with <code>laika update</code> and for one without it. Then pair:
+                </span>
+              </Help>
+            )}
             <CodeBlock
               label={
-                installed ? 'On the device: update, then pair' : 'On the device: install, then pair'
+                commands.updateFirst ? 'On the device: pair' : 'On the device: install, then pair'
               }
               labelId={`${ids}-bootstrap`}
               text={commands.text}

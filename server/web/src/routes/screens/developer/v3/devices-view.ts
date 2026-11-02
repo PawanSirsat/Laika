@@ -14,6 +14,7 @@ import type { StatusTone } from '../../../../components/wizard/StatusChip.tsx';
 import type { ChipTone } from './DesignChip.tsx';
 import { pairedDevice } from './add-flow.ts';
 import { ACTIVE_MS, OFFLINE_MS } from './overview-state.ts';
+import { DEVICE_STATUS, TOOL_STATUS } from './status-vocabulary.ts';
 import { catalogTool } from './tool-catalog.ts';
 import { readiness, type ReadinessKey } from './tool-readiness.ts';
 
@@ -57,7 +58,7 @@ export function toolStatus(agent: RegisteredAgent, now: number): ToolStatus {
   if (agent.status === 'revoked') {
     return {
       key: 'revoked',
-      word: 'Revoked',
+      word: TOOL_STATUS.revoked.word,
       tone: 'neutral',
       reason: 'Its credentials no longer work',
     };
@@ -65,7 +66,7 @@ export function toolStatus(agent: RegisteredAgent, now: number): ToolStatus {
   if (liveToken(agent, now) === undefined) {
     return {
       key: 'needs-setup',
-      word: 'Needs setup',
+      word: TOOL_STATUS['needs-setup'].word,
       tone: 'waiting',
       reason: agent.tokens.some((t) => t.revoked_at === null)
         ? 'Its credential has expired'
@@ -76,7 +77,7 @@ export function toolStatus(agent: RegisteredAgent, now: number): ToolStatus {
   if (seen === null) {
     return {
       key: 'needs-setup',
-      word: 'Needs setup',
+      word: TOOL_STATUS['needs-setup'].word,
       tone: 'waiting',
       reason: 'Credential created, never used',
     };
@@ -84,12 +85,27 @@ export function toolStatus(agent: RegisteredAgent, now: number): ToolStatus {
   const ago = timeLabel(seen, now).text;
   const age = now - seen;
   if (age <= ACTIVE_MS) {
-    return { key: 'connected', word: 'Connected', tone: 'ok', reason: `Seen ${ago}` };
+    return {
+      key: 'connected',
+      word: TOOL_STATUS.connected.word,
+      tone: 'ok',
+      reason: `Seen ${ago}`,
+    };
   }
   if (age <= OFFLINE_MS) {
-    return { key: 'idle', word: 'Idle', tone: 'neutral', reason: `Last seen ${ago}` };
+    return {
+      key: 'idle',
+      word: TOOL_STATUS.idle.word,
+      tone: 'neutral',
+      reason: `Last seen ${ago}`,
+    };
   }
-  return { key: 'offline', word: 'Offline', tone: 'warn', reason: `Last seen ${ago}` };
+  return {
+    key: 'offline',
+    word: TOOL_STATUS.offline.word,
+    tone: 'warn',
+    reason: `Last seen ${ago}`,
+  };
 }
 
 /** A tool's status on the Tools list and in its details (LAI-1080). */
@@ -301,10 +317,10 @@ export interface DeviceChip {
 
 /** A device's chip: how it got here, and whether it still works. */
 export function deviceChip(device: Device): DeviceChip {
-  if (device.status === 'revoked') return { word: 'Revoked', tone: 'neutral' };
-  if (device.origin === 'paired') return { word: 'Paired', tone: 'ok' };
-  if (needsConfirm(device)) return { word: 'Imported — confirm it’s yours', tone: 'warn' };
-  return { word: 'Imported', tone: 'neutral' };
+  if (device.status === 'revoked') return { word: DEVICE_STATUS.revoked.word, tone: 'neutral' };
+  if (device.origin === 'paired') return { word: DEVICE_STATUS.paired.word, tone: 'ok' };
+  if (needsConfirm(device)) return { word: DEVICE_STATUS.confirm.word, tone: 'warn' };
+  return { word: DEVICE_STATUS.imported.word, tone: 'neutral' };
 }
 
 /** One row of the Tools list: an agent, where it is, and what it is called there. */
