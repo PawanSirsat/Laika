@@ -14,6 +14,8 @@ import {
 } from '../../../../api/tool-setup.ts';
 import { CheckIcon } from '../../../../components/wizard/CheckIcon.tsx';
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
+import { UpdateCliHelp } from './UpdateCliGuide.tsx';
+import { WIZARD_SUMMARY } from './update-cli.ts';
 import { Help } from '../../../../components/wizard/Help.tsx';
 import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
 import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
@@ -532,6 +534,7 @@ export function AddToolWizard({
           </div>
         ) : (
           <>
+            <UpdateCliHelp summary={WIZARD_SUMMARY} place="add-tool" />
             <CodeBlock
               label={`On ${d.display_name}`}
               labelId={`${ids}-command`}
