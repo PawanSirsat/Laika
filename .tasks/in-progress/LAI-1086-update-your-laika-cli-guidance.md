@@ -2,11 +2,12 @@
 id: LAI-1086
 title: 'Update your Laika CLI: one guidance in the UI where a developer needs it, and a once-a-day CLI notice'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-11-02T17:20:28+05:30
 ---
 
 ## Why
