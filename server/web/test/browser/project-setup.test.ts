@@ -873,6 +873,54 @@ void describe('Project setup, v3', () => {
     }
   });
 
+  // LAI-1087: at 11.75rem every name and every line under it broke in two.
+  void test('each step’s name and its line are one line in the rail, beside the aside and without it', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [] };
+    const h = await open('/developer?tab=projects', stub('v3', world));
+    try {
+      for (const [width, aside] of [
+        [1440, true],
+        [1366, true],
+        [1280, false],
+      ] as const) {
+        await h.page.setViewportSize({ width, height: 900 });
+        await card(h.page, 1).waitFor({ timeout: 20_000 });
+        await until(async () => (await h.page.locator('.dx-aside').isVisible()) === aside);
+        assert.equal(
+          await h.page.locator('.dx-aside').isVisible(),
+          aside,
+          `the aside at ${String(width)}px`,
+        );
+        const lines = await h.page
+          .locator('.dx-rail-card .conn-rail-name, .dx-rail-card .conn-rail-sub')
+          .evaluateAll((els) =>
+            els.map((el) => ({
+              text: (el.textContent ?? '').replace(/^Step \d: /, ''),
+              lines: Math.round(
+                el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight),
+              ),
+            })),
+          );
+        assert.deepEqual(
+          lines.map((l) => l.text),
+          [
+            'Choose project & tool',
+            'Full access · OnRoute',
+            'Copy project prompt',
+            'Paste in the repository',
+            'Review & verify',
+            'Check before working',
+          ],
+        );
+        for (const l of lines) {
+          assert.equal(l.lines, 1, `${String(width)}px: “${l.text}” is ${String(l.lines)} lines`);
+        }
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the aside is beside the step on a desktop, gone at 1040 px; the rail is a strip on a phone', async () => {
     const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [] };
     const h = await open('/developer?tab=projects', stub('v3', world));

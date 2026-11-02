@@ -683,8 +683,11 @@
   align-items: start;
 }
 
+/* Beside an aside the rail keeps room for its longest step name on one line —
+   *Choose project & tool* is 150px after the number — rather than breaking
+   every name in two at 11.75rem (LAI-1087). */
 .dx-wizard[data-aside='true'] {
-  grid-template-columns: 11.75rem minmax(0, 1fr) 18.125rem;
+  grid-template-columns: 16rem minmax(0, 1fr) 17rem;
   gap: var(--space-4);
 }
 
@@ -862,17 +865,21 @@
 
 /* ---- narrower screens ---- */
 
-@media (max-width: 65rem) {
-  .dx-columns {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
+/* Three columns only while the step keeps room for its two pickers side by
+   side; below that the aside goes and the rail keeps its width (LAI-1087). */
+@media (max-width: 80rem) {
   .dx-wizard[data-aside='true'] {
-    grid-template-columns: 11.75rem minmax(0, 1fr);
+    grid-template-columns: 16rem minmax(0, 1fr);
   }
 
   .dx-wizard[data-aside='true'] > .dx-aside {
     display: none;
+  }
+}
+
+@media (max-width: 65rem) {
+  .dx-columns {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
