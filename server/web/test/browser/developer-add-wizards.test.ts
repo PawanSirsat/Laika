@@ -22,6 +22,7 @@ import {
   open,
   refuse,
   reply,
+  setTheme,
   until,
   type ApiStub,
   type StubCall,
@@ -910,4 +911,140 @@ void describe('review round 1 (PR #215)', () => {
       await h.close();
     }
   });
+});
+
+/**
+ * Set `LAIKA_EVIDENCE_DIR` to save each wizard step in the owner's design's
+ * frame (LAI-1081), light and dark, at a desktop's width and a phone's — to
+ * put beside the prototype's own screenshots. Skipped otherwise.
+ */
+const EVIDENCE = process.env.LAIKA_EVIDENCE_DIR;
+
+void describe('screenshots of each step (LAI-1081)', { skip: EVIDENCE === undefined }, () => {
+  for (const theme of ['light', 'dark'] as const) {
+    for (const width of [1440, 390] as const) {
+      void test(`${theme}, ${String(width)}px`, async () => {
+        const size = { width, height: width === 390 ? 844 : 900 };
+        const shot = (page: Page, name: string) =>
+          page.screenshot({
+            path: `${EVIDENCE ?? ''}/wizard-${name}-${theme}-${String(width)}.png`,
+            fullPage: true,
+          });
+
+        let pairing: 'open' | 'claimed' | 'completed' = 'open';
+        const h = await open(
+          '/developer?tab=devices&add=device',
+          stub('v3', [], {
+            '/api/v1/devices/pairing-requests': (call: StubCall) =>
+              call.method === 'POST'
+                ? reply(201, {
+                    pairing: pairingView('open', false),
+                    user_code: CODE,
+                    command: `laika device pair --board http://board.test --code ${CODE}`,
+                  })
+                : refuse(405, 'method_not_allowed', 'no'),
+            '/api/v1/devices/pairing-requests/p1': () =>
+              pairingView(pairing, pairing !== 'open', pairing === 'completed' ? 'd9' : null),
+          }),
+        );
+        try {
+          await h.page.setViewportSize(size);
+          await setTheme(h.page, theme);
+          await wizard(h.page, 'device').waitFor({ timeout: 20_000 });
+          await shot(h.page, 'device-1');
+          await h.page.getByLabel('Device name').fill('Belka');
+          await h.page.getByRole('button', { name: /Get a pairing code/ }).click();
+          await until(async () => (await step(h.page, 'device')) === '2');
+          await shot(h.page, 'device-2');
+          pairing = 'claimed';
+          await until(async () => (await step(h.page, 'device')) === '3', 20_000);
+          await shot(h.page, 'device-3');
+          pairing = 'completed';
+          await until(async () => (await step(h.page, 'device')) === '4', 20_000);
+          await shot(h.page, 'device-4');
+        } finally {
+          await h.close();
+        }
+
+        const created = agentRow('a1', 'claude-code', 'Belka', []);
+        const pass = (detail: unknown) => ({ state: 'pass', at: NOW - 30_000, detail });
+        const fail = (detail: unknown) => ({ state: 'fail', at: null, detail });
+        const t = await open(
+          '/developer?tab=devices&add=tool&tool=claude-code',
+          stub('v3', [deviceRow('d1', 'Belka', true)], {
+            '/api/v1/devices/d1/tools': () =>
+              reply(201, {
+                agent: created,
+                exchange: {
+                  id: 'x1',
+                  state: 'open',
+                  purpose: 'install',
+                  agent_id: 'a1',
+                  device_id: 'd1',
+                  created_at: NOW,
+                  expires_at: NOW + 600_000,
+                  redeemed_at: null,
+                },
+                command: 'laika tool add claude-code --exchange x1',
+                revokes_on_redeem: [],
+              }),
+            '/api/v1/tool-setup/x1': () => ({
+              id: 'x1',
+              state: 'redeemed',
+              purpose: 'install',
+              agent_id: 'a1',
+              device_id: 'd1',
+              created_at: NOW,
+              expires_at: NOW + 600_000,
+              redeemed_at: NOW,
+            }),
+            '/api/v1/agents/a1/verification': () => ({
+              agent_id: 'a1',
+              harness: 'claude-code',
+              status: 'active',
+              now: Date.now(),
+              last_seen_at: Date.now() - 30_000,
+              checks: {
+                device_paired: pass({ device_id: 'd1' }),
+                credential_installed: pass({ token_id: 't1', via_exchange: true }),
+                credential_used: pass(null),
+                tool_request: pass({
+                  evidence: 'client_info',
+                  mcp_client_name: 'specific',
+                  client_slug: 'claude-code',
+                  client_name: 'claude-code',
+                  client_version: '2.1.0',
+                  self_reported: true,
+                }),
+                required_capabilities: {
+                  state: 'pass',
+                  at: null,
+                  detail: { required: [], missing: [] },
+                },
+                session_hooks: fail({ harness: null }),
+              },
+              client_report: null,
+            }),
+            '/api/v1/agents/a1': { ...created, sessions: [] },
+            '/api/v1/agents/a1/checkpoint-consent': NO_CONSENT,
+          }),
+        );
+        try {
+          await t.page.setViewportSize(size);
+          await setTheme(t.page, theme);
+          await wizard(t.page, 'tool').waitFor({ timeout: 20_000 });
+          await shot(t.page, 'tool-1');
+          await t.page.getByRole('button', { name: /Get the command/ }).click();
+          await until(async () => (await step(t.page, 'tool')) === '2');
+          await shot(t.page, 'tool-2');
+          await t.page.getByRole('button', { name: /^I ran it/ }).click();
+          await until(async () => (await step(t.page, 'tool')) === '3');
+          await t.page.locator('[data-check="tool_request"]').waitFor({ timeout: 20_000 });
+          await shot(t.page, 'tool-3');
+        } finally {
+          await t.close();
+        }
+      });
+    }
+  }
 });

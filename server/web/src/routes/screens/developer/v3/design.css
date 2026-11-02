@@ -737,6 +737,12 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* The title takes focus on each step for a screen reader's sake; it is not a
+   control, so the design draws no ring round it. */
+.dx-wizard .conn-card-title:focus-visible {
+  outline: none;
+}
+
 .dx-wizard .conn-card-body {
   min-height: 14rem;
   padding: 1.6875rem 1.75rem;
@@ -887,13 +893,22 @@
   }
 
   .dx-rail-card .conn-steps {
-    display: flex;
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
     gap: 0.3125rem;
-    overflow-x: auto;
   }
 
-  .dx-rail-card .conn-step {
-    flex: 1 0 auto;
+  .dx-rail-card .conn-rail-step {
+    flex-direction: column;
+    gap: 0.3125rem;
+    padding: 0.5625rem 0.25rem;
+    text-align: center;
+  }
+
+  .dx-rail-card .conn-rail-name {
+    font-size: var(--text-small);
+    line-height: var(--leading-small);
   }
 }
 

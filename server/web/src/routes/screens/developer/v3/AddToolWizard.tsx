@@ -40,7 +40,6 @@ import {
 import { checkLines, readiness, readinessSummary } from './tool-readiness.ts';
 import { DesignWizard } from './DesignWizard.tsx';
 import { DxIcon } from './DxIcon.tsx';
-import { NoteBlock } from './NoteBlock.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
 import '../../connect/connect.css';
 import './add-wizards.css';
@@ -609,23 +608,19 @@ export function AddToolWizard({
           <span className="dx-orb" data-tone={current?.key === 'ready' ? undefined : 'accent'}>
             <DxIcon name={current?.key === 'ready' ? 'check' : 'tool'} />
           </span>
-          <div className="dv3w-stack">
-            {current !== undefined ? (
-              <StatusChip tone={current.tone} word={current.word} reason={current.reason} />
-            ) : (
-              <StatusChip tone="waiting" word="Checking" reason="Not read from the board yet" />
-            )}
-            {current?.versionUnknown === true && (
-              <span className="dv3-tag dv3-tag-quiet">Version unknown</span>
-            )}
+          <div>
+            <p className="dv3w-status-word">
+              {current === undefined ? 'Checking' : `${t.name} is ${current.word}`}
+              {current?.versionUnknown === true && (
+                <span className="dv3-tag dv3-tag-quiet">Version unknown</span>
+              )}
+            </p>
+            <p className="dv3w-quiet">
+              {current?.reason ?? 'Not read from the board yet'} · on{' '}
+              {setup.device.display_name}
+            </p>
           </div>
         </div>
-        <NoteBlock title="How this is checked">
-          <p>
-            Each check passes only on a request {t.name} made with its own credential. A setting
-            alone proves nothing, so a check that has not seen one says what it is missing.
-          </p>
-        </NoteBlock>
         <Checklist tool={t} verification={verification} lines={lines} trouble={pollTrouble} />
         {current?.key !== 'ready' && (
           <Help>

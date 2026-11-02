@@ -30,6 +30,19 @@
   }
 }
 
+/* Verify & finish's head: the tool's status in words beside the orb. */
+.dv3w-status-word {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
 .dv3w-stack {
   display: flex;
   flex-direction: column;
