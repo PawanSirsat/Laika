@@ -266,12 +266,28 @@ void describe('the Project setup prompt', () => {
     );
   });
 
-  void test('the opening names the one thing besides the block it may change (LAI-1084)', () => {
+  void test('the opening names what besides the block it may change (LAI-1084, LAI-1091)', () => {
     assert.match(
       prompt,
       phrase(
-        'Only the Laika block in that file, or, with my confirmation, a hand-written Laika section, is yours to change; everything else in it belongs to the people who wrote it.',
+        'Only the Laika block in that file, or, with my confirmation, a hand-written Laika section or a Laika mention inside another section, is yours to change; everything else in it belongs to the people who wrote it.',
       ),
+    );
+  });
+
+  void test('a confirmed edit to a mention is in step 8 and the report as well (LAI-1091)', () => {
+    // The mention path asks before changing a line under another heading;
+    // step 8 and the report must not then read as if that edit were not allowed.
+    const step = between(/^8\. /m, /^9\. /m);
+    assert.match(
+      step,
+      phrase(
+        'In the file, change only the Laika block and, with my confirmation, a hand-written Laika section or a Laika mention inside another section. Change nothing else.',
+      ),
+    );
+    assert.match(
+      between(/^9\. Report in one line/m, /--- begin block ---/),
+      phrase('changed N Laika mentions inside other sections'),
     );
   });
 
@@ -355,6 +371,21 @@ void describe('the Project setup prompt', () => {
     );
   });
 
+  void test('a fold goes into the block: a no to the block folds nothing (LAI-1091)', () => {
+    // Step 6 makes each change stand alone, but a fold has nowhere to go
+    // without the block it folds into.
+    assert.match(
+      between(/^6\. /m, /^7\. /m),
+      phrase('A fold goes into the block: if I say no to the block, do not fold anything into it.'),
+    );
+    // Step 3's update, declined, leaves the old block or pre-marker section as
+    // it was: nothing is folded into it either.
+    assert.match(
+      between(/^3\. /m, /^4\. /m),
+      phrase('If I say no to the update, fold nothing into the old block or section.'),
+    );
+  });
+
   void test('lines kept below the end marker are left, never offered again (LAI-1090)', () => {
     const rules = between(/When you fold a hand-written Laika section/, /^1\. Read/m);
     assert.match(
@@ -377,6 +408,7 @@ void describe('the Project setup prompt', () => {
       'updated it from revision N',
       'replaced a hand-written Laika section',
       'folded N hand-written Laika sections into the block',
+      'changed N Laika mentions inside other sections',
       'already up to date',
       'you said no and I changed nothing',
       'If I said no to some changes and yes to others, say what you changed and what you left as it was.',

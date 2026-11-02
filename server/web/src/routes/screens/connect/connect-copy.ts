@@ -387,6 +387,11 @@ export interface ProjectSetupPromptInput {
  * **Each offered change stands alone** (LAI-1090): a no to a fold leaves the
  * block's upgrade standing, and the reverse. Lines kept below the end marker
  * stay there, and are never offered for folding on a later run.
+ *
+ * **A fold never outlives its block** (LAI-1091): a fold goes into the block,
+ * so a no to the block, or to step 3's update, folds nothing into it. A
+ * confirmed edit to a Laika mention inside another section is named where
+ * the other changes are: the opening, step 8 and the one-line report.
  */
 export function projectSetupPrompt({
   origin,
@@ -397,8 +402,9 @@ export function projectSetupPrompt({
 }: ProjectSetupPromptInput): string {
   return `Set this repository up for the Laika board (${origin}), project \`${project.slug}\`
 (${project.name}), by updating ./${path}. Only the Laika block in that file, or,
-with my confirmation, a hand-written Laika section, is yours to change;
-everything else in it belongs to the people who wrote it.
+with my confirmation, a hand-written Laika section or a Laika mention inside
+another section, is yours to change; everything else in it belongs to the
+people who wrote it.
 
 A hand-written Laika section has no Laika markers and is clearly about the
 Laika board: its heading names Laika, or it is there to say how to work the
@@ -437,7 +443,8 @@ a hand-written Laika section, so never offer them for folding again.
    edited lines inside the old block, point them out in the diff so I can
    keep them. Then offer, as a separate change with its own diff, to fold
    each hand-written Laika section elsewhere in the file into it, as in step
-   2, so I can take the update without the fold.
+   2, so I can take the update without the fold. If I say no to the update,
+   fold nothing into the old block or section.
 4. Otherwise, before you append anything, look for hand-written Laika
    sections. If you find one or more, show me each one and offer to replace
    the first with the block below and fold the others into it, each section
@@ -459,18 +466,22 @@ ${preamble}
    }
 6. Offer each change on its own: the block, and each hand-written section you
    would replace or fold in. If I say no to one, leave that one exactly as it
-   is and still make the others I confirmed. If I say no to all of them,
-   change nothing.
+   is and still make the others I confirmed. A fold goes into the block: if I
+   say no to the block, do not fold anything into it. If I say no to all of
+   them, change nothing.
 7. Copy the block exactly. It contains no token and must never gain one: do
    not add a token, key or password anywhere, and do not ask me for one.
-8. Change nothing else. Do not install, reinstall or update Laika, do not pair
+8. In the file, change only the Laika block and, with my confirmation, a
+   hand-written Laika section or a Laika mention inside another section.
+   Change nothing else. Do not install, reinstall or update Laika, do not pair
    a device, do not edit any MCP configuration, and do not commit or push: I
    will review the change myself.
 9. Report in one line: created the file, appended the block, updated it from
    revision N, replaced a hand-written Laika section, folded N hand-written
-   Laika sections into the block, already up to date, or you said no and I
-   changed nothing. If I said no to some changes and yes to others, say what
-   you changed and what you left as it was.
+   Laika sections into the block, changed N Laika mentions inside other
+   sections, already up to date, or you said no and I changed nothing. If I
+   said no to some changes and yes to others, say what you changed and what
+   you left as it was.
 
 --- begin block ---
 ${block}
