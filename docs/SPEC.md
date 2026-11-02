@@ -3196,20 +3196,25 @@ token and no grants; **more than one is `409`,
 `agent_duplicates_need_resolution`, naming every `agent_ids`, and none is
 picked.** A newer exchange for the same agent cancels its open one; at most
 **five** open exchanges per owner (`409`, `too_many_open_exchanges`). The answer
-is `{ agent, exchange, command }`, the command
-`laika tool add <harness> --exchange <id>`. **Reconnecting**
+is `{ agent, exchange, command, revokes_on_redeem }`, the command
+`laika tool add <harness> --exchange <id>`, and `revokes_on_redeem` the
+agent's tokens live now, which redeeming revokes — empty for `install`. The
+owner's agent is found by its `device_id` **or** the device's label key, so
+one whose label drifted is still the device's. **Reconnecting**
 (`POST /agents/:id/reconnect`) makes the same exchange for an existing active
 agent on its own paired device (`409`, `device_not_paired`, otherwise). The
 browser-shown rotation, `POST /agents/:id/rotate-token`, is unchanged.
 
 **Redeeming** (`POST /tool-setup/:id/redeem`) is the device's, with no actor
-of its own. Without a `signature` it answers the challenge; with one, an
+of its own. Without a `signature` it answers the challenge of an `open`
+exchange, and `409` `exchange_<state>` for any other; with one, an
 Ed25519 signature over
 `laika-tool-redeem-v1\n<id>\n<device_id>\n<challenge>\n<board origin>` by the
 device's paired key — the board's origin being `LAIKA_PUBLIC_URL`'s, `409`
 `public_url_unset` without one. An unknown id, another device's `device_id`,
-a device with no key, and an exchange whose owner may no longer
-`agent.manage_own` are one `404`. The signature is checked **before** the state
+a device with no key or another owner's, an exchange whose owner may no longer
+`agent.manage_own`, and an agent no longer the owner's on that device are one
+`404`. The signature is checked **before** the state
 is said: a bad one is `401`, `device_signature_invalid`, and counts; then `409`
 `exchange_<state>`, `device_revoked` or `agent_revoked`. **It is not D-124's
 case**, since it yields a credential: it asks `can(owner, 'agent.manage_own')`
@@ -3243,6 +3248,7 @@ Devices screen shows (plan §H), and that word is the client's to compute.
 | `protocol` | nullable — `cli`: an integer, 1 to 1000 |
 | `capabilities_json` | nullable — `cli`: a JSON list from a closed vocabulary, at most 32, sorted, once each |
 | `harness_version` | nullable — `cli`: at most 64 printable characters |
+| `harness` | nullable — `cli`: the `AGENT_CLIENTS` slug the CLI says it runs as (D-125) |
 | `client_name`, `client_slug`, `client_version` | nullable — `mcp_initialize`: `clientInfo`, cleaned as `last_client_name` is, and the slug **that name alone** gives — never the agent's harness or the token's name |
 | `reported_at` | nullable — **null while the org has presence off** (§4.2) |
 
@@ -3255,12 +3261,19 @@ token, written only when it changed or once a minute.
 owner, or the agent's own token; another agent's token is the agent `404`. Its
 checks are: `device_paired`; `credential_installed`, a live token, and whether
 its device redeemed it; `credential_used`, a live token reached the board at
-all, which a `curl` satisfies; `tool_request`, an `initialize` **on a live
-token of this agent** naming a client whose own slug is this agent's harness —
-**another tool's request, a personal token's, a rotated-away token's, a curl
-and a config file never pass it**; and `session_hooks`, a session (§4.65) on a
-live token of this agent. A client whose `clientInfo` names nothing (`mcp`,
-which Omnigent and Hermes send) never passes `tool_request`.
+all, which a `curl` satisfies; `tool_request`, the tool itself connected;
+`session_hooks`, a session (§4.65) on a live token of this agent; and
+`required_capabilities`, those its harness must report before it reads as
+Ready. **What `tool_request` takes is one table per harness**,
+`HARNESS_EVIDENCE` (D-125). For a harness whose MCP client names itself, it is
+an `initialize` **on a live token of this agent** naming a client whose own slug
+is this agent's harness. For one whose client sends a generic name (`mcp`, as
+Omnigent and Hermes do), it is an MCP request on a live token of this agent
+**plus a `cli` report from that same token** naming the harness, and it says
+`evidence: 'client_report'`. Both are self-reported. **Another tool's request,
+a personal token's, a rotated-away token's, a curl and a config file never
+pass it**, and `other` never does. While the org has presence off, every time
+this read takes from these rows is `null`, whatever is stored.
 
 ## 5. Task lifecycle
 
@@ -3373,8 +3386,9 @@ Two credentials, one resolved `Actor`:
    by SHA-256 hash, constant-time compared, rejected if revoked or expired.
    `last_used_at` updated at most once a minute. → `actor_kind: agent`.
 
-There is no third path. Webhooks authenticate by signature and act as a system
-actor with a fixed, minimal capability set (§10).
+There is no third credential. Webhooks authenticate by signature and act as a
+system actor with a fixed, minimal capability set (§10); a password-reset link
+and a tool-setup redeem are ways to a credential, below.
 
 #### Origin, and what a mismatch returns
 
@@ -3436,6 +3450,8 @@ links back off by the rule above, on their own counter: keyed on the account
 the link belongs to, and on one shared key for a link that matches nothing,
 so a `429` never says which links exist. A malformed body or a too-short
 password is not an attempt.
+
+**A paired device redeeming a tool setup is a third way to a token, not a third credential** (LAI-1056, §4.80). The owner, signed in, opens the exchange through a session-only, `can()`-checked route; `POST /tool-setup/:id/redeem` has no actor, and its authority is the device's Ed25519 signature, by the key it paired (§4.79), over the exchange id, the device id, the exchange's challenge and `LAIKA_PUBLIC_URL`'s origin, under its own `laika-tool-redeem-v1` prefix. **It is not D-124's case**, because it yields a credential: the handler asks `can(owner, 'agent.manage_own')` of the owner who made the exchange, inside the transaction that mints, so an owner deactivated since mints nothing. The token is minted only there, returned once in that answer, never stored by the idempotency store, and kept only as its hash. A redeem never authenticates the device for anything else: the token it yields is an ordinary personal access token (path 2), and every later request goes through path 2. Refusals before the signature are one `404`; bad signatures are counted per exchange and the fifth cancels it; rate limits are per exchange, so no caller can lock out another.
 
 ### 6.2 Authorisation
 
@@ -3830,13 +3846,13 @@ POST   /api/v1/devices/pairing-requests/:id/deny      body { key_fingerprint } �
 DELETE /api/v1/devices/pairing-requests/:id  cancel a live request → 204 (agent.manage_own, session only)
 POST   /api/v1/device-pairing/claim          no actor; body { code, public_key, os?, cli_version? } → { pairing_id, nonce, key_fingerprint, expires_at } (§4.79)
 POST   /api/v1/device-pairing/:id/complete   no actor; body { signature } → 200 { device_id, display_name, kind, board_origin } once, 202 { state: 'claimed' } before approval (§4.79)
-POST   /api/v1/devices/:id/tools             body { harness } → 201 { agent, exchange: { id, state, purpose, agent_id, device_id, created_at, expires_at, redeemed_at }, command }; no secret (§4.80, agent.manage_own, session only)
+POST   /api/v1/devices/:id/tools             body { harness } → 201 { agent, exchange: { id, state, purpose, agent_id, device_id, created_at, expires_at, redeemed_at }, command, revokes_on_redeem }; no secret (§4.80, agent.manage_own, session only)
 GET    /api/v1/tool-setup/:id                one own exchange, the same shape; never the challenge (agent.read_own)
 DELETE /api/v1/tool-setup/:id                cancel an open exchange → 204 (agent.manage_own, session only)
 POST   /api/v1/tool-setup/:id/redeem         the paired device; body { device_id, signature? } → 200 { challenge, expires_at } without a signature, 201 { agent, token, secret, board_origin } once with one (§4.80; can(owner, agent.manage_own))
 POST   /api/v1/agents/:id/reconnect          a rotate exchange on the agent's paired device → 201, as /devices/:id/tools (§4.80, agent.manage_own, session only)
-GET    /api/v1/agents/:id/verification       → { agent_id, harness, status, now, last_seen_at, checks: { device_paired, credential_installed, credential_used, tool_request, session_hooks }, client_report } (§4.81, agent.read_own; the owner or the agent's own token)
-POST   /api/v1/agents/me/client-report       an agent's token only; body { cli_version, cli_commit?, protocol, capabilities[], harness_version? } → the report (§4.81, heartbeat.send_own)
+GET    /api/v1/agents/:id/verification       → { agent_id, harness, status, now, last_seen_at, checks: { device_paired, credential_installed, credential_used, tool_request, session_hooks, required_capabilities }, client_report } (§4.81, agent.read_own; the owner or the agent's own token)
+POST   /api/v1/agents/me/client-report       an agent's token only; body { cli_version, cli_commit?, protocol, capabilities[], harness_version?, harness? } → the report (§4.81, heartbeat.send_own)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
