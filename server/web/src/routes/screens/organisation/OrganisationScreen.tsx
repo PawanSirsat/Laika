@@ -39,6 +39,7 @@ import { InviteDialog } from './InviteDialog.tsx';
 import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
 import { OrgActivity } from './OrgActivity.tsx';
 import { OrgPulse } from './OrgPulse.tsx';
+import { BoardBuildLine } from './BoardBuildLine.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import { useGates } from '../../../api/permissions.ts';
@@ -489,6 +490,9 @@ export function OrganisationScreen({
             )}
 
             <OrgSpaces projects={projects} onNavigate={onNavigate} />
+
+            {/* Which build this board is (LAI-1069): owners and admins only. */}
+            {(me.org_role === 'owner' || me.org_role === 'admin') && <BoardBuildLine />}
           </>
         )}
 
