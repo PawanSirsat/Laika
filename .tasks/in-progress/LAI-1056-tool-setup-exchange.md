@@ -6,8 +6,7 @@ assignee: core
 priority: p1
 depends-on: [LAI-1050]
 started: 2026-11-02T16:30:00+05:30
-status: review
-finished: 2026-11-02T17:30:00+05:30
+status: in-progress
 ---
 
 Slice C2 of `docs/proposals/LAI-1042-developer-access-v3-plan.md` (§D.2
@@ -99,8 +98,34 @@ No new activity verb (L4). No new §3.1 action (L5).
       single redeem.
 - [x] Rate limit per exchange: a flood against one exchange cannot stop
       another from redeeming.
-- [x] Evidence comes only from the agent's own credential; another tool's
+- [ ] Evidence comes only from the agent's own credential; another tool's
       request, or a personal token, does not count.
-- [x] Client report: strict schema and caps; agent token only; old clients
+- [ ] Client report: strict schema and caps; agent token only; old clients
       unaffected.
 - [x] SPEC rows for the new routes and tables.
+
+## Review notes — PR #211 round 1 (CHIEF, 2026-11-02)
+
+FAIL on one blocker; the security core passed.
+
+- **B1:** with presence off, timestamps still show. `recordMcpClientReport`'s
+  `unchanged` check skips the write when `reportedAt === null`, so a row
+  stamped while presence was on keeps its time. Gate at read time too.
+- **N1:** at redeem, re-check `agent.device_id === row.device_id` and the
+  device's owner; otherwise `404`.
+- **N2:** the `MAX_FAILED_SIGNATURES` comment should say the fifth cancels.
+- **N3:** add tool matches agents by `device_id` or by label key.
+- **N4:**
+  - an unsigned request on a non-open exchange gets `409`, not the
+    challenge;
+  - test the `device_revoked` branch;
+  - the sibling-agent verification `404` compares bodies;
+  - the rotate-on-add answer says that redeeming revokes the live tokens.
+- **Omnigent/Hermes evidence (CHIEF decision):**
+  - for a harness whose MCP client name is generic, the tool request passes
+    on an MCP request on the agent's own live token plus a client report
+    from the same token naming the harness, marked self-reported;
+  - Ready also needs that harness's required capabilities;
+  - one table per harness, with a test.
+- **Named CHIEF-area edits (D-033):** SPEC §6.1, the sentence and one
+  verbatim paragraph; `docs/DECISIONS.md` D-125.
