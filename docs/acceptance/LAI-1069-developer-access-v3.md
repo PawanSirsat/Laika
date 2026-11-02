@@ -134,3 +134,47 @@ Each server stopped by its own LISTEN pid (70310, 88367, 25063, 29927; port
 HOME (device key, tool credential, hooks file) and the scratch repository
 deleted. The seeded secrets were kept only in a `0600` scratch file, never
 printed in full, and deleted with it.
+
+## 8. Re-run after LAI-1070, LAI-1071, LAI-1072 (2026-11-02)
+
+Run 2026-11-02 between 02:41:15 and 02:41:49 UTC (the final server's first
+and last log lines) on **Belka**, on branch `LAI-1070-walkthrough-defects` at
+`a9f723a0`. It covers the steps above that were **NOT AVAILABLE** or
+**UNVERIFIED** and can now run, and the three fixes. Production, `localhost:3000` and the real `~/.laika` /
+`~/.claude` were not touched.
+
+| Item | Value |
+| --- | --- |
+| Builds | `pnpm run build` in `server/web`, `server` and `cli`, each exit 0 |
+| Server | `node dist/index.js` on `127.0.0.1:3471`, `NODE_ENV=production`, `LAIKA_DEVELOPER_ACCESS=v3`, `LAIKA_PUBLIC_URL=http://127.0.0.1:3471`, `LAIKA_BUILD_COMMIT=a9f723a0…`, its own fresh `LAIKA_DATA_DIR` / `LAIKA_DB_PATH` in a scratch directory |
+| Port check | `lsof -ti tcp:3471 -sTCP:LISTEN` empty before start; first `GET /api/v1/health` `uptime_ms` 1014 at 1 s, `build_commit` `a9f723a0…`; LISTEN pid 14902. (Two earlier starts, pids 66537 and 8829, were stopped and their DBs deleted after the driving script failed on its own bugs — a wrong pairing path, then an empty-body parse — before any finding.) |
+| Helper | `node cli/dist/index.js`, every run with `env` reduced to `PATH`, `HOME=<throwaway>`, `SHELL` |
+| Driver | one Playwright (Chromium) script: the browser session's own API calls for set-up, pairing, add tool, grant and disconnect; the real CLI for `device pair`, `tool add`, `project check`, `doctor`, `update --check`; screenshots at 1440 × 900 and 390 × 844, light and dark, every one `scrollWidth − clientWidth = 0` |
+| Evidence | `.polly/evidence/V3-walkthrough/` in the main checkout: `12-`…`16-*.png` (20 files) and `text/rerun-*.out`. No file there contains a token (`grep 'lai_[A-Za-z0-9]\{6,\}'`: none) |
+
+| # | Step | Command / call | Result | Evidence |
+| --- | --- | --- | --- | --- |
+| R1 | Set-up | `POST /api/v1/setup` → **201**; sign-in → **200** | **PASS** | — |
+| R2 | Overview first run, *Next: Add a device* (LAI-1071) | browser | **PASS** — *"Pair the computer you work on with this board. It becomes your first device; you add its coding tools next."* | `12-overview-add-device-copy-*` |
+| R3 | Pair `Walkbook` | `laika device pair --board http://127.0.0.1:3471 --code <code>`; approve with the claimed fingerprint | **PASS** — CLI **exit 0**, approve **200** | `text/rerun-pair.out` |
+| R4 | Add Claude Code | `POST /devices/:id/tools` **201**; `laika tool add claude-code --exchange <id>` | **PASS**, **exit 0** | `text/rerun-tooladd.out` |
+| R5 | **Claude Code's MCP entry now exists** (LAI-1072; §4's open question) | read `~/.claude.json` | **PASS** — `mcpServers.laika` = `{type: "http", url: "http://127.0.0.1:3471/mcp", headersHelper: <reads ~/.laika/agents/claude-code.json>}`; no token in the file; `~/.laika/env` never created | `text/rerun-claude-json.txt` |
+| R6 | That entry works, on the tool's credential | run its `headersHelper` with `/bin/sh` from `~/.claude`, then `POST /mcp` `initialize` and `tools/call laika_whoami` with that header | **PASS** — **200** (`serverInfo.name` `laika`), **200**, names the tool's own agent | — |
+| R7 | `tool add`'s closing line (LAI-1072) | stdout of R4 | **PASS** — *"the browser ticks "Claude Code connected""*; no *Tool request seen* | `text/rerun-tooladd.out` |
+| R8 | `laika doctor` sees the entry | `laika doctor` | **PASS**, **exit 0** — `mcp entries  a laika MCP entry for claude-code` | `text/rerun-doctor-after-tooladd.out` |
+| 12b | `laika project check` (#221) | grant Rocket read only (`PUT /agents/:id/grants` **200**); scratch git repo whose `CLAUDE.md` holds *"# Rocket … Our own notes. Keep these."* and the revision-2 block; `laika project check --dir <repo> --project rocket` | **PASS**, **exit 0**; Project setup shows *"Checked by laika project check on Walkbook"* | `text/rerun-project-check.out`, `13-project-setup-checked-*` |
+| 17 | Update status (#218) | Devices tool row; `laika update --check` | **PASS** — row: *"Helper Up to date · Runs the helper this board offers, a9f723a · Reported: laika 0.1.0 · a9f723a · protocol 2, just now · What's new"* (no *Version unknown*); CLI **exit 0**, *"Up to date: this checkout is the board's own commit"* | `14-devices-update-status-*`, `text/rerun-update-check.out` |
+| R9 | Reconnect's rail (LAI-1071) | tool ⋯ → *Reconnect (new credential)…* | **PASS** — step 1 `done`: *"✓ Step 1: Choose the tool · Claude Code · Walkbook"* | `15-reconnect-rail-*` |
+| R10 | Reconnect through the MCP entry | `laika tool add claude-code --exchange <rotate id>` | **PASS**, **exit 0** — `~/.claude.json` byte-identical; MCP through the entry **200**; the old header **401** | `text/rerun-reconnect.out` |
+| R11 | Disconnect the only tool → Devices (LAI-1070; was 13d **FAIL**) | `POST /agents/:id/revoke` **200**; reload Devices | **PASS** — *Walkbook · Local · Paired*, *"No tools yet — Add a tool"*, *1 device · 0 tools*, no *"Every device and tool of yours is revoked"*; *Add a tool* opens `?add=tool&device=<Walkbook>` | `16-devices-paired-no-tools-*` |
+| R12 | `laika doctor` on the disconnected V3 tool (LAI-1072) | `laika doctor` | **PASS**, **exit 1** (correct: one ACTION) — *"the board refused it (revoked or expired): reconnect it in the browser (Developer access → Devices → ⋯ → Reconnect) and run the laika tool add command it shows"* | `text/rerun-doctor-after-disconnect.out` |
+
+**Still not verified.** A real Claude Code process reading the entry (R6
+replays its `headersHelper` and its requests exactly, but no `claude` was
+started), hook-driven sessions and claims, every other harness, the cloud
+path, and keyboard-only paths — §4's rows other than *project check*,
+*update status* and the MCP-entry question stand.
+
+**Clean-up.** The server stopped by its LISTEN pid 14902 (port 3471 free
+after); its DB directory, the throwaway HOME (device key, tool credential and
+its `.bak`, `~/.claude.json`, hooks) and the scratch repository deleted.
