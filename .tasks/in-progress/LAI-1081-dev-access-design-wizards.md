@@ -2,11 +2,12 @@
 id: LAI-1081
 title: 'Developer access design: Add device and Add tool wizards in the design shell'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: [LAI-1078, LAI-1080]
 discovered-from: LAI-1075
-status: backlog
+status: in-progress
+started: 2026-11-02T11:07:36+05:30
 ---
 
 ## Why
@@ -34,3 +35,7 @@ Today they render above the device list with a bare rail and no footer band.
 ## Notes
 
 - SHELL, `server/web/` only. PR into `integration-dev-access-design`.
+- Claimed before LAI-1080 is accepted, deliberately (CHIEF, §2 step 1): the
+  wizards' own bodies do not depend on it; where they mount (Devices for Add
+  device, Tools for Add tool) is LAI-1080's, and this slice merges it before
+  it changes the mounting.
