@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type Database from 'better-sqlite3';
+import { AGENT_CLIENTS } from '../../auth/agent-clients.ts';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import {
@@ -127,6 +128,8 @@ const ClientReportBody = strictObject({
   protocol: z.number().int().min(1).max(1000),
   capabilities: z.array(z.enum(CLIENT_CAPABILITIES)).max(MAX_CAPABILITIES),
   harness_version: VersionString.optional(),
+  /** What the CLI says it runs as (D-125); self-reported, a known slug only. */
+  harness: z.enum(AGENT_CLIENTS).optional(),
 });
 
 /** `GET /agents/:id/project-access` (§6.4, LAI-1052): one project, by slug. */
@@ -246,6 +249,7 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
         protocol: body.protocol,
         capabilities: body.capabilities,
         harnessVersion: body.harness_version,
+        harness: body.harness,
       }),
     );
   });

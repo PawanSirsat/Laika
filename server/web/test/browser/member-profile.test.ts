@@ -682,6 +682,8 @@ void describe('the agents card, with who is online in it', () => {
     try {
       const agents = await section(h.page, 'agents');
       assert.match(await agents.locator('.prof-card-title').innerText(), /3 types/);
+      // *Tools used*, not *Agents used* (LAI-1058, plan §B.7).
+      assert.match(await agents.locator('.prof-card-title').innerText(), /^Tools used · /i);
 
       const parts = agents.locator('.prof-share-part');
       assert.deepEqual(

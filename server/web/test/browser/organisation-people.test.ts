@@ -201,6 +201,11 @@ void describe('the People tab (LAI-893)', () => {
               `${el.getAttribute('data-people-filter') ?? ''}=${(el.textContent ?? '').replace(/\s+/g, ' ').trim()}`,
           ),
         );
+      // *Tools running*: it is presence, not registered agents (LAI-1058).
+      assert.deepEqual(
+        (await h.page.getByRole('columnheader').allTextContents()).map((t) => t.trim()),
+        ['', 'Person', 'Role', 'Spaces', 'Tools running', 'Last active', 'Last sign-in', 'Actions'],
+      );
       assert.deepEqual(filters, [
         'all=All 5',
         'owner=Owner 1',

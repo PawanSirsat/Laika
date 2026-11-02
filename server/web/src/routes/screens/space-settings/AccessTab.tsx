@@ -2,12 +2,16 @@ import { useState } from 'react';
 import { Switch } from '../../../components/Switch.tsx';
 import type { Project } from '../../../api/projects.ts';
 import { updateSpace, type SpaceSettingsPatch } from '../../../api/space-settings.ts';
+import { useDeveloperAccessMode } from '../../../api/developer-compat.ts';
+import { projectSetupLink } from '../../page-tabs.ts';
 
 export interface AccessTabProps {
   readonly project: Project;
   readonly orgName: string | undefined;
   readonly mayEdit: boolean;
   readonly onSaved: (project: Project) => void;
+  /** In-app navigation for the Developer access link; absent, it is a plain link. */
+  readonly onNavigate?: ((to: string) => void) | undefined;
 }
 
 /** Which control a save, or its refusal, belongs to. */
@@ -22,7 +26,9 @@ type Setting = 'visibility' | 'task_create_min_role' | 'agents_allowed';
  * setting (item 8): it is drawn on and locked, with the reason. *Join without
  * approval* is not drawn at all until LAI-980.
  */
-export function AccessTab({ project, orgName, mayEdit, onSaved }: AccessTabProps) {
+export function AccessTab({ project, orgName, mayEdit, onSaved, onNavigate }: AccessTabProps) {
+  // The tab the link names, and whether per-tool grants live there (LAI-1058).
+  const setup = projectSetupLink(useDeveloperAccessMode());
   const [pending, setPending] = useState<Setting | undefined>(undefined);
   const [failed, setFailed] = useState<{ readonly setting: Setting; readonly message: string }>();
   const [confirmingPublic, setConfirmingPublic] = useState(false);
@@ -197,10 +203,30 @@ export function AccessTab({ project, orgName, mayEdit, onSaved }: AccessTabProps
         <div className="ss-row">
           <div className="ss-row-label">
             <span className="ss-label" id="ss-agents-label">
-              Agent sessions
+              Coding tools may work here
             </span>
+            {/* The switch narrows **every** token to reads here — a personal
+                credential for scripts too (`agentsMay`, D-103 item 7). Per-tool
+                grants are named only where V3 sets them (LAI-1058). */}
             <p className="ss-help" id="ss-agents-help">
-              Agents can open sessions and claim tasks in this space.
+              Coding tools can open sessions and claim tasks in this space. While this is off, any
+              token — including a personal credential for scripts — can read but not change anything
+              here.{' '}
+              {setup.perTool
+                ? 'Each registered tool also needs its own project access — set in '
+                : 'To point a tool at this space’s repository, see '}
+              <a
+                href={setup.href}
+                onClick={(event) => {
+                  if (onNavigate === undefined) return;
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  onNavigate(setup.href);
+                }}
+              >
+                {setup.label}
+              </a>
+              .
             </p>
           </div>
           <div className="ss-row-field ss-row-field-end">

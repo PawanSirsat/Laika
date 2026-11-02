@@ -10,6 +10,7 @@ import { ShareActivity } from '../connect/ShareActivity.tsx';
 import { TokensScreen } from '../tokens/TokensScreen.tsx';
 import { AgentsTab } from './AgentsTab.tsx';
 import { ProjectsTab } from './ProjectsTab.tsx';
+import { AdvancedTab } from './v3/AdvancedTab.tsx';
 import { DevicesTab } from './v3/DevicesTab.tsx';
 import { OverviewTab } from './v3/OverviewTab.tsx';
 import { ProjectSetupTab } from './v3/ProjectSetupTab.tsx';
@@ -67,8 +68,10 @@ export interface DeveloperScreenProps {
  *
  * `projects` and `activity` are one id in every mode, so they render the same
  * content everywhere: Project setup re-hosts Projects, Activity moves as is.
- * Devices re-hosts Agents and Advanced re-hosts Tokens — their redesigns are
- * later slices (plan §J D2–D5).
+ * Devices re-hosts Agents — its redesign is slices D3 and D4. Advanced is
+ * the reader's personal credentials only (LAI-1058, `v3/AdvancedTab.tsx`);
+ * in `v3` Activity says *Once per device* and points at Project setup, its
+ * rules, scope and history unchanged.
  */
 export function DeveloperScreen({
   mode,
@@ -82,7 +85,6 @@ export function DeveloperScreen({
 }: DeveloperScreenProps) {
   const gates = useGates(me !== undefined);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
-  const [advancedSlot, setAdvancedSlot] = useState<HTMLElement | null>(null);
   const v3Here = mode === 'v3' || (mode === 'preview' && isV3OnlyTab(current));
   const preview = mode === 'preview';
   const go = (to: string) => (event: MouseEvent<HTMLAnchorElement>) => {
@@ -173,16 +175,7 @@ export function DeveloperScreen({
       {current === 'advanced' && (
         <div className="dev-body">
           <div className="dev-card dev-tokens dev-advanced">
-            <div className="dev-advanced-head">
-              <p className="dev-advanced-intro">
-                Personal tokens, for scripts and the API. A token carries your permissions, so treat
-                it like your password.
-              </p>
-              <div className="dev-advanced-actions" ref={setAdvancedSlot} />
-            </div>
-            <EmbeddedScreen slot={advancedSlot} titled>
-              <TokensScreen me={me} />
-            </EmbeddedScreen>
+            <AdvancedTab me={me} onNavigate={onNavigate} />
           </div>
         </div>
       )}
@@ -216,11 +209,14 @@ export function DeveloperScreen({
               <h2 className="dev-card-title" id="dev-sharing-title">
                 Share local activity
               </h2>
-              <span className="conn-chip conn-chip-scope">Once per machine</span>
+              <span className="conn-chip conn-chip-scope">
+                {mode === 'v3' ? 'Once per device' : 'Once per machine'}
+              </span>
             </div>
             <ShareActivity
               canSetInsights={gates.org('org.developer_insights.set')}
               origin={origin}
+              {...(mode === 'v3' ? { setupTabName: 'Project setup' } : {})}
             />
           </section>
         </div>

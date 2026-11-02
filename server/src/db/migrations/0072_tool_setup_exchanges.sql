@@ -7,6 +7,7 @@ CREATE TABLE `agent_client_reports` (
 	`protocol` integer,
 	`capabilities_json` text,
 	`harness_version` text,
+	`harness` text,
 	`client_name` text,
 	`client_slug` text,
 	`client_version` text,

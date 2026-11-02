@@ -14,6 +14,7 @@ import { deviceLabelKey } from '../db/device-label.ts';
 import { type ToolSetupPurpose, type ToolSetupState } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
+import { presenceEnabled } from '../db/orgs.ts';
 import {
   agentClientReports,
   agentSessions,
@@ -35,6 +36,7 @@ import {
   type AgentView,
 } from './agents.ts';
 import { registeredAgent } from './claims.ts';
+import { harnessEvidence, type McpClientNaming } from './harness-evidence.ts';
 import { insertToken, revokeTokenRow, type TokenView } from './tokens.ts';
 
 /**
@@ -71,7 +73,7 @@ import { insertToken, revokeTokenRow, type TokenView } from './tokens.ts';
 export const EXCHANGE_TTL_MS = 10 * 60_000;
 /** Open exchanges an owner may hold at once. */
 export const MAX_OPEN_EXCHANGES = 5;
-/** Bad signatures an exchange survives; the next one cancels it. */
+/** The bad signature that cancels an exchange: the fifth. */
 export const MAX_FAILED_SIGNATURES = 5;
 
 const NOT_FOUND = 'No such tool setup';
@@ -98,6 +100,12 @@ export interface CreatedToolSetupView {
   exchange: ToolSetupView;
   /** What the owner runs on the device. **No secret is in it.** */
   command: string;
+  /**
+   * The agent's tokens live now, which **redeeming revokes** (PR #211 review,
+   * N4): a `rotate` replaces the tool's current credential, and the screen
+   * says so before the owner copies the command. Empty for `install`.
+   */
+  revokes_on_redeem: string[];
 }
 
 export interface ToolRedeemView {
@@ -222,6 +230,7 @@ function created(
     agent: agentView(db, agent),
     exchange: view(exchange, now),
     command: `laika tool add ${agent.harness} --exchange ${exchange.id}`,
+    revokes_on_redeem: liveTokens(db, agent.id, now).map((token) => token.id),
   };
 }
 
@@ -272,7 +281,11 @@ export function addToolToDevice(
       )
       .orderBy(desc(agents.createdAt), desc(agents.id))
       .all()
-      .filter((row) => deviceLabelKey(row.deviceLabel) === device.labelKey);
+      // By the link or by the label (PR #211 review, N3): an agent linked to
+      // this device whose label has drifted is still the device's.
+      .filter(
+        (row) => row.deviceId === device.id || deviceLabelKey(row.deviceLabel) === device.labelKey,
+      );
     if (holders.length > 1) {
       throw conflict(
         `You have ${String(holders.length)} active ${harness} agents on this device; keep one before adding it`,
@@ -382,8 +395,9 @@ export interface RedeemInput {
  * the owner is asked again, then the token is minted, the agent's live
  * tokens revoked and the exchange marked redeemed, all in one transaction.
  *
- * An unknown id, another device's id, an unpaired device, and an exchange
- * whose owner may no longer manage agents are one `404`.
+ * An unknown id, another device's id, an unpaired device, an exchange whose
+ * owner may no longer manage agents, and — before a signature — one that is
+ * no longer open are one `404`.
  */
 export function redeemToolSetup(
   sqlite: Database.Database,
@@ -400,7 +414,9 @@ export function redeemToolSetup(
     if (row?.deviceId !== input.deviceId) throw ApiError.notFound(NOT_FOUND);
     const device = db.select().from(devices).where(eq(devices.id, row.deviceId)).get();
     const key = device?.publicKey == null ? null : parseDevicePublicKey(device.publicKey);
-    if (device === undefined || key === null) throw ApiError.notFound(NOT_FOUND);
+    if (device === undefined || key === null || device.ownerUserId !== row.ownerUserId) {
+      throw ApiError.notFound(NOT_FOUND);
+    }
 
     // The owner, asked again at redeem: whatever has changed since they made
     // the exchange is what decides now.
@@ -408,6 +424,10 @@ export function redeemToolSetup(
     if (owner === null || !can(owner, 'agent.manage_own')) throw ApiError.notFound(NOT_FOUND);
 
     if (input.signature === undefined) {
+      // A spent, expired or withdrawn exchange has no challenge to give
+      // (N4), and before a signature it is the same 404 as no exchange
+      // (§6.1): an unproven caller learns nothing of its state.
+      if (effectiveState(row, now) !== 'open') throw ApiError.notFound(NOT_FOUND);
       return { kind: 'challenge', challenge: row.challenge, expires_at: row.expiresAt };
     }
 
@@ -433,7 +453,12 @@ export function redeemToolSetup(
     if (device.status !== 'active') throw conflict('That device is revoked', 'device_revoked');
 
     const agent = db.select().from(agents).where(eq(agents.id, row.agentId)).get();
-    if (agent?.status !== 'active' || agent.ownerUserId !== row.ownerUserId) {
+    // The agent must still be the owner's, on this device (N1): one moved to
+    // another device since mints nothing here.
+    if (agent?.ownerUserId !== row.ownerUserId || agent.deviceId !== row.deviceId) {
+      throw ApiError.notFound(NOT_FOUND);
+    }
+    if (agent.status !== 'active') {
       throw conflict('This agent is revoked; add the tool again', 'agent_revoked');
     }
 
@@ -526,15 +551,23 @@ export interface AgentVerificationView {
     /** A live token has reached the board at all — a `curl` counts here, and only here. */
     credential_used: VerificationCheck;
     /**
-     * An MCP `initialize` on a live token of **this** agent, naming a client
-     * whose own slug is this agent's harness. Another tool's name fails it.
+     * The tool itself connected, as `HARNESS_EVIDENCE` reads it (D-125): an
+     * MCP `initialize` on a live token of **this** agent naming this harness,
+     * or — for a harness whose MCP client name is generic — one on a live
+     * token plus a CLI report **from that same token** naming the harness.
+     * Another tool's name fails it.
      */
     tool_request: VerificationCheck<{
+      /** What the evidence is: the MCP client's own name, or the CLI's report. */
+      evidence: 'client_info' | 'client_report' | null;
+      mcp_client_name: McpClientNaming;
       client_slug: string | null;
       client_name: string | null;
       client_version: string | null;
       self_reported: true;
     }>;
+    /** The capabilities this harness must report before it reads as Ready (D-125). */
+    required_capabilities: VerificationCheck<{ required: string[]; missing: string[] }>;
     /** A session this agent opened (§4.65): what its hooks start. */
     session_hooks: VerificationCheck<{ harness: string | null }>;
   };
@@ -545,6 +578,8 @@ export interface AgentVerificationView {
     protocol: number | null;
     capabilities: string[];
     harness_version: string | null;
+    harness: string | null;
+    /** Null while the org has presence off (§4.2), whatever was stored. */
     reported_at: number | null;
     self_reported: true;
   } | null;
@@ -608,8 +643,29 @@ export function getAgentVerification(
   const cli = reports.find((r) => r.source === 'cli');
   // From a live credential of this agent only: a rotated-away token's word
   // says nothing about the credential the tool holds now.
-  const mcpTokenId = mcp?.tokenId;
-  const mcpLive = mcp !== undefined && mcpTokenId != null && liveIds.includes(mcpTokenId);
+  const isLive = (tokenId: string | null | undefined): tokenId is string =>
+    tokenId != null && liveIds.includes(tokenId);
+  const mcpLive = mcp !== undefined && isLive(mcp.tokenId);
+  const cliLive = cli !== undefined && isLive(cli.tokenId);
+  const rule = harnessEvidence(agent.harness);
+  let evidence: 'client_info' | 'client_report' | null = null;
+  if (mcpLive && rule.mcp_client_name === 'specific' && mcp.clientSlug === agent.harness) {
+    evidence = 'client_info';
+  } else if (
+    mcpLive &&
+    cliLive &&
+    rule.mcp_client_name === 'generic' &&
+    cli.tokenId === mcp.tokenId &&
+    cli.harness === agent.harness
+  ) {
+    evidence = 'client_report';
+  }
+  const reported = cliLive ? parseCapabilities(cli.capabilitiesJson) : [];
+  const required = [...rule.required_capabilities];
+  const missing = required.filter((cap) => !reported.includes(cap));
+  // Presence off is read here too (B1): a time stored while it was on is
+  // never shown while it is off.
+  const presence = presenceEnabled(db);
 
   const session =
     liveIds.length === 0
@@ -644,9 +700,11 @@ export function getAgentVerification(
         detail: null,
       },
       tool_request: {
-        state: mcpLive && mcp.clientSlug === agent.harness ? 'pass' : 'fail',
-        at: mcpLive ? mcp.reportedAt : null,
+        state: evidence === null ? 'fail' : 'pass',
+        at: mcpLive && presence ? mcp.reportedAt : null,
         detail: {
+          evidence,
+          mcp_client_name: rule.mcp_client_name,
           client_slug: mcpLive ? mcp.clientSlug : null,
           client_name: mcpLive ? mcp.clientName : null,
           client_version: mcpLive ? mcp.clientVersion : null,
@@ -658,6 +716,11 @@ export function getAgentVerification(
         at: session?.startedAt ?? null,
         detail: { harness: session?.harness ?? null },
       },
+      required_capabilities: {
+        state: missing.length === 0 ? 'pass' : 'fail',
+        at: null,
+        detail: { required, missing },
+      },
     },
     client_report:
       cli === undefined
@@ -668,7 +731,8 @@ export function getAgentVerification(
             protocol: cli.protocol,
             capabilities: parseCapabilities(cli.capabilitiesJson),
             harness_version: cli.harnessVersion,
-            reported_at: cli.reportedAt,
+            harness: cli.harness,
+            reported_at: presence ? cli.reportedAt : null,
             self_reported: true,
           },
   };

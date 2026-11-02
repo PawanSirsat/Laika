@@ -401,6 +401,12 @@
   color: var(--text-muted);
 }
 
+/* Into Developer access (LAI-1058). */
+.org-fact-link {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
 .org-fact-error {
   font-size: var(--text-small);
   color: var(--overdue);
