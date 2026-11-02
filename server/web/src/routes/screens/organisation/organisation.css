@@ -401,6 +401,18 @@
   color: var(--text-muted);
 }
 
+/* The board's build, a quiet line at the foot of Overview (LAI-1069). */
+.org-board-build {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.org-board-build-value {
+  font-family: var(--font-mono);
+}
+
 /* Into Developer access (LAI-1058). */
 .org-fact-link {
   color: var(--accent);
