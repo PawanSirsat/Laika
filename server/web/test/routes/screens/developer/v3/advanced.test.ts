@@ -140,9 +140,12 @@ void describe('links into Developer access from outside it (plan §B.7)', () => 
     }
   });
 
-  void test('activity is one id in every mode', () => {
-    for (const mode of ['classic', 'preview', 'v3'] as const) {
+  void test('the activity link is the Activity tab in classic and preview, Advanced’s card in v3', () => {
+    for (const mode of ['classic', 'preview'] as const) {
       assert.equal(land(mode, DEVELOPER_ACTIVITY_HREF).get('tab'), 'activity', mode);
     }
+    const v3 = land('v3', DEVELOPER_ACTIVITY_HREF);
+    assert.equal(v3.get('tab'), 'advanced');
+    assert.equal(v3.get('section'), 'activity');
   });
 });
