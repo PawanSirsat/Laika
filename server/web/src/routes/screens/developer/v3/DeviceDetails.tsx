@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { agentHarness, type RegisteredAgent } from '../../../../api/agents.ts';
 import type { Device } from '../../../../api/devices.ts';
 import { timeLabel } from '../../../../api/time-label.ts';
@@ -77,6 +77,21 @@ export function DeviceDetails({
   restore,
 }: DeviceDetailsProps) {
   const [renaming, setRenaming] = useState<string | undefined>(undefined);
+  // A rename closed hands focus back to its *Rename…*, inside the panel, so a
+  // second Escape closes the panel rather than landing on nothing.
+  const renamed = useRef<string | undefined>(undefined);
+  const body = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (renaming !== undefined || renamed.current === undefined) return;
+    body.current
+      ?.querySelector<HTMLButtonElement>(`[data-rename-for="${CSS.escape(renamed.current)}"]`)
+      ?.focus();
+    renamed.current = undefined;
+  }, [renaming]);
+  const stopRenaming = (): void => {
+    renamed.current = renaming;
+    setRenaming(undefined);
+  };
 
   if (device === undefined) {
     return (
@@ -136,6 +151,7 @@ export function DeviceDetails({
       }
     >
       <div
+        ref={body}
         className="dv3-device-details"
         data-device={device.id}
         data-kind={device.kind}
@@ -272,11 +288,9 @@ export function DeviceDetails({
                           onSaved={(next) => {
                             onChanged(next);
                             announce(`Renamed to ${next.display_name}.`);
-                            setRenaming(undefined);
+                            stopRenaming();
                           }}
-                          onCancel={() => {
-                            setRenaming(undefined);
-                          }}
+                          onCancel={stopRenaming}
                         />
                       ) : (
                         <div className="dv3-panel-conflict-row">
@@ -287,6 +301,7 @@ export function DeviceDetails({
                               <button
                                 type="button"
                                 className="dx-btn dx-btn-sm"
+                                data-rename-for={agent.id}
                                 aria-label={`Rename ${toolLabel(device, agent)}`}
                                 onClick={() => {
                                   setRenaming(agent.id);

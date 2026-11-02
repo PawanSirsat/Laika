@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import {
   getAgent,
   liveToken,
@@ -176,7 +176,20 @@ function ToolPanel({
     if (agent.status !== 'active') retire();
   }, [agent.status, retire]);
 
+  // A form closed — saved, cancelled or Escape — hands focus back to the
+  // button that opened it, inside the panel, so a second Escape closes the
+  // panel rather than landing on nothing.
+  const accessButton = useRef<HTMLButtonElement | null>(null);
+  const renameButton = useRef<HTMLButtonElement | null>(null);
+  const closed = useRef<Form>('none');
+  useEffect(() => {
+    if (form !== 'none' || closed.current === 'none') return;
+    (closed.current === 'access' ? accessButton : renameButton).current?.focus();
+    closed.current = 'none';
+  }, [form]);
+
   const closeForm = (): void => {
+    closed.current = form;
     setForm('none');
     setError(undefined);
   };
@@ -426,6 +439,7 @@ function ToolPanel({
               {canManage && (
                 <button
                   type="button"
+                  ref={accessButton}
                   className="dx-btn dx-btn-sm dx-btn-ghost"
                   onClick={() => {
                     setForm('access');
@@ -520,6 +534,7 @@ function ToolPanel({
                 <div className="dx-actions dv3-panel-actions">
                   <button
                     type="button"
+                    ref={renameButton}
                     className="dx-btn dx-btn-sm"
                     onClick={() => {
                       setForm('rename');
