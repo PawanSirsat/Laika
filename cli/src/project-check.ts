@@ -52,20 +52,30 @@ import { planFor } from './tool-add.ts';
  * the tool.
  * With no credential, or `--offline`, it prints and records nothing; it works
  * with no network at all. **`--harness` is a request to record** (LAI-1090):
- * with no credential for that tool it records nothing and exits `2`, and it
- * says to add that tool, never to record as another one.
+ * with no credential for that tool it records nothing, and it says to add
+ * that tool, never to record as another one.
  *
  * ## Exit codes
  *
- * `0` the block is there and current (and recorded, when a credential was
- * there to record it); `1` something needs action — no block, an older
- * revision, or a block naming another project or prefix; `2` nothing needs
- * action locally but the record could not be made (the board did not answer,
- * refused, or is too old to take it; several tools are set up here and no
- * `--harness` says which; or `--harness` names a tool with no credential
- * here, whether or not another tool has one); `64` the command line itself
- * was wrong (`EX_USAGE`, as `laika doctor`). A run with no `--harness` and no
- * credential at all only prints, and exits `0`.
+ * The first that applies (LAI-1091; `cli/README.md` and {@link USAGE} say the
+ * same, and `project-check.test.ts` holds the three to it):
+ *
+ * - `64` the command line was wrong. It is `EX_USAGE`, as in `laika doctor`.
+ * - `1` the block needs action: missing, an older revision, or naming another
+ *   project or prefix. Whatever else is true, --offline included.
+ * - `2` nothing needs action, but the record was not made: --harness names a
+ *   tool with no credential here, or no project is named; several tools are
+ *   set up here and no --harness picks one; the credential's board URL is not
+ *   a plain address; or the board did not answer, refused, or is too old to
+ *   take it.
+ * - `0` nothing needs action, and the check was recorded or only printed:
+ *   --offline; or no --harness, and no credential here or no project named.
+ *
+ * So: a current block, no credential and no --harness prints and exits 0; a
+ * missing or old block exits 1 whatever else is true; --harness X with no
+ * credential for X exits 2, unless --offline (0) or the block needs action
+ * (1). Whether a record can be made is decided before whether a project is
+ * named, so the order of the checks never turns a `2` into a `0`.
  */
 
 /** The instructions template revision this CLI knows (`connect-copy.ts`'s `PROJECT_BLOCK_REVISION`). */
@@ -269,10 +279,24 @@ export const USAGE = [
   '',
   'Reads the instructions files and changes none of them. With a tool’s own',
   'credential on this machine it records what it found on the board (no file',
-  'contents, no local path); otherwise it only prints. With --harness and no',
-  'credential for that tool, it records nothing and exits 2.',
+  'contents, no local path); otherwise it only prints.',
   '',
-  'Exit: 0 current, 1 needs action, 2 could not record, 64 usage.',
+  'Exit: 0 current, 1 needs action, 2 could not record, 64 usage. The first',
+  'that applies:',
+  '  64  the command line was wrong.',
+  '  1   the block needs action: missing, an older revision, or naming another',
+  '      project or prefix. Whatever else is true, --offline included.',
+  '  2   nothing needs action, but the record was not made: --harness names a',
+  '      tool with no credential here, or no project is named; several tools',
+  '      are set up here and no --harness picks one; the credential’s board',
+  '      URL is not a plain address; or the board did not answer, refused, or',
+  '      is too old to take it.',
+  '  0   nothing needs action, and the check was recorded or only printed:',
+  '      --offline; or no --harness, and no credential here or no project',
+  '      named.',
+  'So: a current block, no credential and no --harness prints and exits 0; a',
+  'missing or old block exits 1 whatever else is true; --harness X with no',
+  'credential for X exits 2, unless --offline (0) or the block needs action (1).',
 ].join('\n');
 
 interface Args {
@@ -423,12 +447,15 @@ export interface RecordedSetup {
  * `--harness <tool>` with no credential for it (LAI-1090). Adding that tool
  * comes first; the tools already set up here are named after it, and only as
  * a fact: the reader picked this tool, so recording as another is not offered.
- * A tool `laika tool add` refuses is not sent there.
+ * A tool `laika tool add` refuses is not sent there. It is told what
+ * {@link readCredential} would take instead, and only that (LAI-1091): the
+ * tool's own agent token in the file `laika agent login` saves, or in
+ * `LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL`.
  */
 function notHereWords(harness: Harness, others: readonly Harness[]): string {
   const add =
     planFor(harness).kind === 'refused'
-      ? `laika tool add cannot set up ${harness}, so this check cannot record for it`
+      ? `laika tool add cannot set up ${harness}; this check records for it only with ${harness}'s own agent token, saved by laika agent login ${harness} or set as LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL`
       : `add ${harness} first: on the board, Developer access → Tools → Add tool gives the laika tool add ${harness} command to run here`;
   const also = others.length === 0 ? '' : ` (other tools set up here: ${others.join(', ')})`;
   return `no credential for ${harness} on this machine — nothing recorded; ${add}${also}`;
@@ -529,12 +556,9 @@ export async function projectCheck(
   let outcome: RecordOutcome;
   if (args.offline) {
     outcome = { kind: 'skipped', why: '--offline: nothing recorded' };
-  } else if (slug === undefined) {
-    outcome = {
-      kind: 'skipped',
-      why: 'no project named — pass --project <slug> to record this check',
-    };
   } else {
+    // Whether a record can be made comes before whether a project is named
+    // (LAI-1091): a credential problem is a `2` with or without --project.
     const choice = chooseCredential(io, args.harness);
     if (choice.kind === 'none') {
       outcome = {
@@ -552,6 +576,11 @@ export async function projectCheck(
         kind: 'failed',
         why: `several tools are set up here (${choice.harnesses.join(', ')}) — pass --harness to record`,
       };
+    } else if (slug === undefined) {
+      // A credential, but no project to record against. --harness asked for
+      // the record, so not making it is a `2`; a bare run only prints.
+      const why = 'no project named — pass --project <slug> to record this check';
+      outcome = args.harness === undefined ? { kind: 'skipped', why } : { kind: 'failed', why };
     } else if (urlProblem(choice.credential.url) !== undefined) {
       outcome = {
         kind: 'failed',

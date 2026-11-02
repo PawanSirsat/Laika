@@ -38,6 +38,7 @@ import {
   normaliseRemote,
   PROJECT_BLOCK_REVISION,
   projectCheck,
+  USAGE,
 } from '../src/project-check.ts';
 
 const AGENT_TOKEN = 'lai_AGENTPLANTEDSECRET0123456789abcdef';
@@ -48,6 +49,9 @@ const BOARD = 'http://board.test';
 
 const marked = (revision: number, slug: string, prefix: string) =>
   `# Notes\n\n${PRIVATE}\n\n<!-- laika:begin revision=${String(revision)} project=${slug} -->\n## Laika\n\nThis project is tracked on a Laika board. Mirror work onto it.\n\nTask keys look like \`${prefix}-42\`.\n${BLOCK_END}\n\n## After\n\nmore\n`;
+
+/** A current marked block whose begin marker names no project: nothing needs action, no slug. */
+const unnamed = `# Notes\n\n${PRIVATE}\n\n<!-- laika:begin revision=2 -->\n## Laika\n\nThis project is tracked on a Laika board.\n${BLOCK_END}\n`;
 
 const legacy = (prefix: string) =>
   `# Notes\n\n${PRIVATE}\n\n## Laika\n\nThis project is tracked on a Laika board. Mirror work onto it as you go.\n\nTask keys look like \`${prefix}-42\`.\n\n## After\n\nmore\n`;
@@ -645,6 +649,79 @@ void describe('laika project check', () => {
     assert.doesNotMatch(r.out, /laika tool add antigravity/);
   });
 
+  void test('a refused tool is told what would record for it, word for word as the README (LAI-1091)', async () => {
+    // "so this check cannot record for it" was not true: readCredential takes
+    // the tool's own file, or LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL.
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run(['--harness', 'antigravity'], { cwd: dir });
+    assert.equal(r.code, 2, r.out);
+    assert.doesNotMatch(r.out, /cannot record for it/);
+    const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
+    const at = readme.indexOf('For a tool `laika tool add` refuses');
+    assert.ok(at !== -1, 'the README no longer documents the refused-tool wording');
+    const quoted = /```\n(.+)\n```/.exec(readme.slice(at))?.[1];
+    assert.ok(quoted?.startsWith('no credential for antigravity'), String(quoted));
+    assert.ok(
+      r.out.split('\n').includes(`  · ${quoted ?? ''}`),
+      `the CLI printed:\n${r.out}\nthe README quotes:\n${quoted ?? ''}`,
+    );
+  });
+
+  void test('what the refused-tool words say is true: LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL records (LAI-1091)', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run(['--harness', 'antigravity'], {
+      cwd: dir,
+      env: { LAIKA_AGENT_TOKEN: AGENT_TOKEN, LAIKA_AGENT_URL: BOARD },
+    });
+    assert.equal(r.code, 0, r.out);
+    assert.equal(r.sent.length, 1);
+    assert.equal(r.sent[0]?.auth, `Bearer ${AGENT_TOKEN}`);
+  });
+
+  void test('--harness with no credential and no project named: exit 2, whatever the order (LAI-1091)', async () => {
+    // The "no project named" check ran first and made this a 0.
+    const dir = repo({ 'CLAUDE.md': unnamed });
+    for (const home_ of [home(), home({ 'claude-code': BOARD })]) {
+      const r = await run(['--harness', 'codex'], { cwd: dir, home: home_ });
+      assert.equal(r.code, 2, r.out);
+      assert.equal(r.sent.length, 0);
+      assert.match(r.out, /no credential for codex on this machine — nothing recorded/);
+    }
+  });
+
+  void test('several tools here, no --harness and no project named: exit 2 (LAI-1091)', async () => {
+    const dir = repo({ 'CLAUDE.md': unnamed });
+    const r = await run([], { cwd: dir, home: home({ 'claude-code': BOARD, codex: BOARD }) });
+    assert.equal(r.code, 2, r.out);
+    assert.equal(r.sent.length, 0);
+    assert.match(r.out, /several tools are set up here \(claude-code, codex\) — pass --harness/);
+  });
+
+  void test('--harness with its credential but no project named: the record was asked for, exit 2 (LAI-1091)', async () => {
+    const dir = repo({ 'CLAUDE.md': unnamed });
+    const r = await run(['--harness', 'codex'], { cwd: dir, home: home({ codex: BOARD }) });
+    assert.equal(r.code, 2, r.out);
+    assert.equal(r.sent.length, 0);
+    assert.match(r.out, /no project named — pass --project <slug> to record this check/);
+  });
+
+  void test('no --harness and no project named: prints only, exit 0, credential or not (LAI-1091)', async () => {
+    const dir = repo({ 'CLAUDE.md': unnamed });
+    for (const home_ of [home(), home({ codex: BOARD })]) {
+      const r = await run([], { cwd: dir, home: home_ });
+      assert.equal(r.code, 0, r.out);
+      assert.equal(r.sent.length, 0);
+    }
+  });
+
+  void test('--harness with no credential: --offline is 0, a block that needs action is 1 (LAI-1091)', async () => {
+    const current = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    assert.equal((await run(['--harness', 'codex', '--offline'], { cwd: current })).code, 0);
+    const old = repo({ 'CLAUDE.md': legacy('ONR') });
+    assert.equal((await run(['--harness', 'codex'], { cwd: old })).code, 1);
+    assert.equal((await run(['--harness', 'codex', '--offline'], { cwd: old })).code, 1);
+  });
+
   void test('several tools here and --harness names one: recorded, exit 0', async () => {
     const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], {
@@ -796,6 +873,63 @@ void describe('drift: the CLI reads the block the web writes', () => {
   void test('every instructions file the CLI reads for a tool is one the web writes', () => {
     for (const [harness, path] of Object.entries(INSTRUCTIONS_FILE)) {
       assert.ok(agents.includes(`'${path}'`), `${harness}: ${path} is not in instructionsTarget`);
+    }
+  });
+});
+
+void describe('the exit codes, said the same in the comment, the usage and the README (LAI-1091)', () => {
+  /** Prose with its comment stars, list dashes, backticks and line breaks taken out. */
+  const plain = (text: string) =>
+    text
+      .replace(/^[ \t]*\* ?/gm, '')
+      .replace(/^[ \t]*- /gm, '')
+      .replace(/`/g, '')
+      .replace(/’/g, "'")
+      .replace(/\s+/g, ' ');
+  /** The text from `from` to the next `to`, both required. */
+  const section = (text: string, from: string, to: string) => {
+    const a = text.indexOf(from);
+    const b = text.indexOf(to, a + from.length);
+    assert.ok(a !== -1 && b !== -1, `${from} … ${to} not found`);
+    return plain(text.slice(a, b));
+  };
+  const source = readFileSync(
+    fileURLToPath(new URL('../src/project-check.ts', import.meta.url)),
+    'utf8',
+  );
+  const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
+  const places = {
+    comment: section(source, '## Exit codes', '*/'),
+    // The usage ends with them: from "Exit:" to its last line.
+    usage: plain(USAGE.slice(Math.max(0, USAGE.indexOf('Exit:')))),
+    readme: section(readme, 'Exit codes, the first that applies', '\n## '),
+  };
+  assert.ok(USAGE.includes('Exit:'), 'the usage text no longer has its exit codes');
+
+  // Each is behaviour the tests above pin: 64 in "usage errors are 64", 1 in
+  // the needs-action cases, 2 and 0 in the --harness, several and
+  // no-project cases.
+  const statement = [
+    '64 the command line was wrong.',
+    '1 the block needs action: missing, an older revision, or naming another project or prefix. Whatever else is true, --offline included.',
+    "2 nothing needs action, but the record was not made: --harness names a tool with no credential here, or no project is named; several tools are set up here and no --harness picks one; the credential's board URL is not a plain address; or the board did not answer, refused, or is too old to take it.",
+    '0 nothing needs action, and the check was recorded or only printed: --offline; or no --harness, and no credential here or no project named.',
+    'So: a current block, no credential and no --harness prints and exits 0; a missing or old block exits 1 whatever else is true; --harness X with no credential for X exits 2, unless --offline (0) or the block needs action (1).',
+  ];
+
+  for (const [where, text] of Object.entries(places)) {
+    void test(`${where} says each line of it`, () => {
+      for (const line of statement) assert.ok(text.includes(line), `${where} lacks: ${line}`);
+    });
+  }
+
+  void test('and none still says the broad version it replaced', () => {
+    for (const text of [source, USAGE, readme]) {
+      assert.doesNotMatch(
+        text,
+        /With --harness and no\s+credential for that tool, it records nothing and exits 2/,
+      );
+      assert.doesNotMatch(text, /whether or not another tool has one\),/);
     }
   });
 });
