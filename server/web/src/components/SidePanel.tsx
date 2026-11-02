@@ -1,0 +1,91 @@
+import { useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useDialogFocus } from './use-dialog-focus.ts';
+import './side-panel.css';
+
+export interface SidePanelProps {
+  readonly title: ReactNode;
+  /** The heading's id; the dialog is labelled by it. */
+  readonly titleId: string;
+  /** A line under the title, such as the tool's status. */
+  readonly subtitle?: ReactNode;
+  readonly onClose: () => void;
+  /** Where focus goes when the panel closes — usually the row that opened it. */
+  readonly restore?: () => HTMLElement | null | undefined;
+  /** Pinned under the scroller, for the panel's one dangerous action. */
+  readonly footer?: ReactNode;
+  /** A `data-panel` hook naming what the panel is about. */
+  readonly panel?: string;
+  readonly children: ReactNode;
+}
+
+/**
+ * Details beside a list (LAI-1078, owner decision 2026-11-02): a row stays one
+ * line, and everything it has no room for opens here — a right-hand panel on a
+ * desktop, a bottom sheet on a phone, at the width the shell's sidebar goes
+ * off-canvas (`MyDayDrawer`'s `SHEET_QUERY`).
+ *
+ * A modal: focus moves in, Tab stays inside, and closing hands focus back
+ * (`useDialogFocus`). Escape, the scrim and × close it. The page addresses it
+ * in the URL, so Back closes it too — that is the caller's, through `onClose`.
+ */
+export function SidePanel({
+  title,
+  titleId,
+  subtitle,
+  onClose,
+  restore,
+  footer,
+  panel,
+  children,
+}: SidePanelProps) {
+  const ref = useRef<HTMLElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  useDialogFocus(ref, {
+    initial: () => closeRef.current,
+    restore,
+  });
+
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+    // A control inside that uses Escape itself (an open menu) has had it first.
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    event.preventDefault();
+    onClose();
+  };
+
+  return createPortal(
+    <>
+      <div className="side-panel-scrim" aria-hidden="true" onClick={onClose} />
+      <aside
+        ref={ref}
+        className="side-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        data-panel={panel}
+        onKeyDown={onKeyDown}
+      >
+        <header className="side-panel-head">
+          <div className="side-panel-heading">
+            <h2 className="side-panel-title" id={titleId}>
+              {title}
+            </h2>
+            {subtitle !== undefined && <div className="side-panel-sub">{subtitle}</div>}
+          </div>
+          <button
+            type="button"
+            className="side-panel-close"
+            aria-label="Close details"
+            ref={closeRef}
+            onClick={onClose}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </header>
+        <div className="side-panel-body">{children}</div>
+        {footer !== undefined && <footer className="side-panel-foot">{footer}</footer>}
+      </aside>
+    </>,
+    document.body,
+  );
+}

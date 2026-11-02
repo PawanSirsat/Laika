@@ -242,7 +242,8 @@ const ROUTES: readonly {
   {
     from: '/developer?tab=activity',
     old: { url: '/developer?tab=activity', tab: 'activity' },
-    v3: { url: '/developer?tab=activity', tab: 'activity' },
+    // LAI-1078: Share local activity is Advanced's second card in v3.
+    v3: { url: '/developer?tab=advanced&section=activity', tab: 'advanced' },
   },
   {
     from: '/developer',
@@ -259,10 +260,10 @@ const ROUTES: readonly {
 void describe('every old address lands, in each mode (plan §C)', () => {
   for (const mode of ['classic', 'preview', 'v3'] as const) {
     void test(`${mode}: each row lands as a replace, the query kept`, async () => {
-      const h = await open('/developer?tab=activity', stub(mode, [agentRow({ id: 'a1' })]));
+      const h = await open('/developer?tab=projects', stub(mode, [agentRow({ id: 'a1' })]));
       try {
         // The control: an address nothing moves, opened the same way.
-        const control = await land(h, '/developer?tab=activity');
+        const control = await land(h, '/developer?tab=projects');
         for (const row of ROUTES) {
           const want = mode === 'v3' ? row.v3 : row.old;
           const got = await land(h, row.from);
@@ -278,14 +279,14 @@ void describe('every old address lands, in each mode (plan §C)', () => {
   }
 
   void test('Back from a moved address goes to the page before it, not to the old one', async () => {
-    const h = await open('/developer?tab=activity', stub('v3'));
+    const h = await open('/developer?tab=projects', stub('v3'));
     try {
       await h.page.locator('.page-tab-active').waitFor({ timeout: 20_000 });
       await land(h, '/tokens');
       assert.equal(here(h.page), '/developer?tab=advanced');
       await h.page.goBack();
       await h.page.locator('.page-tab-active').waitFor({ timeout: 20_000 });
-      assert.equal(here(h.page), '/developer?tab=activity');
+      assert.equal(here(h.page), '/developer?tab=projects');
     } finally {
       await h.close();
     }
@@ -302,13 +303,7 @@ void describe('every old address lands, in each mode (plan §C)', () => {
       const h = await open('/developer', s);
       try {
         await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
-        assert.deepEqual(await tabs(h.page), [
-          'Overview',
-          'Project setup',
-          'Devices',
-          'Activity',
-          'Advanced',
-        ]);
+        assert.deepEqual(await tabs(h.page), ['Overview', 'Project setup', 'Devices', 'Advanced']);
         assert.equal(await h.page.locator('.conn-wizard-card').count(), 0);
       } finally {
         await h.close();
@@ -354,24 +349,19 @@ void describe('the tab bars (plan §I)', () => {
     const h = await open('/developer', stub('v3'));
     try {
       await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
-      assert.deepEqual(await tabs(h.page), [
-        'Overview',
-        'Project setup',
-        'Devices',
-        'Activity',
-        'Advanced',
-      ]);
+      assert.deepEqual(await tabs(h.page), ['Overview', 'Project setup', 'Devices', 'Advanced']);
       assert.equal(await h.page.getByRole('complementary', { name: 'Preview' }).count(), 0);
-      assert.match(
+      // The owner's design's sentence (LAI-1078).
+      assert.equal(
         await h.page.locator('.screen-page-desc').innerText(),
-        /Connect your devices and coding tools/,
+        'Pair your computer once, connect your coding tools, then set up each project repository. Project setup is where work becomes connected.',
       );
     } finally {
       await h.close();
     }
   });
 
-  void test('v3: Devices lists devices; Activity and Advanced carry what they re-host; Project setup its flow', async () => {
+  void test('v3: Devices lists devices; Advanced carries credentials and activity; Project setup its flow', async () => {
     const h = await open('/developer?tab=devices', stub('v3', [agentRow({ id: 'a1' })]));
     try {
       // LAI-1054: Devices is its own list now, not the classic Agents tab.
@@ -383,10 +373,11 @@ void describe('the tab bars (plan §I)', () => {
         .getByRole('heading', { name: 'Set up a project repository' })
         .waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.dev-projects-body').count(), 1);
-      await h.page.locator('.page-tab[data-tab="activity"]').click();
-      await h.page.locator('.dev-sharing').waitFor({ timeout: 20_000 });
+      // No Activity tab in v3 (LAI-1078): its card is Advanced's second.
+      assert.equal(await h.page.locator('.page-tab[data-tab="activity"]').count(), 0);
       await h.page.locator('.page-tab[data-tab="advanced"]').click();
       await h.page.locator('.dev-advanced .dev-adv').waitFor({ timeout: 20_000 });
+      await h.page.locator('.dev-advanced-page .dev-sharing').waitFor({ timeout: 20_000 });
       // *New personal credential* sits in Advanced itself, not in the page
       // header (LAI-1058; developer-advanced.test.ts has the rest).
       await h.page
@@ -596,14 +587,14 @@ void describe('the Overview (LAI-1048)', () => {
     );
     try {
       await h.page.getByRole('link', { name: 'Continue' }).waitFor({ timeout: 20_000 });
-      await h.page.locator('.page-tab[data-tab="activity"]').focus();
+      await h.page.locator('.page-tab[data-tab="advanced"]').focus();
       await h.page.evaluate(() => {
         document.dispatchEvent(new Event('visibilitychange'));
       });
       await h.page.locator('.dev-summary').waitFor({ timeout: 20_000 });
       assert.equal(
         await h.page.evaluate(() => document.activeElement?.getAttribute('data-tab')),
-        'activity',
+        'advanced',
       );
     } finally {
       await h.close();
@@ -713,9 +704,11 @@ void describe('look and fit', () => {
       try {
         await h.page.setViewportSize({ width: 390, height: 844 });
         await setTheme(h.page, theme);
-        for (const tab of ['overview', 'projects', 'devices', 'activity', 'advanced']) {
+        // Advanced is drawn in the design's frame (`.dx`, LAI-1078); the others
+        // still in `.dev-body` until their slices land.
+        for (const tab of ['overview', 'projects', 'devices', 'advanced']) {
           await land(h, `/developer?tab=${tab}`);
-          await h.page.locator('.dev-body').first().waitFor({ timeout: 20_000 });
+          await h.page.locator('.dev-body, .dx').first().waitFor({ timeout: 20_000 });
           const wide = await h.page.evaluate(
             () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
           );

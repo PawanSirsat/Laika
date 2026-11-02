@@ -225,14 +225,13 @@ void describe('Developer access tabs by mode (LAI-1048, plan §C, §I)', () => {
     ]);
   });
 
-  void test('v3 is Overview, Project setup, Devices, Activity, Advanced', () => {
-    assert.deepEqual(labels('v3'), [
-      'Overview',
-      'Project setup',
-      'Devices',
-      'Activity',
-      'Advanced',
-    ]);
+  void test('v3 is Overview, Project setup, Devices, Advanced — Activity is a card on Advanced', () => {
+    assert.deepEqual(labels('v3'), ['Overview', 'Project setup', 'Devices', 'Advanced']);
+    assert.equal(
+      ids('v3').includes('activity'),
+      false,
+      'Share local activity is Advanced’s second card in v3 (LAI-1078)',
+    );
   });
 
   void test('the default tab is Connect in classic and preview, Overview in v3', () => {
@@ -282,7 +281,10 @@ void describe('old Developer access addresses in V3 (LAI-1048, plan §C)', () =>
     ['tab=agents&agent=01ABC', 'tab=devices&agent=01ABC'],
     ['tab=tokens', 'tab=advanced'],
     ['tab=projects', undefined],
-    ['tab=activity', undefined],
+    // LAI-1078: Activity is Advanced's second card, which `section` scrolls to.
+    ['tab=activity', 'tab=advanced&section=activity'],
+    ['tab=activity&section=other&x=1', 'tab=advanced&section=activity&x=1'],
+    ['tab=advanced&section=activity', undefined],
     ['tab=overview', undefined],
     ['tab=devices&add=tool', undefined],
     ['tab=advanced', undefined],
