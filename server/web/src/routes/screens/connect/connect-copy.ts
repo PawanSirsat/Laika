@@ -391,7 +391,10 @@ export interface ProjectSetupPromptInput {
  * **A fold never outlives its block** (LAI-1091): a fold goes into the block,
  * so a no to the block, or to step 3's update, folds nothing into it. A
  * confirmed edit to a Laika mention inside another section is named where
- * the other changes are: the opening, step 8 and the one-line report.
+ * the other changes are: the opening, step 8 and the one-line report. Step 8
+ * lists everything the file may gain: the block, a new file's opening lines
+ * (Cursor's front matter), and, confirmed, a section, the lines kept from it
+ * below the block, or a mention.
  */
 export function projectSetupPrompt({
   origin,
@@ -471,11 +474,14 @@ ${preamble}
    them, change nothing.
 7. Copy the block exactly. It contains no token and must never gain one: do
    not add a token, key or password anywhere, and do not ask me for one.
-8. In the file, change only the Laika block and, with my confirmation, a
-   hand-written Laika section or a Laika mention inside another section.
-   Change nothing else. Do not install, reinstall or update Laika, do not pair
-   a device, do not edit any MCP configuration, and do not commit or push: I
-   will review the change myself.
+8. In the file, change only the Laika block${
+    preamble === '' ? '' : ', the lines step 5 starts a new file with,'
+  } and, with my
+   confirmation, a hand-written Laika section, the lines I keep from it below
+   the block, or a Laika mention inside another section. Change nothing else.
+   Do not install, reinstall or update Laika, do not pair a device,
+   do not edit any MCP configuration, and do not commit or push: I will
+   review the change myself.
 9. Report in one line: created the file, appended the block, updated it from
    revision N, replaced a hand-written Laika section, folded N hand-written
    Laika sections into the block, changed N Laika mentions inside other

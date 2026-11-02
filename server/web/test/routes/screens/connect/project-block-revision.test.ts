@@ -282,7 +282,7 @@ void describe('the Project setup prompt', () => {
     assert.match(
       step,
       phrase(
-        'In the file, change only the Laika block and, with my confirmation, a hand-written Laika section or a Laika mention inside another section. Change nothing else.',
+        'In the file, change only the Laika block and, with my confirmation, a hand-written Laika section, the lines I keep from it below the block, or a Laika mention inside another section. Change nothing else.',
       ),
     );
     assert.match(
@@ -460,6 +460,16 @@ void describe('the Project setup prompt', () => {
       text.includes(`A new file starts with these lines, before the block:\n\n${preamble}`),
     );
     assert.ok(!prompt.includes('A new file starts with'));
+    // Step 8's list of what may change names those lines too, and only where
+    // step 5 writes them (LAI-1091 review, N4).
+    const step8 = (t: string) => t.slice(t.search(/^8\. /m), t.search(/^9\. /m));
+    assert.match(
+      step8(text),
+      phrase(
+        'change only the Laika block, the lines step 5 starts a new file with, and, with my confirmation,',
+      ),
+    );
+    assert.doesNotMatch(step8(prompt), /step 5 starts a new file/);
   });
 });
 
