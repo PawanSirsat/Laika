@@ -127,3 +127,44 @@ export function useDeveloperAccessMode(): DeveloperAccessMode | undefined {
   }, [mode]);
   return mode;
 }
+
+/**
+ * Where a device gets the helper (LAI-1061, plan §E.6, §F.6): the repository
+ * and the commit this board was built from. `commit` is `null` on a build
+ * that does not know its own commit, which the screen says rather than
+ * guessing a branch.
+ */
+export interface CliSource {
+  readonly url: string;
+  readonly commit: string | null;
+}
+
+/**
+ * `cli.source` from a compatibility answer, or `undefined` when it has none
+ * a device could clone from — an older board, or a body this build cannot
+ * read. Only an `http(s)` or `ssh`/`git@` address is accepted, and a commit
+ * only as hex: both are pasted into a terminal.
+ */
+export function cliSourceOf(body: unknown): CliSource | undefined {
+  if (typeof body !== 'object' || body === null) return undefined;
+  const cli = (body as { cli?: unknown }).cli;
+  if (typeof cli !== 'object' || cli === null) return undefined;
+  const source = (cli as { source?: unknown }).source;
+  if (typeof source !== 'object' || source === null) return undefined;
+  const { url, commit } = source as { url?: unknown; commit?: unknown };
+  if (typeof url !== 'string' || !/^(https?:\/\/|ssh:\/\/|git@)[^\s'"`$\\]+$/.test(url)) {
+    return undefined;
+  }
+  return {
+    url,
+    commit: typeof commit === 'string' && /^[0-9a-f]{7,40}$/.test(commit) ? commit : null,
+  };
+}
+
+/** The board's helper source. Never rejects: unreadable is `undefined`. */
+export function loadCliSource(signal?: AbortSignal): Promise<CliSource | undefined> {
+  return request<unknown>('/developer/compatibility', signal === undefined ? {} : { signal }).then(
+    cliSourceOf,
+    () => undefined,
+  );
+}
