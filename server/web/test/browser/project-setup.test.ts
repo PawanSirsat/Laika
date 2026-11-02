@@ -810,6 +810,46 @@ void describe('Project setup, v3', () => {
     }
   });
 
+  void test('a tool laika tool add refuses gets no command: the device cannot check it yet (LAI-1091)', async () => {
+    // --harness antigravity exits 2 and records nothing; `other` is Copilot.
+    for (const harness of ['antigravity', 'other']) {
+      const world: World = {
+        agents: [agentRow({ id: 'a1', harness, grants: FULL })],
+        puts: [],
+        setups: [],
+      };
+      const h = await open('/developer?tab=projects&step=3', stub('v3', world));
+      try {
+        const way = h.page.locator('[data-way="check"]');
+        const note = way.locator('[data-note="no-device-check"]');
+        await note.waitFor({ timeout: 20_000 });
+        assert.match(
+          await note.innerText(),
+          /Laika can’t check .+’s repository from your device yet\s+Record it yourself instead, with I’ve added it below\./,
+        );
+        // Nowhere in the step, the Not recorded chip's reason included.
+        await way.locator('[data-status="not-recorded"]').waitFor({ timeout: 20_000 });
+        assert.doesNotMatch(await way.innerText(), /laika project check|Recommended/);
+        assert.match(
+          await way.locator('[data-status="not-recorded"]').innerText(),
+          /Record it yourself with I’ve added it/,
+        );
+        assert.equal(await way.locator('[data-note="cli-match"]').count(), 0);
+        // The catalogue's manual note, for a tool that has one.
+        assert.equal(
+          await note.locator('[data-note="manual"]').count(),
+          harness === 'antigravity' ? 1 : 0,
+          harness,
+        );
+        // And the way it points to is there, and the only one the foot names.
+        await h.page.getByRole('button', { name: 'I’ve added it' }).waitFor({ timeout: 5_000 });
+        assert.equal((await footNote(h.page).innerText()).trim(), 'Record it yourself to finish.');
+      } finally {
+        await h.close();
+      }
+    }
+  });
+
   void test('the reader’s word alone is never Checked', async () => {
     const world: World = {
       agents: [agentRow({ id: 'a1', grants: FULL })],

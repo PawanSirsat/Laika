@@ -17,6 +17,7 @@ import {
   type InstructionsTarget,
 } from '../../connect/connect-agents.ts';
 import { PLUGIN_HOME, PROJECT_BLOCK_REVISION } from '../../connect/connect-copy.ts';
+import { catalogTool } from './tool-catalog.ts';
 
 /**
  * Developer access V3 → Project setup, as data (LAI-1052, plan §G, §H).
@@ -446,10 +447,40 @@ export const CLI_HARNESS: Readonly<Partial<Record<AgentClient, string>>> = {
  * tools set up checks the file but records nothing (and exits 2, *could not
  * record*), so step 3 would stay *Not recorded* however often the reader ran
  * it.
+ *
+ * `null` when that command cannot record for the tool (LAI-1091): any tool
+ * `laika tool add` refuses — Antigravity, the unverified tools, and `other`,
+ * which is Copilot CLI or Copilot cloud. Read from `cliSetup`, which
+ * `tool-catalog.test.ts` holds to the CLI's `planFor`: with no credential of
+ * its own on the device, `--harness` for it exits 2 and records nothing, so
+ * step 3 could never be recorded that way. `project-setup.test.ts` holds the
+ * CLI harnesses that get a command to those `planFor` does not refuse.
  */
-export function projectCheckCommand(projectSlug: string, client: AgentClient): string {
+export function projectCheckCommand(projectSlug: string, client: AgentClient): string | null {
   const harness = CLI_HARNESS[client];
-  return `laika project check --project ${projectSlug}${harness === undefined ? '' : ` --harness ${harness}`}`;
+  if (harness === undefined || catalogTool(client)?.cliSetup !== true) return null;
+  return `laika project check --project ${projectSlug} --harness ${harness}`;
+}
+
+/**
+ * What step 3 says instead of a command for a tool {@link projectCheckCommand}
+ * has none for (LAI-1091): that the device cannot check it yet, that the
+ * reader's own *I've added it* is the way, and the catalogue's manual note,
+ * which says why `laika tool add` refuses the tool. `other` has no catalogue
+ * entry, so no note.
+ */
+export interface NoDeviceCheck {
+  readonly title: string;
+  readonly body: string;
+  readonly note: string | null;
+}
+
+export function noDeviceCheck(toolName: string, client: AgentClient): NoDeviceCheck {
+  return {
+    title: `Laika can’t check ${toolName}’s repository from your device yet`,
+    body: 'Record it yourself instead, with I’ve added it below.',
+    note: catalogTool(client)?.notes[0] ?? null,
+  };
 }
 
 /**
