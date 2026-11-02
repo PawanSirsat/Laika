@@ -312,16 +312,39 @@
 }
 
 /* A status's word can be a sentence (*Update required for pairing devices, …*):
-   in a panel as narrow as a phone it wraps rather than running out of it. */
-.dv3-tool-details .status-chip,
-.dv3-panel-status .status-chip {
+   in a panel as narrow as a phone it wraps rather than running out of it, in a
+   box rather than a stretched pill. */
+.dv3-tool-details .status-chip {
   flex-wrap: wrap;
   max-width: 100%;
+  border-radius: var(--radius-control);
 }
 
-.dv3-tool-details .status-chip-word,
-.dv3-panel-status .status-chip-word {
+.dv3-tool-details .status-chip-word {
   white-space: normal;
+}
+
+/* The section's own label already says *Helper*. */
+.dv3-tool-details .dv3-update-label {
+  display: none;
+}
+
+/* The panel's status: the word in its chip, then why, as plain text. */
+.dv3-panel-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+.dv3-panel-reason {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dv3-device-details .dv3-update-summary {
+  margin-top: var(--space-3);
 }
 
 .dv3-tool-details .agents-panel,

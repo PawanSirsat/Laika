@@ -13,14 +13,20 @@ import { timeLabel } from '../../../../api/time-label.ts';
 import type { useConfirm } from '../../../../components/ConfirmProvider.tsx';
 import { SidePanel } from '../../../../components/SidePanel.tsx';
 import { CheckIcon } from '../../../../components/wizard/CheckIcon.tsx';
-import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
 import { AccessForm, RenameForm, SecretPanel, grantSummary, useOnceSecret } from '../AgentsTab.tsx';
 import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
 import { cloudExpiry, cloudExpiryProblem, isCloudDevice, rotatableToken } from '../agent-wizard.ts';
 import { showsConsent } from '../checkpoint-consent.ts';
+import { DesignChip } from './DesignChip.tsx';
 import { DetailTiles } from './DetailTiles.tsx';
 import { pairedDevice } from './add-flow.ts';
-import { CLOUD_NOTE, disconnectImpact, listedStatus, type ListedTool } from './devices-view.ts';
+import {
+  CLOUD_NOTE,
+  chipTone,
+  disconnectImpact,
+  listedStatus,
+  type ListedTool,
+} from './devices-view.ts';
 import { catalogTool } from './tool-catalog.ts';
 import { checkLines, readiness } from './tool-readiness.ts';
 import { ToolUpdate, useVerification } from './ToolUpdate.tsx';
@@ -277,7 +283,8 @@ function ToolPanel({
           data-readiness={status.key}
           data-evidence={status.evidence}
         >
-          <StatusChip tone={status.tone} word={status.word} reason={status.reason} />
+          <DesignChip tone={chipTone(status.tone)}>{status.word}</DesignChip>
+          <span className="dv3-panel-reason">{status.reason}</span>
         </span>
       }
       onClose={onClose}

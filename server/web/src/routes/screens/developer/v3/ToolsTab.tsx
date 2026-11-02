@@ -115,7 +115,7 @@ export function ToolsTab({
       <SectionTitle
         title="Connected tools"
         titleId={TOOLS_TITLE}
-        sub="Each coding tool has its own Laika credential, so you can see which tool did what and disconnect one without touching the others."
+        sub="Each coding tool has its own Laika credential: you see which one did what, and can disconnect it alone."
         actions={
           canManage && !wizard ? (
             <button
