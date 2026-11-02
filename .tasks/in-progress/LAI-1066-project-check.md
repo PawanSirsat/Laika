@@ -1,12 +1,13 @@
 ---
 id: LAI-1066
 title: 'Project setup evidence: server records of a repo''s Laika block, and `laika project check`'
-area: core, shell, chief
-assignee: unclaimed
+area: server
+assignee: polly
 priority: p2
 depends-on: []
 discovered-from: LAI-1042
-status: backlog
+status: in-progress
+started: 2026-11-02T07:10:00+05:30
 ---
 
 ## Why
