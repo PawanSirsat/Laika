@@ -33,7 +33,7 @@ import {
   type StatusCopy,
 } from '../../src/routes/screens/developer/v3/status-vocabulary.ts';
 import { stub } from './developer-v3-fixtures.ts';
-import { closeBrowser, open, setTheme, until, type Harness } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type Harness, type OpenOptions } from './harness.ts';
 
 after(async () => {
   await closeBrowser();
@@ -42,13 +42,13 @@ after(async () => {
 const tool = (page: Page, id: string) => page.locator(`.dv3-tool[data-agent="${id}"]`);
 const legend = (page: Page) => page.getByRole('dialog', { name: 'What these statuses mean' });
 
-async function openTab(tab: 'tools' | 'devices'): Promise<Harness> {
-  const h = await open(`/developer?tab=${tab}`, stub());
+async function openTab(tab: 'tools' | 'devices', options: OpenOptions = {}): Promise<Harness> {
+  const h = await open(`/developer?tab=${tab}`, stub(), options);
   const row =
     tab === 'tools' ? tool(h.page, 'a1') : h.page.locator('.dv3-device[data-device="d1"]');
   await row.waitFor({ timeout: 20_000 });
   if (tab === 'tools') {
-    for (const id of ['a1', 'a2', 'a3']) {
+    for (const id of ['a1', 'a2', 'a3', 'a4']) {
       await until(async () => {
         const key = await tool(h.page, id).getAttribute('data-update');
         return key !== null && key !== 'checking';
@@ -59,7 +59,9 @@ async function openTab(tab: 'tools' | 'devices'): Promise<Harness> {
       15_000,
     );
   } else {
-    await h.page.locator('[data-device-version]').waitFor({ timeout: 15_000 });
+    await h.page
+      .locator('.dv3-device[data-device="d1"] [data-device-version]')
+      .waitFor({ timeout: 15_000 });
   }
   return h;
 }
@@ -229,6 +231,25 @@ void describe('each chip explains its own row', () => {
         /To make it Ready: The credential reached the board, but not from Codex itself\./,
       );
 
+      // Review round 1, B1: on imported Strelka the checklist's Device paired fails, and
+      // readiness() never asks for it — the next step is the tool's own request.
+      const strelka = await description(anchorIn(tool(h.page, 'a4').locator('[data-readiness]')));
+      assert.match(
+        strelka,
+        /^Connected, not Ready: Claude Code · Strelka\. The credential reached the board; Claude Code itself has not called it yet\./,
+      );
+      assert.match(
+        strelka,
+        /To make it Ready: The credential reached the board, but not from Claude Code itself\./,
+      );
+      assert.doesNotMatch(strelka, /[Pp]air|no key of its own/);
+
+      // A button, so a screen reader announces its name and its description.
+      const asButton = tool(h.page, 'a2').getByRole('button', { name: 'Connected', exact: true });
+      assert.equal(await asButton.count(), 1);
+      assert.equal(await asButton.evaluate((el) => el.tagName), 'BUTTON');
+      assert.equal(await description(asButton), said);
+
       const omnigent = anchorIn(tool(h.page, 'a3').locator('[data-readiness]'));
       // LAI-1088: its MCP client names no tool, so what is missing is the helper's report.
       const omni = await description(omnigent);
@@ -275,13 +296,16 @@ void describe('each chip explains its own row', () => {
         0,
         'Escape opened or closed nothing',
       );
+      await h.page.keyboard.press('Enter');
+      await until(() => tip.isVisible());
+      assert.equal(await tip.isVisible(), true, 'Enter shows it again');
       await h.page.locator('.dx-section-heading').first().click();
       await anchorIn(tool(h.page, 'a1').locator('[data-readiness]')).hover();
       await until(() => tool(h.page, 'a1').locator('[role="tooltip"]').first().isVisible());
       assert.equal(await tool(h.page, 'a1').locator('[role="tooltip"]').first().isVisible(), true);
 
       // The last row's tooltip is not cut off by the card, which clips what overflows it.
-      const last = tool(h.page, 'a3').locator('[data-update-chip]');
+      const last = tool(h.page, 'a4').locator('[data-readiness]');
       await anchorIn(last).focus();
       const tip3 = last.locator('[role="tooltip"]');
       await until(() => tip3.isVisible());
@@ -306,6 +330,12 @@ void describe('each chip explains its own row', () => {
       assert.match(
         await description(paired),
         /^Paired: Belka holds a key this board approved .+\. Nothing\. Add tool → puts a coding tool on it\.$/,
+      );
+      const imported = anchorIn(h.page.locator('.dv3-device[data-device="d2"] [data-device-chip]'));
+      assert.equal(await imported.innerText(), 'Imported');
+      assert.equal(
+        await description(imported),
+        'Imported: Laika made Strelka from the name your tools reported; it was confirmed, and never paired with a key. Nothing. Its tools keep working.',
       );
       const helpers = anchorIn(row.locator('[data-device-version]'));
       assert.equal(await helpers.innerText(), 'Update required');
@@ -367,10 +397,16 @@ void describe(
           const tag = `${theme}-${String(width)}`;
           const size = { width, height: width === 390 ? 844 : 900 };
           for (const tab of ['tools', 'devices'] as const) {
-            const h = await openTab(tab);
+            // Review round 1, N5: the page opens at this size, so a 390 px shot is a
+            // real 390 px layout with its navigation drawer closed.
+            const h = await openTab(tab, {
+              before: async (page) => {
+                await page.setViewportSize(size);
+              },
+            });
             try {
-              await h.page.setViewportSize(size);
               await setTheme(h.page, theme);
+              assert.equal(await h.page.evaluate(() => window.innerWidth), width);
               const chip =
                 tab === 'tools'
                   ? tool(h.page, 'a2').locator('[data-readiness]')

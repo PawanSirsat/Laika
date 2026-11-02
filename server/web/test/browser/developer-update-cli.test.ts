@@ -420,6 +420,51 @@ void describe('the wizards: before the laika command', () => {
     }
   });
 
+  void test('Add device, already installed: update through the guide first, then the pair command alone', async () => {
+    const h = await open('/developer?tab=devices&add=device', addDeviceStub());
+    try {
+      const wizard = h.page.locator('[data-wizard="device"]');
+      await wizard.waitFor({ timeout: 20_000 });
+      await h.page.getByRole('radio', { name: /^Yes/ }).check();
+      const step = await toPairCommand(h.page);
+      // Review round 1, N3: no `git -C ~/laika fetch && laika update` an old helper cannot run.
+      assert.equal(
+        await step.locator('pre').innerText(),
+        'laika device pair --board http://board.test --code K7W4-X2P8-M3QR-T9VA',
+      );
+      assert.equal(
+        await step.locator('.conn-block-label').first().textContent(),
+        'On the device: pair',
+      );
+      const first = step.locator('[data-update-first]');
+      assert.match(await first.innerText(), /Bring its Laika helper up to date first/);
+      assert.equal(await before(step.locator('[data-update-cli="add-device"]'), first), true);
+      assert.equal(await before(first, step.locator('.conn-block').first()), true);
+      // The guide it points to covers a helper without laika update.
+      const guide = await openGuide(step);
+      assert.equal(
+        await guide.locator('[data-guide-step="older"] pre').innerText(),
+        'git -C ~/laika pull --ff-only',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Add device, a fresh install: no update line', async () => {
+    const h = await open('/developer?tab=devices&add=device', addDeviceStub());
+    try {
+      const step = await toPairCommand(h.page);
+      assert.equal(await step.locator('[data-update-first]').count(), 0);
+      assert.equal(
+        await step.locator('.conn-block-label').first().textContent(),
+        'On the device: install, then pair',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('Add tool: the same line before laika tool add', async () => {
     const h = await open('/developer?tab=tools&add=tool&tool=claude-code', addToolStub());
     try {
@@ -472,10 +517,16 @@ void describe(
         for (const width of [1440, 390] as const) {
           const tag = `${theme}-${String(width)}`;
           const size = { width, height: width === 390 ? 844 : 900 };
+          // Review round 1, N5: every page opens at this size, so a 390 px shot is a
+          // real 390 px layout with its navigation drawer closed.
+          const sized: OpenOptions = {
+            before: async (page) => {
+              await page.setViewportSize(size);
+            },
+          };
 
-          const t = await openTools({}, { insecure: true });
+          const t = await openTools({}, { insecure: true, ...sized });
           try {
-            await t.page.setViewportSize(size);
             await setTheme(t.page, theme);
             const unknown = await details(t.page, 'a3');
             await unknown.locator('[data-version-unknown-hint]').waitFor();
@@ -486,9 +537,8 @@ void describe(
             await t.close();
           }
 
-          const d = await open('/developer?tab=devices&device=d1', stub());
+          const d = await open('/developer?tab=devices&device=d1', stub(), sized);
           try {
-            await d.page.setViewportSize(size);
             await setTheme(d.page, theme);
             await devicePanel(d.page)
               .locator('[data-update-cli="device"]')
@@ -498,9 +548,8 @@ void describe(
             await d.close();
           }
 
-          const w = await open('/developer?tab=devices&add=device', addDeviceStub());
+          const w = await open('/developer?tab=devices&add=device', addDeviceStub(), sized);
           try {
-            await w.page.setViewportSize(size);
             await setTheme(w.page, theme);
             const wizard = await toPairCommand(w.page);
             await wizard.screenshot({ path: join(dir, `add-device-line-${tag}.png`) });
@@ -508,9 +557,12 @@ void describe(
             await w.close();
           }
 
-          const a = await open('/developer?tab=tools&add=tool&tool=claude-code', addToolStub());
+          const a = await open(
+            '/developer?tab=tools&add=tool&tool=claude-code',
+            addToolStub(),
+            sized,
+          );
           try {
-            await a.page.setViewportSize(size);
             await setTheme(a.page, theme);
             const wizard = await toToolCommand(a.page);
             await wizard.screenshot({ path: join(dir, `add-tool-line-${tag}.png`) });
@@ -518,9 +570,8 @@ void describe(
             await a.close();
           }
 
-          const o = await open('/developer?tab=overview', stub());
+          const o = await open('/developer?tab=overview', stub(), sized);
           try {
-            await o.page.setViewportSize(size);
             await setTheme(o.page, theme);
             await o.page.locator('[data-cli-notice]').waitFor({ timeout: 20_000 });
             await o.page.screenshot({

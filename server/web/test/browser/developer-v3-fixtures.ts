@@ -2,7 +2,9 @@
  * The stubbed board LAI-1086's browser tests open Developer access V3 against:
  * the owner's own Tools tab on 2026-11-02 — Claude Code · Belka *Ready*,
  * Codex · Belka and Omnigent · Belka *Connected*, one revoked tool — on a
- * paired device, with each tool's helper report set per test.
+ * paired device, with each tool's helper report set per test. Beside it an
+ * imported device, Strelka, whose Claude Code is *Connected*: its checklist's
+ * *Device paired* fails, which `readiness()` never asks for (review round 1).
  */
 
 import type { ApiStub } from './harness.ts';
@@ -73,13 +75,13 @@ const token = (agentId: string, revoked = false) => ({
   created_at: 1,
 });
 
-export const agentRow = (id: string, harness: string, revoked = false) => ({
+export const agentRow = (id: string, harness: string, revoked = false, device = 'Belka') => ({
   id,
   owner_user_id: 'u1',
   owner_display_name: 'Ada Lovelace',
   display_name: id,
   harness,
-  device_label: 'Belka',
+  device_label: device,
   status: revoked ? 'revoked' : 'active',
   grants: [],
   tokens: [token(id, revoked)],
@@ -96,6 +98,8 @@ export const CODEX = agentRow('a2', 'codex');
 export const OMNIGENT = agentRow('a3', 'omnigent');
 export const REVOKED = agentRow('r1', 'cursor', true);
 export const TOOLS = [CLAUDE, CODEX, OMNIGENT, REVOKED];
+/** Claude Code on the imported device. */
+export const STRELKA_CLAUDE = agentRow('a4', 'claude-code', false, 'Strelka');
 
 export const deviceRow = (agents: readonly Agent[], over: object = {}) => ({
   id: 'd1',
@@ -140,6 +144,7 @@ export const verification = (
   harness: string,
   clientReport: object | null,
   ready = false,
+  paired = true,
 ) => {
   const check = (state: string, detail: unknown, at: number | null = null) => ({
     state,
@@ -153,7 +158,9 @@ export const verification = (
     now: Date.now(),
     last_seen_at: NOW - (ready ? 2 : 31) * MIN,
     checks: {
-      device_paired: check('pass', { device_id: 'd1' }),
+      device_paired: paired
+        ? check('pass', { device_id: 'd1' })
+        : check('fail', { device_id: null }),
       credential_installed: check(
         'pass',
         { token_id: `t-${agentId}`, via_exchange: true },
@@ -201,15 +208,35 @@ export interface StubOver {
   readonly routes?: ApiStub;
 }
 
-/** The owner's three tools: a1 on the board's commit, a2 an older one, a3 never reported. */
+/**
+ * The owner's three tools: a1 on the board's commit, a2 an older one, a3
+ * never reported — and a4 on imported Strelka, on the board's commit, not
+ * paired, its own request not seen yet.
+ */
 export const DEFAULT_VERIFICATIONS: Readonly<Record<string, unknown>> = {
   a1: verification('a1', 'claude-code', report(), true),
   a2: verification('a2', 'codex', report({ cli_commit: OLDER, protocol: 1 })),
   a3: verification('a3', 'omnigent', null),
+  a4: verification('a4', 'claude-code', report(), false, false),
 };
 
+/** Strelka: imported from what its tools reported, confirmed, never paired. */
+export const importedDevice = (agents: readonly Agent[]) =>
+  deviceRow(agents, {
+    id: 'd2',
+    display_name: 'Strelka',
+    device_label: 'strelka',
+    origin: 'imported',
+    confirmed: true,
+    paired_at: null,
+    key_fingerprint: null,
+  });
+
 export function stub(over: StubOver = {}): ApiStub {
-  const agents = over.agents ?? TOOLS;
+  // The default board has the imported device too; a test that names its own tools does not.
+  const imported = over.agents === undefined ? [STRELKA_CLAUDE] : [];
+  const onBelka = over.agents ?? TOOLS;
+  const agents = [...onBelka, ...imported];
   const verifications = { ...DEFAULT_VERIFICATIONS, ...over.verifications };
   const perAgent: Record<string, unknown> = {};
   for (const a of agents) {
@@ -226,7 +253,12 @@ export function stub(over: StubOver = {}): ApiStub {
     '/api/v1/presence': { enabled: true, present: [] },
     '/api/v1/agents': { data: agents, next_cursor: null },
     '/api/v1/agents/devices': { data: [] },
-    '/api/v1/devices': { data: [deviceRow(agents, over.device)] },
+    '/api/v1/devices': {
+      data: [
+        deviceRow(onBelka, over.device),
+        ...(imported.length > 0 ? [importedDevice(imported)] : []),
+      ],
+    },
     '/api/v1/project-setups': { data: [] },
     '/api/v1/developer/compatibility': compat(over.board),
     ...perAgent,
