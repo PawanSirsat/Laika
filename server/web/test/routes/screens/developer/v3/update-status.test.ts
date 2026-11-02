@@ -13,22 +13,24 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   boardBehindNote,
+  type ClientReport,
   deviceUpdateSummary,
   offersUpdate,
+  type Read,
+  reportedHelper,
   sameCommit,
   updateCommand,
+  type UpdateManifest,
   updateManifestOf,
   updateStatus,
+  versionChip,
   WATCH_CAP_MS,
   WATCH_FIRST_MS,
   WATCH_LIMIT_MS,
+  type WatchClock,
   watchForReport,
   whatsNew,
   worstUpdate,
-  type WatchClock,
-  type ClientReport,
-  type Read,
-  type UpdateManifest,
 } from '../../../../../src/routes/screens/developer/v3/update-status.ts';
 
 const BOARD = 'cea011d6b1a2c3d4e5f60718293a4b5c6d7e8f90';
@@ -588,5 +590,72 @@ void describe('the watch after a copy', () => {
     await new Promise((done) => setImmediate(done));
     assert.equal(f.pending(), 0);
     assert.equal(ended, false);
+  });
+});
+
+void describe('versionChip — the version on a list row (LAI-1083)', () => {
+  void test('every status says itself in two words; the update ones as before', () => {
+    assert.deepEqual(versionChip('up-to-date'), {
+      key: 'up-to-date',
+      word: 'Helper up to date',
+      tone: 'ok',
+    });
+    assert.deepEqual(versionChip('available'), {
+      key: 'available',
+      word: 'Update available',
+      tone: 'accent',
+    });
+    assert.deepEqual(versionChip('required'), {
+      key: 'required',
+      word: 'Update required',
+      tone: 'danger',
+    });
+    assert.deepEqual(versionChip('unknown'), {
+      key: 'unknown',
+      word: 'Version unknown',
+      tone: 'neutral',
+    });
+    assert.deepEqual(versionChip('unchecked'), {
+      key: 'unchecked',
+      word: 'Could not check',
+      tone: 'neutral',
+    });
+  });
+
+  void test('nothing while it is still being read, or with nothing to read', () => {
+    assert.equal(versionChip('checking'), undefined);
+    assert.equal(versionChip(undefined), undefined);
+  });
+
+  void test('a device speaks for all of its tools', () => {
+    assert.equal(versionChip('up-to-date', 3)?.word, 'Helpers up to date');
+    assert.equal(versionChip('up-to-date', 1)?.word, 'Helper up to date');
+    assert.equal(versionChip('required', 3)?.word, 'Update required');
+  });
+});
+
+void describe('reportedHelper — the version a tool reported (LAI-1083)', () => {
+  const report = (cliVersion: string | null) => ({
+    cli_version: cliVersion,
+    cli_commit: null,
+    protocol: 2,
+    capabilities: [],
+    harness_version: null,
+    harness: null,
+    reported_at: null,
+    self_reported: true as const,
+  });
+
+  void test('a reported version is the line’s words', () => {
+    assert.equal(reportedHelper(report('0.1.0')), 'helper 0.1.0');
+    assert.equal(reportedHelper(report('  0.2.1 ')), 'helper 0.2.1');
+  });
+
+  void test('no report, an empty version, a failed or pending read: nothing', () => {
+    assert.equal(reportedHelper(report(null)), undefined);
+    assert.equal(reportedHelper(report('  ')), undefined);
+    assert.equal(reportedHelper(null), undefined);
+    assert.equal(reportedHelper('failed'), undefined);
+    assert.equal(reportedHelper(undefined), undefined);
   });
 });
