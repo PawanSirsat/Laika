@@ -322,8 +322,17 @@ void describe('the hint for a CLI older than the board (LAI-1084)', () => {
   void test('the way forward works on a CLI with no laika update: the checkout itself', () => {
     const hint = cliMatchHint(undefined);
     assert.equal(hint.version, 'laika version');
-    assert.equal(hint.pull, 'git -C <your Laika checkout> pull --ff-only');
+    // Where the machine prompt clones it (PLUGIN_HOME).
+    assert.equal(hint.pull, 'git -C ~/laika pull --ff-only');
+    assert.equal(hint.home, '~/laika');
     assert.equal(hint.update, 'laika update');
+  });
+
+  void test('every command in it pastes as it stands: no <placeholder> a shell reads as a redirect', () => {
+    const hint = cliMatchHint(undefined);
+    for (const command of [hint.version, hint.pull, hint.update]) {
+      assert.doesNotMatch(command, /[<>|;&$`]/, command);
+    }
   });
 });
 

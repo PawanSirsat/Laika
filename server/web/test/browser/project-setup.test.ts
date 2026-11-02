@@ -767,7 +767,7 @@ void describe('Project setup, v3', () => {
       await until(async () => (await hint.innerText()).includes('0123456'));
       assert.equal(
         (await hint.innerText()).replace(/\s+/g, ' ').trim(),
-        'This needs a Laika CLI that matches this board (commit 0123456). Check with laika version. If that says unknown command, your CLI predates this board: update the Laika checkout it runs from with git -C <your Laika checkout> pull --ff-only, then run laika version again. Newer CLIs update with laika update.',
+        'This needs a Laika CLI that matches this board (commit 0123456). Check with laika version. If that says unknown command, your CLI predates this board: update the Laika checkout it runs from with git -C ~/laika pull --ff-only (if you cloned Laika somewhere other than ~/laika, use that folder), then run laika version again. Newer CLIs update with laika update; if that says unknown command too, use the same git step.',
       );
       // Directly under the command it is about.
       assert.equal(
@@ -777,7 +777,8 @@ void describe('Project setup, v3', () => {
       assert.deepEqual(await hint.locator('code').allInnerTexts(), [
         '0123456',
         'laika version',
-        'git -C <your Laika checkout> pull --ff-only',
+        'git -C ~/laika pull --ff-only',
+        '~/laika',
         'laika version',
         'laika update',
       ]);

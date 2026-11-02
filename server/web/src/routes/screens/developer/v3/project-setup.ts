@@ -16,7 +16,7 @@ import {
   type AgentChoice,
   type InstructionsTarget,
 } from '../../connect/connect-agents.ts';
-import { PROJECT_BLOCK_REVISION } from '../../connect/connect-copy.ts';
+import { PLUGIN_HOME, PROJECT_BLOCK_REVISION } from '../../connect/connect-copy.ts';
 
 /**
  * Developer access V3 → Project setup, as data (LAI-1052, plan §G, §H).
@@ -443,8 +443,9 @@ export const CLI_HARNESS: Readonly<Partial<Record<AgentClient, string>>> = {
 /**
  * The command that checks this repository from the reader's device, for the
  * tool picked in step 1 (LAI-1084). Without `--harness`, a device with two
- * tools set up checks the file, records nothing and still exits 0, so step 3
- * would stay *Not recorded* however often the reader ran it.
+ * tools set up checks the file but records nothing (and exits 2, *could not
+ * record*), so step 3 would stay *Not recorded* however often the reader ran
+ * it.
  */
 export function projectCheckCommand(projectSlug: string, client: AgentClient): string {
   const harness = CLI_HARNESS[client];
@@ -453,8 +454,11 @@ export function projectCheckCommand(projectSlug: string, client: AgentClient): s
 
 /**
  * The hint under that command (LAI-1084). A CLI older than the board answers
- * `laika: unknown command "project"`, and one that old has no `laika update`
- * either, so the way forward is the checkout itself.
+ * `laika: unknown command "project"`, and one that old may have no
+ * `laika version` or no `laika update` either, so the way forward is the
+ * checkout itself: `git -C` on {@link PLUGIN_HOME}, where the machine prompt
+ * clones it. Every command is pasteable as it stands: no `<placeholder>`,
+ * which a shell would read as a redirect.
  */
 export interface CliMatchHint {
   /**
@@ -464,8 +468,13 @@ export interface CliMatchHint {
    */
   readonly commit: string | null;
   readonly version: string;
-  /** For a CLI with no `laika version`: the checkout it runs from, moved on. */
+  /**
+   * For a CLI with no `laika version`, or whose `laika update` is unknown:
+   * the checkout it runs from, moved on.
+   */
   readonly pull: string;
+  /** Where {@link pull} assumes the checkout is, for "if you cloned it elsewhere". */
+  readonly home: string;
   readonly update: string;
 }
 
@@ -474,7 +483,8 @@ export function cliMatchHint(source: CliSource | undefined): CliMatchHint {
   return {
     commit: commit === null ? null : commit.slice(0, 7),
     version: 'laika version',
-    pull: 'git -C <your Laika checkout> pull --ff-only',
+    pull: `git -C ${PLUGIN_HOME} pull --ff-only`,
+    home: PLUGIN_HOME,
     update: 'laika update',
   };
 }

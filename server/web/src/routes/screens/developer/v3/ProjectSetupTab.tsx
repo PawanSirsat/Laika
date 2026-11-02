@@ -1332,8 +1332,10 @@ function ReviewStep({
             </>
           )}
           . Check with <code>{hint.version}</code>. If that says unknown command, your CLI predates
-          this board: update the Laika checkout it runs from with <code>{hint.pull}</code>, then run{' '}
-          <code>{hint.version}</code> again. Newer CLIs update with <code>{hint.update}</code>.
+          this board: update the Laika checkout it runs from with <code>{hint.pull}</code> (if you
+          cloned Laika somewhere other than <code>{hint.home}</code>, use that folder), then run{' '}
+          <code>{hint.version}</code> again. Newer CLIs update with <code>{hint.update}</code>; if
+          that says unknown command too, use the same git step.
         </p>
         {records.kind === 'loading' ? (
           <LoadingState shape="row" count={1} label="Loading what is recorded" />
