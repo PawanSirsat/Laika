@@ -1,21 +1,59 @@
 /**
- * What the V3 Overview says (LAI-1048), from the devices list alone: the
- * journey's next step, where *Continue* goes, and the returning summary.
+ * What the V3 Overview says (LAI-1048, LAI-1079), from `GET /devices` and the
+ * reader's setup records alone: the hero's one next step and where it goes,
+ * the journey's three steps, the connection status card, the setups list and
+ * what needs the reader — and that its numbers are the Devices tab's.
  */
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import type { AgentDevice } from '../../../../../src/api/agent-devices.ts';
 import type { RegisteredAgent } from '../../../../../src/api/agents.ts';
+import type { Device } from '../../../../../src/api/devices.ts';
+import type { ProjectSetup } from '../../../../../src/api/project-setups.ts';
+import type { TokenView } from '../../../../../src/api/tokens.ts';
+import { deviceCounts } from '../../../../../src/routes/screens/developer/v3/devices-view.ts';
 import {
-  ACTIVE_MS,
-  OFFLINE_MS,
+  ADVANCED_ADDRESS,
+  NO_TOOL,
   OVERVIEW_ADDRESSES,
+  SETUP_CHIPS,
+  attentionItems,
+  heroOf,
+  journeyComplete,
+  journeyRows,
   overviewState,
   overviewSummary,
-  toolActivity,
+  setupLine,
+  setupRows,
+  setupTitle,
+  statusLines,
   toolAddress,
+  type OverviewState,
 } from '../../../../../src/routes/screens/developer/v3/overview-state.ts';
+import type { UpdateStatus } from '../../../../../src/routes/screens/developer/v3/update-status.ts';
+
+const NOW = 1_800_000_000_000;
+const PROJECTS = '/developer?tab=projects';
+const TOOLS = '/developer?tab=tools';
+
+const token = (over: Partial<TokenView> = {}): TokenView => ({
+  id: 't1',
+  name: 't1',
+  prefix: 'lai_abcd',
+  scope: 'full',
+  project_ids: null,
+  last_used_at: null,
+  last_mcp_at: null,
+  last_client: null,
+  last_client_name: null,
+  kind: 'agent',
+  agent_id: 'a1',
+  agent_label: 'Claude Code · Belka',
+  expires_at: null,
+  revoked_at: null,
+  created_at: 1,
+  ...over,
+});
 
 const agent = (over: Partial<RegisteredAgent> & { id: string }): RegisteredAgent => ({
   owner_user_id: 'u1',
@@ -25,132 +63,590 @@ const agent = (over: Partial<RegisteredAgent> & { id: string }): RegisteredAgent
   device_label: 'Belka',
   status: 'active',
   grants: [],
-  tokens: [],
+  tokens: [token()],
   created_at: 1,
   revoked_at: null,
   last_seen_at: null,
   ...over,
 });
 
-const device = (label: string, agents: RegisteredAgent[]): AgentDevice => {
-  const active = agents.filter((a) => a.status === 'active').length;
+const device = (over: Partial<Device> & { id: string; agents: RegisteredAgent[] }): Device => {
+  const active = over.agents.filter((a) => a.status === 'active').length;
   return {
-    device_label: label.toLowerCase(),
-    display_name: label,
-    recognised: true,
+    display_name: 'Belka',
+    device_label: 'belka',
+    kind: 'local',
+    origin: 'paired',
+    status: 'active',
+    confirmed: true,
+    confirmed_at: null,
+    paired_at: 1,
+    key_fingerprint: null,
     last_seen_at: null,
     active_count: active,
-    revoked_count: agents.length - active,
-    agents,
+    revoked_count: over.agents.length - active,
+    created_at: 1,
+    revoked_at: null,
+    ...over,
   };
 };
 
-void describe('overviewState: first run', () => {
-  void test('nothing at all: the next step is a device, and Continue adds one', () => {
-    const s = overviewState([]);
-    assert.equal(s.kind, 'first-run');
-    if (s.kind !== 'first-run') return;
-    assert.equal(s.next, 'device');
-    assert.equal(s.resume, OVERVIEW_ADDRESSES.addDevice);
+const setup = (over: Partial<ProjectSetup> & { id: string }): ProjectSetup => ({
+  agent_id: 'a1',
+  device_label: 'Belka',
+  project_id: 'p1',
+  project_slug: 'onroute',
+  repo_label: null,
+  instructions_path: 'CLAUDE.md',
+  block_found: true,
+  template_revision: 2,
+  project_match: null,
+  prefix_match: null,
+  source: 'self_reported_browser',
+  checked_at: NOW - 60_000,
+  ...over,
+});
+
+const check = (over: Partial<ProjectSetup> & { id: string }): ProjectSetup =>
+  setup({
+    source: 'local_check',
+    repo_label: 'onroute-app',
+    project_match: true,
+    prefix_match: true,
+    ...over,
+  });
+
+/** A tool whose own credential has reached the board a minute ago. */
+const seen = (over: Partial<RegisteredAgent> & { id: string }): RegisteredAgent =>
+  agent({ last_seen_at: NOW - 60_000, ...over });
+
+const state = (devices: Device[], records: ProjectSetup[] = []): OverviewState =>
+  overviewState(devices, records, NOW);
+
+void describe('the hero: one next step, from real data', () => {
+  void test('nothing at all: start by connecting a device', () => {
+    const s = state([]);
+    assert.equal(s.hero, 'no-device');
+    const hero = heroOf(s, NOW, PROJECTS, TOOLS);
+    assert.equal(hero.eyebrow, 'Start here');
+    assert.equal(hero.title, 'Start by connecting your device');
+    assert.deepEqual(hero.primary, { label: 'Add a device →', href: OVERVIEW_ADDRESSES.addDevice });
+    assert.equal(hero.secondary, undefined);
+  });
+
+  void test('a paired device with no tool yet: connect a coding tool on it', () => {
+    const s = state([device({ id: 'd1', agents: [] })]);
+    assert.equal(s.hero, 'no-tool');
+    const hero = heroOf(s, NOW, PROJECTS, TOOLS);
+    assert.equal(hero.eyebrow, 'Start here');
+    assert.equal(hero.title, 'Connect a coding tool');
+    assert.match(hero.sub, / on Belka\./);
+    assert.deepEqual(hero.primary, {
+      label: 'Add your first tool →',
+      href: OVERVIEW_ADDRESSES.addTool,
+    });
+    assert.equal(hero.secondary, undefined);
+  });
+
+  void test('a tool registered and never heard from: finish connecting it, at its row', () => {
+    const s = state([
+      device({
+        id: 'd1',
+        agents: [agent({ id: 'a1', harness: 'codex', created_at: 2 }), agent({ id: 'a0' })],
+      }),
+    ]);
+    assert.equal(s.hero, 'finish-tool');
+    assert.equal(s.pending?.id, 'a1', 'the newest tool that needs setup');
+    const hero = heroOf(s, NOW, PROJECTS, TOOLS);
+    assert.equal(hero.eyebrow, 'Your next step');
+    assert.equal(hero.title, 'Finish connecting Codex · Belka');
+    assert.equal(
+      hero.sub,
+      'Credential created, never used. Finish its setup on Belka; this page moves on once it has connected.',
+    );
+    assert.deepEqual(hero.primary, { label: 'Continue setup →', href: toolAddress('a1') });
+    assert.equal(hero.secondary, undefined);
+  });
+
+  void test('a tool seen once whose credential has expired still needs finishing', () => {
+    const s = state([
+      device({
+        id: 'd1',
+        agents: [seen({ id: 'a1', tokens: [token({ expires_at: NOW - 1 })] })],
+      }),
+    ]);
+    assert.equal(s.hero, 'finish-tool');
+    assert.match(heroOf(s, NOW, PROJECTS, TOOLS).sub, /^Its credential has expired\. /);
+  });
+
+  void test('a connected tool and no setup: set up the project repository, or manage tools', () => {
+    const s = state([device({ id: 'd1', agents: [seen({ id: 'a1' })] })]);
+    assert.equal(s.hero, 'no-setup');
+    const hero = heroOf(s, NOW, PROJECTS, TOOLS);
+    assert.equal(hero.eyebrow, 'Your next step');
+    assert.equal(hero.title, 'Set up your project repository');
+    assert.deepEqual(hero.primary, { label: 'Set up a project →', href: PROJECTS });
+    assert.deepEqual(hero.secondary, { label: 'Manage tools', href: TOOLS });
+  });
+
+  void test('a recorded setup: set up another repository', () => {
+    const s = state([device({ id: 'd1', agents: [seen({ id: 'a1' })] })], [setup({ id: 's1' })]);
+    assert.equal(s.hero, 'all-done');
+    const hero = heroOf(s, NOW, PROJECTS, TOOLS);
+    assert.equal(hero.title, 'Set up another repository');
+    assert.match(hero.sub, /^1 repository setup so far\./);
+    assert.deepEqual(hero.primary, { label: 'Set up a repository →', href: PROJECTS });
+    assert.deepEqual(hero.secondary, { label: 'Manage tools', href: TOOLS });
+  });
+
+  void test('a check that found no block is not a setup: the next step stays', () => {
+    const s = state(
+      [device({ id: 'd1', agents: [seen({ id: 'a1' })] })],
+      [check({ id: 's1', block_found: false, template_revision: null })],
+    );
+    assert.equal(s.hero, 'no-setup');
+    assert.equal(s.setUp, 0);
+    assert.equal(s.setups.length, 1, 'still listed, as what the check found');
+  });
+
+  void test('one connected tool is enough to move past the tool step', () => {
+    const s = state([
+      device({ id: 'd1', agents: [seen({ id: 'a1' }), agent({ id: 'a2', created_at: 2 })] }),
+    ]);
+    assert.equal(s.hero, 'no-setup');
+    assert.equal(s.pending, undefined);
+  });
+});
+
+void describe('which devices and tools count: the Devices tab’s', () => {
+  void test('a paired device with no tool counts — the old read skipped it', () => {
+    const devices = [device({ id: 'd1', agents: [] })];
+    const s = state(devices);
+    assert.equal(s.devices.length, 1);
+    assert.deepEqual(s.counts, deviceCounts(devices));
+  });
+
+  void test('revoked devices, an imported label with no tool, and revoked tools count for nothing', () => {
+    const devices = [
+      device({ id: 'd1', agents: [seen({ id: 'a1' }), agent({ id: 'gone', status: 'revoked' })] }),
+      device({ id: 'd2', display_name: 'Old', status: 'revoked', agents: [] }),
+      device({ id: 'd3', display_name: 'Label', origin: 'imported', agents: [] }),
+    ];
+    const s = state(devices);
     assert.deepEqual(
-      s.steps.map((x) => [x.step, x.done]),
+      s.devices.map((d) => d.id),
+      ['d1'],
+    );
+    assert.deepEqual(
+      s.tools.map((t) => t.id),
+      ['a1'],
+    );
+    assert.deepEqual(s.counts, deviceCounts(devices));
+    assert.equal(s.counts.devices, 1);
+    assert.equal(s.counts.tools, 1);
+  });
+
+  void test('tools newest first across devices; needs setup is the Devices tab’s word', () => {
+    const s = state([
+      device({ id: 'd1', agents: [seen({ id: 'a1' }), agent({ id: 'a2', created_at: 3 })] }),
+      device({
+        id: 'd2',
+        display_name: 'Strelka',
+        device_label: 'strelka',
+        agents: [agent({ id: 'a3', device_label: 'Strelka', created_at: 2, tokens: [] })],
+      }),
+    ]);
+    assert.deepEqual(
+      s.tools.map((t) => t.id),
+      ['a2', 'a3', 'a1'],
+    );
+    assert.deepEqual(
+      s.needSetup.map((t) => t.id),
+      ['a2', 'a3'],
+    );
+  });
+});
+
+void describe('the setup journey', () => {
+  void test('fresh: the first step is next, the others locked with a reason', () => {
+    const rows = journeyRows(state([]), PROJECTS, TOOLS);
+    assert.deepEqual(
+      rows.map((r) => [r.step, r.state, r.action.label, r.locked ?? '']),
       [
-        ['device', false],
-        ['tool', false],
-        ['project', false],
+        ['device', 'active', 'Start', ''],
+        ['tool', 'pending', 'Start', 'Add a device first'],
+        ['project', 'pending', 'Start', 'Connect a tool first'],
+      ],
+    );
+    assert.equal(rows[0].action.href, OVERVIEW_ADDRESSES.addDevice);
+    assert.equal(rows[0].line, 'Pair your laptop or a cloud runner, once');
+    assert.equal(journeyComplete(rows), '0 of 3 complete');
+  });
+
+  void test('a device only: Manage it, and the tool step is next', () => {
+    const rows = journeyRows(
+      state([
+        device({ id: 'd1', agents: [] }),
+        device({ id: 'd2', display_name: 'Strelka', agents: [] }),
+      ]),
+      PROJECTS,
+      TOOLS,
+    );
+    assert.deepEqual(rows[0], {
+      step: 'device',
+      name: 'Connect a device',
+      state: 'done',
+      line: '2 devices · Belka, Strelka',
+      action: { label: 'Manage', href: OVERVIEW_ADDRESSES.devices },
+    });
+    assert.equal(rows[1].state, 'active');
+    assert.equal(rows[1].locked, undefined);
+    assert.equal(rows[1].action.href, OVERVIEW_ADDRESSES.addTool);
+    assert.equal(rows[2].state, 'pending');
+    assert.equal(journeyComplete(rows), '1 of 3 complete');
+  });
+
+  void test('a tool never seen: the tool step names it and Start goes to its row', () => {
+    const rows = journeyRows(
+      state([device({ id: 'd1', agents: [agent({ id: 'a1', harness: 'codex' })] })]),
+      PROJECTS,
+      TOOLS,
+    );
+    assert.equal(rows[1].state, 'active');
+    assert.equal(rows[1].line, 'Codex · Belka registered, not connected yet');
+    assert.deepEqual(rows[1].action, { label: 'Start', href: toolAddress('a1') });
+  });
+
+  void test('connected: real counts on the tool step, the project step next', () => {
+    const rows = journeyRows(
+      state([
+        device({
+          id: 'd1',
+          agents: [seen({ id: 'a1' }), agent({ id: 'a2' }), agent({ id: 'a3' })],
+        }),
+      ]),
+      PROJECTS,
+      TOOLS,
+    );
+    assert.deepEqual(rows[1], {
+      step: 'tool',
+      name: 'Add your coding tool',
+      state: 'done',
+      line: '3 tools registered, 1 connected',
+      action: { label: 'Manage', href: TOOLS },
+    });
+    assert.equal(rows[2].state, 'active');
+    assert.deepEqual(rows[2].action, { label: 'Start', href: PROJECTS });
+    assert.equal(journeyComplete(rows), '2 of 3 complete');
+  });
+
+  void test('all done: Open the setups, with how many a check confirmed', () => {
+    const rows = journeyRows(
+      state(
+        [device({ id: 'd1', agents: [seen({ id: 'a1' }), seen({ id: 'a2', harness: 'codex' })] })],
+        [check({ id: 's1' }), setup({ id: 's2', agent_id: 'a2', project_id: 'p2' })],
+      ),
+      PROJECTS,
+      TOOLS,
+    );
+    assert.deepEqual(rows[2], {
+      step: 'project',
+      name: 'Set up a project repository',
+      state: 'done',
+      line: '2 repository setups · 1 checked',
+      action: { label: 'Open', href: PROJECTS },
+    });
+    assert.equal(journeyComplete(rows), '3 of 3 complete');
+  });
+});
+
+void describe('connection status', () => {
+  void test('fresh: nothing added, the setups are the next step', () => {
+    assert.deepEqual(
+      statusLines(state([])).map((l) => [l.key, l.count, l.names, l.chip.word, l.chip.tone]),
+      [
+        ['devices', '0 devices', 'No paired devices', 'Not added', 'neutral'],
+        ['tools', '0 tools', 'No tools yet', 'Not added', 'neutral'],
+        [
+          'setups',
+          '0 repositories set up',
+          'Project prompts and instructions files',
+          'Next step',
+          'accent',
+        ],
       ],
     );
   });
 
-  void test('a registered agent nobody has heard from: device done, Continue goes to it', () => {
-    const s = overviewState([device('Belka', [agent({ id: 'a1' })])]);
-    assert.equal(s.kind, 'first-run');
-    if (s.kind !== 'first-run') return;
-    assert.equal(s.next, 'tool');
-    assert.equal(s.steps[0].done, true);
-    assert.equal(s.steps[0].sub, 'Belka');
-    assert.equal(s.steps[1].done, false);
-    assert.equal(s.pending?.id, 'a1');
-    assert.equal(s.resume, toolAddress('a1'));
-  });
-
-  void test('a device with only revoked agents is no device', () => {
-    const s = overviewState([
-      device('Belka', [agent({ id: 'a1', status: 'revoked', last_seen_at: 5 })]),
-    ]);
-    assert.equal(s.kind, 'first-run');
-    if (s.kind !== 'first-run') return;
-    assert.equal(s.next, 'device');
-    assert.equal(s.steps[0].done, false);
-  });
-});
-
-void describe('overviewState: returning', () => {
-  void test('one tool that has reached the board ends the funnel', () => {
-    const s = overviewState([
-      device('Belka', [
-        agent({ id: 'a1', last_seen_at: 10, grants: [{ project_id: 'p1', scope: 'full' }] }),
-        agent({ id: 'a2', created_at: 2, grants: [{ project_id: 'p1', scope: 'read_only' }] }),
-        agent({ id: 'gone', status: 'revoked', grants: [{ project_id: 'p9', scope: 'full' }] }),
-      ]),
-      device('Strelka', [agent({ id: 'a3', grants: [{ project_id: 'p2', scope: 'full' }] })]),
-    ]);
-    assert.equal(s.kind, 'returning');
-    if (s.kind !== 'returning') return;
-    assert.equal(s.devices, 2);
-    // Newest first, revoked left out of every count.
+  void test('names, and a word only as far as the evidence goes', () => {
+    const lines = statusLines(
+      state(
+        [
+          device({
+            id: 'd1',
+            agents: [seen({ id: 'a1' }), agent({ id: 'a2', harness: 'codex', created_at: 2 })],
+          }),
+          device({
+            id: 'd2',
+            display_name: 'Strelka',
+            origin: 'imported',
+            agents: [seen({ id: 'a3', device_label: 'Strelka', harness: 'omnigent' })],
+          }),
+        ],
+        [check({ id: 's1' }), setup({ id: 's2', agent_id: 'a3', project_id: 'p2' })],
+      ),
+    );
     assert.deepEqual(
-      s.tools.map((t) => t.id),
-      ['a2', 'a1', 'a3'],
-    );
-    assert.equal(s.projects, 2, 'p1 and p2; the revoked agent’s p9 does not count');
-    assert.equal(s.notConnected, 2);
-  });
-});
-
-void describe('toolActivity', () => {
-  const now = 10 * OFFLINE_MS;
-  void test('never seen, active, idle, offline — at the edges', () => {
-    assert.equal(toolActivity({ last_seen_at: null }, now), 'not-connected');
-    assert.equal(toolActivity({ last_seen_at: now }, now), 'active');
-    assert.equal(toolActivity({ last_seen_at: now - ACTIVE_MS }, now), 'active');
-    assert.equal(toolActivity({ last_seen_at: now - ACTIVE_MS - 1 }, now), 'idle');
-    assert.equal(toolActivity({ last_seen_at: now - OFFLINE_MS }, now), 'idle');
-    assert.equal(toolActivity({ last_seen_at: now - OFFLINE_MS - 1 }, now), 'offline');
-  });
-});
-
-void describe('overviewSummary: what the live region says (review round 1)', () => {
-  void test('first run names the next step', () => {
-    assert.equal(overviewSummary(overviewState([])), 'Next step: Add a device.');
-    assert.equal(
-      overviewSummary(overviewState([device('Belka', [agent({ id: 'a1' })])])),
-      'Next step: Add a coding tool.',
+      lines.map((l) => [l.count, l.names, l.chip.word, l.chip.tone]),
+      [
+        ['2 devices', 'Belka, Strelka', '1 imported', 'neutral'],
+        [
+          '3 tools',
+          'Codex · Belka, Claude Code · Belka, Omnigent · Strelka',
+          '1 needs setup',
+          'warn',
+        ],
+        ['2 repositories set up', '1 checked, 1 not verified', 'Recorded', 'neutral'],
+      ],
     );
   });
 
-  void test('returning counts as connected only the tools the board has heard from', () => {
-    // The browser test's returning fixture: a1 seen, a2 never.
-    const s = overviewState([
-      device('Belka', [agent({ id: 'a1', last_seen_at: 10 })]),
-      device('Strelka', [agent({ id: 'a2', created_at: 2 })]),
-    ]);
-    assert.equal(overviewSummary(s), '2 tools on this board, 1 connected.');
-    assert.doesNotMatch(overviewSummary(s), /2 tools connected/);
+  void test('every device paired, every tool connected, every setup checked', () => {
+    const lines = statusLines(
+      state([device({ id: 'd1', agents: [seen({ id: 'a1' })] })], [check({ id: 's1' })]),
+    );
+    assert.deepEqual(
+      lines.map((l) => l.chip),
+      [
+        { word: 'Paired', tone: 'ok' },
+        { word: 'Connected', tone: 'ok' },
+        { word: 'Checked', tone: 'ok' },
+      ],
+    );
+    assert.equal(lines[0]?.count, '1 device');
+    assert.equal(lines[2]?.count, '1 repository set up');
   });
 
-  void test('one tool, seen, is one tool and one connected', () => {
-    const s = overviewState([device('Belka', [agent({ id: 'a1', last_seen_at: 10 })])]);
-    assert.equal(overviewSummary(s), '1 tool on this board, 1 connected.');
+  void test('a setup a check found out of date is to update, not checked and not yours', () => {
+    const [, , setups] = statusLines(
+      state(
+        [device({ id: 'd1', agents: [seen({ id: 'a1' })] })],
+        [check({ id: 's1' }), check({ id: 's2', project_id: 'p2', template_revision: 1 })],
+      ),
+    );
+    assert.deepEqual(setups, {
+      key: 'setups',
+      icon: 'repo',
+      count: '2 repositories set up',
+      names: '1 checked, 1 to update',
+      chip: { word: 'Recorded', tone: 'neutral' },
+    });
   });
 
-  void test('revoked agents are in neither number', () => {
-    const s = overviewState([
-      device('Belka', [
-        agent({ id: 'a1', last_seen_at: 10 }),
-        agent({ id: 'gone', status: 'revoked', last_seen_at: 9 }),
+  void test('two tools that need setup say so in the plural; all imported is Imported', () => {
+    const lines = statusLines(
+      state([
+        device({
+          id: 'd1',
+          origin: 'imported',
+          agents: [seen({ id: 'a1' }), agent({ id: 'a2' }), agent({ id: 'a3' })],
+        }),
       ]),
+    );
+    assert.equal(lines[0]?.chip.word, 'Imported');
+    assert.equal(lines[1]?.chip.word, '2 need setup');
+  });
+});
+
+void describe('repository setups: one row per tool and project', () => {
+  const tools = [seen({ id: 'a1' }), seen({ id: 'a2', harness: 'codex', device_label: 'Strelka' })];
+
+  void test('a local check that found a current block is Checked, and names its repository', () => {
+    const [row] = setupRows([check({ id: 's1' }), setup({ id: 's0' })], tools);
+    assert.equal(row?.chip, 'checked');
+    assert.deepEqual(row?.repos, ['onroute-app']);
+    assert.equal(setupTitle(row, 'OnRoute'), 'OnRoute · onroute-app');
+    assert.equal(setupLine(row), 'Claude Code · Belka · CLAUDE.md');
+    assert.deepEqual(SETUP_CHIPS.checked, { word: 'Checked', tone: 'ok' });
+  });
+
+  void test('the reader’s own word alone is Recorded by you, and says not verified', () => {
+    const [row] = setupRows(
+      [setup({ id: 's1', agent_id: 'a2', instructions_path: 'AGENTS.md' })],
+      tools,
+    );
+    assert.equal(row?.chip, 'recorded');
+    assert.deepEqual(row?.repos, []);
+    assert.equal(setupTitle(row, 'OnRoute'), 'OnRoute');
+    assert.equal(setupLine(row), 'Codex · Strelka · AGENTS.md · not verified');
+    assert.deepEqual(SETUP_CHIPS.recorded, { word: 'Recorded by you', tone: 'neutral' });
+  });
+
+  void test('an older template revision is Update available; no block found says so', () => {
+    const rows = setupRows(
+      [
+        check({ id: 's1', template_revision: 1 }),
+        check({ id: 's2', agent_id: 'a2', block_found: false, template_revision: null }),
+      ],
+      tools,
+    );
+    assert.deepEqual(
+      rows.map((r) => r.chip),
+      ['update-available', 'missing'],
+    );
+    assert.equal(
+      setupLine(rows[1]!),
+      'Codex · Strelka · CLAUDE.md · laika project check found no Laika block',
+    );
+    assert.deepEqual(SETUP_CHIPS['update-available'], { word: 'Update available', tone: 'warn' });
+  });
+
+  void test('a check that found no block beats the reader’s own word, as on Project setup', () => {
+    const [row] = setupRows(
+      [check({ id: 's1', block_found: false, template_revision: null }), setup({ id: 's2' })],
+      tools,
+    );
+    assert.equal(row?.chip, 'missing');
+  });
+
+  void test('rows keep the read’s order, newest first, one per tool and project', () => {
+    const rows = setupRows(
+      [
+        setup({ id: 's3', agent_id: 'a2', project_id: 'p2', project_slug: 'atlas' }),
+        check({ id: 's2' }),
+        setup({ id: 's1' }),
+      ],
+      tools,
+    );
+    assert.deepEqual(
+      rows.map((r) => [r.key, r.projectSlug]),
+      [
+        ['p2:a2', 'atlas'],
+        ['p1:a1', 'onroute'],
+      ],
+    );
+  });
+
+  void test('a disconnected tool’s records go with it; one naming no tool is listed as such', () => {
+    const rows = setupRows(
+      [
+        setup({ id: 's1', agent_id: 'gone' }),
+        setup({ id: 's2', agent_id: null, instructions_path: null }),
+      ],
+      tools,
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.toolLabel, NO_TOOL);
+    assert.equal(rows[0]?.chip, 'recorded');
+    assert.equal(setupLine(rows[0]), 'No tool named · instructions file not named · not verified');
+  });
+});
+
+void describe('what needs the reader', () => {
+  const update = (key: UpdateStatus['key'], word: string): UpdateStatus => ({
+    key,
+    word,
+    tone: 'danger',
+    reason: '',
+    requiredFor: [],
+    aheadOfBoard: false,
+  });
+
+  void test('tools not connected yet, and a helper the board needs updated, each to its row', () => {
+    const s = state([
+      device({
+        id: 'd1',
+        agents: [
+          seen({ id: 'a1' }),
+          seen({ id: 'a2', harness: 'codex', created_at: 2 }),
+          agent({ id: 'a3', harness: 'omnigent', created_at: 3 }),
+        ],
+      }),
     ]);
-    assert.equal(overviewSummary(s), '1 tool on this board, 1 connected.');
+    const items = attentionItems(
+      s,
+      new Map([
+        ['a1', update('up-to-date', 'Up to date')],
+        ['a2', update('required', 'Update required for pairing devices')],
+      ]),
+      NOW,
+    );
+    assert.deepEqual(items, [
+      {
+        agentId: 'a3',
+        label: 'Omnigent · Belka',
+        why: 'credential created, never used',
+        href: toolAddress('a3'),
+      },
+      {
+        agentId: 'a2',
+        label: 'Codex · Belka',
+        why: 'update required for pairing devices',
+        href: toolAddress('a2'),
+      },
+    ]);
+  });
+
+  void test('the tool the hero is about is not said twice', () => {
+    const s = state([
+      device({
+        id: 'd1',
+        agents: [agent({ id: 'a1', created_at: 2 }), agent({ id: 'a2', harness: 'codex' })],
+      }),
+    ]);
+    assert.equal(s.pending?.id, 'a1');
+    assert.deepEqual(
+      attentionItems(s, new Map(), NOW).map((i) => i.agentId),
+      ['a2'],
+    );
+  });
+
+  void test('Update available, Version unknown and Could not check are not attention', () => {
+    const s = state([device({ id: 'd1', agents: [seen({ id: 'a1' })] })]);
+    for (const [key, word] of [
+      ['available', 'Update available'],
+      ['unknown', 'Version unknown'],
+      ['unchecked', 'Could not check'],
+    ] as const) {
+      assert.deepEqual(attentionItems(s, new Map([['a1', update(key, word)]]), NOW), []);
+    }
+  });
+});
+
+void describe('overviewSummary: what the live region says', () => {
+  void test('the next step, then the tools on the board and how many have connected', () => {
+    assert.equal(overviewSummary(state([])), 'Next step: Start by connecting your device.');
+    assert.equal(
+      overviewSummary(
+        state([
+          device({ id: 'd1', agents: [seen({ id: 'a1' })] }),
+          device({
+            id: 'd2',
+            display_name: 'Strelka',
+            agents: [agent({ id: 'a2', device_label: 'Strelka', created_at: 2 })],
+          }),
+        ]),
+      ),
+      'Next step: Set up your project repository. 2 tools on this board, 1 connected.',
+    );
+  });
+
+  void test('a tool registered and never used is on the board, not connected', () => {
+    const said = overviewSummary(state([device({ id: 'd1', agents: [agent({ id: 'a1' })] })]));
+    assert.equal(
+      said,
+      'Next step: Finish connecting Claude Code · Belka. 1 tool on this board, 0 connected.',
+    );
+  });
+});
+
+void describe('addresses', () => {
+  void test('Advanced is where scripts and the API get a credential', () => {
+    assert.equal(ADVANCED_ADDRESS, '/developer?tab=advanced');
+  });
+
+  void test('Manage tools is the Tools tab, and a tool opens there with its Details (LAI-1080)', () => {
+    assert.equal(OVERVIEW_ADDRESSES.tools, '/developer?tab=tools');
+    assert.equal(toolAddress('a 1'), '/developer?tab=tools&agent=a%201');
   });
 });
