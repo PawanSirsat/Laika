@@ -2,11 +2,12 @@
 id: LAI-1067
 title: 'Nothing fails when the server moves PROTOCOL.current and cli/src/protocol.ts stays behind'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-1062, LAI-1064]
 discovered-from: LAI-1064
-status: backlog
+started: 2026-11-02T01:38:47Z
+status: in-progress
 ---
 
 LAI-1062 moved `server/src/services/developer-compat.ts`'s `PROTOCOL.current`

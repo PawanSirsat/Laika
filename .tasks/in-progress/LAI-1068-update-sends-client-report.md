@@ -2,11 +2,12 @@
 id: LAI-1068
 title: 'After laika update, the Devices tab still shows the old version until each tool reconnects'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-1064]
 discovered-from: LAI-1065
-status: backlog
+started: 2026-11-02T01:38:47Z
+status: in-progress
 ---
 
 `laika tool add` sends a client report (`POST /api/v1/agents/me/client-report`,
