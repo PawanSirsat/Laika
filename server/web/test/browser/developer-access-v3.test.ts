@@ -381,7 +381,11 @@ void describe('the tab bars (plan §I)', () => {
       await h.page
         .getByRole('heading', { name: 'Set up a project repository' })
         .waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('.dev-projects-body').count(), 1);
+      // Drawn as the design's three-step wizard since LAI-1082; its title
+      // shows while the tools load, so wait for the wizard itself.
+      const wizard = h.page.locator('.dev-setup [data-wizard="project-setup"]');
+      await wizard.waitFor({ timeout: 20_000 });
+      assert.equal(await wizard.count(), 1);
       // No Activity tab in v3 (LAI-1078): its card is Advanced's second.
       assert.equal(await h.page.locator('.page-tab[data-tab="activity"]').count(), 0);
       await h.page.locator('.page-tab[data-tab="advanced"]').click();
@@ -891,6 +895,8 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
 
       await hero(h.page).getByRole('link', { name: 'Set up a project →' }).click();
       await h.page.waitForURL(/tab=projects/, { timeout: 20_000 });
+      // It lands on Project setup's wizard (LAI-1082), not just its address.
+      await h.page.locator('.dev-setup').waitFor({ timeout: 20_000 });
       assert.equal(here(h.page), '/developer?tab=projects');
       assert.equal(await active(h.page), 'projects');
     } finally {
