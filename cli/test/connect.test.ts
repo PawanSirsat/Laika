@@ -29,7 +29,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
-import { AGENTS, codexLaikaState, resolveAgent } from '../src/agents.ts';
+import { AGENTS, codexLaikaLines, codexLaikaState, resolveAgent } from '../src/agents.ts';
 import { connect, planConnect, rcFileFor, writeEnvFile, type ConnectIo } from '../src/connect.ts';
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -749,6 +749,8 @@ void describe('codex never gets a second laika table (review round 1)', () => {
       // Re-review: the connect test below passes for "present" and "unsure"
       // alike, so it cannot see the detection itself. This can.
       assert.equal(codexLaikaState(original), 'present');
+      // LAI-1089: whatever spelling counts as present, laika update compares lines of it.
+      assert.notDeepEqual(codexLaikaLines(original), []);
     });
 
     void test(`${label} is left byte-identical, and the result still has one laika table`, async () => {
@@ -799,6 +801,52 @@ void describe('codex never gets a second laika table (review round 1)', () => {
   void test('a [mcp_servers.laika] line inside a multi-line string is text, not a table', () => {
     assert.equal(codexLaikaState('notes = """\n[mcp_servers.laika]\nurl = "x"\n"""\n'), 'absent');
     assert.equal(codexLaikaState("notes = '''\n[mcp_servers.laika]\n'''\n"), 'absent');
+  });
+
+  // LAI-1089: what laika update's MCP guard compares in ~/.codex/config.toml.
+  void test('codexLaikaLines keeps laika’s lines, and none of the rest of the file', () => {
+    const toml = [
+      'model = "o4"',
+      '# a comment',
+      '[projects."/Users/me/laika"]',
+      'trust_level = "trusted"',
+      '',
+      '[mcp_servers.other]',
+      'command = "other-mcp"',
+      '',
+      '[mcp_servers.laika]',
+      'url = "http://x/mcp"',
+      'bearer_token_env_var = "LAIKA_TOKEN"',
+      'args = [',
+      '  "--one",',
+      ']',
+      '',
+      '[mcp_servers.laika.env]',
+      'X = "1"',
+      '',
+      '[mcp_servers."laika.v2"]',
+      'url = "http://v2/mcp"',
+      '',
+      '[mcp_servers]',
+      'laika.timeout = 5',
+      'other2 = { url = "http://y" }',
+      '',
+      'notes = """',
+      '[mcp_servers.laika]',
+      '"""',
+    ].join('\n');
+    assert.deepEqual(codexLaikaLines(toml), [
+      '[mcp_servers.laika]',
+      'url = "http://x/mcp"',
+      'bearer_token_env_var = "LAIKA_TOKEN"',
+      'args = [',
+      '"--one",',
+      ']',
+      '[mcp_servers.laika.env]',
+      'X = "1"',
+      'laika.timeout = 5',
+    ]);
+    assert.deepEqual(codexLaikaLines('[projects."/Users/me/laika"]\ntrust_level = "x"\n'), []);
   });
 
   void test('an append to a file with other servers leaves exactly one laika table', async () => {
