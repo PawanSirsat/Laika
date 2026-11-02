@@ -19,6 +19,8 @@ const BASE_CAPABILITIES = [
   'client_report',
   'doctor',
   'update',
+  // `laika project check` (LAI-1066) records with the tool's credential.
+  'project_check',
 ] as const;
 
 /** What the report says the helper is. */

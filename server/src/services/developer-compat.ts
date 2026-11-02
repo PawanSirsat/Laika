@@ -46,9 +46,11 @@ export type FeatureName = (typeof FEATURE_NAMES)[number];
  * than written beside it — a route removed, renamed or left unmounted (an app
  * built without a database mounts none of them) turns its feature off.
  *
- * **An empty list is never on.** `project_setups` has no server-side record
- * yet — the web keeps a browser-local one — so there is no route that could
- * make it true, and it stays `false` until one exists and is named here.
+ * **An empty list is never on**, so a feature cannot be switched on by
+ * naming nothing. `project_setups` (LAI-1066, §4.82) is one route pair the
+ * owner and the agent share: the owner's browser record and the agent's
+ * `laika project check` are both `POST /project-setups`, and both read back
+ * through `GET /project-setups`.
  */
 export const FEATURE_ROUTES: Readonly<Record<FeatureName, readonly string[]>> = {
   // The owner's side (approve in the browser) and the device's (claim, complete):
@@ -61,7 +63,7 @@ export const FEATURE_ROUTES: Readonly<Record<FeatureName, readonly string[]>> = 
   ],
   tool_setup_exchange: ['POST /api/v1/devices/:id/tools', 'POST /api/v1/tool-setup/:id/redeem'],
   client_reports: ['POST /api/v1/agents/me/client-report'],
-  project_setups: [],
+  project_setups: ['POST /api/v1/project-setups', 'GET /api/v1/project-setups'],
 };
 
 /** Each feature, on exactly when all of its routes are in `served`. */

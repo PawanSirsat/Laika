@@ -855,6 +855,13 @@ const PAIRS: readonly Pair[] = [
     client: 'ProjectAccess',
     clientFile: 'project-access.ts',
   },
+  // LAI-1066: what is known about a repository's Laika block (§4.82).
+  {
+    server: 'ProjectSetupView',
+    serverFile: 'services/project-setups.ts',
+    client: 'ProjectSetup',
+    clientFile: 'project-setups.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [

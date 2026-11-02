@@ -8,6 +8,8 @@ import {
   type RegisteredAgent,
 } from '../../../../api/agents.ts';
 import type { ProjectAccess } from '../../../../api/project-access.ts';
+import type { ProjectSetup } from '../../../../api/project-setups.ts';
+import { dateTime } from '../../../../api/time-label.ts';
 import {
   instructionsTarget,
   type AgentChoice,
@@ -23,11 +25,11 @@ import { PROJECT_BLOCK_REVISION } from '../../connect/connect-copy.ts';
  * are called, which grants the selector offers, the one-project change to the
  * grant set, and what may be said about a repository's block.
  *
- * **What the page may claim.** The board cannot see a repository. The only
- * record of a block is the one the reader makes by saying *I've added it*,
- * kept in this browser and always shown as theirs, never as verified. Until
- * `laika project check` exists (plan §F.7), nothing else is evidence, and the
- * page says so rather than implying it looked.
+ * **What the page may claim.** The board cannot see a repository. What it
+ * knows about a block is a record (SPEC §4.82, LAI-1066): the reader's *I've
+ * added it*, always shown as theirs and never as verified, or what
+ * `laika project check` read in the file on a device. With neither, the page
+ * says *not recorded* rather than implying it looked.
  */
 
 /** One of the reader's tools, as the picker offers it. */
@@ -142,78 +144,93 @@ export function withOneGrant(
   return choice === 'none' ? others : [...others, { project_id: projectId, scope: choice }];
 }
 
-// ------------------------------------------------------- the reader's record
+// ------------------------------------------------------------------ records
 
-/** One *I've added it*: the reader's word, in this browser, never verified. */
-export interface SelfReport {
-  readonly revision: number;
-  readonly at: number;
-}
-
-export const SELF_REPORT_KEY = 'laika.developer.project-setup';
-
-function reportKey(agentId: string, projectId: string): string {
-  return `${agentId}:${projectId}`;
-}
-
-function readAll(storage: Storage | undefined): Record<string, SelfReport> {
-  try {
-    const raw = storage?.getItem(SELF_REPORT_KEY);
-    if (raw === null || raw === undefined) return {};
-    const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed !== null
-      ? (parsed as Record<string, SelfReport>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function browserStorage(): Storage | undefined {
-  try {
-    return window.localStorage;
-  } catch {
-    return undefined;
-  }
-}
-
-export function readSelfReport(
-  agentId: string,
-  projectId: string,
-  storage: Storage | undefined = browserStorage(),
-): SelfReport | null {
-  const found = readAll(storage)[reportKey(agentId, projectId)];
-  return typeof found?.revision === 'number' && typeof found.at === 'number' ? found : null;
-}
-
-/** Records the reader's word. A storage that refuses is not an error: the page still works. */
-export function writeSelfReport(
-  agentId: string,
-  projectId: string,
-  report: SelfReport,
-  storage: Storage | undefined = browserStorage(),
-): void {
-  try {
-    const all = readAll(storage);
-    all[reportKey(agentId, projectId)] = report;
-    storage?.setItem(SELF_REPORT_KEY, JSON.stringify(all));
-  } catch {
-    // Private windows and blocked storage: the record is a convenience.
-  }
-}
-
-export type BlockStatus =
-  | { readonly kind: 'not-recorded' }
-  | { readonly kind: 'current'; readonly report: SelfReport }
-  | { readonly kind: 'update-available'; readonly report: SelfReport };
+/** What one record says about the block, from that record alone. */
+export type RecordState = 'current' | 'update-available' | 'missing';
 
 /**
- * What may be said about the repository's block — only from a record. With
- * none, it is *not recorded*, never *missing* or *up to date*.
+ * *Update available* only from evidence: an older template revision, or a
+ * block naming another project or a prefix since changed. A local check that
+ * found no block is *missing*. A field the record could not check (`null`) is
+ * never read as a mismatch.
  */
-export function blockStatus(report: SelfReport | null): BlockStatus {
-  if (report === null) return { kind: 'not-recorded' };
-  return report.revision < PROJECT_BLOCK_REVISION
-    ? { kind: 'update-available', report }
-    : { kind: 'current', report };
+export function recordState(record: ProjectSetup): RecordState {
+  if (!record.block_found) return 'missing';
+  if (record.template_revision !== null && record.template_revision < PROJECT_BLOCK_REVISION) {
+    return 'update-available';
+  }
+  if (record.project_match === false || record.prefix_match === false) return 'update-available';
+  return 'current';
+}
+
+export interface SetupEvidence {
+  /** What `laika project check` read, one per repository, oldest first. */
+  readonly checks: readonly ProjectSetup[];
+  /** The reader's own *I've added it*, or `null`. */
+  readonly self: ProjectSetup | null;
+  /** The line the step leads with. */
+  readonly overall: 'not-recorded' | RecordState;
+}
+
+/**
+ * The records for one tool, split by source, and the one word the step leads
+ * with: *update available* if any record shows one, else *missing* when every
+ * local check found nothing and the reader recorded nothing, else *current*.
+ */
+export function setupEvidence(records: readonly ProjectSetup[], agentId: string): SetupEvidence {
+  const mine = records.filter((record) => record.agent_id === agentId);
+  const checks = mine.filter((record) => record.source === 'local_check');
+  const self = mine.find((record) => record.source === 'self_reported_browser') ?? null;
+  const states = [...checks, ...(self === null ? [] : [self])].map(recordState);
+  const overall =
+    states.length === 0
+      ? 'not-recorded'
+      : states.includes('update-available')
+        ? 'update-available'
+        : states.every((state) => state === 'missing')
+          ? 'missing'
+          : 'current';
+  return { checks, self, overall };
+}
+
+/**
+ * Who said it, and when: *Checked by laika project check on Belka at 20 Oct,
+ * 2:29 PM*, or *Recorded by you — not verified*. No time while presence is
+ * off: the server sends none.
+ */
+export function recordSource(record: ProjectSetup, now: number): string {
+  const at = record.checked_at === null ? '' : ` at ${dateTime(record.checked_at, now)}`;
+  if (record.source === 'local_check') {
+    const device = record.device_label?.trim() ?? '';
+    return `Checked by laika project check on ${device === '' ? NO_DEVICE.toLowerCase() : device}${at}`;
+  }
+  return `Recorded by you${at} — not verified`;
+}
+
+/**
+ * What one record found, in words: the repository, revision and any mismatch.
+ * A local check's project and prefix match are worked out when it is recorded,
+ * so it says *as of the last check*: a prefix changed since shows only once
+ * `laika project check` runs again.
+ */
+export function recordFinding(record: ProjectSetup): string {
+  const asOf = record.source === 'local_check' ? 'as of the last check, ' : '';
+  const where = `${record.repo_label === null ? '' : `${record.repo_label}: `}${asOf}`;
+  const file = record.instructions_path ?? 'the instructions file';
+  if (!record.block_found) return `${where}no Laika block in ${file}`;
+  const revision =
+    record.template_revision === null
+      ? 'a Laika block'
+      : `instructions template revision ${String(record.template_revision)}`;
+  const problems = [
+    record.project_match === false ? 'it names another project' : null,
+    record.prefix_match === false ? 'its task keys use another prefix' : null,
+  ].filter((p): p is string => p !== null);
+  return `${where}${revision} in ${file}${problems.length === 0 ? '' : ` — ${problems.join(', ')}`}`;
+}
+
+/** The command that checks this repository from the reader's device. */
+export function projectCheckCommand(projectSlug: string): string {
+  return `laika project check --project ${projectSlug}`;
 }

@@ -60,7 +60,7 @@ describe('compatibility()', () => {
       device_pairing: true,
       tool_setup_exchange: true,
       client_reports: true,
-      project_setups: false,
+      project_setups: true,
     });
     expect(Object.values(servedFeatures([])).some(Boolean)).toBe(false);
 
@@ -76,9 +76,14 @@ describe('compatibility()', () => {
     }
   });
 
-  it('keeps project setups off: it has no server-side record, so no route names it', () => {
-    expect(FEATURE_ROUTES.project_setups).toEqual([]);
-    expect(compatibility(INPUT).features.project_setups).toBe(false);
+  it('names project setups by the owner’s and the agent’s shared routes (LAI-1066)', () => {
+    expect(FEATURE_ROUTES.project_setups).toEqual([
+      'POST /api/v1/project-setups',
+      'GET /api/v1/project-setups',
+    ]);
+    // Either half alone is not the feature.
+    expect(servedFeatures(['POST /api/v1/project-setups']).project_setups).toBe(false);
+    expect(servedFeatures(['GET /api/v1/project-setups']).project_setups).toBe(false);
   });
 
   // Plan §F.3: a helper too old for a feature that is on is told to update for

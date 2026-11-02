@@ -208,11 +208,13 @@ export function commonRefusal(answer: Answer, origin: string): string | undefine
 }
 
 /** A manifest feature a device command needs, and what a person calls it. */
-export type GatedFeature = 'device_pairing' | 'tool_setup_exchange';
+export type GatedFeature = 'device_pairing' | 'tool_setup_exchange' | 'project_setups';
 
 const FEATURE_WORDS: Readonly<Record<GatedFeature, string>> = {
   device_pairing: 'device pairing',
   tool_setup_exchange: 'tool setup',
+  // `laika project check`'s record (LAI-1066).
+  project_setups: 'project setup records',
 };
 
 export type Gate =

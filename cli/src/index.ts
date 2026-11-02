@@ -4,6 +4,7 @@ import { connect } from './connect.ts';
 import { device } from './device.ts';
 import { doctor } from './doctor.ts';
 import { init } from './init.ts';
+import { projectCheck } from './project-check.ts';
 import { tool } from './tool-add.ts';
 import { update } from './update.ts';
 import { version } from './version.ts';
@@ -33,6 +34,8 @@ const USAGE = [
   '  laika device pair        pair this machine with a board (the browser shows the command)',
   '  laika tool add <tool>    install one tool’s own credential on this paired machine',
   '  laika connect <agent>    point a coding agent at the board (--project: this folder)',
+  '  laika project check      is this repo’s Laika block there and current? reads only;',
+  '                           records the finding with a tool’s own credential (--help)',
   '  laika connect --list     the agents connect knows, and what it does for each',
   '  laika activity on|off    count local agent activity for the heatmap (opt-in)',
   '  laika activity status    what the next activity sync would send',
@@ -67,6 +70,13 @@ async function main(argv: readonly string[]): Promise<number> {
   if (command === 'connect') return connect(argv.slice(1));
   if (command === 'device') return device(argv.slice(1));
   if (command === 'tool') return tool(argv.slice(1));
+  if (command === 'project') {
+    if (argv[1] === 'check') return projectCheck(argv.slice(2));
+    process.stderr.write(
+      'laika project: the only subcommand is "check" (laika project check --help)\n',
+    );
+    return 64;
+  }
   if (command === 'activity') return activity(argv.slice(1));
   if (command === 'time') return time(argv.slice(1));
   if (command === 'agent') {

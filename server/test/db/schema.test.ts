@@ -130,6 +130,8 @@ describe('migrations', () => {
     // LAI-546, §4.74: a project's hand-off settings; no row is the defaults.
     'project_handoff_policies',
     'project_memberships',
+    // LAI-1066: what is known about a repository's Laika block; evidence only.
+    'project_repo_setups',
     'project_statuses',
     'projects',
     'pushed_commit_keys',

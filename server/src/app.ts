@@ -58,6 +58,7 @@ import { agentRoutes } from './http/routes/agents.ts';
 import { deviceRoutes } from './http/routes/devices.ts';
 import { devicePairingRequestRoutes, devicePairingRoutes } from './http/routes/device-pairing.ts';
 import { deviceToolRoutes, toolSetupRoutes } from './http/routes/tool-setup.ts';
+import { projectSetupRoutes } from './http/routes/project-setups.ts';
 import { agentSessionRoutes } from './http/routes/agent-sessions.ts';
 import { tokenRoutes, userTokenRoutes } from './http/routes/tokens.ts';
 import { mcpRoutes } from './http/routes/mcp.ts';
@@ -410,6 +411,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     const toolSetup = { db, sqlite: options.sqlite, publicUrl: options.publicUrl };
     app.route(`${API_BASE}/devices`, deviceToolRoutes(toolSetup));
     app.route(`${API_BASE}/tool-setup`, toolSetupRoutes(toolSetup));
+    // LAI-1066: what is known about a repository's Laika block (§4.82).
+    app.route(`${API_BASE}/project-setups`, projectSetupRoutes({ db }));
     // LAI-1045: the owner's devices (§4.78), read only.
     app.route(`${API_BASE}/devices`, deviceRoutes({ db }));
     app.route(`${API_BASE}/agent-sessions`, agentSessionRoutes({ db, sqlite: options.sqlite }));

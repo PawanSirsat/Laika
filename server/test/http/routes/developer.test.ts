@@ -164,7 +164,7 @@ async function setUp(harness: AuthHarness): Promise<void> {
 }
 
 describe('GET /api/v1/developer/compatibility — features (LAI-1062)', () => {
-  it('says device pairing, the tool setup exchange and client reports are on, project setups off', async () => {
+  it('says device pairing, the tool setup exchange, client reports and project setups are on', async () => {
     h = authHarness();
     await setUp(h);
 
@@ -175,7 +175,7 @@ describe('GET /api/v1/developer/compatibility — features (LAI-1062)', () => {
       device_pairing: true,
       tool_setup_exchange: true,
       client_reports: true,
-      project_setups: false,
+      project_setups: true,
     });
   });
 
@@ -195,6 +195,7 @@ describe('GET /api/v1/developer/compatibility — features (LAI-1062)', () => {
       `/api/v1/device-pairing/${id}/complete`,
       `/api/v1/tool-setup/${id}/redeem`,
       '/api/v1/agents/me/client-report',
+      '/api/v1/project-setups',
     ]) {
       const res = await h.app.request(path, { method: 'POST', headers: jsonHeaders(), body: '{}' });
       expect(res.status, path).not.toBe(404);

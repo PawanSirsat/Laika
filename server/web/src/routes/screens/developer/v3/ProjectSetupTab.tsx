@@ -8,6 +8,11 @@ import {
 import { everyPage } from '../../../../api/every-page.ts';
 import { pickProject } from '../../../../api/pick-project.ts';
 import { getProjectAccess, type ProjectAccess } from '../../../../api/project-access.ts';
+import {
+  listProjectSetups,
+  recordSelfReport,
+  type ProjectSetup,
+} from '../../../../api/project-setups.ts';
 import { useProjects } from '../../../../api/use-projects.ts';
 import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../../components/Dropdown.tsx';
@@ -27,18 +32,19 @@ import {
 } from '../../connect/connect-copy.ts';
 import { OVERVIEW_ADDRESSES } from './overview-state.ts';
 import {
-  blockStatus,
   connectedTools,
   currentChoice,
   grantLabel,
   grantOptions,
-  readSelfReport,
+  projectCheckCommand,
+  recordFinding,
+  recordSource,
+  recordState,
   REPO_MCP_CONFIG_TOOLS,
+  setupEvidence,
   targetFor,
   withOneGrant,
-  writeSelfReport,
   type GrantChoice,
-  type SelfReport,
   type ToolChoice,
 } from './project-setup.ts';
 import '../../connect/connect.css';
@@ -93,7 +99,9 @@ const ROLE_WORDS = { lead: 'Lead', member: 'Member', viewer: 'Viewer' } as const
  * 3. **Instructions** — the tool's own file (`instructionsTarget`) and the
  *    revision-2 prompt that updates only the Laika block in it.
  * 4. **Repo MCP config** — only for the tools that read it from the repo.
- * 5. **Record** — *I've added it*, the reader's word, shown as theirs.
+ * 5. **Record** — what is known about the block, from the board's records
+ *    (§4.82): `laika project check`'s, verified on a device, apart from the
+ *    reader's own *I've added it*, which is shown as theirs, never verified.
  *
  * The board never sees the repository, and the page never says it did.
  */
@@ -293,7 +301,10 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
-  const [report, setReport] = useState<SelfReport | null>(null);
+  const [now] = useState(() => Date.now());
+  const [records, setRecords] = useState<Load<readonly ProjectSetup[]>>({ kind: 'loading' });
+  const [recording, setRecording] = useState(false);
+  const [recordError, setRecordError] = useState<unknown>(null);
 
   const load = useCallback(() => {
     const controller = new AbortController();
@@ -302,11 +313,19 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
       .then((value) => {
         setAccess({ kind: 'ready', value });
         setChoice(currentChoice(value));
-        setReport(readSelfReport(tool.id, value.project.id));
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setAccess({ kind: 'error', error });
+      });
+    setRecords({ kind: 'loading' });
+    listProjectSetups(project.slug, tool.id, controller.signal)
+      .then((value) => {
+        setRecords({ kind: 'ready', value });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setRecords({ kind: 'error', error });
       });
     return controller;
   }, [tool.id, project.slug]);
@@ -370,7 +389,32 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
   const prompt = target.committable
     ? projectSetupPrompt({ origin, project, path: target.path, block, preamble })
     : undefined;
-  const status = blockStatus(report);
+  const evidence = records.kind === 'ready' ? setupEvidence(records.value, tool.id) : null;
+  const checkCommand = projectCheckCommand(project.slug);
+
+  const record = async () => {
+    setRecording(true);
+    setRecordError(null);
+    try {
+      const made = await recordSelfReport({
+        agentId: tool.id,
+        projectSlug: project.slug,
+        templateRevision: PROJECT_BLOCK_REVISION,
+        instructionsPath: target.committable ? target.path : null,
+      });
+      setRecords((prev) =>
+        prev.kind === 'ready'
+          ? { kind: 'ready', value: [...prev.value.filter((r) => r.id !== made.id), made] }
+          : { kind: 'ready', value: [made] },
+      );
+      announce(`Recorded: you added the block for ${project.name}. Not verified.`);
+    } catch (error: unknown) {
+      setRecordError(error);
+      announce('Could not record it.');
+    } finally {
+      setRecording(false);
+    }
+  };
   const roleWord = value.member.role === null ? 'Not a member' : ROLE_WORDS[value.member.role];
   const spaceSettings = `/spaces/${encodeURIComponent(project.slug)}/settings?tab=access`;
 
@@ -543,46 +587,90 @@ function SetupFor({ origin, tool, project, announce, go, onAgentChanged }: Setup
 
       <fieldset className="dev-setup-step" data-step="record">
         <legend className="dev-setup-legend">Record it</legend>
-        <p className="conn-body" data-status={status.kind}>
-          {status.kind === 'not-recorded' ? (
-            <StatusChip
-              tone="neutral"
-              word="Not recorded"
-              reason="Laika cannot see your repository, so it does not know whether the block is there."
-            />
-          ) : status.kind === 'current' ? (
-            <StatusChip
-              tone="ok"
-              word="Recorded by you"
-              reason={`on this browser, revision ${String(status.report.revision)} — not verified`}
-            />
-          ) : (
-            <StatusChip
-              tone="warn"
-              word="Update available"
-              reason={`you recorded revision ${String(status.report.revision)}; the template is now revision ${String(PROJECT_BLOCK_REVISION)}. Paste the prompt again — it replaces only the block.`}
-            />
-          )}
+        {records.kind === 'loading' ? (
+          <LoadingState shape="row" count={1} label="Loading what is recorded" />
+        ) : records.kind === 'error' ? (
+          <ApiErrorState
+            error={records.error}
+            resource="what is recorded for this repository"
+            scope="project"
+            onRetry={load}
+          />
+        ) : evidence === null ? null : (
+          <>
+            <p className="conn-body" data-status={evidence.overall}>
+              {evidence.overall === 'not-recorded' ? (
+                <StatusChip
+                  tone="neutral"
+                  word="Not recorded"
+                  reason="Laika cannot see your repository. Run laika project check in it to find out."
+                />
+              ) : evidence.overall === 'update-available' ? (
+                <StatusChip
+                  tone="warn"
+                  word="Update available"
+                  reason={`a record below is older than instructions template revision ${String(PROJECT_BLOCK_REVISION)}, or names another project. Paste the prompt again — it replaces only the block.`}
+                />
+              ) : evidence.overall === 'missing' ? (
+                <StatusChip
+                  tone="warn"
+                  word="No block found"
+                  reason="laika project check found no Laika block. Paste the prompt above in the repository."
+                />
+              ) : evidence.checks.some((r) => recordState(r) === 'current') ? (
+                <StatusChip
+                  tone="ok"
+                  word="Checked"
+                  reason="laika project check found the current block on your device."
+                />
+              ) : (
+                <StatusChip tone="ok" word="Recorded by you" reason="not verified" />
+              )}
+            </p>
+            {(evidence.checks.length > 0 || evidence.self !== null) && (
+              <ul className="dev-setup-records" aria-label="Records for this repository">
+                {evidence.checks.map((r) => (
+                  <li key={r.id} data-source="local_check" data-state={recordState(r)}>
+                    <span className="dev-setup-record-source">{recordSource(r, now)}</span>
+                    <span className="conn-note">{recordFinding(r)}</span>
+                  </li>
+                ))}
+                {evidence.self !== null && (
+                  <li data-source="self_reported_browser" data-state={recordState(evidence.self)}>
+                    <span className="dev-setup-record-source">
+                      {recordSource(evidence.self, now)}
+                    </span>
+                    <span className="conn-note">{recordFinding(evidence.self)}</span>
+                  </li>
+                )}
+              </ul>
+            )}
+          </>
+        )}
+        <p className="conn-body" data-note="project-check">
+          To check the file from your device, run this in the repository. It reads the instructions
+          file, changes nothing, and records what it found with {tool.toolName}’s own credential.
         </p>
+        <CodeBlock label="Terminal, in the repository" text={checkCommand} what="the command" />
+        {recordError !== null && (
+          <ApiErrorState error={recordError} resource="your record" scope="project" verb="save" />
+        )}
         <div className="dev-setup-actions">
           <button
             type="button"
             className="bar-control"
+            aria-disabled={recording || records.kind !== 'ready'}
+            aria-busy={recording}
             onClick={() => {
-              const next = { revision: PROJECT_BLOCK_REVISION, at: Date.now() };
-              writeSelfReport(tool.id, value.project.id, next);
-              setReport(next);
-              announce(`Recorded: you added the block for ${project.name}. Not verified.`);
+              if (recording || records.kind !== 'ready') return;
+              void record();
             }}
           >
+            {recording && <Spinner size="sm" />}
             I’ve added it
           </button>
           <span className="conn-note">Self-reported. Laika does not check the file.</span>
         </div>
-        <p className="conn-note" data-note="project-check">
-          Coming later: <code>laika project check</code> will check the file from your device and
-          record what it found. It is not available yet.
-        </p>
       </fieldset>
     </>
   );

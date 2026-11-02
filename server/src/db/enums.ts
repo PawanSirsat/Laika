@@ -303,6 +303,14 @@ export const CLIENT_REPORT_SOURCES = ['cli', 'mcp_initialize'] as const;
 export type ClientReportSource = (typeof CLIENT_REPORT_SOURCES)[number];
 
 /**
+ * Where a project repository setup record came from (§4.82, LAI-1066): the
+ * owner saying so in the browser, or `laika project check` reading the file on
+ * a device with the agent's own token. Neither is an authorisation input.
+ */
+export const PROJECT_SETUP_SOURCES = ['self_reported_browser', 'local_check'] as const;
+export type ProjectSetupSource = (typeof PROJECT_SETUP_SOURCES)[number];
+
+/**
  * An agent's grant on one project (§4.64, D-114): the same two words a token's
  * scope uses, because it narrows the same way — `read_only` keeps the reads.
  */
