@@ -35,6 +35,8 @@ import {
   DEVICE_ORDER,
   DEVICE_STATUS,
   DUPLICATE,
+  NOTHING_MISSING,
+  READY_NEEDS,
   TOOL_ORDER,
   TOOL_STATUS,
   UPDATE_ORDER,
@@ -124,6 +126,10 @@ interface Over {
   readonly missing?: readonly string[];
   readonly session?: boolean;
   readonly requestAt?: number | null;
+  /** False: an imported device, which holds no key of its own. */
+  readonly paired?: boolean;
+  /** What the helper must report; the missing ones by default. */
+  readonly required?: readonly string[];
 }
 
 function verification(over: Over = {}): AgentVerification {
@@ -137,7 +143,7 @@ function verification(over: Over = {}): AgentVerification {
     now: NOW,
     last_seen_at: NOW - 31 * MIN,
     checks: {
-      device_paired: pass({ device_id: 'd1' }),
+      device_paired: over.paired === false ? fail({ device_id: null }) : pass({ device_id: 'd1' }),
       credential_installed:
         over.installed === false
           ? fail({ token_id: null, via_exchange: false })
@@ -166,7 +172,7 @@ function verification(over: Over = {}): AgentVerification {
       required_capabilities: {
         state: missing.length === 0 ? ('pass' as const) : ('fail' as const),
         at: null,
-        detail: { required: [...missing], missing: [...missing] },
+        detail: { required: [...(over.required ?? missing)], missing: [...missing] },
       },
       session_hooks: over.session === false ? fail({ harness: null }) : pass({ harness }),
     },
@@ -360,6 +366,83 @@ void describe('every status the code can return has copy, and the chips say the 
     assert.match(TOOL_STATUS.ready.meaning, new RegExp(`in the last ${recent}`));
     assert.match(TOOL_STATUS.idle.meaning, new RegExp(`between ${recent} and ${stale} ago`));
     assert.match(TOOL_STATUS.offline.meaning, new RegExp(`more than ${stale} ago`));
+  });
+});
+
+void describe('the next step comes only from what readiness() requires (review round 1, B1)', () => {
+  const claude = tool('claude-code');
+  const ready: Over = { harness: 'claude-code', own: true };
+  /** Each check failing alone, on a tool that is otherwise Ready. */
+  const alone: Readonly<Record<string, Over>> = {
+    device_paired: { ...ready, paired: false },
+    credential_installed: { ...ready, installed: false },
+    tool_request: { ...ready, own: false },
+    required_capabilities: { ...ready, missing: ['client_report'] },
+    session_hooks: { ...ready, session: false },
+  };
+
+  void test('READY_NEEDS is exactly the checks whose failure alone stops Ready', () => {
+    assert.equal(readiness(verification(ready), claude).key, 'ready');
+    const stops = Object.entries(alone)
+      .filter(([, over]) => readiness(verification(over), claude).key !== 'ready')
+      .map(([id]) => id);
+    assert.deepEqual(stops, [...READY_NEEDS]);
+    // And every check a checklist can fail is one of the five tried here.
+    const ids = checkLines(
+      verification({ ...ready, required: ['client_report'] }),
+      claude,
+      'Belka',
+    ).map((line) => line.id);
+    assert.deepEqual([...ids].sort(), Object.keys(alone).sort());
+  });
+
+  const describe_ = (v: AgentVerification) =>
+    toolChipDescription({
+      label: 'Claude Code · Strelka',
+      status: { ...readiness(v, claude), evidence: true },
+      agent: agent({ harness: 'claude-code' }),
+      verification: v,
+      tool: claude,
+      deviceName: 'Strelka',
+      now: NOW,
+    });
+
+  void test('an imported device: Connected says the tool’s own request is missing, never to pair', () => {
+    const v = verification({ harness: 'claude-code', paired: false });
+    assert.equal(readiness(v, claude).key, 'connected');
+    const lines = checkLines(v, claude, 'Strelka');
+    assert.equal(lines[0]?.id, 'device_paired');
+    assert.equal(lines[0]?.state, 'fail', 'the checklist does show the device unpaired');
+    const request = lines.find((line) => line.id === 'tool_request');
+    assert.ok(request);
+    const text = describe_(v);
+    assert.ok(text.endsWith(`To make it Ready: ${request.detail}`), text);
+    assert.doesNotMatch(text, /[Pp]air|no key of its own/);
+  });
+
+  void test('an imported device whose tool has every check it needs is Ready, with nothing to do', () => {
+    const v = verification({ ...ready, paired: false });
+    assert.equal(readiness(v, claude).key, 'ready');
+    assert.equal(
+      describe_(v),
+      'Ready: Claude Code · Strelka. Claude Code is using its own credential. Nothing to do.',
+    );
+  });
+
+  void test('presence off with every check passing: the code’s reason, and nothing said to be missing', () => {
+    const v = verification({ ...ready, requestAt: null });
+    const r = readiness(v, claude);
+    assert.equal(r.key, 'connected');
+    const text = describe_(v);
+    assert.ok(text.startsWith(`Connected, not Ready: Claude Code · Strelka. ${r.reason}.`), text);
+    assert.match(text, /presence off/);
+    assert.ok(text.endsWith(NOTHING_MISSING), text);
+    assert.doesNotMatch(text, /To make it Ready|names what is missing|checklist/);
+  });
+
+  void test('the legend’s Connected covers presence off too, so no chip contradicts it', () => {
+    assert.match(TOOL_STATUS.connected.meaning, /with presence off, the board keeps no time/);
+    assert.match(TOOL_STATUS.connected.todo, /what is missing, if anything/);
   });
 });
 

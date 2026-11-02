@@ -6,7 +6,7 @@ import type { ChipTone } from './DesignChip.tsx';
 import type { ListedStatus, ToolStatusKey } from './devices-view.ts';
 import { ACTIVE_MS, OFFLINE_MS } from './overview-state.ts';
 import type { ToolCapability } from './tool-catalog.ts';
-import { checkLines, type ReadinessKey } from './tool-readiness.ts';
+import { checkLines, type CheckId, type ReadinessKey } from './tool-readiness.ts';
 import type { UpdateKey, UpdateStatus } from './update-status.ts';
 
 /**
@@ -102,8 +102,8 @@ export const TOOL_STATUS: Readonly<Record<ToolChipKey, StatusCopy>> = {
     word: 'Connected',
     tone: 'accent',
     meaning:
-      'Its credential is in use, but not all of the evidence for Ready is in yet: the tool’s own request naming itself (for a tool whose MCP client names no tool, such as Omnigent, the helper’s report saying which tool it is), the helper’s report of what it needs, or a session from its hooks.',
-    todo: 'Open Details: its checklist names what is missing and how to send it.',
+      'Its credential is in use, but the board cannot call it Ready yet: some evidence is missing — the tool’s own request naming itself (for a tool whose MCP client names no tool, such as Omnigent, the helper’s report saying which tool it is), the helper’s report of what it needs, or a session from its hooks — or, with presence off, the board keeps no time to show the tool is using it now.',
+    todo: 'Hover over or focus its chip, or open Details: they say what is missing, if anything.',
   },
   'needs-setup': {
     word: 'Needs setup',
@@ -243,10 +243,34 @@ function sentence(text: string): string {
 }
 
 /**
+ * The checks `readiness()` (`tool-readiness.ts`) requires before *Ready*, in
+ * its order: a credential on the device, the tool's own request
+ * (`ownToolRequest`: its MCP client's name or, for a tool whose client names
+ * no tool, the helper's report — LAI-1088), the helper's report of what it
+ * needs, and a session where the tool has hooks. **Not *Device paired***:
+ * `readiness()` never reads it, so a tool on an imported device can be Ready,
+ * and pairing is never its next step (review round 1, B1).
+ * `status-vocabulary.test.ts` proves this set against `readiness()` itself:
+ * failing each of these alone stops Ready, and failing any other check alone
+ * does not.
+ */
+export const READY_NEEDS: readonly CheckId[] = [
+  'credential_installed',
+  'tool_request',
+  'required_capabilities',
+  'session_hooks',
+];
+
+/** Said when every check `readiness()` requires passes and it still is not Ready: its reason says why. */
+export const NOTHING_MISSING = 'Nothing is missing on the tool’s side.';
+
+/**
  * A tool chip's own description: its word, the row, the reason the code gave
  * for **this** row, and what to do — for *Connected* and *Needs setup* the
- * first check its verification still fails, in that check's own words, which
- * say what is missing and how to send it. Nothing the server did not send.
+ * first check `readiness()` requires that its verification still fails, in
+ * that check's own words, which say what is missing and how to send it. When
+ * none fails (presence off), the reason stands alone, and nothing is said to
+ * be missing. Nothing the server did not send.
  */
 export function toolChipDescription(input: {
   readonly label: string;
@@ -265,14 +289,18 @@ export function toolChipDescription(input: {
   if (status.key === 'connected' && status.evidence && seen !== null) {
     parts.push(`Its credential last reached the board ${timeLabel(seen, now).text}.`);
   }
-  const missing =
-    status.evidence && verification !== undefined && tool !== undefined
-      ? checkLines(verification, tool, deviceName).find((line) => line.state === 'fail')
-      : undefined;
+  const read = status.evidence && verification !== undefined && tool !== undefined;
+  const missing = read
+    ? checkLines(verification, tool, deviceName).find(
+        (line) => line.state === 'fail' && READY_NEEDS.includes(line.id),
+      )
+    : undefined;
   if ((status.key === 'connected' || status.key === 'needs-setup') && missing !== undefined) {
     parts.push(
       `${status.key === 'connected' ? 'To make it Ready' : 'Next'}: ${sentence(missing.detail)}`,
     );
+  } else if (status.key === 'connected' && read) {
+    parts.push(NOTHING_MISSING);
   } else {
     parts.push(copy.todo);
   }
