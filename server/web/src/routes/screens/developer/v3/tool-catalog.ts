@@ -89,7 +89,8 @@ export const TOOL_CATALOG: readonly ToolCapability[] = [
     sessions: true,
     tested: true,
     notes: [
-      'Quit Claude Code and start it again — `laika-claude` for Laika’s commands too, or plain `claude`. Its Laika MCP entry in `~/.claude.json` reads this tool’s own credential. If that file already has a `laika` server, `laika tool add` keeps it and prints the entry to use instead.',
+      'Quit Claude Code before you run the command: it rewrites `~/.claude.json`, which a running Claude Code also writes.',
+      'Then start it again — `laika-claude` for Laika’s commands too, or plain `claude`. Its Laika MCP entry in `~/.claude.json` reads this tool’s own credential. If that file already has a `laika` server of your own, `laika tool add` keeps it — and that entry, not this tool’s credential, decides who Claude Code acts as — and prints how to switch.',
     ],
     firstRequest: `Start Claude Code again, then ${WHOAMI}.`,
   },

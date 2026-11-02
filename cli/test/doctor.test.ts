@@ -32,6 +32,7 @@ import {
   updateStatus,
 } from '../src/doctor.ts';
 import { PROTOCOL } from '../src/protocol.ts';
+import { claudeToolEntry } from '../src/tool-add.ts';
 import { type GitRunner, type VersionInfo } from '../src/version.ts';
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -332,6 +333,79 @@ void describe('laika doctor — the board', () => {
     const { code, text } = await run([], sandbox());
     assert.equal(code, 2, text);
     assert.match(text, /no board configured: pass --board <url>/);
+  });
+});
+
+void describe('laika doctor — Claude Code’s laika MCP entry (LAI-1074 N2)', () => {
+  const plantClaude = (dir: string, laika: unknown): void => {
+    writeFileSync(
+      join(dir, '.claude.json'),
+      `${JSON.stringify({ mcpServers: { laika } }, null, 2)}\n`,
+    );
+  };
+  const line = (text: string): string =>
+    (/^\s*\w+\s+claude mcp\s.*$/m.exec(text)?.[0] ?? '').trim();
+
+  void test('the entry tool add writes: OK, it reads this tool’s credential', async () => {
+    const dir = sandbox();
+    plantCredential(dir, 'http://127.0.0.1:9', 0o600, { source: 'tool-add' });
+    plantClaude(dir, claudeToolEntry('http://127.0.0.1:9'));
+    const { text } = await run(['--offline'], dir);
+    assert.match(
+      line(text),
+      /^OK\s+claude mcp\s+mcpServers\.laika in ~\/\.claude\.json reads this tool's credential/,
+    );
+  });
+
+  void test('a token written into the entry: ACTION, never printed', async () => {
+    const dir = sandbox();
+    plantClaude(dir, {
+      type: 'http',
+      url: 'http://127.0.0.1:9/mcp',
+      headers: { Authorization: `Bearer ${PERSONAL_TOKEN}` },
+    });
+    const { code, text } = await run(['--offline'], dir);
+    assert.equal(code, 1, text);
+    assert.match(
+      line(text),
+      /^ACTION\s+claude mcp\s+.*holds a token written into the file: Claude Code acts as that token, laika-claude too/,
+    );
+    assert.match(line(text), /claude mcp remove laika --scope user/);
+    assert.ok(!text.includes(PERSONAL_TOKEN), 'the token was printed');
+    const json = await run(['--offline', '--json'], dir);
+    assert.ok(!json.text.includes(PERSONAL_TOKEN), 'the token was printed in --json');
+  });
+
+  void test('an environment variable: a warning naming it — ACTION beside a tool add credential, INFO without', async () => {
+    const entry = {
+      type: 'http',
+      url: '${LAIKA_URL}/mcp',
+      headers: { Authorization: 'Bearer ${LAIKA_TOKEN}' },
+    };
+    const withTool = sandbox();
+    plantCredential(withTool, 'http://127.0.0.1:9', 0o600, { source: 'tool-add' });
+    plantClaude(withTool, entry);
+    const a = await run(['--offline'], withTool);
+    assert.match(
+      line(a.text),
+      /^ACTION\s+claude mcp\s+.*sends \$\{LAIKA_TOKEN\} from the environment, not this tool's credential/,
+    );
+    rmSync(withTool, { recursive: true, force: true });
+
+    const alone = sandbox();
+    plantClaude(alone, entry);
+    const b = await run(['--offline'], alone);
+    assert.match(
+      line(b.text),
+      /^INFO\s+claude mcp\s+.*sends \$\{LAIKA_TOKEN\} from the environment/,
+    );
+  });
+
+  void test('no laika entry: no claude mcp line', async () => {
+    const dir = sandbox();
+    writeFileSync(join(dir, '.claude.json'), '{"mcpServers":{"other":{"command":"x"}}}\n');
+    const { text } = await run(['--offline'], dir);
+    assert.equal(line(text), '');
   });
 });
 

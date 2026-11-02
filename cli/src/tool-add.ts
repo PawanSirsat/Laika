@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { type AgentHookReport, installAgentHooks } from './agent-hooks.ts';
 import { ADAPTERS, type Harness } from './agent-adapters.ts';
+import { claudeJsonPath, holdsEntry, isToolEntry } from './claude-mcp.ts';
 import { credentialPath, isRecord, writeCredential, writePrivate } from './agent-session.ts';
 import { AGENT_HOOK_SCRIPT } from './agent-setup.ts';
 import { reportOutcome, sendClientReport } from './client-report.ts';
@@ -108,11 +109,13 @@ export function tokenExportLine(harness: Harness, variable: string): string {
  * `Authorization` header from the tool's own credential file each time Claude
  * Code connects. User scope runs it from `~/.claude`, with the person's
  * environment, without a trust prompt (code.claude.com/docs/en/mcp, *Use
- * dynamic headers*). The token is never in `~/.claude.json`.
+ * dynamic headers*). The token is never in `~/.claude.json`. With no token
+ * there (the file gone, or no `token` line) it prints nothing and exits 1, so
+ * Claude Code reports a failed helper rather than sending `Bearer ` (LAI-1074).
  */
 export const CLAUDE_HEADERS_HELPER =
   `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$HOME/.laika/agents/claude-code.json")" && ` +
-  `printf '{"Authorization":"Bearer %s"}' "$t"`;
+  `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`;
 
 /** The `mcpServers.laika` entry `tool add` writes into `~/.claude.json`. */
 export function claudeToolEntry(url: string): Record<string, string> {
@@ -214,6 +217,7 @@ function describe(plan: Exclude<ToolPlan, { kind: 'refused' }>, hooks: boolean):
   if (h === 'claude-code') {
     lines.push(
       '  mcp         ~/.claude.json mcpServers.laika → reads ~/.laika/agents/claude-code.json',
+      '  first       quit Claude Code: this rewrites ~/.claude.json, which a running one also writes',
     );
   }
   if (plan.kind === 'mcp-manual')
@@ -315,9 +319,9 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   saveCredential(io, target, redeemed, deviceId);
 
   const installed: AgentHookReport[] = [];
-  let mcpOn = target === 'codex';
+  let mcp: ClaudeMcp = target === 'codex' ? 'tool' : 'none';
   if (target === 'codex') codexMcp(io, redeemed.boardOrigin);
-  if (target === 'claude-code') mcpOn = claudeMcp(io, redeemed.boardOrigin);
+  if (target === 'claude-code') mcp = claudeMcp(io, redeemed.boardOrigin);
   if ((target === 'claude-code' || target === 'codex') && hooks) {
     const report = installAgentHooks(io.home, AGENT_HOOK_SCRIPT, target);
     installed.push(report);
@@ -338,7 +342,7 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
     for (const line of manualMcp(target, redeemed.boardOrigin)) io.out(line);
     io.out('');
   }
-  for (const line of nextSteps(target, hooksOn, mcpOn)) io.out(line);
+  for (const line of nextSteps(target, hooksOn, mcp)) io.out(line);
   return 0;
 }
 
@@ -500,41 +504,84 @@ function codexMcp(io: ToolAddIo, url: string): void {
 }
 
 /**
+ * What came of Claude Code's MCP entry: `tool` — `mcpServers.laika` reads this
+ * tool's credential; `kept` — the person's own `laika` entry stays, and it
+ * decides who Claude Code acts as; `none` — nothing could be written.
+ */
+export type ClaudeMcp = 'tool' | 'kept' | 'none';
+
+/** The JSON of the tool entry, indented for printing. */
+function printEntry(io: ToolAddIo, entry: Record<string, string>): void {
+  for (const line of JSON.stringify({ laika: entry }, null, 2).split('\n'))
+    io.out(`        ${line}`);
+}
+
+/**
  * Claude Code's Laika MCP entry, merged into `~/.claude.json` the way
  * `laika connect` merges a JSON config (`prepare`/`apply`): every other key
  * and server is kept, the original is backed up once beside it, a file that
- * does not parse is left alone. **An existing `mcpServers.laika` is kept** —
- * it may be the person's own — and the entry to use instead is printed.
- * Whether Claude Code reads this tool's credential from now on.
+ * does not parse is left alone, a symlink is written through. An entry this
+ * command wrote before (any helper revision) is brought up to date. **Any
+ * other `mcpServers.laika` is kept** — it may be the person's own — and it,
+ * not this tool's credential, decides who Claude Code acts as; how to switch
+ * is printed. The file is read back after writing (LAI-1074).
  */
-function claudeMcp(io: ToolAddIo, url: string): boolean {
+function claudeMcp(io: ToolAddIo, url: string): ClaudeMcp {
   const entry = claudeToolEntry(url);
-  const path = join(io.home, '.claude.json');
+  const where = claudeJsonPath(io.home);
+  if ('refused' in where) {
+    io.out(`  ! mcp: ${where.refused}.`);
+    io.out('      MCP set up by hand: add this under "mcpServers" in the file it should point to:');
+    printEntry(io, entry);
+    return 'none';
+  }
+  const path = where.path;
+  const via = path === join(io.home, '.claude.json') ? '' : ` (through the symlink ~/.claude.json)`;
   const prepared = prepare({ kind: 'json', path, container: 'mcpServers', entry, secret: true });
   if (!prepared.ok) {
     io.out(`  ! mcp: ${prepared.message.split('\n').join(' ')}`);
     io.out('      MCP set up by hand: add this under "mcpServers" in ~/.claude.json:');
-    for (const line of JSON.stringify({ laika: entry }, null, 2).split('\n'))
-      io.out(`        ${line}`);
-    return false;
+    printEntry(io, entry);
+    return 'none';
   }
   if (prepared.status === 'unchanged') {
-    io.out(`  · mcp: ${prepared.path} already has this tool's laika entry`);
-    return true;
+    io.out(`  · mcp: ${prepared.path}${via} already has this tool's laika entry`);
+    return 'tool';
   }
-  if (prepared.status === 'replaced') {
-    io.out(`  · mcp: ${prepared.path} already has an mcpServers.laika entry — kept as it is.`);
-    io.out("      To use this tool's own credential, replace it with:");
-    for (const line of JSON.stringify({ laika: entry }, null, 2).split('\n'))
-      io.out(`        ${line}`);
-    return false;
+  if (prepared.status === 'replaced' && !isToolEntry(existingLaika(path))) {
+    io.out(`  · mcp: ${prepared.path}${via} already has its own mcpServers.laika — kept as it is.`);
+    io.out('      That entry, not this tool’s credential, decides who Claude Code acts as on');
+    io.out('      Laika — under `laika-claude` too, whose own laika server it overrides.');
+    io.out("      To switch it to this tool's own credential, with Claude Code quit:");
+    io.out('        claude mcp remove laika --scope user');
+    io.out(`        claude mcp add-json laika --scope user '${JSON.stringify(entry)}'`);
+    io.out('      or replace the entry in that file with:');
+    printEntry(io, entry);
+    return 'kept';
   }
   const backup = apply(prepared);
+  if (!holdsEntry(path, entry)) {
+    io.out(`  ! mcp: ${path}${via} does not hold the laika entry after writing it — something`);
+    io.out('      rewrote the file, most likely a running Claude Code. Quit Claude Code, then');
+    io.out('      add this under "mcpServers" in ~/.claude.json, or run a new setup command:');
+    printEntry(io, entry);
+    return 'none';
+  }
   io.out(
-    `  ✓ mcp: mcpServers.laika ${prepared.status} in ${prepared.path}, reading this tool's credential` +
+    `  ✓ mcp: mcpServers.laika ${prepared.status === 'replaced' ? 'updated' : prepared.status} in ${prepared.path}${via}, reading this tool's credential` +
       `${backup === undefined ? '' : ` (backup: ${backup})`}`,
   );
-  return true;
+  return 'tool';
+}
+
+/** The `mcpServers.laika` already in `path`, if any. */
+function existingLaika(path: string): unknown {
+  try {
+    const doc: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    return isRecord(doc) && isRecord(doc.mcpServers) ? doc.mcpServers.laika : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Where a hand-set MCP entry goes, per tool `tool add` cannot configure itself. */
@@ -593,19 +640,26 @@ export function manualMcp(harness: Harness, url: string): string[] {
 export const connectedCheck = (harness: Harness): string =>
   `${harness === 'copilot-vscode' ? 'VS Code' : ADAPTERS[harness].name} connected`;
 
-function nextSteps(harness: Harness, hooksOn: boolean, mcpOn: boolean): string[] {
+function nextSteps(harness: Harness, hooksOn: boolean, mcp: ClaudeMcp): string[] {
   switch (harness) {
     case 'claude-code':
       return [
-        ...(mcpOn
+        ...(mcp === 'tool'
           ? [
               'Next: quit Claude Code and start it again — `laika-claude` (with the Laika',
               "commands) or plain `claude`. Its Laika MCP entry uses this tool's own credential.",
             ]
-          : [
-              'Next: quit Claude Code and start it again with `laika-claude`, which uses this',
-              "tool's own credential; plain `claude` gets no Laika tools until the entry above is set.",
-            ]),
+          : mcp === 'kept'
+            ? [
+                'Next: quit Claude Code and start it again. Its Laika tools act as whoever your',
+                'own mcpServers.laika entry says — with `laika-claude` too — until you switch it',
+                'as shown above.',
+              ]
+            : [
+                'Next: quit Claude Code and start it again with `laika-claude`, which uses this',
+                "tool's own credential unless ~/.claude.json defines a laika server of its own;",
+                'plain `claude` gets no Laika tools until the entry above is set.',
+              ]),
         `Then ask it to call laika_whoami — the browser ticks "${connectedCheck(harness)}".`,
         ...(hooksOn ? [] : ['Hooks are off: no sessions, claims or automatic checkpoints.']),
       ];

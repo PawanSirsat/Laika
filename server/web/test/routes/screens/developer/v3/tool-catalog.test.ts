@@ -150,6 +150,6 @@ void describe('what the MCP entry is, said the same on both sides (LAI-1072)', (
       new URL('../../../../../../../cli/src/tool-add.ts', import.meta.url),
       'utf8',
     );
-    assert.match(source, /if \(target === 'claude-code'\) mcpOn = claudeMcp\(/);
+    assert.match(source, /if \(target === 'claude-code'\) mcp = claudeMcp\(/);
   });
 });
