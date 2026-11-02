@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
 import { AGENTS, codexLaikaState, resolveAgent } from '../src/agents.ts';
-import { connect, planConnect, rcFileFor, type ConnectIo } from '../src/connect.ts';
+import { connect, planConnect, rcFileFor, writeEnvFile, type ConnectIo } from '../src/connect.ts';
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 
@@ -954,3 +954,33 @@ void describe('credentials, again (review round 1)', () => {
 function dirnameOf(path: string): string {
   return path.slice(0, path.lastIndexOf('/'));
 }
+
+void describe('~/.laika/env is never replaced unkept (LAI-1060, plan §A8)', () => {
+  void test('a different file is backed up, 0600, before the new one lands', () => {
+    const home = mkdtempSync(join(tmpdir(), 'laika-env-bak-'));
+    try {
+      writeEnvFile(home, 'http://a.test', 'lai_first', 1);
+      assert.deepEqual(
+        readdirSync(join(home, '.laika')),
+        ['env'],
+        'a first write backed up nothing',
+      );
+      const first = readFileSync(join(home, '.laika', 'env'), 'utf8');
+
+      writeEnvFile(home, 'http://a.test', 'lai_first', 2);
+      assert.deepEqual(
+        readdirSync(join(home, '.laika')),
+        ['env'],
+        'an unchanged write made a copy',
+      );
+
+      writeEnvFile(home, 'http://b.test', 'lai_second', 3);
+      const backup = join(home, '.laika', 'env.bak-3');
+      assert.equal(readFileSync(backup, 'utf8'), first);
+      assert.equal(statSync(backup).mode & 0o777, 0o600);
+      assert.match(readFileSync(join(home, '.laika', 'env'), 'utf8'), /lai_second/);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
