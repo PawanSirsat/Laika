@@ -2,11 +2,12 @@
 id: LAI-1061
 title: 'Developer access V3 slice D4: the Add device and Add tool wizards, and honest per-tool verification'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: [LAI-1050, LAI-1054, LAI-1056]
 discovered-from: LAI-1042
-status: backlog
+status: in-progress
+started: 2026-11-02T05:47:54+05:30
 ---
 
 ## Why
