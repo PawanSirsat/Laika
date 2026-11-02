@@ -84,16 +84,18 @@ export const DEVELOPER_TABS: readonly PageTab[] = [
 ];
 
 /**
- * The V3 tabs (plan §B, §C), in the owner's design (LAI-1078): the device holds
- * the tools, and a project is set up on its own. `projects` keeps the classic
- * id, so a link to it means the same place in every mode. **Activity is not a
- * tab of its own here**: *Share local activity* is the second card on
- * Advanced, and `?tab=activity` lands on it (`developerAlias`).
+ * The V3 tabs (plan §B, §C), in the owner's design (LAI-1078): a device is
+ * paired once, its coding tools are listed on their own (*Tools*, LAI-1080),
+ * and a project is set up on its own. `projects` keeps the classic id, so a
+ * link to it means the same place in every mode. **Activity is not a tab of
+ * its own here**: *Share local activity* is the second card on Advanced, and
+ * `?tab=activity` lands on it (`developerAlias`).
  */
 export const DEVELOPER_V3_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'projects', label: 'Project setup' },
   { id: 'devices', label: 'Devices' },
+  { id: 'tools', label: 'Tools' },
   { id: 'advanced', label: 'Advanced' },
 ];
 
@@ -104,7 +106,7 @@ export const DEVELOPER_V3_TABS: readonly PageTab[] = [
 export const ADVANCED_ACTIVITY_SECTION = 'activity';
 
 /** The V3 tabs classic does not have — the ones `preview` adds, marked. */
-const V3_ONLY = new Set(['overview', 'devices', 'advanced']);
+const V3_ONLY = new Set(['overview', 'devices', 'tools', 'advanced']);
 
 /** Whether `id` is a tab only the V3 Developer access has. */
 export function isV3OnlyTab(id: string): boolean {
@@ -140,8 +142,14 @@ export function developerTabs(mode: DeveloperAccessMode): readonly PageTab[] {
  *
  * - `connect` is the Overview, unless it carried the wizard's state: `?agent=`
  *   (a tool to set up) or `?step=` (somewhere past choosing it). Then it is
- *   Devices with *Add a tool* open, the tool kept as `tool`.
- * - `agents` is Devices; `?agent=<id>` names a row there and travels as is.
+ *   Tools with *Add a tool* open, the tool kept as `tool`.
+ * - `agents` is Tools (LAI-1080); `?agent=<id>` names a tool there — its
+ *   details — and travels as is. With `?add=device` it is Devices, where that
+ *   wizard is.
+ * - `devices` with a tool on it moves to Tools (LAI-1080): `?agent=<id>`, or
+ *   `?add=tool` with whatever that wizard carried (`device`, `tool`,
+ *   `exchange`, `reconnect`). Devices itself, its details and *Add device*
+ *   stay.
  * - `tokens` is Advanced.
  * - `activity` is Advanced's *Share local activity* card (LAI-1078):
  *   `?section=activity`, which Advanced scrolls to.
@@ -154,15 +162,30 @@ export function developerAlias(
 ): URLSearchParams | undefined {
   if (mode !== 'v3') return undefined;
   const tab = params.get('tab');
-  if (tab !== 'connect' && tab !== 'agents' && tab !== 'tokens' && tab !== 'activity') {
+  if (
+    tab !== 'connect' &&
+    tab !== 'agents' &&
+    tab !== 'devices' &&
+    tab !== 'tokens' &&
+    tab !== 'activity'
+  ) {
     return undefined;
   }
 
   const next = new URLSearchParams();
   const rest = [...params].filter(([key]) => key !== 'tab');
+  const add = params.get('add');
+  const agent = params.get('agent');
 
   if (tab === 'agents') {
-    next.set('tab', 'devices');
+    next.set('tab', add === 'device' ? 'devices' : 'tools');
+    for (const [key, value] of rest) next.append(key, value);
+    return next;
+  }
+  if (tab === 'devices') {
+    const tool = add === 'tool' || (add === null && agent !== null && agent !== '');
+    if (!tool) return undefined;
+    next.set('tab', 'tools');
     for (const [key, value] of rest) next.append(key, value);
     return next;
   }
@@ -178,14 +201,13 @@ export function developerAlias(
     return next;
   }
 
-  const agent = params.get('agent');
   const wizard = (agent !== null && agent !== '') || params.has('step');
   if (!wizard) {
     next.set('tab', 'overview');
     for (const [key, value] of rest) next.append(key, value);
     return next;
   }
-  next.set('tab', 'devices');
+  next.set('tab', 'tools');
   next.set('add', 'tool');
   if (agent !== null && agent !== '') next.set('tool', agent);
   for (const [key, value] of rest) {

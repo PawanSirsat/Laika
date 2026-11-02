@@ -1,0 +1,344 @@
+/*
+ * Project setup in the owner's design (LAI-1082): the parts of its three-step
+ * wizard the kit (`design.css`, LAI-1078) does not draw — the pickers, the
+ * authorization row and its grant tiles, step 3's two ways to record, the
+ * done card. Tokens only, and none new.
+ *
+ * Every rule is under `.dx-ps` or a `dx-ps-` class. The page imports this
+ * before `developer.css` and `v3.css`, so a rule that restyles one of their
+ * classes (`.dev-setup-facts`) is scoped to win on specificity, not on order;
+ * and no rule here touches a shared `conn-` class outside `.dx-ps`, which
+ * classic Connect never draws.
+ */
+
+.dx-ps .conn-card-body {
+  gap: var(--space-4);
+}
+
+.dx-ps code {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.dx-ps .dx-note-body p {
+  margin: 0;
+}
+
+/* The rail's line under each step wraps, as the design's does, rather than
+   cutting *Paste in the repository folder* to an ellipsis. */
+.dx-ps .dx-rail-card .conn-rail-sub {
+  white-space: normal;
+}
+
+/* ---- step 1: the two pickers, side by side ---- */
+
+.dx-ps-pickers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.dx-ps-pickers .conn-field {
+  align-items: stretch;
+  min-width: 0;
+}
+
+.dx-ps-pickers .conn-label {
+  color: var(--text-primary);
+}
+
+.dx-ps-pickers .conn-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+}
+
+.dx-ps .dx-ps-divider {
+  margin: 0;
+}
+
+/* ---- step 1: the authorization row ---- */
+
+.dx-ps-auth {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.dx-ps-auth-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.dx-ps-auth-text {
+  min-width: 0;
+}
+
+.dx-ps-auth-title {
+  display: block;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+/* The two facts as one muted line: *You: Member · In effect: Full*. */
+.dx-ps .dx-ps-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-1);
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+.dx-ps .dx-ps-facts div {
+  display: flex;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.dx-ps .dx-ps-facts div + div::before {
+  content: '·';
+  color: var(--text-muted);
+}
+
+.dx-ps .dx-ps-facts dt {
+  color: var(--text-secondary);
+}
+
+.dx-ps .dx-ps-facts dt::after {
+  content: ':';
+}
+
+.dx-ps .dx-ps-facts dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.dx-ps-auth-why {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-muted);
+}
+
+.dx-ps-auth-end {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dx-ps-grants-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.dx-ps-grants {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6875rem;
+}
+
+/* Under `.dx-ps`: the kit's `.dx-option` loads after this file. */
+.dx-ps .dx-ps-grant {
+  align-items: flex-start;
+  min-height: 0;
+  padding: 0.75rem 0.875rem;
+}
+
+.dx-ps-grant[data-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.dx-ps-grant[data-disabled='true']:hover {
+  border-color: var(--border-card);
+}
+
+/* A sentence's own link that moves the wizard rather than the page. */
+.dx-ps-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.dx-ps-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+/* ---- step 3: the status head and the two ways to record ---- */
+
+.dx-ps-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.dx-ps-review .dx-status-head,
+.dx-ps-done .dx-status-head {
+  margin-bottom: 0;
+}
+
+.dx-ps-status-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  font-weight: var(--weight-heavy);
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.dx-ps-status-line {
+  margin: 0.125rem 0 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.dx-ps-way {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+}
+
+.dx-ps-way[data-way='check'] {
+  border-color: var(--accent-border);
+}
+
+.dx-ps-way-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.dx-ps-way-title {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.dx-ps-status {
+  margin: 0;
+}
+
+.dx-ps .dx-ps-records {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ---- the aside's first list: a rule under the label, then one per item ---- */
+
+.dx-ps-separate {
+  margin: 0;
+  padding: 0.8125rem 0 0;
+  border-top: 1px solid var(--border-subtle);
+  list-style: none;
+}
+
+.dx-ps .dx-aside .dx-label {
+  margin-bottom: 0.8125rem;
+}
+
+/* ---- done ---- */
+
+.dx-ps-done .dx-card-pad {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.dx-ps-done .dx-ps-done-eyebrow {
+  margin-bottom: var(--space-1);
+}
+
+.dx-ps-done-title {
+  margin: 0;
+  font-size: var(--text-heading-md);
+  line-height: var(--leading-heading-md);
+  font-weight: var(--weight-heavy);
+  letter-spacing: -0.012em;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.dx-ps-done-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+/* ---- the rail as a strip: three steps side by side, a number over a name ---- */
+
+/* The kit turns the rail card into a strip under 53rem, but Connect's
+   `.conn-steps` keeps its column; the design's strip is a row. */
+@media (max-width: 53rem) {
+  .dx-ps .dx-rail-card .conn-steps {
+    flex-direction: row;
+  }
+
+  .dx-ps .dx-rail-card .conn-step {
+    flex: 1 1 0;
+  }
+
+  .dx-ps .dx-rail-card .conn-rail-step {
+    flex-direction: column;
+    gap: var(--space-1);
+    height: 100%;
+    padding: var(--space-2) var(--space-1);
+    text-align: center;
+  }
+
+  .dx-ps .dx-rail-card .conn-rail-name {
+    font-size: var(--text-small);
+    line-height: var(--leading-small);
+  }
+
+  .dx-ps .dx-rail-card .conn-rail-sub {
+    display: none;
+  }
+}
+
+/* ---- phones ---- */
+
+@media (max-width: 600px) {
+  .dx-ps-pickers,
+  .dx-ps-grants {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dx-ps-auth-head,
+  .dx-ps-way-head {
+    flex-wrap: wrap;
+  }
+
+  /* A setup's line says who said it — *your word, not verified* — last; on a
+     phone it wraps rather than cutting that off. */
+  .dx-ps-setups .dx-record-sub {
+    white-space: normal;
+  }
+}

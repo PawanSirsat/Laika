@@ -212,11 +212,11 @@ void describe('a legacy tool token', () => {
       await link.waitFor({ timeout: 20_000 });
       assert.equal(
         await link.getAttribute('href'),
-        '/developer?tab=devices&add=tool&tool=claude-code',
+        '/developer?tab=tools&add=tool&tool=claude-code',
       );
       await link.click();
-      await until(() => here(h.page.url()).startsWith('/developer?tab=devices'), 10_000);
-      assert.equal(here(h.page.url()), '/developer?tab=devices&add=tool&tool=claude-code');
+      await until(() => here(h.page.url()).startsWith('/developer?tab=tools'), 10_000);
+      assert.equal(here(h.page.url()), '/developer?tab=tools&add=tool&tool=claude-code');
       await h.page.waitForTimeout(500);
       assert.equal(
         h.calls.filter((c) => c.method === 'DELETE').length,

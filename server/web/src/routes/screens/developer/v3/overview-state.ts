@@ -46,7 +46,7 @@ export function activeTools(devices: readonly Pick<Device, 'agents'>[]): Registe
 
 export const OVERVIEW_ADDRESSES = {
   addDevice: '/developer?tab=devices&add=device',
-  addTool: '/developer?tab=devices&add=tool',
+  addTool: '/developer?tab=tools&add=tool',
   projects: '/developer?tab=projects',
   devices: '/developer?tab=devices',
   tools: '/developer?tab=tools',
