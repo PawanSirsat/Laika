@@ -60,3 +60,19 @@ task's, not that one's: `da0e2577` (the stack merge), `abeed4a3` (filing),
       report; feature-specific *required*; copy command holds no secret;
       classic untouched. Screenshots light + dark, desktop + 390 px, per
       status, in `.polly/evidence/LAI-1065/`.
+
+## Review round 1 (PR #218) — answered in `a295e6f1`
+
+- **B1**: a helper at the board's protocol on another commit was *Update
+  available*, offering a `laika update` the CLI refuses when the target is not
+  ahead of the checkout. Now *Up to date*, naming both commits, with no
+  update offered. A neutral *Runs another helper* status was rejected: the
+  board needs a protocol, not a commit, and plan §H says "or protocol
+  current". *Update available* is only `min_client ≤ protocol < current`.
+  The test that pinned the old behaviour is reversed; a fork/newer-commit
+  case is added.
+- **N1**: clock-driven browser tests: 15/30/60 s, then a 120 s cap, 18 reads
+  and stop at the 30-minute limit, and no read after the tab unmounts.
+- **N3**: one wording for the protocol on every side; `ReportFacts` says the
+  time is hidden server-side.
+- Fixtures mirror the protocol-2 board #216 serves.
