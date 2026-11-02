@@ -19,7 +19,7 @@ import {
   type DeviceCounts,
   type ListedTool,
 } from './devices-view.ts';
-import { UpdateChip, useUpdateStatus, useVerification } from './ToolUpdate.tsx';
+import { UpdateChip, useReportedHelper, useUpdateStatus, useVerification } from './ToolUpdate.tsx';
 
 export const TOOLS_TITLE = 'dv3-tools-title';
 
@@ -216,6 +216,7 @@ function ToolRecord({
   const { agent, label, inConflict } = listed;
   const status = listedStatus(agent, useVerification(agent.id), now);
   const update = useUpdateStatus(agent.id);
+  const helper = useReportedHelper(agent.id);
   const action = toolAction(listed, status);
   const active = agent.status === 'active';
   const follow = (event: MouseEvent<HTMLAnchorElement>): void => {
@@ -238,6 +239,7 @@ function ToolRecord({
         <strong className="dx-record-title">{label}</strong>
         <span className="dx-record-sub" data-line>
           {toolLine(agent, now)}
+          {active && helper !== undefined && ` · ${helper}`}
         </span>
       </div>
       <div className="dx-record-end">

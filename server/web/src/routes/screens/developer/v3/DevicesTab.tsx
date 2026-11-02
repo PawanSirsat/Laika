@@ -16,7 +16,7 @@ import {
   revokedDevice,
   type DeviceCounts,
 } from './devices-view.ts';
-import { BoardUpdateNote } from './ToolUpdate.tsx';
+import { BoardUpdateNote, DeviceVersionChip } from './ToolUpdate.tsx';
 
 export const DEVICES_TITLE = 'dv3-devices-title';
 
@@ -238,6 +238,13 @@ function DeviceRecord({
       </div>
       <div className="dx-record-end">
         <DesignChip tone={chip.tone}>{chip.word}</DesignChip>
+        {device.status === 'active' && (
+          <DeviceVersionChip
+            agentIds={device.agents
+              .filter((agent) => agent.status === 'active')
+              .map((agent) => agent.id)}
+          />
+        )}
         {canManage && pairedDevice(device) && (
           <button
             type="button"
