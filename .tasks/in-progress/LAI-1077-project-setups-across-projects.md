@@ -2,11 +2,12 @@
 id: LAI-1077
 title: 'Developer access design: GET /project-setups lists my setups across every project I can read'
 area: core
-assignee: unclaimed
+assignee: core/belka
 priority: p2
 depends-on: []
 discovered-from: LAI-1075
-status: backlog
+status: in-progress
+started: 2026-11-02T10:25:28+05:30
 ---
 
 ## Why
