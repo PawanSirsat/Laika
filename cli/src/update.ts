@@ -16,10 +16,10 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ADAPTERS, HARNESSES, HOOK_HARNESSES, type Harness } from './agent-adapters.ts';
+import { ADAPTERS, HARNESSES, HOOK_HARNESSES, type Harness, isHarness } from './agent-adapters.ts';
 import { AGENT_MARKER, hookFile } from './agent-hooks.ts';
-import { readCredential } from './agent-session.ts';
-import { USER_CONFIG } from './agents.ts';
+import { agentsDir, credentialPath, isRecord, readCredential } from './agent-session.ts';
+import { codexLaikaLines, USER_CONFIG } from './agents.ts';
 import { normaliseUrl } from './api.ts';
 import { type Helper, reportOutcome, sendClientReport } from './client-report.ts';
 import { boardOriginOf } from './device.ts';
@@ -85,8 +85,10 @@ import { CLI_DIR, tildePath } from './version.ts';
  * 6. **Refresh**: the new checkout's own `laika agent hooks on` for each tool
  *    whose hooks were already on. The digest after each is written to the
  *    marker. MCP entries hold the board URL and an env-var name, never a
- *    checkout path, so nothing in them changes: they are hashed before and
- *    after, and a difference is a failure.
+ *    checkout path, so nothing in them changes: each config's **laika
+ *    entries** — only those, never the rest of the file, which Claude Code and
+ *    others rewrite as they run (LAI-1089) — are hashed before and after, and a
+ *    difference is a failure.
  * 7. **Verify** from the switched checkout. Any failure from 4 on **rolls
  *    back**, each item named.
  * 8. **Report** (LAI-1068): when the board's manifest says `client_reports`,
@@ -95,7 +97,10 @@ import { CLI_DIR, tildePath } from './version.ts';
  *    without waiting for the tool to reconnect. Version, commit and protocol
  *    are the **new** checkout's, from its `laika version --json` in step 7 —
  *    this process is still the old CLI. A report that fails is one line; it
- *    never changes the exit code and never rolls anything back.
+ *    never changes the exit code and never rolls anything back. A checkout that
+ *    version calls `dirty` is not the board's build and sends none, and every
+ *    other `~/.laika/agents/*.json` is named on one line with why it was
+ *    passed over (LAI-1089).
  *
  * A checkout already at the board's commit stops after step 2, and still
  * sends the step-8 reports by the same rules (LAI-1085), with that checkout's
@@ -537,9 +542,93 @@ function hooksOn(home: string, harness: Harness): boolean {
   }
 }
 
+/**
+ * The laika entries in one MCP config's text, `undefined` when it has none;
+ * throws when the text is not the format at all.
+ */
+type LaikaEntries = (text: string) => unknown;
+
+interface McpFile {
+  readonly path: string;
+  readonly entries: LaikaEntries;
+}
+
+const jsonEntry =
+  (container: string): LaikaEntries =>
+  (text) => {
+    const doc: unknown = JSON.parse(text);
+    const servers = isRecord(doc) ? doc[container] : undefined;
+    return isRecord(servers) ? servers.laika : undefined;
+  };
+
+/** Claude Code's: the user-scope `mcpServers.laika`, and each project's own. */
+function claudeEntries(text: string): unknown {
+  const doc: unknown = JSON.parse(text);
+  if (!isRecord(doc)) return undefined;
+  const user = isRecord(doc.mcpServers) ? doc.mcpServers.laika : undefined;
+  const projects: Record<string, unknown> = {};
+  for (const [dir, project] of Object.entries(isRecord(doc.projects) ? doc.projects : {})) {
+    const servers = isRecord(project) ? project.mcpServers : undefined;
+    if (isRecord(servers) && servers.laika !== undefined) projects[dir] = servers.laika;
+  }
+  return user === undefined && Object.keys(projects).length === 0 ? undefined : { user, projects };
+}
+
+/** Where each user-scope file keeps its laika entry: `detectAgents`'s containers. */
+const USER_ENTRIES: { readonly [K in keyof typeof USER_CONFIG]: LaikaEntries } = {
+  cursor: jsonEntry('mcpServers'),
+  codex: (text) => {
+    const lines = codexLaikaLines(text);
+    return lines.length === 0 ? undefined : lines;
+  },
+  'gemini-cli': jsonEntry('mcpServers'),
+  opencode: jsonEntry('mcp'),
+  antigravity: jsonEntry('mcpServers'),
+};
+
 /** Every file a laika MCP entry may live in at user scope (`detectAgents`'s). */
-function mcpFiles(home: string): string[] {
-  return [join(home, '.claude.json'), ...Object.values(USER_CONFIG).map((f) => f(home))];
+function mcpFiles(home: string): McpFile[] {
+  const user = Object.keys(USER_CONFIG) as (keyof typeof USER_CONFIG)[];
+  return [
+    { path: join(home, '.claude.json'), entries: claudeEntries },
+    ...user.map((name) => ({ path: USER_CONFIG[name](home), entries: USER_ENTRIES[name] })),
+  ];
+}
+
+/** JSON with every object's keys in order, so a rewrite that reorders them is no change. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (isRecord(value)) {
+    const keys = Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * What the MCP guard compares (LAI-1089): a digest of the file's laika
+ * entries, never of the rest of it, which Claude Code rewrites every few
+ * seconds while it runs. Nothing else is kept, and only the path is ever
+ * printed. `none` for no file or no entry; a file that is not the format at
+ * all is compared whole, as before.
+ */
+export function entriesDigest(file: McpFile): string {
+  let text: string;
+  try {
+    text = readFileSync(file.path, 'utf8');
+  } catch {
+    return 'none';
+  }
+  let entries: unknown;
+  try {
+    entries = file.entries(text);
+  } catch {
+    return `whole:${createHash('sha256').update(text).digest('hex')}`;
+  }
+  if (entries === undefined) return 'none';
+  return createHash('sha256').update(canonical(entries)).digest('hex');
 }
 
 export function digest(path: string): string {
@@ -585,8 +674,12 @@ function laika(
  */
 type SelfCheck =
   | { readonly ok: false; readonly problem: string }
-  /** `helper` is what `laika version --json` said, when it said all of it. */
-  | { readonly ok: true; readonly helper: Helper | undefined };
+  /**
+   * `helper` is what `laika version --json` said, when it said all of it;
+   * `dirty` that it saw local changes under `cli/` or `plugin/`, so it is not
+   * exactly the commit it names (LAI-1089).
+   */
+  | { readonly ok: true; readonly helper: Helper | undefined; readonly dirty: boolean };
 
 const failed = (problem: string): SelfCheck => ({ ok: false, problem });
 
@@ -600,7 +693,7 @@ function versionAt(
 ): SelfCheck {
   const version = laika(run, env, home, checkout, ['version', '--json']);
   if (version.code !== 0) return failed(`laika version exited ${String(version.code)}`);
-  let said: { version?: unknown; commit?: unknown; protocol?: unknown };
+  let said: { version?: unknown; commit?: unknown; protocol?: unknown; dirty?: unknown };
   try {
     said = JSON.parse(version.stdout) as typeof said;
   } catch {
@@ -613,7 +706,7 @@ function versionAt(
     typeof said.version === 'string' && typeof said.protocol === 'number'
       ? { version: said.version, commit: target, protocol: said.protocol }
       : undefined;
-  return { ok: true, helper };
+  return { ok: true, helper, dirty: said.dirty === true };
 }
 
 function selfCheck(
@@ -1032,7 +1125,8 @@ async function go(
     );
     // LAI-1085: a checkout moved here by plain git has never reported, and
     // nothing else would until the next release.
-    if (!options.dryRun) io.out(await reportCurrent(io, run, checkout, target));
+    if (!options.dryRun)
+      for (const line of await reportCurrent(io, run, checkout, target)) io.out(line);
     return 0;
   }
 
@@ -1174,20 +1268,49 @@ interface ToolCredential {
   readonly token: string;
 }
 
-/** Each installed tool credential whose board is this one. */
-function credentialsFor(home: string, board: string): ToolCredential[] {
+interface Credentials {
+  readonly tools: readonly ToolCredential[];
+  /** Every other `~/.laika/agents/*.json`, as `name (why)` — names only, never contents. */
+  readonly passed: readonly string[];
+}
+
+/**
+ * Each installed tool credential whose board is this one, and each other
+ * credential file with why it was passed over (LAI-1089). A file not named
+ * for a tool (`polly.json`, LAI-589) is **not opened**: it is listed by name.
+ */
+function credentialsFor(home: string, board: string): Credentials {
   const origin = boardOriginOf(board);
-  if (origin === undefined) return [];
-  const found: ToolCredential[] = [];
+  if (origin === undefined) return { tools: [], passed: [] };
+  const tools: ToolCredential[] = [];
+  const passed: string[] = [];
   for (const harness of HARNESSES) {
+    const pass = (why: string): void => {
+      if (existsSync(credentialPath(home, harness))) passed.push(`${harness}.json (${why})`);
+    };
     // `{}`: the saved file only, never a token from this process's environment.
     const saved = readCredential(home, harness, {});
-    if (saved === undefined || urlProblem(saved.url) !== undefined) continue;
-    if (boardOriginOf(saved.url) !== origin) continue;
-    found.push({ harness, url: saved.url, token: saved.token });
+    if (saved === undefined) pass('no saved URL and token');
+    else if (urlProblem(saved.url) !== undefined) pass('its board URL cannot be used');
+    else if (boardOriginOf(saved.url) !== origin) pass('another board');
+    else tools.push({ harness, url: saved.url, token: saved.token });
   }
-  return found;
+  let names: string[] = [];
+  try {
+    names = readdirSync(agentsDir(home));
+  } catch {
+    // No credentials directory: nothing set up, nothing passed over.
+  }
+  for (const name of names) {
+    if (name.endsWith('.json') && !isHarness(name.slice(0, -'.json'.length))) {
+      passed.push(`${name} (not a tool laika knows)`);
+    }
+  }
+  return { tools, passed: passed.sort() };
 }
+
+const notExact = (shown: string): string =>
+  `${shown} has local changes under cli/ or plugin/, so it is not the board’s exact build`;
 
 /** One client report per credential, with its own token; a throw is an outcome, never thrown. */
 async function sendReports(
@@ -1216,45 +1339,62 @@ const shortHelper = (helper: Helper): string =>
 
 /**
  * Step 8: one client report per installed tool credential whose board is this
- * one, with that credential's own token. Never fails the update: every
- * outcome is a line, and a throw is caught here.
+ * one, with that credential's own token — none when `dirty` names the
+ * checkout, which has local changes. Never fails the update: every outcome is
+ * a line, and a throw is caught here.
  */
-async function reportUpdate(io: UpdateIo, board: string, helper: Helper): Promise<void> {
-  for (const { name, outcome } of await sendReports(io, credentialsFor(io.home, board), helper)) {
-    io.out(
-      outcome === 'sent'
-        ? `  ✓ told the board ${name} now runs ${shortHelper(helper)}`
-        : `  · could not tell the board ${name}'s new version (${outcome}); the update stands`,
-    );
+async function reportUpdate(
+  io: UpdateIo,
+  board: string,
+  helper: Helper,
+  dirty: string | undefined,
+): Promise<void> {
+  const { tools, passed } = credentialsFor(io.home, board);
+  if (dirty !== undefined) io.out(`  · version report skipped: ${notExact(dirty)}`);
+  else {
+    for (const { name, outcome } of await sendReports(io, tools, helper)) {
+      io.out(
+        outcome === 'sent'
+          ? `  ✓ told the board ${name} now runs ${shortHelper(helper)}`
+          : `  · could not tell the board ${name}'s new version (${outcome}); the update stands`,
+      );
+    }
   }
+  if (passed.length > 0) io.out(`  · passed over in ~/.laika/agents: ${passed.join(', ')}`);
 }
 
 /**
  * The same report when the checkout is already the board's commit (LAI-1085),
  * by the same rules as step 8, with the checkout's own `laika version --json`.
- * Returns the one line saying what happened; never throws, so a report can
- * never change the exit code.
+ * Returns the line saying what happened, then the passed-over line when there
+ * is one; never throws, so a report can never change the exit code.
  */
 async function reportCurrent(
   io: UpdateIo,
   run: Runner,
   checkout: string,
   target: Target,
-): Promise<string> {
+): Promise<string[]> {
   const skipped = (why: string): string => `Version report skipped: ${why}.`;
   if (target.body.features.client_reports !== true)
-    return skipped('the board does not take client reports');
+    return [skipped('the board does not take client reports')];
+  let passed: readonly string[] = [];
+  const say = (line: string): string[] =>
+    passed.length === 0 ? [line] : [line, `Passed over in ~/.laika/agents: ${passed.join(', ')}.`];
   try {
-    const tools = credentialsFor(io.home, target.board);
+    const found = credentialsFor(io.home, target.board);
+    ({ passed } = found);
+    const { tools } = found;
     if (tools.length === 0) {
-      return skipped(
-        'no tool on this machine is set up for this board (laika tool add sets one up)',
+      return say(
+        skipped('no tool on this machine is set up for this board (laika tool add sets one up)'),
       );
     }
     const version = versionAt(run, io.env, io.home, checkout, target.commit);
-    if (!version.ok) return skipped(version.problem);
+    if (!version.ok) return say(skipped(version.problem));
+    if (version.dirty) return say(skipped(notExact(tildePath(checkout, io.home))));
     if (version.helper === undefined)
-      return skipped('laika version --json did not say its version and protocol');
+      return say(skipped('laika version --json did not say its version and protocol'));
     const outcomes = await sendReports(io, tools, version.helper);
     const sent = outcomes.filter((o) => o.outcome === 'sent').map((o) => o.name);
     const notSent = outcomes
@@ -1264,10 +1404,10 @@ async function reportCurrent(
       ...(sent.length > 0 ? [`sent for ${sent.join(', ')}`] : []),
       ...(notSent.length > 0 ? [`not sent for ${notSent.join(', ')}`] : []),
     ];
-    return `Version report for ${shortHelper(version.helper)}: ${parts.join('; ')}.`;
+    return say(`Version report for ${shortHelper(version.helper)}: ${parts.join('; ')}.`);
   } catch {
     // `sendReports` never throws, so whatever did, nothing was sent.
-    return skipped('it failed before anything was sent');
+    return say(skipped('it failed before anything was sent'));
   }
 }
 
@@ -1318,7 +1458,7 @@ async function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): Pro
       mode: 0o600,
     });
     io.out(`  ✓ backed up to ${tildePath(backup, io.home)}/`);
-    const mcpBefore = mcpFiles(io.home).map((path) => [path, digest(path)] as const);
+    const mcpBefore = mcpFiles(io.home).map((file) => [file, entriesDigest(file)] as const);
 
     // Stage.
     const added = git.run(['worktree', 'add', '--quiet', '--detach', state.staging, p.target]);
@@ -1386,17 +1526,18 @@ async function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): Pro
     }
     if (failures.length === 0) {
       const moved = mcpBefore
-        .filter(([path, before]) => digest(path) !== before)
-        .map(([path]) => tildePath(path, io.home));
+        .filter(([file, before]) => entriesDigest(file) !== before)
+        .map(([file]) => tildePath(file.path, io.home));
       if (moved.length > 0)
-        failures.push(`an MCP config changed during the update: ${moved.join(', ')}`);
+        failures.push(`a laika MCP entry changed during the update: ${moved.join(', ')}`);
     }
 
     // Verify from the switched checkout.
     let helper: Helper | undefined;
+    let dirty = false;
     if (failures.length === 0) {
       const verified = selfCheck(run, io.env, io.home, p.checkout, p.target);
-      if (verified.ok) helper = verified.helper;
+      if (verified.ok) ({ helper, dirty } = verified);
       else failures.push(`the switched checkout failed its check: ${verified.problem}`);
     }
 
@@ -1426,7 +1567,8 @@ async function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): Pro
     const left = removeStaging(git, state.staging);
     if (left !== undefined) io.out(`  · ${left}`);
     io.out('  ✓ the switched checkout passes laika version and laika doctor --offline');
-    if (p.clientReports && helper !== undefined) await reportUpdate(io, p.board, helper);
+    if (p.clientReports && helper !== undefined)
+      await reportUpdate(io, p.board, helper, dirty ? p.shown : undefined);
     io.out('');
     io.out(
       `Updated: ${p.shown} is at ${p.target.slice(0, 7)}, the commit the board was built from.`,
