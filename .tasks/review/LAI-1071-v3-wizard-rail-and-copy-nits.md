@@ -6,7 +6,8 @@ assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-1069
-status: in-progress
+status: review
+finished: 2026-11-02T02:42:56Z
 started: 2026-11-02T02:20:43Z
 ---
 
@@ -24,9 +25,16 @@ Two small things seen in the LAI-1069 walkthrough
 
 ## Acceptance
 
-- [ ] Reconnect's rail step 1 reads as done with the tool's label (as Add
+- [x] Reconnect's rail step 1 reads as done with the tool's label (as Add
       tool's does: *Claude Code · Walkbook*), or is not shown.
-- [ ] Overview's Add-a-device body describes pairing the computer, not
+- [x] Overview's Add-a-device body describes pairing the computer, not
       registering a tool.
-- [ ] Tests assert the rail word for Reconnect and the Overview copy.
+- [x] Tests assert the rail word for Reconnect and the Overview copy.
 - [ ] Web typecheck, eslint, prettier exit 0; PR into `master`, CI green.
+
+## Submitted (2026-11-02)
+
+Batched with LAI-1070 and LAI-1072 (branch `LAI-1070-walkthrough-defects`).
+The rail's step 1 uses the setup's tool and device when Reconnect or a resumed
+exchange opened the wizard (red before: `done:✓Step 1: Choose the toolNot
+yet`). Re-walked: §8 R2, R9. CI box open until the PR's run is in.

@@ -6,7 +6,8 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-1069
-status: in-progress
+status: review
+finished: 2026-11-02T02:42:56Z
 started: 2026-11-02T02:20:43Z
 ---
 
@@ -26,12 +27,24 @@ false.
 
 ## Acceptance
 
-- [ ] A paired, active device stays listed whatever its tools' state — none,
+- [x] A paired, active device stays listed whatever its tools' state — none,
       all revoked, or some — with *+ Add tool* reachable from it.
-- [ ] The "Every device and tool of yours is revoked" note appears only when
+- [x] The "Every device and tool of yours is revoked" note appears only when
       every device is in fact revoked.
-- [ ] An **imported** device whose tools are all revoked keeps today's
+- [x] An **imported** device whose tools are all revoked keeps today's
       behaviour (history), unless the owner decides otherwise.
-- [ ] Unit test on `deviceLive` for the paired-all-revoked case, red before
+- [x] Unit test on `deviceLive` for the paired-all-revoked case, red before
       the fix; a browser test for the disconnect → still listed path.
 - [ ] Web typecheck, eslint, prettier exit 0; PR into `master`, CI green.
+
+## Submitted (2026-11-02)
+
+Batched with LAI-1071 and LAI-1072 on branch `LAI-1070-walkthrough-defects`,
+one PR. `deviceLive()` lists a paired active device whatever its tools' state;
+the card reads *No tools yet — Add a tool* (opens the tool wizard on that
+device); the revoked note shows only when every device is revoked
+(`everyDeviceRevoked`). The existing browser test that had a **paired** device
+leave the list on its last disconnect encoded this bug; it now uses an
+imported device, and a new test covers the paired path. Re-walked locally:
+`docs/acceptance/LAI-1069-developer-access-v3.md` §8, R11. Typecheck, eslint
+and prettier exit 0 locally; the CI box stays open until the PR's run is in.
