@@ -18,10 +18,12 @@ import {
   POLL_FIRST_MS,
   POLL_MAX_MS,
   bootstrapCommands,
+  exchangeEnded,
   fingerprintGroups,
   nextPollDelay,
   pairedDevice,
   pairingFinished,
+  pairingNotBehind,
   pairingRefusal,
   toolAddCommand,
   toolRefusal,
@@ -122,6 +124,22 @@ void describe('waiting on the board', () => {
     for (const state of ['completed', 'denied', 'expired', 'cancelled'] as const) {
       assert.equal(pairingFinished(state), true);
     }
+  });
+
+  void test('a poll answer behind what is on screen is not taken', () => {
+    assert.equal(pairingNotBehind(undefined, 'open'), true);
+    assert.equal(pairingNotBehind('claimed', 'approved'), true);
+    assert.equal(pairingNotBehind('approved', 'claimed'), false);
+    assert.equal(pairingNotBehind('denied', 'claimed'), false);
+    assert.equal(pairingNotBehind('approved', 'completed'), true);
+    assert.equal(pairingNotBehind('approved', 'approved'), true);
+  });
+
+  void test('an exchange has ended only when it closed unredeemed', () => {
+    assert.equal(exchangeEnded({ state: 'expired', redeemed_at: null }), true);
+    assert.equal(exchangeEnded({ state: 'cancelled', redeemed_at: null }), true);
+    assert.equal(exchangeEnded({ state: 'redeemed', redeemed_at: 5 }), false);
+    assert.equal(exchangeEnded({ state: 'open', redeemed_at: null }), false);
   });
 
   void test('a fingerprint reads in fours with every character kept', () => {

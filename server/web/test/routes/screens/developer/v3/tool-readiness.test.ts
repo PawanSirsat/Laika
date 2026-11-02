@@ -47,6 +47,8 @@ interface Over {
   } | null;
   readonly session?: boolean;
   readonly lastSeen?: number | null;
+  /** When the tool's own request was, as served; null is presence off. */
+  readonly requestAt?: number | null;
   readonly cliVersion?: string | null;
   /** The harness the CLI's report names. */
   readonly reportedHarness?: string | null;
@@ -86,7 +88,12 @@ function verification(over: Over = {}): AgentVerification {
             })
           : {
               state: request.state,
-              at: request.state === 'pass' && over.lastSeen !== null ? NOW - MIN : null,
+              at:
+                request.state !== 'pass'
+                  ? null
+                  : over.requestAt === undefined
+                    ? NOW - MIN
+                    : over.requestAt,
               detail: {
                 evidence: request.state === 'pass' ? (request.evidence ?? 'client_info') : null,
                 mcp_client_name: generic ? ('generic' as const) : ('specific' as const),
@@ -164,17 +171,32 @@ void describe('status words come from evidence only', () => {
     assert.equal(r.key, 'ready');
   });
 
-  void test('the same evidence seen hours ago is Idle, and a week ago Offline', () => {
+  void test('the tool’s own request hours ago is Idle, and a week ago Offline', () => {
     const base = { request: { slug: 'claude-code', state: 'pass' as const }, session: true };
     assert.equal(
-      readiness(verification({ ...base, lastSeen: NOW - 3 * 60 * MIN }), tool('claude-code')).key,
+      readiness(verification({ ...base, requestAt: NOW - 3 * 60 * MIN }), tool('claude-code')).key,
       'idle',
     );
     assert.equal(
-      readiness(verification({ ...base, lastSeen: NOW - 8 * 24 * 60 * MIN }), tool('claude-code'))
+      readiness(verification({ ...base, requestAt: NOW - 8 * 24 * 60 * MIN }), tool('claude-code'))
         .key,
       'offline',
     );
+  });
+
+  void test('recency is the tool’s own request: a curl a minute ago does not make it Ready', () => {
+    // `last_seen_at` moves on any request on the agent's credentials.
+    const r = readiness(
+      verification({
+        request: { slug: 'claude-code', state: 'pass' },
+        session: true,
+        lastSeen: NOW - MIN,
+        requestAt: NOW - 3 * 60 * MIN,
+      }),
+      tool('claude-code'),
+    );
+    assert.equal(r.key, 'idle');
+    assert.match(r.reason, /last own request was 3 h ago/);
   });
 
   void test('revoked says so', () => {
@@ -310,14 +332,18 @@ void describe('a harness whose MCP client names no tool (D-125)', () => {
 });
 
 void describe('presence off', () => {
-  void test('every check passing but no time kept is Connected, never Ready', () => {
+  void test('a passing request served with no time is presence off: Connected, never Ready', () => {
+    // As the server sends it with presence off: the check passes, its `at` is
+    // null, and `last_seen_at` is still served.
     const v = verification({
       request: { slug: 'claude-code', state: 'pass' },
       session: true,
-      lastSeen: null,
+      lastSeen: NOW - MIN,
+      requestAt: null,
     });
     const r = readiness(v, tool('claude-code'));
     assert.equal(r.key, 'connected');
+    assert.match(r.reason, /presence off/);
     assert.match(r.reason, /does not record when/);
   });
 });

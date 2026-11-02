@@ -5,6 +5,7 @@ import { ApiError } from '../../../../api/errors.ts';
 import type { MeProfile } from '../../../../api/me.ts';
 import {
   addToolToDevice,
+  cancelToolSetup,
   getAgentVerification,
   getToolSetup,
   reconnectAgent,
@@ -20,9 +21,11 @@ import { StepRail } from '../../../../components/wizard/StepRail.tsx';
 import { ToolTile } from '../../../../components/wizard/ToolTile.tsx';
 import { WizardCard } from '../../../../components/wizard/WizardCard.tsx';
 import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
+import { useConfirm } from '../../../../components/ConfirmProvider.tsx';
 import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
 import {
   POLL_FIRST_MS,
+  exchangeEnded,
   nextPollDelay,
   pairedDevice,
   toolAddCommand,
@@ -60,6 +63,8 @@ export interface AddToolWizardProps {
   readonly onResolveConflict: (agentId: string) => void;
   /** Project setup, for this agent. */
   readonly onSetUpProject: (agentId: string) => void;
+  /** Advanced, for a tool the helper cannot set up: a personal token, by hand. */
+  readonly onOpenAdvanced: () => void;
   readonly onClose: (changed: boolean) => void;
 }
 
@@ -116,9 +121,11 @@ export function AddToolWizard({
   onAddDevice,
   onResolveConflict,
   onSetUpProject,
+  onOpenAdvanced,
   onClose,
 }: AddToolWizardProps) {
   const ids = useId();
+  const confirm = useConfirm();
   const [message, announce] = useLiveRegion();
   const titleRef = useRef<HTMLHeadingElement | null>(null);
 
@@ -250,6 +257,10 @@ export function AddToolWizard({
             exchangeOpen = exchange.state === 'open';
             setSetup((s) => (s?.exchange.id === exchange.id ? { ...s, exchange } : s));
           }
+          // End states: nothing more will arrive, so stop asking. A revoked
+          // agent, or an exchange that closed without being redeemed — its
+          // own screen offers a new command, which starts a new poll.
+          if (v.status === 'revoked' || (exchange !== undefined && exchangeEnded(exchange))) return;
           delay = first ? POLL_FIRST_MS : nextPollDelay(delay, moved, false);
           timer = setTimeout(() => {
             tick(false);
@@ -285,8 +296,35 @@ export function AddToolWizard({
     announce(readinessSummary(current, lines, setup.tool.name));
   }, [current, lines, setup, announce]);
 
+  /**
+   * Leave this setup, then `then`. An exchange still open is cancelled first,
+   * after asking — as closing a pairing does — so the command copied for it
+   * stops working rather than staying live for ten minutes nobody watches.
+   */
+  const leave = (then: () => void): void => {
+    const open = setup?.exchange.state === 'open' ? setup.exchange : undefined;
+    if (open === undefined) {
+      then();
+      return;
+    }
+    void confirm({
+      title: 'Cancel this tool setup?',
+      body: `The command for ${setup?.tool.name ?? 'this tool'} stops working at once and no credential is fetched. If ${setup?.device.display_name ?? 'the device'} already ran it, nothing changes.`,
+      confirmLabel: 'Cancel setup',
+      cancelLabel: 'Keep it',
+      icon: 'warning',
+    }).then((yes) => {
+      if (!yes) return;
+      cancelToolSetup(open.id)
+        .catch(() => undefined)
+        .finally(then);
+    });
+  };
+
   const close = (): void => {
-    onClose(changed.current);
+    leave(() => {
+      onClose(changed.current);
+    });
   };
 
   let body: ReactNode = null;
@@ -392,7 +430,17 @@ export function AddToolWizard({
               </div>
             ))}
           </fieldset>
-          {already !== undefined && tool !== undefined && device !== undefined && (
+          {tool !== undefined && !tool.cliSetup && (
+            <div className="dv3w-manual" data-manual={tool.harness}>
+              <Help tone="warn">
+                <InlineCode text={tool.notes[0] ?? ''} />
+              </Help>
+              <button type="button" className="bar-control" onClick={onOpenAdvanced}>
+                Open Advanced
+              </button>
+            </div>
+          )}
+          {already !== undefined && tool !== undefined && device !== undefined && tool.cliSetup && (
             <Help tone="info">
               {tool.name} is already on {device.display_name}. This gives it a new credential, which
               replaces the current one when the device fetches it.
@@ -400,14 +448,17 @@ export function AddToolWizard({
           )}
         </div>
       );
-    hint =
-      paired.length === 0
+    hint = !canManage
+      ? 'Adding a tool needs a signed-in browser session; this one is not allowed to.'
+      : paired.length === 0
         ? 'Pair a device, then come back.'
         : device === undefined
           ? 'Choose a device.'
           : tool === undefined
             ? 'Choose a tool.'
-            : `Next, the command to run on ${device.display_name}.`;
+            : !tool.cliSetup
+              ? `The helper cannot set up ${tool.name}, so there is no command: connect it by hand.`
+              : `Next, the command to run on ${device.display_name}.`;
     primary =
       devices !== undefined && paired.length === 0 ? (
         <button
@@ -423,8 +474,11 @@ export function AddToolWizard({
         <button
           type="button"
           className="conn-continue"
-          disabled={device === undefined || tool === undefined || busy || !canManage}
+          disabled={
+            device === undefined || tool === undefined || !tool.cliSetup || busy || !canManage
+          }
           aria-busy={busy || undefined}
+          aria-describedby={`${ids}-hint`}
           onClick={add}
         >
           Get the command <span aria-hidden="true">→</span>
@@ -433,10 +487,10 @@ export function AddToolWizard({
   } else if (setup !== undefined && step === 2) {
     const { exchange, tool: t, device: d } = setup;
     line = `On ${d.display_name}, in a terminal.`;
-    const expired = exchange.state === 'expired' || exchange.state === 'cancelled';
+    const expired = exchangeEnded(exchange);
     body = (
       <div className="dv3w-stack">
-        {expired && lines?.find((l) => l.id === 'credential_installed')?.state !== 'pass' ? (
+        {expired ? (
           <div className="dv3w-error" role="alert">
             <p>
               This command {exchange.state === 'expired' ? 'expired' : 'was replaced'} before{' '}
@@ -579,11 +633,13 @@ export function AddToolWizard({
             type="button"
             className="bar-control"
             onClick={() => {
-              setSetup(undefined);
-              setVerification(undefined);
-              setHarness(undefined);
-              setStep(1);
-              onExchange(undefined);
+              leave(() => {
+                setSetup(undefined);
+                setVerification(undefined);
+                setHarness(undefined);
+                setStep(1);
+                onExchange(undefined);
+              });
             }}
           >
             Add another tool
@@ -597,7 +653,9 @@ export function AddToolWizard({
         type="button"
         className="conn-continue"
         onClick={() => {
-          onSetUpProject(agent.id);
+          leave(() => {
+            onSetUpProject(agent.id);
+          });
         }}
       >
         Set up a project <span aria-hidden="true">→</span>
@@ -660,7 +718,9 @@ export function AddToolWizard({
               <button type="button" className="conn-outline conn-back" onClick={close}>
                 {shownStep === 1 ? 'Cancel' : 'Done'}
               </button>
-              <p className="conn-foot-hint">{hint}</p>
+              <p className="conn-foot-hint" id={`${ids}-hint`}>
+                {hint}
+              </p>
               {primary}
             </footer>
           }

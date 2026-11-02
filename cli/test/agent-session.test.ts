@@ -1581,6 +1581,31 @@ void describe('what a session says about itself (LAI-588, D-118)', () => {
     assert.deepEqual(readState(path)?.reported, { model: 'claude-sonnet-5-5' });
   });
 
+  void test('a resumed harness’s new start is not overridden by the old process’s noted model (LAI-1063)', async () => {
+    const home = temp();
+    const w = world(home);
+    await startSession(w.deps, { ...request(), self: { model: 'claude-opus-5-5' } });
+    const path = statePath(home, 'claude-code', 'hs-1');
+    // The old process's hook noted its model beside the state;
+    noteSelfReport(home, path, { model: 'claude-opus-5-5', harness_version: '2.1.300' });
+    // `claude --resume` is a new process under the same harness session, and
+    // its start reads a different model.
+    const resumed: ProcInfo = { ...HARNESS, pid: 4343, started: 'Wed Oct 28 06:00:00 2026' };
+    const deps: Deps = { ...w.deps, proc: (pid) => (pid === resumed.pid ? resumed : undefined) };
+    await startSession(deps, {
+      ...request(),
+      harnessProc: resumed,
+      self: { model: 'claude-sonnet-5-5' },
+    });
+    assert.deepEqual(w.created(), 2);
+    assert.deepEqual(selfReportOf(path), { model: 'claude-sonnet-5-5' });
+    assert.equal(statSync(selfPath(path)).mode & 0o777, 0o600);
+    // The new start said B, and the first heartbeat does not take it back to A.
+    assert.equal(await beatOnce(deps, path, CRED), 'renewed');
+    assert.deepEqual(sent(w, 'beat'), ['']);
+    assert.deepEqual(readState(path)?.reported, { model: 'claude-sonnet-5-5' });
+  });
+
   void test('a noted report is read back through the transcript’s checks; it is never a session', async () => {
     const home = temp();
     const w = world(home);
