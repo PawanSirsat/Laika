@@ -232,7 +232,9 @@ void describe('the Project setup prompt', () => {
     const definition = between(/A hand-written Laika section has/, /^1\. Read/m);
     assert.match(
       definition,
-      phrase('A hand-written Laika section has no Laika markers and is clearly about the Laika board'),
+      phrase(
+        'A hand-written Laika section has no Laika markers and is clearly about the Laika board',
+      ),
     );
     for (const sign of [
       phrase('its heading names Laika'),
@@ -270,10 +272,15 @@ void describe('the Project setup prompt', () => {
     const step = between(/^4\. Otherwise, before you append/m, /^5\. /m);
     assert.match(step, phrase('look for hand-written Laika sections'));
     assert.match(step, phrase('If you find one or more, show me each one'));
-    assert.match(step, phrase('replace the first with the block below and fold the others into it'));
     assert.match(
       step,
-      phrase('Ask which of their lines I want to keep, show me the diff and wait for me to confirm.'),
+      phrase('replace the first with the block below and fold the others into it'),
+    );
+    assert.match(
+      step,
+      phrase(
+        'Ask which of their lines I want to keep, show me the diff and wait for me to confirm.',
+      ),
     );
     assert.match(step, phrase('If I say a section is not about this board, leave it as it is'));
     assert.ok(
