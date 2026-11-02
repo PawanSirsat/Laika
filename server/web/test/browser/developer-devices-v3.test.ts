@@ -783,6 +783,64 @@ void describe('V3 Tools: the details panel’s actions', () => {
       await h.page.getByRole('button', { name: 'Done' }).click();
       await h.page.getByTestId('agent-secret').waitFor({ state: 'detached' });
       assert.doesNotMatch(await h.page.content(), /SECRET_ONCE/);
+      // Copied and done: the panel closes without asking (LAI-1081).
+      await panel(h.page, 'tool').getByRole('button', { name: 'Close details' }).click();
+      await panel(h.page, 'tool').waitFor({ state: 'detached', timeout: 10_000 });
+      assert.equal(await h.page.getByRole('alertdialog').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('closing the panel while a new credential is shown asks first (LAI-1081)', async () => {
+    const h = await open(
+      '/developer?tab=tools&agent=a1',
+      stub('v3', [BELKA], {
+        '/api/v1/agents/a1/rotate-token': () => ({
+          agent: { ...BELKA.agents[0], tokens: [token('t-new', 'a1', 'lai_newx')] },
+          token: token('t-new', 'a1', 'lai_newx'),
+          secret: 'lai_newx_SECRET_ONCE',
+        }),
+      }),
+    );
+    try {
+      const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a1"]');
+      await body.waitFor({ timeout: 20_000 });
+      await body.getByRole('button', { name: 'Reconnect (new credential)…' }).click();
+      await h.page
+        .getByRole('alertdialog')
+        .getByRole('button', { name: 'Create new credential' })
+        .click();
+      const secret = h.page.getByTestId('agent-secret');
+      await secret.waitFor({ timeout: 10_000 });
+      const ask = h.page.getByRole('alertdialog', {
+        name: 'Close without copying the new credential?',
+      });
+
+      // Escape asks; Keep it open keeps the panel, its address and the secret.
+      await h.page.keyboard.press('Escape');
+      await ask.waitFor({ timeout: 10_000 });
+      assert.match(await ask.innerText(), /shown only once/);
+      await ask.getByRole('button', { name: 'Keep it open' }).click();
+      await ask.waitFor({ state: 'detached', timeout: 10_000 });
+      assert.equal(await panel(h.page, 'tool').count(), 1);
+      assert.equal(await secret.innerText(), 'lai_newx_SECRET_ONCE');
+      assert.equal(new URL(h.page.url()).searchParams.get('agent'), 'a1');
+
+      // The scrim asks too.
+      await h.page.locator('.side-panel-scrim').click({ position: { x: 10, y: 10 } });
+      await ask.waitFor({ timeout: 10_000 });
+      await ask.getByRole('button', { name: 'Keep it open' }).click();
+      await ask.waitFor({ state: 'detached', timeout: 10_000 });
+      assert.equal(await secret.innerText(), 'lai_newx_SECRET_ONCE');
+
+      // × asks; Close anyway closes the panel and the secret goes with it.
+      await panel(h.page, 'tool').getByRole('button', { name: 'Close details' }).click();
+      await ask.waitFor({ timeout: 10_000 });
+      await ask.getByRole('button', { name: 'Close anyway' }).click();
+      await panel(h.page, 'tool').waitFor({ state: 'detached', timeout: 10_000 });
+      assert.equal(new URL(h.page.url()).searchParams.get('agent'), null);
+      assert.doesNotMatch(await h.page.content(), /SECRET_ONCE/);
     } finally {
       await h.close();
     }

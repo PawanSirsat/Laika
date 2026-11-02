@@ -176,6 +176,39 @@ function ToolPanel({
     if (agent.status !== 'active') retire();
   }, [agent.status, retire]);
 
+  // A credential shown once is gone when the panel closes (LAI-1081, the
+  // owner, 2026-11-02): closing it by ×, Escape or the scrim asks first, and
+  // reloading or leaving the page meanwhile gets the browser's own warning.
+  // The browser's Back is the one way out that cannot be asked about here.
+  const showingSecret = rotated !== undefined && rotated.secret !== '';
+  useEffect(() => {
+    if (!showingSecret) return;
+    const warn = (event: BeforeUnloadEvent): void => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => {
+      window.removeEventListener('beforeunload', warn);
+    };
+  }, [showingSecret]);
+  const closePanel = (): void => {
+    if (!showingSecret) {
+      onClose();
+      return;
+    }
+    void confirm({
+      title: 'Close without copying the new credential?',
+      body: `${label}’s new credential is shown only once, and the old one has already stopped working. Once this closes it cannot be shown again: you would have to reconnect ${label} with another new one.`,
+      confirmLabel: 'Close anyway',
+      cancelLabel: 'Keep it open',
+      icon: 'warning',
+    }).then((yes) => {
+      if (!yes) return;
+      forget();
+      onClose();
+    });
+  };
+
   // A form closed — saved, cancelled or Escape — hands focus back to the
   // button that opened it, inside the panel, so a second Escape closes the
   // panel rather than landing on nothing.
@@ -300,7 +333,7 @@ function ToolPanel({
           <span className="dv3-panel-reason">{status.reason}</span>
         </span>
       }
-      onClose={onClose}
+      onClose={closePanel}
       restore={restore}
       panel="tool"
       // Busy is `aria-disabled`, never `disabled`: a confirmation hands focus
