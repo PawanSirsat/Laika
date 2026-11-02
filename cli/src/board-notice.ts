@@ -13,6 +13,7 @@ import {
   type Compatibility,
 } from './doctor.ts';
 import { PROTOCOL } from './protocol.ts';
+import { boardTransport } from './update.ts';
 import { versionInfo, type GitRunner, type VersionDeps, type VersionInfo } from './version.ts';
 
 /**
@@ -32,7 +33,8 @@ import { versionInfo, type GitRunner, type VersionDeps, type VersionInfo } from 
  *   and only when stderr is a terminal. Hooks (`laika agent …`, the activity
  *   hook) and anything a harness or a script reads are piped, so they never
  *   see it — and nor does any test that captures output.
- * - **Never with `--json`**, and never with `--help`.
+ * - **Never with `--json`**, never with `--help`, and never with `--offline`,
+ *   which promises no request to any board.
  * - **Never changes the exit code** and never fails the command: every step
  *   is caught, the request has a short timeout of its own, and the line comes
  *   after the command's own output.
@@ -82,7 +84,9 @@ export function wantsNotice(argv: readonly string[], isTTY: boolean): boolean {
   if (!isTTY) return false;
   const command = argv[0];
   if (command === undefined || !NOTICE_COMMANDS.has(command)) return false;
-  return !argv.some((arg) => arg === '--json' || arg === '--help' || arg === '-h');
+  return !argv.some(
+    (arg) => arg === '--json' || arg === '--help' || arg === '-h' || arg === '--offline',
+  );
 }
 
 function flagValue(argv: readonly string[], flag: string): string | undefined {
@@ -96,6 +100,12 @@ export interface NoticeBoard {
   readonly url: string;
   /** What the cache file holds: the same address, as `laika doctor` prints it. */
   readonly key: string;
+  /**
+   * `laika update` would not find this board by itself — it came from
+   * `--board`, or from the paired machine's `device.json`, which `laika
+   * update`'s `pickBoard` does not read — so its command names it.
+   */
+  readonly named: boolean;
 }
 
 /**
@@ -109,9 +119,11 @@ export function noticeBoard(
   io: { readonly env: Readonly<Record<string, string | undefined>>; readonly home: string },
   argv: readonly string[],
 ): NoticeBoard | undefined {
-  const raw = pickBoard(io, flagValue(argv, '--board')).url ?? readDevice(io.home)?.board;
+  const picked = pickBoard(io, flagValue(argv, '--board'));
+  const raw = picked.url ?? readDevice(io.home)?.board;
   if (raw === undefined || urlProblem(raw) !== undefined) return undefined;
-  return { url: normaliseUrl(raw), key: displayUrl(raw) };
+  const named = picked.url === undefined || picked.from === '--board';
+  return { url: normaliseUrl(raw), key: displayUrl(raw), named };
 }
 
 /** `true`: `ancestor` is in `of`'s history. `undefined`: `of` is not in this checkout. */
@@ -165,17 +177,35 @@ export function cliBehind(
   return ancestry(local.commit, board) ?? true;
 }
 
+/**
+ * What to run, pasteable as it stands — built as the web's `updateCommand`
+ * builds it (review round 1, N1): `--board` when `laika update` would not
+ * find this board by itself, and `--allow-http` on the update when the board
+ * is plain http off loopback, the one case `laika update` refuses without it.
+ * `--check` only warns, so it never needs the flag.
+ */
+export function updateCommands(board: Pick<NoticeBoard, 'url' | 'key' | 'named'> | undefined): {
+  readonly check: string;
+  readonly update: string;
+} {
+  const at = board?.named === true ? ` --board ${board.key}` : '';
+  const http = board !== undefined && boardTransport(board.url) === 'http' ? ' --allow-http' : '';
+  return { check: `laika update --check${at}`, update: `laika update${at}${http}` };
+}
+
 /** The line itself: both commits, and what to run. */
 export function noticeLine(
   local: Pick<VersionInfo, 'commit'>,
   body: Compatibility,
+  board?: Pick<NoticeBoard, 'url' | 'key' | 'named'>,
   protocol: number = PROTOCOL,
 ): string {
-  const board = boardCommit(body);
+  const run = updateCommands(board);
+  const built = boardCommit(body);
   const differ = body.protocol.current !== protocol;
-  const theirs = `${board === null ? 'an unnamed build' : board.slice(0, 7)}${differ ? ` (protocol ${String(body.protocol.current)})` : ''}`;
+  const theirs = `${built === null ? 'an unnamed build' : built.slice(0, 7)}${differ ? ` (protocol ${String(body.protocol.current)})` : ''}`;
   const ours = `${local.commit === null ? 'an unknown commit' : local.commit.slice(0, 7)}${differ ? ` (protocol ${String(protocol)})` : ''}`;
-  return `Laika: this board runs ${theirs}; your CLI is ${ours}. Run \`laika update\` (see \`laika update --check\`).`;
+  return `Laika: this board runs ${theirs}; your CLI is ${ours}. Run \`${run.update}\` (see \`${run.check}\`).`;
 }
 
 // ------------------------------------------------------------------ the file
@@ -262,7 +292,7 @@ export async function prepareNotice(
   if (answer.kind !== 'ok') return undefined;
   const ancestry = gitAncestry(local.checkout, io.git ?? realGit);
   if (!cliBehind(local, answer.body, ancestry)) return undefined;
-  return { line: noticeLine(local, answer.body), key: board.key };
+  return { line: noticeLine(local, answer.body, board), key: board.key };
 }
 
 /**

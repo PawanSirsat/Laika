@@ -23,6 +23,7 @@ import {
   noticeBoard,
   noticeLine,
   noticePath,
+  updateCommands,
   wantsNotice,
   withBoardNotice,
   type NoticeIo,
@@ -147,9 +148,12 @@ void describe('which command lines may carry it', () => {
     }
   });
 
-  void test('never with --json or --help, never on hook, update, doctor or version paths', () => {
+  void test('never with --json, --help or --offline, never on hook, update, doctor or version paths', () => {
     for (const argv of [
       ['project', 'check', '--json'],
+      // Review round 1, N2: --offline promises no request to any board.
+      ['project', 'check', '--offline'],
+      ['whoami', '--offline'],
       ['whoami', '--json'],
       ['project', 'check', '--help'],
       ['tool', '-h'],
@@ -233,10 +237,12 @@ void describe('the board it asks', () => {
     assert.deepEqual(noticeBoard(io, ['device', 'pair', '--board', 'https://flag.test']), {
       url: 'https://flag.test',
       key: 'https://flag.test',
+      named: true,
     });
     assert.deepEqual(noticeBoard(io, ['whoami']), {
       url: 'https://from-env.test',
       key: 'https://from-env.test',
+      named: false,
     });
     assert.equal(
       noticeBoard({ env: { LAIKA_URL: `https://u:${SECRET}@x.test` }, home: home() }, ['whoami']),
@@ -265,7 +271,58 @@ void describe('the board it asks', () => {
     assert.deepEqual(noticeBoard({ env: {}, home: h }, ['tool', 'add', 'codex']), {
       url: 'https://paired.test',
       key: 'https://paired.test',
+      // laika update's pickBoard does not read device.json, so the command names it.
+      named: true,
     });
+  });
+});
+
+void describe('the command it gives can be pasted as it stands (review round 1, N1)', () => {
+  const board = (url: string, named: boolean) => ({ url, key: url, named });
+
+  void test('a board laika update finds by itself: no --board; plain http off loopback: --allow-http', () => {
+    assert.deepEqual(updateCommands(board('https://laika.example.test', false)), {
+      check: 'laika update --check',
+      update: 'laika update',
+    });
+    assert.deepEqual(updateCommands(board('http://laika.lan:3000', false)), {
+      check: 'laika update --check',
+      update: 'laika update --allow-http',
+    });
+    for (const loopback of ['http://localhost:3000', 'http://127.0.0.1:3000']) {
+      assert.deepEqual(updateCommands(board(loopback, false)), {
+        check: 'laika update --check',
+        update: 'laika update',
+      });
+    }
+  });
+
+  void test('a board from --board or the paired device: named, as #218’s web command names it', () => {
+    assert.deepEqual(updateCommands(board('https://flag.test', true)), {
+      check: 'laika update --check --board https://flag.test',
+      update: 'laika update --board https://flag.test',
+    });
+    assert.deepEqual(updateCommands(board('http://laika.lan:3000', true)), {
+      check: 'laika update --check --board http://laika.lan:3000',
+      update: 'laika update --board http://laika.lan:3000 --allow-http',
+    });
+    assert.equal(
+      noticeLine({ commit: OURS }, compat(), board('http://laika.lan:3000', true)),
+      'Laika: this board runs 3f2a1b0; your CLI is 9c8d7e6. Run `laika update --board http://laika.lan:3000 --allow-http` (see `laika update --check --board http://laika.lan:3000`).',
+    );
+  });
+
+  void test('end to end: a device pair against a plain-http board names it and adds --allow-http', async () => {
+    const f = fixture();
+    await withBoardNotice(
+      ['device', 'pair', '--board', 'http://laika.lan:3000', '--code', 'ABCD'],
+      ok,
+      f.io,
+    );
+    assert.deepEqual(f.asked, ['http://laika.lan:3000/api/v1/developer/compatibility']);
+    assert.deepEqual(f.lines, [
+      'Laika: this board runs 3f2a1b0; your CLI is 9c8d7e6. Run `laika update --board http://laika.lan:3000 --allow-http` (see `laika update --check --board http://laika.lan:3000`).',
+    ]);
   });
 });
 
@@ -330,6 +387,7 @@ void describe('once a day per board, after the command, never changing its exit 
     await withBoardNotice(['project', 'check', '--json'], ok, f.io);
     await withBoardNotice(['agent', 'hook', 'tool', 'claude-code'], ok, f.io);
     await withBoardNotice(['activity', 'hook'], ok, f.io);
+    await withBoardNotice(['project', 'check', '--offline'], ok, f.io);
     const piped = fixture({ isTTY: false });
     await withBoardNotice(['project', 'check'], ok, piped.io);
     assert.deepEqual([...f.lines, ...piped.lines], []);
