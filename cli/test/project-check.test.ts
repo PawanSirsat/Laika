@@ -584,6 +584,32 @@ void describe('laika project check', () => {
     assert.equal(r.sent.length, 0);
   });
 
+  void test('--harness names a tool with no credential here while others have one: exit 2, says which', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run(['--harness', 'codex'], {
+      cwd: dir,
+      home: home({ 'claude-code': BOARD, cursor: BOARD }),
+    });
+    assert.equal(r.code, 2, r.out);
+    assert.equal(r.sent.length, 0);
+    assert.deepEqual(r.asked, []);
+    assert.match(
+      r.out,
+      /no credential for codex on this machine \(it has: claude-code, cursor\) — nothing recorded/,
+    );
+    // Names only: nothing from inside a credential file.
+    assert.ok(!r.out.includes(AGENT_TOKEN), 'a token was printed');
+    assert.ok(!r.out.includes(BOARD), 'a credential’s board URL was printed');
+  });
+
+  void test('--harness names a tool and no tool has a credential here: says which, exit 0', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run(['--harness', 'codex'], { cwd: dir });
+    assert.equal(r.code, 0, r.out);
+    assert.equal(r.sent.length, 0);
+    assert.match(r.out, /no credential for codex on this machine — nothing recorded/);
+  });
+
   void test('several tools here and --harness names one: recorded, exit 0', async () => {
     const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], {
