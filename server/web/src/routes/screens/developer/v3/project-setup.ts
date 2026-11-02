@@ -7,6 +7,7 @@ import {
   type AgentGrantScope,
   type RegisteredAgent,
 } from '../../../../api/agents.ts';
+import type { CliSource } from '../../../../api/developer-compat.ts';
 import type { ProjectAccess } from '../../../../api/project-access.ts';
 import type { ProjectSetup } from '../../../../api/project-setups.ts';
 import { dateTime } from '../../../../api/time-label.ts';
@@ -425,4 +426,31 @@ export function recordFinding(record: ProjectSetup): string {
 /** The command that checks this repository from the reader's device. */
 export function projectCheckCommand(projectSlug: string): string {
   return `laika project check --project ${projectSlug}`;
+}
+
+/**
+ * The hint under that command (LAI-1084). A CLI older than the board answers
+ * `laika: unknown command "project"`, and one that old has no `laika update`
+ * either, so the way forward is the checkout itself.
+ */
+export interface CliMatchHint {
+  /**
+   * The board's helper commit (`cli.source.commit`), seven characters as
+   * `laika version` prints its own, or `null` when the board does not say:
+   * an older board, or a build that does not know its commit.
+   */
+  readonly commit: string | null;
+  readonly version: string;
+  /** For a CLI with no `laika version`: the checkout it runs from, moved on. */
+  readonly pull: string;
+  readonly update: string;
+}
+
+export function cliMatchHint(source: CliSource | undefined): CliMatchHint {
+  return {
+    commit: source === undefined || source.commit === null ? null : source.commit.slice(0, 7),
+    version: 'laika version',
+    pull: 'git -C <your Laika checkout> pull --ff-only',
+    update: 'laika update',
+  };
 }

@@ -289,6 +289,12 @@ export interface ReplacedBlock {
  * - Neither: `block` is appended after a blank line, and the rest is kept.
  *
  * Everything outside the replaced span is byte-identical to `text`.
+ *
+ * One rule of the prompt is not here: a Laika section someone wrote by hand,
+ * with neither markers nor {@link BLOCK_MARKER} (LAI-1084). Whether a section
+ * is about the board, and which of its lines to keep, is the person's call,
+ * so the prompt shows it and waits. This function's *append* stands for a
+ * file with no such section, or one the person says is not about the board.
  */
 export function replaceLaikaBlock(
   text: string | null,
@@ -369,6 +375,11 @@ export interface ProjectSetupPromptInput {
  * any replacement, and leaves every other line as the person wrote it. It
  * carries no token and asks for none, and it installs, pairs, configures and
  * commits nothing: the device and the tool were set up once, elsewhere.
+ *
+ * **It never appends a second Laika section** (LAI-1084). A file whose Laika
+ * section was written by hand, with no markers and no {@link BLOCK_MARKER}
+ * line, gained a whole second block on OnRoute; so before appending, the tool
+ * looks for any section about the board, shows it, and offers to replace it.
  */
 export function projectSetupPrompt({
   origin,
@@ -394,8 +405,20 @@ yours to change; everything else in it belongs to the people who wrote it.
    as a diff and wait for me to confirm. Then replace only that block. If I
    edited lines inside the old block, point them out in the diff so I can
    keep them.
-4. If there is no Laika block, append the block below at the end, keeping
-   everything already in the file. Create the file only if it does not exist.${
+4. Otherwise, before you append anything, look for a section someone wrote by
+   hand about this Laika board, with no markers: a heading that mentions
+   Laika, or text that mentions laika_whoami, get_project_context,
+   start_working, finish_task, ${origin}, or task keys like
+   \`${project.prefix}-42\`. If you find one, show it to me and offer to replace
+   that whole section, from its heading to the next heading of the same or a
+   higher level or the end of the file, with the block below. Ask which of its
+   lines I want to keep, and put those directly below the block's last line,
+   as they were. Show me the diff and wait for me to confirm. Then replace only
+   that section. If I say it is not about this board, go on to step 5. If I
+   say no, change nothing and stop.
+5. If there is no Laika block and no such section, append the block below at
+   the end, keeping everything already in the file. Create the file only if it
+   does not exist. Never add a second Laika section to a file that has one.${
      preamble === ''
        ? ''
        : `
@@ -404,13 +427,13 @@ yours to change; everything else in it belongs to the people who wrote it.
 ${preamble}
 `
    }
-5. Copy the block exactly. It contains no token and must never gain one: do
+6. Copy the block exactly. It contains no token and must never gain one: do
    not add a token, key or password anywhere, and do not ask me for one.
-6. Change nothing else. Do not install, reinstall or update Laika, do not pair
+7. Change nothing else. Do not install, reinstall or update Laika, do not pair
    a device, do not edit any MCP configuration, and do not commit or push: I
    will review the change myself.
-7. Report in one line: created the file, appended the block, updated it from
-   revision N, or already up to date.
+8. Report in one line: created the file, appended the block, updated it from
+   revision N, replaced a hand-written Laika section, or already up to date.
 
 --- begin block ---
 ${block}

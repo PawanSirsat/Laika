@@ -16,6 +16,7 @@ import {
   setAgentGrants,
   type RegisteredAgent,
 } from '../../../../api/agents.ts';
+import { loadCliSource, type CliSource } from '../../../../api/developer-compat.ts';
 import { everyPage } from '../../../../api/every-page.ts';
 import { pickProject } from '../../../../api/pick-project.ts';
 import { getProjectAccess, type ProjectAccess } from '../../../../api/project-access.ts';
@@ -48,6 +49,7 @@ import { NoteBlock } from './NoteBlock.tsx';
 import { OVERVIEW_ADDRESSES } from './overview-state.ts';
 import { SectionTitle } from './SectionTitle.tsx';
 import {
+  cliMatchHint,
   connectedTools,
   currentChoice,
   doneSummary,
@@ -1232,6 +1234,19 @@ function ReviewStep({
   const [recording, setRecording] = useState(false);
   const [recordError, setRecordError] = useState<unknown>(null);
   const checkCommand = projectCheckCommand(project.slug);
+  const [cliSource, setCliSource] = useState<CliSource | undefined>(undefined);
+  const hint = cliMatchHint(cliSource);
+
+  // The board's helper commit, for the hint: read once; unreadable says none.
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadCliSource(controller.signal).then((answer) => {
+      if (!controller.signal.aborted) setCliSource(answer);
+    });
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1308,6 +1323,18 @@ function ReviewStep({
           what it found with {tool.toolName}’s own credential.
         </p>
         <CodeBlock label="Terminal, in the repository" text={checkCommand} what="the command" />
+        <p className="conn-note" data-note="cli-match">
+          This needs a Laika CLI that matches this board
+          {hint.commit !== null && (
+            <>
+              {' '}
+              (commit <code>{hint.commit}</code>)
+            </>
+          )}
+          . Check with <code>{hint.version}</code>. If that says unknown command, your CLI predates
+          this board: update the Laika checkout it runs from with <code>{hint.pull}</code>, then run{' '}
+          <code>{hint.version}</code> again. Newer CLIs update with <code>{hint.update}</code>.
+        </p>
         {records.kind === 'loading' ? (
           <LoadingState shape="row" count={1} label="Loading what is recorded" />
         ) : records.kind === 'error' ? (
