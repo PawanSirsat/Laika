@@ -17,9 +17,15 @@
 }
 
 .dv3w .conn-wizard-card {
-  grid-row: 1;
   height: auto;
   max-height: none;
+}
+
+/* Side by side only where Connect's sheet puts them so; stacked, its order stands. */
+@media (min-width: 56.01rem) {
+  .dv3w .conn-wizard-card {
+    grid-row: 1;
+  }
 }
 
 .dv3w .conn-card-scroll {
@@ -75,6 +81,8 @@
 }
 
 .dv3w-name {
+  /* Connect's input grows along a row; in this column it must not grow down. */
+  flex: none;
   width: min(100%, 22rem);
 }
 
