@@ -2,11 +2,12 @@
 id: LAI-1063
 title: 'Developer access V3 slice E3: update status on device and tool rows, What''s new, Copy update command'
 area: shell
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: [LAI-1043, LAI-1051, LAI-1054, LAI-1056, LAI-1061]
 discovered-from: LAI-1042
-status: backlog
+status: in-progress
+started: 2026-11-02T06:33:17+05:30
 ---
 
 ## Why
