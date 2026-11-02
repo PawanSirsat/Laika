@@ -2,11 +2,12 @@
 id: LAI-1064
 title: 'The CLI still speaks protocol 1 while it carries device pair and tool add; the board now says protocol 2'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-1062]
 discovered-from: LAI-1062
-status: backlog
+started: 2026-11-02T01:10:23Z
+status: in-progress
 ---
 
 The SHELL half of LAI-1062 (CLAUDE.md §4.4; board card LAIKA-918).
