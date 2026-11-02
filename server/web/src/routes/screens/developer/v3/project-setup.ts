@@ -175,8 +175,9 @@ export interface SetupEvidence {
 
 /**
  * The records for one tool, split by source, and the one word the step leads
- * with: *update available* if any record shows one, else *missing* when every
- * local check found nothing and the reader recorded nothing, else *current*.
+ * with: *update available* if any record shows one; else *missing* when a
+ * local check found no block and no local check found a current one — what a
+ * check read beats the reader's own word (LAI-1073); else *current*.
  */
 export function setupEvidence(records: readonly ProjectSetup[], agentId: string): SetupEvidence {
   const mine = records.filter((record) => record.agent_id === agentId);
@@ -188,7 +189,8 @@ export function setupEvidence(records: readonly ProjectSetup[], agentId: string)
       ? 'not-recorded'
       : states.includes('update-available')
         ? 'update-available'
-        : states.every((state) => state === 'missing')
+        : checks.some((r) => recordState(r) === 'missing') &&
+            !checks.some((r) => recordState(r) === 'current')
           ? 'missing'
           : 'current';
   return { checks, self, overall };
