@@ -13,6 +13,12 @@
 # Settings come from ~/.laika/env, written by install.sh. Each person has their
 # own token there — a token is personal, and the board attributes every action
 # and every session to whoever owns it.
+#
+# Once `laika tool add claude-code` has installed Claude Code's own credential
+# (~/.laika/agents/claude-code.json), that is used instead, so the board sees
+# this tool as itself (LAI-1060, plan LAI-1042 §L2). Only a file `tool add`
+# wrote counts — it says `"source": "tool-add"` — so a credential saved by
+# `laika agent login` before this existed changes nothing for anyone.
 set -eu
 
 # ---------------------------------------------------------------------------
@@ -46,6 +52,18 @@ if [ -r "$CONFIG" ]; then
   . "$CONFIG"
 fi
 
+AGENT_CREDENTIAL="$HOME/.laika/agents/claude-code.json"
+if [ -r "$AGENT_CREDENTIAL" ] && grep -q '"source": "tool-add"' "$AGENT_CREDENTIAL"; then
+  # Read, never sourced: the file is JSON that `laika tool add` writes, one key a line.
+  AGENT_URL="$(sed -n 's/^ *"url": *"\([^"]*\)".*/\1/p' "$AGENT_CREDENTIAL")"
+  AGENT_TOKEN="$(sed -n 's/^ *"token": *"\([^"]*\)".*/\1/p' "$AGENT_CREDENTIAL")"
+  if [ -n "$AGENT_URL" ] && [ -n "$AGENT_TOKEN" ]; then
+    LAIKA_URL="$AGENT_URL"
+    LAIKA_TOKEN="$AGENT_TOKEN"
+  fi
+  unset AGENT_URL AGENT_TOKEN
+fi
+
 if [ -z "${LAIKA_URL:-}" ] || [ -z "${LAIKA_TOKEN:-}" ]; then
   echo "laika-claude: not configured yet." >&2
   # Only offer the installer if it is actually there. Naming a path with
@@ -58,6 +76,8 @@ if [ -z "${LAIKA_URL:-}" ] || [ -z "${LAIKA_TOKEN:-}" ]; then
     echo "  the checkout looks incomplete. Re-clone, or set the two values below." >&2
   fi
   echo "  Or set LAIKA_URL and LAIKA_TOKEN in $CONFIG" >&2
+  echo "  Or pair this machine and add Claude Code from the browser:" >&2
+  echo "  laika device pair, then laika tool add claude-code" >&2
   exit 1
 fi
 
