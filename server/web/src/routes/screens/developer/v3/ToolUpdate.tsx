@@ -21,10 +21,12 @@ import {
   deviceUpdateSummary,
   offersUpdate,
   reportKey,
+  reportedHelper,
   updateAnnouncement,
   updateCommand,
   updateManifestOf,
   updateStatus,
+  versionChip,
   watchForReport,
   whatsNew,
   worstUpdate,
@@ -254,19 +256,40 @@ export function useUpdateStatus(agentId: string): UpdateStatus | undefined {
   return useUpdates()?.status(agentId);
 }
 
+/** The helper version a tool reported — *helper 0.1.0* — for its row's line. */
+export function useReportedHelper(agentId: string): string | undefined {
+  return reportedHelper(useUpdates()?.report(agentId));
+}
+
 /**
- * The small chip on a tool's row (LAI-1080): only when there is something to
- * update to — *Update available*, or *Update required*. The whole status, its
- * reason and the command are in the tool's details.
+ * The version chip on a tool's row (LAI-1083; LAI-1080 showed only the update
+ * ones): *Helper up to date*, *Update available*, *Update required*, *Version
+ * unknown* or *Could not check*. Its reason and the command are in the tool's
+ * details.
  */
 export function UpdateChip({ status }: { readonly status: UpdateStatus | undefined }) {
-  if (status === undefined || !offersUpdate(status.key)) return null;
-  const required = status.key === 'required';
+  const chip = versionChip(status?.key);
+  if (chip === undefined) return null;
   return (
-    <span data-update-chip={status.key}>
-      <DesignChip tone={required ? 'danger' : 'accent'}>
-        {required ? 'Update required' : 'Update available'}
-      </DesignChip>
+    <span data-update-chip={chip.key}>
+      <DesignChip tone={chip.tone}>{chip.word}</DesignChip>
+    </span>
+  );
+}
+
+/**
+ * A device row's version chip (LAI-1083): the worst helper status among its
+ * active tools, *Helpers up to date* when every one is. The count of each is
+ * the device's details (`DeviceUpdate`).
+ */
+export function DeviceVersionChip({ agentIds }: { readonly agentIds: readonly string[] }) {
+  const updates = useUpdates();
+  if (updates === undefined || agentIds.length === 0) return null;
+  const chip = versionChip(worstUpdate(agentIds.map((id) => updates.status(id))), agentIds.length);
+  if (chip === undefined) return null;
+  return (
+    <span data-device-version={chip.key}>
+      <DesignChip tone={chip.tone}>{chip.word}</DesignChip>
     </span>
   );
 }
