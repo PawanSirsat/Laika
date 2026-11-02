@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { SidePanel } from '../../../../components/SidePanel.tsx';
 import { DesignChip, type ChipTone } from './DesignChip.tsx';
 import {
@@ -29,17 +29,67 @@ export interface HintChipProps {
   readonly description: string;
 }
 
+/** The tooltip's distance from the chip and from the screen's edges, in px. */
+const GAP = 4;
+const EDGE = 8;
+
+interface Place {
+  readonly top: number;
+  readonly left: number;
+}
+
+/**
+ * Where the tooltip goes: under the chip, its right edge at the chip's, moved
+ * in to stay on screen; above the chip when there is no room below. Fixed to
+ * the viewport, so the list's card — which clips what overflows it — cannot
+ * cut it off.
+ */
+function place(anchor: DOMRect, tip: DOMRect, width: number, height: number): Place {
+  const left = Math.min(Math.max(anchor.right - tip.width, EDGE), width - tip.width - EDGE);
+  const below = anchor.bottom + GAP;
+  const top = below + tip.height > height - EDGE ? anchor.top - GAP - tip.height : below;
+  return { top: Math.max(EDGE, top), left: Math.max(EDGE, left) };
+}
+
 /**
  * A status chip that explains itself: focusable, described by its row's
  * reason (`aria-describedby`), and showing it as a tooltip on hover **and**
  * on focus. Escape hides the tooltip without moving focus or closing what
- * the chip sits in; it comes back on the next hover or focus.
+ * the chip sits in; scrolling hides it too, since it would no longer sit
+ * under its chip.
  */
 export function HintChip({ word, tone, description }: HintChipProps) {
   const id = useId();
+  const [hover, setHover] = useState(false);
+  const [focus, setFocus] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [at, setAt] = useState<Place | undefined>(undefined);
+  const anchor = useRef<HTMLSpanElement | null>(null);
+  const tip = useRef<HTMLSpanElement | null>(null);
+  const open = (hover || focus) && !hidden;
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setAt(undefined);
+      return;
+    }
+    const a = anchor.current?.getBoundingClientRect();
+    const t = tip.current?.getBoundingClientRect();
+    if (a === undefined || t === undefined) return;
+    setAt(place(a, t, document.documentElement.clientWidth, window.innerHeight));
+    const away = (): void => {
+      setHidden(true);
+    };
+    window.addEventListener('scroll', away, { capture: true, passive: true });
+    window.addEventListener('resize', away);
+    return () => {
+      window.removeEventListener('scroll', away, { capture: true });
+      window.removeEventListener('resize', away);
+    };
+  }, [open]);
+
   const onKeyDown = (event: KeyboardEvent<HTMLSpanElement>): void => {
-    if (event.key !== 'Escape' || hidden) return;
+    if (event.key !== 'Escape' || !open) return;
     // The tooltip goes first; a panel around it closes on the next Escape.
     event.preventDefault();
     event.stopPropagation();
@@ -48,23 +98,43 @@ export function HintChip({ word, tone, description }: HintChipProps) {
   return (
     <span
       className="dv3-hint"
-      data-hidden={hidden || undefined}
-      onMouseLeave={() => {
+      data-open={open || undefined}
+      onMouseEnter={() => {
         setHidden(false);
+        setHover(true);
+      }}
+      onMouseLeave={() => {
+        setHover(false);
       }}
     >
       <span
+        ref={anchor}
         className="dv3-hint-anchor"
         tabIndex={0}
         aria-describedby={id}
         onKeyDown={onKeyDown}
-        onBlur={() => {
+        onFocus={() => {
           setHidden(false);
+          setFocus(true);
+        }}
+        onBlur={() => {
+          setFocus(false);
         }}
       >
         <DesignChip tone={tone}>{word}</DesignChip>
       </span>
-      <span className="dv3-hint-tip" role="tooltip" id={id}>
+      <span
+        ref={tip}
+        className="dv3-hint-tip"
+        role="tooltip"
+        id={id}
+        data-placed={at === undefined ? undefined : ''}
+        style={
+          at === undefined
+            ? undefined
+            : { top: `${String(at.top)}px`, left: `${String(at.left)}px` }
+        }
+      >
         {description}
       </span>
     </span>

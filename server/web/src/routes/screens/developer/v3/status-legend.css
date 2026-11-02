@@ -1,12 +1,11 @@
 /*
  * What every status means (LAI-1086): the chip that explains itself, and the
  * legend. Existing tokens only, so both themes come from theme.css. The
- * tooltip opens under its chip, aligned to the row's end, and is never wider
- * than the screen less its gutters — 390 px never scrolls sideways.
+ * tooltip is never wider than the screen less a margin, and is kept on it —
+ * 390 px never scrolls sideways.
  */
 
 .dv3-hint {
-  position: relative;
   display: inline-flex;
   min-width: 0;
 }
@@ -22,14 +21,19 @@
   outline-offset: 2px;
 }
 
+/*
+ * Fixed to the viewport (`StatusLegend.tsx` places it under its chip and
+ * keeps it on screen), so the list's card, which clips what overflows it,
+ * cannot cut it off. Measured while hidden, then shown where it was placed.
+ */
 .dv3-hint-tip {
   display: none;
-  position: absolute;
-  top: calc(100% + var(--space-1));
-  right: 0;
-  z-index: 20;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
   width: max-content;
-  max-width: min(22rem, calc(100vw - 2rem));
+  max-width: min(22rem, calc(100vw - 1rem));
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-control);
@@ -44,9 +48,13 @@
   overflow-wrap: anywhere;
 }
 
-.dv3-hint:hover:not([data-hidden]) > .dv3-hint-tip,
-.dv3-hint:focus-within:not([data-hidden]) > .dv3-hint-tip {
+.dv3-hint[data-open] > .dv3-hint-tip {
   display: block;
+  visibility: hidden;
+}
+
+.dv3-hint[data-open] > .dv3-hint-tip[data-placed] {
+  visibility: visible;
 }
 
 .dv3-legend-link {
