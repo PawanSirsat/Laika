@@ -35,6 +35,7 @@ export const HARNESSES = [
   'copilot-cloud',
   'gemini-cli',
   'antigravity',
+  'omnigent',
 ] as const;
 
 export type Harness = (typeof HARNESSES)[number];
@@ -52,6 +53,12 @@ export interface HarnessAdapter {
   readonly comm?: RegExp;
   /** `laika agent hooks on` installs for it: a hook format verified on a real binary. */
   readonly hooks: boolean;
+  /**
+   * The helper keeps only its credential (LAI-1060, plan LAI-1042 §M): no
+   * sessions, no hooks. `laika agent session start` refuses it, because
+   * nothing here has seen its process or its hook format.
+   */
+  readonly credentialOnly?: true;
 }
 
 export const ADAPTERS: Readonly<Record<Harness, HarnessAdapter>> = {
@@ -97,6 +104,15 @@ export const ADAPTERS: Readonly<Record<Harness, HarnessAdapter>> = {
     agentHarness: 'antigravity',
     hooks: false,
   },
+  // Credential only (LAI-1060): Omnigent's workers open their own sessions
+  // through their own harness's hooks, so the identity here is the token.
+  omnigent: {
+    harness: 'omnigent',
+    name: 'Omnigent',
+    agentHarness: 'omnigent',
+    hooks: false,
+    credentialOnly: true,
+  },
 };
 
 export const adapter = (harness: Harness): HarnessAdapter => ADAPTERS[harness];
@@ -111,6 +127,12 @@ export const HOOK_HARNESSES: readonly Harness[] = HARNESSES.filter((h) => ADAPTE
  */
 export function explicitCommands(harness: Harness): string[] {
   const h = harness;
+  if (ADAPTERS[h].credentialOnly === true) {
+    return [
+      `${ADAPTERS[h].name} is credential only here: no hooks and no sessions, so nothing was installed.`,
+      `Its token is in ~/.laika/agents/${h}.json (0600); point its MCP config at the board by hand.`,
+    ];
+  }
   return [
     `${ADAPTERS[h].name} has no hook adapter Laika has verified, so nothing was installed.`,
     'Run the shared helper yourself (cli/agent-adapters/CAPABILITIES.md):',

@@ -1,17 +1,40 @@
 #!/bin/sh
-# install.sh — set up `laika-claude` on this machine, once.
+# install.sh — set up the `laika` and `laika-claude` commands on this machine.
 #
-#   git clone https://github.com/PawanSirsat/Laika.git ~/laika
-#   ~/laika/plugin/scripts/install.sh
+# The V3 path (LAI-1060) asks for no token and writes none:
 #
-# Asks for the board URL and YOUR OWN personal access token, stores them in
-# ~/.laika/env (readable only by you), and adds a `laika-claude` command to
-# your shell. Nothing is written into any git repository, so a token cannot be
-# committed by accident.
+#   git clone <the board's source URL> ~/laika
+#   git -C ~/laika checkout --detach <the board's commit>
+#   ~/laika/plugin/scripts/install.sh --no-credential
+#   laika device pair --board <board> --code <code>     # the browser shows this
 #
-# Re-running it is safe: it overwrites the stored settings and leaves one
-# alias line, not a pile of them.
+# Each tool then gets its own credential with `laika tool add` (the browser
+# shows that command too), kept in ~/.laika/agents/<tool>.json.
+#
+# Without --no-credential it is the older path: it asks for the board URL and
+# YOUR OWN personal access token and stores them in ~/.laika/env (readable only
+# by you). An existing ~/.laika/env is kept as env.bak-<seconds> first. Nothing
+# is written into any git repository, so a token cannot be committed by
+# accident.
+#
+# Re-running it is safe: it leaves one PATH line and one alias line, not a pile
+# of them.
 set -eu
+
+NO_CREDENTIAL=no
+for ARG in "$@"; do
+  case "$ARG" in
+    --no-credential) NO_CREDENTIAL=yes ;;
+    -h | --help)
+      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      printf 'install.sh: unknown option %s (try --no-credential)\n' "$ARG" >&2
+      exit 1
+      ;;
+  esac
+done
 
 # Resolved through symlinks, the same way the launcher does (LAI-482): if this
 # installer is ever reached through one, a bare dirname would make LAUNCHER
@@ -29,59 +52,8 @@ SCRIPT_DIR="$(cd "$(dirname "$SELF")" && pwd)"
 CONFIG_DIR="$HOME/.laika"
 CONFIG="$CONFIG_DIR/env"
 
-printf '\nLaika — set up the laika-claude command\n'
-printf -- '---------------------------------------\n\n'
-
-# --- board URL ------------------------------------------------------------
-DEFAULT_URL="${LAIKA_URL:-http://52.72.203.206}"
-printf 'Board URL [%s]: ' "$DEFAULT_URL"
-read -r URL_INPUT || URL_INPUT=''
-URL="${URL_INPUT:-$DEFAULT_URL}"
-URL="${URL%/}"
-
-# --- token ----------------------------------------------------------------
-printf '\nYour personal access token.\n'
-printf '  Get one at %s → sidebar SETTINGS → Tokens → create.\n' "$URL"
-printf '  It is shown once. Use YOUR OWN — the board attributes every action\n'
-printf '  and every live session to the person who owns the token.\n\n'
-printf 'Token (lai_...): '
-# Echo off while it is typed: this script exists for onboarding walkthroughs,
-# which are exactly the sessions that get screen-shared and recorded. `read -s`
-# is bash/zsh only, so stty is the portable way, and the trap puts the terminal
-# back even if the person hits Ctrl-C at the prompt.
-if [ -t 0 ]; then
-  STTY_STATE="$(stty -g 2>/dev/null || true)"
-  [ -n "$STTY_STATE" ] && trap 'stty "$STTY_STATE" 2>/dev/null || true' EXIT INT TERM
-  stty -echo 2>/dev/null || true
-fi
-read -r TOKEN || TOKEN=''
-if [ -t 0 ] && [ -n "${STTY_STATE:-}" ]; then
-  stty "$STTY_STATE" 2>/dev/null || true
-  trap - EXIT INT TERM
-fi
-printf '\n'
-
-if [ -z "$TOKEN" ]; then
-  printf '\nNo token given — nothing was written. Re-run when you have one.\n' >&2
-  exit 1
-fi
-
-case "$TOKEN" in
-  lai_*) ;;
-  *) printf '\nWarning: that does not look like a Laika token (expected lai_...).\n' ;;
-esac
-
-# --- store ----------------------------------------------------------------
-mkdir -p "$CONFIG_DIR"
-chmod 700 "$CONFIG_DIR"
-umask 077
-cat > "$CONFIG" <<EOF
-# Laika settings for laika-claude. Personal — do not share or commit.
-LAIKA_URL="$URL"
-LAIKA_TOKEN="$TOKEN"
-EOF
-chmod 600 "$CONFIG"
-printf '\n  ✓ settings saved to %s (readable only by you)\n' "$CONFIG"
+printf '\nLaika — set up the laika and laika-claude commands\n'
+printf -- '---------------------------------------------------\n\n'
 
 # --- shell command --------------------------------------------------------
 LAUNCHER="$SCRIPT_DIR/laika-claude"
@@ -158,9 +130,16 @@ if [ -n "$BIN" ]; then
     printf '  ✓ installed the laika command in %s\n' "$BIN"
   fi
 
+  # Once, however often this runs (LAI-1060): the marker line is what is
+  # looked for, so a second run adds nothing.
+  PATH_MARKER='# Laika — put ~/.local/bin on PATH (install.sh)'
   if [ "${NEEDS_PATH:-no}" = yes ]; then
-    printf '\n# Laika\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC"
-    printf '  ✓ added %s to your PATH in %s — open a new terminal\n' "$BIN" "$RC"
+    if [ -f "$RC" ] && grep -qF "$PATH_MARKER" "$RC"; then
+      printf '  · %s already puts %s on your PATH — open a new terminal\n' "$RC" "$BIN"
+    else
+      printf '\n%s\nexport PATH="$HOME/.local/bin:$PATH"\n' "$PATH_MARKER" >> "$RC"
+      printf '  ✓ added %s to your PATH in %s — open a new terminal\n' "$BIN" "$RC"
+    fi
   fi
 else
   # No writable PATH directory: fall back to an alias.
@@ -179,6 +158,76 @@ else
   fi
   printf '    (an alias — it applies to terminals opened from now on)\n'
 fi
+
+if [ "$NO_CREDENTIAL" = yes ]; then
+  # The V3 path stops here: no token asked for, ~/.laika/env left as it is.
+  printf '\n  · --no-credential: no token asked for; %s is left as it is\n' "$CONFIG"
+  printf '\nDone. Start a new terminal, then pair this machine with your board.\n'
+  printf 'In the browser, Developer access → Add device shows the exact command:\n\n'
+  printf '    laika device pair --board <board> --code <code>\n\n'
+  printf 'Then add each tool there; it shows a `laika tool add …` command to run here.\n'
+  exit 0
+fi
+
+# --- board URL ----------------------------------------------------------
+DEFAULT_URL="${LAIKA_URL:-http://52.72.203.206}"
+printf 'Board URL [%s]: ' "$DEFAULT_URL"
+read -r URL_INPUT || URL_INPUT=''
+URL="${URL_INPUT:-$DEFAULT_URL}"
+URL="${URL%/}"
+
+# --- token --------------------------------------------------------------
+printf '\nYour personal access token.\n'
+printf '  Get one at %s → Developer access → Tokens (Advanced, in the new\n' "$URL"
+printf '  layout) → create. It is shown once. Use YOUR OWN — the board attributes\n'
+printf '  every action and every live session to the person who owns the token.\n'
+printf '  (Pairing this machine instead? Re-run with --no-credential.)\n\n'
+printf 'Token (lai_...): '
+# Echo off while it is typed: this script exists for onboarding walkthroughs,
+# which are exactly the sessions that get screen-shared and recorded. `read -s`
+# is bash/zsh only, so stty is the portable way, and the trap puts the terminal
+# back even if the person hits Ctrl-C at the prompt.
+if [ -t 0 ]; then
+  STTY_STATE="$(stty -g 2>/dev/null || true)"
+  [ -n "$STTY_STATE" ] && trap 'stty "$STTY_STATE" 2>/dev/null || true' EXIT INT TERM
+  stty -echo 2>/dev/null || true
+fi
+read -r TOKEN || TOKEN=''
+if [ -t 0 ] && [ -n "${STTY_STATE:-}" ]; then
+  stty "$STTY_STATE" 2>/dev/null || true
+  trap - EXIT INT TERM
+fi
+printf '\n'
+
+if [ -z "$TOKEN" ]; then
+  printf '\nNo token given — no settings were written. Re-run when you have one.\n' >&2
+  exit 1
+fi
+
+case "$TOKEN" in
+  lai_*) ;;
+  *) printf '\nWarning: that does not look like a Laika token (expected lai_...).\n' ;;
+esac
+
+# --- store --------------------------------------------------------------
+mkdir -p "$CONFIG_DIR"
+chmod 700 "$CONFIG_DIR"
+umask 077
+# The settings already here may be somebody's only copy of their token
+# (LAI-1060, plan LAI-1042 §A8): kept, 0600, before anything replaces them.
+if [ -f "$CONFIG" ]; then
+  BACKUP="$CONFIG.bak-$(date +%s)"
+  cp "$CONFIG" "$BACKUP"
+  chmod 600 "$BACKUP"
+  printf '\n  ✓ kept the previous settings as %s\n' "$BACKUP"
+fi
+cat > "$CONFIG" <<EOF
+# Laika settings for laika-claude. Personal — do not share or commit.
+LAIKA_URL="$URL"
+LAIKA_TOKEN="$TOKEN"
+EOF
+chmod 600 "$CONFIG"
+printf '\n  ✓ settings saved to %s (readable only by you)\n' "$CONFIG"
 
 printf '\nDone. Start a new terminal, then from ANY project folder:\n\n'
 printf '    laika-claude                              # like `claude`\n'
