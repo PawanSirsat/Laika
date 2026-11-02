@@ -49,6 +49,7 @@ import {
   findHarness,
   isAlive,
   isDeadState,
+  listStates,
   liveness,
   procReader,
   PS_ENV,
@@ -63,6 +64,8 @@ import {
   readSelfReport,
   readState,
   runWatcher,
+  selfPath,
+  selfReportOf,
   startSession,
   statePath,
   transcriptEnds,
@@ -1559,7 +1562,38 @@ void describe('what a session says about itself (LAI-588, D-118)', () => {
     assert.equal(await beatOnce(w.deps, path, CRED), 'renewed');
 
     assert.deepEqual(sent(w, 'beat'), ['', '', '{"model":"claude-sonnet-5-5"}', '', '']);
-    assert.deepEqual(readState(path)?.self, { model: 'claude-sonnet-5-5' });
+    assert.deepEqual(selfReportOf(path), { model: 'claude-sonnet-5-5' });
+  });
+
+  void test('a model noted while a heartbeat is in flight survives the watcher writing back what it read (LAI-1059)', async () => {
+    const home = temp();
+    const w = world(home);
+    await startSession(w.deps, { ...request(), self: { model: 'claude-opus-5-5' } });
+    const path = statePath(home, 'claude-code', 'hs-1');
+    // The watcher's copy, read before its heartbeat answered;
+    const watchers = readState(path)!;
+    // a prompt's hook notes the switch while it is in flight;
+    noteSelfReport(home, path, { model: 'claude-sonnet-5-5' });
+    // and the watcher writes its copy back, whole.
+    writeState(home, watchers);
+    assert.equal(await beatOnce(w.deps, path, CRED), 'renewed');
+    assert.deepEqual(sent(w, 'beat'), ['{"model":"claude-sonnet-5-5"}']);
+    assert.deepEqual(readState(path)?.reported, { model: 'claude-sonnet-5-5' });
+  });
+
+  void test('a noted report is read back through the transcript’s checks; it is never a session', async () => {
+    const home = temp();
+    const w = world(home);
+    await startSession(w.deps, { ...request(), self: { model: 'claude-opus-5-5' } });
+    const path = statePath(home, 'claude-code', 'hs-1');
+    writeFileSync(selfPath(path), JSON.stringify({ model: '<synthetic>', harness_version: 'a b' }));
+    assert.deepEqual(selfReportOf(path), { model: 'claude-opus-5-5' });
+    assert.equal(await beatOnce(w.deps, path, CRED), 'renewed');
+    assert.deepEqual(sent(w, 'beat'), ['']);
+    assert.deepEqual(
+      listStates(home).map((s) => s.harness_session_id),
+      ['hs-1'],
+    );
   });
 
   void test('a heartbeat that did not arrive sends the change again', async () => {
@@ -1891,7 +1925,7 @@ void describe('reading the harness’s own record (LAI-588)', () => {
       isTTY: false,
     };
     assert.equal(await hook(io, 'prompt', 'claude-code'), '');
-    assert.deepEqual(readState(path)?.self, {
+    assert.deepEqual(selfReportOf(path), {
       harness_version: '2.1.312',
       model: 'claude-sonnet-5-5',
     });
@@ -1932,7 +1966,7 @@ void describe('reading the harness’s own record (LAI-588)', () => {
     };
     // The reuse is what tells the model its session id; nothing went to the board.
     assert.match(await hook(io, 'session-start', 'claude-code'), /agent session 01JS0+1 is open/);
-    assert.deepEqual(readState(path)?.self, { model: 'claude-sonnet-5-5' });
+    assert.deepEqual(selfReportOf(path), { model: 'claude-sonnet-5-5' });
     assert.deepEqual(readState(path)?.reported, { model: 'claude-opus-5-5' });
     assert.deepEqual(w.calls, ['start']);
   });
