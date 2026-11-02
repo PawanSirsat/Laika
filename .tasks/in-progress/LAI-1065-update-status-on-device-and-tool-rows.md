@@ -1,5 +1,5 @@
 ---
-id: LAI-1063
+id: LAI-1065
 title: 'Developer access V3 slice E3: update status on device and tool rows, What''s new, Copy update command'
 area: shell
 assignee: shell/belka
@@ -26,6 +26,13 @@ None of LAI-1061's files are edited except the tool row and device card in
 `DevicesTab.tsx`. `server/` is untouched (LAI-1062 is fixing the feature
 flags there).
 
+**Renumbered from LAI-1063** (§3): another session filed LAI-1063 on the
+board at 06:31:58 and in git at 06:32:06, before this was filed at 06:33:17.
+Three pushed commits on this branch still carry `[LAI-1063]` and are this
+task's, not that one's: `da0e2577` (the stack merge), `abeed4a3` (filing),
+`2dc406b4` (claim). The branch `LAI-1063-update-status-ui` was renamed
+`LAI-1065-update-status-ui`.
+
 ## Acceptance criteria
 
 - [ ] `v3` and `preview` only; classic unchanged; no separate Updates tab.
@@ -51,4 +58,4 @@ flags there).
 - [ ] Tests: each status from fixture combos; never *outdated* without a
       report; feature-specific *required*; copy command holds no secret;
       classic untouched. Screenshots light + dark, desktop + 390 px, per
-      status, in `.polly/evidence/LAI-1063/`.
+      status, in `.polly/evidence/LAI-1065/`.
