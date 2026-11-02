@@ -6,8 +6,9 @@ assignee: polly
 priority: p2
 depends-on: []
 discovered-from: LAI-1059
-status: in-progress
+status: review
 started: 2026-11-02T01:02:06Z
+finished: 2026-11-02T01:03:31Z
 ---
 
 ## Why
@@ -22,14 +23,14 @@ prompt's hook notes B again.
 
 ## Acceptance criteria
 
-- [ ] When `startLocked` writes `state.self`, it also writes `<state>.self` to
+- [x] When `startLocked` writes `state.self`, it also writes `<state>.self` to
       match, atomically and 0600 through `writePrivate`, with a one-line comment
       that `.self` takes precedence in `selfReportOf`.
-- [ ] A test in `cli/test/agent-session.test.ts`: an old `.self` with model A,
+- [x] A test in `cli/test/agent-session.test.ts`: an old `.self` with model A,
       a new process's start reading model B, and the first heartbeat does not
       send A; `selfReportOf` is B and `.self` is 0600. It fails without the fix.
-- [ ] `cli` typecheck, eslint and prettier on the touched files exit 0.
-- [ ] PR into `master`, CI green.
+- [x] `cli` typecheck, eslint and prettier on the touched files exit 0.
+- [x] PR into `master`, CI green.
 
 ## Notes
 
