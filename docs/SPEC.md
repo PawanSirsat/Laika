@@ -6292,10 +6292,14 @@ anything missing sends the task back.
   LAI-1078) in Laika's own tokens: the page's sentence is *Pair your computer
   once, connect your coding tools, then set up each project repository.
   Project setup is where work becomes connected.*, then **Overview · Project
-  setup · Devices · Advanced**. *Advanced* is the reader's personal
-  credentials, then the *Share local activity* card (*Once per device*); the
-  old `?tab=activity` lands on it as `?tab=advanced&section=activity`, which
-  scrolls to it and focuses its title.
+  setup · Devices · Tools · Advanced**. *Devices* lists the reader's devices
+  and *Tools* the coding tools on them (LAI-1080), one line a row from the
+  same `GET /devices`; everything a row has no room for opens in a **details
+  side panel** addressed by the URL (`?tab=devices&device=<id>`,
+  `?tab=tools&agent=<id>`), which Back, Escape, the scrim and × close.
+  *Advanced* is the reader's personal credentials, then the *Share local
+  activity* card (*Once per device*); the old `?tab=activity` lands on it as
+  `?tab=advanced&section=activity`, which scrolls to it and focuses its title.
 - **Tokens** (on Developer access) — create with name and scope; **value shown exactly once** with a
   copy affordance and an explicit "you will not see this again"; list with
   prefix, scope, last used, expiry; revoke with confirmation; admin view of
