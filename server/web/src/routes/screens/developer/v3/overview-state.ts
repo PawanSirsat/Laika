@@ -481,7 +481,10 @@ export interface StatusLine {
  * - Devices: *Paired* only when every one was paired; one imported from its
  *   tools' labels before pairing existed says so.
  * - Tools: *Connected* only when every one has reached the board.
- * - Setups: *Checked* only when `laika project check` found every one current.
+ * - Setups: the most useful true thing, in this order — any that needs an
+ *   update or has no block (warn, naming how many); else any the reader only
+ *   recorded (*n to verify*); else *Checked*, when `laika project check` found
+ *   every one current; with none, *Next step*.
  */
 export function statusLines(state: OverviewState): StatusLine[] {
   const counts = state.counts;
@@ -508,12 +511,23 @@ export function statusLines(state: OverviewState): StatusLine[] {
 
   const recorded = state.setups.filter((row) => row.chip === 'recorded').length;
   const outdated = state.setups.filter((row) => row.chip === 'update-available').length;
+  const missing = state.setups.filter((row) => row.chip === 'missing').length;
   const setupChip =
-    state.setUp === 0
-      ? { word: 'Next step', tone: 'accent' as const }
-      : state.checked === state.setUp
-        ? { word: 'Checked', tone: 'ok' as const }
-        : { word: 'Recorded', tone: 'neutral' as const };
+    outdated > 0
+      ? {
+          word: `${String(outdated)} ${outdated === 1 ? 'needs' : 'need'} an update`,
+          tone: 'warn' as const,
+        }
+      : missing > 0
+        ? {
+            word: `${String(missing)} ${missing === 1 ? 'has' : 'have'} no block`,
+            tone: 'warn' as const,
+          }
+        : recorded > 0
+          ? { word: `${String(recorded)} to verify`, tone: 'neutral' as const }
+          : state.setUp > 0
+            ? { word: 'Checked', tone: 'ok' as const }
+            : { word: 'Next step', tone: 'accent' as const };
   const setupNames =
     state.setUp === 0
       ? 'Project prompts and instructions files'

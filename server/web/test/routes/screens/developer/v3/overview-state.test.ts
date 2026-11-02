@@ -406,7 +406,7 @@ void describe('connection status', () => {
           '1 needs setup',
           'warn',
         ],
-        ['2 repositories set up', '1 checked, 1 not verified', 'Recorded', 'neutral'],
+        ['2 repositories set up', '1 checked, 1 not verified', '1 to verify', 'neutral'],
       ],
     );
   });
@@ -439,7 +439,7 @@ void describe('connection status', () => {
       icon: 'repo',
       count: '2 repositories set up',
       names: '1 checked, 1 to update',
-      chip: { word: 'Recorded', tone: 'neutral' },
+      chip: { word: '1 needs an update', tone: 'warn' },
     });
   });
 
@@ -455,6 +455,73 @@ void describe('connection status', () => {
     );
     assert.equal(lines[0]?.chip.word, 'Imported');
     assert.equal(lines[1]?.chip.word, '2 need setup');
+  });
+});
+
+void describe('the setups chip: the most useful true thing, in order', () => {
+  const tools = [
+    seen({ id: 'a1' }),
+    seen({ id: 'a2', harness: 'codex' }),
+    seen({ id: 'a3', harness: 'omnigent' }),
+  ];
+  const chipOf = (records: ProjectSetup[]) =>
+    statusLines(state([device({ id: 'd1', agents: tools })], records))[2]?.chip;
+
+  void test('an update available comes first, whatever else is there', () => {
+    assert.deepEqual(
+      chipOf([
+        check({ id: 's1' }),
+        setup({ id: 's2', agent_id: 'a2' }),
+        check({ id: 's3', agent_id: 'a3', template_revision: 1 }),
+      ]),
+      { word: '1 needs an update', tone: 'warn' },
+    );
+    assert.deepEqual(
+      chipOf([
+        check({ id: 's1', template_revision: 1 }),
+        check({ id: 's2', agent_id: 'a2', template_revision: 1 }),
+      ]),
+      { word: '2 need an update', tone: 'warn' },
+    );
+  });
+
+  void test('a check that found no block is warned of too, before anything only recorded', () => {
+    assert.deepEqual(
+      chipOf([
+        check({ id: 's1', block_found: false, template_revision: null }),
+        setup({ id: 's2', agent_id: 'a2' }),
+      ]),
+      { word: '1 has no block', tone: 'warn' },
+    );
+    assert.deepEqual(
+      chipOf([
+        check({ id: 's1', block_found: false, template_revision: null }),
+        check({ id: 's2', agent_id: 'a2', block_found: false, template_revision: null }),
+      ]),
+      { word: '2 have no block', tone: 'warn' },
+    );
+  });
+
+  void test('else the reader’s own word still to verify, even beside a check', () => {
+    assert.deepEqual(chipOf([check({ id: 's1' }), setup({ id: 's2', agent_id: 'a2' })]), {
+      word: '1 to verify',
+      tone: 'neutral',
+    });
+    assert.deepEqual(chipOf([setup({ id: 's1' }), setup({ id: 's2', agent_id: 'a2' })]), {
+      word: '2 to verify',
+      tone: 'neutral',
+    });
+  });
+
+  void test('else Checked, only when a check found every one current', () => {
+    assert.deepEqual(
+      chipOf([check({ id: 's1' }), check({ id: 's2', agent_id: 'a2', repo_label: 'web' })]),
+      { word: 'Checked', tone: 'ok' },
+    );
+  });
+
+  void test('none at all is the next step', () => {
+    assert.deepEqual(chipOf([]), { word: 'Next step', tone: 'accent' });
   });
 });
 

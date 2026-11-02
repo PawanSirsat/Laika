@@ -923,7 +923,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       });
       assert.deepEqual(
         (await readStatus(h.page))[2],
-        'setups | 3 repositories set up | 1 checked, 1 not verified, 1 to update | Recorded',
+        'setups | 3 repositories set up | 1 checked, 1 not verified, 1 to update | 1 needs an update',
       );
       // The project's name where the list has it, its slug where it does not;
       // Checked only from laika project check; the reader's word is not verified.
