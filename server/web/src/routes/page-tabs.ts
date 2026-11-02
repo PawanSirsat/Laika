@@ -84,17 +84,24 @@ export const DEVELOPER_TABS: readonly PageTab[] = [
 ];
 
 /**
- * The V3 tabs (plan §B, §C): the device holds the tools, and a project is set
- * up on its own. `projects` and `activity` keep the classic ids, so a link to
- * either means the same place in every mode.
+ * The V3 tabs (plan §B, §C), in the owner's design (LAI-1078): the device holds
+ * the tools, and a project is set up on its own. `projects` keeps the classic
+ * id, so a link to it means the same place in every mode. **Activity is not a
+ * tab of its own here**: *Share local activity* is the second card on
+ * Advanced, and `?tab=activity` lands on it (`developerAlias`).
  */
 export const DEVELOPER_V3_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'projects', label: 'Project setup' },
   { id: 'devices', label: 'Devices' },
-  { id: 'activity', label: 'Activity' },
   { id: 'advanced', label: 'Advanced' },
 ];
+
+/**
+ * Where on Advanced `?section=` points (LAI-1078): the *Share local activity*
+ * card, which was V3's Activity tab.
+ */
+export const ADVANCED_ACTIVITY_SECTION = 'activity';
 
 /** The V3 tabs classic does not have — the ones `preview` adds, marked. */
 const V3_ONLY = new Set(['overview', 'devices', 'advanced']);
@@ -136,6 +143,8 @@ export function developerTabs(mode: DeveloperAccessMode): readonly PageTab[] {
  *   Devices with *Add a tool* open, the tool kept as `tool`.
  * - `agents` is Devices; `?agent=<id>` names a row there and travels as is.
  * - `tokens` is Advanced.
+ * - `activity` is Advanced's *Share local activity* card (LAI-1078):
+ *   `?section=activity`, which Advanced scrolls to.
  *
  * Everything else in the query is kept, in its order.
  */
@@ -145,7 +154,9 @@ export function developerAlias(
 ): URLSearchParams | undefined {
   if (mode !== 'v3') return undefined;
   const tab = params.get('tab');
-  if (tab !== 'connect' && tab !== 'agents' && tab !== 'tokens') return undefined;
+  if (tab !== 'connect' && tab !== 'agents' && tab !== 'tokens' && tab !== 'activity') {
+    return undefined;
+  }
 
   const next = new URLSearchParams();
   const rest = [...params].filter(([key]) => key !== 'tab');
@@ -158,6 +169,12 @@ export function developerAlias(
   if (tab === 'tokens') {
     next.set('tab', 'advanced');
     for (const [key, value] of rest) next.append(key, value);
+    return next;
+  }
+  if (tab === 'activity') {
+    next.set('tab', 'advanced');
+    next.set('section', ADVANCED_ACTIVITY_SECTION);
+    for (const [key, value] of rest) if (key !== 'section') next.append(key, value);
     return next;
   }
 
