@@ -212,7 +212,7 @@ const ROUTES: readonly {
   {
     from: '/developer/connect?agent=codex&step=2',
     old: { url: '/developer?tab=connect&agent=codex&step=2', tab: 'connect' },
-    v3: { url: '/developer?tab=devices&add=tool&tool=codex', tab: 'devices' },
+    v3: { url: '/developer?tab=tools&add=tool&tool=codex', tab: 'tools' },
   },
   {
     from: '/tokens?utm=mail',
@@ -222,12 +222,12 @@ const ROUTES: readonly {
   {
     from: '/developer?tab=connect&step=2',
     old: { url: '/developer?tab=connect&step=2', tab: 'connect' },
-    v3: { url: '/developer?tab=devices&add=tool', tab: 'devices' },
+    v3: { url: '/developer?tab=tools&add=tool', tab: 'tools' },
   },
   {
     from: '/developer?tab=agents&agent=a1',
     old: { url: '/developer?tab=agents&agent=a1', tab: 'agents' },
-    v3: { url: '/developer?tab=devices&agent=a1', tab: 'devices' },
+    v3: { url: '/developer?tab=tools&agent=a1', tab: 'tools' },
   },
   {
     from: '/developer?tab=tokens',
@@ -303,7 +303,13 @@ void describe('every old address lands, in each mode (plan §C)', () => {
       const h = await open('/developer', s);
       try {
         await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
-        assert.deepEqual(await tabs(h.page), ['Overview', 'Project setup', 'Devices', 'Advanced']);
+        assert.deepEqual(await tabs(h.page), [
+          'Overview',
+          'Project setup',
+          'Devices',
+          'Tools',
+          'Advanced',
+        ]);
         assert.equal(await h.page.locator('.conn-wizard-card').count(), 0);
       } finally {
         await h.close();
@@ -325,6 +331,7 @@ void describe('the tab bars (plan §I)', () => {
         'Tokens',
         'Overview Preview',
         'Devices Preview',
+        'Tools Preview',
         'Advanced Preview',
       ]);
       const banner = h.page.getByRole('complementary', { name: 'Preview' });
@@ -349,7 +356,13 @@ void describe('the tab bars (plan §I)', () => {
     const h = await open('/developer', stub('v3'));
     try {
       await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
-      assert.deepEqual(await tabs(h.page), ['Overview', 'Project setup', 'Devices', 'Advanced']);
+      assert.deepEqual(await tabs(h.page), [
+        'Overview',
+        'Project setup',
+        'Devices',
+        'Tools',
+        'Advanced',
+      ]);
       assert.equal(await h.page.getByRole('complementary', { name: 'Preview' }).count(), 0);
       // The owner's design's sentence (LAI-1078).
       assert.equal(
@@ -469,11 +482,11 @@ void describe('the Overview (LAI-1048)', () => {
       );
       assert.match(await h.page.locator('.dev-journey-next').innerText(), /Codex · Belka/);
       await h.page.getByRole('link', { name: 'Continue' }).click();
-      await h.page.locator('.dv3-tool[data-agent="a1"]').waitFor({ timeout: 20_000 });
-      assert.equal(here(h.page), '/developer?tab=devices&agent=a1');
-      await h.page.waitForFunction(() => document.activeElement?.id === 'tool-a1', undefined, {
-        timeout: 10_000,
-      });
+      // LAI-1080: the tool's details, on Tools.
+      await h.page
+        .locator('.side-panel[data-panel="tool"] .dv3-tool-details[data-agent="a1"]')
+        .waitFor({ timeout: 20_000 });
+      assert.equal(here(h.page), '/developer?tab=tools&agent=a1');
     } finally {
       await h.close();
     }
@@ -605,7 +618,7 @@ void describe('the Overview (LAI-1048)', () => {
     const h = await open('/connect?agent=codex', stub('v3'));
     try {
       await h.page.locator('[data-wizard="tool"]').waitFor({ timeout: 20_000 });
-      assert.equal(here(h.page), '/developer?tab=devices&add=tool&tool=codex');
+      assert.equal(here(h.page), '/developer?tab=tools&add=tool&tool=codex');
       // No device is paired here, so the tool is kept for after pairing (LAI-1061).
       await h.page.locator('[data-kept-tool="codex"]').waitFor({ timeout: 20_000 });
       assert.match(await h.page.locator('[data-wizard="tool"]').innerText(), /Codex is kept/);
@@ -706,7 +719,7 @@ void describe('look and fit', () => {
         await setTheme(h.page, theme);
         // Advanced is drawn in the design's frame (`.dx`, LAI-1078); the others
         // still in `.dev-body` until their slices land.
-        for (const tab of ['overview', 'projects', 'devices', 'advanced']) {
+        for (const tab of ['overview', 'projects', 'devices', 'tools', 'advanced']) {
           await land(h, `/developer?tab=${tab}`);
           await h.page.locator('.dev-body, .dx').first().waitFor({ timeout: 20_000 });
           const wide = await h.page.evaluate(
