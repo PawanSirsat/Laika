@@ -35,7 +35,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   cpSync,
@@ -422,11 +422,15 @@ void describe('install.sh --no-credential, and the env file the older path repla
 });
 
 void describe("laika-claude and Claude Code's own credential (plan §L2)", () => {
-  function launch(sb: Sandbox, credential: Record<string, string> | undefined) {
+  function launch(
+    sb: Sandbox,
+    credential: Record<string, string> | undefined,
+    personalUrl = 'http://personal.test',
+  ): { code: number; out: string; err: string } {
     mkdirSync(join(sb.home, '.laika', 'agents'), { recursive: true });
     writeFileSync(
       join(sb.home, '.laika', 'env'),
-      'LAIKA_URL="http://personal.test"\nLAIKA_TOKEN="personal-token"\n',
+      `LAIKA_URL="${personalUrl}"\nLAIKA_TOKEN="personal-token"\n`,
     );
     if (credential !== undefined) {
       writeFileSync(
@@ -436,32 +440,56 @@ void describe("laika-claude and Claude Code's own credential (plan §L2)", () =>
     }
     writeFileSync(join(sb.fakeBin, 'claude'), '#!/bin/sh\necho "AS: $LAIKA_URL $LAIKA_TOKEN"\n');
     chmodSync(join(sb.fakeBin, 'claude'), 0o755);
-    return run(sb, join(sb.checkoutScripts, 'laika-claude'), []);
+    const result = spawnSync(join(sb.checkoutScripts, 'laika-claude'), [], {
+      env: sb.env,
+      encoding: 'utf8',
+    });
+    return { code: result.status ?? -1, out: result.stdout, err: result.stderr };
   }
 
-  void test('a credential `laika tool add` wrote is the one Claude Code gets', () => {
+  const TOOL_ADD = {
+    url: 'http://board.test',
+    token: 'agent-token',
+    agent_id: 'A',
+    device_id: 'D',
+    source: 'tool-add',
+  };
+
+  void test('a credential `laika tool add` wrote is the one Claude Code gets, and it says so', () => {
     const sb = sandbox();
-    const result = launch(sb, {
-      url: 'http://board.test',
-      token: 'agent-token',
-      agent_id: 'A',
-      device_id: 'D',
-      source: 'tool-add',
-    });
-    assert.equal(result.code, 0, result.out);
+    const result = launch(sb, TOOL_ADD, 'http://board.test');
+    assert.equal(result.code, 0, result.out + result.err);
     assert.equal(result.out.trim(), 'AS: http://board.test agent-token');
+    assert.equal(
+      result.err.trim(),
+      `laika-claude: acting as Claude Code's own credential (${join(sb.home, '.laika', 'agents', 'claude-code.json')}) on http://board.test`,
+    );
+    assert.ok(!result.err.includes('agent-token'), 'the token was printed');
+  });
+
+  void test('a credential for another board than ~/.laika/env is warned about', () => {
+    const sb = sandbox();
+    const result = launch(sb, TOOL_ADD);
+    assert.equal(result.out.trim(), 'AS: http://board.test agent-token');
+    assert.match(
+      result.err,
+      /warning — Claude Code's credential is for http:\/\/board\.test, but .* names http:\/\/personal\.test; using http:\/\/board\.test\./,
+    );
   });
 
   void test('CONTROL: one `laika agent login` wrote changes nothing — never retroactive', () => {
     const sb = sandbox();
     const result = launch(sb, { url: 'http://board.test', token: 'agent-token' });
-    assert.equal(result.code, 0, result.out);
+    assert.equal(result.code, 0, result.out + result.err);
     assert.equal(result.out.trim(), 'AS: http://personal.test personal-token');
+    assert.match(result.err, /acting as your personal token/);
+    assert.doesNotMatch(result.err, /warning/);
   });
 
   void test('CONTROL: with no agent credential it is the personal token, as before', () => {
     const sb = sandbox();
     const result = launch(sb, undefined);
     assert.equal(result.out.trim(), 'AS: http://personal.test personal-token');
+    assert.match(result.err, /acting as your personal token/);
   });
 });

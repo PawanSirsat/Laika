@@ -4,13 +4,7 @@ import { join } from 'node:path';
 
 import { type AgentHookReport, installAgentHooks } from './agent-hooks.ts';
 import { ADAPTERS, type Harness } from './agent-adapters.ts';
-import {
-  credentialPath,
-  isRecord,
-  readJson,
-  writeCredential,
-  writePrivate,
-} from './agent-session.ts';
+import { credentialPath, isRecord, writeCredential, writePrivate } from './agent-session.ts';
 import { AGENT_HOOK_SCRIPT } from './agent-setup.ts';
 import { apply, prepare, rcFileFor } from './connect.ts';
 import {
@@ -232,30 +226,32 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
     return 1;
   }
 
-  // What was minted is for the agent the board names; the file follows it.
+  // **The minted agent decides where the token may go, never the typed name**
+  // (review S1). An exchange made for another tool is a command copied from
+  // the wrong row: nothing is set up for the tool typed here.
   const minted = planFor(redeemed.agentHarness);
-  const target = minted.kind === 'refused' ? plan.harness : minted.harness;
-  if (target !== plan.harness) {
-    io.out(`  The board made this credential for ${redeemed.agentHarness}; saving it as that.`);
+  if (minted.kind === 'refused') {
+    io.err(
+      `laika tool add: this setup was made for ${redeemed.agentHarness}, not ${slug}, and ` +
+        `${redeemed.agentHarness} cannot be set up here — nothing was saved.`,
+    );
+    io.err('  The token it minted is unused; disconnect that tool in the browser, or set it up');
+    io.err('  by hand from its own row.');
+    return 1;
   }
-
-  // A credential this replaces is kept once — unless it is this same agent's
-  // from an earlier `tool add`: the redeem just revoked that token, so a copy
-  // would be a dead secret kept for nothing.
-  const path = credentialPath(io.home, target);
-  const before = readJson(path);
-  const sameAgent =
-    isRecord(before) && before.source === 'tool-add' && before.agent_id === redeemed.agentId;
-  if (existsSync(path) && !sameAgent && !existsSync(`${path}.bak`)) {
-    writePrivate(`${path}.bak`, readFileSync(path, 'utf8'));
+  if (minted.harness !== plan.harness) {
+    saveCredential(io, minted.harness, redeemed, deviceId);
+    io.err(
+      `laika tool add: this setup was made for ${redeemed.agentHarness}, not ${slug}. Its ` +
+        `credential is saved as ~/.laika/agents/${minted.harness}.json and nothing was set up for ${slug}.`,
+    );
+    io.err(
+      `  Run the command from ${ADAPTERS[minted.harness].name}'s row to finish setting it up.`,
+    );
+    return 1;
   }
-  writeCredential(
-    io.home,
-    target,
-    { url: redeemed.boardOrigin, token: redeemed.secret },
-    { agent_id: redeemed.agentId, device_id: deviceId, source: 'tool-add' },
-  );
-  io.out(`  ✓ credential saved in ~/.laika/agents/${target}.json (0600)`);
+  const target = plan.harness;
+  saveCredential(io, target, redeemed, deviceId);
 
   const installed: AgentHookReport[] = [];
   if (target === 'codex') codexMcp(io, redeemed.boardOrigin);
@@ -273,6 +269,28 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   io.out('');
   for (const line of nextSteps(target, hooksOn)) io.out(line);
   return 0;
+}
+
+/**
+ * The token, into the one file it belongs in. A file it replaces is kept as
+ * `<harness>.json.bak` whenever it differs from what is written, so the last
+ * credential there before this one is always recoverable.
+ */
+function saveCredential(
+  io: ToolAddIo,
+  harness: Harness,
+  redeemed: Redeemed,
+  deviceId: string,
+): void {
+  const path = credentialPath(io.home, harness);
+  const extra = { agent_id: redeemed.agentId, device_id: deviceId, source: 'tool-add' };
+  const next = `${JSON.stringify({ url: redeemed.boardOrigin, token: redeemed.secret, ...extra }, null, 2)}\n`;
+  if (existsSync(path)) {
+    const before = readFileSync(path, 'utf8');
+    if (before !== next) writePrivate(`${path}.bak`, before);
+  }
+  writeCredential(io.home, harness, { url: redeemed.boardOrigin, token: redeemed.secret }, extra);
+  io.out(`  ✓ credential saved in ~/.laika/agents/${harness}.json (0600)`);
 }
 
 /* -------------------------------------------------------------------------- */

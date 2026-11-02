@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { createHash, createPrivateKey, createPublicKey, randomBytes, verify } from 'node:crypto';
+import { type ChildProcess, spawn } from 'node:child_process';
+import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -15,7 +15,7 @@ import { createServer, type Server, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { after, afterEach, describe, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
  * `laika device pair` and `laika tool add` (LAI-1060), run as the real CLI in
@@ -79,21 +79,35 @@ const error = (code: string, reason: string) => ({
   error: { code, message: reason, details: { reason } },
 });
 
-function fingerprintOf(publicKey: string): string {
-  return createHash('sha256')
-    .update(Buffer.from(publicKey, 'base64url'))
-    .digest('hex')
-    .slice(0, 16);
+/**
+ * The server's own builders and verifier, imported rather than retyped
+ * (review): the stub signs off on exactly the bytes the server checks. A path,
+ * not a static import, because `cli/`'s tsconfig stops at its own root; the
+ * shape is checked below.
+ */
+interface DeviceSignature {
+  parseDevicePublicKey(encoded: string): KeyObject | null;
+  keyFingerprint(encoded: string): string;
+  pairingMessage(pairingId: string, nonce: string, boardOrigin: string): Buffer;
+  toolRedeemMessage(
+    exchangeId: string,
+    deviceId: string,
+    challenge: string,
+    boardOrigin: string,
+  ): Buffer;
+  verifyDeviceSignature(key: KeyObject, message: Buffer, signature: string): boolean;
 }
+const serverSig = (await import(pathToFileURL(DEVICE_SIGNATURE).href)) as DeviceSignature;
 
-function signed(publicKey: string, message: string, signature: unknown): boolean {
-  if (typeof signature !== 'string') return false;
-  const key = createPublicKey({
-    key: Buffer.from(publicKey, 'base64url'),
-    format: 'der',
-    type: 'spki',
-  });
-  return verify(null, Buffer.from(message, 'utf8'), key, Buffer.from(signature, 'base64url'));
+const fingerprintOf = (publicKey: string): string => serverSig.keyFingerprint(publicKey);
+
+function signed(publicKey: string, message: Buffer, signature: unknown): boolean {
+  const key = serverSig.parseDevicePublicKey(publicKey);
+  return (
+    key !== null &&
+    typeof signature === 'string' &&
+    serverSig.verifyDeviceSignature(key, message, signature)
+  );
 }
 
 async function startStub(options: StubOptions = {}): Promise<Stub> {
@@ -153,7 +167,7 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
           json(res, 409, error('conflict', 'public_url_unset'));
           return;
         }
-        const message = `laika-pair-v1\n${PAIRING_ID}\n${nonce}\n${origin}`;
+        const message = serverSig.pairingMessage(PAIRING_ID, nonce, origin);
         if (stub.publicKey === undefined || !signed(stub.publicKey, message, body.signature)) {
           json(res, 401, error('unauthorized', 'device_signature_invalid'));
           return;
@@ -187,7 +201,7 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
           return;
         }
         const challenge = challenges.get(exchange) ?? '';
-        const message = `laika-tool-redeem-v1\n${exchange}\n${DEVICE_ID}\n${challenge}\n${origin}`;
+        const message = serverSig.toolRedeemMessage(exchange, DEVICE_ID, challenge, origin);
         if (!signed(stub.publicKey, message, body.signature)) {
           json(res, 401, error('unauthorized', 'device_signature_invalid'));
           return;
@@ -228,23 +242,32 @@ interface Run {
   readonly argv: readonly string[];
 }
 
+interface Started {
+  readonly child: ChildProcess;
+  readonly stdout: () => string;
+  readonly done: Promise<Run>;
+}
+
 /** The real CLI, asynchronously: the stub answers from this same process. */
-function laika(home: string, args: readonly string[]): Promise<Run> {
+function start(home: string, args: readonly string[]): Started {
   const argv = [ENTRY, ...args];
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, argv, {
-      env: { PATH: process.env.PATH ?? '', HOME: home, SHELL: '/bin/zsh' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')));
-    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
-    child.on('close', (code) => {
-      resolve({ code: code ?? -1, stdout, stderr, argv });
+  const child = spawn(process.execPath, argv, {
+    env: { PATH: process.env.PATH ?? '', HOME: home, SHELL: '/bin/zsh' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout?.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')));
+  child.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
+  const done = new Promise<Run>((resolve) => {
+    child.on('close', (code, signal) => {
+      resolve({ code: code ?? (signal === null ? -1 : 128), stdout, stderr, argv });
     });
   });
+  return { child, stdout: () => stdout, done };
 }
+
+const laika = (home: string, args: readonly string[]): Promise<Run> => start(home, args).done;
 
 const homes: string[] = [];
 const stubs: Stub[] = [];
@@ -416,6 +439,59 @@ void describe('laika device pair', () => {
     assert.match(run.stderr, /already paired/);
     assert.equal(readFileSync(join(home, '.laika', 'device', 'key.pem'), 'utf8'), before);
   });
+});
+
+void describe('laika device pair --replace, interrupted (review S2)', () => {
+  /** Pair, then start a --replace that waits for approval forever, and stop it. */
+  async function interrupted(
+    signal: NodeJS.Signals,
+  ): Promise<{ home: string; run: Run; before: string[] }> {
+    const home = sandbox();
+    const first = await board();
+    await paired(home, first);
+    const dir = join(home, '.laika', 'device');
+    const before = ['key.pem', 'device.json'].map((n) => readFileSync(join(dir, n), 'utf8'));
+    const second = await board({ pendingPolls: 1_000_000 });
+    const started = start(home, [
+      'device',
+      'pair',
+      '--board',
+      second.url,
+      '--code',
+      'ABCD',
+      '--replace',
+    ]);
+    const begun = Date.now();
+    while (!/^ {4}[0-9a-f]{16}$/m.test(started.stdout())) {
+      assert.ok(Date.now() - begun < 30_000, `never reached the wait: ${started.stdout()}`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    // It is waiting for approval with its new key in hand.
+    assert.ok(second.publicKey !== undefined && second.publicKey !== first.publicKey);
+    started.child.kill(signal);
+    return { home, run: await started.done, before };
+  }
+
+  for (const signal of ['SIGINT', 'SIGKILL'] as const) {
+    void test(`${signal} while waiting leaves the old pairing in place, byte for byte`, async () => {
+      const { home, run, before } = await interrupted(signal);
+      const dir = join(home, '.laika', 'device');
+      assert.deepEqual(
+        ['key.pem', 'device.json'].map((n) => readFileSync(join(dir, n), 'utf8')),
+        before,
+        'the old key or record was replaced by a pairing that never completed',
+      );
+      if (signal === 'SIGINT') {
+        assert.equal(run.code, 130);
+        assert.match(run.stderr, /interrupted — this machine is as it was/);
+        assert.deepEqual(
+          readdirSync(dir).filter((n) => n.endsWith('.pending')),
+          [],
+          'the staged key was left behind',
+        );
+      }
+    });
+  }
 });
 
 /* -------------------------------------------------------------------------- */
@@ -634,6 +710,68 @@ void describe('laika tool add', () => {
     assertNoLeak(home, [run, session], '.laika/agents/omnigent.json');
   });
 
+  void test('a claude-code command redeeming an antigravity exchange saves nothing anywhere (S1)', async () => {
+    const home = sandbox();
+    const s = await board({ agentHarness: 'antigravity' });
+    await paired(home, s);
+    const run = await laika(home, ['tool', 'add', 'claude-code', '--exchange', 'EX1']);
+    assert.equal(run.code, 1);
+    assert.match(run.stderr, /made for antigravity, not claude-code/);
+    assert.match(run.stderr, /nothing was saved/);
+    assert.deepEqual(
+      files(home).filter((p) => !p.startsWith('.laika/device/')),
+      [],
+      'the token was written somewhere',
+    );
+    assertNoLeak(home, [run], '');
+  });
+
+  void test('a claude-code command redeeming a codex exchange saves only codex.json, sets up nothing (S1)', async () => {
+    const home = sandbox();
+    const s = await board({ agentHarness: 'codex' });
+    await paired(home, s);
+    s.received.length = 0;
+    const run = await laika(home, ['tool', 'add', 'claude-code', '--exchange', 'EX1']);
+    assert.equal(run.code, 1);
+    assert.match(run.stderr, /made for codex, not claude-code/);
+    assert.deepEqual(
+      files(home).filter((p) => !p.startsWith('.laika/device/')),
+      ['.laika/agents/codex.json'],
+      'something was set up for the typed tool',
+    );
+    assert.equal(mode(join(home, '.laika', 'agents', 'codex.json')), 0o600);
+    assert.ok(!s.received.some((r) => r.path.endsWith('/client-report')), 'it reported a setup');
+    assertNoLeak(home, [run], '.laika/agents/codex.json');
+  });
+
+  void test('a credential file that differs is backed up every time, not only once', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    const credential = join(home, '.laika', 'agents', 'claude-code.json');
+    for (const [n, other] of [
+      [1, '{"url":"http://a","token":"lai_A"}\n'],
+      [2, '{"url":"http://b","token":"lai_B"}\n'],
+    ] as const) {
+      write(home, '.laika/agents/claude-code.json', other);
+      const run = await laika(home, [
+        'tool',
+        'add',
+        'claude-code',
+        '--exchange',
+        `EX${String(n)}`,
+        '--no-hooks',
+      ]);
+      assert.equal(run.code, 0, run.stdout + run.stderr);
+      assert.equal(
+        readFileSync(`${credential}.bak`, 'utf8'),
+        other,
+        `run ${String(n)} kept no copy`,
+      );
+      assert.equal(mode(`${credential}.bak`), 0o600);
+    }
+  });
+
   void test('an unpaired machine is told to pair first, and nothing is sent', async () => {
     const home = sandbox();
     const s = await board();
@@ -657,15 +795,21 @@ void describe('laika tool add', () => {
   });
 });
 
-void describe("the messages signed here are the server's", () => {
-  void test('server/src/auth/device-signature.ts still builds the same bytes and fingerprint', () => {
-    const source = readFileSync(DEVICE_SIGNATURE, 'utf8');
-    for (const needle of [
-      '`laika-pair-v1\\n${pairingId}\\n${nonce}\\n${boardOrigin}`',
-      '`laika-tool-redeem-v1\\n${exchangeId}\\n${deviceId}\\n${challenge}\\n${boardOrigin}`',
-      "createHash('sha256').update(Buffer.from(encoded, 'base64url')).digest('hex').slice(0, 16)",
-    ]) {
-      assert.ok(source.includes(needle), `device-signature.ts no longer has ${needle}`);
+void describe("the stub verifies with the server's own code", () => {
+  void test('device-signature.ts was imported, and refuses a signature over other bytes', () => {
+    for (const name of [
+      'parseDevicePublicKey',
+      'keyFingerprint',
+      'pairingMessage',
+      'toolRedeemMessage',
+      'verifyDeviceSignature',
+    ] as const) {
+      assert.equal(typeof serverSig[name], 'function', `device-signature.ts has no ${name}`);
     }
+    assert.equal(
+      serverSig.pairingMessage('p', 'n', 'o').toString('utf8'),
+      'laika-pair-v1\np\nn\no',
+      'the import is not the server module',
+    );
   });
 });

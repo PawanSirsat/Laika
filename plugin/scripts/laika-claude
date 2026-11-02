@@ -53,13 +53,19 @@ if [ -r "$CONFIG" ]; then
 fi
 
 AGENT_CREDENTIAL="$HOME/.laika/agents/claude-code.json"
+IDENTITY="your personal token ($CONFIG)"
 if [ -r "$AGENT_CREDENTIAL" ] && grep -q '"source": "tool-add"' "$AGENT_CREDENTIAL"; then
   # Read, never sourced: the file is JSON that `laika tool add` writes, one key a line.
   AGENT_URL="$(sed -n 's/^ *"url": *"\([^"]*\)".*/\1/p' "$AGENT_CREDENTIAL")"
   AGENT_TOKEN="$(sed -n 's/^ *"token": *"\([^"]*\)".*/\1/p' "$AGENT_CREDENTIAL")"
   if [ -n "$AGENT_URL" ] && [ -n "$AGENT_TOKEN" ]; then
+    # Two boards on one machine is legal but rarely meant: say which one wins.
+    if [ -n "${LAIKA_URL:-}" ] && [ "${LAIKA_URL%/}" != "${AGENT_URL%/}" ]; then
+      echo "laika-claude: warning — Claude Code's credential is for $AGENT_URL, but $CONFIG names $LAIKA_URL; using $AGENT_URL." >&2
+    fi
     LAIKA_URL="$AGENT_URL"
     LAIKA_TOKEN="$AGENT_TOKEN"
+    IDENTITY="Claude Code's own credential ($AGENT_CREDENTIAL)"
   fi
   unset AGENT_URL AGENT_TOKEN
 fi
@@ -82,6 +88,8 @@ if [ -z "${LAIKA_URL:-}" ] || [ -z "${LAIKA_TOKEN:-}" ]; then
 fi
 
 export LAIKA_URL LAIKA_TOKEN
+# One line, so nobody has to guess who the board will see (never the token).
+echo "laika-claude: acting as $IDENTITY on $LAIKA_URL" >&2
 
 if [ ! -f "$PLUGIN_DIR/.claude-plugin/plugin.json" ]; then
   echo "laika-claude: no plugin at $PLUGIN_DIR — is the checkout still there?" >&2

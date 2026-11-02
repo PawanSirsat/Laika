@@ -5,7 +5,7 @@ import {
   sign,
   type KeyObject,
 } from 'node:crypto';
-import { copyFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { homedir, platform, release } from 'node:os';
 import { join } from 'node:path';
 
@@ -220,17 +220,8 @@ function osLabel(): string {
   return `${platform()} ${release()}`.slice(0, 64);
 }
 
-/** Keep the old key and record beside the new ones, never overwrite them unread. */
-function backUpPaired(home: string, now: number): (readonly [string, string])[] {
-  const kept: (readonly [string, string])[] = [];
-  for (const path of [deviceKeyPath(home), deviceFilePath(home)]) {
-    if (!existsSync(path)) continue;
-    const backup = `${path}.bak-${String(now)}`;
-    copyFileSync(path, backup);
-    kept.push([path, backup]);
-  }
-  return kept;
-}
+/** Where a pairing in flight keeps its key and record until it completes. */
+const pending = (path: string): string => `${path}.pending`;
 
 export async function device(argv: readonly string[], io: DeviceIo = CONSOLE): Promise<number> {
   const sub = argv[0];
@@ -268,14 +259,52 @@ async function pair(argv: readonly string[], io: DeviceIo): Promise<number> {
     io.err('  Nothing was changed. To pair it again, add --replace (the old key is kept).');
     return 1;
   }
-  const kept = isPaired ? backUpPaired(io.home, io.now()) : [];
-  for (const [, backup] of kept) io.out(`Kept the old pairing: ${backup}`);
-  /** A pairing that did not complete leaves this machine as it found it. */
-  const forgetUnpaired = (): void => {
-    rmSync(deviceKeyPath(io.home), { force: true });
-    rmSync(deviceFilePath(io.home), { force: true });
-    for (const [path, backup] of kept) copyFileSync(backup, path);
+  // **Nothing in place changes until the board says paired** (review S2): the
+  // new key and record are staged beside the old ones and moved over them
+  // only on completion. A refusal, an exception or Ctrl-C removes the staged
+  // files, and a kill that leaves them leaves the old pairing working.
+  const keyPath = deviceKeyPath(io.home);
+  const recordPath = deviceFilePath(io.home);
+  let done = false;
+  const discard = (): void => {
+    if (done) return;
+    rmSync(pending(keyPath), { force: true });
+    rmSync(pending(recordPath), { force: true });
   };
+  const onInterrupt = (): void => {
+    discard();
+    io.err('\nlaika device pair: interrupted — this machine is as it was.');
+    process.exit(130);
+  };
+  process.once('SIGINT', onInterrupt);
+  process.once('SIGTERM', onInterrupt);
+  try {
+    return await pairStaged(
+      io,
+      { origin, code: code.trim(), wantName, wantCloud, isPaired },
+      () => {
+        done = true;
+      },
+    );
+  } finally {
+    discard();
+    process.off('SIGINT', onInterrupt);
+    process.off('SIGTERM', onInterrupt);
+  }
+}
+
+interface PairInput {
+  readonly origin: string;
+  readonly code: string;
+  readonly wantName: string | undefined;
+  readonly wantCloud: boolean;
+  readonly isPaired: boolean;
+}
+
+async function pairStaged(io: DeviceIo, input: PairInput, completed: () => void): Promise<number> {
+  const { origin, wantName, wantCloud } = input;
+  const keyPath = deviceKeyPath(io.home);
+  const recordPath = deviceFilePath(io.home);
 
   // A fresh key every time: one from an attempt that never completed is
   // already bound to that request on the board, and is worth nothing.
@@ -286,41 +315,25 @@ async function pair(argv: readonly string[], io: DeviceIo): Promise<number> {
 
   privateDir(join(io.home, '.laika'));
   privateDir(deviceDir(io.home));
-  writePrivate(
-    deviceKeyPath(io.home),
-    privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
-  );
-  const record: DeviceRecord = {
-    board: origin,
-    device_id: null,
-    fingerprint,
-    public_key: publicB64,
-  };
-  writePrivate(deviceFilePath(io.home), `${JSON.stringify(record, null, 2)}\n`);
+  writePrivate(pending(keyPath), privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
 
   const claim = await postJson(io, `${origin}/api/v1/device-pairing/claim`, {
-    code: code.trim(),
+    code: input.code,
     public_key: publicB64,
     os: osLabel(),
     cli_version: versionInfo().version,
   });
   const claimed = claimAnswer(claim, origin);
   if (typeof claimed === 'string') {
-    forgetUnpaired();
     io.err(`laika device pair: ${claimed}`);
     return 1;
   }
   if (claimed.fingerprint !== fingerprint) {
-    forgetUnpaired();
     io.err('laika device pair: STOP — the board reports a different key fingerprint than the');
     io.err('  key this machine just made. Do not approve anything in the browser; deny the');
     io.err('  request there and start again. Nothing was saved here.');
     return 1;
   }
-  writePrivate(
-    deviceFilePath(io.home),
-    `${JSON.stringify({ ...record, pairing_id: claimed.pairingId }, null, 2)}\n`,
-  );
 
   io.out('Pairing code accepted. In your browser, approve this device only if it shows');
   io.out('exactly this key fingerprint (computed on this machine):');
@@ -343,7 +356,6 @@ async function pair(argv: readonly string[], io: DeviceIo): Promise<number> {
     const outcome = completeAnswer(answer, origin);
     if (outcome.kind === 'pending') {
       if (io.now() >= deadline) {
-        forgetUnpaired();
         io.err('laika device pair: the code expired before it was approved. Start again in the');
         io.err('  browser. Nothing was saved here.');
         return 1;
@@ -352,7 +364,6 @@ async function pair(argv: readonly string[], io: DeviceIo): Promise<number> {
       continue;
     }
     if (outcome.kind === 'refused') {
-      forgetUnpaired();
       io.err(`laika device pair: ${outcome.message} Nothing was saved here.`);
       return 1;
     }
@@ -366,7 +377,20 @@ async function pair(argv: readonly string[], io: DeviceIo): Promise<number> {
       kind: outcome.deviceKind,
       paired_at: io.now(),
     };
-    writePrivate(deviceFilePath(io.home), `${JSON.stringify(paired, null, 2)}\n`);
+    writePrivate(pending(recordPath), `${JSON.stringify(paired, null, 2)}\n`);
+    // The old pairing is kept beside the new one, then the new one moves in.
+    if (input.isPaired) {
+      const at = String(io.now());
+      for (const path of [keyPath, recordPath]) {
+        if (!existsSync(path)) continue;
+        copyFileSync(path, `${path}.bak-${at}`);
+        io.out(`Kept the old pairing: ${path}.bak-${at}`);
+      }
+    }
+    renameSync(pending(keyPath), keyPath);
+    renameSync(pending(recordPath), recordPath);
+    completed();
+
     io.out(`Paired as ${outcome.displayName}${outcome.deviceKind === 'cloud' ? ' (cloud)' : ''}.`);
     if (wantName !== undefined && wantName.trim() !== outcome.displayName) {
       io.out(

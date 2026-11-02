@@ -53,8 +53,10 @@ this command. Here:
 
 `pairing_already_claimed` means someone else presented the code first:
 *Someone else claimed this code — deny the request in the browser and start
-again.* A board with no `LAIKA_PUBLIC_URL` cannot pair, and says so. A pairing
-that does not complete leaves nothing behind. An already-paired machine is
+again.* A board with no `LAIKA_PUBLIC_URL` cannot pair, and says so. The new
+key and record are staged as `*.pending` and move into place only when the
+board says paired, so a pairing that does not complete — refused, interrupted
+or killed — leaves this machine as it was. An already-paired machine is
 refused unless `--replace`, which keeps the old key and record as
 `*.bak-<ms>`. `--name` and `--cloud` repeat what you chose in the browser and
 only point out a difference; the name and kind are the browser's.
@@ -75,7 +77,12 @@ board's challenge (`laika-tool-redeem-v1`) with its paired key, and the board
 mints the tool's token **in that answer**. It goes straight into
 `~/.laika/agents/<harness>.json` (0600) — never an argument, never printed,
 never a prompt or a repository — and **`~/.laika/env` is never written**. A
-file being replaced is kept once as `<harness>.json.bak`. A version report
+file being replaced is kept as `<harness>.json.bak` whenever it differs. The
+agent the board minted decides the file, never the name typed: a command run
+for the wrong tool saves only that agent's credential (or nothing, for a tool
+`tool add` refuses), sets nothing up, and exits 1. `laika-claude` prints one
+line on stderr naming the identity it uses, and warns when Claude Code's
+credential is for another board than `~/.laika/env`. A version report
 (`POST /agents/me/client-report`) follows, with the tool's own token.
 
 | Tool | What `tool add` does |
