@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p2
 depends-on: []
 discovered-from: LAI-1090
-status: in-progress
+status: review
 started: 2026-11-02T19:05:00+05:30
+finished: 2026-11-02T19:18:58+05:30
 ---
 
 ## Why
@@ -51,31 +52,31 @@ Small follow-ups from the review of PR #241 (LAI-1090, merged as
 
 ## Acceptance criteria
 
-- [ ] Prompt: a fold goes into the block. If I say no to the block, nothing is
+- [x] Prompt: a fold goes into the block. If I say no to the block, nothing is
       folded into it. In step 3, if I decline the upgrade, nothing is folded
       into the old block or section.
-- [ ] Prompt: the opening sentence, step 8 and step 9's report cover a
+- [x] Prompt: the opening sentence, step 8 and step 9's report cover a
       confirmed edit to a Laika mention inside another section.
-- [ ] Every earlier prompt guarantee still holds. Classic `projectPrompt` stays
+- [x] Every earlier prompt guarantee still holds. Classic `projectPrompt` stays
       byte-identical and its CONTROL hash test passes.
-- [ ] CLI: an explicit `--harness` that cannot record exits `2` whatever the
+- [x] CLI: an explicit `--harness` that cannot record exits `2` whatever the
       order of the checks: no credential for that tool, with or without a
       project named. *Several tools, no `--harness`* exits `2` with or without
       a project named. A missing or old block still exits `1`, and `--offline`
       still exits `0`.
-- [ ] CLI: the exit-code comment, the usage text and `cli/README.md` give the
+- [x] CLI: the exit-code comment, the usage text and `cli/README.md` give the
       same, precise statement, and each part of it is true of the code.
-- [ ] CLI: the refused-tool message says only what is true, and the README
+- [x] CLI: the refused-tool message says only what is true, and the README
       quotes its wording.
-- [ ] Web: step 3 shows `laika project check` only for a tool the CLI can set
+- [x] Web: step 3 shows `laika project check` only for a tool the CLI can set
       up, and therefore record for. Antigravity, `other` and every tool
       `laika tool add` refuses get the honest path instead: Laika cannot check
       this tool's repository from the device yet, so record it yourself with
       *I've added it*, plus the tool's manual note.
-- [ ] Web: the set of CLI harnesses that get the command equals the set
+- [x] Web: the set of CLI harnesses that get the command equals the set
       `planFor` does not refuse. A test reads `cli/src/tool-add.ts` and
       `cli/src/agent-adapters.ts` and fails if they drift.
-- [ ] Each change has a test that fails when the change is undone. The task
+- [x] Each change has a test that fails when the change is undone. The task
       notes say how this was checked.
 
 ## Notes
@@ -94,3 +95,54 @@ Small follow-ups from the review of PR #241 (LAI-1090, merged as
   wait while the 1-minute load average is above 15. Do not run the full suite
   locally; CI runs the gate.
 - Board card: LAIKA-944 (`external_ref: LAI-1091`).
+
+## How it was checked
+
+- Each change has a test: the prompt's in
+  `project-block-revision.test.ts`, the CLI's in
+  `cli/test/project-check.test.ts`, and the web's in
+  `developer/v3/project-setup.test.ts` plus one browser case in
+  `test/browser/project-setup.test.ts`.
+- Each file was run alone with `node --test --test-concurrency=1`, after
+  waiting for the 1-minute load to fall below 15:
+  `project-block-revision.test.ts` 33/33, `project-check.test.ts` 56/56,
+  `project-setup.test.ts` 32/32, `tool-catalog.test.ts` 8/8, and the browser
+  file filtered to the new case and *the whole flow* 2/2. These counts are
+  the `# tests` that node reports, subtests included. `tsc --noEmit` exited
+  0 for both `cli` and `server/web`. `eslint` and `prettier --check` on the
+  changed files exited 0.
+- A mutation script (scratchpad, not committed) undid each change in turn,
+  anchor-checked. It ran only that change's test file and restored the file
+  by checksum. `git status` was clean afterwards. All 17 went red on the
+  test named for them:
+  - P1/P2: step 6's fold rule removed, then step 3's declined-update rule:
+    *a fold goes into the block*.
+  - P3: the opening without the mention: *the opening names what besides
+    the block*.
+  - P4/P5: step 8 back to *"Change nothing else."*, then the report without
+    mentions: *a confirmed edit to a mention*.
+  - C1: the *no project named* check before the credential again:
+    *--harness with no credential and no project named*.
+  - C2: `--harness` with a credential and no project, made `skipped`:
+    *--harness with its credential but no project named*.
+  - C3/C4: the old refused message, or a README quote one comma off: *a
+    refused tool is told what would record for it*.
+  - C5/C6/C7: one case of exit 2 dropped from the usage, the comment or the
+    README: *usage / comment / readme says each line of it*.
+  - W1: the command ignoring `cliSetup`: *the harnesses that get a command
+    are the ones laika tool add does not refuse*.
+  - W2: no manual note: *instead of a command*.
+  - B1/B2/B3: the command branch always taken, the *Not recorded* reason
+    always naming the check, and the foot note always naming it: the
+    browser case *a tool laika tool add refuses gets no command*.
+- Classic `projectPrompt` is untouched. The CONTROL hash test passes in the
+  same file.
+- One reading beyond the brief: `--harness X` **with** a credential but no
+  project to record against now also exits `2`. `--harness` is a request to
+  record (LAI-1090), and the brief asked for exit 2 for an explicit
+  `--harness` that cannot record, whatever the order. A bare run in the same
+  state still only prints, and exits `0`. The test *no --harness and no
+  project named* pins that.
+- Two more places in step 3 told a refused tool to run the check: the
+  *Not recorded* reason and the foot note. The browser case caught the first.
+  Both now say to record it yourself.
