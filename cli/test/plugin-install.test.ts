@@ -35,13 +35,14 @@
  */
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   cpSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -349,5 +350,146 @@ void describe('laika-claude, invoked through the installed symlink', () => {
     const result = run(sb, command, []);
     assert.equal(result.code, 1, 'it started claude with no plugin (LAI-616)');
     assert.ok(!result.out.includes('ARGV:'), 'claude was invoked despite the missing plugin');
+  });
+});
+
+/*
+ * LAI-1060: the V3 path installs the commands and touches no credential; the
+ * older path keeps the file it replaces; and `laika-claude` uses Claude Code's
+ * own credential only when `laika tool add` wrote it.
+ */
+void describe('install.sh --no-credential, and the env file the older path replaces', () => {
+  const installer = (sb: Sandbox): string => join(sb.checkoutScripts, 'install.sh');
+
+  void test('--no-credential asks for nothing and leaves ~/.laika/env byte for byte', () => {
+    const sb = sandbox();
+    const env = join(sb.home, '.laika', 'env');
+    mkdirSync(join(sb.home, '.laika'), { recursive: true });
+    writeFileSync(env, 'LAIKA_URL="http://mine"\nLAIKA_TOKEN="lai_mineOnly"\n');
+    const before = readFileSync(env);
+
+    const result = run(sb, '/bin/sh', [installer(sb), '--no-credential'], '');
+    assert.equal(result.code, 0, result.out);
+    assert.ok(readFileSync(env).equals(before), '~/.laika/env changed');
+    assert.ok(lstatSync(join(sb.bin, 'laika-claude')).isSymbolicLink());
+    assert.ok(!result.out.includes('Token (lai_...)'), 'it asked for a token');
+    assert.match(result.out, /laika device pair/);
+  });
+
+  void test('--no-credential on a fresh machine writes no ~/.laika at all', () => {
+    const sb = sandbox();
+    assert.equal(run(sb, '/bin/sh', [installer(sb), '--no-credential'], '').code, 0);
+    assert.ok(!existsSync(join(sb.home, '.laika')), 'it created ~/.laika');
+  });
+
+  void test('CONTROL: without the flag the same empty stdin is refused for want of a token', () => {
+    const sb = sandbox();
+    const result = run(sb, '/bin/sh', [installer(sb)], '');
+    assert.equal(result.code, 1, 'the older path no longer asks for a token');
+  });
+
+  void test('the older path keeps the env file it replaces, 0600', () => {
+    const sb = sandbox();
+    mkdirSync(join(sb.home, '.laika'), { recursive: true });
+    const old = 'LAIKA_URL="http://old"\nLAIKA_TOKEN="lai_oldToken"\n';
+    writeFileSync(join(sb.home, '.laika', 'env'), old);
+
+    assert.equal(run(sb, '/bin/sh', [installer(sb)], ANSWERS).code, 0);
+    const backups = readdirSync(join(sb.home, '.laika')).filter((n) => n.startsWith('env.bak-'));
+    assert.equal(backups.length, 1, `backups: ${backups.join(', ')}`);
+    const backup = join(sb.home, '.laika', backups[0] ?? '');
+    assert.equal(readFileSync(backup, 'utf8'), old);
+    assert.equal(lstatSync(backup).mode & 0o777, 0o600);
+    assert.match(readFileSync(join(sb.home, '.laika', 'env'), 'utf8'), /lai_sandboxtoken/);
+  });
+
+  void test('the PATH line is added once, however often it runs', () => {
+    const sb = sandbox();
+    rmSync(sb.bin, { recursive: true, force: true });
+    // No writable directory on PATH, so it makes ~/.local/bin and adds it.
+    const env = { ...sb.env, PATH: `${sb.fakeBin}:/usr/bin:/bin` };
+    for (const _ of [1, 2, 3]) {
+      const result = execFileSync('/bin/sh', [installer(sb), '--no-credential'], {
+        env,
+        encoding: 'utf8',
+      });
+      assert.match(result, /PATH/);
+    }
+    const rc = readFileSync(join(sb.home, '.zshrc'), 'utf8');
+    const lines = rc.split('\n').filter((l) => l.includes('export PATH="$HOME/.local/bin:$PATH"'));
+    assert.equal(lines.length, 1, rc);
+  });
+});
+
+void describe("laika-claude and Claude Code's own credential (plan §L2)", () => {
+  function launch(
+    sb: Sandbox,
+    credential: Record<string, string> | undefined,
+    personalUrl = 'http://personal.test',
+  ): { code: number; out: string; err: string } {
+    mkdirSync(join(sb.home, '.laika', 'agents'), { recursive: true });
+    writeFileSync(
+      join(sb.home, '.laika', 'env'),
+      `LAIKA_URL="${personalUrl}"\nLAIKA_TOKEN="personal-token"\n`,
+    );
+    if (credential !== undefined) {
+      writeFileSync(
+        join(sb.home, '.laika', 'agents', 'claude-code.json'),
+        `${JSON.stringify(credential, null, 2)}\n`,
+      );
+    }
+    writeFileSync(join(sb.fakeBin, 'claude'), '#!/bin/sh\necho "AS: $LAIKA_URL $LAIKA_TOKEN"\n');
+    chmodSync(join(sb.fakeBin, 'claude'), 0o755);
+    const result = spawnSync(join(sb.checkoutScripts, 'laika-claude'), [], {
+      env: sb.env,
+      encoding: 'utf8',
+    });
+    return { code: result.status ?? -1, out: result.stdout, err: result.stderr };
+  }
+
+  const TOOL_ADD = {
+    url: 'http://board.test',
+    token: 'agent-token',
+    agent_id: 'A',
+    device_id: 'D',
+    source: 'tool-add',
+  };
+
+  void test('a credential `laika tool add` wrote is the one Claude Code gets, and it says so', () => {
+    const sb = sandbox();
+    const result = launch(sb, TOOL_ADD, 'http://board.test');
+    assert.equal(result.code, 0, result.out + result.err);
+    assert.equal(result.out.trim(), 'AS: http://board.test agent-token');
+    assert.equal(
+      result.err.trim(),
+      `laika-claude: acting as Claude Code's own credential (${join(sb.home, '.laika', 'agents', 'claude-code.json')}) on http://board.test`,
+    );
+    assert.ok(!result.err.includes('agent-token'), 'the token was printed');
+  });
+
+  void test('a credential for another board than ~/.laika/env is warned about', () => {
+    const sb = sandbox();
+    const result = launch(sb, TOOL_ADD);
+    assert.equal(result.out.trim(), 'AS: http://board.test agent-token');
+    assert.match(
+      result.err,
+      /warning — Claude Code's credential is for http:\/\/board\.test, but .* names http:\/\/personal\.test; using http:\/\/board\.test\./,
+    );
+  });
+
+  void test('CONTROL: one `laika agent login` wrote changes nothing — never retroactive', () => {
+    const sb = sandbox();
+    const result = launch(sb, { url: 'http://board.test', token: 'agent-token' });
+    assert.equal(result.code, 0, result.out + result.err);
+    assert.equal(result.out.trim(), 'AS: http://personal.test personal-token');
+    assert.match(result.err, /acting as your personal token/);
+    assert.doesNotMatch(result.err, /warning/);
+  });
+
+  void test('CONTROL: with no agent credential it is the personal token, as before', () => {
+    const sb = sandbox();
+    const result = launch(sb, undefined);
+    assert.equal(result.out.trim(), 'AS: http://personal.test personal-token');
+    assert.match(result.err, /acting as your personal token/);
   });
 });

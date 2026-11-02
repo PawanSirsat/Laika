@@ -11,6 +11,7 @@ import {
   tokens,
   users,
 } from '../../../src/db/schema.ts';
+import { classify, PAIRING_CLAIM_PATH } from '../../../src/http/middleware/rate-limit.ts';
 import { LIMITS, RateLimiter } from '../../../src/http/rate-limit.ts';
 import { MAX_FAILED_SIGNATURES, MAX_OPEN_PAIRINGS } from '../../../src/services/device-pairing.ts';
 import {
@@ -767,18 +768,28 @@ describe('what an anonymous caller cannot lock out', () => {
 
   it('every claim spends one bucket of 6,000 a minute, malformed ones included', async () => {
     expect(LIMITS.pairing).toEqual({ perMinute: 6000, burst: 6000 });
+    // The bucket the middleware takes from for a claim, whoever sends it.
+    const bucket = classify(PAIRING_CLAIM_PATH, null, 'POST');
+    expect(bucket).toEqual({ key: 'pairing:claim', policy: LIMITS.pairing });
+    // All but the last twenty of the 6,000 are spent on the app's own limiter,
+    // with the clock held: 6,001 claims through the whole app outlast a CI
+    // runner's 5 s test timeout (LAI-1059). The twenty are spent by claims.
+    let left = 0;
+    for (let i = 0; i < 5980; i++) left = limiter.take(bucket.key, bucket.policy).remaining;
+    expect(left).toBe(20);
     // A malformed body is refused 422, and spends the bucket all the same:
-    // there is no free way to send claims.
-    const statuses = new Map<number, number>();
+    // there is no free way to send claims. Exactly one token each, so the
+    // twenty-first is the 6,001st claim, and the first refused.
+    const statuses: number[] = [];
     let last: Response | undefined;
-    for (let i = 0; i < 6001; i++) {
+    for (let i = 0; i < 21; i++) {
       last = await post(
         '/api/v1/device-pairing/claim',
         i % 2 === 0 ? { code: 'x', public_key: 'AAAA' } : {},
       );
-      statuses.set(last.status, (statuses.get(last.status) ?? 0) + 1);
+      statuses.push(last.status);
     }
-    expect(Object.fromEntries(statuses)).toEqual({ 422: 6000, 429: 1 });
+    expect(statuses).toEqual([...Array<number>(20).fill(422), 429]);
     expect(Number(last?.headers.get('Retry-After'))).toBeGreaterThan(0);
     // Holding it empty takes 100 a second: a hundredth of a second refills one.
     clock += 10;

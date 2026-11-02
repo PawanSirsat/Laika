@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { activity, time } from './activity.ts';
 import { connect } from './connect.ts';
+import { device } from './device.ts';
 import { doctor } from './doctor.ts';
 import { init } from './init.ts';
+import { tool } from './tool-add.ts';
 import { update } from './update.ts';
 import { version } from './version.ts';
 import { whoami } from './whoami.ts';
@@ -28,6 +30,8 @@ const USAGE = [
   '                           and its board (alias: laika status; --offline, --json)',
   '  laika update             move this checkout to the commit the board was built from',
   '                           (--check: is there an update; --dry-run: show the plan)',
+  '  laika device pair        pair this machine with a board (the browser shows the command)',
+  '  laika tool add <tool>    install one tool’s own credential on this paired machine',
   '  laika connect <agent>    point a coding agent at the board (--project: this folder)',
   '  laika connect --list     the agents connect knows, and what it does for each',
   '  laika activity on|off    count local agent activity for the heatmap (opt-in)',
@@ -61,6 +65,8 @@ async function main(argv: readonly string[]): Promise<number> {
   if (command === 'doctor' || command === 'status') return doctor(argv.slice(1));
   if (command === 'update') return update(argv.slice(1));
   if (command === 'connect') return connect(argv.slice(1));
+  if (command === 'device') return device(argv.slice(1));
+  if (command === 'tool') return tool(argv.slice(1));
   if (command === 'activity') return activity(argv.slice(1));
   if (command === 'time') return time(argv.slice(1));
   if (command === 'agent') {
