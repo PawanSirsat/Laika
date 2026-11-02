@@ -223,8 +223,8 @@ reported as *changed since — left alone*. A hook file that a killed run had
 rewritten before it could record what it wrote is likewise **reported, not
 restored**: run `laika agent hooks on` to put the hooks right.
 
-**Never touched:** `~/.laika/env`, `~/.laika/agents/*`, `~/.laika/device/*`,
-MCP entries (they hold the board URL and a variable name, not a checkout path;
+**Never touched:** `~/.laika/env`, `~/.laika/agents/*` (only read, for the
+version reports below), `~/.laika/device/*`, MCP entries (they hold the board URL and a variable name, not a checkout path;
 they are hashed before and after, and a change is a failure), consent, grants,
 and any repository's instruction files. The one copy that may hold a token is
 `~/.claude/settings.json` when `laika init` put one there and its hooks are on:
@@ -232,6 +232,21 @@ the copy is `0600` in a `0700` directory and is deleted on every way out —
 success, refusal, rollback, error and recovery — except an incomplete rollback,
 where it is kept for the next run. Only each run's `state.json` (paths and
 digests) stays.
+
+**Version reports** (LAI-1068, LAI-1085). When the board's manifest says
+`client_reports`, each tool set up on this machine for **this** board
+(`~/.laika/agents/<harness>.json`, read-only) sends the board one client
+report (`POST /agents/me/client-report`) with **its own saved token** — never
+a token from your shell, never to another board, never printed — so the
+Devices tab shows the version, commit and protocol the checkout's own
+`laika version --json` gives. It is sent after a successful update, and also
+when the checkout is **already** at the board's commit: a machine moved there
+with plain `git`, or set up before `laika tool add` reported anything, would
+otherwise show *Version unknown* until the next release. That run prints one
+line, `Version report for <commit>: sent for …` or `Version report skipped:`
+and why (the board takes none; no tool here is set up for this board; the
+version could not be read). A report that fails is a line, never a different
+exit code. `--check` and `--dry-run` never send one.
 
 Afterwards, restart Claude Code with `laika-claude`; if the Codex hooks
 changed, open `/hooks` in Codex to trust them again; then `laika doctor`.
