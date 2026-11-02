@@ -19,12 +19,19 @@ export { type CompatibilityBody };
  * caller sees exactly what a signed-in one does. Rate limiting still applies —
  * an anonymous request spends the shared anonymous bucket (§6.3).
  */
-export function developerRoutes(input: CompatibilityInput): Hono<AppEnv> {
+export function developerRoutes(
+  input: Omit<CompatibilityInput, 'servedRoutes'> & { servedRoutes: () => Iterable<string> },
+): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  // Built once: every input is fixed for the life of the process.
-  const body = compatibility(input);
+  // Built once, on the first request: every input is fixed for the life of the
+  // process, but this router is mounted before the routes `features` is read
+  // off (LAI-1062), so the route table is asked only once the app is complete.
+  let body: CompatibilityBody | undefined;
 
-  app.get('/compatibility', (c) => c.json<CompatibilityBody>(body));
+  app.get('/compatibility', (c) => {
+    body ??= compatibility({ ...input, servedRoutes: input.servedRoutes() });
+    return c.json<CompatibilityBody>(body);
+  });
 
   return app;
 }

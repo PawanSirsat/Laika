@@ -6638,7 +6638,8 @@ you are looking at an exception.
 **Decision.** A third case is added to CLAUDE.md §5, with all of these conditions:
 1. The handler reads no database row and resolves no actor; its factory takes no
    `db` handle.
-2. Its body is built only from environment variables and constants.
+2. Its body is built only from environment, constants, and the app's own
+   route table as fixed at boot.
 3. Nothing the caller sends is echoed back.
 4. It is named: `GET /api/v1/health`, `GET /api/v1/developer/compatibility`.
    A further instance is a new decision.
@@ -6648,6 +6649,15 @@ answers 409 like every API path except `/health` and `/setup`.
 
 **Consequences.** Values served by these routes must be safe for anonymous readers;
 `LAIKA_CLI_SOURCE_URL` refuses user, password, query and fragment at boot.
+
+**Amended 2026-11-02 (LAI-1062):** condition 2 read *"built only from
+environment variables and constants"*. `/developer/compatibility` now reads its
+`features` off the app's route table: each one is `true` when every route it
+names is mounted. The table is fixed at boot, holds no data and no actor, and
+says nothing a caller could not learn by asking each route. So condition 2 now
+reads *"built only from environment, constants, and the app's own route table
+as fixed at boot"*. Conditions 1, 3 and 4 are unchanged. Edited by the LAI-1062
+builder as a named CHIEF edit (D-033), on the polly manager's review of #216.
 
 ## D-122 — A device has a server row and a kind; the cloud rule applies to a device of kind `cloud` or the label `Cloud` (LAI-1045; amends D-121 item 2)
 

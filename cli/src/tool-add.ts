@@ -10,6 +10,7 @@ import { apply, prepare, rcFileFor } from './connect.ts';
 import {
   commonRefusal,
   type DeviceIo,
+  featureGate,
   postJson,
   readDevice,
   readDeviceKey,
@@ -48,6 +49,12 @@ import { versionInfo } from './version.ts';
  * - **Antigravity** takes a token only written into its own config, so it is
  *   refused **before** anything is redeemed; so is any tool with no CLI
  *   harness. A refused exchange mints nothing.
+ *
+ * Before redeeming — and in `--dry-run` too, which only reads — the paired
+ * board's manifest must say `tool_setup_exchange: true` (`featureGate` in
+ * `device.ts`, LAI-1064). The client report after setup is sent only when the
+ * manifest says `client_reports: true`, or when the board is too old to have a
+ * manifest and its answer decides, as before.
  */
 
 export interface ToolAddIo extends DeviceIo {
@@ -80,9 +87,15 @@ export const CODEX_TOKEN_VAR = 'LAIKA_AGENT_TOKEN_CODEX';
 export const CODEX_RC_MARKER =
   "# Laika — Codex's own agent token for its MCP entry (laika tool add codex)";
 
+/**
+ * Where a refused tool goes instead — the web's Add tool wizard says the same
+ * (`tool-catalog.ts`, LAI-1061): a personal token, in the tool's own MCP
+ * settings. V3 has no "Set up by hand" for a tool.
+ */
 const SET_UP_BY_HAND = [
-  'Set it up by hand instead: in the browser, cancel this setup and use',
-  '"Set up by hand" for this tool. Nothing was redeemed, so no token exists.',
+  'Connect it by hand instead: create a personal token under Developer access →',
+  "Advanced, and add it in the tool's own MCP settings. That token acts as you,",
+  'not as a tool of its own. Nothing was redeemed, so no token exists.',
 ];
 
 export function planFor(slug: string): ToolPlan {
@@ -201,6 +214,12 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   const origin = paired.board;
   const hooks = plan.kind === 'full' && !noHooks;
 
+  const gate = await featureGate(io, origin, 'tool_setup_exchange');
+  if (gate.kind === 'refused') {
+    io.err(`laika tool add: ${gate.message}. Nothing was redeemed or written.`);
+    return 1;
+  }
+
   io.out(`${dryRun ? 'Would set up' : 'Setting up'} ${ADAPTERS[plan.harness].name} on ${origin}:`);
   for (const line of describe(plan, hooks)) io.out(line);
   if (dryRun) {
@@ -235,8 +254,8 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
       `laika tool add: this setup was made for ${redeemed.agentHarness}, not ${slug}, and ` +
         `${redeemed.agentHarness} cannot be set up here — nothing was saved.`,
     );
-    io.err('  The token it minted is unused; disconnect that tool in the browser, or set it up');
-    io.err('  by hand from its own row.');
+    io.err('  The token it minted is unused; disconnect that tool in the browser, and connect');
+    io.err('  it with a personal token from Developer access → Advanced in its own MCP settings.');
     return 1;
   }
   if (minted.harness !== plan.harness) {
@@ -264,7 +283,11 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   }
 
   const hooksOn = installed.some((r) => r.status === 'installed' || r.status === 'unchanged');
-  await clientReport(io, redeemed.boardOrigin, redeemed.secret, hooksOn);
+  if (gate.features === undefined || gate.features.client_reports === true) {
+    await clientReport(io, redeemed.boardOrigin, redeemed.secret, hooksOn);
+  } else {
+    io.out('  · the board does not take client reports yet; the setup stands');
+  }
 
   io.out('');
   for (const line of nextSteps(target, hooksOn)) io.out(line);

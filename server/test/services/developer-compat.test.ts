@@ -1,16 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { compatibility, FEATURE_NAMES, PROTOCOL } from '../../src/services/developer-compat.ts';
+import {
+  compatibility,
+  FEATURE_NAMES,
+  FEATURE_ROUTES,
+  PROTOCOL,
+  servedFeatures,
+} from '../../src/services/developer-compat.ts';
 
 /**
  * The compatibility body (SPEC §6.4, LAI-1043). The route is asserted in
  * `http/routes/developer.test.ts`.
  */
 
+/** Every route every feature names, as a full build mounts them. */
+const ALL_ROUTES = Object.values(FEATURE_ROUTES).flat();
+
 const INPUT = {
   version: '1.2.3',
   buildCommit: 'abc1234',
   developerAccess: 'classic',
   cliSourceUrl: 'https://github.com/PawanSirsat/Laika.git',
+  servedRoutes: ALL_ROUTES,
 } as const;
 
 describe('compatibility()', () => {
@@ -24,7 +34,7 @@ describe('compatibility()', () => {
     ]);
   });
 
-  it('serves a closed feature set, by name, every V3 feature off until it ships', () => {
+  it('serves a closed feature set, by name', () => {
     const { features } = compatibility(INPUT);
 
     // Names, not a count (CLAUDE.md §2): a feature added without this test
@@ -42,8 +52,48 @@ describe('compatibility()', () => {
       'project_setups',
       'tool_setup_exchange',
     ]);
-    for (const name of FEATURE_NAMES) expect(features[name], name).toBe(false);
     expect(features.developer_access).toBe('classic');
+  });
+
+  it('turns a feature on exactly when every route it names is served (LAI-1062)', () => {
+    expect(servedFeatures(ALL_ROUTES)).toEqual({
+      device_pairing: true,
+      tool_setup_exchange: true,
+      client_reports: true,
+      project_setups: false,
+    });
+    expect(Object.values(servedFeatures([])).some(Boolean)).toBe(false);
+
+    // One route missing is enough to turn its feature off, and only its own.
+    for (const name of FEATURE_NAMES) {
+      for (const route of FEATURE_ROUTES[name]) {
+        const served = servedFeatures(ALL_ROUTES.filter((r) => r !== route));
+        expect(served[name], `${name} without ${route}`).toBe(false);
+        for (const other of FEATURE_NAMES.filter((n) => n !== name)) {
+          expect(served[other], `${other} without ${route}`).toBe(FEATURE_ROUTES[other].length > 0);
+        }
+      }
+    }
+  });
+
+  it('keeps project setups off: it has no server-side record, so no route names it', () => {
+    expect(FEATURE_ROUTES.project_setups).toEqual([]);
+    expect(compatibility(INPUT).features.project_setups).toBe(false);
+  });
+
+  // Plan §F.3: a helper too old for a feature that is on is told to update for
+  // that feature, never refused outright — so every feature that is on needs a
+  // protocol this board speaks, and the oldest helper is still in range.
+  it('keeps a protocol-1 helper in range while naming protocol 2 for what is on', () => {
+    const body = compatibility(INPUT);
+
+    expect(body.protocol).toEqual({ current: 2, min_client: 1 });
+    for (const name of FEATURE_NAMES) {
+      if (!body.features[name]) continue;
+      expect(body.cli.min_protocol_for[name], name).toBeLessThanOrEqual(body.protocol.current);
+      expect(body.cli.min_protocol_for[name], name).toBeGreaterThan(1);
+    }
+    expect(body.release_notes.whats_new.map((e) => e.protocol)).toEqual([1, 2]);
   });
 
   it('passes each Developer access mode through', () => {

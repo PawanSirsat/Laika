@@ -770,7 +770,8 @@ file. The rules below are the ones that are true of every line of code.
 
   **The third narrow case is public deployment metadata** (D-123): a handler
   that reads no database row and no actor, builds its body only from
-  environment and constants, and echoes nothing the caller sent. Its instances
+  environment, constants, and the app's own route table as fixed at boot, and
+  echoes nothing the caller sent. Its instances
   are `GET /api/v1/health` and `GET /api/v1/developer/compatibility`. A route
   that needs a `db` handle or an actor to answer is not this case. Do not invent
   an action such as `deployment.read` to give it a `can()` call — that is the
