@@ -1201,7 +1201,15 @@ async function sendReports(
     try {
       const hooks = ADAPTERS[tool.harness].hooks && hooksOn(io.home, tool.harness);
       outcome = reportOutcome(
-        await sendClientReport(io, normaliseUrl(tool.url), tool.token, helper, hooks),
+        // The tool's own name, so a generic harness can read Ready (LAI-1088).
+        await sendClientReport(
+          io,
+          normaliseUrl(tool.url),
+          tool.token,
+          helper,
+          hooks,
+          ADAPTERS[tool.harness].agentHarness,
+        ),
       );
     } catch {
       outcome = 'failed';
