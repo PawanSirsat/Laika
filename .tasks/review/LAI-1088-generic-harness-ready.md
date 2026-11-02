@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p1
 depends-on: [LAI-1083]
 discovered-from: LAI-1083
-status: in-progress
+status: review
 started: 2026-11-02T17:29:29+05:30
+finished: 2026-11-02T17:46:10+05:30
 ---
 
 ## Why
@@ -33,24 +34,24 @@ why it's showing Missing"*. A read-only sweep of `origin/master` found:
 
 ## Acceptance criteria
 
-- [ ] The CLI's client report carries `harness` (a known slug the server
+- [x] The CLI's client report carries `harness` (a known slug the server
       accepts) when the caller knows it; `laika tool add` sends it.
       `sendClientReport` takes it as an optional argument so
       `cli/src/update.ts` (LAI-1085's) can pass it in one line.
-- [ ] `laika tool add` (install or reconnect) also writes the new
+- [x] `laika tool add` (install or reconnect) also writes the new
       credential into any other file under `~/.laika/agents/` that held a
       token of the same agent, so a manager's own file (`polly.json`) never
       keeps a revoked one; it never prints a secret, never follows a symlink
       out of `~/.laika/agents/`, and says which files it updated.
-- [ ] Tool panel copy (`server/web/.../v3/tool-readiness.ts`): Device paired
+- [x] Tool panel copy (`server/web/.../v3/tool-readiness.ts`): Device paired
       on an existing tool on an imported device says its tools keep working
       and pairing is what lets Reconnect run without a secret; a generic
       harness's *connected* check and its status reason name the missing
       helper report and say requests from its workers on its credential are
       expected; Helper reports names a command that sends a report.
-- [ ] SPEC §4.81 (named edit) and the comment at `tool-setup.ts` ~558 say a
+- [x] SPEC §4.81 (named edit) and the comment at `tool-setup.ts` ~558 say a
       generic harness's MCP client name is not read, in line with D-118.
-- [ ] Tests: CLI report body with and without harness; the extra credential
+- [x] Tests: CLI report body with and without harness; the extra credential
       file updated and a file of another agent untouched; each copy change
       in `tool-readiness`; mutation-checked.
 
@@ -62,3 +63,11 @@ why it's showing Missing"*. A read-only sweep of `origin/master` found:
   LAI-1084 (Project setup prompt), LAI-1087 (the rail).
 - Named cross-area edits: `docs/SPEC.md` §4.81, one comment in
   `server/src/services/tool-setup.ts`.
+- How a manager's file is recognised without reading anything new from the
+  board: before redeeming, each other credential file for this board whose
+  token answers `GET /me` `200` is noted; after, any that now answers `401`
+  held this agent's token (redeeming revokes only this agent's). Files hold
+  only `{url, token}` on Belka, so an agent id could not be read from them.
+- To get Belka's Omnigent to Ready once this is live: pair Belka (Devices →
+  Add device → the imported Belka), then Omnigent's details → Reconnect, and
+  run the command on Belka; `polly.json` is brought along.
