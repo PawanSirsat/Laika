@@ -7,15 +7,21 @@ import {
   type RegisteredAgent,
 } from '../../../../api/agents.ts';
 import type { Device } from '../../../../api/devices.ts';
-import { agentLabel } from '../../../../api/selected-agent.ts';
+import { agentLabel, twinNames } from '../../../../api/selected-agent.ts';
 import { timeLabel } from '../../../../api/time-label.ts';
+import type { AgentVerification } from '../../../../api/tool-setup.ts';
 import type { StatusTone } from '../../../../components/wizard/StatusChip.tsx';
+import type { ChipTone } from './DesignChip.tsx';
+import { pairedDevice } from './add-flow.ts';
 import { ACTIVE_MS, OFFLINE_MS } from './overview-state.ts';
+import { catalogTool } from './tool-catalog.ts';
+import { readiness, type ReadinessKey } from './tool-readiness.ts';
 
 /**
- * What Developer access V3's Devices tab says (LAI-1054, plan LAI-1042 §B.3,
- * §D, §H), worked out **only from what the server sent**: `GET /devices`,
- * each device with its agents — a tool on that device each.
+ * What Developer access V3's Devices and Tools tabs say (LAI-1054, LAI-1080,
+ * plan LAI-1042 §B.3, §D, §H), worked out **only from what the server sent**:
+ * `GET /devices`, each device with its agents — a tool on that device each —
+ * and, for a tool's readiness, its own `GET /agents/:id/verification`.
  *
  * Kept free of React so `node --test` reaches every rule here.
  */
@@ -84,6 +90,41 @@ export function toolStatus(agent: RegisteredAgent, now: number): ToolStatus {
     return { key: 'idle', word: 'Idle', tone: 'neutral', reason: `Last seen ${ago}` };
   }
   return { key: 'offline', word: 'Offline', tone: 'warn', reason: `Last seen ${ago}` };
+}
+
+/** A tool's status on the Tools list and in its details (LAI-1080). */
+export interface ListedStatus {
+  readonly key: ToolStatusKey | ReadinessKey;
+  readonly word: string;
+  readonly tone: StatusTone;
+  readonly reason: string;
+  /** Worked out from the tool's own verification, so it may say *Ready*. */
+  readonly evidence: boolean;
+}
+
+/**
+ * **`readiness()` once the tool's verification is in**, which is the only
+ * place *Ready* can come from: this tool's own request on its own credential
+ * (`tool-readiness.ts`). Until it is — still being read, the read failed, or a
+ * tool the catalog has no capabilities for — the agent's own stamps
+ * (`toolStatus`), which never say *Ready*.
+ */
+export function listedStatus(
+  agent: RegisteredAgent,
+  verification: AgentVerification | undefined,
+  now: number,
+): ListedStatus {
+  const tool = catalogTool(agent.harness);
+  if (agent.status === 'active' && verification !== undefined && tool !== undefined) {
+    const r = readiness(verification, tool);
+    return { key: r.key, word: r.word, tone: r.tone, reason: r.reason, evidence: true };
+  }
+  return { ...toolStatus(agent, now), evidence: false };
+}
+
+/** A status's tone on the design's chip, which has no blue: waiting is the accent. */
+export function chipTone(tone: StatusTone): ChipTone {
+  return tone === 'waiting' ? 'accent' : tone;
 }
 
 /**
@@ -165,31 +206,43 @@ export function needsConfirm(
   );
 }
 
+/**
+ * What *Show revoked* adds to Devices (LAI-1080): a revoked device, or an
+ * imported one whose every tool is revoked. An imported label no agent
+ * carries any more is neither listed nor revoked — it is nothing.
+ */
+export function revokedDevice(device: Device): boolean {
+  return !deviceLive(device) && (device.status === 'revoked' || device.agents.length > 0);
+}
+
 export interface DeviceCounts {
   /** Devices listed without *Show revoked*. */
   readonly devices: number;
   /** Active agents on those devices, conflicts included. */
   readonly tools: number;
-  /** What *Show revoked* adds: revoked tools, and revoked devices with none. */
-  readonly revoked: number;
+  /** What Devices' *Show revoked* adds: {@link revokedDevice}. */
+  readonly revokedDevices: number;
+  /** What Tools' *Show revoked* adds: every revoked agent, on any device. */
+  readonly revokedTools: number;
 }
 
 /** §H: **counts exclude revoked**. */
 export function deviceCounts(devices: readonly Device[]): DeviceCounts {
   let shown = 0;
   let tools = 0;
-  let revoked = 0;
+  let revokedDevices = 0;
+  let revokedTools = 0;
   for (const device of devices) {
     const gone = device.agents.filter((agent) => agent.status !== 'active').length;
-    revoked += gone;
+    revokedTools += gone;
     if (deviceLive(device)) {
       shown += 1;
       tools += device.agents.length - gone;
-    } else if (device.status === 'revoked' && device.agents.length === 0) {
-      revoked += 1;
+    } else if (revokedDevice(device)) {
+      revokedDevices += 1;
     }
   }
-  return { devices: shown, tools, revoked };
+  return { devices: shown, tools, revokedDevices, revokedTools };
 }
 
 /** What the live region says once the list is in. */
@@ -205,6 +258,146 @@ export const CLOUD_NOTE = 'Cloud credentials last a day. Reconnect to give the r
 /** The kind in words. */
 export function kindWord(device: Pick<Device, 'kind'>): string {
   return device.kind === 'cloud' ? 'Cloud' : 'Local';
+}
+
+// ------------------------------------------------------------------ one line a row (LAI-1080)
+
+/** The kind as the design says it: *Local computer*, *Cloud runner*. */
+export function kindName(device: Pick<Device, 'kind'>): string {
+  return device.kind === 'cloud' ? 'Cloud runner' : 'Local computer';
+}
+
+function seenWords(at: number | null, now: number, lead: string): string {
+  return at === null ? 'never seen' : `${lead} ${timeLabel(at, now).text}`;
+}
+
+function count(n: number, one: string, many: string): string {
+  return `${String(n)} ${n === 1 ? one : many}`;
+}
+
+/** A device's line: *Local computer · 3 tools · last seen just now*. Active tools only. */
+export function deviceLine(device: Device, now: number): string {
+  const active = device.agents.filter((agent) => agent.status === 'active').length;
+  return [
+    kindName(device),
+    active === 0 ? 'No tools yet' : count(active, 'tool', 'tools'),
+    seenWords(device.last_seen_at, now, 'last seen'),
+  ].join(' · ');
+}
+
+/** A tool's line: *1 project · seen just now*, or *No project yet · never seen*. */
+export function toolLine(agent: RegisteredAgent, now: number): string {
+  const projects = agent.grants.length;
+  return [
+    projects === 0 ? 'No project yet' : count(projects, 'project', 'projects'),
+    seenWords(agent.last_seen_at, now, 'seen'),
+  ].join(' · ');
+}
+
+export interface DeviceChip {
+  readonly word: string;
+  readonly tone: ChipTone;
+}
+
+/** A device's chip: how it got here, and whether it still works. */
+export function deviceChip(device: Device): DeviceChip {
+  if (device.status === 'revoked') return { word: 'Revoked', tone: 'neutral' };
+  if (device.origin === 'paired') return { word: 'Paired', tone: 'ok' };
+  if (needsConfirm(device)) return { word: 'Imported — confirm it’s yours', tone: 'warn' };
+  return { word: 'Imported', tone: 'neutral' };
+}
+
+/** One row of the Tools list: an agent, where it is, and what it is called there. */
+export interface ListedTool {
+  readonly agent: RegisteredAgent;
+  readonly device: Device;
+  /** `<tool> · <device>`, marked where another of the device's agents shares it. */
+  readonly label: string;
+  /** One of a legacy duplicate pair: the only place *Rename* is offered (D-120). */
+  readonly inConflict: boolean;
+}
+
+/** An agent's label on its device, with its twin mark where it has one. */
+export function toolLabel(device: Pick<Device, 'agents'>, agent: RegisteredAgent): string {
+  const twin = twinNames(device.agents).get(agent.id);
+  return twin === undefined ? agentLabel(agent) : `${agentLabel(agent)} (${twin})`;
+}
+
+/**
+ * The Tools list (LAI-1080): every active tool on a listed device — the same
+ * agents {@link deviceCounts} counts, so Devices and Tools agree — device by
+ * device, each device's tools before its conflicts. *Show revoked* adds every
+ * revoked agent after them.
+ */
+export function listedTools(devices: readonly Device[], showRevoked: boolean): ListedTool[] {
+  const out: ListedTool[] = [];
+  const row = (device: Device, agent: RegisteredAgent, inConflict: boolean): ListedTool => ({
+    agent,
+    device,
+    label: toolLabel(device, agent),
+    inConflict,
+  });
+  for (const device of devices) {
+    if (!deviceLive(device)) continue;
+    const { tools, conflicts } = deviceTools(device);
+    for (const agent of tools) out.push(row(device, agent, false));
+    for (const conflict of conflicts) {
+      for (const agent of conflict.agents) out.push(row(device, agent, true));
+    }
+  }
+  if (showRevoked) {
+    for (const device of devices) {
+      for (const agent of deviceTools(device).revoked) out.push(row(device, agent, false));
+    }
+  }
+  return out;
+}
+
+/** The tool with this id, wherever it is — revoked ones included, for its details. */
+export function findTool(devices: readonly Device[], agentId: string): ListedTool | undefined {
+  const device = deviceOf(devices, agentId);
+  const agent = device?.agents.find((a) => a.id === agentId);
+  if (device === undefined || agent === undefined) return undefined;
+  const inConflict = deviceTools(device).conflicts.some((c) =>
+    c.agents.some((a) => a.id === agentId),
+  );
+  return { agent, device, label: toolLabel(device, agent), inConflict };
+}
+
+/** Listed devices with legacy duplicate pairs, and how many pairs in all. */
+export function conflictsToReview(devices: readonly Device[]): {
+  readonly devices: readonly Device[];
+  readonly count: number;
+} {
+  const withConflicts = devices.filter(
+    (device) => deviceLive(device) && deviceTools(device).conflicts.length > 0,
+  );
+  return {
+    devices: withConflicts,
+    count: withConflicts.reduce((n, device) => n + deviceTools(device).conflicts.length, 0),
+  };
+}
+
+/** A paired device the tool wizard can add to: none means *Add a device first*. */
+export function anyPaired(devices: readonly Device[]): boolean {
+  return devices.some(pairedDevice);
+}
+
+/**
+ * What a tool row's action is. A tool that needs setup on a paired device,
+ * of a kind `laika tool add` sets up, finishes in the Add tool wizard's
+ * reconnect (an exchange its device redeems); one the helper cannot set up
+ * finishes in its details, where the browser-shown credential is. Anything
+ * else goes on to *Set up project*.
+ */
+export type ToolAction = 'set-up-project' | 'finish-in-wizard' | 'finish-in-details' | 'none';
+
+export function toolAction(listed: ListedTool, status: Pick<ListedStatus, 'key'>): ToolAction {
+  if (listed.agent.status !== 'active') return 'none';
+  if (status.key !== 'needs-setup') return 'set-up-project';
+  return pairedDevice(listed.device) && catalogTool(listed.agent.harness)?.cliSetup === true
+    ? 'finish-in-wizard'
+    : 'finish-in-details';
 }
 
 // ------------------------------------------------------------------ what stops

@@ -221,12 +221,13 @@ void describe('Developer access tabs by mode (LAI-1048, plan §C, §I)', () => {
       'Tokens',
       'Overview [Preview]',
       'Devices [Preview]',
+      'Tools [Preview]',
       'Advanced [Preview]',
     ]);
   });
 
-  void test('v3 is Overview, Project setup, Devices, Advanced — Activity is a card on Advanced', () => {
-    assert.deepEqual(labels('v3'), ['Overview', 'Project setup', 'Devices', 'Advanced']);
+  void test('v3 is Overview, Project setup, Devices, Tools, Advanced — Activity is a card on Advanced', () => {
+    assert.deepEqual(labels('v3'), ['Overview', 'Project setup', 'Devices', 'Tools', 'Advanced']);
     assert.equal(
       ids('v3').includes('activity'),
       false,
@@ -250,7 +251,7 @@ void describe('Developer access tabs by mode (LAI-1048, plan §C, §I)', () => {
   });
 
   void test('preview opens the V3-only tabs by id, and classic does not', () => {
-    for (const id of ['overview', 'devices', 'advanced']) {
+    for (const id of ['overview', 'devices', 'tools', 'advanced']) {
       const asked = new URLSearchParams(`tab=${id}`);
       assert.equal(currentTab(developerTabs('preview'), asked), id);
       assert.equal(currentTab(developerTabs('classic'), asked), 'connect');
@@ -274,11 +275,26 @@ void describe('old Developer access addresses in V3 (LAI-1048, plan §C)', () =>
   /** Every §C row: what the v3 address becomes. `undefined` means it stays. */
   const ROWS: readonly (readonly [string, string | undefined])[] = [
     ['tab=connect', 'tab=overview'],
-    ['tab=connect&agent=codex', 'tab=devices&add=tool&tool=codex'],
-    ['tab=connect&step=2', 'tab=devices&add=tool'],
-    ['tab=connect&agent=claude-code&step=3', 'tab=devices&add=tool&tool=claude-code'],
-    ['tab=agents', 'tab=devices'],
-    ['tab=agents&agent=01ABC', 'tab=devices&agent=01ABC'],
+    ['tab=connect&agent=codex', 'tab=tools&add=tool&tool=codex'],
+    ['tab=connect&step=2', 'tab=tools&add=tool'],
+    ['tab=connect&agent=claude-code&step=3', 'tab=tools&add=tool&tool=claude-code'],
+    // LAI-1080: a tool lives on Tools; Add device stays on Devices.
+    ['tab=agents', 'tab=tools'],
+    ['tab=agents&agent=01ABC', 'tab=tools&agent=01ABC'],
+    ['tab=agents&add=device', 'tab=devices&add=device'],
+    ['tab=devices&agent=01ABC', 'tab=tools&agent=01ABC'],
+    ['tab=devices&add=tool', 'tab=tools&add=tool'],
+    ['tab=devices&add=tool&device=d1&tool=codex', 'tab=tools&add=tool&device=d1&tool=codex'],
+    ['tab=devices&add=tool&reconnect=a1', 'tab=tools&add=tool&reconnect=a1'],
+    ['tab=devices&add=tool&exchange=x1&utm=y', 'tab=tools&add=tool&exchange=x1&utm=y'],
+    ['tab=devices', undefined],
+    ['tab=devices&device=d1', undefined],
+    ['tab=devices&add=device&pairing=p1', undefined],
+    ['tab=devices&add=device&device=d1&tool=codex', undefined],
+    ['tab=devices&agent=', undefined],
+    ['tab=tools', undefined],
+    ['tab=tools&agent=01ABC', undefined],
+    ['tab=tools&add=tool&tool=codex', undefined],
     ['tab=tokens', 'tab=advanced'],
     ['tab=projects', undefined],
     // LAI-1078: Activity is Advanced's second card, which `section` scrolls to.
@@ -286,7 +302,6 @@ void describe('old Developer access addresses in V3 (LAI-1048, plan §C)', () =>
     ['tab=activity&section=other&x=1', 'tab=advanced&section=activity&x=1'],
     ['tab=advanced&section=activity', undefined],
     ['tab=overview', undefined],
-    ['tab=devices&add=tool', undefined],
     ['tab=advanced', undefined],
     ['', undefined],
   ];
@@ -309,19 +324,19 @@ void describe('old Developer access addresses in V3 (LAI-1048, plan §C)', () =>
     assert.equal(alias('v3', 'tab=connect&utm=x'), 'tab=overview&utm=x');
     assert.equal(
       alias('v3', 'tab=connect&agent=codex&step=2&utm=x'),
-      'tab=devices&add=tool&tool=codex&utm=x',
+      'tab=tools&add=tool&tool=codex&utm=x',
     );
   });
 
   void test('a repeated parameter travels with every value, in order (review round 1)', () => {
     assert.equal(alias('v3', 'tab=tokens&x=1&x=2'), 'tab=advanced&x=1&x=2');
-    assert.equal(alias('v3', 'tab=agents&agent=a1&x=1&x=2'), 'tab=devices&agent=a1&x=1&x=2');
+    assert.equal(alias('v3', 'tab=agents&agent=a1&x=1&x=2'), 'tab=tools&agent=a1&x=1&x=2');
     assert.equal(alias('v3', 'tab=connect&x=1&x=2'), 'tab=overview&x=1&x=2');
     // The wizard's own two are spent: only the first `agent` becomes the tool,
     // and no stray copy of `agent` or `step` rides along.
     assert.equal(
       alias('v3', 'tab=connect&agent=codex&agent=cursor&step=2&step=3&x=1&x=2'),
-      'tab=devices&add=tool&tool=codex&x=1&x=2',
+      'tab=tools&add=tool&tool=codex&x=1&x=2',
     );
   });
 
@@ -346,8 +361,8 @@ void describe('old Developer access addresses in V3 (LAI-1048, plan §C)', () =>
     assert.equal(connect, '/developer?tab=connect&agent=codex');
     assert.equal(tokens, '/developer?tab=tokens');
     const query = (url: string | undefined) => url?.slice(url.indexOf('?') + 1) ?? '';
-    assert.equal(alias('v3', query(connect)), 'tab=devices&add=tool&tool=codex');
+    assert.equal(alias('v3', query(connect)), 'tab=tools&add=tool&tool=codex');
     assert.equal(alias('v3', query(tokens)), 'tab=advanced');
-    assert.equal(alias('v3', query(deep)), 'tab=devices&add=tool&tool=cursor');
+    assert.equal(alias('v3', query(deep)), 'tab=tools&add=tool&tool=cursor');
   });
 });

@@ -1010,7 +1010,7 @@ void describe('Project setup, v3', () => {
       await h.page.getByText('No connected tools yet').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.dx-empty').count(), 1);
       await h.page.getByRole('button', { name: 'Add a tool' }).click();
-      await h.page.waitForURL(/add=tool/, { timeout: 20_000 });
+      await h.page.waitForURL(/tab=tools&add=tool/, { timeout: 20_000 });
     } finally {
       await h.close();
     }

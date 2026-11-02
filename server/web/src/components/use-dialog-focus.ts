@@ -51,7 +51,18 @@ export function useDialogFocus(dialog: RefObject<HTMLElement | null>, focus: Dia
 
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== 'Tab') return;
-      const target = trapTarget(controls(), document.activeElement as HTMLElement, event.shiftKey);
+      // Another modal opened over this one — a confirmation asked from a side
+      // panel (LAI-1080) — holds Tab itself; pulling focus back here would trap
+      // it on that modal's first control.
+      const active = document.activeElement;
+      if (
+        active !== null &&
+        !box.contains(active) &&
+        active.closest('[aria-modal="true"]') !== null
+      ) {
+        return;
+      }
+      const target = trapTarget(controls(), active as HTMLElement, event.shiftKey);
       if (target === undefined) return;
       event.preventDefault();
       target.focus();

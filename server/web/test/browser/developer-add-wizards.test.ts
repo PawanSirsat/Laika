@@ -9,8 +9,9 @@
  *   address and no storage, and no `lai_` reaches the page.
  * - A tool is *Ready* only on its own request and a session where it has
  *   hooks; another tool's request ticks nothing.
- * - A duplicate pair routes to the conflicts; a paired device's Reconnect is
- *   an exchange, not a secret in the browser; classic mode is untouched.
+ * - A duplicate pair routes to that tool's details, where it is renamed; a
+ *   paired device's Reconnect is an exchange, not a secret in the browser;
+ *   classic mode is untouched.
  */
 
 import assert from 'node:assert/strict';
@@ -437,7 +438,7 @@ void describe('Add tool: the command, and checks from evidence', () => {
       };
     };
     const h = await open(
-      '/developer?tab=devices&add=tool&tool=claude-code',
+      '/developer?tab=tools&add=tool&tool=claude-code',
       stub('v3', [deviceRow('d1', 'Belka', true)], {
         '/api/v1/devices/d1/tools': () =>
           reply(201, {
@@ -545,10 +546,10 @@ void describe('Add tool: the command, and checks from evidence', () => {
     }
   });
 
-  void test('a duplicate pair routes to the device’s conflicts', async () => {
+  void test('a duplicate pair routes to the tool’s details, where it can be renamed', async () => {
     const twins = [agentRow('a2', 'codex'), agentRow('a3', 'codex')];
     const h = await open(
-      '/developer?tab=devices&add=tool&tool=codex',
+      '/developer?tab=tools&add=tool&tool=codex',
       stub('v3', [deviceRow('d1', 'Belka', true, twins)], {
         '/api/v1/devices/d1/tools': reply(409, {
           error: {
@@ -566,16 +567,14 @@ void describe('Add tool: the command, and checks from evidence', () => {
       await page.getByRole('button', { name: 'Go to the conflicts' }).click();
       await wizard(page, 'tool').waitFor({ state: 'detached' });
       assert.match(page.url(), /agent=a2/);
-      await until(
-        async () =>
-          (await page
-            .locator('.dv3-device[data-device="d1"] [data-conflicts]')
-            .getAttribute('open')) !== null,
+      assert.match(page.url(), /tab=tools/);
+      // LAI-1080: its details, where one of a pair is renamed.
+      const details = page.locator(
+        '.side-panel[data-panel="tool"] .dv3-tool-details[data-agent="a2"]',
       );
-      assert.notEqual(
-        await page.locator('.dv3-device[data-device="d1"] [data-conflicts]').getAttribute('open'),
-        null,
-      );
+      await details.waitFor({ timeout: 10_000 });
+      assert.equal(await details.locator('[data-rename]').count(), 1);
+      assert.equal(await details.getByRole('button', { name: 'Rename…' }).count(), 1);
     } finally {
       await h.close();
     }
@@ -583,7 +582,7 @@ void describe('Add tool: the command, and checks from evidence', () => {
 
   void test('no paired device: pair one first, keeping the tool', async () => {
     const h = await open(
-      '/developer?tab=devices&add=tool&tool=codex',
+      '/developer?tab=tools&add=tool&tool=codex',
       stub('v3', [deviceRow('d2', 'Strelka', false)]),
     );
     try {
@@ -604,7 +603,7 @@ void describe('Add tool: the command, and checks from evidence', () => {
   void test('Reconnect on a paired device is an exchange: no rotate, no secret', async () => {
     const a1 = agentRow('a1', 'claude-code');
     const h = await open(
-      '/developer?tab=devices',
+      '/developer?tab=tools&agent=a1',
       stub('v3', [deviceRow('d1', 'Belka', true, [a1])], {
         '/api/v1/agents/a1/reconnect': () =>
           reply(201, {
@@ -638,9 +637,11 @@ void describe('Add tool: the command, and checks from evidence', () => {
     );
     try {
       const page = h.page;
-      await page.locator('.dv3-tool[data-agent="a1"]').waitFor({ timeout: 20_000 });
-      await page.getByRole('button', { name: 'More actions for Claude Code · Belka' }).click();
-      await page.getByRole('menuitem', { name: 'Reconnect (new credential)…' }).click();
+      const details = page.locator(
+        '.side-panel[data-panel="tool"] .dv3-tool-details[data-agent="a1"]',
+      );
+      await details.waitFor({ timeout: 20_000 });
+      await details.getByRole('button', { name: 'Reconnect (new credential)…' }).click();
       await until(async () => (await step(page, 'tool')) === '2', 15_000);
       assert.match(page.url(), /reconnect=a1/);
       // Step 1 is done and names the tool, never a tick beside "Not yet" (LAI-1071).
@@ -794,7 +795,7 @@ void describe('review round 1 (PR #215)', () => {
 
   void test('an exchange that expired unredeemed stops the polling and offers a new command', async () => {
     const h = await open(
-      '/developer?tab=devices&add=tool&tool=claude-code',
+      '/developer?tab=tools&add=tool&tool=claude-code',
       stub('v3', [deviceRow('d1', 'Belka', true)], {
         '/api/v1/devices/d1/tools': toolCreated,
         '/api/v1/tool-setup/x1': exchangeRow('expired', false),
@@ -821,7 +822,7 @@ void describe('review round 1 (PR #215)', () => {
 
   void test('closing Add tool with an open exchange asks, then cancels it', async () => {
     const h = await open(
-      '/developer?tab=devices&add=tool&tool=claude-code',
+      '/developer?tab=tools&add=tool&tool=claude-code',
       stub('v3', [deviceRow('d1', 'Belka', true)], {
         '/api/v1/devices/d1/tools': toolCreated,
         '/api/v1/tool-setup/x1': (call: StubCall) =>
@@ -852,7 +853,7 @@ void describe('review round 1 (PR #215)', () => {
     };
     perms.me.actions = perms.me.actions.filter((a) => a !== 'agent.manage_own');
     const h = await open(
-      '/developer?tab=devices&add=tool&tool=claude-code',
+      '/developer?tab=tools&add=tool&tool=claude-code',
       stub('v3', [deviceRow('d1', 'Belka', true)], { '/api/v1/permissions': perms }),
     );
     try {
@@ -874,7 +875,7 @@ void describe('review round 1 (PR #215)', () => {
 
   void test('a tool the helper refuses gets the manual step, never a laika tool add command', async () => {
     const h = await open(
-      '/developer?tab=devices&add=tool&tool=zed',
+      '/developer?tab=tools&add=tool&tool=zed',
       stub('v3', [deviceRow('d1', 'Belka', true)]),
     );
     try {

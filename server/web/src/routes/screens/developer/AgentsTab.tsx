@@ -1655,7 +1655,10 @@ export function RenameForm({
         save();
       }}
       onKeyDown={(event) => {
-        if (event.key === 'Escape') onCancel();
+        if (event.key !== 'Escape') return;
+        // Handled: a side panel around the form (LAI-1080) must not close too.
+        event.preventDefault();
+        onCancel();
       }}
     >
       <label className="agents-field">
@@ -1746,7 +1749,10 @@ export function AccessForm({
     <div
       className="agents-panel"
       onKeyDown={(event) => {
-        if (event.key === 'Escape') onCancel();
+        if (event.key !== 'Escape') return;
+        // Handled: a side panel around the form (LAI-1080) must not close too.
+        event.preventDefault();
+        onCancel();
       }}
     >
       <GrantEditor
