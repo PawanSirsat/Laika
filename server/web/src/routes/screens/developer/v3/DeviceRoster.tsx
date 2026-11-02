@@ -606,11 +606,17 @@ export function DeviceRoster({
           onClose={closeWizard}
         />
       )}
+      {/* An open wizard stands in place of its list, as the owner's design
+          draws it (LAI-1081); its *Back to …* and *Cancel* bring the list back.
+          The provider stays mounted under it, so a wizard opened and closed
+          asks nothing of the board again (review round 1). */}
       {devices === undefined ? (
-        lists
+        wizard ? null : (
+          lists
+        )
       ) : (
         <UpdatesProvider agentIds={updateIds} origin={origin} announce={announce}>
-          {lists}
+          {wizard ? null : lists}
         </UpdatesProvider>
       )}
     </div>

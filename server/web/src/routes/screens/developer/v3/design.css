@@ -126,6 +126,7 @@
 /* ---- buttons: the design's are taller than a bar's ---- */
 
 .dx-btn {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -737,6 +738,12 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* The title takes focus on each step for a screen reader's sake; it is not a
+   control, so the design draws no ring round it. */
+.dx-wizard .conn-card-title:focus-visible {
+  outline: none;
+}
+
 .dx-wizard .conn-card-body {
   min-height: 14rem;
   padding: 1.6875rem 1.75rem;
@@ -886,14 +893,27 @@
     display: none;
   }
 
+  /* Connect's list is a flex column; the strip is the same list as a row. */
   .dx-rail-card .conn-steps {
-    display: flex;
+    flex-direction: row;
     gap: 0.3125rem;
-    overflow-x: auto;
   }
 
   .dx-rail-card .conn-step {
-    flex: 1 0 auto;
+    flex: 1 1 0;
+  }
+
+  .dx-rail-card .conn-rail-step {
+    flex-direction: column;
+    gap: 0.3125rem;
+    height: 100%;
+    padding: 0.5625rem 0.25rem;
+    text-align: center;
+  }
+
+  .dx-rail-card .conn-rail-name {
+    font-size: var(--text-small);
+    line-height: var(--leading-small);
   }
 }
 

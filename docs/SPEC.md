@@ -6296,8 +6296,12 @@ anything missing sends the task back.
   and *Tools* the coding tools on them (LAI-1080), one line a row from the
   same `GET /devices`; everything a row has no room for opens in a **details
   side panel** addressed by the URL (`?tab=devices&device=<id>`,
-  `?tab=tools&agent=<id>`), which Back, Escape, the scrim and × close.
-  *Advanced* is the reader's personal credentials, then the *Share local
+  `?tab=tools&agent=<id>`), which Back, Escape, the scrim and × close —
+  except that while a credential created in the browser is on screen, ×,
+  Escape and the scrim ask *Close without copying the new credential?* first
+  (LAI-1081). *Add device* and *Add tool* stand in place of their list while
+  open: a titled rail of three steps, *Step n of 3 · Device* or *· Tool*, and
+  a footer band with the note and the actions. *Advanced* is the reader's personal credentials, then the *Share local
   activity* card (*Once per device*); the old `?tab=activity` lands on it as
   `?tab=advanced&section=activity`, which scrolls to it and focuses its title.
 - **Tokens** (on Developer access) — create with name and scope; **value shown exactly once** with a

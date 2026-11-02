@@ -24,6 +24,8 @@ export interface DesignWizardProps {
 
   /** The footer band's sentence, on the left; it wraps, the buttons never do. */
   readonly note: ReactNode;
+  /** The note's id, so the primary can be described by it. */
+  readonly noteId?: string;
   /** *Back* and the primary, on the right. */
   readonly actions: ReactNode;
   /** Cards beside the step, such as *What stays separate*. Hidden ≤ 1040px. */
@@ -58,6 +60,7 @@ export function DesignWizard({
   titleId,
   titleRef,
   note,
+  noteId,
   actions,
   aside,
   wizard,
@@ -85,7 +88,9 @@ export function DesignWizard({
         titleRef={titleRef}
         footer={
           <footer className="dx-wizard-foot">
-            <p className="dx-wizard-note">{note}</p>
+            <p className="dx-wizard-note" id={noteId}>
+              {note}
+            </p>
             <div className="dx-actions">{actions}</div>
           </footer>
         }

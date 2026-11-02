@@ -31,11 +31,6 @@
   color: var(--text-secondary);
 }
 
-/* The full-width button is as wide as its card's padding box, not wider. */
-.dx-overview .dx-btn-full {
-  box-sizing: border-box;
-}
-
 .dx-overview-aside {
   margin: var(--space-3) 0 0;
   font-size: var(--text-small);
