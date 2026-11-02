@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: [LAI-1050]
 started: 2026-11-02T16:30:00+05:30
-status: in-progress
+status: review
+finished: 2026-11-02T18:40:00+05:30
 ---
 
 Slice C2 of `docs/proposals/LAI-1042-developer-access-v3-plan.md` (§D.2
@@ -98,9 +99,9 @@ No new activity verb (L4). No new §3.1 action (L5).
       single redeem.
 - [x] Rate limit per exchange: a flood against one exchange cannot stop
       another from redeeming.
-- [ ] Evidence comes only from the agent's own credential; another tool's
+- [x] Evidence comes only from the agent's own credential; another tool's
       request, or a personal token, does not count.
-- [ ] Client report: strict schema and caps; agent token only; old clients
+- [x] Client report: strict schema and caps; agent token only; old clients
       unaffected.
 - [x] SPEC rows for the new routes and tables.
 
@@ -129,3 +130,41 @@ FAIL on one blocker; the security core passed.
   - one table per harness, with a test.
 - **Named CHIEF-area edits (D-033):** SPEC §6.1, the sentence and one
   verbatim paragraph; `docs/DECISIONS.md` D-125.
+
+### Round 1 fixes (`cf131005`, `a00bdd45`)
+
+- **B1:** `recordMcpClientReport` now rewrites a row that carries a time
+  while presence is off. `getAgentVerification` nulls `tool_request.at` and
+  `client_report.reported_at` whenever presence is off. Test: presence on,
+  initialize, presence off, read and initialize again; `at` is null and the
+  stored time is gone.
+- **N1:** redeem refuses another owner's device, and an agent moved off the
+  device, with the uniform `404`.
+- **N2:** the comment now says the fifth bad signature cancels.
+- **N3:** add tool matches an agent by `device_id` or by label key. Tested
+  with a drifted label.
+- **N4:**
+  - an unsigned redeem of a non-open setup is `409 exchange_<state>`, and
+    never returns the challenge;
+  - the `device_revoked` branch is tested;
+  - the sibling `404` body is compared with the unknown one;
+  - `revokes_on_redeem` lists the tokens a redeem revokes, and is empty for
+    `install`.
+- **D-125 evidence:**
+  - `server/src/services/harness-evidence.ts` holds `HARNESS_EVIDENCE`, a
+    `Record<AgentClient, …>`, tested by name;
+  - omnigent and hermes are generic and need `tool_setup_exchange` and
+    `client_report`; `other` is unverifiable;
+  - the client report gains `harness`, and `agent_client_reports.harness`
+    is added in 0072, which is unreleased and was regenerated in place;
+  - the new check `required_capabilities` gates Ready.
+- **Named edits:** SPEC §6.1, the sentence and the verbatim paragraph;
+  `docs/DECISIONS.md` D-125.
+- Eight mutants, one per fix, each went red in its own test.
+
+**A tension for CHIEF:** the verbatim §6.1 paragraph says "Refusals before
+the signature are one `404`", but N4 makes an unsigned request on a spent,
+expired or cancelled setup a `409`. That request names both ids, the
+exchange's and its device's, so a caller who is not the device learns one
+thing: the state of an exchange whose ids they already hold. Either the
+sentence or N4 should give way; this PR does what each asked.
