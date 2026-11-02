@@ -2,11 +2,12 @@
 id: LAI-1071
 title: 'V3 wizards: Reconnect''s rail shows a tick on "Not yet", and Overview''s Add-a-device copy talks about a tool'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-1069
-status: backlog
+status: in-progress
+started: 2026-11-02T02:20:43Z
 ---
 
 Two small things seen in the LAI-1069 walkthrough

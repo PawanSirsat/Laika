@@ -2,11 +2,12 @@
 id: LAI-1070
 title: 'Devices hides a paired device once its only tool is disconnected, and says every device is revoked'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-1069
-status: backlog
+status: in-progress
+started: 2026-11-02T02:20:43Z
 ---
 
 Found in the LAI-1069 walkthrough (`docs/acceptance/LAI-1069-developer-access-v3.md`,

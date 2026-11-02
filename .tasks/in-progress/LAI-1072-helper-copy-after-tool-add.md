@@ -2,11 +2,12 @@
 id: LAI-1072
 title: 'Helper copy after tool add: names a check the browser does not show, and doctor sends a V3 tool to agent login'
 area: cli
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-1069
-status: backlog
+status: in-progress
+started: 2026-11-02T02:20:43Z
 ---
 
 Seen in the LAI-1069 walkthrough
