@@ -557,7 +557,8 @@ export function PeopleTab({
                 <span role="columnheader">Person</span>
                 <span role="columnheader">Role</span>
                 <span role="columnheader">Spaces</span>
-                <span role="columnheader">Agents</span>
+                {/* Presence, not registered agents (LAI-1058, plan §B.7). */}
+                <span role="columnheader">Tools running</span>
                 <span role="columnheader">Last active</span>
                 <span role="columnheader">Last sign-in</span>
                 <span role="columnheader" className="visually-hidden">
