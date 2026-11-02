@@ -848,6 +848,9 @@ function target(
   const harness = option(argv, '--harness');
   const id = option(argv, '--harness-session');
   if (!isHarness(harness)) return `--harness must be one of ${HARNESSES.join(', ')}`;
+  if (adapter(harness).credentialOnly === true) {
+    return `${name(harness)} is credential only: Laika opens no sessions for it (cli/agent-adapters/CAPABILITIES.md)`;
+  }
   if (id === undefined || id === '') return '--harness-session <id> is required';
   const credential = readCredential(io.home, harness, io.env);
   if (credential === undefined) {

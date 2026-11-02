@@ -157,10 +157,24 @@ export function credentialFingerprint(credential: AgentCredential): string {
     .slice(0, 16);
 }
 
-export function writeCredential(home: string, harness: Harness, credential: AgentCredential): void {
+/**
+ * `extra` is what `laika tool add` records beside the credential (LAI-1060):
+ * the agent and device ids, and `source: "tool-add"`, which is what
+ * `laika-claude` reads before it prefers this token to the person's own.
+ * Nothing that reads a credential looks at any of it.
+ */
+export function writeCredential(
+  home: string,
+  harness: Harness,
+  credential: AgentCredential,
+  extra: Readonly<Record<string, string>> = {},
+): void {
   privateDir(join(home, '.laika'));
   privateDir(agentsDir(home));
-  writePrivate(credentialPath(home, harness), `${JSON.stringify(credential, null, 2)}\n`);
+  writePrivate(
+    credentialPath(home, harness),
+    `${JSON.stringify({ url: credential.url, token: credential.token, ...extra }, null, 2)}\n`,
+  );
 }
 
 /**
