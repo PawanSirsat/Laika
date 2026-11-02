@@ -3881,26 +3881,31 @@ GET    /api/v1/developer/compatibility       public: the build, the helper proto
 **`GET /developer/compatibility` answers before sign-in, like `/health`**
 (LAI-1043). `laika doctor` and a fresh install read it before they hold a
 credential. It reads no data and no actor, so an anonymous caller and a
-signed-in one get the same body, built from §11.7's settings alone:
+signed-in one get the same body, built from §11.7's settings and the app's own
+route table as fixed at boot (D-123, amended by LAI-1062):
 `server { version, build_commit }`, `protocol { current, min_client }`,
 `features { developer_access, device_pairing, tool_setup_exchange,
 client_reports, project_setups }` (the mode of `LAIKA_DEVELOPER_ACCESS`, then a
 closed set of booleans, each `true` exactly when this build mounts every route
-that feature names — `POST /device-pairing/claim` and `/:id/complete`,
-`POST /tool-setup/:id/redeem`, `POST /agents/me/client-report` — and
-`project_setups` `false` until a server-side project setup record exists;
-LAI-1062),
+that feature names, LAI-1062). `device_pairing` is
+`POST /devices/pairing-requests`, `POST /devices/pairing-requests/:id/approve`,
+`POST /device-pairing/claim` and `POST /device-pairing/:id/complete`;
+`tool_setup_exchange` is `POST /devices/:id/tools` and
+`POST /tool-setup/:id/redeem`; `client_reports` is
+`POST /agents/me/client-report`. `project_setups` is `false` until a
+server-side project setup record exists.
 `cli { min_protocol_for, source { type: 'git', url, commit, path } }` and
 `release_notes { ref, whats_new[] }`. The protocol range a helper must speak is
-`protocol.min_client` to `protocol.current` — today `1` to `2`: protocol 2 is
-the three features above, and a protocol-1 helper keeps working; `cli.min_protocol_for` names the
-protocol each feature needs once it is on. `build_commit` is `null` when the
-image was built without one. Nothing in it is a secret, and
-`LAIKA_CLI_SOURCE_URL` is refused at boot if it carries a user, password, query
-or fragment. **Before first-boot setup it answers `409`, like every API path
-but `/health` and `/setup`** (`conflict`, `details.setup_required: true`). An
-old board answers `404`, which a helper reads as *"this board cannot say"*.
-`/health` gained `build_commit` beside its three original fields, unchanged.
+`protocol.min_client` to `protocol.current`, today `1` to `2`: protocol 2 is the
+three features above, and a protocol-1 helper keeps working.
+`cli.min_protocol_for` names the protocol each feature needs once it is on.
+`build_commit` is `null` when the image was built without one. Nothing in it is
+a secret, and `LAIKA_CLI_SOURCE_URL` is refused at boot if it carries a user,
+password, query or fragment. **Before first-boot setup it answers `409`, like
+every API path but `/health` and `/setup`** (`conflict`,
+`details.setup_required: true`). An old board answers `404`, which a helper
+reads as *"this board cannot say"*. `/health` gained `build_commit` beside its
+three original fields, unchanged.
 
 `PATCH /tasks/:id` accepts a partial
 `{ title, description_md, acceptance_md, tags, priority, assignee_id,
