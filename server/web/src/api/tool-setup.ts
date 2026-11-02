@@ -50,6 +50,12 @@ export interface VerificationCheck<D> {
   readonly detail: D;
 }
 
+export interface CredentialDetail {
+  readonly token_id: string | null;
+  /** Its newest live token was minted by an exchange this device redeemed. */
+  readonly via_exchange: boolean;
+}
+
 /**
  * What the board can show about one agent's tool, **from that agent's own
  * credential only**. The status word is this client's to work out, with the
@@ -64,17 +70,19 @@ export interface AgentVerification {
   readonly last_seen_at: number | null;
   readonly checks: {
     readonly device_paired: VerificationCheck<{ readonly device_id: string | null }>;
-    readonly credential_installed: VerificationCheck<{
-      readonly token_id: string | null;
-      readonly via_exchange: boolean;
-    }>;
+    readonly credential_installed: VerificationCheck<CredentialDetail>;
     /** Any request on a live credential — a `curl` counts here, and only here. */
     readonly credential_used: VerificationCheck<null>;
     /** An MCP `initialize` on this agent's own credential, naming this tool. */
+    /*
+     * Inline, as the server writes it: `view-type-drift.test.ts` reads the
+     * lines of a nested block as fields, so both sides lay it out alike.
+     */
     readonly tool_request: VerificationCheck<{
       readonly client_slug: string | null;
       readonly client_name: string | null;
       readonly client_version: string | null;
+      /** The tool's own word for itself, as a `User-Agent` is. */
       readonly self_reported: true;
     }>;
     readonly session_hooks: VerificationCheck<{ readonly harness: string | null }>;

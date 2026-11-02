@@ -21,7 +21,14 @@ import { ToolTile } from '../../../../components/wizard/ToolTile.tsx';
 import { WizardCard } from '../../../../components/wizard/WizardCard.tsx';
 import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
-import { POLL_FIRST_MS, nextPollDelay, toolRefusal, type ToolRefusal } from './add-flow.ts';
+import {
+  POLL_FIRST_MS,
+  nextPollDelay,
+  pairedDevice,
+  toolAddCommand,
+  toolRefusal,
+  type ToolRefusal,
+} from './add-flow.ts';
 import {
   MODE_MEANING,
   MODE_WORDS,
@@ -63,21 +70,6 @@ const STEP_NAMES: Readonly<Record<Step, string>> = {
   2: 'Run it and check',
   3: 'Finish',
 };
-
-/** Whether a device can take a tool: active, and holding a key this board approved. */
-export function pairedDevice(device: Device): boolean {
-  return device.status === 'active' && device.paired_at !== null;
-}
-
-/**
- * The command for an exchange this page made before a reload — exactly the
- * server's (`services/tool-setup.ts` builds `laika tool add <harness>
- * --exchange <id>`; `add-tool.test.ts` reads that template there), since
- * the `201` that carried it is gone.
- */
-export function toolAddCommand(harness: string, exchangeId: string): string {
-  return `laika tool add ${harness} --exchange ${exchangeId}`;
-}
 
 interface Setup {
   readonly agent: RegisteredAgent;

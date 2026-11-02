@@ -1,5 +1,6 @@
 import type { CliSource } from '../../../../api/developer-compat.ts';
 import type { PairingState } from '../../../../api/device-pairing.ts';
+import type { Device } from '../../../../api/devices.ts';
 import { ApiError, NetworkError } from '../../../../api/errors.ts';
 
 /**
@@ -72,6 +73,21 @@ export function bootstrapCommands(
         ? `Version unknown: this board does not know which commit it was built from. Keep the helper current with \`git -C ${CHECKOUT} pull\`.`
         : undefined,
   };
+}
+
+/** Whether a device can take a tool: active, and holding a key this board approved. */
+export function pairedDevice(device: Pick<Device, 'status' | 'paired_at'>): boolean {
+  return device.status === 'active' && device.paired_at !== null;
+}
+
+/**
+ * The command for an exchange this page made before a reload — exactly the
+ * server's, since the `201` that carried it is gone. `services/tool-setup.ts`
+ * builds it; `add-flow.test.ts` reads the template there, so the two cannot
+ * part silently.
+ */
+export function toolAddCommand(harness: string, exchangeId: string): string {
+  return `laika tool add ${harness} --exchange ${exchangeId}`;
 }
 
 /** A pairing request that will not move again. */

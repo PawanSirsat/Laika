@@ -197,18 +197,13 @@ const UNPAIRED = new Map<string, string>([
   // `web/src/api/org.ts` — and the staleness guard below is what noticed, by
   // firing on a *reason* going false rather than on an entry going unnecessary.
   ['AvatarView', 'no client type exists'],
-  // LAI-1050: pairing is served ahead of the V3 pairing screen and the CLI's
-  // `laika device pair`; plan LAI-1042 slices C3 and D write their types.
-  ['CreatedPairingView', 'no client type exists'],
-  ['DevicePairingView', 'no client type exists'],
+  // LAI-1050: the device's half of pairing; only the CLI's `laika device
+  // pair` reads it (plan LAI-1042 slice C3). LAI-1061 paired the owner's.
   ['PairingClaimView', 'no client type exists'],
   ['PairingCompleteView', 'no client type exists'],
-  // LAI-1056: tool setup is served ahead of the V3 Devices screen and
-  // `laika tool add`; plan LAI-1042 slices C3 and D write their types.
-  ['CreatedToolSetupView', 'no client type exists'],
-  ['ToolSetupView', 'no client type exists'],
+  // LAI-1056: the redeem answer is the device's alone (`laika tool add`,
+  // slice C3). LAI-1061 paired the owner's tool setup and verification.
   ['ToolRedeemView', 'no client type exists'],
-  ['AgentVerificationView', 'no client type exists'],
   ['ClientReportView', 'no client type exists'],
   // LAI-1043: served ahead of the Developer access V3 screens that read it;
   // `laika doctor` is its only reader until then.

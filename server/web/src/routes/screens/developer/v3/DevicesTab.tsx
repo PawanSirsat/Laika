@@ -29,7 +29,8 @@ import {
 import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
 import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import { AddDeviceWizard } from './AddDeviceWizard.tsx';
-import { AddToolWizard, pairedDevice } from './AddToolWizard.tsx';
+import { AddToolWizard } from './AddToolWizard.tsx';
+import { pairedDevice } from './add-flow.ts';
 import { AccessForm, RenameForm, SecretPanel, grantSummary, useOnceSecret } from '../AgentsTab.tsx';
 import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
 import { cloudExpiry, cloudExpiryProblem, isCloudDevice, rotatableToken } from '../agent-wizard.ts';
