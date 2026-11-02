@@ -84,25 +84,31 @@ function pairedDevice(name: string, kind: 'local' | 'cloud' = 'local') {
   return { id, privateKey: pair.privateKey };
 }
 
+/**
+ * A signed redeem, with the challenge read from the row: before a signature,
+ * a setup that is no longer open is a 404 (§6.1), and these tests want the
+ * signed answer for that state.
+ */
 function redeem(exchangeId: string, device: { id: string; privateKey: KeyObject }, now = NOW) {
-  const first = redeemToolSetup(t.sqlite, t.db, {
-    id: exchangeId,
-    deviceId: device.id,
-    boardOrigin: ORIGIN,
-    now,
-  });
-  if (first.kind !== 'challenge') throw new Error(`expected a challenge, got ${first.kind}`);
+  const challenge =
+    t.db.select().from(toolSetupExchanges).where(eq(toolSetupExchanges.id, exchangeId)).get()
+      ?.challenge ?? 'missing';
   return redeemToolSetup(t.sqlite, t.db, {
     id: exchangeId,
     deviceId: device.id,
     signature: sign(
       null,
-      toolRedeemMessage(exchangeId, device.id, first.challenge, ORIGIN),
+      toolRedeemMessage(exchangeId, device.id, challenge, ORIGIN),
       device.privateKey,
     ).toString('base64url'),
     boardOrigin: ORIGIN,
     now,
   });
+}
+
+/** The unsigned half: the challenge, or the refusal. */
+function ask(exchangeId: string, deviceId: string, now = NOW) {
+  return redeemToolSetup(t.sqlite, t.db, { id: exchangeId, deviceId, boardOrigin: ORIGIN, now });
 }
 
 describe('the exchange', () => {
@@ -120,6 +126,12 @@ describe('the exchange', () => {
       code: 'conflict',
       reason: 'exchange_expired',
     });
+    // Unsigned, an expired setup is the uniform 404; it gives no challenge.
+    expect(refusal(() => ask(created.exchange.id, device.id, NOW + EXCHANGE_TTL_MS))).toEqual({
+      code: 'not_found',
+      reason: undefined,
+    });
+    expect(ask(created.exchange.id, device.id, NOW + EXCHANGE_TTL_MS - 1).kind).toBe('challenge');
     expect(redeem(created.exchange.id, device, NOW + EXCHANGE_TTL_MS - 1).kind).toBe('redeemed');
   });
 

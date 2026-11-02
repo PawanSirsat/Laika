@@ -166,11 +166,15 @@ async function challengeOf(exchangeId: string, deviceId: string): Promise<string
   return body.challenge;
 }
 
+/**
+ * A signed redeem. The challenge is read from the row, not asked for: an
+ * unsigned request on a setup that is no longer open is a 404 (N4, §6.1), and
+ * these tests want the signed answer for that state. `challengeOf` asks.
+ */
 async function redeem(exchangeId: string, device: { id: string; key: Key }): Promise<Response> {
-  const asked = await post(`/api/v1/tool-setup/${exchangeId}/redeem`, { device_id: device.id });
-  // A setup that is no longer open refuses the challenge itself (N4).
-  if (asked.status !== 200) return asked;
-  const { challenge } = (await asked.json()) as { challenge: string };
+  const challenge =
+    h.db.select().from(toolSetupExchanges).where(eq(toolSetupExchanges.id, exchangeId)).get()
+      ?.challenge ?? 'missing';
   return post(`/api/v1/tool-setup/${exchangeId}/redeem`, {
     device_id: device.id,
     signature: signRedeem(device.key, exchangeId, device.id, challenge),
@@ -434,8 +438,8 @@ describe('redeeming', () => {
       await req('/api/v1/tokens', {}, { cookie: bob.cookie }),
       await post(`/api/v1/tool-setup/${created.exchange.id}/redeem`, { device_id: device.id }),
     ];
-    // The last is a spent setup asked again: refused (N4), and still no secret.
-    expect(reads.map((res) => res.status)).toEqual([200, 200, 200, 200, 200, 409]);
+    // The last is a spent setup asked again: the uniform 404 (N4), no secret.
+    expect(reads.map((res) => res.status)).toEqual([200, 200, 200, 200, 200, 404]);
     for (const res of reads) expect(await res.text()).not.toContain(redeemed.secret);
   });
 
@@ -502,16 +506,30 @@ describe('redeeming', () => {
     expect(await wrongDevice.text()).toBe(await unknown.text());
   });
 
-  it('an unsigned request on a spent setup is refused, not given the challenge (N4)', async () => {
+  it('an unsigned request on a setup no longer open is the uniform 404, never the challenge (N4)', async () => {
     const device = await pair(bob.cookie);
     const { created } = await install(bob.cookie, device);
-    const res = await post(`/api/v1/tool-setup/${created.exchange.id}/redeem`, {
-      device_id: device.id,
-    });
-    const text = await res.clone().text();
-    expect(await refusal(res, 409)).toEqual({ code: 'conflict', reason: 'exchange_redeemed' });
-    const row = h.db.select().from(toolSetupExchanges).get();
-    expect(text).not.toContain(row?.challenge ?? 'missing');
+    const cancelled = await ok<Created>(await addTool(bob.cookie, device.id, 'codex'), 201);
+    const withdrawn = await req(
+      `/api/v1/tool-setup/${cancelled.exchange.id}`,
+      { method: 'DELETE' },
+      { cookie: bob.cookie },
+    );
+    expect(withdrawn.status).toBe(204);
+    const expired = await ok<Created>(await addTool(bob.cookie, device.id, 'cursor'), 201);
+    h.db
+      .update(toolSetupExchanges)
+      .set({ expiresAt: Date.now() - 1 })
+      .where(eq(toolSetupExchanges.id, expired.exchange.id))
+      .run();
+    const unknownBody = await (
+      await post(`/api/v1/tool-setup/${newId()}/redeem`, { device_id: device.id })
+    ).text();
+    for (const id of [created.exchange.id, cancelled.exchange.id, expired.exchange.id]) {
+      const res = await post(`/api/v1/tool-setup/${id}/redeem`, { device_id: device.id });
+      expect(res.status, id).toBe(404);
+      expect(await res.text()).toBe(unknownBody);
+    }
   });
 
   it('a device revoked since the setup was made mints nothing', async () => {

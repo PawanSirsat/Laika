@@ -3207,7 +3207,7 @@ browser-shown rotation, `POST /agents/:id/rotate-token`, is unchanged.
 
 **Redeeming** (`POST /tool-setup/:id/redeem`) is the device's, with no actor
 of its own. Without a `signature` it answers the challenge of an `open`
-exchange, and `409` `exchange_<state>` for any other; with one, an
+exchange, and the same `404` for any other; with one, an
 Ed25519 signature over
 `laika-tool-redeem-v1\n<id>\n<device_id>\n<challenge>\n<board origin>` by the
 device's paired key — the board's origin being `LAIKA_PUBLIC_URL`'s, `409`

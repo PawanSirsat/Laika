@@ -395,8 +395,9 @@ export interface RedeemInput {
  * the owner is asked again, then the token is minted, the agent's live
  * tokens revoked and the exchange marked redeemed, all in one transaction.
  *
- * An unknown id, another device's id, an unpaired device, and an exchange
- * whose owner may no longer manage agents are one `404`.
+ * An unknown id, another device's id, an unpaired device, an exchange whose
+ * owner may no longer manage agents, and — before a signature — one that is
+ * no longer open are one `404`.
  */
 export function redeemToolSetup(
   sqlite: Database.Database,
@@ -424,9 +425,9 @@ export function redeemToolSetup(
 
     if (input.signature === undefined) {
       // A spent, expired or withdrawn exchange has no challenge to give
-      // (PR #211 review, N4); the caller still had to name both ids.
-      const state = effectiveState(row, now);
-      if (state !== 'open') throw conflict(`This tool setup is ${state}`, `exchange_${state}`);
+      // (N4), and before a signature it is the same 404 as no exchange
+      // (§6.1): an unproven caller learns nothing of its state.
+      if (effectiveState(row, now) !== 'open') throw ApiError.notFound(NOT_FOUND);
       return { kind: 'challenge', challenge: row.challenge, expires_at: row.expiresAt };
     }
 
