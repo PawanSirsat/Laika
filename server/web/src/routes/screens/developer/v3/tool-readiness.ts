@@ -15,9 +15,16 @@ import type { ToolCapability } from './tool-catalog.ts';
  *   not announced itself on it — or, for a tool with sessions, has opened
  *   none yet.
  * - **Ready**: this tool's own MCP request on its own credential, and a
- *   session where the tool has them, last seen within 15 minutes.
- * - **Idle** / **Offline**: that evidence, last seen 15 min – 7 days ago, or
- *   longer.
+ *   session where the tool has them, **that request** within 15 minutes —
+ *   `tool_request.at`, never `last_seen_at`, which any request on any of the
+ *   agent's credentials moves, a `curl` included.
+ * - **Idle** / **Offline**: that evidence, the tool's own request 15 min – 7
+ *   days ago, or longer.
+ *
+ * **Presence off** (§4.2): the board then serves `tool_request.at` as null
+ * while the check passes — the one way the payload says it keeps no times
+ * (`last_seen_at` is served regardless, so it cannot tell). The most said then
+ * is *Connected*, with that reason: Ready is defined by recency.
  *
  * The board's `tool_request` already fails another tool's name; this reads
  * the slug again anyway, so a server that said `pass` for the wrong client
@@ -143,16 +150,17 @@ export function readiness(v: AgentVerification, tool: ToolCapability): Readiness
       reason: `${tool.name} called the board; no session from its hooks yet`,
     };
   }
-  const seen = v.last_seen_at ?? v.checks.tool_request.at;
+  // The tool's own request time — not `last_seen_at`. A passing check with no
+  // time is presence off: the board keeps no times, so it cannot say lately.
+  const seen = v.checks.tool_request.at;
   if (seen === null) {
-    // Every piece of evidence is in, but the board keeps no times (presence
-    // off): it cannot say the tool was seen lately, so it does not say Ready.
     return {
       ...base,
       key: 'connected',
       word: 'Connected',
       tone: 'waiting',
-      reason: 'All its evidence is in; this organisation does not record when it was last seen',
+      reason:
+        'All its evidence is in; this organisation has presence off, so the board does not record when it was last seen',
     };
   }
   const age = v.now - seen;
@@ -171,7 +179,7 @@ export function readiness(v: AgentVerification, tool: ToolCapability): Readiness
       key: 'idle',
       word: 'Idle',
       tone: 'neutral',
-      reason: `Last seen ${ago(seen, v.now)}`,
+      reason: `Its last own request was ${ago(seen, v.now)}`,
     };
   }
   return {
@@ -179,7 +187,7 @@ export function readiness(v: AgentVerification, tool: ToolCapability): Readiness
     key: 'offline',
     word: 'Offline',
     tone: 'warn',
-    reason: `Last seen ${ago(seen, v.now)}`,
+    reason: `Its last own request was ${ago(seen, v.now)}`,
   };
 }
 
