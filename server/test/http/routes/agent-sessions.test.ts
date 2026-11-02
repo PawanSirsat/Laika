@@ -730,6 +730,8 @@ const NOT_FENCED: Record<string, string> = {
     'session only (agent.manage_own); a rotate exchange for the agent, touches no task',
   'POST /api/v1/agents/me/client-report':
     'self-report on the agent’s own token (§4.81), as a heartbeat is; touches no task',
+  'POST /api/v1/project-setups':
+    'a record of a repo’s Laika block (§4.82, LAI-1066): the owner’s word or the agent’s own local check; touches no task',
   'POST /api/v1/agents/me/events/ack':
     'presence, as a heartbeat is (§4.77, LAI-553): records a delivery state, touches no task',
   'POST /api/v1/tokens': 'a credential, not a task',
