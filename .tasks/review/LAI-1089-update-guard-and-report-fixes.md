@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p1
 depends-on: [LAI-1085]
 discovered-from: LAI-1085
-status: in-progress
+status: review
 started: 2026-11-02T12:38:09Z
+finished: 2026-11-02T13:05:43Z
 ---
 
 ## Why
@@ -33,29 +34,29 @@ Found live on Belka (owner, 2026-11-02), all in `laika update`:
 
 ## Acceptance
 
-- [ ] The guard compares, for each MCP config it watches (`~/.claude.json`
+- [x] The guard compares, for each MCP config it watches (`~/.claude.json`
       and every `USER_CONFIG` file), **only the Laika entries**: in
       `~/.claude.json` the top-level `mcpServers.laika` and every
       `projects[<dir>].mcpServers.laika`; `mcpServers.laika` in the Cursor,
       Gemini CLI and Antigravity files; `mcp.laika` in OpenCode's; the
       `mcp_servers.laika` table (any TOML spelling) in Codex's. Nothing else
       in those files is kept, compared or printed; only the path is printed.
-- [ ] Tests: unrelated keys changing in those files during the update (Claude
+- [x] Tests: unrelated keys changing in those files during the update (Claude
       Code's own state, another server's entry, a Codex project trust level)
       do not roll back; a change to a Laika entry (top-level, per-project,
       Codex table) still rolls back, naming the file.
-- [ ] Whenever `laika update` looks for credentials to report with, it prints
+- [x] Whenever `laika update` looks for credentials to report with, it prints
       one line naming each `~/.laika/agents/*.json` it did not report for and
       why — file names only. A file whose name is no tool's is **not opened**
       (`polly.json` is LAI-1088's to read; how it is written or read does not
       change here).
-- [ ] A checkout `laika version --json` calls `dirty` sends no report, and the
+- [x] A checkout `laika version --json` calls `dirty` sends no report, and the
       output line says so — on the already-current path and after a switch.
-- [ ] Tests for origin matching: the same host on another port and http
+- [x] Tests for origin matching: the same host on another port and http
       against https are not this board; a trailing slash is.
-- [ ] Each fix has a test that goes red when the fix is undone (mutation
+- [x] Each fix has a test that goes red when the fix is undone (mutation
       checked, recorded in the log).
-- [ ] `cli/README.md` documents the mixed `sent for X; not sent for Y (500)`
+- [x] `cli/README.md` documents the mixed `sent for X; not sent for Y (500)`
       line, `it failed before anything was sent`, the skipped-files line and
       the dirty case, and its update section is wrapped to 80 columns.
 
