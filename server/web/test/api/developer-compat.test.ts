@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  boardBuildOf,
   DEVELOPER_ACCESS_MODES,
   developerAccessMode,
   modeWithin,
@@ -107,5 +108,46 @@ void describe('modeWithin: a hung compatibility request cannot hold the page (re
     const mode = await modeWithin(new Promise<DeveloperAccessMode>(() => undefined), 50);
     assert.equal(mode, 'classic');
     assert.ok(Date.now() - started >= 45, 'settled before the deadline');
+  });
+});
+
+void describe('boardBuildOf (LAI-1069)', () => {
+  const answer = (server: unknown, protocol: unknown) => ({ server, protocol, features: {} });
+
+  void test('reads the version, a hex commit and both protocol numbers', () => {
+    assert.deepEqual(
+      boardBuildOf(
+        answer({ version: '0.1.0', build_commit: 'abc1234' }, { current: 2, min_client: 1 }),
+      ),
+      { version: '0.1.0', commit: 'abc1234', protocol: 2, minClient: 1 },
+    );
+  });
+
+  void test('a missing or non-hex commit is null, not shown', () => {
+    for (const commit of [null, undefined, 'main', 'ABC1234', 'abc', '<b>x</b>']) {
+      assert.equal(
+        boardBuildOf(
+          answer({ version: '0.1.0', build_commit: commit }, { current: 2, min_client: 1 }),
+        )?.commit,
+        null,
+        String(commit),
+      );
+    }
+  });
+
+  void test('an older board or a malformed body is undefined', () => {
+    const good = { version: '0.1.0', build_commit: null };
+    for (const odd of [
+      null,
+      'x',
+      {},
+      { server: good },
+      answer(good, { current: '2', min_client: 1 }),
+      answer(good, { current: 2.5, min_client: 1 }),
+      answer({ version: 3, build_commit: null }, { current: 2, min_client: 1 }),
+      answer({ version: 'a b', build_commit: null }, { current: 2, min_client: 1 }),
+    ]) {
+      assert.equal(boardBuildOf(odd), undefined, JSON.stringify(odd));
+    }
   });
 });

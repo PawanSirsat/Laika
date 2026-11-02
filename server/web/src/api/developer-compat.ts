@@ -168,3 +168,48 @@ export function loadCliSource(signal?: AbortSignal): Promise<CliSource | undefin
     () => undefined,
   );
 }
+
+/**
+ * Which build this board is (LAI-1069, plan §J E3): the server's version and
+ * the commit it was built from, and the helper protocol it speaks. `commit` is
+ * `null` on a build that does not know its own commit.
+ */
+export interface BoardBuild {
+  readonly version: string;
+  readonly commit: string | null;
+  readonly protocol: number;
+  readonly minClient: number;
+}
+
+/**
+ * `server` and `protocol` from a compatibility answer, or `undefined` when it
+ * has none this build can read — an older board, or a malformed body. A commit
+ * is kept only as hex, the version only as a short plain string.
+ */
+export function boardBuildOf(body: unknown): BoardBuild | undefined {
+  if (typeof body !== 'object' || body === null) return undefined;
+  const { server, protocol } = body as { server?: unknown; protocol?: unknown };
+  if (typeof server !== 'object' || server === null) return undefined;
+  if (typeof protocol !== 'object' || protocol === null) return undefined;
+  const { version, build_commit: commit } = server as { version?: unknown; build_commit?: unknown };
+  const { current, min_client: minClient } = protocol as {
+    current?: unknown;
+    min_client?: unknown;
+  };
+  if (typeof version !== 'string' || !/^[\w.+-]{1,40}$/.test(version)) return undefined;
+  if (!Number.isInteger(current) || !Number.isInteger(minClient)) return undefined;
+  return {
+    version,
+    commit: typeof commit === 'string' && /^[0-9a-f]{7,40}$/.test(commit) ? commit : null,
+    protocol: current as number,
+    minClient: minClient as number,
+  };
+}
+
+/** The board's build. Never rejects: unreadable is `undefined`. */
+export function loadBoardBuild(signal?: AbortSignal): Promise<BoardBuild | undefined> {
+  return request<unknown>('/developer/compatibility', signal === undefined ? {} : { signal }).then(
+    boardBuildOf,
+    () => undefined,
+  );
+}
