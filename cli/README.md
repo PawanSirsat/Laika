@@ -177,9 +177,9 @@ laika update [--check] [--dry-run] [--board <url>] [--source <url>]
 ```
 
 Moves this Laika checkout to **the commit the connected board was built
-from** — `cli.source.commit` in the board's `GET /api/v1/developer/compatibility`
-answer. Never "newest master", and never npm: the package is private and the
-checkout is the distribution.
+from** — `cli.source.commit` in the board's
+`GET /api/v1/developer/compatibility` answer. Never "newest master", and never
+npm: the package is private and the checkout is the distribution.
 
 | Flag | What it does |
 | --- | --- |
@@ -230,14 +230,22 @@ rewritten before it could record what it wrote is likewise **reported, not
 restored**: run `laika agent hooks on` to put the hooks right.
 
 **Never touched:** `~/.laika/env`, `~/.laika/agents/*` (only read, for the
-version reports below), `~/.laika/device/*`, MCP entries (they hold the board URL and a variable name, not a checkout path;
-they are hashed before and after, and a change is a failure), consent, grants,
-and any repository's instruction files. The one copy that may hold a token is
-`~/.claude/settings.json` when `laika init` put one there and its hooks are on:
-the copy is `0600` in a `0700` directory and is deleted on every way out —
-success, refusal, rollback, error and recovery — except an incomplete rollback,
-where it is kept for the next run. Only each run's `state.json` (paths and
-digests) stays.
+version reports below), `~/.laika/device/*`, MCP entries, consent, grants, and
+any repository's instruction files. MCP entries hold the board URL and a
+variable name, not a checkout path, so the update compares them before and
+after, and a change is a failure that rolls back (`a laika MCP entry changed
+during the update: <file>`). **Only the laika entries are compared** (LAI-1089)
+— the top-level `mcpServers.laika` and each project's `mcpServers.laika` in
+`~/.claude.json`, `mcpServers.laika` for Cursor, Gemini CLI and Antigravity,
+`mcp.laika` for OpenCode, and the `mcp_servers.laika` table in
+`~/.codex/config.toml` — never the rest of the file, which Claude Code rewrites
+every few seconds while a session is open. Nothing else in those files is kept
+or printed; a file that is not JSON (or TOML) at all is compared whole. The one
+copy that may hold a token is `~/.claude/settings.json` when `laika init` put
+one there and its hooks are on: the copy is `0600` in a `0700` directory and is
+deleted on every way out — success, refusal, rollback, error and recovery —
+except an incomplete rollback, where it is kept for the next run. Only each
+run's `state.json` (paths and digests) stays.
 
 **Version reports** (LAI-1068, LAI-1085). When the board's manifest says
 `client_reports`, each tool set up on this machine for **this** board
@@ -248,11 +256,36 @@ Devices tab shows the version, commit and protocol the checkout's own
 `laika version --json` gives. It is sent after a successful update, and also
 when the checkout is **already** at the board's commit: a machine moved there
 with plain `git`, or set up before `laika tool add` reported anything, would
-otherwise show *Version unknown* until the next release. That run prints one
-line, `Version report for <commit>: sent for …` or `Version report skipped:`
-and why (the board takes none; no tool here is set up for this board; the
-version could not be read). A report that fails is a line, never a different
-exit code. `--check` and `--dry-run` never send one.
+otherwise show *Version unknown* until the next release. A credential's board
+is its URL's origin: another port, or `http` against `https`, is another
+board; a trailing slash is not a difference.
+
+That run prints one line. `Version report for <commit>: sent for Claude Code,
+Cursor.` when every report went; when some did not, each is named with what
+went wrong, `Version report for <commit>: sent for Claude Code; not sent for
+Cursor (500).` (`unreachable` when the board did not answer). Or
+`Version report skipped:` and why: the board takes none; no tool here is set
+up for this board; the version could not be read; the checkout has local
+changes under `cli/` or `plugin/`, so it is not the board's exact build
+(`laika version --json` says `dirty`); or `it failed before anything was sent`
+when something went wrong before the first report. After an update the same
+outcomes are one line per tool (`✓ told the board …`, `· could not tell the
+board …`, `· version report skipped: …`).
+
+**What it passed over is said.** Whenever it looked for credentials, one more
+line names every other `~/.laika/agents/*.json` and why, by file name only:
+`Passed over in ~/.laika/agents: codex.json (another board), polly.json (the
+same credential as omnigent.json).` A file not named for a tool — Omnigent ·
+Belka's manager credential is `polly.json` (LAI-589) — is never reported with.
+Its token is read only to compare it, never sent or printed: `laika tool add`
+keeps such a file holding the tool's own token (LAI-1088), and then it is `the
+same credential as <tool>.json`, whose report is its agent's; otherwise it is
+`not a tool laika knows`, as is a symlink, which is never read. The other
+reasons are `another board`, `no saved URL and token` and `its board URL
+cannot be used`.
+
+A report that fails is a line, never a different exit code. `--check` and
+`--dry-run` never send one.
 
 Afterwards, restart Claude Code with `laika-claude`; if the Codex hooks
 changed, open `/hooks` in Codex to trust them again; then `laika doctor`.
