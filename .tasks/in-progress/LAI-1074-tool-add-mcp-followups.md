@@ -2,11 +2,12 @@
 id: LAI-1074
 title: 'tool add / doctor MCP follow-ups: a kept entry decides the identity, doctor tells helper from literal, empty token, quit first, symlinked ~/.claude.json'
 area: cli
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-1072
-status: backlog
+status: in-progress
+started: 2026-11-02T02:55:32Z
 ---
 
 The non-blocking items from the review of PR #225 (LAI-1070/1071/1072), batched.
