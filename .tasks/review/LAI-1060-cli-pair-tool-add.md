@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: [LAI-1050, LAI-1056]
 started: 2026-11-02T05:43:33+05:30
-status: in-progress
+status: review
+finished: 2026-11-02T06:00:00+05:30
 ---
 
 Slice C3 of `docs/proposals/LAI-1042-developer-access-v3-plan.md` (§A7, §A8,
@@ -44,18 +45,18 @@ review, not in `done/`. The owner's dispatch stacks this branch on
 
 ## Acceptance
 
-- [ ] Pairing happy path end to end against a stub board that verifies the
+- [x] Pairing happy path end to end against a stub board that verifies the
       Ed25519 signature; the fingerprint printed is computed locally, and a
       board that reports a different one is refused.
-- [ ] The private key never appears in stdout, stderr, argv or any request
+- [x] The private key never appears in stdout, stderr, argv or any request
       body; only signatures leave.
-- [ ] `pairing_already_claimed` prints the exact instruction.
-- [ ] Redeem writes the token only to the per-harness file, 0600; zero `lai_`
+- [x] `pairing_already_claimed` prints the exact instruction.
+- [x] Redeem writes the token only to the per-harness file, 0600; zero `lai_`
       in stdout/stderr and in any file outside `~/.laika/agents/*.json`.
-- [ ] `~/.laika/env` is byte-identical after `tool add`.
-- [ ] Config backups are made once and other MCP servers are untouched.
-- [ ] Antigravity is refused before redeeming; Omnigent is credential only.
-- [ ] `install.sh --no-credential` writes no `~/.laika/env`; the legacy path
+- [x] `~/.laika/env` is byte-identical after `tool add`.
+- [x] Config backups are made once and other MCP servers are untouched.
+- [x] Antigravity is refused before redeeming; Omnigent is credential only.
+- [x] `install.sh --no-credential` writes no `~/.laika/env`; the legacy path
       backs it up; the PATH line is added once.
-- [ ] `cli` typecheck and lint green; each touched test file green, single
+- [x] `cli` typecheck and lint green; each touched test file green, single
       worker; CI green.
