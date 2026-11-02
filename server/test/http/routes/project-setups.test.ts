@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { activity, orgs, projectRepoSetups, users } from '../../../src/db/schema.ts';
+import { activity, orgs, projectRepoSetups, projects, users } from '../../../src/db/schema.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -66,6 +66,11 @@ function post(body: unknown, auth: Auth): Promise<Response> {
 
 function list(query: string, auth: Auth): Promise<Response> {
   return req(`/api/v1/project-setups?${query}`, {}, auth);
+}
+
+/** No query at all: every project the reader can read (LAI-1077). */
+function all(auth: Auth): Promise<Response> {
+  return req('/api/v1/project-setups', {}, auth);
 }
 
 /** Setup writes go through here, so one that fails cannot pass silently. */
@@ -575,3 +580,249 @@ describe('reading records', () => {
     expect(refused.code).toBe('not_found');
   });
 });
+
+describe('reading records with no project, across every project the reader can read (LAI-1077)', () => {
+  /** What the newest-first order is for these ids: ULIDs sort by creation. */
+  const newestFirst = (ids: string[]) => [...ids].sort().reverse();
+
+  /** A browser record about no tool in particular, in one project. */
+  async function selfReport(slug: string, auth: Auth): Promise<Setup> {
+    return ok<Setup>(
+      await post({ agent_id: null, project_slug: slug, template_revision: 2 }, auth),
+      201,
+    );
+  }
+
+  beforeEach(async () => {
+    await addMember('beta', bob.id);
+  });
+
+  it('answers the reader’s own records from both projects, newest first, each naming its project', async () => {
+    const tool = await register(bob.cookie, [
+      { project_id: alpha, scope: 'full' },
+      { project_id: betaId(), scope: 'full' },
+    ]);
+    const inAlpha = await ok<Setup>(await post(localCheck(), { bearer: tool.secret }), 201);
+    const inBeta = await ok<Setup>(
+      await post(localCheck({ project_slug: 'beta', block_project: 'beta', block_prefix: 'BET' }), {
+        bearer: tool.secret,
+      }),
+      201,
+    );
+    const browserAlpha = await selfReport('alpha', { cookie: bob.cookie });
+
+    const res = await all({ cookie: bob.cookie });
+    const body = await ok<{ data: Setup[] }>(res);
+    expect(body.data.map((row) => row.id)).toEqual(
+      newestFirst([inAlpha.id, inBeta.id, browserAlpha.id]),
+    );
+    expect(
+      Object.fromEntries(body.data.map((row) => [row.id, [row.project_id, row.project_slug]])),
+    ).toEqual({
+      [inAlpha.id]: [alpha, 'alpha'],
+      [inBeta.id]: [betaId(), 'beta'],
+      [browserAlpha.id]: [alpha, 'alpha'],
+    });
+    // The same row shape the per-project read answers, field for field.
+    const perProject = await ok<{ data: Setup[] }>(
+      await list('project=beta', { cookie: bob.cookie }),
+    );
+    expect(body.data.find((row) => row.id === inBeta.id)).toEqual(perProject.data[0]);
+  });
+
+  it('leaves out a project the reader can no longer read, and names it nowhere', async () => {
+    const tool = await register(bob.cookie, [
+      { project_id: alpha, scope: 'full' },
+      { project_id: betaId(), scope: 'full' },
+    ]);
+    const inAlpha = await ok<Setup>(await post(localCheck(), { bearer: tool.secret }), 201);
+    await ok(await post(localCheck({ project_slug: 'beta' }), { bearer: tool.secret }), 201);
+    await selfReport('beta', { cookie: bob.cookie });
+
+    await ok(
+      await req(
+        `/api/v1/projects/beta/members/${bob.id}`,
+        { method: 'DELETE' },
+        {
+          cookie: ownerCookie,
+        },
+      ),
+    );
+    // Bob's two records in beta are still stored — the read is what leaves them out.
+    expect(
+      h.db
+        .select()
+        .from(projectRepoSetups)
+        .where(eq(projectRepoSetups.projectId, betaId()))
+        .all()
+        .map((row) => row.ownerUserId),
+    ).toEqual([bob.id, bob.id]);
+
+    for (const auth of [{ cookie: bob.cookie }, { bearer: tool.secret }]) {
+      const res = await all(auth);
+      const text = await res.clone().text();
+      const body = await ok<{ data: Setup[] }>(res);
+      expect(body.data.map((row) => row.id)).toEqual([inAlpha.id]);
+      expect(text).not.toContain(betaId());
+      expect(text).not.toContain('beta');
+    }
+    // And the per-project read still answers it as a project that does not exist.
+    expect((await refusal(await list('project=beta', { cookie: bob.cookie }), 404)).code).toBe(
+      'not_found',
+    );
+  });
+
+  it('never answers another user’s records, even to the owner who reads every project', async () => {
+    const bobs = await register(bob.cookie, [{ project_id: alpha, scope: 'full' }]);
+    const adas = await register(ownerCookie, [
+      { project_id: alpha, scope: 'full' },
+      { project_id: betaId(), scope: 'full' },
+    ]);
+    const bobAlpha = await ok<Setup>(await post(localCheck(), { bearer: bobs.secret }), 201);
+    const adaAlpha = await ok<Setup>(await post(localCheck(), { bearer: adas.secret }), 201);
+    const adaBeta = await selfReport('beta', { cookie: ownerCookie });
+
+    const bobRead = await ok<{ data: Setup[] }>(await all({ cookie: bob.cookie }));
+    expect(bobRead.data.map((row) => row.id)).toEqual([bobAlpha.id]);
+
+    const adaRead = await ok<{ data: Setup[] }>(await all({ cookie: ownerCookie }));
+    expect(adaRead.data.map((row) => row.id)).toEqual(newestFirst([adaAlpha.id, adaBeta.id]));
+  });
+
+  it('is not paginated, as the per-project read is not: every row in one answer, no cursor', async () => {
+    const tool = await register(bob.cookie, [
+      { project_id: alpha, scope: 'full' },
+      { project_id: betaId(), scope: 'full' },
+    ]);
+    // More than §6.3's default page of 50, split across both projects.
+    const made: string[] = [];
+    for (let i = 0; i < 56; i += 1) {
+      const row = await ok<Setup>(
+        await post(
+          localCheck({
+            project_slug: i % 2 === 0 ? 'alpha' : 'beta',
+            repo_key: i.toString(16).padStart(64, '0'),
+          }),
+          { bearer: tool.secret },
+        ),
+        201,
+      );
+      made.push(row.id);
+    }
+
+    const body = await ok<Record<string, unknown>>(await all({ cookie: bob.cookie }));
+    expect(Object.keys(body)).toEqual(['data']);
+    expect((body.data as Setup[]).map((row) => row.id)).toEqual(newestFirst(made));
+  });
+
+  it('narrows to one of the reader’s tools with agent_id, still only the reader’s own', async () => {
+    const tool = await register(bob.cookie, [
+      { project_id: alpha, scope: 'full' },
+      { project_id: betaId(), scope: 'full' },
+    ]);
+    const sibling = await register(
+      bob.cookie,
+      [
+        { project_id: alpha, scope: 'full' },
+        { project_id: betaId(), scope: 'full' },
+      ],
+      'Strelka',
+    );
+    const adas = await register(ownerCookie, [{ project_id: alpha, scope: 'full' }]);
+    const toolAlpha = await ok<Setup>(await post(localCheck(), { bearer: tool.secret }), 201);
+    const toolBeta = await ok<Setup>(
+      await post(localCheck({ project_slug: 'beta' }), { bearer: tool.secret }),
+      201,
+    );
+    await ok(await post(localCheck({ project_slug: 'beta' }), { bearer: sibling.secret }), 201);
+    await selfReport('alpha', { cookie: bob.cookie });
+    await ok(await post(localCheck(), { bearer: adas.secret }), 201);
+
+    const filtered = await ok<{ data: Setup[] }>(
+      await list(`agent_id=${tool.agent.id}`, { cookie: bob.cookie }),
+    );
+    expect(filtered.data.map((row) => row.id)).toEqual(newestFirst([toolAlpha.id, toolBeta.id]));
+
+    // Another owner's tool, and an id that names nothing: the same 404.
+    const foreign = await refusal(
+      await list(`agent_id=${adas.agent.id}`, { cookie: bob.cookie }),
+      404,
+    );
+    const unknown = await refusal(
+      await list('agent_id=01ARZ3NDEKTSV4RRFFQ69G5FAV', { cookie: bob.cookie }),
+      404,
+    );
+    expect(foreign.code).toBe('not_found');
+    expect(foreign.body).toEqual(unknown.body);
+  });
+
+  it('lets an agent’s token read only its own, and only inside its grants as they are now', async () => {
+    const tool = await register(bob.cookie, [
+      { project_id: alpha, scope: 'full' },
+      { project_id: betaId(), scope: 'full' },
+    ]);
+    const sibling = await register(bob.cookie, [{ project_id: alpha, scope: 'full' }], 'Strelka');
+    const toolAlpha = await ok<Setup>(await post(localCheck(), { bearer: tool.secret }), 201);
+    const toolBeta = await ok<Setup>(
+      await post(localCheck({ project_slug: 'beta' }), { bearer: tool.secret }),
+      201,
+    );
+    await ok(await post(localCheck(), { bearer: sibling.secret }), 201);
+    await selfReport('beta', { cookie: bob.cookie });
+
+    const own = await ok<{ data: Setup[] }>(await all({ bearer: tool.secret }));
+    expect(own.data.map((row) => row.id)).toEqual(newestFirst([toolAlpha.id, toolBeta.id]));
+
+    const asked = await refusal(
+      await list(`agent_id=${sibling.agent.id}`, { bearer: tool.secret }),
+      404,
+    );
+    expect(asked.code).toBe('not_found');
+
+    // Take beta out of the tool's grants: its own token no longer reads beta's
+    // record, and the owner — who still reads beta — still does.
+    await ok(
+      await req(
+        `/api/v1/agents/${tool.agent.id}/grants`,
+        { method: 'PUT', body: JSON.stringify({ grants: [{ project_id: alpha, scope: 'full' }] }) },
+        { cookie: bob.cookie },
+      ),
+    );
+    const narrowed = await ok<{ data: Setup[] }>(await all({ bearer: tool.secret }));
+    expect(narrowed.data.map((row) => row.id)).toEqual([toolAlpha.id]);
+    const owners = await ok<{ data: Setup[] }>(
+      await list(`agent_id=${tool.agent.id}`, { cookie: bob.cookie }),
+    );
+    expect(owners.data.map((row) => row.id)).toEqual(newestFirst([toolAlpha.id, toolBeta.id]));
+  });
+
+  it('answers an empty list to a reader with no project to read', async () => {
+    const carol = await join('carol@example.test');
+    await selfReport('alpha', { cookie: bob.cookie });
+    const body = await ok<Record<string, unknown>>(await all({ cookie: carol.cookie }));
+    expect(body).toEqual({ data: [] });
+  });
+
+  it('leaves the per-project form as it was: one project, oldest first, an empty slug refused', async () => {
+    const tool = await register(bob.cookie, [
+      { project_id: alpha, scope: 'full' },
+      { project_id: betaId(), scope: 'full' },
+    ]);
+    const first = await ok<Setup>(await post(localCheck(), { bearer: tool.secret }), 201);
+    await ok(await post(localCheck({ project_slug: 'beta' }), { bearer: tool.secret }), 201);
+    const second = await selfReport('alpha', { cookie: bob.cookie });
+
+    const alphaOnly = await ok<{ data: Setup[] }>(
+      await list('project=alpha', { cookie: bob.cookie }),
+    );
+    expect(alphaOnly.data.map((row) => row.id)).toEqual([first.id, second.id].sort());
+
+    const empty = await refusal(await list('project=', { cookie: bob.cookie }), 422);
+    expect(empty.code).toBe('unprocessable');
+  });
+});
+
+/** Beta's id, read from the database the projects route wrote. */
+function betaId(): string {
+  return h.db.select().from(projects).where(eq(projects.slug, 'beta')).get()?.id ?? '';
+}
