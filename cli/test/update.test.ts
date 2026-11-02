@@ -25,6 +25,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -407,6 +408,39 @@ const switchedVersionAnswers = (w: World, answer: 'throw' | number): Runner =>
     if (answer === 'throw') throw new Error('the process blew up');
     return { code: answer };
   });
+
+/**
+ * The real runner; `meanwhile` runs once, at the staging self-check — after
+ * the MCP configs were read and before they are compared — as another program
+ * writing them while the update runs would. `ran()` says whether it did.
+ */
+function midUpdate(w: World, meanwhile: () => void): { runner: Runner; ran: () => boolean } {
+  let ran = false;
+  const runner = spy((program, args) => {
+    if (!ran && program === 'sh' && args[0]?.startsWith(updateDir(w.home)) === true) {
+      ran = true;
+      meanwhile();
+    }
+    return 'real';
+  });
+  return { runner, ran: () => ran };
+}
+
+/** The real runner, but the switched checkout's own `laika version --json` says `dirty`. */
+const switchedVersionDirty = (w: World): Runner => {
+  const real = spy(() => 'real');
+  return (program, args, options) => {
+    const result = real(program, args, options);
+    const switched =
+      program === 'sh' &&
+      args[0] === join(w.checkout, 'cli', 'bin', 'laika') &&
+      args[1] === 'version';
+    if (!switched) return result;
+    const said = JSON.parse(result.stdout) as Record<string, unknown>;
+    assert.equal(said.dirty, false, 'setup: the switched checkout is clean');
+    return { ...result, stdout: JSON.stringify({ ...said, dirty: true }) };
+  };
+};
 
 /**
  * What a run killed after the switch and the hook refresh leaves behind — the
@@ -1056,6 +1090,155 @@ void describe('laika update — recovering a run that was killed', () => {
   });
 });
 
+void describe('laika update — the MCP guard compares only laika’s entries (LAI-1089)', () => {
+  const claudePath = (w: World): string => join(w.home, '.claude.json');
+  const codexPath = (w: World): string => join(w.home, '.codex', 'config.toml');
+  const cursorPath = (w: World): string => join(w.home, '.cursor', 'mcp.json');
+  const opencodePath = (w: World): string => join(w.home, '.config', 'opencode', 'opencode.json');
+  const writeJson = (path: string, value: unknown): void => {
+    mkdirSync(join(path, '..'), { recursive: true });
+    writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  };
+  const entry = (url: string): Record<string, unknown> => ({
+    type: 'http',
+    url: `${url}/mcp`,
+    headers: { Authorization: 'Bearer ${LAIKA_TOKEN}' },
+  });
+
+  /** `~/.claude.json` as a running Claude Code keeps it: its own state beside the entries. */
+  function claudeJson(url: string, startups: number): Record<string, unknown> {
+    return {
+      numStartups: startups,
+      mcpServers: { laika: entry(url), github: { command: 'gh-mcp', args: ['--stdio'] } },
+      projects: {
+        '/work/a': { lastCost: startups, mcpServers: { laika: entry(url) } },
+        '/work/b': { lastCost: 0, mcpServers: {} },
+      },
+    };
+  }
+
+  /** Every MCP config the guard watches, each with laika and somebody else in it. */
+  function configs(w: World, url: string): void {
+    writeJson(claudePath(w), claudeJson(url, 1));
+    writeJson(cursorPath(w), { mcpServers: { laika: entry(url), other: { command: 'o' } } });
+    writeJson(opencodePath(w), {
+      theme: 'dark',
+      mcp: { laika: entry(url), other: { type: 'local' } },
+    });
+  }
+
+  // Hash the whole file again and this is the test that fails: on Belka, every
+  // update rolled back while a Claude Code session was open.
+  void test('Claude Code, Codex, Cursor and OpenCode rewriting their own settings meanwhile is no change', async () => {
+    const w = world();
+    const url = await board(w);
+    plant(w, url);
+    configs(w, url);
+    const mid = midUpdate(w, () => {
+      const claude = claudeJson(url, 2);
+      const projects = claude.projects as Record<string, Record<string, unknown>>;
+      writeJson(claudePath(w), {
+        ...claude,
+        // Another server's entry, a new project, and laika's keys in another order.
+        mcpServers: {
+          github: { command: 'gh-mcp', args: ['--stdio', '--verbose'] },
+          laika: { headers: entry(url).headers, url: `${url}/mcp`, type: 'http' },
+        },
+        projects: { ...projects, '/work/c': { lastCost: 3 } },
+        tipsHistory: { 'new-user-warmup': 2 },
+      });
+      writeFileSync(
+        codexPath(w),
+        `model = "o4"\n${readFileSync(codexPath(w), 'utf8').replace('other-mcp', 'other-mcp-2')}\n[projects."/work/a"]\ntrust_level = "trusted"\n`,
+      );
+      writeJson(cursorPath(w), { mcpServers: { laika: entry(url), other: { command: 'o2' } } });
+      writeJson(opencodePath(w), {
+        theme: 'light',
+        mcp: { laika: entry(url), other: { type: 'remote' } },
+      });
+    });
+
+    const r = await run(w, ['--board', url], { runner: mid.runner });
+    assert.ok(mid.ran(), 'setup: nothing was rewritten during the update');
+    assert.equal(r.code, 0, r.err);
+    assert.equal(head(w), w.b);
+    assert.doesNotMatch(r.err, /MCP entry changed|Rolling back/);
+    assert.match(readFileSync(claudePath(w), 'utf8'), /"numStartups": 2/, 'setup: not rewritten');
+    assert.match(r.out, new RegExp(`Updated: .* is at ${w.b.slice(0, 7)}`));
+  });
+
+  const changes: readonly (readonly [string, string, (w: World, url: string) => void])[] = [
+    [
+      'the user-scope mcpServers.laika in ~/.claude.json',
+      '~/.claude.json',
+      (w, url) => {
+        writeJson(claudePath(w), {
+          ...claudeJson(url, 2),
+          mcpServers: { laika: entry('https://elsewhere.example') },
+        });
+      },
+    ],
+    [
+      'a project’s own mcpServers.laika in ~/.claude.json',
+      '~/.claude.json',
+      (w, url) => {
+        const claude = claudeJson(url, 2);
+        const projects = claude.projects as Record<string, unknown>;
+        writeJson(claudePath(w), {
+          ...claude,
+          projects: {
+            ...projects,
+            '/work/a': { mcpServers: { laika: entry('https://x.example') } },
+          },
+        });
+      },
+    ],
+    [
+      'Codex’s [mcp_servers.laika]',
+      '~/.codex/config.toml',
+      (w) => {
+        const toml = readFileSync(codexPath(w), 'utf8');
+        assert.match(toml, /url = "http:\/\/x\/mcp"/, 'setup: the planted codex table');
+        writeFileSync(codexPath(w), toml.replace('http://x/mcp', 'https://elsewhere.example/mcp'));
+      },
+    ],
+    [
+      'OpenCode’s mcp.laika',
+      '~/.config/opencode/opencode.json',
+      (w, url) => {
+        writeJson(opencodePath(w), {
+          theme: 'dark',
+          mcp: { laika: { ...entry(url), enabled: false } },
+        });
+      },
+    ],
+  ];
+  for (const [label, shown, change] of changes) {
+    void test(`a change to ${label} still rolls back, naming the file`, async () => {
+      const w = world();
+      const url = await board(w);
+      plant(w, url);
+      configs(w, url);
+      const mid = midUpdate(w, () => change(w, url));
+
+      const r = await run(w, ['--board', url], { runner: mid.runner });
+      assert.ok(mid.ran(), 'setup: nothing was changed during the update');
+      assert.equal(r.code, 1);
+      assert.match(
+        r.err,
+        new RegExp(
+          `! a laika MCP entry changed during the update: ${shown.replaceAll('.', '\\.')}$`,
+          'm',
+        ),
+      );
+      assert.match(r.err, /Rolled back: .* is at [0-9a-f]{7} again/);
+      assert.equal(head(w), w.a);
+      assert.equal(onBranch(w), 'main');
+      assertOnlyStateFiles(w);
+    });
+  }
+});
+
 void describe('laika update — the client report after an update (LAI-1068)', () => {
   /** A board build whose CLI says protocol 7, so the report can only have read the new checkout. */
   function protocolSevenBuild(w: World): string {
@@ -1105,7 +1288,28 @@ void describe('laika update — the client report after an update (LAI-1068)', (
     // LAI-1088: the report names its tool, as the board's generic rule needs.
     assert.equal(report.body.harness, 'claude-code');
     assert.match(r.out, new RegExp(`✓ told the board Claude Code now runs ${c.slice(0, 7)}`));
+    // LAI-1089: what was passed over is said, by name.
+    assert.match(
+      r.out,
+      /\n {2}· passed over in ~\/\.laika\/agents: codex\.json \(another board\)\n/,
+    );
     assert.deepEqual(protectedFiles(w), before, 'a credential file was written');
+  });
+
+  // LAI-1089: put `dirty` back out of the check and this is the test that fails.
+  void test('a switched checkout that laika version calls dirty sends no report, and says so', async () => {
+    const w = world();
+    const url = await board(w, { features: { client_reports: true } });
+    plant(w, url);
+    const r = await run(w, ['--board', url], { runner: switchedVersionDirty(w) });
+    assert.equal(r.code, 0, r.err);
+    assert.equal(head(w), w.b);
+    assert.deepEqual(reports, [], 'a dirty checkout was reported as the board’s build');
+    assert.match(
+      r.out,
+      /\n {2}· version report skipped: .* has local changes under cli\/ or plugin\/, so it is not the board’s exact build\n/,
+    );
+    assert.match(r.out, new RegExp(`Updated: .* is at ${w.b.slice(0, 7)}`));
   });
 
   void test('client_reports off: nothing is sent and nothing is said about it', async () => {
@@ -1153,6 +1357,7 @@ void describe('laika update — the client report after an update (LAI-1068)', (
 
 void describe('laika update on a checkout already at the board’s commit (LAI-1085)', () => {
   const CURSOR_TOKEN = 'lai_CURSORPLANTEDSECRET0123456789abcd';
+  const POLLY_TOKEN = 'lai_POLLYPLANTEDSECRET0123456789abcde';
   const SHELL_TOKEN = 'lai_SHELLPLANTEDSECRET0123456789abcde';
 
   /**
@@ -1226,7 +1431,9 @@ void describe('laika update on a checkout already at the board’s commit (LAI-1
     }
     assert.match(
       r.out,
-      new RegExp(`\\nVersion report for ${c.slice(0, 7)}: sent for Claude Code, Cursor\\.$`),
+      new RegExp(
+        `\\nVersion report for ${c.slice(0, 7)}: sent for Claude Code, Cursor\\.\\nPassed over in ~/\\.laika/agents: codex\\.json \\(another board\\)\\.$`,
+      ),
     );
     assert.doesNotMatch(r.out, /Codex/);
     assert.deepEqual(protectedFiles(w), before, 'a credential file was written');
@@ -1246,7 +1453,135 @@ void describe('laika update on a checkout already at the board’s commit (LAI-1
     assert.deepEqual(posted, []);
     assert.match(
       r.out,
-      /\nVersion report skipped: no tool on this machine is set up for this board \(laika tool add sets one up\)\.$/,
+      /\nVersion report skipped: no tool on this machine is set up for this board \(laika tool add sets one up\)\.\nPassed over in ~\/\.laika\/agents: codex\.json \(another board\)\.$/,
+    );
+  });
+
+  // LAI-1089: Omnigent · Belka's credential (LAI-589) is polly.json, which names no tool.
+  void test('every credential file not reported for is named on one line, with why', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    const agents = join(w.home, '.laika', 'agents');
+    // A credential for this very board: had it been read as one, a report would carry it.
+    writeFileSync(join(agents, 'polly.json'), `${JSON.stringify({ url, token: POLLY_TOKEN })}\n`, {
+      mode: 0o600,
+    });
+    credential(w, 'codex', 'http://other.invalid', 'lai_OTHERBOARDTOKEN');
+    writeFileSync(join(agents, 'cursor.json'), '{ not json', { mode: 0o600 });
+    credential(w, 'gemini-cli', 'http://user:pw@127.0.0.1', 'lai_URLWITHCREDENTIALS');
+    // Not a .json: not a credential file at all.
+    writeFileSync(join(agents, 'claude-code.json.bak-2026-10-29'), '{}\n', { mode: 0o600 });
+    const posted: string[] = [];
+
+    const r = await run(w, ['--board', url], { fetch: recording(posted) });
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(
+      reports.map((report) => report.auth),
+      [`Bearer ${AGENT_TOKEN}`],
+      'polly.json was reported with',
+    );
+    assert.match(
+      r.out,
+      new RegExp(
+        `\\nVersion report for ${c.slice(0, 7)}: sent for Claude Code\\.\\nPassed over in ~/\\.laika/agents: codex\\.json \\(another board\\), cursor\\.json \\(no saved URL and token\\), gemini-cli\\.json \\(its board URL cannot be used\\), polly\\.json \\(not a tool laika knows\\)\\.$`,
+      ),
+    );
+    assert.doesNotMatch(r.out, /bak-2026|other\.invalid|user:pw/);
+  });
+
+  // LAI-1089 on LAI-1088: `laika tool add --harness omnigent` keeps polly.json
+  // holding the same token as omnigent.json, so that report is its agent's.
+  void test('a manager file holding a tool’s own credential says so, and is not sent twice', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    const agents = join(w.home, '.laika', 'agents');
+    credential(w, 'omnigent', url, POLLY_TOKEN);
+    writeFileSync(
+      join(agents, 'polly.json'),
+      `${JSON.stringify({ url, token: POLLY_TOKEN, agent_id: 'p1' })}\n`,
+      { mode: 0o600 },
+    );
+    // A symlink is never read (LAI-1088's rule), even to the very same credential.
+    symlinkSync(join(agents, 'claude-code.json'), join(agents, 'link.json'));
+    const posted: string[] = [];
+
+    const r = await run(w, ['--board', url], { fetch: recording(posted) });
+    assert.equal(r.code, 0, r.err);
+    const endpoint = `${url}/api/v1/agents/me/client-report`;
+    assert.deepEqual(posted, [endpoint, endpoint], 'polly.json was sent as well as omnigent.json');
+    assert.deepEqual(
+      reports.map((report) => [report.auth, report.body.harness]).sort(),
+      [
+        [`Bearer ${AGENT_TOKEN}`, 'claude-code'],
+        [`Bearer ${POLLY_TOKEN}`, 'omnigent'],
+      ].sort(),
+    );
+    assert.match(
+      r.out,
+      new RegExp(
+        `\\nVersion report for ${c.slice(0, 7)}: sent for Claude Code, Omnigent\\.\\nPassed over in ~/\\.laika/agents: link\\.json \\(not a tool laika knows\\), polly\\.json \\(the same credential as omnigent\\.json\\)\\.$`,
+      ),
+    );
+  });
+
+  // LAI-1089: compare hosts only, or the raw strings, and one of these goes red.
+  void test('origin edges: another port and the other scheme are another board; a trailing slash is this one', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    const port = Number(new URL(url).port);
+    credential(w, 'cursor', `${url}/`, CURSOR_TOKEN);
+    credential(
+      w,
+      'codex',
+      `http://127.0.0.1:${String(port === 65535 ? 65534 : port + 1)}`,
+      'lai_OTHERPORT0123456789abcdef',
+    );
+    credential(
+      w,
+      'gemini-cli',
+      `https://127.0.0.1:${String(port)}`,
+      'lai_OTHERSCHEME0123456789abcd',
+    );
+    const posted: string[] = [];
+
+    const r = await run(w, ['--board', url], { fetch: recording(posted) });
+    assert.equal(r.code, 0, r.err);
+    const endpoint = `${url}/api/v1/agents/me/client-report`;
+    assert.deepEqual(posted, [endpoint, endpoint], 'a report went somewhere else');
+    assert.deepEqual(
+      reports.map((report) => report.auth).sort(),
+      [`Bearer ${AGENT_TOKEN}`, `Bearer ${CURSOR_TOKEN}`].sort(),
+    );
+    assert.match(
+      r.out,
+      new RegExp(
+        `\\nVersion report for ${c.slice(0, 7)}: sent for Claude Code, Cursor\\.\\nPassed over in ~/\\.laika/agents: codex\\.json \\(another board\\), gemini-cli\\.json \\(another board\\)\\.$`,
+      ),
+    );
+  });
+
+  // LAI-1089: put `dirty` back out of the check and this is the test that fails.
+  void test('a checkout with local changes is not the board’s build: nothing is sent, and the line says so', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    writeFileSync(join(w.checkout, 'cli', 'LOCAL.md'), 'a local change\n');
+    const posted: string[] = [];
+
+    const r = await run(w, ['--board', url], { fetch: recording(posted) });
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /^Up to date/);
+    assert.deepEqual(posted, []);
+    assert.match(
+      r.out,
+      /\nVersion report skipped: .* has local changes under cli\/ or plugin\/, so it is not the board’s exact build\.$/,
     );
   });
 

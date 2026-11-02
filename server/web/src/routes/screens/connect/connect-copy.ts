@@ -383,6 +383,10 @@ export interface ProjectSetupPromptInput {
  * current block, and offers to replace them or fold them in, with a diff and
  * a confirmation. A mere mention under a heading about something else is
  * shown and asked about, never replaced.
+ *
+ * **Each offered change stands alone** (LAI-1090): a no to a fold leaves the
+ * block's upgrade standing, and the reverse. Lines kept below the end marker
+ * stay there, and are never offered for folding on a later run.
  */
 export function projectSetupPrompt({
   origin,
@@ -404,12 +408,16 @@ heading to the next heading of the same or a higher level, or the end of the
 file. Mentions inside a section whose heading is about something else (a line
 under "## Development workflow", a task key under "## Known issues") do not
 make that section one: show me those lines and ask what I want done with
-them, and never replace a section whose heading is about something else.
+them. If I want them changed, show me the diff and wait for me to confirm
+before you change them, and never replace a section whose heading is about
+something else.
 
 When you fold a hand-written Laika section into the block, keep lines, not
 headings: put the lines I choose to keep directly below the block's last
 line, as they were, and drop the section's old Laika heading unless I ask for
-it, so the file ends up with one Laika heading.
+it, so the file ends up with one Laika heading. Lines directly below the end
+marker, up to the next heading, were kept on purpose; leave them. They are not
+a hand-written Laika section, so never offer them for folding again.
 
 1. Read ./${path} first. Do not assume what is in it.
 2. If it has a marked Laika block — a line starting "<!-- laika:begin" and a
@@ -427,14 +435,16 @@ it, so the file ends up with one Laika heading.
    higher level or the end of the file — show me the exact old and new text
    as a diff and wait for me to confirm. Then replace only that block. If I
    edited lines inside the old block, point them out in the diff so I can
-   keep them. Offer, in the same diff, to fold any hand-written Laika section
-   elsewhere in the file into it, as in step 2.
+   keep them. Then offer, as a separate change with its own diff, to fold
+   each hand-written Laika section elsewhere in the file into it, as in step
+   2, so I can take the update without the fold.
 4. Otherwise, before you append anything, look for hand-written Laika
    sections. If you find one or more, show me each one and offer to replace
-   the first with the block below and fold the others into it. Ask which of
-   their lines I want to keep, show me the diff and wait for me to confirm.
-   Then change only those sections. If I say a section is not about this
-   board, leave it as it is; if none of them is, go on to step 5.
+   the first with the block below and fold the others into it, each section
+   as its own change. Ask which of their lines I want to keep, show me the
+   diff and wait for me to confirm. Then change only those sections. If I say
+   a section is not about this board, leave it as it is; if none of them is,
+   go on to step 5.
 5. If there is no Laika block and no hand-written Laika section, append the
    block below at the end, keeping everything already in the file. Create the
    file only if it does not exist. Never add a second Laika section to a file
@@ -447,7 +457,10 @@ it, so the file ends up with one Laika heading.
 ${preamble}
 `
    }
-6. If I say no to a change you offered, change nothing at all.
+6. Offer each change on its own: the block, and each hand-written section you
+   would replace or fold in. If I say no to one, leave that one exactly as it
+   is and still make the others I confirmed. If I say no to all of them,
+   change nothing.
 7. Copy the block exactly. It contains no token and must never gain one: do
    not add a token, key or password anywhere, and do not ask me for one.
 8. Change nothing else. Do not install, reinstall or update Laika, do not pair
@@ -456,7 +469,8 @@ ${preamble}
 9. Report in one line: created the file, appended the block, updated it from
    revision N, replaced a hand-written Laika section, folded N hand-written
    Laika sections into the block, already up to date, or you said no and I
-   changed nothing.
+   changed nothing. If I said no to some changes and yes to others, say what
+   you changed and what you left as it was.
 
 --- begin block ---
 ${block}

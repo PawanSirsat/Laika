@@ -331,6 +331,63 @@ export function hasCodexLaikaTable(toml: string): boolean {
   return codexLaikaState(toml) === 'present';
 }
 
+const isLaikaKey = (key: readonly string[]): boolean =>
+  key[0] === 'mcp_servers' && key[1] === 'laika';
+
+/**
+ * The lines that define the `laika` server, in the spellings
+ * {@link codexLaikaState} counts, trimmed — and **none of the rest** of the
+ * file (LAI-1089). `laika update` compares these before and after, so Codex
+ * rewriting its own settings meanwhile (a project's trust level, the model) is
+ * not a change to Laika's entry. A value carried on across lines comes with
+ * the line that starts it; `mcp_servers = { … }` comes whole, other servers
+ * and all, because one value cannot be split.
+ */
+export function codexLaikaLines(toml: string): string[] {
+  const kept: string[] = [];
+  let table: string[] = [];
+  let inString: (typeof FENCES)[number] | undefined;
+  let open = 0;
+  let keeping = false;
+
+  for (const raw of toml.split('\n')) {
+    if (inString !== undefined) {
+      if (keeping) kept.push(raw);
+      if (raw.includes(inString)) inString = undefined;
+      continue;
+    }
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) continue;
+
+    if (open > 0) {
+      if (keeping) kept.push(line);
+      open += openBrackets(line);
+      continue;
+    }
+
+    const header = /^\[\[?(.+?)\]\]?\s*(?:#.*)?$/.exec(line);
+    if (header !== null) {
+      table = keyPath(header[1] ?? '');
+      if (isLaikaKey(table)) kept.push(line);
+      continue;
+    }
+
+    const eq = equalsAt(line);
+    if (eq < 0) continue;
+    const key = [...table, ...keyPath(line.slice(0, eq))];
+    const value = line.slice(eq + 1).trim();
+    // `mcp_servers = { … }` is every server in one value, laika's among them.
+    keeping = isLaikaKey(key) || (key.length === 1 && key[0] === 'mcp_servers');
+    if (keeping) kept.push(line);
+
+    for (const fence of FENCES) {
+      if (value.startsWith(fence) && !value.slice(3).includes(fence)) inString = fence;
+    }
+    if (inString === undefined) open = Math.max(0, openBrackets(value));
+  }
+  return kept;
+}
+
 /** A single-quoted shell word that survives any character, `'` included. */
 export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;

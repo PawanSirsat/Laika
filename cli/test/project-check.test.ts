@@ -584,7 +584,7 @@ void describe('laika project check', () => {
     assert.equal(r.sent.length, 0);
   });
 
-  void test('--harness names a tool with no credential here while others have one: exit 2, says which', async () => {
+  void test('--harness names a tool with no credential here while others have one: exit 2, add it first (LAI-1090)', async () => {
     const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], {
       cwd: dir,
@@ -593,21 +593,56 @@ void describe('laika project check', () => {
     assert.equal(r.code, 2, r.out);
     assert.equal(r.sent.length, 0);
     assert.deepEqual(r.asked, []);
-    assert.match(
-      r.out,
-      /no credential for codex on this machine \(it has: claude-code, cursor\) — nothing recorded/,
+    assert.match(r.out, /no credential for codex on this machine — nothing recorded/);
+    // Adding the tool picked comes first; the others are named after it, as a fact.
+    const add = r.out.indexOf(
+      'add codex first: on the board, Developer access → Tools → Add tool gives the laika tool add codex command to run here',
     );
+    const others = r.out.indexOf('(other tools set up here: claude-code, cursor)');
+    assert.ok(add !== -1 && others > add, r.out);
+    // Never steered to record as a tool the reader did not pick.
+    assert.doesNotMatch(r.out, /pass --harness|one of those/);
     // Names only: nothing from inside a credential file.
     assert.ok(!r.out.includes(AGENT_TOKEN), 'a token was printed');
     assert.ok(!r.out.includes(BOARD), 'a credential’s board URL was printed');
   });
 
-  void test('--harness names a tool and no tool has a credential here: says which, exit 0', async () => {
+  void test('--harness names a tool and no tool has a credential here: exit 2, add it first (LAI-1090)', async () => {
+    // CHIEF: an explicit --harness is a request to record, so this could not record.
     const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], { cwd: dir });
-    assert.equal(r.code, 0, r.out);
+    assert.equal(r.code, 2, r.out);
     assert.equal(r.sent.length, 0);
-    assert.match(r.out, /no credential for codex on this machine — nothing recorded/);
+    assert.deepEqual(r.asked, []);
+    assert.match(
+      r.out,
+      /no credential for codex on this machine — nothing recorded; add codex first: .* laika tool add codex command to run here$/m,
+    );
+    assert.doesNotMatch(r.out, /other tools set up here/);
+  });
+
+  void test('--harness with no credential and no block: needs action still wins, exit 1', async () => {
+    const dir = repo({ 'CLAUDE.md': '# Notes\n' });
+    const r = await run(['--harness', 'codex'], { cwd: dir });
+    assert.equal(r.code, 1, r.out);
+    assert.equal(r.sent.length, 0);
+  });
+
+  void test('--harness with no credential, --json: the record failed and the exit is 2', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run(['--harness', 'codex', '--json'], { cwd: dir });
+    assert.equal(r.code, 2, r.out);
+    const json = JSON.parse(r.out) as { record: { kind: string }; exit: number };
+    assert.equal(json.record.kind, 'failed');
+    assert.equal(json.exit, 2);
+  });
+
+  void test('--harness for a tool laika tool add refuses: never told to run it', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run(['--harness', 'antigravity'], { cwd: dir });
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /laika tool add cannot set up antigravity/);
+    assert.doesNotMatch(r.out, /laika tool add antigravity/);
   });
 
   void test('several tools here and --harness names one: recorded, exit 0', async () => {
