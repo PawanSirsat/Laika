@@ -371,21 +371,83 @@ void describe('V3 Tools: each tool’s helper update status', () => {
     }
   });
 
-  void test('only a tool with something to update to offers the command, and a chip on its row', async () => {
+  void test('only a tool with something to update to offers the command', async () => {
     const h = await openTab();
     try {
       await settled(h.page);
       assert.equal(await (await details(h.page, 'a3')).locator('[data-update-how]').count(), 1);
-      assert.equal(
-        await tool(h.page, 'a3').locator('[data-update-chip]').innerText(),
-        'Update required',
-      );
       // a2 runs another commit at the board's protocol: `laika update` would
       // refuse a target that is not ahead of it, so nothing is offered.
       for (const id of ['a1', 'a2', 'a4', 'a5']) {
         assert.equal(await (await details(h.page, id)).locator('[data-update-how]').count(), 0, id);
-        assert.equal(await tool(h.page, id).locator('[data-update-chip]').count(), 0, id);
       }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('every row says its version; its line, what the helper reported (LAI-1083)', async () => {
+    const h = await openTab();
+    try {
+      await settled(h.page);
+      const rows: [string, string, string][] = [
+        ['a1', 'up-to-date', 'Helper up to date'],
+        ['a2', 'up-to-date', 'Helper up to date'],
+        ['a3', 'required', 'Update required'],
+        ['a4', 'unknown', 'Version unknown'],
+        ['a5', 'unchecked', 'Could not check'],
+      ];
+      for (const [id, key, word] of rows) {
+        const chip = tool(h.page, id).locator('[data-update-chip]');
+        await chip.waitFor({ timeout: 10_000 });
+        assert.equal(await chip.getAttribute('data-update-chip'), key, id);
+        assert.equal(await chip.innerText(), word, id);
+      }
+      // A reported version is on the line; no report, or no answer, says none.
+      for (const id of ['a1', 'a2', 'a3']) {
+        assert.match(
+          await tool(h.page, id).locator('[data-line]').innerText(),
+          / · helper 0\.1\.0$/,
+          id,
+        );
+      }
+      for (const id of ['a4', 'a5']) {
+        assert.doesNotMatch(
+          await tool(h.page, id).locator('[data-line]').innerText(),
+          /helper/,
+          id,
+        );
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a device row says its tools’ worst helper status (LAI-1083)', async () => {
+    const h = await open('/developer?tab=devices', stub());
+    try {
+      const chip = h.page.locator('.dv3-device[data-device="d1"] [data-device-version]');
+      await chip.waitFor({ timeout: 20_000 });
+      await until(async () => (await chip.getAttribute('data-device-version')) === 'required');
+      assert.equal(await chip.innerText(), 'Update required');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a device whose tools are all up to date says so once, for all of them (LAI-1083)', async () => {
+    const h = await open(
+      '/developer?tab=devices',
+      stub({
+        agents: [UP, AVAILABLE],
+        reports: { a1: verification('a1', report()), a2: verification('a2', report()) },
+      }),
+    );
+    try {
+      const chip = h.page.locator('.dv3-device[data-device="d1"] [data-device-version]');
+      await chip.waitFor({ timeout: 20_000 });
+      assert.equal(await chip.getAttribute('data-device-version'), 'up-to-date');
+      assert.equal(await chip.innerText(), 'Helpers up to date');
     } finally {
       await h.close();
     }
