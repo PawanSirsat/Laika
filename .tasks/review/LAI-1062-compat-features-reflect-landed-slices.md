@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: [LAI-1056]
 discovered-from: LAI-1060
-status: in-progress
+status: review
 started: 2026-11-02T00:57:59Z
+finished: 2026-11-02T01:03:22Z
 ---
 
 `server/src/services/developer-compat.ts` builds `features` as every name in
@@ -31,9 +32,11 @@ board by its answer (no Laika JSON → "does not support device pairing yet").
 
 ## Acceptance
 
-- [ ] The manifest's features match the routes this build serves.
+- [x] The manifest's features match the routes this build serves.
 - [ ] LAI-1060's CLI note (`cli/src/device.ts` header) is revisited by SHELL
       once this lands: gate on the manifest, keep the answer-based fallback.
+      **Not CORE's to tick: filed as LAI-1064 (SHELL), with the CLI's
+      `PROTOCOL` 1 → 2 that this change makes due.**
 
 ## Claim notes
 
