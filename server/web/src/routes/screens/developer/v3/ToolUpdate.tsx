@@ -12,7 +12,6 @@ import { getCompatibility } from '../../../../api/developer-updates.ts';
 import { timeLabel } from '../../../../api/time-label.ts';
 import { getAgentVerification, type AgentVerification } from '../../../../api/tool-setup.ts';
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
-import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
 import { DesignChip } from './DesignChip.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
 import {
@@ -281,9 +280,10 @@ export interface ToolUpdateProps {
 }
 
 /**
- * A tool's update status, in its details: *Helper* and the status word with its reason,
- * what the helper reported, and — when there is something to update to — the
- * command, *What's new*, and what to do after.
+ * A tool's update status, in its details (LAI-1080): a note whose title is
+ * the status word — warm when there is something to update to — with its
+ * reason, what the helper reported, and then the command, *What's new*, and
+ * what to do after. The section it sits in is labelled *Helper*.
  */
 export function ToolUpdate({ agentId, label }: ToolUpdateProps) {
   const updates = useUpdates();
@@ -299,71 +299,71 @@ export function ToolUpdate({ agentId, label }: ToolUpdateProps) {
 
   return (
     <div className="dv3-update" data-update={s.key} id={id}>
-      <div className="dv3-update-line">
-        <span className="dv3-update-label">Helper</span>
-        <StatusChip tone={s.tone} word={s.word} reason={s.reason} />
+      <NoteBlock tone={offersUpdate(s.key) ? 'warn' : 'neutral'} title={s.word}>
+        <p data-update-reason>{s.reason}</p>
+        {known !== null && <ReportFacts report={known} now={updates.now} />}
         {s.key === 'unchecked' && (
-          <button
-            type="button"
-            className="bar-control dv3-update-retry"
-            aria-label={`Retry the update check for ${label}`}
-            onClick={() => {
-              updates.retry(agentId);
-            }}
-          >
-            Retry
-          </button>
+          <div className="dx-actions">
+            <button
+              type="button"
+              className="dx-btn dx-btn-sm dv3-update-retry"
+              aria-label={`Retry the update check for ${label}`}
+              onClick={() => {
+                updates.retry(agentId);
+              }}
+            >
+              Retry
+            </button>
+          </div>
         )}
-      </div>
 
-      {known !== null && <ReportFacts report={known} now={updates.now} />}
-
-      {offersUpdate(s.key) && (
-        <details className="dv3-update-how" data-update-how>
-          <summary>How to update {label}</summary>
-          <p className="dv3-note">
-            On that device, check first, then update. It moves your Laika checkout to the helper
-            this board offers; nothing else on the device changes.
-          </p>
-          <CodeBlock
-            label="Terminal"
-            labelId={`${id}-command`}
-            text={command.text}
-            what="the update command"
-            onCopied={() => {
-              updates.watch(agentId, label);
-            }}
-          />
-          {command.allowHttp && (
-            <p className="dv3-note" data-allow-http>
-              <strong>Why --allow-http:</strong> {ALLOW_HTTP_WHY}
+        {offersUpdate(s.key) && (
+          <details className="dv3-update-how" data-update-how>
+            <summary>How to update {label}</summary>
+            <p className="dv3-note">
+              On that device, check first, then update. It moves your Laika checkout to the helper
+              this board offers; nothing else on the device changes.
             </p>
-          )}
-          <p className="dv3-note" data-after-update>
-            {AFTER_UPDATE}
-          </p>
-          {updates.watching(agentId) && (
-            <p className="dv3-note" data-watching>
-              Watching for {label}’s new version report.
+            <CodeBlock
+              label="Terminal"
+              labelId={`${id}-command`}
+              text={command.text}
+              what="the update command"
+              onCopied={() => {
+                updates.watch(agentId, label);
+              }}
+            />
+            {command.allowHttp && (
+              <p className="dv3-note" data-allow-http>
+                <strong>Why --allow-http:</strong> {ALLOW_HTTP_WHY}
+              </p>
+            )}
+            <p className="dv3-note" data-after-update>
+              {AFTER_UPDATE}
             </p>
-          )}
-        </details>
-      )}
+            {updates.watching(agentId) && (
+              <p className="dv3-note" data-watching>
+                Watching for {label}’s new version report.
+              </p>
+            )}
+          </details>
+        )}
 
-      {notes !== undefined && notes.length > 0 && s.key !== 'checking' && (
-        <details className="dv3-update-new" data-whats-new>
-          <summary>What’s new</summary>
-          <ul className="dv3-update-notes">
-            {notes.map((line) => (
-              <li key={line.protocol} data-new-for-tool={line.newForTool || undefined}>
-                <span className="dv3-update-protocol">Protocol {line.protocol}</span>
-                {line.newForTool && <span className="dv3-tag">New for this tool</span>}{' '}
-                {line.summary}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+        {notes !== undefined && notes.length > 0 && s.key !== 'checking' && (
+          <details className="dv3-update-new" data-whats-new>
+            <summary>What’s new</summary>
+            <ul className="dv3-update-notes">
+              {notes.map((line) => (
+                <li key={line.protocol} data-new-for-tool={line.newForTool || undefined}>
+                  <span className="dv3-update-protocol">Protocol {line.protocol}</span>
+                  {line.newForTool && <span className="dv3-tag">New for this tool</span>}{' '}
+                  {line.summary}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </NoteBlock>
     </div>
   );
 }

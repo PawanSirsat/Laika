@@ -311,36 +311,28 @@
   margin: 0;
 }
 
-/* A status's word can be a sentence (*Update required for pairing devices, …*):
-   in a panel as narrow as a phone it wraps rather than running out of it, in a
-   box rather than a stretched pill. */
-.dv3-tool-details .status-chip {
-  flex-wrap: wrap;
-  max-width: 100%;
-  border-radius: var(--radius-control);
-}
-
-.dv3-tool-details .status-chip-word {
-  white-space: normal;
-}
-
-/* The section's own label already says *Helper*. */
-.dv3-tool-details .dv3-update-label {
-  display: none;
-}
-
-/* The panel's status: the word in its chip, then why, as plain text. */
+/* The panel's status: the word in its chip, and why on its own muted line. */
 .dv3-panel-status {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .dv3-panel-reason {
   min-width: 0;
   overflow-wrap: anywhere;
+  color: var(--text-secondary);
+}
+
+/* The helper's status is a note: its body's disclosures and command fit it. */
+.dv3-tool-details .dv3-update .dx-note-body {
+  min-width: 0;
+}
+
+.dv3-tool-details .dv3-update-facts {
+  margin: 0;
 }
 
 .dv3-device-details .dv3-update-summary {
