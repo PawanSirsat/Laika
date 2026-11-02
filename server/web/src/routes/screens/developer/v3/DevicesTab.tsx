@@ -28,14 +28,9 @@ import {
 } from '../../../../components/wizard/OverflowMenu.tsx';
 import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
 import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
-import {
-  AccessForm,
-  AgentsTab,
-  RenameForm,
-  SecretPanel,
-  grantSummary,
-  useOnceSecret,
-} from '../AgentsTab.tsx';
+import { AddDeviceWizard } from './AddDeviceWizard.tsx';
+import { AddToolWizard, pairedDevice } from './AddToolWizard.tsx';
+import { AccessForm, RenameForm, SecretPanel, grantSummary, useOnceSecret } from '../AgentsTab.tsx';
 import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
 import { cloudExpiry, cloudExpiryProblem, isCloudDevice, rotatableToken } from '../agent-wizard.ts';
 import { showsConsent } from '../checkpoint-consent.ts';
@@ -68,7 +63,15 @@ export interface DevicesTabProps {
   readonly origin: string;
   readonly params: URLSearchParams;
   readonly setParams: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
+  /**
+   * Preview mode: Project setup's new flow is `?setup=v3` on the Projects tab
+   * (LAI-1052), so *Set up a project* carries it.
+   */
+  readonly preview?: boolean;
 }
+
+/** Every address parameter the two wizards read; closing one drops them all. */
+const WIZARD_PARAMS = ['add', 'pairing', 'device', 'tool', 'exchange', 'reconnect'] as const;
 
 /**
  * Developer access V3 → Devices (LAI-1054, plan LAI-1042 §B.3, §D, §H).
@@ -94,11 +97,14 @@ export interface DevicesTabProps {
  * agent's live claims are not served to its owner (`GET /agents/:id` lists
  * sessions, not claims), and a row never guesses one.
  *
- * **Add device / Add tool** still open the classic registration wizard
- * (`?add=device|tool`, `?tool=<id>` to start it on a tool), which asks for
- * the device and the tool together. The V3 wizards replace it in slice D4.
+ * **Add device / Add tool** (LAI-1061) are the V3 wizards: `?add=device`
+ * pairs a device (`&pairing=<id>` resumes one, `&device=<id>` pairs an
+ * imported one), and `?add=tool` adds a tool to a paired device
+ * (`&device=`, `&tool=<slug>` to start on one, `&exchange=<id>` resumes,
+ * `&reconnect=<agent>` gives a tool a new credential on its own device). The
+ * browser never holds a tool's secret in either.
  */
-export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
+export function DevicesTab({ me, params, setParams, preview = false }: DevicesTabProps) {
   const gates = useGates(me !== undefined);
   const canManage = gates.org('agent.manage_own');
   const confirm = useConfirm();
@@ -187,14 +193,14 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
     };
   }, [load, loadProjects]);
 
-  // `?agent=<id>`: once the list is in, open what hides it and bring the row to focus.
-  const focused = useRef(false);
+  // `?agent=<id>`: once the list is in, open what hides it and bring the row to focus —
+  // once per id, so a wizard sending the reader to a conflict lands there too.
+  const focused = useRef<string | undefined>(undefined);
   const [openConflict, setOpenConflict] = useState<string | undefined>(undefined);
   useEffect(() => {
-    if (focused.current || devices === undefined || focusAgent === null || focusAgent === '') {
-      return;
-    }
-    focused.current = true;
+    if (devices === undefined || focusAgent === null || focusAgent === '' || wizard) return;
+    if (focused.current === focusAgent) return;
+    focused.current = focusAgent;
     const device = deviceOf(devices, focusAgent);
     if (device === undefined) return;
     const agent = device.agents.find((a) => a.id === focusAgent);
@@ -208,13 +214,50 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
       row?.scrollIntoView({ block: 'center' });
       row?.focus();
     }, 0);
-  }, [devices, focusAgent]);
+  }, [devices, focusAgent, wizard]);
 
   const openAdd = (what: 'device' | 'tool'): void => {
     lastAdd.current = what;
     const next = new URLSearchParams(params);
     next.set('add', what);
     setParams(next, { push: true });
+  };
+
+  /** The address with the wizards' parameters replaced by `set`. */
+  const wizardParams = (set: Readonly<Record<string, string | undefined>>): URLSearchParams => {
+    const next = new URLSearchParams(params);
+    for (const key of WIZARD_PARAMS) {
+      if (key in set) next.delete(key);
+    }
+    for (const [key, value] of Object.entries(set)) {
+      if (value !== undefined) next.set(key, value);
+    }
+    return next;
+  };
+
+  const closeWizard = (changed: boolean, extra: Readonly<Record<string, string>> = {}): void => {
+    lastAdd.current ??= add === 'device' ? 'device' : 'tool';
+    const next = new URLSearchParams(params);
+    for (const key of WIZARD_PARAMS) next.delete(key);
+    for (const [key, value] of Object.entries(extra)) next.set(key, value);
+    setParams(next);
+    if (changed) load();
+  };
+
+  const reconnect = (agent: RegisteredAgent): void => {
+    lastAdd.current = 'tool';
+    setParams(
+      wizardParams({
+        add: 'tool',
+        reconnect: agent.id,
+        device: undefined,
+        tool: undefined,
+        exchange: undefined,
+      }),
+      {
+        push: true,
+      },
+    );
   };
 
   // Focus goes back to the button that opened the wizard, once it is back.
@@ -331,22 +374,55 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
   return (
     <div className="dev-body">
       <LiveRegion message={message} />
-      {wizard && (
-        // Slice D4 replaces this with the V3 Add device and Add tool wizards.
-        <AgentsTab
-          me={me}
-          origin={origin}
-          openWizard
-          wizardOnly
-          initialGuide={params.get('tool') ?? undefined}
-          onWizardClosed={() => {
-            lastAdd.current ??= add === 'device' ? 'device' : 'tool';
-            const next = new URLSearchParams(params);
-            next.delete('add');
-            next.delete('tool');
-            setParams(next);
+      {add === 'device' && (
+        <AddDeviceWizard
+          key="device"
+          devices={devices}
+          resumeId={params.get('pairing') ?? undefined}
+          initialDeviceId={params.get('device') ?? undefined}
+          onRequest={(id) => {
+            setParams(wizardParams({ pairing: id }));
+          }}
+          onAddTool={(deviceId) => {
+            setParams(wizardParams({ add: 'tool', device: deviceId, pairing: undefined }));
             load();
           }}
+          onClose={closeWizard}
+        />
+      )}
+      {add === 'tool' && (
+        <AddToolWizard
+          key={`tool-${params.get('reconnect') ?? ''}`}
+          devices={devices}
+          me={me}
+          canManage={canManage}
+          initialDeviceId={params.get('device') ?? undefined}
+          initialTool={params.get('tool') ?? undefined}
+          reconnectId={params.get('reconnect') ?? undefined}
+          resumeExchange={params.get('exchange') ?? undefined}
+          onExchange={(id) => {
+            setParams(wizardParams({ exchange: id }));
+          }}
+          onAddDevice={(deviceId, tool) => {
+            setParams(
+              wizardParams({
+                add: 'device',
+                device: deviceId,
+                tool,
+                exchange: undefined,
+                reconnect: undefined,
+              }),
+            );
+          }}
+          onResolveConflict={(agentId) => {
+            closeWizard(false, { agent: agentId });
+          }}
+          onSetUpProject={(agentId) => {
+            const next = new URLSearchParams({ tab: 'projects', tool: agentId });
+            if (preview) next.set('setup', 'v3');
+            setParams(next, { push: true });
+          }}
+          onClose={closeWizard}
         />
       )}
 
@@ -458,6 +534,7 @@ export function DevicesTab({ me, origin, params, setParams }: DevicesTabProps) {
                       disconnectDevice(device, heading);
                     }}
                     onChanged={put}
+                    onReconnect={reconnect}
                     onRemoved={focusAfterRemoval}
                     announce={announce}
                     confirm={confirm}
@@ -503,6 +580,8 @@ interface DeviceCardProps {
   readonly onRecognise: () => void;
   readonly onDisconnect: (heading: RefObject<HTMLElement | null>) => void;
   readonly onChanged: (agent: RegisteredAgent) => void;
+  /** *Reconnect* on a paired device: the tool wizard, with a `rotate` exchange. */
+  readonly onReconnect: (agent: RegisteredAgent) => void;
   /** A disconnect is about to take a row away: say where focus goes after. */
   readonly onRemoved: (heading: RefObject<HTMLElement | null>) => void;
   readonly announce: (message: string) => void;
@@ -525,6 +604,7 @@ function DeviceCard({
   onRecognise,
   onDisconnect,
   onChanged,
+  onReconnect,
   onRemoved,
   announce,
   confirm,
@@ -545,6 +625,7 @@ function DeviceCard({
           : `${agentLabel(agent)} (${twins.get(agent.id) ?? ''})`
       }
       cloud={cloud || isCloudDevice(agent.device_label)}
+      paired={pairedDevice(device)}
       inConflict={inConflict}
       now={now}
       me={me}
@@ -553,6 +634,7 @@ function DeviceCard({
       projectsError={projectsError}
       onRetryProjects={onRetryProjects}
       onChanged={onChanged}
+      onReconnect={onReconnect}
       onRemoved={onRemoved}
       announce={announce}
       confirm={confirm}
@@ -689,6 +771,12 @@ interface ToolRowProps {
   /** `<tool> · <device>`, marked where another of the device's agents shares it. */
   readonly label: string;
   readonly cloud: boolean;
+  /**
+   * Its device is paired: *Reconnect* is an exchange the device redeems
+   * (LAI-1061), and no secret reaches this page. Otherwise it is the
+   * browser-shown rotate, for a device that has no key to redeem with.
+   */
+  readonly paired: boolean;
   /** One of a legacy duplicate pair: the only place *Rename* is offered (D-120). */
   readonly inConflict: boolean;
   readonly now: number;
@@ -698,6 +786,7 @@ interface ToolRowProps {
   readonly projectsError: unknown;
   readonly onRetryProjects: () => void;
   readonly onChanged: (agent: RegisteredAgent) => void;
+  readonly onReconnect: (agent: RegisteredAgent) => void;
   /** A disconnect is about to take a row away: say where focus goes after. */
   readonly onRemoved: (heading: RefObject<HTMLElement | null>) => void;
   readonly announce: (message: string) => void;
@@ -712,6 +801,7 @@ function ToolRow({
   agent,
   label,
   cloud,
+  paired,
   inConflict,
   now,
   me,
@@ -720,6 +810,7 @@ function ToolRow({
   projectsError,
   onRetryProjects,
   onChanged,
+  onReconnect,
   onRemoved,
   announce,
   confirm,
@@ -851,12 +942,21 @@ function ToolRow({
         setPanel('access');
       },
     },
-    {
-      id: 'reconnect',
-      label: 'Reconnect (new credential)…',
-      disabled: busy || replaceable === undefined,
-      onSelect: rotate,
-    },
+    paired
+      ? {
+          id: 'reconnect',
+          label: 'Reconnect (new credential)…',
+          disabled: busy,
+          onSelect: () => {
+            onReconnect(agent);
+          },
+        }
+      : {
+          id: 'reconnect',
+          label: 'Reconnect (new credential)…',
+          disabled: busy || replaceable === undefined,
+          onSelect: rotate,
+        },
     {
       id: 'disconnect',
       label: 'Disconnect tool…',

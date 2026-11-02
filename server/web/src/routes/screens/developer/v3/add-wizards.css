@@ -1,0 +1,279 @@
+/*
+ * Add device and Add tool (LAI-1061). They are Connect's wizard parts —
+ * `StepRail`, `WizardCard`, `CodeBlock`, `ToolTile` — styled by
+ * `connect/connect.css`, set inside the Devices tab. Only what that sheet
+ * cannot know is here: the wizard sits in a tab, not a page of its own
+ * height, and the steps' own content. Existing tokens only.
+ */
+
+.dv3w {
+  margin-bottom: var(--space-5);
+}
+
+/* Connect's wizard is exactly the page's height; in a tab it is as tall as it needs. */
+.dv3w .dv3w-grid {
+  flex: none;
+  grid-template-rows: auto;
+}
+
+.dv3w .conn-wizard-card {
+  grid-row: 1;
+  height: auto;
+  max-height: none;
+}
+
+.dv3w .conn-card-scroll {
+  overflow: visible;
+}
+
+.dv3w-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.dv3w-set {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.dv3w-set > legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+}
+
+.dv3w-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.dv3w-option input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.dv3w-option-off {
+  color: var(--text-secondary);
+}
+
+.dv3w-quiet {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+.dv3w-name {
+  width: min(100%, 22rem);
+}
+
+.dv3w-mode-meaning {
+  margin-left: var(--space-2);
+  font-weight: normal;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.dv3w-picker {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.dv3w-wait {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.dv3w-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.dv3w-deny {
+  color: var(--overdue);
+  border-color: var(--overdue-border);
+}
+
+.dv3w-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+.dv3w-error p {
+  margin: 0;
+}
+
+.dv3w-ended {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+/* The fingerprint is compared character by character against a terminal. */
+.dv3w-fingerprint {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+}
+
+.dv3w-fingerprint .conn-label {
+  margin: 0 0 var(--space-1);
+}
+
+.dv3w-fingerprint-value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  color: var(--text-primary);
+}
+
+.dv3w-facts {
+  margin-top: 0;
+}
+
+.dv3w-notes {
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  line-height: 1.55;
+}
+
+.dv3w-notes code,
+.dv3w-check-detail code {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ checks */
+
+.dv3w-checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.dv3w-checks-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dv3w-checks-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.dv3w-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dv3w-check {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.dv3w-check-mark {
+  display: inline-flex;
+  justify-content: center;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.dv3w-check[data-state='pass'] .dv3w-check-mark {
+  color: var(--chip-green);
+}
+
+.dv3w-check-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dv3w-check-label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+/* The state in words, so the mark is never the only signal. */
+.dv3w-check-state {
+  font-weight: normal;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.dv3w-check-detail {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+.dv3w-honest {
+  margin-top: var(--space-1);
+}
+
+.dv3w-consent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.dv3w-consent .conn-label {
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .dv3w .conn-card-foot {
+    flex-wrap: wrap;
+  }
+
+  .dv3w-fingerprint-value {
+    font-size: var(--text-body);
+  }
+}
