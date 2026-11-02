@@ -212,11 +212,11 @@ void describe('a legacy tool token', () => {
       await link.waitFor({ timeout: 20_000 });
       assert.equal(
         await link.getAttribute('href'),
-        '/developer?tab=devices&add=tool&tool=claude-code',
+        '/developer?tab=tools&add=tool&tool=claude-code',
       );
       await link.click();
-      await until(() => here(h.page.url()).startsWith('/developer?tab=devices'), 10_000);
-      assert.equal(here(h.page.url()), '/developer?tab=devices&add=tool&tool=claude-code');
+      await until(() => here(h.page.url()).startsWith('/developer?tab=tools'), 10_000);
+      assert.equal(here(h.page.url()), '/developer?tab=tools&add=tool&tool=claude-code');
       await h.page.waitForTimeout(500);
       assert.equal(
         h.calls.filter((c) => c.method === 'DELETE').length,
@@ -361,6 +361,46 @@ void describe('Activity', () => {
       const text = await h.page.locator('.dev-sharing').innerText();
       assert.match(text, /Developer access’s Project setup\./);
       assert.doesNotMatch(text, /Projects tab/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('v3: an Activity address lands on Advanced’s second card, its title focused (LAI-1078)', async () => {
+    const h = await open('/developer?tab=activity', stub('v3'));
+    try {
+      await h.page.locator('#activity #dev-sharing-title').waitFor({ timeout: 20_000 });
+      assert.equal(new URL(h.page.url()).search, '?tab=advanced&section=activity');
+      assert.equal(await h.page.locator('.page-tab-active').getAttribute('data-tab'), 'advanced');
+      // Personal credentials first, then Share local activity — one tab, two cards.
+      const order = await h.page.evaluate(() =>
+        [...document.querySelectorAll('.dev-advanced-page > *')].map((el) =>
+          el.classList.contains('dev-sharing')
+            ? 'activity'
+            : el.classList.contains('dev-advanced')
+              ? 'credentials'
+              : el.className,
+        ),
+      );
+      assert.deepEqual(order, ['credentials', 'activity']);
+      await h.page.waitForFunction(
+        () => document.activeElement?.id === 'dev-sharing-title',
+        undefined,
+        { timeout: 10_000 },
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('v3: Advanced on its own leaves focus where it was', async () => {
+    const h = await open('/developer?tab=advanced', stub('v3'));
+    try {
+      await h.page.locator('#activity #dev-sharing-title').waitFor({ timeout: 20_000 });
+      await h.page.locator('.dev-adv-row, .dev-advanced .state-empty').first().waitFor({
+        timeout: 20_000,
+      });
+      assert.notEqual(await h.page.evaluate(() => document.activeElement?.id), 'dev-sharing-title');
     } finally {
       await h.close();
     }

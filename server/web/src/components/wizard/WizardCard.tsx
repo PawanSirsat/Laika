@@ -8,6 +8,12 @@ import type { ReactNode, Ref } from 'react';
 export interface WizardCardProps {
   readonly step: number;
   readonly total: number;
+  /**
+   * What the wizard sets up, after the count — *Step 2 of 3 · Device* in
+   * Developer access's design (LAI-1078). Absent, the eyebrow and its markup
+   * are exactly as before, which Connect's golden test pins.
+   */
+  readonly kind?: string | undefined;
   readonly title: string;
   /** One sentence under the title: what this step is for. */
   readonly line: string;
@@ -31,6 +37,7 @@ export interface WizardCardProps {
 export function WizardCard({
   step,
   total,
+  kind,
   title,
   line,
   titleId,
@@ -46,6 +53,7 @@ export function WizardCard({
         <header className="conn-card-head" ref={headRef}>
           <p className="conn-eyebrow">
             Step {String(step)} of {String(total)}
+            {kind !== undefined && ` · ${kind}`}
           </p>
           <h2 className="conn-card-title" id={titleId} tabIndex={-1} ref={titleRef}>
             {title}

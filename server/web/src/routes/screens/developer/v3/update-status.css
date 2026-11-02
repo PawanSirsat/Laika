@@ -1,25 +1,12 @@
 /*
- * Developer access V3 → Devices: each tool's helper update status (LAI-1065).
- * Existing tokens only, so both themes come from theme.css; every status is a
- * word as well as the chip's colour.
+ * Developer access V3: each tool's helper update status (LAI-1065), in the
+ * tool's details since LAI-1080. Existing tokens only, so both themes come
+ * from theme.css; every status is a word as well as its note's colour.
  */
 
 .dv3-update {
   margin: var(--space-2) 0 0;
   min-width: 0;
-}
-
-.dv3-update-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  min-width: 0;
-}
-
-.dv3-update-label {
-  color: var(--text-muted);
-  font-size: var(--text-small);
 }
 
 .dv3-update-facts {

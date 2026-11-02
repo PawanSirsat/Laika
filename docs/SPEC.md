@@ -3894,7 +3894,7 @@ POST   /api/v1/agents/:id/reconnect          a rotate exchange on the agent's pa
 GET    /api/v1/agents/:id/verification       → { agent_id, harness, status, now, last_seen_at, checks: { device_paired, credential_installed, credential_used, tool_request, session_hooks, required_capabilities }, client_report } (§4.81, agent.read_own; the owner or the agent's own token)
 POST   /api/v1/agents/me/client-report       an agent's token only; body { cli_version, cli_commit?, protocol, capabilities[], harness_version?, harness? } → the report (§4.81, heartbeat.send_own)
 POST   /api/v1/project-setups            the owner signed in: body { agent_id: string | null, project_slug, template_revision, instructions_path? } → 201 a self_reported_browser record (agent.manage_own, session only); an agent's own token: body { project_slug, repo_key, repo_label, instructions_path, block_found, template_revision, block_project, block_prefix } → 201 a local_check record for that agent (heartbeat.send_own); a personal token 403 not_an_agent (§4.82)
-GET    /api/v1/project-setups            ?project= (required), agent_id= optional → { data: [{ id, agent_id, device_label, project_id, project_slug, repo_label, instructions_path, block_found, template_revision, project_match, prefix_match, source, checked_at }] } — own rows; an agent's token its own (§4.82, agent.read_own; not paginated)
+GET    /api/v1/project-setups            ?project= optional, agent_id= optional → { data: [{ id, agent_id, device_label, project_id, project_slug, repo_label, instructions_path, block_found, template_revision, project_match, prefix_match, source, checked_at }] } — own rows, for the one project; with no project, across every project the caller can read, newest first — each project asked the same project.read, and one the caller cannot read contributes nothing and is named nowhere (LAI-1077); an agent's token its own (§4.82, agent.read_own; not paginated)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
@@ -6116,7 +6116,7 @@ the decision currently governing it rather than the table naming one for all.
 | a space's tabs | two groups with a hairline between — *Board, List, Timeline, Calendar* \| *Sprints, Dashboard, Activity, Meeting review* — and *Agents* and *Create* on the right | **LAI-796** |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer | D-059.2, amended by **D-063** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
-| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
+| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
 | old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`) | **LAI-796**; **LAI-507** |
 | Organisation | four tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*; the spaces), **People** (members and invites), **Integrations** (GitHub webhook, model prices, AI provider), **Security** (everyone's tokens, owners and admins) | **LAI-796** |
 
@@ -6287,6 +6287,23 @@ anything missing sends the task back.
   per machine* or *Once per project*. The compact *Connect an agent* card and
   the wizard's *Optional* rail are gone, and so is *Invite a teammate*: an
   invite is Organisation → People's.
+- **Developer access in `v3`** (`LAIKA_DEVELOPER_ACCESS`, the default since
+  LAI-1076), drawn in the owner's design (`laika-developer-access-v3.html`,
+  LAI-1078) in Laika's own tokens: the page's sentence is *Pair your computer
+  once, connect your coding tools, then set up each project repository.
+  Project setup is where work becomes connected.*, then **Overview · Project
+  setup · Devices · Tools · Advanced**. *Devices* lists the reader's devices
+  and *Tools* the coding tools on them (LAI-1080), one line a row from the
+  same `GET /devices`; everything a row has no room for opens in a **details
+  side panel** addressed by the URL (`?tab=devices&device=<id>`,
+  `?tab=tools&agent=<id>`), which Back, Escape, the scrim and × close —
+  except that while a credential created in the browser is on screen, ×,
+  Escape and the scrim ask *Close without copying the new credential?* first
+  (LAI-1081). *Add device* and *Add tool* stand in place of their list while
+  open: a titled rail of three steps, *Step n of 3 · Device* or *· Tool*, and
+  a footer band with the note and the actions. *Advanced* is the reader's personal credentials, then the *Share local
+  activity* card (*Once per device*); the old `?tab=activity` lands on it as
+  `?tab=advanced&section=activity`, which scrolls to it and focuses its title.
 - **Tokens** (on Developer access) — create with name and scope; **value shown exactly once** with a
   copy affordance and an explicit "you will not see this again"; list with
   prefix, scope, last used, expiry; revoke with confirmation; admin view of

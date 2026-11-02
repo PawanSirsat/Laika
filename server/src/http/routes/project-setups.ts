@@ -62,8 +62,9 @@ const LocalCheckBody = strictObject({
   block_prefix: z.string().min(1).max(32).nullable(),
 });
 
+/** No `project` reads the caller's own across every project they can read (LAI-1077). */
 const ListQuery = z.object({
-  project: ProjectSlug,
+  project: ProjectSlug.optional(),
   agent_id: z.string().min(1).max(64).optional(),
 });
 

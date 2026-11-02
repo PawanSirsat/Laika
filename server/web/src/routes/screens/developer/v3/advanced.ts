@@ -57,7 +57,7 @@ export function isLegacyToolToken(token: TokenView): boolean {
 }
 
 /**
- * Where *Upgrade connection* goes: Devices with *Add a tool* open, on the tool
+ * Where *Upgrade connection* goes: Tools with *Add a tool* open, on the tool
  * that last used this token when there is a guide for it. **It revokes
  * nothing** — it is a link, and the old token stays valid until its owner
  * revokes it here.
@@ -66,7 +66,7 @@ export function upgradeHref(token: TokenView): string {
   const client = asAgentClient(token.last_client);
   const guide =
     client === null ? undefined : AGENT_GUIDES.find((candidate) => candidate.id === client);
-  const params = new URLSearchParams({ tab: 'devices', add: 'tool' });
+  const params = new URLSearchParams({ tab: 'tools', add: 'tool' });
   if (guide !== undefined) params.set('tool', guide.id);
   return `/developer?${params.toString()}`;
 }

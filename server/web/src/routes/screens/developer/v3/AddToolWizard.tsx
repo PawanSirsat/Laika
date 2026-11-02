@@ -17,9 +17,7 @@ import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
 import { Help } from '../../../../components/wizard/Help.tsx';
 import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
 import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
-import { StepRail } from '../../../../components/wizard/StepRail.tsx';
 import { ToolTile } from '../../../../components/wizard/ToolTile.tsx';
-import { WizardCard } from '../../../../components/wizard/WizardCard.tsx';
 import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import { useConfirm } from '../../../../components/ConfirmProvider.tsx';
 import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
@@ -40,6 +38,9 @@ import {
   type ToolCapability,
 } from './tool-catalog.ts';
 import { checkLines, readiness, readinessSummary } from './tool-readiness.ts';
+import { DesignWizard } from './DesignWizard.tsx';
+import { DxIcon } from './DxIcon.tsx';
+import { SectionTitle } from './SectionTitle.tsx';
 import '../../connect/connect.css';
 import './add-wizards.css';
 
@@ -70,10 +71,16 @@ export interface AddToolWizardProps {
 
 type Step = 1 | 2 | 3;
 
+/**
+ * The owner's design's steps (LAI-1081), less its *Authorize identity*: the
+ * browser authorizes when it asks the board for the command, and the device
+ * fetches the credential itself — a step of its own would be a click that
+ * does nothing.
+ */
 const STEP_NAMES: Readonly<Record<Step, string>> = {
-  1: 'Choose the tool',
-  2: 'Run it and check',
-  3: 'Finish',
+  1: 'Choose tool',
+  2: 'Configure on your device',
+  3: 'Verify & finish',
 };
 
 interface Setup {
@@ -362,25 +369,30 @@ export function AddToolWizard({
       ) : (
         <div className="dv3w-stack">
           <fieldset className="dv3w-set">
-            <legend className="conn-label">Device</legend>
-            {paired.map((d) => (
-              <label key={d.id} className="dv3w-option">
-                <input
-                  type="radio"
-                  name={`${ids}-device`}
-                  checked={device?.id === d.id}
-                  onChange={() => {
-                    setDeviceId(d.id);
-                  }}
-                />
-                <span>
-                  {d.display_name}{' '}
-                  <span className="dv3w-quiet">
-                    — {d.kind === 'cloud' ? 'Cloud' : 'Local'}, paired
+            <legend className="dx-label">On device</legend>
+            <div className="dx-options">
+              {paired.map((d) => (
+                <label key={d.id} className="dx-option">
+                  <input
+                    type="radio"
+                    name={`${ids}-device`}
+                    checked={device?.id === d.id}
+                    onChange={() => {
+                      setDeviceId(d.id);
+                    }}
+                  />
+                  <span className="dx-icon">
+                    <DxIcon name={d.kind === 'cloud' ? 'cloud' : 'device'} />
                   </span>
-                </span>
-              </label>
-            ))}
+                  <span>
+                    <strong className="dx-option-name">{d.display_name}</strong>
+                    <span className="dx-option-sub">
+                      {d.kind === 'cloud' ? 'Cloud runner' : 'Local computer'}, paired
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
             {unpaired.map((d) => (
               <div key={d.id} className="dv3w-option dv3w-option-off">
                 <span>
@@ -404,8 +416,8 @@ export function AddToolWizard({
             role="radiogroup"
             aria-labelledby={`${ids}-tools`}
           >
-            <legend className="conn-label" id={`${ids}-tools`}>
-              Coding tool
+            <legend className="dx-label" id={`${ids}-tools`}>
+              Choose the app that will connect to Laika
             </legend>
             {catalogGroups().map((group) => (
               <div key={group.mode} className="conn-group" data-mode={group.mode}>
@@ -463,7 +475,7 @@ export function AddToolWizard({
       devices !== undefined && paired.length === 0 ? (
         <button
           type="button"
-          className="conn-continue"
+          className="dx-btn dx-btn-primary"
           onClick={() => {
             onAddDevice(undefined, harness);
           }}
@@ -473,7 +485,7 @@ export function AddToolWizard({
       ) : (
         <button
           type="button"
-          className="conn-continue"
+          className="dx-btn dx-btn-primary"
           disabled={
             device === undefined || tool === undefined || !tool.cliSetup || busy || !canManage
           }
@@ -486,7 +498,7 @@ export function AddToolWizard({
       );
   } else if (setup !== undefined && step === 2) {
     const { exchange, tool: t, device: d } = setup;
-    line = `On ${d.display_name}, in a terminal.`;
+    line = `Configure ${t.name} on ${d.display_name}, in a terminal.`;
     const expired = exchangeEnded(exchange);
     body = (
       <div className="dv3w-stack">
@@ -572,42 +584,46 @@ export function AddToolWizard({
             ))}
           </ul>
         )}
-
-        <Checklist tool={t} verification={verification} lines={lines} trouble={pollTrouble} />
       </div>
     );
-    hint =
-      current?.key === 'ready'
-        ? `${t.name} is Ready.`
-        : 'This checks by itself. You can finish now and come back.';
+    hint = 'Existing tools and projects are not changed.';
     primary = (
       <button
         type="button"
-        className="conn-continue"
+        className="dx-btn dx-btn-primary"
         onClick={() => {
           setStep(3);
         }}
       >
-        {current?.key === 'ready' ? 'Continue' : 'Finish for now'} <span aria-hidden="true">→</span>
+        I ran it <span aria-hidden="true">→</span>
       </button>
     );
   } else if (setup !== undefined && step === 3) {
     const { tool: t, agent } = setup;
-    line = `${t.name} on ${setup.device.display_name}.`;
+    line = `Checks for ${t.name} on ${setup.device.display_name}, from its own requests.`;
     body = (
       <div className="dv3w-stack">
-        {current !== undefined ? (
-          <StatusChip tone={current.tone} word={current.word} reason={current.reason} />
-        ) : (
-          <StatusChip tone="waiting" word="Checking" reason="Not read from the board yet" />
-        )}
-        {current?.versionUnknown === true && (
-          <span className="dv3-tag dv3-tag-quiet">Version unknown</span>
-        )}
+        <div className="dx-status-head">
+          <span className="dx-orb" data-tone={current?.key === 'ready' ? undefined : 'accent'}>
+            <DxIcon name={current?.key === 'ready' ? 'check' : 'tool'} />
+          </span>
+          <div>
+            <p className="dv3w-status-word">
+              {current === undefined ? 'Checking' : `${t.name} is ${current.word}`}
+              {current?.versionUnknown === true && (
+                <span className="dv3-tag dv3-tag-quiet">Version unknown</span>
+              )}
+            </p>
+            <p className="dv3w-quiet">
+              {current?.reason ?? 'Not read from the board yet'} · on {setup.device.display_name}
+            </p>
+          </div>
+        </div>
+        <Checklist tool={t} verification={verification} lines={lines} trouble={pollTrouble} />
         {current?.key !== 'ready' && (
           <Help>
-            Not Ready yet: the checks keep going on the Devices tab, where this tool’s row says what
-            is still missing.
+            Not Ready yet: the checks keep going here and on the tool’s details, which say what is
+            still missing. You can finish now and come back.
           </Help>
         )}
         {t.sessions ? (
@@ -651,7 +667,7 @@ export function AddToolWizard({
     primary = (
       <button
         type="button"
-        className="conn-continue"
+        className="dx-btn dx-btn-primary"
         onClick={() => {
           leave(() => {
             onSetUpProject(agent.id);
@@ -672,95 +688,115 @@ export function AddToolWizard({
   const railTool = setup?.tool ?? tool;
   const railDevice = setup?.device ?? device;
 
+  const reconnecting = reconnectId !== undefined;
   return (
     <section
       className="dv3w"
-      aria-label={reconnectId === undefined ? 'Add a tool' : 'Reconnect a tool'}
+      aria-label={reconnecting ? 'Reconnect a tool' : 'Add a tool'}
       data-wizard="tool"
       data-step={shownStep}
       data-status={current?.key}
     >
       <LiveRegion message={message} />
-      <div className="conn-wizard dv3w-grid">
-        <StepRail
-          label="Tool setup steps"
-          intro={
-            reconnectId === undefined
-              ? 'Each tool gets its own credential, fetched by its device.'
-              : 'A new credential, fetched by the device; the old one stops when it arrives.'
-          }
-          current={shownStep}
-          steps={([1, 2, 3] as const).map((n) => ({
-            n,
-            name: STEP_NAMES[n],
-            sub:
-              n === 1
-                ? railTool === undefined
-                  ? 'Not yet'
-                  : `${railTool.name}${railDevice === undefined ? '' : ` · ${railDevice.display_name}`}`
-                : n === 2
-                  ? current === undefined
-                    ? 'Not yet'
-                    : current.word
-                  : 'Consent and a project',
-            done: n < shownStep,
-            open: n === shownStep || (n === 3 && setup !== undefined),
-            lockedReason: 'Opens once the command exists',
-          }))}
-          onSelect={(n) => {
-            if (setup !== undefined && n >= 2) setStep(n as Step);
-          }}
-        />
-        <WizardCard
-          step={shownStep}
-          total={3}
-          title={STEP_NAMES[shownStep]}
-          line={line}
-          titleId={`${ids}-title`}
-          titleRef={titleRef}
-          footer={
-            <footer className="conn-card-foot">
-              <button type="button" className="conn-outline conn-back" onClick={close}>
-                {shownStep === 1 ? 'Cancel' : 'Done'}
+      <SectionTitle
+        title={reconnecting ? 'Reconnect a coding tool' : 'Add a coding tool'}
+        titleId={`${ids}-section`}
+        actions={
+          <button type="button" className="dx-btn dx-btn-sm" onClick={close}>
+            Back to tools
+          </button>
+        }
+      />
+      <DesignWizard
+        railTitle={reconnecting ? 'Reconnect a tool' : 'Connect a tool'}
+        railIntro={
+          reconnecting
+            ? 'A new credential, fetched by the device; the old one stops when it arrives.'
+            : 'Each tool gets its own credential, fetched by its device.'
+        }
+        railLabel="Tool setup steps"
+        current={shownStep}
+        steps={([1, 2, 3] as const).map((n) => ({
+          n,
+          name: STEP_NAMES[n],
+          sub:
+            n === 1
+              ? railTool === undefined
+                ? 'Not yet'
+                : `${railTool.name}${railDevice === undefined ? '' : ` · ${railDevice.display_name}`}`
+              : n === 2
+                ? setup === undefined
+                  ? 'The command, on the device'
+                  : 'Command ready'
+                : current === undefined
+                  ? 'Real requests, checked'
+                  : current.word,
+          done: n < shownStep,
+          open: n === shownStep || (n >= 2 && setup !== undefined),
+          lockedReason: 'Opens once the command exists',
+        }))}
+        onSelect={(n) => {
+          if (setup !== undefined && n >= 2) setStep(n as Step);
+        }}
+        step={shownStep}
+        total={3}
+        kind="Tool"
+        title={STEP_NAMES[shownStep]}
+        line={line}
+        titleId={`${ids}-title`}
+        titleRef={titleRef}
+        note={hint}
+        noteId={`${ids}-hint`}
+        actions={
+          <>
+            <button type="button" className="dx-btn" onClick={close}>
+              {shownStep === 1 ? 'Cancel' : 'Done'}
+            </button>
+            {shownStep === 3 && (
+              <button
+                type="button"
+                className="dx-btn"
+                onClick={() => {
+                  setStep(2);
+                }}
+              >
+                Back
               </button>
-              <p className="conn-foot-hint" id={`${ids}-hint`}>
-                {hint}
-              </p>
-              {primary}
-            </footer>
-          }
-        >
-          {body}
-          {refusal !== undefined && (
-            <div className="dv3w-error" role="alert" data-refusal>
-              <p>{refusal.message}</p>
-              {refusal.duplicates !== undefined && refusal.duplicates.length > 0 && (
-                <button
-                  type="button"
-                  className="bar-control"
-                  onClick={() => {
-                    const first = refusal.duplicates?.[0];
-                    if (first !== undefined) onResolveConflict(first);
-                  }}
-                >
-                  Go to the conflicts
-                </button>
-              )}
-              {refusal.needsPairing === true && (
-                <button
-                  type="button"
-                  className="bar-control"
-                  onClick={() => {
-                    onAddDevice(device?.id, harness);
-                  }}
-                >
-                  Pair the device
-                </button>
-              )}
-            </div>
-          )}
-        </WizardCard>
-      </div>
+            )}
+            {primary}
+          </>
+        }
+      >
+        {body}
+        {refusal !== undefined && (
+          <div className="dv3w-error" role="alert" data-refusal>
+            <p>{refusal.message}</p>
+            {refusal.duplicates !== undefined && refusal.duplicates.length > 0 && (
+              <button
+                type="button"
+                className="dx-btn dx-btn-sm"
+                onClick={() => {
+                  const first = refusal.duplicates?.[0];
+                  if (first !== undefined) onResolveConflict(first);
+                }}
+              >
+                Go to the conflicts
+              </button>
+            )}
+            {refusal.needsPairing === true && (
+              <button
+                type="button"
+                className="dx-btn dx-btn-sm"
+                onClick={() => {
+                  onAddDevice(device?.id, harness);
+                }}
+              >
+                Pair the device
+              </button>
+            )}
+          </div>
+        )}
+      </DesignWizard>
     </section>
   );
 }

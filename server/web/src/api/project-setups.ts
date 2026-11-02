@@ -35,16 +35,21 @@ export interface ProjectSetup {
   readonly checked_at: number | null;
 }
 
-/** The reader's own records for one project, optionally for one tool. */
+/**
+ * The reader's own records for one project — or, with no project, across every
+ * project they can read, newest first (LAI-1077) — optionally for one tool.
+ */
 export async function listProjectSetups(
-  projectSlug: string,
+  projectSlug?: string,
   agentId?: string,
   signal?: AbortSignal,
 ): Promise<ProjectSetup[]> {
-  const query = new URLSearchParams({ project: projectSlug });
+  const query = new URLSearchParams();
+  if (projectSlug !== undefined) query.set('project', projectSlug);
   if (agentId !== undefined) query.set('agent_id', agentId);
+  const qs = query.toString();
   const page = await request<{ data: ProjectSetup[] }>(
-    `/project-setups?${query.toString()}`,
+    `/project-setups${qs === '' ? '' : `?${qs}`}`,
     signal === undefined ? {} : { signal },
   );
   return page.data;

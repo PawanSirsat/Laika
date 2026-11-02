@@ -1,7 +1,8 @@
 /**
  * `/project-setups` from the client (LAI-1066): the reader's records for one
- * project and tool, and *I've added it* sent as the board's record — the
- * slug and id encoded, and nothing in the body but the four fields.
+ * project and tool — or across every project, with no `project` (LAI-1077) —
+ * and *I've added it* sent as the board's record — the slug and id encoded,
+ * and nothing in the body but the four fields.
  */
 
 import assert from 'node:assert/strict';
@@ -60,6 +61,23 @@ void describe('listProjectSetups', () => {
   void test('without a tool, asks for the project only', async () => {
     await listProjectSetups('onroute');
     assert.match(seen[0]?.url ?? '', /\/api\/v1\/project-setups\?project=onroute$/);
+  });
+
+  void test('without a project, asks across every project, with no query at all (LAI-1077)', async () => {
+    reply = { data: [{ id: 's2' }, { id: 's1' }] };
+    const rows = await listProjectSetups();
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]?.method, 'GET');
+    assert.match(seen[0]?.url ?? '', /\/api\/v1\/project-setups$/);
+    assert.deepEqual(
+      rows.map((r) => r.id),
+      ['s2', 's1'],
+    );
+  });
+
+  void test('a tool without a project asks for that tool only, encoded', async () => {
+    await listProjectSetups(undefined, 'a/1');
+    assert.match(seen[0]?.url ?? '', /\/api\/v1\/project-setups\?agent_id=a%2F1$/);
   });
 });
 

@@ -1,8 +1,9 @@
 /**
- * What the V3 Devices tab says (LAI-1054), from `GET /devices` alone: each
- * tool's status word — never *Ready*, *Connected* only from the agent's own
- * recent request — the conflicts section, the revoked toggle's counts, and
- * what a disconnect names.
+ * What the V3 Devices and Tools tabs say (LAI-1054, LAI-1080), from
+ * `GET /devices` alone: each tool's status word — never *Ready*, *Connected*
+ * only from the agent's own recent request — the conflicts section, the
+ * revoked toggles' counts, and what a disconnect names. And the one place a
+ * row may say *Ready*: `listedStatus`, from the tool's own verification.
  */
 
 import assert from 'node:assert/strict';
@@ -10,22 +11,35 @@ import { describe, test } from 'node:test';
 import type { AgentSession, RegisteredAgent } from '../../../../../src/api/agents.ts';
 import type { Device } from '../../../../../src/api/devices.ts';
 import type { TokenView } from '../../../../../src/api/tokens.ts';
+import type { AgentVerification } from '../../../../../src/api/tool-setup.ts';
 import {
   ACTIVE_MS,
   OFFLINE_MS,
 } from '../../../../../src/routes/screens/developer/v3/overview-state.ts';
 import {
+  anyPaired,
+  chipTone,
+  conflictsToReview,
+  deviceChip,
   deviceCounts,
+  deviceLine,
   deviceLive,
   deviceOf,
   deviceTools,
   devicesSummary,
   disconnectImpact,
   everyDeviceRevoked,
+  findTool,
+  kindName,
   kindWord,
+  listedStatus,
+  listedTools,
   needsConfirm,
+  revokedDevice,
   runningSessions,
   sessionLine,
+  toolAction,
+  toolLine,
   toolStatus,
   withAgent,
   withConfirmed,
@@ -235,11 +249,16 @@ void describe('deviceLive and deviceCounts: revoked hidden and never counted', (
     assert.equal(deviceLive(importedEmpty), false);
   });
 
-  void test('counts exclude revoked; the toggle counts what it would add', () => {
+  void test('counts exclude revoked; each toggle counts what it would add', () => {
     const c = deviceCounts([live, allRevoked, revokedEmpty, pairedEmpty, importedEmpty]);
+    // Devices' toggle adds allRevoked and revokedEmpty; Tools' adds a2 and a3.
     // The empty imported label is neither listed nor revoked.
-    assert.deepEqual(c, { devices: 2, tools: 1, revoked: 3 });
+    assert.deepEqual(c, { devices: 2, tools: 1, revokedDevices: 2, revokedTools: 2 });
     assert.equal(devicesSummary(c), '2 devices, 1 tool.');
+    assert.equal(revokedDevice(allRevoked), true);
+    assert.equal(revokedDevice(revokedEmpty), true);
+    assert.equal(revokedDevice(importedEmpty), false);
+    assert.equal(revokedDevice(live), false);
   });
   // LAI-1070: pair Walkbook, add one tool, disconnect it. The device is still
   // active and paired — the one the next tool goes on — so it stays listed.
@@ -265,7 +284,7 @@ void describe('deviceLive and deviceCounts: revoked hidden and never counted', (
     // An imported device whose tools are all revoked keeps today's behaviour.
     assert.equal(deviceLive(allRevoked), false);
     const c = deviceCounts([pairedAllRevoked]);
-    assert.deepEqual(c, { devices: 1, tools: 0, revoked: 1 });
+    assert.deepEqual(c, { devices: 1, tools: 0, revokedDevices: 0, revokedTools: 1 });
     assert.equal(devicesSummary(c), '1 device, 0 tools.');
   });
 
@@ -383,5 +402,231 @@ void describe('what a write changes', () => {
     const d = device({ id: 'd1', agents: [agent({ id: 'a1' })] });
     assert.equal(deviceOf([d], 'a1')?.id, 'd1');
     assert.equal(deviceOf([d], 'zz'), undefined);
+  });
+});
+
+// ------------------------------------------------------------------ LAI-1080: one line a row
+
+const check = <D>(state: 'pass' | 'fail', detail: D, at: number | null = null) => ({
+  state,
+  at,
+  detail,
+});
+
+/** A verification for one agent: `ready` is its own request lately, with a session. */
+const verification = (
+  agentId: string,
+  harness: string,
+  how: 'ready' | 'used' | 'unused',
+): AgentVerification => ({
+  agent_id: agentId,
+  harness,
+  status: 'active',
+  now: NOW,
+  last_seen_at: how === 'unused' ? null : NOW - 60_000,
+  checks: {
+    device_paired: check('pass', { device_id: 'd1' }, NOW - 600_000),
+    credential_installed: check('pass', { token_id: 't1', via_exchange: true }, NOW - 600_000),
+    credential_used: check(how === 'unused' ? 'fail' : 'pass', null),
+    tool_request: check(
+      how === 'ready' ? 'pass' : 'fail',
+      {
+        evidence: how === 'ready' ? ('client_info' as const) : null,
+        mcp_client_name: 'specific' as const,
+        client_slug: how === 'ready' ? harness : null,
+        client_name: how === 'ready' ? harness : null,
+        client_version: null,
+        self_reported: true as const,
+      },
+      how === 'ready' ? NOW - 60_000 : null,
+    ),
+    required_capabilities: check('pass', { required: [], missing: [] }),
+    session_hooks: check(
+      how === 'ready' ? 'pass' : 'fail',
+      { harness: how === 'ready' ? harness : null },
+      how === 'ready' ? NOW - 60_000 : null,
+    ),
+  },
+  client_report: null,
+});
+
+void describe('listedStatus: Ready only from the tool’s own verification', () => {
+  const seen = agent({ id: 'a1', last_seen_at: NOW - 60_000 });
+
+  void test('no verification yet is the agent’s own stamps, which never say Ready', () => {
+    const s = listedStatus(seen, undefined, NOW);
+    assert.equal(s.word, 'Connected');
+    assert.equal(s.evidence, false);
+  });
+
+  void test('its own request and a session lately is Ready, from evidence', () => {
+    const s = listedStatus(seen, verification('a1', 'claude-code', 'ready'), NOW);
+    assert.equal(s.key, 'ready');
+    assert.equal(s.word, 'Ready');
+    assert.equal(s.evidence, true);
+  });
+
+  void test('a credential used by something else is Connected, not Ready', () => {
+    const s = listedStatus(seen, verification('a1', 'claude-code', 'used'), NOW);
+    assert.equal(s.key, 'connected');
+    assert.notEqual(s.word, 'Ready');
+  });
+
+  void test('installed and never used is Needs setup', () => {
+    const s = listedStatus(agent({ id: 'a1' }), verification('a1', 'claude-code', 'unused'), NOW);
+    assert.equal(s.key, 'needs-setup');
+  });
+
+  void test('a revoked agent, or a kind the catalog has no checks for, never reads its verification', () => {
+    const v = verification('a1', 'claude-code', 'ready');
+    assert.equal(listedStatus(agent({ id: 'a1', status: 'revoked' }), v, NOW).word, 'Revoked');
+    const other = agent({ id: 'a1', harness: 'some-new-tool', last_seen_at: NOW - 60_000 });
+    const s = listedStatus(other, verification('a1', 'some-new-tool', 'ready'), NOW);
+    assert.equal(s.evidence, false);
+    assert.notEqual(s.word, 'Ready');
+  });
+
+  void test('the design chip has no blue: waiting is the accent, the rest keep their tone', () => {
+    assert.equal(chipTone('waiting'), 'accent');
+    assert.equal(chipTone('ok'), 'ok');
+    assert.equal(chipTone('warn'), 'warn');
+    assert.equal(chipTone('neutral'), 'neutral');
+    assert.equal(chipTone('danger'), 'danger');
+  });
+});
+
+void describe('one line a device, one line a tool', () => {
+  void test('a device: its kind, its active tools and when it was last seen', () => {
+    const d = device({
+      id: 'd1',
+      last_seen_at: NOW - 60_000,
+      agents: [
+        agent({ id: 'a1' }),
+        agent({ id: 'a2', harness: 'codex' }),
+        agent({ id: 'a3', harness: 'cursor', status: 'revoked' }),
+      ],
+    });
+    assert.equal(deviceLine(d, NOW), 'Local computer · 2 tools · last seen 1 min ago');
+    assert.equal(
+      deviceLine(device({ id: 'd2', kind: 'cloud', agents: [] }), NOW),
+      'Cloud runner · No tools yet · never seen',
+    );
+    assert.equal(kindName({ kind: 'local' }), 'Local computer');
+  });
+
+  void test('a tool: how many projects it reaches, and when it was seen', () => {
+    assert.equal(toolLine(agent({ id: 'a1' }), NOW), 'No project yet · never seen');
+    assert.equal(
+      toolLine(
+        agent({
+          id: 'a1',
+          last_seen_at: NOW - 60_000,
+          grants: [{ project_id: 'p1', scope: 'full' }],
+        }),
+        NOW,
+      ),
+      '1 project · seen 1 min ago',
+    );
+  });
+
+  void test('a device’s chip: how it got here, and whether it still works', () => {
+    const one = [agent({ id: 'a1' })];
+    assert.deepEqual(deviceChip(device({ id: 'd1', origin: 'paired', agents: one })), {
+      word: 'Paired',
+      tone: 'ok',
+    });
+    assert.equal(
+      deviceChip(device({ id: 'd1', confirmed: false, agents: one })).word,
+      'Imported — confirm it’s yours',
+    );
+    assert.equal(deviceChip(device({ id: 'd1', agents: one })).word, 'Imported');
+    assert.equal(
+      deviceChip(device({ id: 'd1', status: 'revoked', origin: 'paired', agents: [] })).word,
+      'Revoked',
+    );
+  });
+});
+
+void describe('the Tools list agrees with Devices', () => {
+  const belka = device({
+    id: 'd1',
+    agents: [
+      agent({ id: 'a1' }),
+      agent({ id: 'a2', harness: 'codex', display_name: 'old laptop' }),
+      agent({ id: 'a3', harness: 'codex', display_name: 'new laptop' }),
+      agent({ id: 'a4', harness: 'cursor', status: 'revoked' }),
+    ],
+  });
+  const old = device({
+    id: 'd2',
+    display_name: 'Old',
+    device_label: 'old',
+    agents: [agent({ id: 'a9', device_label: 'Old', status: 'revoked' })],
+  });
+
+  void test('every active tool on a listed device, conflicts after; as many as the count', () => {
+    const rows = listedTools([belka, old], false);
+    assert.deepEqual(
+      rows.map((r) => r.agent.id),
+      ['a1', 'a2', 'a3'],
+    );
+    assert.equal(rows.length, deviceCounts([belka, old]).tools);
+    assert.deepEqual(
+      rows.map((r) => r.inConflict),
+      [false, true, true],
+    );
+    assert.equal(rows[1]?.label, 'Codex · Belka (old laptop)');
+  });
+
+  void test('Show revoked adds every revoked agent, on any device', () => {
+    const rows = listedTools([belka, old], true);
+    assert.deepEqual(
+      rows.map((r) => r.agent.id),
+      ['a1', 'a2', 'a3', 'a4', 'a9'],
+    );
+    assert.equal(deviceCounts([belka, old]).revokedTools, 2);
+  });
+
+  void test('findTool finds any agent, revoked too, with its conflict', () => {
+    assert.equal(findTool([belka], 'a2')?.inConflict, true);
+    assert.equal(findTool([belka], 'a4')?.agent.status, 'revoked');
+    assert.equal(findTool([belka], 'zz'), undefined);
+  });
+
+  void test('conflicts to review: the devices with pairs, and how many pairs', () => {
+    const review = conflictsToReview([belka, old]);
+    assert.deepEqual(
+      review.devices.map((d) => d.id),
+      ['d1'],
+    );
+    assert.equal(review.count, 1);
+  });
+
+  void test('Add a device first: only when no device is paired', () => {
+    assert.equal(anyPaired([belka]), false);
+    assert.equal(
+      anyPaired([device({ id: 'd3', paired_at: 1, origin: 'paired', agents: [] })]),
+      true,
+    );
+  });
+
+  void test('a row’s action: Finish setup while it needs setup, Set up project after', () => {
+    const paired = device({
+      id: 'd5',
+      origin: 'paired',
+      paired_at: 1,
+      agents: [agent({ id: 'a1' })],
+    });
+    const row = findTool([paired], 'a1');
+    assert.ok(row !== undefined);
+    assert.equal(toolAction(row, { key: 'needs-setup' }), 'finish-in-wizard');
+    assert.equal(toolAction(row, { key: 'ready' }), 'set-up-project');
+    // Imported: no key to redeem an exchange with, so its details finish it.
+    const imported = findTool([belka], 'a1');
+    assert.ok(imported !== undefined);
+    assert.equal(toolAction(imported, { key: 'needs-setup' }), 'finish-in-details');
+    const gone = findTool([belka], 'a4');
+    assert.ok(gone !== undefined);
+    assert.equal(toolAction(gone, { key: 'revoked' }), 'none');
   });
 });

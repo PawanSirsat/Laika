@@ -76,13 +76,13 @@ void describe('legacy tool tokens (plan §B.6)', () => {
     );
   });
 
-  void test('Upgrade connection opens Add a tool on Devices, on the tool when it has a guide', () => {
+  void test('Upgrade connection opens Add a tool on Tools, on the tool when it has a guide', () => {
     assert.equal(
       upgradeHref(token({ last_client: 'claude-code' })),
-      '/developer?tab=devices&add=tool&tool=claude-code',
+      '/developer?tab=tools&add=tool&tool=claude-code',
     );
-    assert.equal(upgradeHref(token({ last_client: 'other' })), '/developer?tab=devices&add=tool');
-    assert.equal(upgradeHref(token()), '/developer?tab=devices&add=tool');
+    assert.equal(upgradeHref(token({ last_client: 'other' })), '/developer?tab=tools&add=tool');
+    assert.equal(upgradeHref(token()), '/developer?tab=tools&add=tool');
   });
 
   void test('its target is a V3 id, so no mode moves it again', () => {
@@ -140,9 +140,12 @@ void describe('links into Developer access from outside it (plan §B.7)', () => 
     }
   });
 
-  void test('activity is one id in every mode', () => {
-    for (const mode of ['classic', 'preview', 'v3'] as const) {
+  void test('the activity link is the Activity tab in classic and preview, Advanced’s card in v3', () => {
+    for (const mode of ['classic', 'preview'] as const) {
       assert.equal(land(mode, DEVELOPER_ACTIVITY_HREF).get('tab'), 'activity', mode);
     }
+    const v3 = land('v3', DEVELOPER_ACTIVITY_HREF);
+    assert.equal(v3.get('tab'), 'advanced');
+    assert.equal(v3.get('section'), 'activity');
   });
 });

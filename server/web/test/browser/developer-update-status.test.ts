@@ -1,12 +1,14 @@
 /**
- * Developer access V3 → Devices: each tool's helper update status (LAI-1065,
- * plan LAI-1042 §H), in a real browser against a stubbed API.
+ * Developer access V3 → Tools: each tool's helper update status (LAI-1065,
+ * plan LAI-1042 §H), in a real browser against a stubbed API. Since LAI-1080
+ * the status is in the tool's details panel, and its row carries a chip only
+ * when there is something to update to.
  *
  * - Every status, from the board's compatibility answer and each tool's own
  *   report: Up to date, Update available, Update required for a feature,
  *   Version unknown, Could not check with Retry.
- * - Separate from the connection status on the same row; summarised on the
- *   device card.
+ * - Separate from the connection status on the same row; summarised in the
+ *   device's details.
  * - *Copy update command* names this board and no secret; `--allow-http` only
  *   on a plain-http board, with why. *What's new* from the release notes.
  * - After a copy the row polls, and changes when a new report arrives,
@@ -168,10 +170,45 @@ const report = (over: object = {}) => ({
   ...over,
 });
 
-const verification = (agentId: string, clientReport: object | null) => ({
-  agent_id: agentId,
-  client_report: clientReport,
-});
+const HARNESS: Readonly<Record<string, string>> = {
+  a1: 'claude-code',
+  a2: 'codex',
+  a3: 'omnigent',
+  a4: 'cursor',
+  a5: 'gemini-cli',
+};
+
+/**
+ * `GET /agents/:id/verification` as the board serves it: the credential
+ * reached the board, the tool itself has not called it — *Connected*, not
+ * *Ready* — and the helper's report, which is what this file is about.
+ */
+const verification = (agentId: string, clientReport: object | null) => {
+  const check = (state: string, detail: unknown) => ({ state, at: null, detail });
+  return {
+    agent_id: agentId,
+    harness: HARNESS[agentId] ?? 'claude-code',
+    status: 'active',
+    now: Date.now(),
+    last_seen_at: NOW - 60_000,
+    checks: {
+      device_paired: check('pass', { device_id: 'd1' }),
+      credential_installed: check('pass', { token_id: `t-${agentId}`, via_exchange: true }),
+      credential_used: check('pass', null),
+      tool_request: check('fail', {
+        evidence: null,
+        mcp_client_name: 'specific',
+        client_slug: null,
+        client_name: null,
+        client_version: null,
+        self_reported: true,
+      }),
+      required_capabilities: check('pass', { required: [], missing: [] }),
+      session_hooks: check('fail', { harness: null }),
+    },
+    client_report: clientReport,
+  };
+};
 
 const NO_CONSENT = { given: false, given_by_user_id: null, given_at: null, withdrawn_at: null };
 
@@ -224,18 +261,36 @@ after(async () => {
   await closeBrowser();
 });
 
+/** A tool's row on Tools. */
 const tool = (page: Page, id: string) => page.locator(`.dv3-tool[data-agent="${id}"]`);
-const update = (page: Page, id: string) => tool(page, id).locator('.dv3-update');
-const live = (page: Page) => page.locator('.dev-body > [role="status"][aria-live="polite"]');
+/** A tool's details, when its panel is open. */
+const panelOf = (page: Page, id: string) =>
+  page.locator(`.side-panel[data-panel="tool"] .dv3-tool-details[data-agent="${id}"]`);
+const update = (page: Page, id: string) => panelOf(page, id).locator('.dv3-update');
+const live = (page: Page) => page.locator('.dv3-roster > [role="status"][aria-live="polite"]');
 
+/** Every row's update status is in: the row carries it as `data-update`. */
 async function settled(page: Page, ids: readonly string[] = ALL.map((a) => a.id)): Promise<void> {
-  await page.locator('.dv3-device[data-device="d1"]').waitFor({ timeout: 20_000 });
+  await tool(page, 'a1').waitFor({ timeout: 20_000 });
   for (const id of ids) {
     await until(async () => {
-      const key = await update(page, id).getAttribute('data-update');
+      const key = await tool(page, id).getAttribute('data-update');
       return key !== null && key !== 'checking';
     }, 15_000);
   }
+}
+
+/** Open one tool's details from its row, closing any other first. */
+async function details(page: Page, id: string) {
+  const open = page.locator('.side-panel[data-panel="tool"]');
+  if ((await panelOf(page, id).count()) > 0) return panelOf(page, id);
+  if ((await open.count()) > 0) {
+    await open.getByRole('button', { name: 'Close details' }).click();
+    await open.waitFor({ state: 'detached' });
+  }
+  await tool(page, id).locator(`[data-details="tools:${id}"]`).click();
+  await panelOf(page, id).waitFor({ timeout: 10_000 });
+  return panelOf(page, id);
 }
 
 /** Clipboard reads and writes allowed, so a copy succeeds and *watching* starts. */
@@ -247,34 +302,47 @@ const withClipboard =
   };
 
 async function openTab(over: StubOver = {}, options: OpenOptions = {}): Promise<Harness> {
-  return open(`/developer?tab=devices`, stub(over), options);
+  return open(`/developer?tab=tools`, stub(over), options);
 }
 
-void describe('V3 Devices: each tool’s helper update status', () => {
+void describe('V3 Tools: each tool’s helper update status', () => {
   void test('every status in words with its reason, beside the connection status', async () => {
     const h = await openTab();
     try {
       await settled(h.page);
-      const expect: [string, string, RegExp][] = [
-        ['a1', 'up-to-date', /Up to date[\s\S]*Runs the helper this board offers, cea011d/],
+      const expect: [string, string, string, RegExp][] = [
+        ['a1', 'up-to-date', 'Up to date', /Runs the helper this board offers, cea011d/],
         // Review round 1, B1: another commit at the board's protocol is no update.
-        ['a2', 'up-to-date', /Up to date[\s\S]*on helper 19f8587; this board offers cea011d/],
+        ['a2', 'up-to-date', 'Up to date', /on helper 19f8587; this board offers cea011d/],
         [
           'a3',
           'required',
-          /Update required for pairing devices, adding tools without a secret, version reports[\s\S]*version reports need helper protocol 2; this one speaks 1/,
+          'Update required for pairing devices, adding tools without a secret, version reports',
+          /version reports need helper protocol 2; this one speaks 1/,
         ],
-        ['a4', 'unknown', /Version unknown[\s\S]*has not reported a version/],
-        ['a5', 'unchecked', /Could not check[\s\S]*version report could not be read/],
+        ['a4', 'unknown', 'Version unknown', /has not reported a version/],
+        ['a5', 'unchecked', 'Could not check', /version report could not be read/],
       ];
-      for (const [id, key, words] of expect) {
+      for (const [id, key, word, why] of expect) {
+        assert.equal(await tool(h.page, id).getAttribute('data-update'), key, id);
+        await details(h.page, id);
         assert.equal(await update(h.page, id).getAttribute('data-update'), key, id);
-        assert.match(await update(h.page, id).locator('.status-chip').innerText(), words, id);
-        // The connection status is its own chip on the same row, unchanged.
+        // The word is the note's title, its reason the line under it (LAI-1080).
+        assert.equal(await update(h.page, id).locator('.dx-note-title').innerText(), word, id);
+        assert.match(await update(h.page, id).locator('[data-update-reason]').innerText(), why, id);
+        // Warm only where there is something to update to.
+        assert.equal(
+          await update(h.page, id).locator('.dx-note').getAttribute('data-tone'),
+          key === 'required' ? 'warn' : 'neutral',
+          id,
+        );
+        // The connection status is its own, on the row and in the details, unchanged.
         assert.equal(await tool(h.page, id).getAttribute('data-status'), 'connected', id);
+        assert.equal(await panelOf(h.page, id).getAttribute('data-status'), 'connected', id);
+        assert.doesNotMatch(await panelOf(h.page, id).innerText(), /outdated/i);
       }
-      // Never "outdated", and Version unknown only where there is no report.
-      assert.doesNotMatch(await h.page.locator('.dv3-devices').innerText(), /outdated/i);
+      // Never "outdated" on the list either.
+      assert.doesNotMatch(await h.page.locator('.dv3-roster').innerText(), /outdated/i);
       // Nothing was asked of GitHub: only this board's answers.
       assert.ok(h.calls.every((c) => c.path.startsWith('/api/v1/')));
     } finally {
@@ -282,11 +350,17 @@ void describe('V3 Devices: each tool’s helper update status', () => {
     }
   });
 
-  void test('the device card summarises its tools, worst first', async () => {
-    const h = await openTab();
+  void test('the device’s details summarise its tools, worst first', async () => {
+    const h = await open('/developer?tab=devices&device=d1', stub());
     try {
-      await settled(h.page);
-      const line = h.page.locator('.dv3-device[data-device="d1"] [data-device-update]');
+      const line = h.page.locator('.side-panel[data-panel="device"] [data-device-update]');
+      const all =
+        'Helper updates: 1 update required, 1 could not check, 1 version unknown, 2 up to date';
+      // Every tool's answer is in once the line names all five.
+      await until(
+        async () => (await line.count()) === 1 && (await line.innerText()) === all,
+        20_000,
+      );
       assert.equal(await line.getAttribute('data-device-update'), 'required');
       assert.equal(
         await line.innerText(),
@@ -297,15 +371,20 @@ void describe('V3 Devices: each tool’s helper update status', () => {
     }
   });
 
-  void test('only a tool with something to update to offers the command', async () => {
+  void test('only a tool with something to update to offers the command, and a chip on its row', async () => {
     const h = await openTab();
     try {
       await settled(h.page);
-      assert.equal(await tool(h.page, 'a3').locator('[data-update-how]').count(), 1);
+      assert.equal(await (await details(h.page, 'a3')).locator('[data-update-how]').count(), 1);
+      assert.equal(
+        await tool(h.page, 'a3').locator('[data-update-chip]').innerText(),
+        'Update required',
+      );
       // a2 runs another commit at the board's protocol: `laika update` would
       // refuse a target that is not ahead of it, so nothing is offered.
       for (const id of ['a1', 'a2', 'a4', 'a5']) {
-        assert.equal(await tool(h.page, id).locator('[data-update-how]').count(), 0, id);
+        assert.equal(await (await details(h.page, id)).locator('[data-update-how]').count(), 0, id);
+        assert.equal(await tool(h.page, id).locator('[data-update-chip]').count(), 0, id);
       }
     } finally {
       await h.close();
@@ -316,19 +395,24 @@ void describe('V3 Devices: each tool’s helper update status', () => {
     const h = await openTab({ board: 'p3' });
     try {
       await settled(h.page);
+      await details(h.page, 'a2');
       assert.equal(await update(h.page, 'a2').getAttribute('data-update'), 'available');
+      assert.equal(
+        await tool(h.page, 'a2').locator('[data-update-chip]').innerText(),
+        'Update available',
+      );
       assert.match(
-        await update(h.page, 'a2').locator('.status-chip').innerText(),
+        await update(h.page, 'a2').locator('.dx-note').innerText(),
         /Update available[\s\S]*This board speaks helper protocol 3; this one speaks 2\. What it does now keeps working/,
       );
-      assert.equal(await tool(h.page, 'a2').locator('[data-update-how]').count(), 1);
+      assert.equal(await panelOf(h.page, 'a2').locator('[data-update-how]').count(), 1);
     } finally {
       await h.close();
     }
   });
 });
 
-void describe('V3 Devices: Could not check, and Retry', () => {
+void describe('V3 Tools: Could not check, and Retry', () => {
   void test('a failed compatibility answer is Could not check on every row; Retry asks again', async () => {
     let asks = 0;
     const h = await openTab({
@@ -342,6 +426,7 @@ void describe('V3 Devices: Could not check, and Retry', () => {
     });
     try {
       await settled(h.page);
+      await details(h.page, 'a1');
       assert.equal(await update(h.page, 'a1').getAttribute('data-update'), 'unchecked');
       assert.match(
         await update(h.page, 'a1').innerText(),
@@ -374,8 +459,9 @@ void describe('V3 Devices: Could not check, and Retry', () => {
     });
     try {
       await settled(h.page);
+      assert.equal(await tool(h.page, 'a1').getAttribute('data-update'), 'up-to-date');
+      await details(h.page, 'a5');
       assert.equal(await update(h.page, 'a5').getAttribute('data-update'), 'unchecked');
-      assert.equal(await update(h.page, 'a1').getAttribute('data-update'), 'up-to-date');
       await update(h.page, 'a5').getByRole('button', { name: /Retry/ }).click();
       await until(
         async () => (await update(h.page, 'a5').getAttribute('data-update')) === 'up-to-date',
@@ -386,12 +472,12 @@ void describe('V3 Devices: Could not check, and Retry', () => {
   });
 });
 
-void describe('V3 Devices: the update command, What’s new, and after', () => {
+void describe('V3 Tools: the update command, What’s new, and after', () => {
   void test('check first, then update, against this board — no secret, no --allow-http on loopback', async () => {
     const h = await openTab();
     try {
       await settled(h.page);
-      const how = tool(h.page, 'a3').locator('[data-update-how]');
+      const how = (await details(h.page, 'a3')).locator('[data-update-how]');
       await how.locator('summary').focus();
       await h.page.keyboard.press('Enter');
       const text = await how.locator('pre').innerText();
@@ -413,7 +499,7 @@ void describe('V3 Devices: the update command, What’s new, and after', () => {
     const h = await openTab({}, { insecure: true });
     try {
       await settled(h.page);
-      const how = tool(h.page, 'a3').locator('[data-update-how]');
+      const how = (await details(h.page, 'a3')).locator('[data-update-how]');
       await how.locator('summary').click();
       const text = await how.locator('pre').innerText();
       assert.match(text, /^laika update --check --board http:\/\/laika\.test:\d+\n/);
@@ -431,7 +517,7 @@ void describe('V3 Devices: the update command, What’s new, and after', () => {
     const h = await openTab();
     try {
       await settled(h.page);
-      const notes = tool(h.page, 'a3').locator('[data-whats-new]');
+      const notes = (await details(h.page, 'a3')).locator('[data-whats-new]');
       await notes.locator('summary').click();
       const lines = notes.locator('li');
       assert.equal(await lines.count(), 2);
@@ -461,7 +547,7 @@ void describe('V3 Devices: the update command, What’s new, and after', () => {
     );
     try {
       await settled(h.page);
-      const how = tool(h.page, 'a3').locator('[data-update-how]');
+      const how = (await details(h.page, 'a3')).locator('[data-update-how]');
       await how.locator('summary').click();
       await how.locator('.copy-button').click();
       await how.locator('[data-watching]').waitFor();
@@ -486,13 +572,13 @@ void describe('V3 Devices: the update command, What’s new, and after', () => {
  * on a loaded CI runner. What only a browser shows stays here: leaving the
  * tab stops the watch.
  */
-void describe('V3 Devices: the watch stops with the tab', () => {
+void describe('V3 Tools: the watch stops with the tab', () => {
   const reads = (h: Harness) =>
     h.calls.filter((c) => c.path === '/api/v1/agents/a3/verification').length;
 
   async function watching(h: Harness): Promise<void> {
     await settled(h.page);
-    const how = tool(h.page, 'a3').locator('[data-update-how]');
+    const how = (await details(h.page, 'a3')).locator('[data-update-how]');
     await how.locator('summary').click();
     await how.locator('.copy-button').click();
     await how.locator('[data-watching]').waitFor();
@@ -504,7 +590,7 @@ void describe('V3 Devices: the watch stops with the tab', () => {
       await watching(h);
       const before = reads(h);
       await navigateInApp(h.page, '/developer?tab=advanced');
-      await h.page.locator('.dv3-device').first().waitFor({ state: 'detached' });
+      await h.page.locator('.dv3-tool').first().waitFor({ state: 'detached' });
       await h.page.clock.runFor(10 * 60_000);
       await new Promise((done) => setTimeout(done, 500));
       assert.equal(reads(h), before, 'the watch kept reading after the tab unmounted');
@@ -514,13 +600,13 @@ void describe('V3 Devices: the watch stops with the tab', () => {
   });
 });
 
-void describe('V3 Devices: the board, and presence', () => {
+void describe('V3 Devices and Tools: the board, and presence', () => {
   const ahead = { a1: verification('a1', report({ cli_commit: OLDER, protocol: 4 })) };
 
   void test('an owner sees the board note when a helper is ahead of the board', async () => {
-    const h = await openTab({ orgRole: 'owner', reports: ahead });
+    const h = await open('/developer?tab=devices', stub({ orgRole: 'owner', reports: ahead }));
     try {
-      await settled(h.page);
+      await h.page.locator('[data-board-update]').waitFor({ timeout: 20_000 });
       assert.match(
         await h.page.locator('[data-board-update]').innerText(),
         /updated by whoever runs this instance; your devices update themselves with laika update/,
@@ -538,6 +624,8 @@ void describe('V3 Devices: the board, and presence', () => {
       const h = await openTab({ orgRole: role, reports });
       try {
         await settled(h.page);
+        await h.page.locator('.page-tab[data-tab="devices"]').click();
+        await h.page.locator('.dv3-device[data-device="d1"]').waitFor({ timeout: 20_000 });
         assert.equal(await h.page.locator('[data-board-update]').count(), 0, role);
       } finally {
         await h.close();
@@ -551,31 +639,40 @@ void describe('V3 Devices: the board, and presence', () => {
     });
     try {
       await settled(h.page);
-      assert.match(await tool(h.page, 'a1').locator('[data-report]').innerText(), /laika 0\.1\.0/);
-      assert.equal(await tool(h.page, 'a1').locator('[data-reported-at]').count(), 0);
-      // With presence on, the same row says when.
-      assert.equal(await tool(h.page, 'a2').locator('[data-reported-at]').count(), 1);
+      const a1 = await details(h.page, 'a1');
+      assert.match(await a1.locator('[data-report]').innerText(), /laika 0\.1\.0/);
+      assert.equal(await a1.locator('[data-reported-at]').count(), 0);
+      // With presence on, the same details say when.
+      assert.equal(await (await details(h.page, 'a2')).locator('[data-reported-at]').count(), 1);
     } finally {
       await h.close();
     }
   });
 });
 
-void describe('V3 Devices: layout, themes, and classic', () => {
+void describe('V3 Tools: layout, themes, and classic', () => {
   for (const theme of ['light', 'dark'] as const) {
-    void test(`${theme}: 390 px has no sideways scroll, with every panel open`, async () => {
+    void test(`${theme}: 390 px has no sideways scroll, with every disclosure open`, async () => {
       const h = await openTab({}, { insecure: true });
       try {
         await h.page.setViewportSize({ width: 390, height: 844 });
         await setTheme(h.page, theme);
         await settled(h.page);
-        for (const summary of await h.page.locator('.dv3-update summary').all()) {
-          await summary.click();
+        const wide = () =>
+          h.page.evaluate(
+            () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          );
+        assert.equal(await wide(), false, 'the list scrolls sideways at 390 px');
+        for (const id of ['a2', 'a3']) {
+          const body = await details(h.page, id);
+          for (const summary of await body.locator('.dv3-update summary').all()) {
+            await summary.click();
+          }
+          assert.equal(await wide(), false, `${id}'s details scroll sideways at 390 px`);
+          // Nothing inside the sheet is wider than it.
+          const over = await body.evaluate((el) => el.scrollWidth - el.clientWidth);
+          assert.ok(over <= 0, `${id}'s details overflow by ${String(over)}px`);
         }
-        const wide = await h.page.evaluate(
-          () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-        );
-        assert.equal(wide, false, 'the page scrolls sideways at 390 px');
       } finally {
         await h.close();
       }
@@ -594,10 +691,11 @@ void describe('V3 Devices: layout, themes, and classic', () => {
     }
   });
 
-  void test('preview shows it on the V3 Devices tab', async () => {
-    const h = await open('/developer?tab=devices', stub({ mode: 'preview' }));
+  void test('preview shows it on the V3 Tools tab', async () => {
+    const h = await open('/developer?tab=tools', stub({ mode: 'preview' }));
     try {
       await settled(h.page);
+      await details(h.page, 'a3');
       assert.equal(await update(h.page, 'a3').getAttribute('data-update'), 'required');
     } finally {
       await h.close();
@@ -640,16 +738,16 @@ void describe(
             await h.page.setViewportSize({ width, height: 900 });
             await setTheme(h.page, theme);
             await settled(h.page);
-            for (const id of ['a2', 'a3']) {
-              await tool(h.page, id).locator('[data-update-how] summary').click();
-              await tool(h.page, id).locator('[data-whats-new] summary').click();
-            }
             await h.page.screenshot({
-              path: join(dir, `devices-${theme}-${String(width)}.png`),
+              path: join(dir, `tools-${theme}-${String(width)}.png`),
               fullPage: true,
             });
             for (const [id, name] of Object.entries(names)) {
-              await tool(h.page, id).screenshot({
+              const body = await details(h.page, id);
+              for (const summary of await body.locator('.dv3-update summary').all()) {
+                await summary.click();
+              }
+              await h.page.locator('.side-panel[data-panel="tool"]').screenshot({
                 path: join(dir, `${name}-${theme}-${String(width)}.png`),
               });
             }
@@ -662,7 +760,8 @@ void describe(
             await p2.page.setViewportSize({ width, height: 900 });
             await setTheme(p2.page, theme);
             await settled(p2.page);
-            await tool(p2.page, 'a2').screenshot({
+            await details(p2.page, 'a2');
+            await p2.page.locator('.side-panel[data-panel="tool"]').screenshot({
               path: join(dir, `up-to-date-other-commit-${theme}-${String(width)}.png`),
             });
           } finally {
