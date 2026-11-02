@@ -1,0 +1,91 @@
+/*
+ * Developer access V3 → Devices: each tool's helper update status (LAI-1065).
+ * Existing tokens only, so both themes come from theme.css; every status is a
+ * word as well as the chip's colour.
+ */
+
+.dv3-update {
+  margin: var(--space-2) 0 0;
+  min-width: 0;
+}
+
+.dv3-update-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+
+.dv3-update-label {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.dv3-update-facts {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
+.dv3-update-how,
+.dv3-update-new {
+  margin: var(--space-2) 0 0;
+  min-width: 0;
+}
+
+.dv3-update-how > summary,
+.dv3-update-new > summary {
+  width: fit-content;
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.dv3-update-how > summary:focus-visible,
+.dv3-update-new > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.dv3-update-how .conn-code,
+.dv3-update-how pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.dv3-update-notes {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.25rem;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+.dv3-update-notes li + li {
+  margin-top: var(--space-1);
+}
+
+.dv3-update-protocol {
+  margin-right: var(--space-2);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.dv3-update-notes .dv3-tag {
+  margin-right: var(--space-2);
+}
+
+.dv3-update-summary {
+  font-weight: 600;
+}
+
+.dv3-board-update {
+  margin: var(--space-3) 1.25rem 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}

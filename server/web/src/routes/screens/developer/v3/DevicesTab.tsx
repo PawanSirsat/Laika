@@ -39,7 +39,6 @@ import { showsConsent } from '../checkpoint-consent.ts';
 import {
   CLAIMS_LAPSE_MANY,
   CLOUD_NOTE,
-  VERSION_UNKNOWN,
   deviceCounts,
   deviceLive,
   deviceOf,
@@ -56,6 +55,7 @@ import {
   withRevokedAgents,
   type Conflict,
 } from './devices-view.ts';
+import { BoardUpdateNote, DeviceUpdate, ToolUpdate, UpdatesProvider } from './ToolUpdate.tsx';
 import '../../tokens/tokens.css';
 import '../agents.css';
 import './devices-tab.css';
@@ -106,7 +106,7 @@ const WIZARD_PARAMS = ['add', 'pairing', 'device', 'tool', 'exchange', 'reconnec
  * `&reconnect=<agent>` gives a tool a new credential on its own device). The
  * browser never holds a tool's secret in either.
  */
-export function DevicesTab({ me, params, setParams, preview = false }: DevicesTabProps) {
+export function DevicesTab({ me, origin, params, setParams, preview = false }: DevicesTabProps) {
   const gates = useGates(me !== undefined);
   const canManage = gates.org('agent.manage_own');
   const confirm = useConfirm();
@@ -372,6 +372,13 @@ export function DevicesTab({ me, params, setParams, preview = false }: DevicesTa
   const counts = devices === undefined ? undefined : deviceCounts(devices);
   const listed =
     devices === undefined ? [] : devices.filter((device) => showRevoked || deviceLive(device));
+  // Every active tool on a live device shows its helper's update status (LAI-1065).
+  const updateIds = listed
+    .filter((device) => device.status === 'active')
+    .flatMap((device) => {
+      const { tools, conflicts } = deviceTools(device);
+      return activeIds(tools, conflicts);
+    });
 
   return (
     <div className="dev-body">
@@ -508,7 +515,8 @@ export function DevicesTab({ me, params, setParams, preview = false }: DevicesTa
               : {})}
           />
         ) : (
-          <>
+          <UpdatesProvider agentIds={updateIds} origin={origin} announce={announce}>
+            <BoardUpdateNote orgRole={me?.org_role} agentIds={updateIds} />
             {listed.length === 0 ? (
               <p className="dv3-none" role="note">
                 Every device and tool of yours is revoked.
@@ -559,7 +567,7 @@ export function DevicesTab({ me, params, setParams, preview = false }: DevicesTa
                 {showRevoked ? 'Hide revoked' : `Show revoked (${String(counts.revoked)})`}
               </button>
             )}
-          </>
+          </UpdatesProvider>
         )}
       </section>
     </div>
@@ -567,6 +575,11 @@ export function DevicesTab({ me, params, setParams, preview = false }: DevicesTa
 }
 
 // ------------------------------------------------------------------ one device
+
+/** The active tools on a device — its rows and its conflicts' — which show an update status. */
+function activeIds(tools: readonly RegisteredAgent[], conflicts: readonly Conflict[]): string[] {
+  return [...tools, ...conflicts.flatMap((c) => c.agents)].map((agent) => agent.id);
+}
 
 interface DeviceCardProps {
   readonly device: Device;
@@ -688,6 +701,7 @@ function DeviceCard({
       </div>
 
       {cloud && live && <p className="dv3-note">{CLOUD_NOTE}</p>}
+      {live && <DeviceUpdate agentIds={activeIds(tools, conflicts)} />}
       {device.key_fingerprint !== null && (
         <p className="dv3-note">
           Key fingerprint <code>{device.key_fingerprint}</code>
@@ -988,13 +1002,14 @@ function ToolRow({
           <span>{label}</span>
         </span>
         <StatusChip tone={status.tone} word={status.word} reason={status.reason} />
-        {active && <span className="dv3-tag dv3-tag-quiet">{VERSION_UNKNOWN}</span>}
         {canManage && active && (
           <span className="dv3-tool-menu">
             <OverflowMenu label={`More actions for ${label}`} items={items} />
           </span>
         )}
       </div>
+
+      {active && <ToolUpdate agentId={agent.id} label={label} />}
 
       {active && live === undefined && replaceable !== undefined && (
         <p className="dv3-note" data-cloud-expired>
