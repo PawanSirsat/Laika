@@ -482,10 +482,6 @@ void describe(
             await t.page.locator('.side-panel[data-panel="tool"]').screenshot({
               path: join(dir, `tool-version-unknown-${tag}.png`),
             });
-            await openGuide(await details(t.page, 'a2'));
-            await t.page.locator('.side-panel[data-panel="tool"] [data-update-cli]').screenshot({
-              path: join(dir, `guide-${tag}.png`),
-            });
           } finally {
             await t.close();
           }
@@ -530,6 +526,14 @@ void describe(
             await o.page.screenshot({
               path: join(dir, `overview-notice-${tag}.png`),
               fullPage: true,
+            });
+            // The guide itself, opened from the notice. The app scrolls an inner
+            // container, so the window is made tall enough for all of it; the width
+            // is the one under test.
+            await openGuide(o.page.locator('[data-cli-notice]'));
+            await o.page.setViewportSize({ width, height: 2800 });
+            await o.page.locator('[data-note="cli-update"]').screenshot({
+              path: join(dir, `guide-${tag}.png`),
             });
           } finally {
             await o.close();
