@@ -57,3 +57,21 @@ export function verifyDeviceSignature(key: KeyObject, message: Buffer, signature
     return false;
   }
 }
+
+/**
+ * The bytes a paired device signs to redeem a tool setup exchange (§4.80,
+ * LAI-1056). Its own prefix, so a pairing signature is never a redeem one;
+ * the exchange, the device and the board's origin are all in it, so a
+ * signature for one is no use for any other.
+ */
+export function toolRedeemMessage(
+  exchangeId: string,
+  deviceId: string,
+  challenge: string,
+  boardOrigin: string,
+): Buffer {
+  return Buffer.from(
+    `laika-tool-redeem-v1\n${exchangeId}\n${deviceId}\n${challenge}\n${boardOrigin}`,
+    'utf8',
+  );
+}

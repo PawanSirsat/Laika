@@ -588,6 +588,8 @@ describe('the parser itself', () => {
       .sort();
 
     expect(withoutId).toEqual([
+      // LAI-1056: the latest report per (agent, source); the row is that word.
+      'agent_client_reports',
       // LAI-553: keyed by (event, agent), and by the activity row's id.
       'agent_event_deliveries',
       'agent_events',

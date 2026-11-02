@@ -140,6 +140,20 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     'a device calls it with no session (LAI-1050); `laika device pair` (plan LAI-1042 slice C3)',
   'api/v1/device-pairing/*/complete':
     'a device calls it with no session (LAI-1050); `laika device pair` (plan LAI-1042 slice C3)',
+  // LAI-1056 serves tool setup ahead of its screen and its CLI: the V3 Devices
+  // screen (plan LAI-1042 slice D) is the owner's caller, `laika tool add` and
+  // `laika doctor` (slice C3) the device's and the agent's. Named by LAI-1056
+  // (D-033).
+  'api/v1/devices/*/tools': 'LAI-1056 — the V3 Devices screen (plan LAI-1042 slice D) is not built',
+  'api/v1/tool-setup/*': 'LAI-1056 — the V3 Devices screen (plan LAI-1042 slice D) is not built',
+  'api/v1/agents/*/reconnect':
+    'LAI-1056 — the V3 Devices screen (plan LAI-1042 slice D) is not built',
+  'api/v1/agents/*/verification':
+    'LAI-1056 — the V3 Devices screen (plan LAI-1042 slice D) is not built',
+  'api/v1/tool-setup/*/redeem':
+    'a paired device calls it with no session (LAI-1056); `laika tool add` (plan LAI-1042 slice C3)',
+  'api/v1/agents/me/client-report':
+    'an agent token calls it (LAI-1056); `laika doctor --report` (plan LAI-1042 slice C3)',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */

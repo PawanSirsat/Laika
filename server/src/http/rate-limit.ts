@@ -76,6 +76,14 @@ export const LIMITS = {
    * real device ever uses.
    */
   pairingComplete: { perMinute: 40, burst: 10 },
+  /**
+   * A device redeeming one tool setup (LAI-1056, plan §E.8): **10 a minute,
+   * per exchange id**. A redeem is two calls — the challenge, then the
+   * signed redeem — and an exchange is spent by the first good one, so this
+   * is generous for the device and nothing to anyone else: there is no
+   * shared key here to drain.
+   */
+  toolRedeem: { perMinute: 10 },
 } as const satisfies Record<string, LimitPolicy>;
 
 export type LimitName = keyof typeof LIMITS;

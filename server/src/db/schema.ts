@@ -71,6 +71,9 @@ import {
   DEVICE_ORIGINS,
   DEVICE_STATUSES,
   DEVICE_PAIRING_STATES,
+  TOOL_SETUP_PURPOSES,
+  TOOL_SETUP_STATES,
+  CLIENT_REPORT_SOURCES,
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
   TIME_DRAFT_SOURCES,
@@ -1059,6 +1062,87 @@ export const agents = sqliteTable(
     index('agents_owner_user_id_idx').on(t.ownerUserId),
     index('agents_device_id_idx').on(t.deviceId),
     check('agents_status_check', oneOf('status', AGENT_STATUSES)),
+  ],
+);
+
+// ---------------------------------------------- §4.80 tool_setup_exchanges
+
+/**
+ * One owner-approved setup of a tool on a paired device (§4.80, LAI-1056).
+ *
+ * **No secret column.** The owner makes it signed in; the device redeems it
+ * once by signing `challenge` with its paired key, and only then is a token
+ * minted — straight into the answer, its hash into `tokens`. `challenge` is
+ * not a secret: without the device's private key it opens nothing.
+ */
+export const toolSetupExchanges = sqliteTable(
+  'tool_setup_exchanges',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    deviceId: text('device_id')
+      .notNull()
+      .references(() => devices.id, { onDelete: 'cascade' }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    purpose: text('purpose', { enum: TOOL_SETUP_PURPOSES }).notNull(),
+    challenge: text('challenge').notNull(),
+    state: text('state', { enum: TOOL_SETUP_STATES }).notNull(),
+    mintedTokenId: text('minted_token_id').references(() => tokens.id, { onDelete: 'set null' }),
+    failedAttempts: integer('failed_attempts').notNull().default(0),
+    createdAt,
+    expiresAt: integer('expires_at').notNull(),
+    redeemedAt: integer('redeemed_at'),
+    cancelledAt: integer('cancelled_at'),
+  },
+  (t) => [
+    index('tool_setup_exchanges_owner_state_idx').on(t.ownerUserId, t.state),
+    index('tool_setup_exchanges_agent_id_idx').on(t.agentId),
+    check('tool_setup_exchanges_state_check', oneOf('state', TOOL_SETUP_STATES)),
+    check('tool_setup_exchanges_purpose_check', oneOf('purpose', TOOL_SETUP_PURPOSES)),
+  ],
+);
+
+// --------------------------------------------- §4.81 agent_client_reports
+
+/**
+ * The latest report per agent and source (§4.81, LAI-1056): what the client
+ * on the agent's **own token** said it is. Everything here is self-reported —
+ * evidence for a status word, **never an authorisation input**, as a token's
+ * `last_client` is (§4.9).
+ */
+export const agentClientReports = sqliteTable(
+  'agent_client_reports',
+  {
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    source: text('source', { enum: CLIENT_REPORT_SOURCES }).notNull(),
+    /** The credential that reported: always one of the agent's own. */
+    tokenId: text('token_id').references(() => tokens.id, { onDelete: 'set null' }),
+    cliVersion: text('cli_version'),
+    cliCommit: text('cli_commit'),
+    protocol: integer('protocol'),
+    capabilitiesJson: text('capabilities_json'),
+    harnessVersion: text('harness_version'),
+    /** `cli`: the harness the CLI says it runs as — an `AGENT_CLIENTS` slug (D-125). */
+    harness: text('harness'),
+    /** `clientInfo.name`, cleaned, and the slug it names on its own. */
+    clientName: text('client_name'),
+    clientSlug: text('client_slug'),
+    clientVersion: text('client_version'),
+    /** Null while the org has presence off (§4.2): a report says when only then. */
+    reportedAt: integer('reported_at'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.agentId, t.source] }),
+    check('agent_client_reports_source_check', oneOf('source', CLIENT_REPORT_SOURCES)),
   ],
 );
 

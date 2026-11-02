@@ -120,6 +120,12 @@ export const PAIRING_CLAIM_PATH = '/api/v1/device-pairing/claim';
 export const PAIRING_COMPLETE_PATH =
   /^\/api\/v1\/device-pairing\/([0-9A-HJKMNP-TV-Z]{26})\/complete$/;
 
+/** A device redeeming a tool setup (LAI-1056): `/tool-setup/:id/redeem`, ULID ids. */
+export const TOOL_REDEEM_PATH = /^\/api\/v1\/tool-setup\/([0-9A-HJKMNP-TV-Z]{26})\/redeem$/;
+export const TOOL_SETUP_PREFIX = '/api/v1/tool-setup/';
+/** An agent's CLI reporting itself (LAI-1056), on the heartbeat class. */
+export const CLIENT_REPORT_PATH = '/api/v1/agents/me/client-report';
+
 /** A collector's drafted blocks (LAI-787). */
 export const TIME_DRAFTS_PATH = '/api/v1/me/time-drafts';
 
@@ -174,6 +180,23 @@ export function classify(
       key: id === undefined ? 'pairing:complete:other' : `pairing:complete:${id}`,
       policy: LIMITS.pairingComplete,
     };
+  }
+
+  // Redeeming a tool setup (LAI-1056): no actor, so a bucket per exchange,
+  // and only for a ULID-shaped id — anything else that ends in `/redeem`
+  // shares one. A flood on one exchange spends that exchange's budget and
+  // nobody else's; the owner's `GET` / `DELETE` stay on their session's.
+  if (path.startsWith(TOOL_SETUP_PREFIX) && path.endsWith('/redeem')) {
+    const id = TOOL_REDEEM_PATH.exec(path)?.[1];
+    return {
+      key: id === undefined ? 'tool-redeem:other' : `tool-redeem:${id}`,
+      policy: LIMITS.toolRedeem,
+    };
+  }
+
+  // A CLI's report of itself is heartbeat-sized (plan LAI-1042 §E.8).
+  if (path === CLIENT_REPORT_PATH) {
+    return { key: `client-report:${who}`, policy: LIMITS.heartbeat };
   }
 
   // Heartbeats are frequent, cheap and get their own budget (§6.3, §9.1) so a

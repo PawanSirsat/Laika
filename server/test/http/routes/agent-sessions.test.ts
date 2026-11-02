@@ -719,6 +719,17 @@ const NOT_FENCED: Record<string, string> = {
     'no actor — a device presents a code and a key (§4.79); no task, no credential',
   'POST /api/v1/device-pairing/:id/complete':
     'no actor — a device proves its key (§4.79); no task, no credential',
+  // LAI-1056: setting a tool up (§4.80) touches no task; only redeem mints.
+  'POST /api/v1/devices/:id/tools':
+    'session only (agent.manage_own); registers or reuses an agent with no credential, touches no task',
+  'DELETE /api/v1/tool-setup/:id':
+    'session only (agent.manage_own); withdraws a tool setup, touches no task',
+  'POST /api/v1/tool-setup/:id/redeem':
+    'a paired device redeems once (§4.80), the owner asked again by can(); a credential, not a task',
+  'POST /api/v1/agents/:id/reconnect':
+    'session only (agent.manage_own); a rotate exchange for the agent, touches no task',
+  'POST /api/v1/agents/me/client-report':
+    'self-report on the agent’s own token (§4.81), as a heartbeat is; touches no task',
   'POST /api/v1/agents/me/events/ack':
     'presence, as a heartbeat is (§4.77, LAI-553): records a delivery state, touches no task',
   'POST /api/v1/tokens': 'a credential, not a task',

@@ -6707,3 +6707,39 @@ A further instance is a new decision.
 **Consequences.** Condition 4 is why review sent LAI-1050 back: a single shared anonymous
 failure bucket could be drained by any caller to block pairing for the whole board.
 
+## D-125 — A paired device may redeem a tool setup by signature; can() is asked of the exchange's owner at mint (LAI-1056)
+
+**Date:** 2026-11-02 · **Decided by:** Pawan (owner), on the standing instruction to continue
+Developer Access V3; recorded by CHIEF.
+
+**In one line:** a paired device redeems a tool setup once by its key's signature and is given an
+ordinary token; because that mints a credential it is not D-124's case, so the handler asks
+`can(owner, 'agent.manage_own')` of the exchange's owner inside the minting transaction.
+
+**Context.** LAI-1056 (PR #211) adds the tool setup exchange (SPEC §4.80). The owner opens it
+signed in, through a session-only, `can()`-checked route, and the command they copy carries no
+secret. The device has no actor when it redeems. D-124's first condition forbids minting a
+credential, so the redeem cannot be the fourth exception, and inventing an action for the device
+would be the warning sign CLAUDE.md §5 describes.
+
+**Decision.**
+1. `POST /tool-setup/:id/redeem` authenticates by the device's Ed25519 signature, by the key it
+   paired (§4.79). The signature covers the exchange id, the device id, the exchange's challenge
+   and `LAIKA_PUBLIC_URL`'s origin, under its own `laika-tool-redeem-v1` prefix.
+2. **It is not a D-124 case**, because it mints. The handler asks
+   `can(owner, 'agent.manage_own')` of the owner who made the exchange, inside the transaction
+   that mints, so an owner deactivated since, or no longer allowed, mints nothing.
+3. It yields an ordinary personal access token (SPEC §6.1 path 2), returned once and kept only as
+   its hash. A redeem authenticates the device for nothing else; every later request is path 2.
+   SPEC §6.1 says this in its own paragraph.
+4. **Evidence for clients with a generic MCP name.** Some harnesses' MCP clients announce only a
+   name like `mcp` (Omnigent, Hermes), so a name can never match the harness. For those
+   harnesses, "the tool itself connected" passes on an MCP request on the agent's own live
+   token **plus** a client report **from that same token** naming the harness, marked
+   self-reported. Ready also needs the capabilities that harness must report. Which harnesses
+   are generic, and what each must report, is one table per harness (`HARNESS_EVIDENCE`,
+   `server/src/services/harness-evidence.ts`), with a test.
+
+**Consequences.** §6.1's "there is no third path" becomes "there is no third credential": a
+password-reset link and a tool-setup redeem are ways to a credential, not credentials of their
+own. A further way to a token is a new decision.

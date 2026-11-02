@@ -284,6 +284,25 @@ export const DEVICE_PAIRING_STATES = [
 export type DevicePairingState = (typeof DEVICE_PAIRING_STATES)[number];
 
 /**
+ * A tool setup exchange (§4.80, LAI-1056). `open` until the paired device
+ * redeems it once (`redeemed`) or the owner withdraws it (`cancelled`);
+ * `expired` is ten minutes passing. All but `open` are terminal.
+ */
+export const TOOL_SETUP_STATES = ['open', 'redeemed', 'expired', 'cancelled'] as const;
+export type ToolSetupState = (typeof TOOL_SETUP_STATES)[number];
+
+/** What an exchange is for: a first credential, or replacing a live one (§4.80). */
+export const TOOL_SETUP_PURPOSES = ['install', 'rotate'] as const;
+export type ToolSetupPurpose = (typeof TOOL_SETUP_PURPOSES)[number];
+
+/**
+ * Where an agent's client report came from (§4.81, LAI-1056): the CLI's own
+ * report, or an MCP `initialize` on the agent's token.
+ */
+export const CLIENT_REPORT_SOURCES = ['cli', 'mcp_initialize'] as const;
+export type ClientReportSource = (typeof CLIENT_REPORT_SOURCES)[number];
+
+/**
  * An agent's grant on one project (§4.64, D-114): the same two words a token's
  * scope uses, because it narrows the same way — `read_only` keeps the reads.
  */

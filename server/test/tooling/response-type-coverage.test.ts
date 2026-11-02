@@ -203,6 +203,13 @@ const UNPAIRED = new Map<string, string>([
   ['DevicePairingView', 'no client type exists'],
   ['PairingClaimView', 'no client type exists'],
   ['PairingCompleteView', 'no client type exists'],
+  // LAI-1056: tool setup is served ahead of the V3 Devices screen and
+  // `laika tool add`; plan LAI-1042 slices C3 and D write their types.
+  ['CreatedToolSetupView', 'no client type exists'],
+  ['ToolSetupView', 'no client type exists'],
+  ['ToolRedeemView', 'no client type exists'],
+  ['AgentVerificationView', 'no client type exists'],
+  ['ClientReportView', 'no client type exists'],
   // LAI-1043: served ahead of the Developer access V3 screens that read it;
   // `laika doctor` is its only reader until then.
   ['CompatibilityBody', 'no client type exists'],

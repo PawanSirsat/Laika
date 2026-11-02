@@ -223,6 +223,42 @@ export function registerAgent(
   return { agent: agentView(db, row), token: created.token, secret: created.secret };
 }
 
+/**
+ * Register an agent on a paired device with **no credential yet** (§4.80,
+ * LAI-1056): the tool setup exchange mints its first token only when the
+ * device redeems it. No grants — least privilege until the owner gives some.
+ * The caller holds the write transaction and has looked for the owner's
+ * active agent on this pair; D-120 is asked again here all the same.
+ */
+export function insertDeviceAgent(
+  db: Db,
+  actor: ResolvedActor,
+  input: { harness: string; device: typeof devices.$inferSelect; now: number },
+): AgentRow {
+  assertCan(actor, 'agent.manage_own');
+  const harness = cleanHarness(input.harness);
+  // The unnamed device (key '') is agents with no label, as D-120 compares them.
+  const deviceLabel =
+    input.device.labelKey === '' ? null : cleanDeviceLabel(input.device.displayName);
+  assertHarnessDeviceFree(db, actor, harness, deviceLabel, null);
+  const row: AgentRow = {
+    id: newId(),
+    orgId: input.device.orgId,
+    ownerUserId: actor.userId,
+    // `<harness> · <device>`, the label D-120 shows anyway; renamable later.
+    displayName: cleanName(`${harness} · ${input.device.displayName}`.slice(0, 80)),
+    harness,
+    deviceLabel,
+    deviceId: input.device.id,
+    status: 'active',
+    createdAt: input.now,
+    revokedAt: null,
+    lastSeenAt: null,
+  };
+  db.insert(agents).values(row).run();
+  return row;
+}
+
 export interface ListAgentsOptions {
   limit: number;
   /** Keyset position, `(created_at, id)`, matching the ORDER BY below. */
@@ -625,7 +661,7 @@ export function requireOwnAgent(db: Db, actor: ResolvedActor, agentId: string): 
   return row;
 }
 
-function requireActiveAgent(db: Db, actor: ResolvedActor, agentId: string): AgentRow {
+export function requireActiveAgent(db: Db, actor: ResolvedActor, agentId: string): AgentRow {
   const row = requireOwnAgent(db, actor, agentId);
   if (row.status !== 'active') {
     throw new ApiError('conflict', 'This agent is revoked; register a new one', {
@@ -672,7 +708,7 @@ function cleanName(raw: string): string {
   return name;
 }
 
-function cleanHarness(raw: string): string {
+export function cleanHarness(raw: string): string {
   const harness = AGENT_CLIENTS.find((slug) => slug === raw);
   if (harness === undefined) {
     throw new ApiError('unprocessable', 'harness must be a known agent client, or "other"', {
@@ -720,7 +756,7 @@ function isCloudDevice(db: Db, ownerUserId: string, label: string | null): boole
 }
 
 /** As {@link isCloudDevice}, for an existing agent: its linked device first. */
-function isCloudAgent(db: Db, row: AgentRow): boolean {
+export function isCloudAgent(db: Db, row: AgentRow): boolean {
   if (isCloudLabel(row.deviceLabel)) return true;
   if (row.deviceId === null) return isCloudDevice(db, row.ownerUserId, row.deviceLabel);
   const linked = db
@@ -797,7 +833,7 @@ function assertHarnessDeviceFree(
   );
 }
 
-function liveTokens(db: Db, agentId: string, now: number): (typeof tokens.$inferSelect)[] {
+export function liveTokens(db: Db, agentId: string, now: number): (typeof tokens.$inferSelect)[] {
   return db
     .select()
     .from(tokens)
