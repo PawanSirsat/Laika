@@ -3275,6 +3275,43 @@ a personal token's, a rotated-away token's, a curl and a config file never
 pass it**, and `other` never does. While the org has presence off, every time
 this read takes from these rows is `null`, whatever is stored.
 
+### 4.82 `project_repo_setups`
+
+What is known about the Laika block in **one repository's** instructions file
+(LAI-1066; plan LAI-1042 §D.2, §G). **A record, never an access grant** — no
+`can()`, fence or claim reads it — and the board never sees a repository: a
+row is either the owner's word or what `laika project check` read on a device.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `org_id` | FK `orgs`, cascade |
+| `owner_user_id` | FK `users`, cascade — whose record it is |
+| `agent_id` | nullable, FK `agents`, cascade — the tool; null for a browser record about no tool in particular |
+| `project_id` | FK `projects`, cascade |
+| `repo_key` | 64 lower-case hex: the SHA-256 the CLI made of the normalised remote URL (or of the label, with no remote); `''` for a browser record. **Never a local path** |
+| `repo_label` | nullable — 1–90, the name the person chose for the repository; a browser record has none |
+| `instructions_path` | nullable — **relative to the repository**, one of the instructions files (`CLAUDE.md`, `.cursor/rules/laika.mdc`, …); no leading `/` or `~`, no `..` |
+| `block_found` | whether a Laika block was found |
+| `template_revision` | nullable — the **instructions template** revision found (`1` for the unmarked block); null when none was found. **Not** `projects.context_revision` (§4.68), and never named as it |
+| `project_match` | nullable — the block's `project=` slug is this project's; null when not checked (a browser record, an unmarked block, or no block) |
+| `prefix_match` | nullable — the block's task-key prefix is this project's; null when not checked |
+| `source` | `self_reported_browser` \| `local_check` (CHECK) |
+| `checked_at` | nullable — **null while the org has presence off** (§4.2), and answered null then whatever is stored |
+
+One row per owner, agent, project, `repo_key` and `source`, replaced on each
+record. **`POST /project-setups`** from the owner signed in records
+`self_reported_browser` (`agent.manage_own`, session only; the agent, when
+named, must be the owner's and active); from a registered agent's **own** token
+it records `local_check` for **that agent only** (`heartbeat.send_own`), and
+`project_match` and `prefix_match` are worked out against the project as it is
+then. Either way the project must be one the caller can read, so an agent
+records only inside its grants (`403`, `agent_not_granted`, as every agent read
+outside them). A personal token is refused `403`, `not_an_agent`. **`GET
+/project-setups`** answers the caller's own rows for one project; an agent's
+token reads only its own. Another owner's agent and an id that names nothing
+are the same `404`. No activity row is written.
+
 ## 5. Task lifecycle
 
 ```
@@ -3853,6 +3890,8 @@ POST   /api/v1/tool-setup/:id/redeem         the paired device; body { device_id
 POST   /api/v1/agents/:id/reconnect          a rotate exchange on the agent's paired device → 201, as /devices/:id/tools (§4.80, agent.manage_own, session only)
 GET    /api/v1/agents/:id/verification       → { agent_id, harness, status, now, last_seen_at, checks: { device_paired, credential_installed, credential_used, tool_request, session_hooks, required_capabilities }, client_report } (§4.81, agent.read_own; the owner or the agent's own token)
 POST   /api/v1/agents/me/client-report       an agent's token only; body { cli_version, cli_commit?, protocol, capabilities[], harness_version?, harness? } → the report (§4.81, heartbeat.send_own)
+POST   /api/v1/project-setups            the owner signed in: body { agent_id: string | null, project_slug, template_revision, instructions_path? } → 201 a self_reported_browser record (agent.manage_own, session only); an agent's own token: body { project_slug, repo_key, repo_label, instructions_path, block_found, template_revision, block_project, block_prefix } → 201 a local_check record for that agent (heartbeat.send_own); a personal token 403 not_an_agent (§4.82)
+GET    /api/v1/project-setups            ?project= (required), agent_id= optional → { data: [{ id, agent_id, device_label, project_id, project_slug, repo_label, instructions_path, block_found, template_revision, project_match, prefix_match, source, checked_at }] } — own rows; an agent's token its own (§4.82, agent.read_own; not paginated)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
