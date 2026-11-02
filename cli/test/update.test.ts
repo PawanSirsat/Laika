@@ -256,16 +256,19 @@ interface BoardOptions {
   readonly commit?: string | null;
   readonly source?: string;
   readonly features?: Record<string, unknown>;
+  /** `protocol.current`; 1 (a board from before LAI-1062) unless set. */
+  readonly current?: number;
+  readonly minProtocolFor?: Record<string, number>;
 }
 
 function compatBody(w: World, options: BoardOptions): unknown {
   const commitId = options.commit === undefined ? w.b : options.commit;
   return {
     server: { version: '0.1.0', build_commit: commitId },
-    protocol: { current: 1, min_client: 1 },
+    protocol: { current: options.current ?? 1, min_client: 1 },
     features: { developer_access: 'classic', device_pairing: false, ...options.features },
     cli: {
-      min_protocol_for: { device_pairing: 2 },
+      min_protocol_for: { device_pairing: 2, ...options.minProtocolFor },
       source: { type: 'git', url: options.source ?? w.source, commit: commitId, path: 'cli' },
     },
     release_notes: { ref: commitId, whats_new: [] },
@@ -1066,11 +1069,30 @@ void describe('laika update --dry-run and --check', () => {
 
   void test('--check says Update required for a feature this CLI cannot speak yet', async () => {
     const w = world();
-    const url = await board(w, { features: { device_pairing: true } });
+    const url = await board(w, {
+      current: 3,
+      features: { project_setups: true },
+      minProtocolFor: { project_setups: 3 },
+    });
     plant(w, url);
     const r = await run(w, ['--board', url, '--check']);
     assert.equal(r.code, 1);
-    assert.match(r.out, /^Update required for device_pairing/);
+    assert.match(r.out, /^Update required for project_setups/);
+  });
+
+  // LAI-1064: since LAI-1062 the board says protocol 2 with these on.
+  void test('--check against a protocol-2 board with the protocol-2 features on requires nothing', async () => {
+    const w = world();
+    const url = await board(w, {
+      current: 2,
+      features: { device_pairing: true, tool_setup_exchange: true, client_reports: true },
+      minProtocolFor: { tool_setup_exchange: 2, client_reports: 2 },
+    });
+    plant(w, url);
+    const r = await run(w, ['--board', url, '--check']);
+    assert.equal(r.code, 0, r.out + r.err);
+    assert.doesNotMatch(r.out, /Update required/);
+    assert.match(r.out, /^Update available: the board runs .*Run: laika update$/);
   });
 
   void test('a wrong option is a usage error, 64', async () => {
