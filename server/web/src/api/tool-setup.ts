@@ -39,9 +39,18 @@ export interface CreatedToolSetup {
   readonly exchange: ToolSetup;
   /** What the owner runs on the device. **No secret is in it.** */
   readonly command: string;
+  /**
+   * The agent's live tokens that **redeeming revokes**: a reconnect replaces
+   * the tool's current credential, and the screen says so before the owner
+   * copies the command. Empty for a first install.
+   */
+  readonly revokes_on_redeem: readonly string[];
 }
 
 export type CheckState = 'pass' | 'fail';
+
+/** How a harness's MCP client names itself (`services/harness-evidence.ts`, D-125). */
+export type McpClientNaming = 'specific' | 'generic' | 'unverifiable';
 
 export interface VerificationCheck<D> {
   readonly state: CheckState;
@@ -54,6 +63,12 @@ export interface CredentialDetail {
   readonly token_id: string | null;
   /** Its newest live token was minted by an exchange this device redeemed. */
   readonly via_exchange: boolean;
+}
+
+/** The capabilities a harness must report, and those its CLI has not. */
+export interface CapabilityDetail {
+  readonly required: readonly string[];
+  readonly missing: readonly string[];
 }
 
 /**
@@ -79,12 +94,20 @@ export interface AgentVerification {
      * lines of a nested block as fields, so both sides lay it out alike.
      */
     readonly tool_request: VerificationCheck<{
+      /**
+       * What passed it: the MCP client's own name, or — for a harness whose
+       * MCP client says only `mcp` — the CLI's report from the same token.
+       */
+      readonly evidence: 'client_info' | 'client_report' | null;
+      readonly mcp_client_name: McpClientNaming;
       readonly client_slug: string | null;
       readonly client_name: string | null;
       readonly client_version: string | null;
       /** The tool's own word for itself, as a `User-Agent` is. */
       readonly self_reported: true;
     }>;
+    /** What the CLI must report before the tool reads as Ready (D-125). */
+    readonly required_capabilities: VerificationCheck<CapabilityDetail>;
     readonly session_hooks: VerificationCheck<{ readonly harness: string | null }>;
   };
   /** The CLI's own report; null is *Version unknown*. */
@@ -94,6 +117,9 @@ export interface AgentVerification {
     readonly protocol: number | null;
     readonly capabilities: readonly string[];
     readonly harness_version: string | null;
+    /** The harness the CLI says it runs as: a generic MCP client's only name. */
+    readonly harness: string | null;
+    /** Null while the organisation has presence off, whatever was stored. */
     readonly reported_at: number | null;
     readonly self_reported: true;
   } | null;

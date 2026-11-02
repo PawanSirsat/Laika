@@ -414,17 +414,22 @@ void describe('Add tool: the command, and checks from evidence', () => {
           tool_request:
             request === 'claude-code'
               ? pass({
+                  evidence: 'client_info',
+                  mcp_client_name: 'specific',
                   client_slug: 'claude-code',
                   client_name: 'claude-code',
                   client_version: '2.1.0',
                   self_reported: true,
                 })
               : fail({
+                  evidence: null,
+                  mcp_client_name: 'specific',
                   client_slug: request,
                   client_name: request,
                   client_version: null,
                   self_reported: true,
                 }),
+          required_capabilities: { state: 'pass', at: null, detail: { required: [], missing: [] } },
           session_hooks: phase >= 3 ? pass({ harness: 'claude-code' }) : fail({ harness: null }),
         },
         client_report: null,
@@ -447,6 +452,7 @@ void describe('Add tool: the command, and checks from evidence', () => {
               redeemed_at: null,
             },
             command: 'laika tool add claude-code --exchange x1',
+            revokes_on_redeem: [],
           }),
         '/api/v1/tool-setup/x1': () => ({
           id: 'x1',
@@ -613,6 +619,7 @@ void describe('Add tool: the command, and checks from evidence', () => {
               redeemed_at: null,
             },
             command: 'laika tool add claude-code --exchange x2',
+            revokes_on_redeem: ['t-a1'],
           }),
         '/api/v1/tool-setup/x2': {
           id: 'x2',
@@ -639,7 +646,17 @@ void describe('Add tool: the command, and checks from evidence', () => {
         await wizard(page, 'tool').locator('pre').innerText(),
         'laika tool add claude-code --exchange x2',
       );
-      assert.match(await wizard(page, 'tool').innerText(), /already has a credential/);
+      // The board said which live credential redeeming revokes: said before the copy.
+      assert.equal(
+        await wizard(page, 'tool')
+          .locator('[data-revokes-on-redeem]')
+          .getAttribute('data-revokes-on-redeem'),
+        '1',
+      );
+      assert.match(
+        await wizard(page, 'tool').innerText(),
+        /replaces Claude Code’s current credential/,
+      );
       assert.equal(h.calls.filter((c) => c.path.endsWith('/rotate-token')).length, 0);
       assert.doesNotMatch(await page.locator('body').innerText(), new RegExp(SECRET));
     } finally {

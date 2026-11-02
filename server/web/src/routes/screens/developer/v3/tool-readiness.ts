@@ -35,7 +35,12 @@ export interface Readiness {
   readonly versionUnknown: boolean;
 }
 
-export type CheckId = 'device_paired' | 'credential_installed' | 'tool_request' | 'session_hooks';
+export type CheckId =
+  | 'device_paired'
+  | 'credential_installed'
+  | 'tool_request'
+  | 'required_capabilities'
+  | 'session_hooks';
 
 export interface CheckLine {
   readonly id: CheckId;
@@ -46,10 +51,23 @@ export interface CheckLine {
   readonly detail: string;
 }
 
-/** The tool's own request on its own credential, read twice over: state and slug. */
+/**
+ * The tool's own request on its own credential, read twice over: the board's
+ * state, and the evidence it names (`services/harness-evidence.ts`, D-125) —
+ * the MCP client's own name for a tool that has one, or, for one whose client
+ * says only `mcp` (Omnigent, Hermes), the CLI's report naming the harness.
+ */
 export function ownToolRequest(v: AgentVerification): boolean {
   const request = v.checks.tool_request;
-  return request.state === 'pass' && request.detail.client_slug === v.harness;
+  if (request.state !== 'pass') return false;
+  if (request.detail.evidence === 'client_info') return request.detail.client_slug === v.harness;
+  if (request.detail.evidence === 'client_report') return v.client_report?.harness === v.harness;
+  return false;
+}
+
+/** The capabilities the CLI must report for this harness, all reported. */
+function capabilitiesMet(v: AgentVerification): boolean {
+  return v.checks.required_capabilities.state === 'pass';
 }
 
 /** The tool's sessions, when it has them; trivially met when it does not. */
@@ -107,6 +125,15 @@ export function readiness(v: AgentVerification, tool: ToolCapability): Readiness
       reason: `The credential reached the board; ${tool.name} itself has not called it yet`,
     };
   }
+  if (!capabilitiesMet(v)) {
+    return {
+      ...base,
+      key: 'connected',
+      word: 'Connected',
+      tone: 'waiting',
+      reason: `The helper has not reported ${v.checks.required_capabilities.detail.missing.join(', ')} yet`,
+    };
+  }
   if (!sessionsMet(v, tool)) {
     return {
       ...base,
@@ -117,8 +144,19 @@ export function readiness(v: AgentVerification, tool: ToolCapability): Readiness
     };
   }
   const seen = v.last_seen_at ?? v.checks.tool_request.at;
-  const age = seen === null ? Infinity : v.now - seen;
-  if (seen !== null && age <= ACTIVE_MS) {
+  if (seen === null) {
+    // Every piece of evidence is in, but the board keeps no times (presence
+    // off): it cannot say the tool was seen lately, so it does not say Ready.
+    return {
+      ...base,
+      key: 'connected',
+      word: 'Connected',
+      tone: 'waiting',
+      reason: 'All its evidence is in; this organisation does not record when it was last seen',
+    };
+  }
+  const age = v.now - seen;
+  if (age <= ACTIVE_MS) {
     return {
       ...base,
       key: 'ready',
@@ -127,7 +165,7 @@ export function readiness(v: AgentVerification, tool: ToolCapability): Readiness
       reason: `${tool.name} is using its own credential`,
     };
   }
-  if (seen !== null && age <= OFFLINE_MS) {
+  if (age <= OFFLINE_MS) {
     return {
       ...base,
       key: 'idle',
@@ -141,7 +179,7 @@ export function readiness(v: AgentVerification, tool: ToolCapability): Readiness
     key: 'offline',
     word: 'Offline',
     tone: 'warn',
-    reason: seen === null ? 'Not seen' : `Last seen ${ago(seen, v.now)}`,
+    reason: `Last seen ${ago(seen, v.now)}`,
   };
 }
 
@@ -190,7 +228,9 @@ export function checkLines(
   const request = checks.tool_request;
   const other = request.detail.client_slug;
   let requestDetail: string;
-  if (ownToolRequest(v)) {
+  if (ownToolRequest(v) && request.detail.evidence === 'client_report') {
+    requestDetail = `It called the board on its own credential${request.at === null ? '' : ` ${ago(request.at, now)}`}. ${tool.name}’s MCP client names no tool, so the helper’s report from the same credential says it is ${tool.name}. Both are its own word for itself.`;
+  } else if (ownToolRequest(v)) {
     const named = request.detail.client_name ?? tool.name;
     const version =
       request.detail.client_version === null ? '' : ` ${request.detail.client_version}`;
@@ -210,6 +250,25 @@ export function checkLines(
     state: ownToolRequest(v) ? 'pass' : 'fail',
     detail: requestDetail,
   });
+
+  const caps = checks.required_capabilities;
+  if (caps.detail.required.length > 0) {
+    lines.push(
+      caps.state === 'pass'
+        ? {
+            id: 'required_capabilities',
+            label: 'Helper reports',
+            state: 'pass',
+            detail: `The helper reported what ${tool.name} needs: ${caps.detail.required.join(', ')}.`,
+          }
+        : {
+            id: 'required_capabilities',
+            label: 'Helper reports',
+            state: 'fail',
+            detail: `Not yet reported: ${caps.detail.missing.join(', ')}. The helper sends this after \`laika tool add\`; an older helper needs \`laika update\`.`,
+          },
+    );
+  }
 
   const session = checks.session_hooks;
   if (!tool.sessions) {

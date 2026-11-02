@@ -75,6 +75,12 @@ interface Setup {
   readonly agent: RegisteredAgent;
   readonly exchange: ToolSetup;
   readonly command: string;
+  /**
+   * The live credentials redeeming revokes, as the board said when it made
+   * the exchange; `undefined` for one resumed after a reload, where only its
+   * `purpose` is known.
+   */
+  readonly revokes: readonly string[] | undefined;
   readonly device: Device;
   readonly tool: ToolCapability;
 }
@@ -137,7 +143,12 @@ export function AddToolWizard({
   }, [step]);
 
   const begin = useCallback(
-    (made: { agent: RegisteredAgent; exchange: ToolSetup; command: string }): void => {
+    (made: {
+      readonly agent: RegisteredAgent;
+      readonly exchange: ToolSetup;
+      readonly command: string;
+      readonly revokes_on_redeem?: readonly string[];
+    }): void => {
       const on = (devices ?? []).find((d) => d.id === made.exchange.device_id);
       const capability = catalogTool(made.agent.harness);
       if (on === undefined || capability === undefined) {
@@ -145,7 +156,14 @@ export function AddToolWizard({
         return;
       }
       changed.current = true;
-      setSetup({ ...made, device: on, tool: capability });
+      setSetup({
+        agent: made.agent,
+        exchange: made.exchange,
+        command: made.command,
+        revokes: made.revokes_on_redeem,
+        device: on,
+        tool: capability,
+      });
       setVerification(undefined);
       setStep(2);
       onExchange(made.exchange.id);
@@ -460,10 +478,26 @@ export function AddToolWizard({
               own key and keeps it in a file only you can read; it never passes through this
               browser. The command works once, for ten minutes.
             </Help>
-            {exchange.purpose === 'rotate' && (
-              <Help tone="info">
-                {t.name} already has a credential. When this runs, the new one replaces it at once.
+            {setup.revokes !== undefined && setup.revokes.length > 0 ? (
+              <Help tone="warn">
+                <span data-revokes-on-redeem={setup.revokes.length}>
+                  <strong>This replaces {t.name}’s current credential.</strong> When the command
+                  runs,{' '}
+                  {setup.revokes.length === 1
+                    ? 'the credential it uses now stops'
+                    : `the ${String(setup.revokes.length)} credentials it holds now stop`}{' '}
+                  working at once; anything still using {setup.revokes.length === 1 ? 'it' : 'them'}{' '}
+                  is cut off.
+                </span>
               </Help>
+            ) : (
+              setup.revokes === undefined &&
+              exchange.purpose === 'rotate' && (
+                <Help tone="warn">
+                  This replaces {t.name}’s current credential: it stops working when the command
+                  runs.
+                </Help>
+              )
             )}
           </>
         )}

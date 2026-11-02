@@ -39,16 +39,28 @@ interface Over {
   readonly status?: 'active' | 'revoked';
   readonly installed?: boolean;
   readonly used?: boolean;
-  /** The slug the tool's MCP request named, and whether the board passed it. */
-  readonly request?: { readonly slug: string; readonly state: 'pass' | 'fail' } | null;
+  /** The tool's MCP request: the slug it named, the board's verdict, and what passed it. */
+  readonly request?: {
+    readonly slug: string;
+    readonly state: 'pass' | 'fail';
+    readonly evidence?: 'client_info' | 'client_report';
+  } | null;
   readonly session?: boolean;
   readonly lastSeen?: number | null;
   readonly cliVersion?: string | null;
+  /** The harness the CLI's report names. */
+  readonly reportedHarness?: string | null;
+  readonly missing?: readonly string[];
+  readonly required?: readonly string[];
 }
 
 function verification(over: Over = {}): AgentVerification {
   const harness = over.harness ?? 'claude-code';
   const request = over.request === undefined ? null : over.request;
+  const generic = harness === 'omnigent' || harness === 'hermes';
+  const required = over.required ?? (generic ? ['tool_setup_exchange', 'client_report'] : []);
+  const missing = over.missing ?? [];
+  const reported = over.cliVersion !== undefined || over.reportedHarness !== undefined;
   return {
     agent_id: 'a1',
     harness,
@@ -65,6 +77,8 @@ function verification(over: Over = {}): AgentVerification {
       tool_request:
         request === null
           ? fail({
+              evidence: null,
+              mcp_client_name: generic ? ('generic' as const) : ('specific' as const),
               client_slug: null,
               client_name: null,
               client_version: null,
@@ -72,28 +86,35 @@ function verification(over: Over = {}): AgentVerification {
             })
           : {
               state: request.state,
-              at: request.state === 'pass' ? NOW - MIN : null,
+              at: request.state === 'pass' && over.lastSeen !== null ? NOW - MIN : null,
               detail: {
+                evidence: request.state === 'pass' ? (request.evidence ?? 'client_info') : null,
+                mcp_client_name: generic ? ('generic' as const) : ('specific' as const),
                 client_slug: request.slug,
                 client_name: request.slug,
                 client_version: '2.1.0',
                 self_reported: true,
               },
             },
+      required_capabilities: {
+        state: missing.length === 0 ? 'pass' : 'fail',
+        at: null,
+        detail: { required, missing },
+      },
       session_hooks: over.session === true ? pass({ harness }) : fail({ harness: null }),
     },
-    client_report:
-      over.cliVersion === undefined || over.cliVersion === null
-        ? null
-        : {
-            cli_version: over.cliVersion,
-            cli_commit: null,
-            protocol: 2,
-            capabilities: [],
-            harness_version: null,
-            reported_at: NOW,
-            self_reported: true,
-          },
+    client_report: !reported
+      ? null
+      : {
+          cli_version: over.cliVersion ?? '0.2.0',
+          cli_commit: null,
+          protocol: 2,
+          capabilities: required.filter((c) => !missing.includes(c)),
+          harness_version: null,
+          harness: over.reportedHarness ?? null,
+          reported_at: NOW,
+          self_reported: true,
+        },
   };
 }
 
@@ -236,5 +257,67 @@ void describe('the checklist says what is missing', () => {
       said,
       /^Codex: Connected\. Still missing: Codex connected, Sessions and claims\.$/,
     );
+  });
+});
+
+void describe('a harness whose MCP client names no tool (D-125)', () => {
+  void test('Omnigent is Ready on its request plus the helper’s report naming it, shown as self-reported', () => {
+    const v = verification({
+      harness: 'omnigent',
+      request: { slug: 'other', state: 'pass', evidence: 'client_report' },
+      reportedHarness: 'omnigent',
+    });
+    assert.equal(readiness(v, tool('omnigent')).key, 'ready');
+    const line = checkLines(v, tool('omnigent'), 'Belka').find((l) => l.id === 'tool_request');
+    assert.equal(line?.state, 'pass');
+    assert.match(line?.detail ?? '', /helper’s report from the same credential/);
+    assert.match(line?.detail ?? '', /own word for itself/);
+  });
+
+  void test('a report naming another harness does not tick it, whatever the board said', () => {
+    const v = verification({
+      harness: 'omnigent',
+      request: { slug: 'other', state: 'pass', evidence: 'client_report' },
+      reportedHarness: 'hermes',
+    });
+    assert.notEqual(readiness(v, tool('omnigent')).key, 'ready');
+  });
+
+  void test('required capabilities not reported yet: Connected, and the line says which', () => {
+    const v = verification({
+      harness: 'omnigent',
+      request: { slug: 'other', state: 'pass', evidence: 'client_report' },
+      reportedHarness: 'omnigent',
+      missing: ['client_report'],
+    });
+    const r = readiness(v, tool('omnigent'));
+    assert.equal(r.key, 'connected');
+    assert.match(r.reason, /client_report/);
+    const line = checkLines(v, tool('omnigent'), 'Belka').find(
+      (l) => l.id === 'required_capabilities',
+    );
+    assert.equal(line?.state, 'fail');
+    assert.match(line?.detail ?? '', /Not yet reported: client_report/);
+  });
+
+  void test('a tool with nothing required shows no capabilities line', () => {
+    const lines = checkLines(verification(), tool('claude-code'), 'Belka');
+    assert.equal(
+      lines.find((l) => l.id === 'required_capabilities'),
+      undefined,
+    );
+  });
+});
+
+void describe('presence off', () => {
+  void test('every check passing but no time kept is Connected, never Ready', () => {
+    const v = verification({
+      request: { slug: 'claude-code', state: 'pass' },
+      session: true,
+      lastSeen: null,
+    });
+    const r = readiness(v, tool('claude-code'));
+    assert.equal(r.key, 'connected');
+    assert.match(r.reason, /does not record when/);
   });
 });
