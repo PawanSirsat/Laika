@@ -6116,7 +6116,7 @@ the decision currently governing it rather than the table naming one for all.
 | a space's tabs | two groups with a hairline between — *Board, List, Timeline, Calendar* \| *Sprints, Dashboard, Activity, Meeting review* — and *Agents* and *Create* on the right | **LAI-796** |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer | D-059.2, amended by **D-063** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
-| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
+| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
 | old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`) | **LAI-796**; **LAI-507** |
 | Organisation | four tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*; the spaces), **People** (members and invites), **Integrations** (GitHub webhook, model prices, AI provider), **Security** (everyone's tokens, owners and admins) | **LAI-796** |
 
@@ -6287,6 +6287,15 @@ anything missing sends the task back.
   per machine* or *Once per project*. The compact *Connect an agent* card and
   the wizard's *Optional* rail are gone, and so is *Invite a teammate*: an
   invite is Organisation → People's.
+- **Developer access in `v3`** (`LAIKA_DEVELOPER_ACCESS`, the default since
+  LAI-1076), drawn in the owner's design (`laika-developer-access-v3.html`,
+  LAI-1078) in Laika's own tokens: the page's sentence is *Pair your computer
+  once, connect your coding tools, then set up each project repository.
+  Project setup is where work becomes connected.*, then **Overview · Project
+  setup · Devices · Advanced**. *Advanced* is the reader's personal
+  credentials, then the *Share local activity* card (*Once per device*); the
+  old `?tab=activity` lands on it as `?tab=advanced&section=activity`, which
+  scrolls to it and focuses its title.
 - **Tokens** (on Developer access) — create with name and scope; **value shown exactly once** with a
   copy affordance and an explicit "you will not see this again"; list with
   prefix, scope, last used, expiry; revoke with confirmation; admin view of

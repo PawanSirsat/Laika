@@ -1,0 +1,951 @@
+/*
+ * Developer access V3 in the owner's design (LAI-1078,
+ * `laika-developer-access-v3.html`): its layout, hierarchy and shapes — cards,
+ * a hero, flow rows, one-line records, step-rail wizards — drawn in Laika's
+ * own tokens, both themes. Tokens only, and none new.
+ *
+ * Every class here is `dx-…`, which classic Connect never draws. Where the
+ * design restyles a wizard part Connect shares (`.conn-rail`,
+ * `.conn-wizard-card`, …) the rule is scoped under a `dx-` class: Connect's
+ * golden test pins those parts' markup and computed style byte for byte, and
+ * an unscoped rule would turn it red. The side panel is portalled out of the
+ * page, which is why the `dx-` rules are not nested under `.dx` itself.
+ */
+
+.dx {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: var(--space-5) 1.125rem 2.5rem;
+}
+
+/* ---- section title: a heading and its sentence, actions on the right ---- */
+
+.dx-section-title {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.dx-section-heading {
+  margin: 0;
+  font-size: var(--text-heading-md);
+  line-height: var(--leading-heading-md);
+  font-weight: var(--weight-heavy);
+  letter-spacing: -0.012em;
+  color: var(--text-primary);
+}
+
+.dx-section-heading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+.dx-section-sub {
+  margin: var(--space-1) 0 0;
+  max-width: 44rem;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+}
+
+.dx-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* ---- cards ---- */
+
+.dx-card {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+}
+
+.dx-card-pad {
+  padding: var(--space-5);
+}
+
+.dx-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.dx-card-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  font-weight: var(--weight-heavy);
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.dx-card-sub {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+.dx-eyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.dx-label {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.dx-divider {
+  margin: var(--space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ---- buttons: the design's are taller than a bar's ---- */
+
+.dx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.dx-btn:hover:not(:disabled, [aria-disabled='true']) {
+  border-color: var(--accent-border);
+}
+
+.dx-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dx-btn:disabled,
+.dx-btn[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.dx-btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.dx-btn-primary:hover:not(:disabled, [aria-disabled='true']) {
+  border-color: var(--accent);
+  filter: brightness(1.08);
+}
+
+.dx-btn-soft {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.dx-btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.dx-btn-sm {
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+.dx-btn-full {
+  width: 100%;
+}
+
+.dx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---- chips: a word in a pill, never colour alone ---- */
+
+.dx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.1875rem 0.5625rem;
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-pill);
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+}
+
+.dx-chip[data-tone='ok'] {
+  border-color: var(--chip-green-border);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+}
+
+.dx-chip[data-tone='warn'] {
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+}
+
+.dx-chip[data-tone='accent'] {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.dx-chip[data-tone='danger'] {
+  border-color: var(--overdue-border);
+  background: var(--blocked-bg);
+  color: var(--overdue);
+}
+
+/* ---- hero: the one next step ---- */
+
+.dx-hero {
+  position: relative;
+  border-color: var(--accent-border);
+  background: linear-gradient(120deg, var(--bg-card) 55%, var(--accent-bg));
+}
+
+.dx-hero::after {
+  content: '';
+  position: absolute;
+  top: -7.2rem;
+  right: -3.8rem;
+  width: 14.7rem;
+  height: 14.7rem;
+  border: 2.25rem solid var(--accent-border);
+  border-radius: 50%;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.dx-hero-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.dx-hero-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-heading-lg);
+  line-height: var(--leading-heading-lg);
+  font-weight: var(--weight-heavy);
+  letter-spacing: -0.025em;
+  color: var(--text-primary);
+}
+
+.dx-hero-sub {
+  margin: 0;
+  max-width: 35rem;
+  font-size: var(--text-body);
+  line-height: var(--leading-reading);
+  color: var(--text-secondary);
+}
+
+.dx-hero .dx-actions {
+  margin-top: var(--space-5);
+}
+
+/* ---- flow rows: a numbered step, its line, its one action ---- */
+
+.dx-flow {
+  margin: 0;
+  padding: 0 var(--space-5) var(--space-3);
+  list-style: none;
+}
+
+.dx-flow-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0.9375rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dx-flow-row:last-child {
+  border-bottom: 0;
+}
+
+.dx-flow-n {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.125rem;
+  height: 2.125rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-canvas);
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+}
+
+.dx-flow-n[data-state='done'] {
+  border-color: var(--chip-green-border);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+}
+
+.dx-flow-n[data-state='active'] {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.dx-flow-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.dx-flow-name {
+  display: block;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.dx-flow-line {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* ---- stat rows: an icon, a count with its names, a chip ---- */
+
+.dx-stats {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-stat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 0 0.9375rem;
+  margin: 0 0 0.9375rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dx-stat:last-child {
+  padding: 0;
+  margin: 0;
+  border-bottom: 0;
+}
+
+.dx-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.375rem;
+  height: 2.375rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-canvas);
+  color: var(--text-secondary);
+}
+
+.dx-icon svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.dx-stat-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.dx-stat-count {
+  display: block;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.dx-stat-names {
+  display: block;
+  overflow: hidden;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- one-line records ---- */
+
+.dx-records {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-record {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 1.125rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dx-record:last-child {
+  border-bottom: 0;
+}
+
+.dx-record-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.dx-record-title {
+  display: block;
+  overflow: hidden;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dx-record-sub {
+  display: block;
+  margin: 0.125rem 0 0;
+  overflow: hidden;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dx-record-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* ---- note blocks: a sentence that needs its own ground ---- */
+
+.dx-note {
+  padding: 0.8125rem 0.9375rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+}
+
+.dx-note[data-tone='warn'] {
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+}
+
+.dx-note[data-tone='accent'] {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.dx-note[data-tone='danger'] {
+  border-color: var(--overdue-border);
+  background: var(--blocked-bg);
+}
+
+.dx-note-title {
+  display: block;
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+}
+
+.dx-note-body {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.dx-note-body > * + * {
+  margin-top: var(--space-2);
+}
+
+/* A focus note: a rule down its left, as the design's project focus. */
+.dx-focus {
+  padding: 0.8125rem 0.9375rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: var(--bg-canvas);
+}
+
+.dx-focus-title {
+  display: block;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.dx-focus-body {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* ---- detail tiles: a label over a value, two to a row ---- */
+
+.dx-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.dx-detail {
+  min-width: 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+}
+
+.dx-detail dt {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-muted);
+}
+
+.dx-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+/* ---- option tiles: one choice among a few, icon and two lines ---- */
+
+.dx-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6875rem;
+}
+
+.dx-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 4.8rem;
+  padding: 0.875rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.dx-option:hover {
+  border-color: var(--accent-border);
+}
+
+.dx-option:has(input:checked),
+.dx-option[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.dx-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dx-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dx-option-name {
+  display: block;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-bold);
+}
+
+.dx-option-sub {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* ---- the orb: a status head's icon ---- */
+
+.dx-status-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.dx-orb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 1rem;
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+}
+
+.dx-orb[data-tone='accent'] {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.dx-orb[data-tone='warn'] {
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+}
+
+.dx-orb svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* ---- the wizard: a rail card, the step's card, an optional aside ---- */
+
+.dx-wizard {
+  display: grid;
+  grid-template-columns: 15.3rem minmax(0, 1fr);
+  gap: 1.4375rem;
+  align-items: start;
+}
+
+.dx-wizard[data-aside='true'] {
+  grid-template-columns: 11.75rem minmax(0, 1fr) 18.125rem;
+  gap: var(--space-4);
+}
+
+.dx-rail-card {
+  position: sticky;
+  top: var(--space-5);
+  padding: 1.3125rem 0.9375rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+}
+
+.dx-rail-title {
+  margin: 0 0.3125rem 0.3125rem;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+/* The rail itself is classic Connect's; inside the card it gives up its own
+   box and its intro reads as the card's sub. */
+.dx-rail-card .conn-rail {
+  position: static;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.dx-rail-card .conn-rail-intro {
+  margin: 0 0.3125rem 1.0625rem;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+.dx-wizard .conn-wizard-card {
+  min-width: 0;
+  height: auto;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+}
+
+.dx-wizard .conn-card-scroll {
+  overflow: visible;
+}
+
+.dx-wizard .conn-card-head {
+  padding: 1.625rem 1.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dx-wizard .conn-card-body {
+  min-height: 14rem;
+  padding: 1.6875rem 1.75rem;
+}
+
+.dx-wizard-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0.9375rem var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
+}
+
+/* The note wraps; the buttons never do (the design's own step 3 wrapped them). */
+.dx-wizard-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+.dx-wizard-foot .dx-actions {
+  flex: none;
+  flex-wrap: nowrap;
+}
+
+.dx-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.dx-aside .dx-card-pad {
+  padding: 1.1875rem;
+}
+
+.dx-aside-list {
+  margin: 0;
+  padding-left: 1.125rem;
+  font-size: var(--text-small);
+  line-height: var(--leading-reading);
+  color: var(--text-secondary);
+}
+
+.dx-aside-item + .dx-aside-item {
+  margin-top: 0.8125rem;
+  padding-top: 0.8125rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.dx-aside-item strong {
+  display: block;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+}
+
+.dx-aside-item span {
+  display: block;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+/* ---- two columns: the Overview's main and side ---- */
+
+.dx-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(17.8rem, 1fr);
+  gap: 1.125rem;
+  align-items: start;
+}
+
+.dx-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+  min-width: 0;
+}
+
+.dx-empty {
+  padding: 2.6875rem 1.5625rem;
+  text-align: center;
+}
+
+.dx-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 3.4375rem;
+  height: 3.4375rem;
+  margin: 0 auto 0.875rem;
+  border-radius: 1.125rem;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.dx-empty-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.dx-empty-body {
+  max-width: 26rem;
+  margin: 0 auto var(--space-4);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+}
+
+/* ---- narrower screens ---- */
+
+@media (max-width: 65rem) {
+  .dx-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dx-wizard[data-aside='true'] {
+    grid-template-columns: 11.75rem minmax(0, 1fr);
+  }
+
+  .dx-wizard[data-aside='true'] > .dx-aside {
+    display: none;
+  }
+}
+
+/* The rail becomes a strip of steps over the card. */
+@media (max-width: 53rem) {
+  .dx-wizard,
+  .dx-wizard[data-aside='true'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dx-rail-card {
+    position: static;
+    padding: 0.625rem;
+  }
+
+  .dx-rail-card .dx-rail-title,
+  .dx-rail-card .conn-rail-intro {
+    display: none;
+  }
+
+  .dx-rail-card .conn-steps {
+    display: flex;
+    gap: 0.3125rem;
+    overflow-x: auto;
+  }
+
+  .dx-rail-card .conn-step {
+    flex: 1 0 auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .dx {
+    padding: var(--space-4) 0.9375rem 3.75rem;
+  }
+
+  .dx-section-title {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dx-card-pad,
+  .dx-wizard .conn-card-head,
+  .dx-wizard .conn-card-body {
+    padding: 1.25rem;
+  }
+
+  .dx-wizard-foot {
+    flex-wrap: wrap;
+    padding: 0.8125rem;
+  }
+
+  .dx-wizard-foot .dx-actions {
+    width: 100%;
+  }
+
+  .dx-wizard-foot .dx-actions .dx-btn {
+    flex: 1;
+  }
+
+  .dx-options,
+  .dx-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dx-record {
+    flex-wrap: wrap;
+  }
+
+  .dx-record-end {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .dx-hero-title {
+    font-size: var(--text-heading-md);
+    line-height: var(--leading-heading-md);
+  }
+
+  .dx-rail-card .conn-rail-sub {
+    display: none;
+  }
+}
