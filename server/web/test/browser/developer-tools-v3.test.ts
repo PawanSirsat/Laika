@@ -500,13 +500,13 @@ void describe('the details panel: phone and themes', () => {
       try {
         await setTheme(h.page, theme);
         await openFromRow(h.page);
-        const [panelBg, cardBg] = await h.page.evaluate(() => [
-          getComputedStyle(document.querySelector('.side-panel') as Element).backgroundColor,
-          getComputedStyle(document.querySelector('.dv3-roster .dx-card') as Element)
-            .backgroundColor,
-        ]);
+        const panelBg = await panel(h.page).evaluate((el) => getComputedStyle(el).backgroundColor);
+        const cardBg = await h.page
+          .locator('.dv3-roster .dx-card')
+          .first()
+          .evaluate((el) => getComputedStyle(el).backgroundColor);
         assert.equal(panelBg, cardBg, `${theme}: the panel is not the card colour`);
-        colours.push(panelBg ?? '');
+        colours.push(panelBg);
       } finally {
         await h.close();
       }
