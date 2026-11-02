@@ -6,7 +6,8 @@ assignee: shell/belka
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-11-02T18:35:03+05:30
 started: 2026-11-02T17:20:28+05:30
 ---
 
@@ -24,7 +25,7 @@ the only way forward for it is to update the git checkout.
 
 ## Acceptance criteria
 
-- [ ] One shared component, *Update your Laika CLI* (V3 wizard/help style,
+- [x] One shared component, *Update your Laika CLI* (V3 wizard/help style,
       existing tokens, both themes, 390 px), saying in this order: how to
       check (`laika version` shows commit and protocol; *unknown command*
       means the CLI predates this board); how to update a CLI that has
@@ -37,31 +38,52 @@ the only way forward for it is to update the git checkout.
       hooks in `/hooks`). The board's build commit, protocol and minimum
       helper protocol come from `GET /developer/compatibility`, never
       hard-coded. No secret anywhere.
-- [ ] Tool update states (*Update available*, *Update required for …*,
+- [x] Tool update states (*Update available*, *Update required for …*,
       *Version unknown*) link to it; *Version unknown* says how to make the
       version appear (`laika update`, worded to be true once LAI-1085 makes
       it report when already current). The device's helper summary links to
       it when one of its tools needs it.
-- [ ] Overview: a quiet notice, linking to it, when any of the reader's own
+- [x] Overview: a quiet notice, linking to it, when any of the reader's own
       tools is *Update required* or has never reported; none when all are up
       to date.
-- [ ] Add device and Add tool: before the `laika device pair` /
+- [x] Add device and Add tool: before the `laika device pair` /
       `laika tool add` command, *Already have Laika installed? Make sure it's
       current* opens it.
-- [ ] Project setup's check-step hint is **not** edited (LAI-1084 owns it);
+- [x] Project setup's check-step hint is **not** edited (LAI-1084 owns it);
       the component is exported so LAI-1084 or a follow-up can use it.
-- [ ] CLI: a protocol-2 CLI talking to a board whose build is newer, or
+- [x] CLI: a protocol-2 CLI talking to a board whose build is newer, or
       whose protocol it does not meet, prints one stderr line naming both
       commits and `laika update` — at most once per 24 h per board (cache
       under `~/.laika`, no secrets), never with `--json`, never failing the
       command or changing its exit code, never on hook or MCP paths.
       `cli/src/update.ts` is not edited (LAI-1085 is on it).
-- [ ] Tests: component content (every path, `--allow-http` only for http,
+- [x] Tests: component content (every path, `--allow-http` only for http,
       no secrets); each placement in the right states and not otherwise;
       Overview notice hidden when up to date; CLI notice once per 24 h,
       never on `--json`, never on hook paths, exit code unchanged.
       Screenshots of each placement, light and dark, 1440 and 390 px, in
       `.polly/evidence/LAI-1086/`.
+
+### Added mid-flight by the owner (2026-11-02)
+
+- [x] *What do these statuses mean?* beside the Connected tools and Devices
+      headings opens an accessible legend (focus trap, Escape, focus back) of
+      every status the code can show — a tool (Ready, Connected, Needs setup,
+      Idle, Offline, Revoked, Duplicate), its helper (Helper up to date,
+      Update available, Update required, Version unknown, Could not check), a
+      device (Paired, Imported — confirm it's yours, Imported, Revoked) — each
+      with one sentence of meaning and one of what to do, from one module
+      (`status-vocabulary.ts`) the chips also use. Thresholds are `ACTIVE_MS`
+      and `OFFLINE_MS` in words.
+- [x] Every row chip is focusable and described (`aria-describedby`, tooltip
+      on hover and focus) by its row's own evidence: the code's reason and,
+      for Connected, the first check its verification still fails.
+- [x] `tool-readiness.ts` and the Ready/Connected computation not changed;
+      after LAI-1088 merged, the legend's Ready and Connected say its rule
+      for a tool whose MCP client names no tool.
+- [x] Tests: a status without copy fails `status-vocabulary.test.ts`; chip
+      descriptions match the row's evidence; the dialog's keyboard
+      behaviour; screenshots light/dark, 1440/390.
 
 ## Notes
 
