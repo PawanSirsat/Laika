@@ -131,15 +131,21 @@ export function deviceTools(device: Pick<Device, 'agents'>): DeviceTools {
 
 /**
  * Whether a device is listed without *Show revoked*: an active device that
- * still has an active tool, or a **paired** one with none yet. An imported
- * device with no agents (its tools were relabelled away) is an empty label,
- * not a device anybody added; a revoked device, or one every tool of which
- * was revoked, is history.
+ * still has an active tool, or a **paired** one whatever its tools' state —
+ * none yet, or every one disconnected (LAI-1070): it is still paired, and it
+ * is the device the next tool goes on. An imported device with no active
+ * agent (its tools were relabelled away or revoked) is a label, not a device
+ * anybody added; a revoked device is history.
  */
 export function deviceLive(device: Device): boolean {
   if (device.status !== 'active') return false;
   if (device.active_count > 0) return true;
-  return device.agents.length === 0 && device.origin === 'paired';
+  return device.origin === 'paired';
+}
+
+/** Every device there is has been revoked — the only time the tab may say so. */
+export function everyDeviceRevoked(devices: readonly Pick<Device, 'status'>[]): boolean {
+  return devices.length > 0 && devices.every((device) => device.status === 'revoked');
 }
 
 /**

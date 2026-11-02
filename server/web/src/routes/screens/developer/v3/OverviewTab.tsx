@@ -260,8 +260,8 @@ function FirstRun({
           </h3>
           {state.next === 'device' ? (
             <p>
-              Register the first coding tool on the computer you work on. That computer becomes your
-              first device.
+              Pair the computer you work on with this board. It becomes your first device; you add
+              its coding tools next.
             </p>
           ) : state.pending !== undefined ? (
             <p>

@@ -418,6 +418,10 @@ void describe('the Overview (LAI-1048)', () => {
       assert.match(steps[0] ?? '', /^current:1Step 1: Add a deviceNot yet$/);
       assert.match(steps[2] ?? '', /^todo:.*Set up a project/);
       assert.equal(await rail.locator('.conn-rail-step').nth(2).isDisabled(), true);
+      // The step pairs a computer; tools come next (LAI-1071).
+      const next = await h.page.locator('.dev-journey-next').innerText();
+      assert.match(next, /Pair the computer you work on with this board/);
+      assert.doesNotMatch(next, /Register the first coding tool/);
       // No summary for someone who has nothing yet.
       assert.equal(await h.page.getByRole('link', { name: 'Set up a project' }).count(), 0);
 

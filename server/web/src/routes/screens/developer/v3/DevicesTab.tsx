@@ -41,6 +41,7 @@ import {
   CLOUD_NOTE,
   deviceCounts,
   deviceLive,
+  everyDeviceRevoked,
   deviceOf,
   deviceTools,
   devicesSummary,
@@ -519,7 +520,9 @@ export function DevicesTab({ me, origin, params, setParams, preview = false }: D
             <BoardUpdateNote orgRole={me?.org_role} agentIds={updateIds} />
             {listed.length === 0 ? (
               <p className="dv3-none" role="note">
-                Every device and tool of yours is revoked.
+                {everyDeviceRevoked(devices)
+                  ? 'Every device and tool of yours is revoked.'
+                  : 'Nothing active to show. Show revoked to see the rest.'}
               </p>
             ) : (
               <ul className="dv3-device-list" aria-labelledby={DEVICES_TITLE}>
@@ -548,6 +551,10 @@ export function DevicesTab({ me, origin, params, setParams, preview = false }: D
                     }}
                     onChanged={put}
                     onReconnect={reconnect}
+                    onAddTool={() => {
+                      lastAdd.current = 'tool';
+                      setParams(wizardParams({ add: 'tool', device: device.id }), { push: true });
+                    }}
                     onRemoved={focusAfterRemoval}
                     announce={announce}
                     confirm={confirm}
@@ -600,6 +607,8 @@ interface DeviceCardProps {
   readonly onChanged: (agent: RegisteredAgent) => void;
   /** *Reconnect* on a paired device: the tool wizard, with a `rotate` exchange. */
   readonly onReconnect: (agent: RegisteredAgent) => void;
+  /** *Add a tool* on a paired device with no active tool: the tool wizard on it. */
+  readonly onAddTool: () => void;
   /** A disconnect is about to take a row away: say where focus goes after. */
   readonly onRemoved: (heading: RefObject<HTMLElement | null>) => void;
   readonly announce: (message: string) => void;
@@ -623,6 +632,7 @@ function DeviceCard({
   onDisconnect,
   onChanged,
   onReconnect,
+  onAddTool,
   onRemoved,
   announce,
   confirm,
@@ -736,7 +746,17 @@ function DeviceCard({
         </ul>
       )}
       {tools.length === 0 && conflictCount === 0 && live && (
-        <p className="dv3-none">No tools on this device yet.</p>
+        <p className="dv3-none">
+          No tools yet
+          {canManage && pairedDevice(device) && (
+            <>
+              {' — '}
+              <button type="button" className="conn-link-button" onClick={onAddTool}>
+                Add a tool
+              </button>
+            </>
+          )}
+        </p>
       )}
 
       {conflictCount > 0 && (

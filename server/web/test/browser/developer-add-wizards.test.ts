@@ -643,6 +643,14 @@ void describe('Add tool: the command, and checks from evidence', () => {
       await page.getByRole('menuitem', { name: 'Reconnect (new credential)…' }).click();
       await until(async () => (await step(page, 'tool')) === '2', 15_000);
       assert.match(page.url(), /reconnect=a1/);
+      // Step 1 is done and names the tool, never a tick beside "Not yet" (LAI-1071).
+      const railStep1 = await wizard(page, 'tool')
+        .getByRole('navigation', { name: 'Tool setup steps' })
+        .locator('.conn-step')
+        .first()
+        .evaluate((el) => `${el.getAttribute('data-state') ?? ''}:${el.textContent?.trim() ?? ''}`);
+      assert.match(railStep1, /^done:.*Choose the tool.*Claude Code · Belka$/);
+      assert.doesNotMatch(railStep1, /Not yet/);
       assert.equal(
         await wizard(page, 'tool').locator('pre').innerText(),
         'laika tool add claude-code --exchange x2',

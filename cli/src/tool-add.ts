@@ -40,13 +40,18 @@ import { versionInfo } from './version.ts';
  * What each tool gets is what `cli/agent-adapters/CAPABILITIES.md` and plan
  * §M say it can honestly have, and nothing is promised past that:
  *
- * - **Claude Code**: credential, hooks, and `laika-claude` prefers this
- *   credential to the person's own — only because `tool add` wrote it
+ * - **Claude Code**: credential, hooks, and a user-scope MCP entry in
+ *   `~/.claude.json` whose `headersHelper` reads the token out of
+ *   `~/.laika/agents/claude-code.json` each time Claude Code connects — so the
+ *   token is in no config file, and a Reconnect needs no edit (LAI-1072). An
+ *   existing `mcpServers.laika` is kept. `laika-claude` prefers this
+ *   credential to the person's own too — only because `tool add` wrote it
  *   (`source: "tool-add"`), so nobody is switched retroactively (§L2).
  * - **Codex**: credential, hooks, and an MCP entry reading its own variable,
  *   `LAIKA_AGENT_TOKEN_CODEX`. An existing `[mcp_servers.laika]` is kept.
  * - **Omnigent**: credential only — no hooks, no sessions.
- * - **Cursor, Gemini CLI, VS Code**: credential; MCP is set up by hand.
+ * - **Cursor, Gemini CLI, VS Code**: credential; **MCP set up by hand** — the
+ *   exact entry and the shell line that sets its variable are printed.
  * - **Antigravity** takes a token only written into its own config, so it is
  *   refused **before** anything is redeemed; so is any tool with no CLI
  *   harness. A refused exchange mints nothing.
@@ -84,6 +89,35 @@ export type ToolPlan =
 
 /** The variable Codex's MCP entry reads its token from. Its own, never `LAIKA_TOKEN`. */
 export const CODEX_TOKEN_VAR = 'LAIKA_AGENT_TOKEN_CODEX';
+
+/** The variable a hand-set MCP entry reads a tool's own token from: `LAIKA_AGENT_TOKEN_CURSOR`. */
+export function tokenVar(harness: Harness): string {
+  return `LAIKA_AGENT_TOKEN_${harness.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+}
+
+/** A shell line that sets `variable` from `harness`'s own credential file, and holds no token. */
+export function tokenExportLine(harness: Harness, variable: string): string {
+  return (
+    `[ -r "$HOME/.laika/agents/${harness}.json" ] && ` +
+    `export ${variable}="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$HOME/.laika/agents/${harness}.json")"`
+  );
+}
+
+/**
+ * Claude Code's `headersHelper` for the Laika entry: prints the
+ * `Authorization` header from the tool's own credential file each time Claude
+ * Code connects. User scope runs it from `~/.claude`, with the person's
+ * environment, without a trust prompt (code.claude.com/docs/en/mcp, *Use
+ * dynamic headers*). The token is never in `~/.claude.json`.
+ */
+export const CLAUDE_HEADERS_HELPER =
+  `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$HOME/.laika/agents/claude-code.json")" && ` +
+  `printf '{"Authorization":"Bearer %s"}' "$t"`;
+
+/** The `mcpServers.laika` entry `tool add` writes into `~/.claude.json`. */
+export function claudeToolEntry(url: string): Record<string, string> {
+  return { type: 'http', url: `${url}/mcp`, headersHelper: CLAUDE_HEADERS_HELPER };
+}
 
 export const CODEX_RC_MARKER =
   "# Laika — Codex's own agent token for its MCP entry (laika tool add codex)";
@@ -177,6 +211,13 @@ export async function tool(argv: readonly string[], io: ToolAddIo = CONSOLE): Pr
 function describe(plan: Exclude<ToolPlan, { kind: 'refused' }>, hooks: boolean): string[] {
   const h = plan.harness;
   const lines = [`  credential  ~/.laika/agents/${h}.json (0600), this tool's own token`];
+  if (h === 'claude-code') {
+    lines.push(
+      '  mcp         ~/.claude.json mcpServers.laika → reads ~/.laika/agents/claude-code.json',
+    );
+  }
+  if (plan.kind === 'mcp-manual')
+    lines.push('  mcp         set up by hand — the exact step is printed');
   if (h === 'codex') {
     lines.push(`  mcp         ~/.codex/config.toml [mcp_servers.laika] → ${CODEX_TOKEN_VAR}`);
     lines.push(`  shell       an export of ${CODEX_TOKEN_VAR} from the credential file`);
@@ -274,7 +315,9 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   saveCredential(io, target, redeemed, deviceId);
 
   const installed: AgentHookReport[] = [];
+  let mcpOn = target === 'codex';
   if (target === 'codex') codexMcp(io, redeemed.boardOrigin);
+  if (target === 'claude-code') mcpOn = claudeMcp(io, redeemed.boardOrigin);
   if ((target === 'claude-code' || target === 'codex') && hooks) {
     const report = installAgentHooks(io.home, AGENT_HOOK_SCRIPT, target);
     installed.push(report);
@@ -291,7 +334,11 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   }
 
   io.out('');
-  for (const line of nextSteps(target, hooksOn)) io.out(line);
+  if (plan.kind === 'mcp-manual') {
+    for (const line of manualMcp(target, redeemed.boardOrigin)) io.out(line);
+    io.out('');
+  }
+  for (const line of nextSteps(target, hooksOn, mcpOn)) io.out(line);
   return 0;
 }
 
@@ -406,9 +453,7 @@ export function codexBlock(url: string): string {
  * shell can see an exported variable — isolation per tool is per file, not
  * per process (plan §L).
  */
-export const CODEX_RC_LINE =
-  `[ -r "$HOME/.laika/agents/codex.json" ] && ` +
-  `export ${CODEX_TOKEN_VAR}="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$HOME/.laika/agents/codex.json")"`;
+export const CODEX_RC_LINE = tokenExportLine('codex', CODEX_TOKEN_VAR);
 
 function codexMcp(io: ToolAddIo, url: string): void {
   const prepared = prepare({
@@ -454,13 +499,114 @@ function codexMcp(io: ToolAddIo, url: string): void {
   );
 }
 
-function nextSteps(harness: Harness, hooksOn: boolean): string[] {
+/**
+ * Claude Code's Laika MCP entry, merged into `~/.claude.json` the way
+ * `laika connect` merges a JSON config (`prepare`/`apply`): every other key
+ * and server is kept, the original is backed up once beside it, a file that
+ * does not parse is left alone. **An existing `mcpServers.laika` is kept** —
+ * it may be the person's own — and the entry to use instead is printed.
+ * Whether Claude Code reads this tool's credential from now on.
+ */
+function claudeMcp(io: ToolAddIo, url: string): boolean {
+  const entry = claudeToolEntry(url);
+  const path = join(io.home, '.claude.json');
+  const prepared = prepare({ kind: 'json', path, container: 'mcpServers', entry, secret: true });
+  if (!prepared.ok) {
+    io.out(`  ! mcp: ${prepared.message.split('\n').join(' ')}`);
+    io.out('      MCP set up by hand: add this under "mcpServers" in ~/.claude.json:');
+    for (const line of JSON.stringify({ laika: entry }, null, 2).split('\n'))
+      io.out(`        ${line}`);
+    return false;
+  }
+  if (prepared.status === 'unchanged') {
+    io.out(`  · mcp: ${prepared.path} already has this tool's laika entry`);
+    return true;
+  }
+  if (prepared.status === 'replaced') {
+    io.out(`  · mcp: ${prepared.path} already has an mcpServers.laika entry — kept as it is.`);
+    io.out("      To use this tool's own credential, replace it with:");
+    for (const line of JSON.stringify({ laika: entry }, null, 2).split('\n'))
+      io.out(`        ${line}`);
+    return false;
+  }
+  const backup = apply(prepared);
+  io.out(
+    `  ✓ mcp: mcpServers.laika ${prepared.status} in ${prepared.path}, reading this tool's credential` +
+      `${backup === undefined ? '' : ` (backup: ${backup})`}`,
+  );
+  return true;
+}
+
+/** Where a hand-set MCP entry goes, per tool `tool add` cannot configure itself. */
+export function manualMcp(harness: Harness, url: string): string[] {
+  const variable = tokenVar(harness);
+  const mcpUrl = `${url}/mcp`;
+  const head = `MCP set up by hand — ${ADAPTERS[harness].name} reads this tool's credential through ${variable}:`;
+  const env = [
+    `  1. Add this line to your shell's rc file, then open a new terminal:`,
+    `       ${tokenExportLine(harness, variable)}`,
+  ];
+  const json = (entry: unknown): string[] =>
+    JSON.stringify({ laika: entry }, null, 2)
+      .split('\n')
+      .map((line) => `       ${line}`);
+  switch (harness) {
+    case 'cursor':
+      return [
+        head,
+        ...env,
+        '  2. Add this under "mcpServers" in ~/.cursor/mcp.json, and start Cursor from that terminal:',
+        ...json({ url: mcpUrl, headers: { Authorization: `Bearer \${env:${variable}}` } }),
+      ];
+    case 'gemini-cli':
+      return [
+        head,
+        ...env,
+        '  2. Add this under "mcpServers" in ~/.gemini/settings.json:',
+        ...json({
+          type: 'http',
+          url: mcpUrl,
+          headers: { Authorization: `Bearer \${${variable}}` },
+        }),
+      ];
+    case 'copilot-vscode':
+      return [
+        head,
+        ...env,
+        '  2. Run this once, then start VS Code from that terminal:',
+        `       code --add-mcp '${JSON.stringify({ name: 'laika', type: 'http', url: mcpUrl, headers: { Authorization: `Bearer \${env:${variable}}` } })}'`,
+      ];
+    default:
+      return [
+        head,
+        ...env,
+        `  2. Point ${ADAPTERS[harness].name}'s MCP settings at ${mcpUrl} with that variable.`,
+      ];
+  }
+}
+
+/**
+ * The browser's check for a tool's own first request — `tool-readiness.ts`'s
+ * `${name} connected`, with the board's name for the tool (`AGENT_CLIENT_NAMES`):
+ * the board calls Copilot in VS Code *VS Code*.
+ */
+export const connectedCheck = (harness: Harness): string =>
+  `${harness === 'copilot-vscode' ? 'VS Code' : ADAPTERS[harness].name} connected`;
+
+function nextSteps(harness: Harness, hooksOn: boolean, mcpOn: boolean): string[] {
   switch (harness) {
     case 'claude-code':
       return [
-        'Next: quit Claude Code and start it again with `laika-claude`. It now uses this',
-        "tool's own credential instead of your personal token; plain `claude` gets no",
-        'Laika tools. Then ask it to call laika_whoami — the browser ticks "Tool request seen".',
+        ...(mcpOn
+          ? [
+              'Next: quit Claude Code and start it again — `laika-claude` (with the Laika',
+              "commands) or plain `claude`. Its Laika MCP entry uses this tool's own credential.",
+            ]
+          : [
+              'Next: quit Claude Code and start it again with `laika-claude`, which uses this',
+              "tool's own credential; plain `claude` gets no Laika tools until the entry above is set.",
+            ]),
+        `Then ask it to call laika_whoami — the browser ticks "${connectedCheck(harness)}".`,
         ...(hooksOn ? [] : ['Hooks are off: no sessions, claims or automatic checkpoints.']),
       ];
     case 'codex':
@@ -469,7 +615,7 @@ function nextSteps(harness: Harness, hooksOn: boolean): string[] {
         ...(hooksOn
           ? ['trust the Laika hooks in /hooks — Codex runs a new hook only once you do.']
           : ['note hooks are off: no sessions, claims or automatic checkpoints.']),
-        'Then ask it to call laika_whoami — the browser ticks "Tool request seen".',
+        `Then ask it to call laika_whoami — the browser ticks "${connectedCheck(harness)}".`,
       ];
     case 'omnigent':
       return [
@@ -481,8 +627,9 @@ function nextSteps(harness: Harness, hooksOn: boolean): string[] {
     default:
       return [
         `${ADAPTERS[harness].name}: MCP only — reads and writes tasks; no session claims or`,
-        'automatic checkpoints. Its MCP config is set up by hand and is Documented-not-tested',
-        '(cli/agent-adapters/CAPABILITIES.md); the credential is for `laika agent` commands.',
+        'automatic checkpoints. Its MCP entry is set up by hand (above) and is',
+        'Documented-not-tested (cli/agent-adapters/CAPABILITIES.md).',
+        `Then ask it to call laika_whoami — the browser ticks "${connectedCheck(harness)}".`,
       ];
   }
 }

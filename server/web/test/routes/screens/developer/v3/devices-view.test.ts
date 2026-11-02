@@ -21,6 +21,7 @@ import {
   deviceTools,
   devicesSummary,
   disconnectImpact,
+  everyDeviceRevoked,
   kindWord,
   needsConfirm,
   runningSessions,
@@ -239,6 +240,40 @@ void describe('deviceLive and deviceCounts: revoked hidden and never counted', (
     // The empty imported label is neither listed nor revoked.
     assert.deepEqual(c, { devices: 2, tools: 1, revoked: 3 });
     assert.equal(devicesSummary(c), '2 devices, 1 tool.');
+  });
+  // LAI-1070: pair Walkbook, add one tool, disconnect it. The device is still
+  // active and paired — the one the next tool goes on — so it stays listed.
+  const pairedAllRevoked = device({
+    id: 'd6',
+    display_name: 'Walkbook',
+    origin: 'paired',
+    paired_at: 1,
+    agents: [agent({ id: 'a6', status: 'revoked' })],
+  });
+  const pairedSomeRevoked = device({
+    id: 'd7',
+    origin: 'paired',
+    paired_at: 1,
+    agents: [agent({ id: 'a7' }), agent({ id: 'a8', harness: 'codex', status: 'revoked' })],
+  });
+
+  void test('a paired active device stays listed whatever its tools state (LAI-1070)', () => {
+    assert.equal(deviceLive(pairedAllRevoked), true);
+    assert.equal(deviceLive(pairedSomeRevoked), true);
+    // A revoked paired device is still history.
+    assert.equal(deviceLive({ ...pairedAllRevoked, status: 'revoked' }), false);
+    // An imported device whose tools are all revoked keeps today's behaviour.
+    assert.equal(deviceLive(allRevoked), false);
+    const c = deviceCounts([pairedAllRevoked]);
+    assert.deepEqual(c, { devices: 1, tools: 0, revoked: 1 });
+    assert.equal(devicesSummary(c), '1 device, 0 tools.');
+  });
+
+  void test('"every device is revoked" only when every device is', () => {
+    assert.equal(everyDeviceRevoked([revokedEmpty]), true);
+    assert.equal(everyDeviceRevoked([revokedEmpty, pairedAllRevoked]), false);
+    assert.equal(everyDeviceRevoked([allRevoked]), false);
+    assert.equal(everyDeviceRevoked([]), false);
   });
 });
 

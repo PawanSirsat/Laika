@@ -278,6 +278,8 @@ export function pickBoard(
 interface SavedCredential {
   readonly url?: string;
   readonly token?: string;
+  /** `tool-add` when `laika tool add` wrote it (a V3 tool), absent for `laika agent login`. */
+  readonly source?: string;
   readonly malformed: boolean;
 }
 
@@ -289,10 +291,12 @@ function readCredentialFile(home: string, harness: Harness): SavedCredential | u
     if (!isRecord(raw)) return { malformed: true };
     const url = typeof raw.url === 'string' && raw.url !== '' ? raw.url : undefined;
     const token = typeof raw.token === 'string' && raw.token !== '' ? raw.token : undefined;
+    const source = typeof raw.source === 'string' ? raw.source : undefined;
     return {
       malformed: url === undefined || token === undefined,
       ...(url === undefined ? {} : { url }),
       ...(token === undefined ? {} : { token }),
+      ...(source === undefined ? {} : { source }),
     };
   } catch {
     return { malformed: true };
@@ -308,11 +312,21 @@ function hooksOn(home: string, harness: Harness): boolean {
   }
 }
 
+/**
+ * What fixes a credential the board refuses. A V3 tool's (`laika tool add`,
+ * LAI-1072) is replaced from the browser: Reconnect makes a new setup command
+ * for the same tool. `laika agent login` is the older path, for the older file.
+ */
+export const RECONNECT_ADVICE =
+  'reconnect it in the browser (Developer access → Devices → ⋯ → Reconnect) and run the laika tool add command it shows';
+
 async function credentialAccepted(
   url: string,
   token: string,
   fetchImpl: typeof fetch,
+  source: string | undefined,
 ): Promise<{ status: Status; detail: string }> {
+  const fix = source === 'tool-add' ? RECONNECT_ADVICE : 'log the agent in again';
   let response: Response;
   try {
     response = await fetchImpl(`${normaliseUrl(url)}/api/v1/agents/me/work-requests`, {
@@ -329,13 +343,13 @@ async function credentialAccepted(
   if (response.status === 401) {
     return {
       status: 'action',
-      detail: 'the board refused it (revoked or expired): log the agent in again',
+      detail: `the board refused it (revoked or expired): ${fix}`,
     };
   }
   if (response.status === 403) {
     return {
       status: 'action',
-      detail: 'the board says it is not an agent’s credential: log the agent in again',
+      detail: `the board says it is not an agent’s credential: ${fix}`,
     };
   }
   return { status: 'unknown', detail: `the board answered ${String(response.status)}` };
@@ -396,7 +410,7 @@ async function toolChecks(io: DoctorIo, offline: boolean): Promise<Check[]> {
       });
       continue;
     }
-    const accepted = await credentialAccepted(saved.url, saved.token, io.fetch);
+    const accepted = await credentialAccepted(saved.url, saved.token, io.fetch, saved.source);
     const codex = harness === 'codex' && hooks ? '. Codex asks you to trust the hook once' : '';
     checks.push({
       name,

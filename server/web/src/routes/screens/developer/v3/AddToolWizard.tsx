@@ -667,6 +667,11 @@ export function AddToolWizard({
   }
 
   const shownStep: Step = setup === undefined ? 1 : step;
+  // Step 1's word: what was chosen — by the picker, or by the setup a
+  // Reconnect or a resumed exchange opened on, which skips the picker (LAI-1071).
+  const railTool = setup?.tool ?? tool;
+  const railDevice = setup?.device ?? device;
+
   return (
     <section
       className="dv3w"
@@ -690,9 +695,9 @@ export function AddToolWizard({
             name: STEP_NAMES[n],
             sub:
               n === 1
-                ? tool === undefined
+                ? railTool === undefined
                   ? 'Not yet'
-                  : `${tool.name}${device === undefined ? '' : ` · ${device.display_name}`}`
+                  : `${railTool.name}${railDevice === undefined ? '' : ` · ${railDevice.display_name}`}`
                 : n === 2
                   ? current === undefined
                     ? 'Not yet'

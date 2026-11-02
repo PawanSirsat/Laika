@@ -147,10 +147,15 @@ function sandbox(): string {
   return home;
 }
 
-function plantCredential(dir: string, url: string, mode = 0o600): void {
+function plantCredential(
+  dir: string,
+  url: string,
+  mode = 0o600,
+  extra: Record<string, string> = {},
+): void {
   mkdirSync(join(dir, '.laika', 'agents'), { recursive: true, mode: 0o700 });
   const path = join(dir, '.laika', 'agents', 'claude-code.json');
-  writeFileSync(path, `${JSON.stringify({ url, token: AGENT_TOKEN })}\n`, { mode });
+  writeFileSync(path, `${JSON.stringify({ url, token: AGENT_TOKEN, ...extra })}\n`, { mode });
   chmodSync(path, mode);
 }
 
@@ -339,6 +344,34 @@ void describe('laika doctor — tools', () => {
     assert.equal(code, 1, text);
     assert.match(text, /ACTION\s+tool claude-code\s+.*the board refused it/);
     assert.ok(!text.includes(AGENT_TOKEN));
+  });
+
+  void test('a refused laika agent login credential keeps "log the agent in again"', async () => {
+    const { url } = await board(modernBoard(compat(), 401));
+    const dir = sandbox();
+    plantCredential(dir, url);
+    const { text } = await run([], dir);
+    assert.match(text, /the board refused it \(revoked or expired\): log the agent in again/);
+    assert.doesNotMatch(text, /Reconnect/);
+  });
+
+  void test('a refused tool add credential points to Reconnect on Devices (LAI-1072)', async () => {
+    for (const status of [401, 403]) {
+      const { url } = await board(modernBoard(compat(), status));
+      const dir = sandbox();
+      plantCredential(dir, url, 0o600, { agent_id: 'a1', device_id: 'd1', source: 'tool-add' });
+      const { code, text } = await run([], dir);
+      assert.equal(code, 1, text);
+      assert.match(
+        text,
+        /ACTION\s+tool claude-code\s+.*reconnect it in the browser \(Developer access → Devices → ⋯ → Reconnect\) and run the laika tool add command it shows/,
+      );
+      assert.doesNotMatch(text, /log the agent in again/);
+      assert.ok(!text.includes(AGENT_TOKEN));
+      await new Promise<void>((resolve) => server?.close(() => resolve()));
+      server = undefined;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   void test('a credential file other users can read is ACTION', async () => {
