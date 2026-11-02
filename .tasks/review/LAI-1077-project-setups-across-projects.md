@@ -6,8 +6,9 @@ assignee: core/belka
 priority: p2
 depends-on: []
 discovered-from: LAI-1075
-status: in-progress
+status: review
 started: 2026-11-02T10:25:28+05:30
+finished: 2026-11-02T10:45:05+05:30
 ---
 
 ## Why
@@ -21,17 +22,21 @@ would need one request per project.
 
 ## Acceptance criteria
 
-- [ ] `GET /api/v1/project-setups` with no `project` returns the caller's own
+- [x] `GET /api/v1/project-setups` with no `project` returns the caller's own
       records across every project they can read, newest first, paged as the
       per-project read is, same row shape plus the project's slug and name.
-- [ ] The per-project form (`?project=`, `?agent_id=`) is unchanged.
-- [ ] Every row's project passes the same `can()` the per-project read asks;
+      *(Builder: the row already carried `project_id` and `project_slug`, and
+      I added no `project_name`, per the owner's plan ("same row shape") and
+      CHIEF's dispatch (the web maps id to name). "Paged as the per-project
+      read is" means not paginated (SPEC §6), so the response is one `{ data }`.)*
+- [x] The per-project form (`?project=`, `?agent_id=`) is unchanged.
+- [x] Every row's project passes the same `can()` the per-project read asks;
       a project the caller cannot read contributes nothing and is not named.
       `agent_id` without `project` filters to that tool, the caller's own.
-- [ ] SPEC §6 row describes the optional `project`; route census, parity and
+- [x] SPEC §6 row describes the optional `project`; route census, parity and
       response-type tests updated; server tests cover: two projects, one
       unreadable, another user's records never returned, paging, agent filter.
-- [ ] The web client `listProjectSetups` accepts no project.
+- [x] The web client `listProjectSetups` accepts no project.
 
 ## Notes
 
@@ -39,3 +44,6 @@ would need one request per project.
   client function in `server/web/src/api/project-setups.ts` (named edit).
 - Data access: needs an independent review before merge.
 - PR into `integration-dev-access-design`.
+- Review: https://github.com/PawanSirsat/Laika/pull/229 (CORE on Belka, at
+  the owner's direct instruction). SPEC §4.82's prose still says "for one
+  project"; it is outside the named edit and left for CHIEF.
