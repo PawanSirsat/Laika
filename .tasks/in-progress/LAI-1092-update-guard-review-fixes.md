@@ -2,11 +2,12 @@
 id: LAI-1092
 title: 'laika update: the PR #243 review batch — guard comments say what each format does, Gemini/Antigravity guard tests, a re-read before the whole-file fallback, tokenIn reads from one fd'
 area: cli
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: [LAI-1089]
 discovered-from: LAI-1089
-status: backlog
+status: in-progress
+started: 2026-11-02T13:41:17Z
 ---
 
 ## Why
