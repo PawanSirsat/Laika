@@ -807,7 +807,10 @@ void describe('laika tool add', () => {
     assert.ok(!existsSync(join(home, '.laika', 'agents', 'link.json.bak')));
     // Tokens went only to this board, and only as a bearer on GET /me.
     const asked = s.received.filter((r) => r.path === '/api/v1/me');
-    assert.ok(asked.some((r) => r.auth === `Bearer ${OLD}`), 'polly.json was never asked about');
+    assert.ok(
+      asked.some((r) => r.auth === `Bearer ${OLD}`),
+      'polly.json was never asked about',
+    );
     assert.ok(!asked.some((r) => r.auth === `Bearer ${STALE}`), 'a symlink was followed');
     assert.ok(!asked.some((r) => r.auth === 'Bearer lai_X'), 'another board’s token was sent');
     // The report names Omnigent, so the board's generic rule can pass.
