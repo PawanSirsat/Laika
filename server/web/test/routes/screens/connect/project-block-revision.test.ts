@@ -253,6 +253,13 @@ void describe('the Project setup prompt', () => {
       phrase('Mentions inside a section whose heading is about something else'),
     );
     assert.match(definition, phrase('show me those lines and ask what I want done with them'));
+    // LAI-1090: the mention path has the diff step every other path has.
+    assert.match(
+      definition,
+      phrase(
+        'If I want them changed, show me the diff and wait for me to confirm before you change them',
+      ),
+    );
     assert.match(
       definition,
       phrase('never replace a section whose heading is about something else'),
@@ -303,11 +310,16 @@ void describe('the Project setup prompt', () => {
     );
     assert.ok(fold !== -1 && stop > fold, 'the fold is offered before it stops as up to date');
     assert.match(step, phrase('show me the diff and wait for me to confirm'));
-    // An older block being replaced offers the same, in one diff.
+    // An older block being replaced offers the same, as its own change (LAI-1090).
+    const replace = between(/^3\. /m, /^4\. /m);
     assert.match(
-      between(/^3\. /m, /^4\. /m),
-      phrase('Offer, in the same diff, to fold any hand-written Laika section elsewhere'),
+      replace,
+      phrase(
+        'Then offer, as a separate change with its own diff, to fold each hand-written Laika section elsewhere in the file into it',
+      ),
     );
+    assert.match(replace, phrase('so I can take the update without the fold.'));
+    assert.doesNotMatch(replace, /in the same diff/);
     // Lines kept, never a second Laika heading.
     assert.match(prompt, phrase('keep lines, not headings'));
     assert.match(
@@ -318,8 +330,46 @@ void describe('the Project setup prompt', () => {
     );
   });
 
-  void test('a no changes nothing, and every outcome has its own words', () => {
-    assert.match(prompt, phrase('If I say no to a change you offered, change nothing at all.'));
+  void test('a no leaves only that change undone; the others confirmed still apply (LAI-1090)', () => {
+    // Step 3 offers an upgrade and a fold. "Change nothing at all" made a no to
+    // the fold throw away the upgrade too.
+    const step = between(/^6\. /m, /^7\. /m);
+    assert.match(
+      step,
+      phrase(
+        'Offer each change on its own: the block, and each hand-written section you would replace or fold in.',
+      ),
+    );
+    assert.match(
+      step,
+      phrase(
+        'If I say no to one, leave that one exactly as it is and still make the others I confirmed.',
+      ),
+    );
+    assert.match(step, phrase('If I say no to all of them, change nothing.'));
+    assert.doesNotMatch(prompt, /change nothing at all/);
+    // Before appending, each section is its own change too.
+    assert.match(
+      between(/^4\. Otherwise, before you append/m, /^5\. /m),
+      phrase('fold the others into it, each section as its own change.'),
+    );
+  });
+
+  void test('lines kept below the end marker are left, never offered again (LAI-1090)', () => {
+    const rules = between(/When you fold a hand-written Laika section/, /^1\. Read/m);
+    assert.match(
+      rules,
+      phrase(
+        'Lines directly below the end marker, up to the next heading, were kept on purpose; leave them.',
+      ),
+    );
+    assert.match(
+      rules,
+      phrase('They are not a hand-written Laika section, so never offer them for folding again.'),
+    );
+  });
+
+  void test('every outcome has its own words, a partial yes included', () => {
     const report = between(/^9\. Report in one line/m, /--- begin block ---/);
     for (const outcome of [
       'created the file',
@@ -329,6 +379,7 @@ void describe('the Project setup prompt', () => {
       'folded N hand-written Laika sections into the block',
       'already up to date',
       'you said no and I changed nothing',
+      'If I said no to some changes and yes to others, say what you changed and what you left as it was.',
     ]) {
       assert.match(report, phrase(outcome));
     }
