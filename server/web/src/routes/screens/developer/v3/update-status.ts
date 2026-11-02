@@ -229,7 +229,7 @@ export function updateStatus(
       'required',
       `Update required for ${words.join(', ')}`,
       'danger',
-      `${capitalise(words.join(', '))} needs helper protocol ${String(needs)}; this one speaks ${String(speaks)}. What it does now keeps working`,
+      `${capitalise(words.join(', '))} ${words.length === 1 ? 'needs' : 'need'} helper protocol ${String(needs)}; this one speaks ${String(speaks)}. What it does now keeps working`,
       { requiredFor: words },
     );
   }

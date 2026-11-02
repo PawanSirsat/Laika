@@ -405,6 +405,8 @@ void describe('against the protocol-2 board', () => {
       'Update required for pairing devices, adding tools without a secret, version reports',
     );
     assert.doesNotMatch(s.word, /project setup/);
+    // Three features need it: plural agreement, and one feature stays singular.
+    assert.match(s.reason, /version reports need helper protocol 2; this one speaks 1\./);
     assert.equal(offersUpdate(s.key), true);
     assert.deepEqual(
       whatsNew(board, report({ protocol: 1 })).map((l) => l.newForTool),

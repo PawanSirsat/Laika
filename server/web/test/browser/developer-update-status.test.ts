@@ -262,7 +262,7 @@ void describe('V3 Devices: each tool’s helper update status', () => {
         [
           'a3',
           'required',
-          /Update required for pairing devices, adding tools without a secret, version reports[\s\S]*needs helper protocol 2; this one speaks 1/,
+          /Update required for pairing devices, adding tools without a secret, version reports[\s\S]*version reports need helper protocol 2; this one speaks 1/,
         ],
         ['a4', 'unknown', /Version unknown[\s\S]*has not reported a version/],
         ['a5', 'unchecked', /Could not check[\s\S]*version report could not be read/],
