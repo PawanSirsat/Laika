@@ -8,6 +8,7 @@ import type { RegisteredAgent } from '../../../../../src/api/agents.ts';
 import type { ProjectAccess } from '../../../../../src/api/project-access.ts';
 import type { ProjectSetup } from '../../../../../src/api/project-setups.ts';
 import {
+  cliMatchHint,
   connectedTools,
   currentChoice,
   doneSummary,
@@ -249,6 +250,28 @@ void describe('what the records say (LAI-1066)', () => {
 
   void test('the command to run names the project', () => {
     assert.equal(projectCheckCommand('onroute'), 'laika project check --project onroute');
+  });
+});
+
+void describe('the hint for a CLI older than the board (LAI-1084)', () => {
+  const COMMIT = '0123456789abcdef0123456789abcdef01234567';
+
+  void test('names the board’s helper commit as laika version prints one: seven characters', () => {
+    const hint = cliMatchHint({ url: 'https://github.com/PawanSirsat/Laika.git', commit: COMMIT });
+    assert.equal(hint.commit, '0123456');
+  });
+
+  void test('a board that does not say its commit, or did not answer, names none', () => {
+    const url = 'https://github.com/PawanSirsat/Laika.git';
+    assert.equal(cliMatchHint({ url, commit: null }).commit, null);
+    assert.equal(cliMatchHint(undefined).commit, null);
+  });
+
+  void test('the way forward works on a CLI with no laika update: the checkout itself', () => {
+    const hint = cliMatchHint(undefined);
+    assert.equal(hint.version, 'laika version');
+    assert.equal(hint.pull, 'git -C <your Laika checkout> pull --ff-only');
+    assert.equal(hint.update, 'laika update');
   });
 });
 

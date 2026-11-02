@@ -209,6 +209,53 @@ void describe('the Project setup prompt', () => {
     assert.match(prompt, /do not edit any MCP configuration/);
   });
 
+  void test('before it appends, it looks for a hand-written Laika section and asks (LAI-1084)', () => {
+    // OnRoute's CLAUDE.md had `## Laika board ritual`: no markers, no
+    // BLOCK_MARKER line. The prompt appended a second block beside it.
+    const look = prompt.indexOf('look for a section someone wrote by\n   hand about this Laika board');
+    const append = prompt.indexOf('append the block below');
+    assert.ok(look !== -1, 'the detection step is missing');
+    assert.ok(look < append, 'it must look before it appends');
+    const step = prompt.slice(look, append);
+    for (const sign of [
+      'a heading that mentions\n   Laika',
+      'laika_whoami',
+      'get_project_context',
+      'start_working',
+      'finish_task',
+      ORIGIN,
+      '`ONR-42`',
+    ]) {
+      assert.ok(step.includes(sign), `it names ${sign}`);
+    }
+    assert.match(step, /show it to me and offer to replace\s+that whole section/);
+    assert.match(step, /Ask which of its\s+lines I want to keep/);
+    assert.match(step, /Show me the diff and wait for me to confirm/);
+    assert.match(step, /If I\s+say no, change nothing and stop/);
+    assert.match(prompt, /Never add a second Laika section to a file that has one/);
+    assert.match(prompt, /replaced a hand-written Laika section/);
+  });
+
+  void test('and it gave up none of the guarantees it had before LAI-1084', () => {
+    for (const guarantee of [
+      // Inspect first; only the Laika block is the tool's to change.
+      /Read \.\/CLAUDE\.md first\. Do not assume what is in it\./,
+      /Only the Laika block in that file is\s+yours to change/,
+      // Up to date: this revision, this project, this prefix — unchanged.
+      /whose begin line says a revision of\s+2 or more and project=onroute, and whose task keys look like\s+`ONR-42`, it is already up to date: tell me so and stop\./,
+      // A marked or revision-1 block: shown as a diff, confirmed, replaced alone.
+      /show me the exact old and new text\s+as a diff and wait for me to confirm\. Then replace only that block\./,
+      /keeping everything already in the file\. Create the file only if it\s+does not exist\./,
+      // No token, no install, no MCP config, no commit, nothing else.
+      /Change nothing else\./,
+      /It contains no token and must never gain one/,
+      /do not ask me for one/,
+      /Do not install, reinstall or update Laika, do not pair\s+a device, do not edit any MCP configuration, and do not commit or push/,
+    ]) {
+      assert.match(prompt, guarantee);
+    }
+  });
+
   void test('CONTROL: zero secrets — no lai_ token, no placeholder, no command that mints one', () => {
     for (const text of [prompt, BLOCK]) {
       assert.doesNotMatch(text, /lai_[A-Za-z0-9…]/);
