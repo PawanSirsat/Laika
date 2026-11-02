@@ -1149,6 +1149,194 @@ void describe('laika update — the client report after an update (LAI-1068)', (
   });
 });
 
+void describe('laika update on a checkout already at the board’s commit (LAI-1085)', () => {
+  const CURSOR_TOKEN = 'lai_CURSORPLANTEDSECRET0123456789abcd';
+  const SHELL_TOKEN = 'lai_SHELLPLANTEDSECRET0123456789abcde';
+
+  /**
+   * The checkout moved to the board's build with plain git, as a machine set
+   * up before `laika update` reported anything was. That build's CLI says
+   * protocol 7, so a report saying 7 can only have read the checkout's own
+   * `laika version --json`.
+   */
+  function alreadyCurrent(w: World): string {
+    const c = commit(w.source, 'C: a build at protocol 7', {
+      'cli/src/protocol.ts': 'export const PROTOCOL = 7;\n',
+    });
+    git(w.checkout, 'fetch', '--quiet', w.source, c);
+    git(w.checkout, 'checkout', '--quiet', '--detach', c);
+    return c;
+  }
+
+  function credential(w: World, harness: string, url: string, token: string): void {
+    writeFileSync(
+      join(w.home, '.laika', 'agents', `${harness}.json`),
+      `${JSON.stringify({ url, token })}\n`,
+      { mode: 0o600 },
+    );
+  }
+
+  /** The real `fetch`, recording where every POST was aimed. */
+  function recording(posted: string[]): typeof fetch {
+    return (input, init) => {
+      if (init?.method === 'POST')
+        posted.push(input instanceof Request ? input.url : input.toString());
+      return fetch(input, init);
+    };
+  }
+
+  // Put the early return back before the report and this is the test that fails.
+  void test('client_reports on: one report per tool set up for this board, from the checkout’s own laika version', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    credential(w, 'cursor', url, CURSOR_TOKEN);
+    // A tool set up for another board is not this board's to hear about.
+    credential(w, 'codex', 'http://other.invalid', 'lai_OTHERBOARDTOKEN');
+    const before = protectedFiles(w);
+    const posted: string[] = [];
+
+    const r = await run(w, ['--board', url], {
+      fetch: recording(posted),
+      // A token in the shell is never the one a report carries.
+      env: { LAIKA_TOKEN: SHELL_TOKEN, LAIKA_AGENT_TOKEN: SHELL_TOKEN, LAIKA_AGENT_URL: url },
+    });
+
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, new RegExp(`^Up to date: .* is at ${c.slice(0, 7)}`));
+    assert.equal(head(w), c, 'an up-to-date run moved the checkout');
+    const endpoint = `${url}/api/v1/agents/me/client-report`;
+    assert.deepEqual(posted, [endpoint, endpoint], 'a token went to a board it does not belong to');
+    assert.deepEqual(
+      reports.map((report) => report.auth).sort(),
+      [`Bearer ${AGENT_TOKEN}`, `Bearer ${CURSOR_TOKEN}`].sort(),
+      'a report did not carry its own credential’s token',
+    );
+    for (const report of reports) {
+      assert.equal(report.body.cli_commit, c);
+      assert.equal(
+        report.body.protocol,
+        7,
+        'the protocol is the running CLI’s, not the checkout’s',
+      );
+      assert.equal(typeof report.body.cli_version, 'string');
+    }
+    assert.match(
+      r.out,
+      new RegExp(`\\nVersion report for ${c.slice(0, 7)}: sent for Claude Code, Cursor\\.$`),
+    );
+    assert.doesNotMatch(r.out, /Codex/);
+    assert.deepEqual(protectedFiles(w), before, 'a credential file was written');
+  });
+
+  void test('no tool set up for this board: nothing is sent, and the line says why', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    rmSync(join(w.home, '.laika', 'agents', 'claude-code.json'));
+    credential(w, 'codex', 'http://other.invalid', 'lai_OTHERBOARDTOKEN');
+    const posted: string[] = [];
+
+    const r = await run(w, ['--board', url], { fetch: recording(posted) });
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(posted, []);
+    assert.match(
+      r.out,
+      /\nVersion report skipped: no tool on this machine is set up for this board \(laika tool add sets one up\)\.$/,
+    );
+  });
+
+  void test('a refused report is the one line; still up to date, exit 0', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, {
+      commit: c,
+      features: { client_reports: true },
+      reportStatus: 500,
+    });
+    plant(w, url);
+    const r = await run(w, ['--board', url]);
+    assert.equal(r.code, 0, r.err);
+    assert.equal(reports.length, 1);
+    assert.match(
+      r.out,
+      new RegExp(`\\nVersion report for ${c.slice(0, 7)}: not sent for Claude Code \\(500\\)\\.$`),
+    );
+  });
+
+  void test('a board that does not answer the report: exit 0', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    const r = await run(w, ['--board', url], {
+      fetch: (input, init) =>
+        init?.method === 'POST'
+          ? Promise.reject(new Error('connection refused'))
+          : fetch(input, init),
+    });
+    assert.equal(r.code, 0, r.err);
+    assert.match(
+      r.out,
+      /\nVersion report for [0-9a-f]{7}: not sent for Claude Code \(unreachable\)\.$/,
+    );
+  });
+
+  void test('a checkout whose laika version does not answer: skipped, exit 0', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    const posted: string[] = [];
+    const r = await run(w, ['--board', url], {
+      fetch: recording(posted),
+      runner: switchedVersionAnswers(w, 1),
+    });
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(posted, []);
+    assert.match(r.out, /\nVersion report skipped: laika version exited 1\.$/);
+
+    // Not even a throw while reading it reaches the exit code.
+    const thrown = await run(w, ['--board', url], {
+      fetch: recording(posted),
+      runner: switchedVersionAnswers(w, 'throw'),
+    });
+    assert.equal(thrown.code, 0, thrown.err);
+    assert.deepEqual(posted, []);
+    assert.match(thrown.out, /\nVersion report skipped: it failed before anything was sent\.$/);
+  });
+
+  void test('client_reports off: nothing is sent, and the line says the board takes none', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: false } });
+    plant(w, url);
+    const posted: string[] = [];
+    const r = await run(w, ['--board', url], { fetch: recording(posted) });
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(posted, []);
+    assert.match(r.out, /\nVersion report skipped: the board does not take client reports\.$/);
+  });
+
+  void test('--check and --dry-run send nothing', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    for (const flag of ['--check', '--dry-run']) {
+      const posted: string[] = [];
+      const r = await run(w, ['--board', url, flag], { fetch: recording(posted) });
+      assert.equal(r.code, 0, r.err);
+      assert.match(r.out, /^Up to date/);
+      assert.deepEqual(posted, [], `${flag} sent a report`);
+      assert.doesNotMatch(r.out, /Version report/);
+    }
+    assert.deepEqual(reports, []);
+  });
+});
+
 void describe('laika update --dry-run and --check', () => {
   void test('--dry-run shows the plan and fetches and writes nothing', async () => {
     const w = world();

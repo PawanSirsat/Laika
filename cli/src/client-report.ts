@@ -7,9 +7,10 @@ import { type Answer, postJson } from './device.ts';
  * status word on the board, never a permission.
  *
  * Sent by `laika tool add` once a tool is set up (LAI-1060), and by
- * `laika update` once the checkout has moved (LAI-1068) — there with the
- * **new** checkout's own `laika version --json`, because the process running
- * the update is still the old one.
+ * `laika update` once the checkout has moved (LAI-1068) or when it is already
+ * the board's commit (LAI-1085) — there with the checkout's own
+ * `laika version --json`, because the process running the update may be an
+ * older one.
  */
 
 /** Closed: the board refuses a capability it does not know (§4.81). */
