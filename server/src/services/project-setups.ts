@@ -1,12 +1,13 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type ProjectSetupSource } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { presenceEnabled } from '../db/orgs.ts';
-import { agentProjectGrants, agents, projectRepoSetups } from '../db/schema.ts';
+import { agentProjectGrants, agents, projectRepoSetups, projects } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { visibleProjectIds } from './activity.ts';
 import { requireActiveAgent, requireOwnAgent } from './agents.ts';
 import { registeredAgent } from './claims.ts';
 import { requireReadableProjectBySlug } from './projects.ts';
@@ -233,27 +234,22 @@ function requireGrantedAgent(
 
 /**
  * `GET /project-setups?project=&agent_id=`: the caller's own records for one
- * project they can read. An agent's token reads only its own; asking for
- * another agent — a sibling, another owner's, or none at all — is the agent
- * `404`, the answer an id that names nothing gets.
+ * project they can read — or, with no `project`, across every project they can
+ * read (LAI-1077). An agent's token reads only its own; asking for another
+ * agent — a sibling, another owner's, or none at all — is the agent `404`, the
+ * answer an id that names nothing gets.
  */
 export function listProjectSetups(
   db: Db,
   actor: ResolvedActor,
-  projectSlug: string,
+  projectSlug: string | undefined,
   agentId: string | undefined,
 ): ProjectSetupView[] {
   assertCan(actor, 'agent.read_own');
-  const project = requireReadableProjectBySlug(db, actor, projectSlug);
-  const self = registeredAgent(actor);
+  if (projectSlug === undefined) return listAcrossProjects(db, actor, agentId);
 
-  let only: string | undefined;
-  if (self !== null) {
-    if (agentId !== undefined && agentId !== self.id) throw ApiError.agentNotFound();
-    only = self.id;
-  } else if (agentId !== undefined) {
-    only = requireOwnAgent(db, actor, agentId).id;
-  }
+  const project = requireReadableProjectBySlug(db, actor, projectSlug);
+  const only = onlyAgent(db, actor, agentId);
 
   const rows = db
     .select()
@@ -270,6 +266,50 @@ export function listProjectSetups(
 
   const presence = presenceEnabled(db);
   return rows.map((row) => toView(db, row, project.slug, presence));
+}
+
+/**
+ * Every project's records at once, newest first by id (a ULID, so by when the
+ * record was first made). Each project is asked the same `project.read` the
+ * per-project read asks (`visibleProjectIds`, §3.3), and only those ids reach
+ * the query: a project the caller cannot read contributes nothing and is named
+ * nowhere — there is no project to answer `404` about.
+ */
+function listAcrossProjects(
+  db: Db,
+  actor: ResolvedActor,
+  agentId: string | undefined,
+): ProjectSetupView[] {
+  const only = onlyAgent(db, actor, agentId);
+  const readable = visibleProjectIds(db, actor);
+  if (readable.length === 0) return [];
+
+  const rows = db
+    .select({ row: projectRepoSetups, slug: projects.slug })
+    .from(projectRepoSetups)
+    .innerJoin(projects, eq(projects.id, projectRepoSetups.projectId))
+    .where(
+      and(
+        eq(projectRepoSetups.ownerUserId, actor.userId),
+        inArray(projectRepoSetups.projectId, readable),
+        only === undefined ? undefined : eq(projectRepoSetups.agentId, only),
+      ),
+    )
+    .orderBy(desc(projectRepoSetups.id))
+    .all();
+
+  const presence = presenceEnabled(db);
+  return rows.map(({ row, slug }) => toView(db, row, slug, presence));
+}
+
+/** The one agent a read is narrowed to, if any — the token's own, or the owner's named one. */
+function onlyAgent(db: Db, actor: ResolvedActor, agentId: string | undefined): string | undefined {
+  const self = registeredAgent(actor);
+  if (self !== null) {
+    if (agentId !== undefined && agentId !== self.id) throw ApiError.agentNotFound();
+    return self.id;
+  }
+  return agentId === undefined ? undefined : requireOwnAgent(db, actor, agentId).id;
 }
 
 function toView(db: Db, row: Row, projectSlug: string, presence: boolean): ProjectSetupView {
