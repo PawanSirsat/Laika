@@ -74,6 +74,7 @@ import {
   TOOL_SETUP_PURPOSES,
   TOOL_SETUP_STATES,
   CLIENT_REPORT_SOURCES,
+  PROJECT_SETUP_SOURCES,
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
   TIME_DRAFT_SOURCES,
@@ -1143,6 +1144,60 @@ export const agentClientReports = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.agentId, t.source] }),
     check('agent_client_reports_source_check', oneOf('source', CLIENT_REPORT_SOURCES)),
+  ],
+);
+
+// --------------------------------------------- §4.82 project_repo_setups
+
+/**
+ * What is known about one repository's Laika block (§4.82, LAI-1066; plan
+ * LAI-1042 §D.2, §G): the owner's word in the browser, or what
+ * `laika project check` read on a device. **Evidence for a status line, never
+ * an access grant** — no `can()`, fence or claim reads it.
+ *
+ * **No local path.** A repository is a `repo_key` — a hash the CLI computes
+ * from the normalised remote URL — and a `repo_label` the person chose, so a
+ * username in a home directory never reaches the board. `instructions_path`
+ * is relative to the repository. `template_revision` is the instructions
+ * template's revision (`PROJECT_BLOCK_REVISION`), **not** the project brief's
+ * `context_revision` (§4.68).
+ *
+ * One row per (owner, agent, project, repository, source), replaced on each
+ * record. No `created_at`: while presence is off `checked_at` is null and
+ * nothing here says when anybody worked (§4.2).
+ */
+export const projectRepoSetups = sqliteTable(
+  'project_repo_setups',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Null for a record the owner made about no tool in particular. */
+    agentId: text('agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** 64 hex, or `''` for a browser record that names no repository. */
+    repoKey: text('repo_key').notNull(),
+    repoLabel: text('repo_label'),
+    instructionsPath: text('instructions_path'),
+    blockFound: integer('block_found', { mode: 'boolean' }).notNull(),
+    /** `1` for the unmarked block; null when none was found. */
+    templateRevision: integer('template_revision'),
+    projectMatch: integer('project_match', { mode: 'boolean' }),
+    prefixMatch: integer('prefix_match', { mode: 'boolean' }),
+    source: text('source', { enum: PROJECT_SETUP_SOURCES }).notNull(),
+    /** Null while the org has presence off (§4.2). */
+    checkedAt: integer('checked_at'),
+  },
+  (t) => [
+    index('project_repo_setups_owner_project_idx').on(t.ownerUserId, t.projectId),
+    index('project_repo_setups_agent_id_idx').on(t.agentId),
+    check('project_repo_setups_source_check', oneOf('source', PROJECT_SETUP_SOURCES)),
   ],
 );
 

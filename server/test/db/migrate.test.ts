@@ -2784,8 +2784,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
       const dropped = journal.entries.splice(at);
       // The guard on this guard: the cut is exactly the two Phase 3 migrations,
       // LAI-553's agent events, LAI-1045's devices, LAI-1050's pairing
-      // requests and LAI-1056's tool setup, which a 0066 database also
-      // upgrades through.
+      // requests, LAI-1056's tool setup and LAI-1066's project setups, which
+      // a 0066 database also upgrades through.
       expect(dropped.map((e) => e.tag)).toEqual([
         expect.stringMatching(/_checkpoints$/),
         expect.stringMatching(/_handoff_offers$/),
@@ -2793,6 +2793,7 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_devices$/),
         expect.stringMatching(/_device_pairing_requests$/),
         expect.stringMatching(/_tool_setup_exchanges$/),
+        expect.stringMatching(/_project_repo_setups$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
