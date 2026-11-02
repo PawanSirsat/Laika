@@ -96,7 +96,9 @@ void describe('laika version', () => {
       const out = execFileSync('node', [ENTRY, ...argv], { encoding: 'utf8', stdio: 'pipe' });
       assert.match(
         out,
-        /^laika \d+\.\d+\.\d+ \(cli\) · commit [0-9a-f]{7}(\+dirty)? · protocol 1 · node /,
+        new RegExp(
+          `^laika \\d+\\.\\d+\\.\\d+ \\(cli\\) · commit [0-9a-f]{7}(\\+dirty)? · protocol ${String(PROTOCOL)} · node `,
+        ),
         argv.join(' '),
       );
     }
