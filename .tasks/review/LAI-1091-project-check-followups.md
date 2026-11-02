@@ -146,3 +146,52 @@ Small follow-ups from the review of PR #241 (LAI-1090, merged as
 - Two more places in step 3 told a refused tool to run the check: the
   *Not recorded* reason and the foot note. The browser case caught the first.
   Both now say to record it yourself.
+
+## Review round 1 (PR #244, head `c8b9e667`): fixed in the same PR
+
+The review failed one wording blocker. The code passed a 3360-run probe
+with 0 mismatches.
+
+- **B1:** the exit statement said a wrong task-key prefix exits `1`
+  *"whatever else is true, --offline included"*. This CLI learns of a wrong
+  prefix only from the board's reply to a recorded check. *Whatever else is
+  true* now covers only a missing or old block and one naming a project
+  other than `--project`. A wrong prefix, or a project the board says is
+  wrong, gives `1` only once the board has recorded the check. The `2` and
+  `0` lines now say *nothing this run can see needs action*. This is fixed
+  in all three places and in the test's statement. A new test pins the
+  measured behaviour: recorded `1`, `--offline` `0`, no credential `0`,
+  board down `2`, several tools `2`, `--harness` with no credential `2`.
+- **N1:** the `2` line now says *"--harness names a tool with no credential
+  here, or names one but no project is named"*.
+- **N2:** the statement now says `LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL`
+  wins over the several-tools rule. A test shows it records and exits `0`.
+- **N3:** the README lists `LAIKA_AGENT_TOKEN` with its board from
+  `LAIKA_AGENT_URL` or, failing that, the tool's own file. A test checks
+  both the README and the behaviour.
+- **N4:** prompt step 8 now lists a new file's opening lines (Cursor's front
+  matter, named only where step 5 writes it) and the lines a fold keeps
+  below the block.
+- **N6:** the drift test now compares the whole normalised statement from
+  *"first that applies:"* to the end in each place, so an added clause fails
+  too. The README's lead-in was reworded so the anchor phrase reads the same
+  in all three places.
+- `origin/master` (`e45a46ee`, with #242) was merged first. Nothing
+  overlapped.
+- Checked each file alone, with one worker, once the load was below 15:
+  `project-block-revision.test.ts` 33/33, `project-check.test.ts` 59/59,
+  `project-setup.test.ts` 32/32, `tool-catalog.test.ts` 8/8. `tsc` exited 0
+  for both packages; `eslint` and `prettier --check` exited 0 on the changed
+  files.
+- Mutations: 8 more, each run against only its test file and restored by
+  checksum, with `git status` clean afterwards. All went red on the test
+  named for them:
+  - R1: the comment's old `1` line;
+  - R2: the usage without *"names one but"*;
+  - R3: the README without the environment sentence;
+  - R4: saved tools counted before the environment;
+  - R5: the README's old credential sentence;
+  - R6: a contradicting clause added to the usage only, which the old
+    clause-by-clause test let through;
+  - R7: step 8 without the kept lines;
+  - R8: step 8 without the front matter.
