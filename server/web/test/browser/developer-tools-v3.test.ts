@@ -401,6 +401,209 @@ void describe('the details panel: open, held, closed', () => {
   });
 });
 
+/** Two Codex agents on Belka, from before one per tool per device: a conflict. */
+const TWIN_A = agentRow('a4', 'codex', NOW - 60_000);
+const TWIN_B = agentRow('a5', 'codex', NOW - 120_000);
+
+const focusLabel = (page: Page) =>
+  page.evaluate(
+    () =>
+      document.activeElement?.getAttribute('aria-label') ??
+      document.activeElement?.textContent?.trim() ??
+      '',
+  );
+
+void describe('the details panel: a form inside it, and Escape (review round 1)', () => {
+  void test('Escape in Project access closes the form, not the panel; a second Escape closes the panel', async () => {
+    const h = await open('/developer?tab=tools', stub());
+    try {
+      await openFromRow(h.page);
+      const body = panel(h.page).locator('.dv3-tool-details[data-agent="a1"]');
+      await body.getByRole('button', { name: 'Project access…' }).click();
+      const form = body.locator('.agents-panel');
+      await form.waitFor({ timeout: 10_000 });
+      await form.getByRole('radio', { name: 'Read only' }).focus();
+      await h.page.keyboard.press('Escape');
+      await form.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await panel(h.page).count(), 1, 'Escape in the form closed the panel');
+      assert.equal(here(h.page), '/developer?tab=tools&agent=a1');
+      // Focus is back on the button that opened the form, inside the panel.
+      await until(async () => (await focusLabel(h.page)) === 'Project access…');
+      assert.equal(await focusIn(h.page, '.side-panel'), true);
+
+      await h.page.keyboard.press('Escape');
+      await closedTo(h.page);
+      assert.equal(here(h.page), '/developer?tab=tools');
+      assert.equal(h.calls.filter((c) => c.method !== 'GET').length, 0, 'nothing was saved');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Escape in Rename closes the form, not the panel; a second Escape closes the panel', async () => {
+    const h = await open('/developer?tab=tools', stub([CLAUDE, TWIN_A, TWIN_B]));
+    try {
+      await openFromRow(h.page, 'a4');
+      const body = panel(h.page).locator('.dv3-tool-details[data-agent="a4"]');
+      await body.getByRole('button', { name: 'Rename…' }).click();
+      const input = body.getByLabel('New name');
+      await input.waitFor({ timeout: 10_000 });
+      // The form puts focus in its field; Escape is pressed there.
+      await until(async () => focusIn(h.page, '.agents-panel'));
+      await h.page.keyboard.press('Escape');
+      await input.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await panel(h.page).count(), 1, 'Escape in the form closed the panel');
+      await until(async () => (await focusLabel(h.page)) === 'Rename…');
+
+      await h.page.keyboard.press('Escape');
+      await closedTo(h.page, 'a4');
+      assert.equal(h.calls.filter((c) => c.method !== 'GET').length, 0, 'nothing was renamed');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Escape in a device’s conflict Rename closes the form, not the panel', async () => {
+    const h = await open('/developer?tab=devices', stub([CLAUDE, TWIN_A, TWIN_B]));
+    try {
+      await h.page.locator('.dv3-device[data-device="d1"]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-details="devices:d1"]').click();
+      const conflicts = panel(h.page).locator('[data-conflicts]');
+      await conflicts.waitFor({ timeout: 10_000 });
+      await conflicts
+        .getByRole('button', { name: /^Rename Codex · Belka/ })
+        .first()
+        .click();
+      const input = conflicts.getByLabel('New name');
+      await input.waitFor({ timeout: 10_000 });
+      await until(async () => focusIn(h.page, '.agents-panel'));
+      await h.page.keyboard.press('Escape');
+      await input.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await panel(h.page).count(), 1, 'Escape in the form closed the panel');
+      await until(async () => (await focusLabel(h.page)).startsWith('Rename Codex · Belka'));
+
+      await h.page.keyboard.press('Escape');
+      await panel(h.page).waitFor({ state: 'detached', timeout: 10_000 });
+      await until(async () => (await focusedDetails(h.page)) === 'devices:d1');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the details panel: around it (review round 1)', () => {
+  void test('an address naming a wizard and a panel shows the wizard; closing it opens the panel', async () => {
+    const h = await open('/developer?tab=tools&add=tool&agent=a1', stub());
+    try {
+      await h.page.locator('[data-wizard="tool"]').waitFor({ timeout: 20_000 });
+      // The wizard takes the page; no panel opens over it.
+      assert.equal(await panel(h.page).count(), 0);
+      await h.page.waitForTimeout(300);
+      assert.equal(await panel(h.page).count(), 0);
+      // The list is still under it, nothing broken.
+      await h.page.locator('.dv3-tool[data-agent="a1"]').waitFor({ timeout: 10_000 });
+      await h.page.locator('[data-wizard="tool"]').getByRole('button', { name: 'Cancel' }).click();
+      await h.page.locator('[data-wizard="tool"]').waitFor({ state: 'detached', timeout: 10_000 });
+      // What was left in the address is the panel, and it opens.
+      assert.equal(here(h.page), '/developer?tab=tools&agent=a1');
+      await panel(h.page).locator('[data-agent="a1"]').waitFor({ timeout: 10_000 });
+      assert.equal(h.calls.filter((c) => c.method !== 'GET').length, 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Disconnect device: the panel closes, and focus is on the device’s Details while it is listed', async () => {
+    let revoked = false;
+    const gone = [CLAUDE, CODEX, OMNI].map((a) => ({
+      ...a,
+      status: 'revoked',
+      revoked_at: NOW,
+    }));
+    const h = await open('/developer?tab=devices', {
+      ...stub(),
+      // The board, read again after the write, says what it did.
+      '/api/v1/devices': () => ({
+        data: [revoked ? deviceRow(gone) : deviceRow([CLAUDE, CODEX, OMNI])],
+      }),
+      '/api/v1/agents/devices/revoke': () => {
+        revoked = true;
+        return { revoked_agent_ids: ['a1', 'a2', 'a3'] };
+      },
+    });
+    try {
+      await h.page.locator('.dv3-device[data-device="d1"]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-details="devices:d1"]').click();
+      await panel(h.page).getByRole('button', { name: 'Disconnect device…' }).click();
+      const dialog = h.page
+        .getByRole('alertdialog')
+        .or(h.page.getByRole('dialog', { name: /Disconnect Belka/ }));
+      await dialog.waitFor({ timeout: 10_000 });
+      await dialog.getByRole('button', { name: 'Disconnect 3 tools' }).click();
+      await panel(h.page).waitFor({ state: 'detached', timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=devices');
+      // Belka is paired: still listed, with no tools, and focus is on its Details.
+      await until(async () => (await focusedDetails(h.page)) === 'devices:d1');
+      await until(async () =>
+        (await h.page.locator('.dv3-device[data-device="d1"] [data-line]').innerText()).includes(
+          'No tools yet',
+        ),
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Disconnect device: when the device leaves the list, focus is on the list’s heading', async () => {
+    let revoked = false;
+    const imported = {
+      ...deviceRow([CLAUDE]),
+      origin: 'imported',
+      paired_at: null,
+      key_fingerprint: null,
+    };
+    const h = await open('/developer?tab=devices&device=d1', {
+      ...stub([CLAUDE]),
+      '/api/v1/devices': () => ({
+        data: [
+          revoked
+            ? {
+                ...imported,
+                active_count: 0,
+                revoked_count: 1,
+                agents: [{ ...CLAUDE, status: 'revoked', revoked_at: NOW }],
+              }
+            : imported,
+        ],
+      }),
+      '/api/v1/agents/devices/revoke': () => {
+        revoked = true;
+        return { revoked_agent_ids: ['a1'] };
+      },
+    });
+    try {
+      await panel(h.page).locator('[data-device="d1"]').waitFor({ timeout: 20_000 });
+      await panel(h.page).getByRole('button', { name: 'Disconnect device…' }).click();
+      const dialog = h.page
+        .getByRole('alertdialog')
+        .or(h.page.getByRole('dialog', { name: /Disconnect Belka/ }));
+      await dialog.waitFor({ timeout: 10_000 });
+      await dialog.getByRole('button', { name: 'Disconnect 1 tool' }).click();
+      await panel(h.page).waitFor({ state: 'detached', timeout: 10_000 });
+      await h.page
+        .locator('.dv3-device[data-device="d1"]')
+        .waitFor({ state: 'detached', timeout: 10_000 });
+      await h.page.waitForFunction(
+        () => document.activeElement?.id === 'dv3-devices-title',
+        undefined,
+        { timeout: 5_000 },
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('the details panel: what it says', () => {
   void test('a Ready tool: its checks from the board’s evidence, its helper, projects and credential', async () => {
     const h = await open('/developer?tab=tools&agent=a1', stub());
