@@ -3290,7 +3290,7 @@ row is either the owner's word or what `laika project check` read on a device.
 | `agent_id` | nullable, FK `agents`, cascade — the tool; null for a browser record about no tool in particular |
 | `project_id` | FK `projects`, cascade |
 | `repo_key` | 64 lower-case hex: the SHA-256 the CLI made of the normalised remote URL (or of the label, with no remote); `''` for a browser record. **Never a local path** |
-| `repo_label` | nullable — 1–90, the name the person chose for the repository; a browser record has none |
+| `repo_label` | nullable — 1–90, the name the person chose for the repository: letters and digits in any script, spaces and `. _ - + ( ) # & , ' @`, starting with a letter or digit — **no `/`, `\`, `~`, `:` or control character**, so a path is refused, never stored (LAI-1073); a browser record has none |
 | `instructions_path` | nullable — **relative to the repository**, one of the instructions files (`CLAUDE.md`, `.cursor/rules/laika.mdc`, …); no leading `/` or `~`, no `..` |
 | `block_found` | whether a Laika block was found |
 | `template_revision` | nullable — the **instructions template** revision found (`1` for the unmarked block); null when none was found. **Not** `projects.context_revision` (§4.68), and never named as it |
@@ -3302,12 +3302,15 @@ row is either the owner's word or what `laika project check` read on a device.
 One row per owner, agent, project, `repo_key` and `source`, replaced on each
 record. **`POST /project-setups`** from the owner signed in records
 `self_reported_browser` (`agent.manage_own`, session only; the agent, when
-named, must be the owner's and active); from a registered agent's **own** token
+named, must be the owner's, active, **and granted on the project** — `403`,
+`agent_not_granted` otherwise — so a record about a tool says no more than the
+tool could record for itself, LAI-1073); from a registered agent's **own** token
 it records `local_check` for **that agent only** (`heartbeat.send_own`), and
 `project_match` and `prefix_match` are worked out against the project as it is
 then. Either way the project must be one the caller can read, so an agent
 records only inside its grants (`403`, `agent_not_granted`, as every agent read
-outside them). A personal token is refused `403`, `not_an_agent`. **`GET
+outside them). A personal token is refused `403`, `not_an_agent`, **whatever body it sends**
+— before the body is read, so a local-check body is not answered `422`. **`GET
 /project-setups`** answers the caller's own rows for one project; an agent's
 token reads only its own. Another owner's agent and an id that names nothing
 are the same `404`. No activity row is written.
