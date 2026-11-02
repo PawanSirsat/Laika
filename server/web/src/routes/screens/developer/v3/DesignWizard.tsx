@@ -28,7 +28,7 @@ export interface DesignWizardProps {
   readonly noteId?: string;
   /** *Back* and the primary, on the right. */
   readonly actions: ReactNode;
-  /** Cards beside the step, such as *What stays separate*. Hidden ≤ 1040px. */
+  /** Cards beside the step, such as *What stays separate*. Hidden ≤ 1280px. */
   readonly aside?: ReactNode;
   /** A `data-wizard` hook naming the wizard. */
   readonly wizard?: string;
