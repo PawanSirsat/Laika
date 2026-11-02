@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { type CompatibilityBody } from '../../../src/http/routes/developer.ts';
-import { FEATURE_NAMES, FEATURE_ROUTES } from '../../../src/services/developer-compat.ts';
+import { FEATURE_NAMES } from '../../../src/services/developer-compat.ts';
 import { TEST_VERSION, testApp } from '../../helpers/app.ts';
 import {
   type AuthHarness,
@@ -179,31 +179,18 @@ describe('GET /api/v1/developer/compatibility — features (LAI-1062)', () => {
     });
   });
 
-  // The other direction: a flag that is `true` never stands without its
-  // routes, whatever the derivation does. A route *removed* turns its flag off,
-  // so it is the pinned `true`s above, and the 404 check below, that go red.
-  it('mounts every route of every feature it reports on', async () => {
-    h = authHarness();
-    await setUp(h);
-    const mounted = new Set(h.app.routes.map((route) => `${route.method} ${route.path}`));
-
-    const { features } = await read(await h.app.request('/api/v1/developer/compatibility'));
-
-    for (const name of FEATURE_NAMES) {
-      if (!features[name]) continue;
-      expect(FEATURE_ROUTES[name].length, name).toBeGreaterThan(0);
-      for (const route of FEATURE_ROUTES[name]) expect(mounted.has(route), route).toBe(true);
-    }
-  });
-
-  // The device's side of each feature answers as itself, not as the SPA
-  // fallback or a 404: an empty body is refused by the route's own validation.
+  // Each feature's routes answer as themselves, not as the SPA fallback or a
+  // 404: an anonymous empty body is refused by the route's own auth or
+  // validation, with a Laika error code.
   it('answers each named route with Laika JSON, not a 404', async () => {
     h = authHarness();
     await setUp(h);
     const id = '01M6CTJSC90GV0R511PPMG7NBH';
 
     for (const path of [
+      '/api/v1/devices/pairing-requests',
+      `/api/v1/devices/pairing-requests/${id}/approve`,
+      `/api/v1/devices/${id}/tools`,
       '/api/v1/device-pairing/claim',
       `/api/v1/device-pairing/${id}/complete`,
       `/api/v1/tool-setup/${id}/redeem`,

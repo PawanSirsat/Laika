@@ -27,9 +27,9 @@ import { type DeveloperAccessMode } from '../env.ts';
 export const PROTOCOL = { current: 2, minClient: 1 } as const;
 
 /**
- * The features the V3 onboarding adds (plan §J). **A closed set**: the test asserts the keys by name, so a feature
- * cannot be added here without that test, and a client can treat an unknown
- * key as absent.
+ * The features the V3 onboarding adds (plan §J). **A closed set**: the test
+ * asserts the keys by name, so a feature cannot be added here without that
+ * test, and a client can treat an unknown key as absent.
  */
 export const FEATURE_NAMES = [
   'device_pairing',
@@ -51,8 +51,15 @@ export type FeatureName = (typeof FEATURE_NAMES)[number];
  * make it true, and it stays `false` until one exists and is named here.
  */
 export const FEATURE_ROUTES: Readonly<Record<FeatureName, readonly string[]>> = {
-  device_pairing: ['POST /api/v1/device-pairing/claim', 'POST /api/v1/device-pairing/:id/complete'],
-  tool_setup_exchange: ['POST /api/v1/tool-setup/:id/redeem'],
+  // The owner's side (approve in the browser) and the device's (claim, complete):
+  // a feature with only one half is not a feature a person can use.
+  device_pairing: [
+    'POST /api/v1/devices/pairing-requests',
+    'POST /api/v1/devices/pairing-requests/:id/approve',
+    'POST /api/v1/device-pairing/claim',
+    'POST /api/v1/device-pairing/:id/complete',
+  ],
+  tool_setup_exchange: ['POST /api/v1/devices/:id/tools', 'POST /api/v1/tool-setup/:id/redeem'],
   client_reports: ['POST /api/v1/agents/me/client-report'],
   project_setups: [],
 };
