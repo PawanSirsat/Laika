@@ -137,29 +137,38 @@ no credential for antigravity on this machine — nothing recorded; laika tool a
 ```
 
 That is all a credential can be here: the tool's own file
-(`~/.laika/agents/<tool>.json`) or `LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL`.
+(`~/.laika/agents/<tool>.json`); or `LAIKA_AGENT_TOKEN`, with its board from
+`LAIKA_AGENT_URL` or, when that is not set, from the tool's own file.
 The board's Project setup does not offer the check command for these tools;
 it asks you to record the block yourself with *I've added it*.
 
-Exit codes, the first that applies (LAI-1091; the usage text and the comment
-in `src/project-check.ts` say the same):
+Exit codes (LAI-1091; the usage text and the comment in
+`src/project-check.ts` give the same statement, word for word), the first
+that applies:
 
 - `64` the command line was wrong.
-- `1` the block needs action: missing, an older revision, or naming another
-  project or prefix. Whatever else is true, `--offline` included.
-- `2` nothing needs action, but the record was not made: `--harness` names a
-  tool with no credential here, or no project is named; several tools are
-  set up here and no `--harness` picks one; the credential's board URL is not
-  a plain address; or the board did not answer, refused, or is too old to
-  take it.
-- `0` nothing needs action, and the check was recorded or only printed:
-  `--offline`; or no `--harness`, and no credential here or no project named.
+- `1` the block needs action: missing, an older revision, or naming a
+  project other than `--project`. These give `1` whatever else is true,
+  `--offline` included. A wrong task-key prefix gives `1` only once the board
+  has recorded the check and says so, as does a project the board says is
+  wrong.
+- `2` nothing this run can see needs action, but the record was not made:
+  `--harness` names a tool with no credential here, or names one but no
+  project is named; several tools are set up here and no `--harness` picks
+  one; the credential's board URL is not a plain address; or the board did
+  not answer, refused, or is too old to take it.
+- `0` nothing this run can see needs action, and the check was recorded or
+  only printed: `--offline`; or no `--harness`, and no credential here or no
+  project named.
 
 So: a current block, no credential and no `--harness` prints and exits `0`; a
 missing or old block exits `1` whatever else is true; `--harness X` with no
 credential for X exits `2`, unless `--offline` (`0`) or the block needs action
-(`1`). Whether a record can be made is decided before whether a project is
-named, so the order of the checks never turns a `2` into a `0`.
+(`1`). `LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL` in the environment is a
+credential for whichever tool is asked for, and it wins over the
+several-tools rule: the check records with it. Whether a record can be made
+is decided before whether a project is named, so the order of the checks
+never turns a `2` into a `0`.
 
 ## `laika version` — which CLI this is (LAI-1043)
 

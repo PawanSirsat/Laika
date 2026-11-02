@@ -43,6 +43,8 @@ import {
 
 const AGENT_TOKEN = 'lai_AGENTPLANTEDSECRET0123456789abcdef';
 const PERSONAL_TOKEN = 'lai_PERSONALPLANTEDSECRET0123456789';
+/** An agent token from the environment, told apart from the saved files' one. */
+const ENV_TOKEN = 'lai_ENVAGENTPLANTEDSECRET0123456789ab';
 /** A sentence in every fixture file that must never be printed or sent. */
 const PRIVATE = 'PRIVATE-NOTE-do-not-leak-7f3a';
 const BOARD = 'http://board.test';
@@ -722,6 +724,56 @@ void describe('laika project check', () => {
     assert.equal((await run(['--harness', 'codex', '--offline'], { cwd: old })).code, 1);
   });
 
+  void test('a wrong prefix is seen only in the board’s reply: 1 once recorded, else 0 or 2 (review B1)', async () => {
+    // The exit statement once said a wrong prefix was 1 "whatever else is
+    // true, --offline included"; only the board can tell this CLI the prefix.
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'OLD') });
+    const one = home({ 'claude-code': BOARD });
+    const recorded = await run([], { cwd: dir, home: one });
+    assert.equal(recorded.code, 1, recorded.out);
+    assert.match(recorded.out, /the board says the block’s task-key prefix is not this project’s/);
+    assert.equal((await run(['--offline'], { cwd: dir, home: one })).code, 0);
+    assert.equal((await run([], { cwd: dir })).code, 0);
+    assert.equal((await run([], { cwd: dir, home: one, board: () => 'down' })).code, 2);
+    const several = home({ 'claude-code': BOARD, codex: BOARD });
+    assert.equal((await run([], { cwd: dir, home: several })).code, 2);
+    assert.equal((await run(['--harness', 'codex'], { cwd: dir })).code, 2);
+  });
+
+  void test('LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL wins over several tools: it records, exit 0 (review N2)', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run([], {
+      cwd: dir,
+      home: home({ 'claude-code': BOARD, codex: BOARD }),
+      env: { LAIKA_AGENT_TOKEN: ENV_TOKEN, LAIKA_AGENT_URL: BOARD },
+    });
+    assert.equal(r.code, 0, r.out);
+    assert.equal(r.sent.length, 1);
+    assert.equal(r.sent[0]?.auth, `Bearer ${ENV_TOKEN}`);
+    assert.ok(!r.out.includes(ENV_TOKEN), 'the token was printed');
+  });
+
+  void test('LAIKA_AGENT_TOKEN alone takes its board from the tool’s own file, as the README says (review N3)', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run(['--harness', 'codex'], {
+      cwd: dir,
+      home: home({ codex: BOARD }),
+      env: { LAIKA_AGENT_TOKEN: ENV_TOKEN },
+    });
+    assert.equal(r.code, 0, r.out);
+    assert.equal(r.sent[0]?.url, `${BOARD}/api/v1/project-setups`);
+    assert.equal(r.sent[0]?.auth, `Bearer ${ENV_TOKEN}`);
+    const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8')
+      .replace(/`/g, '')
+      .replace(/\s+/g, ' ');
+    assert.ok(
+      readme.includes(
+        "That is all a credential can be here: the tool's own file (~/.laika/agents/<tool>.json); or LAIKA_AGENT_TOKEN, with its board from LAIKA_AGENT_URL or, when that is not set, from the tool's own file.",
+      ),
+      'the README no longer lists every credential readCredential takes',
+    );
+  });
+
   void test('several tools here and --harness names one: recorded, exit 0', async () => {
     const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], {
@@ -902,24 +954,34 @@ void describe('the exit codes, said the same in the comment, the usage and the R
     comment: section(source, '## Exit codes', '*/'),
     // The usage ends with them: from "Exit:" to its last line.
     usage: plain(USAGE.slice(Math.max(0, USAGE.indexOf('Exit:')))),
-    readme: section(readme, 'Exit codes, the first that applies', '\n## '),
+    readme: section(readme, 'Exit codes (LAI-1091', '\n## '),
   };
   assert.ok(USAGE.includes('Exit:'), 'the usage text no longer has its exit codes');
 
-  // Each is behaviour the tests above pin: 64 in "usage errors are 64", 1 in
-  // the needs-action cases, 2 and 0 in the --harness, several and
-  // no-project cases.
+  // Each is behaviour the tests above pin: 64 in "usage errors are 64"; 1 in
+  // the needs-action cases, and a wrong prefix only from the board in "a
+  // wrong prefix is seen only in the board's reply"; 2 and 0 in the
+  // --harness, several and no-project cases; the environment in "LAIKA_AGENT_
+  // TOKEN with LAIKA_AGENT_URL wins over several tools".
+  const ANCHOR = 'first that applies:';
   const statement = [
+    ANCHOR,
     '64 the command line was wrong.',
-    '1 the block needs action: missing, an older revision, or naming another project or prefix. Whatever else is true, --offline included.',
-    "2 nothing needs action, but the record was not made: --harness names a tool with no credential here, or no project is named; several tools are set up here and no --harness picks one; the credential's board URL is not a plain address; or the board did not answer, refused, or is too old to take it.",
-    '0 nothing needs action, and the check was recorded or only printed: --offline; or no --harness, and no credential here or no project named.',
+    '1 the block needs action: missing, an older revision, or naming a project other than --project. These give 1 whatever else is true, --offline included. A wrong task-key prefix gives 1 only once the board has recorded the check and says so, as does a project the board says is wrong.',
+    "2 nothing this run can see needs action, but the record was not made: --harness names a tool with no credential here, or names one but no project is named; several tools are set up here and no --harness picks one; the credential's board URL is not a plain address; or the board did not answer, refused, or is too old to take it.",
+    '0 nothing this run can see needs action, and the check was recorded or only printed: --offline; or no --harness, and no credential here or no project named.',
     'So: a current block, no credential and no --harness prints and exits 0; a missing or old block exits 1 whatever else is true; --harness X with no credential for X exits 2, unless --offline (0) or the block needs action (1).',
-  ];
+    'LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL in the environment is a credential for whichever tool is asked for, and it wins over the several-tools rule: the check records with it.',
+    'Whether a record can be made is decided before whether a project is named, so the order of the checks never turns a 2 into a 0.',
+  ].join(' ');
 
   for (const [where, text] of Object.entries(places)) {
-    void test(`${where} says each line of it`, () => {
-      for (const line of statement) assert.ok(text.includes(line), `${where} lacks: ${line}`);
+    // The whole statement, not each clause found somewhere in it: a clause
+    // added in one place, contradicting the others, fails too (review N6).
+    void test(`${where} gives the whole statement and nothing else`, () => {
+      const at = text.indexOf(ANCHOR);
+      assert.ok(at !== -1, `${where} has no "${ANCHOR}"`);
+      assert.equal(text.slice(at).trim(), statement, where);
     });
   }
 
