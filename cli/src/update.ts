@@ -97,6 +97,13 @@ import { CLI_DIR, tildePath } from './version.ts';
  *    this process is still the old CLI. A report that fails is one line; it
  *    never changes the exit code and never rolls anything back.
  *
+ * A checkout already at the board's commit stops after step 2, and still
+ * sends the step-8 reports by the same rules (LAI-1085), with that checkout's
+ * own `laika version --json`, then one line saying sent or skipped and why: a
+ * machine moved there by plain `git`, or set up before `laika tool add`
+ * reported anything, has no other way to tell the board. `--check` and
+ * `--dry-run` never send one.
+ *
  * ## Putting back never overwrites somebody else's change
  *
  * The checkout moves back only while `HEAD` is still the target (or the
@@ -110,9 +117,10 @@ import { CLI_DIR, tildePath } from './version.ts';
  * `~/.laika/env`, `~/.laika/agents/*`, `~/.laika/device/*`, consent, grants
  * and any repository's instruction files are not written, copied or printed.
  * `~/.laika/agents/*` is the one of them it **opens, read-only**, and only
- * after a successful update: each credential's URL decides whether it belongs
- * to this board, and its token goes in that one report's `Authorization`
- * header to that board (step 8) — nowhere else. The one secret-bearing file it may copy is `~/.claude/settings.json`
+ * after a successful update or on a checkout already at the board's commit:
+ * each credential's URL decides whether it belongs to this board, and its
+ * token goes in that one report's `Authorization` header to that board
+ * (step 8) — nowhere else. The one secret-bearing file it may copy is `~/.claude/settings.json`
  * (when `laika init` put a token there, and only when its hooks are on): the
  * copy is `0600` in a `0700` directory and is deleted on **every** way out —
  * success, refusal, rollback, exception and recovery — except an incomplete
@@ -582,7 +590,8 @@ type SelfCheck =
 
 const failed = (problem: string): SelfCheck => ({ ok: false, problem });
 
-function selfCheck(
+/** The checkout's own `laika version --json`, which must say it is `target`. */
+function versionAt(
   run: Runner,
   env: Readonly<Record<string, string | undefined>>,
   home: string,
@@ -600,6 +609,22 @@ function selfCheck(
   if (said.commit !== target) {
     return failed(`laika version reports commit ${String(said.commit)}, not ${target}`);
   }
+  const helper =
+    typeof said.version === 'string' && typeof said.protocol === 'number'
+      ? { version: said.version, commit: target, protocol: said.protocol }
+      : undefined;
+  return { ok: true, helper };
+}
+
+function selfCheck(
+  run: Runner,
+  env: Readonly<Record<string, string | undefined>>,
+  home: string,
+  checkout: string,
+  target: string,
+): SelfCheck {
+  const version = versionAt(run, env, home, checkout, target);
+  if (!version.ok) return version;
 
   const doctor = laika(run, env, home, checkout, ['doctor', '--offline', '--json']);
   if (![0, 1, 2].includes(doctor.code)) return failed(`laika doctor exited ${String(doctor.code)}`);
@@ -609,11 +634,7 @@ function selfCheck(
   } catch {
     return failed('laika doctor --json did not print JSON');
   }
-  const helper =
-    typeof said.version === 'string' && typeof said.protocol === 'number'
-      ? { version: said.version, commit: target, protocol: said.protocol }
-      : undefined;
-  return { ok: true, helper };
+  return version;
 }
 
 function runtimeDependencies(checkout: string): string[] {
@@ -1009,6 +1030,9 @@ async function go(
     io.out(
       `Up to date: ${shown} is at ${target.commit.slice(0, 7)}, the commit the board was built from.`,
     );
+    // LAI-1085: a checkout moved here by plain git has never reported, and
+    // nothing else would until the next release.
+    if (!options.dryRun) io.out(await reportCurrent(io, run, checkout, target));
     return 0;
   }
 
@@ -1144,33 +1168,106 @@ interface SwitchPlan {
 
 const problemOf = (check: SelfCheck): string | undefined => (check.ok ? undefined : check.problem);
 
+interface ToolCredential {
+  readonly harness: Harness;
+  readonly url: string;
+  readonly token: string;
+}
+
+/** Each installed tool credential whose board is this one. */
+function credentialsFor(home: string, board: string): ToolCredential[] {
+  const origin = boardOriginOf(board);
+  if (origin === undefined) return [];
+  const found: ToolCredential[] = [];
+  for (const harness of HARNESSES) {
+    // `{}`: the saved file only, never a token from this process's environment.
+    const saved = readCredential(home, harness, {});
+    if (saved === undefined || urlProblem(saved.url) !== undefined) continue;
+    if (boardOriginOf(saved.url) !== origin) continue;
+    found.push({ harness, url: saved.url, token: saved.token });
+  }
+  return found;
+}
+
+/** One client report per credential, with its own token; a throw is an outcome, never thrown. */
+async function sendReports(
+  io: UpdateIo,
+  tools: readonly ToolCredential[],
+  helper: Helper,
+): Promise<{ readonly name: string; readonly outcome: string }[]> {
+  const outcomes: { name: string; outcome: string }[] = [];
+  for (const tool of tools) {
+    let outcome: string;
+    try {
+      const hooks = ADAPTERS[tool.harness].hooks && hooksOn(io.home, tool.harness);
+      outcome = reportOutcome(
+        await sendClientReport(io, normaliseUrl(tool.url), tool.token, helper, hooks),
+      );
+    } catch {
+      outcome = 'failed';
+    }
+    outcomes.push({ name: ADAPTERS[tool.harness].name, outcome });
+  }
+  return outcomes;
+}
+
+const shortHelper = (helper: Helper): string =>
+  helper.commit === null ? helper.version : helper.commit.slice(0, 7);
+
 /**
  * Step 8: one client report per installed tool credential whose board is this
  * one, with that credential's own token. Never fails the update: every
  * outcome is a line, and a throw is caught here.
  */
 async function reportUpdate(io: UpdateIo, board: string, helper: Helper): Promise<void> {
-  const origin = boardOriginOf(board);
-  for (const harness of HARNESSES) {
-    // `{}`: the saved file only, never a token from this process's environment.
-    const saved = readCredential(io.home, harness, {});
-    if (saved === undefined || urlProblem(saved.url) !== undefined) continue;
-    if (origin === undefined || boardOriginOf(saved.url) !== origin) continue;
-    const name = ADAPTERS[harness].name;
-    let outcome: string;
-    try {
-      const hooks = ADAPTERS[harness].hooks && hooksOn(io.home, harness);
-      outcome = reportOutcome(
-        await sendClientReport(io, normaliseUrl(saved.url), saved.token, helper, hooks),
-      );
-    } catch {
-      outcome = 'failed';
-    }
+  for (const { name, outcome } of await sendReports(io, credentialsFor(io.home, board), helper)) {
     io.out(
       outcome === 'sent'
-        ? `  ✓ told the board ${name} now runs ${helper.commit === null ? helper.version : helper.commit.slice(0, 7)}`
+        ? `  ✓ told the board ${name} now runs ${shortHelper(helper)}`
         : `  · could not tell the board ${name}'s new version (${outcome}); the update stands`,
     );
+  }
+}
+
+/**
+ * The same report when the checkout is already the board's commit (LAI-1085),
+ * by the same rules as step 8, with the checkout's own `laika version --json`.
+ * Returns the one line saying what happened; never throws, so a report can
+ * never change the exit code.
+ */
+async function reportCurrent(
+  io: UpdateIo,
+  run: Runner,
+  checkout: string,
+  target: Target,
+): Promise<string> {
+  const skipped = (why: string): string => `Version report skipped: ${why}.`;
+  if (target.body.features.client_reports !== true)
+    return skipped('the board does not take client reports');
+  try {
+    const tools = credentialsFor(io.home, target.board);
+    if (tools.length === 0) {
+      return skipped(
+        'no tool on this machine is set up for this board (laika tool add sets one up)',
+      );
+    }
+    const version = versionAt(run, io.env, io.home, checkout, target.commit);
+    if (!version.ok) return skipped(version.problem);
+    if (version.helper === undefined)
+      return skipped('laika version --json did not say its version and protocol');
+    const outcomes = await sendReports(io, tools, version.helper);
+    const sent = outcomes.filter((o) => o.outcome === 'sent').map((o) => o.name);
+    const notSent = outcomes
+      .filter((o) => o.outcome !== 'sent')
+      .map((o) => `${o.name} (${o.outcome})`);
+    const parts = [
+      ...(sent.length > 0 ? [`sent for ${sent.join(', ')}`] : []),
+      ...(notSent.length > 0 ? [`not sent for ${notSent.join(', ')}`] : []),
+    ];
+    return `Version report for ${shortHelper(version.helper)}: ${parts.join('; ')}.`;
+  } catch {
+    // `sendReports` never throws, so whatever did, nothing was sent.
+    return skipped('it failed before anything was sent');
   }
 }
 
