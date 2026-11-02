@@ -410,6 +410,48 @@ export function deviceUpdateSummary(statuses: readonly UpdateStatus[]): string |
   return `Helper updates: ${parts.join(', ')}`;
 }
 
+/** A list row's version chip (LAI-1083): its word, and a tone that repeats it. */
+export interface VersionChip {
+  readonly key: UpdateKey;
+  readonly word: string;
+  readonly tone: 'ok' | 'accent' | 'danger' | 'neutral';
+}
+
+/**
+ * The version chip on a Tools or Devices row (LAI-1083, the owner: *"the
+ * version thing is removed now"*): every status says itself in two words,
+ * the update ones as before. Nothing while it is still being read, so a row
+ * does not flicker through *Checking*. `tools` above one is a device's chip,
+ * which speaks for all of its tools.
+ */
+export function versionChip(key: UpdateKey | undefined, tools = 1): VersionChip | undefined {
+  switch (key) {
+    case undefined:
+    case 'checking':
+      return undefined;
+    case 'up-to-date':
+      return { key, word: tools > 1 ? 'Helpers up to date' : 'Helper up to date', tone: 'ok' };
+    case 'available':
+      return { key, word: 'Update available', tone: 'accent' };
+    case 'required':
+      return { key, word: 'Update required', tone: 'danger' };
+    case 'unknown':
+      return { key, word: 'Version unknown', tone: 'neutral' };
+    case 'unchecked':
+      return { key, word: 'Could not check', tone: 'neutral' };
+  }
+}
+
+/**
+ * The helper version a tool reported, for its row's line — *helper 0.1.0* —
+ * or nothing when it has not said one (its chip says *Version unknown*).
+ */
+export function reportedHelper(report: Read<ClientReport | null>): string | undefined {
+  if (report === undefined || report === 'failed' || report === null) return undefined;
+  const version = report.cli_version?.trim() ?? '';
+  return version === '' ? undefined : `helper ${version}`;
+}
+
 /** The worst status on a device, for its card's data attribute. */
 export function worstUpdate(statuses: readonly UpdateStatus[]): UpdateKey | undefined {
   return ORDER.find((key) => statuses.some((s) => s.key === key));
