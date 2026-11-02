@@ -500,8 +500,8 @@ void describe('the details panel: around it (review round 1)', () => {
       assert.equal(await panel(h.page).count(), 0);
       await h.page.waitForTimeout(300);
       assert.equal(await panel(h.page).count(), 0);
-      // The list is still under it, nothing broken.
-      await h.page.locator('.dv3-tool[data-agent="a1"]').waitFor({ timeout: 10_000 });
+      // The wizard stands in place of the list (LAI-1081), nothing broken.
+      assert.equal(await h.page.locator('.dv3-tool[data-agent="a1"]').count(), 0);
       await h.page.locator('[data-wizard="tool"]').getByRole('button', { name: 'Cancel' }).click();
       await h.page.locator('[data-wizard="tool"]').waitFor({ state: 'detached', timeout: 10_000 });
       // What was left in the address is the panel, and it opens.

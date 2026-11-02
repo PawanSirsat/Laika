@@ -126,6 +126,7 @@
 /* ---- buttons: the design's are taller than a bar's ---- */
 
 .dx-btn {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;

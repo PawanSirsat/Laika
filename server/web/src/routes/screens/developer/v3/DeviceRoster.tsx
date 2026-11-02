@@ -606,7 +606,9 @@ export function DeviceRoster({
           onClose={closeWizard}
         />
       )}
-      {devices === undefined ? (
+      {/* An open wizard stands in place of its list, as the owner's design
+          draws it (LAI-1081); its *Back to …* and *Cancel* bring the list back. */}
+      {wizard ? null : devices === undefined ? (
         lists
       ) : (
         <UpdatesProvider agentIds={updateIds} origin={origin} announce={announce}>

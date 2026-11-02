@@ -914,6 +914,37 @@ void describe('review round 1 (PR #215)', () => {
   });
 });
 
+void describe('an open wizard stands in place of its list (LAI-1081)', () => {
+  for (const [tab, open_, back, which] of [
+    ['devices', '+ Add device', 'Back to devices', 'device'],
+    ['tools', '+ Add tool', 'Back to tools', 'tool'],
+  ] as const) {
+    void test(`${tab}: ${open_} hides the list; ${back} brings it back, focus on ${open_}`, async () => {
+      const h = await open(
+        `/developer?tab=${tab}`,
+        stub('v3', [deviceRow('d1', 'Belka', true, [agentRow('a1', 'claude-code')])]),
+      );
+      try {
+        const page = h.page;
+        const list = page.locator('.dv3-list');
+        await list.waitFor({ timeout: 20_000 });
+        await page.getByRole('button', { name: open_ }).click();
+        await wizard(page, which).waitFor({ timeout: 20_000 });
+        assert.equal(await list.count(), 0);
+        await page.getByRole('button', { name: back }).click();
+        await wizard(page, which).waitFor({ state: 'detached', timeout: 10_000 });
+        await list.waitFor({ timeout: 10_000 });
+        await until(
+          async () =>
+            (await page.evaluate(() => document.activeElement?.textContent?.trim())) === open_,
+        );
+      } finally {
+        await h.close();
+      }
+    });
+  }
+});
+
 /**
  * Set `LAIKA_EVIDENCE_DIR` to save each wizard step in the owner's design's
  * frame (LAI-1081), light and dark, at a desktop's width and a phone's — to
