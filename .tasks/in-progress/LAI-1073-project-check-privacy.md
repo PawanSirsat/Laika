@@ -2,11 +2,12 @@
 id: LAI-1073
 title: 'Project setup records: privacy and consistency edge cases from the #221 review'
 area: server
-assignee: unclaimed
+assignee: polly
 priority: p2
 depends-on: []
 discovered-from: LAI-1066
-status: backlog
+status: in-progress
+started: 2026-11-02T07:47:23+0530
 ---
 
 ## Why
