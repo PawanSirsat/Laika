@@ -31,7 +31,18 @@ Details side panel addressed by the URL.
       (version, How to update, What's new), projects + change access,
       credential + Reconnect, Save checkpoints automatically, Rename for
       conflicts, Disconnect. No extra request per open.
+- [ ] The **Tools** tab joins `DEVELOPER_V3_TABS` after Devices (moved here
+      from LAI-1078, so it arrives with a real list): Overview · Project setup ·
+      Devices · Tools · Advanced. It hosts the Add tool wizard. `developerAlias`
+      in v3: `agents` → tools, `devices&agent=` → `tools&agent=`,
+      `devices&add=tool…` → `tools&add=tool…` (with `reconnect=`, `exchange=`),
+      old `connect` with wizard state → tools; every in-app link to a tool row
+      or Add tool (Overview, Advanced's *Upgrade connection*, Project setup)
+      follows.
 - [ ] Back, Escape and the scrim close a panel; focus returns to the row.
+      `SidePanel` (LAI-1078's `components/SidePanel.tsx`) gets its browser
+      tests here, with its first use: focus in, Tab trapped, Escape, scrim,
+      ×, focus back, bottom sheet at 390px, both themes.
 - [ ] *Ready* only from `readiness()` evidence.
 - [ ] Tests: `developer-devices-v3`, `developer-update-status` moved to the
       panels; new panel tests; both themes; 390px.
