@@ -289,6 +289,12 @@ export interface ReplacedBlock {
  * - Neither: `block` is appended after a blank line, and the rest is kept.
  *
  * Everything outside the replaced span is byte-identical to `text`.
+ *
+ * One rule of the prompt is not here: a Laika section someone wrote by hand,
+ * with neither markers nor {@link BLOCK_MARKER} (LAI-1084). Whether a section
+ * is about the board, and which of its lines to keep, is the person's call,
+ * so the prompt shows it and waits. This function's *append* and *current*
+ * stand for a file with no such section, or one where the person said no.
  */
 export function replaceLaikaBlock(
   text: string | null,
@@ -369,6 +375,14 @@ export interface ProjectSetupPromptInput {
  * any replacement, and leaves every other line as the person wrote it. It
  * carries no token and asks for none, and it installs, pairs, configures and
  * commits nothing: the device and the tool were set up once, elsewhere.
+ *
+ * **It never appends a second Laika section** (LAI-1084). A file whose Laika
+ * section was written by hand, with no markers and no {@link BLOCK_MARKER}
+ * line, gained a whole second block on OnRoute. So the tool looks for
+ * sections clearly about the board, before appending and even beside a
+ * current block, and offers to replace them or fold them in, with a diff and
+ * a confirmation. A mere mention under a heading about something else is
+ * shown and asked about, never replaced.
  */
 export function projectSetupPrompt({
   origin,
@@ -378,14 +392,34 @@ export function projectSetupPrompt({
   preamble = '',
 }: ProjectSetupPromptInput): string {
   return `Set this repository up for the Laika board (${origin}), project \`${project.slug}\`
-(${project.name}), by updating ./${path}. Only the Laika block in that file is
-yours to change; everything else in it belongs to the people who wrote it.
+(${project.name}), by updating ./${path}. Only the Laika block in that file, or,
+with my confirmation, a hand-written Laika section, is yours to change;
+everything else in it belongs to the people who wrote it.
+
+A hand-written Laika section has no Laika markers and is clearly about the
+Laika board: its heading names Laika, or it is there to say how to work the
+board, with laika_whoami, get_project_context, start_working, finish_task,
+${origin}, or task keys like \`${project.prefix}-42\`. It runs from its
+heading to the next heading of the same or a higher level, or the end of the
+file. Mentions inside a section whose heading is about something else (a line
+under "## Development workflow", a task key under "## Known issues") do not
+make that section one: show me those lines and ask what I want done with
+them, and never replace a section whose heading is about something else.
+
+When you fold a hand-written Laika section into the block, keep lines, not
+headings: put the lines I choose to keep directly below the block's last
+line, as they were, and drop the section's old Laika heading unless I ask for
+it, so the file ends up with one Laika heading.
 
 1. Read ./${path} first. Do not assume what is in it.
 2. If it has a marked Laika block — a line starting "<!-- laika:begin" and a
    later "${BLOCK_END}" line — whose begin line says a revision of
    ${String(PROJECT_BLOCK_REVISION)} or more and project=${project.slug}, and whose task keys look like
-   \`${project.prefix}-42\`, it is already up to date: tell me so and stop.
+   \`${project.prefix}-42\`, it is already up to date. Before you tell me so,
+   look for hand-written Laika sections elsewhere in the file. For each one,
+   show it to me and offer to fold it into the block and remove the
+   duplicate; ask which of its lines I want to keep, show me the diff and wait
+   for me to confirm. If there are none, tell me it is up to date and stop.
 3. Otherwise, if it has a Laika block — from "<!-- laika:begin" to
    "${BLOCK_END}", whatever its revision or project, or,
    from before the markers existed, the "## Laika" section whose first
@@ -393,9 +427,18 @@ yours to change; everything else in it belongs to the people who wrote it.
    higher level or the end of the file — show me the exact old and new text
    as a diff and wait for me to confirm. Then replace only that block. If I
    edited lines inside the old block, point them out in the diff so I can
-   keep them.
-4. If there is no Laika block, append the block below at the end, keeping
-   everything already in the file. Create the file only if it does not exist.${
+   keep them. Offer, in the same diff, to fold any hand-written Laika section
+   elsewhere in the file into it, as in step 2.
+4. Otherwise, before you append anything, look for hand-written Laika
+   sections. If you find one or more, show me each one and offer to replace
+   the first with the block below and fold the others into it. Ask which of
+   their lines I want to keep, show me the diff and wait for me to confirm.
+   Then change only those sections. If I say a section is not about this
+   board, leave it as it is; if none of them is, go on to step 5.
+5. If there is no Laika block and no hand-written Laika section, append the
+   block below at the end, keeping everything already in the file. Create the
+   file only if it does not exist. Never add a second Laika section to a file
+   that has one.${
      preamble === ''
        ? ''
        : `
@@ -404,13 +447,16 @@ yours to change; everything else in it belongs to the people who wrote it.
 ${preamble}
 `
    }
-5. Copy the block exactly. It contains no token and must never gain one: do
+6. If I say no to a change you offered, change nothing at all.
+7. Copy the block exactly. It contains no token and must never gain one: do
    not add a token, key or password anywhere, and do not ask me for one.
-6. Change nothing else. Do not install, reinstall or update Laika, do not pair
+8. Change nothing else. Do not install, reinstall or update Laika, do not pair
    a device, do not edit any MCP configuration, and do not commit or push: I
    will review the change myself.
-7. Report in one line: created the file, appended the block, updated it from
-   revision N, or already up to date.
+9. Report in one line: created the file, appended the block, updated it from
+   revision N, replaced a hand-written Laika section, folded N hand-written
+   Laika sections into the block, already up to date, or you said no and I
+   changed nothing.
 
 --- begin block ---
 ${block}
