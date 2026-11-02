@@ -1,0 +1,51 @@
+---
+id: LAI-1085
+title: 'laika update on a checkout already at the board''s build still sends each tool''s version report'
+area: cli
+assignee: unclaimed
+priority: p2
+depends-on: [LAI-1068]
+discovered-from: LAI-1068
+status: backlog
+---
+
+## Why
+
+Found live on Belka (owner, 2026-11-02): `~/laika` is at `ec91f053`, the
+board's own build, and the V3 Devices tab shows **Version unknown** for its
+tools — and will until the next release. `laika update` returns early on
+**Up to date** (`cli/src/update.ts`, the `head === target.commit` branch in
+`go()`), before the client report LAI-1068 added after a successful switch.
+So a machine updated with plain `git`, or set up before `laika tool add`
+existed, has no command that tells the board what its tools run.
+
+## Acceptance
+
+- [ ] `laika update` (not `--check`, not `--dry-run`) that finds the checkout
+      already at the board's commit still sends one client report
+      (`POST /api/v1/agents/me/client-report`, SPEC §4.81) per installed tool
+      credential (`~/.laika/agents/<harness>.json`) whose board origin is the
+      board the update asked — the same rules as LAI-1068: each credential's
+      own saved token, never one from the environment, only to that board,
+      never printed, and only when the manifest says `client_reports`.
+- [ ] Version, commit and protocol come from the checkout's own
+      `laika version --json`, and its commit must be the board's commit.
+- [ ] One line says what happened: sent (for which tools), or skipped and
+      why (the board takes no reports; no tool here is set up for this board;
+      the version could not be read). A failed report never changes the exit
+      code (`0`).
+- [ ] `--check` and `--dry-run` on an up-to-date checkout send nothing.
+- [ ] Tests: the up-to-date path sends one report per installed tool to the
+      right board; a credential for another board is skipped; a report
+      failure keeps exit 0; `--check` and `--dry-run` send nothing; a test
+      fails if the early return is put back before the report step.
+- [ ] `cli/README.md` (the `laika update` section) says so.
+- [ ] cli typecheck, eslint and prettier exit 0; PR into `master`, CI green.
+
+## Notes
+
+- Area `cli` only: `cli/src/update.ts`, `cli/test/update.test.ts`,
+  `cli/README.md`. No new dependency. No server change: the endpoint and the
+  manifest flag exist (LAI-1056, LAI-1062).
+- Optional in the dispatch: `laika doctor` suggesting `laika update` when a
+  tool has never reported — only if cheap and read-only.
