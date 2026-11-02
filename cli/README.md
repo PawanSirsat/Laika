@@ -120,15 +120,21 @@ What is sent is the summary only: found or not, the revision, the project and
 task-key prefix the block names, the file's path inside the repository, a
 SHA-256 of the remote URL and a label (`--label`, else the remote's name). **No
 file contents, no local path, and never your personal `LAIKA_TOKEN`.** With no
-credential, or `--offline`, it only prints. Before recording it asks the
-board's `GET /developer/compatibility`, as `device pair` and `tool add` do: a
-board with `project_setups` off, or needing a newer protocol, gets nothing and
-you are told which (`laika update`, or ask your admin to update the board).
+credential, or `--offline`, it only prints. **`--harness <tool>` asks for a
+record** (LAI-1090): with no credential for that tool it records nothing,
+says to add it first (Developer access → Tools → Add tool gives its
+`laika tool add` command), names any other tools set up here only after that,
+and exits `2`. Before recording it asks the board's
+`GET /developer/compatibility`, as `device pair` and `tool add` do: a board
+with `project_setups` off, or needing a newer protocol, gets nothing and you
+are told which (`laika update`, or ask your admin to update the board).
 
 Exit codes: `0` current, `1` needs action (no block, an older revision, another
 project or prefix), `2` could not record (the board did not answer or refused;
 several tools are set up here and no `--harness` says which; or `--harness`
-names a tool with no credential here while others have one), `64` usage.
+names a tool with no credential here, whether or not another tool has one),
+`64` usage. A run with no `--harness` and no credential at all only prints,
+and exits `0`.
 
 ## `laika version` — which CLI this is (LAI-1043)
 

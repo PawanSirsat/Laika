@@ -17,6 +17,7 @@ import { agentsDir, readCredential, type AgentCredential } from './agent-session
 import { LAIKA_BLOCK_FILES } from './activity-census.ts';
 import { featureGate, postJson, reasonOf, type Answer } from './device.ts';
 import { displayUrl, urlProblem, USAGE_EXIT } from './doctor.ts';
+import { planFor } from './tool-add.ts';
 
 /**
  * `laika project check` — is this repository's Laika block there, and is it the
@@ -50,7 +51,9 @@ import { displayUrl, urlProblem, USAGE_EXIT } from './doctor.ts';
  * and gets nothing. **Never with `LAIKA_TOKEN`** — the person's token is not
  * the tool.
  * With no credential, or `--offline`, it prints and records nothing; it works
- * with no network at all.
+ * with no network at all. **`--harness` is a request to record** (LAI-1090):
+ * with no credential for that tool it records nothing and exits `2`, and it
+ * says to add that tool, never to record as another one.
  *
  * ## Exit codes
  *
@@ -59,9 +62,10 @@ import { displayUrl, urlProblem, USAGE_EXIT } from './doctor.ts';
  * revision, or a block naming another project or prefix; `2` nothing needs
  * action locally but the record could not be made (the board did not answer,
  * refused, or is too old to take it; several tools are set up here and no
- * `--harness` says which; or `--harness` names a tool with no credential here
- * while others have one); `64` the command line itself was wrong
- * (`EX_USAGE`, as `laika doctor`).
+ * `--harness` says which; or `--harness` names a tool with no credential
+ * here, whether or not another tool has one); `64` the command line itself
+ * was wrong (`EX_USAGE`, as `laika doctor`). A run with no `--harness` and no
+ * credential at all only prints, and exits `0`.
  */
 
 /** The instructions template revision this CLI knows (`connect-copy.ts`'s `PROJECT_BLOCK_REVISION`). */
@@ -265,7 +269,8 @@ export const USAGE = [
   '',
   'Reads the instructions files and changes none of them. With a tool’s own',
   'credential on this machine it records what it found on the board (no file',
-  'contents, no local path); otherwise it only prints.',
+  'contents, no local path); otherwise it only prints. With --harness and no',
+  'credential for that tool, it records nothing and exits 2.',
   '',
   'Exit: 0 current, 1 needs action, 2 could not record, 64 usage.',
 ].join('\n');
@@ -383,9 +388,9 @@ type CredentialChoice =
       readonly harness: Harness | null;
       readonly credential: AgentCredential;
     }
-  | { readonly kind: 'none'; readonly harness?: Harness }
+  | { readonly kind: 'none' }
   | { readonly kind: 'several'; readonly harnesses: readonly Harness[] }
-  /** `--harness` named a tool with no credential here, while others have one. */
+  /** `--harness` named a tool with no credential here; `others` may be empty. */
   | { readonly kind: 'not-here'; readonly harness: Harness; readonly others: readonly Harness[] };
 
 function chooseCredential(io: CheckIo, harness: Harness | undefined): CredentialChoice {
@@ -394,7 +399,7 @@ function chooseCredential(io: CheckIo, harness: Harness | undefined): Credential
     if (credential !== undefined) return { kind: 'found', harness, credential };
     // Names only: which tools have a credential file here, never what is in one.
     const others = savedHarnesses(io.home).filter((h) => h !== harness);
-    return others.length === 0 ? { kind: 'none', harness } : { kind: 'not-here', harness, others };
+    return { kind: 'not-here', harness, others };
   }
   const token = io.env.LAIKA_AGENT_TOKEN;
   const url = io.env.LAIKA_AGENT_URL;
@@ -412,6 +417,21 @@ function chooseCredential(io: CheckIo, harness: Harness | undefined): Credential
 export interface RecordedSetup {
   readonly project_match: boolean | null;
   readonly prefix_match: boolean | null;
+}
+
+/**
+ * `--harness <tool>` with no credential for it (LAI-1090). Adding that tool
+ * comes first; the tools already set up here are named after it, and only as
+ * a fact: the reader picked this tool, so recording as another is not offered.
+ * A tool `laika tool add` refuses is not sent there.
+ */
+function notHereWords(harness: Harness, others: readonly Harness[]): string {
+  const add =
+    planFor(harness).kind === 'refused'
+      ? `laika tool add cannot set up ${harness}, so this check cannot record for it`
+      : `add ${harness} first: on the board, Developer access → Tools → Add tool gives the laika tool add ${harness} command to run here`;
+  const also = others.length === 0 ? '' : ` (other tools set up here: ${others.join(', ')})`;
+  return `no credential for ${harness} on this machine — nothing recorded; ${add}${also}`;
 }
 
 type RecordOutcome =
@@ -519,17 +539,12 @@ export async function projectCheck(
     if (choice.kind === 'none') {
       outcome = {
         kind: 'skipped',
-        why:
-          choice.harness === undefined
-            ? 'no tool credential on this machine — nothing recorded (laika tool add sets one up)'
-            : `no credential for ${choice.harness} on this machine — nothing recorded (laika tool add sets one up)`,
+        why: 'no tool credential on this machine — nothing recorded (laika tool add sets one up)',
       };
     } else if (choice.kind === 'not-here') {
-      // As `several`: a credential is here and a record was asked for (exit 2).
-      outcome = {
-        kind: 'failed',
-        why: `no credential for ${choice.harness} on this machine (it has: ${choice.others.join(', ')}) — nothing recorded; pass --harness with one of those, or laika tool add sets one up`,
-      };
+      // `--harness` asked for a record (exit 2, LAI-1090), whether or not
+      // another tool has a credential here.
+      outcome = { kind: 'failed', why: notHereWords(choice.harness, choice.others) };
     } else if (choice.kind === 'several') {
       // Not `skipped`: credentials are here and the record was expected, so a
       // script or agent must not read this as done (exit 2, LAI-1084).
