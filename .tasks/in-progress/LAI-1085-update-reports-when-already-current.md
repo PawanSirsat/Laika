@@ -2,11 +2,12 @@
 id: LAI-1085
 title: 'laika update on a checkout already at the board''s build still sends each tool''s version report'
 area: cli
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: [LAI-1068]
 discovered-from: LAI-1068
-status: backlog
+status: in-progress
+started: 2026-11-02T11:44:45Z
 ---
 
 ## Why
@@ -49,3 +50,7 @@ existed, has no command that tells the board what its tools run.
   manifest flag exist (LAI-1056, LAI-1062).
 - Optional in the dispatch: `laika doctor` suggesting `laika update` when a
   tool has never reported — only if cheap and read-only.
+- **Claimed with `depends-on` not in `done/`** (§2 step 1): LAI-1068 sits in
+  `.tasks/review/` on `master`, but its code is merged there (PR #222,
+  `c95a91c6`) and the owner's dispatch names it as the base this builds on.
+  Recorded here rather than read loosely.
