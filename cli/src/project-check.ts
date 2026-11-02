@@ -7,7 +7,7 @@ import { basename, join, resolve } from 'node:path';
 import { HARNESSES, isHarness, type Harness } from './agent-adapters.ts';
 import { agentsDir, readCredential, type AgentCredential } from './agent-session.ts';
 import { LAIKA_BLOCK_FILES } from './activity-census.ts';
-import { postJson, reasonOf, type Answer } from './device.ts';
+import { featureGate, postJson, reasonOf, type Answer } from './device.ts';
 import { displayUrl, urlProblem, USAGE_EXIT } from './doctor.ts';
 
 /**
@@ -36,7 +36,11 @@ import { displayUrl, urlProblem, USAGE_EXIT } from './doctor.ts';
  * or `LAIKA_AGENT_TOKEN`), the finding is recorded on the board as a
  * `local_check` (`POST /api/v1/project-setups`, SPEC §4.82), which the
  * Developer access → Project setup tab shows as *Checked by laika project
- * check*. **Never with `LAIKA_TOKEN`** — the person's token is not the tool.
+ * check*. Before it sends anything, it asks the board's manifest
+ * (`featureGate`, as `device pair` and `tool add` do) whether `project_setups`
+ * is on and this CLI's protocol reaches it; a board that says no is told so
+ * and gets nothing. **Never with `LAIKA_TOKEN`** — the person's token is not
+ * the tool.
  * With no credential, or `--offline`, it prints and records nothing; it works
  * with no network at all.
  *
@@ -377,6 +381,20 @@ function refusalWords(answer: Answer, board: string, slug: string): string {
   return `the board answered ${String(answer.status)}${reason === undefined ? '' : ` (${reason})`}`;
 }
 
+async function record(
+  io: CheckIo,
+  board: string,
+  token: string,
+  body: Readonly<Record<string, unknown>>,
+): Promise<RecordOutcome> {
+  const answer = await postJson(io, `${board}/api/v1/project-setups`, body, {
+    Authorization: `Bearer ${token}`,
+  });
+  return answer.kind === 'json' && answer.status === 201
+    ? { kind: 'recorded', setup: answer.body as RecordedSetup }
+    : { kind: 'failed', why: refusalWords(answer, displayUrl(board), String(body.project_slug)) };
+}
+
 export async function projectCheck(
   argv: readonly string[],
   io: CheckIo = CONSOLE,
@@ -453,25 +471,23 @@ export async function projectCheck(
       };
     } else {
       const board = choice.credential.url.replace(/\/+$/, '');
-      const answer = await postJson(
-        io,
-        `${board}/api/v1/project-setups`,
-        {
-          project_slug: slug,
-          repo_key: repoKey,
-          repo_label: label,
-          instructions_path: instructionsPath,
-          block_found: block.found,
-          template_revision: block.found ? block.revision : null,
-          block_project: block.found ? block.project : null,
-          block_prefix: block.found ? block.prefix : null,
-        },
-        { Authorization: `Bearer ${choice.credential.token}` },
-      );
+      // As `device pair` and `tool add`: the board's manifest must say
+      // `project_setups` is on and this CLI's protocol reaches it, or nothing
+      // is sent. A board too old for the manifest is tried, and its 404 said.
+      const gate = await featureGate(io, board, 'project_setups');
       outcome =
-        answer.kind === 'json' && answer.status === 201
-          ? { kind: 'recorded', setup: answer.body as RecordedSetup }
-          : { kind: 'failed', why: refusalWords(answer, displayUrl(board), slug) };
+        gate.kind === 'refused'
+          ? { kind: 'failed', why: gate.message }
+          : await record(io, board, choice.credential.token, {
+              project_slug: slug,
+              repo_key: repoKey,
+              repo_label: label,
+              instructions_path: instructionsPath,
+              block_found: block.found,
+              template_revision: block.found ? block.revision : null,
+              block_project: block.found ? block.project : null,
+              block_prefix: block.found ? block.prefix : null,
+            });
     }
   }
 

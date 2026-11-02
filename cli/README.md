@@ -120,7 +120,10 @@ What is sent is the summary only: found or not, the revision, the project and
 task-key prefix the block names, the file's path inside the repository, a
 SHA-256 of the remote URL and a label (`--label`, else the remote's name). **No
 file contents, no local path, and never your personal `LAIKA_TOKEN`.** With no
-credential, or `--offline`, it only prints.
+credential, or `--offline`, it only prints. Before recording it asks the
+board's `GET /developer/compatibility`, as `device pair` and `tool add` do: a
+board with `project_setups` off, or needing a newer protocol, gets nothing and
+you are told which (`laika update`, or ask your admin to update the board).
 
 Exit codes: `0` current, `1` needs action (no block, an older revision, another
 project or prefix), `2` could not record (the board did not answer or refused),

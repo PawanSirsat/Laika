@@ -729,6 +729,8 @@ void describe('laika tool add', () => {
     const sent = JSON.parse(report.body) as { capabilities: string[]; protocol: number };
     assert.ok(sent.capabilities.includes('session_hooks'));
     assert.ok(sent.capabilities.includes('tool_setup_exchange'));
+    // LAI-1066: `laika project check` exists, so the report says so.
+    assert.ok(sent.capabilities.includes('project_check'));
     assert.match(run.stdout, /laika-claude/);
 
     // Again, with a new exchange: the backups are not taken a second time.

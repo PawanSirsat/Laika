@@ -108,10 +108,42 @@ interface Run {
   code: number;
   out: string;
   err: string;
+  /** The records posted. */
   sent: Sent[];
+  /** The manifest reads the gate made. */
+  asked: string[];
 }
 
 type Board = (body: Record<string, unknown>) => { status: number; body: unknown } | 'down';
+
+/** The board's `GET /developer/compatibility`, as #216 serves it. */
+type Manifest = { status: number; body: unknown } | 'down';
+
+const manifest = (
+  over: { project_setups?: boolean; need?: number } = {},
+): { status: number; body: unknown } => ({
+  status: 200,
+  body: {
+    server: { version: '0.1.0', build_commit: null },
+    protocol: { current: 2, min_client: 1 },
+    features: {
+      developer_access: 'v3',
+      device_pairing: true,
+      tool_setup_exchange: true,
+      client_reports: true,
+      project_setups: over.project_setups ?? true,
+    },
+    cli: {
+      min_protocol_for: {
+        device_pairing: 2,
+        tool_setup_exchange: 2,
+        client_reports: 2,
+        project_setups: over.need ?? 2,
+      },
+      source: { url: 'https://example.test/laika.git', commit: null },
+    },
+  },
+});
 
 const recording: Board = (body) => ({
   status: 201,
@@ -141,12 +173,15 @@ async function run(
     home?: string;
     env?: Record<string, string>;
     board?: Board;
+    manifest?: Manifest;
   },
 ): Promise<Run> {
   const out: string[] = [];
   const err: string[] = [];
   const sent: Sent[] = [];
   const board = options.board ?? recording;
+  const compat = options.manifest ?? manifest();
+  const asked: string[] = [];
   const io: CheckIo = {
     out: (line) => out.push(line),
     err: (line) => err.push(line),
@@ -154,11 +189,25 @@ async function run(
     cwd: options.cwd,
     env: options.env ?? {},
     fetch: (input, init) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.endsWith('/api/v1/developer/compatibility')) {
+        // The gate's GET: nothing of this machine's in it.
+        assert.equal(init?.body, undefined);
+        assert.equal(new Headers(init?.headers).get('authorization'), null);
+        asked.push(url);
+        if (compat === 'down') return Promise.reject(new Error('ECONNREFUSED'));
+        return Promise.resolve(
+          new Response(JSON.stringify(compat.body), {
+            status: compat.status,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
       const raw = typeof init?.body === 'string' ? init.body : '{}';
       const body = JSON.parse(raw) as Record<string, unknown>;
       const headers = new Headers(init?.headers);
       sent.push({
-        url: input instanceof Request ? input.url : input.toString(),
+        url,
         auth: headers.get('authorization'),
         body,
       });
@@ -186,7 +235,7 @@ async function run(
   const code = await projectCheck(argv, io);
   // **Never writes.** Not a byte, not a timestamp, not a new file.
   assert.deepEqual(tree(options.cwd), before, 'laika project check changed a file');
-  const result = { code, out: out.join('\n'), err: err.join('\n'), sent };
+  const result = { code, out: out.join('\n'), err: err.join('\n'), sent, asked };
   // Nothing secret or private, on any run.
   const everything = `${result.out}\n${result.err}\n${JSON.stringify(sent.map((s) => s.body))}`;
   assert.doesNotMatch(everything, new RegExp(AGENT_TOKEN), 'the token was printed or sent');
@@ -381,10 +430,73 @@ void describe('laika project check', () => {
       cwd: dir,
       home: home({ 'claude-code': BOARD }),
       board: () => 'down',
+      manifest: 'down',
     });
     assert.equal(r.code, 2);
     assert.match(r.out, /revision 2/);
-    assert.match(r.out, /nothing answered at http:\/\/board\.test/);
+    assert.match(r.out, /could not ask http:\/\/board\.test what it supports/);
+    assert.equal(r.sent.length, 0);
+  });
+
+  void test('asks the board’s manifest before it records, as device pair and tool add do', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run([], { cwd: dir, home: home({ 'claude-code': BOARD }) });
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(r.asked, [`${BOARD}/api/v1/developer/compatibility`]);
+    assert.equal(r.sent.length, 1);
+  });
+
+  void test('a board with project setups off: nothing sent, exit 2, told to update the board', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run([], {
+      cwd: dir,
+      home: home({ 'claude-code': BOARD }),
+      manifest: manifest({ project_setups: false }),
+    });
+    assert.equal(r.code, 2);
+    assert.equal(r.sent.length, 0);
+    assert.match(r.out, /this board doesn't support project setup records yet/);
+  });
+
+  void test('a board needing a newer CLI: nothing sent, exit 2, told to laika update', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run([], {
+      cwd: dir,
+      home: home({ 'claude-code': BOARD }),
+      manifest: manifest({ need: 3 }),
+    });
+    assert.equal(r.code, 2);
+    assert.equal(r.sent.length, 0);
+    assert.match(
+      r.out,
+      /needs protocol 3 for project setup records and this CLI speaks 2 — run: laika update/,
+    );
+  });
+
+  void test('a board too old for the manifest is tried, and its 404 said', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const r = await run([], {
+      cwd: dir,
+      home: home({ 'claude-code': BOARD }),
+      manifest: {
+        status: 404,
+        body: { error: { code: 'not_found', message: 'x', details: null } },
+      },
+      board: () => ({
+        status: 404,
+        body: { error: { code: 'not_found', message: 'x', details: null } },
+      }),
+    });
+    assert.equal(r.code, 2);
+    assert.equal(r.sent.length, 1);
+    assert.match(r.out, /has no project "onroute", or does not record project setups yet/);
+  });
+
+  void test('offline and credential-less runs never ask the manifest either', async () => {
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const offline = await run(['--offline'], { cwd: dir, home: home({ 'claude-code': BOARD }) });
+    const bare = await run([], { cwd: dir });
+    assert.deepEqual([offline.asked, bare.asked], [[], []]);
   });
 
   void test('a project outside the tool’s grants: exit 2, said in words', async () => {

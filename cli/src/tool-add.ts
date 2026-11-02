@@ -493,6 +493,8 @@ const BASE_CAPABILITIES = [
   'client_report',
   'doctor',
   'update',
+  // `laika project check` (LAI-1066) records with this credential.
+  'project_check',
 ] as const;
 
 /**
