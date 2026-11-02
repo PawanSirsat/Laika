@@ -13,6 +13,8 @@ import { ApiError } from '../../../../api/errors.ts';
 import { timeLabel } from '../../../../api/time-label.ts';
 import { useConfirm } from '../../../../components/ConfirmProvider.tsx';
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
+import { UpdateCliHelp } from './UpdateCliGuide.tsx';
+import { WIZARD_SUMMARY } from './update-cli.ts';
 import { Help } from '../../../../components/wizard/Help.tsx';
 import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
 import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
@@ -539,6 +541,7 @@ export function AddDeviceWizard({
           <p className="dv3w-quiet">Reading where this board’s helper comes from…</p>
         ) : (
           <>
+            <UpdateCliHelp summary={WIZARD_SUMMARY} place="add-device" />
             <CodeBlock
               label={
                 installed ? 'On the device: update, then pair' : 'On the device: install, then pair'

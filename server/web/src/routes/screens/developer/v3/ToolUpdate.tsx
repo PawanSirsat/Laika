@@ -14,6 +14,8 @@ import { getAgentVerification, type AgentVerification } from '../../../../api/to
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
 import { DesignChip } from './DesignChip.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
+import { UpdateCliHelp } from './UpdateCliGuide.tsx';
+import { guideFor, versionUnknownHint } from './update-cli.ts';
 import {
   AFTER_UPDATE,
   ALLOW_HTTP_WHY,
@@ -372,6 +374,21 @@ export function ToolUpdate({ agentId, label }: ToolUpdateProps) {
           </details>
         )}
 
+        {s.key === 'unknown' && (
+          <p className="dv3-note" data-version-unknown-hint="">
+            {versionUnknownHint()}
+          </p>
+        )}
+        {guideFor(s.key) && (
+          <UpdateCliHelp
+            origin={updates.origin}
+            place="tool"
+            onCopiedUpdate={() => {
+              updates.watch(agentId, label);
+            }}
+          />
+        )}
+
         {notes !== undefined && notes.length > 0 && s.key !== 'checking' && (
           <details className="dv3-update-new" data-whats-new>
             <summary>What’s new</summary>
@@ -425,10 +442,14 @@ export function DeviceUpdate({ agentIds }: { readonly agentIds: readonly string[
   const statuses = agentIds.map((id) => updates.status(id));
   const line = deviceUpdateSummary(statuses);
   if (line === undefined) return null;
+  const worst = worstUpdate(statuses);
   return (
-    <p className="dv3-note dv3-update-summary" data-device-update={worstUpdate(statuses)}>
-      {line}
-    </p>
+    <>
+      <p className="dv3-note dv3-update-summary" data-device-update={worst}>
+        {line}
+      </p>
+      {guideFor(worst) && <UpdateCliHelp origin={updates.origin} place="device" />}
+    </>
   );
 }
 

@@ -36,6 +36,8 @@ import {
   type HeroKind,
   type SetupChipKey,
 } from './overview-state.ts';
+import { UpdateCliHelp } from './UpdateCliGuide.tsx';
+import { cliNotice, cliNoticeText } from './update-cli.ts';
 import { updateManifestOf, updateStatus, type UpdateStatus } from './update-status.ts';
 import './overview.css';
 
@@ -251,6 +253,7 @@ export function OverviewTab({
     const toolsHref = OVERVIEW_ADDRESSES.tools;
     const hero = heroOf(state, now, projectsHref, toolsHref);
     const attention = attentionItems(state, updates, now);
+    const notice = cliNotice(updates.values());
     const rows = journeyRows(state, projectsHref, toolsHref);
     body = (
       <>
@@ -296,6 +299,14 @@ export function OverviewTab({
                     </li>
                   ))}
                 </ul>
+              </NoteBlock>
+            )}
+            {notice !== undefined && (
+              <NoteBlock note="cli-update">
+                <div className="dx-overview-cli" data-cli-notice="">
+                  <p>{cliNoticeText(notice)}</p>
+                  <UpdateCliHelp place="overview" />
+                </div>
               </NoteBlock>
             )}
             <section className="dx-card" aria-labelledby="dx-overview-journey" data-journey="">
