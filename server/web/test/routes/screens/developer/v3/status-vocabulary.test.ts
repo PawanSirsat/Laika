@@ -157,7 +157,7 @@ function verification(over: Over = {}): AgentVerification {
           )
         : fail({
             evidence: null,
-            mcp_client_name: 'specific' as const,
+            mcp_client_name: harness === 'omnigent' ? ('generic' as const) : ('specific' as const),
             client_slug: null,
             client_name: null,
             client_version: null,
@@ -237,6 +237,8 @@ function everyToolStatus(): { key: string; word: string; via: string }[] {
   r({ installed: false }, 'no credential');
   r({ used: false }, 'unused');
   r({}, 'reached, not the tool');
+  // LAI-1088: a tool whose MCP client names no tool is Connected until the helper says which it is.
+  r({}, 'in use, the helper has not said which tool', 'omnigent');
   r({ own: true, missing: ['client_report'] }, 'helper report missing');
   r({ own: true, session: false }, 'no session');
   r({ own: true, requestAt: null }, 'presence off');
@@ -401,6 +403,38 @@ void describe('each chip’s description is its row’s own evidence', () => {
       /^Connected, not Ready: Codex · Belka\. The helper has not reported client_report yet\./,
     );
     assert.match(text, /To make it Ready: Not yet reported: client_report\./);
+  });
+
+  void test('Omnigent, whose MCP client names no tool: the reason and the step LAI-1088 gives', () => {
+    const omnigent = tool('omnigent');
+    const v = verification({ harness: 'omnigent' });
+    const status = { ...readiness(v, omnigent), evidence: true };
+    assert.equal(status.key, 'connected');
+    const missing = checkLines(v, omnigent, 'Belka').find((line) => line.state === 'fail');
+    assert.ok(missing);
+    const text = toolChipDescription({
+      label: 'Omnigent · Belka',
+      status,
+      agent: agent({ harness: 'omnigent' }),
+      verification: v,
+      tool: omnigent,
+      deviceName: 'Belka',
+      now: NOW,
+    });
+    assert.ok(
+      text.startsWith(
+        'Connected, not Ready: Omnigent · Belka. The credential is in use; the helper has not yet reported that it is Omnigent’s.',
+      ),
+      text,
+    );
+    // The chip's next step is the checklist's own line, word for word.
+    assert.ok(text.endsWith(`To make it Ready: ${missing.detail}`), text);
+    assert.match(missing.detail, /What is missing is the helper’s report from this credential/);
+    // And the legend's Connected says the same of such a tool.
+    assert.match(
+      TOOL_STATUS.connected.meaning,
+      /names no tool, such as Omnigent, the helper’s report saying which tool it is/,
+    );
   });
 
   void test('Ready says nothing more is needed; a row before its checks says only what its stamps show', () => {

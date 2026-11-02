@@ -230,7 +230,16 @@ void describe('each chip explains its own row', () => {
       );
 
       const omnigent = anchorIn(tool(h.page, 'a3').locator('[data-readiness]'));
-      assert.match(await description(omnigent), /^Connected, not Ready: Omnigent · Belka\./);
+      // LAI-1088: its MCP client names no tool, so what is missing is the helper's report.
+      const omni = await description(omnigent);
+      assert.match(
+        omni,
+        /^Connected, not Ready: Omnigent · Belka\. The credential is in use; the helper has not yet reported that it is Omnigent’s\./,
+      );
+      assert.match(
+        omni,
+        /To make it Ready: Omnigent runs other tools as its workers[\s\S]*What is missing is the helper’s report from this credential saying it is Omnigent\. Reconnect Omnigent from here and run the command on Belka: `laika tool add` sends it\.$/,
+      );
 
       // The helper chip: updateStatus's own reason for this row.
       const update = anchorIn(tool(h.page, 'a2').locator('[data-update-chip]'));

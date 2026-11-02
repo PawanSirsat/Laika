@@ -22,8 +22,10 @@ import type { UpdateKey, UpdateStatus } from './update-status.ts';
  * - **A tool** — `listedStatus` (`devices-view.ts`): `readiness()`
  *   (`tool-readiness.ts`) once the tool's own verification is in, otherwise
  *   `toolStatus()` from the agent's own stamps. `readiness()` keeps its own
- *   words (LAI-1088 owns that file); `status-vocabulary.test.ts` drives every
- *   branch of both and fails on any word not written here.
+ *   words (LAI-1088 owns that file, and its rule for a tool whose MCP client
+ *   names no tool — `namesNoTool` — is what *Ready* and *Connected* say here);
+ *   `status-vocabulary.test.ts` drives every branch of both and fails on any
+ *   word not written here.
  * - **Duplicate** — `ListedTool.inConflict`: two active agents of one harness
  *   on one device (D-120).
  * - **A tool's helper** — `updateStatus()` and the row chip `versionChip()`
@@ -92,7 +94,7 @@ export const TOOL_STATUS: Readonly<Record<ToolChipKey, StatusCopy>> = {
     word: 'Ready',
     tone: 'ok',
     get meaning() {
-      return `The tool itself called the board on its own credential in the last ${recent()}, and everything else it needs is in: the helper’s report of what it needs and, for a tool with hooks, a session.`;
+      return `The tool itself called the board on its own credential in the last ${recent()} — named by its MCP client or, for a tool whose client names no tool such as Omnigent, by the helper’s report from that credential — and everything else it needs is in: the helper’s report of what it needs and, for a tool with hooks, a session.`;
     },
     todo: 'Nothing to do.',
   },
@@ -100,7 +102,7 @@ export const TOOL_STATUS: Readonly<Record<ToolChipKey, StatusCopy>> = {
     word: 'Connected',
     tone: 'accent',
     meaning:
-      'Its credential has reached the board, but not all of the evidence for Ready is in yet: the tool’s own request naming itself, the helper’s report of what it needs, or a session from its hooks.',
+      'Its credential is in use, but not all of the evidence for Ready is in yet: the tool’s own request naming itself (for a tool whose MCP client names no tool, such as Omnigent, the helper’s report saying which tool it is), the helper’s report of what it needs, or a session from its hooks.',
     todo: 'Open Details: its checklist names what is missing and how to send it.',
   },
   'needs-setup': {
