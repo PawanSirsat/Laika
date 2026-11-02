@@ -1102,6 +1102,8 @@ void describe('laika update — the client report after an update (LAI-1068)', (
     assert.equal(report.body.protocol, 7, 'the protocol is the running CLI’s, not the new one’s');
     assert.equal(typeof report.body.cli_version, 'string');
     assert.ok(Array.isArray(report.body.capabilities));
+    // LAI-1088: the report names its tool, as the board's generic rule needs.
+    assert.equal(report.body.harness, 'claude-code');
     assert.match(r.out, new RegExp(`✓ told the board Claude Code now runs ${c.slice(0, 7)}`));
     assert.deepEqual(protectedFiles(w), before, 'a credential file was written');
   });
