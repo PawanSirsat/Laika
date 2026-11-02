@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p2
 depends-on: [LAI-1068]
 discovered-from: LAI-1068
-status: in-progress
+status: review
 started: 2026-11-02T11:44:45Z
+finished: 2026-11-02T11:56:45Z
 ---
 
 ## Why
@@ -22,25 +23,25 @@ existed, has no command that tells the board what its tools run.
 
 ## Acceptance
 
-- [ ] `laika update` (not `--check`, not `--dry-run`) that finds the checkout
+- [x] `laika update` (not `--check`, not `--dry-run`) that finds the checkout
       already at the board's commit still sends one client report
       (`POST /api/v1/agents/me/client-report`, SPEC §4.81) per installed tool
       credential (`~/.laika/agents/<harness>.json`) whose board origin is the
       board the update asked — the same rules as LAI-1068: each credential's
       own saved token, never one from the environment, only to that board,
       never printed, and only when the manifest says `client_reports`.
-- [ ] Version, commit and protocol come from the checkout's own
+- [x] Version, commit and protocol come from the checkout's own
       `laika version --json`, and its commit must be the board's commit.
-- [ ] One line says what happened: sent (for which tools), or skipped and
+- [x] One line says what happened: sent (for which tools), or skipped and
       why (the board takes no reports; no tool here is set up for this board;
       the version could not be read). A failed report never changes the exit
       code (`0`).
-- [ ] `--check` and `--dry-run` on an up-to-date checkout send nothing.
-- [ ] Tests: the up-to-date path sends one report per installed tool to the
+- [x] `--check` and `--dry-run` on an up-to-date checkout send nothing.
+- [x] Tests: the up-to-date path sends one report per installed tool to the
       right board; a credential for another board is skipped; a report
       failure keeps exit 0; `--check` and `--dry-run` send nothing; a test
       fails if the early return is put back before the report step.
-- [ ] `cli/README.md` (the `laika update` section) says so.
+- [x] `cli/README.md` (the `laika update` section) says so.
 - [ ] cli typecheck, eslint and prettier exit 0; PR into `master`, CI green.
 
 ## Notes
@@ -54,3 +55,21 @@ existed, has no command that tells the board what its tools run.
   `.tasks/review/` on `master`, but its code is merged there (PR #222,
   `c95a91c6`) and the owner's dispatch names it as the base this builds on.
   Recorded here rather than read loosely.
+
+## Notes (SHELL on Belka, at review)
+
+- Last criterion: typecheck, eslint and prettier exit 0 locally (on the
+  changed files; Belka runs no full suite); the PR and its CI result are on
+  the card (LAIKA-938). Left unticked here because ticking it after CI would
+  be one more commit for CI to re-run.
+- Files: `cli/src/update.ts`, `cli/test/update.test.ts`, `cli/README.md`, and
+  one sentence in `cli/src/client-report.ts`'s header, which said a report is
+  sent only "once the checkout has moved" — no longer true.
+- The `laika doctor` hint is **not built**: doctor has no read of whether a
+  tool has reported. The board's per-agent detail (`GET /agents/:id`) is the
+  owner's read, not the tool token's, so it would be a new request and a new
+  shape for doctor — not the "cheap and read-only" the dispatch allowed.
+- Mutations run (each anchor confirmed, file restored by checksum): early
+  return put back before the report → 6 of the 7 new tests red; the
+  `--dry-run` guard removed → `--check and --dry-run send nothing` red; the
+  catch rethrowing → the version-throw assertion red.
