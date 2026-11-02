@@ -59,11 +59,29 @@ interface StubOptions {
   publicUrlUnset?: boolean;
   /** The harness the redeemed agent has. */
   agentHarness?: string;
+  /**
+   * What `GET /developer/compatibility` answers (LAI-1064). `protocol-2` (the
+   * default) is a board with LAI-1062: protocol 2, the three features on.
+   * `protocol-1` is one from before it: protocol 1, every feature off. `none`
+   * is a board older than the manifest (`404`), `spa` one whose fallback page
+   * answers `200` with HTML, `down` one whose manifest answers `503`.
+   */
+  compat?: 'protocol-2' | 'protocol-1' | 'none' | 'spa' | 'down';
+  /** Overrides on the manifest's `features`. */
+  features?: Record<string, unknown>;
+  /** Overrides on the manifest's `protocol`. */
+  protocol?: { current?: number; min_client?: number };
+  /** The device and tool routes answer as an old board's SPA does: `200`, HTML. */
+  noDeviceRoutes?: boolean;
 }
 
 interface Stub {
   readonly url: string;
+  /** Every request but the manifest's `GET`, which is counted in `compatAsked`. */
   readonly received: Received[];
+  compatAsked: number;
+  /** Read on every request, so a test can change the board between commands. */
+  readonly options: StubOptions;
   /** Signatures that verified, by route. */
   readonly verified: string[];
   publicKey: string | undefined;
@@ -110,6 +128,47 @@ function signed(publicKey: string, message: Buffer, signature: unknown): boolean
   );
 }
 
+/** The manifest, shaped as `server/src/services/developer-compat.ts` builds it. */
+function compatAnswer(res: ServerResponse, options: StubOptions): void {
+  const kind = options.compat ?? 'protocol-2';
+  if (kind === 'none') {
+    json(res, 404, error('not_found', 'not_found'));
+    return;
+  }
+  if (kind === 'spa') {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<!doctype html><title>Laika</title>');
+    return;
+  }
+  if (kind === 'down') {
+    json(res, 503, error('unavailable', 'unavailable'));
+    return;
+  }
+  const on = kind === 'protocol-2';
+  json(res, 200, {
+    server: { version: '0.1.0', build_commit: null },
+    protocol: { current: on ? 2 : 1, min_client: 1, ...options.protocol },
+    features: {
+      developer_access: 'classic',
+      device_pairing: on,
+      tool_setup_exchange: on,
+      client_reports: on,
+      project_setups: false,
+      ...options.features,
+    },
+    cli: {
+      min_protocol_for: {
+        device_pairing: 2,
+        tool_setup_exchange: 2,
+        client_reports: 2,
+        project_setups: 2,
+      },
+      source: { type: 'git', url: 'https://example.test/laika.git', commit: null, path: 'cli' },
+    },
+    release_notes: { ref: null, whats_new: [] },
+  });
+}
+
 async function startStub(options: StubOptions = {}): Promise<Stub> {
   const received: Received[] = [];
   const verified: string[] = [];
@@ -120,6 +179,8 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
   const stub: Stub = {
     url: '',
     received,
+    compatAsked: 0,
+    options,
     verified,
     publicKey: undefined,
     close: () =>
@@ -135,8 +196,21 @@ async function startStub(options: StubOptions = {}): Promise<Stub> {
     req.on('data', (chunk: Buffer) => (raw += chunk.toString('utf8')));
     req.on('end', () => {
       const path = req.url ?? '';
+      if (req.method === 'GET' && path === '/api/v1/developer/compatibility') {
+        stub.compatAsked += 1;
+        compatAnswer(res, options);
+        return;
+      }
       received.push({ method: req.method ?? '', path, auth: req.headers.authorization, body: raw });
       const body = (raw === '' ? {} : JSON.parse(raw)) as Record<string, unknown>;
+      if (
+        options.noDeviceRoutes === true &&
+        (path.startsWith('/api/v1/device-pairing/') || path.startsWith('/api/v1/tool-setup/'))
+      ) {
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.end('<!doctype html><title>Laika</title>');
+        return;
+      }
 
       if (path === '/api/v1/device-pairing/claim') {
         // The server's ClaimBody is strict: anything else in it is a 422.
@@ -341,6 +415,7 @@ void describe('laika device pair', () => {
 
     // The board verified two completes (one pending, one approved) — real signatures.
     assert.deepEqual(s.verified, ['complete', 'complete']);
+    assert.equal(s.compatAsked, 1, 'it did not ask the manifest first');
 
     const key = join(home, '.laika', 'device', 'key.pem');
     assert.equal(mode(key), 0o600);
@@ -438,6 +513,87 @@ void describe('laika device pair', () => {
     assert.equal(run.code, 1);
     assert.match(run.stderr, /already paired/);
     assert.equal(readFileSync(join(home, '.laika', 'device', 'key.pem'), 'utf8'), before);
+  });
+});
+
+/** A refusal that sent nothing but the manifest's GET and kept nothing. */
+function assertRefusedClean(run: Run, s: Stub, home: string, message: RegExp): void {
+  assert.equal(run.code, 1, run.stdout + run.stderr);
+  assert.match(run.stderr, message);
+  assert.deepEqual(s.received, [], 'it went past the manifest');
+  assert.deepEqual(files(home), [], 'a refused pairing left something behind');
+}
+
+void describe('laika device pair asks the manifest first (LAI-1064)', () => {
+  const pairOn = (home: string, s: Stub): Promise<Run> =>
+    laika(home, ['device', 'pair', '--board', s.url, '--code', 'ABCD']);
+
+  void test('a protocol-1 board (device_pairing false) is refused before any key is made', async () => {
+    const home = sandbox();
+    const s = await board({ compat: 'protocol-1' });
+    const run = await pairOn(home, s);
+    assertRefusedClean(
+      run,
+      s,
+      home,
+      /this board doesn't support device pairing yet — ask your admin to update the board/,
+    );
+    assert.equal(s.compatAsked, 1);
+  });
+
+  void test('a protocol-2 board with device_pairing turned off is refused the same way', async () => {
+    const home = sandbox();
+    const s = await board({ features: { device_pairing: false } });
+    assertRefusedClean(
+      await pairOn(home, s),
+      s,
+      home,
+      /doesn't support device pairing yet — ask your admin/,
+    );
+  });
+
+  void test('a board needing a newer protocol than this CLI says to update this CLI', async () => {
+    const home = sandbox();
+    const s = await board({ protocol: { current: 3, min_client: 3 } });
+    assertRefusedClean(
+      await pairOn(home, s),
+      s,
+      home,
+      /needs protocol 3 for device pairing and this CLI speaks 2 — run: laika update/,
+    );
+  });
+
+  void test('a manifest that answers 503 is refused, nothing sent, nothing kept', async () => {
+    const home = sandbox();
+    const s = await board({ compat: 'down' });
+    assertRefusedClean(
+      await pairOn(home, s),
+      s,
+      home,
+      /could not ask .* what it supports: the board answered 503/,
+    );
+  });
+
+  for (const compat of ['none', 'spa'] as const) {
+    void test(`no manifest (${compat}) and no device routes: the answer refuses, nothing kept`, async () => {
+      const home = sandbox();
+      const s = await board({ compat, noDeviceRoutes: true });
+      const run = await pairOn(home, s);
+      assert.equal(run.code, 1, run.stdout + run.stderr);
+      assert.match(
+        run.stderr,
+        /does not support device pairing yet \(it answered 200 without Laika's JSON\)/,
+      );
+      assert.deepEqual(files(home), [], 'an old board left a key or record behind');
+    });
+  }
+
+  void test('no manifest but the routes answer: the old fallback lets the answer decide', async () => {
+    const home = sandbox();
+    const s = await board({ compat: 'none' });
+    const run = await pairOn(home, s);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    assert.match(run.stdout, /Paired as Belka\./);
   });
 });
 
@@ -791,6 +947,98 @@ void describe('laika tool add', () => {
     assert.equal(run.code, 0, run.stdout + run.stderr);
     assert.match(run.stdout, /Dry run: nothing was redeemed/);
     assert.deepEqual(s.received, []);
+    assert.deepEqual(files(home), before);
+  });
+});
+
+void describe('laika tool add asks the manifest first (LAI-1064)', () => {
+  void test('a board that turns tool_setup_exchange off: refused, nothing redeemed, dry run too', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    const before = files(home);
+    s.received.length = 0;
+    s.options.compat = 'protocol-1';
+    for (const extra of [[], ['--dry-run']]) {
+      const run = await laika(home, ['tool', 'add', 'claude-code', '--exchange', 'EX1', ...extra]);
+      assert.equal(run.code, 1, run.stdout + run.stderr);
+      assert.match(
+        run.stderr,
+        /this board doesn't support tool setup yet — ask your admin to update the board/,
+      );
+      assert.match(run.stderr, /Nothing was redeemed or written\./);
+    }
+    assert.deepEqual(s.received, [], 'it redeemed on a board that said no');
+    assert.deepEqual(files(home), before, 'it wrote something');
+  });
+
+  void test('client_reports off: the tool is set up and no report is sent', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    s.options.features = { client_reports: false };
+    const run = await laika(home, [
+      'tool',
+      'add',
+      'claude-code',
+      '--exchange',
+      'EX1',
+      '--no-hooks',
+    ]);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    assert.ok(existsSync(join(home, '.laika', 'agents', 'claude-code.json')));
+    assert.ok(!s.received.some((r) => r.path.endsWith('/client-report')), 'it reported anyway');
+    assert.match(run.stdout, /the board does not take client reports yet; the setup stands/);
+  });
+
+  void test('client_reports on: the report says protocol 2', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    const run = await laika(home, [
+      'tool',
+      'add',
+      'claude-code',
+      '--exchange',
+      'EX1',
+      '--no-hooks',
+    ]);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    const report = s.received.find((r) => r.path === '/api/v1/agents/me/client-report');
+    assert.ok(report !== undefined, 'no client report was sent');
+    assert.equal((JSON.parse(report.body) as { protocol: number }).protocol, 2);
+  });
+
+  void test('no manifest: the old fallback redeems and reports, as before', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    s.options.compat = 'none';
+    const run = await laika(home, [
+      'tool',
+      'add',
+      'claude-code',
+      '--exchange',
+      'EX1',
+      '--no-hooks',
+    ]);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    assert.ok(
+      s.received.some((r) => r.path.endsWith('/client-report')),
+      'no report was tried',
+    );
+  });
+
+  void test('no manifest and no tool routes: the answer refuses and nothing is saved', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    const before = files(home);
+    s.options.compat = 'none';
+    s.options.noDeviceRoutes = true;
+    const run = await laika(home, ['tool', 'add', 'claude-code', '--exchange', 'EX1']);
+    assert.equal(run.code, 1, run.stdout + run.stderr);
+    assert.match(run.stderr, /without Laika's JSON/);
     assert.deepEqual(files(home), before);
   });
 });

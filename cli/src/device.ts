@@ -10,6 +10,8 @@ import { homedir, platform, release } from 'node:os';
 import { join } from 'node:path';
 
 import { isRecord, privateDir, readJson, writePrivate } from './agent-session.ts';
+import { fetchCompatibility } from './doctor.ts';
+import { PROTOCOL } from './protocol.ts';
 import { versionInfo } from './version.ts';
 
 /**
@@ -30,10 +32,21 @@ import { versionInfo } from './version.ts';
  * The code is on the command line. It is not a credential: single use, ten
  * minutes, and it grants nothing until a person approves the fingerprint.
  *
- * It does not ask `GET /developer/compatibility` first (plan §F.3 step 1):
- * that answer still says `device_pairing: false` on boards that serve it
- * (LAI-1062). An old board is told by its answer instead — no Laika JSON
- * means "does not support device pairing yet".
+ * ## The board's manifest decides first (plan §F.3 step 1, LAI-1064)
+ *
+ * Before any key is made, `featureGate` asks `GET /developer/compatibility`.
+ * A board that answers it is believed: `features.device_pairing` (or
+ * `tool_setup_exchange` for `laika tool add`) must be `true`, and this CLI's
+ * protocol must reach the board's `min_client` and the feature's
+ * `cli.min_protocol_for`, or the command stops with nothing sent and nothing
+ * written. Since LAI-1062 the flag is read off the routes the board mounts, so
+ * `true` means the routes are there.
+ *
+ * A board too old to have the manifest (`404`, or a `200` that is not Laika's
+ * JSON) is *Version unknown*, and the old fallback stands: the command goes on
+ * and the device route's own answer decides — no Laika JSON means "does not
+ * support device pairing yet", and nothing is kept. A board that does not
+ * answer, or is not set up, is refused before anything is made.
  */
 
 export interface DeviceIo {
@@ -194,6 +207,55 @@ export function commonRefusal(answer: Answer, origin: string): string | undefine
   return undefined;
 }
 
+/** A manifest feature a device command needs, and what a person calls it. */
+export type GatedFeature = 'device_pairing' | 'tool_setup_exchange';
+
+const FEATURE_WORDS: Readonly<Record<GatedFeature, string>> = {
+  device_pairing: 'device pairing',
+  tool_setup_exchange: 'tool setup',
+};
+
+export type Gate =
+  /** `features` is the manifest's, or `undefined` for a board too old to have one. */
+  | { readonly kind: 'go'; readonly features: Readonly<Record<string, unknown>> | undefined }
+  | { readonly kind: 'refused'; readonly message: string };
+
+/**
+ * Whether `origin` serves `feature`, from its compatibility manifest (see the
+ * header). Only a `GET`: it sends nothing of this machine's.
+ */
+export async function featureGate(
+  io: { readonly fetch: typeof fetch },
+  origin: string,
+  feature: GatedFeature,
+  protocol: number = PROTOCOL,
+): Promise<Gate> {
+  const words = FEATURE_WORDS[feature];
+  const result = await fetchCompatibility(origin, io.fetch);
+  if (result.kind === 'unsupported') return { kind: 'go', features: undefined };
+  if (result.kind === 'unreachable') {
+    return { kind: 'refused', message: `could not ask ${origin} what it supports: ${result.why}` };
+  }
+  if (result.kind === 'not_set_up') {
+    return { kind: 'refused', message: `${origin} has not been set up yet` };
+  }
+  const { body } = result;
+  if (body.features[feature] !== true) {
+    return {
+      kind: 'refused',
+      message: `this board doesn't support ${words} yet — ask your admin to update the board (${origin})`,
+    };
+  }
+  const need = Math.max(body.protocol.min_client, body.cli.min_protocol_for[feature] ?? 0);
+  if (protocol < need) {
+    return {
+      kind: 'refused',
+      message: `${origin} needs protocol ${String(need)} for ${words} and this CLI speaks ${String(protocol)} — run: laika update`,
+    };
+  }
+  return { kind: 'go', features: body.features };
+}
+
 /* -------------------------------------------------------------------------- */
 /* `laika device pair`                                                        */
 /* -------------------------------------------------------------------------- */
@@ -257,6 +319,12 @@ async function pair(argv: readonly string[], io: DeviceIo): Promise<number> {
         `${existing.display_name === undefined ? '' : ` as ${existing.display_name}`}.`,
     );
     io.err('  Nothing was changed. To pair it again, add --replace (the old key is kept).');
+    return 1;
+  }
+  // Asked before a key exists, so a refusal leaves nothing to clean up.
+  const gate = await featureGate(io, origin, 'device_pairing');
+  if (gate.kind === 'refused') {
+    io.err(`laika device pair: ${gate.message}. Nothing was changed.`);
     return 1;
   }
   // **Nothing in place changes until the board says paired** (review S2): the

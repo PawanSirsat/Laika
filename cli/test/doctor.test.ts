@@ -31,6 +31,7 @@ import {
   exitCode,
   updateStatus,
 } from '../src/doctor.ts';
+import { PROTOCOL } from '../src/protocol.ts';
 import { type GitRunner, type VersionInfo } from '../src/version.ts';
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -46,6 +47,11 @@ const gitAt =
     return '';
   };
 
+/**
+ * A board's compatibility answer. The default is a board with LAI-1062:
+ * protocol 2, `device_pairing`, `tool_setup_exchange` and `client_reports` on.
+ * `PROTOCOL_1_BOARD` is one from before it, every feature off.
+ */
 function compat(
   overrides: Partial<{
     commit: string | null;
@@ -59,15 +65,22 @@ function compat(
       version: '0.1.0',
       build_commit: overrides.commit === undefined ? COMMIT : overrides.commit,
     },
-    protocol: { current: overrides.current ?? 1, min_client: overrides.min ?? 1 },
+    protocol: { current: overrides.current ?? 2, min_client: overrides.min ?? 1 },
     features: {
       developer_access: 'classic',
-      device_pairing: false,
-      tool_setup_exchange: false,
+      device_pairing: true,
+      tool_setup_exchange: true,
+      client_reports: true,
+      project_setups: false,
       ...overrides.features,
     },
     cli: {
-      min_protocol_for: { device_pairing: 2, tool_setup_exchange: 2 },
+      min_protocol_for: {
+        device_pairing: 2,
+        tool_setup_exchange: 2,
+        client_reports: 2,
+        project_setups: 2,
+      },
       source: {
         url: 'https://github.com/PawanSirsat/Laika.git',
         commit: overrides.commit === undefined ? COMMIT : overrides.commit,
@@ -75,6 +88,11 @@ function compat(
     },
   };
 }
+
+const PROTOCOL_1_BOARD = compat({
+  current: 1,
+  features: { device_pairing: false, tool_setup_exchange: false, client_reports: false },
+});
 
 type Handler = (req: IncomingMessage, res: ServerResponse) => void;
 interface Seen {
@@ -186,7 +204,7 @@ void describe('laika doctor — never a secret, never a write', () => {
     const asJson = await run(['--json'], dir);
 
     assert.equal(text.code, 0, text.text);
-    assert.match(text.text, /OK\s+board\s+.*protocol 1/);
+    assert.match(text.text, /OK\s+board\s+.*protocol 2/);
     assert.match(text.text, /OK\s+update\s+Up to date: the board’s own commit/);
     assert.match(
       text.text,
@@ -282,11 +300,28 @@ void describe('laika doctor — the board', () => {
   });
 
   void test('a board needing a newer protocol is ACTION, exit 1', async () => {
-    const { url } = await board(modernBoard(compat({ current: 3, min: 2 })));
+    const { url } = await board(modernBoard(compat({ current: 3, min: 3 })));
     const { code, text } = await run(['--board', url], sandbox());
     assert.equal(code, 1, text);
-    assert.match(text, /ACTION\s+update\s+Update required: this board needs protocol 2 or later/);
+    assert.match(text, /ACTION\s+update\s+Update required: this board needs protocol 3 or later/);
   });
+
+  // LAI-1064: the board says protocol 2 with three features on since LAI-1062.
+  for (const [what, body] of [
+    ['a protocol-2 board with device_pairing, tool_setup_exchange, client_reports on', compat()],
+    ['a protocol-1 board with them off', PROTOCOL_1_BOARD],
+  ] as const) {
+    void test(`${what}: exit 0, no "Update required"`, async () => {
+      const { url } = await board(modernBoard(body));
+      const { code, text } = await run(['--board', url], sandbox(), {
+        version: { git: gitAt('1111111111111111111111111111111111111111') },
+      });
+      assert.equal(code, 0, text);
+      assert.doesNotMatch(text, /Update required/);
+      assert.match(text, new RegExp(`OK\\s+board\\s+.*protocol ${String(body.protocol.current)}`));
+      assert.match(text, /OK\s+update\s+Up to date: protocol 2 \(the board runs cea011d\)/);
+    });
+  }
 
   void test('with no board anywhere it says how to name one', async () => {
     const { code, text } = await run([], sandbox());
@@ -340,34 +375,49 @@ void describe('updateStatus (plan §H)', () => {
     );
   });
 
-  void test('an older protocol than the board’s current is "Update available"', () => {
-    const check = updateStatus(local('1111111'), compat({ current: 2 }));
-    assert.equal(check.status, 'info');
-    assert.match(check.detail, /^Update available: the board speaks protocol 2, this CLI 1/);
+  void test('this CLI speaks protocol 2: device pair, tool add and client reports (LAI-1064)', () => {
+    assert.equal(PROTOCOL, 2);
+    // With the default protocol — the constant — a protocol-2 board with the
+    // three features on requires nothing. At PROTOCOL = 1 this is ACTION.
+    const check = updateStatus(local('1111111'), compat());
+    assert.equal(check.status, 'ok', check.detail);
+    assert.doesNotMatch(check.detail, /Update required/);
   });
 
-  void test('a feature the board has on and this CLI cannot speak is "Update required for" it', () => {
-    const check = updateStatus(
-      local('1111111'),
-      compat({ current: 2, features: { device_pairing: true } }),
-    );
+  void test('an older protocol than the board’s current is "Update available"', () => {
+    const check = updateStatus(local('1111111'), compat({ current: 3 }));
+    assert.equal(check.status, 'info');
+    assert.match(check.detail, /^Update available: the board speaks protocol 3, this CLI 2/);
+  });
+
+  void test('a protocol-1 CLI against a protocol-2 board is "Update required for" each feature on', () => {
+    const check = updateStatus(local('1111111'), compat(), 1);
     assert.equal(check.status, 'action');
-    assert.match(check.detail, /^Update required for device_pairing/);
+    assert.match(
+      check.detail,
+      /^Update required for device_pairing, tool_setup_exchange, client_reports: the board has it on and this CLI speaks protocol 1/,
+    );
   });
 
   void test('a feature that is off never blocks', () => {
-    const check = updateStatus(local('1111111'), compat({ features: { device_pairing: false } }));
+    const check = updateStatus(local('1111111'), PROTOCOL_1_BOARD, 1);
     assert.equal(check.status, 'ok');
+  });
+
+  void test('a protocol-1 board is up to date for this CLI: it asks nothing protocol 2 adds', () => {
+    const check = updateStatus(local('1111111'), PROTOCOL_1_BOARD);
+    assert.equal(check.status, 'ok');
+    assert.equal(check.detail, 'Up to date: protocol 2 (the board runs cea011d)');
   });
 
   void test('same protocol, different commit: up to date, naming the board’s commit', () => {
     assert.equal(
       updateStatus(local('1111111'), compat()).detail,
-      'Up to date: protocol 1 (the board runs cea011d)',
+      'Up to date: protocol 2 (the board runs cea011d)',
     );
     assert.equal(
       updateStatus(local(null), compat({ commit: null })).detail,
-      'Up to date: protocol 1 (the board does not say which commit it runs)',
+      'Up to date: protocol 2 (the board does not say which commit it runs)',
     );
   });
 

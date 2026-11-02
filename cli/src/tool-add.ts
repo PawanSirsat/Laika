@@ -10,6 +10,7 @@ import { apply, prepare, rcFileFor } from './connect.ts';
 import {
   commonRefusal,
   type DeviceIo,
+  featureGate,
   postJson,
   readDevice,
   readDeviceKey,
@@ -48,6 +49,12 @@ import { versionInfo } from './version.ts';
  * - **Antigravity** takes a token only written into its own config, so it is
  *   refused **before** anything is redeemed; so is any tool with no CLI
  *   harness. A refused exchange mints nothing.
+ *
+ * Before redeeming — and in `--dry-run` too, which only reads — the paired
+ * board's manifest must say `tool_setup_exchange: true` (`featureGate` in
+ * `device.ts`, LAI-1064). The client report after setup is sent only when the
+ * manifest says `client_reports: true`, or when the board is too old to have a
+ * manifest and its answer decides, as before.
  */
 
 export interface ToolAddIo extends DeviceIo {
@@ -201,6 +208,12 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   const origin = paired.board;
   const hooks = plan.kind === 'full' && !noHooks;
 
+  const gate = await featureGate(io, origin, 'tool_setup_exchange');
+  if (gate.kind === 'refused') {
+    io.err(`laika tool add: ${gate.message}. Nothing was redeemed or written.`);
+    return 1;
+  }
+
   io.out(`${dryRun ? 'Would set up' : 'Setting up'} ${ADAPTERS[plan.harness].name} on ${origin}:`);
   for (const line of describe(plan, hooks)) io.out(line);
   if (dryRun) {
@@ -264,7 +277,11 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   }
 
   const hooksOn = installed.some((r) => r.status === 'installed' || r.status === 'unchanged');
-  await clientReport(io, redeemed.boardOrigin, redeemed.secret, hooksOn);
+  if (gate.features === undefined || gate.features.client_reports === true) {
+    await clientReport(io, redeemed.boardOrigin, redeemed.secret, hooksOn);
+  } else {
+    io.out('  · the board does not take client reports yet; the setup stands');
+  }
 
   io.out('');
   for (const line of nextSteps(target, hooksOn)) io.out(line);
