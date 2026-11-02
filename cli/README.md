@@ -100,6 +100,32 @@ backed up once (`.bak`, or `.laika-backup` for the rc file) before its first
 change. Every exported variable is visible to children of that shell, so
 isolation between tools is per file, not per process.
 
+## `laika project check` — is this repository's Laika block there? (LAI-1066)
+
+```
+laika project check [--project <slug>] [--dir <repo>] [--harness <tool>] [--label <name>] [--offline] [--json]
+```
+
+Reads the instructions files a tool uses (`CLAUDE.md`, `AGENTS.md`,
+`GEMINI.md`, `.cursor/rules/laika.mdc`, `.github/copilot-instructions.md`, …)
+and says whether the Laika block is there: the marked block
+(`<!-- laika:begin revision=N project=<slug> -->` … `<!-- laika:end -->`), or
+the older unmarked one, which counts as revision 1. **It never changes a
+file** — the Project setup prompt does that, with you watching.
+
+With a tool's own credential on this machine (`laika tool add` wrote it, or
+`LAIKA_AGENT_TOKEN`), it records what it found on the board, and Developer
+access → Project setup shows *Checked by laika project check on <device>*.
+What is sent is the summary only: found or not, the revision, the project and
+task-key prefix the block names, the file's path inside the repository, a
+SHA-256 of the remote URL and a label (`--label`, else the remote's name). **No
+file contents, no local path, and never your personal `LAIKA_TOKEN`.** With no
+credential, or `--offline`, it only prints.
+
+Exit codes: `0` current, `1` needs action (no block, an older revision, another
+project or prefix), `2` could not record (the board did not answer or refused),
+`64` usage.
+
 ## `laika version` — which CLI this is (LAI-1043)
 
 ```
