@@ -973,7 +973,13 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
     // field not known is left out, never sent empty. What was learned after a
     // key was first sent waits for the first heartbeat, which sends whatever
     // `reported` does not already hold.
-    state.self = { ...state.self, ...request.self };
+    state.self = {
+      ...(resumable === undefined ? {} : selfReportOf(path, resumable)),
+      ...request.self,
+    };
+    // `.self` takes precedence in selfReportOf, so it is rewritten to match:
+    // an old process's left there would outvote this start (LAI-1063).
+    writePrivate(selfPath(path), `${JSON.stringify(state.self)}\n`);
     state.start_body ??=
       resumable === undefined
         ? {
