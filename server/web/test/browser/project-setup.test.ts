@@ -458,9 +458,36 @@ void describe('Project setup, v3', () => {
 
   void test('the Overview’s Set up a project lands here', async () => {
     const world: World = { agents: [agentRow({ id: 'a1' })], puts: [] };
-    const h = await open('/developer', stub('v3', world));
+    // The Overview reads the Devices tab's `GET /devices` (LAI-1079): a1 on
+    // Belka with a live credential it has used, so its next step is a project.
+    const connected = {
+      ...agentRow({ id: 'a1' }),
+      tokens: [{ id: 't1', prefix: 'lai_abcd', expires_at: null, revoked_at: null }],
+    };
+    const device = {
+      id: 'd1',
+      display_name: 'Belka',
+      device_label: 'belka',
+      kind: 'local',
+      origin: 'paired',
+      status: 'active',
+      confirmed: true,
+      confirmed_at: 1,
+      paired_at: 1,
+      key_fingerprint: null,
+      last_seen_at: null,
+      active_count: 1,
+      revoked_count: 0,
+      agents: [connected],
+      created_at: 1,
+      revoked_at: null,
+    };
+    const h = await open(
+      '/developer',
+      stub('v3', world, { '/api/v1/devices': { data: [device] } }),
+    );
     try {
-      await h.page.getByRole('link', { name: 'Set up a project' }).click();
+      await h.page.getByRole('link', { name: 'Set up a project →', exact: true }).click();
       await h.page.locator('.dev-setup').waitFor({ timeout: 20_000 });
       assert.match(here(h.page), /tab=projects/);
     } finally {

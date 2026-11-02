@@ -1,0 +1,66 @@
+/*
+ * Developer access V3 → Overview (LAI-1079): the few things the design kit
+ * (`design.css`, LAI-1078) has no part for. Tokens only, and every rule under
+ * a `dx-overview…` class, so no other tab draws differently for it.
+ */
+
+/* The journey's head sits close over its rows, as the design's does. */
+.dx-overview-journey-head {
+  padding-bottom: var(--space-2);
+}
+
+.dx-overview-attention {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dx-overview-attention li + li {
+  margin-top: var(--space-1);
+}
+
+.dx-overview-attention a {
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.dx-overview-distinction-body {
+  margin: var(--space-2) 0 var(--space-4);
+  font-size: var(--text-small);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+}
+
+/* The full-width button is as wide as its card's padding box, not wider. */
+.dx-overview .dx-btn-full {
+  box-sizing: border-box;
+}
+
+.dx-overview-aside {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-muted);
+}
+
+.dx-overview-aside a {
+  color: var(--accent);
+}
+
+.dx-overview-setups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* The first row offers a new setup: its sentence wraps rather than trails off. */
+.dx-overview [data-setup='new'] .dx-record-sub {
+  white-space: normal;
+}
+
+@media (max-width: 600px) {
+  .dx-overview [data-setup='new'] .dx-record-end .dx-btn {
+    flex: 1;
+  }
+}
