@@ -1,11 +1,97 @@
 # cli/ — owned by **Builder-B**
 
 The `laika` CLI (`laika init`, `laika whoami`, `laika version`, `laika doctor`,
-`laika update`, `laika connect`, `laika activity`). Installed on PATH by
-`plugin/scripts/install.sh` from a Laika checkout.
+`laika update`, `laika device pair`, `laika tool add`, `laika connect`,
+`laika activity`). Installed on PATH by `plugin/scripts/install.sh` from a
+Laika checkout.
 
 If you need a change here, write a task file in `.tasks/backlog/` with
 `area: cli`.
+
+## A fresh install (LAI-1060)
+
+There is no `npx laika`: the package is private and unpublished
+(`cli/bin/laika`). The CLI ships as the board's own source, at the commit the
+board was built from (`GET /api/v1/developer/compatibility` → `cli.source`).
+The browser's **Add device** fills these in:
+
+```
+git clone <cli.source.url> ~/laika
+git -C ~/laika checkout --detach <cli.source.commit>
+~/laika/plugin/scripts/install.sh --no-credential
+laika device pair --board <board> --code <code>
+```
+
+`install.sh --no-credential` links `laika` and `laika-claude`, adds the PATH
+line once, and **asks for no token and writes none** — `~/.laika/env` is left
+exactly as it was. Then each tool gets its own credential with
+`laika tool add` (below). Without the flag, `install.sh` is the older path: it
+asks for your personal token and writes `~/.laika/env`, keeping any existing
+file as `env.bak-<seconds>` first. `laika connect` keeps the old file the same
+way (`env.bak-<ms>`) when it would change it.
+
+## `laika device pair` — this machine, proven by a key (LAI-1060)
+
+```
+laika device pair --board <url> --code <code> [--name <name>] [--cloud] [--replace]
+```
+
+The browser (Developer access → Add device) makes a one-time code and shows
+this command. Here:
+
+1. An Ed25519 key is made with `node:crypto`. The private half is written to
+   `~/.laika/device/key.pem` (0600, directory 0700) and **is never printed and
+   never sent**; `device.json` beside it holds the board, the device id once
+   paired, and the public key.
+2. The code is claimed with the public key. The **fingerprint is computed on
+   this machine** (sha256 of the public key, 16 hex) and printed; approve in
+   the browser only if it shows exactly that. If the board's own copy differs,
+   pairing stops here.
+3. Completion is asked every 2 s, signed `laika-pair-v1` over the request,
+   its nonce and the board's origin, until you approve, deny or the code
+   expires.
+
+`pairing_already_claimed` means someone else presented the code first:
+*Someone else claimed this code — deny the request in the browser and start
+again.* A board with no `LAIKA_PUBLIC_URL` cannot pair, and says so. A pairing
+that does not complete leaves nothing behind. An already-paired machine is
+refused unless `--replace`, which keeps the old key and record as
+`*.bak-<ms>`. `--name` and `--cloud` repeat what you chose in the browser and
+only point out a difference; the name and kind are the browser's.
+
+The code is on the command line. That is deliberate: it is single use, lives
+ten minutes, and grants nothing until a person approves the fingerprint. It is
+not a credential.
+
+## `laika tool add <tool>` — one tool's own credential (LAI-1060)
+
+```
+laika tool add <harness> --exchange <id> [--no-hooks] [--dry-run]
+```
+
+The browser (a device → Add tool) makes a ten-minute, single-use exchange
+and shows this command, with no secret in it. Here the device signs the
+board's challenge (`laika-tool-redeem-v1`) with its paired key, and the board
+mints the tool's token **in that answer**. It goes straight into
+`~/.laika/agents/<harness>.json` (0600) — never an argument, never printed,
+never a prompt or a repository — and **`~/.laika/env` is never written**. A
+file being replaced is kept once as `<harness>.json.bak`. A version report
+(`POST /agents/me/client-report`) follows, with the tool's own token.
+
+| Tool | What `tool add` does |
+| --- | --- |
+| Claude Code | credential; hooks (unless `--no-hooks`); `laika-claude` then uses this credential instead of your personal token — only because `tool add` wrote it (`"source": "tool-add"`), never for a file `laika agent login` wrote. Restart Claude Code with `laika-claude` |
+| Codex | credential; hooks; `[mcp_servers.laika]` in `~/.codex/config.toml` reading `LAIKA_AGENT_TOKEN_CODEX`, exported by one rc line from the credential file. An existing `[mcp_servers.laika]` is **kept** and the one-line edit printed. Trust the hooks in `/hooks` |
+| Omnigent | credential only: no hooks, no sessions. Its MCP sidecar is written by hand |
+| Cursor, Gemini CLI, VS Code | credential; MCP only, configured by hand (Documented-not-tested) |
+| Antigravity | **refused before redeeming**: its config takes only an inline token, and `tool add` never writes a token into a config. Set it up by hand |
+| anything else | refused before redeeming: no CLI harness, so "Set up by hand" |
+
+A refusal redeems nothing, so no token exists. Config files are merged
+conservatively: other MCP servers and hooks are never touched, and each file is
+backed up once (`.bak`, or `.laika-backup` for the rc file) before its first
+change. Every exported variable is visible to children of that shell, so
+isolation between tools is per file, not per process.
 
 ## `laika version` — which CLI this is (LAI-1043)
 
