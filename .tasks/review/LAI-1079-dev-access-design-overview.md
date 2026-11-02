@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p2
 depends-on: [LAI-1077, LAI-1078]
 discovered-from: LAI-1075
-status: in-progress
+status: review
 started: 2026-11-02T11:06:32+05:30
+finished: 2026-11-02T12:39:23+05:30
 ---
 
 ## Why
@@ -18,19 +19,19 @@ Overview is a stats card and a prose card.
 
 ## Acceptance criteria
 
-- [ ] Hero "Your next step", one state each from real data: no device; device
+- [x] Hero "Your next step", one state each from real data: no device; device
       with no tool; tool registered never seen; connected with no setup; all
       done. Attention (tools not connected, update required) as a note block.
-- [ ] "Your setup journey": three flow rows (done / active / pending), real
+- [x] "Your setup journey": three flow rows (done / active / pending), real
       one-line subs, Manage / Start / Open, chip "n of 3 complete".
-- [ ] Connection status: devices, tools, repositories set up — counts, names,
+- [x] Connection status: devices, tools, repositories set up — counts, names,
       chips.
-- [ ] "Access ≠ repository setup" card replaces "How this works", with a link
+- [x] "Access ≠ repository setup" card replaces "How this works", with a link
       to Advanced for scripts and the API.
-- [ ] Your repository setups: "Set up a new repository →", then one row per
+- [x] Your repository setups: "Set up a new repository →", then one row per
       recorded setup with its chip (Checked / Recorded by you).
-- [ ] Numbers agree with Devices and Tools (same reads). Live region kept.
-- [ ] Tests: each hero state, counts, links; both themes; 390px.
+- [x] Numbers agree with Devices and Tools (same reads). Live region kept.
+- [x] Tests: each hero state, counts, links; both themes; 390px.
 
 ## Notes
 
