@@ -92,3 +92,24 @@ the only way forward for it is to update the git checkout.
 - Belka load rule: one test file at a time, single worker; CI runs the gate.
 - A design-match redesign of the V3 screens follows; placements stay small
   and componentised so it can move them.
+
+## Review round 1 (2026-11-02) — fixed in the same PR
+
+- [x] **B1** A chip's next step comes only from the checks `readiness()`
+      requires (`READY_NEEDS`: credential installed, the tool's own request
+      with LAI-1088's rule, the helper's report, session hooks), proved
+      against `readiness()` itself — never *pair* on an imported device.
+      With presence off and every check passing, the code's reason stands
+      and nothing is said to be missing; the legend's Connected covers
+      presence off. Fixtures include imported Strelka.
+- [x] **N1** The CLI notice's command is pasteable: `--board` when
+      `laika update` would not find the board itself, `--allow-http` for
+      plain http off loopback.
+- [x] **N2** `--offline` runs get no notice and make no request.
+- [x] **N3** Add device on an installed helper: the pair command alone,
+      after a line pointing to the guide (with and without `laika update`).
+- [x] **N4** The after-update line says `laika update` sends the version
+      report (LAI-1085); the stale comment is gone.
+- [x] **N5** 390 px evidence opens at 390 px, drawer closed.
+- [x] Suggestion: the status chip is a button, announced with its
+      description.
