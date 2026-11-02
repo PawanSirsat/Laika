@@ -39,20 +39,20 @@ export interface AdvancedTabProps {
   readonly onNavigate: (to: string) => void;
 }
 
-const DEVICES_HREF = '/developer?tab=devices';
+const TOOLS_HREF = '/developer?tab=tools';
 
 /**
  * Developer access V3 → Advanced (LAI-1058, plan §B.6): the reader's own
  * **personal** credentials, for scripts, the REST API and automation.
  *
  * - **Personal only** (`?kind=personal`, LAI-1046). A coding tool's credential
- *   belongs to the tool on Devices; listing it here made it look like an
+ *   belongs to the tool on Tools; listing it here made it look like an
  *   anonymous token.
  * - **An expiry is chosen when creating**, 90 days by default; *Never* is still
  *   allowed (plan §L7) but is not the default.
  * - **A personal token a coding tool uses** is the pre-V3 way of connecting it.
  *   It is labelled *Personal (legacy)*, says how to move, and offers *Upgrade
- *   connection* — a link to Devices → Add a tool. Nothing is revoked by it: the
+ *   connection* — a link to Tools → Add a tool. Nothing is revoked by it: the
  *   old token keeps working until its owner revokes it here.
  * - **Revoke is under the row's `⋯`**, behind a confirmation, and a failure
  *   is shown whether or not the form is open.
@@ -176,7 +176,7 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
     void confirm({
       title: `Revoke “${token.name}”?`,
       body: legacy
-        ? 'A coding tool is using this token. It stops working immediately and cannot be restored. Connect the tool on Devices first if you still use it.'
+        ? 'A coding tool is using this token. It stops working immediately and cannot be restored. Connect the tool on Tools first if you still use it.'
         : 'Anything using it — a script, an automation, a call to the API — stops working immediately, and it cannot be restored. You can create a new one.',
       confirmLabel: 'Revoke credential',
       danger: true,
@@ -215,8 +215,8 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
           <p className="dev-advanced-intro">
             For scripts, the REST API and automation. A personal credential acts as you, with your
             permissions, so treat it like your password. Coding tools get their own credential on{' '}
-            <a href={DEVICES_HREF} onClick={go(DEVICES_HREF)}>
-              Devices
+            <a href={TOOLS_HREF} onClick={go(TOOLS_HREF)}>
+              Tools
             </a>{' '}
             instead — never a personal one.
           </p>
@@ -394,7 +394,7 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
               ? 'One of these is used by a coding tool.'
               : `${String(legacyCount)} of these are used by coding tools.`}
           </strong>{' '}
-          That is the old way to connect one, and it keeps working. Connecting the tool on Devices
+          That is the old way to connect one, and it keeps working. Connecting the tool on Tools
           gives it its own credential, limited to the projects you grant; then revoke the personal
           one here. Nothing is revoked for you.
         </p>
@@ -407,7 +407,7 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
       ) : tokens.length === 0 ? (
         <EmptyState
           headline="No personal credentials yet"
-          body="Create one for a script or a call to the API. To connect a coding tool, use Devices."
+          body="Create one for a script or a call to the API. To connect a coding tool, use Tools."
         />
       ) : (
         <ul className="tok-list">
@@ -534,8 +534,8 @@ function AdvancedRow({
 
       {legacy && state === 'active' && (
         <p className="dev-adv-legacy">
-          Used by {tool}. It keeps working; to give {tool} its own credential, connect it on
-          Devices, then revoke this one.{' '}
+          Used by {tool}. It keeps working; to give {tool} its own credential, connect it on Tools,
+          then revoke this one.{' '}
           <a
             href={href}
             aria-label={`Upgrade connection for ${token.name}`}

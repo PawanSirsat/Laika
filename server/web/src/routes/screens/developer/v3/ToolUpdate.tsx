@@ -10,9 +10,11 @@ import {
 } from 'react';
 import { getCompatibility } from '../../../../api/developer-updates.ts';
 import { timeLabel } from '../../../../api/time-label.ts';
-import { getAgentVerification } from '../../../../api/tool-setup.ts';
+import { getAgentVerification, type AgentVerification } from '../../../../api/tool-setup.ts';
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
 import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
+import { DesignChip } from './DesignChip.tsx';
+import { NoteBlock } from './NoteBlock.tsx';
 import {
   AFTER_UPDATE,
   ALLOW_HTTP_WHY,
@@ -38,16 +40,18 @@ import '../../connect/connect.css';
 import './update-status.css';
 
 /**
- * The update statuses on Developer access V3's Devices tab (LAI-1065, plan
- * LAI-1042 §H): one per tool row, a summary on each device card, and — for an
+ * The update statuses on Developer access V3's Devices and Tools tabs
+ * (LAI-1065, LAI-1080, plan LAI-1042 §H): a chip on each tool's row, the whole
+ * status in its details, a summary in each device's details, and — for an
  * org owner or admin, only when the data shows it — a note that the board is
  * behind. No tab of their own.
  *
  * One provider reads the board's compatibility answer once, and each listed
- * tool's version report from `GET /agents/:id/verification`. After *Copy
- * update command* the row polls its report, with backoff, until a new one
- * arrives, and the change is announced through the tab's throttled live
- * region.
+ * tool's `GET /agents/:id/verification` — **kept whole** (LAI-1080), so the
+ * same answer gives the tool's readiness on its row and in its details with
+ * no second request. After *Copy update command* the details poll the report,
+ * with backoff, until a new one arrives, and the change is announced through
+ * the tab's throttled live region.
  */
 
 const REAL_CLOCK: WatchClock = {
@@ -60,6 +64,8 @@ const REAL_CLOCK: WatchClock = {
 
 interface UpdatesValue {
   readonly manifest: Read<UpdateManifest>;
+  /** The tool's whole verification answer: its checks as well as its report. */
+  readonly verification: (agentId: string) => Read<AgentVerification>;
   readonly report: (agentId: string) => Read<ClientReport | null>;
   readonly status: (agentId: string) => UpdateStatus;
   readonly retry: (agentId: string) => void;
@@ -86,7 +92,7 @@ function aborted(cause: unknown): boolean {
 
 export function UpdatesProvider({ agentIds, origin, announce, children }: UpdatesProviderProps) {
   const [manifest, setManifest] = useState<Read<UpdateManifest>>(undefined);
-  const [reports, setReports] = useState<ReadonlyMap<string, Read<ClientReport | null>>>(new Map());
+  const [answers, setAnswers] = useState<ReadonlyMap<string, Read<AgentVerification>>>(new Map());
   const [watched, setWatched] = useState<ReadonlySet<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
   const asked = useRef(new Set<string>());
@@ -127,15 +133,15 @@ export function UpdatesProvider({ agentIds, origin, announce, children }: Update
     };
   }, [loadManifest]);
 
-  const put = useCallback((agentId: string, value: Read<ClientReport | null>): void => {
-    setReports((was) => new Map(was).set(agentId, value));
+  const put = useCallback((agentId: string, value: Read<AgentVerification>): void => {
+    setAnswers((was) => new Map(was).set(agentId, value));
   }, []);
 
-  const readReport = useCallback(
-    (agentId: string): Promise<Read<ClientReport | null>> =>
+  const readVerification = useCallback(
+    (agentId: string): Promise<Read<AgentVerification>> =>
       getAgentVerification(agentId).then(
-        (v) => v.client_report,
-        (): Read<ClientReport | null> => 'failed',
+        (v) => v,
+        (): Read<AgentVerification> => 'failed',
       ),
     [],
   );
@@ -143,13 +149,13 @@ export function UpdatesProvider({ agentIds, origin, announce, children }: Update
   const fetchReport = useCallback(
     (agentId: string): void => {
       put(agentId, undefined);
-      void readReport(agentId).then((value) => {
+      void readVerification(agentId).then((value) => {
         if (!live.current) return;
         put(agentId, value);
         setNow(Date.now());
       });
     },
-    [put, readReport],
+    [put, readVerification],
   );
 
   // Each listed tool's report, once; a tool that appears later is read when it does.
@@ -170,19 +176,20 @@ export function UpdatesProvider({ agentIds, origin, announce, children }: Update
     [fetchReport, loadManifest],
   );
 
-  const reportsRef = useRef(reports);
-  reportsRef.current = reports;
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
 
   const watch = useCallback(
     (agentId: string, label: string): void => {
       if (watches.current.has(agentId)) return;
-      const was = reportsRef.current.get(agentId);
-      const before = was === undefined || was === 'failed' ? undefined : reportKey(was);
+      const was = answersRef.current.get(agentId);
+      const before =
+        was === undefined || was === 'failed' ? undefined : reportKey(was.client_report);
       setWatched((set) => new Set(set).add(agentId));
-      const w = watchForReport<ClientReport | null>(
+      const w = watchForReport<AgentVerification>(
         () =>
-          readReport(agentId).then((value) =>
-            value !== 'failed' && value !== undefined && reportKey(value) !== before
+          readVerification(agentId).then((value) =>
+            value !== 'failed' && value !== undefined && reportKey(value.client_report) !== before
               ? value
               : undefined,
           ),
@@ -198,33 +205,71 @@ export function UpdatesProvider({ agentIds, origin, announce, children }: Update
           if (found === undefined) return;
           put(agentId, found);
           setNow(Date.now());
-          announce(updateAnnouncement(label, updateStatus(manifestRef.current, found)));
+          announce(
+            updateAnnouncement(label, updateStatus(manifestRef.current, found.client_report)),
+          );
         },
       );
       watches.current.set(agentId, w);
     },
-    [announce, put, readReport],
+    [announce, put, readVerification],
   );
 
-  const value = useMemo<UpdatesValue>(
-    () => ({
+  const value = useMemo<UpdatesValue>(() => {
+    const report = (agentId: string): Read<ClientReport | null> => {
+      const answer = answers.get(agentId);
+      return answer === undefined || answer === 'failed' ? answer : answer.client_report;
+    };
+    return {
       manifest,
-      report: (agentId) => reports.get(agentId),
-      status: (agentId) => updateStatus(manifest, reports.get(agentId)),
+      verification: (agentId) => answers.get(agentId),
+      report,
+      status: (agentId) => updateStatus(manifest, report(agentId)),
       retry,
       watch,
       watching: (agentId) => watched.has(agentId),
       origin,
       now,
-    }),
-    [manifest, reports, retry, watch, watched, origin, now],
-  );
+    };
+  }, [manifest, answers, retry, watch, watched, origin, now]);
 
   return <UpdatesContext.Provider value={value}>{children}</UpdatesContext.Provider>;
 }
 
 function useUpdates(): UpdatesValue | undefined {
   return useContext(UpdatesContext);
+}
+
+/**
+ * A tool's verification as the provider read it — `undefined` while it is
+ * being read, when it failed, or outside a provider. What its readiness is
+ * worked out from (`listedStatus`), on its row and in its details alike.
+ */
+export function useVerification(agentId: string): AgentVerification | undefined {
+  const answer = useUpdates()?.verification(agentId);
+  return answer === 'failed' ? undefined : answer;
+}
+
+/** A tool's helper update status, outside a provider `undefined`. */
+export function useUpdateStatus(agentId: string): UpdateStatus | undefined {
+  return useUpdates()?.status(agentId);
+}
+
+/**
+ * The small chip on a tool's row (LAI-1080): only when there is something to
+ * update to — *Update available*, or *Update required*. The whole status, its
+ * reason and the command are in the tool's details.
+ */
+export function UpdateChip({ status }: { readonly status: UpdateStatus | undefined }) {
+  if (status === undefined || !offersUpdate(status.key)) return null;
+  const required = status.key === 'required';
+  return (
+    <span data-update-chip={status.key}>
+      <DesignChip tone={required ? 'danger' : 'accent'}>
+        {required ? 'Update required' : 'Update available'}
+      </DesignChip>
+    </span>
+  );
 }
 
 // ------------------------------------------------------------------ one tool
@@ -236,7 +281,7 @@ export interface ToolUpdateProps {
 }
 
 /**
- * A tool row's update status: *Helper* and the status word with its reason,
+ * A tool's update status, in its details: *Helper* and the status word with its reason,
  * what the helper reported, and — when there is something to update to — the
  * command, *What's new*, and what to do after.
  */
@@ -350,7 +395,7 @@ function ReportFacts({ report, now }: { readonly report: ClientReport; readonly 
 
 // ------------------------------------------------------------------ one device
 
-/** A device card's line: its tools' update statuses, worst first. */
+/** A device's line, in its details: its tools' update statuses, worst first. */
 export function DeviceUpdate({ agentIds }: { readonly agentIds: readonly string[] }) {
   const updates = useUpdates();
   if (updates === undefined) return null;
@@ -382,8 +427,10 @@ export function BoardUpdateNote({
   );
   if (note === undefined) return null;
   return (
-    <p className="dv3-note dv3-board-update" role="note" data-board-update>
-      {note}
-    </p>
+    <div role="note" data-board-update>
+      <NoteBlock tone="accent" title="Board update">
+        <p>{note}</p>
+      </NoteBlock>
+    </div>
   );
 }

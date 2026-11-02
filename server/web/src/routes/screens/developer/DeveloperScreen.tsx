@@ -11,7 +11,7 @@ import { TokensScreen } from '../tokens/TokensScreen.tsx';
 import { AgentsTab } from './AgentsTab.tsx';
 import { ProjectsTab } from './ProjectsTab.tsx';
 import { AdvancedTab } from './v3/AdvancedTab.tsx';
-import { DevicesTab } from './v3/DevicesTab.tsx';
+import { DeviceRoster } from './v3/DeviceRoster.tsx';
 import { OverviewTab } from './v3/OverviewTab.tsx';
 import { ProjectSetupTab } from './v3/ProjectSetupTab.tsx';
 import './developer.css';
@@ -67,14 +67,16 @@ export interface DeveloperScreenProps {
  * - **`preview`** keeps it, Connect still the default, and adds Overview,
  *   Devices and Advanced after the classic tabs, each marked *Preview*, with
  *   a banner on Connect pointing at them and one on each saying it is one.
- * - **`v3`** is Overview · Project setup · Devices · Advanced, Overview
- *   first, in the owner's design (LAI-1078). The old tab ids are aliases
- *   (`developerAlias`), applied before this renders; *Activity* is the second
- *   card on Advanced, and `?section=activity` scrolls to it.
+ * - **`v3`** is Overview · Project setup · Devices · Tools · Advanced,
+ *   Overview first, in the owner's design (LAI-1078, LAI-1080). The old tab
+ *   ids are aliases (`developerAlias`), applied before this renders;
+ *   *Activity* is the second card on Advanced, and `?section=activity`
+ *   scrolls to it.
  *
  * `projects` and `activity` are one id in every mode, so they render the same
  * content everywhere: Project setup re-hosts Projects, Activity moves as is.
- * Devices re-hosts Agents — its redesign is slices D3 and D4. Advanced is
+ * Devices and Tools re-host Agents, one read for both (`DeviceRoster`),
+ * each row one line with its details in a side panel (LAI-1080). Advanced is
  * the reader's personal credentials only (LAI-1058, `v3/AdvancedTab.tsx`);
  * in `v3` Activity says *Once per device* and points at Project setup, its
  * rules, scope and history unchanged.
@@ -169,8 +171,9 @@ export function DeveloperScreen({
           {...(preview ? { projectsHref: PREVIEW_SETUP_HREF } : {})}
         />
       )}
-      {current === 'devices' && (
-        <DevicesTab
+      {(current === 'devices' || current === 'tools') && (
+        <DeviceRoster
+          tab={current}
           me={me}
           origin={origin}
           params={params}

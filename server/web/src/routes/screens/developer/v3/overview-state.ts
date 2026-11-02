@@ -84,7 +84,7 @@ export function activeTools(devices: readonly AgentDevice[]): RegisteredAgent[] 
 
 export const OVERVIEW_ADDRESSES = {
   addDevice: '/developer?tab=devices&add=device',
-  addTool: '/developer?tab=devices&add=tool',
+  addTool: '/developer?tab=tools&add=tool',
   projects: '/developer?tab=projects',
   devices: '/developer?tab=devices',
 } as const;
