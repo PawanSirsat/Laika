@@ -7,7 +7,8 @@ priority: p2
 depends-on: [LAI-1062, LAI-1064]
 discovered-from: LAI-1064
 started: 2026-11-02T01:38:47Z
-status: in-progress
+finished: 2026-11-02T01:46:02Z
+status: review
 ---
 
 LAI-1062 moved `server/src/services/developer-compat.ts`'s `PROTOCOL.current`
@@ -19,17 +20,17 @@ checkout. The next bump will leave the CLI behind silently again.
 
 ## Acceptance
 
-- [ ] A test in `cli/test/` imports the server's `developer-compat.ts` by
+- [x] A test in `cli/test/` imports the server's `developer-compat.ts` by
       path (as `device-pair-tool-add.test.ts` already imports
       `server/src/auth/device-signature.ts`) and asserts the CLI's `PROTOCOL`
       equals the server's `PROTOCOL.current` — values from both sides, never a
       literal number.
-- [ ] It also asserts the import is the real module (e.g. `PROTOCOL.current`
+- [x] It also asserts the import is the real module (e.g. `PROTOCOL.current`
       is a number and `compatibility` is a function), so a wrong path cannot
       pass it.
-- [ ] Mutation: bump either side alone and that test goes red; restore and
+- [x] Mutation: bump either side alone and that test goes red; restore and
       it is green.
-- [ ] cli typecheck, eslint and prettier exit 0; PR into `master`, CI green.
+- [x] cli typecheck, eslint and prettier exit 0; PR into `master`, CI green.
 
 ## Notes
 
@@ -37,3 +38,7 @@ checkout. The next bump will leave the CLI behind silently again.
   together, #216 + #219); before that the two numbers disagree on `master`.
 - `cli/`'s tsconfig stops at its own root, so the import is a dynamic
   `import(pathToFileURL(...))`, typed by a local interface.
+
+## Notes (SHELL, at review)
+
+- Shipped as one batched PR with LAI-1068 (CLAUDE.md §4 batching), branch `LAI-1068-update-client-report`.
