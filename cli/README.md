@@ -268,10 +268,15 @@ board …`, `· version report skipped: …`).
 
 **What it passed over is said.** Whenever it looked for credentials, one more
 line names every other `~/.laika/agents/*.json` and why, by file name only:
-`Passed over in ~/.laika/agents: codex.json (another board), polly.json (not a
-tool laika knows).` A file that is not named for a tool — Omnigent · Belka's
-manager credential is `polly.json` (LAI-589) — is listed, not opened. The other
-reasons are `no saved URL and token` and `its board URL cannot be used`.
+`Passed over in ~/.laika/agents: codex.json (another board), polly.json (the
+same credential as omnigent.json).` A file not named for a tool — Omnigent ·
+Belka's manager credential is `polly.json` (LAI-589) — is never reported with.
+Its token is read only to compare it, never sent or printed: `laika tool add`
+keeps such a file holding the tool's own token (LAI-1088), and then it is `the
+same credential as <tool>.json`, whose report is its agent's; otherwise it is
+`not a tool laika knows`, as is a symlink, which is never read. The other
+reasons are `another board`, `no saved URL and token` and `its board URL
+cannot be used`.
 
 A report that fails is a line, never a different exit code. `--check` and
 `--dry-run` never send one.

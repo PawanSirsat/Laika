@@ -25,6 +25,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -1488,6 +1489,43 @@ void describe('laika update on a checkout already at the board’s commit (LAI-1
       ),
     );
     assert.doesNotMatch(r.out, /bak-2026|other\.invalid|user:pw/);
+  });
+
+  // LAI-1089 on LAI-1088: `laika tool add --harness omnigent` keeps polly.json
+  // holding the same token as omnigent.json, so that report is its agent's.
+  void test('a manager file holding a tool’s own credential says so, and is not sent twice', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    const agents = join(w.home, '.laika', 'agents');
+    credential(w, 'omnigent', url, POLLY_TOKEN);
+    writeFileSync(
+      join(agents, 'polly.json'),
+      `${JSON.stringify({ url, token: POLLY_TOKEN, agent_id: 'p1' })}\n`,
+      { mode: 0o600 },
+    );
+    // A symlink is never read (LAI-1088's rule), even to the very same credential.
+    symlinkSync(join(agents, 'claude-code.json'), join(agents, 'link.json'));
+    const posted: string[] = [];
+
+    const r = await run(w, ['--board', url], { fetch: recording(posted) });
+    assert.equal(r.code, 0, r.err);
+    const endpoint = `${url}/api/v1/agents/me/client-report`;
+    assert.deepEqual(posted, [endpoint, endpoint], 'polly.json was sent as well as omnigent.json');
+    assert.deepEqual(
+      reports.map((report) => [report.auth, report.body.harness]).sort(),
+      [
+        [`Bearer ${AGENT_TOKEN}`, 'claude-code'],
+        [`Bearer ${POLLY_TOKEN}`, 'omnigent'],
+      ].sort(),
+    );
+    assert.match(
+      r.out,
+      new RegExp(
+        `\\nVersion report for ${c.slice(0, 7)}: sent for Claude Code, Omnigent\\.\\nPassed over in ~/\\.laika/agents: link\\.json \\(not a tool laika knows\\), polly\\.json \\(the same credential as omnigent\\.json\\)\\.$`,
+      ),
+    );
   });
 
   // LAI-1089: compare hosts only, or the raw strings, and one of these goes red.

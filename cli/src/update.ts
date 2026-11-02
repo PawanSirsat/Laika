@@ -4,6 +4,7 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -18,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 import { ADAPTERS, HARNESSES, HOOK_HARNESSES, type Harness, isHarness } from './agent-adapters.ts';
 import { AGENT_MARKER, hookFile } from './agent-hooks.ts';
-import { agentsDir, credentialPath, isRecord, readCredential } from './agent-session.ts';
+import { agentsDir, credentialPath, isRecord, readCredential, readJson } from './agent-session.ts';
 import { codexLaikaLines, USER_CONFIG } from './agents.ts';
 import { normaliseUrl } from './api.ts';
 import { type Helper, reportOutcome, sendClientReport } from './client-report.ts';
@@ -1275,9 +1276,29 @@ interface Credentials {
 }
 
 /**
+ * The token in a credential file not named for a tool, read only to compare
+ * it: a plain file directly in the directory, never a symlink (LAI-1088's
+ * rule). Never sent, never printed.
+ */
+function tokenIn(path: string): string | undefined {
+  try {
+    if (!lstatSync(path).isFile()) return undefined;
+  } catch {
+    return undefined;
+  }
+  const saved = readJson(path);
+  return isRecord(saved) && typeof saved.token === 'string' && saved.token !== ''
+    ? saved.token
+    : undefined;
+}
+
+/**
  * Each installed tool credential whose board is this one, and each other
  * credential file with why it was passed over (LAI-1089). A file not named
- * for a tool (`polly.json`, LAI-589) is **not opened**: it is listed by name.
+ * for a tool — a manager's own, `polly.json` (LAI-589) — is never reported
+ * with; `laika tool add` keeps it holding the same token as the tool's own
+ * file (LAI-1088), and when it does, the line says so, because that tool's
+ * report is its agent's.
  */
 function credentialsFor(home: string, board: string): Credentials {
   const origin = boardOriginOf(board);
@@ -1301,10 +1322,13 @@ function credentialsFor(home: string, board: string): Credentials {
   } catch {
     // No credentials directory: nothing set up, nothing passed over.
   }
+  const reported = new Map(tools.map((tool) => [tool.token, `${tool.harness}.json`]));
   for (const name of names) {
-    if (name.endsWith('.json') && !isHarness(name.slice(0, -'.json'.length))) {
-      passed.push(`${name} (not a tool laika knows)`);
-    }
+    if (!name.endsWith('.json') || isHarness(name.slice(0, -'.json'.length))) continue;
+    const same = reported.get(tokenIn(join(agentsDir(home), name)) ?? '');
+    passed.push(
+      `${name} (${same === undefined ? 'not a tool laika knows' : `the same credential as ${same}`})`,
+    );
   }
   return { tools, passed: passed.sort() };
 }
