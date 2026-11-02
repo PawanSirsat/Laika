@@ -69,3 +69,15 @@ Found live on Belka (owner, 2026-11-02), all in `laika update`:
   merge master if it lands first.
 - Belka load rule: one test file at a time, one worker, no full suite
   locally; CI runs the gate.
+
+## Deviation from the criteria as filed
+
+The third criterion says a file whose name is no tool's is **not opened**. That
+held until LAI-1088 merged mid-task (`a87bfafb`): `laika tool add` now keeps
+`polly.json` holding the same token as `omnigent.json`, and the manager asked
+for the line to say what is true on top of that. So such a file is now **read
+once, only to compare its token** with the tools reported for: it reads `the
+same credential as omnigent.json` when they match, `not a tool laika knows`
+otherwise. The token is never sent and never printed, a symlink is never read
+(LAI-1088's rule), and how `polly.json` is written does not change. Flagged for
+review rather than ticked silently.
