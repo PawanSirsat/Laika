@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p2
 depends-on: [LAI-1082]
 discovered-from: LAI-1082
-status: in-progress
+status: review
 started: 2026-11-02T17:25:32+05:30
+finished: 2026-11-02T17:31:50+05:30
 ---
 
 ## Why
@@ -31,14 +32,14 @@ pickers side by side.
 
 ## Acceptance criteria
 
-- [ ] At 1440 × 900 on step 1, each of the three step names in the rail is
+- [x] At 1440 × 900 on step 1, each of the three step names in the rail is
       one line: its height is one line box.
-- [ ] The aside is still beside the step at 1440 px and gone at 1040 px (the
+- [x] The aside is still beside the step at 1440 px and gone at 1040 px (the
       existing browser test stays green unchanged).
-- [ ] The Add device and Add tool wizards, which pass no aside, are unchanged.
-- [ ] The rail is still a strip of three under 53rem, and both themes draw it
+- [x] The Add device and Add tool wizards, which pass no aside, are unchanged.
+- [x] The rail is still a strip of three under 53rem, and both themes draw it
       in tokens only, none new.
-- [ ] A browser test pins the one-line names at 1440 px.
+- [x] A browser test pins the one-line names at 1440 px.
 
 ## Notes / context
 
