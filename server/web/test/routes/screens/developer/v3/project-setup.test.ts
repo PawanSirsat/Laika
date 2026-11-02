@@ -3,11 +3,15 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import type { RegisteredAgent } from '../../../../../src/api/agents.ts';
 import type { ProjectAccess } from '../../../../../src/api/project-access.ts';
 import type { ProjectSetup } from '../../../../../src/api/project-setups.ts';
 import {
+  CLI_HARNESS,
+  cliMatchHint,
   connectedTools,
   currentChoice,
   doneSummary,
@@ -247,8 +251,88 @@ void describe('what the records say (LAI-1066)', () => {
     );
   });
 
-  void test('the command to run names the project', () => {
-    assert.equal(projectCheckCommand('onroute'), 'laika project check --project onroute');
+  void test('the command to run names the project and the tool picked in step 1 (LAI-1084)', () => {
+    assert.equal(
+      projectCheckCommand('onroute', 'claude-code'),
+      'laika project check --project onroute --harness claude-code',
+    );
+    assert.equal(
+      projectCheckCommand('onroute', 'codex'),
+      'laika project check --project onroute --harness codex',
+    );
+    // The board's `vscode` is the CLI's Copilot in VS Code.
+    assert.equal(
+      projectCheckCommand('onroute', 'vscode'),
+      'laika project check --project onroute --harness copilot-vscode',
+    );
+  });
+
+  void test('a tool the CLI cannot name for certain gets no --harness rather than a wrong one', () => {
+    // `other` is both Copilot CLI and Copilot cloud; Claude Desktop has no adapter.
+    assert.equal(projectCheckCommand('onroute', 'other'), 'laika project check --project onroute');
+    assert.equal(
+      projectCheckCommand('onroute', 'claude-desktop'),
+      'laika project check --project onroute',
+    );
+  });
+
+  void test('CLI_HARNESS is the CLI’s ADAPTERS read backwards, and shell-safe', () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('../../../../../../../cli/src/agent-adapters.ts', import.meta.url)),
+      'utf8',
+    );
+    const start = source.indexOf('export const ADAPTERS');
+    const adapters = source.slice(start, source.indexOf('\n};', start));
+    const pairs = [
+      ...adapters.matchAll(/harness: '([a-z0-9-]+)'[\s\S]*?agentHarness: '([a-z0-9-]+)'/g),
+    ].map((m) => [m[1] ?? '', m[2] ?? ''] as const);
+    assert.ok(pairs.length >= 8, `parsed ${String(pairs.length)} adapters`);
+    assert.ok(
+      pairs.some(([h, slug]) => h === 'claude-code' && slug === 'claude-code'),
+      'the list did not parse',
+    );
+
+    // Every slug exactly one adapter registers under, and no other.
+    const bySlug = new Map<string, string[]>();
+    for (const [harness, slug] of pairs) bySlug.set(slug, [...(bySlug.get(slug) ?? []), harness]);
+    const expected = Object.fromEntries(
+      [...bySlug].filter(([, hs]) => hs.length === 1).map(([slug, hs]) => [slug, hs[0]]),
+    );
+    assert.deepEqual({ ...CLI_HARNESS }, expected);
+    for (const harness of Object.values(CLI_HARNESS)) {
+      assert.match(harness ?? '', /^[a-z][a-z0-9-]*$/);
+    }
+  });
+});
+
+void describe('the hint for a CLI older than the board (LAI-1084)', () => {
+  const COMMIT = '0123456789abcdef0123456789abcdef01234567';
+
+  void test('names the board’s helper commit as laika version prints one: seven characters', () => {
+    const hint = cliMatchHint({ url: 'https://github.com/PawanSirsat/Laika.git', commit: COMMIT });
+    assert.equal(hint.commit, '0123456');
+  });
+
+  void test('a board that does not say its commit, or did not answer, names none', () => {
+    const url = 'https://github.com/PawanSirsat/Laika.git';
+    assert.equal(cliMatchHint({ url, commit: null }).commit, null);
+    assert.equal(cliMatchHint(undefined).commit, null);
+  });
+
+  void test('the way forward works on a CLI with no laika update: the checkout itself', () => {
+    const hint = cliMatchHint(undefined);
+    assert.equal(hint.version, 'laika version');
+    // Where the machine prompt clones it (PLUGIN_HOME).
+    assert.equal(hint.pull, 'git -C ~/laika pull --ff-only');
+    assert.equal(hint.home, '~/laika');
+    assert.equal(hint.update, 'laika update');
+  });
+
+  void test('every command in it pastes as it stands: no <placeholder> a shell reads as a redirect', () => {
+    const hint = cliMatchHint(undefined);
+    for (const command of [hint.version, hint.pull, hint.update]) {
+      assert.doesNotMatch(command, /[<>|;&$`]/, command);
+    }
   });
 });
 
