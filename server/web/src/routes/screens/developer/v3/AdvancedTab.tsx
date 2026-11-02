@@ -17,6 +17,7 @@ import { asAgentClient, AGENT_CLIENT_NAMES } from '../../../../api/agent-clients
 import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
 import { useConfirm } from '../../../../components/ConfirmProvider.tsx';
 import { CopyButton } from '../../../../components/CopyButton.tsx';
+import { Dropdown } from '../../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../../components/LoadingState.tsx';
 import { Spinner } from '../../../../components/Spinner.tsx';
@@ -328,28 +329,30 @@ export function AdvancedTab({ me, onNavigate }: AdvancedTabProps) {
             )}
           </div>
 
-          <label className="tok-field">
-            <span className="tok-label">Expires</span>
-            <select
-              className="tok-input dev-adv-expiry"
-              value={expiry}
-              aria-describedby={`${formId}-expiry-hint`}
-              onChange={(event) => {
-                setExpiry(event.target.value);
-              }}
-            >
-              {EXPIRY_CHOICES.map((choice) => (
-                <option key={choice.id} value={choice.id}>
-                  {choice.label}
-                </option>
-              ))}
-            </select>
+          <div className="tok-field">
+            <span className="tok-label" id={`${formId}-expiry-label`}>
+              Expires
+            </span>
+            {/* The shared select-only combobox: no native <select> (LAI-726). */}
+            <div className="dev-adv-expiry">
+              <Dropdown
+                value={expiry}
+                options={EXPIRY_CHOICES.map((choice) => ({
+                  value: choice.id,
+                  label: choice.label,
+                }))}
+                onChange={setExpiry}
+                aria-labelledby={`${formId}-expiry-label`}
+                aria-describedby={`${formId}-expiry-hint`}
+                noun="Expiry"
+              />
+            </div>
             <span className="tok-hint" id={`${formId}-expiry-hint`}>
               {expiry === 'never'
                 ? 'It works until you revoke it. A credential that never expires is the one most often forgotten.'
                 : 'After that it stops working by itself. You can revoke it sooner.'}
             </span>
-          </label>
+          </div>
 
           {mintError !== undefined && (
             <p className="tok-error" role="alert">

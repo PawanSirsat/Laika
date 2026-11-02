@@ -239,14 +239,13 @@ void describe('creating a credential', () => {
       await name.waitFor({ timeout: 10_000 });
       assert.equal(await name.evaluate((el) => el === document.activeElement), true);
       const expiry = h.page.getByRole('combobox', { name: 'Expires' });
-      assert.equal(await expiry.inputValue(), '90');
-      assert.deepEqual(await expiry.locator('option').allInnerTexts(), [
-        '30 days',
-        '90 days',
-        '180 days',
-        '1 year',
-        'Never',
-      ]);
+      assert.match(await expiry.innerText(), /90 days/);
+      await expiry.click();
+      assert.deepEqual(
+        (await h.page.getByRole('option').allInnerTexts()).map((t) => t.trim()),
+        ['30 days', '90 days', '180 days', '1 year', 'Never'],
+      );
+      await h.page.keyboard.press('Escape');
       await name.fill('new-one');
       const before = Date.now();
       await h.page.getByRole('button', { name: 'Create credential' }).click();
@@ -276,7 +275,8 @@ void describe('creating a credential', () => {
     try {
       await h.page.getByRole('button', { name: '+ New personal credential' }).click();
       await h.page.getByRole('textbox', { name: 'Name' }).fill('forever');
-      await h.page.getByRole('combobox', { name: 'Expires' }).selectOption('never');
+      await h.page.getByRole('combobox', { name: 'Expires' }).click();
+      await h.page.getByRole('option', { name: 'Never' }).click();
       assert.match(await h.page.locator('.tok-form').innerText(), /works until you revoke it/);
       await h.page.getByRole('button', { name: 'Create credential' }).click();
       await h.page.locator('.tok-secret').waitFor({ timeout: 10_000 });
