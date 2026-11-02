@@ -52,11 +52,12 @@ function place(anchor: DOMRect, tip: DOMRect, width: number, height: number): Pl
 }
 
 /**
- * A status chip that explains itself: focusable, described by its row's
- * reason (`aria-describedby`), and showing it as a tooltip on hover **and**
- * on focus. Escape hides the tooltip without moving focus or closing what
- * the chip sits in; scrolling hides it too, since it would no longer sit
- * under its chip.
+ * A status chip that explains itself: a button (review round 1 — a screen
+ * reader announces a button's name and its description; a focusable span has
+ * neither), described by its row's reason (`aria-describedby`), and showing
+ * it as a tooltip on hover **and** on focus. Escape hides the tooltip without
+ * moving focus or closing what the chip sits in; Enter or a click shows it
+ * again. Scrolling hides it too, since it would no longer sit under its chip.
  */
 export function HintChip({ word, tone, description }: HintChipProps) {
   const id = useId();
@@ -64,7 +65,7 @@ export function HintChip({ word, tone, description }: HintChipProps) {
   const [focus, setFocus] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [at, setAt] = useState<Place | undefined>(undefined);
-  const anchor = useRef<HTMLSpanElement | null>(null);
+  const anchor = useRef<HTMLButtonElement | null>(null);
   const tip = useRef<HTMLSpanElement | null>(null);
   const open = (hover || focus) && !hidden;
 
@@ -88,7 +89,7 @@ export function HintChip({ word, tone, description }: HintChipProps) {
     };
   }, [open]);
 
-  const onKeyDown = (event: KeyboardEvent<HTMLSpanElement>): void => {
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>): void => {
     if (event.key !== 'Escape' || !open) return;
     // The tooltip goes first; a panel around it closes on the next Escape.
     event.preventDefault();
@@ -107,12 +108,15 @@ export function HintChip({ word, tone, description }: HintChipProps) {
         setHover(false);
       }}
     >
-      <span
+      <button
+        type="button"
         ref={anchor}
         className="dv3-hint-anchor"
-        tabIndex={0}
         aria-describedby={id}
         onKeyDown={onKeyDown}
+        onClick={() => {
+          setHidden(false);
+        }}
         onFocus={() => {
           setHidden(false);
           setFocus(true);
@@ -122,7 +126,7 @@ export function HintChip({ word, tone, description }: HintChipProps) {
         }}
       >
         <DesignChip tone={tone}>{word}</DesignChip>
-      </span>
+      </button>
       <span
         ref={tip}
         className="dv3-hint-tip"
