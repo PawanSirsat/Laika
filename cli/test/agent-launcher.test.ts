@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
 import type { EventRecord } from '../src/agent-events.ts';
-import { handoffsDir } from '../src/agent-handoff.ts';
+import { handoffsDir, PREPARE_RETRY } from '../src/agent-handoff.ts';
 import {
   argvProblem,
   auditPath,
@@ -52,12 +52,15 @@ import {
   loadConfig,
   parseGitVersion,
   pidPath,
+  PREPARE_MARKER,
   runDir,
   startLauncher,
   STOP_SIGNALS,
   statusPath,
   takePid,
   launcherDir,
+  UNREACHABLE_BACKOFF_MAX_MS,
+  UNREACHABLE_BACKOFF_MS,
 } from '../src/agent-launcher.ts';
 import { readProc, writeCredential } from '../src/agent-session.ts';
 import { pollyTurn } from '../src/agent.ts';
@@ -178,6 +181,7 @@ function rig(records: () => readonly EventRecord[], over: Partial<LauncherDeps> 
     sleep: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 200))),
     ownerOf: () => Promise.resolve(OWNER),
     poll: () => Promise.resolve(records()),
+    worktreeProblem: () => undefined,
     prepare: (args) => {
       prepared.push(args.offerId);
       tokens.push(args.credential.token);
@@ -765,7 +769,8 @@ void describe('the loop', () => {
       { ...r.deps, maxTicks: 1 },
       config({ argv: [process.execPath, fakeHarness(dir), '--ms', '1'] }),
     ).finished;
-    assert.equal(existsSync(runDir(r.home, ids(18))), false);
+    // Only the marker written before prepare (LAI-1107): no offer, note or output.
+    assert.deepEqual(readdirSync(runDir(r.home, ids(18))), [PREPARE_MARKER]);
     const lines = auditLines(r.home);
     assert.equal(lines.find((l) => l.event === 'refused')?.reason, 'prepare_refused');
     assert.equal(
@@ -2419,5 +2424,305 @@ void describe('LAI-1039 review round 2: items 1, 3, 4', () => {
     assert.equal(await openRunSession(at(429), cred, 'claude-code'), SESSION_RATE_LIMITED);
     assert.equal(await openRunSession(at(503), cred, 'claude-code'), READ_FAILED);
     assert.equal(await openRunSession(at(403), cred, 'claude-code'), undefined);
+  });
+});
+
+void describe('LAI-1107: nothing lost to a transient failure, a hand prepare, a throw or a moved worktree', () => {
+  const cred = { url: 'http://board.invalid', token: TOKEN };
+
+  /** Ticks 1–3: the first sleep passes no time; the second passes more than the longest backoff. */
+  function clock(): {
+    now: () => number;
+    sleep: (ms: number) => Promise<void>;
+    tick: () => number;
+  } {
+    let sleeps = 0;
+    let shift = 0;
+    return {
+      now: () => Date.now() + shift,
+      sleep: (ms) =>
+        new Promise((done) => {
+          sleeps += 1;
+          if (sleeps === 2) shift += UNREACHABLE_BACKOFF_MAX_MS + 1000;
+          setTimeout(done, Math.min(ms, 50));
+        }),
+      tick: () => sleeps + 1,
+    };
+  }
+
+  void test('item 1, hand-off: prepare could not reach — backed off, tried again, never handled', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    const c = clock();
+    const ticks: number[] = [];
+    let handledAtRetry = -1;
+    const r = rig(() => [record({ event_id: rid(60), offer_id: rid(61) })]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 3,
+        now: c.now,
+        sleep: c.sleep,
+        prepare: (args) => {
+          ticks.push(c.tick());
+          if (ticks.length === 1) return Promise.resolve(PREPARE_RETRY);
+          handledAtRetry = loadHandled(r.home).events.length;
+          return r.deps.prepare(args);
+        },
+      },
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    ).finished;
+    assert.deepEqual(ticks, [1, 3], 'tried, held off for the backoff, tried again');
+    assert.equal(handledAtRetry, 0, 'not handled while it could not reach');
+    const lines = auditLines(r.home);
+    assert.equal(
+      lines.some((l) => l.reason === 'prepare_refused'),
+      false,
+    );
+    const deferred = lines.filter((l) => l.reason === 'prepare_unreachable');
+    assert.equal(deferred.length, 1);
+    assert.equal(deferred[0]!.event, 'deferred');
+    assert.equal(deferred[0]!.retry_ms, UNREACHABLE_BACKOFF_MS);
+    assert.equal(lines.filter((l) => l.event === 'start').length, 1);
+  });
+
+  void test('item 1, work request: a remote that could not be reached — backed off, tried again, its session ended', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    const c = clock();
+    const ticks: number[] = [];
+    const opened: string[] = [];
+    const ended: string[] = [];
+    const r = workRig(() => [selectedAs(rid(62), rid(63))]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 3,
+        now: c.now,
+        sleep: c.sleep,
+        openSession: () => {
+          opened.push(rid(64 + opened.length));
+          return Promise.resolve(opened.at(-1)!);
+        },
+        endSession: (_c, id) => {
+          ended.push(id);
+          return Promise.resolve();
+        },
+        workspace: (args) => {
+          ticks.push(c.tick());
+          if (ticks.length === 1)
+            return { unreachable: 'the remote could not be read: SECRET-URL' };
+          return r.deps.workspace!(args);
+        },
+      },
+      workConfig([process.execPath, script, '--ms', '30']),
+    ).finished;
+    assert.deepEqual(ticks, [1, 3]);
+    assert.equal(opened.length, 2, 'no session is opened while it is backed off');
+    assert.ok(ended.includes(rid(64)), 'the first attempt’s session was ended');
+    const lines = auditLines(r.home);
+    assert.equal(
+      lines.some((l) => l.reason === 'workspace_refused'),
+      false,
+    );
+    assert.equal(lines.filter((l) => l.reason === 'workspace_unreachable').length, 1);
+    assert.equal(lines.filter((l) => l.event === 'start').length, 1);
+    assert.doesNotMatch(readFileSync(auditPath(r.home), 'utf8'), /SECRET-URL/);
+    assert.match(
+      readFileSync(join(runDir(r.home, rid(63)), 'workspace-unreachable.txt'), 'utf8'),
+      /SECRET-URL/,
+    );
+  });
+
+  void test('item 2: an offer the owner prepared by hand is left alone — no prepare, no start, audited', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    const r = rig(() => [record({ event_id: rid(66), offer_id: rid(67) })]);
+    // `laika agent handoff prepare` run by hand: a prepared record, and no launcher marker.
+    assert.equal(
+      await r.deps.prepare({
+        offerId: rid(67),
+        harness: 'claude-code',
+        credential: cred,
+        repoDir: '/unused',
+      }),
+      0,
+    );
+    let checked = 0;
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 2,
+        worktreeProblem: () => {
+          checked += 1;
+          return undefined;
+        },
+      },
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    ).finished;
+    assert.deepEqual(r.prepared, [rid(67)], 'only the owner’s own prepare');
+    assert.equal(checked, 0, 'never considered for reuse');
+    const lines = auditLines(r.home);
+    assert.equal(
+      lines.some((l) => l.event === 'start'),
+      false,
+    );
+    const refused = lines.filter((l) => l.reason === 'prepared_by_hand');
+    assert.equal(refused.length, 1);
+    assert.equal(refused[0]!.detail, 'prepared');
+    assert.equal(loadHandled(r.home).events.length, 1, 'decided: not started, ever');
+    assert.equal(existsSync(join(runDir(r.home, rid(67)), PREPARE_MARKER)), false);
+  });
+
+  void test('item 2: the launcher’s own prepare carries its marker, so its record is reused', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let markedBeforePrepare = false;
+    let stop = false;
+    const r = rig(() => [record({ event_id: rid(68), offer_id: rid(69) })]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 1,
+        stopped: () => stop,
+        prepare: async (args) => {
+          markedBeforePrepare = existsSync(join(runDir(r.home, args.offerId), PREPARE_MARKER));
+          const code = await r.deps.prepare(args);
+          stop = true;
+          return code;
+        },
+      },
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    ).finished;
+    assert.equal(markedBeforePrepare, true, 'the marker is written before prepare is called');
+    await startLauncher(
+      { ...r.deps, maxTicks: 2 },
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    ).finished;
+    assert.deepEqual(r.prepared, [rid(69)]);
+    assert.equal(auditLines(r.home).filter((l) => l.event === 'start').length, 1);
+  });
+
+  void test('item 3: a launch that throws after the session opened ends that session', async () => {
+    const ended: string[] = [];
+    const r = rig(() => [record({ event_id: rid(70), offer_id: rid(71) })], {
+      openSession: () => Promise.resolve(rid(72)),
+      endSession: (_c, id) => {
+        ended.push(id);
+        return Promise.resolve();
+      },
+      note: () => Promise.reject(new Error('the note could not be read')),
+    });
+    await startLauncher({ ...r.deps, maxTicks: 1 }, config({ argv: [process.execPath] })).finished;
+    const lines = auditLines(r.home);
+    assert.equal(lines.filter((l) => l.reason === 'launch_error').length, 1);
+    assert.equal(
+      lines.some((l) => l.event === 'start'),
+      false,
+    );
+    assert.deepEqual(ended, [rid(72)]);
+  });
+
+  void test('item 3: a harness that cannot be spawned ends its session too', async () => {
+    const dir = scratch();
+    const ended: string[] = [];
+    const r = rig(() => [record({ event_id: rid(73), offer_id: rid(74) })], {
+      openSession: () => Promise.resolve(rid(75)),
+      endSession: (_c, id) => {
+        ended.push(id);
+        return Promise.resolve();
+      },
+    });
+    await startLauncher(
+      { ...r.deps, maxTicks: 1 },
+      config({ argv: [join(dir, 'no-such-harness')] }),
+    ).finished;
+    assert.equal(auditLines(r.home).filter((l) => l.reason === 'spawn_failed').length, 1);
+    assert.deepEqual(ended, [rid(75)]);
+  });
+
+  void test('item 4, hand-off: a reused worktree that moved is refused, never started', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let stop = false;
+    const r = rig(() => [record({ event_id: rid(76), offer_id: rid(77) })]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 1,
+        stopped: () => stop,
+        prepare: async (args) => {
+          const code = await r.deps.prepare(args);
+          stop = true;
+          return code;
+        },
+      },
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    ).finished;
+    const asked: string[][] = [];
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 2,
+        worktreeProblem: (worktree, branch, sha) => {
+          asked.push([worktree, branch, sha]);
+          return 'it has changes or untracked files';
+        },
+      },
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    ).finished;
+    assert.deepEqual(asked, [[join(r.home, 'wt'), 'laika/handoff', 'a'.repeat(40)]]);
+    assert.deepEqual(r.prepared, [rid(77)], 'not prepared again either');
+    const lines = auditLines(r.home);
+    assert.equal(
+      lines.some((l) => l.event === 'start'),
+      false,
+    );
+    assert.equal(lines.filter((l) => l.reason === 'reuse_refused').length, 1);
+    assert.match(
+      readFileSync(join(runDir(r.home, rid(77)), 'reuse-refused.txt'), 'utf8'),
+      /changes or untracked/,
+    );
+  });
+
+  void test('item 4, work request: a reused worktree that moved is refused, never started', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let stop = false;
+    const r = workRig(() => [selectedAs(rid(78), rid(79))]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 1,
+        stopped: () => stop,
+        workspace: (args) => {
+          const made = r.deps.workspace!(args);
+          stop = true;
+          return made;
+        },
+      },
+      workConfig([process.execPath, script, '--ms', '30']),
+    ).finished;
+    const asked: string[][] = [];
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 2,
+        worktreeProblem: (worktree, branch, sha) => {
+          asked.push([worktree, branch, sha]);
+          return 'it is on refs/heads/elsewhere, not the recorded branch';
+        },
+      },
+      workConfig([process.execPath, script, '--ms', '30']),
+    ).finished;
+    const branch = `LAI-1039-auto-${rid(79).slice(-6).toLowerCase()}`;
+    assert.deepEqual(asked, [[join(r.home, `wt-${rid(79)}`), branch, 'b'.repeat(40)]]);
+    assert.deepEqual(r.workspaces, [rid(79)], 'made once, not made again');
+    const lines = auditLines(r.home);
+    assert.equal(
+      lines.some((l) => l.event === 'start'),
+      false,
+    );
+    assert.equal(lines.filter((l) => l.reason === 'reuse_refused').length, 1);
   });
 });

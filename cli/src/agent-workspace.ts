@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 import { TASK_KEY } from './agent-events.ts';
@@ -12,6 +12,7 @@ import {
   type GitRunner,
   inert,
   isSymref,
+  MISSING_REF,
   plainRef,
   refSnapshot,
   refTaken,
@@ -110,6 +111,22 @@ export interface Workspace {
 }
 
 class Refused extends Error {}
+/** The remote could not be reached: nothing was made, and a later try can pass. */
+class Unreachable extends Refused {}
+
+/**
+ * Why the worktree was not made **this time**: the remote could not be read
+ * or fetched from (the network, the host, a timeout). Nothing was made, so the
+ * launcher tries it again, backing off, rather than take it as a refusal (LAI-1107).
+ */
+export interface WorkspaceUnreachable {
+  readonly unreachable: string;
+}
+
+export const workspaceUnreachable = (v: unknown): v is WorkspaceUnreachable =>
+  typeof v === 'object' &&
+  v !== null &&
+  typeof (v as { unreachable?: unknown }).unreachable === 'string';
 
 /**
  * The remote's default branch and the commit at its head, from
@@ -134,7 +151,7 @@ export function parseSymrefHead(text: string): { branch: string; sha: string } |
 }
 
 /** Make the work request's worktree, or answer why not. Never removes or moves anything. */
-export function prepareWorkspace(args: WorkspaceArgs): Workspace | string {
+export function prepareWorkspace(args: WorkspaceArgs): Workspace | string | WorkspaceUnreachable {
   const { git } = args;
   if (!TASK_KEY.test(args.taskKey)) return 'the task key is not a task key';
   if (!isLaikaId(args.offerId)) return 'the offer id is not a Laika id';
@@ -191,7 +208,9 @@ export function prepareWorkspace(args: WorkspaceArgs): Workspace | string {
 
   // 1. Which branch is the default, and the commit at its head.
   const listed = git(toplevel, [...remoteArgs, 'ls-remote', '--symref', '--', source.url, 'HEAD']);
-  if (listed.code !== 0) return `the remote could not be read: ${firstLine(listed.stderr)}`;
+  if (listed.code !== 0) {
+    return { unreachable: `the remote could not be read: ${firstLine(listed.stderr)}` };
+  }
   const head = parseSymrefHead(listed.stdout);
   if (typeof head === 'string') return head;
   const defaultBranch = head.branch;
@@ -239,7 +258,8 @@ export function prepareWorkspace(args: WorkspaceArgs): Workspace | string {
       `refs/heads/${defaultBranch}`,
     ]);
     if (fetched.code !== 0) {
-      throw new Refused(`${defaultBranch} could not be fetched: ${firstLine(fetched.stderr)}`);
+      const message = `${defaultBranch} could not be fetched: ${firstLine(fetched.stderr)}`;
+      throw MISSING_REF.test(fetched.stderr) ? new Refused(message) : new Unreachable(message);
     }
     if (refSnapshot(git, toplevel, [localRef, branchRef]) !== before) {
       throw new Refused('the fetch changed refs; nothing was checked out');
@@ -285,6 +305,7 @@ export function prepareWorkspace(args: WorkspaceArgs): Workspace | string {
       throw new Refused('the new worktree does not match the default branch head');
     }
   } catch (cause) {
+    if (cause instanceof Unreachable) return { unreachable: cause.message };
     if (cause instanceof Refused) return cause.message;
     throw cause;
   }
@@ -296,4 +317,38 @@ export function prepareWorkspace(args: WorkspaceArgs): Workspace | string {
     local_ref: localRef,
     repo_dir: toplevel,
   };
+}
+
+/**
+ * Why a worktree an earlier attempt made may not be started in now, or
+ * `undefined` when it may (LAI-1107). It must still be that worktree, on
+ * `branch`, with `HEAD` at `sha` or a commit after it on that branch, and
+ * nothing changed or untracked in it. Every git call runs under the runner's
+ * hardening; nothing is written.
+ */
+export function reusedWorktreeProblem(
+  git: GitRunner,
+  worktree: string,
+  branch: string,
+  sha: string,
+): string | undefined {
+  if (!FULL_SHA.test(sha)) return 'the recorded commit is not a full SHA';
+  let real: string;
+  try {
+    real = realpathSync(worktree);
+  } catch {
+    return 'the worktree is gone';
+  }
+  const top = git(worktree, ['rev-parse', '--show-toplevel']);
+  if (top.code !== 0 || top.stdout.trim() !== real) return 'it is no longer its own worktree';
+  const head = git(worktree, ['symbolic-ref', '-q', 'HEAD']).stdout.trim();
+  if (head !== `refs/heads/${branch}`) {
+    return `it is on ${inert(head, 200) || 'no branch'}, not ${inert(branch, 200)}`;
+  }
+  if (git(worktree, ['merge-base', '--is-ancestor', sha, 'HEAD']).code !== 0) {
+    return `its HEAD is neither ${sha} nor a commit after it`;
+  }
+  const status = git(worktree, ['status', '--porcelain', '--untracked-files=all']);
+  if (status.code !== 0 || status.stdout.trim() !== '') return 'it has changes or untracked files';
+  return undefined;
 }

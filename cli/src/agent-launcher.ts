@@ -37,14 +37,18 @@ import {
   type HandoffIo,
   inert,
   prepare,
+  PREPARE_RETRY,
   readRecord,
   untrustedBlock,
 } from './agent-handoff.ts';
 import {
   branchAllowed,
   prepareWorkspace,
+  reusedWorktreeProblem,
   validDefaultBranch,
   type Workspace,
+  workspaceUnreachable,
+  type WorkspaceUnreachable,
 } from './agent-workspace.ts';
 import {
   type AgentCredential,
@@ -586,6 +590,8 @@ export interface AuditEntry {
   readonly base_sha?: string;
   /** Runs started today (UTC), with this one. */
   readonly runs_today?: number;
+  /** A deferral's wait, in ms, before the next try. */
+  readonly retry_ms?: number;
   /** From Claude Code's `--output-format json` result, when the run printed one. */
   readonly subtype?: string;
   readonly is_error?: boolean;
@@ -789,6 +795,17 @@ export const SESSION_BACKOFF_MS = 30_000;
 export const sessionRateLimited = (v: unknown): v is typeof SESSION_RATE_LIMITED =>
   v === SESSION_RATE_LIMITED;
 
+/**
+ * A prepare or a worktree that could not reach the board or the repository is
+ * tried again after this long, doubling with each failure up to the cap
+ * (LAI-1107). It is never taken as an answer, so the event stays to do.
+ */
+export const UNREACHABLE_BACKOFF_MS = 30_000;
+export const UNREACHABLE_BACKOFF_MAX_MS = 15 * 60_000;
+
+/** Beside a run, written before the launcher calls `prepare`: a record without it was prepared by hand. */
+export const PREPARE_MARKER = 'launcher-prepare.json';
+
 /** `GET /api/v1/me` answered 401: this credential is revoked or expired. */
 export const CREDENTIAL_REFUSED: { readonly credential: 'refused' } = Object.freeze({
   credential: 'refused',
@@ -828,7 +845,10 @@ export interface LauncherDeps {
     credential: AgentCredential,
     ping?: PingAnswerer,
   ) => Promise<readonly EventRecord[]>;
-  /** The existing `handoff prepare`. 0 is prepared; anything else refused. */
+  /**
+   * The existing `handoff prepare`. 0 is prepared; {@link PREPARE_RETRY} could
+   * not reach the board or the repository, and is tried again; anything else refused.
+   */
   readonly prepare: (args: {
     offerId: string;
     harness: Harness;
@@ -876,7 +896,13 @@ export interface LauncherDeps {
     remote?: string;
     offerId: string;
     taskKey: string;
-  }) => Workspace | string;
+  }) => Workspace | string | WorkspaceUnreachable;
+  /**
+   * Why a worktree an earlier attempt made may not be started in now, or
+   * `undefined` when it may: the branch, `HEAD` at `sha` or after it, a clean
+   * status ({@link reusedWorktreeProblem}). Asked before every reuse (LAI-1107).
+   */
+  readonly worktreeProblem: (worktree: string, branch: string, sha: string) => string | undefined;
   /** Post one fixed-words comment on a task. */
   readonly comment?: (
     credential: AgentCredential,
@@ -1491,6 +1517,43 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     return 'done';
   };
 
+  /** Offer id → failures in a row that could not reach the board or the repository, and the next try. */
+  const unreachable = new Map<string, { failures: number; until: number }>();
+
+  /**
+   * A prepare or a worktree that could not reach the board or the repository
+   * (LAI-1107): never an answer, so the event stays to do, and nothing about
+   * it is asked again until a backoff that doubles up to a cap has passed.
+   */
+  const backOff = (
+    record: EventRecord,
+    harness: Harness,
+    reason: string,
+    extra: Partial<AuditEntry> = {},
+  ): Disposition => {
+    const offerId = record.offer_id!;
+    const failures = (unreachable.get(offerId)?.failures ?? 0) + 1;
+    const wait = Math.min(
+      UNREACHABLE_BACKOFF_MAX_MS,
+      UNREACHABLE_BACKOFF_MS * 2 ** Math.min(failures - 1, 10),
+    );
+    unreachable.set(offerId, { failures, until: deps.now() + wait });
+    audit(deps.home, deps.now(), {
+      event: 'deferred',
+      reason,
+      ...base(record, harness),
+      ...extra,
+      retry_ms: wait,
+    });
+    return 'retry';
+  };
+
+  /** Whether the launcher, not a person, began preparing this offer here: its marker is beside the run. */
+  const launcherPrepared = (offerId: string): boolean => {
+    const marker = readJson(join(runDir(deps.home, offerId), PREPARE_MARKER));
+    return isRecord(marker) && marker.version === 1 && marker.offer_id === offerId;
+  };
+
   /** A hand-off or recovery offer: the existing exact-commit prepare, then the fixed prompt. */
   const planHandoff = async (
     record: EventRecord,
@@ -1500,12 +1563,39 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
   ): Promise<LaunchPlan | Disposition> => {
     const offerId = record.offer_id!;
     const project = config.projects.find((p) => p.project_id === record.project_id)!;
-    // An attempt that prepared and then did not start (a stop, a crash) left its
-    // worktree prepared: it is reused, since `prepare` refuses an offer prepared once.
+    const dir = runDir(deps.home, offerId);
     const before = readRecord(deps.home, offerId);
+    // A record the launcher did not begin is the owner's — `handoff prepare` run
+    // by hand: it is never reused, prepared over or started in (LAI-1107).
+    if (before !== undefined && !launcherPrepared(offerId)) {
+      return refuse(record, harness, 'prepared_by_hand', {
+        ...(/^[a-z_]{1,40}$/.test(before.status) ? { detail: before.status } : {}),
+      });
+    }
+    // An attempt that prepared and then did not start (a stop, a crash) left its
+    // worktree prepared: it is reused, since `prepare` refuses an offer prepared once —
+    // once it is checked to be as it was left.
     const reuse =
       before?.status === 'prepared' && before.harness === harness && existsSync(before.worktree);
-    if (!reuse) {
+    if (reuse) {
+      const problem = deps.worktreeProblem(
+        before.worktree,
+        before.branch,
+        before.verified_commit_sha,
+      );
+      if (problem !== undefined) {
+        // The reason names paths and branches: kept beside the run, never in the audit line.
+        writePrivate(join(dir, 'reuse-refused.txt'), `${inert(problem, 2000)}\n`);
+        return refuse(record, harness, 'reuse_refused');
+      }
+    } else {
+      // The marker goes first, so a prepare that dies part-way is still the launcher's.
+      privateDir(join(launcherDir(deps.home), 'runs'));
+      privateDir(dir);
+      writePrivate(
+        join(dir, PREPARE_MARKER),
+        `${JSON.stringify({ version: 1, offer_id: offerId, harness })}\n`,
+      );
       const code = await deps.prepare({
         offerId,
         harness,
@@ -1513,6 +1603,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         repoDir: project.repo,
         ...(project.remote === undefined ? {} : { remote: project.remote }),
       });
+      if (code === PREPARE_RETRY) return backOff(record, harness, 'prepare_unreachable');
       if (code !== 0) return refuse(record, harness, 'prepare_refused', { code });
     }
     const prepared = readRecord(deps.home, offerId);
@@ -1523,7 +1614,6 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       record.task_key !== undefined && TASK_KEY.test(record.task_key)
         ? record.task_key
         : prepared.task_id;
-    const dir = runDir(deps.home, offerId);
     privateDir(join(launcherDir(deps.home), 'runs'));
     privateDir(dir);
     writePrivate(
@@ -1639,7 +1729,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     privateDir(join(launcherDir(deps.home), 'runs'));
     privateDir(dir);
     const recorded = readJson(join(dir, 'workspace.json'));
-    let ws: Workspace | string;
+    let ws: Workspace;
     if (
       isRecord(recorded) &&
       typeof recorded.worktree === 'string' &&
@@ -1658,19 +1748,30 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         local_ref: recorded.local_ref,
         repo_dir: recorded.repo_dir,
       };
+      // Reused only as it was left (LAI-1107).
+      const problem = deps.worktreeProblem(ws.worktree, ws.branch, ws.base_sha);
+      if (problem !== undefined) {
+        writePrivate(join(dir, 'reuse-refused.txt'), `${inert(problem, 2000)}\n`);
+        return refuse(record, harness, 'reuse_refused', { task_key: check.taskKey });
+      }
     } else {
-      ws = deps.workspace!({
+      const made = deps.workspace!({
         repoDir: check.rule.repo,
         boardRepo: check.boardRepo,
         ...(check.rule.remote === undefined ? {} : { remote: check.rule.remote }),
         offerId,
         taskKey: check.taskKey,
       });
-      if (typeof ws === 'string') {
-        // The reason may name remotes and paths: kept beside the run, never in the audit line.
-        writePrivate(join(dir, 'workspace-refused.txt'), `${inert(ws, 2000)}\n`);
+      // The reasons may name remotes and paths: kept beside the run, never in the audit line.
+      if (workspaceUnreachable(made)) {
+        writePrivate(join(dir, 'workspace-unreachable.txt'), `${inert(made.unreachable, 2000)}\n`);
+        return backOff(record, harness, 'workspace_unreachable', { task_key: check.taskKey });
+      }
+      if (typeof made === 'string') {
+        writePrivate(join(dir, 'workspace-refused.txt'), `${inert(made, 2000)}\n`);
         return refuse(record, harness, 'workspace_refused', { task_key: check.taskKey });
       }
+      ws = made;
       writePrivate(join(dir, 'workspace.json'), `${JSON.stringify(ws, null, 2)}\n`);
     }
     let prompt: string;
@@ -1762,6 +1863,10 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     if (child.pid === undefined) {
       audit(deps.home, deps.now(), { event: 'refused', reason: 'spawn_failed', ...auditFields });
       child.on('error', () => undefined);
+      // Nothing started: the session opened for it is ended, not left to lapse (LAI-1107).
+      if (sessionId !== undefined && deps.endSession !== undefined) {
+        void deps.endSession(credential, sessionId).catch(() => undefined);
+      }
       return;
     }
     child.stdin?.on('error', () => undefined);
@@ -1869,6 +1974,8 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     agentId: string,
   ): Promise<Disposition> => {
     if (!isLaikaId(record.offer_id)) return refuse(record, harness, 'bad_offer_id');
+    // Unreachable last time: nothing is asked again until its backoff has passed.
+    if (deps.now() < (unreachable.get(record.offer_id)?.until ?? 0)) return 'retry';
     const work = record.offer_kind === 'work_request';
     // 1. What the board must say, before anything is made on disk.
     let check: WorkCheck | undefined;
@@ -1906,26 +2013,33 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       }
       return outcome;
     };
-    // 3. Once more, the instant before anything is made (N9): a person may have
-    //    claimed, moved or deselected it meanwhile.
-    if (work && deps.task !== undefined) {
-      const again = await deps.task(credential, check!.taskId);
-      if (readFailed(again)) return release('retry');
-      const closed = taskClosed(again, agentId);
-      if (closed !== undefined) {
-        return release(refuse(record, harness, 'request_closed', { detail: closed }));
+    try {
+      // 3. Once more, the instant before anything is made (N9): a person may have
+      //    claimed, moved or deselected it meanwhile.
+      if (work && deps.task !== undefined) {
+        const again = await deps.task(credential, check!.taskId);
+        if (readFailed(again)) return release('retry');
+        const closed = taskClosed(again, agentId);
+        if (closed !== undefined) {
+          return release(refuse(record, harness, 'request_closed', { detail: closed }));
+        }
       }
+      if (deps.stopped()) return release('retry');
+      // 4. Prepare, or the worktree — each reused if an earlier attempt made it.
+      const plan = work
+        ? makeWorkspace(record, harness, check!, agentId)
+        : await planHandoff(record, harness, credential, agentId);
+      if (typeof plan === 'string') return release(plan);
+      // 5. A stop that came while all that ran starts nothing (round 2, item 3).
+      if (deps.stopped()) return release('retry');
+      spawnRun(plan, harness, base(record, harness), credential, sessionId);
+      return 'done';
+    } catch (cause) {
+      // A launch that throws started nothing — unless its run is already
+      // running, which ends its own session — so the session goes with it (LAI-1107).
+      if (!running.has(record.offer_id)) release('done');
+      throw cause;
     }
-    if (deps.stopped()) return release('retry');
-    // 4. Prepare, or the worktree — each reused if an earlier attempt made it.
-    const plan = work
-      ? makeWorkspace(record, harness, check!, agentId)
-      : await planHandoff(record, harness, credential, agentId);
-    if (typeof plan === 'string') return release(plan);
-    // 5. A stop that came while all that ran starts nothing (round 2, item 3).
-    if (deps.stopped()) return release('retry');
-    spawnRun(plan, harness, base(record, harness), credential, sessionId);
-    return 'done';
   };
 
   /** The agent the offer is addressed to, through this credential's own inbox (D-117a item 2). */
@@ -2131,7 +2245,10 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       } catch {
         outcome = refuse(record, harness, 'launch_error');
       }
-      if (outcome === 'done') markHandled(deps.home, memory, handledKey, record.event_id);
+      if (outcome === 'done') {
+        unreachable.delete(record.offer_id!);
+        markHandled(deps.home, memory, handledKey, record.event_id);
+      }
     }
   };
 
@@ -2699,6 +2816,8 @@ export function launcherDeps(io: LauncherIo, stopped: () => boolean): LauncherDe
       return { slug: hit.slug, repo: typeof hit.repo === 'string' ? hit.repo : null };
     },
     workspace: (args) => prepareWorkspace({ git: gitRunner(io.env), env: io.env, ...args }),
+    worktreeProblem: (worktree, branch, sha) =>
+      reusedWorktreeProblem(gitRunner(io.env), worktree, branch, sha),
     comment: async (credential, taskId, body) => {
       const result = await callBoard(fetchFn, credential, `/api/v1/tasks/${taskId}/comments`, {
         body_md: body,

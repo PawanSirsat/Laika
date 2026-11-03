@@ -24,6 +24,7 @@ import {
   isLaikaId,
   listStates,
   readCredential,
+  retryable,
 } from './agent-session.ts';
 
 /**
@@ -254,6 +255,9 @@ export const firstLine = (text: string): string => inert(text.trim().split('\n')
 
 /** A full commit SHA, lower case. */
 export const FULL_SHA = /^[0-9a-f]{40}$/;
+
+/** What `git fetch` says (under `LC_ALL=C`) when the remote answered and has no such ref. */
+export const MISSING_REF = /couldn't find remote ref/i;
 
 /**
  * A checkpoint ref as the server builds it (§6.4): `refs/tags/laika-ckpt/
@@ -526,10 +530,26 @@ export function asOffer(value: unknown): InboxOffer | undefined {
   };
 }
 
+/**
+ * A read the board did not answer — the network, a 5xx, a 408 or a 429. Unlike
+ * a refusal it can pass on its own, so `prepare` exits {@link PREPARE_RETRY}.
+ */
+interface Unanswered {
+  readonly unanswered: string;
+}
+
+const unanswered = (v: unknown): v is Unanswered => isRecord(v) && typeof v.unanswered === 'string';
+
+/** The words for a failed read: unanswered when it is worth trying again, else a refusal. */
+function unread(what: string, result: ApiResult): string | Unanswered {
+  const message = `${what} could not be read: ${describe(result)}`;
+  return retryable(result) ? { unanswered: message } : message;
+}
+
 async function readInbox(
   fetchFn: Fetch,
   credential: AgentCredential,
-): Promise<InboxOffer[] | string> {
+): Promise<InboxOffer[] | string | Unanswered> {
   const items: InboxOffer[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < 20; page += 1) {
@@ -538,7 +558,7 @@ async function readInbox(
       credential,
       `/api/v1/agents/me/inbox${cursor === undefined ? '' : `?cursor=${encodeURIComponent(cursor)}`}`,
     );
-    if (result.kind !== 'ok') return `the inbox could not be read: ${describe(result)}`;
+    if (result.kind !== 'ok') return unread('the inbox', result);
     const body = isRecord(result.body) ? result.body : {};
     const data = Array.isArray(body.data) ? body.data : [];
     for (const item of data) {
@@ -566,9 +586,9 @@ async function readCheckpoint(
   credential: AgentCredential,
   taskId: string,
   checkpointId: string,
-): Promise<CheckpointDetail | string> {
+): Promise<CheckpointDetail | string | Unanswered> {
   const result = await boardGet(fetchFn, credential, `/api/v1/tasks/${taskId}/checkpoints`);
-  if (result.kind !== 'ok') return `the task's checkpoints could not be read: ${describe(result)}`;
+  if (result.kind !== 'ok') return unread("the task's checkpoints", result);
   const data = isRecord(result.body) && Array.isArray(result.body.data) ? result.body.data : [];
   const found = data.find(
     (c): c is Record<string, unknown> => isRecord(c) && c.id === checkpointId,
@@ -624,6 +644,7 @@ const USAGE = [
   '  laika agent handoff show    <offer> [--harness H]    one offer, its checkpoint and its note',
   '  laika agent handoff prepare <offer> [--harness H] [--repo DIR] [--remote NAME] [--into DIR]',
   '                              fetch the checkpoint, verify its SHA, make a fresh worktree on it',
+  '                              (exit 75: the board or the repository could not be reached)',
   '  laika agent handoff accept  <offer> [--harness H] [--session ID]',
   '                              only after prepare: send the verified SHA, take the claim',
   '  laika agent handoff decline <offer> [--harness H] [--reason TEXT]',
@@ -683,8 +704,18 @@ export async function findOffer(
   credential: AgentCredential,
   offerId: string,
 ): Promise<InboxOffer | string> {
+  const offer = await locateOffer(io, credential, offerId);
+  return unanswered(offer) ? offer.unanswered : offer;
+}
+
+/** {@link findOffer}, telling a board that did not answer from one that refused. */
+async function locateOffer(
+  io: HandoffIo,
+  credential: AgentCredential,
+  offerId: string,
+): Promise<InboxOffer | string | Unanswered> {
   const inbox = await readInbox(io.fetch, credential);
-  if (typeof inbox === 'string') return inbox;
+  if (!Array.isArray(inbox)) return inbox;
   const offer = inbox.find((o) => o.id === offerId);
   return (
     offer ??
@@ -694,8 +725,8 @@ export async function findOffer(
 
 async function inbox(io: HandoffIo, credential: AgentCredential): Promise<number> {
   const items = await readInbox(io.fetch, credential);
-  if (typeof items === 'string') {
-    io.err(`laika agent handoff: ${items}`);
+  if (!Array.isArray(items)) {
+    io.err(`laika agent handoff: ${unanswered(items) ? items.unanswered : items}`);
     return 1;
   }
   if (items.length === 0) {
@@ -767,6 +798,17 @@ interface PrepareArgs {
 
 /** A local refusal: printed, recorded when a worktree may exist, and nothing is sent. */
 class Stop extends Error {}
+/** The repository could not be reached (a failed fetch or `ls-remote`): nothing was checked out. */
+class Unreachable extends Stop {}
+
+/**
+ * `prepare`'s exit code when it **could not read the board or reach the
+ * repository** — the network, a 5xx, a failed fetch — as opposed to `1`, a
+ * refusal. Nothing was checked out, and a later try can pass: the launcher
+ * tries it again, backing off, and never takes it as an answer (LAI-1107).
+ * `EX_TEMPFAIL` from `sysexits.h`.
+ */
+export const PREPARE_RETRY = 75;
 
 export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number> {
   const git = gitRunner(io.env);
@@ -774,6 +816,11 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     io.err(`laika agent handoff: not prepared — ${message}`);
     io.err('Nothing was sent to the board.');
     return 1;
+  };
+  const again = (message: string): number => {
+    io.err(`laika agent handoff: not prepared — ${message}`);
+    io.err('Nothing was sent to the board, and nothing was checked out: try again.');
+    return PREPARE_RETRY;
   };
 
   // `preparing` is a prepare that stopped part-way — a crash, a kill — and
@@ -794,7 +841,8 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     );
   }
 
-  const offer = await findOffer(io, args.credential, args.offerId);
+  const offer = await locateOffer(io, args.credential, args.offerId);
+  if (unanswered(offer)) return again(offer.unanswered);
   if (typeof offer === 'string') return fail(offer);
   if (offer.kind !== 'handoff' && offer.kind !== 'recovery') {
     return fail(`a ${offer.kind} carries no checkpoint; claim it with start_working`);
@@ -818,6 +866,7 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     return fail(words ?? `checkpoint is ${offer.checkpoint.verification}`);
 
   const cp = await readCheckpoint(io.fetch, args.credential, offer.task_id, offer.checkpoint_id);
+  if (unanswered(cp)) return again(cp.unanswered);
   if (typeof cp === 'string') return fail(cp);
   if (cp.commit_sha.toLowerCase() !== sha)
     return fail('the checkpoint’s SHA is not the one the offer carries');
@@ -986,9 +1035,10 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
       cp.newestRef,
     ]);
     if (fetched.code !== 0) {
-      throw new Stop(
-        `the checkpoint tag could not be fetched from ${remote ?? ''}: ${firstLine(fetched.stderr)}`,
-      );
+      const message = `the checkpoint tag could not be fetched from ${remote ?? ''}: ${firstLine(fetched.stderr)}`;
+      // A tag the remote does not have is an answer; anything else (the
+      // network, the host, a timeout) may pass, and is tried again.
+      throw MISSING_REF.test(fetched.stderr) ? new Stop(message) : new Unreachable(message);
     }
     if (refSnapshot(git, toplevel, [localRef, branchRef]) !== before) {
       throw new Stop('the fetch changed refs; nothing was checked out');
@@ -1000,7 +1050,7 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     // lightweight tag names the commit, an annotated one its tag object.
     const listed = git(toplevel, [...remoteArgs, 'ls-remote', '--', source.url, cp.newestRef]);
     if (listed.code !== 0) {
-      throw new Stop(
+      throw new Unreachable(
         `the checkpoint tag could not be read from ${remote ?? ''}: ${firstLine(listed.stderr)}`,
       );
     }
@@ -1063,6 +1113,13 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
       throw new Stop('the new worktree does not match the checkpoint commit');
     }
   } catch (cause) {
+    if (cause instanceof Unreachable) {
+      // Recorded, so a retry is allowed and takes fresh names; nothing was made yet.
+      record.status = 'needs_attention';
+      record.detail = cause.message;
+      writeRecord(io.home, record);
+      return again(cause.message);
+    }
     if (cause instanceof Stop) return attention(cause.message);
     throw cause;
   }

@@ -6,7 +6,15 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -19,11 +27,15 @@ import {
   gitEnv,
   inert,
   LOCAL_ROOT_ENV,
+  prepare,
+  PREPARE_RETRY,
+  readRecord,
   SAFE_CONFIG,
   saveWording,
   shellQuote,
   untrustedBlock,
 } from '../src/agent-handoff.ts';
+import type { Fetch } from '../src/agent-session.ts';
 
 void describe('gitEnv', () => {
   void test('keeps what a fetch needs and drops every credential', () => {
@@ -256,5 +268,173 @@ void describe('cleanup commands', () => {
       cleanupCommand('/tmp/a', { kind: 'worktree', name: '/tmp/x‮y' }),
       /holds control characters/,
     );
+  });
+});
+
+void describe('LAI-1107: prepare tells "could not reach" from a refusal', () => {
+  const OFFER = '01M6GM0000000000000000AAAA';
+  const TASK = '01M6GM0000000000000000BBBB';
+  const CP = '01M6GM0000000000000000CCCC';
+  const REF = `refs/tags/laika-ckpt/LAI-1/${CP}`;
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'laika-1107-prep-')));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  const run = (cwd: string, ...args: string[]): string =>
+    execFileSync('git', ['-c', 'user.name=S', '-c', 'user.email=s@example.test', ...args], {
+      cwd,
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH ?? '', HOME: root, GIT_TERMINAL_PROMPT: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  const bare = join(root, 'remotes', 'kvell', 'laika.git');
+  mkdirSync(bare, { recursive: true });
+  run(bare, 'init', '-q', '--bare', '-b', 'main');
+  const seed = join(root, 'seed');
+  run(root, 'clone', '-q', bare, seed);
+  run(seed, 'commit', '-q', '--allow-empty', '-m', 'checkpoint');
+  run(seed, 'push', '-q', 'origin', 'HEAD:refs/heads/main');
+  const sha = run(seed, 'rev-parse', 'HEAD');
+  run(bare, 'update-ref', REF, sha);
+
+  const json = (status: number, body: unknown): Promise<Response> =>
+    Promise.resolve(new Response(JSON.stringify(body), { status }));
+  const offer = {
+    id: OFFER,
+    task_id: TASK,
+    kind: 'handoff',
+    state: 'open',
+    checkpoint_id: CP,
+    checkpoint_commit_sha: sha,
+    checkpoint: { commit_sha: sha, verification: 'verified' },
+  };
+  const checkpoints = {
+    data: [
+      {
+        id: CP,
+        repo: 'kvell/laika',
+        commit_sha: sha,
+        verification: 'verified',
+        refs: [{ ref: REF, revision: 1 }],
+      },
+    ],
+  };
+  type Answer = () => Promise<Response>;
+  const board =
+    (inbox: Answer, cps: Answer = () => json(200, checkpoints)): Fetch =>
+    (input) =>
+      input.includes('/agents/me/inbox') ? inbox() : cps();
+
+  interface Attempt {
+    readonly code: number;
+    readonly err: string;
+    readonly home: string;
+    readonly repo: string;
+  }
+  function owner(): { home: string; repo: string } {
+    const repo = join(mkdtempSync(join(root, 'owner-')), 'laika');
+    run(root, 'clone', '-q', bare, repo);
+    return { home: mkdtempSync(join(root, 'home-')), repo };
+  }
+  async function attempt(fetch: Fetch): Promise<Attempt> {
+    const { home, repo } = owner();
+    return again(fetch, home, repo);
+  }
+  async function again(fetch: Fetch, home: string, repo: string): Promise<Attempt> {
+    const err: string[] = [];
+    const code = await prepare(
+      {
+        out: () => undefined,
+        err: (l) => err.push(l),
+        home,
+        env: { PATH: process.env.PATH ?? '', HOME: root, [LOCAL_ROOT_ENV]: join(root, 'remotes') },
+        cwd: repo,
+        fetch,
+        now: () => 0,
+      },
+      {
+        offerId: OFFER,
+        harness: 'claude-code',
+        credential: { url: 'http://board.invalid', token: 't' },
+        repoDir: repo,
+      },
+    );
+    return { code, err: err.join('\n'), home, repo };
+  }
+
+  void test('the board did not answer (the network, a 5xx): exit 75, nothing made', async () => {
+    for (const [what, fetch] of [
+      ['inbox network', board(() => Promise.reject(new TypeError('fetch failed')))],
+      ['inbox 503', board(() => json(503, {}))],
+      [
+        'checkpoints 502',
+        board(
+          () => json(200, { data: [offer] }),
+          () => json(502, {}),
+        ),
+      ],
+    ] as const) {
+      const r = await attempt(fetch);
+      assert.equal(r.code, PREPARE_RETRY, `${what}: ${r.err}`);
+      assert.equal(PREPARE_RETRY, 75);
+      assert.match(r.err, /could not be read: (network|HTTP 50)/, what);
+      assert.match(r.err, /nothing was checked out: try again/, what);
+      assert.equal(readRecord(r.home, OFFER), undefined, `${what}: nothing recorded`);
+    }
+  });
+
+  void test('the board refused (not in the inbox, a 404): exit 1, as before', async () => {
+    for (const [what, fetch] of [
+      ['not in the inbox', board(() => json(200, { data: [] }))],
+      [
+        'checkpoints 404',
+        board(
+          () => json(200, { data: [offer] }),
+          () => json(404, {}),
+        ),
+      ],
+    ] as const) {
+      const r = await attempt(fetch);
+      assert.equal(r.code, 1, `${what}: ${r.err}`);
+    }
+  });
+
+  void test('the repository could not be fetched from: exit 75; the retry prepares', async () => {
+    const fetch = board(() => json(200, { data: [offer] }));
+    const { home, repo } = owner();
+    const objects = join(bare, 'objects');
+    renameSync(objects, `${objects}.away`);
+    let first: Attempt;
+    try {
+      first = await again(fetch, home, repo);
+    } finally {
+      renameSync(`${objects}.away`, objects);
+    }
+    assert.equal(first.code, PREPARE_RETRY, first.err);
+    assert.match(first.err, /the checkpoint tag could not be fetched from origin/);
+    assert.doesNotMatch(first.err, /Save needs attention/);
+    const record = readRecord(first.home, OFFER)!;
+    assert.equal(record.status, 'needs_attention');
+    assert.equal(existsSync(record.worktree), false, 'nothing was checked out');
+
+    const second = await again(fetch, first.home, first.repo);
+    assert.equal(second.code, 0, second.err);
+    assert.equal(readRecord(first.home, OFFER)!.status, 'prepared');
+  });
+
+  void test('the remote answers it has no such tag: still a refusal, exit 1', async () => {
+    const { home, repo } = owner();
+    run(bare, 'update-ref', '-d', REF);
+    let r: Attempt;
+    try {
+      r = await again(
+        board(() => json(200, { data: [offer] })),
+        home,
+        repo,
+      );
+    } finally {
+      run(bare, 'update-ref', REF, sha);
+    }
+    assert.equal(r.code, 1, r.err);
+    assert.match(r.err, /Save needs attention — the checkpoint tag could not be fetched/);
+    assert.match(r.err, /couldn't find remote ref/);
   });
 });
