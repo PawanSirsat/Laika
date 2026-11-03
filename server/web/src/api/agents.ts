@@ -1,5 +1,6 @@
 import { pageSuffix, type PageQuery } from './every-page.ts';
 import { AGENT_CLIENTS, type AgentClient } from './agent-clients.ts';
+import type { Launcher } from './capacity.ts';
 import { request } from './client.ts';
 import type { Page } from './tasks.ts';
 import type { TokenScope, TokenView } from './tokens.ts';
@@ -52,6 +53,12 @@ export interface RegisteredAgent {
    * whole of why the wizard's last step can trust it.
    */
   readonly last_seen_at: number | null;
+  /**
+   * Its launcher, as its own token last reported it (§4.83, D-126 item 4):
+   * `on` only from an enabled report under three minutes old. Read-only —
+   * nothing on the board starts or configures a launcher.
+   */
+  readonly launcher: Launcher;
 }
 
 /**

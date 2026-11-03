@@ -31,6 +31,7 @@ import {
   type Harness,
   type StubCall,
 } from './harness.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 const MIN = 60_000;
@@ -77,6 +78,7 @@ const AGENTS = [
     created_at: 1,
     revoked_at: null,
     last_seen_at: NOW - MIN,
+    launcher: NEVER_REPORTED,
   },
 ];
 

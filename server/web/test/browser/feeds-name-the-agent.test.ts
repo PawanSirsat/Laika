@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 const NOW = Date.now();
@@ -38,6 +39,7 @@ const MINE = {
   created_at: 1,
   revoked_at: null,
   last_seen_at: NOW,
+  launcher: NEVER_REPORTED,
 };
 
 const NAMED = 'Ada Lovelace via Claude Code · Belka';

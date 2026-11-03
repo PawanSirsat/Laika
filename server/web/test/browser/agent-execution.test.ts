@@ -29,6 +29,7 @@ import {
   type ApiStub,
   type Harness,
 } from './harness.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 const HOUR = 3_600_000;
 const NOW = Date.now();
@@ -75,6 +76,7 @@ const AGENTS = [
     created_at: 1,
     revoked_at: null,
     last_seen_at: NOW - 60_000,
+    launcher: NEVER_REPORTED,
   },
 ];
 

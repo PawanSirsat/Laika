@@ -1011,3 +1011,88 @@
 .handoff-row-live {
   position: relative;
 }
+
+/* ------------------------------------------------------- capacity ping (LAI-1102) */
+
+/* Ping, and what came back: the button first, the answer under it. The answer
+   wraps at any width — every fact is its own item, so 390 px breaks between
+   facts rather than through one. */
+.agent-ping {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.agent-ping-status {
+  flex: 1 1 100%;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.agent-ping-live:empty {
+  /* Kept in the tree so the live region exists before it fills; drawn as nothing. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.agent-ping-line {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-ping-problem {
+  color: var(--text-primary);
+}
+
+.agent-ping-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-primary);
+}
+
+.agent-ping-facts li {
+  overflow-wrap: anywhere;
+}
+
+.agent-ping-status[data-stale] .agent-ping-facts {
+  color: var(--text-secondary);
+}
+
+/* The drawer's quiet Ping: the rail's link weight, a button underneath. */
+.agent-ping-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.agent-ping-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.agent-ping-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+.agent-ping-link[aria-disabled='true'] {
+  cursor: default;
+  text-decoration: none;
+  color: var(--text-muted);
+}

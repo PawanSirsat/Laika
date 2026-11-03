@@ -224,6 +224,9 @@ const LABELS: Readonly<Record<string, string>> = {
   // Written by the system when a claim expired with a verified save: an
   // offer, never an assignment (§4.73).
   'task.recovered': 'offered this task for recovery from its last verified save',
+  // A capacity ping (D-126, LAI-1038): a question, not a change. The answer is
+  // never an activity row, so this line says only that the agent was asked.
+  'agent.capacity_requested': 'asked an agent whether it can take work',
 
   'comment.added': 'commented',
   'comment.edited': 'edited a comment',

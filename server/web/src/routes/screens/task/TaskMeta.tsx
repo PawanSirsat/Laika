@@ -347,6 +347,7 @@ export function TaskMeta({
               myAgents={myAgents}
               readOrder={readOrder}
               onChanged={onTaskEdited}
+              projectSlug={slug}
             />
 
             <div className="meta-row">

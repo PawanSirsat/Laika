@@ -10,6 +10,8 @@
  */
 
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import {
@@ -28,6 +30,7 @@ import {
 } from './harness.ts';
 import { offered, pick } from './dropdown.ts';
 import { AGENT_SAVE_DEADLINE_MS } from '../../src/api/agent-writes.ts';
+import { NEVER_REPORTED, reported } from '../helpers/launcher.ts';
 
 const HOUR = 3_600_000;
 const NOW = Date.now();
@@ -62,6 +65,7 @@ const AGENTS = [
     created_at: 1,
     revoked_at: null,
     last_seen_at: NOW - 60_000,
+    launcher: NEVER_REPORTED,
   },
   {
     id: 'ag-desktop',
@@ -75,6 +79,7 @@ const AGENTS = [
     created_at: 2,
     revoked_at: null,
     last_seen_at: null,
+    launcher: NEVER_REPORTED,
   },
   {
     id: 'ag-ro',
@@ -88,6 +93,7 @@ const AGENTS = [
     created_at: 3,
     revoked_at: null,
     last_seen_at: NOW - 60_000,
+    launcher: NEVER_REPORTED,
   },
 ];
 
@@ -2122,6 +2128,265 @@ void describe('two agents that share a harness and a device', () => {
       assert.equal(await visible('t3'), 'desktop-2', 'an agent with no twin keeps its device');
     } finally {
       await h.close();
+    }
+  });
+});
+
+// ------------------------------------------------------------------ Ping (LAI-1102)
+
+const ANSWERED_PING = () => ({
+  ping: {
+    id: 'cp1',
+    agent_id: 'ag-laptop',
+    project_id: 'laika-core',
+    task_id: 't2',
+    state: 'answered',
+    requested_by: { user_id: 'u1', agent_id: null },
+    created_at: Date.now() - 3000,
+    expires_at: Date.now() + 57_000,
+    answered_at: Date.now() - 1000,
+    answer: {
+      launcher: {
+        state: 'on',
+        auto_pickup: { work_requests: true, handoffs: true },
+        running: 0,
+        max_concurrent: 1,
+      },
+      harness_ready: { credential: true, argv: true, hooks: true },
+      session_live: false,
+      battery: { state: 'unsupported' },
+      memory: { state: 'normal' },
+      cli_version: '0.4.2',
+      answered_by: 'launcher',
+    },
+  },
+  created: true,
+});
+
+/** The world, with the laptop agent's launcher on and a ping it answers. */
+function pingWorld(options: { readonly role?: 'lead' | 'viewer' } = {}): World {
+  const w = world(options);
+  return {
+    ...w,
+    stub: {
+      ...w.stub,
+      '/api/v1/agents': {
+        data: AGENTS.map((a) =>
+          a.id === 'ag-laptop' ? { ...a, launcher: reported('on', Date.now() - 20_000) } : a,
+        ),
+        next_cursor: null,
+      },
+      '/api/v1/agents/ag-laptop/capacity-pings': () => reply(201, ANSWERED_PING()),
+    },
+  };
+}
+
+/** The laptop agent's launcher, on until the test turns it. */
+function launcherWorld(): World & { turn: (state: 'on' | 'unknown') => void } {
+  const w = world();
+  let state: 'on' | 'unknown' = 'on';
+  return {
+    ...w,
+    turn: (next) => {
+      state = next;
+    },
+    stub: {
+      ...w.stub,
+      '/api/v1/agents': () => ({
+        data: AGENTS.map((a) =>
+          a.id === 'ag-laptop'
+            ? {
+                ...a,
+                launcher: reported(state, Date.now() - (state === 'on' ? 20_000 : 4 * 60_000)),
+              }
+            : a,
+        ),
+        next_cursor: null,
+      }),
+    },
+  };
+}
+
+const pingIn = (h: Harness) =>
+  h.page.locator('.meta-row-agent').getByRole('button', { name: /^Ping / });
+
+void describe('Ping on the drawer’s agent (LAI-1102)', () => {
+  void test('the reader’s own selectable agent: Ping, asked about this task in its space', async () => {
+    const h = await open('/board?project=laika-core&task=t2', pingWorld().stub);
+    try {
+      await agentBox(h);
+      const link = pingIn(h);
+      await link.waitFor({ timeout: 10_000 });
+      assert.equal(await link.getAttribute('aria-label'), 'Ping Claude Code · laptop-1');
+      await link.focus();
+      await h.page.keyboard.press('Enter');
+      const region = h.page.locator('.meta-row-agent .agent-ping-status');
+      assert.equal(await region.locator('.agent-ping-live').getAttribute('aria-live'), 'polite');
+      await region.locator('[data-answer="battery"]').waitFor({ timeout: 10_000 });
+      assert.equal(
+        (await region.locator('[data-answer="battery"]').innerText()).trim(),
+        'Battery: unsupported on this device',
+      );
+      const post = h.calls.find(
+        (c) => c.method === 'POST' && c.path === '/api/v1/agents/ag-laptop/capacity-pings',
+      );
+      assert.deepEqual(post?.body, { project: 'laika-core', task_id: 't2', wait_ms: 8000 });
+      assert.equal(
+        await link.evaluate((el) => el === document.activeElement),
+        true,
+        'focus left the Ping link',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the picker says auto-pickup on, and Starts automatically, from the board’s word', async () => {
+    const h = await open('/board?project=laika-core&task=t2', pingWorld().stub);
+    try {
+      const box = await agentBox(h);
+      const row = await agentRow(h);
+      await until(async () => (await row.innerText()).includes('Starts automatically'));
+      assert.match(
+        await row.innerText(),
+        /Starts automatically on laptop-1: its launcher picks up the work request\./,
+      );
+      await box.focus();
+      await h.page.keyboard.press('ArrowDown');
+      await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
+      const options = await optionsOpen(h.page, box);
+      const laptop = options.find((o) => o.value === 'ag-laptop');
+      const desktop = options.find((o) => o.value === 'ag-desktop');
+      assert.match(laptop?.text ?? '', /Available · auto-pickup on/);
+      // Its launcher never reported: no such words.
+      assert.doesNotMatch(desktop?.text ?? '', /auto-pickup/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('no Ping without an agent, for a viewer, or for an agent read-only here', async () => {
+    const none = await open('/board?project=laika-core&task=t1', pingWorld().stub);
+    try {
+      await agentBox(none);
+      assert.equal(await pingIn(none).count(), 0);
+    } finally {
+      await none.close();
+    }
+
+    const viewer = await open(
+      '/board?project=laika-core&task=t2',
+      pingWorld({ role: 'viewer' }).stub,
+    );
+    try {
+      const row = await agentRow(viewer);
+      await until(async () => (await row.innerText()).includes('laptop-1'));
+      // The setup is checked, not assumed: `until` never fails by itself. And
+      // an absence is read only once the reads that decide it are in — the
+      // agent shows before the reader's permissions do.
+      assert.match(await row.innerText(), /laptop-1/);
+      await viewer.page.waitForLoadState('networkidle');
+      assert.equal(await pingIn(viewer).count(), 0);
+    } finally {
+      await viewer.close();
+    }
+
+    const w = pingWorld();
+    const plain = w.tasks.find((t) => t.id === 't1');
+    assert.ok(plain !== undefined);
+    plain.selected_agent = viewOf('ag-ro');
+    const reader = await open('/board?project=laika-core&task=t1', w.stub);
+    try {
+      // The picker is drawn only once the reader may edit and their agents
+      // are in: the state Ping is decided in, so its absence means something.
+      await agentBox(reader);
+      const row = await agentRow(reader);
+      assert.match(await row.innerText(), /tablet/);
+      assert.equal(await pingIn(reader).count(), 0);
+    } finally {
+      await reader.close();
+    }
+  });
+});
+
+void describe('the picker’s Starts automatically follows the launcher (review round 1)', () => {
+  void test('read again quietly when the window comes back; a failed read keeps it; focus stays', async () => {
+    const w = launcherWorld();
+    const h = await open('/board?project=laika-core&task=t2', w.stub);
+    try {
+      const box = await agentBox(h);
+      const row = await agentRow(h);
+      await until(async () => (await row.innerText()).includes('Starts automatically'));
+      assert.match(await row.innerText(), /Starts automatically on laptop-1/);
+      await box.focus();
+      const reads = () => h.calls.filter((c) => c.path === '/api/v1/agents').length;
+
+      // A read that fails says nothing and changes nothing.
+      const agentsList = (url: URL): boolean => url.pathname === '/api/v1/agents';
+      await h.page.route(agentsList, (route) => route.abort('internetdisconnected'));
+      let failed = 0;
+      h.page.on('requestfailed', (request) => {
+        if (new URL(request.url()).pathname === '/api/v1/agents') failed += 1;
+      });
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await until(() => failed > 0);
+      assert.ok(failed > 0, 'the quiet read never went out');
+      await until(async () => !(await row.innerText()).includes('Starts automatically'), 1000);
+      assert.match(await row.innerText(), /Starts automatically on laptop-1/);
+      assert.equal(await row.getByRole('alert').count(), 0);
+      await h.page.unroute(agentsList);
+
+      // The launcher stops reporting; the next read takes the words away.
+      w.turn('unknown');
+      const before = reads();
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await until(() => reads() > before);
+      await until(async () => !(await row.innerText()).includes('Starts automatically'));
+      assert.doesNotMatch(await row.innerText(), /Starts automatically/);
+      assert.match(await row.innerText(), /A work request goes to this agent/);
+      assert.equal(
+        await box.evaluate((el) => el === document.activeElement),
+        true,
+        'a re-read took focus from the Agent field',
+      );
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+});
+
+const EVIDENCE = process.env.LAIKA_EVIDENCE_DIR;
+
+/** Theme colours ease in; a screenshot taken mid-way shows neither theme. */
+const settled = (page: Page) =>
+  page.evaluate(() => new Promise<void>((done) => setTimeout(done, 600)));
+
+void describe('evidence: Ping in the drawer', { skip: EVIDENCE === undefined }, () => {
+  void test('screenshots', async () => {
+    const dir = EVIDENCE ?? '';
+    mkdirSync(dir, { recursive: true });
+    for (const theme of ['light', 'dark'] as const) {
+      for (const width of [1440, 390] as const) {
+        const h = await open('/board?project=laika-core&task=t2', pingWorld().stub, {
+          before: async (page) => {
+            await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+          },
+        });
+        try {
+          await agentBox(h);
+          await setTheme(h.page, theme);
+          await pingIn(h).click();
+          await h.page.locator('.meta-row-agent [data-answer="cli"]').waitFor({ timeout: 10_000 });
+          await h.page.locator('.meta-row-agent').scrollIntoViewIfNeeded();
+          await settled(h.page);
+          await h.page.screenshot({
+            path: join(dir, `drawer-ping-answer-${theme}-${String(width)}.png`),
+          });
+        } finally {
+          await h.close();
+        }
+      }
     }
   });
 });

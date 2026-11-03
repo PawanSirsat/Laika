@@ -38,6 +38,7 @@ import {
   TOOL_CATALOG,
 } from '../../../../../src/routes/screens/developer/v3/tool-catalog.ts';
 import { hazardsIn } from './shell-words.ts';
+import { NEVER_REPORTED } from '../../../../helpers/launcher.ts';
 
 const agent = (over: Partial<RegisteredAgent> & { id: string }): RegisteredAgent => ({
   owner_user_id: 'u1',
@@ -51,6 +52,7 @@ const agent = (over: Partial<RegisteredAgent> & { id: string }): RegisteredAgent
   created_at: 1,
   revoked_at: null,
   last_seen_at: null,
+  launcher: NEVER_REPORTED,
   ...over,
 });
 

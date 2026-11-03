@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { confirmAgentDevice, revokeAgentDevice } from '../../../../api/agent-devices.ts';
 import { getAgent, type RegisteredAgent } from '../../../../api/agents.ts';
+import { PRESENCE_REREAD_MS } from '../../../../api/capacity.ts';
 import { listDevices, type Device } from '../../../../api/devices.ts';
 import { everyPage } from '../../../../api/every-page.ts';
 import type { MeProfile } from '../../../../api/me.ts';
@@ -137,22 +138,32 @@ export function DeviceRoster({
   const addToolButton = useRef<HTMLButtonElement | null>(null);
   const lastAdd = useRef<'device' | 'tool' | undefined>(undefined);
   const readGen = useRef(0);
+  /** A list has been shown: a quiet re-read that fails leaves it there. */
+  const listed = useRef(false);
 
   const load = useCallback(
-    (signal?: AbortSignal): void => {
+    (signal?: AbortSignal, quiet = false): void => {
       readGen.current += 1;
       const gen = readGen.current;
       listDevices(signal)
         .then(({ data }) => {
           if (gen !== readGen.current) return;
+          listed.current = true;
           setDevices(data);
           setError(null);
           setNow(Date.now());
-          announce(devicesSummary(deviceCounts(data)));
+          // A re-read for presence alone says nothing: the list did not change
+          // because of anything the reader did.
+          if (!quiet) announce(devicesSummary(deviceCounts(data)));
         })
         .catch((cause: unknown) => {
           if (cause instanceof DOMException && cause.name === 'AbortError') return;
           if (gen !== readGen.current) return;
+          // A presence re-read that fails — offline, a laptop waking, a deploy
+          // restarting — keeps the list it has (LAI-1102 review, B1). Putting
+          // an error in its place would take the row the reader is on, and
+          // their focus with it; the next read that works brings it up to date.
+          if (quiet && listed.current) return;
           setError(cause);
         });
     },
@@ -182,6 +193,24 @@ export function DeviceRoster({
       controller.abort();
     };
   }, [load, loadProjects]);
+
+  // A launcher's presence moves on its own (§4.83, LAI-1102), and these
+  // screens hold no event stream: read the list again, quietly, when the
+  // window comes back and every minute while it is shown. Rows keep their
+  // keys, so nothing a reader is on moves or loses focus.
+  const reread = useCallback((): void => {
+    if (document.visibilityState === 'visible') load(undefined, true);
+  }, [load]);
+  useEffect(() => {
+    const timer = setInterval(reread, PRESENCE_REREAD_MS);
+    window.addEventListener('focus', reread);
+    document.addEventListener('visibilitychange', reread);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', reread);
+      document.removeEventListener('visibilitychange', reread);
+    };
+  }, [reread]);
 
   // A panel named by the address for something *Show revoked* hides: show
   // the revoked too, so its row is there for focus to come back to. Once per
@@ -545,6 +574,7 @@ export function DeviceRoster({
           confirm={confirm}
           onClose={closeDetails}
           restore={restoreFor(panelKey)}
+          onPinged={reread}
         />
       )}
     </>

@@ -47,6 +47,7 @@ import {
   withDevice,
   withRevokedAgents,
 } from '../../../../../src/routes/screens/developer/v3/devices-view.ts';
+import { NEVER_REPORTED } from '../../../../helpers/launcher.ts';
 
 const NOW = 1_800_000_000_000;
 
@@ -81,6 +82,7 @@ const agent = (over: Partial<RegisteredAgent> & { id: string }): RegisteredAgent
   created_at: 1,
   revoked_at: null,
   last_seen_at: null,
+  launcher: NEVER_REPORTED,
   ...over,
 });
 
@@ -101,6 +103,7 @@ const device = (over: Partial<Device> & { id: string; agents: RegisteredAgent[] 
     revoked_count: over.agents.length - active,
     created_at: 1,
     revoked_at: null,
+    launcher: NEVER_REPORTED,
     ...over,
   };
 };

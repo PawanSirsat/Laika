@@ -18,6 +18,11 @@ interface AgentChoiceBase {
    * list cannot hide it.
    */
   readonly twin?: string | undefined;
+  /**
+   * Its device's launcher starts a work request by itself, on the board's
+   * word (LAI-1102). Only then does the picker say *auto-pickup on*.
+   */
+  readonly autoPickup?: boolean | undefined;
 }
 
 /**
@@ -63,9 +68,9 @@ export function choiceLabel(agent: AgentChoice): string {
 
 /** What the option says after its label: the availability, or the reason it is out. */
 export function choiceDetail(agent: AgentChoice): string {
-  return agent.availability === 'unavailable'
-    ? agent.reason
-    : AVAILABILITY_WORDS[agent.availability];
+  if (agent.availability === 'unavailable') return agent.reason;
+  const words = AVAILABILITY_WORDS[agent.availability];
+  return agent.autoPickup === true ? `${words} · auto-pickup on` : words;
 }
 
 /**
@@ -133,9 +138,11 @@ export function AgentPicker({ agents, value, onChange, disabled }: AgentPickerPr
         <p id={helpId} className="agent-picker-help">
           {selected === undefined
             ? 'Picking an agent sends it a work request. It does not start any work.'
-            : selected.availability === 'offline'
-              ? 'Offline. The work request waits until this agent reconnects.'
-              : 'A work request goes to this agent. The task changes only when it accepts.'}
+            : selected.availability !== 'unavailable' && selected.autoPickup === true
+              ? `Starts automatically on ${selected.device}: its launcher picks up the work request. The task changes only when it accepts.`
+              : selected.availability === 'offline'
+                ? 'Offline. The work request waits until this agent reconnects.'
+                : 'A work request goes to this agent. The task changes only when it accepts.'}
         </p>
       </div>
     </div>

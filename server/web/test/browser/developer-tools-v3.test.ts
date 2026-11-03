@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, navigateInApp, open, setTheme, until, type ApiStub } from './harness.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 const NOW = Date.now();
 
@@ -116,6 +117,7 @@ const agentRow = (
   created_at: 1,
   revoked_at: null as number | null,
   last_seen_at: seen,
+  launcher: NEVER_REPORTED,
 });
 
 type Agent = ReturnType<typeof agentRow>;
@@ -140,6 +142,7 @@ const deviceRow = (agents: Agent[]) => ({
   active_count: agents.length,
   revoked_count: 0,
   agents,
+  launcher: NEVER_REPORTED,
   created_at: 1,
   revoked_at: null,
 });
@@ -572,6 +575,7 @@ void describe('the details panel: around it (review round 1)', () => {
                 active_count: 0,
                 revoked_count: 1,
                 agents: [{ ...CLAUDE, status: 'revoked', revoked_at: NOW }],
+                launcher: NEVER_REPORTED,
               }
             : imported,
         ],

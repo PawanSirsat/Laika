@@ -72,4 +72,8 @@ export const STREAM_TYPES: readonly string[] = [
   'task.handoff_cancelled',
   'task.handoff_expired',
   'task.recovered',
+  // Somebody asked an agent's device for its capacity (D-126, LAI-1038). The
+  // row carries no answer — that comes back on the ping's own request — so a
+  // reader sees only that the agent was asked.
+  'agent.capacity_requested',
 ];

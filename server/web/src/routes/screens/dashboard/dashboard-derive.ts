@@ -220,6 +220,9 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   'task.handoff_cancelled': 'withdrew a hand-off',
   'task.handoff_expired': 'expired a hand-off nobody accepted',
   'task.recovered': 'offered a task for recovery',
+  // A capacity ping (D-126, LAI-1038). Worded so the vocabulary is whole, and
+  // declined in FEED_SILENT below.
+  'agent.capacity_requested': 'asked an agent whether it can take work',
 };
 
 /**
@@ -249,6 +252,11 @@ export const FEED_SILENT: Readonly<Record<string, string>> = {
   'invite.expired':
     'nobody did this; the invite simply aged out, and a feed of what people did should not narrate the calendar',
   'meeting_review.expired': 'nobody did this either — the same reasoning as invite.expired',
+
+  // D-126 (LAI-1038): a ping asks a device a question and changes nothing on
+  // the project, and anyone who may delegate can send four a minute.
+  'agent.capacity_requested':
+    'a question to a device, not a change to the project — and frequent enough to bury the rows that are',
 
   // `task.stale_flagged` is deliberately **not** here. It is the one cron verb a
   // person asks about — "why is this marked stale" — and it appears on the

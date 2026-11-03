@@ -37,6 +37,7 @@ import {
   type SelectedAgent,
 } from '../../src/api/selected-agent.ts';
 import { AVAILABILITY_WORDS } from '../../src/components/agent/agent-states.ts';
+import { NEVER_REPORTED, reported } from '../helpers/launcher.ts';
 
 const NOW = 1_800_000_000_000;
 
@@ -52,6 +53,7 @@ const registered = (over: Partial<RegisteredAgent> & { id: string }): Registered
   created_at: 1,
   revoked_at: null,
   last_seen_at: NOW - 60_000,
+  launcher: NEVER_REPORTED,
   ...over,
 });
 
@@ -163,6 +165,41 @@ void describe('who the picker offers', () => {
     );
     // The availability union is the components' one.
     for (const row of rows) assert.ok(row.availability in AVAILABILITY_WORDS);
+  });
+
+  void test('auto-pickup on only where the board says on and work requests are picked up', () => {
+    const rows = pickerChoices({
+      agents: [
+        registered({ id: 'on', launcher: reported('on', NOW - 30_000) }),
+        // A report a second old, on a word the board already turned: never on.
+        registered({ id: 'stale', launcher: reported('unknown', NOW - 1000) }),
+        registered({ id: 'never' }),
+        registered({
+          id: 'handoffs-only',
+          launcher: {
+            ...reported('on', NOW - 30_000),
+            auto_pickup: { work_requests: false, handoffs: true },
+          },
+        }),
+        // Ineligible here: nothing to start, whatever its launcher says.
+        registered({ id: 'ungranted', grants: [], launcher: reported('on', NOW - 30_000) }),
+      ],
+      ownerName: 'Ada Lovelace',
+      projectId: 'p1',
+      agentsAllowed: true,
+      current: null,
+      now: NOW,
+    });
+    assert.deepEqual(
+      rows.map((r) => [r.id, r.autoPickup]),
+      [
+        ['on', true],
+        ['stale', false],
+        ['never', false],
+        ['handoffs-only', false],
+        ['ungranted', undefined],
+      ],
+    );
   });
 
   void test('a revoked agent is left out, unless it is the current choice', () => {
