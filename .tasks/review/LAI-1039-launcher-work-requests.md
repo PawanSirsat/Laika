@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p3
 depends-on: [LAI-558]
 discovered-from: LAI-558
-status: in-progress
+status: review
 started: 2026-11-03T14:35:00+05:30
+finished: 2026-11-03T15:45:00+05:30
 ---
 
 ## Goal
@@ -26,9 +27,12 @@ that is new git logic outside D-117's text. Then the harness claims with
 
 ## Acceptance criteria
 
-- [ ] Recorded as an amendment to D-117 before any code.
-- [ ] Same limits, audit, argv/env/stdin rules as LAI-558; tests and mutations.
-- [ ] Repo-root gate exits 0.
+- [x] Recorded as an amendment to D-117 before any code. — D-117a (with D-126,
+      D-127), written by CHIEF in PR #251 before this branch's first code commit.
+- [x] Same limits, audit, argv/env/stdin rules as LAI-558; tests and mutations.
+      — 13 mutations red; see the log.
+- [x] Repo-root gate exits 0. — the CI Gate on PR #254 at f07a30f6, every job
+      green; not run locally on Belka (the owner's one-file rule).
 
 ## Dispatch (2026-11-03, CHIEF / polly)
 
@@ -53,4 +57,12 @@ Named files (the plan's list, nothing else): `cli/src/agent-launcher.ts`,
 `agent-events.test.ts`, new `agent-workspace.test.ts`,
 `agent-launcher-service.test.ts`, `agent-omnigent.test.ts`,
 `agent-launcher-e2e.test.ts`, and `cli/test/support/fake-harness.ts`.
+
+## Delivered (PR #254)
+
+Slice B (F1–F6) and LAI-1038's CLI half, plus, on the owner's direction, the
+launcher wired to slice D's `agent-omnigent.ts` (branch merged in; #252 merges
+first). Not here: a live Codex run (LAI-1104), the Omnigent live check
+(LAI-1103), the `agent.ts` usage line (LAI-1105). Log:
+`logs/shell-2026-11-03-LAI-1039.md`.
 
