@@ -473,7 +473,9 @@ function who(party: Party | null): string {
   if (party === null || typeof party.harness !== 'string' || !HARNESS.test(party.harness)) {
     return 'another agent';
   }
-  return HARNESS_NAMES[party.harness] ?? party.harness;
+  // Only a harness this helper knows by name (round 2, item 5): a slug that merely
+  // matches the shape is another owner's text too.
+  return HARNESS_NAMES[party.harness] ?? 'another agent';
 }
 
 /**
@@ -766,8 +768,11 @@ export async function receive(
   if (records.some((r) => SILENT_TYPES.has(r.type))) {
     await settlePings(deps, key, credential, timeoutMs);
   }
+  // A ping is acknowledged only by whoever settles it (`settlePings`): one left
+  // for a running launcher stays undelivered, so the launcher's own poll still
+  // finds it if its stream is down (round 2, item 6).
   const unreceived = readStore(deps.home, key)
-    .records.filter((r) => r.state === 'available')
+    .records.filter((r) => r.state === 'available' && !SILENT_TYPES.has(r.type))
     .map((r) => r.event_id);
   const { recorded, outcome } = await ack(
     deps,

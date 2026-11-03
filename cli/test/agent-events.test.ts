@@ -585,6 +585,22 @@ void describe('F1: a device label with spaces and apostrophes', () => {
     assert.ok(!text.includes(long));
   });
 
+  void test('round 2, item 5: a harness slug the helper does not know by name is "another agent"', () => {
+    for (const harness of ['robot-x', 'gh-pr-merge', 'claude']) {
+      const r = received(envelope({ from: { agent_id: id(), harness, device: null } }), {
+        task_key: 'LAI-5',
+      });
+      assert.match(noticeLine(r), /^LAI-5: hand-off offer from another agent; run/, harness);
+    }
+    const known = received(
+      envelope({ from: { agent_id: id(), harness: 'omnigent', device: null } }),
+      {
+        task_key: 'LAI-5',
+      },
+    );
+    assert.match(noticeLine(known), /^LAI-5: hand-off offer from Omnigent; run/);
+  });
+
   void test('B1: another owner’s label written as an instruction never reaches the model', () => {
     // A label is its agent's owner's free text; under allow_other_owners that is
     // another person, and a notice is read by an unattended `claude -p` too.
@@ -707,7 +723,11 @@ void describe('a capacity ping (agent.capacity_requested)', () => {
     const left = id();
     await receive(hook, KEY, credential, [ping(left)], undefined);
     assert.deepEqual(replies, [], 'nothing answered inside a hook');
-    assert.equal(readStore(home, KEY).records[0]!.state, 'received', 'acknowledged, not answered');
+    assert.equal(
+      readStore(home, KEY).records[0]!.state,
+      'available',
+      'neither answered nor acknowledged: it stays undelivered for an answerer',
+    );
 
     // The stream: the session's own answer, `launcher: off` (no launcher here).
     const pid = id();
@@ -736,21 +756,46 @@ void describe('a capacity ping (agent.capacity_requested)', () => {
     ]);
   });
 
-  void test('left for another answerer stays received; past twice the open window it is settled unanswered', async () => {
+  void test('round 2, item 6: a ping left for the launcher is not acknowledged, so its poll still finds it; past its window it is settled', async () => {
     const pid = id();
     let now = Date.now();
-    const deps: EventDeps = {
+    const acks: unknown[] = [];
+    const fetchFn = (input: string, init: RequestInit): Promise<Response> => {
+      if (input.endsWith('/events/ack')) acks.push(JSON.parse(init.body as string));
+      return Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 }));
+    };
+    // The session watcher: a launcher runs, so it leaves the ping.
+    const watcher: EventDeps = {
       home,
       now: () => now,
       sleep: () => Promise.resolve(),
-      fetch: () => Promise.resolve(new Response(JSON.stringify({ data: [] }), { status: 200 })),
+      fetch: fetchFn,
       answerPing: () => Promise.resolve(false),
     };
-    await receive(deps, KEY, credential, [ping(pid)], undefined);
-    assert.equal(readStore(home, KEY).records[0]!.state, 'received');
-    // Past `ping.expires_at` and the skew allowance, nothing can answer it: settled.
-    now += 121_000;
-    assert.equal(await settlePings(deps, KEY, credential), 1);
+    await receive(watcher, KEY, credential, [ping(pid)], undefined);
+    assert.equal(readStore(home, KEY).records[0]!.state, 'available');
+    assert.deepEqual(acks, [], 'not acknowledged: still undelivered on the board');
+    // The launcher answers it from the same store, then acknowledges it.
+    const order: string[] = [];
+    const launcher: EventDeps = {
+      ...watcher,
+      fetch: (input, init) => {
+        if (input.endsWith('/events/ack')) order.push('ack');
+        return fetchFn(input, init);
+      },
+      answerPing: () => {
+        order.push('answer');
+        return Promise.resolve(true);
+      },
+    };
+    assert.equal(await settlePings(launcher, KEY, credential), 1);
+    assert.deepEqual(order, ['answer', 'ack']);
     assert.equal(readStore(home, KEY).records[0]!.state, 'presented');
+    // One nobody answers is settled once past its window, and acknowledged then.
+    const other = id();
+    await receive(watcher, KEY, credential, [ping(other)], undefined);
+    now += 121_000;
+    assert.equal(await settlePings(watcher, KEY, credential), 1);
+    assert.equal(readStore(home, KEY).records.find((r) => r.ping_id === other)?.state, 'presented');
   });
 });
