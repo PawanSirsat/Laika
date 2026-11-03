@@ -3469,7 +3469,9 @@ answered_at, answer }` **by whoever pinged** — the person, through any of thei
 credentials — **and by the agent's owner**, while they may read the project;
 anyone else gets the `404` of no ping. `requested_by.agent_id` is shown only to
 the pinging agent's own owner (D-121 item 7). It is **not an activity row**. A
-client calls an answer older than 5 minutes stale.
+client calls an answer older than 5 minutes stale. `GET /agents/:id/capacity`
+reads only **the project asked**, which the reader may read: its owner, the
+newest answer to anyone's ping there; anyone else, to its own there.
 
 ## 5. Task lifecycle
 
@@ -4054,7 +4056,7 @@ PUT    /api/v1/agents/me/launcher            an agent's token only; body { enabl
 POST   /api/v1/agents/:id/capacity-pings     body { project, task_id?, wait_ms? ≤ 10000 } → 201 { ping, created: true }, or 200 { ping, created: false } for the one still open from a repeat within 15 s; held up to wait_ms for the answer, one held request per requester per ping (a repeat while one is held answers at once); anyone who may not ping it the agent 404; 429 capacity_ping_rate with Retry-After (§4.84, agent.ping)
 GET    /api/v1/capacity-pings/:id            → { ping } — to whoever pinged and the agent's owner; anyone else the 404 of no ping (§4.84, project.read)
 POST   /api/v1/agents/me/capacity-pings/:id/reply   the pinged agent's own token; body the answer (§4.84) → { ping }; 409 already_answered or ping_expired; a ping addressed to another agent the 404 of none (heartbeat.send_own)
-GET    /api/v1/agents/:id/capacity           ?project= → { agent_id, launcher, latest_answer, now } — the agents the caller may ping (else the agent 404); latest_answer is the newest answered ping it may read: any, to the owner; its own in this project, to anyone else (§4.84, agent.ping)
+GET    /api/v1/agents/:id/capacity           ?project= → { agent_id, launcher, latest_answer, now } — the agents the caller may ping (else the agent 404); latest_answer is the newest answered ping in this project: anyone's, to the owner; its own, to anyone else (§4.84, agent.ping)
 POST   /api/v1/project-setups            the owner signed in: body { agent_id: string | null, project_slug, template_revision, instructions_path? } → 201 a self_reported_browser record (agent.manage_own, session only); an agent's own token: body { project_slug, repo_key, repo_label, instructions_path, block_found, template_revision, block_project, block_prefix } → 201 a local_check record for that agent (heartbeat.send_own); a personal token 403 not_an_agent (§4.82)
 GET    /api/v1/project-setups            ?project= optional, agent_id= optional → { data: [{ id, agent_id, device_label, project_id, project_slug, repo_label, instructions_path, block_found, template_revision, project_match, prefix_match, source, checked_at }] } — own rows, for the one project; with no project, across every project the caller can read, newest first — each project asked the same project.read, and one the caller cannot read contributes nothing and is named nowhere (LAI-1077); an agent's token its own (§4.82, agent.read_own; not paginated)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }

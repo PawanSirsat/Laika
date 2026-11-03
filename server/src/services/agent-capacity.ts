@@ -571,9 +571,10 @@ export function replyToPing(
 
 /**
  * `GET /agents/:id/capacity?project=`, `get_agent_capacity` (§6.4, §7.1):
- * the agent's launcher presence and the newest answer this reader may see —
- * its owner, any; anyone else who may ping it, the newest to a ping of theirs
- * in this project. Refused as a ping is: the agent `404`.
+ * the agent's launcher presence and the newest answer this reader may see
+ * **in the project asked**, which it may read (LAI-1038 review) — its owner,
+ * anyone's there; anyone else who may ping it, its own there. Refused as a
+ * ping is: the agent `404`.
  */
 export function getAgentCapacity(
   db: Db,
@@ -586,14 +587,10 @@ export function getAgentCapacity(
   const owner = ownerOf(db, agentId) === actor.userId;
   const conditions: SQL[] = [
     eq(capacityPings.agentId, agentId),
+    eq(capacityPings.projectId, project.id),
     isNotNull(capacityPings.answeredAt),
   ];
-  if (!owner) {
-    conditions.push(
-      eq(capacityPings.requestedByUserId, actor.userId),
-      eq(capacityPings.projectId, project.id),
-    );
-  }
+  if (!owner) conditions.push(eq(capacityPings.requestedByUserId, actor.userId));
   const latest = db
     .select()
     .from(capacityPings)

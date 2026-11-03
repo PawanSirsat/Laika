@@ -675,6 +675,48 @@ describe('review fixes (LAI-1038)', () => {
     expect(((await ok(await first, 201)).ping as Ping).state).toBe('answered');
   });
 
+  it('capacity reads the newest answer in the project asked, never another project’s', async () => {
+    const second = await ok(
+      await send(
+        'POST',
+        '/api/v1/projects',
+        { Cookie: cookie },
+        { name: 'Second', slug: 'second', prefix: 'SEC' },
+      ),
+      201,
+    );
+    await ok(
+      await send(
+        'PUT',
+        `/api/v1/agents/${mine.id}/grants`,
+        { Cookie: cookie },
+        {
+          grants: [
+            { project_id: projectId, scope: 'full' },
+            { project_id: second.id as string, scope: 'full' },
+          ],
+        },
+      ),
+      200,
+    );
+    const elsewhere = await ok(
+      await pingAs({ Cookie: cookie }, mine.id, { project: 'second' }),
+      201,
+    );
+    await ok(await reply(mine.secret, (elsewhere.ping as Ping).id), 200);
+
+    const here = await ok(
+      await send('GET', `/api/v1/agents/${mine.id}/capacity?project=laika`, { Cookie: cookie }),
+      200,
+    );
+    expect(here.latest_answer).toBeNull();
+    const there = await ok(
+      await send('GET', `/api/v1/agents/${mine.id}/capacity?project=second`, { Cookie: cookie }),
+      200,
+    );
+    expect((there.latest_answer as Ping).id).toBe((elsewhere.ping as Ping).id);
+  });
+
 });
 
 // ------------------------------------------------------------------ presence
