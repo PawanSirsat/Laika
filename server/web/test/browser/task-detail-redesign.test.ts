@@ -392,7 +392,10 @@ void describe('the task detail redesign (D-129)', () => {
     try {
       const finish = h.page.locator('#panel-all .cmt-finish');
       await finish.waitFor({ timeout: 10_000 });
-      assert.match(await finish.locator('summary').innerText(), /Finish summary · round 1/);
+      assert.match(
+        await finish.locator('.cmt-finish-title').innerText(),
+        /Finish summary · round 1/,
+      );
       // One agent, one session: everything after the first row continues its run.
       assert.ok(
         (await h.page.locator('#panel-all .panel-event-cont, #panel-all .cmt-cont').count()) >= 1,

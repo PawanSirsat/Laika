@@ -3,26 +3,13 @@ import { ApiError } from '../../../api/errors.ts';
 import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../api/sprints.ts';
 import { copyText } from '../../../components/CopyButton.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
-import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
-import {
-  describeEvent,
-  pushSummary,
-  statusMoveNames,
-  type ActivityEvent,
-} from '../../../api/activity.ts';
-import { dateTime, timeLabel } from '../../../api/time-label.ts';
-import { isAgentComment, type Comment } from '../../../api/comments.ts';
 import { listMentionable, type MentionableUser } from '../../../api/mentions.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
 import { useTaskText } from '../../../api/use-task-text.ts';
 import { useDelayed } from '../../../components/use-delayed.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
-import { actorLine, describeActor, viaLine } from './actor-presentation.ts';
-import { threadOrder, type ThreadItem } from './thread-order.ts';
-import { agentNamesFrom, agentVia } from '../../../api/selected-agent.ts';
-import { sessionHarnessName } from '../../../api/agent-session.ts';
-import { WhoDidThis } from '../task/WhoDidThis.tsx';
+import { agentNamesFrom } from '../../../api/selected-agent.ts';
 import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import {
   getTask,
@@ -41,17 +28,15 @@ import type { CardCandidate, MentionCandidate } from '../task/LazyRichEditor.tsx
 import { taskHref } from '../my-day/task-link.ts';
 import { DependenciesSection } from '../task/DependenciesSection.tsx';
 import { SubtasksSection } from '../task/SubtasksSection.tsx';
-import { CommentBody } from '../task/CommentBody.tsx';
-import { CommentComposer } from '../task/CommentComposer.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { ForecastSection } from '../task/ForecastSection.tsx';
 import { TokensSection } from '../task/TokensSection.tsx';
 import { StateHero } from '../task/StateHero.tsx';
 import { DeliversPanel } from '../task/DeliversPanel.tsx';
+import { ActivityFeed } from '../task/ActivityFeed.tsx';
 import { heroKind, mayDecideReview } from '../task/hero-derive.ts';
 import { reviewSince, statusSubline } from '../task/rail-derive.ts';
 import { checklistProgress } from '../task/acceptance-derive.ts';
-import { actorKey, commentKind, firstLine, groupRuns } from '../task/feed-groups.ts';
 import { SendBackDialog } from '../review/SendBackDialog.tsx';
 import { PingButton } from '../../../components/agent/PingButton.tsx';
 import {
@@ -82,8 +67,6 @@ import type { HandoffOffer } from '../../../api/handoffs.ts';
 import { useTaskHandoffs } from '../../../api/use-task-handoffs.ts';
 import { usePermissions, holdsProjectAction, implicitlyLeads } from '../../../api/permissions.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
-import { avatarColorSolid } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
 import '../task/task-panel.css';
 import '../../../components/markers.css';
 import './task-detail.css';
@@ -530,73 +513,6 @@ export function TaskDetailPanel({
     [myAgents, task, byId],
   );
   /**
-   * Which agent wrote each agent comment, from its `comment.added` row:
-   * `CommentView` carries no `agent_id`, and the activity row does (LAI-535).
-   * A row with none is a legacy token's — *agent (unregistered token)*, never
-   * an agent's name (D-114).
-   */
-  const commentAgents = useMemo(() => {
-    const found = new Map<string, string>();
-    if (detail.status !== 'ready') return found;
-    for (const event of detail.activity) {
-      if (event.type !== 'comment.added') continue;
-      const id = (event.payload as { comment_id?: unknown } | null)?.comment_id;
-      const via = viaLine(event, agentNames);
-      if (typeof id === 'string' && via !== undefined) found.set(id, via);
-    }
-    return found;
-  }, [detail, agentNames]);
-  /**
-   * Each comment's `comment.added` row (LAI-1117): who wrote it, through which
-   * agent and session — the run it belongs to, and its *Who did this*.
-   */
-  const addedRows = useMemo(() => {
-    const found = new Map<string, ActivityEvent>();
-    if (detail.status !== 'ready') return found;
-    for (const event of detail.activity) {
-      if (event.type !== 'comment.added') continue;
-      const id = (event.payload as { comment_id?: unknown } | null)?.comment_id;
-      if (typeof id === 'string') found.set(id, event);
-    }
-    return found;
-  }, [detail]);
-  const commentKey = (comment: Comment): string => {
-    const row = addedRows.get(comment.id);
-    if (row !== undefined) return actorKey(row);
-    // No row loaded: an agent's comment is still not its person's (D-114).
-    return `${comment.author_id ?? 'system'}|${isAgentComment(comment) ? 'agent' : ''}|`;
-  };
-  /** Which items continue the run above them (D-129): same actor, same session. */
-  const continues = <T,>(items: readonly T[], keyOf: (item: T) => string): boolean[] =>
-    groupRuns(items, keyOf).flatMap((run) => run.items.map((_, i) => i > 0));
-  /** *Who did this* for an agent's row; nothing for a person's or Laika's. */
-  const whoFor = (row: ActivityEvent | undefined) => {
-    if (row?.actor_kind !== 'agent') return null;
-    const redacted =
-      row.agent_redacted === true || row.agent_id === null || row.agent_id === undefined;
-    const session = row.agent_session ?? null;
-    const harness = session?.harness ?? null;
-    return (
-      <WhoDidThis
-        person={personName(row.actor_id, members)}
-        agent={agentVia(row, agentNames) ?? 'an agent'}
-        redacted={redacted}
-        device={
-          row.agent_id === null || row.agent_id === undefined
-            ? undefined
-            : (agentNames.get(row.agent_id)?.device_label ?? undefined)
-        }
-        tool={
-          harness === null
-            ? undefined
-            : `${sessionHarnessName(harness)}${session?.harness_version === null || session?.harness_version === undefined ? '' : ` ${session.harness_version}`}`
-        }
-        model={session?.model ?? undefined}
-      />
-    );
-  };
-
-  /**
    * The execution panel's facts: the task view, its live claim (LAI-597) and
    * its claim rows (LAI-543). The live claim is read on this reader's clock,
    * which re-renders the panel when its heartbeat goes stale and every half
@@ -694,40 +610,8 @@ export function TaskDetailPanel({
     (leads || isAssignee || (o.from_agent_id !== null && myAgentIds.has(o.from_agent_id)));
   const orgRole = permissions?.me.org_role;
   const backlog = statuses.find((s) => s.category === 'backlog' && !s.hidden);
-  /**
-   * Which tab is showing.
-   *
-   * Local, not in the URL: a tab is a way of looking at the task already
-   * identified by `?task=`, and putting it in the address bar would make Back
-   * step through tab switches before it closed the drawer — which is the one
-   * thing Back has to do here (LAI-252).
-   */
-  const [tab, setTab] = useState<'all' | 'comments' | 'history' | 'changes'>('all');
   const [descriptionOpen, setDescriptionOpen] = useState(true);
   const [acceptanceOpen, setAcceptanceOpen] = useState(true);
-
-  /*
-   * **All** is the thread and the history in one timeline, oldest first — a
-   * conversation's order, with what happened between the messages. Neither
-   * list is re-sorted on its own tab; this merge is the only place the two
-   * meet, and it is by `created_at` with the comment first on a tie and two
-   * events by `seq` ({@link threadOrder}, LAI-575).
-   */
-  const everything: readonly ThreadItem[] =
-    detail.status === 'ready'
-      ? [
-          ...detail.comments.map((comment) => ({
-            kind: 'comment' as const,
-            at: comment.created_at,
-            comment,
-          })),
-          ...detail.activity.map((event) => ({
-            kind: 'event' as const,
-            at: event.created_at,
-            event,
-          })),
-        ].sort(threadOrder)
-      : [];
 
   /**
    * Focus moves into the panel on open and **back to the card on close**.
@@ -752,164 +636,6 @@ export function TaskDetailPanel({
    * owns dismissal, this owns the task. The `×` in the header stays here
    * because the design draws it beside the key.
    */
-
-  /** One comment, as the thread draws it — used by the All and Comments tabs alike. */
-  const renderComment = (comment: Comment, cont = false) => {
-    const agent = isAgentComment(comment);
-    const who = personName(comment.author_id, members);
-    const ink = comment.author_id === null ? undefined : avatarColorSolid(comment.author_id, theme);
-    const kind = commentKind(comment, rounds?.rounds ?? []);
-    return (
-      <li
-        key={comment.id}
-        className={['cmt', cont ? 'cmt-cont' : '', comment.sent_back ? 'cmt-reason' : '']
-          .filter((c) => c !== '')
-          .join(' ')}
-        data-feed-item="comment"
-      >
-        <span
-          className="cmt-avatar"
-          aria-hidden="true"
-          {...(ink === undefined
-            ? {}
-            : { style: { background: ink.background, color: ink.foreground } })}
-        >
-          {initials(who)}
-          {/*
-            The bot mark rides on the avatar, as it does on a card and a
-            presence chip — one treatment for one fact, everywhere.
-          */}
-          {agent && (
-            <span className="cmt-bot" aria-hidden="true">
-              <svg width="8" height="8" viewBox="0 0 24 24" fill="none">
-                <rect
-                  x="4"
-                  y="8"
-                  width="16"
-                  height="12"
-                  rx="3"
-                  stroke="var(--on-accent)"
-                  strokeWidth="3"
-                />
-                <path d="M12 4v4" stroke="var(--on-accent)" strokeWidth="3" />
-              </svg>
-            </span>
-          )}
-        </span>
-
-        <div className="cmt-body">
-          <p className="cmt-head">
-            {/*
-              **`Mira Kellner's agent`, not `Mira Kellner`.** An agent comment
-              was written *by a tool running as* somebody; the possessive is
-              the honest attribution and it is what the design writes.
-            */}
-            {/* The person, and the agent they acted through (LAI-538): named
-                where this reader may see it, *agent (unregistered token)* for
-                a legacy token's. An agent comment whose activity row is not
-                loaded says only *an agent* — it is never given a name. */}
-            <span className="cmt-who">
-              {agent || commentAgents.has(comment.id)
-                ? `${who} via ${commentAgents.get(comment.id) ?? 'an agent'}`
-                : who}
-            </span>
-            {agent && <span className="cmt-agent">AGENT</span>}
-            {!cont && whoFor(addedRows.get(comment.id))}
-            {comment.edited_at !== null && <span className="cmt-edited">edited</span>}
-            {/* The reason a person sent the task back from review (D-082). */}
-            {comment.sent_back && (
-              <span className="cmt-sent-back">
-                <span aria-hidden="true">↩</span> sent back
-              </span>
-            )}
-            {/*
-              Short and relative, beside the name — the design reads `5d ago`,
-              not a timestamp to the second. The exact time stays in the `title`.
-            */}
-            <time
-              className="cmt-when"
-              dateTime={timeLabel(comment.created_at, now).iso}
-              title={timeLabel(comment.created_at, now).full}
-            >
-              {timeLabel(comment.created_at, now).text}
-            </time>
-          </p>
-
-          {kind.kind === 'finish_summary' ? (
-            /* A round's summary, folded to its first line (D-129). */
-            <details className="cmt-finish">
-              <summary>
-                Finish summary · round {kind.round}
-                <span className="cmt-finish-first">{firstLine(comment.body_md)}</span>
-              </summary>
-              <CommentBody body={comment.body_md} people={people} meId={meId} />
-            </details>
-          ) : (
-            <CommentBody body={comment.body_md} people={people} meId={meId} />
-          )}
-        </div>
-      </li>
-    );
-  };
-
-  /** One activity row — the History tab's shape, reused inside All. */
-  const renderEvent = (event: ActivityEvent, cont = false) => {
-    // The status **names** — two columns of one kind would otherwise read
-    // `review → review` (LAI-739).
-    const move = statusMoveNames(event);
-    // Not `personName`: on an activity row a null actor is the system by
-    // CHECK constraint, and "someone edited this task" reads as an
-    // unidentified human (LAI-411).
-    const actor = describeActor(event, members, agentNames);
-    return (
-      <li
-        key={`${event.id}-${String(event.seq)}`}
-        className={cont ? 'panel-event panel-event-cont' : 'panel-event'}
-        data-feed-item="event"
-      >
-        {/* *Pawan via Claude Code · laptop-1* on an agent's row (LAI-538). */}
-        <span className="panel-event-who">{actorLine(actor)}</span>
-        {!cont && whoFor(event)}
-        {/* The word itself, not a colour — an `agent` and a `system` marker
-            must be told apart by someone who cannot separate violet from
-            grey (AC3). */}
-        {actor.badge !== undefined && (
-          <span className={`marker marker-${actor.badge}`}>{actor.badge}</span>
-        )}
-        <span className="panel-event-what">
-          {describeEvent(event, agentNames)}
-          {move !== undefined && (
-            <>
-              {' '}
-              <code>{move.from}</code> → <code>{move.to}</code>
-            </>
-          )}
-        </span>
-        <time className="panel-time" dateTime={new Date(event.created_at).toISOString()}>
-          {dateTime(event.created_at, Date.now())}
-        </time>
-      </li>
-    );
-  };
-
-  const composer = (
-    <div className="panel-composer">
-      {meId !== undefined && (
-        <span
-          className="cmt-avatar cmt-avatar-me"
-          aria-hidden="true"
-          style={{
-            background: avatarColorSolid(meId, theme).background,
-            color: avatarColorSolid(meId, theme).foreground,
-          }}
-        >
-          {initials(personName(meId, members))}
-        </span>
-      )}
-
-      <CommentComposer people={people} meId={meId} cards={cards} onPost={detail.post} />
-    </div>
-  );
 
   return (
     <div
@@ -1425,169 +1151,18 @@ export function TaskDetailPanel({
             onChanged={onTaskEdited}
           />
 
-          <section className="panel-section panel-activity-section">
-            <h3 className="panel-section-title">Activity</h3>
-            {detail.status === 'loading' ? (
-              <LoadingState shape="row" count={3} label="Loading comments and activity" />
-            ) : detail.status === 'error' ? (
-              <ApiErrorState error={detail.error} resource="this task" onRetry={detail.reload} />
-            ) : (
-              <>
-                {/*
-                  **Four tabs, as Jira has them.** *All* is the thread and the
-                  history merged in time; *History* is the audit trail; *Changes*
-                  is the commits — `webhook.commit` activity rows, which the
-                  GitHub webhook writes. All three filters are over rows this
-                  panel already loaded, so no tab can disagree with the one
-                  beside it. The composer sits under the tabs, where Jira puts it.
-                */}
-                <div className="panel-tabs" role="tablist" aria-label="Task activity">
-                  {(
-                    [
-                      ['all', 'All', everything.length],
-                      ['comments', 'Comments', detail.comments.length],
-                      ['history', 'History', detail.activity.length],
-                      ['changes', 'Changes', changes.length],
-                    ] as const
-                  ).map(([id, label, count]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      role="tab"
-                      id={`tab-${id}`}
-                      aria-selected={tab === id}
-                      aria-controls={`panel-${id}`}
-                      className={tab === id ? 'panel-tab panel-tab-on' : 'panel-tab'}
-                      onClick={() => {
-                        setTab(id);
-                      }}
-                    >
-                      {label} <span className="panel-tab-count">{count}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/*
-                  **Only the showing tab is in the DOM.** A hidden tabpanel
-                  still holds its rows, and the thread's comments would then
-                  exist twice — once under All, once under Comments — for
-                  anything that counts them.
-                */}
-                {(tab === 'all' || tab === 'comments') && composer}
-
-                {tab === 'all' && (
-                  <section
-                    className="panel-section"
-                    id="panel-all"
-                    role="tabpanel"
-                    aria-labelledby="tab-all"
-                  >
-                    {everything.length === 0 ? (
-                      <p className="cmt-none">Nothing yet</p>
-                    ) : (
-                      <ul className="cmt-list panel-everything">
-                        {(() => {
-                          const cont = continues(everything, (item) =>
-                            item.kind === 'comment'
-                              ? commentKey(item.comment)
-                              : actorKey(item.event),
-                          );
-                          return everything.map((item, i) =>
-                            item.kind === 'comment'
-                              ? renderComment(item.comment, cont[i])
-                              : renderEvent(item.event, cont[i]),
-                          );
-                        })()}
-                      </ul>
-                    )}
-                  </section>
-                )}
-
-                {tab === 'comments' && (
-                  <section
-                    className="panel-section"
-                    id="panel-comments"
-                    role="tabpanel"
-                    aria-labelledby="tab-comments"
-                  >
-                    {detail.comments.length === 0 ? (
-                      /*
-                       * **One quiet line, not a full empty state** (LAI-605).
-                       * `EmptyState` is built for a screen with nothing on it,
-                       * and here it sat above a composer already inviting a
-                       * comment.
-                       */
-                      <p className="cmt-none">No comments yet</p>
-                    ) : (
-                      <ul className="cmt-list">
-                        {(() => {
-                          const cont = continues(detail.comments, commentKey);
-                          return detail.comments.map((comment, i) =>
-                            renderComment(comment, cont[i]),
-                          );
-                        })()}
-                      </ul>
-                    )}
-                  </section>
-                )}
-
-                {tab === 'history' && (
-                  <section
-                    className="panel-section"
-                    id="panel-history"
-                    role="tabpanel"
-                    aria-labelledby="tab-history"
-                  >
-                    {detail.activity.length === 0 ? (
-                      <p className="panel-muted">Nothing recorded yet.</p>
-                    ) : (
-                      <ol className="panel-activity">
-                        {(() => {
-                          const cont = continues(detail.activity, actorKey);
-                          return detail.activity.map((event, i) => renderEvent(event, cont[i]));
-                        })()}
-                      </ol>
-                    )}
-                  </section>
-                )}
-
-                {tab === 'changes' && (
-                  <section
-                    className="panel-section"
-                    id="panel-changes"
-                    role="tabpanel"
-                    aria-labelledby="tab-changes"
-                  >
-                    {changes.length === 0 ? (
-                      <p className="panel-muted">
-                        No commits recorded against this task. Laika learns about them from the
-                        GitHub webhook, so a space with no repo wired has none.
-                      </p>
-                    ) : (
-                      <ol className="panel-changes">
-                        {changes.map((event) => (
-                          <li key={`${event.id}-${String(event.seq)}`} className="panel-change">
-                            <span className="panel-change-who">
-                              {actorLine(describeActor(event, members, agentNames))}
-                            </span>
-                            <span className="panel-change-what">
-                              {pushSummary(event) ?? describeEvent(event)}
-                            </span>
-                            <time
-                              className="panel-time"
-                              dateTime={new Date(event.created_at).toISOString()}
-                            >
-                              {dateTime(event.created_at, Date.now())}
-                            </time>
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </section>
-                )}
-              </>
-            )}
-          </section>
+          <ActivityFeed
+            detail={detail}
+            task={task}
+            changes={changes}
+            members={members}
+            agentNames={agentNames}
+            people={people}
+            cards={cards}
+            meId={meId}
+            rounds={rounds?.rounds ?? []}
+            leads={leads}
+          />
         </div>
 
         {/*

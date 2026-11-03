@@ -78,3 +78,67 @@ export function firstLine(md: string, max = 240): string {
   const plain = line.replace(/^[-*+]\s+/, '').replace(/[*_`]/g, '');
   return plain.length > max ? `${plain.slice(0, max - 1)}…` : plain;
 }
+
+/** Where an item sits in its run: alone, first, between, or last. */
+export type RunPosition = 'solo' | 'start' | 'mid' | 'end';
+
+/**
+ * Each item's place in its run (LAI-1122): the first draws the run's header
+ * row — avatar, name, agent chip, time — and the rest hang off the rail under
+ * it. Same cut as {@link groupRuns}, one answer per item, in order.
+ */
+export function runPositions<T>(items: readonly T[], keyOf: (item: T) => string): RunPosition[] {
+  return groupRuns(items, keyOf).flatMap((run) =>
+    run.items.map((_, i): RunPosition => {
+      if (run.items.length === 1) return 'solo';
+      if (i === 0) return 'start';
+      return i === run.items.length - 1 ? 'end' : 'mid';
+    }),
+  );
+}
+
+const LIST_ITEM = /^\s*([-*+]|\d+[.)])\s+/;
+const FENCE = /^\s*(```|~~~)/;
+
+/**
+ * How many points a finish summary makes (LAI-1122): each list item, each
+ * paragraph, each heading and each fenced block is one. A paragraph is a run
+ * of lines with no blank between them; a fence is one point however long.
+ */
+export function summaryPoints(md: string): number {
+  let points = 0;
+  let inParagraph = false;
+  let inFence = false;
+  for (const line of md.split('\n')) {
+    if (inFence) {
+      if (FENCE.test(line)) inFence = false;
+      continue;
+    }
+    if (FENCE.test(line)) {
+      points += 1;
+      inFence = true;
+      inParagraph = false;
+    } else if (line.trim() === '') {
+      inParagraph = false;
+    } else if (LIST_ITEM.test(line) || /^\s*#{1,6}\s/.test(line)) {
+      points += 1;
+      inParagraph = false;
+    } else if (!inParagraph) {
+      points += 1;
+      inParagraph = true;
+    }
+  }
+  return points;
+}
+
+/**
+ * The folded summary's button (D-129, LAI-1122): *Show full summary · 6 more
+ * points* — every point after the first, which is what a folded card shows —
+ * and *Show less* once open.
+ */
+export function foldLabel(md: string, open: boolean): string {
+  if (open) return 'Show less';
+  const more = Math.max(summaryPoints(md) - 1, 0);
+  if (more === 0) return 'Show full summary';
+  return `Show full summary · ${String(more)} more ${more === 1 ? 'point' : 'points'}`;
+}

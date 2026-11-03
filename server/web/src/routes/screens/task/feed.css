@@ -1,85 +1,457 @@
 /*
- * The activity feed in runs (§11.4.2.1, D-129, LAI-1117): a later item by the
- * same actor in the same session drops its avatar and name, and a rail joins
- * it to the first. The name stays in the DOM for a screen reader. Tokens only.
+ * The activity feed (§11.4.2.1, D-129, LAI-1117, LAI-1122), as the design
+ * draws it: runs under one header row — avatar, person, agent chip, time — a
+ * rail joining a run's items, a mark per event, and comments as cards. The
+ * list stays one `li` per item; these rules override the thread's older
+ * shapes (`task-panel.css`, `task-detail.css`) inside `.feed-list` only.
+ * Tokens only — both themes come from `styles/theme.css`.
  */
 
-.cmt-cont .cmt-avatar,
-.panel-event-cont .panel-event-who + .marker {
-  visibility: hidden;
-}
-
-.cmt-cont .cmt-who,
-.cmt-cont .cmt-agent,
-.panel-event-cont .panel-event-who {
-  position: absolute;
+/* Visible to a screen reader, not to eyes — and inline, so `innerText` reads
+   *Ada Lovelace via Claude Code* as one line (`.visually-hidden` is
+   absolute, which would break it). */
+.feed-sr {
+  display: inline-block;
   width: 1px;
   height: 1px;
   overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+  clip-path: inset(50%);
+  white-space: pre;
+  /* No negative margin: it took the header line's measure of itself short by
+     a pixel and wrapped the agent chip under the name. */
 }
 
-.cmt-cont,
-.panel-event-cont {
+.feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.feed-list > li.cmt,
+.feed-list > li.panel-event {
   position: relative;
+  display: block;
+  margin: 0;
+  padding: 0 0 6px;
+  border: 0;
+  background: transparent;
+  font-size: var(--text-body);
+  color: var(--text-primary);
 }
 
-.cmt-cont::before {
+.feed-list > li[data-run='solo'],
+.feed-list > li[data-run='end'] {
+  padding-bottom: 0;
+  margin-bottom: 1.125rem;
+}
+
+.feed-list > li:last-child {
+  margin-bottom: 0.5rem;
+}
+
+/* The rail: one line down the avatar's centre, from under it to the last item. */
+.feed-list > li[data-run='start']::before,
+.feed-list > li[data-run='mid']::before,
+.feed-list > li[data-run='end']::before {
   content: '';
   position: absolute;
-  left: 17px;
-  top: -10px;
-  height: 18px;
+  left: 17.5px;
   width: 1px;
   background: var(--border-subtle);
 }
 
-.cmt-reason .panel-comment-body {
-  border-left: 2px solid var(--chip-pink-border);
-  padding-left: var(--space-2);
+.feed-list > li[data-run='start']::before {
+  top: 40px;
+  bottom: 0;
 }
 
+.feed-list > li[data-run='mid']::before {
+  top: 0;
+  bottom: 0;
+}
+
+.feed-list > li[data-run='end']::before {
+  top: 0;
+  height: 14px;
+}
+
+/* A continuing item's actor, for a screen reader only. */
+.feed-cont-who {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------- the header */
+
+.feed-head,
+.feed-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  column-gap: 0.75rem;
+}
+
+.feed-head {
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.feed-head-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+  margin: 0;
+}
+
+.feed-head-line .cmt-who,
+.feed-head-line .panel-event-who {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-body);
+  font-weight: var(--weight-normal);
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.feed-name {
+  font-weight: var(--weight-bold);
+  margin-right: 0.5rem;
+}
+
+.feed-agent {
+  color: var(--text-secondary);
+}
+
+.feed-when {
+  margin-left: auto;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-normal);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------ an item */
+
+.feed-row {
+  align-items: start;
+}
+
+.feed-row + .feed-row {
+  margin-top: 4px;
+}
+
+.feed-gutter {
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.feed-icon {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  line-height: 1;
+}
+
+.feed-what {
+  margin: 0;
+  min-width: 0;
+  min-height: 24px;
+  overflow-wrap: anywhere;
+  font-size: var(--text-body);
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+.feed-object {
+  font-weight: var(--weight-semibold);
+}
+
+.feed-pill {
+  display: inline-block;
+  white-space: nowrap;
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  line-height: 1.5;
+}
+
+.feed-arrow,
+.feed-meta {
+  color: var(--text-muted);
+}
+
+.feed-meta {
+  font-size: var(--text-small);
+}
+
+/* ------------------------------------------------------------ comments */
+
+.feed-list .cmt-body {
+  min-width: 0;
+  max-width: 820px;
+}
+
+.cmt-card,
 .cmt-finish {
+  margin: 4px 0;
+  padding: 0.625rem 0.875rem;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
-  background: var(--bg-card-hover);
-  padding: var(--space-2) var(--space-3);
-  margin-top: var(--space-1);
+  background: var(--bg-card);
 }
 
-.cmt-finish > summary {
-  cursor: pointer;
+.cmt-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* An agent's progress note and a round's summary sit on the raised fill. */
+.cmt-card-note,
+.cmt-finish {
+  background: var(--bg-card-hover);
+}
+
+.feed-list .cmt-card .panel-comment-body,
+.feed-list .cmt-finish .panel-comment-body {
+  font-size: var(--text-body);
+  line-height: 1.6;
+}
+
+.cmt-card-reason .cmt-sent-back {
+  align-self: flex-start;
+}
+
+.cmt-finish-title {
+  display: block;
+  margin-bottom: 4px;
   font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-secondary);
 }
 
-.cmt-finish-first {
-  display: block;
-  font-weight: var(--weight-normal);
-  color: var(--text-primary);
+.cmt-finish-body {
+  position: relative;
+  overflow: hidden;
+}
+
+.cmt-finish-body[data-folded='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 44px;
+  background: linear-gradient(to bottom, transparent, var(--bg-card-hover));
+  pointer-events: none;
+}
+
+.cmt-card-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   margin-top: 2px;
 }
 
-.cmt-finish[open] .cmt-finish-first {
-  display: none;
+.cmt-card-foot .cmt-edited {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  font-weight: var(--weight-normal);
+  color: var(--text-muted);
 }
+
+.cmt-fold,
+.cmt-action {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.cmt-fold {
+  color: var(--accent);
+}
+
+.cmt-actions {
+  display: inline-flex;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.cmt-action {
+  color: var(--text-muted);
+}
+
+.cmt-action:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.cmt-fold:focus-visible,
+.cmt-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.cmt-editing {
+  margin: 4px 0;
+}
+
+.cmt-editing .rich-editor {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------ composer */
+
+.feed-empty {
+  margin: 0 0 0.75rem;
+  padding-left: calc(36px + 0.75rem);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.cmt-composer-rest {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+}
+
+.cmt-composer-rest:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.cmt-composer-rest .cmt-composer-start {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: var(--text-body);
+  color: var(--text-muted);
+}
+
+.cmt-composer-rest .cmt-composer-start:focus-visible {
+  outline: none;
+}
+
+.cmt-composer-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.cmt-composer-send {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cmt-composer-send:hover {
+  color: var(--text-primary);
+}
+
+.cmt-composer-send:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* -------------------------------------------------- the agent chip */
 
 .who {
   position: relative;
-  display: inline-flex;
+  display: inline;
 }
 
+/* Inline-block, not flex, all the way down: a flex item reads as its own line
+   to `innerText`, and the chip's words are part of the header's sentence. */
 .who-chip {
+  display: inline-block;
+  /* Not a percentage: a button's percentage max-width counts as nothing when
+     the header line sizes itself, which wrapped the chip under the name. */
+  max-width: calc(100vw - 7.5rem);
+  box-sizing: border-box;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  height: 22px;
+  padding: 0 8px 0 4px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xs);
   background: var(--bg-column);
-  color: var(--text-secondary);
+  font: inherit;
   font-size: var(--text-small);
-  line-height: 1;
-  padding: 2px 4px;
+  font-weight: var(--weight-semibold);
+  line-height: 20px;
+  color: var(--text-primary);
   cursor: pointer;
+}
+
+.who-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.who-chip-mark {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+  border-radius: 3px;
+  background: var(--chip-pink);
+  color: var(--on-accent);
+  line-height: 14px;
+  text-align: center;
+  vertical-align: -3px;
+}
+
+.who-chip-mark svg {
+  vertical-align: 0;
 }
 
 .who-chip[aria-expanded='true'] {
