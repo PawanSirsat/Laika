@@ -1524,134 +1524,231 @@ Same cells as the session matrix above.
 | A trigger's save and offer | Documented-not-tested end to end: the reporting is tested with the save and the board faked (no claim, consent off, refused, unregistered, pending, verified, offer refused); the save itself is `autoCheckpoint`, tested in `agent-checkpoint-e2e.test.ts` | the same | — |
 | Fires on a real low battery or real memory pressure | Unverified: no battery was drained and no pressure was induced | Unverified | — |
 
-## `laika agent launcher` — optional: start a harness for a hand-off offer (LAI-558, D-117)
+## `laika agent launcher` — optional: pick up work addressed to this device's agents (LAI-558, LAI-1039; D-117, D-117a)
 
-**Off unless you switch it on, on this device.** It starts nothing until you
-write `~/.laika/launcher.json` yourself, owned by you and `chmod 600`:
-
-```json
-{
-  "version": 1,
-  "enabled": true,
-  "owner_user_id": "<your Laika user id>",
-  "device": "Belka",
-  "projects": [{ "project_id": "<project id>", "repo": "/Users/you/code/Laika" }],
-  "harnesses": { "claude-code": ["/Users/you/.npm-global/bin/claude", "-p", "--max-turns", "200"] },
-  "max_concurrent": 1,
-  "max_runtime_seconds": 7200,
-  "pass_ssh_agent": false
-}
-```
-
-`~/.laika` must be a real directory (not a symlink) that only you can write,
-and the file is opened without following a symlink.
+**Off unless you switch it on, on this device.** It starts nothing until
+`~/.laika/launcher.json` says `"enabled": true` — written by `enable` after
+you have read it and typed `enable`, or by you, owned by you and `chmod 600`.
 
 ```sh
-laika agent launcher check    # validate the file and git; starts nothing
-laika agent launcher run      # the daemon, in the foreground (nohup or launchd to keep it)
-laika agent launcher status   # enabled?, running?, last start, runs now
-laika agent launcher stop     # stops the daemon and every run it started
+laika agent launcher enable    # reads this device, shows the config and the service, waits for you to type `enable`
+laika agent launcher disable   # unloads the service and writes "enabled": false; both files are kept
+laika agent launcher status    # enabled?, service installed/loaded/running, presence, runs today, runs now
+laika agent launcher check     # validate the file and git; starts nothing
+laika agent launcher run       # the daemon in the foreground (what the service runs)
+laika agent launcher stop      # stops the daemon and every run it started
+laika agent launcher headers <harness>   # the MCP Authorization header from that harness's saved file
 ```
 
-**What it does.** Every `poll_seconds` (default 30) it reads, for each harness
-in the file whose agent is logged in here (`laika agent login`), the offers the
-event helper received. For a **hand-off or recovery offer** addressed to that
-agent — its harness, this `device`, a project in the file, and a token that
-`/api/v1/me` says is `owner_user_id`'s — it runs `laika agent handoff prepare`
-into the project's `repo`, and only when that succeeds starts the harness's
-argv in the new worktree. **The harness accepts, not the launcher**: its prompt
-tells it to run `laika agent handoff accept <offer>`, so every check the board
-makes on an accept applies, and an offer that is waiting for approval, closed,
-expired or not verified is refused by `prepare` before anything starts. A work
-request is refused (LAI-1039). **The agent must be known**: when the event
-helper has not yet learned which agent this credential is, the launcher asks
-the board whose inbox holds the offer and goes on only if it is that agent's;
-otherwise the offer is refused (`agent_unresolved`).
+### `enable` — one command on a new device
 
-**What the harness is given.**
+It reads what is already here and asks only what it cannot read:
 
-- **argv**: the file's array, exactly. Nothing is appended.
-- **stdin**: fixed words, the offer id and the task key — nothing else.
+1. Each saved agent credential (`~/.laika/agents/<harness>.json`, as
+   `laika tool add` writes them) and whose it is (`GET /api/v1/me`). Every one
+   must be the same person's.
+2. Each project those agents can read, and its repository on the board. You
+   give the path of your checkout of each, and it must have a remote whose URL
+   is exactly that repository (as `handoff prepare` checks one). A project with
+   no repository on the board is left out. **Work requests are off unless you
+   type `yes` for that project.**
+3. Each harness program on `PATH`, checked as the daemon will check it.
+   Claude Code needs 2.1.259 or later, its launcher-safe MCP entry
+   (`laika tool add claude-code`) and its session hooks
+   (`laika agent hooks on --harness claude-code`); without either it is left
+   out, with the command that fixes it. **Codex is added only if you type
+   `danger-full-access`** (below). Omnigent only if you type `yes`.
+4. It prints the whole config and the service file, and does nothing until you
+   type `enable`. `--dry-run` prints and stops.
+
+The defaults: one run at a time, 7200 s each, 10 a day, hand-off and recovery
+offers on, work requests only where you said yes, no ssh agent.
+
+**The service** is a per-user one, started at login:
+
+- macOS: `~/Library/LaunchAgents/ai.laika.launcher.plist`, loaded with
+  `launchctl bootstrap gui/$UID`. `KeepAlive { SuccessfulExit = false }`:
+  restarted after a crash, **never after `stop`**, which exits 0. Its log is
+  `~/.laika/launcher/daemon.log`. Check it with
+  `launchctl print gui/$(id -u)/ai.laika.launcher`.
+- Linux: `~/.config/systemd/user/laika-launcher.service`, `Restart=on-failure`,
+  `systemctl --user enable --now`. It runs while you are logged in;
+  `loginctl enable-linger` keeps it after logout, and is not done for you.
+
+### What it picks up
+
+For each harness in the file, with **that harness's saved credential only**
+(an inherited `LAIKA_AGENT_TOKEN` is ignored) and only when `/api/v1/me` says
+the token is `owner_user_id`'s:
+
+- **Addressing is by agent id, never by device label** (D-117a item 2, F1).
+  The event names the agent; the credential's own inbox — its work requests,
+  or its hand-off inbox — must hold the offer for that agent. A label is the
+  owner's display text: `KvellD’s MacBook 36 GB` with its spaces and its
+  apostrophe is shown, never compared, and a label is never a reason to refuse.
+- **A work request** — the agent was selected on a card — in a project with
+  `"work_requests": true`. Just before anything is made it reads the request
+  and the task again, and starts nothing (`request_closed`) if the request is
+  closed, the task is claimed, or the agent is no longer the one selected.
+  It then makes a fresh worktree **from the head of the remote's default
+  branch**, on a new branch `<KEY>-auto-<last 6 of the offer id>`
+  (`-2`, `-3`… when taken) — never the default branch, `master` or `main`. The
+  fetch is `handoff prepare`'s, hardened the same way: to the checked URL, no
+  ref, tag or `FETCH_HEAD` written, hooks, filters and replace refs off, refs
+  created create-only. Nothing is pushed, nothing that exists is moved or
+  deleted, and your checkout's `HEAD`, branch and files are never written.
+- **A hand-off or recovery offer**, unless `"auto_pickup": {"handoffs": false}`:
+  `laika agent handoff prepare` at the exact checkpoint commit, as before.
+
+**The harness claims and finishes, not the launcher.** A work request's prompt
+tells it to read the task with `get_task_context`, claim it with
+`start_working` on that branch, push only that branch, open a pull request and
+`finish_task` into Review; a hand-off's prompt tells it to run
+`laika agent handoff accept`. Every check the board makes applies. **A person
+accepts.** If a run ends — exit, timeout or stop — with the task still claimed
+by that agent and not in Review, the launcher posts **one** comment of fixed
+words (how it ended, the minutes, the exit code); the claim lapses by itself.
+A later selection of another agent stops a run that has not claimed yet.
+
+**What has been handled is on disk** (`~/.laika/launcher/handled.json`): a
+restarted launcher, or one the service brought back, never starts the same
+event twice. Work requests never expire, which is why this matters.
+
+**How it hears.** It holds `GET /api/v1/events` open with each agent's token,
+catches up from `/agents/me/events` on connect and on every gap, and an agent
+event wakes it at once; polling every `poll_seconds` (default 30) stays as the
+fallback. A 401 anywhere — the agent was revoked — ends that credential's runs
+(SIGTERM, audited `credential_refused`) and it is never used again.
+
+**Presence and capacity pings** (D-126). Every 60 s and on any change it sends
+`PUT /api/v1/agents/me/launcher` with each agent's token — enabled, auto-pickup,
+runs, the CLI version — and once more with `enabled: false` on a clean stop. A
+capacity ping is answered with the pinged agent's token, once, with fixed
+fields only: launcher state, runs, whether the harness is ready, whether a
+session is live, battery and memory as the watcher reads them (or
+`unsupported`), and the CLI version — no path, host, repository or task text.
+With no launcher running, the session's event helper answers `launcher: off`.
+**A board without these routes** (before slice A) answers 404: presence is
+asked again hourly, a ping is settled unanswered, and nothing else changes.
+
+### What the harness is given
+
+- **argv**: the file's array, exactly; with `"prompt_via": {"<harness>": "argv"}`
+  the prompt is appended as the last item (Omnigent's `omni polly -p`).
+- **stdin**: the prompt (unless `prompt_via` is `argv`). For a work request:
+  fixed words and five fields, each format-checked — the task key, the project
+  slug, the branch, the default branch and the base commit. **No task text**:
+  the harness reads the task over MCP, as an interactive session does. For a
+  hand-off: fixed words, the offer id and the task key.
 - **environment**: `HOME PATH TMPDIR LANG LC_ALL USER LOGNAME TERM
   XDG_CONFIG_HOME`, plus `LAIKA_LAUNCH_DIR` and `LAIKA_LAUNCH_OFFER`.
-  `SSH_AUTH_SOCK` only with `"pass_ssh_agent": true` — the ssh agent lets the
-  harness sign as you to any host your keys reach, so it is off by default.
-  **No token**: the agent's own stays in
-  `~/.laika/agents/<harness>.json` for its `laika agent …` calls. A
-  `LAIKA_AGENT_TOKEN` in the launcher's environment is ignored.
-- **`$LAIKA_LAUNCH_DIR/offer.json`**: ids, the worktree, the branch and the
-  verified SHA. **`note.txt`**: the sender's note inside a delimited untrusted
-  block — data, never instructions. The harness's output goes to `output.log`
-  beside them (all 0600, under `~/.laika/launcher/runs/<offer>/`).
+  `SSH_AUTH_SOCK` only with `"pass_ssh_agent": true`. **No token of any name.**
+  The harness reaches the board's MCP through a helper that reads its saved
+  credential file: Claude Code's `headersHelper` (`laika tool add`), Codex's
+  `http_headers_helper` running `laika agent launcher headers codex`.
+- **`$LAIKA_LAUNCH_DIR/offer.json`**: ids, key, slug, branch, base and worktree.
+  For a hand-off, **`note.txt`** holds the sender's note in a delimited
+  untrusted block. Output goes to `output.log` (all 0600, under
+  `~/.laika/launcher/runs/<offer>/`).
 
-**Limits.** `max_concurrent` (1 – 4) runs at once; a further offer waits for a
-slot. A run past `max_runtime_seconds` (60 – 86400) gets SIGTERM to its process
-group and SIGKILL 10 s later. **Cost and token caps are not enforced by the
-launcher** — put the harness's own flag in its argv (e.g. Claude Code's
-`--max-turns`); `max_cost_usd` in the file is refused rather than ignored.
+### The harness commands `enable` writes
+
+Claude Code (verified against code.claude.com `headless.md`,
+`cli-reference.md` and `permission-modes.md`, 2026-11-03):
+
+```
+claude -p --output-format json --permission-mode dontAsk --permission-prompts none
+  --allowedTools Read Edit Write Glob Grep "Bash(git *)" "Bash(pnpm *)" "Bash(gh pr *)"
+                 "Bash(laika agent *)" "mcp__laika__*"
+  --disallowedTools "Bash(git push --force *)" "Bash(git push -f *)"
+                    "Bash(git push --force-with-lease *)" "Bash(git push * master*)"
+                    "Bash(git push * main*)" "Bash(git push * +*)"
+  --max-turns 200 --max-budget-usd 5
+```
+
+`dontAsk` denies anything not on the allowlist and the run continues; deny
+rules hold in every mode; `--permission-prompts none` means nothing waits on a
+person. The mode is written out because before Claude Code 2.1.302 a `-p` run
+with no mode could start in auto mode (F6). The audit keeps only the result's
+`subtype`, `is_error`, `num_turns` and `total_cost_usd`.
+
+Codex (`codex exec --help`, 0.162.1; developers.openai.com `codex/mcp.md`) —
+**off unless you type `danger-full-access`**:
+
+```
+codex exec --json --sandbox danger-full-access
+  -c mcp_servers.laika.url="<board>/mcp"
+  -c mcp_servers.laika.http_headers_helper="<laika> agent launcher headers codex"
+  -c mcp_servers.laika.required=true -c mcp_servers.laika.default_tools_approval_mode="approve" -
+```
+
+Measured on Belka with `codex sandbox -P :workspace` (the `workspace-write`
+profile): a `git commit` fails with `index.lock: Operation not permitted` in a
+worktree **and in a plain checkout**, so a `workspace-write` run cannot commit
+at all; `danger-full-access` commits. The docs say an explicit bearer token
+takes precedence over a helper's header. Today `laika tool add codex` writes
+`bearer_token_env_var` into `~/.codex/config.toml` (slice D replaces it with
+the helper); that variable is unset in the launcher's child, and whether Codex
+then falls back to the helper is **unverified**, as is a live `codex exec` run
+through the launcher (no model run was possible when this was written).
+
+### Limits and refusals
+
+`max_concurrent` (1 – 4) at once; `max_runs_per_day` (1 – 50, default 10) per
+UTC day across every harness — past it a request waits, audited once a day,
+and starts the next day if it is still open; `max_runtime_seconds` (60 – 86400),
+then SIGTERM to the process group and SIGKILL 10 s later. Cost: Claude Code's
+`--max-budget-usd` and `--max-turns`; Codex and Omnigent have runtime only.
 Git older than 2.41 is refused.
 
-**Refused config.** A command string instead of an array; a relative program;
-a program that group or others can write, that is owned by neither you nor
-root, or whose folder — or, through a symlink, whose target's folder — group or
-others can write; a shell or wrapper as the program
-(`sh`, `bash`, `zsh`, `env`, `sudo`, …); a `repo` that is relative, missing or
-reached through a symlink; an unknown key; a config that is a symlink, is
-writable by group or others, or is owned by someone else; a `~/.laika` that is
-a symlink or writable by others.
+Refused config: a command string instead of an array; a relative program; a
+program that group or others can write, owned by neither you nor root, or
+whose folder (or its symlink target's) group or others can write; a shell or
+wrapper as the program (`sh`, `bash`, `zsh`, `env`, `sudo`, …); a `repo` that is
+relative, missing or reached through a symlink; an unknown key; a v2 key in a
+v1 file; a device label holding a control character; a config that is a
+symlink, writable by group or others, or someone else's; a `~/.laika` that is a
+symlink or writable by others. A v1 file is still read: hand-offs on, work
+requests off.
 
 **The shell and wrapper list is a guard against an obvious mistake, not a
-guarantee.** Any program you list — `node`, `python`, a script, the harness
-itself — can run any command it likes. You are trusting every argv you write
-into this file; the launcher only makes sure nobody else's text is added to it.
+guarantee.** Any program you list can run any command it likes. You are
+trusting every argv in this file; the launcher only makes sure nobody else's
+text is added to it.
 
 **One launcher per device.** `run` takes `~/.laika/launcher/launcher.pid` with
-an exclusive create, written whole; a second `run` is refused. A pid file whose
-launcher is dead — judged by pid and start time, never by age — is cleared
-under a *break* lock named for that dead holder (`launcher.pid.reap-…`), which
-itself holds a pid and start time. Under it the file is read again and removed
-only if it still names that holder, so two new launchers cannot both clear it,
-and a breaker that died holding its lock is cleared the same way. An
-unreadable lock file is never guessed at: remove it yourself.
+an exclusive create; a dead holder — judged by pid and start time, never by
+age — is cleared under a break lock named for it, and an unreadable lock is
+never guessed at. **If the launcher dies**, `status.json` keeps each run's pid,
+start time and deadline: `status` names a live leftover and ends one past its
+deadline, `stop` ends every one, the next `run` ends them first. A record that
+cannot be checked is kept and shown, never signalled. A process the harness
+moved out of its group is **not** ended.
 
-**If the launcher dies.** SIGINT, SIGTERM and SIGHUP stop it cleanly, ending
-every run it started. Each run's pid, start time and deadline are kept in
-`~/.laika/launcher/status.json`, so a launcher that was killed or crashed
-leaves a record: `status` names any run still alive and ends one past its
-`deadline`; `stop` ends every one even with the launcher gone; the next `run`
-ends them before starting anything. `status` and `stop` take the launcher's
-lock while they do it, so a launcher starting at that moment is never
-mistaken for a dead one. Only a process whose start time still matches is
-signalled, so a reused pid is never hit — and a record that cannot be checked
-(no start time, or no process table) is **kept and shown by `status`**, never
-signalled and never erased.
+**The audit log** is `~/.laika/launcher/audit.jsonl`: `daemon_start`,
+`refused` (its `reason`, and a fixed-word `detail`), `deferred`, `start`,
+`timeout`, `exit`, `stopped`, `reaped`, `daemon_stop` — ids, harness, branch,
+base, pid, exit code, signal, runtime, runs today. No token, URL, note, title
+or output is written to it.
 
-**What "ends a run" reaches.** The harness's process group: SIGTERM, then
-SIGKILL. A process the harness moved into a session or group of its own
-(`setsid`, a detached spawn) is outside that group and is **not** ended by the
-launcher — tested, not assumed.
-
-**The audit log** is `~/.laika/launcher/audit.jsonl`: one JSON line per
-`daemon_start`, `refused` (with its `reason`), `deferred`, `start`, `timeout`,
-`exit`, `stopped` and `daemon_stop`, holding ids, harness, pid, exit code,
-signal and runtime. No token, URL or note is ever written to it.
-
-**It never wakes a machine.** A laptop that is asleep or off starts nothing;
-its offers wait on the board, and recovery is unchanged.
+**It never wakes a machine.** A laptop asleep or off starts nothing; work
+waits on the board, and the catch-up on reconnect starts it afterwards.
 
 ### Capability matrix, launcher
 
 | Capability | macOS | Linux | Windows, other |
 | --- | --- | --- | --- |
-| Off by default; config validation and refusals | Verified-and-tested (`agent-launcher.test.ts`; `check`, `status`, `stop` and a refused `run` run for real on Belka, macOS 27.2, git 2.50.1) | Documented-not-tested (no OS-specific code) | Unsupported: process groups and file modes are POSIX |
-| argv exact, no note or token in argv, environment or stdin | Verified-and-tested with a real child process | Documented-not-tested | Unsupported |
-| Runtime kill (SIGTERM, then SIGKILL), concurrency cap, stop | Verified-and-tested with a real child process | Documented-not-tested | Unsupported |
-| One launcher per device under a concurrent start; a stale lock recovered | Verified-and-tested: six real processes race the lock | Documented-not-tested | Unsupported |
-| SIGHUP stops cleanly; runs left by a SIGKILLed launcher ended by `stop` or the next `run` | Verified-and-tested with a real launcher process | Documented-not-tested | Unsupported |
-| A process the harness detached from its group | Not ended (tested): outside the launcher's reach | same | — |
-| An offer from the real board, prepared and started end to end | Unverified: `prepare` and the event helper are injected in the tests; no live offer was launched | Unverified | Unsupported |
-| A real `claude -p` / `codex exec` accepting through the launcher | Unverified | Unverified | Unsupported |
-| Cost or token cap | Unsupported by the launcher (the harness's own flag in argv) | same | — |
+| Off by default; config validation and refusals; v1 files still read | Verified-and-tested (`agent-launcher.test.ts`) | Documented-not-tested (no OS-specific code) | Unsupported: process groups and file modes are POSIX |
+| Addressed by agent id; a label with spaces and `’` neither refused nor compared | Verified-and-tested, unit and end to end (`agent-launcher-e2e.test.ts`, the agent labelled `KvellD’s MacBook 36 GB`) | Documented-not-tested | Unsupported |
+| A work request from a real board: stream wake, re-read, fresh worktree at the default head, a harness that claims and finishes into Review | Verified-and-tested against a real server with a fake harness (`agent-launcher-e2e.test.ts`) | Documented-not-tested | Unsupported |
+| Handled events survive a restart; the day cap | Verified-and-tested, unit and end to end | Documented-not-tested | Unsupported |
+| argv exact, no token in argv, environment or stdin; no title in the prompt | Verified-and-tested with real child processes | Documented-not-tested | Unsupported |
+| Runtime kill, concurrency cap, stop, revoked credential ends its runs | Verified-and-tested with real child processes | Documented-not-tested | Unsupported |
+| One launcher per device; leftovers after a SIGKILL | Verified-and-tested with real processes | Documented-not-tested | Unsupported |
+| `enable` / `disable`, the LaunchAgent and the systemd unit | Unit-tested (files, refusals, `launchctl` calls recorded; the plist passes `plutil -lint`); **not yet bootstrapped on a real login** | Unit-tested (the unit text, `systemctl` calls recorded) | Unsupported |
+| Presence and the ping answer | Unit-tested against a stub board; the board's routes are slice A's, so a live answer is **unverified** until it lands | same | — |
+| A real `claude -p` run through the launcher | Unverified: the flags are from the docs and `claude --help` 2.1.280; no model run in the tests | Unverified | Unsupported |
+| A real `codex exec` run | Unverified (and off by default): Codex's usage limit blocked a live run; the sandbox result above was measured without a model | Unverified | Unsupported |
 
 ## `laika agent events` — hand-off and context notices at the next boundary (LAI-554)
 
