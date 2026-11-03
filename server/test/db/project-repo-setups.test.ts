@@ -37,7 +37,11 @@ function folderBefore0073(): string {
   // The guard on this guard: the cut drops exactly 0073 and what came after
   // it — LAI-1038's capacity pings, which a 0072 database also upgrades
   // through. A later migration lands here and says so.
-  expect(journal.entries.slice(at).map((e) => e.tag)).toEqual([TAG, '0074_agent_capacity']);
+  expect(journal.entries.slice(at).map((e) => e.tag)).toEqual([
+    TAG,
+    '0074_agent_capacity',
+    '0075_task_deliverables',
+  ]);
   journal.entries.splice(at);
   writeFileSync(journalPath, JSON.stringify(journal));
   return dir;
