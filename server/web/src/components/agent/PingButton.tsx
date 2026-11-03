@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { PING_WAIT_MS, getCapacityPing, pingAgent, type CapacityPing } from '../../api/capacity.ts';
-import { timeLabel } from '../../api/time-label.ts';
+import { clockTime, timeLabel } from '../../api/time-label.ts';
 import { PING_WORDS, answerItems, answeredAgo, isStale, pingRefusal } from './capacity-derive.ts';
 import './agent.css';
 
@@ -18,10 +18,13 @@ const TICK_MS = 10_000;
 
 type Outcome =
   | { readonly kind: 'idle' }
-  | { readonly kind: 'waiting' }
+  /** Inside the reader's wait. `lost`: the last check failed, and another is on its way. */
+  | { readonly kind: 'waiting'; readonly lost: boolean }
   | { readonly kind: 'answered'; readonly ping: CapacityPing }
+  /** The wait is over and the ping is still open. `lost` as above. */
   | { readonly kind: 'pending'; readonly ping: CapacityPing; readonly lost: boolean }
-  | { readonly kind: 'expired' }
+  /** `unread`: it expired while the board could not be reached — answered or not is unknown. */
+  | { readonly kind: 'expired'; readonly unread: boolean }
   | { readonly kind: 'refused' }
   | { readonly kind: 'limited'; readonly seconds: number; readonly until: number }
   | { readonly kind: 'failed'; readonly message: string };
@@ -92,8 +95,8 @@ export function PingButton({
     [],
   );
 
-  // An answer's age, and a rate limit's wait, move on screen.
-  const ticking = outcome.kind === 'answered' || outcome.kind === 'limited';
+  // An answer's age moves on screen; a rate limit's end is timed below.
+  const ticking = outcome.kind === 'answered';
   useEffect(() => {
     if (!ticking) return;
     const timer = setInterval(() => {
@@ -117,6 +120,26 @@ export function PingButton({
     };
   }, [until]);
 
+  /** Ask about `ping` again in `delay`; `failures` checks in a row have failed. */
+  const check = (
+    ping: CapacityPing,
+    signal: AbortSignal,
+    waitUntil: number,
+    delay: number,
+    failures: number,
+  ): void => {
+    watch.current = setTimeout(() => {
+      getCapacityPing(ping.id, signal)
+        .then(({ ping: again }) => {
+          settle(again, signal, waitUntil);
+        })
+        .catch(() => {
+          if (signal.aborted) return;
+          lose(ping, signal, waitUntil, failures + 1);
+        });
+    }, delay);
+  };
+
   /** What a ping's state means now, `waitUntil` being the end of the reader's wait. */
   const settle = (ping: CapacityPing, signal: AbortSignal, waitUntil: number): void => {
     if (signal.aborted) return;
@@ -127,31 +150,58 @@ export function PingButton({
       return;
     }
     if (ping.state === 'expired') {
-      setOutcome({ kind: 'expired' });
+      setOutcome({ kind: 'expired', unread: false });
       return;
     }
     const at = Date.now();
-    const waiting = at < waitUntil;
     // Inside the wait it is still *Waiting…*; after it, *no answer*, asked
     // about again until it expires, and once just after.
-    if (!waiting) setOutcome({ kind: 'pending', ping, lost: false });
-    const delay = waiting
-      ? Math.min(WAIT_POLL_MS, waitUntil - at)
-      : Math.min(WATCH_EVERY_MS, Math.max(0, ping.expires_at - at) + 500);
-    watch.current = setTimeout(() => {
-      getCapacityPing(ping.id, signal)
-        .then(({ ping: again }) => {
-          settle(again, signal, waitUntil);
-        })
-        .catch(() => {
-          if (signal.aborted) return;
-          setOutcome({ kind: 'pending', ping, lost: true });
-        });
-    }, delay);
+    if (at < waitUntil) {
+      setOutcome({ kind: 'waiting', lost: false });
+      check(ping, signal, waitUntil, Math.min(WAIT_POLL_MS, waitUntil - at), 0);
+      return;
+    }
+    setOutcome({ kind: 'pending', ping, lost: false });
+    check(
+      ping,
+      signal,
+      waitUntil,
+      Math.min(WATCH_EVERY_MS, Math.max(0, ping.expires_at - at) + 500),
+      0,
+    );
+  };
+
+  /**
+   * A check failed (LAI-1102 review, B2). The ping's own clock still holds:
+   * ask again, backing off — 1 s, 2 s, 4 s, up to the usual 10 s — but never
+   * past the end of the wait, so *no answer* is said on time, nor past the
+   * expiry, after which a failed check is the last: *expired, answered or not
+   * unknown*. A failure inside the wait is still *Waiting…*, never an early
+   * *no answer*.
+   */
+  const lose = (
+    ping: CapacityPing,
+    signal: AbortSignal,
+    waitUntil: number,
+    failures: number,
+  ): void => {
+    const at = Date.now();
+    if (at >= ping.expires_at) {
+      setOutcome({ kind: 'expired', unread: true });
+      return;
+    }
+    const inWait = at < waitUntil;
+    setOutcome(inWait ? { kind: 'waiting', lost: true } : { kind: 'pending', ping, lost: true });
+    const backoff = Math.min(WATCH_EVERY_MS, WAIT_POLL_MS * 2 ** (failures - 1));
+    const bound = inWait ? waitUntil - at : Math.max(0, ping.expires_at - at) + 500;
+    check(ping, signal, waitUntil, Math.min(backoff, bound), failures);
   };
 
   const limited = outcome.kind === 'limited' && now < outcome.until;
-  const busy = outcome.kind === 'waiting' || outcome.kind === 'pending' || limited;
+  // A ping still being watched holds the button; one whose checks are failing
+  // does not — asking again is the reader's way out.
+  const busy =
+    outcome.kind === 'waiting' || (outcome.kind === 'pending' && !outcome.lost) || limited;
 
   const ping = (): void => {
     if (busy) return;
@@ -160,7 +210,7 @@ export function PingButton({
     const next = new AbortController();
     controller.current = next;
     const waitUntil = Date.now() + PING_WAIT_MS;
-    setOutcome({ kind: 'waiting' });
+    setOutcome({ kind: 'waiting', lost: false });
     pingAgent(
       agentId,
       { project, wait_ms: PING_WAIT_MS, ...(taskId === undefined ? {} : { task_id: taskId }) },
@@ -199,73 +249,110 @@ export function PingButton({
       >
         Ping
       </button>
-      <div className="agent-ping-status" role="status" aria-live="polite" aria-atomic="true">
-        <PingStatus outcome={outcome} target={target} now={now} />
+      <div
+        className="agent-ping-status"
+        data-stale={(outcome.kind === 'answered' && isStale(outcome.ping, now)) || undefined}
+      >
+        {/* How long ago moves on screen and is not read out: it sits outside
+            the live region, which changes only when the outcome does
+            (LAI-1102 review). */}
+        {outcome.kind === 'answered' && <AnswerAge ping={outcome.ping} target={target} now={now} />}
+        <div className="agent-ping-live" role="status" aria-live="polite" aria-atomic="true">
+          <PingStatus outcome={outcome} target={target} limitPassed={!limited} />
+        </div>
       </div>
     </div>
+  );
+}
+
+function AnswerAge({
+  ping,
+  target,
+  now,
+}: {
+  readonly ping: CapacityPing;
+  readonly target: string;
+  readonly now: number;
+}) {
+  if (ping.answered_at === null) return null;
+  const at = timeLabel(ping.answered_at, now);
+  const stale = isStale(ping, now);
+  return (
+    <p className="agent-ping-line agent-ping-age">
+      {stale ? 'Stale: ' : ''}
+      {target}{' '}
+      <time dateTime={at.iso} title={at.full}>
+        {answeredAgo(ping.answered_at, now)}
+      </time>
+      {stale && ' — ping again for its state now'}
+    </p>
   );
 }
 
 function PingStatus({
   outcome,
   target,
-  now,
+  limitPassed,
 }: {
   readonly outcome: Outcome;
   readonly target: string;
-  readonly now: number;
+  /** The rate limit's wait is over: said once, never counted down aloud. */
+  readonly limitPassed: boolean;
 }) {
   switch (outcome.kind) {
     case 'idle':
       return null;
     case 'waiting':
-      return <p className="agent-ping-line">{PING_WORDS.waiting(target)}</p>;
+      return (
+        <p className="agent-ping-line">
+          {outcome.lost ? PING_WORDS.waitingLost(target) : PING_WORDS.waiting(target)}
+        </p>
+      );
     case 'pending':
       return (
         <p className="agent-ping-line" data-ping-pending>
-          {PING_WORDS.noAnswer(PING_WAIT_MS / 1000)}
-          {outcome.lost && ' The board could not be asked again.'}
+          {outcome.lost
+            ? PING_WORDS.noAnswerLost(
+                PING_WAIT_MS / 1000,
+                clockTime(outcome.ping.expires_at, { seconds: true }),
+              )
+            : PING_WORDS.noAnswer(PING_WAIT_MS / 1000)}
         </p>
       );
     case 'expired':
-      return <p className="agent-ping-line">{PING_WORDS.expired}</p>;
-    case 'refused':
-      return <p className="agent-ping-line agent-ping-problem">{PING_WORDS.refused(target)}</p>;
-    case 'limited': {
-      const left = Math.max(0, Math.ceil((outcome.until - now) / 1000));
       return (
-        <p className="agent-ping-line agent-ping-problem">
-          {left > 0 ? PING_WORDS.limited(target, left) : `${target} can be pinged again.`}
+        <p className="agent-ping-line">
+          {outcome.unread ? PING_WORDS.expiredUnread(target) : PING_WORDS.expired}
         </p>
       );
-    }
+    case 'refused':
+      return <p className="agent-ping-line agent-ping-problem">{PING_WORDS.refused(target)}</p>;
+    case 'limited':
+      return (
+        <p className="agent-ping-line agent-ping-problem">
+          {limitPassed
+            ? `${target} can be pinged again.`
+            : PING_WORDS.limited(target, outcome.seconds)}
+        </p>
+      );
     case 'failed':
       return (
         <p className="agent-ping-line agent-ping-problem">{PING_WORDS.failed(outcome.message)}</p>
       );
     case 'answered': {
-      const { ping } = outcome;
-      if (ping.answer === null || ping.answered_at === null) return null;
-      const at = timeLabel(ping.answered_at, now);
-      const stale = isStale(ping, now);
+      const { answer } = outcome.ping;
+      if (answer === null) return null;
       return (
-        <div className="agent-ping-answer" data-stale={stale || undefined}>
-          <p className="agent-ping-line">
-            {stale ? 'Stale: ' : ''}
-            {target}{' '}
-            <time dateTime={at.iso} title={at.full}>
-              {answeredAgo(ping.answered_at, now)}
-            </time>
-            {stale && ' — ping again for its state now'}
-          </p>
+        <>
+          <span className="visually-hidden">{target} answered.</span>
           <ul className="agent-ping-facts" aria-label={`${target}’s answer`}>
-            {answerItems(ping.answer).map((item) => (
+            {answerItems(answer).map((item) => (
               <li key={item.key} data-answer={item.key}>
                 {item.text}
               </li>
             ))}
           </ul>
-        </div>
+        </>
       );
     }
   }

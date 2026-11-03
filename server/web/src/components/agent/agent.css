@@ -1032,7 +1032,7 @@
   font-size: var(--text-small);
 }
 
-.agent-ping-status:empty {
+.agent-ping-live:empty {
   /* Kept in the tree so the live region exists before it fills; drawn as nothing. */
   position: absolute;
   width: 1px;
@@ -1064,7 +1064,7 @@
   overflow-wrap: anywhere;
 }
 
-.agent-ping-answer[data-stale] .agent-ping-facts {
+.agent-ping-status[data-stale] .agent-ping-facts {
   color: var(--text-secondary);
 }
 
