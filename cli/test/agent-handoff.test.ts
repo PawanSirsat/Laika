@@ -14,6 +14,7 @@ import {
   renameSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -338,14 +339,19 @@ void describe('LAI-1107: prepare tells "could not reach" from a refusal', () => 
     const { home, repo } = owner();
     return again(fetch, home, repo);
   }
-  async function again(fetch: Fetch, home: string, repo: string): Promise<Attempt> {
+  async function again(
+    fetch: Fetch,
+    home: string,
+    repo: string,
+    path = process.env.PATH ?? '',
+  ): Promise<Attempt> {
     const err: string[] = [];
     const code = await prepare(
       {
         out: () => undefined,
         err: (l) => err.push(l),
         home,
-        env: { PATH: process.env.PATH ?? '', HOME: root, [LOCAL_ROOT_ENV]: join(root, 'remotes') },
+        env: { PATH: path, HOME: root, [LOCAL_ROOT_ENV]: join(root, 'remotes') },
         cwd: repo,
         fetch,
         now: () => 0,
@@ -436,5 +442,63 @@ void describe('LAI-1107: prepare tells "could not reach" from a refusal', () => 
     assert.equal(r.code, 1, r.err);
     assert.match(r.err, /Save needs attention — the checkpoint tag could not be fetched/);
     assert.match(r.err, /couldn't find remote ref/);
+  });
+
+  /**
+   * A `PATH` whose first `git` answers `command` with exit 128 and `stderr`,
+   * and runs the real git for everything else: `prepare` builds its own runner.
+   */
+  function gitAnswering(command: 'fetch' | 'ls-remote', stderr: string): string {
+    const bin = mkdtempSync(join(root, 'bin-'));
+    const real = execFileSync('sh', ['-c', 'command -v git'], {
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH ?? '' },
+    }).trim();
+    writeFileSync(join(bin, 'stderr.txt'), stderr);
+    writeFileSync(
+      join(bin, 'git'),
+      `#!/bin/sh\nfor a in "$@"; do\n  if [ "$a" = '${command}' ]; then cat '${join(bin, 'stderr.txt')}' >&2; exit 128; fi\ndone\nexec '${real}' "$@"\n`,
+      { mode: 0o755 },
+    );
+    return `${bin}:${process.env.PATH ?? ''}`;
+  }
+
+  void test('LAI-1108: the host refuses the repository (credentials, not found): exit 1, never 75', async () => {
+    const fetch = board(() => json(200, { data: [offer] }));
+    for (const [command, stderr] of [
+      [
+        'fetch',
+        "remote: Repository not found.\nfatal: repository 'https://github.com/kvell/laika.git/' not found\n",
+      ],
+      ['fetch', "fatal: Authentication failed for 'https://github.com/kvell/laika.git/'\n"],
+      [
+        'ls-remote',
+        'git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.\n',
+      ],
+    ] as const) {
+      const { home, repo } = owner();
+      const r = await again(fetch, home, repo, gitAnswering(command, stderr));
+      assert.equal(r.code, 1, `${command}: ${r.err}`);
+      assert.match(r.err, /Save needs attention — the checkpoint tag could not be (fetched|read)/);
+      assert.doesNotMatch(r.err, /try again/, command);
+    }
+  });
+
+  void test('LAI-1108: ls-remote failing on the network is still exit 75', async () => {
+    const { home, repo } = owner();
+    const r = await again(
+      board(() => json(200, { data: [offer] })),
+      home,
+      repo,
+      gitAnswering(
+        'ls-remote',
+        "fatal: unable to access 'x': Could not resolve host: github.com\n",
+      ),
+    );
+    assert.equal(r.code, PREPARE_RETRY, r.err);
+    assert.match(
+      r.err,
+      /the checkpoint tag could not be read from origin: .*Could not resolve host/,
+    );
   });
 });

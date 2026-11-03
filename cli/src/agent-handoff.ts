@@ -260,6 +260,30 @@ export const FULL_SHA = /^[0-9a-f]{40}$/;
 export const MISSING_REF = /couldn't find remote ref/i;
 
 /**
+ * What git says (under `LC_ALL=C`) when the host answered and **will not
+ * serve this repository to these credentials** — waiting does not change it
+ * (LAI-1108, from PR #256's review): HTTPS `Authentication failed` and no
+ * credentials to send (`could not read Username`), GitHub's `Repository not
+ * found` / `repository '…' not found` and `Permission to … denied`, SSH's
+ * `Permission denied (publickey…)`, and an HTTP 401, 403 or 404.
+ *
+ * Deliberately not here: `Could not read from remote repository`, which git
+ * prints after an SSH host that could not be resolved or reached as well,
+ * and a local path that `does not appear to be a git repository` (a mount
+ * that is not there yet). The network, a 5xx and a timeout stay retried.
+ */
+export const PERMANENT_GIT_FAILURE =
+  /authentication failed|could not read username|repository not found|repository '[^'\n]*' not found|permission to \S+ denied|permission denied \((?:publickey|keyboard-interactive|password)|the requested url returned error: 40[134]\b/i;
+
+/**
+ * Whether a failed fetch or `ls-remote` is an answer rather than a failure to
+ * reach: the remote has no such ref ({@link MISSING_REF}), or it refuses this
+ * repository to these credentials ({@link PERMANENT_GIT_FAILURE}).
+ */
+export const gitRefused = (stderr: string): boolean =>
+  MISSING_REF.test(stderr) || PERMANENT_GIT_FAILURE.test(stderr);
+
+/**
  * A checkpoint ref as the server builds it (§6.4): `refs/tags/laika-ckpt/
  * <task>/<checkpoint-id>` or a re-tag's `…-r<n>`. Checked again here, because
  * it reaches git as a refspec: nothing else may.
@@ -804,7 +828,8 @@ class Unreachable extends Stop {}
 /**
  * `prepare`'s exit code when it **could not read the board or reach the
  * repository** — the network, a 5xx, a failed fetch — as opposed to `1`, a
- * refusal. Nothing was checked out, and a later try can pass: the launcher
+ * refusal, which includes a host that will not serve the repository to these
+ * credentials ({@link gitRefused}, LAI-1108). Nothing was checked out, and a later try can pass: the launcher
  * tries it again, backing off, and never takes it as an answer (LAI-1107).
  * `EX_TEMPFAIL` from `sysexits.h`.
  */
@@ -1036,9 +1061,10 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     ]);
     if (fetched.code !== 0) {
       const message = `the checkpoint tag could not be fetched from ${remote ?? ''}: ${firstLine(fetched.stderr)}`;
-      // A tag the remote does not have is an answer; anything else (the
-      // network, the host, a timeout) may pass, and is tried again.
-      throw MISSING_REF.test(fetched.stderr) ? new Stop(message) : new Unreachable(message);
+      // A tag the remote does not have, or a repository it will not serve
+      // these credentials, is an answer; anything else (the network, the
+      // host, a timeout) may pass, and is tried again.
+      throw gitRefused(fetched.stderr) ? new Stop(message) : new Unreachable(message);
     }
     if (refSnapshot(git, toplevel, [localRef, branchRef]) !== before) {
       throw new Stop('the fetch changed refs; nothing was checked out');
@@ -1050,9 +1076,8 @@ export async function prepare(io: HandoffIo, args: PrepareArgs): Promise<number>
     // lightweight tag names the commit, an annotated one its tag object.
     const listed = git(toplevel, [...remoteArgs, 'ls-remote', '--', source.url, cp.newestRef]);
     if (listed.code !== 0) {
-      throw new Unreachable(
-        `the checkpoint tag could not be read from ${remote ?? ''}: ${firstLine(listed.stderr)}`,
-      );
+      const message = `the checkpoint tag could not be read from ${remote ?? ''}: ${firstLine(listed.stderr)}`;
+      throw gitRefused(listed.stderr) ? new Stop(message) : new Unreachable(message);
     }
     const at = listed.stdout
       .split('\n')
