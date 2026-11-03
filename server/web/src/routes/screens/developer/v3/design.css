@@ -78,7 +78,13 @@
   border-radius: var(--radius-chip);
 }
 
-/* `page-tab-active` gives it the tabs' accent and underline on its own page. */
+/* On its own page it is marked as an active tab is (`page-tab-active`), which
+   this sheet's rule above would otherwise outweigh by coming later. */
+.dx-tab-secondary.page-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: var(--weight-bold);
+}
 
 .dx-tab-secondary-more {
   display: none;

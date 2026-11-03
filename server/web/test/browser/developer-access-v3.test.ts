@@ -428,8 +428,23 @@ void describe('the tab bars (plan §I)', () => {
       await advancedLink(h.page).click();
       await h.page.locator('.dev-advanced .dev-adv').waitFor({ timeout: 20_000 });
       assert.equal(here(h.page), '/developer?tab=advanced');
-      // On its own page the link is marked as a tab is, and no tab is.
+      // On its own page the link is marked as a tab is, and no tab is: the
+      // accent and its underline, as the active tab draws them.
       assert.equal(await advancedLink(h.page).getAttribute('aria-current'), 'page');
+      const marked = await advancedLink(h.page).evaluate((el) => {
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--accent)';
+        document.body.append(probe);
+        const accent = getComputedStyle(probe).color;
+        probe.remove();
+        const got = getComputedStyle(el);
+        return { color: got.color, underline: got.borderBottomColor, accent };
+      });
+      assert.deepEqual(marked, {
+        color: marked.accent,
+        underline: marked.accent,
+        accent: marked.accent,
+      });
       assert.equal(await h.page.locator('.page-tab-active').count(), 1);
       assert.equal(await active(h.page), 'advanced');
       assert.equal(await h.page.locator('.page-tab[aria-current]').count(), 0);
@@ -1442,6 +1457,16 @@ void describe('look and fit', () => {
         await link.click();
         await h.page.locator('.dev-advanced').waitFor({ timeout: 20_000 });
         assert.equal(await link.getAttribute('aria-current'), 'page');
+        // *⋯* is marked as the active tab is, so a phone shows where it is.
+        const [colour, accent] = await link.evaluate((el) => {
+          const probe = document.createElement('span');
+          probe.style.color = 'var(--accent)';
+          document.body.append(probe);
+          const want = getComputedStyle(probe).color;
+          probe.remove();
+          return [getComputedStyle(el).borderBottomColor, want];
+        });
+        assert.equal(colour, accent);
       } finally {
         await h.close();
       }
