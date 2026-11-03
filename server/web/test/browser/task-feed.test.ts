@@ -422,7 +422,8 @@ void describe('the task feed (D-129, LAI-1122)', () => {
       const head = h.page.locator('#panel-all .feed-head').first();
       assert.equal(
         squash(await head.locator('.panel-event-who').innerText()),
-        'Ada Lovelace via Claude Code · laptop-1 · Claude Code · claude-opus-5-5',
+        // The harness is said once when it is the agent's own (LAI-1123).
+        'Ada Lovelace via Claude Code · laptop-1 · claude-opus-5-5',
       );
       assert.equal(squash(await head.locator('.who-chip').innerText()), 'Claude Code · laptop-1');
       assert.match((await head.locator('time').getAttribute('title')) ?? '', /\d{4}, \d/);

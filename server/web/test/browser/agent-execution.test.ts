@@ -790,7 +790,9 @@ void describe('the live claim (LAI-597)', () => {
       const found = await panel(h);
       const line = found.locator('[data-session-line]');
       await line.waitFor({ timeout: 10_000 });
-      assert.equal((await line.innerText()).trim(), 'Claude Code · Belka · Codex · gpt-5.5');
+      // What ran, without the chip's words again (LAI-1123): the chip says
+      // *Claude Code · Belka*, the line under it what that session ran.
+      assert.equal((await line.innerText()).trim(), 'Codex · gpt-5.5');
       // The chip still names the agent; the line is beneath it, not instead.
       assert.match(
         await found.locator('[data-working-session]').innerText(),

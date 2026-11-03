@@ -39,6 +39,20 @@ export function sessionWords(session: ActivitySession | null | undefined): strin
  * session said ran. With no snapshot, the agent's name alone.
  */
 export function agentLine(agentName: string, session: ActivitySession | null | undefined): string {
-  const words = sessionWords(session);
+  // The session's harness is said only when it is not the agent's own: an
+  // agent named *Claude Code · Belka* running Claude Code reads *Claude Code ·
+  // Belka · claude-opus-5-5*, not *Claude Code* twice (LAI-1123). A different
+  // harness — *Codex* under a Claude Code agent — is the fact worth showing.
+  const product = agentName.split(' · ')[0];
+  const sameHarness =
+    session !== null &&
+    session !== undefined &&
+    present(session.harness) &&
+    sessionHarnessName(session.harness) === product;
+  const words = sameHarness
+    ? present(session.model)
+      ? session.model
+      : undefined
+    : sessionWords(session);
   return words === undefined ? agentName : `${agentName} · ${words}`;
 }
