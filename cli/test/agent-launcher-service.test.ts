@@ -24,6 +24,9 @@ import { afterEach, describe, test } from 'node:test';
 import { LOCAL_ROOT_ENV } from '../src/agent-handoff.ts';
 import { AGENT_MARKER, agentHookGroups, agentHooksProblems, hookFile } from '../src/agent-hooks.ts';
 import {
+  BOOTOUT_POLL_MS,
+  BOOTOUT_POLLS,
+  BOOTSTRAP_BACKOFF_MS,
   BRANCH_PROTECTION_NOTE,
   CHECKOUT_TRIES,
   checkoutPath,
@@ -36,6 +39,7 @@ import {
   disable,
   enable,
   launchAgentPlist,
+  MANUAL_BOOTSTRAP,
   omnigentArgv,
   plistPath,
   programProblem,
@@ -301,8 +305,10 @@ function device(
     claudeVersion?: string;
     /** A `laika` command the Terminal viewer can name (LAI-1113); else one that is not there. */
     laika?: boolean;
+    /** What `launchctl` answers (LAI-1114); `undefined` is the default, exit 0. */
+    launchctl?: (args: readonly string[]) => RunResult | undefined;
   } = {},
-): Rig & { home: string; repo: string; script: string } {
+): Rig & { home: string; repo: string; script: string; sleeps: number[] } {
   const home = scratch();
   writeCredential(home, 'claude-code', { url: 'http://board.invalid', token: TOKEN });
   if (extra.codex === true)
@@ -347,6 +353,7 @@ function device(
   const out: string[] = [];
   const runs: string[][] = [];
   const asked: string[] = [];
+  const sleeps: number[] = [];
   const owner = answers.map((a) => (a === null ? null : a.replace('$REPO', repo)));
   const io: ServiceIo = {
     out: (l) => out.push(l),
@@ -364,6 +371,10 @@ function device(
     interrupted: () => false,
     run: (file, args): RunResult => {
       runs.push([file, ...args]);
+      if (file === '/bin/launchctl') {
+        const answer = extra.launchctl?.(args);
+        if (answer !== undefined) return answer;
+      }
       if (file === program) {
         return {
           code: 0,
@@ -406,8 +417,12 @@ function device(
     entry: '/opt/laika/cli/dist/index.js',
     laika: extra.laika === true ? laika : '/opt/laika/bin/laika',
     which: (name) => (name === 'claude' ? program : name === 'codex' ? codex : undefined),
+    sleep: (ms) => {
+      sleeps.push(ms);
+      return Promise.resolve();
+    },
   };
-  return { io, out, runs, asked, home, repo, script };
+  return { io, out, runs, asked, home, repo, script, sleeps };
 }
 
 void describe('enable', () => {
@@ -991,6 +1006,125 @@ void describe('LAI-1111: --dry-run loads the config as the launcher will, and na
     const d = device(['$REPO', 'yes']);
     assert.equal(await enable(d.io, ['--dry-run']), 0);
     assert.ok(!d.out.join('\n').includes('That is the CLI in the checkout'));
+  });
+});
+
+void describe('LAI-1114: enable over a running launcher waits for launchd', () => {
+  const gone: RunResult = { code: 113, stdout: '', stderr: 'Could not find service' };
+  const busy: RunResult = {
+    code: 5,
+    stdout: '',
+    stderr: 'Bootstrap failed: 5: Input/output error\n',
+  };
+  const ok: RunResult = { code: 0, stdout: '', stderr: '' };
+  const launchctlCalls = (runs: string[][]): string[] =>
+    runs.filter((r) => r[0] === '/bin/launchctl').map((r) => r[1] ?? '');
+
+  void test('the old job lingers after bootout: bootstrap waits until print cannot find it', async () => {
+    let prints = 0;
+    const d = device(['$REPO', 'yes', '', '', 'enable'], {
+      launchctl: (args) => {
+        if (args[0] === 'print') return ++prints < 4 ? ok : gone;
+        // A bootstrap before the job is gone fails the way launchd does.
+        if (args[0] === 'bootstrap') return prints < 4 ? busy : ok;
+        return undefined;
+      },
+    });
+    assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
+    assert.deepEqual(launchctlCalls(d.runs), [
+      'bootout',
+      'print',
+      'print',
+      'print',
+      'print',
+      'bootstrap',
+    ]);
+    assert.deepEqual(d.sleeps, [BOOTOUT_POLL_MS, BOOTOUT_POLL_MS, BOOTOUT_POLL_MS]);
+    assert.deepEqual(
+      d.runs.find((r) => r[1] === 'print'),
+      ['/bin/launchctl', 'print', `gui/501/${SERVICE_LABEL}`],
+    );
+    assert.match(d.out.join('\n'), /Installed and started ai\.laika\.launcher/);
+  });
+
+  void test('the wait is bounded: a job that never goes still gets one bootstrap', async () => {
+    const d = device(['$REPO', 'yes', '', '', 'enable'], {
+      launchctl: (args) => (args[0] === 'print' ? ok : undefined),
+    });
+    assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
+    assert.equal(launchctlCalls(d.runs).filter((c) => c === 'print').length, BOOTOUT_POLLS);
+    assert.equal(d.sleeps.length, BOOTOUT_POLLS);
+    assert.ok(BOOTOUT_POLLS * BOOTOUT_POLL_MS <= 10_000, 'about ten seconds at most');
+  });
+
+  void test('bootstrap fails once with 5, then succeeds after a short wait', async () => {
+    let bootstraps = 0;
+    const d = device(['$REPO', 'yes', '', '', 'enable'], {
+      launchctl: (args) => {
+        if (args[0] === 'print') return gone;
+        if (args[0] === 'bootstrap') return ++bootstraps === 1 ? busy : ok;
+        return undefined;
+      },
+    });
+    assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
+    assert.equal(bootstraps, 2);
+    assert.deepEqual(d.sleeps, [BOOTSTRAP_BACKOFF_MS[0]]);
+    assert.ok(!d.out.join('\n').includes('launchctl bootstrap failed'));
+  });
+
+  void test('error 37 is retried too', async () => {
+    let bootstraps = 0;
+    const d = device(['$REPO', 'yes', '', '', 'enable'], {
+      launchctl: (args) => {
+        if (args[0] === 'print') return gone;
+        if (args[0] === 'bootstrap')
+          return ++bootstraps === 1
+            ? {
+                code: 37,
+                stdout: '',
+                stderr: 'Bootstrap failed: 37: Operation already in progress',
+              }
+            : ok;
+        return undefined;
+      },
+    });
+    assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
+    assert.equal(bootstraps, 2);
+  });
+
+  void test('a persistent failure prints the manual command and exits non-zero', async () => {
+    const d = device(['$REPO', 'yes', '', '', 'enable'], {
+      launchctl: (args) =>
+        args[0] === 'print' ? gone : args[0] === 'bootstrap' ? busy : undefined,
+    });
+    assert.equal(await enable(d.io, []), 1);
+    assert.equal(
+      launchctlCalls(d.runs).filter((c) => c === 'bootstrap').length,
+      BOOTSTRAP_BACKOFF_MS.length + 1,
+    );
+    assert.deepEqual(d.sleeps, [...BOOTSTRAP_BACKOFF_MS]);
+    const text = d.out.join('\n');
+    assert.match(text, /launchctl bootstrap failed: Bootstrap failed: 5: Input\/output error/);
+    assert.equal(
+      MANUAL_BOOTSTRAP,
+      'launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.laika.launcher.plist',
+    );
+    assert.ok(text.includes(`Start it by hand: ${MANUAL_BOOTSTRAP}`), text);
+  });
+
+  void test('another bootstrap error is not retried', async () => {
+    const d = device(['$REPO', 'yes', '', '', 'enable'], {
+      launchctl: (args) =>
+        args[0] === 'print'
+          ? gone
+          : args[0] === 'bootstrap'
+            ? { code: 1, stdout: '', stderr: 'Bootstrap failed: 1: Operation not permitted' }
+            : undefined,
+    });
+    assert.equal(await enable(d.io, []), 1);
+    assert.equal(launchctlCalls(d.runs).filter((c) => c === 'bootstrap').length, 1);
+    assert.deepEqual(d.sleeps, []);
+    assert.ok(d.out.join('\n').includes(MANUAL_BOOTSTRAP));
   });
 });
 

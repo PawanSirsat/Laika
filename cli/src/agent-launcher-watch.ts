@@ -216,11 +216,20 @@ const SHOWN: ReadonlySet<string> = new Set([
   'stopped',
   'reaped',
   'refused',
+  'skipped',
 ]);
 
 const clock = (ms: number): string => new Date(ms).toTimeString().slice(0, 8);
 const label = (h: Harness | undefined): string =>
   h === undefined ? 'a harness' : HARNESS_LABELS[h];
+
+/** Why a check was skipped, in words (LAI-1114); a reason this CLI does not know is shown as itself. */
+function skippedWhy(reason: string | undefined): string {
+  if (reason === 'owner_unknown') {
+    return 'could not reach the board to confirm the owner (will retry)';
+  }
+  return `${reason ?? 'no reason given'} (will retry)`;
+}
 
 /** One audit event as a line, or `undefined` for one this view does not show. */
 export function renderAudit(e: AuditLine): string | undefined {
@@ -256,6 +265,8 @@ export function renderAudit(e: AuditLine): string | undefined {
       return `${t} ■ stopping ${key}${e.reason === undefined ? '' : `: ${e.reason}`}${run}`;
     case 'reaped':
       return `${t} ■ ended a run a gone launcher left${e.reason === undefined ? '' : ` (${e.reason})`}${run}`;
+    case 'skipped':
+      return `${t} · skipped a check: ${skippedWhy(e.reason)}`;
     default:
       return `${t} ✖ refused ${key}: ${e.reason ?? 'no reason given'}${e.detail === undefined ? '' : ` (${e.detail})`}${run}`;
   }

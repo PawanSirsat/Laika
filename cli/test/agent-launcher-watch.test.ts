@@ -294,6 +294,17 @@ void describe('the audit log', () => {
       }),
     );
     assert.deepEqual(hostile, { at: Date.parse(at), event: 'refused' });
+    // LAI-1114: the board not answering whose the credential is refused nothing.
+    const skipped = renderAudit(
+      parseAudit(
+        JSON.stringify({ at, event: 'skipped', reason: 'owner_unknown', harness: 'claude-code' }),
+      )!,
+    );
+    assert.match(
+      skipped ?? '',
+      /· skipped a check: could not reach the board to confirm the owner \(will retry\)$/,
+    );
+    assert.ok(!(skipped ?? '').includes('refused'));
     assert.equal(renderAudit(parseAudit(JSON.stringify({ at, event: 'deferred' }))!), undefined);
     assert.equal(parseAudit('not json'), undefined);
     assert.equal(parseAudit(JSON.stringify({ event: 'start' })), undefined, 'no time, no line');

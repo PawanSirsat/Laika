@@ -762,6 +762,26 @@ void describe('the loop', () => {
     assert.equal(auditLines(r.home).find((l) => l.event === 'refused')?.reason, 'owner_mismatch');
   });
 
+  void test('LAI-1114: a board that cannot say whose the token is skips the tick, refusing nothing', async () => {
+    let polled = 0;
+    const r = rig(
+      () => {
+        polled += 1;
+        return [record({ event_id: ids(14), offer_id: ids(15) })];
+      },
+      { ownerOf: () => Promise.resolve(undefined) },
+    );
+    await startLauncher({ ...r.deps, maxTicks: 2 }, config({ argv: [process.execPath] })).finished;
+    assert.equal(polled, 0);
+    assert.deepEqual(r.prepared, []);
+    const lines = auditLines(r.home);
+    assert.equal(lines.filter((l) => l.event === 'refused').length, 0, 'nothing refused');
+    const skipped = lines.filter((l) => l.event === 'skipped');
+    assert.equal(skipped.length, 1, 'audited once, not every tick');
+    assert.equal(skipped[0]?.reason, 'owner_unknown');
+    assert.equal(skipped[0]?.harness, 'claude-code');
+  });
+
   void test('starts nothing when prepare refuses', async () => {
     const dir = scratch();
     const r = rig(() => [record({ event_id: ids(17), offer_id: ids(18) })], {
