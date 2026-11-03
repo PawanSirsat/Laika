@@ -753,6 +753,44 @@ void describe('laika project check', () => {
     assert.ok(!r.out.includes(ENV_TOKEN), 'the token was printed');
   });
 
+  // The exit statement once said "the check records with it", whatever else
+  // was true (LAI-1094). Several tools are set up here, so in each case it is
+  // the environment's credential that decides.
+  void test('LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL: every other rule applies to it (LAI-1094)', async () => {
+    const several = home({ 'claude-code': BOARD, codex: BOARD });
+    const env = { LAIKA_AGENT_TOKEN: ENV_TOKEN, LAIKA_AGENT_URL: BOARD };
+    const unnamedDir = repo({ 'CLAUDE.md': unnamed });
+    const prints = await run([], { cwd: unnamedDir, home: several, env });
+    assert.equal(prints.code, 0, prints.out);
+    assert.equal(prints.sent.length, 0);
+    assert.match(prints.out, /no project named — pass --project <slug> to record this check/);
+    const asked = await run(['--harness', 'codex'], { cwd: unnamedDir, home: several, env });
+    assert.equal(asked.code, 2, asked.out);
+    assert.equal(asked.sent.length, 0);
+
+    const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
+    const notFound = { error: { code: 'not_found', message: 'x', details: null } };
+    for (const [board, why] of [
+      [{ manifest: 'down' as const }, /could not ask http:\/\/board\.test what it supports/],
+      [
+        { board: () => ({ status: 401, body: { error: { code: 'unauthorized', message: 'x' } } }) },
+        /the board no longer accepts this tool’s credential/,
+      ],
+      [
+        {
+          manifest: { status: 404, body: notFound },
+          board: () => ({ status: 404, body: notFound }),
+        },
+        /has no project "onroute", or does not record project setups yet/,
+      ],
+    ] as const) {
+      const r = await run([], { cwd: dir, home: several, env, ...board });
+      assert.equal(r.code, 2, r.out);
+      assert.match(r.out, why);
+      assert.ok(!r.out.includes(ENV_TOKEN), 'the token was printed');
+    }
+  });
+
   void test('LAIKA_AGENT_TOKEN alone takes its board from the tool’s own file, as the README says (review N3)', async () => {
     const dir = repo({ 'CLAUDE.md': marked(2, 'onroute', 'ONR') });
     const r = await run(['--harness', 'codex'], {
@@ -958,11 +996,23 @@ void describe('the exit codes, said the same in the comment, the usage and the R
   };
   assert.ok(USAGE.includes('Exit:'), 'the usage text no longer has its exit codes');
 
+  // Each place from its heading to the statement: its own words, and nothing
+  // else. A sentence added to a lead-in, contradicting the statement, fails
+  // here (LAI-1094).
+  const leadIn = {
+    comment:
+      '## Exit codes cli/README.md and {@link USAGE} give the same statement, word for word, and project-check.test.ts holds the three to it (LAI-1091). 64 is EX_USAGE, as in laika doctor. The',
+    usage: 'Exit: 0 current, 1 needs action, 2 could not record, 64 usage. The',
+    readme:
+      'Exit codes (LAI-1091; the usage text and the comment in src/project-check.ts give the same statement, word for word), the',
+  };
+
   // Each is behaviour the tests above pin: 64 in "usage errors are 64"; 1 in
   // the needs-action cases, and a wrong prefix only from the board in "a
   // wrong prefix is seen only in the board's reply"; 2 and 0 in the
   // --harness, several and no-project cases; the environment in "LAIKA_AGENT_
-  // TOKEN with LAIKA_AGENT_URL wins over several tools".
+  // TOKEN with LAIKA_AGENT_URL wins over several tools" and "… every other
+  // rule applies to it".
   const ANCHOR = 'first that applies:';
   const statement = [
     ANCHOR,
@@ -971,16 +1021,19 @@ void describe('the exit codes, said the same in the comment, the usage and the R
     "2 nothing this run can see needs action, but the record was not made: --harness names a tool with no credential here, or names one but no project is named; several tools are set up here and no --harness picks one; the credential's board URL is not a plain address; or the board did not answer, refused, or is too old to take it.",
     '0 nothing this run can see needs action, and the check was recorded or only printed: --offline; or no --harness, and no credential here or no project named.',
     'So: a current block, no credential and no --harness prints and exits 0; a missing or old block exits 1 whatever else is true; --harness X with no credential for X exits 2, unless --offline (0) or the block needs action (1).',
-    'LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL in the environment is a credential for whichever tool is asked for, and it wins over the several-tools rule: the check records with it.',
+    'LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL in the environment is a credential for whichever tool is asked for, and it wins over the several-tools rule.',
+    'Every other rule above applies to it as written: no project named only prints, or is 2 with --harness; a board that does not answer, refuses, or is too old to take it is 2.',
     'Whether a record can be made is decided before whether a project is named, so the order of the checks never turns a 2 into a 0.',
   ].join(' ');
 
-  for (const [where, text] of Object.entries(places)) {
+  for (const where of ['comment', 'usage', 'readme'] as const) {
+    const text = places[where];
     // The whole statement, not each clause found somewhere in it: a clause
     // added in one place, contradicting the others, fails too (review N6).
-    void test(`${where} gives the whole statement and nothing else`, () => {
+    void test(`${where} gives its heading, its lead-in and the whole statement, and nothing else`, () => {
       const at = text.indexOf(ANCHOR);
       assert.ok(at !== -1, `${where} has no "${ANCHOR}"`);
+      assert.equal(text.slice(0, at).trim(), leadIn[where], where);
       assert.equal(text.slice(at).trim(), statement, where);
     });
   }
