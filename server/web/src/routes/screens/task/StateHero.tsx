@@ -80,8 +80,8 @@ function Fact({
           {value}
         </span>
       )}
-      {sub !== undefined && sub !== '' && <span className="hero-fact-sub">{sub}</span>}
       {children}
+      {sub !== undefined && sub !== '' && <span className="hero-fact-sub">{sub}</span>}
     </div>
   );
 }
