@@ -42,6 +42,17 @@ import {
   untrustedBlock,
 } from './agent-handoff.ts';
 import {
+  claudeProjectDir,
+  laikaPathProblem,
+  notice,
+  type Notice,
+  commandEnv,
+  openViewer,
+  realRunner,
+  runEnding,
+  showNotice,
+} from './agent-launcher-visible.ts';
+import {
   branchAllowed,
   prepareWorkspace,
   reusedWorktreeProblem,
@@ -152,7 +163,22 @@ export interface LauncherConfig {
    * session instead (slice D's `wakeOmnigentSession`). Off unless set.
    */
   readonly omnigent?: { readonly wake_sessions: boolean };
+  /** A notification when a run starts and when it ends (LAI-1113). Off unless set. */
+  readonly notify?: boolean;
+  /** A Terminal window per run, running the read-only viewer (LAI-1113, macOS). Off unless set. */
+  readonly open_terminal?: boolean;
+  /** The absolute path of the `laika` command that viewer runs; required by `open_terminal`. */
+  readonly laika?: string;
+  /**
+   * How Claude Code runs are allowed to work (LAI-1113, D-128): `allowlist`
+   * (`--permission-mode dontAsk` with `--allowedTools`), the default, or `skip`
+   * (`--dangerously-skip-permissions`), which the owner turns on by typing
+   * `skip-permissions` at `enable`. The argv must agree: {@link permissionsProblem}.
+   */
+  readonly permissions?: Permissions;
 }
+
+export type Permissions = 'allowlist' | 'skip';
 
 export type ConfigResult =
   | { readonly kind: 'disabled'; readonly why: string }
@@ -186,10 +212,23 @@ const TOP_KEYS = new Set([
   'auto_pickup',
   'prompt_via',
   'omnigent',
+  'notify',
+  'open_terminal',
+  'laika',
+  'permissions',
 ]);
 const PROJECT_KEYS = new Set(['project_id', 'repo', 'remote', 'work_requests']);
 /** Keys a v1 file may not carry: they are what v2 added. */
-const V2_ONLY = new Set(['max_runs_per_day', 'auto_pickup', 'prompt_via', 'omnigent']);
+const V2_ONLY = new Set([
+  'max_runs_per_day',
+  'auto_pickup',
+  'prompt_via',
+  'omnigent',
+  'notify',
+  'open_terminal',
+  'laika',
+  'permissions',
+]);
 
 /**
  * A program that reads its arguments as a command of its own. Refused as a
@@ -450,6 +489,33 @@ export function loadConfig(
       errors.push('omnigent must be { "wake_sessions": true | false }');
     } else wakeSessions = raw.omnigent.wake_sessions;
   }
+  for (const key of ['notify', 'open_terminal'] as const) {
+    if (raw[key] !== undefined && typeof raw[key] !== 'boolean') {
+      errors.push(`${key} must be true or false`);
+    }
+  }
+  if (raw.laika !== undefined) {
+    const why = laikaPathProblem(raw.laika) ?? argvProblem([raw.laika]);
+    if (why !== undefined) errors.push(`laika: ${why}`);
+  }
+  if (raw.open_terminal === true && raw.laika === undefined) {
+    errors.push(
+      'open_terminal needs "laika": the absolute path of the laika command its window runs',
+    );
+  }
+  let permissions: Permissions = 'allowlist';
+  if (raw.permissions !== undefined) {
+    if (raw.permissions === 'allowlist' || raw.permissions === 'skip')
+      permissions = raw.permissions;
+    else errors.push('permissions must be "allowlist" or "skip"');
+  }
+  const claude = harnesses['claude-code'];
+  if (claude !== undefined) {
+    const why = permissionsProblem(claude, permissions);
+    if (why !== undefined) errors.push(`harnesses.claude-code: ${why}`);
+  } else if (permissions === 'skip') {
+    errors.push('permissions "skip" is for harnesses.claude-code, which is not set');
+  }
   if (errors.length > 0) return { kind: 'invalid', errors };
   return {
     kind: 'enabled',
@@ -466,8 +532,238 @@ export function loadConfig(
       auto_pickup: { handoffs },
       prompt_via: promptVia,
       omnigent: { wake_sessions: wakeSessions },
+      notify: raw.notify === true,
+      open_terminal: raw.open_terminal === true,
+      ...(typeof raw.laika === 'string' ? { laika: raw.laika } : {}),
+      permissions,
     },
   };
+}
+
+/**
+ * Claude Code headless (code.claude.com `headless.md`, `cli-reference.md`,
+ * `permission-modes.md`, read 2026-11-03): `-p` with the prompt on stdin;
+ * `dontAsk` denies anything not on the allowlist and the run continues; deny
+ * rules apply in every mode, as written (best effort — see {@link CLAUDE_DENIED});
+ * `--permission-prompts none` (≥ 2.1.259) means nobody is waited on. **The mode is written explicitly** (F6): before
+ * 2.1.302 a `-p` run with no mode could start in auto mode.
+ */
+export const CLAUDE_ALLOWED: readonly string[] = [
+  'Read',
+  'Edit',
+  'Write',
+  'Glob',
+  'Grep',
+  'Bash(git *)',
+  'Bash(pnpm *)',
+  // Opening and reading a pull request only: `gh pr merge --admin` would land on
+  // master, and a push to master here deploys production (CLAUDE.md §4).
+  'Bash(gh pr create *)',
+  'Bash(gh pr view *)',
+  'Bash(gh pr checks *)',
+  'Bash(gh pr list *)',
+  'Bash(laika agent *)',
+  'mcp__laika__*',
+];
+
+/**
+ * Deny rules hold in every mode — **as written**. Claude Code's own
+ * permissions doc calls argument-constraining Bash patterns "fragile": a push
+ * written another way (`git -C . push`, an alias, a script) is not matched.
+ * These are best effort, **not a boundary**. What keeps a run off the default
+ * branch is GitHub branch protection on it (require a pull request), which the
+ * owner turns on; `enable` says so.
+ */
+export const CLAUDE_DENIED: readonly string[] = [
+  'Bash(gh pr merge *)',
+  'Bash(gh api *)',
+  'Bash(gh repo *)',
+  'Bash(git push * main*)',
+  'Bash(git push * master*)',
+  'Bash(git push * --force*)',
+  'Bash(git push * -f*)',
+  'Bash(git push --force *)',
+  'Bash(git push -f *)',
+  'Bash(git push * +*)',
+  'Bash(git -c *)',
+  'Bash(git -C * push*)',
+  'Bash(pnpm exec *)',
+  'Bash(pnpm dlx *)',
+  'Bash(npx *)',
+];
+
+/** The flag that starts Claude Code with its permission checks skipped (`bypassPermissions`). */
+export const SKIP_PERMISSIONS = '--dangerously-skip-permissions';
+
+/** What `enable` writes in place of these in `skip` mode: none of them may stay. */
+const ALLOWLIST_FLAGS: readonly string[] = [
+  '--permission-mode',
+  '--permission-prompts',
+  '--allowedTools',
+  '--allowed-tools',
+];
+
+/**
+ * Whether `argv` starts Claude Code with its permission checks skipped: the
+ * exact flags and values that do (`cli-reference.md`), not any word that
+ * mentions one — a deny rule such as `Bash(echo bypassPermissions)` skips nothing.
+ * An inline `--settings` JSON that names `bypassPermissions` counts too (it can
+ * set `permissions.defaultMode`); a settings *file* cannot be read here, since
+ * it may change after the config loads (cli/README.md).
+ */
+export function skipsChecks(argv: readonly string[]): boolean {
+  const inlineSettings = (word: string, i: number): string | undefined =>
+    word === '--settings'
+      ? argv[i + 1]
+      : word.startsWith('--settings=')
+        ? word.slice('--settings='.length)
+        : undefined;
+  return argv.some((word, i) => {
+    const settings = inlineSettings(word, i);
+    return (
+      word === SKIP_PERMISSIONS ||
+      word === '--allow-dangerously-skip-permissions' ||
+      word === '--permission-mode=bypassPermissions' ||
+      (word === 'bypassPermissions' && argv[i - 1] === '--permission-mode') ||
+      (settings !== undefined &&
+        settings.trimStart().startsWith('{') &&
+        settings.includes('bypassPermissions'))
+    );
+  });
+}
+
+/**
+ * Every spelling Claude Code reads as each flag that takes a value: its name,
+ * its alias (`cli-reference.md`), and each as `--name=value`. A second
+ * occurrence in any spelling is a second value — for the caps, one that would
+ * raise them past what `check` shows (round-2 review) — so each is counted.
+ */
+const SPELLINGS: Readonly<Record<string, readonly string[]>> = {
+  '--disallowedTools': ['--disallowedTools', '--disallowed-tools'],
+  '--max-turns': ['--max-turns'],
+  '--max-budget-usd': ['--max-budget-usd'],
+};
+
+/** What a Claude Code argv says about its permissions, read from the argv itself. */
+export interface ClaudeShape {
+  readonly skips: boolean;
+  /**
+   * The words after `--disallowedTools`, up to the next flag; `undefined` unless
+   * the deny-list flag is there once, in that spelling.
+   */
+  readonly denied: readonly string[] | undefined;
+  /** {@link CLAUDE_DENIED} rules that are not among them. */
+  readonly missingDenied: readonly string[];
+  /**
+   * Each value only when its flag is there once, in its bare spelling, followed
+   * by a well-formed number.
+   */
+  readonly maxTurns: string | undefined;
+  readonly maxBudgetUsd: string | undefined;
+  /** How many times each flag that takes a value appears, in any of its {@link SPELLINGS}. */
+  readonly counts: Readonly<Record<string, number>>;
+  /** Allowlist-mode flags present ({@link ALLOWLIST_FLAGS}, also as `--flag=value`). */
+  readonly allowlistFlags: readonly string[];
+}
+
+export function claudeShape(argv: readonly string[]): ClaudeShape {
+  const count = (flag: string): number =>
+    argv.filter((w) => (SPELLINGS[flag] ?? [flag]).some((n) => w === n || w.startsWith(`${n}=`)))
+      .length;
+  const counts = {
+    '--disallowedTools': count('--disallowedTools'),
+    '--max-turns': count('--max-turns'),
+    '--max-budget-usd': count('--max-budget-usd'),
+  };
+  const at = argv.indexOf('--disallowedTools');
+  let denied: string[] | undefined;
+  if (at !== -1 && counts['--disallowedTools'] === 1) {
+    denied = [];
+    for (let i = at + 1; i < argv.length && !argv[i]!.startsWith('-'); i += 1)
+      denied.push(argv[i]!);
+  }
+  const value = (flag: string, form: RegExp): string | undefined => {
+    if (count(flag) !== 1 || !argv.includes(flag)) return undefined;
+    const v = argv[argv.indexOf(flag) + 1];
+    return v !== undefined && form.test(v) ? v : undefined;
+  };
+  const budget = value('--max-budget-usd', /^(?:[1-9][0-9]{0,4}|0)(?:\.[0-9]{1,2})?$/);
+  return {
+    skips: skipsChecks(argv),
+    denied,
+    missingDenied: CLAUDE_DENIED.filter((rule) => !(denied ?? []).includes(rule)),
+    maxTurns: value('--max-turns', /^[1-9][0-9]{0,5}$/),
+    maxBudgetUsd: budget !== undefined && Number(budget) > 0 ? budget : undefined,
+    counts,
+    allowlistFlags: ALLOWLIST_FLAGS.filter((flag) =>
+      argv.some((w) => w === flag || w.startsWith(`${flag}=`)),
+    ),
+  };
+}
+
+/**
+ * Why a Claude Code argv does not match the config's `permissions`, or
+ * `undefined`. **Skipping permission checks is the owner's explicit choice**
+ * (D-128): an argv that skips them without `"permissions": "skip"` is refused.
+ * **A `skip` argv must be the shape `enable` writes** (`claudeArgv(…, 'skip')`,
+ * LAI-1113 review): `--dangerously-skip-permissions`; one `--disallowedTools`
+ * followed by every {@link CLAUDE_DENIED} rule, which Claude Code enforces in
+ * that mode too (cli/README.md); one `--max-turns` and one `--max-budget-usd`
+ * with a number each; and none of the allowlist's flags.
+ */
+export function permissionsProblem(
+  argv: readonly string[],
+  permissions: Permissions,
+): string | undefined {
+  const s = claudeShape(argv);
+  if (permissions === 'allowlist') {
+    return s.skips
+      ? 'it skips permission checks, which needs "permissions": "skip" (enable asks for it)'
+      : undefined;
+  }
+  if (!argv.includes(SKIP_PERMISSIONS)) {
+    return `"permissions": "skip" needs ${SKIP_PERMISSIONS} in it`;
+  }
+  if (s.allowlistFlags.length > 0) {
+    return `"permissions": "skip" replaces the allowlist: remove ${s.allowlistFlags.join(', ')}`;
+  }
+  if (s.denied === undefined) {
+    return '"permissions": "skip" keeps the deny list: one --disallowedTools, written so (not --disallowedTools=… or --disallowed-tools), followed by its rules';
+  }
+  if (s.missingDenied.length > 0) {
+    return `"permissions": "skip" keeps the launcher's whole deny list: ${String(s.missingDenied.length)} of its rules are not after --disallowedTools (the first: ${s.missingDenied[0]!})`;
+  }
+  if (s.maxTurns === undefined) {
+    return '"permissions": "skip" needs one --max-turns <whole number>, as two words, and no other --max-turns';
+  }
+  if (s.maxBudgetUsd === undefined) {
+    return '"permissions": "skip" needs one --max-budget-usd <amount>, as two words, and no other --max-budget-usd';
+  }
+  return undefined;
+}
+
+/** The `check` / `status` line, from what the argv says — never from what it should say. */
+export function permissionsLine(argv: readonly string[], permissions: Permissions): string {
+  const s = claudeShape(argv);
+  const mode =
+    permissions === 'skip' ? `skip (${SKIP_PERMISSIONS})` : 'allowlist (permission checks on)';
+  const unreadable = (flag: string): string =>
+    flag === '--disallowedTools'
+      ? 'not readable (it must be one --disallowedTools, written so, followed by its rules)'
+      : `not readable (it must be one ${flag}, written so, followed by its number)`;
+  const cap = (flag: string, v: string | undefined): string =>
+    v ?? (s.counts[flag] === 0 ? 'not set' : unreadable(flag));
+  const deny =
+    s.counts['--disallowedTools'] === 0
+      ? 'no deny list'
+      : s.denied === undefined
+        ? `deny list ${unreadable('--disallowedTools')}`
+        : `deny list of ${String(s.denied.length)} rule${s.denied.length === 1 ? '' : 's'}, ${
+            s.missingDenied.length === 0
+              ? 'every one of the launcher’s among them'
+              : `${String(s.missingDenied.length)} of the launcher’s missing`
+          }`;
+  return `  Claude Code permissions: ${mode}; ${deny}; --max-turns ${cap('--max-turns', s.maxTurns)}; --max-budget-usd ${cap('--max-budget-usd', s.maxBudgetUsd)}`;
 }
 
 /** Why an argv array is not one the launcher will run, or `undefined`. */
@@ -600,6 +896,10 @@ export interface AuditEntry {
   /** From Codex's `--json` stream, when the run printed one. */
   readonly thread_id?: string;
   readonly turn_failed?: boolean;
+  /** On `start` (LAI-1113): the run's worktree, a path this machine chose. */
+  readonly worktree?: string;
+  /** On a Claude Code `start`: the folder its transcript is written to, for `watch`. */
+  readonly transcript_dir?: string;
 }
 
 export function audit(home: string, now: number, entry: AuditEntry): void {
@@ -973,6 +1273,13 @@ export interface LauncherDeps {
     taskKey: string;
     projectSlug?: string;
   }) => Promise<string>;
+
+  /* What the owner sees (LAI-1113). Each optional, fire and forget. */
+
+  /** Show a notification built by `notice()`. */
+  readonly notify?: (n: Notice) => void;
+  /** Open a Terminal window running `<laika> agent launcher watch --run <runId>`. */
+  readonly openViewer?: (laika: string, runId: string) => void;
 }
 
 const OFFER_EVENTS: ReadonlySet<string> = new Set([
@@ -1196,6 +1503,18 @@ function writeStatus(
   } catch {
     // Status is a convenience; the audit log is the record.
   }
+}
+
+/**
+ * Why a run ended, as its `exit` audit line and its notification both say it:
+ * a stop by the launcher outranks a timeout that came first.
+ */
+export function exitReason(run: Pick<Running, 'stopping' | 'stopReason' | 'timedOut'>): string {
+  return run.stopping
+    ? (run.stopReason ?? 'launcher_stopped')
+    : run.timedOut
+      ? 'timeout'
+      : 'exited';
 }
 
 function terminate(run: Running, graceMs: number): void {
@@ -1871,6 +2190,18 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     );
   };
 
+  /** A notification, when the config asks for them: built only from `notice()`'s checked values. */
+  const show = (moment: Parameters<typeof notice>[0]): void => {
+    if (config.notify !== true || deps.notify === undefined) return;
+    const n = notice(moment);
+    if (n === undefined) return;
+    try {
+      deps.notify(n);
+    } catch {
+      // A notification is a courtesy: nothing about the run depends on it.
+    }
+  };
+
   const spawnRun = (
     plan: LaunchPlan,
     harness: Harness,
@@ -1965,19 +2296,27 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         // No group left.
       }
       running.delete(plan.offer_id);
+      const runtime = deps.now() - runStarted;
+      const reason = exitReason(run);
       audit(deps.home, deps.now(), {
         event: 'exit',
         ...auditFields,
         pid: run.pid,
         code: exitCode,
         signal,
-        runtime_ms: deps.now() - runStarted,
-        reason: run.stopping
-          ? (run.stopReason ?? 'launcher_stopped')
-          : run.timedOut
-            ? 'timeout'
-            : 'exited',
+        runtime_ms: runtime,
+        reason,
         ...runSummary(readTail(join(plan.dir, 'output.log'))),
+      });
+      // The notification says what the audit line says (review): one reason, one precedence.
+      show({
+        kind: 'exit',
+        taskKey: plan.task_key,
+        harness,
+        ending: runEnding(reason),
+        code: exitCode,
+        signal,
+        runtimeMs: runtime,
       });
       status(true);
       const ended = afterRun(run, exitCode)
@@ -1998,8 +2337,21 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       pid: run.pid,
       running: running.size,
       runs_today: today,
+      // Where `watch` finds this run (LAI-1113), so it never has to guess.
+      worktree: plan.worktree,
+      ...(harness === 'claude-code'
+        ? { transcript_dir: claudeProjectDir(deps.home, plan.worktree) }
+        : {}),
     });
     status(true);
+    show({ kind: 'start', taskKey: plan.task_key, harness });
+    if (config.open_terminal === true && config.laika !== undefined) {
+      try {
+        deps.openViewer?.(config.laika, plan.offer_id);
+      } catch {
+        // A viewer is a convenience: the run is already started and stays the launcher's.
+      }
+    }
   };
 
   const launch = async (
@@ -2637,6 +2989,9 @@ export const LAUNCHER_USAGE = [
   '  laika agent launcher check    validate the config and git, start nothing',
   '  laika agent launcher run      run in the foreground until stopped',
   '  laika agent launcher status   enabled?, service?, running?, presence, runs now',
+  '  laika agent launcher watch [--run <id>] [--once]',
+  '                                follow runs live, read-only: the audit log and a',
+  '                                Claude Code run’s transcript; closing it stops nothing',
   '  laika agent launcher stop     stop the launcher and every run it started',
   '  laika agent launcher headers <harness>',
   '                                print the MCP Authorization header from that',
@@ -2672,6 +3027,12 @@ function describeConfig(io: LauncherIo, result: ConfigResult): void {
     io.out(
       '  cost / token caps: not enforced by the launcher (put the harness’s own flag in argv)',
     );
+    io.out(`  notifications: ${c.notify === true ? 'on' : 'off'}`);
+    io.out(
+      `  a Terminal window per run: ${c.open_terminal === true && c.laika !== undefined ? `on (${c.laika} agent launcher watch --run <id>)` : 'off'}`,
+    );
+    const claude = c.harnesses['claude-code'];
+    if (claude !== undefined) io.out(permissionsLine(claude, c.permissions ?? 'allowlist'));
   }
 }
 
@@ -2913,6 +3274,9 @@ export function launcherDeps(io: LauncherIo, stopped: () => boolean): LauncherDe
         key,
         credential,
       ),
+    notify: (n) => showNotice(realRunner(commandEnv(io.env, io.home)), process.platform, io.env, n),
+    openViewer: (laika, runId) =>
+      openViewer(realRunner(commandEnv(io.env, io.home)), process.platform, laika, runId, io.err),
     spawn,
     stopped,
   };
@@ -3026,6 +3390,10 @@ export async function launcherCommand(io: LauncherIo, argv: readonly string[]): 
     return sub === undefined ? 1 : 0;
   }
   if (sub === 'status') return await status(io);
+  if (sub === 'watch') {
+    const { watchCommand } = await import('./agent-launcher-watch.ts');
+    return await watchCommand(io, argv.slice(1));
+  }
   if (sub === 'stop') return await stop(io);
   if (sub === 'headers') return headers(io, argv[1]);
   if (sub === 'enable' || sub === 'disable') {

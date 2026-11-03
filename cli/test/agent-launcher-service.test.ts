@@ -43,6 +43,8 @@ import {
   type RunResult,
   SERVICE_LABEL,
   serviceLines,
+  SKIP_PERMISSIONS_DOCS,
+  SKIP_PERMISSIONS_FINDING,
   type ServiceIo,
   systemdUnit,
   unitPath,
@@ -292,7 +294,14 @@ function hooksOn(home: string, script: string): void {
  */
 function device(
   answers: (string | null)[],
-  extra: { codex?: boolean; hooks?: boolean; git?: string; claudeVersion?: string } = {},
+  extra: {
+    codex?: boolean;
+    hooks?: boolean;
+    git?: string;
+    claudeVersion?: string;
+    /** A `laika` command the Terminal viewer can name (LAI-1113); else one that is not there. */
+    laika?: boolean;
+  } = {},
 ): Rig & { home: string; repo: string; script: string } {
   const home = scratch();
   writeCredential(home, 'claude-code', { url: 'http://board.invalid', token: TOKEN });
@@ -329,6 +338,11 @@ function device(
   for (const p of [program, codex]) {
     writeFileSync(p, '#!/bin/sh\necho "2.1.280 (Claude Code)"\n', { mode: 0o755 });
     chmodSync(p, 0o755);
+  }
+  const laika = join(home, 'bin', 'laika');
+  if (extra.laika === true) {
+    writeFileSync(laika, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    chmodSync(laika, 0o755);
   }
   const out: string[] = [];
   const runs: string[][] = [];
@@ -390,7 +404,7 @@ function device(
     uid: 501,
     node: process.execPath,
     entry: '/opt/laika/cli/dist/index.js',
-    laika: '/opt/laika/bin/laika',
+    laika: extra.laika === true ? laika : '/opt/laika/bin/laika',
     which: (name) => (name === 'claude' ? program : name === 'codex' ? codex : undefined),
   };
   return { io, out, runs, asked, home, repo, script };
@@ -398,7 +412,7 @@ function device(
 
 void describe('enable', () => {
   void test('shows the whole config and writes nothing unless the owner types enable', async () => {
-    const d = device(['$REPO', 'yes', 'no thanks']);
+    const d = device(['$REPO', 'yes', '', '', 'no thanks']);
     assert.equal(await enable(d.io, []), 1);
     assert.equal(existsSync(configPath(d.home)), false);
     assert.equal(existsSync(plistPath(d.home)), false);
@@ -411,7 +425,8 @@ void describe('enable', () => {
   });
 
   void test('typing enable writes a v2 config the launcher loads, 0600, and starts the LaunchAgent', async () => {
-    const d = device(['$REPO', 'yes', 'enable']);
+    // The two LAI-1113 questions (notifications, permissions) take their defaults.
+    const d = device(['$REPO', 'yes', '', '', 'enable']);
     assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
     const result = loadConfig(d.home);
     assert.equal(result.kind, 'enabled', JSON.stringify(result));
@@ -440,7 +455,7 @@ void describe('enable', () => {
   });
 
   void test('work requests stay off for a project the owner does not say yes to', async () => {
-    const d = device(['$REPO', '', 'enable']);
+    const d = device(['$REPO', '', '', '', 'enable']);
     assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
     const result = loadConfig(d.home);
     assert.equal(result.kind === 'enabled' && result.config.projects[0]?.work_requests, false);
@@ -448,12 +463,12 @@ void describe('enable', () => {
 
   void test('Codex is added only when the owner types danger-full-access', async () => {
     // The harness questions come first now (LAI-1111), then the project's.
-    const off = device(['yes', '$REPO', 'no', 'enable'], { codex: true });
+    const off = device(['yes', '$REPO', 'no', '', '', 'enable'], { codex: true });
     assert.equal(await enable(off.io, []), 0, off.out.join('\n'));
     const a = loadConfig(off.home);
     assert.equal(a.kind === 'enabled' && a.config.harnesses.codex, undefined);
 
-    const on = device(['danger-full-access', '$REPO', 'no', 'enable'], { codex: true });
+    const on = device(['danger-full-access', '$REPO', 'no', '', '', 'enable'], { codex: true });
     assert.equal(await enable(on.io, []), 0, on.out.join('\n'));
     const b = loadConfig(on.home);
     assert.ok(b.kind === 'enabled' && b.config.harnesses.codex?.includes('danger-full-access'));
@@ -981,7 +996,7 @@ void describe('LAI-1111: --dry-run loads the config as the launcher will, and na
 
 void describe('disable and status', () => {
   void test('B3: disable unloads the LaunchAgent and removes its plist, so a login does not bring it back', async () => {
-    const d = device(['$REPO', 'yes', 'enable']);
+    const d = device(['$REPO', 'yes', '', '', 'enable']);
     assert.equal(await enable(d.io, []), 0);
     assert.ok(existsSync(plistPath(d.home)));
     assert.equal(await disable(d.io), 0);
@@ -994,7 +1009,7 @@ void describe('disable and status', () => {
   });
 
   void test('B3: disable on Linux stops the unit and removes it', async () => {
-    const d = device(['$REPO', 'yes', 'enable']);
+    const d = device(['$REPO', 'yes', '', '', 'enable']);
     const linux = { ...d.io, platform: 'linux' as NodeJS.Platform };
     assert.equal(await enable(linux, []), 0, d.out.join('\n'));
     const unit = unitPath(d.home, linux.env);
@@ -1009,5 +1024,102 @@ void describe('disable and status', () => {
   void test('status names the service state', () => {
     const d = device([]);
     assert.deepEqual(serviceLines(d.io), ['Service: not installed']);
+  });
+});
+
+void describe('LAI-1113: enable asks what the owner sees of a run, and how Claude Code may work', () => {
+  const written = (home: string): Record<string, unknown> =>
+    JSON.parse(readFileSync(configPath(home), 'utf8')) as Record<string, unknown>;
+
+  void test('notifications and a Terminal per run are yes by default; the allowlist stays', async () => {
+    const d = device(['$REPO', 'yes', '', '', '', 'enable'], { laika: true });
+    assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
+    const r = loadConfig(d.home);
+    assert.equal(r.kind, 'enabled', JSON.stringify(r));
+    if (r.kind !== 'enabled') return;
+    assert.equal(r.config.notify, true);
+    assert.equal(r.config.open_terminal, true);
+    assert.equal(r.config.laika, d.io.laika);
+    assert.equal(r.config.permissions, 'allowlist');
+    assert.deepEqual(r.config.harnesses['claude-code'], claudeArgv(join(d.home, 'bin', 'claude')));
+    const questions = d.asked.join('\n');
+    assert.match(
+      questions,
+      /Show a notification on this computer when a run starts and when it ends\? \[yes\]/,
+    );
+    assert.match(
+      questions,
+      /Open a Terminal window for each run[\s\S]*closing the window never stops the run\)\? \[yes\]/,
+    );
+    assert.match(questions, /Type skip-permissions to run Claude Code that way/);
+  });
+
+  void test('no and n say no; the config then names no laika path', async () => {
+    const d = device(['$REPO', 'yes', 'no', 'N', '', 'enable'], { laika: true });
+    assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
+    const c = written(d.home);
+    assert.equal(c.notify, false);
+    assert.equal(c.open_terminal, false);
+    assert.equal('laika' in c, false);
+  });
+
+  void test('skip only on the exact word, after the warning and the docs finding', async () => {
+    for (const typed of [
+      'skip',
+      'yes',
+      'SKIP-PERMISSIONS',
+      'skip permissions',
+      'skip-permissions!',
+    ]) {
+      const d = device(['$REPO', 'yes', '', '', typed, 'enable'], { laika: true });
+      assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
+      assert.equal(written(d.home).permissions, 'allowlist', typed);
+    }
+    const d = device(['$REPO', 'yes', '', '', 'skip-permissions', 'enable'], { laika: true });
+    assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
+    const r = loadConfig(d.home);
+    assert.equal(r.kind, 'enabled', JSON.stringify(r));
+    if (r.kind !== 'enabled') return;
+    assert.equal(r.config.permissions, 'skip');
+    const argv = r.config.harnesses['claude-code']!;
+    assert.deepEqual(argv, claudeArgv(join(d.home, 'bin', 'claude'), 'skip'));
+    assert.ok(argv.includes('--dangerously-skip-permissions'));
+    assert.deepEqual(
+      argv.slice(argv.indexOf('--disallowedTools') + 1, argv.indexOf('--max-turns')),
+      [...CLAUDE_DENIED],
+      'the whole deny list is kept',
+    );
+    const text = d.out.join('\n');
+    for (const line of SKIP_PERMISSIONS_FINDING) assert.ok(d.out.includes(line), line);
+    assert.ok(text.includes(SKIP_PERMISSIONS_DOCS));
+    assert.match(
+      text,
+      /claude-code: --dangerously-skip-permissions, with the deny list, --max-turns and --max-budget-usd kept/,
+    );
+    assert.match(text, /"permissions": "skip"/, 'the config shown says so before it is written');
+  });
+
+  void test('no Terminal question off macOS, or when the laika command cannot be named', async () => {
+    const linux = device(['$REPO', 'yes', '', '', 'enable'], { laika: true });
+    assert.equal(await enable({ ...linux.io, platform: 'linux' }, []), 0, linux.out.join('\n'));
+    assert.ok(!linux.asked.some((q) => q.includes('Terminal')), linux.asked.join('\n'));
+    assert.equal(written(linux.home).open_terminal, false);
+    const missing = device(['$REPO', 'yes', '', '', 'enable']);
+    assert.equal(await enable(missing.io, []), 0, missing.out.join('\n'));
+    assert.ok(!missing.asked.some((q) => q.includes('Terminal')));
+    assert.match(
+      missing.out.join('\n'),
+      /A Terminal window per run: off — \/opt\/laika\/bin\/laika is not an executable file/,
+    );
+  });
+
+  void test('no permissions question when Claude Code is not one of the harnesses', async () => {
+    const d = device(['danger-full-access', '$REPO', 'no', '', 'enable'], {
+      codex: true,
+      hooks: false,
+    });
+    assert.equal(await enable(d.io, []), 0, d.out.join('\n'));
+    assert.ok(!d.asked.some((q) => q.includes('skip-permissions')), d.asked.join('\n'));
+    assert.equal('permissions' in written(d.home), false);
   });
 });
