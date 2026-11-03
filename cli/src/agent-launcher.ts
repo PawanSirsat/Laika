@@ -2674,27 +2674,36 @@ export async function launcherCommand(io: LauncherIo, argv: readonly string[]): 
     io.err(`laika agent launcher: unknown subcommand "${sub}"\n\n${LAUNCHER_USAGE}`);
     return 1;
   }
+  // `run --service` is what the login service starts (review B3). A refusal there
+  // is one audit line and exit 0: with KeepAlive { SuccessfulExit = false } and
+  // Restart=on-failure, any other exit would bring it straight back, every 30 s.
+  const service = sub === 'run' && argv.includes('--service');
+  const refused = (reason: string): number => {
+    audit(io.home, Date.now(), {
+      event: 'refused',
+      reason,
+      ...(service ? { detail: 'service' } : {}),
+    });
+    return service ? 0 : 1;
+  };
   const result = loadConfig(io.home);
   describeConfig(io, result);
-  if (result.kind === 'disabled') return sub === 'check' ? 0 : 1;
-  if (result.kind === 'invalid') {
-    audit(io.home, Date.now(), { event: 'refused', reason: 'config_invalid' });
-    return 1;
-  }
+  if (result.kind === 'disabled')
+    return sub === 'check' ? 0 : service ? refused('config_disabled') : 1;
+  if (result.kind === 'invalid') return refused('config_invalid');
   const version = parseGitVersion(readGitVersion());
   if (!gitNewEnough(version)) {
     io.err(
       `laika agent launcher: git ${version === undefined ? '(not found)' : version.join('.')} is older than ${MIN_GIT.join('.')}; refusing`,
     );
-    audit(io.home, Date.now(), { event: 'refused', reason: 'git_too_old' });
-    return 1;
+    return refused('git_too_old');
   }
   io.out(`git ${version!.join('.')}: ok`);
   if (sub === 'check') return 0;
 
   if (!takePid(io.home, readProc)) {
     io.err('laika agent launcher: another launcher is already running on this device');
-    return 1;
+    return service ? refused('already_running') : 1;
   }
   let stopping = false;
   const removeSignals = onStopSignals(() => {

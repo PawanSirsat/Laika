@@ -1536,10 +1536,10 @@ you have read it and typed `enable`, or by you, owned by you and `chmod 600`.
 
 ```sh
 laika agent launcher enable    # reads this device, shows the config and the service, waits for you to type `enable`
-laika agent launcher disable   # unloads the service and writes "enabled": false; both files are kept
+laika agent launcher disable   # unloads the service, removes its file, writes "enabled": false (config kept)
 laika agent launcher status    # enabled?, service installed/loaded/running, presence, runs today, runs now
 laika agent launcher check     # validate the file and git; starts nothing
-laika agent launcher run       # the daemon in the foreground (what the service runs)
+laika agent launcher run       # the daemon in the foreground (the service runs it with --service)
 laika agent launcher stop      # stops the daemon and every run it started
 laika agent launcher headers <harness>   # the MCP Authorization header from that harness's saved file
 ```
@@ -1580,6 +1580,11 @@ offers on, work requests only where you said yes, no ssh agent.
 - Linux: `~/.config/systemd/user/laika-launcher.service`, `Restart=on-failure`,
   `systemctl --user enable --now`. It runs while you are logged in;
   `loginctl enable-linger` keeps it after logout, and is not done for you.
+
+The service runs `laika agent launcher run --service`: a config that is off or
+invalid, or a launcher already running, is one `refused` audit line and exit
+0 — never an exit the service would restart every 30 s. `disable` unloads the
+service **and removes its file**, so the next login does not load it again.
 
 ### What it picks up
 

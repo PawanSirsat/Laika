@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -55,8 +56,10 @@ import { readDevice } from './device.ts';
  * (`~/Library/LaunchAgents/ai.laika.launcher.plist`) or a systemd `--user`
  * unit. It restarts the launcher after a crash and never after a clean stop:
  * `KeepAlive { SuccessfulExit = false }`, `Restart=on-failure`, and the
- * launcher exits 0 when it is stopped. `disable` unloads it and switches the
- * config off; neither file is deleted.
+ * launcher exits 0 when it is stopped — and, started as `run --service`, also
+ * when its config is off or invalid, after one audit line. `disable` unloads it
+ * and removes its file, so a login does not load it again; the config is kept,
+ * switched off.
  */
 
 export const SERVICE_LABEL = 'ai.laika.launcher';
@@ -74,6 +77,12 @@ export const unitPath = (home: string, env: Readonly<Record<string, string | und
     UNIT_NAME,
   );
 export const daemonLogPath = (home: string): string => join(launcherDir(home), 'daemon.log');
+
+/**
+ * What the service runs: `run --service`, so a disabled or invalid config is one
+ * audit line and exit 0 — never an exit the service would restart every 30 s.
+ */
+export const SERVICE_RUN: readonly string[] = ['agent', 'launcher', 'run', '--service'];
 
 export interface ServiceSpec {
   /** Absolute: node, the CLI's entry file, and the PATH captured at `enable`. */
@@ -97,7 +106,7 @@ const xml = (text: string): string =>
  * which ends it with 0. `RunAtLoad` starts it at login.
  */
 export function launchAgentPlist(spec: ServiceSpec): string {
-  const args = [spec.node, spec.entry, 'agent', 'launcher', 'run'];
+  const args = [spec.node, spec.entry, ...SERVICE_RUN];
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -150,7 +159,7 @@ export function systemdUnit(spec: ServiceSpec): string {
     'Description=Laika launcher (laika agent launcher run)',
     '',
     '[Service]',
-    `ExecStart=${[spec.node, spec.entry, 'agent', 'launcher', 'run'].map(unitWord).join(' ')}`,
+    `ExecStart=${[spec.node, spec.entry, ...SERVICE_RUN].map(unitWord).join(' ')}`,
     `Environment=${unitWord(`PATH=${spec.path}`)}`,
     `Environment=${unitWord(`HOME=${spec.home}`)}`,
     `WorkingDirectory=${unitWord(spec.home)}`,
@@ -684,7 +693,7 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
     io.out(`No login service on ${io.platform}: run \`laika agent launcher run\` yourself.`);
   } else {
     io.out(`and the login service at ${service.path}, which runs:`);
-    io.out(`  ${[spec.node, spec.entry, 'agent', 'launcher', 'run'].join(' ')}`);
+    io.out(`  ${[spec.node, spec.entry, ...SERVICE_RUN].join(' ')}`);
     io.out('It restarts after a crash, never after `laika agent launcher stop`.');
   }
   if (dryRun) {
@@ -745,19 +754,43 @@ function installService(io: ServiceIo): boolean {
 /* disable and status                                                         */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Unload the service **and remove its file** (review B3): a LaunchAgent left in
+ * `~/Library/LaunchAgents` with `RunAtLoad` is loaded again at the next login,
+ * so "off" would not stay off. The config is kept, saying `"enabled": false`;
+ * `enable` writes both again.
+ */
 export async function disable(io: ServiceIo): Promise<number> {
   if (io.platform === 'darwin') {
     io.run('/bin/launchctl', ['bootout', `gui/${String(io.uid)}/${SERVICE_LABEL}`]);
+    removeOurs(plistPath(io.home));
   } else if (io.platform === 'linux') {
     io.run('systemctl', ['--user', 'disable', '--now', UNIT_NAME]);
+    removeOurs(unitPath(io.home, io.env));
+    io.run('systemctl', ['--user', 'daemon-reload']);
   }
   const raw = readJson(configPath(io.home));
   if (isRecord(raw)) {
     writePrivate(configPath(io.home), `${JSON.stringify({ ...raw, enabled: false }, null, 2)}\n`);
   }
-  io.out('The launcher is off: the service is unloaded and the config says "enabled": false.');
-  io.out('Both files are kept; `laika agent launcher enable` turns it on again.');
+  io.out(
+    'The launcher is off: the service is unloaded and removed, and the config says "enabled": false.',
+  );
+  io.out('The config is kept; `laika agent launcher enable` turns it on again.');
   return Promise.resolve(0);
+}
+
+/** Remove a service file only if it is the one `enable` wrote (it runs `agent launcher run`). */
+function removeOurs(path: string): void {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return; // Not there: nothing to remove.
+  }
+  if (text.includes(SERVICE_LABEL) || text.includes('laika agent launcher run')) {
+    rmSync(path, { force: true });
+  }
 }
 
 export type ServiceState = 'not_installed' | 'installed' | 'loaded' | 'running';

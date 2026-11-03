@@ -508,6 +508,28 @@ void describe('git', () => {
     assert.equal(existsSync(pidPath(home)), false);
   });
 
+  void test('B3: run --service on a disabled or invalid config writes one audit line and exits 0', async () => {
+    // What the login service starts: any other exit, under KeepAlive { SuccessfulExit = false },
+    // would bring it straight back every ThrottleInterval, with a refusal each time.
+    const home = scratch();
+    const out: string[] = [];
+    const io = { out: (l: string) => out.push(l), err: (l: string) => out.push(l), home, env: {} };
+    assert.equal(await launcherCommand(io, ['run', '--service']), 0, 'disabled: no restart loop');
+    assert.deepEqual(
+      auditLines(home).map((l) => [l.event, l.reason, l.detail]),
+      [['refused', 'config_disabled', 'service']],
+    );
+    assert.equal(existsSync(pidPath(home)), false);
+    mkdirSync(join(home, '.laika'), { recursive: true });
+    writeFileSync(configPath(home), JSON.stringify({ enabled: true, version: 9 }), { mode: 0o600 });
+    chmodSync(configPath(home), 0o600);
+    assert.equal(await launcherCommand(io, ['run', '--service']), 0, 'invalid: no restart loop');
+    assert.equal(auditLines(home).at(-1)?.reason, 'config_invalid');
+    assert.equal(auditLines(home).length, 2);
+    // By hand, the exit codes still say what happened.
+    assert.equal(await launcherCommand(io, ['run']), 1);
+  });
+
   void test('run refuses an invalid config and audits it', async () => {
     const home = scratch();
     mkdirSync(join(home, '.laika'));

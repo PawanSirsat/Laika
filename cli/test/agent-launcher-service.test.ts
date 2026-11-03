@@ -39,6 +39,7 @@ import {
   serviceLines,
   type ServiceIo,
   systemdUnit,
+  unitPath,
 } from '../src/agent-launcher-service.ts';
 import { argvProblem, configPath, loadConfig } from '../src/agent-launcher.ts';
 import { writeCredential } from '../src/agent-session.ts';
@@ -87,6 +88,7 @@ void describe('the service files', () => {
         ].join('\n    '),
       ),
     );
+    assert.ok(plist.includes('<string>run</string>\n    <string>--service</string>'));
     assert.ok(plist.includes('<string>/Users/kvelld/.laika/launcher/daemon.log</string>'));
     if (process.platform === 'darwin') {
       const dir = scratch();
@@ -106,7 +108,7 @@ void describe('the service files', () => {
     assert.doesNotMatch(unit, /^Restart=always$/m);
     assert.match(
       unit,
-      /^ExecStart=\/opt\/node\/bin\/node \/Users\/kvelld\/laika\/cli\/dist\/index\.js agent launcher run$/m,
+      /^ExecStart=\/opt\/node\/bin\/node \/Users\/kvelld\/laika\/cli\/dist\/index\.js agent launcher run --service$/m,
     );
     assert.match(unit, /^WantedBy=default\.target$/m);
   });
@@ -419,15 +421,30 @@ void describe('enable', () => {
 });
 
 void describe('disable and status', () => {
-  void test('disable unloads the service and switches the config off, keeping both files', async () => {
+  void test('B3: disable unloads the LaunchAgent and removes its plist, so a login does not bring it back', async () => {
     const d = device(['$REPO', 'yes', 'enable']);
     assert.equal(await enable(d.io, []), 0);
+    assert.ok(existsSync(plistPath(d.home)));
     assert.equal(await disable(d.io), 0);
     assert.deepEqual(d.runs.at(-1), ['/bin/launchctl', 'bootout', `gui/501/${SERVICE_LABEL}`]);
     assert.equal(loadConfig(d.home).kind, 'disabled');
-    assert.ok(existsSync(configPath(d.home)) && existsSync(plistPath(d.home)));
+    assert.equal(existsSync(plistPath(d.home)), false, 'no plist left with RunAtLoad');
+    assert.ok(existsSync(configPath(d.home)), 'the config is kept');
     const raw = JSON.parse(readFileSync(configPath(d.home), 'utf8')) as { enabled: boolean };
     assert.equal(raw.enabled, false);
+  });
+
+  void test('B3: disable on Linux stops the unit and removes it', async () => {
+    const d = device(['$REPO', 'yes', 'enable']);
+    const linux = { ...d.io, platform: 'linux' as NodeJS.Platform };
+    assert.equal(await enable(linux, []), 0, d.out.join('\n'));
+    const unit = unitPath(d.home, linux.env);
+    assert.ok(existsSync(unit));
+    assert.equal(await disable(linux), 0);
+    assert.equal(existsSync(unit), false, 'no unit left');
+    assert.ok(
+      d.runs.some((r) => r.join(' ') === 'systemctl --user disable --now laika-launcher.service'),
+    );
   });
 
   void test('status names the service state', () => {
