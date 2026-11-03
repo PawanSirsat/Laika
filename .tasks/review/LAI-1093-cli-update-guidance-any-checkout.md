@@ -7,7 +7,8 @@ priority: p1
 depends-on: []
 discovered-from: LAI-1086
 started: 2026-11-03T11:58:36+05:30
-status: in-progress
+status: review
+finished: 2026-11-03T12:22:04+05:30
 ---
 
 ## Why
@@ -30,13 +31,13 @@ LAI-1090 and LAI-1091, all merged to `master` (their files sit in review).
 
 ## Acceptance criteria
 
-- [ ] Every site that tells a developer how to get a current CLI is found by
+- [x] Every site that tells a developer how to get a current CLI is found by
       an untruncated grep and fixed: the *How to update your Laika CLI* guide
       (LAI-1086), Add device's *Already have Laika installed?* line and its
       *installed* option, Add tool's equivalent, Project setup's old-CLI hint
       (LAI-1084/1090/1091), the status legend's and *Version unknown*'s
       reason text, Tool details' *How to update*, and `cli/README.md`.
-- [ ] The guidance works when the checkout is not at `~/laika`, when the CLI
+- [x] The guidance works when the checkout is not at `~/laika`, when the CLI
       predates `laika version`/`laika update`, when the checkout is detached,
       and when there is no checkout: `laika version` (prints a commit →
       `laika update`, with `--board`/`--allow-http` as the board needs);
@@ -47,11 +48,11 @@ LAI-1090 and LAI-1091, all merged to `master` (their files sit in review).
       `install.sh --no-credential`; `rehash` / `hash -r`; `laika version`),
       saying the old checkout is left untouched; the install.sh relink note
       and the one `ln -sf` fix for a symlink earlier on PATH.
-- [ ] No token printed or asked for. Next to a pair command, it says to make
+- [x] No token printed or asked for. Next to a pair command, it says to make
       a fresh code after updating (codes last ten minutes).
-- [ ] Tests: the guide/hint tests updated; no rendered guidance has a bare
+- [x] Tests: the guide/hint tests updated; no rendered guidance has a bare
       `~/laika` pull without the find / fresh-install alternative; the
       paste-safety test (nothing a shell acts on unquoted) covers the new
       commands.
-- [ ] Light/dark and 390 px screenshots of the changed hints in
+- [x] Light/dark and 390 px screenshots of the changed hints in
       `.polly/evidence/LAI-1093/`.
