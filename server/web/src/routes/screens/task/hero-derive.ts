@@ -41,6 +41,34 @@ function itemsOf(round: Round): readonly EvidenceItem[] {
   ];
 }
 
+/** How many of a round's items GitHub confirmed, contradicted, or has not checked. */
+function proofCounts(round: Round): {
+  readonly n: number;
+  readonly confirmed: number;
+  readonly failed: number;
+  readonly claimed: number;
+} {
+  const items = itemsOf(round);
+  const confirmed = items.filter((i) => i.state === 'confirmed').length;
+  const failed = items.filter((i) => i.state === 'failed').length;
+  return { n: items.length, confirmed, failed, claimed: items.length - confirmed - failed };
+}
+
+/**
+ * {@link confirmedSentence} in a few words, for a folded Proof section's
+ * summary (LAI-1122): *all 7 confirmed*, *3 of 4 confirmed*, *1 of 4
+ * contradicted*, *nothing confirmed yet*, *no proof attached*.
+ */
+export function confirmedShort(round: Round): string {
+  const { n, confirmed, failed } = proofCounts(round);
+  const of = (k: number) => `${String(k)} of ${String(n)}`;
+  if (n === 0) return 'no proof attached';
+  if (failed > 0) return `${of(failed)} contradicted`;
+  if (confirmed === n) return n === 1 ? 'its 1 item confirmed' : `all ${String(n)} confirmed`;
+  if (confirmed > 0) return `${of(confirmed)} confirmed`;
+  return 'nothing confirmed yet';
+}
+
 export interface ConfirmedSentence {
   readonly tone: 'ok' | 'partial' | 'failed' | 'claimed' | 'none';
   readonly text: string;
@@ -52,12 +80,8 @@ export interface ConfirmedSentence {
  * the webhook and never calls GitHub (D-116).
  */
 export function confirmedSentence(round: Round): ConfirmedSentence {
-  const items = itemsOf(round);
-  const n = items.length;
+  const { n, confirmed, failed, claimed } = proofCounts(round);
   if (n === 0) return { tone: 'none', text: 'No proof attached to this finish.' };
-  const confirmed = items.filter((i) => i.state === 'confirmed').length;
-  const failed = items.filter((i) => i.state === 'failed').length;
-  const claimed = n - confirmed - failed;
   const of = (k: number) => `${String(k)} of ${String(n)}`;
   if (failed > 0) {
     return {
@@ -93,10 +117,21 @@ export interface ReviewFacts {
   readonly commitsSub: string;
 }
 
+/** A GitHub pull request's number from its URL, or null for another shape. */
+function prNumber(url: string): string | null {
+  return /\/pull\/(\d+)/.exec(url)?.[1] ?? null;
+}
+
+/** `#260`, or `link` when the URL names no number. */
+function prLabel(url: string): string {
+  const n = prNumber(url);
+  return n === null ? 'link' : `#${n}`;
+}
+
 /** The four facts of a finished round, as the review panel's grid draws them. */
 export function reviewFacts(round: Round): ReviewFacts {
   const pr = round.pull_request;
-  const number = pr === null ? null : (/\/pull\/(\d+)/.exec(pr.url)?.[1] ?? null);
+  const number = pr === null ? null : prNumber(pr.url);
   const passed = round.tests.filter((t) => t.exit_code === 0).length;
   const failed = round.tests.length - passed;
   const ci = round.ci;
@@ -137,6 +172,76 @@ export function reviewFacts(round: Round): ReviewFacts {
           : `${String(failed)} exited non-zero`,
     commits: String(round.commits.length),
     commitsSub: round.branch?.name ?? (ci === null ? '' : `on ${shortSha(ci.head_sha)}`),
+  };
+}
+
+/** How many test runs the review panel lists before *Show all N runs* (LAI-1122). */
+export const TESTS_SHOWN = 4;
+
+/** The runs the review panel lists: the first {@link TESTS_SHOWN}, or all of them. */
+export function testsShown<T>(tests: readonly T[], all: boolean): readonly T[] {
+  return all ? tests : tests.slice(0, TESTS_SHOWN);
+}
+
+/** The toggle under the runs, or null when every run already shows. */
+export function testsToggle(total: number, all: boolean): string | null {
+  if (total <= TESTS_SHOWN) return null;
+  return all ? 'Show fewer' : `Show all ${String(total)} runs`;
+}
+
+export interface RoundEvidence {
+  /** Null when the round attached no pull request. */
+  readonly pullRequest: {
+    readonly url: string;
+    readonly label: string;
+    readonly merged: string;
+  } | null;
+  readonly ci: string;
+  readonly ciTone: ReviewFacts['ciTone'];
+  readonly commits: string;
+  readonly tests: string;
+}
+
+/**
+ * The sent-back panel's one line about the round that was sent back
+ * (LAI-1122): *PR #260 not merged · CI 13/13 passed · 4 commits · 10 tests
+ * passed*. Every figure from the round; one it lacks is said to be missing.
+ */
+export function roundEvidence(round: Round): RoundEvidence {
+  const facts = reviewFacts(round);
+  const pr = round.pull_request;
+  const ci = round.ci;
+  const passed = round.tests.filter((t) => t.exit_code === 0).length;
+  const failed = round.tests.length - passed;
+  const plural = (k: number, one: string, many: string) => `${String(k)} ${k === 1 ? one : many}`;
+  return {
+    pullRequest:
+      pr === null
+        ? null
+        : {
+            url: pr.url,
+            label: prLabel(pr.url),
+            merged:
+              pr.merged === true
+                ? 'merged'
+                : pr.merged === false
+                  ? 'not merged'
+                  : 'merge not reported',
+          },
+    ci:
+      ci === null || ci.total === 0
+        ? 'No CI reported'
+        : ci.failed > 0
+          ? `CI ${String(ci.failed)}/${String(ci.total)} failed`
+          : `CI ${String(ci.passed)}/${String(ci.total)} passed${ci.pending > 0 ? `, ${String(ci.pending)} pending` : ''}`,
+    ciTone: facts.ciTone,
+    commits: plural(round.commits.length, 'commit', 'commits'),
+    tests:
+      round.tests.length === 0
+        ? 'No tests run'
+        : failed === 0
+          ? `${plural(passed, 'test', 'tests')} passed`
+          : `${String(passed)} passed · ${String(failed)} failed`,
   };
 }
 

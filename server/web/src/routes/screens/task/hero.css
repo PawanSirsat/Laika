@@ -80,6 +80,9 @@
 }
 
 .hero-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   white-space: nowrap;
   font-size: var(--text-small);
   color: var(--text-secondary);
@@ -87,6 +90,10 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xs);
   padding: 0 6px;
+}
+
+.hero-agent:has(.hero-agentmark) {
+  padding-left: 3px;
 }
 
 .hero-when {
@@ -305,6 +312,7 @@
 .hero-agentmark {
   width: 22px;
   height: 22px;
+  flex-shrink: 0;
   border-radius: var(--radius-xs);
   background: var(--chip-pink);
   color: var(--on-accent);
@@ -313,6 +321,142 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+/* The mark inside a name chip: the same tile, small enough for the line. */
+.hero-agentmark-sm {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* *Full summary in activity ↓* after the summary's first line (LAI-1122). */
+.hero-more {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+/* A round's commits and test runs, side by side; one column when narrow. */
+.hero-lists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+}
+
+@media (max-width: 1000px) {
+  .hero-lists {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+}
+
+.hero-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.hero-list-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.hero-list-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hero-commit {
+  display: grid;
+  grid-template-columns: 7.5em minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  font-size: var(--text-body);
+}
+
+.hero-sha {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--accent);
+}
+
+.hero-commit-text {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.hero-run {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-size: var(--text-small);
+}
+
+.hero-run-mark {
+  font-weight: var(--weight-bold);
+}
+
+.hero-run-command {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.hero-run-exit {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.hero-run[data-exit='fail'] .hero-run-exit {
+  color: var(--overdue);
+}
+
+.hero-textbutton {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+/* The sent-back panel's line about the round that was sent back. */
+.hero-evline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) 14px;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.hero-evline .hero-link {
+  font-weight: var(--weight-semibold);
+}
+
+.hero-evline-toggle {
+  margin-left: auto;
+}
+
+.hero-sentback .hero-lists {
+  padding-top: var(--space-1);
 }
 
 .hero-waiting-text {
