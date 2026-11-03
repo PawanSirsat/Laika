@@ -280,10 +280,46 @@ export interface Task extends TaskSummary {
   readonly description_md: string | null;
   /** Acceptance criteria, as written. Markdown source, not rendered. */
   readonly acceptance_md: string | null;
+  /**
+   * What this delivers — the Ships list, each item with its state (§4.5,
+   * LAI-1115). Optional, as `claim` and `handoff` are, because a view served
+   * before LAI-1115 has none — and the panel draws nothing for it (D-032).
+   */
+  readonly deliverables?: readonly Deliverable[];
+  /** The problems finishing this removes, in order. */
+  readonly solves?: readonly string[];
+  /** What finishing this makes possible, in order. */
+  readonly unlocks?: readonly string[];
+}
+
+/** Where a Ships item stands (§4.5): the server's `DELIVERABLE_STATES`. */
+export const DELIVERABLE_STATES = ['pending', 'in_progress', 'done'] as const;
+export type DeliverableState = (typeof DELIVERABLE_STATES)[number];
+
+/** One Ships item (§4.5, LAI-1115). `id` is what a checkpoint or a finish names. */
+export interface Deliverable {
+  readonly id: string;
+  readonly title: string;
+  readonly detail: string | null;
+  readonly state: DeliverableState;
+}
+
+/** A Ships item as `PATCH` takes it: `id` keeps an existing one, `state` absent keeps its state. */
+export interface DeliverableEdit {
+  readonly id?: string;
+  readonly title: string;
+  readonly detail?: string | null;
+  readonly state?: DeliverableState;
 }
 
 /** The fields `?fields=slim` leaves out of a list, and {@link toSummary} drops. */
-export const SLIM_OMITS = ['description_md', 'acceptance_md'] as const;
+export const SLIM_OMITS = [
+  'description_md',
+  'acceptance_md',
+  'deliverables',
+  'solves',
+  'unlocks',
+] as const;
 
 /**
  * A task as a list holds it. A write answers the task in full, and the store
@@ -294,7 +330,14 @@ export const SLIM_OMITS = ['description_md', 'acceptance_md'] as const;
  */
 export function toSummary(task: TaskSummary | Task): TaskSummary {
   if (!SLIM_OMITS.some((field) => field in task)) return task;
-  const { description_md: _description, acceptance_md: _acceptance, ...summary } = task as Task;
+  const {
+    description_md: _description,
+    acceptance_md: _acceptance,
+    deliverables: _deliverables,
+    solves: _solves,
+    unlocks: _unlocks,
+    ...summary
+  } = task as Task;
   return summary;
 }
 
@@ -647,6 +690,10 @@ export interface TaskEdit {
   readonly title?: string;
   readonly description_md?: string;
   readonly acceptance_md?: string;
+  /** Each replaces the whole list (§6.4, LAI-1115); `[]` clears. */
+  readonly deliverables?: readonly DeliverableEdit[];
+  readonly solves?: readonly string[];
+  readonly unlocks?: readonly string[];
   readonly priority?: TaskPriority;
   readonly assignee_id?: string | null;
   readonly sprint_id?: string | null;
