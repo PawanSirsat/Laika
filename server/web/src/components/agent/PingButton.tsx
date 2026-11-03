@@ -6,6 +6,13 @@ import './agent.css';
 
 /** How often a ping that got no answer within the wait is asked about again. */
 const WATCH_EVERY_MS = 10_000;
+/**
+ * How often a ping is asked about **inside** the wait. The board holds only
+ * one request per requester per ping and answers a repeat at once with the
+ * ping as it stands (LAI-1038 review), so a `pending` that comes back early
+ * is not *no answer* yet: the wait is the reader's, from their click.
+ */
+const WAIT_POLL_MS = 1_000;
 /** How often the answer's age is re-read on screen. */
 const TICK_MS = 10_000;
 
@@ -40,7 +47,9 @@ export interface PingButtonProps {
  *
  * `POST /agents/:id/capacity-pings`, held up to {@link PING_WAIT_MS}: *Waiting
  * for Claude Code · Belka…*, then the answer, every fact from the answer
- * itself. No answer within the wait says so, and the ping is asked about
+ * itself. A `pending` that comes back before the wait is over — a repeat,
+ * which the board answers at once — is asked about again until the wait
+ * ends. No answer within the wait says so, and the ping is asked about
  * again until it expires — a late answer still shows, and an expiry says so.
  * A `404` is the board's one answer for an agent that does not exist and one
  * this reader may not ping, and is said that way; a `429` names the wait.
@@ -108,7 +117,8 @@ export function PingButton({
     };
   }, [until]);
 
-  const settle = (ping: CapacityPing, signal: AbortSignal): void => {
+  /** What a ping's state means now, `waitUntil` being the end of the reader's wait. */
+  const settle = (ping: CapacityPing, signal: AbortSignal, waitUntil: number): void => {
     if (signal.aborted) return;
     if (ping.state === 'answered') {
       setNow(Date.now());
@@ -120,13 +130,18 @@ export function PingButton({
       setOutcome({ kind: 'expired' });
       return;
     }
-    setOutcome({ kind: 'pending', ping, lost: false });
-    // Asked about again until it expires, and once just after.
-    const delay = Math.min(WATCH_EVERY_MS, Math.max(0, ping.expires_at - Date.now()) + 500);
+    const at = Date.now();
+    const waiting = at < waitUntil;
+    // Inside the wait it is still *Waiting…*; after it, *no answer*, asked
+    // about again until it expires, and once just after.
+    if (!waiting) setOutcome({ kind: 'pending', ping, lost: false });
+    const delay = waiting
+      ? Math.min(WAIT_POLL_MS, waitUntil - at)
+      : Math.min(WATCH_EVERY_MS, Math.max(0, ping.expires_at - at) + 500);
     watch.current = setTimeout(() => {
       getCapacityPing(ping.id, signal)
         .then(({ ping: again }) => {
-          settle(again, signal);
+          settle(again, signal, waitUntil);
         })
         .catch(() => {
           if (signal.aborted) return;
@@ -144,6 +159,7 @@ export function PingButton({
     clearTimeout(watch.current);
     const next = new AbortController();
     controller.current = next;
+    const waitUntil = Date.now() + PING_WAIT_MS;
     setOutcome({ kind: 'waiting' });
     pingAgent(
       agentId,
@@ -151,7 +167,7 @@ export function PingButton({
       next.signal,
     )
       .then(({ ping: first }) => {
-        settle(first, next.signal);
+        settle(first, next.signal, waitUntil);
       })
       .catch((cause: unknown) => {
         if (next.signal.aborted) return;
