@@ -491,11 +491,6 @@ const COLUMNS_NOT_IN_SPEC = new Map<string, string>([
     'users.image',
     'required by better-auth’s user model; unused — §4.1 says avatars are derived, no uploads in v1',
   ],
-  // In flight (LAI-1115): the three "What this delivers" columns land before
-  // LAI-1116 writes their §4.5 rows. LAI-1116 removes these three entries.
-  ['tasks.deliverables', 'LAI-1116, in flight: awaiting §4.5’s rows (LAI-1115)'],
-  ['tasks.solves', 'LAI-1116, in flight: awaiting §4.5’s rows (LAI-1115)'],
-  ['tasks.unlocks', 'LAI-1116, in flight: awaiting §4.5’s rows (LAI-1115)'],
 ]);
 
 /**
