@@ -31,15 +31,19 @@ token from `LAIKA_AGENT_TOKEN_CODEX`, which a launcher-started child never has
 SHELL: `cli/` only.
 
 - Changed: `cli/src/tool-add.ts`, `cli/src/agents.ts`, `cli/src/connect.ts`,
-  `cli/src/agent.ts`, `cli/src/agent-hooks.ts`, `cli/src/agent-adapters.ts`,
+  `cli/src/agent.ts` (the hooks; `agent-hooks.ts` was not changed),
+  `cli/src/agent-adapters.ts`,
   `cli/README.md` (Omnigent and Codex lines only).
 - New: `cli/src/agent-mcp-bridge.ts`, `cli/src/agent-omnigent.ts` (daemon
   discovery, version gate, session wake — the module the launcher, slice B,
   calls; its signature is agreed in the PR description), `cli/docs/omnigent.md`.
 - Added while building (named here so the reviewer sees them):
   `cli/src/agent-omnigent-marker.ts` (the marker, kept out of the wake
-  module so the hook path loads only it), and the Omnigent section of
-  `cli/agent-adapters/CAPABILITIES.md`, which said "does nothing else".
+  module so the hook path loads only it), `cli/src/mcp-headers.ts` (the
+  headers helpers and "does this harness's MCP follow Omnigent runs", out of
+  `tool-add.ts` so the hook path need not load it — review B1), and the
+  Omnigent section of `cli/agent-adapters/CAPABILITIES.md`, which said
+  "does nothing else".
 - Tests: `cli/test/agent-mcp-bridge.test.ts`, `tool-add-omnigent.test.ts`,
   `agent-hooks-omnigent.test.ts`, `agent-omnigent.test.ts`, and the existing
   tests of the files changed.
@@ -88,3 +92,13 @@ PR #252. On head `162dbe58`, every job of Gate — test, lint, format passed:
 cli, lint/format, server 1–4 and web 1–4. Spikes, the verification and the
 mutation runs are in the PR description and in
 `logs/shell-2026-11-03-LAI-1101.md`.
+
+## Review round 1 (2026-11-03), fixed as new commits
+
+CHIEF's review of PR #252 failed on B1, and named fixes #1, #2, #3, #5/#6,
+#8, #9, #10 and #12. All are fixed in the commits after `97834880`; the
+tests and mutations for each are in `logs/shell-2026-11-03-LAI-1101.md`.
+
+- **B1:** the hooks switch to `omnigent.json` only where that harness's MCP
+  entry is the switching helper (b). `tool add omnigent` switches the entries
+  an earlier `tool add` wrote, and names any other (a).

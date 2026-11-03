@@ -146,18 +146,23 @@ harness that runs them instead. polly's own turns run on Claude Code through
 `claude-sdk`, and its workers on Claude Code or Codex. Every one of them
 carries `OMNIGENT=1` (Omnigent's `runner/identity.py`).
 
-On a device holding `~/.laika/agents/omnigent.json`, those hooks and the
-Claude Code and Codex MCP headers helpers act as the Omnigent agent (D-118),
-and each session ends at its turn's Stop. `laika tool add omnigent`
-installs a copy of polly whose MCP is `laika agent mcp-bridge`. Details are
-in [`../docs/omnigent.md`](../docs/omnigent.md).
+On a device holding `~/.laika/agents/omnigent.json`, an Omnigent run's
+session ends at its turn's Stop. It acts as the Omnigent agent (D-118) only
+where that harness's Laika MCP entry is the switching helper `laika tool add`
+writes, so its hooks and its MCP speak as one agent. Anywhere else it acts
+as the harness's own agent.
+
+`laika tool add omnigent` installs a copy of polly whose MCP is
+`laika agent mcp-bridge`. It also switches any Claude Code or Codex Laika
+entry an earlier `tool add` wrote. Details are in
+[`../docs/omnigent.md`](../docs/omnigent.md).
 
 | Capability | Omnigent |
 | --- | --- |
 | Agent credential for the helper | Documented-not-tested: `laika tool add omnigent` or `laika agent login omnigent`, own file; the shared code is tested, no Omnigent run |
 | Board MCP credential in the harness's own config | Documented-not-tested: `~/.laika/omnigent/laika-polly/tools/mcp/laika.yaml`, `transport: stdio` running `laika agent mcp-bridge` by absolute path, no `${VAR}` (`laika tool add omnigent`, or `laika connect omnigent --dir`). The bridge is tested against a fake board; it was not run inside a running Omnigent |
-| Sessions, hooks, automatic checkpoints | Through Claude Code's or Codex's hooks, as the Omnigent agent. Measured on 0.19.1, 2026-11-03, with a throwaway server under a temp HOME: a polly turn ran `~/.claude/settings.json`'s `SessionStart`, `UserPromptSubmit` and `SessionEnd`, with `OMNIGENT=1` and `CLAUDE_CODE_ENTRYPOINT=sdk-py`. `Stop` was not observed, because no turn completed without a Claude login. The Laika session itself was not opened there |
-| A notice to a running session | Documented-not-tested: a user `message` to `/v1/sessions/{id}/events` on the loopback server (`agent-omnigent.ts`), gated to 0.19.x and tested against a fake server |
+| Sessions, hooks, automatic checkpoints | Through Claude Code's or Codex's hooks: as the Omnigent agent where the harness's MCP entry is the switching helper, otherwise as the harness's own agent (tested with a stand-in harness and a stub board). Measured on 0.19.1, 2026-11-03, with a throwaway server under a temp HOME: a polly turn ran `~/.claude/settings.json`'s `SessionStart`, `UserPromptSubmit` and `SessionEnd`, with `OMNIGENT=1` and `CLAUDE_CODE_ENTRYPOINT=sdk-py`. `Stop` was not observed, because no turn completed without a Claude login. The Laika session itself was not opened there |
+| A notice to a running session | Documented-not-tested: a user `message` to `/v1/sessions/{id}/events` on the loopback server (`agent-omnigent.ts`), to a `laika-polly` session only, gated to 0.19.x and tested against a fake server |
 | Stopping a headless run | Measured on 0.19.1: `stop_session` stops the server-side turn within 3 s. SIGTERM or SIGINT to `omni … -p` does not |
 
 ## The words each cell relies on
