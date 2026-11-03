@@ -25,7 +25,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import type { Launcher } from '../../src/api/capacity.ts';
 import { NEVER_REPORTED, reported } from '../helpers/launcher.ts';
-import { CLAUDE, CODEX, OMNIGENT, REVOKED, stub, type Agent } from './developer-v3-fixtures.ts';
+import { CLAUDE, CODEX, me, OMNIGENT, REVOKED, stub, type Agent } from './developer-v3-fixtures.ts';
 import {
   closeBrowser,
   open,
@@ -131,6 +131,8 @@ const panel = (page: Page) => page.locator('.side-panel[data-panel="tool"]');
 const pingButton = (page: Page) =>
   panel(page).getByRole('button', { name: 'Ping Claude Code · Belka' });
 const status = (page: Page) => panel(page).locator('.agent-ping-status');
+/** The polite live region inside it: what is read out, and only on a change of outcome. */
+const live = (page: Page) => panel(page).locator('.agent-ping-live');
 
 async function openTools(routes: ApiStub = {}, options: OpenOptions = {}): Promise<Harness> {
   const h = await open('/developer?tab=tools', board(routes), options);
@@ -170,7 +172,10 @@ void describe('the Auto-pickup chip says the board’s word', () => {
       const on = await chip(h.page, 'a1');
       assert.equal(on.state, 'on');
       assert.match(on.word, /^Auto-pickup: on · \d+ s$/);
-      assert.match(on.reason, /^The launcher on Belka reported just now that it is on; /);
+      assert.match(
+        on.reason,
+        /^The launcher on Belka reported just now that it is running\. It starts work requests and hand-offs /,
+      );
 
       // Reported six minutes ago: the board says unknown, and so does the chip.
       const stale = await chip(h.page, 'a2');
@@ -230,11 +235,11 @@ void describe('Ping is offered only where the reader may ping', () => {
         await section.locator('[data-auto-pickup]').getAttribute('data-auto-pickup'),
         'on',
       );
-      assert.match(await section.innerText(), /it starts work requests and hand-offs/);
+      assert.match(await section.innerText(), /It starts work requests and hand-offs/);
       assert.equal(await pingButton(h.page).count(), 1);
       // The live region is there before anything is said in it.
-      assert.equal(await status(h.page).getAttribute('role'), 'status');
-      assert.equal(await status(h.page).getAttribute('aria-live'), 'polite');
+      assert.equal(await live(h.page).getAttribute('role'), 'status');
+      assert.equal(await live(h.page).getAttribute('aria-live'), 'polite');
       assert.equal((await status(h.page).innerText()).trim(), '');
     } finally {
       await h.close();
@@ -248,11 +253,38 @@ void describe('Ping is offered only where the reader may ping', () => {
       await section.waitFor({ timeout: 20_000 });
       await section.locator('[data-ping-none]').waitFor({ timeout: 10_000 });
       assert.equal(await section.getByRole('button', { name: /^Ping/ }).count(), 0);
+      assert.equal(
+        await section.locator('[data-ping-none]').getAttribute('data-ping-none'),
+        'no-space',
+      );
       assert.match(await section.innerText(), /has no space you could select it in/);
       assert.equal(
         h.calls.filter((c) => c.path.startsWith('/api/v1/agents/a2/capacity')).length,
         0,
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('Ping is not offered to a viewer, and the note says so (review round 1)', () => {
+  void test('an organisation viewer is told their role, not the tool’s access', async () => {
+    const h = await open(
+      '/developer?tab=tools&agent=a1',
+      board({ '/api/v1/me': { ...me, org_role: 'viewer' } }),
+    );
+    try {
+      const section = panel(h.page).locator('[data-launcher]');
+      await section.waitFor({ timeout: 20_000 });
+      const none = section.locator('[data-ping-none]');
+      await none.waitFor({ timeout: 10_000 });
+      assert.equal(await none.getAttribute('data-ping-none'), 'viewer');
+      assert.equal(
+        (await none.innerText()).trim(),
+        'Your role in this organisation is viewer, and pinging a tool is for members and above. You can still see Claude Code · Belka’s launcher above.',
+      );
+      assert.equal(await section.getByRole('button', { name: /^Ping/ }).count(), 0);
     } finally {
       await h.close();
     }
@@ -297,6 +329,13 @@ void describe('Ping', () => {
         ],
       );
       assert.match(await status(h.page).innerText(), /Claude Code · Belka answered \d+ s ago/);
+      // The age moves on screen and is not read out (review round 1): it is
+      // outside the live region, which holds the answer and no clock.
+      const age = status(h.page).locator('.agent-ping-age');
+      assert.match(await age.innerText(), /^Claude Code · Belka answered \d+ s ago$/);
+      assert.equal(await age.evaluate((el) => el.closest('[aria-live]') === null), true);
+      assert.doesNotMatch(await live(h.page).innerText(), /ago|\d+ s\b/);
+      assert.match(await live(h.page).innerText(), /Claude Code · Belka answered\./);
       const post = h.calls.find((c) => c.method === 'POST');
       assert.deepEqual(post?.body, { project: 'laika', wait_ms: 8000 });
       assert.equal(await focusedOnPing(h.page), 'Ping Claude Code · Belka');
@@ -431,6 +470,147 @@ void describe('Ping', () => {
         /^Stale: Claude Code · Belka answered 12 min ago/,
       );
     } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a background read that fails changes nothing (review round 1, B1)', () => {
+  void test('B1: a failed presence re-read keeps the list, and focus on the row control', async () => {
+    const h = await openTools();
+    try {
+      const details = h.page.locator('[data-details="tools:a1"]');
+      await details.focus();
+      let failed = 0;
+      h.page.on('requestfailed', (request) => {
+        if (new URL(request.url()).pathname === '/api/v1/devices') failed += 1;
+      });
+      await h.page.route('**/api/v1/devices', (route) => route.abort('internetdisconnected'));
+      // The window coming back is one of the re-read's triggers.
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await until(() => failed > 0);
+      assert.ok(failed > 0, 'the background read never went out');
+      // Long enough for an error state to take the list's place, if it were going to.
+      const errorShown = () => h.page.locator('.state-error').isVisible();
+      await until(errorShown, 1500);
+      assert.equal(await errorShown(), false, 'a failed background read replaced the list');
+      assert.equal(await row(h.page, 'a1').isVisible(), true);
+      assert.equal(
+        await h.page.evaluate(() => document.activeElement?.getAttribute('data-details') ?? null),
+        'tools:a1',
+        'focus left the row control',
+      );
+      // The next read that works brings it up to date, and focus stays.
+      await h.page.unroute('**/api/v1/devices');
+      const reads = () => h.calls.filter((c) => c.path === '/api/v1/devices').length;
+      const before = reads();
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await until(() => reads() > before);
+      assert.ok(reads() > before, 'the next read did not go out');
+      assert.equal(
+        await h.page.evaluate(() => document.activeElement?.getAttribute('data-details') ?? null),
+        'tools:a1',
+      );
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+});
+
+const pingState = (page: Page) => panel(page).locator('.agent-ping').getAttribute('data-ping');
+
+/** Record each outcome the Ping takes, with when, from the moment this runs. */
+async function recordOutcomes(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const seen: { state: string; at: number }[] = [];
+    const start = Date.now();
+    (window as unknown as { __ping: typeof seen }).__ping = seen;
+    const box = document.querySelector('.side-panel .agent-ping');
+    if (box === null) throw new Error('no ping');
+    new MutationObserver(() => {
+      seen.push({ state: box.getAttribute('data-ping') ?? '', at: Date.now() - start });
+    }).observe(box, { attributes: true, attributeFilter: ['data-ping'] });
+  });
+}
+
+const outcomes = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __ping: { state: string; at: number }[] }).__ping);
+
+void describe('a check that fails (review round 1, B2)', () => {
+  void test('B2: a check that fails inside the wait keeps waiting, says so, and the answer still arrives', async () => {
+    let gets = 0;
+    const h = await openPanel({
+      '/api/v1/agents/a1/capacity-pings': () =>
+        reply(200, { ping: ping('pending', Date.now() + MIN), created: false }),
+      '/api/v1/capacity-pings/cp1': () => ({ ping: ping('answered', Date.now() + MIN) }),
+    });
+    try {
+      // The first two checks fail; the board is back for the third.
+      await h.page.route('**/api/v1/capacity-pings/cp1', async (route) => {
+        gets += 1;
+        if (gets <= 2) await route.abort('internetdisconnected');
+        else await route.continue();
+      });
+      await recordOutcomes(h.page);
+      await pingButton(h.page).click();
+      await until(async () => (await live(h.page).innerText()).includes('did not answer'), 5_000);
+      assert.equal(
+        (await live(h.page).innerText()).trim(),
+        'Waiting for Claude Code · Belka… The board did not answer the last check; asking again.',
+      );
+      await status(h.page).locator('[data-answer="online"]').waitFor({ timeout: 10_000 });
+      const seen = await outcomes(h.page);
+      assert.ok(
+        !seen.some((o) => o.state === 'pending'),
+        `it said no answer inside the wait: ${JSON.stringify(seen)}`,
+      );
+      assert.equal(seen.at(-1)?.state, 'answered');
+      assert.ok(gets >= 3, `asked ${String(gets)} times`);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('B2: checks that keep failing retry until the ping expires, then say so, and Ping is offered again', async () => {
+    let gets = 0;
+    const h = await openPanel({
+      '/api/v1/agents/a1/capacity-pings': () =>
+        reply(201, { ping: ping('pending', Date.now() + 11 * SECOND), created: true }),
+    });
+    try {
+      await h.page.route('**/api/v1/capacity-pings/cp1', async (route) => {
+        gets += 1;
+        await route.abort('internetdisconnected');
+      });
+      await recordOutcomes(h.page);
+      await pingButton(h.page).click();
+      // After the wait: no answer, the failing checks said, and Ping offered again.
+      await until(
+        async () => (await live(h.page).innerText()).includes('could not be reached'),
+        12_000,
+      );
+      assert.match(
+        (await live(h.page).innerText()).trim(),
+        /^No answer within 8 s, and the board could not be reached to check again\. Retrying until the ping expires at \d{1,2}:\d{2}:\d{2} (AM|PM)\.$/,
+      );
+      assert.equal(await pingButton(h.page).getAttribute('aria-disabled'), null);
+      const first = (await outcomes(h.page)).find((o) => o.state === 'pending');
+      assert.ok(
+        first !== undefined && first.at >= 7_500,
+        `no answer said early: ${JSON.stringify(first)}`,
+      );
+      // Then at the expiry: expired, answered or not unknown.
+      await until(async () => (await pingState(h.page)) === 'expired', 8_000);
+      assert.equal(
+        (await live(h.page).innerText()).trim(),
+        'The ping expired while the board could not be reached, so whether Claude Code · Belka answered is unknown. Ping again to ask.',
+      );
+      assert.equal(await pingButton(h.page).getAttribute('aria-disabled'), null);
+      assert.ok(gets >= 4, `retried ${String(gets)} times`);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
   });

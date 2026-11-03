@@ -2181,6 +2181,32 @@ function pingWorld(options: { readonly role?: 'lead' | 'viewer' } = {}): World {
   };
 }
 
+/** The laptop agent's launcher, on until the test turns it. */
+function launcherWorld(): World & { turn: (state: 'on' | 'unknown') => void } {
+  const w = world();
+  let state: 'on' | 'unknown' = 'on';
+  return {
+    ...w,
+    turn: (next) => {
+      state = next;
+    },
+    stub: {
+      ...w.stub,
+      '/api/v1/agents': () => ({
+        data: AGENTS.map((a) =>
+          a.id === 'ag-laptop'
+            ? {
+                ...a,
+                launcher: reported(state, Date.now() - (state === 'on' ? 20_000 : 4 * 60_000)),
+              }
+            : a,
+        ),
+        next_cursor: null,
+      }),
+    },
+  };
+}
+
 const pingIn = (h: Harness) =>
   h.page.locator('.meta-row-agent').getByRole('button', { name: /^Ping / });
 
@@ -2195,7 +2221,7 @@ void describe('Ping on the drawer’s agent (LAI-1102)', () => {
       await link.focus();
       await h.page.keyboard.press('Enter');
       const region = h.page.locator('.meta-row-agent .agent-ping-status');
-      assert.equal(await region.getAttribute('aria-live'), 'polite');
+      assert.equal(await region.locator('.agent-ping-live').getAttribute('aria-live'), 'polite');
       await region.locator('[data-answer="battery"]').waitFor({ timeout: 10_000 });
       assert.equal(
         (await region.locator('[data-answer="battery"]').innerText()).trim(),
@@ -2279,6 +2305,53 @@ void describe('Ping on the drawer’s agent (LAI-1102)', () => {
       assert.equal(await pingIn(reader).count(), 0);
     } finally {
       await reader.close();
+    }
+  });
+});
+
+void describe('the picker’s Starts automatically follows the launcher (review round 1)', () => {
+  void test('read again quietly when the window comes back; a failed read keeps it; focus stays', async () => {
+    const w = launcherWorld();
+    const h = await open('/board?project=laika-core&task=t2', w.stub);
+    try {
+      const box = await agentBox(h);
+      const row = await agentRow(h);
+      await until(async () => (await row.innerText()).includes('Starts automatically'));
+      assert.match(await row.innerText(), /Starts automatically on laptop-1/);
+      await box.focus();
+      const reads = () => h.calls.filter((c) => c.path === '/api/v1/agents').length;
+
+      // A read that fails says nothing and changes nothing.
+      const agentsList = (url: URL): boolean => url.pathname === '/api/v1/agents';
+      await h.page.route(agentsList, (route) => route.abort('internetdisconnected'));
+      let failed = 0;
+      h.page.on('requestfailed', (request) => {
+        if (new URL(request.url()).pathname === '/api/v1/agents') failed += 1;
+      });
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await until(() => failed > 0);
+      assert.ok(failed > 0, 'the quiet read never went out');
+      await until(async () => !(await row.innerText()).includes('Starts automatically'), 1000);
+      assert.match(await row.innerText(), /Starts automatically on laptop-1/);
+      assert.equal(await row.getByRole('alert').count(), 0);
+      await h.page.unroute(agentsList);
+
+      // The launcher stops reporting; the next read takes the words away.
+      w.turn('unknown');
+      const before = reads();
+      await h.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await until(() => reads() > before);
+      await until(async () => !(await row.innerText()).includes('Starts automatically'));
+      assert.doesNotMatch(await row.innerText(), /Starts automatically/);
+      assert.match(await row.innerText(), /A work request goes to this agent/);
+      assert.equal(
+        await box.evaluate((el) => el === document.activeElement),
+        true,
+        'a re-read took focus from the Agent field',
+      );
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
     }
   });
 });
