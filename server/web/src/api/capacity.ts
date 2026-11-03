@@ -141,6 +141,15 @@ export const PING_WAIT_MS = 8_000;
 /** An answer older than this is called stale (plan §4). */
 export const ANSWER_STALE_MS = 5 * 60_000;
 
+/**
+ * How often a screen showing presence reads it again while it is shown
+ * (plan §6) — well inside the three minutes a report stays `on`, so nothing
+ * on screen says *on* long after the board stopped. It is also read again
+ * when the window comes back. A re-read is quiet: it says nothing, and one
+ * that fails keeps what is on screen.
+ */
+export const PRESENCE_REREAD_MS = 60_000;
+
 export interface PingInput {
   /** The project's slug: a ping is asked, and refused, per project. */
   readonly project: string;

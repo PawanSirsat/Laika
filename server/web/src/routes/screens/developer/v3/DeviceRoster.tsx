@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { confirmAgentDevice, revokeAgentDevice } from '../../../../api/agent-devices.ts';
 import { getAgent, type RegisteredAgent } from '../../../../api/agents.ts';
+import { PRESENCE_REREAD_MS } from '../../../../api/capacity.ts';
 import { listDevices, type Device } from '../../../../api/devices.ts';
 import { everyPage } from '../../../../api/every-page.ts';
 import type { MeProfile } from '../../../../api/me.ts';
@@ -62,9 +63,6 @@ const PANEL_PARAM: Readonly<Record<RosterTab, string>> = { devices: 'device', to
  * mark, and closing it replaces the address instead — Back would leave.
  */
 const PANEL_MARK = 'laikaDetails';
-
-/** How often the list is read again for launcher presence while it is shown (plan §6). */
-const PRESENCE_REREAD_MS = 60_000;
 
 function panelMarked(key: string): boolean {
   const state: unknown = window.history.state;
@@ -140,6 +138,8 @@ export function DeviceRoster({
   const addToolButton = useRef<HTMLButtonElement | null>(null);
   const lastAdd = useRef<'device' | 'tool' | undefined>(undefined);
   const readGen = useRef(0);
+  /** A list has been shown: a quiet re-read that fails leaves it there. */
+  const listed = useRef(false);
 
   const load = useCallback(
     (signal?: AbortSignal, quiet = false): void => {
@@ -148,6 +148,7 @@ export function DeviceRoster({
       listDevices(signal)
         .then(({ data }) => {
           if (gen !== readGen.current) return;
+          listed.current = true;
           setDevices(data);
           setError(null);
           setNow(Date.now());
@@ -158,6 +159,11 @@ export function DeviceRoster({
         .catch((cause: unknown) => {
           if (cause instanceof DOMException && cause.name === 'AbortError') return;
           if (gen !== readGen.current) return;
+          // A presence re-read that fails — offline, a laptop waking, a deploy
+          // restarting — keeps the list it has (LAI-1102 review, B1). Putting
+          // an error in its place would take the row the reader is on, and
+          // their focus with it; the next read that works brings it up to date.
+          if (quiet && listed.current) return;
           setError(cause);
         });
     },
