@@ -51,3 +51,15 @@ export interface Device {
 export function listDevices(signal?: AbortSignal): Promise<{ data: Device[] }> {
   return request<{ data: Device[] }>('/devices', signal === undefined ? {} : { signal });
 }
+
+/**
+ * Rename one of your active devices (LAI-1095, §4.78): every tool on it is
+ * relabelled with it, and the device comes back whole. Session only; a name
+ * another of your active devices holds is `409 device_name_taken`.
+ */
+export function renameDevice(id: string, displayName: string): Promise<Device> {
+  return request<Device>(`/devices/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { display_name: displayName },
+  });
+}
