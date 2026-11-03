@@ -1309,7 +1309,8 @@ void describe('laika tool add', () => {
       'something besides the credential was written',
     );
     assert.match(run.stdout, /polly agent was not found/);
-    assert.match(run.stdout, /run this again\s+with --from <polly agent folder>/);
+    assert.match(run.stdout, /No new exchange is\s+needed/);
+    assert.match(run.stdout, /laika connect omnigent --dir <agent-folder>/);
     const report = s.received.find((r) => r.path === '/api/v1/agents/me/client-report');
     assert.ok(report !== undefined);
     assert.ok(
@@ -1347,6 +1348,17 @@ void describe('laika tool add', () => {
         `printf 'ARGS %s\\n' "$*" >> ${JSON.stringify(calls)}\nenv >> ${JSON.stringify(calls)}\n`,
     );
     chmodSync(join(home, 'bin', 'omni'), 0o755);
+    // Review B1: an entry an older tool add wrote, and a person's own Codex table.
+    const olderHelper =
+      `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$HOME/.laika/agents/claude-code.json")" && ` +
+      `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`;
+    write(
+      home,
+      '.claude.json',
+      `${JSON.stringify({ mcpServers: { laika: { type: 'http', url: `${s.url}/mcp`, headersHelper: olderHelper } } })}\n`,
+    );
+    const mine = `[mcp_servers.laika]\nurl = "${s.url}/mcp"\nbearer_token_env_var = "LAIKA_TOKEN"\n`;
+    write(home, '.codex/config.toml', mine);
     const run = await laika(
       home,
       [
@@ -1376,6 +1388,21 @@ void describe('laika tool add', () => {
     assert.ok(!called.includes(SECRET), 'the token reached omni');
     assert.match(run.stdout, /quit Omnigent fully \(Omnigent menu → Quit, not just the window\)/);
     assert.match(run.stdout, /laika agent hooks on --harness claude-code/);
+    // B1 (a): Claude Code's older entry now follows Omnigent runs; the
+    // person's Codex table is left byte for byte, and named.
+    const claude = JSON.parse(readFileSync(join(home, '.claude.json'), 'utf8')) as {
+      mcpServers: { laika: { headersHelper: string } };
+    };
+    assert.equal(claude.mcpServers.laika.headersHelper, CLAUDE_HEADERS_HELPER);
+    assert.match(
+      run.stdout,
+      /claude code: mcpServers\.laika in .*\.claude\.json now follows Omnigent runs/,
+    );
+    assert.equal(readFileSync(join(home, '.codex', 'config.toml'), 'utf8'), mine);
+    assert.match(
+      run.stdout,
+      /codex: .*config\.toml has a \[mcp_servers\.laika\] that laika tool add did not write — left alone/,
+    );
     assertNoLeak(home, [run], '.laika/agents/omnigent.json');
   });
 

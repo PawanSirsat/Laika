@@ -252,10 +252,55 @@ void describe('runBridge', () => {
       const m = out[i] as { id: number; error: { code: number; message: string } };
       assert.equal(m.id, id);
       assert.equal(m.error.code, NO_CREDENTIAL_CODE);
-      assert.match(m.error.message, /no Laika credential on this machine/);
+      assert.match(m.error.message, /no usable Laika credential on this machine/);
       assert.match(m.error.message, /\.laika\/agents\/omnigent\.json/);
     }
     assert.deepEqual(b.seen, [], 'the bridge sent something without a credential');
+  });
+});
+
+void describe('the board address the bridge sends to (review #8)', () => {
+  void test('a url that is not an http(s) board is no credential: nothing is fetched at all', async () => {
+    for (const url of [
+      'file:///etc/passwd',
+      'javascript:alert(1)',
+      'ftp://board.test',
+      'not a url',
+    ]) {
+      const h = home({ url, token: TOKEN });
+      const input = new PassThrough();
+      const out: string[] = [];
+      let fetched = 0;
+      const done = runBridge(
+        {
+          home: h,
+          fetch: (i, n) => {
+            fetched += 1;
+            return fetch(i, n);
+          },
+          input,
+          write: (line) => out.push(line),
+        },
+        'omnigent',
+      );
+      input.end(`${LIST}\n`);
+      assert.equal(await done, 0);
+      assert.equal(fetched, 0, `${url} was fetched`);
+      assert.equal(
+        (JSON.parse(out[0] ?? '{}') as { error?: { code: number } }).error?.code,
+        NO_CREDENTIAL_CODE,
+      );
+    }
+  });
+
+  void test('a url with a path posts to its origin’s /mcp, and nowhere else', async () => {
+    const b = await board();
+    const h = home({ url: `${b.url}/some/path/`, token: TOKEN });
+    const out = await relay(h, [LIST]);
+    assert.deepEqual(out, [
+      { jsonrpc: '2.0', id: 2, result: { tools: [{ name: 'laika_whoami' }] } },
+    ]);
+    assert.equal(b.seen.filter((q) => q.method === 'POST').length, 1);
   });
 });
 

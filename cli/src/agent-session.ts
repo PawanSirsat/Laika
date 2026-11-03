@@ -479,6 +479,15 @@ export interface SessionState {
   self?: SelfReport;
   /** What the board was last told of {@link self}: a heartbeat sends only what differs. */
   reported?: SelfReport;
+  /**
+   * Whose credential this harness session speaks with, decided once, by the
+   * hook that first opened it (LAI-1101 review round 2, N1): `omnigent`, the
+   * Omnigent agent's (`~/.laika/agents/omnigent.json`), or `own`, the
+   * harness's. Every later hook, the watcher, a checkpoint, the end at Stop
+   * and a reopen use it, so a session never changes agent when its working
+   * directory moves into a folder with a project `laika` server.
+   */
+  identity?: 'omnigent' | 'own';
 }
 
 export function readState(path: string): SessionState | undefined {
@@ -844,6 +853,8 @@ export interface StartRequest {
   readonly clientVersion?: string;
   /** The harness's version and model, when they could be told ({@link readSelfReport}). */
   readonly self?: SelfReport;
+  /** Whose credential this session speaks with, recorded in its state from the start (N1). */
+  readonly identity?: 'omnigent' | 'own';
 }
 
 export type StartOutcome =
@@ -965,6 +976,7 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
       failures: 0,
       claims: [],
       noticed: [],
+      ...(request.identity === undefined ? {} : { identity: request.identity }),
     };
     const state: SessionState =
       resumable === undefined ? fresh : { ...resumable, status: 'starting' };

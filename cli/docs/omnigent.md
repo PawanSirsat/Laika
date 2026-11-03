@@ -38,9 +38,27 @@ reach an Omnigent session. LAI-1101, from the auto-pickup plan's slice D
 **`laika tool add omnigent` options:**
 
 - `--from <dir>` copies a different polly folder. Use it when `omni` is not
-  on `PATH`, or when you keep your own copy of polly.
-- Re-running is safe. The copy already there is kept as
-  `laika-polly.bak-<time>`.
+  on `PATH`, or when you keep your own copy of polly. The folder must hold
+  no symlinks: copying one would write through it.
+- Running it again needs a new exchange from the browser. The copy already
+  there is kept as `laika-polly.bak-<time>`.
+
+**It also brings Claude Code and Codex along.** A Laika MCP entry that an
+earlier `laika tool add` wrote — `mcpServers.laika` in `~/.claude.json`, or
+`[mcp_servers.laika]` in `~/.codex/config.toml` — is switched to the helper
+that follows Omnigent runs. The file is backed up first, and the old Codex
+rc export is removed. Any other `laika` entry is yours: it is left alone and
+named, and that tool keeps acting as its own agent inside Omnigent (see
+below).
+
+**To redo the wiring without a new exchange** — after you move Node or the
+Laika checkout, for example — rewrite the sidecar in the existing copy, then
+install it again:
+
+```bash
+laika connect omnigent --dir ~/.laika/omnigent/laika-polly
+omni agent add ~/.laika/omnigent/laika-polly
+```
 
 ## The MCP sidecar: no `${VAR}`
 
@@ -76,8 +94,10 @@ JSON-RPC between stdio and `<board>/mcp`.
 - With no credential it sends nothing. Every request gets a JSON-RPC error
   that says how to add the tool.
 - `node` is named by an absolute path because a Dock-launched app's `PATH`
-  has none. If you move Node or the Laika checkout, run `laika tool add
-  omnigent` again.
+  has none. If you move Node or the Laika checkout, redo the wiring as
+  above (`laika connect omnigent --dir …`, then `omni agent add …`).
+- The token goes only to the `http(s)` origin in that file, at `/mcp`. A
+  `url` that is anything else counts as no credential.
 
 `laika connect omnigent --dir <agent>` writes the same sidecar into an agent
 folder of your own. It also uses Omnigent's credential, not your personal
@@ -93,29 +113,72 @@ A manager is a harness. polly's own turns and every worker Omnigent starts
 are **sessions of the Omnigent agent**.
 
 **How a run is recognised.** Omnigent stamps `OMNIGENT=1` on its runner,
-and the runner's children inherit it (`runner/identity.py`). The nearest
-harness process above a hook decides: `claude` or `codex`.
+and the runner's children inherit it (`runner/identity.py`).
 
-**What changes, only on a device that holds
-`~/.laika/agents/omnigent.json`:**
+- **Claude Code** passes its whole environment to its hooks and its
+  `headersHelper`, so its own `OMNIGENT` decides, and no process is read.
+- **Codex** gives its `http_headers_helper` an environment without it. So
+  for Codex the variable is read from the `codex` process itself: from
+  `/proc` on Linux, or from `ps -E` on macOS. The hooks and the helper read
+  it the same way.
+- **On macOS**, `ps -E` prints the command line, then the environment. The
+  command line is cut off first, so an argument never counts. An
+  environment *value* that itself contains ` OMNIGENT=1` cannot be told
+  from the real entry there.
+- `ps -E` shows nothing for a system binary such as `/bin/sh`; that counts
+  as "cannot tell".
+- A tool started by hand in a terminal that Omnigent opened inherits
+  `OMNIGENT=1` too, and counts as an Omnigent run.
 
-- The Claude Code and Codex hooks open the session with the Omnigent
-  agent's token.
-- Both MCP headers helpers send that same token, so the `session_id` a
-  model is told is one its MCP calls may claim with.
+**Which agent, and why the hooks and MCP must agree.** The board refuses a
+claim whose session belongs to another agent. So on a device that holds
+`~/.laika/agents/omnigent.json`:
 
-**Fail closed.** When a hook cannot tell (no harness found, or `ps` failed),
-it opens no session at all rather than guess between two agents.
+- **polly's own turns are always the Omnigent agent.** These are Claude
+  Code started by Omnigent's `claude-sdk` harness: `OMNIGENT=1` and
+  `CLAUDE_CODE_ENTRYPOINT=sdk-py`. Their Laika MCP is Omnigent's own, the
+  bridge, which always speaks as the Omnigent agent, whatever
+  `~/.claude.json` or a `.mcp.json` says.
+  - **The cost:** a `claude-sdk` Omnigent agent whose Laika MCP is *not*
+    the bridge would split, with its hooks as the Omnigent agent and its MCP
+    as whatever its own config says. `laika-polly` is the only Omnigent
+    agent Laika targets, and its MCP is the bridge.
+- **A worker is the Omnigent agent only where its tool's effective Laika
+  MCP entry is the switching helper** `laika tool add` writes. Then the
+  hooks open the session with the Omnigent agent's token, and the helper
+  sends that same token.
+  - "Effective" means the entry the tool reads in that run:
+    `$CLAUDE_CONFIG_DIR/.claude.json` when set, else `~/.claude.json`; and
+    `$CODEX_HOME/config.toml` when set, else `~/.codex/config.toml`.
+  - Omnigent gives each Codex worker a private `CODEX_HOME` holding a copy
+    of that file. A conversation that was already running keeps its old copy
+    until it is restarted.
+- **A worker whose entry is anything else** keeps acting as its own agent in
+  an Omnigent run, hooks included. "Anything else" means your own entry, an
+  older helper, a nearer local-scope or project `laika` server, or none.
+  - Known limitation: a project `laika` server that Claude Code never loaded
+    (a `.mcp.json` nobody approved) still counts as nearer.
 
-**On macOS**, `ps -E` shows the environment of `claude`, `codex` and
-`node`, but not of a system binary such as `/bin/sh`.
+**Decided once per session.** The agent is chosen by the hook that opens the
+session, and recorded in the session's state file. The watcher, a
+checkpoint, the end at Stop and a reopen all use the recorded choice, even
+after the working directory moves into a folder with a project `laika`
+server, such as this repository's `plugin/.mcp.json`.
+
+**Fail closed.** When a run cannot be told apart for Codex (no harness
+found, `ps` failed, or the environment unreadable), the hook opens no
+session, and the Codex helper prints nothing and exits 1.
 
 ### Sessions end at each turn
 
-Omnigent keeps a finished worker's harness process alive, and the watcher
-renews a session for as long as its process lives. So an Omnigent run's
-session **ends at Stop**, which releases its claims. The next prompt or tool
-call opens a new one, and the model is told the new `session_id`.
+On a device that holds `omnigent.json`, an Omnigent run's session **ends at
+Stop**, whichever agent it is. Omnigent keeps a finished worker's harness
+process alive, and the watcher renews a session for as long as its process
+lives, so ending at Stop is what releases the claims.
+
+The next prompt or tool call opens a new session, and the model is told the
+new `session_id`. Where there is no `omnigent.json`, nothing here applies,
+and Codex's process table is never read.
 
 A worker that continues in a later turn calls `start_working` again with that
 new id. A plain session keeps one session for its whole life.
@@ -146,20 +209,23 @@ on 0.19.1:
 **Rules that hold for every call:**
 
 - **Loopback only.** The server comes from `~/.omnigent/daemons/*.json`,
-  then `local_server.pid`. A server that is not `http://127.0.0.1`,
-  `localhost` or `[::1]` is never contacted, and redirects are refused.
+  then `local_server.pid`. A server that is not `http://127.0.0.1` or
+  `http://[::1]` is never contacted (not even `localhost`, which is a name),
+  and redirects are refused.
 - **Gated to 0.19.x.** The session routes are internal, so `GET
   /api/version` is read first. Another version, or no answer, sends
   nothing.
-- **What is sent:** `Content-Type: application/json` and the body. There is
-  no `Origin`, no `X-Forwarded-Email` and no credential; the local server
-  runs single-user in header mode.
+- **What is sent:** the body, with `Content-Type: application/json`, the
+  only header Laika sets; `fetch`'s own defaults (`accept`, `user-agent`, …)
+  ride along. There is never an `Origin`, an `X-Forwarded-Email` or a
+  credential; the local server runs single-user in header mode.
 - **Never retried.** A 4xx or 5xx comes back as `refused`, and one request
   is one request.
 
-**The session a notice goes to** belongs to `laika-polly` first, then the
-built-in `polly`. One working in the given workspace is preferred;
-otherwise the most recently updated one that has not failed.
+**The session a notice goes to** is always a `laika-polly` session, never
+the built-in `polly`, which has no Laika MCP. A session working in the given
+workspace is preferred; otherwise the most recently updated one that has
+not failed.
 
 **To start polly headless in a worktree**, run the copy, not the bundled
 agent:

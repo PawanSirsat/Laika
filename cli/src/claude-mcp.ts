@@ -2,6 +2,7 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { isRecord } from './agent-session.ts';
+import { isClaudeToolHelper } from './mcp-headers.ts';
 
 /**
  * Claude Code's `mcpServers.laika` in `~/.claude.json`, as `laika tool add`
@@ -11,18 +12,16 @@ import { isRecord } from './agent-session.ts';
  */
 
 /**
- * Whether a `mcpServers.laika` entry is one `tool add` wrote — it reads the
- * tool's credential file through a `headersHelper` — whatever revision of the
- * helper it carries. Such an entry is this command's to update; any other is
- * the person's, and is kept.
+ * Whether a `mcpServers.laika` entry is one `tool add` wrote: its
+ * `headersHelper` is a revision `tool add` actually wrote — LAI-1072's or
+ * LAI-1074's exactly, or LAI-1101's switching helper by its shape
+ * (`isClaudeToolHelper`, review round 2 N5) — and it has no `headers`. Such
+ * an entry is this command's to update; any other, including a command of
+ * the person's own that happens to read `claude-code.json`, is theirs, and
+ * is kept.
  */
 export function isToolEntry(entry: unknown): boolean {
-  return (
-    isRecord(entry) &&
-    typeof entry.headersHelper === 'string' &&
-    entry.headersHelper.includes('.laika/agents/claude-code.json') &&
-    entry.headers === undefined
-  );
+  return isRecord(entry) && isClaudeToolHelper(entry.headersHelper) && entry.headers === undefined;
 }
 
 /**

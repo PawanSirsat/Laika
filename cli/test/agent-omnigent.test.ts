@@ -132,12 +132,13 @@ const events = (fake: FakeOmnigent): Seen[] =>
   fake.seen.filter((s) => s.method === 'POST' && s.url.endsWith('/events'));
 
 void describe('loopbackOrigin', () => {
-  void test('only http on 127.0.0.1, localhost or [::1], with a port and no path', () => {
+  void test('only http on 127.0.0.1 or [::1], with a port and no path — never a name', () => {
     assert.equal(loopbackOrigin('http://127.0.0.1:6767'), 'http://127.0.0.1:6767');
     assert.equal(loopbackOrigin('http://127.0.0.1:6767/'), 'http://127.0.0.1:6767');
-    assert.equal(loopbackOrigin('http://localhost:9'), 'http://localhost:9');
     assert.equal(loopbackOrigin('http://[::1]:6767'), 'http://[::1]:6767');
     for (const bad of [
+      'http://localhost:9',
+      'http://LOCALHOST:6767',
       'https://127.0.0.1:6767',
       'http://10.0.0.5:6767',
       'http://example.com:6767',
@@ -305,19 +306,24 @@ void describe('wakeOmnigentSession', () => {
     assert.deepEqual(outcome, { kind: 'delivered', sessionId: 's_here' });
   });
 
-  void test('falls back to the built-in polly; no session of either is no_session, nothing posted', async () => {
+  void test('only laika-polly: a bundled polly session is never woken, nor asked about', async () => {
     const { fake, deps } = await setUp();
-    fake.sessions.polly = [session('s_polly', { agent_name: 'polly' })];
-    assert.deepEqual(await wakeOmnigentSession(deps, { kind: 'selected', taskKey: 'LAI-9' }), {
-      kind: 'delivered',
-      sessionId: 's_polly',
-    });
-    fake.sessions = {};
+    fake.sessions.polly = [session('s_polly', { agent_name: 'polly', updated_at: 999 })];
     assert.deepEqual(await wakeOmnigentSession(deps, { kind: 'selected', taskKey: 'LAI-9' }), {
       kind: 'skipped',
       reason: 'no_session',
     });
-    assert.equal(events(fake).length, 1);
+    assert.equal(events(fake).length, 0, 'a notice went to a polly without Laika');
+    const asked = fake.seen.filter((q) => q.url.startsWith('/v1/sessions?'));
+    assert.deepEqual(
+      asked.map((q) => new URL(q.url, 'http://x').searchParams.get('agent_name')),
+      ['laika-polly'],
+    );
+    fake.sessions['laika-polly'] = [session('s_laika')];
+    assert.deepEqual(await wakeOmnigentSession(deps, { kind: 'selected', taskKey: 'LAI-9' }), {
+      kind: 'delivered',
+      sessionId: 's_laika',
+    });
   });
 
   void test('gated to 0.19.x: another version, or none, sends nothing past the version check', async () => {
@@ -420,6 +426,17 @@ void describe('stopOmnigentRun', () => {
     assert.equal(posts.length, 1);
     assert.equal(posts[0]?.url, '/v1/sessions/s_running_here/events');
     assert.deepEqual(JSON.parse(posts[0]?.body ?? ''), { type: 'stop_session', data: {} });
+  });
+
+  void test('a bundled polly running in the worktree is not laika-polly, and is left alone', async () => {
+    const { fake, deps, h } = await setUp();
+    const work = join(h, 'wt');
+    mkdirSync(work);
+    fake.sessions.polly = [
+      session('s_polly', { agent_name: 'polly', workspace: work, status: 'running' }),
+    ];
+    assert.deepEqual(await stopOmnigentRun(deps, work), { kind: 'skipped', reason: 'no_session' });
+    assert.equal(events(fake).length, 0);
   });
 
   void test('nothing running there is no_session; a refusal is not retried', async () => {
