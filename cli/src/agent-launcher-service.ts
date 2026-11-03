@@ -358,6 +358,8 @@ export interface ServiceIo {
   readonly ask: (question: string) => Promise<string | undefined>;
   /** Stops listening for answers, so the process can exit; `enable` calls it once, at the end. */
   readonly closeAsk: () => void;
+  /** Whether a question was ended by Ctrl+C. */
+  readonly interrupted: () => boolean;
   /** Runs a program by absolute path or name on PATH, never through a shell. */
   readonly run: (file: string, args: readonly string[]) => RunResult;
   readonly fetch: Fetch;
@@ -375,6 +377,8 @@ export interface ServiceIo {
 export interface TerminalAsker {
   readonly ask: (question: string) => Promise<string | undefined>;
   readonly close: () => void;
+  /** Whether the owner pressed Ctrl+C at a question, rather than input ending. */
+  readonly interrupted: () => boolean;
 }
 
 /**
@@ -388,7 +392,8 @@ export interface TerminalAsker {
  * transcript reads in order). A line that arrives with the end of input is
  * still an answer — the LAI-1109 order — and only a question with no line
  * left is `undefined`. Nothing listens until the first question, so a run
- * that refuses before asking never takes the terminal.
+ * that refuses before asking never takes the terminal; once closed — by
+ * `close()`, the end of input or Ctrl+C — it never listens again.
  */
 export function terminalAsker(
   input: NodeJS.ReadableStream & { isTTY?: boolean },
@@ -396,6 +401,7 @@ export function terminalAsker(
 ): TerminalAsker {
   let rl: Interface | undefined;
   let ended = false;
+  let interrupted = false;
   const lines: string[] = [];
   const waiting: ((answer: string | undefined) => void)[] = [];
   const open = (): Interface => {
@@ -410,6 +416,11 @@ export function terminalAsker(
       ended = true;
       for (const resolve of waiting.splice(0)) resolve(undefined);
     });
+    // Ctrl+C at a question: the terminal is raw, so it is a key, not a signal.
+    r.on('SIGINT', () => {
+      interrupted = true;
+      r.close();
+    });
     rl = r;
     return r;
   };
@@ -420,7 +431,6 @@ export function terminalAsker(
           resolve(undefined);
           return;
         }
-        const r = open();
         const typed = lines.shift();
         if (typed !== undefined) {
           output.write(`${question}${typed}\n`);
@@ -431,13 +441,16 @@ export function terminalAsker(
           resolve(undefined);
           return;
         }
+        const r = open();
         waiting.push(resolve);
         r.setPrompt(question);
         r.prompt();
       }),
     close: () => {
+      ended = true;
       rl?.close();
     },
+    interrupted: () => interrupted,
   };
 }
 
@@ -473,6 +486,7 @@ export function realServiceIo(io: LauncherIo): ServiceIo {
     terminal: process.stdin.isTTY,
     ask: asker.ask,
     closeAsk: asker.close,
+    interrupted: asker.interrupted,
     run,
     fetch: (input, init) => fetch(input, init),
     platform: process.platform,
@@ -562,7 +576,31 @@ export function checkoutPath(
 }
 
 /** `fetchSourceFor`'s reason, with what an SSH host alias is and why it is not followed. */
+/**
+ * A remote's URL as it may be printed: whatever stands before its host — a
+ * user, a password, a token — is `***` (review B1). `git remote get-url`
+ * prints a URL as written, `https://x-access-token:<token>@github.com/…`
+ * included, and `enable` prints what it rejected. Only scp-style `git@` is
+ * kept as written: it is SSH's user name, never a secret.
+ */
+export function redactedUrl(url: string): string {
+  const scheme = /^([a-z][a-z0-9+.-]*:\/\/)[^/?#]*@/i;
+  if (scheme.test(url)) return url.replace(scheme, '$1***@');
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return url;
+  // scp-style `user@host:path`: the last `@` before the path's first `/`.
+  const slash = url.indexOf('/');
+  const at = slash < 0 ? url.lastIndexOf('@') : url.lastIndexOf('@', slash);
+  if (at === -1 || url.slice(0, at) === 'git') return url;
+  return `***${url.slice(at)}`;
+}
+
+/** A URL with a password or token in it: `scheme://user:secret@…`. */
+const CREDENTIALED = /^[a-z][a-z0-9+.-]*:\/\/[^/?#@]*:[^/?#]*@/i;
+
 function remoteReason(url: string, why: string): string {
+  if (CREDENTIALED.test(url)) {
+    return 'a remote with a password or token in its URL is not fetched from: the launcher never sends a credential written into a URL';
+  }
   const host = /^host (.+) is not github\.com$/.exec(why)?.[1];
   const ssh = /^(?:ssh:\/\/)?[^/@:]+@/.test(url) && !/^https:/i.test(url);
   return host !== undefined && ssh
@@ -574,7 +612,8 @@ function remoteReason(url: string, why: string): string {
  * The remote of `dir` whose URL is exactly the board's `owner/name`, or why
  * there is none — **each remote with its own reason** (LAI-1111), so a
  * checkout whose only remote is `git@github-personal:owner/name.git` says that
- * an SSH alias is not github.com, and what remote would do.
+ * an SSH alias is not github.com, and what remote would do. Every URL in the
+ * answer is {@link redactedUrl}'s.
  */
 export function checkRepo(
   dir: string,
@@ -601,11 +640,13 @@ export function checkRepo(
     const url = git(toplevel, ['remote', 'get-url', '--', name]).stdout.trim();
     const source = fetchSourceFor(url, boardRepo, env);
     if (typeof source !== 'string') return { repo: toplevel, remote: name };
-    reasons.push(`remote ${name} (${url}): ${remoteReason(url, source)}`);
+    reasons.push(`remote ${name} (${redactedUrl(url)}): ${remoteReason(url, source)}`);
   }
+  // A name the checkout does not use yet, so the suggestion runs as printed.
+  const free = ['laika', 'laika-github', 'github'].find((n) => !names.includes(n)) ?? 'laika-fetch';
   const fix = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(boardRepo)
     ? [
-        `To use this checkout, give it a remote the launcher can fetch from, for example: git -C ${shellQuote(toplevel)} remote add laika https://github.com/${boardRepo}.git`,
+        `To use this checkout, give it a remote the launcher can fetch from, for example: git -C ${shellQuote(toplevel)} remote add ${free} https://github.com/${boardRepo}.git`,
       ]
     : [];
   return [
@@ -694,8 +735,9 @@ const RECONNECT =
  * (LAI-1111). `tool add` never replaces an entry it did not write, so an older
  * entry — a token written into the file by `laika init` or `laika connect` —
  * must be removed first, with Claude Code closed so it does not write the file
- * back. Reads `.claude.json` where Claude Code does: under `CLAUDE_CONFIG_DIR`
- * when that is set.
+ * back. Reads `.claude.json` under `env`'s `CLAUDE_CONFIG_DIR` when it sets
+ * one; `enable` passes none, because a launched run reads `~/.claude.json`
+ * (see {@link claudeCheck}).
  */
 export function claudeMcpProblem(
   home: string,
@@ -730,10 +772,19 @@ export function claudeMcpProblem(
   };
 }
 
-/** Every reason Claude Code cannot be started unattended, and its argv when there is none. */
+/**
+ * Every reason Claude Code cannot be started unattended, and its argv when
+ * there is none — **checked as a launched run will see it** (review B2). The
+ * service starts the launcher with only HOME and PATH, and a run gets the
+ * `LAUNCH_ENV` allowlist, which has no `CLAUDE_CONFIG_DIR`; so a launched
+ * Claude Code reads `~/.claude.json` and `~/.claude/settings.json`, and these
+ * checks read the same two files, whatever this shell's `CLAUDE_CONFIG_DIR`
+ * says. A `CLAUDE_CONFIG_DIR` here is a note, so the owner is not surprised.
+ */
 export function claudeCheck(io: ServiceIo): {
   readonly argv: string[] | undefined;
   readonly problems: Problem[];
+  readonly notes: string[];
 } {
   const problems: Problem[] = [];
   let argv: string[] | undefined;
@@ -756,7 +807,7 @@ export function claudeCheck(io: ServiceIo): {
     if (where === undefined) argv = candidate;
     else problems.push(where);
   }
-  const mcp = claudeMcpProblem(io.home, io.env);
+  const mcp = claudeMcpProblem(io.home, {});
   if (mcp !== undefined) problems.push(mcp);
   const hooks = agentHooksProblems(io.home, 'claude-code');
   if (hooks.length > 0) {
@@ -765,7 +816,14 @@ export function claudeCheck(io: ServiceIo): {
       fix: 'run `laika agent hooks on --harness claude-code` with the laika of an up-to-date Laika checkout (git pull there first), so every hook runs a script that exists',
     });
   }
-  return { argv: problems.length === 0 ? argv : undefined, problems };
+  const dir = io.env.CLAUDE_CONFIG_DIR;
+  const notes =
+    dir === undefined || dir === ''
+      ? []
+      : [
+          `CLAUDE_CONFIG_DIR is set in this shell (${dir}), but the launcher starts Claude Code with only HOME and PATH, so a launched run reads ~/.claude.json and ~/.claude/settings.json, not ${dir}; these checks read those two. Run any fix below in a shell without it (unset CLAUDE_CONFIG_DIR first).`,
+        ];
+  return { argv: problems.length === 0 ? argv : undefined, problems, notes };
 }
 
 function printProblems(io: ServiceIo, name: string, problems: readonly Problem[]): void {
@@ -826,7 +884,13 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
   } catch (cause) {
     if (!(cause instanceof InputEnded)) throw cause;
     io.err(
-      `laika agent launcher enable: ${io.terminal ? 'input ended before every question was answered' : 'enable needs a terminal to answer in'}`,
+      `laika agent launcher enable: ${
+        io.interrupted()
+          ? 'interrupted'
+          : io.terminal
+            ? 'input ended before every question was answered'
+            : 'enable needs a terminal to answer in'
+      }`,
     );
     io.err('Nothing was written.');
     return 1;
@@ -894,6 +958,7 @@ async function enableSteps(io: ServiceIo, argv: readonly string[]): Promise<numb
   for (const { harness, credential } of usable) {
     if (harness === 'claude-code') {
       const checked = claudeCheck(io);
+      for (const note of checked.notes) io.out(`  claude-code: note: ${note}`);
       if (checked.argv === undefined) {
         printProblems(io, 'claude-code', checked.problems);
         continue;
@@ -912,6 +977,8 @@ async function enableSteps(io: ServiceIo, argv: readonly string[]): Promise<numb
         printProblems(io, 'codex', [where]);
         continue;
       }
+      // Too old a git refuses below whatever is answered: ask nothing first (review N3).
+      if (!gitOk) continue;
       const typed = await ask(
         'Codex can commit in a worktree only with full access (workspace-write keeps git read-only).\n' +
           'Type danger-full-access to let the launcher start Codex, or press Enter to leave it off: ',
@@ -931,6 +998,7 @@ async function enableSteps(io: ServiceIo, argv: readonly string[]): Promise<numb
         );
         continue;
       }
+      if (!gitOk) continue;
       wakeSessions = yes(
         await ask(
           'When Laika selects or offers work to this Omnigent agent and the launcher does not start it,\n' +

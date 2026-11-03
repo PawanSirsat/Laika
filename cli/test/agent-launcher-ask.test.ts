@@ -114,13 +114,35 @@ void describe('terminalAsker', () => {
     asker.close();
   });
 
-  void test('close before any question is harmless, and a closed asker answers undefined', async () => {
+  void test('a closed asker answers undefined and never listens again (review N1)', async () => {
     const input = terminal();
     const asker = terminalAsker(input, new PassThrough());
     asker.close();
-    assert.equal(input.listenerCount('data'), 0, 'nothing listened before a question');
-    const answer = asker.ask('Checkout: ');
+    input.write('/Users/me/Laika\n');
+    assert.equal(await asker.ask('Checkout: '), undefined);
+    assert.equal(input.listenerCount('data'), 0, 'closed before a question: no reader opened');
+    assert.equal(asker.interrupted(), false);
+  });
+
+  void test('a closed asker after a question answers undefined too', async () => {
+    const input = terminal();
+    const asker = terminalAsker(input, new PassThrough());
+    const first = asker.ask('Checkout: ');
+    input.write('/Users/me/Laika\n');
+    assert.equal(await first, '/Users/me/Laika');
     asker.close();
+    assert.equal(await asker.ask('Allow? '), undefined);
+  });
+
+  void test('Ctrl+C at a question is undefined, and says it was interrupted', async () => {
+    const input = terminal();
+    // A terminal on both sides, so readline reads keys and Ctrl+C is one.
+    const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 });
+    const asker = terminalAsker(input, output);
+    const answer = asker.ask('Checkout: ');
+    input.write('\x03');
     assert.equal(await answer, undefined);
+    assert.equal(asker.interrupted(), true);
+    assert.equal(await asker.ask('Allow? '), undefined);
   });
 });

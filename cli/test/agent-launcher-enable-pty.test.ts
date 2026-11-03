@@ -27,6 +27,7 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -38,7 +39,7 @@ import { after, afterEach, before, describe, test } from 'node:test';
 
 import { LOCAL_ROOT_ENV } from '../src/agent-handoff.ts';
 import { agentHookGroups } from '../src/agent-hooks.ts';
-import { configPath } from '../src/agent-launcher.ts';
+import { configPath, gitNewEnough, MIN_GIT, parseGitVersion } from '../src/agent-launcher.ts';
 import { writeCredential } from '../src/agent-session.ts';
 import { CLAUDE_HEADERS_HELPER } from '../src/mcp-headers.ts';
 
@@ -62,6 +63,34 @@ function onPath(name: string): string | undefined {
 
 type Driver = 'expect' | 'script';
 
+/**
+ * A folder holding a git `enable` accepts (review N2): the first on this PATH,
+ * then the usual places, that is 2.41 or later. A Mac whose Command Line Tools
+ * git is older would otherwise refuse before the first question.
+ */
+const gitDirs: { dir: string; version: string }[] = [];
+const gitDir: string | undefined = (() => {
+  const dirs = [
+    ...(process.env.PATH ?? '').split(':'),
+    '/usr/bin',
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+  ].filter((d) => d !== '');
+  for (const dir of new Set(dirs)) {
+    const git = join(dir, 'git');
+    if (!existsSync(git)) continue;
+    let text = '';
+    try {
+      text = execFileSync(git, ['version'], { encoding: 'utf8', stdio: 'pipe' });
+    } catch {
+      continue;
+    }
+    gitDirs.push({ dir, version: text.trim() });
+    if (gitNewEnough(parseGitVersion(text))) return dir;
+  }
+  return undefined;
+})();
+
 const linuxScript = process.platform === 'linux' && onPath('script') !== undefined;
 
 /** `LAIKA_PTY_DRIVER=script` runs the Linux fallback where `expect` is installed too. */
@@ -73,7 +102,9 @@ const driver: Driver | undefined = (() => {
 const skip =
   driver === undefined
     ? 'needs a pty driver: expect is not installed, and util-linux script is Linux only, so enable cannot be driven through a terminal here'
-    : false;
+    : gitDir === undefined
+      ? `needs git ${MIN_GIT.join('.')} or later, which enable requires before its first question; found ${gitDirs.map((g) => `${g.version} in ${g.dir}`).join(', ') || 'none'}`
+      : false;
 
 /** One step of the owner: wait for `prompt`, then type `send` (`\r` is Enter, `\x04` is ^D). */
 interface Step {
@@ -249,6 +280,11 @@ function laptop(): { home: string; repo: string; env: NodeJS.ProcessEnv } {
   mkdirSync(bin, { recursive: true });
   chmodSync(bin, 0o755);
   writeFileSync(join(bin, 'claude'), '#!/bin/sh\necho "2.1.280 (Claude Code)"\n', { mode: 0o755 });
+  // Only the git found above, ahead of /usr/bin: its folder may hold another node too.
+  const gitbin = join(home, 'gitbin');
+  mkdirSync(gitbin);
+  if (gitDir !== undefined && gitDir !== '/usr/bin')
+    symlinkSync(join(gitDir, 'git'), join(gitbin, 'git'));
   const bare = join(home, 'remotes', 'kvell', 'laika.git');
   mkdirSync(bare, { recursive: true });
   git(bare, 'init', '-q', '--bare', '-b', 'main');
@@ -256,7 +292,7 @@ function laptop(): { home: string; repo: string; env: NodeJS.ProcessEnv } {
   mkdirSync(join(home, 'src'), { recursive: true });
   execFileSync('git', ['clone', '-q', bare, repo], { stdio: 'ignore' });
   const env: NodeJS.ProcessEnv = {
-    PATH: [bin, '/usr/bin', '/bin', dirname(process.execPath)].join(':'),
+    PATH: [bin, gitbin, '/usr/bin', '/bin', dirname(process.execPath)].join(':'),
     HOME: home,
     LANG: 'C',
     TERM: 'dumb',
@@ -301,6 +337,15 @@ void describe('enable --dry-run on a real terminal', { skip }, () => {
     assert.equal(s.code, 0, s.out);
     assert.ok(s.out.includes(`"repo": "${l.repo}"`), s.out);
     assert.match(s.out, /"work_requests": false/);
+  });
+
+  void test('Ctrl+C at a question is "interrupted", and nothing is written', async () => {
+    const l = laptop();
+    const s = await drive(l.home, l.env, [{ prompt: CHECKOUT, send: '\x03' }]);
+    assert.equal(s.code, 1, s.out);
+    assert.match(s.out, /laika agent launcher enable: interrupted/);
+    assert.match(s.out, /Nothing was written/);
+    assert.equal(existsSync(configPath(l.home)), false);
   });
 
   void test('^D at a question is "input ended", not "needs a terminal"', async () => {

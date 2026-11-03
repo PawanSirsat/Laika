@@ -1564,8 +1564,8 @@ It reads what is already here and asks only what it cannot read:
    must be the same person's.
 2. **This device, before any project question** (LAI-1111): git 2.41 or later,
    and each harness program on `PATH`, checked as the daemon will check it.
-   Every problem is printed at once, each with its fix, so one run tells you
-   everything:
+   Too old a git refuses before anything is asked. Every problem is printed at
+   once, each with its fix, so one run tells you everything:
    - Claude Code needs 2.1.259 or later (`claude update`).
    - Its program, and the folder that holds it, may be written only by you or
      root: the launcher runs it unattended. Homebrew's `/opt/homebrew/bin` is
@@ -1573,9 +1573,13 @@ It reads what is already here and asks only what it cannot read:
      where only you can write (Claude Code's native installer uses
      `~/.local/bin`) and put that first on `PATH`, or `chmod go-w` the folder
      if nobody else can write it in practice.
-   - Its user-level `laika` MCP entry (in `.claude.json`, under
-     `CLAUDE_CONFIG_DIR` when that is set) must be the one `laika tool add`
-     writes. `tool add` never replaces an entry it did not write, such as a
+   - Its user-level `laika` MCP entry in `~/.claude.json` must be the one
+     `laika tool add` writes. **`~/.claude.json` even when your shell sets
+     `CLAUDE_CONFIG_DIR`**: the service starts the launcher with only `HOME`
+     and `PATH`, and a run gets no `CLAUDE_CONFIG_DIR`, so a launched Claude
+     Code reads `~/.claude.json` and `~/.claude/settings.json`. `enable` says
+     so when `CLAUDE_CONFIG_DIR` is set; run the fixes in a shell without it.
+     `tool add` never replaces an entry it did not write, such as a
      token an older `laika init` or `laika connect` wrote into the file: quit
      Claude Code, run `claude mcp remove laika --scope user`, then in the
      browser open Developer access → Tools → the tool → Reconnect (new
@@ -1598,7 +1602,9 @@ It reads what is already here and asks only what it cannot read:
    `handoff prepare` checks one). Each remote that is not says why: an SSH
    host alias such as `git@github-personal:owner/name.git` is not
    `github.com`, because the launcher fetches from github.com itself and never
-   through `~/.ssh/config`; add an `https://github.com/owner/name.git` remote.
+   through `~/.ssh/config`; a URL with a password or token in it is never
+   fetched from. Add an `https://github.com/owner/name.git` remote. Whatever
+   stands before a remote's host — a user, a token — is printed as `***`.
    A wrong path is asked again, three times at most. A project with no
    repository on the board is left out. **Work requests are off unless you
    type `yes` for that project.**
@@ -1612,7 +1618,8 @@ It reads what is already here and asks only what it cannot read:
 
 All the questions are asked on one terminal reader, so answers typed or pasted
 ahead are read in order. Input ending before every question is answered stops
-with `input ended`, and nothing is written.
+with `input ended`, Ctrl+C at a question with `interrupted`, and nothing is
+written.
 
 The defaults: one run at a time, 7200 s each, 10 a day, hand-off and recovery
 offers on, work requests only where you said yes, no ssh agent.

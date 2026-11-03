@@ -39,6 +39,7 @@ import {
   omnigentArgv,
   plistPath,
   programProblem,
+  redactedUrl,
   type RunResult,
   SERVICE_LABEL,
   serviceLines,
@@ -346,6 +347,7 @@ function device(
       return Promise.resolve(next === null ? undefined : (next ?? ''));
     },
     closeAsk: () => undefined,
+    interrupted: () => false,
     run: (file, args): RunResult => {
       runs.push([file, ...args]);
       if (file === program) {
@@ -555,13 +557,16 @@ void describe('LAI-1111: every device check before any project question', () => 
     assert.ok(!text.includes(TOKEN), 'the token is never printed');
   });
 
-  void test('git older than 2.41 is refused before any project question, --dry-run too', async () => {
-    const d = device(['$REPO', 'yes'], { git: '2.39.5' });
+  void test('git older than 2.41 is refused before anything is asked, --dry-run too (review N3)', async () => {
+    // Codex here too: its danger-full-access question used to come before the refusal.
+    const d = device(['danger-full-access', '$REPO', 'yes'], { git: '2.39.5', codex: true });
     assert.equal(await enable(d.io, ['--dry-run']), 1);
     const text = d.out.join('\n');
     assert.match(text, /git: 2\.39 is older than 2\.41, and the launcher needs 2\.41 or later/);
     assert.match(text, /the launcher needs a newer git/);
     assert.deepEqual(d.asked, []);
+    // The checks that need no answer still report: one run tells everything.
+    assert.match(text, /claude-code: ok/);
   });
 
   void test('a new enough git is said to be ok', async () => {
@@ -697,23 +702,131 @@ void describe('LAI-1111: the launcher-safe MCP entry', () => {
     assert.ok(!(p?.fix ?? '').includes('claude mcp remove'));
   });
 
-  void test('CLAUDE_CONFIG_DIR is where Claude Code keeps .claude.json, so it is read there', () => {
+  void test('the helper follows CLAUDE_CONFIG_DIR for the callers that pass it', () => {
     const d = device([]);
     const dir = join(d.home, 'claude-config');
     mkdirSync(dir);
-    // tool add's entry under CLAUDE_CONFIG_DIR, an old one at ~/.claude.json.
     writeFileSync(join(dir, '.claude.json'), readFileSync(join(d.home, '.claude.json')));
     writeFileSync(
       join(d.home, '.claude.json'),
       JSON.stringify({ mcpServers: { laika: { headers: { Authorization: 'Bearer x' } } } }),
     );
     assert.equal(claudeMcpProblem(d.home, { CLAUDE_CONFIG_DIR: dir }), undefined);
-    assert.notEqual(claudeMcpProblem(d.home, {}), undefined);
     assert.notEqual(readClaudeLaika(d.home, { CLAUDE_CONFIG_DIR: dir }), undefined);
     assert.match(
       claudeMcpProblem(d.home, {})?.what ?? '',
       new RegExp(`${d.home}/\\.claude\\.json`),
     );
+  });
+
+  void test('review B2: enable checks ~/.claude.json, as a launched run reads it, even with CLAUDE_CONFIG_DIR set', async () => {
+    const d = device(['$REPO', 'yes']);
+    const dir = join(d.home, 'claude-config');
+    mkdirSync(dir);
+    // tool add's entry under CLAUDE_CONFIG_DIR, a token at ~/.claude.json: the run would send the token.
+    writeFileSync(join(dir, '.claude.json'), readFileSync(join(d.home, '.claude.json')));
+    writeFileSync(
+      join(d.home, '.claude.json'),
+      JSON.stringify({ mcpServers: { laika: { headers: { Authorization: `Bearer ${TOKEN}` } } } }),
+    );
+    const io: ServiceIo = { ...d.io, env: { ...d.io.env, CLAUDE_CONFIG_DIR: dir } };
+    assert.equal(await enable(io, ['--dry-run']), 1);
+    const text = d.out.join('\n');
+    assert.ok(
+      text.includes(
+        `the user-level \`laika\` MCP entry in ${join(d.home, '.claude.json')} sends a token`,
+      ),
+      text,
+    );
+    assert.ok(
+      text.includes(
+        `claude-code: note: CLAUDE_CONFIG_DIR is set in this shell (${dir}), but the launcher starts Claude Code with only HOME and PATH, so a launched run reads ~/.claude.json and ~/.claude/settings.json`,
+      ),
+      text,
+    );
+    assert.match(text, /Run any fix below in a shell without it \(unset CLAUDE_CONFIG_DIR first\)/);
+    assert.ok(!text.includes(TOKEN));
+  });
+
+  void test('review B2: with ~/.claude.json right, CLAUDE_CONFIG_DIR is a note, not a refusal', async () => {
+    const d = device(['$REPO', 'yes']);
+    const dir = join(d.home, 'claude-config');
+    mkdirSync(dir);
+    writeFileSync(join(dir, '.claude.json'), '{}');
+    const io: ServiceIo = { ...d.io, env: { ...d.io.env, CLAUDE_CONFIG_DIR: dir } };
+    assert.equal(await enable(io, ['--dry-run']), 0, d.out.join('\n'));
+    assert.match(d.out.join('\n'), /claude-code: note: CLAUDE_CONFIG_DIR is set/);
+    assert.match(d.out.join('\n'), /claude-code: ok/);
+  });
+});
+
+void describe('review B1: a remote URL is never printed with what stands before its host', () => {
+  const USERPASS = 'SENTINEL_USERPASS_9f3a';
+  const TOKENONLY = 'SENTINEL_TOKENONLY_7c1e';
+  const SCP = 'SENTINEL_SCP_44d0';
+
+  void test('redactedUrl keeps the host and path, never the user, password or token', () => {
+    assert.equal(
+      redactedUrl(`https://x-access-token:${USERPASS}@github.com/kvell/laika.git`),
+      'https://***@github.com/kvell/laika.git',
+    );
+    assert.equal(
+      redactedUrl(`https://${TOKENONLY}@github.com/someone/fork.git`),
+      'https://***@github.com/someone/fork.git',
+    );
+    assert.equal(
+      redactedUrl(`ssh://git:${SCP}@example.com/kvell/laika.git`),
+      'ssh://***@example.com/kvell/laika.git',
+    );
+    assert.equal(
+      redactedUrl(`x:${SCP}@github.com:kvell/laika.git`),
+      '***@github.com:kvell/laika.git',
+    );
+    assert.equal(
+      redactedUrl('git@github-personal:kvell/laika.git'),
+      'git@github-personal:kvell/laika.git',
+    );
+    assert.equal(
+      redactedUrl('https://github.com/kvell/laika.git'),
+      'https://github.com/kvell/laika.git',
+    );
+    assert.equal(redactedUrl('/srv/git/kvell/laika.git'), '/srv/git/kvell/laika.git');
+  });
+
+  void test('no token in a remote reaches enable’s output, and a credentialed remote says why', async () => {
+    const d = device(['$REPO', '']);
+    git(
+      d.repo,
+      'remote',
+      'set-url',
+      'origin',
+      `https://x-access-token:${USERPASS}@github.com/kvell/laika.git`,
+    );
+    git(d.repo, 'remote', 'add', 'fork', `https://${TOKENONLY}@github.com/someone/fork.git`);
+    git(d.repo, 'remote', 'add', 'scp', `x:${SCP}@github.com:kvell/laika.git`);
+    assert.equal(await enable(d.io, ['--dry-run']), 1);
+    const text = d.out.join('\n');
+    for (const secret of [USERPASS, TOKENONLY, SCP]) {
+      assert.ok(!text.includes(secret), `${secret} was printed:\n${text}`);
+    }
+    assert.match(
+      text,
+      /remote origin \(https:\/\/\*\*\*@github\.com\/kvell\/laika\.git\): a remote with a password or token in its URL is not fetched from/,
+    );
+    assert.match(
+      text,
+      /remote fork \(https:\/\/\*\*\*@github\.com\/someone\/fork\.git\): the path is not kvell\/laika/,
+    );
+    assert.match(text, /remote scp \(\*\*\*@github\.com:kvell\/laika\.git\): /);
+  });
+
+  void test('the remote it suggests adding is one the checkout does not have yet', () => {
+    const d = device([]);
+    git(d.repo, 'remote', 'set-url', 'origin', 'https://github.com/someone/else.git');
+    git(d.repo, 'remote', 'add', 'laika', 'https://github.com/someone/other.git');
+    const why = checkRepo(d.repo, 'kvell/laika', d.io.env);
+    assert.ok(typeof why === 'string');
+    assert.match(why, /remote add laika-github https:\/\/github\.com\/kvell\/laika\.git$/);
   });
 });
 
