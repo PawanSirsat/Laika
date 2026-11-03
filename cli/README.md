@@ -1137,10 +1137,14 @@ laika agent handoff decline <offer> --reason "busy"
 
 **`prepare`'s exit codes** (LAI-1107): `0` prepared; `1` refused; `75`
 (`EX_TEMPFAIL`) when it **could not read the board** (the network, a 5xx, a 408
-or a 429) **or reach the repository** (a fetch or `ls-remote` that failed for
-any reason but the remote saying it has no such ref). Nothing was checked out
-and trying again can pass; a failed fetch leaves the record `needs_attention`
-with its reason, which a retry is allowed over.
+or a 429) **or reach the repository** (a fetch or `ls-remote` that failed on
+the network, a 5xx or a timeout). Nothing was checked out and trying again can
+pass; a failed fetch leaves the record `needs_attention` with its reason, which
+a retry is allowed over. **A host that answered and will not serve the
+repository is `1`, not `75`** (LAI-1108): the remote has no such ref,
+`Authentication failed`, no credentials to send, `Repository not found`,
+`Permission denied` / `Permission to … denied`, or an HTTP 401, 403 or 404 —
+waiting does not change any of those.
 
 - **`prepare`** reads the offer and the checkpoint's newest ref, finds the
   remote of this repository whose URL is **exactly** the project's configured
@@ -1674,13 +1678,25 @@ event twice. Work requests never expire, which is why this matters.
 or a work request's worktree whose remote could not be read or fetched from, is
 audited `deferred` (`prepare_unreachable`, `workspace_unreachable`, with
 `retry_ms`) and nothing about that offer is asked again for 30 s, doubling to at
-most 15 minutes; it is never marked handled. **A hand-off you prepared yourself
+most 15 minutes; it is never marked handled. A permanent failure — the
+credentials refused, the repository not found — is a refusal instead
+(`prepare_refused`, `workspace_refused`), never retried (LAI-1108). The backoff
+is dropped the moment the offer is decided — started, refused, or found closed
+— and one whose offer is not tried again within 30 minutes of its time is
+forgotten. **A hand-off you prepared yourself
 stays yours**: the launcher writes `runs/<offer>/launcher-prepare.json` before
 it runs `prepare`, and reuses a prepared worktree only beside that marker — an
-offer prepared by hand is refused `prepared_by_hand` and never started in. **A
-reused worktree is checked first**: the recorded branch, `HEAD` at the recorded
-commit or after it on that branch, nothing changed or untracked — otherwise
-refused `reuse_refused`, the reason in `reuse-refused.txt` beside the run. A
+offer prepared by hand is refused `prepared_by_hand` and never started in.
+**Upgrading from a launcher before PR #256** (LAI-1107): a prepared record
+that launcher left has no marker, so it counts as hand-prepared, once — refused
+`prepared_by_hand` and never started in. That fails closed, and touches only an
+offer that was in flight across the upgrade. **A
+reused worktree is checked first**: still at its recorded real path (a symlink
+put there is refused) and a worktree of the project's configured repository
+(`git rev-parse --git-common-dir`, so another clone moved there is refused), on
+the recorded branch, `HEAD` at the recorded commit or after it on that branch,
+nothing changed or untracked — otherwise refused `reuse_refused`, the reason in
+`reuse-refused.txt` beside the run. A
 session opened for an attempt that throws, or whose harness cannot be spawned,
 is ended at once rather than left to lapse.
 

@@ -654,7 +654,8 @@ const OLDER_CODEX_BLOCK = new RegExp(
 export const CODEX_RC_LINE = tokenExportLine('codex', CODEX_TOKEN_VAR);
 
 function codexMcp(io: ToolAddIo, url: string): void {
-  const path = join(io.home, '.codex', 'config.toml');
+  // Under `CODEX_HOME` when it is set, as Codex and the hooks read it (LAI-1108).
+  const path = codexConfigFile(io.home, io.env ?? process.env);
   const raw = existsSync(path) ? readFileSync(path, 'utf8') : undefined;
   const older = raw === undefined ? null : OLDER_CODEX_BLOCK.exec(raw);
   const prepared =
@@ -740,7 +741,9 @@ function printEntry(io: ToolAddIo, entry: Record<string, string>): void {
  */
 function claudeMcp(io: ToolAddIo, url: string): ClaudeMcp {
   const entry = claudeToolEntry(url);
-  const where = claudeJsonPath(io.home);
+  // Under `CLAUDE_CONFIG_DIR` when it is set, as Claude Code and the hooks read it (LAI-1108).
+  const env = io.env ?? process.env;
+  const where = claudeJsonPath(io.home, env);
   if ('refused' in where) {
     io.out(`  ! mcp: ${where.refused}.`);
     io.out('      MCP set up by hand: add this under "mcpServers" in the file it should point to:');
@@ -748,11 +751,14 @@ function claudeMcp(io: ToolAddIo, url: string): ClaudeMcp {
     return 'none';
   }
   const path = where.path;
-  const via = path === join(io.home, '.claude.json') ? '' : ` (through the symlink ~/.claude.json)`;
+  const dir = env.CLAUDE_CONFIG_DIR;
+  const link = join(dir !== undefined && dir !== '' ? dir : io.home, '.claude.json');
+  const shown = link === join(io.home, '.claude.json') ? '~/.claude.json' : link;
+  const via = path === link ? '' : ` (through the symlink ${shown})`;
   const prepared = prepare({ kind: 'json', path, container: 'mcpServers', entry, secret: true });
   if (!prepared.ok) {
     io.out(`  ! mcp: ${prepared.message.split('\n').join(' ')}`);
-    io.out('      MCP set up by hand: add this under "mcpServers" in ~/.claude.json:');
+    io.out(`      MCP set up by hand: add this under "mcpServers" in ${shown}:`);
     printEntry(io, entry);
     return 'none';
   }
@@ -775,7 +781,7 @@ function claudeMcp(io: ToolAddIo, url: string): ClaudeMcp {
   if (!holdsEntry(path, entry)) {
     io.out(`  ! mcp: ${path}${via} does not hold the laika entry after writing it — something`);
     io.out('      rewrote the file, most likely a running Claude Code. Quit Claude Code, then');
-    io.out('      add this under "mcpServers" in ~/.claude.json, or run a new setup command:');
+    io.out(`      add this under "mcpServers" in ${shown}, or run a new setup command:`);
     printEntry(io, entry);
     return 'none';
   }

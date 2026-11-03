@@ -27,7 +27,8 @@ export function isToolEntry(entry: unknown): boolean {
 /**
  * The `.claude.json` Claude Code reads: under `CLAUDE_CONFIG_DIR` when that is
  * set, as `claudeConfigFile` in `mcp-headers.ts` reads it, `~/.claude.json`
- * otherwise (LAI-1111). Not resolved through a symlink.
+ * otherwise (LAI-1108 for `tool add`, LAI-1111 for the launcher's check). Not
+ * resolved through a symlink.
  */
 export function claudeJsonLink(
   home: string,
@@ -38,10 +39,10 @@ export function claudeJsonLink(
 }
 
 /**
- * Where `.claude.json` really is ({@link claudeJsonLink}). A symlink is
- * written **through**, to its target — `apply`'s temp-file-and-rename would
- * otherwise replace the link with a file (LAI-1074). A link that leads
- * nowhere is refused. Without `env`, `~/.claude.json`, as before.
+ * Where Claude Code's `.claude.json` really is ({@link claudeJsonLink}). A
+ * symlink is written **through**, to its target — `apply`'s
+ * temp-file-and-rename would otherwise replace the link with a file
+ * (LAI-1074). A link that leads nowhere is refused.
  */
 export function claudeJsonPath(
   home: string,

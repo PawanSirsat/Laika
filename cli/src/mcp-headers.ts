@@ -128,14 +128,51 @@ function shapeOf(text: string): RegExp {
   return new RegExp(`^\\s*${escaped}\\s*$`);
 }
 
+/**
+ * Every switching helper `tool add` has written, per harness, **as literal
+ * text** (LAI-1108, from PR #252's review) — what {@link OLDER_CLAUDE_HELPERS}
+ * is for the helpers before them. A device keeps the helper it was given
+ * until `tool add` runs there again, so when {@link headersHelper} changes,
+ * its new text is **added** here and no text is ever removed: a device whose
+ * helper stopped matching would have its hooks go back to the harness's own
+ * agent while its MCP still switches to the Omnigent agent, and every claim
+ * it made would be refused. A test pins this list and requires the current
+ * helper to be in it.
+ *
+ * LAI-1101's, the first, are the only ones so far.
+ */
+export const SWITCHING_HELPERS: Readonly<Record<'claude-code' | 'codex', readonly string[]>> = {
+  'claude-code': [
+    'p="$HOME/.laika/agents/claude-code.json"; o="$HOME/.laika/agents/omnigent.json"; ' +
+      'if [ "${OMNIGENT:-}" = 1 ] && [ -r "$o" ]; then p="$o"; fi; ' +
+      `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$p")" && ` +
+      `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`,
+  ],
+  codex: [
+    'p="$HOME/.laika/agents/codex.json"; o="$HOME/.laika/agents/omnigent.json"; ' +
+      'if [ -r "$o" ]; then ' +
+      `if e="$(tr '\\0' '\\n' 2>/dev/null < "/proc/$PPID/environ")"; then :; ` +
+      'else a="$(ps -ww -o command= -p "$PPID" 2>/dev/null)" && ' +
+      'f="$(ps -E -ww -o command= -p "$PPID" 2>/dev/null)" && ' +
+      `case "$f" in "$a "*) e="$(printf '%s' "\${f#"$a "}" | tr ' ' '\\n')" ;; *) exit 1 ;; esac; fi; ` +
+      '[ -n "$e" ] || exit 1; ' +
+      `if printf '%s\\n' "$e" | grep -qx 'OMNIGENT=1'; then p="$o"; fi; fi; ` +
+      `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$p")" && ` +
+      `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`,
+  ],
+};
+
 const SHAPES = {
-  'claude-code': shapeOf(CLAUDE_HEADERS_HELPER),
-  codex: shapeOf(CODEX_HEADERS_HELPER),
+  'claude-code': SWITCHING_HELPERS['claude-code'].map(shapeOf),
+  codex: SWITCHING_HELPERS.codex.map(shapeOf),
 } as const;
 
-/** Whether `text` is the switching helper for `harness`, by its shape (N4). */
+/**
+ * Whether `text` is a switching helper for `harness` — any revision in
+ * {@link SWITCHING_HELPERS} — by its shape (N4).
+ */
 export function isSwitchingHelper(text: unknown, harness: 'claude-code' | 'codex'): boolean {
-  return typeof text === 'string' && SHAPES[harness].test(text);
+  return typeof text === 'string' && SHAPES[harness].some((shape) => shape.test(text));
 }
 
 /**

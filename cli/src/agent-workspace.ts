@@ -10,9 +10,9 @@ import {
   firstLine,
   FULL_SHA,
   type GitRunner,
+  gitRefused,
   inert,
   isSymref,
-  MISSING_REF,
   plainRef,
   refSnapshot,
   refTaken,
@@ -118,6 +118,8 @@ class Unreachable extends Refused {}
  * Why the worktree was not made **this time**: the remote could not be read
  * or fetched from (the network, the host, a timeout). Nothing was made, so the
  * launcher tries it again, backing off, rather than take it as a refusal (LAI-1107).
+ * A host that answered and will not serve the repository to these credentials
+ * is a refusal, not this ({@link gitRefused}, LAI-1108).
  */
 export interface WorkspaceUnreachable {
   readonly unreachable: string;
@@ -209,7 +211,8 @@ export function prepareWorkspace(args: WorkspaceArgs): Workspace | string | Work
   // 1. Which branch is the default, and the commit at its head.
   const listed = git(toplevel, [...remoteArgs, 'ls-remote', '--symref', '--', source.url, 'HEAD']);
   if (listed.code !== 0) {
-    return { unreachable: `the remote could not be read: ${firstLine(listed.stderr)}` };
+    const message = `the remote could not be read: ${firstLine(listed.stderr)}`;
+    return gitRefused(listed.stderr) ? message : { unreachable: message };
   }
   const head = parseSymrefHead(listed.stdout);
   if (typeof head === 'string') return head;
@@ -259,7 +262,7 @@ export function prepareWorkspace(args: WorkspaceArgs): Workspace | string | Work
     ]);
     if (fetched.code !== 0) {
       const message = `${defaultBranch} could not be fetched: ${firstLine(fetched.stderr)}`;
-      throw MISSING_REF.test(fetched.stderr) ? new Refused(message) : new Unreachable(message);
+      throw gitRefused(fetched.stderr) ? new Refused(message) : new Unreachable(message);
     }
     if (refSnapshot(git, toplevel, [localRef, branchRef]) !== before) {
       throw new Refused('the fetch changed refs; nothing was checked out');
@@ -319,18 +322,37 @@ export function prepareWorkspace(args: WorkspaceArgs): Workspace | string | Work
   };
 }
 
+/** The real path of the repository `dir` belongs to (`--git-common-dir`), or `undefined`. */
+function commonDir(git: GitRunner, dir: string): string | undefined {
+  const got = git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  if (got.code !== 0 || got.stdout.trim() === '') return undefined;
+  try {
+    return realpathSync(got.stdout.trim());
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Why a worktree an earlier attempt made may not be started in now, or
  * `undefined` when it may (LAI-1107). It must still be that worktree, on
  * `branch`, with `HEAD` at `sha` or a commit after it on that branch, and
  * nothing changed or untracked in it. Every git call runs under the runner's
  * hardening; nothing is written.
+ *
+ * **And it must still be the worktree that was made there** (LAI-1108, from
+ * PR #256's review): the recorded path is real when it is made — it is built
+ * from git's own `--show-toplevel` — so a path that now resolves anywhere
+ * else is a symlink put in its place, refused; and the worktree's repository
+ * (`--git-common-dir`) must be `repoDir`'s, the project's configured
+ * checkout, so another clone moved to the recorded path is refused too.
  */
 export function reusedWorktreeProblem(
   git: GitRunner,
   worktree: string,
   branch: string,
   sha: string,
+  repoDir: string,
 ): string | undefined {
   if (!FULL_SHA.test(sha)) return 'the recorded commit is not a full SHA';
   let real: string;
@@ -339,8 +361,13 @@ export function reusedWorktreeProblem(
   } catch {
     return 'the worktree is gone';
   }
+  if (real !== worktree) return 'its recorded path now leads somewhere else (a symlink)';
   const top = git(worktree, ['rev-parse', '--show-toplevel']);
   if (top.code !== 0 || top.stdout.trim() !== real) return 'it is no longer its own worktree';
+  const repository = commonDir(git, repoDir);
+  if (repository === undefined || commonDir(git, worktree) !== repository) {
+    return 'it is not a worktree of the configured repository';
+  }
   const head = git(worktree, ['symbolic-ref', '-q', 'HEAD']).stdout.trim();
   if (head !== `refs/heads/${branch}`) {
     return `it is on ${inert(head, 200) || 'no branch'}, not ${inert(branch, 200)}`;

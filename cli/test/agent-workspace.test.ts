@@ -20,13 +20,20 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 
-import { type GitRunner, gitRunner, LOCAL_ROOT_ENV } from '../src/agent-handoff.ts';
+import {
+  type GitRunner,
+  gitRefused,
+  gitRunner,
+  LOCAL_ROOT_ENV,
+  PERMANENT_GIT_FAILURE,
+} from '../src/agent-handoff.ts';
 import {
   autoBranch,
   branchAllowed,
@@ -313,7 +320,7 @@ void describe('LAI-1107: reusedWorktreeProblem (real git)', () => {
   }
   const problem = (ws: Workspace, over: Partial<Workspace> = {}): string | undefined => {
     const w = { ...ws, ...over };
-    return reusedWorktreeProblem(gitRunner(env()), w.worktree, w.branch, w.base_sha);
+    return reusedWorktreeProblem(gitRunner(env()), w.worktree, w.branch, w.base_sha, w.repo_dir);
   };
 
   void test('as it was left, or with a commit made on its branch: may start', () => {
@@ -362,5 +369,121 @@ void describe('LAI-1107: reusedWorktreeProblem (real git)', () => {
     const plain = join(mkdtempSync(join(root, 'plain-')), 'x');
     mkdirSync(plain);
     assert.match(problem(ws, { worktree: plain }) ?? '', /no longer its own worktree/);
+  });
+});
+
+void describe('LAI-1108: a reused worktree is the one made there, of the configured repository', () => {
+  function fresh(taskKey: string): Workspace {
+    const ws = prepareWorkspace({
+      git: gitRunner(env()),
+      env: env(),
+      repoDir: clone(),
+      boardRepo: REPO,
+      offerId: OFFER,
+      taskKey,
+    });
+    assert.ok(made(ws), text(ws));
+    return ws;
+  }
+  const problem = (ws: Workspace): string | undefined =>
+    reusedWorktreeProblem(gitRunner(env()), ws.worktree, ws.branch, ws.base_sha, ws.repo_dir);
+
+  void test('a symlink at the recorded path, even to that same worktree moved: refused', () => {
+    const ws = fresh('LAI-25');
+    const moved = `${ws.worktree}.moved`;
+    renameSync(ws.worktree, moved);
+    symlinkSync(moved, ws.worktree);
+    // Everything else holds — its branch, its commit, clean, this repository's.
+    assert.equal(git(moved, 'symbolic-ref', 'HEAD'), `refs/heads/${ws.branch}`);
+    assert.match(problem(ws) ?? '', /recorded path now leads somewhere else \(a symlink\)/);
+  });
+
+  void test('another clone at the recorded path, on the same branch and commit: refused', () => {
+    const ws = fresh('LAI-26');
+    renameSync(ws.worktree, `${ws.worktree}.away`);
+    git(root, 'clone', '-q', bare, ws.worktree);
+    git(ws.worktree, 'checkout', '-q', '-b', ws.branch, ws.base_sha);
+    // A real directory, its own toplevel, the branch at the commit, clean.
+    assert.equal(git(ws.worktree, 'rev-parse', '--show-toplevel'), ws.worktree);
+    assert.equal(git(ws.worktree, 'status', '--porcelain', '--untracked-files=all'), '');
+    assert.match(problem(ws) ?? '', /not a worktree of the configured repository/);
+    // Asked of the configured checkout, not of whatever the record names.
+    assert.equal(
+      reusedWorktreeProblem(gitRunner(env()), ws.worktree, ws.branch, ws.base_sha, ws.worktree),
+      undefined,
+      'the same clone as its own repository passes: the check is the repository, nothing else',
+    );
+  });
+
+  void test('a configured checkout that is not a repository: refused, never passed', () => {
+    const ws = fresh('LAI-27');
+    const plain = mkdtempSync(join(root, 'not-a-repo-'));
+    assert.match(
+      reusedWorktreeProblem(gitRunner(env()), ws.worktree, ws.branch, ws.base_sha, plain) ?? '',
+      /not a worktree of the configured repository/,
+    );
+  });
+});
+
+void describe('LAI-1108: a remote that refuses the repository is a refusal, not unreachable', () => {
+  /** The real runner, with `ls-remote` or `fetch` answering as `stderr` says. */
+  const failing =
+    (command: 'ls-remote' | 'fetch', stderr: string): GitRunner =>
+    (cwd, args) =>
+      args.includes(command) ? { code: 128, stdout: '', stderr } : gitRunner(env())(cwd, args);
+  const attempt = (git: GitRunner, taskKey: string): ReturnType<typeof prepareWorkspace> =>
+    prepareWorkspace({
+      git,
+      env: env(),
+      repoDir: clone(),
+      boardRepo: REPO,
+      offerId: OFFER,
+      taskKey,
+    });
+
+  const PERMANENT = [
+    "fatal: Authentication failed for 'https://github.com/kvell/laika.git/'\n",
+    "fatal: could not read Username for 'https://github.com': terminal prompts disabled\n",
+    "remote: Repository not found.\nfatal: repository 'https://github.com/kvell/laika.git/' not found\n",
+    'ERROR: Repository not found.\nfatal: Could not read from remote repository.\n',
+    'git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.\n',
+    "remote: Permission to kvell/laika.git denied to someone.\nfatal: unable to access 'x': The requested URL returned error: 403\n",
+    "fatal: unable to access 'https://example.test/x.git/': The requested URL returned error: 401\n",
+  ];
+  const TRANSIENT = [
+    "fatal: unable to access 'x': Could not resolve host: github.com\n",
+    'ssh: Could not resolve hostname github.com: nodename nor servname provided\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n',
+    "fatal: unable to access 'x': The requested URL returned error: 503\n",
+    "fatal: unable to access 'x': Operation timed out after 300000 milliseconds\n",
+    'fatal: the remote end hung up unexpectedly\n',
+    "fatal: '/mnt/repos/laika.git' does not appear to be a git repository\n",
+  ];
+
+  void test('which failures are answers: the permanent ones, never the network', () => {
+    for (const stderr of PERMANENT) assert.equal(gitRefused(stderr), true, stderr);
+    for (const stderr of TRANSIENT) {
+      assert.equal(gitRefused(stderr), false, stderr);
+      assert.equal(PERMANENT_GIT_FAILURE.test(stderr), false, stderr);
+    }
+  });
+
+  void test('ls-remote refused (credentials, not found, permission): a refusal, nothing made', () => {
+    for (const [n, stderr] of PERMANENT.entries()) {
+      const ws = attempt(failing('ls-remote', stderr), `LAI-3${String(n)}`);
+      assert.equal(typeof ws, 'string', `${stderr}: ${text(ws)}`);
+      assert.match(text(ws), /the remote could not be read: /);
+    }
+  });
+
+  void test('the fetch refused: a refusal; the network: still unreachable', () => {
+    const refused = attempt(failing('fetch', PERMANENT[2]!), 'LAI-40');
+    assert.equal(typeof refused, 'string', text(refused));
+    assert.match(text(refused), /main could not be fetched: remote: Repository not found/);
+    for (const [n, stderr] of TRANSIENT.entries()) {
+      const ws = attempt(failing('fetch', stderr), `LAI-4${String(n + 1)}`);
+      assert.ok(workspaceUnreachable(ws), `${stderr}: ${text(ws)}`);
+    }
+    const listed = attempt(failing('ls-remote', TRANSIENT[1]!), 'LAI-48');
+    assert.ok(workspaceUnreachable(listed), text(listed));
   });
 });
