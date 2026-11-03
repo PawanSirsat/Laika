@@ -24,6 +24,7 @@ import {
   DUPLICATE,
   TOOL_STATUS,
   duplicateDescription,
+  rowShowsUpdate,
   toolChipDescription,
 } from './status-vocabulary.ts';
 import { catalogTool } from './tool-catalog.ts';
@@ -62,10 +63,10 @@ export interface ToolsTabProps {
  *
  * A row says the tool and its device, how many projects it reaches and when
  * it was last seen, its status — *Ready* only from its own verification
- * (`listedStatus`) — and, when there is something to update to, a small
- * update chip. Its action is the next step: *Set up project →*, or *Finish
- * setup →* while it needs setup. Everything else is in its details panel,
- * which hosts what every tool row on Devices used to expand to.
+ * (`listedStatus`) — and a helper chip only when there is something to do
+ * (`rowShowsUpdate`). Its action is the next step: *Set up project →*, or
+ * *Finish setup →* while it needs setup. **The row itself opens its details
+ * panel** (LAI-1097), which hosts everything else.
  */
 export function ToolsTab({
   devices,
@@ -237,7 +238,7 @@ function ToolRecord({
   };
   return (
     <li
-      className="dx-record dv3-tool"
+      className="dx-record dv3-tool dv3-row"
       id={toolRowId(agent.id)}
       data-agent={agent.id}
       data-status={status.key}
@@ -247,7 +248,13 @@ function ToolRecord({
         <AgentMark client={agentHarness(agent)} size="sm" />
       </span>
       <div className="dx-record-main">
-        <strong className="dx-record-title">{label}</strong>
+        <RowOpen
+          details={`tools:${agent.id}`}
+          label={label}
+          onOpen={() => {
+            onDetails(agent.id);
+          }}
+        />
         <span className="dx-record-sub" data-line>
           {toolLine(agent, now)}
           {active && helper !== undefined && ` · ${helper}`}
@@ -269,7 +276,7 @@ function ToolRecord({
             })}
           />
         </span>
-        {active && <UpdateChip status={update} label={label} />}
+        {active && rowShowsUpdate(update?.key) && <UpdateChip status={update} label={label} />}
         {inConflict && (
           <span data-duplicate="">
             <HintChip
@@ -313,18 +320,47 @@ function ToolRecord({
             Finish setup →
           </button>
         )}
-        <button
-          type="button"
-          className="dx-btn dx-btn-sm dx-btn-ghost"
-          data-details={`tools:${agent.id}`}
-          aria-label={`Details for ${label}`}
-          onClick={() => {
-            onDetails(agent.id);
-          }}
-        >
-          Details
-        </button>
       </div>
+      <RowChevron />
     </li>
+  );
+}
+
+/**
+ * A Tools or Devices row's name, as the button that opens its details
+ * (LAI-1097: the owner's rows have one chip and one action, and no *Details*
+ * button). `devices-tab.css` stretches it over the whole row, under the
+ * chips and the row's action, which keep their own clicks. `data-details`
+ * is where focus comes back to when the panel closes (`DeviceRoster`).
+ */
+export function RowOpen({
+  details,
+  label,
+  onOpen,
+}: {
+  readonly details: string;
+  readonly label: string;
+  readonly onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="dv3-row-open"
+      data-details={details}
+      aria-label={`Details for ${label}`}
+      aria-haspopup="dialog"
+      onClick={onOpen}
+    >
+      <strong className="dx-record-title">{label}</strong>
+    </button>
+  );
+}
+
+/** The row's end: it opens, so it says so. Decoration only — the name is the button. */
+export function RowChevron() {
+  return (
+    <span className="dv3-row-chevron" aria-hidden="true">
+      ›
+    </span>
   );
 }

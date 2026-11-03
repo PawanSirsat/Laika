@@ -130,11 +130,14 @@ void describe('status words come from evidence only', () => {
     const r = readiness(verification({ installed: false }), tool('claude-code'));
     assert.equal(r.key, 'needs-setup');
     assert.equal(r.word, 'Needs setup');
+    // The warn tone, the owner's design's orange (LAI-1097): never Connected's.
+    assert.equal(r.tone, 'warn');
   });
 
   void test('a credential nothing used is Needs setup, not Connected', () => {
     const r = readiness(verification(), tool('claude-code'));
     assert.equal(r.key, 'needs-setup');
+    assert.equal(r.tone, 'warn');
     assert.match(r.reason, /nothing has used it/);
   });
 

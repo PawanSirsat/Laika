@@ -119,7 +119,7 @@ export function readiness(v: AgentVerification, tool: ToolCapability): Readiness
       ...base,
       key: 'needs-setup',
       word: 'Needs setup',
-      tone: 'waiting',
+      tone: 'warn',
       reason: 'No credential on this device yet',
     };
   }
@@ -130,7 +130,7 @@ export function readiness(v: AgentVerification, tool: ToolCapability): Readiness
         ...base,
         key: 'needs-setup',
         word: 'Needs setup',
-        tone: 'waiting',
+        tone: 'warn',
         reason: 'Credential installed; nothing has used it yet',
       };
     }
