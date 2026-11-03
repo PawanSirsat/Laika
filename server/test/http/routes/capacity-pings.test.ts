@@ -506,7 +506,10 @@ describe('GET /capacity-pings/:id and GET /agents/:id/capacity', () => {
     const ping = await pinged(bearer(pinger.secret), bobs.id);
     await ok(await reply(bobs.secret, ping.id), 200);
 
-    const byAda = await ok(await send('GET', `/api/v1/capacity-pings/${ping.id}`, { Cookie: cookie }), 200);
+    const byAda = await ok(
+      await send('GET', `/api/v1/capacity-pings/${ping.id}`, { Cookie: cookie }),
+      200,
+    );
     expect(byAda.ping).toMatchObject({ requested_by: { agent_id: pinger.id }, answer: ANSWER });
     const byBob = await ok(
       await send('GET', `/api/v1/capacity-pings/${ping.id}`, { Cookie: b.cookie }),
@@ -552,10 +555,7 @@ describe('GET /capacity-pings/:id and GET /agents/:id/capacity', () => {
 describe('a ping reaches the pinged agent’s device, and nobody else’s', () => {
   it('in the durable inbox, as a versioned envelope with what the device needs', async () => {
     const ping = await pinged({ Cookie: cookie }, mine.id, { task_id: taskId });
-    const page = await ok(
-      await send('GET', '/api/v1/agents/me/events', bearer(mine.secret)),
-      200,
-    );
+    const page = await ok(await send('GET', '/api/v1/agents/me/events', bearer(mine.secret)), 200);
     const events = page.data as Record<string, unknown>[];
     expect(events.map((e) => e.type)).toEqual(['agent.capacity_requested']);
     expect(events[0]).toMatchObject({
@@ -586,15 +586,17 @@ describe('a ping reaches the pinged agent’s device, and nobody else’s', () =
 
   it('a work request’s event carries the request, the agent, the task key and the slug', async () => {
     await ok(
-      await send('PATCH', `/api/v1/tasks/${taskId}`, { Cookie: cookie }, {
-        selected_agent_id: mine.id,
-      }),
+      await send(
+        'PATCH',
+        `/api/v1/tasks/${taskId}`,
+        { Cookie: cookie },
+        {
+          selected_agent_id: mine.id,
+        },
+      ),
       200,
     );
-    const page = await ok(
-      await send('GET', '/api/v1/agents/me/events', bearer(mine.secret)),
-      200,
-    );
+    const page = await ok(await send('GET', '/api/v1/agents/me/events', bearer(mine.secret)), 200);
     const event = (page.data as Record<string, unknown>[]).find(
       (e) => e.type === 'task.agent_selected',
     )!;
@@ -623,14 +625,17 @@ describe('PUT /agents/me/launcher', () => {
     const view = await ok(await send('GET', `/api/v1/agents/${mine.id}`, { Cookie: cookie }), 200);
     expect((view.launcher as { state: string }).state).toBe('on');
     const devices = await ok(await send('GET', '/api/v1/devices', { Cookie: cookie }), 200);
-    const device = (devices.data as { agents: { id: string }[]; launcher: { state: string } }[]).find(
-      (d) => d.agents.some((a) => a.id === mine.id),
-    )!;
+    const device = (
+      devices.data as { agents: { id: string }[]; launcher: { state: string } }[]
+    ).find((d) => d.agents.some((a) => a.id === mine.id))!;
     expect(device.launcher.state).toBe('on');
   });
 
   it('never reported is off; an old report is unknown; disabled is off', async () => {
-    const before = await ok(await send('GET', `/api/v1/agents/${mine.id}`, { Cookie: cookie }), 200);
+    const before = await ok(
+      await send('GET', `/api/v1/agents/${mine.id}`, { Cookie: cookie }),
+      200,
+    );
     expect(before.launcher).toEqual({
       state: 'off',
       reported_at: null,
@@ -655,8 +660,12 @@ describe('PUT /agents/me/launcher', () => {
 
   it('a session is 403 not_an_agent; an extra key is 422', async () => {
     expect(
-      (await errorOf(await send('PUT', '/api/v1/agents/me/launcher', { Cookie: cookie }, LAUNCHER), 403))
-        .details,
+      (
+        await errorOf(
+          await send('PUT', '/api/v1/agents/me/launcher', { Cookie: cookie }, LAUNCHER),
+          403,
+        )
+      ).details,
     ).toMatchObject({ reason: 'not_an_agent' });
     await errorOf(await report(mine.secret, { ...LAUNCHER, command: 'start' }), 422);
     await errorOf(await report(mine.secret, { ...LAUNCHER, running: 5 }), 422);

@@ -442,9 +442,7 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
   app.get('/:id/capacity', (c) => {
     const actor = requireActor(c);
     const query = parseQuery(ProjectAccessQuery, c.req.query());
-    return c.json<AgentCapacityView>(
-      getAgentCapacity(db, actor, c.req.param('id'), query.project),
-    );
+    return c.json<AgentCapacityView>(getAgentCapacity(db, actor, c.req.param('id'), query.project));
   });
 
   // What the board saw of this agent's tool, from its own credential only.

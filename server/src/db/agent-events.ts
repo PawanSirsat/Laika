@@ -206,9 +206,7 @@ function keysOf(db: Db, row: Activity): Pick<AgentEventDetail, 'task_key' | 'pro
           ?.number;
   return {
     task_key:
-      project === undefined || number === undefined
-        ? null
-        : `${project.prefix}-${String(number)}`,
+      project === undefined || number === undefined ? null : `${project.prefix}-${String(number)}`,
     project_slug: project?.slug ?? null,
   };
 }
@@ -275,12 +273,7 @@ function stateOf(
   }
 }
 
-function detailOf(
-  db: Db,
-  row: Activity,
-  payload: Payload,
-  offer: OfferRow | null,
-): VerbDetail {
+function detailOf(db: Db, row: Activity, payload: Payload, offer: OfferRow | null): VerbDetail {
   const type = row.type as AgentEventType;
   const contextRevision =
     type === 'project.context_updated' && typeof payload.revision === 'number'

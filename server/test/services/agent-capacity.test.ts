@@ -40,7 +40,7 @@ import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
  * D-126, LAI-1038): who may ping, the one delivery, the repeat window, the
  * two rate buckets, the one answer inside the minute, who reads it, and the
  * word a presence report makes. The routes, the stream and MCP are
- * `test/http/routes/agent-capacity.test.ts`.
+ * `test/http/routes/capacity-pings.test.ts`.
  */
 
 const T0 = 1_800_000_000_000;
@@ -69,10 +69,7 @@ interface AgentHandle {
 
 let devices = 0;
 
-function agentOf(
-  person: ResolvedActor,
-  scope: 'full' | 'read_only' | null = 'full',
-): AgentHandle {
+function agentOf(person: ResolvedActor, scope: 'full' | 'read_only' | null = 'full'): AgentHandle {
   const created = registerAgent(t.sqlite, t.db, person, {
     displayName: `agent ${String(devices)}`,
     harness: 'claude-code',
@@ -379,18 +376,18 @@ describe('the answer (D-126 item 3)', () => {
       status: 404,
       body: { error: { code: 'not_found', message: 'No such capacity ping', details: null } },
     });
-    expect(refusal(() => replyToPing(t.sqlite, t.db, other.actor, made.id, ANSWER, T0 + 1))).toEqual(
-      unknown,
-    );
+    expect(
+      refusal(() => replyToPing(t.sqlite, t.db, other.actor, made.id, ANSWER, T0 + 1)),
+    ).toEqual(unknown);
     expect(t.db.select().from(capacityPings).get()!.answeredAt).toBeNull();
   });
 
   it('a person cannot answer: 403 not_an_agent', () => {
     const mine = agentOf(owner);
     const made = ping(owner, mine.id, T0).ping;
-    expect(refusal(() => replyToPing(t.sqlite, t.db, owner, made.id, ANSWER, T0 + 1))).toMatchObject(
-      { status: 403, body: { error: { details: { reason: 'not_an_agent' } } } },
-    );
+    expect(
+      refusal(() => replyToPing(t.sqlite, t.db, owner, made.id, ANSWER, T0 + 1)),
+    ).toMatchObject({ status: 403, body: { error: { details: { reason: 'not_an_agent' } } } });
   });
 
   it('is read by whoever pinged and the agent’s owner, and by nobody else', () => {
@@ -423,9 +420,21 @@ describe('the answer (D-126 item 3)', () => {
     const mine = agentOf(owner);
     const old = ping(owner, mine.id, T0).ping;
     ping(owner, mine.id, T0 + 7 * DAY, task());
-    expect(t.db.select().from(capacityPings).all().map((r) => r.id)).toContain(old.id);
+    expect(
+      t.db
+        .select()
+        .from(capacityPings)
+        .all()
+        .map((r) => r.id),
+    ).toContain(old.id);
     ping(owner, mine.id, T0 + 7 * DAY + 1, task());
-    expect(t.db.select().from(capacityPings).all().map((r) => r.id)).not.toContain(old.id);
+    expect(
+      t.db
+        .select()
+        .from(capacityPings)
+        .all()
+        .map((r) => r.id),
+    ).not.toContain(old.id);
   });
 });
 

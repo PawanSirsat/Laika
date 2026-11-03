@@ -132,10 +132,10 @@ describe('0074 agent_capacity', () => {
     for (const table of NEW_TABLES) {
       expect(db.all(sql.raw(`SELECT * FROM "${table}"`)), table).toEqual([]);
     }
-    const activitySql = db.get<{ sql: string }>(
+    const activity = db.get<{ sql: string }>(
       sql`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'activity'`,
-    )!.sql;
-    expect(activitySql).toContain("'task.recovered', 'agent.capacity_requested'");
+    );
+    expect(activity?.sql).toContain("'task.recovered', 'agent.capacity_requested'");
     expect(sqlite.pragma('foreign_key_check')).toEqual([]);
 
     // The new verb is written; one outside the vocabulary still is not.

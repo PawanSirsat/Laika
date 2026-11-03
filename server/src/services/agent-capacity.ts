@@ -261,9 +261,7 @@ function spendPingTokens(requesterKey: string, agentId: string, now: number): vo
   ].map((b) => ({ ...b, bucket: refilled(b.key, b.burst, now) }));
   const short = pair.filter((b) => b.bucket.tokens < 1);
   if (short.length > 0) {
-    const waitMs = Math.max(
-      ...short.map((b) => ((1 - b.bucket.tokens) * 60_000) / b.burst),
-    );
+    const waitMs = Math.max(...short.map((b) => ((1 - b.bucket.tokens) * 60_000) / b.burst));
     throw new ApiError('rate_limited', 'Too many capacity pings for this agent', {
       reason: 'capacity_ping_rate',
       // Never below a second (§6.3): `Retry-After: 0` invites a retry that fails.
@@ -329,11 +327,8 @@ function pingView(actor: ResolvedActor, row: PingRow, now: number): CapacityPing
 
 function ownerOf(db: Db, agentId: string): string | null {
   return (
-    db
-      .select({ owner: agents.ownerUserId })
-      .from(agents)
-      .where(eq(agents.id, agentId))
-      .get()?.owner ?? null
+    db.select({ owner: agents.ownerUserId }).from(agents).where(eq(agents.id, agentId)).get()
+      ?.owner ?? null
   );
 }
 
@@ -570,8 +565,8 @@ export function getAgentCapacity(
     .orderBy(desc(capacityPings.answeredAt), desc(capacityPings.id))
     .get();
   const status =
-    db.select({ status: agents.status }).from(agents).where(eq(agents.id, agentId)).get()
-      ?.status ?? 'revoked';
+    db.select({ status: agents.status }).from(agents).where(eq(agents.id, agentId)).get()?.status ??
+    'revoked';
   return {
     agent_id: agentId,
     launcher: launcherOf(db, agentId, status, now),
@@ -668,7 +663,12 @@ export function launcherViewOf(
 }
 
 /** One agent's launcher as the board shows it now. */
-export function launcherOf(db: Db, agentId: string, status: AgentStatus, now: number): LauncherView {
+export function launcherOf(
+  db: Db,
+  agentId: string,
+  status: AgentStatus,
+  now: number,
+): LauncherView {
   const row = db
     .select()
     .from(agentLauncherReports)
