@@ -143,3 +143,26 @@ is in the PR description.
   exit notification takes its words from `exitReason(run)`, the audit's own
   reason, so a stop outranks an earlier timeout in both.
 
+## Review fixes, round 2 (PR #260, review of `ab838675`: FAIL)
+
+- **The caps could be raised in the `=` spelling.** `claudeShape` counts every
+  spelling of `--disallowedTools` (`--disallowed-tools`, and either as
+  `--name=value`), `--max-turns` and `--max-budget-usd` as an occurrence, so
+  the "exactly one" rule refuses enable's argv with `--max-budget-usd=99999`,
+  `--max-turns=999999`, `--disallowedTools=…` or `--disallowed-tools …`
+  appended; a lone `--flag=value` is refused too, since a value is read as the
+  word after the bare flag. `check` / `status` show such a cap as "not
+  readable", never as the first value. All of them are in the test table next
+  to `[...ok, '--max-turns', '9999']`, plus the repro at `loadConfig`.
+  Mutation: back to round 1's bare-only count, the three tests that hold
+  these went red (`exit 1`, 3 of 3), the line showing `--max-turns 200` after
+  a raised cap; restored, checksum matched.
+- **Inline `--settings`.** In allowlist mode an argv whose `--settings` (or
+  `--settings=`) inline JSON names `bypassPermissions` counts as skipping and
+  is refused; a settings file path cannot be inspected, which the README says,
+  with the docs' order: `--permission-mode` above any settings
+  `defaultMode`.
+- **D-128 (`docs/DECISIONS.md`), the one Consequences sentence CHIEF
+  authorised** in the round-2 review: replaced with CHIEF's wording on the
+  refused hand-written skip argv.
+
