@@ -6,7 +6,8 @@ assignee: strelka
 priority: p1
 depends-on: [LAI-1115]
 discovered-from: []
-status: in-progress
+status: review
+finished: 2026-11-03T20:18:01Z
 started: 2026-11-03T20:09:02Z
 ---
 
@@ -18,21 +19,21 @@ screen's new shape.
 
 ## Acceptance criteria
 
-- [ ] §4.5: rows for `deliverables`, `solves`, `unlocks` — not null, default
+- [x] §4.5: rows for `deliverables`, `solves`, `unlocks` — not null, default
       `[]`, the item shape and the state vocabulary, ordered, bounded by the
       service. `schema-spec-drift.test.ts` passes with the LAI-1115
       `COLUMNS_NOT_IN_SPEC` entries removed in this task.
-- [ ] §4.8: one sentence — a change to the three fields is `task.updated`
+- [x] §4.8: one sentence — a change to the three fields is `task.updated`
       (`changed` for a replaced list, `{ field, marked }` for a mark), not a
       verb of its own, as tags and size are not (D-027).
-- [ ] §6.4: `PATCH /tasks/:id` lists the three; `fields=slim` leaves out the
+- [x] §6.4: `PATCH /tasks/:id` lists the three; `fields=slim` leaves out the
       five detail fields; `POST /tasks/:id/finish` says which `checklist`
       lines mark a deliverable done; `POST /tasks/:id/checkpoints` takes
       `working_on`. §4.70 says `working_on` is a request to the task, not a
       column of the checkpoint.
-- [ ] §7.1: `create_task`, `update_task`, `checkpoint_task`, `finish_task` and
+- [x] §7.1: `create_task`, `update_task`, `checkpoint_task`, `finish_task` and
       `get_task_context` rows carry the new params and output.
-- [ ] §11.4.2.1 Task detail: the "What this delivers" section (Ships with
+- [x] §11.4.2.1 Task detail: the "What this delivers" section (Ships with
       states and the progress line, Solves, Unlocks, inline-editable); the
       state panel per status (review with Approve / Send back for readers who
       may decide, in progress, sent back, waiting for the agent, done);
@@ -40,11 +41,11 @@ screen's new shape.
       agent, device, session harness, version and model; acceptance lines of
       the form `- [ ]` / `- [x]` drawn as a checklist; the modal at
       `min(1280px, 94vw)`.
-- [ ] A new decision in `docs/DECISIONS.md` (next free number — D-128 is
+- [x] A new decision in `docs/DECISIONS.md` (next free number — D-128 is
       drafted in PR #260): the redesign keeps the centred modal (D-063),
       stores deliverables as JSON columns, adds no activity verb, and keeps
       every §11.4.2.1 must-have.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0 on the branch
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0 on the branch
       stacked on LAI-1115 (the `view-type-drift` red remains until LAI-1117).
 
 ## Notes / context
