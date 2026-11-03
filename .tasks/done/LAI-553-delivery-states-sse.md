@@ -6,7 +6,7 @@ assignee: core
 priority: p1
 depends-on: [LAI-546, LAI-539]
 discovered-from:
-status: review
+status: done
 finished: 2026-10-31T03:10:00+02:00
 started: 2026-10-30T17:10:00+02:00
 ---

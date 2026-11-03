@@ -1201,6 +1201,89 @@ export const projectRepoSetups = sqliteTable(
   ],
 );
 
+// ------------------------------------------- §4.83 agent_launcher_reports
+
+/**
+ * What an agent's launcher last said about itself (§4.83, D-126 item 4,
+ * LAI-1038): one row per agent, replaced by each report the agent's **own
+ * token** sends. Self-reported, read-only and **never a command channel** —
+ * nothing on the board starts, stops or configures a launcher, and no
+ * `can()`, fence or claim reads it. It decides one word: *Auto-pickup: on*,
+ * only from a report under three minutes old that says enabled.
+ */
+export const agentLauncherReports = sqliteTable(
+  'agent_launcher_reports',
+  {
+    agentId: text('agent_id')
+      .primaryKey()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull(),
+    autoPickupWorkRequests: integer('auto_pickup_work_requests', { mode: 'boolean' }).notNull(),
+    autoPickupHandoffs: integer('auto_pickup_handoffs', { mode: 'boolean' }).notNull(),
+    running: integer('running').notNull(),
+    maxConcurrent: integer('max_concurrent').notNull(),
+    cliVersion: text('cli_version').notNull(),
+    /** When the launcher process started, as the device says; null if it did not say. */
+    startedAt: integer('started_at'),
+    /** The board's clock at the report. Null while the org has presence off (§4.2). */
+    reportedAt: integer('reported_at'),
+  },
+  () => [
+    check('agent_launcher_reports_running_check', sql`running BETWEEN 0 AND 4`),
+    check('agent_launcher_reports_max_concurrent_check', sql`max_concurrent BETWEEN 1 AND 4`),
+  ],
+);
+
+// ------------------------------------------------------ §4.84 capacity_pings
+
+/**
+ * One capacity ping (§4.84, D-126 items 1–3, LAI-1038): who asked which agent,
+ * in which project, and the one answer its device gave with the agent's own
+ * token. The request is also an `agent.capacity_requested` activity row; the
+ * answer is **only here**, shown to whoever pinged and to the agent's owner.
+ * Open for 60 s; rows older than seven days are deleted when the next ping is
+ * written.
+ */
+export const capacityPings = sqliteTable(
+  'capacity_pings',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    /** The agent pinged. */
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    /** The person who pinged — or whose agent did. */
+    requestedByUserId: text('requested_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The registered agent that pinged; null for a person. */
+    requestedByAgentId: text('requested_by_agent_id').references(() => agents.id, {
+      onDelete: 'cascade',
+    }),
+    /** The `agent.capacity_requested` row this ping wrote. */
+    activityId: text('activity_id')
+      .notNull()
+      .references(() => activity.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    answeredAt: integer('answered_at'),
+    /** The closed answer object (§4.84), as JSON; null until answered. */
+    replyJson: text('reply_json'),
+  },
+  (t) => [
+    index('capacity_pings_agent_created_idx').on(t.agentId, t.createdAt),
+    index('capacity_pings_created_at_idx').on(t.createdAt),
+    check('capacity_pings_answer_check', sql`(answered_at IS NULL) = (reply_json IS NULL)`),
+  ],
+);
+
 // --------------------------------------------- §4.67 recognised_agent_devices
 
 /** The owner's confirmed labels; no row means unrecognised (LAI-590). */
@@ -3884,3 +3967,5 @@ export type TimeEntryRevision = typeof timeEntryRevisions.$inferSelect;
 export type TimeBreak = typeof timeBreaks.$inferSelect;
 export type OrgRoleGrant = typeof orgRoleGrants.$inferSelect;
 export type PasswordReset = typeof passwordResets.$inferSelect;
+export type AgentLauncherReport = typeof agentLauncherReports.$inferSelect;
+export type CapacityPing = typeof capacityPings.$inferSelect;

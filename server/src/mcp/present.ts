@@ -1,3 +1,4 @@
+import { type CapacityPingView, type LauncherView } from '../services/agent-capacity.ts';
 import { ApiError } from '../errors.ts';
 import { CATEGORY_LABELS } from '../services/project-statuses.ts';
 import { type TaskView } from '../services/tasks.ts';
@@ -114,4 +115,43 @@ export function nameLookup(
 ): (id: string | null) => string {
   const names = new Map(people.map((p) => [p.user_id, p.name]));
   return (id) => (id === null ? 'nobody' : (names.get(id) ?? id));
+}
+
+/** A launcher as one line (D-126 item 4): the word, and how old the report is. */
+export function launcherText(
+  launcher: Pick<LauncherView, 'state' | 'reported_at' | 'running' | 'max_concurrent'>,
+  now: number,
+): string {
+  const heard = launcher.reported_at === null ? '' : `, reported ${ago(launcher.reported_at, now)}`;
+  const runs =
+    launcher.running === null || launcher.max_concurrent === null
+      ? ''
+      : `, ${String(launcher.running)}/${String(launcher.max_concurrent)} running`;
+  return `**${launcher.state}**${runs}${heard}`;
+}
+
+/** A capacity ping and its answer, as `ping_agent` and `get_agent_capacity` say it. */
+export function capacityText(ping: CapacityPingView, now: number): string {
+  if (ping.answer === null) {
+    return ping.state === 'expired'
+      ? `Ping \`${ping.id}\` **expired** unanswered: nothing on that device answered within a minute.`
+      : `Ping \`${ping.id}\` is **pending** until ${new Date(ping.expires_at).toISOString()}; read it again with \`get_agent_capacity\`.`;
+  }
+  const a = ping.answer;
+  const launcher =
+    a.launcher.state === 'on'
+      ? `on, ${String(a.launcher.running)}/${String(a.launcher.max_concurrent)} running, auto-pickup work requests ${a.launcher.auto_pickup.work_requests ? 'on' : 'off'}, hand-offs ${a.launcher.auto_pickup.handoffs ? 'on' : 'off'}`
+      : 'off';
+  const ready = a.harness_ready.credential && a.harness_ready.argv && a.harness_ready.hooks;
+  const battery =
+    a.battery.state === 'ok' || a.battery.state === 'low'
+      ? `${a.battery.state} ${String(a.battery.percent)}%${a.battery.plugged === true ? ', plugged in' : ''}`
+      : a.battery.state;
+  return [
+    `Ping \`${ping.id}\` **answered** ${ping.answered_at === null ? '' : ago(ping.answered_at, now)} by its ${a.answered_by}:`,
+    `- launcher: ${launcher}`,
+    `- harness ready: ${ready ? 'yes' : `no (credential ${String(a.harness_ready.credential)}, argv ${String(a.harness_ready.argv)}, hooks ${String(a.harness_ready.hooks)})`}`,
+    `- session live: ${a.session_live ? 'yes' : 'no'}`,
+    `- battery: ${battery}; memory: ${a.memory.state}; CLI ${a.cli_version}`,
+  ].join('\n');
 }

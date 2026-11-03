@@ -234,6 +234,12 @@ export const ACTIVITY_TYPES = [
   'task.handoff_cancelled',
   'task.handoff_expired',
   'task.recovered',
+  // D-126 item 2 (LAI-1038): somebody who may delegate to an agent asked its
+  // device for its capacity. Delivered to that agent only (§4.77), carrying no
+  // free text; the answer is never an activity row, because the project
+  // stream reaches every reader and the answer is the pinger's and owner's.
+  // Three owners (CLAUDE.md §4.4): §4.8's row, this, and slice C's mirror.
+  'agent.capacity_requested',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

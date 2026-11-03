@@ -6753,3 +6753,72 @@ would be the warning sign CLAUDE.md §5 describes.
 **Consequences.** §6.1's "there is no third path" becomes "there is no third credential": a
 password-reset link and a tool-setup redeem are ways to a credential, not credentials of their
 own. A further way to a token is a new decision.
+
+## D-117a — The launcher also picks up work requests, listens on the event stream, reports presence and answers capacity pings, and may run as a login service (amends D-117; clarifies D-114 item 7) (LAI-1039, LAI-1038)
+
+**Date:** 2026-11-03 · **Decided by:** Pawan (owner), in chat: a tagged agent on another
+laptop, or a hand-off to it, "must be auto pick", and a capacity ping must be answered, over the
+event stream, between two devices on different accounts; recorded by CHIEF.
+
+**In one line:** selecting an agent still starts nothing on the server; on a device whose owner
+enabled the launcher, that device picks the work up by itself and the harness still claims,
+works and finishes into Review for a person to accept.
+
+**Decision.**
+
+1. **D-114 item 7 stands for the server**: selecting an agent starts nothing on the board. On a device whose owner enabled the launcher, that device's launcher picks the request up.
+2. **Replaces item 2.** The launcher reacts to work requests, hand-off offers and recovery offers addressed to an agent whose saved credential is on this device and whose token `/api/v1/me` says belongs to `owner_user_id`.
+   - Addressing is decided by agent id, through that credential's own inbox — never by device label.
+   - Each kind can be switched off in the config.
+3. **Extends item 3.** For a work request, the launcher makes a fresh worktree from the project's configured repository, with the URL checked as `handoff prepare` checks it.
+   - The worktree starts at the default branch's head, on a new branch `<KEY>-auto-<6 of the offer id>`. It is never the default branch, `master` or `main`. The launcher pushes nothing.
+   - Just before starting, the launcher re-reads the request. It starts nothing if the request is closed or the task is claimed.
+   - The harness claims with `start_working` and ends with `finish_task` into Review. A person accepts.
+4. **Item 4 stands**, with two additions:
+   - The prompt may also carry the project slug, the branch and the default branch, each format-checked.
+   - A harness whose headless mode takes the prompt as an argument gets it as the argv's last item, which the config declares (`prompt_via`).
+5. **Item 5 gains `max_runs_per_day`** (1–50, default 10). Handled events are kept on disk, so a restart never starts one twice.
+6. **Item 6 stands: no token of any name in a child's environment.**
+   - A harness reaches the board's MCP through a helper that reads its saved credential file: Claude Code's `headersHelper`, Codex's `http_headers_helper`, or the Omnigent stdio bridge.
+   - A child may also get `LAIKA_LAUNCH_SESSION`, an agent-session id.
+7. **Item 7 is replaced by D-126.**
+8. **It listens on `GET /api/v1/events`** with each agent's token. It catches up from `/agents/me/events` on connect and on a gap, and polling remains the fallback.
+9. **`laika agent launcher enable`** may install it as a per-user service (a macOS LaunchAgent or a systemd `--user` unit) after showing the config and getting the owner's typed confirmation. `disable` removes it. **Item 8 stands.**
+10. **Omnigent.** It may start `omni polly -p` in the worktree. It may also deliver a notice to an existing local Omnigent session by POSTing fixed words and validated fields to the local server's `/v1/sessions/{id}/events`. That POST goes to loopback only, is gated to version 0.19.x, and is never retried after a 4xx or 5xx.
+
+**Consequences.** Auto-pickup is a property of a device its owner switched on, never of the
+board. Codex auto-pickup stays off by default until its sandbox can commit inside a worktree
+without full access (plan spike); Claude Code and Omnigent first.
+
+## D-126 — Anyone who may delegate to an agent may ping it for capacity; its device answers with the agent's own token; the board shows launcher presence only from a report (LAI-1038, LAI-1039 and the slice tasks filed from D-127's block)
+
+**Date:** 2026-11-03 · **Decided by:** Pawan (owner), in chat: a tagged agent on another
+laptop, or a hand-off to it, "must be auto pick", and a capacity ping must be answered, over the
+event stream, between two devices on different accounts; recorded by CHIEF.
+
+**Decision.**
+
+1. **Who may ping.** A person who may select the agent on that project, or an agent whose project hand-off policy lets it offer to the target (including `allow_other_owners`). A new §3.2 action, `agent.ping`, is checked with `can()`. Anyone else gets `404`, exactly as for an id that names no agent (D-121 item 7).
+2. **How a ping travels.** A ping is an `agent.capacity_requested` activity row, delivered to the pinged agent only, through the same deliveries and stream (§11.5: one transport, one table). It carries no free text.
+   - A repeat within 15 s returns the ping that is still open.
+   - Limits: 4 per minute per requester per agent, and 30 per minute per agent.
+3. **The answer** is POSTed with the pinged agent's own token, under `heartbeat.send_own`.
+   - It is a closed, capped object: launcher state, auto-pickup, run counts, harness ready, session live, battery and memory as the watcher reads them (or "unsupported"), and CLI version.
+   - It carries no paths, host names, repos or task text.
+   - It is accepted once, within 60 s, and shown only to whoever pinged and to the agent's owner. It is not an activity row.
+4. **Presence** is a per-agent report sent with that agent's token every 60 s and on change. The board says *"Auto-pickup: on"* only for a report under 3 minutes old that says so. It is never a command channel: nothing on the board starts, stops or configures a launcher.
+5. **MCP.** `ping_agent` and `get_agent_capacity` mirror the routes.
+
+**Consequences.** This is the one cross-device exchange besides hand-off. It carries no free
+text either way, so it is not agent-to-agent chat.
+
+## D-127 — CHIEF files from LAI-1100 – LAI-1199
+
+**Date:** 2026-11-03 · **Decided by:** CHIEF, under the owner's standing instruction to continue.
+
+**In one line:** D-120's `LAI-1000` – `LAI-1099` is full; CHIEF and the builders it dispatches
+file from `LAI-1100` – `LAI-1199`, lowest unused first, checked with §3's sweep.
+
+**Context.** `LAI-1100` was already taken by a CHIEF builder before this was written
+(`LAI-1100-v3-details-and-advanced`, a branch cancelled unmerged on 2026-11-03); it stays that
+branch's, so filing starts at the lowest number the sweep finds free.

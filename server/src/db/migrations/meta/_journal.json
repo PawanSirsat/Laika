@@ -512,6 +512,13 @@
       "when": 1793582242207,
       "tag": "0073_project_repo_setups",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1793696309021,
+      "tag": "0074_agent_capacity",
+      "breakpoints": true
     }
   ]
 }
