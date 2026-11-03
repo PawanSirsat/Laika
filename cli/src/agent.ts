@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { adapter, HOOK_HARNESSES } from './agent-adapters.ts';
 import { omnigentMarker, type OmnigentVerdict } from './agent-omnigent-marker.ts';
+import { mcpFollowsOmnigent } from './mcp-headers.ts';
 import {
   type AgentCredential,
   asLost,
@@ -722,35 +723,49 @@ async function eventNotices(
 }
 
 /** Is the harness this hook runs under one Omnigent started? (`agent-omnigent-marker.ts`) */
-export type Marker = (io: AgentIo) => OmnigentVerdict;
+export type Marker = (io: AgentIo, harness: Harness) => OmnigentVerdict;
 
-export const marker: Marker = (io) => omnigentMarker(io.env, process.ppid);
+export const marker: Marker = (io, harness) => omnigentMarker(io.env, process.ppid, harness);
+
+/**
+ * Whether Omnigent's rules apply on this device at all: it holds the Omnigent
+ * agent's credential, `~/.laika/agents/omnigent.json` (`laika tool add
+ * omnigent`). Where it does not, a hook never asks whether a run is
+ * Omnigent's — it keeps LAI-542's behaviour exactly.
+ */
+export const omnigentDevice = (io: AgentIo): boolean =>
+  existsSync(credentialPath(io.home, 'omnigent'));
 
 /**
  * The credential a hook speaks with (D-118, LAI-1101; LAI-589's
  * `agent-hook.sh` and `polly-home`, ported). **A manager is a harness**: every
- * worker Omnigent starts, and polly's own turns (which run on Claude Code
- * through `claude-sdk`), is a session of the Omnigent agent — so when this
- * device holds that agent's credential (`~/.laika/agents/omnigent.json`,
- * from `laika tool add omnigent`) an Omnigent run opens its session with it,
- * and its MCP calls carry the same one (`headersHelper` in `tool-add.ts`), so
- * the `session_id` a model is told is one its own token may claim with.
+ * worker Omnigent starts, and polly's own turns (Claude Code through
+ * `claude-sdk`), is a session of the Omnigent agent.
  *
- * - **No Omnigent credential here**: the harness's own, as before. Nothing
- *   reads the process table.
+ * **But hooks and MCP must speak as the same agent**: the board refuses a
+ * claim whose session is another agent's (`requireOwnSession`, 404). So the
+ * Omnigent agent's credential is used only where that harness's MCP entry is
+ * the switching helper `tool add` writes (`mcpFollowsOmnigent`,
+ * `mcp-headers.ts`) — and that helper makes the same choice the same way.
+ *
+ * - **Not an Omnigent device, Claude Code and Codex aside, or an MCP entry
+ *   that does not switch** (the person's own, an older helper, none): the
+ *   harness's own credential, as before, and the run is never asked about.
  * - **An Omnigent run**: the Omnigent agent's file, and never the
  *   environment's `LAIKA_AGENT_TOKEN`. No such file is no session.
- * - **Cannot tell** (no harness above this hook, or `ps` failed): no session
- *   at all — never a guess between two agents.
+ * - **Cannot tell**: no session at all — never a guess between two agents;
+ *   the Codex helper fails closed on the same answer.
  */
 export function hookCredential(
   io: AgentIo,
   harness: Harness,
   verdict: () => OmnigentVerdict,
+  cwd: string | undefined,
 ): AgentCredential | undefined {
   if (
     (harness === 'claude-code' || harness === 'codex') &&
-    existsSync(credentialPath(io.home, 'omnigent'))
+    omnigentDevice(io) &&
+    mcpFollowsOmnigent(io.home, harness, cwd)
   ) {
     const v = verdict();
     if (v === 'omnigent') return readCredential(io.home, 'omnigent', {});
@@ -771,6 +786,12 @@ export function hookCredential(
  * prompt or tool call opens a new session and tells the model its
  * `session_id`. A plain session keeps one session for its whole life, as
  * LAI-542 does.
+ *
+ * **Only on an Omnigent device** (`omnigentDevice`), whatever the MCP entry
+ * says — this is about the harness process living on, not about identity.
+ * There the run is asked about at a turn's edges only: at `Stop`, and at a
+ * prompt or tool call that finds the session ended. For Claude Code that is
+ * its own environment; for Codex it reads the process table (the marker).
  */
 function endTurn(
   io: AgentIo,
@@ -816,8 +837,11 @@ export async function hookResult(
   }
   // Asked at most once a hook, and only where an answer changes something.
   let asked: OmnigentVerdict | undefined;
-  const verdict = (): OmnigentVerdict => (asked ??= isOmnigent(io));
-  const credential = hookCredential(io, harness, verdict);
+  const verdict = (): OmnigentVerdict => (asked ??= isOmnigent(io, harness));
+  const cwd = typeof input.cwd === 'string' && isAbsolute(input.cwd) ? input.cwd : undefined;
+  const credential = hookCredential(io, harness, verdict, cwd);
+  // Turn-scoped sessions are an Omnigent device's rule too (review #5/#6).
+  const omnigentRun = (): boolean => omnigentDevice(io) && verdict() === 'omnigent';
   if (credential === undefined) return out('');
   const path = statePath(io.home, harness, harnessSessionId);
 
@@ -835,7 +859,7 @@ export async function hookResult(
       log(io.home, `checkpoint hook ${event}: ${cause instanceof Error ? cause.name : 'error'}`);
     }
     // After the Stop bookkeeping above, which reads the session it ends.
-    if (event === 'stop' && verdict() === 'omnigent') {
+    if (event === 'stop' && omnigentRun()) {
       endTurn(io, harness, harnessSessionId, credential);
     }
     // `Stop` prints nothing, and `PreToolUse` prints only the deny above:
@@ -850,9 +874,7 @@ export async function hookResult(
   const self = readSelfReport(harness, input);
   // An Omnigent run's session ended at the last Stop: its next turn opens a new one.
   const reopen =
-    (event === 'prompt' || event === 'tool') &&
-    state?.status === 'ended' &&
-    verdict() === 'omnigent';
+    (event === 'prompt' || event === 'tool') && state?.status === 'ended' && omnigentRun();
   if (reopen) {
     log(
       io.home,

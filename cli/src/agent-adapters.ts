@@ -108,9 +108,11 @@ export const ADAPTERS: Readonly<Record<Harness, HarnessAdapter>> = {
   // process. Omnigent's sessions go through the hooks of the harness that
   // runs them (LAI-1101, measured on 0.19.1): polly's own turns run on Claude
   // Code through `claude-sdk`, which loads `~/.claude/settings.json`, and its
-  // workers on Claude Code or Codex. Every one carries `OMNIGENT=1`, so those
-  // hooks open the session with this agent's credential (`hookCredential` in
-  // `agent.ts`) and end it at each turn's Stop.
+  // workers on Claude Code or Codex. Every one carries `OMNIGENT=1`. On a
+  // device holding this agent's credential those hooks end the session at
+  // each turn's Stop, and open it with this agent's credential where that
+  // harness's MCP entry follows Omnigent runs too (`hookCredential` in
+  // `agent.ts`, review B1).
   omnigent: {
     harness: 'omnigent',
     name: 'Omnigent',
@@ -138,7 +140,9 @@ export function explicitCommands(harness: Harness): string[] {
       'Its sessions open through the hooks of the harness that runs them — polly runs on',
       'Claude Code (claude-sdk) — so install those: laika agent hooks on --harness claude-code',
       '(and codex, if its workers run Codex). Inside Omnigent they act as this agent, with',
-      `~/.laika/agents/${h}.json; its MCP is the bridge \`laika tool add omnigent\` installs.`,
+      `~/.laika/agents/${h}.json, where their Laika MCP entry is the switching helper`,
+      '`laika tool add` writes; otherwise as their own. polly’s MCP is the bridge',
+      '`laika tool add omnigent` installs.',
     ];
   }
   if (ADAPTERS[h].credentialOnly === true) {

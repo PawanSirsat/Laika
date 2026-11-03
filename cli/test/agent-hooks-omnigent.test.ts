@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
+import { type ChildProcessWithoutNullStreams, execFileSync, spawn } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -25,7 +25,11 @@ import {
   type SessionState,
   UNKNOWN,
 } from '../src/agent-session.ts';
-import { CLAUDE_HEADERS_HELPER, CODEX_HEADERS_HELPER } from '../src/tool-add.ts';
+import {
+  CLAUDE_HEADERS_HELPER,
+  CODEX_HEADERS_HELPER,
+  CODEX_HELPER_LINE,
+} from '../src/mcp-headers.ts';
 
 /**
  * Omnigent runs in the hook path (LAI-1101; LAI-589's `omnigent-marker`,
@@ -97,6 +101,43 @@ function credentials(
   }
 }
 
+/**
+ * The Claude Code helper an older `tool add` wrote (LAI-1072/1074), verbatim
+ * from `master` before LAI-1101: it always reads `claude-code.json`.
+ */
+const OLD_CLAUDE_HELPER =
+  `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$HOME/.laika/agents/claude-code.json")" && ` +
+  `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`;
+
+/** `~/.claude.json` with this `mcpServers.laika`, beside another server. */
+function claudeJson(home: string, laika: unknown, extra: Record<string, unknown> = {}): void {
+  writeFileSync(
+    join(home, '.claude.json'),
+    `${JSON.stringify({ mcpServers: { other: { type: 'http', url: 'https://x/mcp' }, laika }, ...extra }, null, 2)}\n`,
+  );
+}
+
+const SWITCHING = (url: string) => ({
+  type: 'http',
+  url: `${url}/mcp`,
+  headersHelper: CLAUDE_HEADERS_HELPER,
+});
+const OLDER = (url: string) => ({
+  type: 'http',
+  url: `${url}/mcp`,
+  headersHelper: OLD_CLAUDE_HELPER,
+});
+const PERSONS = (url: string) => ({
+  type: 'http',
+  url: `${url}/mcp`,
+  headers: { Authorization: 'Bearer ${LAIKA_TOKEN}' },
+});
+
+function codexToml(home: string, table: string): void {
+  mkdirSync(join(home, '.codex'), { recursive: true });
+  writeFileSync(join(home, '.codex', 'config.toml'), `model = "o3"\n\n${table}`);
+}
+
 /* -------------------------------------------------------------------------- */
 
 const proc =
@@ -120,10 +161,10 @@ void describe('omnigentMarker', () => {
 
   void test('OMNIGENT=1 on the nearest harness is Omnigent; its absence is plain', () => {
     const omni: EnvironReader = (pid) => (pid === 300 ? ['HOME=/h', 'OMNIGENT=1'] : ['HOME=/h']);
-    assert.equal(omnigentMarker({}, 500, chain, omni), 'omnigent');
+    assert.equal(omnigentMarker({}, 500, 'codex', chain, omni), 'omnigent');
     const plain: EnvironReader = (pid) => (pid === 300 ? ['HOME=/h'] : ['OMNIGENT=1']);
     // Everything above the harness carries it; only the harness decides.
-    assert.equal(omnigentMarker({}, 500, chain, plain), 'plain');
+    assert.equal(omnigentMarker({}, 500, 'codex', chain, plain), 'plain');
   });
 
   void test('our own OMNIGENT=1 is enough; a named harness PID is read outright', () => {
@@ -131,6 +172,7 @@ void describe('omnigentMarker', () => {
       omnigentMarker(
         { OMNIGENT: '1' },
         500,
+        'codex',
         () => UNKNOWN,
         () => undefined,
       ),
@@ -138,7 +180,7 @@ void describe('omnigentMarker', () => {
     );
     const named = proc({ 77: { ppid: 1, comm: 'node' } });
     assert.equal(
-      omnigentMarker({ LAIKA_AGENT_HARNESS_PID: '77' }, 500, named, (pid) =>
+      omnigentMarker({ LAIKA_AGENT_HARNESS_PID: '77' }, 500, 'codex', named, (pid) =>
         pid === 77 ? ['OMNIGENT=1'] : [],
       ),
       'omnigent',
@@ -151,38 +193,47 @@ void describe('omnigentMarker', () => {
       8: { ppid: 1, comm: 'codex-aarch64-apple-darwin' },
     });
     assert.equal(
-      omnigentMarker({}, 9, codex, (pid) => (pid === 8 ? ['OMNIGENT=1'] : [])),
+      omnigentMarker({}, 9, 'codex', codex, (pid) => (pid === 8 ? ['OMNIGENT=1'] : [])),
       'omnigent',
     );
   });
 
   void test('no harness above, ps failing, or an unreadable environment is unknown', () => {
     assert.equal(
-      omnigentMarker({}, 500, proc({ 500: { ppid: 1, comm: 'node' } }), () => []),
+      omnigentMarker({}, 500, 'codex', proc({ 500: { ppid: 1, comm: 'node' } }), () => []),
       'unknown',
     );
     assert.equal(
       omnigentMarker(
         {},
         500,
+        'codex',
         () => UNKNOWN,
         () => [],
       ),
       'unknown',
     );
     assert.equal(
-      omnigentMarker({}, 500, chain, () => undefined),
+      omnigentMarker({}, 500, 'codex', chain, () => undefined),
       'unknown',
     );
+  });
+
+  void test('Claude Code: its own environment decides, and the process table is never read', () => {
+    const never = (): never => {
+      throw new Error('the process table was read for Claude Code');
+    };
+    assert.equal(omnigentMarker({}, 500, 'claude-code', never, never), 'plain');
+    assert.equal(omnigentMarker({ OMNIGENT: '1' }, 500, 'claude-code', never, never), 'omnigent');
   });
 
   // A Node process, as harnesses are: macOS's `ps -E` shows no environment
   // for a platform binary such as /bin/sleep or /bin/sh (measured), and a
   // harness never is one — `claude`, `codex` and Homebrew's `node` all read.
-  const idle = async (env: Record<string, string>) => {
+  const idle = async (env: Record<string, string>, args: readonly string[] = []) => {
     const child = spawn(
       process.execPath,
-      ['-e', 'process.stdout.write("up\\n"); setInterval(() => {}, 1000)'],
+      ['-e', 'process.stdout.write("up\\n"); setInterval(() => {}, 1000)', ...args],
       {
         env: { PATH: '/usr/bin:/bin', ...env },
       },
@@ -207,11 +258,24 @@ void describe('omnigentMarker', () => {
       plain.kill('SIGKILL');
     }
   });
+
+  void test('a word OMNIGENT=1 in the arguments is not an environment entry (review #1)', async () => {
+    const child = await idle({ FOO: 'bar' }, ['OMNIGENT=1', 'x']);
+    try {
+      const entries = environReader()(child.pid ?? 0);
+      assert.ok(entries !== undefined, 'the environment could not be read at all');
+      assert.ok(entries.includes('FOO=bar'), JSON.stringify(entries));
+      assert.ok(!entries.includes('OMNIGENT=1'), 'an argument was read as the marker');
+      assert.ok(!entries.includes('x'), 'the arguments were read as entries');
+    } finally {
+      child.kill('SIGKILL');
+    }
+  });
 });
 
 /* -------------------------------------------------------------------------- */
 
-void describe('hookCredential — who an Omnigent run acts as (D-118)', () => {
+void describe('hookCredential — hooks and MCP speak as one agent (D-118, review B1)', () => {
   const io = (home: string): AgentIo => ({
     out: () => undefined,
     err: () => undefined,
@@ -220,32 +284,108 @@ void describe('hookCredential — who an Omnigent run acts as (D-118)', () => {
     stdin: () => '',
     isTTY: false,
   });
+  const URL_ = 'http://board.test';
+  const own = 'lai_FROMtheENVIRONMENT';
 
-  void test('with the Omnigent credential here: Omnigent run → that agent; plain → its own; unknown → none', () => {
+  void test('B1: Claude Code whose MCP is the switching helper — an Omnigent run is the Omnigent agent', () => {
     const home = join(root(), 'home');
-    credentials(home, 'http://board.test', ['omnigent', 'claude-code']);
-    assert.equal(hookCredential(io(home), 'claude-code', () => 'omnigent')?.token, OMNI_TOKEN);
-    assert.equal(hookCredential(io(home), 'codex', () => 'omnigent')?.token, OMNI_TOKEN);
-    // A plain run keeps the harness's own rule, environment token included.
+    credentials(home, URL_, ['omnigent', 'claude-code']);
+    claudeJson(home, SWITCHING(URL_));
     assert.equal(
-      hookCredential(io(home), 'claude-code', () => 'plain')?.token,
-      'lai_FROMtheENVIRONMENT',
+      hookCredential(io(home), 'claude-code', () => 'omnigent', home)?.token,
+      OMNI_TOKEN,
     );
+    // A plain run keeps the harness's own rule, environment token included.
+    assert.equal(hookCredential(io(home), 'claude-code', () => 'plain', home)?.token, own);
     assert.equal(
-      hookCredential(io(home), 'claude-code', () => 'unknown'),
+      hookCredential(io(home), 'claude-code', () => 'unknown', home),
       undefined,
     );
   });
 
-  void test('no Omnigent credential: the harness’s own, and the process table is never read', () => {
+  void test('B1: Claude Code whose MCP is the older tool-add helper keeps its own credential in an Omnigent run', () => {
     const home = join(root(), 'home');
-    credentials(home, 'http://board.test', ['claude-code']);
+    credentials(home, URL_, ['omnigent', 'claude-code']);
+    claudeJson(home, OLDER(URL_));
     let asked = 0;
     const verdict = () => {
       asked += 1;
       return 'omnigent' as const;
     };
-    assert.equal(hookCredential(io(home), 'claude-code', verdict)?.token, 'lai_FROMtheENVIRONMENT');
+    assert.equal(hookCredential(io(home), 'claude-code', verdict, home)?.token, own);
+    assert.equal(asked, 0, 'the run was asked about although the MCP cannot follow it');
+  });
+
+  void test('B1: Claude Code whose MCP is a person-written laika entry keeps its own credential', () => {
+    const home = join(root(), 'home');
+    credentials(home, URL_, ['omnigent', 'claude-code']);
+    claudeJson(home, PERSONS(URL_));
+    assert.equal(hookCredential(io(home), 'claude-code', () => 'omnigent', home)?.token, own);
+    // And with no laika entry at all.
+    claudeJson(home, undefined);
+    assert.equal(hookCredential(io(home), 'claude-code', () => 'omnigent', home)?.token, own);
+  });
+
+  void test('B1: a nearer laika server — local scope or a project .mcp.json — overrides the switching one', () => {
+    const home = join(root(), 'home');
+    credentials(home, URL_, ['omnigent', 'claude-code']);
+    const repo = join(home, 'repo');
+    const deep = join(repo, 'src', 'lib');
+    mkdirSync(deep, { recursive: true });
+    claudeJson(home, SWITCHING(URL_), {
+      projects: { [repo]: { mcpServers: { laika: PERSONS(URL_) } } },
+    });
+    assert.equal(hookCredential(io(home), 'claude-code', () => 'omnigent', deep)?.token, own);
+    claudeJson(home, SWITCHING(URL_));
+    assert.equal(
+      hookCredential(io(home), 'claude-code', () => 'omnigent', deep)?.token,
+      OMNI_TOKEN,
+    );
+    writeFileSync(
+      join(repo, '.mcp.json'),
+      JSON.stringify({ mcpServers: { laika: PERSONS(URL_) } }),
+    );
+    assert.equal(hookCredential(io(home), 'claude-code', () => 'omnigent', deep)?.token, own);
+  });
+
+  void test('B1: Codex — only the switching table follows; the older table and a person’s keep its own', () => {
+    const home = join(root(), 'home');
+    credentials(home, URL_, ['omnigent']);
+    writeFileSync(
+      join(home, '.laika', 'agents', 'codex.json'),
+      `${JSON.stringify({ url: URL_, token: 'lai_CODEXownTOKEN' })}\n`,
+    );
+    const codexIo: AgentIo = { ...io(home), env: {} };
+    codexToml(home, `[mcp_servers.laika]\nurl = "${URL_}/mcp"\n${CODEX_HELPER_LINE}\n`);
+    assert.equal(hookCredential(codexIo, 'codex', () => 'omnigent', home)?.token, OMNI_TOKEN);
+    codexToml(
+      home,
+      `[mcp_servers.laika]\nurl = "${URL_}/mcp"\nbearer_token_env_var = "LAIKA_AGENT_TOKEN_CODEX"\n`,
+    );
+    assert.equal(
+      hookCredential(codexIo, 'codex', () => 'omnigent', home)?.token,
+      'lai_CODEXownTOKEN',
+    );
+    codexToml(
+      home,
+      `[mcp_servers.laika]\nurl = "${URL_}/mcp"\n${CODEX_HELPER_LINE}\nbearer_token_env_var = "LAIKA_TOKEN"\n`,
+    );
+    assert.equal(
+      hookCredential(codexIo, 'codex', () => 'omnigent', home)?.token,
+      'lai_CODEXownTOKEN',
+    );
+  });
+
+  void test('no Omnigent credential: the harness’s own, and the run is never asked about', () => {
+    const home = join(root(), 'home');
+    credentials(home, URL_, ['claude-code']);
+    claudeJson(home, SWITCHING(URL_));
+    let asked = 0;
+    const verdict = () => {
+      asked += 1;
+      return 'omnigent' as const;
+    };
+    assert.equal(hookCredential(io(home), 'claude-code', verdict, home)?.token, own);
     assert.equal(asked, 0);
   });
 });
@@ -258,6 +398,7 @@ function runHelper(
   home: string,
   parentEnv: Record<string, string>,
   ownEnv: Record<string, string>,
+  parentArgs: readonly string[] = [],
 ): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
     // The parent stands in for the tool: a Node process holding `parentEnv`
@@ -267,7 +408,7 @@ function runHelper(
     const parent =
       'const r = require("node:child_process").spawnSync("/bin/sh", ["-c", process.env.HELPER], ' +
       '{ env: JSON.parse(process.env.INNER), stdio: "inherit" }); process.exit(r.status ?? 1);';
-    const child = spawn(process.execPath, ['-e', parent], {
+    const child = spawn(process.execPath, ['-e', parent, ...parentArgs], {
       env: {
         PATH: '/usr/bin:/bin',
         HELPER: helper,
@@ -282,37 +423,84 @@ function runHelper(
 }
 
 void describe('the MCP headers helpers agree with the hooks', () => {
-  for (const [name, helper] of [
-    ['claude-code', CLAUDE_HEADERS_HELPER],
-    ['codex', CODEX_HEADERS_HELPER],
-  ] as const) {
-    void test(`${name}: its own token, or the Omnigent agent's in an Omnigent run`, async () => {
-      const home = join(root(), 'home');
-      mkdirSync(join(home, '.laika', 'agents'), { recursive: true });
-      const own = 'lai_OWNtoolTOKEN';
+  const setUp = () => {
+    const home = join(root(), 'home');
+    mkdirSync(join(home, '.laika', 'agents'), { recursive: true });
+    for (const name of ['claude-code', 'codex']) {
       writeFileSync(
         join(home, '.laika', 'agents', `${name}.json`),
-        `{\n  "url": "http://b",\n  "token": "${own}"\n}\n`,
+        `{\n  "url": "http://b",\n  "token": "lai_OWN${name}"\n}\n`,
       );
-      const bearer = async (parent: Record<string, string>, ownEnv: Record<string, string>) => {
-        const r = await runHelper(helper, home, parent, ownEnv);
-        assert.equal(r.code, 0);
-        return (JSON.parse(r.out) as { Authorization: string }).Authorization;
-      };
-      // No Omnigent credential here: always the tool's own.
-      assert.equal(await bearer({ OMNIGENT: '1' }, { OMNIGENT: '1' }), `Bearer ${own}`);
+    }
+    const omnigent = () =>
       writeFileSync(
         join(home, '.laika', 'agents', 'omnigent.json'),
         `{\n  "url": "http://b",\n  "token": "${OMNI_TOKEN}"\n}\n`,
       );
-      // Plain.
-      assert.equal(await bearer({}, {}), `Bearer ${own}`);
-      // OMNIGENT=1 in the helper's own environment (Claude Code passes it).
-      assert.equal(await bearer({}, { OMNIGENT: '1' }), `Bearer ${OMNI_TOKEN}`);
-      // Only in the parent's — Codex's allowlist strips it from the helper.
-      assert.equal(await bearer({ OMNIGENT: '1' }, {}), `Bearer ${OMNI_TOKEN}`);
-    });
-  }
+    return { home, omnigent };
+  };
+  const bearer = async (
+    helper: string,
+    home: string,
+    parent: Record<string, string>,
+    ownEnv: Record<string, string>,
+    parentArgs: readonly string[] = [],
+  ): Promise<string> => {
+    const r = await runHelper(helper, home, parent, ownEnv, parentArgs);
+    assert.equal(r.code, 0, `the helper failed: ${r.out}`);
+    return (JSON.parse(r.out) as { Authorization: string }).Authorization;
+  };
+
+  void test('Claude Code: its own OMNIGENT decides, as the hooks’ does', async () => {
+    const { home, omnigent } = setUp();
+    const own = 'Bearer lai_OWNclaude-code';
+    // No Omnigent credential here: always the tool's own.
+    assert.equal(
+      await bearer(CLAUDE_HEADERS_HELPER, home, { OMNIGENT: '1' }, { OMNIGENT: '1' }),
+      own,
+    );
+    omnigent();
+    assert.equal(await bearer(CLAUDE_HEADERS_HELPER, home, {}, {}), own);
+    assert.equal(
+      await bearer(CLAUDE_HEADERS_HELPER, home, {}, { OMNIGENT: '1' }),
+      `Bearer ${OMNI_TOKEN}`,
+    );
+    // Claude Code passes its environment through: a parent's alone is not it.
+    assert.equal(await bearer(CLAUDE_HEADERS_HELPER, home, { OMNIGENT: '1' }, {}), own);
+  });
+
+  void test('Codex: the parent’s environment decides — an entry, never an argument (review #1)', async () => {
+    const { home, omnigent } = setUp();
+    const own = 'Bearer lai_OWNcodex';
+    assert.equal(await bearer(CODEX_HEADERS_HELPER, home, { OMNIGENT: '1' }, {}), own);
+    omnigent();
+    assert.equal(await bearer(CODEX_HEADERS_HELPER, home, {}, {}), own);
+    // Codex's allowlist strips it from the helper: the parent's counts.
+    assert.equal(
+      await bearer(CODEX_HEADERS_HELPER, home, { OMNIGENT: '1' }, {}),
+      `Bearer ${OMNI_TOKEN}`,
+    );
+    // An argument that reads OMNIGENT=1 is not the environment.
+    assert.equal(await bearer(CODEX_HEADERS_HELPER, home, {}, {}, ['OMNIGENT=1']), own);
+  });
+
+  void test('Codex: when the parent’s environment cannot be read it prints nothing and fails (review #2)', async () => {
+    const { home, omnigent } = setUp();
+    // A PATH with sed and nothing to read a process with: no tr, no ps, no grep.
+    const bin = join(root(), 'bin');
+    mkdirSync(bin);
+    const sed = execFileSync('/bin/sh', ['-c', 'command -v sed'], { encoding: 'utf8' }).trim();
+    symlinkSync(sed, join(bin, 'sed'));
+    // The helper works on that PATH where nothing needs telling.
+    assert.equal(
+      await bearer(CODEX_HEADERS_HELPER, home, { OMNIGENT: '1' }, { PATH: bin }),
+      'Bearer lai_OWNcodex',
+    );
+    omnigent();
+    const r = await runHelper(CODEX_HEADERS_HELPER, home, { OMNIGENT: '1' }, { PATH: bin });
+    assert.equal(r.out, '', 'a token was sent although the run could not be told');
+    assert.notEqual(r.code, 0);
+  });
 });
 
 /* -------------------------------------------------------------------------- */
@@ -425,6 +613,7 @@ void describe('an Omnigent run through the real hook', () => {
     symlinkSync(process.execPath, join(bin, 'claude'));
     const board = await stubBoard();
     credentials(home, board.url, ['omnigent', 'claude-code']);
+    claudeJson(home, SWITCHING(board.url));
     const h = startHarness(home, bin, { OMNIGENT: '1' });
 
     const started = await h.run('session-start', 'omni-1');
@@ -461,6 +650,35 @@ void describe('an Omnigent run through the real hook', () => {
     assert.match(next.stdout, new RegExp(second.session_id ?? 'no session id'));
   });
 
+  void test('B1: an Omnigent run whose Claude Code MCP is the older helper opens as Claude Code, and still ends at Stop', async () => {
+    const r = root();
+    const home = join(r, 'home');
+    const bin = join(r, 'bin');
+    mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, 'claude'));
+    const board = await stubBoard();
+    credentials(home, board.url, ['omnigent', 'claude-code']);
+    claudeJson(home, OLDER(board.url));
+    const h = startHarness(home, bin, { OMNIGENT: '1' });
+
+    assert.equal((await h.run('session-start', 'old-1')).code, 0);
+    const first = stateOf(home, 'old-1');
+    const start = board.requests.find((q) => q.path === '/api/v1/agent-sessions');
+    assert.equal(
+      start?.auth,
+      `Bearer ${CLAUDE_TOKEN}`,
+      'the hooks switched to the Omnigent agent while the MCP still sends Claude Code’s token',
+    );
+    assert.equal((await h.run('stop', 'old-1')).code, 0);
+    const ends = await until('the session to be ended on the board at Stop', () => {
+      const sent = board.requests.filter(
+        (q) => q.path === `/api/v1/agent-sessions/${first.session_id ?? ''}/end`,
+      );
+      return sent.length > 0 ? sent : undefined;
+    });
+    assert.equal(ends[0]?.auth, `Bearer ${CLAUDE_TOKEN}`);
+  });
+
   void test('a plain run on the same device acts as its own agent and keeps its session at Stop', async () => {
     const r = root();
     const home = join(r, 'home');
@@ -469,6 +687,7 @@ void describe('an Omnigent run through the real hook', () => {
     symlinkSync(process.execPath, join(bin, 'claude'));
     const board = await stubBoard();
     credentials(home, board.url, ['omnigent', 'claude-code']);
+    claudeJson(home, SWITCHING(board.url));
     const h = startHarness(home, bin, {});
 
     assert.equal((await h.run('session-start', 'plain-1')).code, 0);
