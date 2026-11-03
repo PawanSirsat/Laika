@@ -3060,7 +3060,12 @@ recovery every agent that could take it then (active, a `full` grant, the
 expired claim's owner's unless the space allows other owners); an offer
 approved, answered or closed, everyone an earlier event of it reached and the
 agents it moves between; a context change, every agent granted the project; a
-capacity ping, the agent pinged and nobody else (D-126 item 2).
+capacity ping, the agent pinged and nobody else (D-126 item 2). **A capacity
+ping is `undelivered` only while it can still be answered** (§4.84): its
+answer is its receipt, and its minute running out takes it off `undelivered`
+whatever the helper did — so a helper that predates the verb, and drops it
+unacknowledged, never fills the front of every poll with questions nobody can
+answer. No other verb is affected.
 **The writer gets no delivery of its own write**, and a revoked agent none.
 What actually reaches an agent is asked again on every read and every frame
 (§6.4, §11.5). No activity row: a delivery is presence, as a session is.
@@ -3439,7 +3444,8 @@ only.
 agent's own token**, `heartbeat.send_own` — is accepted **once, before
 `expires_at`**: a second is `409 already_answered`, a first one at or after it
 `409 ping_expired`, and a ping not addressed to the calling agent is the `404`
-of one that does not exist. It is a closed object, every level strict and every
+of one that does not exist. An answer sets its delivery's `received_at`
+(§4.77): the device that answered has the event. It is a closed object, every level strict and every
 string a closed word but the CLI version — **no path, host name, repository or
 task text fits in it**, and a reading the device could not take is a word,
 never a number:

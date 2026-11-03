@@ -8,12 +8,20 @@ import {
 } from '../auth/resolve-actor.ts';
 import { TokenAuthError } from '../auth/tokens.ts';
 import { appendActivity } from '../db/activity.ts';
+import { CAPACITY_PING_OPEN_MS } from '../db/agent-events.ts';
 import { type Db } from '../db/client.ts';
 import { type AgentStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { presenceEnabled } from '../db/orgs.ts';
-import { agentLauncherReports, agents, capacityPings, type projects, tasks } from '../db/schema.ts';
+import {
+  agentEventDeliveries,
+  agentLauncherReports,
+  agents,
+  capacityPings,
+  type projects,
+  tasks,
+} from '../db/schema.ts';
 import { ApiError, isApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { registeredAgent } from './claims.ts';
@@ -64,7 +72,7 @@ import { assertAgentSelectable } from './work-requests.ts';
 /** A ping's clocks (D-126 items 2 and 3, plan §4). */
 export const CAPACITY_PING_LIMITS = {
   /** A ping takes an answer for this long after it is made. */
-  openMs: 60_000,
+  openMs: CAPACITY_PING_OPEN_MS,
   /** A repeat by the same requester inside this returns the ping still open. */
   repeatMs: 15_000,
   /** The longest a request may be held for its answer. */
@@ -524,6 +532,18 @@ export function replyToPing(
     db.update(capacityPings)
       .set({ answeredAt: now, replyJson })
       .where(and(eq(capacityPings.id, row.id), isNull(capacityPings.answeredAt)))
+      .run();
+    // The answer is the receipt (§4.77): a device that answered has the
+    // event, so it leaves `undelivered` whether or not its helper acks it.
+    db.update(agentEventDeliveries)
+      .set({ receivedAt: now })
+      .where(
+        and(
+          eq(agentEventDeliveries.activityId, row.activityId),
+          eq(agentEventDeliveries.agentId, row.agentId),
+          isNull(agentEventDeliveries.receivedAt),
+        ),
+      )
       .run();
     return pingView(current, { ...row, answeredAt: now, replyJson }, now);
   });

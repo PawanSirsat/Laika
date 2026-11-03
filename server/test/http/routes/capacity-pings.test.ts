@@ -610,6 +610,52 @@ describe('a ping reaches the pinged agent’s device, and nobody else’s', () =
   });
 });
 
+// ------------------------------------------------------- review (LAI-1038)
+
+describe('review fixes (LAI-1038)', () => {
+  it('an expired ping leaves undelivered, on REST and in agent_sync; another verb stays', async () => {
+    await ok(
+      await send(
+        'PATCH',
+        `/api/v1/tasks/${taskId}`,
+        { Cookie: cookie },
+        {
+          selected_agent_id: mine.id,
+        },
+      ),
+      200,
+    );
+    const ping = await pinged({ Cookie: cookie }, mine.id);
+    const types = async (query: string) =>
+      (
+        (await ok(
+          await send('GET', `/api/v1/agents/me/events${query}`, bearer(mine.secret)),
+          200,
+        )) as { data: { type: string }[] }
+      ).data.map((e) => e.type);
+    expect(await types('')).toEqual(['task.agent_selected', 'agent.capacity_requested']);
+
+    // The minute runs out: the delivery's clock is the ping's (§4.77 available_at).
+    const row = h.db.select().from(capacityPings).where(eq(capacityPings.id, ping.id)).get()!;
+    h.db
+      .update(agentEventDeliveries)
+      .set({ availableAt: Date.now() - 60_000 })
+      .where(eq(agentEventDeliveries.activityId, row.activityId))
+      .run();
+
+    expect(await types('')).toEqual(['task.agent_selected']);
+    expect(await types('?state=all')).toEqual(['task.agent_selected', 'agent.capacity_requested']);
+    const client = await connect(mine.secret);
+    const synced = await client.callTool({ name: 'agent_sync', arguments: {} });
+    expect(synced.isError, JSON.stringify(synced.content)).not.toBe(true);
+    expect(
+      (synced.structuredContent as { events: { type: string }[] }).events.map((e) => e.type),
+    ).toEqual(['task.agent_selected']);
+    await client.close();
+  });
+
+});
+
 // ------------------------------------------------------------------ presence
 
 describe('PUT /agents/me/launcher', () => {
