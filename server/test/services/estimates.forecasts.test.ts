@@ -18,6 +18,7 @@ import {
 import {
   getEstimateAccuracy,
   getTaskEstimate,
+  getTaskSimilar,
   refitEstimates,
   setEstimateLogger,
   similarFinishedTasks,
@@ -32,6 +33,7 @@ import {
   updateTask,
 } from '../../src/services/tasks.ts';
 import { TOKEN_FORECAST_AFTER } from '../../src/services/token-model.ts';
+import { ApiError } from '../../src/errors.ts';
 import { captureLog } from '../helpers/app.ts';
 import { expectSqliteError, freshDb, type TestDb } from '../helpers/db.ts';
 
@@ -500,6 +502,27 @@ describe('similar finished tasks and why they were sent back', () => {
     }
     expect(JSON.stringify(similar)).not.toContain(bea);
     expect(JSON.stringify(similar)).not.toContain(adminId);
+
+    // The task panel's read (`GET /tasks/:id/similar`, LAI-1122) is the same list.
+    expect(getTaskSimilar(t.db, admin(), task.id)).toEqual({ similar });
+    expect(getTaskSimilar(t.db, actor(bea), task.id).similar.map((s) => s.task_id)).toEqual(
+      similar.map((s) => s.task_id),
+    );
+    // Somebody outside the project is refused before anything is read.
+    const outsider = makeUser('member', 'Dee Outside');
+    let refused: unknown;
+    try {
+      getTaskSimilar(t.db, actor(outsider), task.id);
+    } catch (err) {
+      refused = err;
+    }
+    expect(refused).toBeInstanceOf(ApiError);
+    expect((refused as ApiError).code).toBe('forbidden');
+  });
+
+  it('answers an empty list for a project with nothing finished', () => {
+    const task = newTask({ title: 'the first task here' });
+    expect(getTaskSimilar(t.db, admin(), task.id)).toEqual({ similar: [] });
   });
 });
 
