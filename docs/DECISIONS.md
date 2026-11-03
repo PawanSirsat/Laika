@@ -6822,3 +6822,31 @@ file from `LAI-1100` – `LAI-1199`, lowest unused first, checked with §3's swe
 **Context.** `LAI-1100` was already taken by a CHIEF builder before this was written
 (`LAI-1100-v3-details-and-advanced`, a branch cancelled unmerged on 2026-11-03); it stays that
 branch's, so filing starts at the lowest number the sweep finds free.
+
+## D-128 — A launcher's runs may be made visible on its device, and its Claude Code runs may skip permission prompts when the owner opts in there (LAI-1113; amends D-117a)
+
+**Date:** 2026-11-03 · **Decided by:** Pawan (owner), in chat: "all 3 with this cmd
+--dangerously-skip-permissions", after asking why no terminal appears on the other laptop
+when work is handed to it; recorded by CHIEF.
+
+**Decision.**
+
+1. **Visible runs, opt-in per device.** `laika agent launcher enable` may switch on, for that
+   device only:
+   - a desktop notification when a run starts and when it exits, built only from a validated
+     task key, a known harness name and numbers;
+   - `laika agent launcher watch`, a read-only live view of the launcher's audit events and the
+     run's own harness transcript;
+   - a Terminal window opened per run that shows that view. It is a viewer only: closing it
+     never stops the run, which stays the launcher's child.
+2. **Permissions.** On a device whose owner types `skip-permissions` at `enable`, a Claude Code
+   run uses `--dangerously-skip-permissions` instead of the allowlist. The `--disallowedTools`
+   deny list, `--max-turns` and `--max-budget-usd` stay in every mode, and the config loader
+   refuses an argv that skips permissions without `"permissions": "skip"`.
+3. **The boundary is GitHub, not the argv.** Deny rules match the command as written, so they
+   are best effort. Protecting `master` (require a pull request, do not allow bypassing) is
+   what keeps an unattended run from releasing; `enable` says so.
+
+**Consequences.** Configs written before this load exactly as before: no notifications, no
+Terminal window, the allowlist. Nothing on the board changes; visibility is local to the
+device that runs the work.
