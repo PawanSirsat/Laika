@@ -58,6 +58,10 @@ const harnessLabel = (harness: string): string | undefined =>
 /** How a run ended, in the words a notification uses. */
 export type RunEnding = 'finished' | 'timed out' | 'was stopped';
 
+/** The words for an `exit` line's `reason`: `exited`, `timeout`, or any stop. */
+export const runEnding = (reason: string | undefined): RunEnding =>
+  reason === 'timeout' ? 'timed out' : reason === 'exited' ? 'finished' : 'was stopped';
+
 export type RunMoment =
   | { readonly kind: 'start'; readonly taskKey: string; readonly harness: string }
   | {
@@ -192,6 +196,8 @@ export function laikaPathProblem(laika: unknown): string | undefined {
   }
   if (laika.length > 1000) return 'laika is at most 1000 characters';
   if (UNSAFE.test(laika)) return 'laika holds a control character';
+  // fish reads `\\` and `\'` inside single quotes as escapes, so the quoting would not hold there.
+  if (laika.includes('\\')) return 'laika holds a backslash, which not every shell quotes the same';
   return undefined;
 }
 
@@ -232,13 +238,35 @@ export function failure(cause: unknown, stderr: string): string {
   return 'it could not be run';
 }
 
-export function realRunner(home: string): CommandRunner {
+/**
+ * The environment osascript and notify-send run with: `PATH`, `HOME` and
+ * `LANG`, and the two a Linux desktop's notification needs to reach its
+ * session bus, `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` (review).
+ * Nothing else of the launcher's — no token, no ssh agent.
+ */
+export function commandEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  home: string,
+): Record<string, string> {
+  const out: Record<string, string> = {
+    PATH: env.PATH ?? '/usr/bin:/bin',
+    HOME: home,
+    LANG: env.LANG ?? 'C',
+  };
+  for (const name of ['DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR'] as const) {
+    const value = env[name];
+    if (value !== undefined && value !== '') out[name] = value;
+  }
+  return out;
+}
+
+export function realRunner(env: Readonly<Record<string, string>>): CommandRunner {
   return (command, done) => {
     try {
       execFile(
         command.file,
         [...command.args],
-        { timeout: 15_000, env: { PATH: '/usr/bin:/bin', HOME: home, LANG: 'C' } },
+        { timeout: 15_000, env: { ...env } },
         (cause, _stdout, stderr) => {
           done(cause === null ? undefined : failure(cause, String(stderr)));
         },

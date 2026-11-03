@@ -46,9 +46,10 @@ import {
   laikaPathProblem,
   notice,
   type Notice,
+  commandEnv,
   openViewer,
   realRunner,
-  type RunEnding,
+  runEnding,
   showNotice,
 } from './agent-launcher-visible.ts';
 import {
@@ -539,37 +540,185 @@ export function loadConfig(
   };
 }
 
+/**
+ * Claude Code headless (code.claude.com `headless.md`, `cli-reference.md`,
+ * `permission-modes.md`, read 2026-11-03): `-p` with the prompt on stdin;
+ * `dontAsk` denies anything not on the allowlist and the run continues; deny
+ * rules apply in every mode, as written (best effort — see {@link CLAUDE_DENIED});
+ * `--permission-prompts none` (≥ 2.1.259) means nobody is waited on. **The mode is written explicitly** (F6): before
+ * 2.1.302 a `-p` run with no mode could start in auto mode.
+ */
+export const CLAUDE_ALLOWED: readonly string[] = [
+  'Read',
+  'Edit',
+  'Write',
+  'Glob',
+  'Grep',
+  'Bash(git *)',
+  'Bash(pnpm *)',
+  // Opening and reading a pull request only: `gh pr merge --admin` would land on
+  // master, and a push to master here deploys production (CLAUDE.md §4).
+  'Bash(gh pr create *)',
+  'Bash(gh pr view *)',
+  'Bash(gh pr checks *)',
+  'Bash(gh pr list *)',
+  'Bash(laika agent *)',
+  'mcp__laika__*',
+];
+
+/**
+ * Deny rules hold in every mode — **as written**. Claude Code's own
+ * permissions doc calls argument-constraining Bash patterns "fragile": a push
+ * written another way (`git -C . push`, an alias, a script) is not matched.
+ * These are best effort, **not a boundary**. What keeps a run off the default
+ * branch is GitHub branch protection on it (require a pull request), which the
+ * owner turns on; `enable` says so.
+ */
+export const CLAUDE_DENIED: readonly string[] = [
+  'Bash(gh pr merge *)',
+  'Bash(gh api *)',
+  'Bash(gh repo *)',
+  'Bash(git push * main*)',
+  'Bash(git push * master*)',
+  'Bash(git push * --force*)',
+  'Bash(git push * -f*)',
+  'Bash(git push --force *)',
+  'Bash(git push -f *)',
+  'Bash(git push * +*)',
+  'Bash(git -c *)',
+  'Bash(git -C * push*)',
+  'Bash(pnpm exec *)',
+  'Bash(pnpm dlx *)',
+  'Bash(npx *)',
+];
+
 /** The flag that starts Claude Code with its permission checks skipped (`bypassPermissions`). */
 export const SKIP_PERMISSIONS = '--dangerously-skip-permissions';
-const skipsChecks = (word: string): boolean =>
-  word === SKIP_PERMISSIONS ||
-  word === '--allow-dangerously-skip-permissions' ||
-  word.includes('bypassPermissions');
+
+/** What `enable` writes in place of these in `skip` mode: none of them may stay. */
+const ALLOWLIST_FLAGS: readonly string[] = [
+  '--permission-mode',
+  '--permission-prompts',
+  '--allowedTools',
+  '--allowed-tools',
+];
+
+/**
+ * Whether `argv` starts Claude Code with its permission checks skipped: the
+ * exact flags and values that do (`cli-reference.md`), not any word that
+ * mentions one — a deny rule such as `Bash(echo bypassPermissions)` skips nothing.
+ */
+export function skipsChecks(argv: readonly string[]): boolean {
+  return argv.some(
+    (word, i) =>
+      word === SKIP_PERMISSIONS ||
+      word === '--allow-dangerously-skip-permissions' ||
+      word === '--permission-mode=bypassPermissions' ||
+      (word === 'bypassPermissions' && argv[i - 1] === '--permission-mode'),
+  );
+}
+
+/** What a Claude Code argv says about its permissions, read from the argv itself. */
+export interface ClaudeShape {
+  readonly skips: boolean;
+  /** The words after `--disallowedTools`, up to the next flag; `undefined` with no such flag. */
+  readonly denied: readonly string[] | undefined;
+  /** {@link CLAUDE_DENIED} rules that are not among them. */
+  readonly missingDenied: readonly string[];
+  /** Each value only when it is a well-formed number, and its flag is there once. */
+  readonly maxTurns: string | undefined;
+  readonly maxBudgetUsd: string | undefined;
+  /** How many times each flag that takes a value appears. */
+  readonly counts: Readonly<Record<string, number>>;
+  /** Allowlist-mode flags present ({@link ALLOWLIST_FLAGS}, also as `--flag=value`). */
+  readonly allowlistFlags: readonly string[];
+}
+
+export function claudeShape(argv: readonly string[]): ClaudeShape {
+  const count = (flag: string): number => argv.filter((w) => w === flag).length;
+  const counts = {
+    '--disallowedTools': count('--disallowedTools'),
+    '--max-turns': count('--max-turns'),
+    '--max-budget-usd': count('--max-budget-usd'),
+  };
+  const at = argv.indexOf('--disallowedTools');
+  let denied: string[] | undefined;
+  if (at !== -1) {
+    denied = [];
+    for (let i = at + 1; i < argv.length && !argv[i]!.startsWith('-'); i += 1)
+      denied.push(argv[i]!);
+  }
+  const value = (flag: string, form: RegExp): string | undefined => {
+    if (count(flag) !== 1) return undefined;
+    const v = argv[argv.indexOf(flag) + 1];
+    return v !== undefined && form.test(v) ? v : undefined;
+  };
+  const budget = value('--max-budget-usd', /^(?:[1-9][0-9]{0,4}|0)(?:\.[0-9]{1,2})?$/);
+  return {
+    skips: skipsChecks(argv),
+    denied,
+    missingDenied: CLAUDE_DENIED.filter((rule) => !(denied ?? []).includes(rule)),
+    maxTurns: value('--max-turns', /^[1-9][0-9]{0,5}$/),
+    maxBudgetUsd: budget !== undefined && Number(budget) > 0 ? budget : undefined,
+    counts,
+    allowlistFlags: ALLOWLIST_FLAGS.filter((flag) =>
+      argv.some((w) => w === flag || w.startsWith(`${flag}=`)),
+    ),
+  };
+}
 
 /**
  * Why a Claude Code argv does not match the config's `permissions`, or
  * `undefined`. **Skipping permission checks is the owner's explicit choice**
- * (D-128): an argv that skips them without `"permissions": "skip"` is refused,
- * and `skip` must still carry the deny list (`--disallowedTools`), which
- * Claude Code enforces in that mode too (cli/README.md).
+ * (D-128): an argv that skips them without `"permissions": "skip"` is refused.
+ * **A `skip` argv must be the shape `enable` writes** (`claudeArgv(…, 'skip')`,
+ * LAI-1113 review): `--dangerously-skip-permissions`; one `--disallowedTools`
+ * followed by every {@link CLAUDE_DENIED} rule, which Claude Code enforces in
+ * that mode too (cli/README.md); one `--max-turns` and one `--max-budget-usd`
+ * with a number each; and none of the allowlist's flags.
  */
 export function permissionsProblem(
   argv: readonly string[],
   permissions: Permissions,
 ): string | undefined {
-  const skips = argv.some(skipsChecks);
+  const s = claudeShape(argv);
   if (permissions === 'allowlist') {
-    return skips
+    return s.skips
       ? 'it skips permission checks, which needs "permissions": "skip" (enable asks for it)'
       : undefined;
   }
   if (!argv.includes(SKIP_PERMISSIONS)) {
     return `"permissions": "skip" needs ${SKIP_PERMISSIONS} in it`;
   }
-  if (!argv.includes('--disallowedTools')) {
-    return '"permissions": "skip" keeps the deny list: --disallowedTools must be in it';
+  if (s.allowlistFlags.length > 0) {
+    return `"permissions": "skip" replaces the allowlist: remove ${s.allowlistFlags.join(', ')}`;
   }
+  if (s.counts['--disallowedTools'] !== 1) {
+    return '"permissions": "skip" keeps the deny list: one --disallowedTools, followed by its rules';
+  }
+  if (s.missingDenied.length > 0) {
+    return `"permissions": "skip" keeps the launcher's whole deny list: ${String(s.missingDenied.length)} of its rules are not after --disallowedTools (the first: ${s.missingDenied[0]!})`;
+  }
+  if (s.maxTurns === undefined) return '"permissions": "skip" needs one --max-turns <whole number>';
+  if (s.maxBudgetUsd === undefined)
+    return '"permissions": "skip" needs one --max-budget-usd <amount>';
   return undefined;
+}
+
+/** The `check` / `status` line, from what the argv says — never from what it should say. */
+export function permissionsLine(argv: readonly string[], permissions: Permissions): string {
+  const s = claudeShape(argv);
+  const mode =
+    permissions === 'skip' ? `skip (${SKIP_PERMISSIONS})` : 'allowlist (permission checks on)';
+  const deny =
+    s.denied === undefined
+      ? 'no deny list'
+      : `deny list of ${String(s.denied.length)} rule${s.denied.length === 1 ? '' : 's'}, ${
+          s.missingDenied.length === 0
+            ? 'every one of the launcher’s among them'
+            : `${String(s.missingDenied.length)} of the launcher’s missing`
+        }`;
+  return `  Claude Code permissions: ${mode}; ${deny}; --max-turns ${s.maxTurns ?? 'not set'}; --max-budget-usd ${s.maxBudgetUsd ?? 'not set'}`;
 }
 
 /** Why an argv array is not one the launcher will run, or `undefined`. */
@@ -1309,6 +1458,18 @@ function writeStatus(
   } catch {
     // Status is a convenience; the audit log is the record.
   }
+}
+
+/**
+ * Why a run ended, as its `exit` audit line and its notification both say it:
+ * a stop by the launcher outranks a timeout that came first.
+ */
+export function exitReason(run: Pick<Running, 'stopping' | 'stopReason' | 'timedOut'>): string {
+  return run.stopping
+    ? (run.stopReason ?? 'launcher_stopped')
+    : run.timedOut
+      ? 'timeout'
+      : 'exited';
 }
 
 function terminate(run: Running, graceMs: number): void {
@@ -2091,6 +2252,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       }
       running.delete(plan.offer_id);
       const runtime = deps.now() - runStarted;
+      const reason = exitReason(run);
       audit(deps.home, deps.now(), {
         event: 'exit',
         ...auditFields,
@@ -2098,23 +2260,15 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         code: exitCode,
         signal,
         runtime_ms: runtime,
-        reason: run.stopping
-          ? (run.stopReason ?? 'launcher_stopped')
-          : run.timedOut
-            ? 'timeout'
-            : 'exited',
+        reason,
         ...runSummary(readTail(join(plan.dir, 'output.log'))),
       });
-      const ending: RunEnding = run.timedOut
-        ? 'timed out'
-        : run.stopping
-          ? 'was stopped'
-          : 'finished';
+      // The notification says what the audit line says (review): one reason, one precedence.
       show({
         kind: 'exit',
         taskKey: plan.task_key,
         harness,
-        ending,
+        ending: runEnding(reason),
         code: exitCode,
         signal,
         runtimeMs: runtime,
@@ -2832,15 +2986,8 @@ function describeConfig(io: LauncherIo, result: ConfigResult): void {
     io.out(
       `  a Terminal window per run: ${c.open_terminal === true && c.laika !== undefined ? `on (${c.laika} agent launcher watch --run <id>)` : 'off'}`,
     );
-    if (c.harnesses['claude-code'] !== undefined) {
-      io.out(
-        `  Claude Code permissions: ${
-          c.permissions === 'skip'
-            ? `skip (${SKIP_PERMISSIONS}; the deny list, --max-turns and --max-budget-usd are kept)`
-            : 'allowlist (permission checks on)'
-        }`,
-      );
-    }
+    const claude = c.harnesses['claude-code'];
+    if (claude !== undefined) io.out(permissionsLine(claude, c.permissions ?? 'allowlist'));
   }
 }
 
@@ -3082,9 +3229,9 @@ export function launcherDeps(io: LauncherIo, stopped: () => boolean): LauncherDe
         key,
         credential,
       ),
-    notify: (n) => showNotice(realRunner(io.home), process.platform, io.env, n),
+    notify: (n) => showNotice(realRunner(commandEnv(io.env, io.home)), process.platform, io.env, n),
     openViewer: (laika, runId) =>
-      openViewer(realRunner(io.home), process.platform, laika, runId, io.err),
+      openViewer(realRunner(commandEnv(io.env, io.home)), process.platform, laika, runId, io.err),
     spawn,
     stopped,
   };

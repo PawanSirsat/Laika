@@ -7,7 +7,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -22,16 +22,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, test } from 'node:test';
 
-import type { EventRecord } from '../src/agent-events.ts';
-import { handoffsDir } from '../src/agent-handoff.ts';
 import {
-  auditPath,
   configPath,
   launcherCommand,
-  type LauncherConfig,
-  type LauncherDeps,
+  exitReason,
   loadConfig,
+  permissionsLine,
   permissionsProblem,
+  skipsChecks,
   startLauncher,
 } from '../src/agent-launcher.ts';
 import {
@@ -44,6 +42,7 @@ import {
 import {
   claudeProjectDir,
   type Command,
+  commandEnv,
   type CommandRunner,
   duration,
   failure,
@@ -54,19 +53,22 @@ import {
   onPath,
   openViewer,
   OSASCRIPT,
+  realRunner,
+  runEnding,
   scriptArgs,
   TERMINAL_SCRIPT,
   terminalCommand,
   viewerLine,
 } from '../src/agent-launcher-visible.ts';
-import { writeCredential } from '../src/agent-session.ts';
-
-const OWNER = '01M2ZHT4HVYDPS7GE8S24CF4HH';
-const PROJECT = '01M50CDWK51GKGJ3JQEDM0S507';
-const AGENT = '01M635B62FE71AN9FXEZEJW9ND';
-const TASK = '01M5ZDB5XRCGY0H3NE8EB8NR9R';
-const RUN = '01M6H3V14WKG0HKSF5Y8SY6CSR';
-const HOSTILE_DEVICE = 'Belka" & (do shell script "touch /tmp/laika-pwned") & "';
+import {
+  audits,
+  launchConfig,
+  launchRig,
+  OWNER,
+  PROJECT,
+  RUN,
+  untilEvent,
+} from './support/launch-rig.ts';
 
 const temps: string[] = [];
 afterEach(() => {
@@ -187,6 +189,61 @@ void describe('the notification', () => {
     assert.equal(onPath('notify-send', `relative:${dir}`), join(dir, 'notify-send'));
   });
 
+  void test('osascript and notify-send get PATH, HOME, LANG and the session bus, nothing else', async () => {
+    const env = {
+      PATH: '/usr/local/bin:/usr/bin',
+      LANG: 'en_ZA.UTF-8',
+      DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+      XDG_RUNTIME_DIR: '/run/user/1000',
+      SSH_AUTH_SOCK: '/tmp/ssh-agent',
+      LAIKA_AGENT_TOKEN: 'lai_ENV_TOKEN_SENTINEL',
+      DISPLAY: ':0',
+    };
+    const want = {
+      PATH: '/usr/local/bin:/usr/bin',
+      HOME: '/home/p',
+      LANG: 'en_ZA.UTF-8',
+      DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+      XDG_RUNTIME_DIR: '/run/user/1000',
+    };
+    assert.deepEqual(commandEnv(env, '/home/p'), want);
+    assert.deepEqual(commandEnv({}, '/h'), { PATH: '/usr/bin:/bin', HOME: '/h', LANG: 'C' });
+    // And the runner really starts the program with exactly that environment.
+    const dir = scratch();
+    const probe = join(dir, 'probe');
+    writeFileSync(probe, '#!/bin/sh\nenv > "$0.env"\n', { mode: 0o755 });
+    chmodSync(probe, 0o755);
+    const failed = await new Promise<string | undefined>((resolve) => {
+      realRunner(commandEnv(env, '/home/p'))({ file: probe, args: [] }, resolve);
+    });
+    assert.equal(failed, undefined);
+    const seen = Object.fromEntries(
+      readFileSync(`${probe}.env`, 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]),
+    );
+    for (const [k, v] of Object.entries(want)) assert.equal(seen[k], v, k);
+    for (const k of ['SSH_AUTH_SOCK', 'LAIKA_AGENT_TOKEN', 'DISPLAY']) {
+      assert.equal(seen[k], undefined, `${k} reached the program`);
+    }
+  });
+
+  void test('an exit is worded from the audit line’s reason, with the same precedence', () => {
+    const cases: [Parameters<typeof exitReason>[0], string, string][] = [
+      [{ stopping: false, timedOut: false }, 'exited', 'finished'],
+      [{ stopping: false, timedOut: true }, 'timeout', 'timed out'],
+      [{ stopping: true, timedOut: false }, 'launcher_stopped', 'was stopped'],
+      [{ stopping: true, stopReason: 'deselected', timedOut: false }, 'deselected', 'was stopped'],
+      // Timed out, then the launcher was stopped before the run had exited: a stop, as audited.
+      [{ stopping: true, timedOut: true }, 'launcher_stopped', 'was stopped'],
+    ];
+    for (const [run, reason, ending] of cases) {
+      assert.equal(exitReason(run), reason, JSON.stringify(run));
+      assert.equal(runEnding(exitReason(run)), ending, JSON.stringify(run));
+    }
+  });
+
   void test('a title or body with a control character is refused whoever built it', () => {
     for (const body of ['a\nb', 'a\u202Eb', 'a\u0007b', 'a\u2028b']) {
       assert.equal(notifyCommand('darwin', { title: 'Laika', body }, undefined), undefined, body);
@@ -244,16 +301,26 @@ void describe('the Terminal viewer', () => {
     ]) {
       assert.equal(viewerLine('/usr/local/bin/laika', id), undefined, id);
     }
-    for (const laika of ['laika', './laika', '/opt/la\nika', '/opt/la\u202Eika', '/opt/\u0000x']) {
+    for (const laika of [
+      'laika',
+      './laika',
+      '/opt/la\nika',
+      '/opt/la\u202Eika',
+      '/opt/\u0000x',
+      '/opt/la\\ika',
+    ]) {
       assert.equal(viewerLine(laika, RUN), undefined, JSON.stringify(laika));
       assert.notEqual(laikaPathProblem(laika), undefined);
     }
+    // fish reads `\\` and `\'` inside single quotes as escapes: a backslash would not stay quoted there.
+    assert.match(laikaPathProblem('/opt/la\\ika') ?? '', /backslash/);
   });
 
   void test('a hostile laika path stays one word in sh and zsh: no command runs but laika', () => {
     const root = scratch();
     // Every character a shell would act on outside single quotes, in one folder name.
-    const folder = join(root, `it's $(touch PWNED1) \`touch PWNED2\` "q" ; touch PWNED3 & !x \\ *`);
+    // (Not a backslash: that is refused outright, above.)
+    const folder = join(root, `it's $(touch PWNED1) \`touch PWNED2\` "q" ; touch PWNED3 & !x *`);
     mkdirSync(folder);
     const laika = recorder(join(folder, 'laika'));
     const line = viewerLine(laika, RUN);
@@ -350,6 +417,99 @@ void describe('permissions', () => {
     assert.match(
       permissionsProblem(['/c', '-p', '--dangerously-skip-permissions'], 'skip') ?? '',
       /keeps the deny list/,
+    );
+  });
+
+  void test('skip is the shape enable writes: the two review argvs are refused', () => {
+    // Review of 3d8662ab: both loaded, and `check` said the deny list and caps were kept.
+    const bare = ['/c', '-p', '--dangerously-skip-permissions', '--disallowedTools'];
+    const mixed = [
+      '/c',
+      '-p',
+      '--dangerously-skip-permissions',
+      '--disallowedTools',
+      'Nothing',
+      '--permission-mode',
+      'dontAsk',
+      '--allowedTools',
+      'Bash',
+    ];
+    assert.match(
+      permissionsProblem(bare, 'skip') ?? '',
+      new RegExp(`${String(CLAUDE_DENIED.length)} of its rules are not after --disallowedTools`),
+    );
+    assert.match(
+      permissionsProblem(mixed, 'skip') ?? '',
+      /replaces the allowlist: remove --permission-mode, --allowedTools/,
+    );
+    const ok = claudeArgv('/c', 'skip');
+    assert.equal(permissionsProblem(ok, 'skip'), undefined, 'what enable writes is accepted');
+    // More deny rules than the launcher's is stricter, and fine.
+    const more = [...ok];
+    more.splice(more.indexOf('--disallowedTools') + 1, 0, 'Bash(rm *)');
+    assert.equal(permissionsProblem(more, 'skip'), undefined);
+    const without = (word: string): string[] => ok.filter((w) => w !== word);
+    const replaced = (from: string, to: string): string[] => ok.map((w) => (w === from ? to : w));
+    const cases: [string[], RegExp][] = [
+      [without(CLAUDE_DENIED[3]!), /1 of its rules are not after --disallowedTools/],
+      [[...ok, '--permission-prompts', 'none'], /remove --permission-prompts/],
+      [[...ok, '--allowedTools=Bash'], /remove --allowedTools/],
+      [[...ok, '--disallowedTools', 'Read'], /one --disallowedTools/],
+      [
+        ok.filter((w, i) => w !== '--max-turns' && ok[i - 1] !== '--max-turns'),
+        /needs one --max-turns/,
+      ],
+      [[...ok, '--max-turns', '9999'], /needs one --max-turns/],
+      [replaced('200', 'lots'), /needs one --max-turns/],
+      [replaced('5', '0'), /needs one --max-budget-usd/],
+      [
+        ok.filter((w, i) => w !== '--max-budget-usd' && ok[i - 1] !== '--max-budget-usd'),
+        /needs one --max-budget-usd/,
+      ],
+    ];
+    for (const [argv, why] of cases) {
+      assert.match(permissionsProblem(argv, 'skip') ?? '', why, JSON.stringify(argv));
+    }
+  });
+
+  void test('only the exact flags and values skip checks, not a word that mentions one', () => {
+    for (const argv of [
+      ['/c', '--dangerously-skip-permissions'],
+      ['/c', '--allow-dangerously-skip-permissions'],
+      ['/c', '--permission-mode', 'bypassPermissions'],
+      ['/c', '--permission-mode=bypassPermissions'],
+    ]) {
+      assert.equal(skipsChecks(argv), true, argv.join(' '));
+    }
+    for (const argv of [
+      [...claudeArgv('/c'), 'Bash(echo bypassPermissions)'],
+      ['/c', '--disallowedTools', 'Bash(claude --dangerously-skip-permissions *)'],
+      ['/c', '--permission-mode', 'dontAsk', 'bypassPermissions'],
+    ]) {
+      assert.equal(skipsChecks(argv), false, argv.join(' '));
+      assert.equal(permissionsProblem(argv, 'allowlist'), undefined);
+    }
+  });
+
+  void test('check’s line says what the argv says, not what it should', () => {
+    const n = String(CLAUDE_DENIED.length);
+    assert.equal(
+      permissionsLine(claudeArgv('/c', 'skip'), 'skip'),
+      `  Claude Code permissions: skip (--dangerously-skip-permissions); deny list of ${n} rules, every one of the launcher’s among them; --max-turns 200; --max-budget-usd 5`,
+    );
+    const custom = claudeArgv('/c', 'skip').map((w) => (w === '200' ? '50' : w));
+    custom.splice(custom.indexOf('--disallowedTools') + 1, 0, 'Bash(rm *)');
+    assert.equal(
+      permissionsLine(custom, 'skip'),
+      `  Claude Code permissions: skip (--dangerously-skip-permissions); deny list of ${String(CLAUDE_DENIED.length + 1)} rules, every one of the launcher’s among them; --max-turns 50; --max-budget-usd 5`,
+    );
+    assert.equal(
+      permissionsLine(['/c', '-e', '0'], 'allowlist'),
+      '  Claude Code permissions: allowlist (permission checks on); no deny list; --max-turns not set; --max-budget-usd not set',
+    );
+    assert.equal(
+      permissionsLine(['/c', '--disallowedTools', 'Nothing', '--max-turns', '-1'], 'allowlist'),
+      `  Claude Code permissions: allowlist (permission checks on); deny list of 1 rule, ${n} of the launcher’s missing; --max-turns not set; --max-budget-usd not set`,
     );
   });
 
@@ -451,6 +611,39 @@ void describe('the config keys', () => {
         /permissions "skip" is for harnesses\.claude-code/,
       ],
       [{ version: 1, notify: true }, /notify needs "version": 2/],
+      [
+        {
+          permissions: 'skip',
+          harnesses: {
+            'claude-code': [
+              recorder(join(home, 'c3')),
+              '-p',
+              '--dangerously-skip-permissions',
+              '--disallowedTools',
+            ],
+          },
+        },
+        /harnesses\.claude-code: "permissions": "skip" keeps the launcher's whole deny list/,
+      ],
+      [
+        {
+          permissions: 'skip',
+          harnesses: {
+            'claude-code': [
+              recorder(join(home, 'c4')),
+              '-p',
+              '--dangerously-skip-permissions',
+              '--disallowedTools',
+              'Nothing',
+              '--permission-mode',
+              'dontAsk',
+              '--allowedTools',
+              'Bash',
+            ],
+          },
+        },
+        /harnesses\.claude-code: "permissions": "skip" replaces the allowlist/,
+      ],
     ];
     for (const [over, why] of cases) {
       writeConfig(home, validConfig(home, over));
@@ -458,6 +651,35 @@ void describe('the config keys', () => {
       assert.equal(r.kind, 'invalid', JSON.stringify(over));
       if (r.kind === 'invalid') assert.match(r.errors.join('\n'), why, JSON.stringify(over));
     }
+  });
+
+  void test('upgrading: a skip argv written before LAI-1113 is refused until the key says skip', async () => {
+    const home = scratch();
+    const claude = recorder(join(home, 'claude'));
+    const old = [claude, '-p', '--dangerously-skip-permissions', '--max-turns', '200'];
+    writeConfig(home, validConfig(home, { harnesses: { 'claude-code': old } }));
+    const out: string[] = [];
+    const io = { out: (l: string) => out.push(l), err: (l: string) => out.push(l), home, env: {} };
+    // The login service: one refused line, exit 0 (no restart loop), nothing started.
+    assert.equal(await launcherCommand(io, ['run', '--service']), 0);
+    assert.deepEqual(
+      audits(home).map((l) => [l.event, l.reason, l.detail]),
+      [['refused', 'config_invalid', 'service']],
+    );
+    assert.equal(await launcherCommand(io, ['check']), 1);
+    assert.match(
+      out.join('\n'),
+      /harnesses\.claude-code: it skips permission checks, which needs "permissions": "skip"/,
+    );
+    // Enable's argv and the key: it loads.
+    writeConfig(
+      home,
+      validConfig(home, {
+        permissions: 'skip',
+        harnesses: { 'claude-code': claudeArgv(claude, 'skip') },
+      }),
+    );
+    assert.equal(loadConfig(home).kind, 'enabled');
   });
 
   void test('check and status show the three settings', async () => {
@@ -470,7 +692,12 @@ void describe('the config keys', () => {
     await launcherCommand(io, ['check']);
     assert.ok(out.includes('  notifications: off'), out.join('\n'));
     assert.ok(out.includes('  a Terminal window per run: off'));
-    assert.ok(out.includes('  Claude Code permissions: allowlist (permission checks on)'));
+    assert.ok(
+      out.includes(
+        `  Claude Code permissions: allowlist (permission checks on); deny list of ${String(CLAUDE_DENIED.length)} rules, every one of the launcher’s among them; --max-turns 200; --max-budget-usd 5`,
+      ),
+      out.join('\n'),
+    );
     out.length = 0;
     writeConfig(
       home,
@@ -493,117 +720,35 @@ void describe('the config keys', () => {
       );
       assert.ok(
         out.includes(
-          '  Claude Code permissions: skip (--dangerously-skip-permissions; the deny list, --max-turns and --max-budget-usd are kept)',
+          `  Claude Code permissions: skip (--dangerously-skip-permissions); deny list of ${String(CLAUDE_DENIED.length)} rules, every one of the launcher’s among them; --max-turns 200; --max-budget-usd 5`,
         ),
         text,
       );
     }
+    // The review's two argvs: refused, so no "kept" line is ever printed for them.
+    writeConfig(
+      home,
+      validConfig(home, {
+        permissions: 'skip',
+        harnesses: {
+          'claude-code': [claude, '-p', '--dangerously-skip-permissions', '--disallowedTools'],
+        },
+      }),
+    );
+    out.length = 0;
+    await launcherCommand(io, ['check']);
+    assert.match(out.join('\n'), /config invalid, refusing to run/);
+    assert.ok(!out.some((l) => l.includes('Claude Code permissions:')), out.join('\n'));
   });
 });
 
 /* -------------------------------------------------------------------------- */
 
-function launchRig(over: Partial<LauncherDeps>): {
-  home: string;
-  deps: LauncherDeps;
-  stop: () => void;
-} {
-  const home = scratch();
-  const worktree = join(home, 'wt');
-  mkdirSync(worktree);
-  writeCredential(home, 'claude-code', { url: 'http://board.invalid', token: 'lai_T' });
-  let stopped = false;
-  const record: EventRecord = {
-    cursor: 1,
-    type: 'task.handoff_offered',
-    project_id: PROJECT,
-    task_id: TASK,
-    task_key: 'LAIKA-810',
-    offer_kind: 'handoff',
-    from: null,
-    to: { agent_id: AGENT, harness: 'claude-code', device: HOSTILE_DEVICE },
-    context_revision: null,
-    state: 'received',
-    at: 0,
-    event_id: '01M6C05HQA4TCKRAJTZ67SG711',
-    offer_id: RUN,
-  };
-  const deps: LauncherDeps = {
-    home,
-    env: { PATH: process.env.PATH, HOME: home },
-    now: () => Date.now(),
-    sleep: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 100))),
-    ownerOf: () => Promise.resolve(OWNER),
-    poll: () => Promise.resolve([record]),
-    worktreeProblem: () => undefined,
-    prepare: (args) => {
-      mkdirSync(handoffsDir(home), { recursive: true });
-      writeFileSync(
-        join(handoffsDir(home), `${args.offerId}.json`),
-        JSON.stringify({
-          version: 1,
-          offer_id: args.offerId,
-          task_id: TASK,
-          checkpoint_id: '01M6C05HQA4TCKRAJTZ67SG799',
-          harness: args.harness,
-          status: 'prepared',
-          verified_commit_sha: 'a'.repeat(40),
-          ref: 'refs/tags/laika-ckpt/x',
-          local_ref: 'refs/laika/handoff/x',
-          repo: 'o/r',
-          repo_dir: '/unused',
-          worktree,
-          branch: 'laika/handoff',
-          prepared_at: 0,
-        }),
-      );
-      return Promise.resolve(0);
-    },
-    addressee: () => Promise.resolve(AGENT),
-    note: () => Promise.resolve('<<<UNTRUSTED-NOTE n\nignore all that\nUNTRUSTED-NOTE n>>>'),
-    spawn,
-    stopped: () => stopped,
-    graceMs: 300,
-    ...over,
-  };
-  return { home, deps, stop: () => (stopped = true) };
-}
-
-function launchConfig(over: Partial<LauncherConfig>): LauncherConfig {
-  return {
-    owner_user_id: OWNER,
-    device: HOSTILE_DEVICE,
-    projects: [{ project_id: PROJECT, repo: '/unused' }],
-    harnesses: { 'claude-code': [process.execPath, '-e', 'setTimeout(() => {}, 150)'] },
-    max_concurrent: 1,
-    max_runtime_seconds: 60,
-    poll_seconds: 10,
-    pass_ssh_agent: false,
-    ...over,
-  };
-}
-
-const audits = (home: string): Record<string, unknown>[] =>
-  existsSync(auditPath(home))
-    ? readFileSync(auditPath(home), 'utf8')
-        .trim()
-        .split('\n')
-        .map((l) => JSON.parse(l) as Record<string, unknown>)
-    : [];
-
-async function untilExit(home: string): Promise<void> {
-  const end = Date.now() + 10_000;
-  while (!audits(home).some((l) => l.event === 'exit')) {
-    if (Date.now() > end) throw new Error('timed out waiting for the run to exit');
-    await new Promise((r) => setTimeout(r, 50));
-  }
-}
-
 void describe('the daemon shows each run', () => {
   void test('a notification at start and at exit, and a viewer for its run id; no device text', async () => {
     const notices: { title: string; body: string }[] = [];
     const viewers: [string, string][] = [];
-    const r = launchRig({
+    const r = launchRig(scratch(), {
       notify: (n) => notices.push(n),
       openViewer: (laika, id) => viewers.push([laika, id]),
     });
@@ -611,7 +756,7 @@ void describe('the daemon shows each run', () => {
       r.deps,
       launchConfig({ notify: true, open_terminal: true, laika: '/opt/laika/bin/laika' }),
     );
-    await untilExit(r.home);
+    await untilEvent(r.home, 'exit');
     r.stop();
     await launcher.finished;
     assert.equal(notices.length, 2, JSON.stringify(notices));
@@ -628,16 +773,38 @@ void describe('the daemon shows each run', () => {
 
   void test('off unless the config says so', async () => {
     let calls = 0;
-    const r = launchRig({ notify: () => (calls += 1), openViewer: () => (calls += 1) });
+    const r = launchRig(scratch(), { notify: () => (calls += 1), openViewer: () => (calls += 1) });
     const launcher = startLauncher(r.deps, launchConfig({ laika: '/opt/laika/bin/laika' }));
-    await untilExit(r.home);
+    await untilEvent(r.home, 'exit');
     r.stop();
     await launcher.finished;
     assert.equal(calls, 0);
   });
 
+  void test('a run that times out is notified as timed out, as its audit line says', async () => {
+    const notices: { title: string; body: string }[] = [];
+    const r = launchRig(scratch(), { notify: (n) => notices.push(n) });
+    const launcher = startLauncher(
+      r.deps,
+      launchConfig({
+        notify: true,
+        max_runtime_seconds: 1,
+        harnesses: { 'claude-code': [process.execPath, '-e', 'setTimeout(() => {}, 30000)'] },
+      }),
+    );
+    await untilEvent(r.home, 'exit');
+    r.stop();
+    await launcher.finished;
+    const exit = audits(r.home).find((l) => l.event === 'exit');
+    assert.equal(exit?.reason, 'timeout');
+    assert.match(
+      notices[1]?.body ?? '',
+      /^LAIKA-810 \(Claude Code\) timed out → signal SIGTERM, \d+ s$/,
+    );
+  });
+
   void test('a notifier or viewer that throws changes nothing about the run', async () => {
-    const r = launchRig({
+    const r = launchRig(scratch(), {
       notify: () => {
         throw new Error('no GUI');
       },
@@ -649,7 +816,7 @@ void describe('the daemon shows each run', () => {
       r.deps,
       launchConfig({ notify: true, open_terminal: true, laika: '/opt/laika/bin/laika' }),
     );
-    await untilExit(r.home);
+    await untilEvent(r.home, 'exit');
     r.stop();
     await launcher.finished;
     const exit = audits(r.home).find((l) => l.event === 'exit');

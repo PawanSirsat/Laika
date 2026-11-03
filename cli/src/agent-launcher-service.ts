@@ -30,6 +30,8 @@ import {
   type Permissions,
   SKIP_PERMISSIONS,
   statusPath,
+  CLAUDE_ALLOWED,
+  CLAUDE_DENIED,
 } from './agent-launcher.ts';
 import { laikaPathProblem } from './agent-launcher-visible.ts';
 import {
@@ -205,56 +207,11 @@ export function systemdUnit(spec: ServiceSpec): string {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Claude Code headless (code.claude.com `headless.md`, `cli-reference.md`,
- * `permission-modes.md`, read 2026-11-03): `-p` with the prompt on stdin;
- * `dontAsk` denies anything not on the allowlist and the run continues; deny
- * rules apply in every mode, as written (best effort — see {@link CLAUDE_DENIED});
- * `--permission-prompts none` (≥ 2.1.259) means nobody is waited on. **The mode is written explicitly** (F6): before
- * 2.1.302 a `-p` run with no mode could start in auto mode.
+ * The allowlist and the deny list live beside the loader (`agent-launcher.ts`),
+ * which checks a `skip` argv against the whole deny list (LAI-1113 review);
+ * they are re-exported here, where `claudeArgv` uses them.
  */
-export const CLAUDE_ALLOWED: readonly string[] = [
-  'Read',
-  'Edit',
-  'Write',
-  'Glob',
-  'Grep',
-  'Bash(git *)',
-  'Bash(pnpm *)',
-  // Opening and reading a pull request only: `gh pr merge --admin` would land on
-  // master, and a push to master here deploys production (CLAUDE.md §4).
-  'Bash(gh pr create *)',
-  'Bash(gh pr view *)',
-  'Bash(gh pr checks *)',
-  'Bash(gh pr list *)',
-  'Bash(laika agent *)',
-  'mcp__laika__*',
-];
-
-/**
- * Deny rules hold in every mode — **as written**. Claude Code's own
- * permissions doc calls argument-constraining Bash patterns "fragile": a push
- * written another way (`git -C . push`, an alias, a script) is not matched.
- * These are best effort, **not a boundary**. What keeps a run off the default
- * branch is GitHub branch protection on it (require a pull request), which the
- * owner turns on; `enable` says so.
- */
-export const CLAUDE_DENIED: readonly string[] = [
-  'Bash(gh pr merge *)',
-  'Bash(gh api *)',
-  'Bash(gh repo *)',
-  'Bash(git push * main*)',
-  'Bash(git push * master*)',
-  'Bash(git push * --force*)',
-  'Bash(git push * -f*)',
-  'Bash(git push --force *)',
-  'Bash(git push -f *)',
-  'Bash(git push * +*)',
-  'Bash(git -c *)',
-  'Bash(git -C * push*)',
-  'Bash(pnpm exec *)',
-  'Bash(pnpm dlx *)',
-  'Bash(npx *)',
-];
+export { CLAUDE_ALLOWED, CLAUDE_DENIED };
 
 /** The one line `enable` prints about the limit that is real. */
 export const BRANCH_PROTECTION_NOTE =

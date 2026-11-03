@@ -25,7 +25,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
-import { auditPath, launcherDir, runDir } from '../src/agent-launcher.ts';
+import {
+  audit,
+  auditPath,
+  launcherDir,
+  runDir,
+  startLauncher,
+  statusPath,
+} from '../src/agent-launcher.ts';
 import {
   type AuditLine,
   findTranscript,
@@ -40,8 +47,17 @@ import {
   watchCommand,
 } from '../src/agent-launcher-watch.ts';
 import { claudeProjectDir } from '../src/agent-launcher-visible.ts';
+import type { Harness } from '../src/agent-session.ts';
+import {
+  audits,
+  launchConfig,
+  launchRig,
+  PROJECT,
+  RUN,
+  TASK,
+  untilEvent,
+} from './support/launch-rig.ts';
 
-const RUN = '01M6H3V14WKG0HKSF5Y8SY6CSR';
 const OTHER = '01M6H3V14WKG0HKSF5Y8SY6CSS';
 const SAMPLE = fileURLToPath(new URL('./support/claude-transcript-sample.jsonl', import.meta.url));
 
@@ -191,6 +207,35 @@ void describe('rendering a transcript', () => {
   });
 });
 
+void describe('credentials a run quoted', () => {
+  void test('a Laika token and a Bearer value are shown redacted, in a tool call and in text', () => {
+    assert.equal(
+      toolSummary({
+        command: 'curl -H "Authorization: Bearer lai_SECRET123abc" https://board.example/api',
+      }),
+      'curl -H "Authorization: Bearer [redacted]" https://board.example/api',
+    );
+    assert.equal(
+      toolSummary({ command: 'LAIKA_AGENT_TOKEN=lai_SECRET123abc laika agent whoami' }),
+      'LAIKA_AGENT_TOKEN=lai_…[redacted] laika agent whoami',
+    );
+    assert.equal(toolSummary({ header: 'bearer abc.def-ghi' }), 'header=Bearer [redacted]');
+    assert.equal(
+      toolSummary({ command: 'echo lai_SE\u200BCRET' }),
+      'echo lai_…[redacted]',
+      'a zero-width character cannot split a token past the redaction',
+    );
+    const lines = renderTranscript(
+      assistant({
+        type: 'text',
+        text: 'The token is lai_SECRET123abc.' + '\n' + 'Sent as Bearer lai_SECRET123abc',
+      }),
+    );
+    assert.deepEqual(lines, ['💬 The token is lai_…[redacted].', '   Sent as Bearer [redacted]']);
+    assert.ok(!JSON.stringify(lines).includes('SECRET'));
+  });
+});
+
 void describe('the audit log', () => {
   void test('each event as one line, every field checked first', () => {
     const at = '2026-11-03T16:28:35.637Z';
@@ -292,18 +337,42 @@ function launcherHome(): Home {
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 
-function auditStart(h: Home, at: number, harness = 'claude-code', offer = RUN): void {
-  appendFileSync(
-    auditPath(h.home),
-    `${JSON.stringify({ at: iso(at), event: 'start', offer_id: offer, task_key: 'LAIKA-970', harness, worktree: h.worktree, ...(harness === 'claude-code' ? { transcript_dir: h.dir } : {}) })}\n`,
-  );
+/** The fields the launcher's `start` and `exit` lines carry for a work request (`spawnRun`). */
+const fields = (offer: string, harness: Harness) =>
+  ({
+    offer_id: offer,
+    task_id: TASK,
+    task_key: 'LAIKA-970',
+    project_id: PROJECT,
+    offer_kind: 'work_request',
+    harness,
+    branch: 'LAIKA-970-auto-abc123',
+    base_sha: 'b'.repeat(40),
+  }) as const;
+
+/** A `start` line written by the launcher's own `audit()`, with every field it writes. */
+function auditStart(h: Home, at: number, harness: Harness = 'claude-code', offer = RUN): void {
+  audit(h.home, at, {
+    event: 'start',
+    ...fields(offer, harness),
+    pid: 4242,
+    running: 1,
+    runs_today: 1,
+    worktree: h.worktree,
+    ...(harness === 'claude-code' ? { transcript_dir: h.dir } : {}),
+  });
 }
 
 function auditExit(h: Home, at: number, offer = RUN): void {
-  appendFileSync(
-    auditPath(h.home),
-    `${JSON.stringify({ at: iso(at), event: 'exit', offer_id: offer, task_key: 'LAIKA-970', harness: 'claude-code', code: 0, signal: null, runtime_ms: 18_000, reason: 'exited' })}\n`,
-  );
+  audit(h.home, at, {
+    event: 'exit',
+    ...fields(offer, 'claude-code'),
+    pid: 4242,
+    code: 0,
+    signal: null,
+    runtime_ms: 18_000,
+    reason: 'exited',
+  });
 }
 
 /** Every file under `dir` with its size and mtime: what a read-only command must leave as it was. */
@@ -453,35 +522,80 @@ void describe('watch', () => {
     );
   });
 
-  void test('closing it — a hang-up to its whole process group, as closing a Terminal window does — leaves the run alone', async () => {
+  void test('a transcript file name is printed as safely as its text', async () => {
     const h = launcherHome();
-    // The run: detached into its own process group, as the launcher spawns it.
-    const run = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
-      detached: true,
-      stdio: 'ignore',
-    });
     auditStart(h, Date.now());
-    const entry = fileURLToPath(new URL('../src/agent-main.ts', import.meta.url));
-    // The viewer: in a process group of its own, as a Terminal window's shell is.
-    const viewer = spawn(process.execPath, [entry, 'launcher', 'watch', '--run', RUN], {
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { PATH: process.env.PATH, HOME: h.home },
-    });
-    let seen = '';
-    viewer.stdout.on('data', (c: Buffer) => (seen += c.toString()));
-    const end = Date.now() + 15_000;
-    while (!seen.includes('started LAIKA-970')) {
-      if (Date.now() > end) throw new Error(`the viewer never started:\n${seen}`);
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    const closed = new Promise((r) => viewer.on('exit', r));
-    process.kill(-viewer.pid!, 'SIGHUP');
-    await closed;
+    writeFileSync(join(h.dir, 'x\u202Ey\nz.jsonl'), `${assistant({ type: 'text', text: 'hi' })}\n`);
+    const out: string[] = [];
+    const io = {
+      out: (l: string) => out.push(l),
+      err: (l: string) => out.push(l),
+      home: h.home,
+      env: {},
+      stopped: () => true,
+    };
+    assert.equal(await watchCommand(io, ['--run', RUN, '--once']), 0);
+    const line = out.find((l) => l.includes('transcript:'));
+    assert.ok(line !== undefined, out.join('\n'));
+    assert.ok(line.endsWith('/xy z.jsonl'), line);
+    assert.equal(/[\u202E\n]/.test(out.join('')), false);
+  });
+
+  void test('closing it — a hang-up to its whole process group, as closing a Terminal window does — leaves the run alone', async () => {
+    // The real launcher, so the start line (with the run's pid) and status.json are its own.
+    const home = scratch();
+    const r = launchRig(home, {});
+    const launcher = startLauncher(
+      r.deps,
+      launchConfig({
+        harnesses: { 'claude-code': [process.execPath, '-e', 'setTimeout(() => {}, 60000)'] },
+      }),
+    );
     try {
-      assert.doesNotThrow(() => process.kill(run.pid!, 0), 'the run is still alive');
+      await untilEvent(home, 'start');
+      const start = audits(home).find((l) => l.event === 'start')!;
+      const pid = start.pid as number;
+      assert.equal(typeof pid, 'number', 'the launcher writes the run’s pid on its start line');
+      const status = JSON.parse(readFileSync(statusPath(home), 'utf8')) as {
+        running: { offer_id: string; pid: number }[];
+      };
+      assert.deepEqual(
+        status.running.map((x) => [x.offer_id, x.pid]),
+        [[RUN, pid]],
+        'and in status.json, as running',
+      );
+      // The viewer, in a process group of its own, as a Terminal window's shell is.
+      const entry = fileURLToPath(new URL('../src/agent-main.ts', import.meta.url));
+      const viewer = spawn(process.execPath, [entry, 'launcher', 'watch', '--run', RUN], {
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { PATH: process.env.PATH, HOME: home },
+      });
+      let seen = '';
+      viewer.stdout.on('data', (c: Buffer) => (seen += c.toString()));
+      viewer.stderr.on('data', (c: Buffer) => (seen += c.toString()));
+      const closed = new Promise<NodeJS.Signals | null>((resolve) =>
+        viewer.on('exit', (_code, signal) => resolve(signal)),
+      );
+      const end = Date.now() + 15_000;
+      while (!seen.includes('started LAIKA-810')) {
+        if (Date.now() > end) throw new Error(`the viewer never showed the run:\n${seen}`);
+        await new Promise((res) => setTimeout(res, 50));
+      }
+      process.kill(-viewer.pid!, 'SIGHUP');
+      assert.equal(await closed, 'SIGHUP', `the viewer was closed by the hang-up:\n${seen}`);
+      // Long enough for the launcher to have seen the run exit, had anything ended it.
+      await new Promise((res) => setTimeout(res, 1500));
+      assert.ok(launcher.running.has(RUN), 'the launcher still has the run');
+      assert.equal(
+        audits(home).some((l) => l.event === 'exit'),
+        false,
+        'no exit line: the run is still going',
+      );
+      assert.doesNotThrow(() => process.kill(pid, 0), 'the run’s process is alive');
     } finally {
-      process.kill(-run.pid!, 'SIGKILL');
+      r.stop();
+      await launcher.finished;
     }
   });
 });

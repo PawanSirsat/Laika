@@ -11,7 +11,7 @@ import { isAbsolute, join, relative } from 'node:path';
 
 import { TASK_KEY } from './agent-events.ts';
 import { auditPath, type LauncherIo, runDir, statusPath } from './agent-launcher.ts';
-import { claudeProjectDir, duration, HARNESS_LABELS } from './agent-launcher-visible.ts';
+import { claudeProjectDir, duration, HARNESS_LABELS, runEnding } from './agent-launcher-visible.ts';
 import { type Harness, isHarness, isLaikaId, isRecord, readJson } from './agent-session.ts';
 
 /**
@@ -33,9 +33,24 @@ const USAGE = 'usage: laika agent launcher watch [--run <offer-or-run-id>] [--on
 /** A printable form of `text`: no control, format (bidi, zero-width) or line-separator characters. */
 const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}\p{Cs}]/gu;
 
-/** One line: whitespace runs as one space, unsafe characters gone, at most `max` characters. */
+/**
+ * A credential a run may have quoted — a Laika token (`lai_…`), an
+ * `Authorization: Bearer` value — shown as redacted (review). Applied after the
+ * unsafe characters are gone, so a zero-width character cannot split a token
+ * past it.
+ */
+export function redacted(text: string): string {
+  return text
+    .replace(/lai_[A-Za-z0-9_-]+/g, 'lai_…[redacted]')
+    .replace(/\bBearer\s+[^\s"'`,;)]+/gi, 'Bearer [redacted]');
+}
+
+/**
+ * One line: whitespace runs as one space, unsafe characters gone, credentials
+ * {@link redacted}, at most `max` characters.
+ */
 export function oneLine(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, ' ').replace(UNSAFE, '').trim();
+  const flat = redacted(text.replace(/\s+/g, ' ').replace(UNSAFE, '').trim());
   return flat.length <= max ? flat : `${flat.slice(0, Math.max(0, max - 1))}…`;
 }
 
@@ -159,7 +174,10 @@ export function parseAudit(line: string): AuditLine | undefined {
   const num = (x: unknown): number | undefined =>
     typeof x === 'number' && Number.isFinite(x) ? x : undefined;
   const path = (x: unknown): string | undefined =>
-    typeof x === 'string' && isAbsolute(x) && x.length <= 1000 && !/[\p{Cc}\p{Cf}]/u.test(x)
+    typeof x === 'string' &&
+    isAbsolute(x) &&
+    x.length <= 1000 &&
+    !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(x)
       ? x
       : undefined;
   const out: Record<string, unknown> = { at, event: v.event };
@@ -224,8 +242,7 @@ export function renderAudit(e: AuditLine): string | undefined {
           : typeof e.signal === 'string'
             ? `signal ${e.signal}`
             : 'no exit code';
-      const ending =
-        e.reason === 'timeout' ? 'timed out' : e.reason === 'exited' ? 'finished' : 'was stopped';
+      const ending = runEnding(e.reason);
       const extra = [
         e.subtype,
         e.num_turns === undefined ? undefined : `${String(e.num_turns)} turns`,
@@ -482,12 +499,13 @@ async function watch(io: WatchIo, runId: string | undefined, once: boolean): Pro
     if (f.transcript === undefined) {
       const file = findTranscript(f.dir, f.start.at);
       if (file === undefined) {
-        if (!f.said) io.out(`   (waiting for its transcript in ${f.dir})`);
+        if (!f.said) io.out(`   (waiting for its transcript in ${oneLine(f.dir, 400)})`);
         f.said = true;
         return;
       }
       f.transcript = new Follow(file, 'start');
-      io.out(`   transcript: ${file}`);
+      // A file name is whatever was written to that folder: printed as safely as any text.
+      io.out(`   transcript: ${oneLine(file, 400)}`);
     }
     for (const line of f.transcript.lines()) for (const l of renderTranscript(line)) io.out(l);
   };
