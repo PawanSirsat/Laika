@@ -6,7 +6,10 @@ import {
   actorKey,
   commentKind,
   firstLine,
+  foldLabel,
   groupRuns,
+  runPositions,
+  summaryPoints,
 } from '../../../../src/routes/screens/task/feed-groups.ts';
 
 void describe('groupRuns', () => {
@@ -84,5 +87,51 @@ void describe('firstLine', () => {
   void test('takes the first non-blank line without its markdown marks', () => {
     assert.equal(firstLine('\n\n- **Notify** on `start`\nmore'), 'Notify on start');
     assert.equal(firstLine('x'.repeat(10), 5), 'xxxx…');
+  });
+});
+
+void describe('runPositions', () => {
+  void test('one header per run: solo alone, start then mid then end inside one', () => {
+    assert.deepEqual(
+      runPositions(['a1', 'a2', 'a3', 'b1', 'c1', 'c2'], (s) => s[0]!),
+      ['start', 'mid', 'end', 'solo', 'start', 'end'],
+    );
+    assert.deepEqual(
+      runPositions([], (s: string) => s),
+      [],
+    );
+  });
+});
+
+void describe('summaryPoints and foldLabel', () => {
+  const SUMMARY = [
+    'LAI-1113 is in review as PR #260.',
+    'CI is green on every gate job.',
+    '',
+    '- **Notifications** on start and exit.',
+    '- `watch`: read-only.',
+    '  1. nested item',
+    '',
+    '```sh',
+    '- not a list item, a line of code',
+    '',
+    '```',
+    '',
+    '## After',
+    'The D-128 draft is in the PR body.',
+  ].join('\n');
+
+  void test('a paragraph is one point however many lines, a fence one however long', () => {
+    // Paragraph, two items, a nested item, the fence, the heading, the paragraph.
+    assert.equal(summaryPoints(SUMMARY), 7);
+    assert.equal(summaryPoints(''), 0);
+    assert.equal(summaryPoints('One line.'), 1);
+  });
+
+  void test('names every point after the first, and Show less once open', () => {
+    assert.equal(foldLabel(SUMMARY, false), 'Show full summary · 6 more points');
+    assert.equal(foldLabel('First.\n\n- second', false), 'Show full summary · 1 more point');
+    assert.equal(foldLabel('One long paragraph.', false), 'Show full summary');
+    assert.equal(foldLabel(SUMMARY, true), 'Show less');
   });
 });
