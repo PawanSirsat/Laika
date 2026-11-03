@@ -353,6 +353,33 @@ export interface ServiceIo {
   readonly which: (name: string) => string | undefined;
 }
 
+/**
+ * One question on a terminal: the typed line, trimmed, or `undefined` when
+ * there is no terminal or input ends before a line (LAI-1109).
+ *
+ * **Resolve before closing.** `rl.close()` emits `close` synchronously, so
+ * closing first let the close handler resolve `undefined` ahead of the answer,
+ * and every typed answer read as "no terminal".
+ */
+export function askTerminal(
+  question: string,
+  input: NodeJS.ReadableStream & { isTTY?: boolean },
+  output: NodeJS.WritableStream,
+): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    if (input.isTTY !== true) {
+      resolve(undefined);
+      return;
+    }
+    const rl = createInterface({ input, output });
+    rl.question(question, (answer) => {
+      resolve(answer.trim());
+      rl.close();
+    });
+    rl.on('close', () => resolve(undefined));
+  });
+}
+
 export function realServiceIo(io: LauncherIo): ServiceIo {
   const run = (file: string, args: readonly string[]): RunResult => {
     try {
@@ -380,19 +407,7 @@ export function realServiceIo(io: LauncherIo): ServiceIo {
     err: io.err,
     home: io.home,
     env: io.env,
-    ask: (question) =>
-      new Promise((resolve) => {
-        if (process.stdin.isTTY !== true) {
-          resolve(undefined);
-          return;
-        }
-        const rl = createInterface({ input: process.stdin, output: process.stdout });
-        rl.question(question, (answer) => {
-          rl.close();
-          resolve(answer.trim());
-        });
-        rl.on('close', () => resolve(undefined));
-      }),
+    ask: (question) => askTerminal(question, process.stdin, process.stdout),
     run,
     fetch: (input, init) => fetch(input, init),
     platform: process.platform,
