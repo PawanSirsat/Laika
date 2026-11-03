@@ -33,17 +33,18 @@ import { isRecord } from './agent-session.ts';
  * ## Boundaries (D-117a item 10)
  *
  * - **Loopback only.** The server comes from `~/.omnigent/daemons/*.json`
- *   (or `local_server.pid`), and a URL that is not `http://127.0.0.1`,
- *   `localhost` or `[::1]` with no path is refused before anything is sent.
- *   Redirects are refused too.
+ *   (or `local_server.pid`), and a URL that is not `http://127.0.0.1` or
+ *   `http://[::1]` with a port and no path is refused before anything is
+ *   sent. Redirects are refused too.
  * - **Gated to 0.19.x.** The route is internal (`include_in_schema=False`),
  *   so the version is read from the server's `GET /api/version` first, and
  *   anything else — or no answer — sends nothing.
  * - **Never retried.** A 4xx or 5xx answer is reported, not repeated.
- * - **What is sent** is `Content-Type: application/json` and the body, and
- *   nothing else: no `Origin`, no `X-Forwarded-Email` (which would make the
- *   local server treat the request as another user's), no credential — the
- *   local server runs single-user in header mode and needs none
+ * - **What is sent**: the body, with `Content-Type: application/json` — the
+ *   only header set here; `fetch`'s own defaults ride along. Never an
+ *   `Origin`, never `X-Forwarded-Email` (which would make the local server
+ *   treat the request as another user's), never a credential — the local
+ *   server runs single-user in header mode and needs none
  *   (`server/auth.py:766-773`).
  * - **What the text holds**: fixed words, the task key and the project slug,
  *   each format-checked. Never a title, a description or a comment: those
@@ -59,8 +60,12 @@ export const LAIKA_POLLY = 'laika-polly';
 export const laikaPollyDir = (home: string): string =>
   join(home, '.laika', 'omnigent', LAIKA_POLLY);
 
-/** The agents whose sessions a notice may wake, most specific first. */
-export const DEFAULT_AGENT_NAMES: readonly string[] = [LAIKA_POLLY, 'polly'];
+/**
+ * The one agent whose sessions Laika wakes or stops: the copy `tool add`
+ * made, whose MCP is Laika's bridge. Never the bundled `polly`, which has no
+ * Laika MCP and could not act on a notice (review #12).
+ */
+export const AGENT_NAME = LAIKA_POLLY;
 
 /** How long one request to the local server may take. */
 export const OMNIGENT_REQUEST_MS = 5000;
@@ -79,9 +84,13 @@ export interface OmnigentDeps {
 /* Finding the server                                                         */
 /* -------------------------------------------------------------------------- */
 
-const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
+/**
+ * The loopback addresses themselves (review #9): not `localhost`, which is a
+ * name a resolver could send anywhere. Omnigent records `127.0.0.1`.
+ */
+const LOOPBACK = new Set(['127.0.0.1', '[::1]']);
 
-/** `http://<loopback>:<port>` with no path, query or credentials, or `undefined`. */
+/** `http://127.0.0.1:<port>` or `http://[::1]:<port>` with no path, query or credentials, or `undefined`. */
 export function loopbackOrigin(raw: unknown): string | undefined {
   if (typeof raw !== 'string' || raw === '') return undefined;
   let url: URL;
@@ -177,7 +186,13 @@ export function localServer(deps: Pick<OmnigentDeps, 'home' | 'alive'>): ServerF
 /* Talking to it                                                              */
 /* -------------------------------------------------------------------------- */
 
-/** One request to the local server: the headers below and nothing else, no redirects. */
+/**
+ * One request to the local server, never redirected. The only header this
+ * sets is `Content-Type: application/json`, on a body; `fetch` adds its own
+ * defaults (`accept`, `accept-language`, `accept-encoding`, `user-agent`,
+ * `sec-fetch-mode`), none of them `Origin`, `X-Forwarded-Email` or a
+ * credential.
+ */
 async function call(
   deps: OmnigentDeps,
   url: string,
@@ -331,8 +346,6 @@ export type WakeOutcome =
   | { readonly kind: 'refused'; readonly status: number; readonly sessionId: string };
 
 export interface WakeOptions {
-  /** The agents whose sessions may be woken; {@link DEFAULT_AGENT_NAMES} when absent. */
-  readonly agentNames?: readonly string[];
   /** Prefer the session working in this directory, when one is. */
   readonly workspace?: string;
 }
@@ -362,10 +375,11 @@ const same = (a: string | undefined, b: string): boolean => {
 };
 
 /**
- * Deliver a notice to the local Omnigent session most likely to act on it:
- * of the named agents' sessions that are not failed, one working in
- * `workspace` if there is one, otherwise the most recently updated. One POST;
- * a 4xx or 5xx is returned as `refused` and never repeated.
+ * Deliver a notice to the local `laika-polly` session most likely to act on
+ * it ({@link AGENT_NAME}; never the bundled `polly`): of its sessions that
+ * have not failed, one working in `workspace` if there is one, otherwise the
+ * most recently updated. One POST; a 4xx or 5xx is returned as `refused` and
+ * never repeated.
  */
 export async function wakeOmnigentSession(
   deps: OmnigentDeps,
@@ -376,17 +390,13 @@ export async function wakeOmnigentSession(
   if (text === undefined) return { kind: 'skipped', reason: 'invalid_notice' };
   const reached = await reach(deps);
   if (!('server' in reached)) return reached;
-  let target: OmnigentSession | undefined;
-  for (const name of options.agentNames ?? DEFAULT_AGENT_NAMES) {
-    const sessions = await listSessions(deps, reached.server, name);
-    if (sessions === 'unreachable') return { kind: 'skipped', reason: 'unreachable' };
-    const usable = sessions.filter((s) => s.status !== 'failed');
-    const workspace = options.workspace;
-    target =
-      (workspace === undefined ? undefined : usable.find((s) => same(s.workspace, workspace))) ??
-      usable[0];
-    if (target !== undefined) break;
-  }
+  const sessions = await listSessions(deps, reached.server, AGENT_NAME);
+  if (sessions === 'unreachable') return { kind: 'skipped', reason: 'unreachable' };
+  const usable = sessions.filter((s) => s.status !== 'failed');
+  const workspace = options.workspace;
+  const target =
+    (workspace === undefined ? undefined : usable.find((s) => same(s.workspace, workspace))) ??
+    usable[0];
   if (target === undefined) return { kind: 'skipped', reason: 'no_session' };
   const answer = await call(
     deps,
@@ -407,36 +417,29 @@ export type StopOutcome =
   | { readonly kind: 'refused'; readonly status: number; readonly sessionId: string };
 
 /**
- * Stop the Omnigent run working in `workspace` — the session of one of the
- * named agents that is `running` or `waiting` there — with `stop_session`.
- * The launcher calls this before it signals `omni … -p`, which on its own
- * leaves the turn running on the server. One POST, never retried.
+ * Stop the `laika-polly` run working in `workspace` — its session that is
+ * `running` or `waiting` there — with `stop_session`. The launcher calls this
+ * before it signals `omni … -p`, which on its own leaves the turn running on
+ * the server. One POST, never retried.
  */
-export async function stopOmnigentRun(
-  deps: OmnigentDeps,
-  workspace: string,
-  options: Pick<WakeOptions, 'agentNames'> = {},
-): Promise<StopOutcome> {
+export async function stopOmnigentRun(deps: OmnigentDeps, workspace: string): Promise<StopOutcome> {
   const reached = await reach(deps);
   if (!('server' in reached)) return reached;
-  for (const name of options.agentNames ?? DEFAULT_AGENT_NAMES) {
-    const sessions = await listSessions(deps, reached.server, name);
-    if (sessions === 'unreachable') return { kind: 'skipped', reason: 'unreachable' };
-    const run = sessions.find(
-      (s) => (s.status === 'running' || s.status === 'waiting') && same(s.workspace, workspace),
-    );
-    if (run === undefined) continue;
-    const answer = await call(
-      deps,
-      `${reached.server}/v1/sessions/${encodeURIComponent(run.id)}/events`,
-      'POST',
-      { type: 'stop_session', data: {} },
-    );
-    if (answer === 'unreachable') return { kind: 'skipped', reason: 'unreachable' };
-    if (answer.status >= 200 && answer.status < 300) return { kind: 'stopped', sessionId: run.id };
-    return { kind: 'refused', status: answer.status, sessionId: run.id };
-  }
-  return { kind: 'skipped', reason: 'no_session' };
+  const sessions = await listSessions(deps, reached.server, AGENT_NAME);
+  if (sessions === 'unreachable') return { kind: 'skipped', reason: 'unreachable' };
+  const run = sessions.find(
+    (s) => (s.status === 'running' || s.status === 'waiting') && same(s.workspace, workspace),
+  );
+  if (run === undefined) return { kind: 'skipped', reason: 'no_session' };
+  const answer = await call(
+    deps,
+    `${reached.server}/v1/sessions/${encodeURIComponent(run.id)}/events`,
+    'POST',
+    { type: 'stop_session', data: {} },
+  );
+  if (answer === 'unreachable') return { kind: 'skipped', reason: 'unreachable' };
+  if (answer.status >= 200 && answer.status < 300) return { kind: 'stopped', sessionId: run.id };
+  return { kind: 'refused', status: answer.status, sessionId: run.id };
 }
 
 /* -------------------------------------------------------------------------- */
