@@ -450,6 +450,10 @@ void describe('permissions', () => {
     assert.equal(permissionsProblem(more, 'skip'), undefined);
     const without = (word: string): string[] => ok.filter((w) => w !== word);
     const replaced = (from: string, to: string): string[] => ok.map((w) => (w === from ? to : w));
+    const joined = (flag: string): string[] => {
+      const i = ok.indexOf(flag);
+      return [...ok.slice(0, i), `${flag}=${ok[i + 1]!}`, ...ok.slice(i + 2)];
+    };
     const cases: [string[], RegExp][] = [
       [without(CLAUDE_DENIED[3]!), /1 of its rules are not after --disallowedTools/],
       [[...ok, '--permission-prompts', 'none'], /remove --permission-prompts/],
@@ -460,6 +464,15 @@ void describe('permissions', () => {
         /needs one --max-turns/,
       ],
       [[...ok, '--max-turns', '9999'], /needs one --max-turns/],
+      // Round 2: a second value in the `--flag=value` spelling, or the deny list's alias.
+      [[...ok, '--max-turns=999999'], /needs one --max-turns/],
+      [[...ok, '--max-budget-usd=99999'], /needs one --max-budget-usd/],
+      [[...ok, '--disallowedTools=Read'], /one --disallowedTools, written so/],
+      [[...ok, '--disallowed-tools', 'Nothing'], /one --disallowedTools, written so/],
+      [[...ok, '--disallowed-tools=Nothing'], /one --disallowedTools, written so/],
+      // …or the only one, written as `--flag=value`: the launcher reads two words only.
+      [joined('--max-turns'), /needs one --max-turns/],
+      [joined('--max-budget-usd'), /needs one --max-budget-usd/],
       [replaced('200', 'lots'), /needs one --max-turns/],
       [replaced('5', '0'), /needs one --max-budget-usd/],
       [
@@ -478,6 +491,10 @@ void describe('permissions', () => {
       ['/c', '--allow-dangerously-skip-permissions'],
       ['/c', '--permission-mode', 'bypassPermissions'],
       ['/c', '--permission-mode=bypassPermissions'],
+      // An inline settings JSON can set permissions.defaultMode (round 2).
+      ['/c', '--settings', '{"permissions":{"defaultMode":"bypassPermissions"}}'],
+      ['/c', '--settings={"permissions":{"defaultMode":"bypassPermissions"}}'],
+      ['/c', '--settings', ' {"permissions": {"defaultMode": "bypassPermissions"}}'],
     ]) {
       assert.equal(skipsChecks(argv), true, argv.join(' '));
     }
@@ -485,6 +502,9 @@ void describe('permissions', () => {
       [...claudeArgv('/c'), 'Bash(echo bypassPermissions)'],
       ['/c', '--disallowedTools', 'Bash(claude --dangerously-skip-permissions *)'],
       ['/c', '--permission-mode', 'dontAsk', 'bypassPermissions'],
+      ['/c', '--settings', '{"model":"opus"}'],
+      // A settings file is a path: the launcher cannot read what it will say (README).
+      ['/c', '--settings', '/Users/p/bypassPermissions.json'],
     ]) {
       assert.equal(skipsChecks(argv), false, argv.join(' '));
       assert.equal(permissionsProblem(argv, 'allowlist'), undefined);
@@ -509,7 +529,16 @@ void describe('permissions', () => {
     );
     assert.equal(
       permissionsLine(['/c', '--disallowedTools', 'Nothing', '--max-turns', '-1'], 'allowlist'),
-      `  Claude Code permissions: allowlist (permission checks on); deny list of 1 rule, ${n} of the launcher’s missing; --max-turns not set; --max-budget-usd not set`,
+      `  Claude Code permissions: allowlist (permission checks on); deny list of 1 rule, ${n} of the launcher’s missing; --max-turns not readable (it must be one --max-turns, written so, followed by its number); --max-budget-usd not set`,
+    );
+    // A cap raised with a second, `=` spelling is never shown as the first one.
+    const raised = [...claudeArgv('/c', 'skip'), '--max-turns=999999', '--max-budget-usd=99999'];
+    const line = permissionsLine(raised, 'skip');
+    assert.ok(!line.includes('--max-turns 200') && !line.includes('--max-budget-usd 5'), line);
+    assert.match(line, /--max-turns not readable .*; --max-budget-usd not readable/);
+    assert.match(
+      permissionsLine([...claudeArgv('/c', 'skip'), '--disallowed-tools', 'Nothing'], 'skip'),
+      /deny list not readable \(it must be one --disallowedTools, written so, followed by its rules\)/,
     );
   });
 
@@ -643,6 +672,43 @@ void describe('the config keys', () => {
           },
         },
         /harnesses\.claude-code: "permissions": "skip" replaces the allowlist/,
+      ],
+      // Round 2's repro: enable's argv with a raised cap appended, in the `=` spelling.
+      [
+        {
+          permissions: 'skip',
+          harnesses: {
+            'claude-code': [
+              ...claudeArgv(recorder(join(home, 'c5')), 'skip'),
+              '--max-budget-usd=99999',
+            ],
+          },
+        },
+        /harnesses\.claude-code: "permissions": "skip" needs one --max-budget-usd/,
+      ],
+      [
+        {
+          permissions: 'skip',
+          harnesses: {
+            'claude-code': [
+              ...claudeArgv(recorder(join(home, 'c6')), 'skip'),
+              '--max-turns=999999',
+            ],
+          },
+        },
+        /harnesses\.claude-code: "permissions": "skip" needs one --max-turns/,
+      ],
+      [
+        {
+          harnesses: {
+            'claude-code': [
+              ...claudeArgv(recorder(join(home, 'c7'))),
+              '--settings',
+              '{"permissions":{"defaultMode":"bypassPermissions"}}',
+            ],
+          },
+        },
+        /harnesses\.claude-code: it skips permission checks, which needs "permissions": "skip"/,
       ],
     ];
     for (const [over, why] of cases) {

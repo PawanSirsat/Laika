@@ -607,35 +607,69 @@ const ALLOWLIST_FLAGS: readonly string[] = [
  * Whether `argv` starts Claude Code with its permission checks skipped: the
  * exact flags and values that do (`cli-reference.md`), not any word that
  * mentions one — a deny rule such as `Bash(echo bypassPermissions)` skips nothing.
+ * An inline `--settings` JSON that names `bypassPermissions` counts too (it can
+ * set `permissions.defaultMode`); a settings *file* cannot be read here, since
+ * it may change after the config loads (cli/README.md).
  */
 export function skipsChecks(argv: readonly string[]): boolean {
-  return argv.some(
-    (word, i) =>
+  const inlineSettings = (word: string, i: number): string | undefined =>
+    word === '--settings'
+      ? argv[i + 1]
+      : word.startsWith('--settings=')
+        ? word.slice('--settings='.length)
+        : undefined;
+  return argv.some((word, i) => {
+    const settings = inlineSettings(word, i);
+    return (
       word === SKIP_PERMISSIONS ||
       word === '--allow-dangerously-skip-permissions' ||
       word === '--permission-mode=bypassPermissions' ||
-      (word === 'bypassPermissions' && argv[i - 1] === '--permission-mode'),
-  );
+      (word === 'bypassPermissions' && argv[i - 1] === '--permission-mode') ||
+      (settings !== undefined &&
+        settings.trimStart().startsWith('{') &&
+        settings.includes('bypassPermissions'))
+    );
+  });
 }
+
+/**
+ * Every spelling Claude Code reads as each flag that takes a value: its name,
+ * its alias (`cli-reference.md`), and each as `--name=value`. A second
+ * occurrence in any spelling is a second value — for the caps, one that would
+ * raise them past what `check` shows (round-2 review) — so each is counted.
+ */
+const SPELLINGS: Readonly<Record<string, readonly string[]>> = {
+  '--disallowedTools': ['--disallowedTools', '--disallowed-tools'],
+  '--max-turns': ['--max-turns'],
+  '--max-budget-usd': ['--max-budget-usd'],
+};
 
 /** What a Claude Code argv says about its permissions, read from the argv itself. */
 export interface ClaudeShape {
   readonly skips: boolean;
-  /** The words after `--disallowedTools`, up to the next flag; `undefined` with no such flag. */
+  /**
+   * The words after `--disallowedTools`, up to the next flag; `undefined` unless
+   * the deny-list flag is there once, in that spelling.
+   */
   readonly denied: readonly string[] | undefined;
   /** {@link CLAUDE_DENIED} rules that are not among them. */
   readonly missingDenied: readonly string[];
-  /** Each value only when it is a well-formed number, and its flag is there once. */
+  /**
+   * Each value only when its flag is there once, in its bare spelling, followed
+   * by a well-formed number.
+   */
   readonly maxTurns: string | undefined;
   readonly maxBudgetUsd: string | undefined;
-  /** How many times each flag that takes a value appears. */
+  /** How many times each flag that takes a value appears, in any of its {@link SPELLINGS}. */
   readonly counts: Readonly<Record<string, number>>;
   /** Allowlist-mode flags present ({@link ALLOWLIST_FLAGS}, also as `--flag=value`). */
   readonly allowlistFlags: readonly string[];
 }
 
 export function claudeShape(argv: readonly string[]): ClaudeShape {
-  const count = (flag: string): number => argv.filter((w) => w === flag).length;
+  const count = (flag: string): number =>
+    argv.filter((w) => (SPELLINGS[flag] ?? [flag]).some((n) => w === n || w.startsWith(`${n}=`)))
+      .length;
   const counts = {
     '--disallowedTools': count('--disallowedTools'),
     '--max-turns': count('--max-turns'),
@@ -643,13 +677,13 @@ export function claudeShape(argv: readonly string[]): ClaudeShape {
   };
   const at = argv.indexOf('--disallowedTools');
   let denied: string[] | undefined;
-  if (at !== -1) {
+  if (at !== -1 && counts['--disallowedTools'] === 1) {
     denied = [];
     for (let i = at + 1; i < argv.length && !argv[i]!.startsWith('-'); i += 1)
       denied.push(argv[i]!);
   }
   const value = (flag: string, form: RegExp): string | undefined => {
-    if (count(flag) !== 1) return undefined;
+    if (count(flag) !== 1 || !argv.includes(flag)) return undefined;
     const v = argv[argv.indexOf(flag) + 1];
     return v !== undefined && form.test(v) ? v : undefined;
   };
@@ -693,15 +727,18 @@ export function permissionsProblem(
   if (s.allowlistFlags.length > 0) {
     return `"permissions": "skip" replaces the allowlist: remove ${s.allowlistFlags.join(', ')}`;
   }
-  if (s.counts['--disallowedTools'] !== 1) {
-    return '"permissions": "skip" keeps the deny list: one --disallowedTools, followed by its rules';
+  if (s.denied === undefined) {
+    return '"permissions": "skip" keeps the deny list: one --disallowedTools, written so (not --disallowedTools=… or --disallowed-tools), followed by its rules';
   }
   if (s.missingDenied.length > 0) {
     return `"permissions": "skip" keeps the launcher's whole deny list: ${String(s.missingDenied.length)} of its rules are not after --disallowedTools (the first: ${s.missingDenied[0]!})`;
   }
-  if (s.maxTurns === undefined) return '"permissions": "skip" needs one --max-turns <whole number>';
-  if (s.maxBudgetUsd === undefined)
-    return '"permissions": "skip" needs one --max-budget-usd <amount>';
+  if (s.maxTurns === undefined) {
+    return '"permissions": "skip" needs one --max-turns <whole number>, as two words, and no other --max-turns';
+  }
+  if (s.maxBudgetUsd === undefined) {
+    return '"permissions": "skip" needs one --max-budget-usd <amount>, as two words, and no other --max-budget-usd';
+  }
   return undefined;
 }
 
@@ -710,15 +747,23 @@ export function permissionsLine(argv: readonly string[], permissions: Permission
   const s = claudeShape(argv);
   const mode =
     permissions === 'skip' ? `skip (${SKIP_PERMISSIONS})` : 'allowlist (permission checks on)';
+  const unreadable = (flag: string): string =>
+    flag === '--disallowedTools'
+      ? 'not readable (it must be one --disallowedTools, written so, followed by its rules)'
+      : `not readable (it must be one ${flag}, written so, followed by its number)`;
+  const cap = (flag: string, v: string | undefined): string =>
+    v ?? (s.counts[flag] === 0 ? 'not set' : unreadable(flag));
   const deny =
-    s.denied === undefined
+    s.counts['--disallowedTools'] === 0
       ? 'no deny list'
-      : `deny list of ${String(s.denied.length)} rule${s.denied.length === 1 ? '' : 's'}, ${
-          s.missingDenied.length === 0
-            ? 'every one of the launcher’s among them'
-            : `${String(s.missingDenied.length)} of the launcher’s missing`
-        }`;
-  return `  Claude Code permissions: ${mode}; ${deny}; --max-turns ${s.maxTurns ?? 'not set'}; --max-budget-usd ${s.maxBudgetUsd ?? 'not set'}`;
+      : s.denied === undefined
+        ? `deny list ${unreadable('--disallowedTools')}`
+        : `deny list of ${String(s.denied.length)} rule${s.denied.length === 1 ? '' : 's'}, ${
+            s.missingDenied.length === 0
+              ? 'every one of the launcher’s among them'
+              : `${String(s.missingDenied.length)} of the launcher’s missing`
+          }`;
+  return `  Claude Code permissions: ${mode}; ${deny}; --max-turns ${cap('--max-turns', s.maxTurns)}; --max-budget-usd ${cap('--max-budget-usd', s.maxBudgetUsd)}`;
 }
 
 /** Why an argv array is not one the launcher will run, or `undefined`. */
