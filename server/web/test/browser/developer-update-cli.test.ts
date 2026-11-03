@@ -425,8 +425,9 @@ void describe('the wizards: before the laika command', () => {
     try {
       const wizard = h.page.locator('[data-wizard="device"]');
       await wizard.waitFor({ timeout: 20_000 });
-      // The option's own label, as a person clicks it: its styling covers the input.
-      await wizard.locator('label.dx-option', { hasText: 'There is a checkout' }).click();
+      // The choice's own label, as a person clicks it: its styling covers the input
+      // (one compact line since LAI-1097).
+      await wizard.locator('[data-installed-choice] label', { hasText: 'Yes' }).click();
       assert.equal(await h.page.getByRole('radio', { name: /^Yes/ }).isChecked(), true);
       const step = await toPairCommand(h.page);
       // Review round 1, N3: no `git -C ~/laika fetch && laika update` an old helper cannot run.
