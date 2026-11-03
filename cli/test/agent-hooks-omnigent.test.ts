@@ -679,6 +679,34 @@ void describe('an Omnigent run through the real hook', () => {
     assert.equal(ends[0]?.auth, `Bearer ${CLAUDE_TOKEN}`);
   });
 
+  void test('no omnigent.json on this device: an Omnigent run keeps LAI-542’s behaviour — its session lives on at Stop (review #5/#6)', async () => {
+    const r = root();
+    const home = join(r, 'home');
+    const bin = join(r, 'bin');
+    mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, 'claude'));
+    const board = await stubBoard();
+    credentials(home, board.url, ['claude-code']);
+    claudeJson(home, SWITCHING(board.url));
+    const h = startHarness(home, bin, { OMNIGENT: '1' });
+
+    assert.equal((await h.run('session-start', 'nodev-1')).code, 0);
+    const first = stateOf(home, 'nodev-1');
+    assert.equal(
+      board.requests.find((q) => q.path === '/api/v1/agent-sessions')?.auth,
+      `Bearer ${CLAUDE_TOKEN}`,
+    );
+    assert.equal((await h.run('stop', 'nodev-1')).code, 0);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    assert.equal(stateOf(home, 'nodev-1').status, 'live');
+    assert.ok(
+      !board.requests.some((q) => q.path.endsWith('/end')),
+      'a session was ended at Stop on a device that never set up Omnigent',
+    );
+    assert.equal((await h.run('prompt', 'nodev-1')).code, 0);
+    assert.equal(stateOf(home, 'nodev-1').session_id, first.session_id);
+  });
+
   void test('a plain run on the same device acts as its own agent and keeps its session at Stop', async () => {
     const r = root();
     const home = join(r, 'home');
