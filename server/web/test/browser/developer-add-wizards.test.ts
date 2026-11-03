@@ -28,6 +28,7 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -105,6 +106,7 @@ const agentRow = (
   created_at: 1,
   revoked_at: null,
   last_seen_at: null,
+  launcher: NEVER_REPORTED,
 });
 
 type Agent = ReturnType<typeof agentRow>;
@@ -124,6 +126,7 @@ const deviceRow = (id: string, name: string, paired: boolean, agents: Agent[] = 
   active_count: agents.length,
   revoked_count: 0,
   agents,
+  launcher: NEVER_REPORTED,
   created_at: 1,
   revoked_at: null,
 });

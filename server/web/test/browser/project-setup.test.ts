@@ -34,6 +34,7 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -114,6 +115,7 @@ const agentRow = (over: {
   created_at: 1,
   revoked_at: null,
   last_seen_at: Date.now(),
+  launcher: NEVER_REPORTED,
   ...over,
 });
 
@@ -178,6 +180,7 @@ function stub(
           active_count: world.agents.length,
           revoked_count: 0,
           agents: world.agents,
+          launcher: NEVER_REPORTED,
         },
       ],
     }),
@@ -1119,6 +1122,7 @@ void describe('Project setup, v3', () => {
       active_count: 1,
       revoked_count: 0,
       agents: [connected],
+      launcher: NEVER_REPORTED,
       created_at: 1,
       revoked_at: null,
     };

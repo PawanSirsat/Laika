@@ -64,6 +64,7 @@ import {
   type UpdateManifest,
   type UpdateStatus,
 } from '../../../../../src/routes/screens/developer/v3/update-status.ts';
+import { NEVER_REPORTED } from '../../../../helpers/launcher.ts';
 
 const NOW = 1_800_000_000_000;
 const MIN = 60_000;
@@ -107,6 +108,7 @@ const agent = (over: Partial<RegisteredAgent> = {}): RegisteredAgent => ({
   created_at: 1,
   revoked_at: null,
   last_seen_at: NOW - MIN,
+  launcher: NEVER_REPORTED,
   ...over,
 });
 
@@ -197,6 +199,7 @@ const device = (over: Partial<Device> = {}): Device => ({
   agents: [agent()],
   created_at: 1,
   revoked_at: null,
+  launcher: NEVER_REPORTED,
   ...over,
 });
 

@@ -21,6 +21,7 @@ import {
   type RegisteredAgent,
 } from '../../src/api/agents.ts';
 import type { TokenView } from '../../src/api/tokens.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 const MINT = 1_000_000;
 
@@ -59,6 +60,7 @@ function agent(over: Partial<RegisteredAgent> = {}): RegisteredAgent {
     created_at: MINT,
     revoked_at: null,
     last_seen_at: null,
+    launcher: NEVER_REPORTED,
     ...over,
   };
 }

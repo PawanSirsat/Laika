@@ -1,4 +1,5 @@
 import type { RegisteredAgent } from './agents.ts';
+import type { Launcher } from './capacity.ts';
 import { request } from './client.ts';
 
 /**
@@ -43,6 +44,8 @@ export interface Device {
   readonly revoked_count: number;
   /** Its agents, newest first, active and revoked — the shapes `GET /agents` sends. */
   readonly agents: readonly RegisteredAgent[];
+  /** The device's launcher (§4.83): on if any of its active tools' is, else unknown if any is, else off. */
+  readonly launcher: Launcher;
   readonly created_at: number;
   readonly revoked_at: number | null;
 }

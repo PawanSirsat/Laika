@@ -136,6 +136,16 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     'a paired device calls it with no session (LAI-1056); `laika tool add` (plan LAI-1042 slice C3)',
   'api/v1/agents/me/client-report':
     'an agent token calls it (LAI-1056); `laika doctor --report` (plan LAI-1042 slice C3)',
+  // LAI-1038 serves them, LAI-1102 names them. Permanent, for the reason the
+  // agent-token group above is: a launcher's report about itself and the
+  // answer to a ping are the pinged agent's own token's acts, under
+  // `heartbeat.send_own` (D-126 items 3–4), and the SPA holds a person's
+  // session. A person reads the report on Tools and Devices, and the answer on
+  // the ping they sent — both called from the screens.
+  'api/v1/agents/me/launcher':
+    'agent-token only — a session is refused `403`; the device’s launcher reports with it (plan auto-pickup slice B)',
+  'api/v1/agents/me/capacity-pings/*/reply':
+    'agent-token only — the pinged agent’s own; its launcher or session watcher answers a ping with it (plan auto-pickup slice B)',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */

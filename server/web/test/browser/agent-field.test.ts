@@ -28,6 +28,7 @@ import {
 } from './harness.ts';
 import { offered, pick } from './dropdown.ts';
 import { AGENT_SAVE_DEADLINE_MS } from '../../src/api/agent-writes.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 const HOUR = 3_600_000;
 const NOW = Date.now();
@@ -62,6 +63,7 @@ const AGENTS = [
     created_at: 1,
     revoked_at: null,
     last_seen_at: NOW - 60_000,
+    launcher: NEVER_REPORTED,
   },
   {
     id: 'ag-desktop',
@@ -75,6 +77,7 @@ const AGENTS = [
     created_at: 2,
     revoked_at: null,
     last_seen_at: null,
+    launcher: NEVER_REPORTED,
   },
   {
     id: 'ag-ro',
@@ -88,6 +91,7 @@ const AGENTS = [
     created_at: 3,
     revoked_at: null,
     last_seen_at: NOW - 60_000,
+    launcher: NEVER_REPORTED,
   },
 ];
 

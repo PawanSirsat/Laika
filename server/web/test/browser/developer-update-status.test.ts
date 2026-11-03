@@ -36,6 +36,7 @@ import {
   type Harness,
   type OpenOptions,
 } from './harness.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -127,6 +128,7 @@ const agentRow = (id: string, harness: string) => ({
   created_at: 1,
   revoked_at: null,
   last_seen_at: NOW - 60_000,
+  launcher: NEVER_REPORTED,
 });
 
 type Agent = ReturnType<typeof agentRow>;
@@ -154,6 +156,7 @@ const deviceRow = (agents: Agent[]) => ({
   active_count: agents.length,
   revoked_count: 0,
   agents,
+  launcher: NEVER_REPORTED,
   created_at: 1,
   revoked_at: null,
 });

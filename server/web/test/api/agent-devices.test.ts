@@ -22,6 +22,7 @@ import {
 } from '../../src/api/agent-devices.ts';
 import type { RegisteredAgent } from '../../src/api/agents.ts';
 import type { TokenView } from '../../src/api/tokens.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 interface Sent {
   readonly url: string;
@@ -81,6 +82,7 @@ function agent(id: string, over: Partial<RegisteredAgent> = {}): RegisteredAgent
     created_at: 1,
     revoked_at: null,
     last_seen_at: null,
+    launcher: NEVER_REPORTED,
     ...over,
   };
 }

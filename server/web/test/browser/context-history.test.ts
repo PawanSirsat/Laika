@@ -24,6 +24,7 @@ import {
 } from './harness.ts';
 import { answerConfirm } from './confirm.ts';
 import { pick } from './dropdown.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 const NOW = Date.now();
 const SLUG = 'laika-core';
@@ -73,6 +74,7 @@ const MY_AGENT = {
   created_at: 1,
   revoked_at: null,
   last_seen_at: null,
+  launcher: NEVER_REPORTED,
 };
 
 /** `GET …/context/deliveries` as §6.4 answers it (LAI-1003). */
