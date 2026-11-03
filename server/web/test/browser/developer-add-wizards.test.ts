@@ -256,8 +256,9 @@ void describe('Add device: paired only when the board says so', () => {
 
       const block = await wizard(page, 'device').locator('pre').innerText();
       assert.deepEqual(block.split('\n'), [
-        `git clone https://github.com/PawanSirsat/Laika.git ~/laika && git -C ~/laika checkout --detach ${COMMIT}`,
-        '~/laika/plugin/scripts/install.sh --no-credential',
+        'git clone https://github.com/PawanSirsat/Laika.git ~/laika &&',
+        `git -C ~/laika checkout --detach ${COMMIT} &&`,
+        '~/laika/plugin/scripts/install.sh --no-credential &&',
         `~/laika/cli/bin/laika device pair --board http://board.test --code ${CODE}`,
       ]);
       assert.doesNotMatch(block, /\bnpx\b/);

@@ -575,7 +575,8 @@ export function AddToolWizard({
             <Help>
               No secret is in this command. {d.display_name} fetches {t.name}’s credential with its
               own key and keeps it in a file only you can read; it never passes through this
-              browser. The command works once, for ten minutes.
+              browser. The command works once, for ten minutes: if updating Laika first takes
+              longer, this page offers a new command once this one expires.
             </Help>
             {setup.revokes !== undefined && setup.revokes.length > 0 ? (
               <Help tone="warn">

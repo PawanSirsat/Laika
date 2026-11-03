@@ -186,7 +186,7 @@ export const UPDATE_STATUS: Readonly<Record<UpdateChipKey, StatusCopy>> = {
     tone: 'accent',
     meaning:
       'Its helper speaks an older protocol that this board still accepts: what it does now keeps working, and newer features need the update.',
-    todo: 'On that device run laika update --check, then laika update. Details has the command.',
+    todo: 'On that device run laika update --check, then laika update. Details has the commands, and the steps for a CLI too old to have laika update.',
   },
   required: {
     word: 'Update required',
@@ -200,7 +200,7 @@ export const UPDATE_STATUS: Readonly<Record<UpdateChipKey, StatusCopy>> = {
     tone: 'neutral',
     meaning:
       'Its helper has not reported a version to this board, so there is nothing to compare, and it may well be fine.',
-    todo: 'Run laika update on that device: it reports the helper’s version to this board.',
+    todo: 'Run laika update on that device: it reports the helper’s version to this board. A CLI too old to have laika update: How to update your Laika CLI, in Details.',
   },
   unchecked: {
     word: 'Could not check',

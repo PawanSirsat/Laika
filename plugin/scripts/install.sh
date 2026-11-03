@@ -1,12 +1,15 @@
 #!/bin/sh
 # install.sh — set up the `laika` and `laika-claude` commands on this machine.
 #
-# The V3 path (LAI-1060) asks for no token and writes none:
+# The V3 path (LAI-1060) asks for no token and writes none. The browser's Add
+# device shows these lines filled in, as one && list: each runs only if the one
+# before it worked, so a clone refused because ~/laika exists never runs an
+# older install.sh there, which would ask for a token (LAI-1093):
 #
-#   git clone <the board's source URL> ~/laika
-#   git -C ~/laika checkout --detach <the board's commit>
-#   ~/laika/plugin/scripts/install.sh --no-credential
-#   laika device pair --board <board> --code <code>     # the browser shows this
+#   git clone <the board's source URL> ~/laika &&
+#   git -C ~/laika checkout --detach <the board's commit> &&
+#   ~/laika/plugin/scripts/install.sh --no-credential &&
+#   ~/laika/cli/bin/laika device pair --board <board> --code <code>
 #
 # Each tool then gets its own credential with `laika tool add` (the browser
 # shows that command too), kept in ~/.laika/agents/<tool>.json.
@@ -26,7 +29,7 @@ for ARG in "$@"; do
   case "$ARG" in
     --no-credential) NO_CREDENTIAL=yes ;;
     -h | --help)
-      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)

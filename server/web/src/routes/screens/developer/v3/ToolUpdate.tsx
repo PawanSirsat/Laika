@@ -17,7 +17,7 @@ import { NoteBlock } from './NoteBlock.tsx';
 import { HintChip } from './StatusLegend.tsx';
 import { UpdateCliHelp } from './UpdateCliGuide.tsx';
 import { deviceVersionDescription, updateChipDescription } from './status-vocabulary.ts';
-import { guideFor, versionUnknownHint } from './update-cli.ts';
+import { GUIDE_TITLE, guideFor, versionUnknownHint } from './update-cli.ts';
 import {
   AFTER_UPDATE,
   ALLOW_HTTP_WHY,
@@ -396,6 +396,10 @@ export function ToolUpdate({ agentId, label }: ToolUpdateProps) {
                 <strong>Why --allow-http:</strong> {ALLOW_HTTP_WHY}
               </p>
             )}
+            <p className="dv3-note" data-too-old-update="">
+              If laika update is an unknown command on that device, its CLI is older still:{' '}
+              {GUIDE_TITLE}, below, has the steps for it, wherever the old checkout is.
+            </p>
             <p className="dv3-note" data-after-update>
               {AFTER_UPDATE}
             </p>

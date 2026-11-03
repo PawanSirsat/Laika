@@ -48,6 +48,8 @@ import { DxIcon } from './DxIcon.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
 import { OVERVIEW_ADDRESSES } from './overview-state.ts';
 import { SectionTitle } from './SectionTitle.tsx';
+import { UpdateCliHelp } from './UpdateCliGuide.tsx';
+import { GUIDE_TITLE } from './update-cli.ts';
 import {
   cliMatchHint,
   connectedTools,
@@ -1348,13 +1350,12 @@ function ReviewStep({
                   (commit <code>{hint.commit}</code>)
                 </>
               )}
-              . Check with <code>{hint.version}</code>. If that says unknown command, your CLI
-              predates this board: update the Laika checkout it runs from with{' '}
-              <code>{hint.pull}</code> (if you cloned Laika somewhere other than{' '}
-              <code>{hint.home}</code>, use that folder), then run <code>{hint.version}</code>{' '}
-              again. Newer CLIs update with <code>{hint.update}</code>; if that says unknown command
-              too, use the same git step.
+              . Check with <code>{hint.version}</code>: if it prints a commit,{' '}
+              <code>{hint.update}</code> brings it to this board’s. If either says unknown command,
+              your CLI predates this board: {GUIDE_TITLE}, below, shows where it comes from and what
+              to do about it, wherever the old one is.
             </p>
+            <UpdateCliHelp place="project-setup" />
           </>
         )}
         {records.kind === 'loading' ? (

@@ -221,3 +221,20 @@ export function loadBoardBuild(signal?: AbortSignal): Promise<BoardBuild | undef
     () => undefined,
   );
 }
+
+/** Which build this board is, and where its helper comes from, from one answer. */
+export interface BoardFacts {
+  readonly build: BoardBuild | undefined;
+  readonly source: CliSource | undefined;
+}
+
+/**
+ * The board's build and its helper source (LAI-1093), read in one request.
+ * Never rejects: whatever is unreadable is `undefined`.
+ */
+export function loadBoardFacts(signal?: AbortSignal): Promise<BoardFacts> {
+  return request<unknown>('/developer/compatibility', signal === undefined ? {} : { signal }).then(
+    (body) => ({ build: boardBuildOf(body), source: cliSourceOf(body) }),
+    () => ({ build: undefined, source: undefined }),
+  );
+}
