@@ -1561,7 +1561,9 @@ It reads what is already here and asks only what it cannot read:
    (`laika tool add claude-code`) and its session hooks
    (`laika agent hooks on --harness claude-code`); without either it is left
    out, with the command that fixes it. **Codex is added only if you type
-   `danger-full-access`** (below). Omnigent only if you type `yes`.
+   `danger-full-access`** (below). Omnigent only if `laika tool add omnigent`
+   installed its Laika-connected polly and you type `yes`; it is asked
+   separately whether a notice may wake its running session (below).
 4. It prints the whole config and the service file, and does nothing until you
    type `enable`. `--dry-run` prints and stops.
 
@@ -1638,7 +1640,10 @@ asked again hourly, a ping is settled unanswered, and nothing else changes.
 ### What the harness is given
 
 - **argv**: the file's array, exactly; with `"prompt_via": {"<harness>": "argv"}`
-  the prompt is appended as the last item (Omnigent's `omni polly -p`).
+  the prompt is appended as the last item — Omnigent's
+  `omni run ~/.laika/omnigent/laika-polly -p <prompt>`, the Laika-connected
+  polly `laika tool add omnigent` installs (never the bundled `omni polly`,
+  which has no Laika connection), with the worktree as its cwd.
 - **stdin**: the prompt (unless `prompt_via` is `argv`). For a work request:
   fixed words and five fields, each format-checked — the task key, the project
   slug, the branch, the default branch and the base commit. **No task text**:
@@ -1701,7 +1706,11 @@ through the launcher (no model run was possible when this was written).
 `max_concurrent` (1 – 4) at once; `max_runs_per_day` (1 – 50, default 10) per
 UTC day across every harness — past it a request waits, audited once a day,
 and starts the next day if it is still open; `max_runtime_seconds` (60 – 86400),
-then SIGTERM to the process group and SIGKILL 10 s later. Cost: Claude Code's
+then SIGTERM to the process group and SIGKILL 10 s later. **An Omnigent run is
+first asked to stop on its local server** (`stop_session`, slice D's
+`stopOmnigentRun`; audited `omnigent_stop`), because a signal to `omni … -p`
+leaves the server-side turn running — at most 15 s before the SIGTERM. Cost:
+Claude Code's
 `--max-budget-usd` and `--max-turns`; Codex and Omnigent have runtime only.
 Git older than 2.41 is refused.
 
@@ -1734,6 +1743,14 @@ moved out of its group is **not** ended.
 `timeout`, `exit`, `stopped`, `reaped`, `daemon_stop` — ids, harness, branch,
 base, pid, exit code, signal, runtime, runs today. No token, URL, note, title
 or output is written to it.
+
+**Waking an Omnigent session** (D-117a item 10; `"omnigent": {"wake_sessions":
+true}`, asked at `enable`). Work addressed to this device's Omnigent agent that
+the launcher does not start — Omnigent is not a harness to start here, or that
+kind is switched off for the project — is, once its inbox confirms it is that
+agent's, posted to the agent's running local session as one line: fixed words,
+the task key and the project slug (slice D's `wakeOmnigentSession`: loopback
+only, Omnigent 0.19.x only, never retried). Audited `woken` with what happened.
 
 **It never wakes a machine.** A laptop asleep or off starts nothing; work
 waits on the board, and the catch-up on reconnect starts it afterwards.

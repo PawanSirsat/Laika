@@ -1,6 +1,6 @@
 ---
 id: LAI-1103
-title: 'Launcher: wake an existing local Omnigent session for a selection (D-117a item 10)'
+title: 'Launcher and Omnigent on a real device: start, stop and wake, checked live (D-117a item 10)'
 area: cli
 assignee: unclaimed
 priority: p3
@@ -11,30 +11,30 @@ status: backlog
 
 ## Goal
 
-D-117a item 10 and plan slice B (`cli/src/agent-omnigent.ts`): when an
-Omnigent agent's auto-pickup is off, a selection may still reach an
-**existing** local Omnigent session as a notice. LAI-1039 shipped the
-launcher's work-request pickup, presence and ping answers, and starts
-`omni polly -p` as a harness (`prompt_via: argv`), but **not** the wake: the
-Omnigent server's discovery and the `/v1/sessions/{id}/events` payload were
-not verifiable from this machine without the owner's Omnigent investigation,
-and the route is internal (`include_in_schema=False`).
+D-117a item 10 and plan §8 acceptance step 5. LAI-1039 wires the launcher to
+slice D's `cli/src/agent-omnigent.ts` (LAI-1101): Omnigent starts as
+`omni run <laikaPollyDir> -p <prompt>` in the worktree; a run is asked to
+`stop_session` before its SIGTERM; and, with `omnigent.wake_sessions`, work
+the launcher does not start is posted to the agent's running local session.
+All of it is unit-tested against stubs and D's fake loopback server; **none of
+it has run against a real Omnigent server through the launcher**. This task is
+that live check, on KvellD’s MacBook 36 GB.
+
+(Filed first as the wake's implementation; rescoped the same day, before it
+reached `master`, once slice D shipped the module and LAI-1039 wired it.)
 
 ## Acceptance criteria
 
-- [ ] `cli/src/agent-omnigent.ts`: find the local Omnigent server and a live
-      session for this agent; refuse unless `omni --version` is 0.19.x.
-- [ ] POST to `/v1/sessions/{id}/events` on **loopback only** (a non-loopback
-      URL is refused before any request), fixed words built from
-      `noticeLine` (validated fields only, ≤ 300 characters), never retried
-      after a 4xx or 5xx.
-- [ ] Off unless the config says `"omnigent": {"wake_sessions": true}`;
-      `enable` asks.
-- [ ] `cli/test/agent-omnigent.test.ts` against a fake loopback server, with
-      the plan's mutations red: wake a non-loopback URL; skip the version gate.
-- [ ] Repo-root gate exits 0.
+- [ ] Selecting `Polly · KvellD’s MacBook 36 GB` on a trivial card starts
+      `omni run … -p` in a fresh `<KEY>-auto-…` worktree; it claims and
+      finishes into Review.
+- [ ] `laika agent launcher stop` mid-run: the audit shows `omnigent_stop`
+      `stopped` before the exit, and the Omnigent session is idle within 3 s.
+- [ ] With Omnigent's start off and `wake_sessions` on, a selection posts
+      `[laika] LAI-…: selected for this agent …` to the running polly session
+      (audit `woken` `delivered`).
+- [ ] Each recorded in the acceptance document with the audit lines.
 
 ## Notes / context
 
-Plan: `.polly/plans/auto-pickup-capacity.md` §7 (D-117a item 10), §8 B.
-LAI-1101 (slice D) ships the Omnigent wiring this builds on.
+Plan: `.polly/plans/auto-pickup-capacity.md` §8 two-device acceptance, step 5.
