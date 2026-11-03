@@ -6,7 +6,8 @@ assignee: shell/belka
 priority: p2
 depends-on: []
 started: 2026-11-04T00:40:00+05:30
-status: in-progress
+finished: 2026-11-04T00:45:00+05:30
+status: review
 discovered-from: LAI-1113
 ---
 
@@ -26,22 +27,22 @@ Seen on Belka 2026-11-03 after #260 (LAI-1113). Two things.
 
 ## Acceptance criteria
 
-- [ ] After `bootout`, `installService` waits, bounded (about 10 s), until
+- [x] After `bootout`, `installService` waits, bounded (about 10 s), until
       `launchctl print gui/<uid>/ai.laika.launcher` reports the job gone, then
       bootstraps.
-- [ ] A `bootstrap` failing with error 5 or 37 is retried a few times with a
+- [x] A `bootstrap` failing with error 5 or 37 is retried a few times with a
       short backoff.
-- [ ] If it still fails, the exact manual command
+- [x] If it still fails, the exact manual command
       (`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.laika.launcher.plist`)
       is printed and `enable` exits non-zero.
-- [ ] Tests with a fake runner: the job lingers then disappears; bootstrap
+- [x] Tests with a fake runner: the job lingers then disappears; bootstrap
       fails once with 5 then succeeds; a persistent failure prints the command.
-- [ ] An owner lookup that cannot be answered is audited as its own event kind,
+- [x] An owner lookup that cannot be answered is audited as its own event kind,
       `skipped` with `reason: owner_unknown`, not `refused`; `owner_mismatch`
       stays `refused`.
-- [ ] `watch` renders it as `skipped a check: could not reach the board to
+- [x] `watch` renders it as `skipped a check: could not reach the board to
       confirm the owner (will retry)`. Tested.
-- [ ] `cli/README.md` says both.
+- [x] `cli/README.md` says both.
 
 ## Notes
 
