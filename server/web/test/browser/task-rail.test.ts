@@ -610,9 +610,14 @@ void describe('the rail, to the 2026-11-04 design', () => {
             overflow <= 0,
             `${dark ? 'dark' : 'light'} at ${String(w)}: ${String(overflow)}px sideways`,
           );
-          // Nothing in the rail is wider than the rail.
+          // Nothing in the rail is wider than the rail — or, on a phone, than
+          // the sheet: below 600px the rail's wrapper is `display: contents`
+          // and has no box of its own (the one column, LAI-1122).
           const wider = await h.page.locator('.panel-side').evaluate((side) => {
-            const edge = side.getBoundingClientRect().right + 0.5;
+            const own = side.getBoundingClientRect();
+            const box =
+              own.width > 0 ? own : (side.closest('.drawer') ?? side).getBoundingClientRect();
+            const edge = box.right + 0.5;
             return [...side.querySelectorAll('.meta-card *')]
               .filter(
                 (el) => el.getBoundingClientRect().right > edge && el.getClientRects().length > 0,
