@@ -59,8 +59,10 @@ import {
   statusPath,
   takePid,
   launcherDir,
+  type Launcher,
   UNREACHABLE_BACKOFF_MAX_MS,
   UNREACHABLE_BACKOFF_MS,
+  UNREACHABLE_FORGET_MS,
 } from '../src/agent-launcher.ts';
 import { readProc, writeCredential } from '../src/agent-session.ts';
 import { pollyTurn } from '../src/agent.ts';
@@ -2724,5 +2726,79 @@ void describe('LAI-1107: nothing lost to a transient failure, a hand prepare, a 
       false,
     );
     assert.equal(lines.filter((l) => l.reason === 'reuse_refused').length, 1);
+  });
+});
+
+void describe('LAI-1108: a backoff ends with its offer, or after a bounded time', () => {
+  const R = (): EventRecord => record({ event_id: rid(70), offer_id: rid(71) });
+
+  void test('an offer backed off as unreachable, then closed: decided, and its backoff gone', async () => {
+    // Read from inside a dep, so held where the dep can see it once started.
+    const held: { launcher?: Launcher } = {};
+    let during: readonly string[] = [];
+    let asked = 0;
+    const r = rig(() => [R()], {
+      maxTicks: 2,
+      prepare: () => Promise.resolve(PREPARE_RETRY),
+      // Tick 1: in the inbox. Tick 2: closed — no longer in it.
+      addressee: () => {
+        asked += 1;
+        if (asked === 2) during = held.launcher?.backingOff() ?? [];
+        return Promise.resolve(asked === 1 ? AGENT : undefined);
+      },
+    });
+    const script = fakeHarness(scratch());
+    const launcher = startLauncher(
+      r.deps,
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    );
+    held.launcher = launcher;
+    await launcher.finished;
+    assert.deepEqual(during, [rid(71)], 'backed off after the first try');
+    const lines = auditLines(r.home);
+    assert.equal(lines.filter((l) => l.reason === 'prepare_unreachable').length, 1);
+    assert.equal(lines.filter((l) => l.reason === 'agent_unresolved').length, 1, 'decided');
+    assert.deepEqual(launcher.backingOff(), [], 'the closed offer keeps no backoff');
+  });
+
+  /** Ticks 1 and 2, `shift` apart: the first sleep moves the clock on. */
+  async function forgotten(shift: number): Promise<readonly string[]> {
+    let polls = 0;
+    let moved = 0;
+    const r = rig(() => (polls++ === 0 ? [R()] : []), {
+      maxTicks: 2,
+      now: () => Date.now() + moved,
+      sleep: (ms) =>
+        new Promise((done) => {
+          moved += shift;
+          setTimeout(done, Math.min(ms, 50));
+        }),
+      prepare: () => Promise.resolve(PREPARE_RETRY),
+    });
+    const script = fakeHarness(scratch());
+    const launcher = startLauncher(
+      r.deps,
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    );
+    await launcher.finished;
+    assert.equal(
+      auditLines(r.home).filter((l) => l.reason === 'prepare_unreachable').length,
+      1,
+      'backed off once, and its event never came back',
+    );
+    return launcher.backingOff();
+  }
+
+  void test('a backoff whose offer is never seen again is forgotten, but not before its time', async () => {
+    assert.ok(
+      UNREACHABLE_FORGET_MS > UNREACHABLE_BACKOFF_MAX_MS,
+      'never between two tries at the cap',
+    );
+    // Still inside the bound: kept, so a retry at the cap still doubles.
+    assert.deepEqual(await forgotten(UNREACHABLE_BACKOFF_MS + UNREACHABLE_FORGET_MS - 60_000), [
+      rid(71),
+    ]);
+    // Past it: forgotten.
+    assert.deepEqual(await forgotten(UNREACHABLE_BACKOFF_MS + UNREACHABLE_FORGET_MS + 60_000), []);
   });
 });

@@ -488,6 +488,15 @@ export interface SessionState {
    * directory moves into a folder with a project `laika` server.
    */
   identity?: 'omnigent' | 'own';
+  /**
+   * Whether the run {@link identity} was decided for was Omnigent's — its
+   * `OMNIGENT=1`, as the marker read it (LAI-1108, from PR #252's review). A
+   * `SessionStart` in a run that differs — an Omnigent worker resumed by hand
+   * with `claude --resume`, or the other way round — decides the identity
+   * again instead of keeping one that was decided for another run. Absent on
+   * a session started before it was kept, or off an Omnigent device.
+   */
+  omnigent_run?: boolean;
 }
 
 export function readState(path: string): SessionState | undefined {
@@ -855,6 +864,8 @@ export interface StartRequest {
   readonly self?: SelfReport;
   /** Whose credential this session speaks with, recorded in its state from the start (N1). */
   readonly identity?: 'omnigent' | 'own';
+  /** {@link SessionState.omnigent_run}, recorded beside the identity from the start. */
+  readonly omnigentRun?: boolean;
 }
 
 export type StartOutcome =
@@ -977,6 +988,7 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
       claims: [],
       noticed: [],
       ...(request.identity === undefined ? {} : { identity: request.identity }),
+      ...(request.omnigentRun === undefined ? {} : { omnigent_run: request.omnigentRun }),
     };
     const state: SessionState =
       resumable === undefined ? fresh : { ...resumable, status: 'starting' };

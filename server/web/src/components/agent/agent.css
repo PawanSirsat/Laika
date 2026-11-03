@@ -1032,8 +1032,13 @@
   font-size: var(--text-small);
 }
 
-.agent-ping-live:empty {
-  /* Kept in the tree so the live region exists before it fills; drawn as nothing. */
+/* Kept in the tree so the live region exists before it fills; drawn as
+   nothing. An idle Ping's wrapper holds nothing but that empty region: in flow
+   it would still wrap onto a row of its own, and the row gap above it would
+   show as a space under the button. Out of flow too, an idle Ping is as tall
+   as its button (LAI-1108). */
+.agent-ping-live:empty,
+.agent-ping-status:has(> .agent-ping-live:only-child:empty) {
   position: absolute;
   width: 1px;
   height: 1px;

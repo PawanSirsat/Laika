@@ -802,6 +802,14 @@ export const sessionRateLimited = (v: unknown): v is typeof SESSION_RATE_LIMITED
  */
 export const UNREACHABLE_BACKOFF_MS = 30_000;
 export const UNREACHABLE_BACKOFF_MAX_MS = 15 * 60_000;
+/**
+ * A backoff whose retry time passed this long ago without the offer being
+ * tried again is forgotten (LAI-1108): its event no longer comes back — the
+ * offer closed or expired where no event says so — and an entry is never
+ * kept for the launcher's whole life. Twice the cap, so an offer still being
+ * retried at the cap is never forgotten between two tries.
+ */
+export const UNREACHABLE_FORGET_MS = 2 * UNREACHABLE_BACKOFF_MAX_MS;
 
 /** Beside a run, written before the launcher calls `prepare`: a record without it was prepared by hand. */
 export const PREPARE_MARKER = 'launcher-prepare.json';
@@ -901,8 +909,15 @@ export interface LauncherDeps {
    * Why a worktree an earlier attempt made may not be started in now, or
    * `undefined` when it may: the branch, `HEAD` at `sha` or after it, a clean
    * status ({@link reusedWorktreeProblem}). Asked before every reuse (LAI-1107).
+   * `repoDir` is the project's configured checkout: the worktree must be one
+   * of its repository's, at its recorded real path (LAI-1108).
    */
-  readonly worktreeProblem: (worktree: string, branch: string, sha: string) => string | undefined;
+  readonly worktreeProblem: (
+    worktree: string,
+    branch: string,
+    sha: string,
+    repoDir: string,
+  ) => string | undefined;
   /** Post one fixed-words comment on a task. */
   readonly comment?: (
     credential: AgentCredential,
@@ -1135,6 +1150,8 @@ export interface Launcher {
   readonly finished: Promise<void>;
   /** What presence reports and a ping answers, now. */
   readonly snapshot: () => LauncherSnapshot;
+  /** The offers backed off as unreachable now (LAI-1108): read-only, for status and tests. */
+  readonly backingOff: () => readonly string[];
 }
 
 function writeStatus(
@@ -1521,6 +1538,23 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
   const unreachable = new Map<string, { failures: number; until: number }>();
 
   /**
+   * An offer's event is decided — started, refused, closed, woken or already
+   * launched — so its backoff goes with it (LAI-1108), whatever decided it.
+   */
+  const decided = (key: string, record: EventRecord): void => {
+    markHandled(deps.home, memory, key, record.event_id);
+    if (record.offer_id !== null) unreachable.delete(record.offer_id);
+  };
+
+  /** A backoff whose offer has not been tried again long after its time is forgotten (LAI-1108). */
+  const forgetStaleBackoffs = (): void => {
+    const now = deps.now();
+    for (const [offerId, entry] of unreachable) {
+      if (now - entry.until > UNREACHABLE_FORGET_MS) unreachable.delete(offerId);
+    }
+  };
+
+  /**
    * A prepare or a worktree that could not reach the board or the repository
    * (LAI-1107): never an answer, so the event stays to do, and nothing about
    * it is asked again until a backoff that doubles up to a cap has passed.
@@ -1582,6 +1616,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         before.worktree,
         before.branch,
         before.verified_commit_sha,
+        project.repo,
       );
       if (problem !== undefined) {
         // The reason names paths and branches: kept beside the run, never in the audit line.
@@ -1749,7 +1784,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         repo_dir: recorded.repo_dir,
       };
       // Reused only as it was left (LAI-1107).
-      const problem = deps.worktreeProblem(ws.worktree, ws.branch, ws.base_sha);
+      const problem = deps.worktreeProblem(ws.worktree, ws.branch, ws.base_sha, check.rule.repo);
       if (problem !== undefined) {
         writePrivate(join(dir, 'reuse-refused.txt'), `${inert(problem, 2000)}\n`);
         return refuse(record, harness, 'reuse_refused', { task_key: check.taskKey });
@@ -2172,7 +2207,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         await stopDeselected(record, credential);
       }
       if (record.offer_id !== null && memory.launchedOffers.has(record.offer_id)) {
-        markHandled(deps.home, memory, handledKey, record.event_id);
+        decided(handledKey, record);
         continue;
       }
       let verdict = judge(record, harness, known(), config);
@@ -2190,17 +2225,17 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
             : judge(record, harness, resolved, config);
       }
       if (verdict === 'not_an_offer') {
-        markHandled(deps.home, memory, handledKey, record.event_id);
+        decided(handledKey, record);
         continue;
       }
       if (harness === 'omnigent' && WAKEABLE.has(verdict) && wakeOn()) {
         const woke = await wakeSession(record, credential, fp);
         if (woke === 'retry') continue;
-        markHandled(deps.home, memory, handledKey, record.event_id);
+        decided(handledKey, record);
         continue;
       }
       if (verdict !== 'ok' || agentId === undefined) {
-        markHandled(deps.home, memory, handledKey, record.event_id);
+        decided(handledKey, record);
         refuse(
           record,
           harness,
@@ -2245,10 +2280,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       } catch {
         outcome = refuse(record, harness, 'launch_error');
       }
-      if (outcome === 'done') {
-        unreachable.delete(record.offer_id!);
-        markHandled(deps.home, memory, handledKey, record.event_id);
-      }
+      if (outcome === 'done') decided(handledKey, record);
     }
   };
 
@@ -2261,6 +2293,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     for (let tick = 0; deps.maxTicks === undefined || tick < deps.maxTicks; tick += 1) {
       if (deps.stopped()) break;
       woken = false;
+      forgetStaleBackoffs();
       // Omnigent's credential is read for a wake even when it is not a harness to start.
       const ticked = new Set<Harness>(Object.keys(config.harnesses) as Harness[]);
       if (wakeOn()) ticked.add('omnigent');
@@ -2304,7 +2337,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     status(false);
     audit(deps.home, deps.now(), { event: 'daemon_stop' });
   };
-  return { running, finished: loop(), snapshot };
+  return { running, finished: loop(), snapshot, backingOff: () => [...unreachable.keys()] };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2816,8 +2849,8 @@ export function launcherDeps(io: LauncherIo, stopped: () => boolean): LauncherDe
       return { slug: hit.slug, repo: typeof hit.repo === 'string' ? hit.repo : null };
     },
     workspace: (args) => prepareWorkspace({ git: gitRunner(io.env), env: io.env, ...args }),
-    worktreeProblem: (worktree, branch, sha) =>
-      reusedWorktreeProblem(gitRunner(io.env), worktree, branch, sha),
+    worktreeProblem: (worktree, branch, sha, repoDir) =>
+      reusedWorktreeProblem(gitRunner(io.env), worktree, branch, sha, repoDir),
     comment: async (credential, taskId, body) => {
       const result = await callBoard(fetchFn, credential, `/api/v1/tasks/${taskId}/comments`, {
         body_md: body,

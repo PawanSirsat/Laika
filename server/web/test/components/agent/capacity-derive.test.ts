@@ -255,6 +255,26 @@ void describe('no Ping, and why — the role named when the role is the reason',
     );
   });
 
+  void test('LAI-1108: a space the reader is not a member of names no role of theirs', () => {
+    // Granted there, agents allowed — and the reader holds no role in it.
+    assert.deepEqual(whyNoPing(agent(), spaces, me({ memberships: [] })), { kind: 'no-space' });
+    // A space they are not in is passed over for the one they view.
+    const two = agent({
+      grants: [
+        { project_id: 'p1', scope: 'full' },
+        { project_id: 'p2', scope: 'full' },
+      ],
+    });
+    assert.deepEqual(
+      whyNoPing(
+        two,
+        [{ id: 'p1', name: 'Elsewhere', agents_allowed: true, archived_at: null }, ...spaces],
+        me({ memberships: [{ project_id: 'p2', role: 'viewer' }] }),
+      ),
+      { kind: 'space-viewer', space: 'Laika' },
+    );
+  });
+
   void test('no full grant with agents allowed: the tool’s access, not the role', () => {
     const why = whyNoPing(agent({ grants: [] }), spaces, me());
     assert.deepEqual(why, { kind: 'no-space' });

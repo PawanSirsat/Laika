@@ -85,6 +85,31 @@ export function environReader(exec: Exec = execFileSync): EnvironReader {
 
 export const readEnviron: EnvironReader = environReader();
 
+/**
+ * The environment of the **nearest** harness process above `from` — or of the
+ * one `LAIKA_AGENT_HARNESS_PID` names outright — as {@link EnvironReader}
+ * reads it; `undefined` when no harness is found, `ps` fails, or its
+ * environment cannot be read.
+ */
+export function harnessEnviron(
+  env: Readonly<Record<string, string | undefined>>,
+  from: number,
+  proc: ProcReader = readProc,
+  environ: EnvironReader = readEnviron,
+): readonly string[] | undefined {
+  // A harness launched under another name is named outright (findHarness's rule).
+  const named = env.LAIKA_AGENT_HARNESS_PID;
+  const outright = named !== undefined && /^\d+$/.test(named);
+  let pid = outright ? Number(named) : from;
+  for (let depth = 0; depth < 16 && pid > 1; depth += 1) {
+    const info = proc(pid);
+    if (info === undefined || info === UNKNOWN) return undefined;
+    if (outright || MARKER_HARNESS.test(info.comm)) return environ(pid);
+    pid = info.ppid;
+  }
+  return undefined;
+}
+
 export function omnigentMarker(
   env: Readonly<Record<string, string | undefined>>,
   from: number,
@@ -94,19 +119,40 @@ export function omnigentMarker(
 ): OmnigentVerdict {
   if (env.OMNIGENT === '1') return 'omnigent';
   if (harness === 'claude-code') return 'plain';
-  // A harness launched under another name is named outright (findHarness's rule).
-  const named = env.LAIKA_AGENT_HARNESS_PID;
-  const outright = named !== undefined && /^\d+$/.test(named);
-  let pid = outright ? Number(named) : from;
-  for (let depth = 0; depth < 16 && pid > 1; depth += 1) {
-    const info = proc(pid);
-    if (info === undefined || info === UNKNOWN) return 'unknown';
-    if (outright || MARKER_HARNESS.test(info.comm)) {
-      const entries = environ(pid);
-      if (entries === undefined) return 'unknown';
-      return entries.includes('OMNIGENT=1') ? 'omnigent' : 'plain';
-    }
-    pid = info.ppid;
-  }
-  return 'unknown';
+  const entries = harnessEnviron(env, from, proc, environ);
+  if (entries === undefined) return 'unknown';
+  return entries.includes('OMNIGENT=1') ? 'omnigent' : 'plain';
+}
+
+/**
+ * The environment a hook reads its harness's **own config** under (LAI-1108,
+ * from PR #252's review). For Codex, `CODEX_HOME` is taken from the `codex`
+ * process — the one {@link omnigentMarker} reads `OMNIGENT` from — whatever
+ * the hook's own environment says: Omnigent gives each Codex worker a private
+ * copy of its config there, and that copy is what the worker's MCP reads, so
+ * the hook must read the same one to decide as its MCP does. `codex` without
+ * `CODEX_HOME` reads `~/.codex`, and so does the hook then. When `codex`'s
+ * environment cannot be read, the hook's own is used; the marker, reading the
+ * same process, then says `unknown` unless the hook's own environment holds
+ * `OMNIGENT=1`.
+ *
+ * On macOS the entries come from `ps -E`, split on spaces, so a `CODEX_HOME`
+ * with a space in it is cut short there: its `config.toml` is then not found,
+ * and the hook keeps the harness's own agent. Every other harness: `env`.
+ */
+export function harnessConfigEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  from: number,
+  harness: Harness,
+  proc: ProcReader = readProc,
+  environ: EnvironReader = readEnviron,
+): Readonly<Record<string, string | undefined>> {
+  if (harness !== 'codex') return env;
+  const entries = harnessEnviron(env, from, proc, environ);
+  if (entries === undefined) return env;
+  const own = entries.find((entry) => entry.startsWith('CODEX_HOME='));
+  const next: Record<string, string | undefined> = { ...env };
+  delete next.CODEX_HOME;
+  if (own !== undefined) next.CODEX_HOME = own.slice('CODEX_HOME='.length);
+  return next;
 }

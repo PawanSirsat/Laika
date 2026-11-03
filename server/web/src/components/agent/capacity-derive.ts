@@ -171,7 +171,10 @@ export type NoPing =
   | { readonly kind: 'viewer' }
   /** A space the tool could be selected in, where the reader is only a viewer. */
   | { readonly kind: 'space-viewer'; readonly space: string }
-  /** No space where it has full access with agents allowed. */
+  /**
+   * No space where it has full access with agents allowed — or none the
+   * reader is a member of, where they would have a role to name.
+   */
   | { readonly kind: 'no-space' };
 
 /**
@@ -187,6 +190,9 @@ export function whyNoPing(
   for (const project of projects) {
     if (project.archived_at !== null || !project.agents_allowed) continue;
     if (agent.grants.find((g) => g.project_id === project.id)?.scope !== 'full') continue;
+    // Only a space the reader is a viewer *of*: one they are not a member of
+    // gives them no role there to name (LAI-1108).
+    if (me.memberships.find((m) => m.project_id === project.id)?.role !== 'viewer') continue;
     return { kind: 'space-viewer', space: project.name };
   }
   return { kind: 'no-space' };
@@ -353,4 +359,7 @@ export const PING_WORDS = {
   limited: (target: string, seconds: number): string =>
     `Too many pings for ${target} — try again in ${String(seconds)} s.`,
   failed: (message: string): string => `The ping failed: ${message}`,
+  /** {@link PING_WORDS.failed}'s message when the ping itself never came back. */
+  unanswered: (seconds: number): string =>
+    `the board did not answer within ${String(seconds)} s. Ping again to ask.`,
 } as const;
