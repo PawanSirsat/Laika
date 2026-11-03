@@ -54,9 +54,12 @@ export const LINK_TAIL = '/cli/bin/laika';
  */
 export const FETCH_COMMAND = `git -C ${CHECKOUT} fetch origin`;
 
-/** The terminal remembers where it last found `laika`; these make it look again. */
-export const REHASH_ZSH = 'rehash';
-export const REHASH_BASH = 'hash -r';
+/**
+ * The terminal remembers where it last found `laika`; this makes it look
+ * again. `hash -r` is the one spelling zsh and bash both take — `rehash` is
+ * zsh's alone, and bash answers it `command not found` (review round 1).
+ */
+export const REHASH_COMMAND = 'hash -r';
 
 /**
  * For a link that `install.sh` did not replace because it sits in a folder
@@ -104,8 +107,8 @@ export function freshInstall(source: CliSource | undefined): FreshInstall | unde
   };
 }
 
-/** Then: forget the old path, and check. zsh's form; bash's is {@link REHASH_BASH}. */
-export const RECHECK_COMMAND = [REHASH_ZSH, CHECK_COMMAND].join('\n');
+/** Then: forget the old path, and check. */
+export const RECHECK_COMMAND = [REHASH_COMMAND, CHECK_COMMAND].join('\n');
 
 /** Step 4: is this machine set up for this board now? Read-only. */
 export const AFTER_COMMAND = 'laika doctor';
@@ -177,7 +180,7 @@ export function guideFor(key: UpdateKey | undefined): boolean {
  * already current, since LAI-1085 (#238).
  */
 export function versionUnknownHint(device = 'that device'): string {
-  return `To make its version appear, run laika update on ${device}: it reports the helper’s version to this board, even when it is already current. If laika update is an unknown command there, that CLI is older still: ${GUIDE_TITLE}, below, installs a current one.`;
+  return `To make its version appear, run laika update on ${device}: it reports the helper’s version to this board, even when it is already current. If laika update is an unknown command there, that CLI is older still: ${GUIDE_TITLE}, below, has the steps for it.`;
 }
 
 export interface CliNotice {

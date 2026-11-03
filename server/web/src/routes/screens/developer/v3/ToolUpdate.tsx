@@ -398,7 +398,7 @@ export function ToolUpdate({ agentId, label }: ToolUpdateProps) {
             )}
             <p className="dv3-note" data-too-old-update="">
               If laika update is an unknown command on that device, its CLI is older still:{' '}
-              {GUIDE_TITLE}, below, installs a current one, wherever the old checkout is.
+              {GUIDE_TITLE}, below, has the steps for it, wherever the old checkout is.
             </p>
             <p className="dv3-note" data-after-update>
               {AFTER_UPDATE}

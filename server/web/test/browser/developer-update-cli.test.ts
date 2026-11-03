@@ -28,7 +28,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
-import { barePull, hazardsIn } from '../routes/screens/developer/v3/shell-words.ts';
+import { checkoutPull, hazardsIn } from '../routes/screens/developer/v3/shell-words.ts';
 import {
   BOARD,
   NOW,
@@ -121,7 +121,7 @@ void describe('Tool details: where the guide is offered', () => {
       assert.equal(await unknown.locator('[data-update-cli="tool"]').count(), 1);
       assert.equal(
         await unknown.locator('[data-version-unknown-hint]').innerText(),
-        'To make its version appear, run laika update on that device: it reports the helper’s version to this board, even when it is already current. If laika update is an unknown command there, that CLI is older still: How to update your Laika CLI, below, installs a current one.',
+        'To make its version appear, run laika update on that device: it reports the helper’s version to this board, even when it is already current. If laika update is an unknown command there, that CLI is older still: How to update your Laika CLI, below, has the steps for it.',
       );
 
       const current = await details(h.page, 'a1');
@@ -196,7 +196,7 @@ void describe('the guide', () => {
           `git -C ~/laika checkout --detach ${BOARD} &&`,
           '~/laika/plugin/scripts/install.sh --no-credential',
         ].join('\n'),
-        'rehash\nlaika version',
+        'hash -r\nlaika version',
         'ln -sf ~/laika/cli/bin/laika "$(command -v laika)"',
       ]);
       assert.equal(await pre('after'), 'laika doctor');
@@ -220,7 +220,8 @@ void describe('the guide', () => {
         older,
         /If ~\/laika already exists, this instead: it fetches rather than clones/,
       );
-      assert.match(older, /rehash in zsh, hash -r in bash/);
+      assert.match(older, /look for laika again \(hash -r, in zsh and bash alike\)/);
+      assert.doesNotMatch(older, /\brehash\b/);
       assert.match(older, /something else called laika is already on your PATH/);
       assert.match(older, /When that line starts with l \(a link\)/);
       assert.equal(await guide.locator('[data-fresh-default]').count(), 0);
@@ -481,6 +482,7 @@ void describe('the wizards: before the laika command', () => {
       );
       const first = step.locator('[data-update-first]');
       assert.match(await first.innerText(), /Bring its Laika helper up to date first/);
+      assert.equal(await step.locator('[data-clone-refused]').count(), 0);
       // LAI-1093: codes last ten minutes, and updating an old CLI can take longer.
       assert.match(
         await first.innerText(),
@@ -507,6 +509,20 @@ void describe('the wizards: before the laika command', () => {
       assert.equal(
         await step.locator('.conn-block-label').first().textContent(),
         'On the device: install, then pair',
+      );
+      // Review round 1, B2: one && list, so a clone refused because ~/laika exists
+      // never reaches an older install.sh (which asks for a token) or the pair.
+      const lines = (await step.locator('pre').innerText()).split('\n');
+      assert.match(lines[0] ?? '', /^git clone /);
+      assert.deepEqual(
+        lines.slice(0, -1).filter((line) => !line.endsWith(' &&')),
+        [],
+        lines.join('\n'),
+      );
+      assert.match(lines.at(-1) ?? '', /^~\/laika\/cli\/bin\/laika device pair /);
+      assert.match(
+        (await step.locator('[data-clone-refused]').innerText()).replace(/\s+/g, ' '),
+        /^Each line runs only if the one before it worked\. If git clone stops because ~\/laika already exists, nothing after it ran/,
       );
     } finally {
       await h.close();
@@ -541,7 +557,7 @@ async function commandsIn(scope: Locator): Promise<string[]> {
   ];
 }
 
-void describe('every placement (LAI-1093): no bare ~/laika pull, and every command pastes', () => {
+void describe('every placement (LAI-1093): no pull of a checkout, and every command pastes', () => {
   /** Whether `a` comes before `b` in the document. */
   const before = async (a: Locator, b: Locator): Promise<boolean> => {
     const other = await b.elementHandle();
@@ -555,7 +571,7 @@ void describe('every placement (LAI-1093): no bare ~/laika pull, and every comma
   /** What a placement shows, with its guide open. */
   const check = async (scope: Locator, where: string) => {
     const text = await scope.innerText();
-    assert.equal(barePull(text), undefined, `${where}: tells someone to pull ~/laika`);
+    assert.equal(checkoutPull(text), undefined, `${where}: tells someone to pull a checkout`);
     assert.doesNotMatch(text, /pull --ff-only/, where);
     const commands = await commandsIn(scope);
     // The guide's own five older-CLI blocks, at least: the check is reading something.
@@ -631,7 +647,7 @@ void describe('every placement (LAI-1093): no bare ~/laika pull, and every comma
       await body.locator('[data-update-how] > summary').click();
       assert.equal(
         (await body.locator('[data-too-old-update]').innerText()).replace(/\s+/g, ' '),
-        'If laika update is an unknown command on that device, its CLI is older still: How to update your Laika CLI, below, installs a current one, wherever the old checkout is.',
+        'If laika update is an unknown command on that device, its CLI is older still: How to update your Laika CLI, below, has the steps for it, wherever the old checkout is.',
       );
       assert.equal(
         await before(body.locator('[data-update-how]'), body.locator('[data-update-cli="tool"]')),
@@ -855,6 +871,17 @@ void describe(
             await step.screenshot({ path: join(dir, `add-device-update-first-${tag}.png`) });
           } finally {
             await w.close();
+          }
+
+          const f = await open('/developer?tab=devices&add=device', addDeviceStub(), sized);
+          try {
+            await setTheme(f.page, theme);
+            const step = await toPairCommand(f.page);
+            await step.locator('[data-clone-refused]').waitFor();
+            await tall(f.page);
+            await step.screenshot({ path: join(dir, `add-device-fresh-chained-${tag}.png`) });
+          } finally {
+            await f.close();
           }
 
           const a = await open(

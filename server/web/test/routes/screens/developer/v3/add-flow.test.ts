@@ -39,11 +39,30 @@ void describe('the bootstrap a device runs', () => {
   void test('fresh: clone at the board’s commit, install with no credential, pair through the checkout', () => {
     const { text, versionNote } = bootstrapCommands(SOURCE, PAIR, false);
     assert.deepEqual(text.split('\n'), [
-      'git clone https://github.com/PawanSirsat/Laika.git ~/laika && git -C ~/laika checkout --detach cea011d6abc',
-      '~/laika/plugin/scripts/install.sh --no-credential',
+      'git clone https://github.com/PawanSirsat/Laika.git ~/laika &&',
+      'git -C ~/laika checkout --detach cea011d6abc &&',
+      '~/laika/plugin/scripts/install.sh --no-credential &&',
       `~/laika/cli/bin/${PAIR}`,
     ]);
     assert.equal(versionNote, undefined);
+  });
+
+  void test('fresh: one && list — a refused clone runs neither install.sh nor the pair (LAI-1093)', () => {
+    // An install.sh older than --no-credential ignores the flag and asks for a
+    // personal token: a clone refused because ~/laika exists must stop there.
+    // The per-line paste-safety scanner cannot see this, so it is its own check.
+    for (const source of [SOURCE, { url: SOURCE.url, commit: null }]) {
+      const lines = bootstrapCommands(source, PAIR, false).text.split('\n');
+      assert.ok(lines.length >= 3, lines.join('\n'));
+      assert.match(lines[0] ?? '', /^git clone /);
+      assert.deepEqual(
+        lines.slice(0, -1).filter((line) => !line.endsWith(' &&')),
+        [],
+        lines.join('\n'),
+      );
+      assert.equal(lines.at(-1), `~/laika/cli/bin/${PAIR}`);
+      assert.ok(lines.some((line) => line.startsWith('~/laika/plugin/scripts/install.sh')));
+    }
   });
 
   void test('installed: the server’s pair command as it came, after the update guide', () => {
@@ -60,7 +79,7 @@ void describe('the bootstrap a device runs', () => {
 
   void test('a board that does not know its commit says Version unknown, never a guessed branch', () => {
     const { text, versionNote } = bootstrapCommands({ url: SOURCE.url, commit: null }, PAIR, false);
-    assert.match(text, /^git clone https:\/\/github\.com\/PawanSirsat\/Laika\.git ~\/laika$/m);
+    assert.match(text, /^git clone https:\/\/github\.com\/PawanSirsat\/Laika\.git ~\/laika &&$/m);
     assert.doesNotMatch(text, /checkout --detach/);
     assert.match(versionNote ?? '', /^Version unknown/);
     // LAI-1093: no `git -C ~/laika pull`, which a detached or missing checkout refuses.

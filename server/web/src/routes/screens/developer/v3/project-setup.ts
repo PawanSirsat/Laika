@@ -488,7 +488,7 @@ export function noDeviceCheck(toolName: string, client: AgentClient): NoDeviceCh
  * `laika: unknown command "project"`, and one that old may have no
  * `laika version` or no `laika update` either. The way forward for it is
  * *How to update your Laika CLI*, placed under the hint (LAI-1093): it finds
- * where the old CLI comes from and installs a current one beside it, rather
+ * where the old CLI comes from and the steps to replace it, rather
  * than pulling a checkout this page can only guess the place and state of —
  * `git -C ~/laika pull --ff-only` failed on a laptop whose checkout was not
  * there, and fails on one `laika update` left detached. Every command is

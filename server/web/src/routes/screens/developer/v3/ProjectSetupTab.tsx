@@ -1352,8 +1352,8 @@ function ReviewStep({
               )}
               . Check with <code>{hint.version}</code>: if it prints a commit,{' '}
               <code>{hint.update}</code> brings it to this board’s. If either says unknown command,
-              your CLI predates this board: {GUIDE_TITLE}, below, shows where it comes from and
-              installs a current one beside it, wherever the old one is.
+              your CLI predates this board: {GUIDE_TITLE}, below, shows where it comes from and what
+              to do about it, wherever the old one is.
             </p>
             <UpdateCliHelp place="project-setup" />
           </>

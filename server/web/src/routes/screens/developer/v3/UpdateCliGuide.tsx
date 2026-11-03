@@ -5,8 +5,7 @@ import { CHECKOUT } from './add-flow.ts';
 import {
   GUIDE_TITLE,
   LINK_TAIL,
-  REHASH_BASH,
-  REHASH_ZSH,
+  REHASH_COMMAND,
   SKIP_ANSWER,
   STEP_TITLES,
   TOO_OLD_ANSWER,
@@ -192,11 +191,11 @@ export function UpdateCliGuide({ origin, onCopiedUpdate }: UpdateCliGuideProps) 
             </>
           )}
           <p className="dv3-cli-note">
-            Then make this terminal look for laika again — <code>{REHASH_ZSH}</code> in zsh,{' '}
-            <code>{REHASH_BASH}</code> in bash — and check:
+            Then make this terminal look for laika again (<code>{REHASH_COMMAND}</code>, in zsh and
+            bash alike) and check:
           </p>
           <CodeBlock
-            label="Terminal (zsh)"
+            label="Terminal"
             labelId={`${ids}-recheck`}
             text={commands.recheck}
             what="the commands"
@@ -206,7 +205,7 @@ export function UpdateCliGuide({ origin, onCopiedUpdate }: UpdateCliGuideProps) 
             that is not a link — it says <q>{SKIP_ANSWER}</q>. And if <code>{commands.find}</code>{' '}
             still points into the old folder, that link sits in a folder earlier on your PATH. When
             that line starts with <code>l</code> (a link), point it at the new checkout, then run{' '}
-            <code>{REHASH_ZSH}</code> again:
+            <code>{REHASH_COMMAND}</code> again:
           </p>
           <CodeBlock
             label="Terminal, only for a link"

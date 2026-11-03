@@ -86,15 +86,14 @@ export function hazardsIn(commands: readonly string[]): readonly string[] {
 }
 
 /**
- * The defect LAI-1093 removed: telling someone to `pull` a checkout at
- * `~/laika` — which may not be there, or may be detached — with no way to
- * find the real one and no fresh install beside it. `undefined` when the
- * text is fine.
+ * The defect LAI-1093 removed: telling someone to `pull` a checkout — at
+ * `~/laika`, which may not be there, or anywhere, since it may be detached.
+ * Any `git -C <folder> pull`, or `~/laika pull`, is reported, whatever else
+ * the text offers beside it: an earlier version excused one shown next to
+ * the find and the fresh install, so a page or README that already had those
+ * could gain a bare pull and stay green (review round 1, M6). `undefined`
+ * when there is none.
  */
-export function barePull(text: string): string | undefined {
-  const pull = /(?:git -C )?~\/laika pull\b[^\n]*/.exec(text);
-  if (pull === null) return undefined;
-  const finds = text.includes('ls -l "$(command -v laika)"');
-  const installs = /git clone \S+ ~\/laika/.test(text);
-  return finds && installs ? undefined : pull[0];
+export function checkoutPull(text: string): string | undefined {
+  return /(?:git -C \S+|~\/laika) pull\b[^\n]*/.exec(text)?.[0];
 }

@@ -7,8 +7,9 @@
  * - The older CLI's path assumes nothing about where its checkout is, or
  *   whether it is on a branch (LAI-1093): it shows where `laika` comes from,
  *   and installs from the board's own `cli.source`.
- * - Every command pastes as it stands in zsh and bash, and no source line
- *   tells anyone to pull `~/laika` without that way round.
+ * - Every command pastes as it stands in zsh and bash. No source line, and
+ *   nothing in `cli/README.md`, pulls a checkout; every install list there
+ *   and in `install.sh --help` stops at its first failing line.
  * - `--allow-http` only for a plain-http board off loopback.
  * - The board's build, protocol and oldest accepted helper come from its
  *   compatibility answer — and are said as unknown when it gives none.
@@ -39,7 +40,7 @@ import {
   versionUnknownHint,
 } from '../../../../../src/routes/screens/developer/v3/update-cli.ts';
 import type { UpdateKey } from '../../../../../src/routes/screens/developer/v3/update-status.ts';
-import { barePull, hazardsIn, unquotedHazards } from './shell-words.ts';
+import { checkoutPull, hazardsIn, unquotedHazards } from './shell-words.ts';
 
 const COMMIT = 'cea011d6b1a2c3d4e5f60718293a4b5c6d7e8f90';
 
@@ -105,7 +106,7 @@ void describe('the guide’s steps', () => {
         '~/laika/plugin/scripts/install.sh --no-credential',
       ].join('\n'),
     );
-    assert.equal(c.recheck, 'rehash\nlaika version');
+    assert.equal(c.recheck, 'hash -r\nlaika version');
     assert.equal(c.relink, 'ln -sf ~/laika/cli/bin/laika "$(command -v laika)"');
     assert.equal(c.after, 'laika doctor');
   });
@@ -232,7 +233,7 @@ void describe('every command pastes as it stands, in zsh and bash', () => {
   });
 });
 
-void describe('no hint tells anyone to pull ~/laika without the way round (LAI-1093)', () => {
+void describe('no hint tells anyone to pull a checkout; every install list is chained (LAI-1093)', () => {
   const V3 = fileURLToPath(
     new URL('../../../../../src/routes/screens/developer/v3/', import.meta.url),
   );
@@ -242,15 +243,21 @@ void describe('no hint tells anyone to pull ~/laika without the way round (LAI-1
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
 
-  void test('the checker: a bare pull is caught, and one beside the find and the install is not', () => {
-    assert.equal(barePull('git -C ~/laika pull --ff-only'), 'git -C ~/laika pull --ff-only');
+  void test('the checker: any pull of a checkout is caught, whatever stands beside it', () => {
+    assert.equal(checkoutPull('git -C ~/laika pull --ff-only'), 'git -C ~/laika pull --ff-only');
+    assert.equal(checkoutPull('run git -C ~/laika pull'), 'git -C ~/laika pull');
+    // A template that builds one, as source: the folder is whatever word follows -C.
+    const templated = `git -C \${CHECKOUT} pull --ff-only`;
+    assert.equal(checkoutPull(templated), templated);
+    // Review round 1, M6: the find and the fresh install beside it excuse nothing.
     assert.equal(
-      barePull(
-        `git -C ~/laika pull --ff-only\n${FIND_COMMAND}\n${freshInstall(SOURCE)?.text ?? ''}`,
+      checkoutPull(
+        `${FIND_COMMAND}\n${freshInstall(SOURCE)?.text ?? ''}\ngit -C ~/laika pull --ff-only`,
       ),
-      undefined,
+      'git -C ~/laika pull --ff-only',
     );
-    assert.equal(barePull(every('https://laika.example.test').join('\n')), undefined);
+    assert.equal(checkoutPull('a checkout refuses a plain `git pull --ff-only`'), undefined);
+    assert.equal(checkoutPull(every('https://laika.example.test').join('\n')), undefined);
   });
 
   void test('no Developer access source line pulls a checkout at all', () => {
@@ -258,25 +265,47 @@ void describe('no hint tells anyone to pull ~/laika without the way round (LAI-1
     assert.ok(files.includes('UpdateCliGuide.tsx') && files.includes('project-setup.ts'));
     for (const file of files) {
       const text = shown(file);
-      assert.equal(barePull(text), undefined, file);
-      assert.doesNotMatch(
-        text,
-        /pull --ff-only|\$\{(?:CHECKOUT|PLUGIN_HOME|DEFAULT_CHECKOUT)\} pull/,
-        file,
-      );
+      assert.equal(checkoutPull(text), undefined, file);
+      assert.doesNotMatch(text, /pull --ff-only/, file);
     }
   });
 
-  void test('cli/README.md: wherever it names a pull, the find and the fresh install are there too', () => {
-    const readme = readFileSync(
-      fileURLToPath(new URL('../../../../../../../cli/README.md', import.meta.url)),
-      'utf8',
+  const read = (path: string) =>
+    readFileSync(fileURLToPath(new URL(`../../../../../../../${path}`, import.meta.url)), 'utf8');
+
+  /** Every fenced block in a Markdown file, as its lines. */
+  const fenced = (markdown: string) =>
+    [...markdown.matchAll(/^```[^\n]*\n([\s\S]*?)^```$/gm)].map((m) =>
+      (m[1] ?? '').replace(/\n$/, '').split('\n'),
     );
-    assert.equal(barePull(readme), undefined);
+
+  /** A list that installs must stop at its first failing line: every line but the last ends in &&. */
+  const unchained = (lines: readonly string[]) =>
+    lines.slice(0, -1).filter((line) => !line.endsWith(' &&'));
+
+  void test('cli/README.md: no pull of a checkout, and every install list stops at its first failure', () => {
+    const readme = read('cli/README.md');
+    assert.equal(checkoutPull(readme), undefined);
     assert.ok(readme.includes(FIND_COMMAND));
     assert.ok(readme.includes(RELINK_COMMAND));
-    assert.ok(readme.includes(FETCH_COMMAND));
+    assert.ok(readme.includes(`${FETCH_COMMAND} &&`));
+    const installs = fenced(readme).filter((lines) =>
+      lines.some((line) => /^git clone |^git -C ~\/laika fetch /.test(line)),
+    );
+    // The fresh install, and the two lists for an older CLI.
+    assert.ok(installs.length >= 3, `found ${String(installs.length)} install lists`);
+    for (const lines of installs) assert.deepEqual(unchained(lines), [], lines.join('\n'));
+    // zsh's rehash is no command in bash; hash -r is both shells'.
+    for (const lines of fenced(readme)) assert.ok(!lines.includes('rehash'), lines.join('\n'));
     assert.deepEqual(hazardsIn([FIND_COMMAND, RELINK_COMMAND, FETCH_COMMAND, RECHECK_COMMAND]), []);
+  });
+
+  void test('install.sh --help: the same list, chained', () => {
+    const lines = [...read('plugin/scripts/install.sh').matchAll(/^# {3}(\S.*)$/gm)].map(
+      (m) => m[1] ?? '',
+    );
+    assert.ok(lines[0]?.startsWith('git clone '), lines.join('\n'));
+    assert.deepEqual(unchained(lines), [], lines.join('\n'));
   });
 });
 
@@ -322,7 +351,7 @@ void describe('where it is offered', () => {
   void test('Version unknown says how to make the version appear', () => {
     assert.equal(
       versionUnknownHint(),
-      'To make its version appear, run laika update on that device: it reports the helper’s version to this board, even when it is already current. If laika update is an unknown command there, that CLI is older still: How to update your Laika CLI, below, installs a current one.',
+      'To make its version appear, run laika update on that device: it reports the helper’s version to this board, even when it is already current. If laika update is an unknown command there, that CLI is older still: How to update your Laika CLI, below, has the steps for it.',
     );
   });
 

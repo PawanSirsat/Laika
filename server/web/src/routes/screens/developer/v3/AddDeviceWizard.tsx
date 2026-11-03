@@ -486,7 +486,9 @@ export function AddDeviceWizard({
               />
               <span>
                 <strong className="dx-option-name">No, install it</strong>
-                <span className="dx-option-sub">The next step installs it, with no token</span>
+                <span className="dx-option-sub">
+                  The next step installs it at ~/laika, with no token
+                </span>
               </span>
             </label>
             <label className="dx-option">
@@ -501,7 +503,7 @@ export function AddDeviceWizard({
               <span>
                 <strong className="dx-option-name">Yes</strong>
                 <span className="dx-option-sub">
-                  Its terminal has a laika command, from any folder
+                  It has a laika command, or a ~/laika folder already
                 </span>
               </span>
             </label>
@@ -547,7 +549,7 @@ export function AddDeviceWizard({
             {commands.updateFirst && (
               <Help>
                 <span data-update-first="">
-                  Bring its Laika helper up to date first: the line above has the commands, for a
+                  Bring its Laika helper up to date first: the line above has the steps, for a
                   helper with <code>laika update</code> and for one too old to have it, wherever its
                   checkout is. This code lasts ten minutes: if updating takes longer, cancel this
                   pairing and start again for a fresh code. Then pair:
@@ -564,6 +566,16 @@ export function AddDeviceWizard({
               main
             />
             {commands.versionNote !== undefined && <Help tone="info">{commands.versionNote}</Help>}
+            {!commands.updateFirst && commands.text.startsWith('git clone ') && (
+              <Help>
+                <span data-clone-refused="">
+                  Each line runs only if the one before it worked. If <code>git clone</code> stops
+                  because <code>~/laika</code> already exists, nothing after it ran: use the
+                  commands for when <code>~/laika</code> exists, in the line above, then this
+                  block’s last line.
+                </span>
+              </Help>
+            )}
             <Help>
               The code works once, for ten minutes, and gives nothing on its own: the device still
               needs you to approve its key here. No token is asked for or stored by these commands.

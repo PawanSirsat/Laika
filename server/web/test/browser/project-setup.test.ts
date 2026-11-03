@@ -24,7 +24,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { barePull, hazardsIn } from '../routes/screens/developer/v3/shell-words.ts';
+import { checkoutPull, hazardsIn } from '../routes/screens/developer/v3/shell-words.ts';
 import {
   closeBrowser,
   open,
@@ -768,7 +768,7 @@ void describe('Project setup, v3', () => {
       await until(async () => (await hint.innerText()).includes('0123456'));
       assert.equal(
         (await hint.innerText()).replace(/\s+/g, ' ').trim(),
-        'This needs a Laika CLI that matches this board (commit 0123456). Check with laika version: if it prints a commit, laika update brings it to this board’s. If either says unknown command, your CLI predates this board: How to update your Laika CLI, below, shows where it comes from and installs a current one beside it, wherever the old one is.',
+        'This needs a Laika CLI that matches this board (commit 0123456). Check with laika version: if it prints a commit, laika update brings it to this board’s. If either says unknown command, your CLI predates this board: How to update your Laika CLI, below, shows where it comes from and what to do about it, wherever the old one is.',
       );
       // Directly under the command it is about.
       assert.equal(
@@ -798,7 +798,7 @@ void describe('Project setup, v3', () => {
         `git clone https://github.com/PawanSirsat/Laika.git ~/laika &&\ngit -C ~/laika checkout --detach ${commit} &&\n~/laika/plugin/scripts/install.sh --no-credential`,
       );
       const step = h.page.locator('[data-way="check"]');
-      assert.equal(barePull(await step.innerText()), undefined);
+      assert.equal(checkoutPull(await step.innerText()), undefined);
       assert.doesNotMatch(await step.innerText(), /pull --ff-only/);
       assert.deepEqual(hazardsIn(await step.locator('pre').allInnerTexts()), []);
     } finally {
@@ -855,6 +855,9 @@ void describe('Project setup, v3', () => {
           /Record it yourself with I’ve added it/,
         );
         assert.equal(await way.locator('[data-note="cli-match"]').count(), 0);
+        // LAI-1093: no CLI to update for a check that cannot run, so no guide either.
+        assert.equal(await way.locator('[data-update-cli]').count(), 0);
+        assert.doesNotMatch(await way.innerText(), /How to update your Laika CLI/);
         // The catalogue's manual note, for a tool that has one.
         assert.equal(
           await note.locator('[data-note="manual"]').count(),
