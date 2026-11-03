@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { LazyRichEditor, type CardCandidate, type MentionCandidate } from './LazyRichEditor.tsx';
 import './task-panel.css';
+import './feed.css';
 
 export interface CommentComposerProps {
   /** Who `@` offers — `GET /projects/:slug/mentionable`, with handles. */
@@ -31,17 +32,28 @@ export interface CommentComposerProps {
 export function CommentComposer({ people, meId, cards, onPost }: CommentComposerProps) {
   const [open, setOpen] = useState(false);
 
+  /*
+   * **The design's resting box** (LAI-1122): *Add a comment…*, and under it
+   * what the box takes and the button that sends it. Either opens the editor —
+   * there is nothing to send until something is typed, and the editor's own
+   * *Comment* is the one that posts.
+   */
   if (!open) {
+    const start = (): void => {
+      setOpen(true);
+    };
     return (
-      <button
-        type="button"
-        className="cmt-composer-start"
-        onClick={() => {
-          setOpen(true);
-        }}
-      >
-        Add a comment…
-      </button>
+      <div className="cmt-composer-rest">
+        <button type="button" className="cmt-composer-start" onClick={start}>
+          Add a comment…
+        </button>
+        <div className="cmt-composer-foot">
+          <span className="cmt-composer-hint">Markdown · @ to mention someone</span>
+          <button type="button" className="cmt-composer-send" onClick={start}>
+            Comment
+          </button>
+        </div>
+      </div>
     );
   }
 

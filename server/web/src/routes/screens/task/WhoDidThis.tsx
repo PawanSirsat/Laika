@@ -2,6 +2,12 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import './feed.css';
 
 export interface WhoDidThisProps {
+  /**
+   * The chip's own words (LAI-1122): the agent as this reader may name it —
+   * `<harness> · <device>`, or *an agent* when withheld. The chip is the
+   * trigger, so the run's header reads *Ada Lovelace [Claude Code · laptop-1]*.
+   */
+  readonly label: string;
   /** The person the row is attributed to: the agent's owner on an agent's row. */
   readonly person: string;
   /** The agent as the reader may name it — `<harness> · <device>`, or *an agent* when withheld. */
@@ -22,8 +28,20 @@ const EDGE = 8;
  * disclosure like `InfoTip`: a button with `aria-expanded`, opened by a click,
  * Enter, Space or a pointer resting on it; Escape closes it, gives focus back
  * and is spent here, so the drawer under it stays open.
+ *
+ * Since LAI-1122 the trigger is the agent chip itself, as the design draws
+ * it, rather than an ⓘ beside the name. Its accessible name starts with the
+ * words it shows and says what it opens.
  */
-export function WhoDidThis({ person, agent, redacted, device, tool, model }: WhoDidThisProps) {
+export function WhoDidThis({
+  label,
+  person,
+  agent,
+  redacted,
+  device,
+  tool,
+  model,
+}: WhoDidThisProps) {
   const [open, setOpen] = useState(false);
   const [shift, setShift] = useState(0);
   const id = useId();
@@ -31,6 +49,8 @@ export function WhoDidThis({ person, agent, redacted, device, tool, model }: Who
   const button = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<number | undefined>(undefined);
+  /** Opened by a resting pointer: the click that follows pins it rather than closing it. */
+  const byHover = useRef(false);
 
   useLayoutEffect(() => {
     if (!open || panel.current === null) {
@@ -91,6 +111,7 @@ export function WhoDidThis({ person, agent, redacted, device, tool, model }: Who
       onMouseEnter={() => {
         window.clearTimeout(hoverTimer.current);
         hoverTimer.current = window.setTimeout(() => {
+          byHover.current = true;
           setOpen(true);
         }, 150);
       }}
@@ -105,15 +126,30 @@ export function WhoDidThis({ person, agent, redacted, device, tool, model }: Who
         ref={button}
         type="button"
         className="who-chip"
-        aria-label="Who did this"
+        aria-label={`${label} — who did this`}
         aria-expanded={open}
         aria-controls={id}
         aria-haspopup="dialog"
+        data-redacted={redacted ? 'true' : undefined}
         onClick={() => {
-          setOpen((was) => !was);
+          /*
+           * A pointer that rested ~150 ms before the click has already opened
+           * it; the click then means "keep it", not "close it" — otherwise a
+           * slow click on the chip opens and shuts the panel in one go.
+           */
+          window.clearTimeout(hoverTimer.current);
+          const pin = byHover.current;
+          byHover.current = false;
+          setOpen((was) => (was && pin ? true : !was));
         }}
       >
-        <span aria-hidden="true">ⓘ</span>
+        <span className="who-chip-mark" aria-hidden="true">
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none">
+            <rect x="4" y="8" width="16" height="12" rx="3" stroke="currentColor" strokeWidth="3" />
+            <path d="M12 4v4" stroke="currentColor" strokeWidth="3" />
+          </svg>
+        </span>
+        {label}
       </button>
       {open && (
         <div
@@ -126,9 +162,9 @@ export function WhoDidThis({ person, agent, redacted, device, tool, model }: Who
         >
           <span className="who-title">Who did this</span>
           <dl className="who-rows">
-            {rows.map(([label, value]) => (
-              <div key={label} className="who-row">
-                <dt>{label}</dt>
+            {rows.map(([row, value]) => (
+              <div key={row} className="who-row">
+                <dt>{row}</dt>
                 <dd>{value}</dd>
               </div>
             ))}

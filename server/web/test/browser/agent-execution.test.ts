@@ -497,15 +497,16 @@ void describe('the drawer', () => {
         /Last claim\s*Claude Code · laptop-1\s*its claim expired/,
       );
 
-      // The history row is worded too — the client mirror of the verb.
+      // The history row is worded too — the client mirror of the verb, which
+      // the feed starts with a capital since LAI-1122.
       const history = h.page.locator('.drawer').getByRole('tab', { name: /History/ });
       await history.click();
       await until(async () =>
-        (await h.page.locator('.drawer').innerText()).includes('expired an agent’s claim'),
+        (await h.page.locator('.drawer').innerText()).includes('Expired an agent’s claim'),
       );
       assert.match(
         await h.page.locator('.drawer').innerText(),
-        /expired an agent’s claim — the agent must reclaim explicitly; nothing was restored automatically/,
+        /Expired an agent’s claim — the agent must reclaim explicitly; nothing was restored automatically/,
       );
     } finally {
       await h.close();
