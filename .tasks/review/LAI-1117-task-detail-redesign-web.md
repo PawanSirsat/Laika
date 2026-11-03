@@ -6,7 +6,8 @@ assignee: strelka
 priority: p1
 depends-on: [LAI-1115, LAI-1116]
 discovered-from: []
-status: in-progress
+status: review
+finished: 2026-11-03T20:56:50Z
 started: 2026-11-03T20:18:07Z
 ---
 
@@ -21,19 +22,19 @@ slot or folded where it has none.
 
 ## Acceptance criteria
 
-- [ ] Drawer width `min(1280px, 94vw)`; rail about 380px; fact grids four
+- [x] Drawer width `min(1280px, 94vw)`; rail about 380px; fact grids four
       columns, two under 1000px; the ≤900px stacking still works and 390px
       has no sideways scroll with the hero and the popover open.
-- [ ] Header: key, outside-id chip, watch with count, share (copies the link,
+- [x] Header: key, outside-id chip, watch with count, share (copies the link,
       a `role=status` says "Copied"), `⋯`, close. Breadcrumb for a subtask
       stays.
-- [ ] "What this delivers": Ships with done / in-progress / pending marks and
+- [x] "What this delivers": Ships with done / in-progress / pending marks and
       the progress line ("2 of 4 built · <item> in progress", "4 of 4 built ·
       waiting for approval" in review), Solves, Unlocks, and "Blocks no other
       tasks" or the blocked tasks; inline editing PATCHes only the list that
       changed; a Viewer gets no editor; nothing is drawn when the server does
       not send the field (D-032).
-- [ ] State hero: review (pill, "Round n · finished by <person> [agent]
+- [x] State hero: review (pill, "Round n · finished by <person> [agent]
       <time>", Approve / Send back for the assignee or a lead using the
       Review screen's dialog and endpoints, fact grid Pull request / CI /
       Tests / Commits, commits, test runs with "Show all N runs", a confirmed
@@ -46,9 +47,9 @@ slot or folded where it has none.
       Change agent focuses the picker); done (accepted by, rounds folded).
       Escape inside the Send back dialog closes the dialog, not the drawer.
       After a decision the task, rounds and the Review badge refresh.
-- [ ] Acceptance: `- [ ]` / `- [x]` lines render as a checklist with "n of m";
+- [x] Acceptance: `- [ ]` / `- [x]` lines render as a checklist with "n of m";
       prose renders as today; the editor is unchanged.
-- [ ] Activity: All / Comments / History / Changes; runs grouped by actor and
+- [x] Activity: All / Comments / History / Changes; runs grouped by actor and
       session with a rail; the actor row names the person and the agent as
       `<harness> · <device>` (`display_name` only to its owner;
       `agent_redacted` rows say "an agent" and show no device or model); the
@@ -64,16 +65,16 @@ slot or folded where it has none.
       "Why <level>?", similar tasks with durations, actual, tokens
       "<total> of <p80> (<pct>)" and the cost line, budget bar when set);
       foot; the execution and hand-off panel as today.
-- [ ] Colours only from `theme.css` tokens in both themes; the pulse honours
+- [x] Colours only from `theme.css` tokens in both themes; the pulse honours
       reduced motion; the hero and sub-line are `role=status`; the progress
       bar is a `progressbar`.
-- [ ] Existing pins updated, not deleted: `task-drawer.test.ts` widths,
+- [x] Existing pins updated, not deleted: `task-drawer.test.ts` widths,
       `task-panel.test.ts` Details order and feed selectors,
       `agent-field.test.ts`, `agent-line.test.ts`; `review.test.ts` passes
       unchanged. New browser tests: hero per state including approve and send
       back from the panel, delivers, feed and popover, acceptance checklist,
       layout at 1600 / 1000 / 390 in both themes.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0.
 
 ## Notes / context
 
@@ -99,3 +100,10 @@ slot or folded where it has none.
   `--line2→--border-default`, `--muted→--text-secondary`,
   `--faint→--text-muted`, `--accentSoft→--accent-bg`, `--ok/--warn/--danger/
   --info→--chip-*`, `--agent→--chip-pink`, `--skel→--bg-column`.
+
+## Review notes (builder)
+
+- The **Rail** criterion is left unticked: the status sub-line, the
+  Development card and the foot are done, but the Estimate card and the
+  Details rows in the design's order are not. Filed as LAI-1121.
+- Proof detail stays in its own section under the state panel, not inside it.
