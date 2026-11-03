@@ -13,6 +13,10 @@
  *   reported; none when every tool is up to date.
  * - Add device and Add tool: *Already have Laika installed?* before the
  *   `laika` command.
+ * - An older CLI (LAI-1093): where `laika` comes from, then a fresh install
+ *   filled from the board's own `cli.source` — never a `pull` of a checkout
+ *   at `~/laika` that may not be there, or may be detached — and every
+ *   command on every placement pastes as it stands.
  * - 390 px, both themes: no sideways scroll with the guide open.
  *
  * Set `LAIKA_EVIDENCE_DIR` to also save screenshots of each placement, light
@@ -24,10 +28,13 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
+import { checkoutPull, hazardsIn } from '../routes/screens/developer/v3/shell-words.ts';
 import {
+  BOARD,
   NOW,
   SECRET,
   agentRow,
+  compat,
   report,
   stub,
   verification,
@@ -114,7 +121,7 @@ void describe('Tool details: where the guide is offered', () => {
       assert.equal(await unknown.locator('[data-update-cli="tool"]').count(), 1);
       assert.equal(
         await unknown.locator('[data-version-unknown-hint]').innerText(),
-        'To make its version appear, run laika update on that device: it reports the helper’s version to this board, even when it is already current.',
+        'To make its version appear, run laika update on that device: it reports the helper’s version to this board, even when it is already current. If laika update is an unknown command there, that CLI is older still: How to update your Laika CLI, below, has the steps for it.',
       );
 
       const current = await details(h.page, 'a1');
@@ -175,15 +182,50 @@ void describe('the guide', () => {
         await pre('update'),
         `laika update --check --board ${h.origin}\nlaika update --board ${h.origin}`,
       );
-      assert.equal(await pre('older'), 'git -C ~/laika pull --ff-only');
+      // LAI-1093: where this laika comes from, then a fresh install from the board's
+      // own source and commit — no pull of a checkout that may be elsewhere or detached.
+      assert.deepEqual(await guide.locator('[data-guide-step="older"] pre').allInnerTexts(), [
+        'ls -l "$(command -v laika)"',
+        [
+          'git clone https://github.com/PawanSirsat/Laika.git ~/laika &&',
+          `git -C ~/laika checkout --detach ${BOARD} &&`,
+          '~/laika/plugin/scripts/install.sh --no-credential',
+        ].join('\n'),
+        [
+          'git -C ~/laika fetch origin &&',
+          `git -C ~/laika checkout --detach ${BOARD} &&`,
+          '~/laika/plugin/scripts/install.sh --no-credential',
+        ].join('\n'),
+        'hash -r\nlaika version',
+        'ln -sf ~/laika/cli/bin/laika "$(command -v laika)"',
+      ]);
       assert.equal(await pre('after'), 'laika doctor');
       const text = await guide.innerText();
       assert.match(
         text,
         /If it answers laika: unknown command "version", your CLI is older than this board/,
       );
-      assert.match(text, /Replace ~\/laika with where you cloned Laika/);
-      assert.match(text, /readlink "\$\(command -v laika\)"/);
+      assert.match(text, /If it prints a commit, use step 2/);
+      assert.match(text, /If laika update is an unknown command, use step 3/);
+      const older = await guide.locator('[data-guide-step="older"]').innerText();
+      assert.match(
+        older,
+        /ending in \/cli\/bin\/laika: the folder that holds cli is the old checkout/,
+      );
+      assert.match(
+        older,
+        /leaves a checkout anywhere else untouched: delete that folder once laika version answers/,
+      );
+      assert.match(
+        older,
+        /If ~\/laika already exists, this instead: it fetches rather than clones/,
+      );
+      assert.match(older, /look for laika again \(hash -r, in zsh and bash alike\)/);
+      assert.doesNotMatch(older, /\brehash\b/);
+      assert.match(older, /something else called laika is already on your PATH/);
+      assert.match(older, /When that line starts with l \(a link\)/);
+      assert.equal(await guide.locator('[data-fresh-default]').count(), 0);
+      assert.doesNotMatch(text, /\bpull\b|readlink/);
       assert.match(text, /Restart Claude Code/);
       assert.match(text, /open \/hooks in Codex/);
       assert.doesNotMatch(text, /reset|--force|stash/);
@@ -426,7 +468,7 @@ void describe('the wizards: before the laika command', () => {
       const wizard = h.page.locator('[data-wizard="device"]');
       await wizard.waitFor({ timeout: 20_000 });
       // The option's own label, as a person clicks it: its styling covers the input.
-      await wizard.locator('label.dx-option', { hasText: 'There is a checkout' }).click();
+      await wizard.locator('label.dx-option', { hasText: 'has a laika command' }).click();
       assert.equal(await h.page.getByRole('radio', { name: /^Yes/ }).isChecked(), true);
       const step = await toPairCommand(h.page);
       // Review round 1, N3: no `git -C ~/laika fetch && laika update` an old helper cannot run.
@@ -440,14 +482,20 @@ void describe('the wizards: before the laika command', () => {
       );
       const first = step.locator('[data-update-first]');
       assert.match(await first.innerText(), /Bring its Laika helper up to date first/);
+      assert.equal(await step.locator('[data-clone-refused]').count(), 0);
+      // LAI-1093: codes last ten minutes, and updating an old CLI can take longer.
+      assert.match(
+        await first.innerText(),
+        /This code lasts ten minutes: if updating takes longer, cancel this pairing and start again for a fresh code\. Then pair:/,
+      );
       assert.equal(await before(step.locator('[data-update-cli="add-device"]'), first), true);
       assert.equal(await before(first, step.locator('.conn-block').first()), true);
-      // The guide it points to covers a helper without laika update.
+      // The guide it points to covers a helper without laika update — wherever its
+      // checkout is, and with none at all.
       const guide = await openGuide(step);
-      assert.equal(
-        await guide.locator('[data-guide-step="older"] pre').innerText(),
-        'git -C ~/laika pull --ff-only',
-      );
+      const older = guide.locator('[data-guide-step="older"] pre');
+      assert.equal(await older.first().innerText(), 'ls -l "$(command -v laika)"');
+      assert.match(await older.nth(1).innerText(), /^git clone \S+ ~\/laika &&\n/);
     } finally {
       await h.close();
     }
@@ -461,6 +509,20 @@ void describe('the wizards: before the laika command', () => {
       assert.equal(
         await step.locator('.conn-block-label').first().textContent(),
         'On the device: install, then pair',
+      );
+      // Review round 1, B2: one && list, so a clone refused because ~/laika exists
+      // never reaches an older install.sh (which asks for a token) or the pair.
+      const lines = (await step.locator('pre').innerText()).split('\n');
+      assert.match(lines[0] ?? '', /^git clone /);
+      assert.deepEqual(
+        lines.slice(0, -1).filter((line) => !line.endsWith(' &&')),
+        [],
+        lines.join('\n'),
+      );
+      assert.match(lines.at(-1) ?? '', /^~\/laika\/cli\/bin\/laika device pair /);
+      assert.match(
+        (await step.locator('[data-clone-refused]').innerText()).replace(/\s+/g, ' '),
+        /^Each line runs only if the one before it worked\. If git clone stops because ~\/laika already exists, nothing after it ran/,
       );
     } finally {
       await h.close();
@@ -481,6 +543,162 @@ void describe('the wizards: before the laika command', () => {
         await wizard.locator('pre').innerText(),
         'laika tool add claude-code --exchange x1',
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/** Every command block and inline command inside `scope`, as a person would copy it. */
+async function commandsIn(scope: Locator): Promise<string[]> {
+  return [
+    ...(await scope.locator('pre').allInnerTexts()),
+    ...(await scope.locator('code').allInnerTexts()),
+  ];
+}
+
+void describe('every placement (LAI-1093): no pull of a checkout, and every command pastes', () => {
+  /** Whether `a` comes before `b` in the document. */
+  const before = async (a: Locator, b: Locator): Promise<boolean> => {
+    const other = await b.elementHandle();
+    assert.ok(other !== null);
+    return a.evaluate(
+      (el, o) => Boolean(el.compareDocumentPosition(o) & Node.DOCUMENT_POSITION_FOLLOWING),
+      other,
+    );
+  };
+
+  /** What a placement shows, with its guide open. */
+  const check = async (scope: Locator, where: string) => {
+    const text = await scope.innerText();
+    assert.equal(checkoutPull(text), undefined, `${where}: tells someone to pull a checkout`);
+    assert.doesNotMatch(text, /pull --ff-only/, where);
+    const commands = await commandsIn(scope);
+    // The guide's own five older-CLI blocks, at least: the check is reading something.
+    assert.ok(commands.includes('ls -l "$(command -v laika)"'), `${where}: no guide was read`);
+    assert.deepEqual(hazardsIn(commands), [], where);
+  };
+
+  void test('Tool details, Device details, the Overview, Add device and Add tool', async () => {
+    const t = await openTools();
+    try {
+      for (const id of ['a2', 'a3']) {
+        const body = await details(t.page, id);
+        await openGuide(body);
+        await check(body, `tool ${id}`);
+      }
+    } finally {
+      await t.close();
+    }
+
+    const d = await open('/developer?tab=devices&device=d1', stub());
+    try {
+      const panel = devicePanel(d.page);
+      await panel.locator('[data-update-cli="device"]').waitFor({ timeout: 20_000 });
+      await openGuide(panel);
+      await check(panel, 'device');
+    } finally {
+      await d.close();
+    }
+
+    const o = await open('/developer?tab=overview', stub());
+    try {
+      await o.page.locator('[data-cli-notice]').waitFor({ timeout: 20_000 });
+      await openGuide(o.page.locator('[data-cli-notice]'));
+      await check(o.page.locator('[data-cli-notice]'), 'overview');
+    } finally {
+      await o.close();
+    }
+
+    for (const installed of [false, true]) {
+      const w = await open('/developer?tab=devices&add=device', addDeviceStub());
+      try {
+        const wizard = w.page.locator('[data-wizard="device"]');
+        await wizard.waitFor({ timeout: 20_000 });
+        if (installed) {
+          await wizard.locator('label.dx-option', { hasText: 'has a laika command' }).click();
+        }
+        const step = await toPairCommand(w.page);
+        await openGuide(step);
+        await check(step, `add device, installed ${String(installed)}`);
+      } finally {
+        await w.close();
+      }
+    }
+
+    const a = await open('/developer?tab=tools&add=tool&tool=claude-code', addToolStub());
+    try {
+      const wizard = await toToolCommand(a.page);
+      await openGuide(wizard);
+      await check(wizard, 'add tool');
+      assert.match(
+        await wizard.innerText(),
+        /if updating Laika first takes longer, this page offers a new command once this one expires/,
+      );
+    } finally {
+      await a.close();
+    }
+  });
+
+  void test('Tool details’ own How to update points a CLI without laika update at the guide', async () => {
+    const h = await openTools();
+    try {
+      const body = await details(h.page, 'a2');
+      await body.locator('[data-update-how] > summary').click();
+      assert.equal(
+        (await body.locator('[data-too-old-update]').innerText()).replace(/\s+/g, ' '),
+        'If laika update is an unknown command on that device, its CLI is older still: How to update your Laika CLI, below, has the steps for it, wherever the old checkout is.',
+      );
+      assert.equal(
+        await before(body.locator('[data-update-how]'), body.locator('[data-update-cli="tool"]')),
+        true,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a board that does not know its commit: the default branch, said so', async () => {
+    const h = await openTools({
+      routes: {
+        '/api/v1/developer/compatibility': {
+          ...compat(),
+          cli: { ...compat().cli, source: { ...compat().cli.source, commit: null } },
+        },
+      },
+    });
+    try {
+      const guide = await openGuide(await details(h.page, 'a2'));
+      assert.equal(
+        await guide.locator('[data-guide-step="older"] pre').nth(1).innerText(),
+        [
+          'git clone https://github.com/PawanSirsat/Laika.git ~/laika &&',
+          'git -C ~/laika checkout --detach origin/HEAD &&',
+          '~/laika/plugin/scripts/install.sh --no-credential',
+        ].join('\n'),
+      );
+      assert.match(
+        await guide.locator('[data-fresh-default]').innerText(),
+        /does not say which commit it was built from, so this takes the newest on its repository’s default branch/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a board that does not say where its helper comes from: no install is made up', async () => {
+    const { cli: _cli, ...bare } = compat();
+    void _cli;
+    const h = await openTools({ routes: { '/api/v1/developer/compatibility': bare } });
+    try {
+      const guide = await openGuide(await details(h.page, 'a2'));
+      assert.match(
+        await guide.locator('[data-no-source]').innerText(),
+        /does not say where its helper comes from, so the install cannot be filled in here/,
+      );
+      const blocks = await guide.locator('[data-guide-step="older"] pre').allInnerTexts();
+      assert.equal(blocks[0], 'ls -l "$(command -v laika)"');
+      assert.ok(!blocks.some((b) => b.includes('git clone')), blocks.join(' | '));
     } finally {
       await h.close();
     }
@@ -590,6 +808,95 @@ void describe(
             });
           } finally {
             await o.close();
+          }
+        }
+      }
+    });
+  },
+);
+
+void describe(
+  'LAI-1093 evidence: the older-CLI guidance, light and dark, 1440 and 390 px',
+  { skip: EVIDENCE === undefined },
+  () => {
+    void test('screenshots', async () => {
+      const dir = EVIDENCE ?? '';
+      mkdirSync(dir, { recursive: true });
+      for (const theme of ['light', 'dark'] as const) {
+        for (const width of [1440, 390] as const) {
+          const tag = `${theme}-${String(width)}`;
+          const size = { width, height: width === 390 ? 844 : 900 };
+          const sized: OpenOptions = {
+            before: async (page) => {
+              await page.setViewportSize(size);
+            },
+          };
+          // A tall window for the shot, so a panel that scrolls inside shows all of it.
+          const tall = async (page: Page) => {
+            await page.setViewportSize({ width, height: 3200 });
+            await page.waitForTimeout(150);
+          };
+
+          const t = await openTools({}, sized);
+          try {
+            await setTheme(t.page, theme);
+            const unknown = await details(t.page, 'a3');
+            await unknown.locator('[data-version-unknown-hint]').waitFor();
+            await tall(t.page);
+            await t.page.locator('.side-panel[data-panel="tool"]').screenshot({
+              path: join(dir, `tool-version-unknown-${tag}.png`),
+            });
+            await t.page.setViewportSize(size);
+            const required = await details(t.page, 'a2');
+            await required.locator('[data-update-how] > summary').click();
+            await openGuide(required);
+            await tall(t.page);
+            await t.page.locator('.side-panel[data-panel="tool"]').screenshot({
+              path: join(dir, `tool-how-to-update-and-guide-${tag}.png`),
+            });
+          } finally {
+            await t.close();
+          }
+
+          const w = await open('/developer?tab=devices&add=device', addDeviceStub(), sized);
+          try {
+            await setTheme(w.page, theme);
+            const wizard = w.page.locator('[data-wizard="device"]');
+            await wizard.waitFor({ timeout: 20_000 });
+            await wizard.locator('label.dx-option', { hasText: 'has a laika command' }).click();
+            await wizard.screenshot({ path: join(dir, `add-device-installed-option-${tag}.png`) });
+            const step = await toPairCommand(w.page);
+            await openGuide(step);
+            await tall(w.page);
+            await step.screenshot({ path: join(dir, `add-device-update-first-${tag}.png`) });
+          } finally {
+            await w.close();
+          }
+
+          const f = await open('/developer?tab=devices&add=device', addDeviceStub(), sized);
+          try {
+            await setTheme(f.page, theme);
+            const step = await toPairCommand(f.page);
+            await step.locator('[data-clone-refused]').waitFor();
+            await tall(f.page);
+            await step.screenshot({ path: join(dir, `add-device-fresh-chained-${tag}.png`) });
+          } finally {
+            await f.close();
+          }
+
+          const a = await open(
+            '/developer?tab=tools&add=tool&tool=claude-code',
+            addToolStub(),
+            sized,
+          );
+          try {
+            await setTheme(a.page, theme);
+            const wizard = await toToolCommand(a.page);
+            await openGuide(wizard);
+            await tall(a.page);
+            await wizard.screenshot({ path: join(dir, `add-tool-guide-${tag}.png`) });
+          } finally {
+            await a.close();
           }
         }
       }

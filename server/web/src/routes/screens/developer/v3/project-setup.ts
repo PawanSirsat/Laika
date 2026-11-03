@@ -16,7 +16,7 @@ import {
   type AgentChoice,
   type InstructionsTarget,
 } from '../../connect/connect-agents.ts';
-import { PLUGIN_HOME, PROJECT_BLOCK_REVISION } from '../../connect/connect-copy.ts';
+import { PROJECT_BLOCK_REVISION } from '../../connect/connect-copy.ts';
 import { catalogTool } from './tool-catalog.ts';
 
 /**
@@ -486,10 +486,14 @@ export function noDeviceCheck(toolName: string, client: AgentClient): NoDeviceCh
 /**
  * The hint under that command (LAI-1084). A CLI older than the board answers
  * `laika: unknown command "project"`, and one that old may have no
- * `laika version` or no `laika update` either, so the way forward is the
- * checkout itself: `git -C` on {@link PLUGIN_HOME}, where the machine prompt
- * clones it. Every command is pasteable as it stands: no `<placeholder>`,
- * which a shell would read as a redirect.
+ * `laika version` or no `laika update` either. The way forward for it is
+ * *How to update your Laika CLI*, placed under the hint (LAI-1093): it finds
+ * where the old CLI comes from and the steps to replace it, rather
+ * than pulling a checkout this page can only guess the place and state of —
+ * `git -C ~/laika pull --ff-only` failed on a laptop whose checkout was not
+ * there, and fails on one `laika update` left detached. Every command is
+ * pasteable as it stands: no `<placeholder>`, which a shell would read as a
+ * redirect.
  */
 export interface CliMatchHint {
   /**
@@ -499,13 +503,7 @@ export interface CliMatchHint {
    */
   readonly commit: string | null;
   readonly version: string;
-  /**
-   * For a CLI with no `laika version`, or whose `laika update` is unknown:
-   * the checkout it runs from, moved on.
-   */
-  readonly pull: string;
-  /** Where {@link pull} assumes the checkout is, for "if you cloned it elsewhere". */
-  readonly home: string;
+  /** For a CLI that prints a commit: it brings itself to this board's. */
   readonly update: string;
 }
 
@@ -514,8 +512,6 @@ export function cliMatchHint(source: CliSource | undefined): CliMatchHint {
   return {
     commit: commit === null ? null : commit.slice(0, 7),
     version: 'laika version',
-    pull: `git -C ${PLUGIN_HOME} pull --ff-only`,
-    home: PLUGIN_HOME,
     update: 'laika update',
   };
 }

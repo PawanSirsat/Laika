@@ -300,7 +300,7 @@ export function checkLines(
             id: 'required_capabilities',
             label: 'Helper reports',
             state: 'fail',
-            detail: `Not yet reported: ${caps.detail.missing.join(', ')}. The helper sends this as \`laika tool add\` sets ${tool.name} up: ${reconnectHow}. A helper older than this board needs \`laika update\` first.`,
+            detail: `Not yet reported: ${caps.detail.missing.join(', ')}. The helper sends this as \`laika tool add\` sets ${tool.name} up: ${reconnectHow}. A helper older than this board needs updating first: \`laika update\`, or for one too old to have it, How to update your Laika CLI.`,
           },
     );
   }

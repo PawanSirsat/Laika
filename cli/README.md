@@ -16,11 +16,17 @@ board was built from (`GET /api/v1/developer/compatibility` → `cli.source`).
 The browser's **Add device** fills these in:
 
 ```
-git clone <cli.source.url> ~/laika
-git -C ~/laika checkout --detach <cli.source.commit>
-~/laika/plugin/scripts/install.sh --no-credential
-laika device pair --board <board> --code <code>
+git clone <cli.source.url> ~/laika &&
+git -C ~/laika checkout --detach <cli.source.commit> &&
+~/laika/plugin/scripts/install.sh --no-credential &&
+~/laika/cli/bin/laika device pair --board <board> --code <code>
 ```
+
+**One `&&` list, on purpose** (LAI-1093): each line runs only if the one
+before it worked. A clone refused because `~/laika` already exists must not
+go on to run the `install.sh` already in it — one older than
+`--no-credential` ignores the flag, asks for a personal token and rewrites
+`~/.laika/env`. If `~/laika` exists, use the second list below instead.
 
 `install.sh --no-credential` links `laika` and `laika-claude`, adds the PATH
 line once, and **asks for no token and writes none** — `~/.laika/env` is left
@@ -29,6 +35,76 @@ exactly as it was. Then each tool gets its own credential with
 asks for your personal token and writes `~/.laika/env`, keeping any existing
 file as `env.bak-<seconds>` first. `laika connect` keeps the old file the same
 way (`env.bak-<ms>`) when it would change it.
+
+## Getting a current CLI, whatever is installed now (LAI-1093)
+
+Start with `laika version`. **If it prints a commit**, `laika update` (below)
+moves the checkout to the board's commit — add `--board <url>`, and
+`--allow-http` for a plain-http board off loopback, as the browser's
+*How to update your Laika CLI* shows them.
+
+**If it says `unknown command "version"`** (or `laika update` does), the CLI
+predates both, and **nothing should assume where its checkout is**: it may not
+be at `~/laika`, and a checkout `laika update` once left detached refuses a
+plain `git pull --ff-only` (`You are not currently on a branch`). See where this
+`laika` comes from — it changes nothing:
+
+```
+ls -l "$(command -v laika)"
+```
+
+The arrow points at a file ending in `/cli/bin/laika`; the folder that holds
+`cli` is the old checkout. No such file means no `laika` on this PATH.
+
+Then install a current checkout — the fresh install above. It works whatever
+the old checkout is, and **leaves a checkout anywhere else untouched** (delete
+that one once the new one answers). Each list stops at its first failing line.
+With no `~/laika` yet:
+
+```
+git clone <cli.source.url> ~/laika &&
+git -C ~/laika checkout --detach <cli.source.commit> &&
+~/laika/plugin/scripts/install.sh --no-credential
+```
+
+When `~/laika` already exists — it fetches rather than clones, and git refuses
+rather than overwrite a change you made there:
+
+```
+git -C ~/laika fetch origin &&
+git -C ~/laika checkout --detach <cli.source.commit> &&
+~/laika/plugin/scripts/install.sh --no-credential
+```
+
+Then make the terminal look for `laika` again, and check:
+
+```
+hash -r
+laika version
+```
+
+`hash -r` works in zsh and bash alike; `rehash` is zsh's alone. No `#`
+comments go in these blocks: an interactive zsh does not treat `#` as a
+comment unless `interactivecomments` is set, so a pasted comment runs as
+words. The browser fills in `<cli.source.url>` and `<cli.source.commit>` from
+the board's compatibility answer; typed by hand, replace the whole `<…>` — a
+shell reads a bare `<` as a redirect.
+
+**Still the old one?** `install.sh` does not replace a `laika` on PATH that is
+not a symlink (it prints *something else called laika is already on your PATH
+— skipping*). And if `ls -l "$(command -v laika)"` still points into the old
+folder, that link sits in a directory earlier on PATH than the one `install.sh`
+linked into. Only when that path is a symlink (the `ls -l` line starts with
+`l`), point it at the new checkout and look again:
+
+```
+ln -sf ~/laika/cli/bin/laika "$(command -v laika)"
+hash -r
+```
+
+A file that is not a symlink is not Laika's to replace: rename it yourself,
+then run `install.sh` again. Nothing here asks for or prints a token. A pairing
+code lasts ten minutes, so make a fresh one in the browser after updating.
 
 ## `laika device pair` — this machine, proven by a key (LAI-1060)
 

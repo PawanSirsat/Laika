@@ -20,7 +20,7 @@ import { ApiError, NetworkError } from '../../../../api/errors.ts';
 export const CHECKOUT = '~/laika';
 
 /** A value pasted into a terminal: as is when it is plainly safe, quoted otherwise. */
-function shellWord(value: string): string {
+export function shellWord(value: string): string {
   return /^[\w@%+=:,./~-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
@@ -44,7 +44,10 @@ export interface Bootstrap {
  * - **Fresh**: clone the board's repository **at the board's own commit**,
  *   link the helper without asking for any token (`--no-credential`), then
  *   pair — through the checkout's own `laika`, since the shell that ran the
- *   installer has not re-read its `PATH` yet.
+ *   installer has not re-read its `PATH` yet. **One `&&` list** (LAI-1093,
+ *   review round 1): a clone refused because `~/laika` already exists must
+ *   not go on to run the `install.sh` in it — one older than
+ *   `--no-credential` ignores the flag and asks for a personal token.
  * - **Installed**: the pair command alone, with `updateFirst`. A helper old
  *   enough to need updating may have no `laika update` either (#200, #207) —
  *   `git -C ~/laika fetch && laika update` failed on exactly the CLI that
@@ -71,15 +74,17 @@ export function bootstrapCommands(
       updateFirst: false,
     };
   }
-  const clone =
-    source.commit === null
-      ? `git clone ${shellWord(source.url)} ${CHECKOUT}`
-      : `git clone ${shellWord(source.url)} ${CHECKOUT} && git -C ${CHECKOUT} checkout --detach ${source.commit}`;
+  const steps = [
+    `git clone ${shellWord(source.url)} ${CHECKOUT}`,
+    ...(source.commit === null ? [] : [`git -C ${CHECKOUT} checkout --detach ${source.commit}`]),
+    `${CHECKOUT}/plugin/scripts/install.sh --no-credential`,
+    pair,
+  ];
   return {
-    text: [clone, `${CHECKOUT}/plugin/scripts/install.sh --no-credential`, pair].join('\n'),
+    text: steps.join(' &&\n'),
     versionNote:
       source.commit === null
-        ? `Version unknown: this board does not know which commit it was built from. Keep the helper current with \`git -C ${CHECKOUT} pull\`.`
+        ? 'Version unknown: this board does not know which commit it was built from, so this installs the newest on its repository’s default branch. How to update your Laika CLI has the ways to keep it current.'
         : undefined,
     updateFirst: false,
   };

@@ -24,6 +24,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
+import { checkoutPull, hazardsIn } from '../routes/screens/developer/v3/shell-words.ts';
 import {
   closeBrowser,
   open,
@@ -767,7 +768,7 @@ void describe('Project setup, v3', () => {
       await until(async () => (await hint.innerText()).includes('0123456'));
       assert.equal(
         (await hint.innerText()).replace(/\s+/g, ' ').trim(),
-        'This needs a Laika CLI that matches this board (commit 0123456). Check with laika version. If that says unknown command, your CLI predates this board: update the Laika checkout it runs from with git -C ~/laika pull --ff-only (if you cloned Laika somewhere other than ~/laika, use that folder), then run laika version again. Newer CLIs update with laika update; if that says unknown command too, use the same git step.',
+        'This needs a Laika CLI that matches this board (commit 0123456). Check with laika version: if it prints a commit, laika update brings it to this board’s. If either says unknown command, your CLI predates this board: How to update your Laika CLI, below, shows where it comes from and what to do about it, wherever the old one is.',
       );
       // Directly under the command it is about.
       assert.equal(
@@ -777,11 +778,29 @@ void describe('Project setup, v3', () => {
       assert.deepEqual(await hint.locator('code').allInnerTexts(), [
         '0123456',
         'laika version',
-        'git -C ~/laika pull --ff-only',
-        '~/laika',
-        'laika version',
         'laika update',
       ]);
+      // LAI-1093: the guide itself, right under the hint — and, open, the fresh
+      // install from this board's own source rather than a pull of ~/laika.
+      const help = h.page.locator('[data-way="check"] [data-update-cli="project-setup"]');
+      assert.equal(
+        await hint.evaluate((el) => el.nextElementSibling?.getAttribute('data-update-cli')),
+        'project-setup',
+      );
+      assert.equal(await help.locator('summary').innerText(), 'How to update your Laika CLI');
+      await help.locator('summary').click();
+      const older = help.locator('[data-guide-step="older"] pre');
+      await older.first().waitFor();
+      await until(async () => (await older.count()) === 5);
+      assert.equal(await older.first().innerText(), 'ls -l "$(command -v laika)"');
+      assert.equal(
+        await older.nth(1).innerText(),
+        `git clone https://github.com/PawanSirsat/Laika.git ~/laika &&\ngit -C ~/laika checkout --detach ${commit} &&\n~/laika/plugin/scripts/install.sh --no-credential`,
+      );
+      const step = h.page.locator('[data-way="check"]');
+      assert.equal(checkoutPull(await step.innerText()), undefined);
+      assert.doesNotMatch(await step.innerText(), /pull --ff-only/);
+      assert.deepEqual(hazardsIn(await step.locator('pre').allInnerTexts()), []);
     } finally {
       await h.close();
     }
@@ -802,9 +821,10 @@ void describe('Project setup, v3', () => {
       const text = (await hint.innerText()).replace(/\s+/g, ' ').trim();
       assert.match(
         text,
-        /^This needs a Laika CLI that matches this board\. Check with laika version\./,
+        /^This needs a Laika CLI that matches this board\. Check with laika version: /,
       );
-      assert.doesNotMatch(text, /commit/);
+      // No commit is named: "if it prints a commit" is the CLI's, not the board's.
+      assert.doesNotMatch(text, /\(commit|[0-9a-f]{7}/);
     } finally {
       await h.close();
     }
@@ -835,6 +855,9 @@ void describe('Project setup, v3', () => {
           /Record it yourself with I’ve added it/,
         );
         assert.equal(await way.locator('[data-note="cli-match"]').count(), 0);
+        // LAI-1093: no CLI to update for a check that cannot run, so no guide either.
+        assert.equal(await way.locator('[data-update-cli]').count(), 0);
+        assert.doesNotMatch(await way.innerText(), /How to update your Laika CLI/);
         // The catalogue's manual note, for a tool that has one.
         assert.equal(
           await note.locator('[data-note="manual"]').count(),
@@ -1423,6 +1446,57 @@ void describe(
             await shot(none.page, 'no-tools', theme, width);
           } finally {
             await none.close();
+          }
+        }
+      }
+    });
+  },
+);
+
+void describe(
+  'LAI-1093 evidence: the check step’s CLI hint and its guide, light and dark, 1440 and 390 px',
+  { skip: EVIDENCE === undefined || EVIDENCE === '' },
+  () => {
+    void test('screenshots', async () => {
+      const dir = EVIDENCE ?? '';
+      mkdirSync(dir, { recursive: true });
+      for (const theme of ['light', 'dark'] as const) {
+        for (const width of [1440, 390] as const) {
+          const world: World = {
+            agents: [agentRow({ id: 'a1', grants: FULL })],
+            puts: [],
+            setups: [],
+          };
+          const h = await open(
+            '/developer?tab=projects&step=3',
+            stub('v3', world, {
+              '/api/v1/developer/compatibility': {
+                ...compat('v3'),
+                cli: {
+                  source: {
+                    type: 'git',
+                    url: 'https://github.com/PawanSirsat/Laika.git',
+                    commit: '0123456789abcdef0123456789abcdef01234567',
+                    path: 'cli',
+                  },
+                },
+              },
+            }),
+          );
+          try {
+            await h.page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+            await setTheme(h.page, theme);
+            const way = h.page.locator('[data-way="check"]');
+            await way.locator('[data-note="cli-match"]').waitFor({ timeout: 20_000 });
+            await way.locator('[data-update-cli="project-setup"] > summary').click();
+            await way.locator('[data-guide-step="older"] pre').first().waitFor();
+            await h.page.setViewportSize({ width, height: 3200 });
+            await h.page.waitForTimeout(200);
+            await way.screenshot({
+              path: join(dir, `project-setup-check-hint-${theme}-${String(width)}.png`),
+            });
+          } finally {
+            await h.close();
           }
         }
       }
