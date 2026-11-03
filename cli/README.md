@@ -1628,10 +1628,13 @@ fallback. A 401 anywhere — the agent was revoked — ends that credential's ru
 
 **Presence and capacity pings** (D-126). Every 60 s and on any change it sends
 `PUT /api/v1/agents/me/launcher` with each agent's token — enabled, auto-pickup,
-runs, the CLI version — and once more with `enabled: false` on a clean stop. A
-capacity ping is answered with the pinged agent's token, once, with fixed
-fields only: launcher state, runs, whether the harness is ready, whether a
-session is live, battery and memory as the watcher reads them (or
+runs, the CLI version (`MAJOR.MINOR.PATCH[+commit]` or `unknown`) — and once
+more with `enabled: false` on a clean stop. A capacity ping (envelope v2's
+`ping { id, expires_at }`) is answered with the pinged agent's token, once —
+`POST /api/v1/agents/me/capacity-pings/:id/reply` — and its delivery is
+acknowledged after, with SPEC §4.84's closed fields only: launcher state (and,
+when on, runs), whether the harness is ready (credential, argv, hooks), whether
+a session is live, battery and memory as the watcher reads them (or
 `unsupported`), and the CLI version — no path, host, repository or task text.
 With no launcher running, the session's event helper answers `launcher: off`.
 **A board without these routes** (before slice A) answers 404: presence is
@@ -1767,7 +1770,7 @@ waits on the board, and the catch-up on reconnect starts it afterwards.
 | Runtime kill, concurrency cap, stop, revoked credential ends its runs | Verified-and-tested with real child processes | Documented-not-tested | Unsupported |
 | One launcher per device; leftovers after a SIGKILL | Verified-and-tested with real processes | Documented-not-tested | Unsupported |
 | `enable` / `disable`, the LaunchAgent and the systemd unit | Unit-tested (files, refusals, `launchctl` calls recorded; the plist passes `plutil -lint`); **not yet bootstrapped on a real login** | Unit-tested (the unit text, `systemctl` calls recorded) | Unsupported |
-| Presence and the ping answer | Unit-tested against a stub board; the board's routes are slice A's, so a live answer is **unverified** until it lands | same | — |
+| Presence and the ping answer | Verified-and-tested against a real server with slice A's routes (`agent-launcher-e2e.test.ts`: a held ping answered in the closed shape, its delivery out of `undelivered`; presence `on`, then `off` after stop) | Documented-not-tested | — |
 | A real `claude -p` run through the launcher | Unverified: the flags are from the docs and `claude --help` 2.1.280; no model run in the tests | Unverified | Unsupported |
 | A real `codex exec` run | Unverified (and off by default): Codex's usage limit blocked a live run; the sandbox result above was measured without a model | Unverified | Unsupported |
 
