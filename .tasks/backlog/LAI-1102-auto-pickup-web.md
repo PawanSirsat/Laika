@@ -56,8 +56,9 @@ LAI-1038.
 ## Red on LAI-1038 alone — what this task turns green
 
 Measured on LAI-1038's branch, each web test file run on its own with
-`node --test <file>` from `server/web` (34 files that read the server's
-source; these five failed, the rest passed):
+`node --test <file>` from `server/web` (33 files: the 31 non-browser tests
+that read the server's source, and `endpoint-coverage` and
+`permissions-view`; these five failed, the other 28 passed):
 
 1. `test/api/use-events.test.ts` › *the stream subscribes to exactly what the
    server emits* › **STREAM_TYPES equals ACTIVITY_TYPES, in order** — missing
