@@ -733,6 +733,12 @@ const NOT_FENCED: Record<string, string> = {
     'session only (agent.manage_own); a rotate exchange for the agent, touches no task',
   'POST /api/v1/agents/me/client-report':
     'self-report on the agent’s own token (§4.81), as a heartbeat is; touches no task',
+  'PUT /api/v1/agents/me/launcher':
+    'launcher presence on the agent’s own token (§4.83, LAI-1038), as a heartbeat is; touches no task',
+  'POST /api/v1/agents/:id/capacity-pings':
+    'asks an agent’s device for its capacity (§4.84, D-126); may name a task, and changes nothing on it',
+  'POST /api/v1/agents/me/capacity-pings/:pingId/reply':
+    'the pinged agent’s own answer about itself (§4.84), as a heartbeat is; touches no task',
   'POST /api/v1/project-setups':
     'a record of a repo’s Laika block (§4.82, LAI-1066): the owner’s word or the agent’s own local check; touches no task',
   'POST /api/v1/agents/me/events/ack':

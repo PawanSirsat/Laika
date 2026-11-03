@@ -191,7 +191,7 @@ interface Frame {
 }
 
 function sseClient(res: Response) {
-  const body = res.body;
+  const body: ReadableStream<Uint8Array> | null = res.body;
   if (body === null) throw new Error('no response body');
   const reader = body.getReader();
   const decoder = new TextDecoder();

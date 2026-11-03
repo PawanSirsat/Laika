@@ -13,7 +13,7 @@ import { type AgentStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { presenceEnabled } from '../db/orgs.ts';
-import { agentLauncherReports, agents, capacityPings, projects, tasks } from '../db/schema.ts';
+import { agentLauncherReports, agents, capacityPings, type projects, tasks } from '../db/schema.ts';
 import { ApiError, isApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { registeredAgent } from './claims.ts';

@@ -12,6 +12,7 @@ import {
   projectHandoffPolicies,
   projects,
   taskClaims,
+  tasks,
   type Activity,
 } from './schema.ts';
 
@@ -30,8 +31,8 @@ import {
 
 /**
  * The envelope's shape version. A change to {@link AgentEventDetail} bumps it.
- * `2` added `ping` (LAI-1038); an envelope written at `1` is read with `ping:
- * null`, which is what it would have said.
+ * `2` added `ping`, `task_key` and `project_slug` (LAI-1038); an envelope
+ * written at `1` is read with each `null`.
  */
 export const AGENT_EVENT_SCHEMA_VERSION = 2;
 
@@ -91,7 +92,17 @@ export interface AgentEventDetail {
    * answer. Null on every other verb. No free text either way.
    */
   ping: { id: string; expires_at: number } | null;
+  /**
+   * The task's key and the project's slug as they were when the event was
+   * written (LAI-1038): what a device names in a fixed prompt and a branch
+   * without a second read. A key re-prefixed since still resolves (§4.3).
+   */
+  task_key: string | null;
+  project_slug: string | null;
 }
+
+/** The detail as each verb builds it; the key and the slug are the row's, added once. */
+type VerbDetail = Omit<AgentEventDetail, 'task_key' | 'project_slug'>;
 
 interface Payload {
   offer_id?: string;
@@ -119,7 +130,7 @@ export function recordAgentEvent(db: Db, row: Activity, seq: number): void {
   const payload = JSON.parse(row.payloadJson) as Payload;
 
   const offer = offerOf(db, row, payload);
-  const detail = detailOf(db, row, payload, offer);
+  const detail: AgentEventDetail = { ...detailOf(db, row, payload, offer), ...keysOf(db, row) };
   const recipients = recipientsOf(db, row, payload, offer, detail);
 
   db.insert(agentEvents)
@@ -176,6 +187,30 @@ function offerOf(db: Db, row: Activity, payload: Payload): OfferRow | null {
     );
   }
   return null;
+}
+
+/** The row's task key and project slug, now — frozen into the envelope with the rest. */
+function keysOf(db: Db, row: Activity): Pick<AgentEventDetail, 'task_key' | 'project_slug'> {
+  const project =
+    row.projectId === null
+      ? undefined
+      : db
+          .select({ slug: projects.slug, prefix: projects.prefix })
+          .from(projects)
+          .where(eq(projects.id, row.projectId))
+          .get();
+  const number =
+    row.taskId === null
+      ? undefined
+      : db.select({ number: tasks.number }).from(tasks).where(eq(tasks.id, row.taskId)).get()
+          ?.number;
+  return {
+    task_key:
+      project === undefined || number === undefined
+        ? null
+        : `${project.prefix}-${String(number)}`,
+    project_slug: project?.slug ?? null,
+  };
 }
 
 function identity(db: Db, agentId: string | null | undefined): AgentIdentity | null {
@@ -245,7 +280,7 @@ function detailOf(
   row: Activity,
   payload: Payload,
   offer: OfferRow | null,
-): AgentEventDetail {
+): VerbDetail {
   const type = row.type as AgentEventType;
   const contextRevision =
     type === 'project.context_updated' && typeof payload.revision === 'number'

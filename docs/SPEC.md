@@ -3000,7 +3000,7 @@ what was true when it was written, as the row does.
 | --- | --- |
 | `activity_id` | primary key, FK `activity` (§4.8), cascade — the event id a client de-duplicates by |
 | `seq` | the row's sequence (§11.5), unique — the ordering cursor |
-| `schema_version` | the envelope's shape version: `2` since LAI-1038 added `ping`; an envelope written at `1` is served with `ping: null` |
+| `schema_version` | the envelope's shape version: `2` since LAI-1038 added `ping`, `task_key` and `project_slug`; an envelope written at `1` is served with each `null` |
 | `offer_id` | nullable, **a copy, no FK** — the offer (§4.73) it is about: the payload's, or for a selection the work request it opened |
 | `detail_json` | the frozen part of the envelope, below |
 
@@ -3013,11 +3013,12 @@ decline's; untrusted data, D-115 item 7) and `closed_reason`; `checkpoint`
 (`id`, `commit_sha`, the newest `ref`); `note_hash` — **the note's hash, never
 its text**; `context_revision`; `approval` (`required`, `approved_by_user_id`,
 `approved_at`); `state` `{ before, after }`; `claim_generation` `{ from, to }`;
-`ping` — a capacity ping's `{ id, expires_at }` (§4.84), else `null`. Read when
-it is served, beside the row's facts: **`task_key`** and **`project_slug`**
-(LAI-1038), so a device can name the task and the project in a fixed prompt
-or a branch without a second read — both readable wherever the event is.
-No token, secret or note text is in it. **Its agents are named as the
+`ping` — a capacity ping's `{ id, expires_at }` (§4.84), else `null`; and
+**`task_key`** and **`project_slug`** as they were when the event was written
+(LAI-1038), so a device names the task and the project in a fixed prompt or a
+branch without a second read — a key re-prefixed since still resolves (§4.3),
+and both are readable wherever the event is. No token, secret or note text is
+in it. **Its agents are named as the
 row's are** (§4.8 `agent_id`, D-121 item 7, LAI-1011): `from`, `to` and the
 writing agent and its session are served only where the receiving agent's
 owner may see that agent, through the same gate, and are otherwise `null`
