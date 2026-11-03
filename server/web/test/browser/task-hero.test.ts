@@ -355,13 +355,18 @@ void describe('the state panel complete (LAI-1122)', () => {
       });
       await link.waitFor({ timeout: 10_000 });
       assert.equal(await link.getAttribute('href'), '#activity');
-      const finish = h.page.locator('.cmt-finish').first();
+      // The feed's card for the round the link names (LAI-1122's contract).
+      const finish = h.page.locator('.cmt-finish[data-round="2"]');
       await finish.waitFor({ timeout: 10_000 });
-      assert.equal(await finish.evaluate((d) => (d as HTMLDetailsElement).open), false);
+      assert.equal(await finish.getAttribute('data-open'), 'false');
 
       await link.click();
-      await until(() => finish.evaluate((d) => (d as HTMLDetailsElement).open));
-      assert.match(await finish.locator('summary').innerText(), /Finish summary · round 2/);
+      await until(async () => (await finish.getAttribute('data-open')) === 'true');
+      assert.equal(await finish.getAttribute('data-open'), 'true', 'the link did not open it');
+      assert.match(
+        await finish.locator('.cmt-finish-title').innerText(),
+        /Finish summary · round 2/,
+      );
       assert.ok(await finish.getByText('Notifications').isVisible(), 'the summary did not open');
     } finally {
       await h.close();

@@ -35,6 +35,7 @@ import { firstLine } from './feed-groups.ts';
 import { TaskMarkdown } from './TaskMarkdown.tsx';
 import type { MentionCandidate } from './LazyRichEditor.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { revealFinish } from './reveal-finish.ts';
 import './hero.css';
 
 export interface StateHeroProps {
@@ -237,20 +238,13 @@ function RoundEvidenceRow({ round }: { readonly round: Round }) {
  * not drawn (another tab, or the feed still loading).
  */
 function revealFinishSummary(round: number): void {
-  const feed =
-    document.getElementById('activity') ?? document.querySelector('.panel-activity-section');
-  const finishes = [
-    ...(feed ?? document).querySelectorAll<HTMLDetailsElement>('details.cmt-finish'),
-  ];
-  const named = new RegExp(`round ${String(round)}(?!\\d)`);
-  const mine =
-    finishes.find((d) => named.test(d.querySelector('summary')?.textContent ?? '')) ?? finishes[0];
-  if (mine !== undefined) {
-    mine.open = true;
-    mine.scrollIntoView({ block: 'start' });
-    return;
-  }
-  feed?.scrollIntoView({ block: 'start' });
+  // The feed's card for that round answers and scrolls itself into view
+  // (`reveal-finish.ts`); without one — another tab, or still loading — the
+  // feed itself comes into view.
+  if (revealFinish(round)) return;
+  (
+    document.getElementById('activity') ?? document.querySelector('.panel-activity-section')
+  )?.scrollIntoView({ block: 'start' });
 }
 
 /**

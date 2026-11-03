@@ -455,7 +455,7 @@ export function ActivityFeed({
   );
 
   return (
-    <section className="panel-section panel-activity-section">
+    <section className="panel-section panel-activity-section" id="activity">
       <h3 className="panel-section-title">Activity</h3>
       {detail.status === 'loading' ? (
         <LoadingState shape="row" count={3} label="Loading comments and activity" />

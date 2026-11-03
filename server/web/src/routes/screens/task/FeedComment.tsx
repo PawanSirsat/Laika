@@ -4,6 +4,7 @@ import { timeLabel } from '../../../api/time-label.ts';
 import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
 import { CommentBody } from './CommentBody.tsx';
 import { foldLabel, type CommentKind } from './feed-groups.ts';
+import { REVEAL_FINISH_EVENT, roundOf } from './reveal-finish.ts';
 import { LazyRichEditor, type CardCandidate, type MentionCandidate } from './LazyRichEditor.tsx';
 import './feed.css';
 
@@ -256,9 +257,31 @@ function FinishSummary({ round, body, people, meId, foot }: FinishSummaryProps) 
     };
   }, [body]);
 
+  // *Full summary in activity ↓* names a round (`reveal-finish.ts`): this
+  // card answers for its own, opens and comes into view.
+  const card = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const onReveal = (event: Event): void => {
+      if (roundOf(event) !== round) return;
+      event.preventDefault();
+      setOpen(true);
+      card.current?.scrollIntoView({ block: 'start' });
+    };
+    document.addEventListener(REVEAL_FINISH_EVENT, onReveal);
+    return () => {
+      document.removeEventListener(REVEAL_FINISH_EVENT, onReveal);
+    };
+  }, [round]);
+
   const folded = tall && !open;
   return (
-    <div className="cmt-finish" data-comment-kind="summary">
+    <div
+      ref={card}
+      className="cmt-finish"
+      data-comment-kind="summary"
+      data-round={round}
+      data-open={open ? 'true' : 'false'}
+    >
       <span className="cmt-finish-title">Finish summary · round {round}</span>
       <div
         ref={box}
