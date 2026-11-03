@@ -26,6 +26,7 @@ import {
   deviceLive,
   deviceOf,
   deviceTools,
+  deviceNameProblem,
   devicesSummary,
   disconnectImpact,
   everyDeviceRevoked,
@@ -43,6 +44,7 @@ import {
   toolStatus,
   withAgent,
   withConfirmed,
+  withDevice,
   withRevokedAgents,
 } from '../../../../../src/routes/screens/developer/v3/devices-view.ts';
 
@@ -396,6 +398,29 @@ void describe('what a write changes', () => {
     const [x, y] = withConfirmed([a, b], 'd2');
     assert.equal(x?.confirmed, false);
     assert.equal(y?.confirmed, true);
+  });
+
+  void test('withDevice replaces only the renamed device, whole (LAI-1095)', () => {
+    const a = device({ id: 'd1', agents: [agent({ id: 'a1' })] });
+    const b = device({ id: 'd2', display_name: 'Runner', device_label: 'runner', agents: [] });
+    const renamed = device({
+      id: 'd1',
+      display_name: 'Strelka',
+      device_label: 'strelka',
+      agents: [agent({ id: 'a1', device_label: 'Strelka', display_name: 'Claude Code · Strelka' })],
+    });
+    const [x, y] = withDevice([a, b], renamed);
+    assert.equal(x, renamed);
+    assert.equal(y, b);
+    assert.equal(x?.agents[0]?.device_label, 'Strelka');
+  });
+
+  void test('deviceNameProblem asks for 1 to 80 characters once trimmed (LAI-1095)', () => {
+    assert.equal(deviceNameProblem(''), 'Give the device a name.');
+    assert.equal(deviceNameProblem('   '), 'Give the device a name.');
+    assert.equal(deviceNameProblem('x'.repeat(81)), 'At most 80 characters.');
+    assert.equal(deviceNameProblem(` ${'x'.repeat(80)} `), undefined);
+    assert.equal(deviceNameProblem('Strelka'), undefined);
   });
 
   void test('deviceOf finds the device holding an agent', () => {

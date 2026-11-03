@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { agentHarness, type RegisteredAgent } from '../../../../api/agents.ts';
-import type { Device } from '../../../../api/devices.ts';
+import { renameDevice, type Device } from '../../../../api/devices.ts';
 import { timeLabel } from '../../../../api/time-label.ts';
 import { SidePanel } from '../../../../components/SidePanel.tsx';
+import { Spinner } from '../../../../components/Spinner.tsx';
 import { AgentMark } from '../../../../components/agent-mark/AgentMark.tsx';
 import { RenameForm } from '../AgentsTab.tsx';
 import { DesignChip } from './DesignChip.tsx';
@@ -12,6 +13,7 @@ import {
   CLOUD_NOTE,
   chipTone,
   deviceChip,
+  deviceNameProblem,
   deviceTools,
   kindName,
   listedStatus,
@@ -39,6 +41,8 @@ export interface DeviceDetailsProps {
   /** *Add a tool* on a paired device with no active tool: the tool wizard on it. */
   readonly onAddTool: () => void;
   readonly onChanged: (agent: RegisteredAgent) => void;
+  /** *Rename…* saved: the device as the server now has it, its tools relabelled. */
+  readonly onRenamed: (device: Device) => void;
   readonly announce: (message: string) => void;
   readonly onClose: () => void;
   readonly restore: () => HTMLElement | null | undefined;
@@ -51,6 +55,7 @@ export interface DeviceDetailsProps {
  *
  * - Its kind, how it got here, when it was last seen, and its key's
  *   fingerprint; a Cloud runner's one-day note.
+ * - **Rename…** an active device (LAI-1095): its tools are relabelled with it.
  * - Its tools' helper updates, summarised, worst first.
  * - An imported device nobody claimed asks *confirm it's yours*, through the
  *   same `POST /agents/devices/confirm` as before.
@@ -72,11 +77,25 @@ export function DeviceDetails({
   onOpenTool,
   onAddTool,
   onChanged,
+  onRenamed,
   announce,
   onClose,
   restore,
 }: DeviceDetailsProps) {
   const [renaming, setRenaming] = useState<string | undefined>(undefined);
+  // The device's own rename, closed the same way: focus back on its *Rename…*.
+  const [renamingDevice, setRenamingDevice] = useState(false);
+  const renameDeviceButton = useRef<HTMLButtonElement | null>(null);
+  const deviceRenamed = useRef(false);
+  useEffect(() => {
+    if (renamingDevice || !deviceRenamed.current) return;
+    renameDeviceButton.current?.focus();
+    deviceRenamed.current = false;
+  }, [renamingDevice]);
+  const stopRenamingDevice = (): void => {
+    deviceRenamed.current = true;
+    setRenamingDevice(false);
+  };
   // A rename closed hands focus back to its *Rename…*, inside the panel, so a
   // second Escape closes the panel rather than landing on nothing.
   const renamed = useRef<string | undefined>(undefined);
@@ -197,6 +216,48 @@ export function DeviceDetails({
           {cloud && live && <p className="dv3-note">{CLOUD_NOTE}</p>}
           {live && <DeviceUpdate agentIds={activeIds} />}
         </section>
+
+        {canManage && live && (
+          <section
+            className="side-panel-section"
+            aria-labelledby="dv3-device-name"
+            data-rename-device
+          >
+            <h3 className="side-panel-label" id="dv3-device-name">
+              Name
+            </h3>
+            {renamingDevice ? (
+              <DeviceRenameForm
+                device={device}
+                onSaved={(next) => {
+                  onRenamed(next);
+                  announce(`Renamed to ${next.display_name}.`);
+                  stopRenamingDevice();
+                }}
+                onCancel={stopRenamingDevice}
+              />
+            ) : (
+              <>
+                <p className="dv3-note">
+                  What Laika calls this computer. Every tool on it is shown under this name.
+                </p>
+                <div className="dx-actions dv3-panel-actions">
+                  <button
+                    type="button"
+                    ref={renameDeviceButton}
+                    className="dx-btn dx-btn-sm"
+                    aria-label={`Rename ${device.display_name}`}
+                    onClick={() => {
+                      setRenamingDevice(true);
+                    }}
+                  >
+                    Rename…
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        )}
 
         {needsConfirm(device) && (
           <section className="side-panel-section">
@@ -339,6 +400,102 @@ export function DeviceDetails({
         )}
       </div>
     </SidePanel>
+  );
+}
+
+/**
+ * The device's new name (LAI-1095), as {@link RenameForm} asks an agent's: the
+ * server's 1 to 80 checked before sending, its refusal — a name another of
+ * your devices holds — shown here with focus back on the name, and Escape
+ * cancelling the form rather than closing the panel around it.
+ */
+function DeviceRenameForm({
+  device,
+  onSaved,
+  onCancel,
+}: {
+  readonly device: Device;
+  readonly onSaved: (device: Device) => void;
+  readonly onCancel: () => void;
+}) {
+  const [name, setName] = useState(device.display_name);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const input = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    input.current?.focus();
+    input.current?.select();
+  }, []);
+  const problem = deviceNameProblem(name);
+  const unchanged = name.trim() === device.display_name;
+  const save = (): void => {
+    if (problem !== undefined || unchanged || pending) return;
+    setPending(true);
+    setError(undefined);
+    renameDevice(device.id, name.trim())
+      .then(onSaved)
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error && cause.message !== ''
+            ? cause.message
+            : 'Could not rename that device.',
+        );
+        // *Save* was disabled under focus while it waited: back to the name,
+        // so the reader can correct it and Escape still reaches the form.
+        input.current?.focus();
+      })
+      .finally(() => {
+        setPending(false);
+      });
+  };
+  return (
+    <form
+      className="agents-panel"
+      data-device-rename
+      onSubmit={(event) => {
+        event.preventDefault();
+        save();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return;
+        // Handled: the side panel around the form must not close too.
+        event.preventDefault();
+        onCancel();
+      }}
+    >
+      <label className="agents-field">
+        <span className="agents-label">Device name</span>
+        <input
+          ref={input}
+          className="tok-input"
+          value={name}
+          maxLength={120}
+          aria-invalid={problem !== undefined}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
+        />
+        <span className="agents-hint">{problem ?? 'Its tools are renamed with it.'}</span>
+      </label>
+      {error !== undefined && (
+        <p className="agents-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="agents-panel-actions">
+        <button type="button" className="bar-control" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="bar-control bar-control-primary"
+          disabled={pending || problem !== undefined || unchanged}
+        >
+          {pending && <Spinner size="sm" />}
+          Save name
+        </button>
+      </div>
+    </form>
   );
 }
 
