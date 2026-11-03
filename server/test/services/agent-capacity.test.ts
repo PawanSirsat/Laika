@@ -505,6 +505,59 @@ describe('the event the device receives (§4.76)', () => {
   });
 });
 
+// ------------------------------------------------- undelivered (LAI-1038 review)
+
+describe('the inbox offers a ping only while it can be answered', () => {
+  const undelivered = (actor: ResolvedActor, now: number, limit = 100) =>
+    listAgentEvents(t.db, actor, { after: 0, state: 'undelivered', limit, now }).data;
+
+  it('a ping leaves undelivered when its minute runs out; another verb stays', () => {
+    const mine = agentOf(owner);
+    updateTask(t.db, owner, task(), { selected_agent_id: mine.id });
+    ping(owner, mine.id, T0);
+
+    expect(
+      undelivered(mine.actor, T0 + CAPACITY_PING_LIMITS.openMs - 1).map((e) => e.type),
+    ).toEqual(['task.agent_selected', 'agent.capacity_requested']);
+    expect(undelivered(mine.actor, T0 + CAPACITY_PING_LIMITS.openMs).map((e) => e.type)).toEqual([
+      'task.agent_selected',
+    ]);
+    // Still in the record: `all` keeps it, unreceived.
+    const all = listAgentEvents(t.db, mine.actor, {
+      after: 0,
+      state: 'all',
+      limit: 100,
+      now: T0 + CAPACITY_PING_LIMITS.openMs,
+    }).data;
+    expect(all.find((e) => e.type === 'agent.capacity_requested')?.delivery.state).toBe(
+      'available',
+    );
+  });
+
+  it('an answered ping leaves undelivered at once: the answer is its receipt', () => {
+    const mine = agentOf(owner);
+    const made = ping(owner, mine.id, T0).ping;
+    replyToPing(t.sqlite, t.db, mine.actor, made.id, ANSWER, T0 + 1);
+    expect(undelivered(mine.actor, T0 + 2)).toEqual([]);
+    const all = listAgentEvents(t.db, mine.actor, {
+      after: 0,
+      state: 'all',
+      limit: 100,
+      now: T0 + 2,
+    }).data;
+    expect(all[0]?.delivery).toMatchObject({ state: 'received', received_at: T0 + 1 });
+  });
+
+  it('dead pings an old helper never acknowledged do not push a live event off the page', () => {
+    const mine = agentOf(owner);
+    for (let i = 0; i < 3; i += 1) ping(owner, mine.id, T0 + i * 16_000, task(`t${String(i)}`));
+    updateTask(t.db, owner, task('live'), { selected_agent_id: mine.id });
+    expect(undelivered(mine.actor, T0 + 10 * MIN, 1).map((e) => e.type)).toEqual([
+      'task.agent_selected',
+    ]);
+  });
+});
+
 // ----------------------------------------------------------------- presence
 
 describe('launcher presence (D-126 item 4)', () => {

@@ -132,9 +132,21 @@ const VersionString = z
   .max(64)
   .regex(/^[0-9A-Za-z][0-9A-Za-z.+_-]*$/);
 
+/**
+ * A Laika CLI's version as `laika` sends it (LAI-1038 review): its
+ * `package.json` version, `MAJOR.MINOR.PATCH`, optionally `+` a short commit —
+ * or `unknown`, what `cli/src/version.ts` answers when it cannot read its own.
+ * Narrower than {@link VersionString}, which a dotted host name passes: the
+ * answer and the report a device sends about itself carry no host name (D-126).
+ */
+const CliVersion = z.union([
+  z.literal('unknown'),
+  z.string().regex(/^\d{1,5}\.\d{1,5}\.\d{1,6}(?:\+[0-9a-f]{7,12})?$/),
+]);
+
 /** `POST /agents/me/client-report` (§4.81, LAI-1056): self-reported, closed, capped. */
 const ClientReportBody = strictObject({
-  cli_version: VersionString,
+  cli_version: CliVersion,
   cli_commit: z
     .string()
     .regex(/^[0-9a-f]{7,40}$/)
@@ -157,7 +169,7 @@ const LauncherBody = strictObject({
   auto_pickup: AutoPickup,
   running: Running,
   max_concurrent: MaxConcurrent,
-  cli_version: VersionString,
+  cli_version: CliVersion,
   started_at: z.number().int().positive().nullish(),
 });
 
@@ -195,7 +207,7 @@ const AnswerBody = strictObject({
     strictObject({ state: z.enum(['unsupported', 'unavailable']) }),
   ]),
   memory: strictObject({ state: z.enum(MEMORY_STATES) }),
-  cli_version: VersionString,
+  cli_version: CliVersion,
   answered_by: z.enum(ANSWERED_BY),
 });
 

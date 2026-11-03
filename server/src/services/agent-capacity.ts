@@ -8,12 +8,20 @@ import {
 } from '../auth/resolve-actor.ts';
 import { TokenAuthError } from '../auth/tokens.ts';
 import { appendActivity } from '../db/activity.ts';
+import { CAPACITY_PING_OPEN_MS } from '../db/agent-events.ts';
 import { type Db } from '../db/client.ts';
 import { type AgentStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { presenceEnabled } from '../db/orgs.ts';
-import { agentLauncherReports, agents, capacityPings, type projects, tasks } from '../db/schema.ts';
+import {
+  agentEventDeliveries,
+  agentLauncherReports,
+  agents,
+  capacityPings,
+  type projects,
+  tasks,
+} from '../db/schema.ts';
 import { ApiError, isApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { registeredAgent } from './claims.ts';
@@ -64,7 +72,7 @@ import { assertAgentSelectable } from './work-requests.ts';
 /** A ping's clocks (D-126 items 2 and 3, plan §4). */
 export const CAPACITY_PING_LIMITS = {
   /** A ping takes an answer for this long after it is made. */
-  openMs: 60_000,
+  openMs: CAPACITY_PING_OPEN_MS,
   /** A repeat by the same requester inside this returns the ping still open. */
   repeatMs: 15_000,
   /** The longest a request may be held for its answer. */
@@ -277,6 +285,13 @@ function spendPingTokens(requesterKey: string, agentId: string, now: number): vo
 const waiters = new Map<string, Set<() => void>>();
 
 /**
+ * The pings a request is already being held for, by ping and requester: one
+ * held request each (LAI-1038 review). A repeat inside the 15 s window spends
+ * no bucket, so without this it could hold a connection open per repeat.
+ */
+const held = new Set<string>();
+
+/**
  * Resolve when the ping is answered or `waitMs` passes, whichever is first.
  * One process holds the database (§11.1), so a wake-up here is every answer.
  */
@@ -451,8 +466,17 @@ export async function pingAndWait(
   const clock = input.clock ?? Date.now;
   const first = pingAgent(sqlite, db, actor, agentId, { ...input, now: input.now ?? clock() });
   if (first.ping.state !== 'pending' || input.waitMs <= 0) return first;
-  const left = Math.min(input.waitMs, first.ping.expires_at - clock());
-  await waitForAnswer(first.ping.id, left);
+  // A repeat while this requester's request for the ping is held answers now,
+  // with the ping as it stands: one held request per requester per ping.
+  const key = `${first.ping.id}:${registeredAgent(actor)?.id ?? `user:${actor.userId}`}`;
+  if (held.has(key)) return first;
+  held.add(key);
+  try {
+    const left = Math.min(input.waitMs, first.ping.expires_at - clock());
+    await waitForAnswer(first.ping.id, left);
+  } finally {
+    held.delete(key);
+  }
   return { ping: getPing(db, actor, first.ping.id, clock()), created: first.created };
 }
 
@@ -525,6 +549,18 @@ export function replyToPing(
       .set({ answeredAt: now, replyJson })
       .where(and(eq(capacityPings.id, row.id), isNull(capacityPings.answeredAt)))
       .run();
+    // The answer is the receipt (§4.77): a device that answered has the
+    // event, so it leaves `undelivered` whether or not its helper acks it.
+    db.update(agentEventDeliveries)
+      .set({ receivedAt: now })
+      .where(
+        and(
+          eq(agentEventDeliveries.activityId, row.activityId),
+          eq(agentEventDeliveries.agentId, row.agentId),
+          isNull(agentEventDeliveries.receivedAt),
+        ),
+      )
+      .run();
     return pingView(current, { ...row, answeredAt: now, replyJson }, now);
   });
   wake(pingId);
@@ -535,9 +571,10 @@ export function replyToPing(
 
 /**
  * `GET /agents/:id/capacity?project=`, `get_agent_capacity` (§6.4, §7.1):
- * the agent's launcher presence and the newest answer this reader may see —
- * its owner, any; anyone else who may ping it, the newest to a ping of theirs
- * in this project. Refused as a ping is: the agent `404`.
+ * the agent's launcher presence and the newest answer this reader may see
+ * **in the project asked**, which it may read (LAI-1038 review) — its owner,
+ * anyone's there; anyone else who may ping it, its own there. Refused as a
+ * ping is: the agent `404`.
  */
 export function getAgentCapacity(
   db: Db,
@@ -550,14 +587,10 @@ export function getAgentCapacity(
   const owner = ownerOf(db, agentId) === actor.userId;
   const conditions: SQL[] = [
     eq(capacityPings.agentId, agentId),
+    eq(capacityPings.projectId, project.id),
     isNotNull(capacityPings.answeredAt),
   ];
-  if (!owner) {
-    conditions.push(
-      eq(capacityPings.requestedByUserId, actor.userId),
-      eq(capacityPings.projectId, project.id),
-    );
-  }
+  if (!owner) conditions.push(eq(capacityPings.requestedByUserId, actor.userId));
   const latest = db
     .select()
     .from(capacityPings)

@@ -3060,7 +3060,12 @@ recovery every agent that could take it then (active, a `full` grant, the
 expired claim's owner's unless the space allows other owners); an offer
 approved, answered or closed, everyone an earlier event of it reached and the
 agents it moves between; a context change, every agent granted the project; a
-capacity ping, the agent pinged and nobody else (D-126 item 2).
+capacity ping, the agent pinged and nobody else (D-126 item 2). **A capacity
+ping is `undelivered` only while it can still be answered** (§4.84): its
+answer is its receipt, and its minute running out takes it off `undelivered`
+whatever the helper did — so a helper that predates the verb, and drops it
+unacknowledged, never fills the front of every poll with questions nobody can
+answer. No other verb is affected.
 **The writer gets no delivery of its own write**, and a revoked agent none.
 What actually reaches an agent is asked again on every read and every frame
 (§6.4, §11.5). No activity row: a delivery is presence, as a session is.
@@ -3291,7 +3296,7 @@ Devices screen shows (plan §H), and that word is the client's to compute.
 | `agent_id` | FK `agents`, cascade; with `source`, the key |
 | `source` | `cli` \| `mcp_initialize` (CHECK) |
 | `token_id` | nullable, FK `tokens`, set null — the agent's own token that reported |
-| `cli_version`, `cli_commit` | nullable — `cli`: at most 64 printable characters; a 7–40 hex commit |
+| `cli_version`, `cli_commit` | nullable — `cli`: `MAJOR.MINOR.PATCH`, optionally `+` a 7–12 hex commit, or `unknown` (LAI-1038: never a dotted host name); a 7–40 hex commit |
 | `protocol` | nullable — `cli`: an integer, 1 to 1000 |
 | `capabilities_json` | nullable — `cli`: a JSON list from a closed vocabulary, at most 32, sorted, once each |
 | `harness_version` | nullable — `cli`: at most 64 printable characters |
@@ -3384,7 +3389,7 @@ claim reads it.
 | `auto_pickup_work_requests`, `auto_pickup_handoffs` | its two switches (D-117a item 2) |
 | `running` | 0 to 4 (CHECK) — the runs it has going |
 | `max_concurrent` | 1 to 4 (CHECK) |
-| `cli_version` | at most 64 printable characters, as a client report's (§4.81) |
+| `cli_version` | as a client report's (§4.81): `MAJOR.MINOR.PATCH`, optionally `+` a short commit, or `unknown` — never a host name |
 | `started_at` | nullable — when the launcher process started, as the device says |
 | `reported_at` | nullable — the board's clock at the report; **null while the org has presence off** (§4.2) |
 
@@ -3433,13 +3438,16 @@ and writes nothing. **The limits** are token buckets a minute wide: **4 per
 requester per agent** and **30 per agent** from everyone; past either, `429`,
 `reason: capacity_ping_rate`, with `Retry-After`. A ping writes this row and
 its activity row in one transaction, and the event reaches the pinged agent
-only.
+only. **One request is held per requester per ping**: a repeat while the
+first is still held for its answer answers at once, with the ping as it
+stands.
 
 **The answer** — `POST /agents/me/capacity-pings/:id/reply`, **the pinged
 agent's own token**, `heartbeat.send_own` — is accepted **once, before
 `expires_at`**: a second is `409 already_answered`, a first one at or after it
 `409 ping_expired`, and a ping not addressed to the calling agent is the `404`
-of one that does not exist. It is a closed object, every level strict and every
+of one that does not exist. An answer sets its delivery's `received_at`
+(§4.77): the device that answered has the event. It is a closed object, every level strict and every
 string a closed word but the CLI version — **no path, host name, repository or
 task text fits in it**, and a reading the device could not take is a word,
 never a number:
@@ -3461,7 +3469,12 @@ answered_at, answer }` **by whoever pinged** — the person, through any of thei
 credentials — **and by the agent's owner**, while they may read the project;
 anyone else gets the `404` of no ping. `requested_by.agent_id` is shown only to
 the pinging agent's own owner (D-121 item 7). It is **not an activity row**. A
-client calls an answer older than 5 minutes stale.
+client calls an answer older than 5 minutes stale. **With presence off (§4.2)
+an answer's `answered_at` and `session_live` stay visible**: a ping is an
+explicit request, not presence collected in the background. `GET
+/agents/:id/capacity` reads only **the project asked**, which the reader may
+read: its owner, the newest answer to anyone's ping there; anyone else, to its
+own there.
 
 ## 5. Task lifecycle
 
@@ -4043,10 +4056,10 @@ POST   /api/v1/agents/:id/reconnect          a rotate exchange on the agent's pa
 GET    /api/v1/agents/:id/verification       → { agent_id, harness, status, now, last_seen_at, checks: { device_paired, credential_installed, credential_used, tool_request, session_hooks, required_capabilities }, client_report } (§4.81, agent.read_own; the owner or the agent's own token)
 POST   /api/v1/agents/me/client-report       an agent's token only; body { cli_version, cli_commit?, protocol, capabilities[], harness_version?, harness? } → the report (§4.81, heartbeat.send_own)
 PUT    /api/v1/agents/me/launcher            an agent's token only; body { enabled, auto_pickup: { work_requests, handoffs }, running 0–4, max_concurrent 1–4, cli_version, started_at? } → { agent_id, enabled, state, reported_at, started_at, running, max_concurrent, auto_pickup, cli_version } (§4.83, heartbeat.send_own); a report, never a command
-POST   /api/v1/agents/:id/capacity-pings     body { project, task_id?, wait_ms? ≤ 10000 } → 201 { ping, created: true }, or 200 { ping, created: false } for the one still open from a repeat within 15 s; held up to wait_ms for the answer; anyone who may not ping it the agent 404; 429 capacity_ping_rate with Retry-After (§4.84, agent.ping)
+POST   /api/v1/agents/:id/capacity-pings     body { project, task_id?, wait_ms? ≤ 10000 } → 201 { ping, created: true }, or 200 { ping, created: false } for the one still open from a repeat within 15 s; held up to wait_ms for the answer, one held request per requester per ping (a repeat while one is held answers at once); anyone who may not ping it the agent 404; 429 capacity_ping_rate with Retry-After (§4.84, agent.ping)
 GET    /api/v1/capacity-pings/:id            → { ping } — to whoever pinged and the agent's owner; anyone else the 404 of no ping (§4.84, project.read)
 POST   /api/v1/agents/me/capacity-pings/:id/reply   the pinged agent's own token; body the answer (§4.84) → { ping }; 409 already_answered or ping_expired; a ping addressed to another agent the 404 of none (heartbeat.send_own)
-GET    /api/v1/agents/:id/capacity           ?project= → { agent_id, launcher, latest_answer, now } — the agents the caller may ping (else the agent 404); latest_answer is the newest answered ping it may read: any, to the owner; its own in this project, to anyone else (§4.84, agent.ping)
+GET    /api/v1/agents/:id/capacity           ?project= → { agent_id, launcher, latest_answer, now } — the agents the caller may ping (else the agent 404); latest_answer is the newest answered ping in this project: anyone's, to the owner; its own, to anyone else (§4.84, agent.ping)
 POST   /api/v1/project-setups            the owner signed in: body { agent_id: string | null, project_slug, template_revision, instructions_path? } → 201 a self_reported_browser record (agent.manage_own, session only); an agent's own token: body { project_slug, repo_key, repo_label, instructions_path, block_found, template_revision, block_project, block_prefix } → 201 a local_check record for that agent (heartbeat.send_own); a personal token 403 not_an_agent (§4.82)
 GET    /api/v1/project-setups            ?project= optional, agent_id= optional → { data: [{ id, agent_id, device_label, project_id, project_slug, repo_label, instructions_path, block_found, template_revision, project_match, prefix_match, source, checked_at }] } — own rows, for the one project; with no project, across every project the caller can read, newest first — each project asked the same project.read, and one the caller cannot read contributes nothing and is named nowhere (LAI-1077); an agent's token its own (§4.82, agent.read_own; not paginated)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }

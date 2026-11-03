@@ -610,6 +610,135 @@ describe('a ping reaches the pinged agent’s device, and nobody else’s', () =
   });
 });
 
+// ------------------------------------------------------- review (LAI-1038)
+
+describe('review fixes (LAI-1038)', () => {
+  it('an expired ping leaves undelivered, on REST and in agent_sync; another verb stays', async () => {
+    await ok(
+      await send(
+        'PATCH',
+        `/api/v1/tasks/${taskId}`,
+        { Cookie: cookie },
+        {
+          selected_agent_id: mine.id,
+        },
+      ),
+      200,
+    );
+    const ping = await pinged({ Cookie: cookie }, mine.id);
+    const types = async (query: string) =>
+      (
+        (await ok(
+          await send('GET', `/api/v1/agents/me/events${query}`, bearer(mine.secret)),
+          200,
+        )) as { data: { type: string }[] }
+      ).data.map((e) => e.type);
+    expect(await types('')).toEqual(['task.agent_selected', 'agent.capacity_requested']);
+
+    // The minute runs out: the delivery's clock is the ping's (§4.77 available_at).
+    const row = h.db.select().from(capacityPings).where(eq(capacityPings.id, ping.id)).get()!;
+    h.db
+      .update(agentEventDeliveries)
+      .set({ availableAt: Date.now() - 60_000 })
+      .where(eq(agentEventDeliveries.activityId, row.activityId))
+      .run();
+
+    expect(await types('')).toEqual(['task.agent_selected']);
+    expect(await types('?state=all')).toEqual(['task.agent_selected', 'agent.capacity_requested']);
+    const client = await connect(mine.secret);
+    const synced = await client.callTool({ name: 'agent_sync', arguments: {} });
+    expect(synced.isError, JSON.stringify(synced.content)).not.toBe(true);
+    expect(
+      (synced.structuredContent as { events: { type: string }[] }).events.map((e) => e.type),
+    ).toEqual(['task.agent_selected']);
+    await client.close();
+  });
+
+  it('a repeat while the first request is held answers at once, with the ping as it stands', async () => {
+    const first = pingAs({ Cookie: cookie }, mine.id, { project: 'laika', wait_ms: 5_000 });
+    let row: { id: string } | undefined;
+    for (let i = 0; i < 200 && row === undefined; i += 1) {
+      row = h.db.select().from(capacityPings).get();
+      if (row === undefined) await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(row, 'the ping row never appeared').toBeDefined();
+
+    const started = Date.now();
+    const again = await ok(
+      await pingAs({ Cookie: cookie }, mine.id, { project: 'laika', wait_ms: 5_000 }),
+      200,
+    );
+    expect(Date.now() - started).toBeLessThan(1_500);
+    expect(again).toMatchObject({ created: false, ping: { id: row!.id, state: 'pending' } });
+
+    await ok(await reply(mine.secret, row!.id), 200);
+    expect(((await ok(await first, 201)).ping as Ping).state).toBe('answered');
+  });
+
+  it('capacity reads the newest answer in the project asked, never another project’s', async () => {
+    const second = await ok(
+      await send(
+        'POST',
+        '/api/v1/projects',
+        { Cookie: cookie },
+        { name: 'Second', slug: 'second', prefix: 'SEC' },
+      ),
+      201,
+    );
+    await ok(
+      await send(
+        'PUT',
+        `/api/v1/agents/${mine.id}/grants`,
+        { Cookie: cookie },
+        {
+          grants: [
+            { project_id: projectId, scope: 'full' },
+            { project_id: second.id as string, scope: 'full' },
+          ],
+        },
+      ),
+      200,
+    );
+    const elsewhere = await ok(
+      await pingAs({ Cookie: cookie }, mine.id, { project: 'second' }),
+      201,
+    );
+    await ok(await reply(mine.secret, (elsewhere.ping as Ping).id), 200);
+
+    const here = await ok(
+      await send('GET', `/api/v1/agents/${mine.id}/capacity?project=laika`, { Cookie: cookie }),
+      200,
+    );
+    expect(here.latest_answer).toBeNull();
+    const there = await ok(
+      await send('GET', `/api/v1/agents/${mine.id}/capacity?project=second`, { Cookie: cookie }),
+      200,
+    );
+    expect((there.latest_answer as Ping).id).toBe((elsewhere.ping as Ping).id);
+  });
+
+  it('a CLI version is MAJOR.MINOR.PATCH, +commit or unknown — never a dotted host name', async () => {
+    const ping = await pinged({ Cookie: cookie }, mine.id);
+    const clientReport = (cli_version: string) =>
+      send('POST', '/api/v1/agents/me/client-report', bearer(mine.secret), {
+        cli_version,
+        protocol: 2,
+        capabilities: [],
+      });
+    for (const host of ['pawans-macbook.local', 'build.kvelld.internal', '0.9.3.local']) {
+      await errorOf(await report(mine.secret, { ...LAUNCHER, cli_version: host }), 422);
+      await errorOf(await reply(mine.secret, ping.id, { ...ANSWER, cli_version: host }), 422);
+      await errorOf(await clientReport(host), 422);
+    }
+    // What `laika` sends today, and its fallback, are all taken.
+    for (const version of ['0.1.0', '0.1.0+abc1234', 'unknown']) {
+      await ok(await report(mine.secret, { ...LAUNCHER, cli_version: version }), 200);
+      await ok(await clientReport(version), 200);
+    }
+    await ok(await reply(mine.secret, ping.id, { ...ANSWER, cli_version: '0.1.0+abc1234' }), 200);
+  });
+});
+
 // ------------------------------------------------------------------ presence
 
 describe('PUT /agents/me/launcher', () => {

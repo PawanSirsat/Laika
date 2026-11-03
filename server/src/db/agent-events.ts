@@ -53,6 +53,13 @@ export const AGENT_EVENT_TYPES = [
 
 export type AgentEventType = (typeof AGENT_EVENT_TYPES)[number];
 
+/**
+ * How long a capacity ping takes an answer (§4.84, D-126 item 3). Here, beside
+ * the verb, because two services read it: the ping's own, and the inbox, which
+ * stops offering a ping as undelivered once it can no longer be answered.
+ */
+export const CAPACITY_PING_OPEN_MS = 60_000;
+
 export function isAgentEventType(type: ActivityType): type is AgentEventType {
   return (AGENT_EVENT_TYPES as readonly string[]).includes(type);
 }
