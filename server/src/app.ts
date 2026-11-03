@@ -413,8 +413,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/tool-setup`, toolSetupRoutes(toolSetup));
     // LAI-1066: what is known about a repository's Laika block (§4.82).
     app.route(`${API_BASE}/project-setups`, projectSetupRoutes({ db }));
-    // LAI-1045: the owner's devices (§4.78), read only.
-    app.route(`${API_BASE}/devices`, deviceRoutes({ db }));
+    // LAI-1045: the owner's devices (§4.78); renaming one is LAI-1095.
+    app.route(`${API_BASE}/devices`, deviceRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/agent-sessions`, agentSessionRoutes({ db, sqlite: options.sqlite }));
     app.route(
       `${API_BASE}/invites`,

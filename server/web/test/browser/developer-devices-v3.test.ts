@@ -16,13 +16,24 @@
  *   for an agent seen lately before it is read.
  * - Every action calls the existing endpoint, and focus lands where it
  *   should after it.
+ * - *Rename…* in an active device's details sends `PATCH /devices/:id`, and
+ *   the panel, the row and the tools on it follow the answer (LAI-1095).
  * - Its states, and classic mode untouched.
  */
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, open, refuse, until, type ApiStub, type StubCall } from './harness.ts';
+import { join } from 'node:path';
+import {
+  closeBrowser,
+  open,
+  refuse,
+  setTheme,
+  until,
+  type ApiStub,
+  type StubCall,
+} from './harness.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -1199,4 +1210,157 @@ void describe('classic mode is unchanged', () => {
       await h.close();
     }
   });
+});
+
+// ------------------------------------------------------------------ LAI-1095: renaming a device
+
+/** Belka as `PATCH /devices/d1` answers it, renamed: every tool on it relabelled. */
+const STRELKA = deviceRow({
+  id: 'd1',
+  name: 'Strelka',
+  confirmed: false,
+  last_seen_at: NOW - 60_000,
+  agents: BELKA.agents.map((a) => ({ ...a, device_label: 'Strelka' })),
+});
+
+/** `GET` is Belka; a `PATCH` is answered by `onPatch`. */
+const renameRoute =
+  (onPatch: (call: StubCall) => unknown) =>
+  (call: StubCall): unknown =>
+    call.method === 'PATCH' ? onPatch(call) : BELKA;
+
+const titleOf = (page: Page) => panel(page, 'device').locator('#dv3-device-panel-title');
+
+void describe('V3 Devices: renaming a device (LAI-1095)', () => {
+  void test('Rename… sends the trimmed name; the panel, the row and its tools follow; focus returns', async () => {
+    const h = await open(
+      '/developer?tab=devices&device=d1',
+      stub('v3', [BELKA, RUNNER], { '/api/v1/devices/d1': renameRoute(() => STRELKA) }),
+    );
+    try {
+      const body = panel(h.page, 'device').locator('.dv3-device-details[data-device="d1"]');
+      await body.waitFor({ timeout: 20_000 });
+      await body.getByRole('button', { name: 'Rename Belka' }).click();
+      const form = body.locator('[data-device-rename]');
+      const input = form.getByRole('textbox', { name: 'Device name' });
+      const save = form.getByRole('button', { name: 'Save name' });
+      assert.equal(await input.inputValue(), 'Belka');
+      assert.equal(await input.evaluate((el) => el === document.activeElement), true);
+      // Unchanged, and empty, cannot be sent.
+      assert.equal(await save.isDisabled(), true);
+      await input.fill('   ');
+      assert.equal(await save.isDisabled(), true);
+      assert.match(await form.innerText(), /Give the device a name\./);
+
+      await input.fill('  Strelka ');
+      await save.click();
+      await form.waitFor({ state: 'detached' });
+
+      assert.deepEqual(writes(h.calls), ['PATCH /api/v1/devices/d1']);
+      const sent = h.calls.find((c) => c.method === 'PATCH');
+      assert.deepEqual(sent?.body, { display_name: 'Strelka' });
+      assert.equal(await titleOf(h.page).innerText(), 'Strelka');
+      assert.equal(await device(h.page, 'd1').locator('.dx-record-title').innerText(), 'Strelka');
+      assert.match(
+        await body.locator('ul[aria-label="Tools on Strelka"]').innerText(),
+        /Claude Code · Strelka/,
+      );
+      await until(async () => (await live(h.page).innerText()).includes('Renamed to Strelka.'));
+      assert.match(await live(h.page).innerText(), /Renamed to Strelka\./);
+      await until(async () => (await focusedText(h.page)) === 'Rename Strelka');
+      assert.equal(await focusedText(h.page), 'Rename Strelka');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused name stays in the form with the reason; Escape closes the form, not the panel', async () => {
+    const h = await open(
+      '/developer?tab=devices&device=d1',
+      stub('v3', [BELKA, RUNNER], {
+        '/api/v1/devices/d1': renameRoute(() =>
+          refuse(409, 'conflict', 'You have a device with that name'),
+        ),
+      }),
+    );
+    try {
+      const body = panel(h.page, 'device').locator('.dv3-device-details[data-device="d1"]');
+      await body.waitFor({ timeout: 20_000 });
+      await body.getByRole('button', { name: 'Rename Belka' }).click();
+      const form = body.locator('[data-device-rename]');
+      await form.getByRole('textbox', { name: 'Device name' }).fill('Runner');
+      await form.getByRole('button', { name: 'Save name' }).click();
+      const alert = form.locator('[role="alert"]');
+      await alert.waitFor({ timeout: 10_000 });
+      assert.match(await alert.innerText(), /You have a device with that name/);
+      assert.equal(await titleOf(h.page).innerText(), 'Belka');
+      // Focus is back on the name, not lost with the disabled Save.
+      const input = form.getByRole('textbox', { name: 'Device name' });
+      await until(async () => input.evaluate((el) => el === document.activeElement));
+      assert.equal(await input.evaluate((el) => el === document.activeElement), true);
+
+      await h.page.keyboard.press('Escape');
+      await form.waitFor({ state: 'detached' });
+      assert.equal(await body.isVisible(), true);
+      await until(async () => (await focusedText(h.page)) === 'Rename Belka');
+      assert.equal(await focusedText(h.page), 'Rename Belka');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a revoked device offers no Rename', async () => {
+    const old = deviceRow({
+      id: 'd3',
+      name: 'Old',
+      status: 'revoked',
+      agents: [agentRow({ id: 'a9', status: 'revoked', device_label: 'Old' })],
+    });
+    const h = await open('/developer?tab=devices&device=d3', stub('v3', [BELKA, old]));
+    try {
+      const body = panel(h.page, 'device').locator('.dv3-device-details[data-device="d3"]');
+      await body.waitFor({ timeout: 20_000 });
+      assert.equal(await body.locator('[data-rename-device]').count(), 0);
+      assert.equal(await body.getByRole('button', { name: /^Rename/ }).count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  for (const theme of ['light', 'dark']) {
+    void test(`the form fits a 390px phone in ${theme}`, async () => {
+      const h = await open(
+        '/developer?tab=devices&device=d1',
+        stub('v3', [BELKA, RUNNER], { '/api/v1/devices/d1': renameRoute(() => STRELKA) }),
+      );
+      try {
+        await h.page.setViewportSize({ width: 390, height: 844 });
+        await setTheme(h.page, theme);
+        const body = panel(h.page, 'device').locator('.dv3-device-details[data-device="d1"]');
+        await body.waitFor({ timeout: 20_000 });
+        await body.getByRole('button', { name: 'Rename Belka' }).click();
+        const form = body.locator('[data-device-rename]');
+        for (const part of [
+          form.getByRole('textbox', { name: 'Device name' }),
+          form.getByRole('button', { name: 'Save name' }),
+          form.getByRole('button', { name: 'Cancel' }),
+        ]) {
+          await part.scrollIntoViewIfNeeded();
+          const box = await part.boundingBox();
+          assert.ok(box !== null, 'not rendered');
+          assert.ok(box.x >= 0 && box.x + box.width <= 390, `off-screen: ${JSON.stringify(box)}`);
+        }
+        const wide = await h.page.evaluate(() => document.documentElement.scrollWidth);
+        assert.ok(wide <= 390, `the page scrolls sideways: ${String(wide)}`);
+        const evidence = process.env.LAIKA_EVIDENCE_DIR;
+        if (evidence !== undefined) {
+          await panel(h.page, 'device').screenshot({
+            path: join(evidence, `device-rename-${theme}-390.png`),
+          });
+        }
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
