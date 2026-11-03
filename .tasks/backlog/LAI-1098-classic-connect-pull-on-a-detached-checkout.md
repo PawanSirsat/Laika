@@ -30,6 +30,12 @@ Measured on 2026-11-03 (scratch repos, git on macOS):
 checkout, fast-forwards a branch that tracks the default one, and refuses a
 diverged one (`Not possible to fast-forward, aborting`).
 
+Related, found in LAI-1093's review round: the classic *by hand* commands,
+`manualCommands()` in `connect-copy.ts`, are a clone and an `install.sh` on
+two unchained lines. That path asks for a token by design, so it is not the
+V3 defect, but a refused clone still runs whatever `install.sh` is already in
+`~/laika`; `&&` would make it stop.
+
 Not done in LAI-1093 because `test/browser/golden/connect.json` snapshots this
 text, and that test's header says the golden is not to be regenerated to make
 a red run green: changing the classic copy is a decision about that screen,
