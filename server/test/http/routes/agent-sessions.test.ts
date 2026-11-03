@@ -724,6 +724,9 @@ const NOT_FENCED: Record<string, string> = {
     'session only (agent.manage_own); registers or reuses an agent with no credential, touches no task',
   'DELETE /api/v1/tool-setup/:id':
     'session only (agent.manage_own); withdraws a tool setup, touches no task',
+  // LAI-1095: renaming a device relabels its agents, never a task.
+  'PATCH /api/v1/devices/:id':
+    'session only (agent.manage_own); renames a device and its agents’ label, touches no task',
   'POST /api/v1/tool-setup/:id/redeem':
     'a paired device redeems once (§4.80), the owner asked again by can(); a credential, not a task',
   'POST /api/v1/agents/:id/reconnect':

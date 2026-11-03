@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { backfillAgentDevices } from '../../../src/db/backfill.ts';
 import { devices, orgs, users } from '../../../src/db/schema.ts';
 import {
   type AuthHarness,
@@ -196,5 +197,245 @@ describe('GET /agents/devices is unchanged', () => {
     expect(Object.keys((group!.agents as Record<string, unknown>[])[0]!)).not.toContain(
       'device_id',
     );
+  });
+});
+
+describe('PATCH /devices/:id (LAI-1095)', () => {
+  interface Agent {
+    id: string;
+    display_name: string;
+    device_label: string | null;
+    status: string;
+    tokens: { name: string }[];
+  }
+  type Named = Omit<Device, 'agents'> & { agents: Agent[] };
+
+  function rename(id: string, body: unknown, auth: Auth = { cookie: bob.cookie }) {
+    return req(`/api/v1/devices/${id}`, { method: 'PATCH', body: JSON.stringify(body) }, auth);
+  }
+
+  async function refusal(res: Response, status: number) {
+    expect(res.status, await res.clone().text()).toBe(status);
+    const body = (await res.json()) as { error: { code: string; details?: { reason?: string } } };
+    return { code: body.error.code, reason: body.error.details?.reason };
+  }
+
+  async function deviceNamed(key: string | null): Promise<Named> {
+    const found = (await list({ cookie: bob.cookie })).find((d) => d.device_label === key);
+    expect(found, `no device ${String(key)}`).toBeDefined();
+    return found as Named;
+  }
+
+  it('renames the device and every agent on it, revoked ones too; a default tool name follows', async () => {
+    const claude = await register(bob.cookie, {
+      device_label: ' Belka ',
+      display_name: 'Claude Code · Belka',
+    });
+    const codex = await register(bob.cookie, {
+      device_label: 'belka',
+      harness: 'codex',
+      display_name: 'My own codex',
+    });
+    const cursor = await register(bob.cookie, {
+      device_label: 'Belka',
+      harness: 'cursor',
+      display_name: 'cursor · BELKA',
+    });
+    await ok(
+      await req(
+        `/api/v1/agents/${cursor.agent.id}/revoke`,
+        { method: 'POST' },
+        { cookie: bob.cookie },
+      ),
+    );
+    const before = await deviceNamed('belka');
+
+    const renamed = (await ok(
+      await rename(before.id, { display_name: '  Strelka  ' }),
+    )) as unknown as Named;
+
+    expect(renamed).toMatchObject({
+      id: before.id,
+      display_name: 'Strelka',
+      device_label: 'strelka',
+      status: 'active',
+      active_count: 2,
+      revoked_count: 1,
+    });
+    expect(renamed).toEqual(await deviceNamed('strelka'));
+    const byId = new Map(renamed.agents.map((a) => [a.id, a]));
+    expect(renamed.agents.map((a) => a.device_label)).toEqual(['Strelka', 'Strelka', 'Strelka']);
+    // `<tool> · <old name>` follows, in any case; a name the owner chose stays.
+    expect(byId.get(claude.agent.id)?.display_name).toBe('Claude Code · Strelka');
+    expect(byId.get(claude.agent.id)?.tokens.map((t) => t.name)).toEqual(['Claude Code · Strelka']);
+    expect(byId.get(codex.agent.id)?.display_name).toBe('My own codex');
+    expect(byId.get(codex.agent.id)?.tokens.map((t) => t.name)).toEqual(['My own codex']);
+    expect(byId.get(cursor.agent.id)).toMatchObject({
+      status: 'revoked',
+      display_name: 'cursor · Strelka',
+    });
+
+    // The legacy grouping follows the label, and the boot backfill finds
+    // nothing stale to move back.
+    const legacy = await ok(await req('/api/v1/agents/devices', {}, { cookie: bob.cookie }));
+    const groups = legacy.data as { device_label: string }[];
+    expect(groups.map((g) => g.device_label)).toEqual(['strelka']);
+    expect(backfillAgentDevices(h.db)).toBe(0);
+    expect((await list({ cookie: bob.cookie })).map((d) => d.device_label)).toEqual(['strelka']);
+
+    // The old name is free: a tool registered with it makes a device of its own.
+    await register(bob.cookie, { device_label: 'Belka' });
+    expect((await list({ cookie: bob.cookie })).map((d) => d.device_label)).toEqual([
+      'belka',
+      'strelka',
+    ]);
+  });
+
+  it('changes only the case of a name, and a no-op answers the device unchanged', async () => {
+    await register(bob.cookie, { device_label: 'belka' });
+    const device = await deviceNamed('belka');
+    const shouted = (await ok(
+      await rename(device.id, { display_name: 'BELKA' }),
+    )) as unknown as Named;
+    expect(shouted).toMatchObject({ id: device.id, display_name: 'BELKA', device_label: 'belka' });
+    expect(shouted.agents[0]?.device_label).toBe('BELKA');
+    expect(await ok(await rename(device.id, { display_name: 'BELKA' }))).toEqual(shouted);
+  });
+
+  it('names the unnamed device', async () => {
+    const plain = await register(bob.cookie, { device_label: null });
+    const unnamed = await deviceNamed(null);
+    const named = (await ok(
+      await rename(unnamed.id, { display_name: 'Laika' }),
+    )) as unknown as Named;
+    expect(named).toMatchObject({ display_name: 'Laika', device_label: 'laika' });
+    expect(named.agents.map((a) => [a.id, a.device_label])).toEqual([[plain.agent.id, 'Laika']]);
+  });
+
+  it('refuses a name another active device of yours holds, in any case or spacing', async () => {
+    await register(bob.cookie, { device_label: 'Belka' });
+    await register(bob.cookie, { device_label: 'Strelka' });
+    const strelka = await deviceNamed('strelka');
+    expect(await refusal(await rename(strelka.id, { display_name: ' BELKA ' }), 409)).toEqual({
+      code: 'conflict',
+      reason: 'device_name_taken',
+    });
+    expect((await deviceNamed('strelka')).display_name).toBe('Strelka');
+  });
+
+  it('refuses a name of no characters or more than 80, and an unknown field', async () => {
+    await register(bob.cookie, { device_label: 'Belka' });
+    const belka = await deviceNamed('belka');
+    for (const name of ['', '   ', 'x'.repeat(81)]) {
+      expect(await refusal(await rename(belka.id, { display_name: name }), 422)).toEqual({
+        code: 'unprocessable',
+        reason: 'invalid_device_name',
+      });
+    }
+    expect(await ok(await rename(belka.id, { display_name: 'x'.repeat(80) }))).toMatchObject({
+      display_name: 'x'.repeat(80),
+    });
+    const extra = await rename(belka.id, { display_name: 'Ok', kind: 'cloud' });
+    expect(extra.status).toBe(422);
+  });
+
+  it('refuses a revoked device', async () => {
+    await register(bob.cookie, { device_label: 'Belka' });
+    const belka = await deviceNamed('belka');
+    h.db
+      .update(devices)
+      .set({ status: 'revoked', revokedAt: Date.now() })
+      .where(eq(devices.id, belka.id))
+      .run();
+    expect(await refusal(await rename(belka.id, { display_name: 'Strelka' }), 409)).toEqual({
+      code: 'conflict',
+      reason: 'device_revoked',
+    });
+  });
+
+  it('answers another owner’s device as an id that does not exist, and changes nothing', async () => {
+    await register(bob.cookie, { device_label: 'Belka' });
+    const belka = await deviceNamed('belka');
+    const hidden = await rename(belka.id, { display_name: 'Mine' }, { cookie: ownerCookie });
+    const absent = await rename(
+      '01M00000000000000000000000',
+      { display_name: 'Mine' },
+      {
+        cookie: ownerCookie,
+      },
+    );
+    expect(hidden.status).toBe(404);
+    expect(await hidden.text()).toBe(await absent.text());
+    expect((await deviceNamed('belka')).display_name).toBe('Belka');
+  });
+
+  it('is session only: an agent’s own token cannot rename its device', async () => {
+    const a = await register(bob.cookie, { device_label: 'Belka' });
+    const belka = await deviceNamed('belka');
+    expect(
+      await refusal(await rename(belka.id, { display_name: 'Strelka' }, { bearer: a.secret }), 403),
+    ).toEqual({ code: 'forbidden', reason: 'session_required' });
+    expect((await req(`/api/v1/devices/${belka.id}`, { method: 'PATCH' })).status).toBe(401);
+  });
+
+  it('keeps a confirmation made by label under the new label', async () => {
+    await register(bob.cookie, { device_label: 'Belka' });
+    await ok(
+      await req(
+        '/api/v1/agents/devices/confirm',
+        { method: 'POST', body: JSON.stringify({ device_label: 'belka' }) },
+        { cookie: bob.cookie },
+      ),
+    );
+    const belka = await deviceNamed('belka');
+    expect(belka.confirmed).toBe(true);
+    const renamed = await ok(await rename(belka.id, { display_name: 'Strelka' }));
+    expect(renamed).toMatchObject({ confirmed: true, device_label: 'strelka' });
+    expect(renamed.confirmed_at).not.toBeNull();
+    const legacy = await ok(await req('/api/v1/agents/devices', {}, { cookie: bob.cookie }));
+    expect(legacy.data).toMatchObject([{ device_label: 'strelka', recognised: true }]);
+  });
+
+  it('renames onto Cloud only when every live token on it meets the cloud rule', async () => {
+    await register(bob.cookie, { device_label: 'Belka' });
+    const belka = await deviceNamed('belka');
+    expect(await refusal(await rename(belka.id, { display_name: 'cloud' }), 422)).toEqual({
+      code: 'unprocessable',
+      reason: 'cloud_token_expiry_required',
+    });
+    expect((await deviceNamed('belka')).display_name).toBe('Belka');
+
+    await register(bob.cookie, { device_label: 'Runner', expires_at: Date.now() + 60 * 60_000 });
+    const runner = await deviceNamed('runner');
+    expect(await ok(await rename(runner.id, { display_name: 'Cloud' }))).toMatchObject({
+      display_name: 'Cloud',
+      device_label: 'cloud',
+    });
+  });
+
+  it('carries the new name into a live pairing request for the device', async () => {
+    await register(bob.cookie, { device_label: 'Belka' });
+    const belka = await deviceNamed('belka');
+    const created = (await ok(
+      await req(
+        '/api/v1/devices/pairing-requests',
+        {
+          method: 'POST',
+          body: JSON.stringify({ kind: 'local', display_name: 'ignored', device_id: belka.id }),
+        },
+        { cookie: bob.cookie },
+      ),
+      201,
+    )) as { pairing: { id: string; display_name: string } };
+    expect(created.pairing.display_name).toBe('Belka');
+    await ok(await rename(belka.id, { display_name: 'Strelka' }));
+    const pairing = await ok(
+      await req(
+        `/api/v1/devices/pairing-requests/${created.pairing.id}`,
+        {},
+        { cookie: bob.cookie },
+      ),
+    );
+    expect(pairing.display_name).toBe('Strelka');
   });
 });
