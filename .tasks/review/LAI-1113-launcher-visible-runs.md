@@ -5,8 +5,9 @@ area: cli
 assignee: shell/belka
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-03T22:55:00+05:30
+finished: 2026-11-03T23:40:00+05:30
 ---
 
 ## Why
@@ -19,7 +20,7 @@ that.
 
 ## Acceptance criteria
 
-- [ ] **Notifications.** When the launcher starts a run and when it exits,
+- [x] **Notifications.** When the launcher starts a run and when it exits,
       macOS shows a notification through `/usr/bin/osascript` with `display
       notification`, called with an argv array (`execFile`), never a shell.
       Title and body are built **only** from validated internal values: a
@@ -28,7 +29,7 @@ that.
       hostile key is refused rather than escaped. Linux uses `notify-send`
       when present and skips silently otherwise. Config `"notify": true |
       false`.
-- [ ] **`laika agent launcher watch [--run <offer-or-run-id>] [--once]`**, a
+- [x] **`laika agent launcher watch [--run <offer-or-run-id>] [--once]`**, a
       read-only live view. It tails `~/.laika/launcher/audit.jsonl` for
       start, exit and refused events, and for a running or chosen run prints
       the harness transcript live: for Claude Code,
@@ -39,7 +40,7 @@ that.
       `start` audit events record the worktree and transcript folder so
       watch does not guess. Omnigent runs show audit events only and say the
       transcript lives in Omnigent.
-- [ ] **A Terminal window per run** (opt-in, macOS): config `"open_terminal":
+- [x] **A Terminal window per run** (opt-in, macOS): config `"open_terminal":
       true | false`. A start opens Terminal running `laika agent launcher
       watch --run <id>` through `tell application "Terminal" to do script`,
       where the only interpolated values are a validated run id and the
@@ -47,7 +48,7 @@ that.
       a test that hostile values cannot inject. It is a viewer only: the run
       stays the daemon's child, so closing the window does not stop it. If
       Terminal cannot be opened, one line is logged and the run continues.
-- [ ] **Permission mode for Claude Code runs**: `"permissions": "allowlist"`
+- [x] **Permission mode for Claude Code runs**: `"permissions": "allowlist"`
       (the default, today's argv) or `"skip"`. `skip` builds the argv with
       `--dangerously-skip-permissions` in place of `--permission-mode
       dontAsk --permission-prompts none --allowedTools …`, and keeps the full
@@ -56,13 +57,13 @@ that.
       unattended, is checked against the current official Claude Code docs
       (raw `.md`, grepped) and written with the URL into `cli/README.md` and
       `enable`'s output.
-- [ ] **`enable` asks** for notifications (default yes), a Terminal per run
+- [x] **`enable` asks** for notifications (default yes), a Terminal per run
       (default yes) and permissions; `skip` only after the owner types the
       exact word `skip-permissions`, after a warning that an unattended run
       can then run any command with the owner's local credentials and that
       GitHub branch protection on master is the real guard. `launcher check`
       and `status` show the three settings.
-- [ ] Tests: notification argv (hostile key and device text refused), watch
+- [x] Tests: notification argv (hostile key and device text refused), watch
       transcript discovery and rendering from a fixture and a real-format
       sample, Terminal command quoting and injection, permissions argv in
       both modes (deny list present in both), enable prompts with typed
@@ -77,3 +78,34 @@ their tests under `cli/test/`, and `cli/README.md`. No new dependency.
 
 The decision entry is CHIEF's to write (D-128, owner, 2026-11-03); its draft
 is in the PR description.
+
+**As built.**
+
+- **Docs finding** (raw `.md`, grepped, 2026-11-03): `--dangerously-skip-permissions`
+  is "Equivalent to `--permission-mode bypassPermissions`" (`cli-reference.md`);
+  "Deny rules block in every mode, including `bypassPermissions`" and
+  `--disallowedTools` is deny rules; `-p` takes it with no dialog and denies
+  the few calls that would still prompt (`permission-modes.md`). But a Bash
+  deny rule matches the command as written, not the program
+  (`permissions.md`, "What a Bash rule doesn't match"). So the deny list is
+  kept and enforced, and is still not a boundary; `enable` and the README say
+  so with the URL.
+- **The `permissions` key is checked against the argv**: an argv that skips
+  permission checks without `"permissions": "skip"` is refused at load, and a
+  `skip` argv must carry `--disallowedTools`. A file without the new keys
+  loads as before: no notification, no window, the allowlist.
+- **The Terminal command's `laika` path is a config key** (`"laika"`, required
+  by `open_terminal`), written by `enable` from the `laika` on `PATH` and held
+  to the same program rules as a harness's `argv[0]`.
+- Both osascript scripts are fixed `on run argv` lines with the values as
+  arguments after `--`, so no value is ever AppleScript source; the viewer
+  line single-quotes the path and takes only a ULID.
+- The transcript folder rule (every character not a letter or digit as `-`)
+  was measured on every folder in Belka's `~/.claude/projects`, and `watch
+  --once --run 01M6H3V14WKG0HKSF5Y8SY6CSR` rendered LAIKA-968's real
+  transcript (found through its `workspace.json`, since that start predates
+  the new audit fields).
+- Not done here: no notification is shown and no Terminal window is opened by
+  the tests; the first real window may need macOS Automation allowed. The
+  `laika` a viewer runs must be from a checkout that has this change.
+
