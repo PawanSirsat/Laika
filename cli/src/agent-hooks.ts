@@ -117,6 +117,62 @@ export function hookFile(home: string, harness: Harness): string {
   throw new Error(`${harness} has no hook file`);
 }
 
+/** `/bin/sh '<script>' <event> <harness>` → its three words, or `undefined` for any other command. */
+function parseAgentHookCommand(
+  command: string,
+): { script: string; event: string; harness: string } | undefined {
+  const m = /^\/bin\/sh '((?:[^']|'\\'')*)' (\S+) (\S+)$/.exec(command);
+  if (m === null) return undefined;
+  return { script: (m[1] ?? '').replace(/'\\''/g, "'"), event: m[2] ?? '', harness: m[3] ?? '' };
+}
+
+/**
+ * Whether `laika agent hooks on`'s set is really in a harness's hook file
+ * (LAI-1111), read from the commands themselves: every event it installs has
+ * a `laika-agent-hook` command for that event and harness, and the script
+ * each one runs exists. The marker anywhere in the file is not enough — a
+ * set from a checkout that was moved or removed runs nothing, and a
+ * hand-rolled hook that only mentions the name is not ours. One line per
+ * problem; none means the hooks are on.
+ */
+export function agentHooksProblems(home: string, harness: Harness): string[] {
+  const path = hookFile(home, harness);
+  const parsed = parseConfig(path);
+  if (!parsed.ok) return [`${path} ${parsed.why}`];
+  if (!parsed.existed) return [`${path} does not exist`];
+  const hooks = isObject(parsed.doc.hooks) ? parsed.doc.hooks : {};
+  const missing: string[] = [];
+  const scripts = new Set<string>();
+  for (const [event, group] of Object.entries(agentHookGroups('', harness))) {
+    const wanted = (group.hooks as { command: string }[])[0]?.command ?? '';
+    const arg = wanted.split(' ').at(-2);
+    let found = false;
+    for (const g of (hooks[event] as unknown[] | undefined) ?? []) {
+      if (!isObject(g) || !Array.isArray(g.hooks)) continue;
+      for (const h of g.hooks) {
+        if (!isOurs(h)) continue;
+        const parts = parseAgentHookCommand((h as { command: string }).command);
+        if (parts === undefined || parts.event !== arg || parts.harness !== harness) continue;
+        found = true;
+        scripts.add(parts.script);
+      }
+    }
+    if (!found) missing.push(event);
+  }
+  const problems: string[] = [];
+  if (missing.length > 0) {
+    problems.push(`${path} has no ${AGENT_MARKER} command for ${missing.join(', ')}`);
+  }
+  for (const script of scripts) {
+    if (!existsSync(script)) {
+      problems.push(
+        `the hook script ${script} does not exist (the checkout it was installed from moved or was removed)`,
+      );
+    }
+  }
+  return problems;
+}
+
 function manual(path: string, groups: Record<string, Group>): string[] {
   return [
     `Add this to the "hooks" object in ${path} yourself:`,

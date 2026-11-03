@@ -1,26 +1,32 @@
 import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { createInterface } from 'node:readline';
-import { dirname, isAbsolute, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createInterface, type Interface } from 'node:readline';
+import { dirname, isAbsolute, join, resolve as resolvePath } from 'node:path';
 
 import { fetchSourceFor, gitRunner, REMOTE_NAME } from './agent-handoff.ts';
-import { AGENT_MARKER, hookFile } from './agent-hooks.ts';
+import { agentHooksProblems } from './agent-hooks.ts';
 import {
   argvProblem,
   configPath,
   DEFAULT_RUNS_PER_DAY,
   deviceLabelProblem,
+  gitNewEnough,
   launcherDir,
   type LauncherIo,
   loadConfig,
+  MIN_GIT,
+  parseGitVersion,
   statusPath,
 } from './agent-launcher.ts';
 import {
@@ -36,7 +42,14 @@ import {
   writePrivate,
 } from './agent-session.ts';
 import { laikaPollyDir } from './agent-omnigent.ts';
-import { isToolEntry, readClaudeLaika } from './claude-mcp.ts';
+import { shellQuote } from './agents.ts';
+import {
+  claudeJsonLink,
+  claudeJsonPath,
+  entryKind,
+  isToolEntry,
+  readClaudeLaika,
+} from './claude-mcp.ts';
 import { readDevice } from './device.ts';
 
 /**
@@ -337,8 +350,14 @@ export interface ServiceIo {
   readonly err: (line: string) => void;
   readonly home: string;
   readonly env: Readonly<Record<string, string | undefined>>;
-  /** One answer typed by the owner, or `undefined` when nobody can answer (no terminal). */
+  /** Where `enable` was run: a relative checkout path is read from here. */
+  readonly cwd: string;
+  /** Whether the owner can answer at all: a terminal on standard input. */
+  readonly terminal: boolean;
+  /** One answer typed by the owner, or `undefined` when input has ended or there is no terminal. */
   readonly ask: (question: string) => Promise<string | undefined>;
+  /** Stops listening for answers, so the process can exit; `enable` calls it once, at the end. */
+  readonly closeAsk: () => void;
   /** Runs a program by absolute path or name on PATH, never through a shell. */
   readonly run: (file: string, args: readonly string[]) => RunResult;
   readonly fetch: Fetch;
@@ -353,31 +372,73 @@ export interface ServiceIo {
   readonly which: (name: string) => string | undefined;
 }
 
+export interface TerminalAsker {
+  readonly ask: (question: string) => Promise<string | undefined>;
+  readonly close: () => void;
+}
+
 /**
- * One question on a terminal: the typed line, trimmed, or `undefined` when
- * there is no terminal or input ends before a line (LAI-1109).
+ * Every question of one `enable` on **one** readline (LAI-1111). A readline
+ * per question lost answers typed or pasted ahead: the first interface read
+ * every line waiting on the terminal, answered its own question with one, and
+ * took the rest with it when it closed, so the next question waited for ever.
  *
- * **Resolve before closing.** `rl.close()` emits `close` synchronously, so
- * closing first let the close handler resolve `undefined` ahead of the answer,
- * and every typed answer read as "no terminal".
+ * Here a line that arrives before its question is kept, in order, and the
+ * next question takes it (and prints it after the question, so the
+ * transcript reads in order). A line that arrives with the end of input is
+ * still an answer — the LAI-1109 order — and only a question with no line
+ * left is `undefined`. Nothing listens until the first question, so a run
+ * that refuses before asking never takes the terminal.
  */
-export function askTerminal(
-  question: string,
+export function terminalAsker(
   input: NodeJS.ReadableStream & { isTTY?: boolean },
   output: NodeJS.WritableStream,
-): Promise<string | undefined> {
-  return new Promise((resolve) => {
-    if (input.isTTY !== true) {
-      resolve(undefined);
-      return;
-    }
-    const rl = createInterface({ input, output });
-    rl.question(question, (answer) => {
-      resolve(answer.trim());
-      rl.close();
+): TerminalAsker {
+  let rl: Interface | undefined;
+  let ended = false;
+  const lines: string[] = [];
+  const waiting: ((answer: string | undefined) => void)[] = [];
+  const open = (): Interface => {
+    if (rl !== undefined) return rl;
+    const r = createInterface({ input, output });
+    r.on('line', (line) => {
+      const next = waiting.shift();
+      if (next === undefined) lines.push(line.trim());
+      else next(line.trim());
     });
-    rl.on('close', () => resolve(undefined));
-  });
+    r.on('close', () => {
+      ended = true;
+      for (const resolve of waiting.splice(0)) resolve(undefined);
+    });
+    rl = r;
+    return r;
+  };
+  return {
+    ask: (question) =>
+      new Promise((resolve) => {
+        if (input.isTTY !== true) {
+          resolve(undefined);
+          return;
+        }
+        const r = open();
+        const typed = lines.shift();
+        if (typed !== undefined) {
+          output.write(`${question}${typed}\n`);
+          resolve(typed);
+          return;
+        }
+        if (ended) {
+          resolve(undefined);
+          return;
+        }
+        waiting.push(resolve);
+        r.setPrompt(question);
+        r.prompt();
+      }),
+    close: () => {
+      rl?.close();
+    },
+  };
 }
 
 export function realServiceIo(io: LauncherIo): ServiceIo {
@@ -402,12 +463,16 @@ export function realServiceIo(io: LauncherIo): ServiceIo {
       return process.argv[1] ?? '';
     }
   })();
+  const asker = terminalAsker(process.stdin, process.stdout);
   return {
     out: io.out,
     err: io.err,
     home: io.home,
     env: io.env,
-    ask: (question) => askTerminal(question, process.stdin, process.stdout),
+    cwd: process.cwd(),
+    terminal: process.stdin.isTTY,
+    ask: asker.ask,
+    closeAsk: asker.close,
     run,
     fetch: (input, init) => fetch(input, init),
     platform: process.platform,
@@ -479,7 +544,38 @@ async function projectsOf(
   return out;
 }
 
-/** The remote of `dir` whose URL is exactly the board's `owner/name`, or why there is none. */
+/**
+ * A checkout path as the owner typed it (LAI-1111): `~` and `~/…` are this
+ * home, a relative path is read from `cwd`. `resolved` says the path is not
+ * what was typed, so `enable` can print what it read.
+ */
+export function checkoutPath(
+  typed: string,
+  home: string,
+  cwd: string,
+): { readonly path: string; readonly resolved: boolean } | string {
+  if (typed === '~') return { path: home, resolved: true };
+  if (typed.startsWith('~/')) return { path: join(home, typed.slice(2)), resolved: true };
+  if (typed.startsWith('~')) return `only ~ and ~/… are read as your home, not ${typed}`;
+  if (isAbsolute(typed)) return { path: typed, resolved: false };
+  return { path: resolvePath(cwd, typed), resolved: true };
+}
+
+/** `fetchSourceFor`'s reason, with what an SSH host alias is and why it is not followed. */
+function remoteReason(url: string, why: string): string {
+  const host = /^host (.+) is not github\.com$/.exec(why)?.[1];
+  const ssh = /^(?:ssh:\/\/)?[^/@:]+@/.test(url) && !/^https:/i.test(url);
+  return host !== undefined && ssh
+    ? `${why}: ${host} looks like an SSH host alias, and the launcher fetches from github.com itself, never through ~/.ssh/config`
+    : why;
+}
+
+/**
+ * The remote of `dir` whose URL is exactly the board's `owner/name`, or why
+ * there is none — **each remote with its own reason** (LAI-1111), so a
+ * checkout whose only remote is `git@github-personal:owner/name.git` says that
+ * an SSH alias is not github.com, and what remote would do.
+ */
 export function checkRepo(
   dir: string,
   boardRepo: string,
@@ -500,12 +596,216 @@ export function checkRepo(
     .stdout.split('\n')
     .map((n) => n.trim())
     .filter((n) => REMOTE_NAME.test(n));
+  const reasons: string[] = [];
   for (const name of names) {
     const url = git(toplevel, ['remote', 'get-url', '--', name]).stdout.trim();
-    if (typeof fetchSourceFor(url, boardRepo, env) !== 'string')
-      return { repo: toplevel, remote: name };
+    const source = fetchSourceFor(url, boardRepo, env);
+    if (typeof source !== 'string') return { repo: toplevel, remote: name };
+    reasons.push(`remote ${name} (${url}): ${remoteReason(url, source)}`);
   }
-  return `no remote of ${toplevel} is ${boardRepo}`;
+  const fix = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(boardRepo)
+    ? [
+        `To use this checkout, give it a remote the launcher can fetch from, for example: git -C ${shellQuote(toplevel)} remote add laika https://github.com/${boardRepo}.git`,
+      ]
+    : [];
+  return [
+    names.length === 0
+      ? `${toplevel} has no remote, so none is ${boardRepo}`
+      : `no remote of ${toplevel} is ${boardRepo}`,
+    ...reasons,
+    ...fix,
+  ].join('\n');
+}
+
+/* -------------------------------------------------------------------------- */
+/* Device checks: everything wrong at once, each with its fix (LAI-1111)      */
+/* -------------------------------------------------------------------------- */
+
+export interface Problem {
+  readonly what: string;
+  readonly fix: string;
+}
+
+const modeText = (path: string): string => {
+  try {
+    return (statSync(path).mode & 0o777).toString(8);
+  } catch {
+    return '?';
+  }
+};
+
+const writers = (path: string): string => {
+  try {
+    const m = statSync(path).mode;
+    return (m & 0o020) !== 0 && (m & 0o002) !== 0
+      ? 'its group and everyone else'
+      : (m & 0o002) !== 0
+        ? 'everyone else on this computer'
+        : 'its group';
+  } catch {
+    return 'group or others';
+  }
+};
+
+/**
+ * `argvProblem`, said plainly with what to do about it (LAI-1111). The rule
+ * is the daemon's own and is not loosened here: whoever can replace the
+ * program — or the folder that holds it — chooses what runs unattended.
+ */
+export function programProblem(argv: readonly string[], harness: Harness): Problem | undefined {
+  const problem = argvProblem(argv);
+  if (problem === undefined) return undefined;
+  const program = argv[0] ?? '';
+  const install =
+    harness === 'claude-code'
+      ? 'install it in a folder only you can write — Claude Code’s native installer uses ~/.local/bin — and put that folder before the old one on PATH'
+      : 'install it in a folder only you can write, such as ~/.local/bin, and put that folder before the old one on PATH';
+  const folder = /^(.+), which holds argv\[0\], is writable by group or others$/.exec(problem)?.[1];
+  if (folder !== undefined) {
+    const homebrew = /^\/(opt\/homebrew|usr\/local)(\/|$)/.test(folder)
+      ? ' Homebrew sets its folders up like this so every admin of this Mac can install.'
+      : '';
+    return {
+      what: `${folder}, which holds ${program}, is writable by ${writers(folder)} (mode ${modeText(folder)}): anyone who can write there could replace what the launcher runs unattended, so it is refused.${homebrew}`,
+      fix: `either ${install}, then run enable again; or, if nobody else can write ${folder} in practice (you are this computer's only admin), remove the write: chmod go-w ${shellQuote(folder)}`,
+    };
+  }
+  if (problem === `${program} is writable by group or others`) {
+    return {
+      what: `${program} is writable by ${writers(program)} (mode ${modeText(program)}), so anyone who can write it could change what the launcher runs`,
+      fix: `chmod go-w ${shellQuote(program)}, or ${install}`,
+    };
+  }
+  if (problem === `${program} is owned by neither you nor root`) {
+    return {
+      what: `${program} belongs to another user, who could change what the launcher runs`,
+      fix: install,
+    };
+  }
+  return { what: problem, fix: `${install}, then run enable again` };
+}
+
+const RECONNECT =
+  'in the browser, open Developer access → Tools → your Claude Code tool → Reconnect (new credential)…, and run the `laika tool add claude-code --exchange <id>` it shows';
+
+/**
+ * Whether Claude Code's user-level `laika` MCP entry is the one `tool add`
+ * writes, which reads this tool's credential when the launcher runs it
+ * (LAI-1111). `tool add` never replaces an entry it did not write, so an older
+ * entry — a token written into the file by `laika init` or `laika connect` —
+ * must be removed first, with Claude Code closed so it does not write the file
+ * back. Reads `.claude.json` where Claude Code does: under `CLAUDE_CONFIG_DIR`
+ * when that is set.
+ */
+export function claudeMcpProblem(
+  home: string,
+  env: Readonly<Record<string, string | undefined>>,
+): Problem | undefined {
+  const file = claudeJsonLink(home, env);
+  const where = claudeJsonPath(home, env);
+  if ('refused' in where) {
+    return {
+      what: where.refused,
+      fix: `point ${file} at Claude Code's real file or remove the link, then ${RECONNECT}`,
+    };
+  }
+  const entry = readClaudeLaika(home, env);
+  if (isToolEntry(entry)) return undefined;
+  if (entry === undefined) {
+    return {
+      what: `${file} has no user-level \`laika\` MCP entry, so a launched run would have no Laika tools`,
+      fix: RECONNECT.replace(/^in/, 'In'),
+    };
+  }
+  const kind = entryKind(entry);
+  const sends =
+    kind.kind === 'literal'
+      ? 'a token written into the file (as an older `laika init` or `laika connect` wrote it)'
+      : kind.kind === 'env'
+        ? `\${${kind.variable}} from the environment`
+        : 'something other than this tool’s credential';
+  return {
+    what: `the user-level \`laika\` MCP entry in ${file} sends ${sends}, not \`laika tool add\`’s helper, and \`tool add\` never replaces an entry it did not write`,
+    fix: `quit Claude Code; run \`claude mcp remove laika --scope user\`; then ${RECONNECT}`,
+  };
+}
+
+/** Every reason Claude Code cannot be started unattended, and its argv when there is none. */
+export function claudeCheck(io: ServiceIo): {
+  readonly argv: string[] | undefined;
+  readonly problems: Problem[];
+} {
+  const problems: Problem[] = [];
+  let argv: string[] | undefined;
+  const program = io.which('claude');
+  if (program === undefined) {
+    problems.push({
+      what: '`claude` is not on PATH',
+      fix: 'install Claude Code, or run enable from a shell whose PATH has it',
+    });
+  } else {
+    const version = parseSemver(io.run(program, ['--version']).stdout);
+    if (!atLeast(version, CLAUDE_MIN_VERSION)) {
+      problems.push({
+        what: `Claude Code ${version === undefined ? '(its version could not be read)' : version.join('.')} is older than ${CLAUDE_MIN_VERSION.join('.')}`,
+        fix: 'update it: claude update',
+      });
+    }
+    const candidate = claudeArgv(program);
+    const where = programProblem(candidate, 'claude-code');
+    if (where === undefined) argv = candidate;
+    else problems.push(where);
+  }
+  const mcp = claudeMcpProblem(io.home, io.env);
+  if (mcp !== undefined) problems.push(mcp);
+  const hooks = agentHooksProblems(io.home, 'claude-code');
+  if (hooks.length > 0) {
+    problems.push({
+      what: `its session hooks are not on: ${hooks.join('; ')}`,
+      fix: 'run `laika agent hooks on --harness claude-code` with the laika of an up-to-date Laika checkout (git pull there first), so every hook runs a script that exists',
+    });
+  }
+  return { argv: problems.length === 0 ? argv : undefined, problems };
+}
+
+function printProblems(io: ServiceIo, name: string, problems: readonly Problem[]): void {
+  io.out(`  ${name}: left out until ${problems.length === 1 ? 'this is' : 'these are'} fixed:`);
+  for (const p of problems) {
+    io.out(`    - ${p.what}`);
+    io.out(`      Fix: ${p.fix}`);
+  }
+}
+
+/**
+ * The config, loaded exactly as the launcher will load it, from a scratch
+ * copy (LAI-1111): `--dry-run` checks it too, and nothing is written to
+ * `~/.laika` until it loads.
+ */
+function configProblems(config: unknown): string[] {
+  const scratch = mkdtempSync(join(tmpdir(), 'laika-enable-'));
+  try {
+    mkdirSync(dirname(configPath(scratch)), { recursive: true, mode: 0o700 });
+    chmodSync(dirname(configPath(scratch)), 0o700);
+    writeFileSync(configPath(scratch), `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+    const loaded = loadConfig(scratch);
+    return loaded.kind === 'enabled'
+      ? []
+      : loaded.kind === 'invalid'
+        ? loaded.errors.map((e) => e.replaceAll(scratch, '~'))
+        : [loaded.why];
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/** The git checkout the service would run the CLI from, and the branch it is on now. */
+function entryCheckout(io: ServiceIo): { top: string; branch: string } | undefined {
+  const dir = dirname(io.entry);
+  const top = io.run('git', ['-C', dir, 'rev-parse', '--show-toplevel']);
+  if (top.code !== 0 || top.stdout.trim() === '') return undefined;
+  // A detached HEAD has no branch to name: '' then.
+  const branch = io.run('git', ['-C', dir, 'symbolic-ref', '--short', '-q', 'HEAD']);
+  return { top: top.stdout.trim(), branch: branch.code === 0 ? branch.stdout.trim() : '' };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -514,26 +814,38 @@ export function checkRepo(
 
 const yes = (answer: string | undefined): boolean => /^(y|yes)$/i.test(answer ?? '');
 
-function claudeReady(home: string): string | undefined {
-  if (!isToolEntry(readClaudeLaika(home))) {
-    return 'its MCP entry is not the launcher-safe one (run `laika tool add claude-code`)';
-  }
-  try {
-    if (!readFileSync(hookFile(home, 'claude-code'), 'utf8').includes(AGENT_MARKER)) {
-      return 'its session hooks are off (run `laika agent hooks on --harness claude-code`)';
-    }
-  } catch {
-    return 'its session hooks are off (run `laika agent hooks on --harness claude-code`)';
-  }
-  return undefined;
-}
+/** A question asked after input ended: `enable` stops, having written nothing. */
+class InputEnded extends Error {}
+
+/** How many answers a checkout path gets before its project is left out. */
+export const CHECKOUT_TRIES = 3;
 
 export async function enable(io: ServiceIo, argv: readonly string[]): Promise<number> {
+  try {
+    return await enableSteps(io, argv);
+  } catch (cause) {
+    if (!(cause instanceof InputEnded)) throw cause;
+    io.err(
+      `laika agent launcher enable: ${io.terminal ? 'input ended before every question was answered' : 'enable needs a terminal to answer in'}`,
+    );
+    io.err('Nothing was written.');
+    return 1;
+  } finally {
+    io.closeAsk();
+  }
+}
+
+async function enableSteps(io: ServiceIo, argv: readonly string[]): Promise<number> {
   const dryRun = argv.includes('--dry-run');
   const refuse = (why: string): number => {
     io.err(`laika agent launcher enable: ${why}`);
     io.err('Nothing was written.');
     return 1;
+  };
+  const ask = async (question: string): Promise<string> => {
+    const answer = await io.ask(question);
+    if (answer === undefined) throw new InputEnded();
+    return answer;
   };
 
   // 1. What is on this device: its credentials, and whose they are.
@@ -564,74 +876,43 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
   if (owner === undefined || usable.length === 0)
     return refuse('no credential here is accepted by the board');
 
-  // 2. The projects, and a checkout of each one's repository.
-  const seen = new Map<string, BoardProject>();
-  for (const c of usable) {
-    for (const p of (await projectsOf(io.fetch, c.credential)) ?? []) seen.set(p.id, p);
-  }
-  const projects: { project_id: string; repo: string; remote: string; work_requests: boolean }[] =
-    [];
-  for (const p of seen.values()) {
-    if (p.repo === null) {
-      io.out(`  ${p.slug}: no repository is configured on the board; left out`);
-      continue;
-    }
-    const dir = await io.ask(
-      `Checkout of ${p.repo} for project ${p.slug} (absolute path; blank skips): `,
+  // 2. git and the harness programs, checked as the launcher will check them —
+  // before any project question, and every problem at once (LAI-1111).
+  io.out('Checking this device:');
+  const gitVersion = parseGitVersion(io.run('git', ['version']).stdout);
+  const gitOk = gitNewEnough(gitVersion);
+  if (gitOk) io.out(`  git ${gitVersion!.join('.')}: ok`);
+  else {
+    io.out(
+      `  git: ${gitVersion === undefined ? 'not on PATH' : `${gitVersion.join('.')} is older than ${MIN_GIT.join('.')}`}, and the launcher needs ${MIN_GIT.join('.')} or later`,
     );
-    if (dir === undefined) return refuse('enable needs a terminal to answer in');
-    if (dir === '') continue;
-    const checked = checkRepo(dir, p.repo, io.env);
-    if (typeof checked === 'string') {
-      io.out(`  ${p.slug}: ${checked}; left out`);
-      continue;
-    }
-    const wr = await io.ask(
-      `Start a work request selected for an agent in ${p.slug} by itself? Type yes to allow [no]: `,
-    );
-    projects.push({
-      project_id: p.id,
-      repo: checked.repo,
-      remote: checked.remote,
-      work_requests: yes(wr),
-    });
+    io.out(`      Fix: install a newer git and run enable from a shell whose PATH finds it first`);
   }
-  if (projects.length === 0) return refuse('no project has a checkout here');
-
-  // 3. The harness programs, checked as the launcher will check them.
   const harnesses: Partial<Record<Harness, string[]>> = {};
   const promptVia: Partial<Record<Harness, 'stdin' | 'argv'>> = {};
   let wakeSessions = false;
   for (const { harness, credential } of usable) {
     if (harness === 'claude-code') {
-      const program = io.which('claude');
-      if (program === undefined) {
-        io.out('  claude-code: `claude` is not on PATH; left out');
+      const checked = claudeCheck(io);
+      if (checked.argv === undefined) {
+        printProblems(io, 'claude-code', checked.problems);
         continue;
       }
-      const version = parseSemver(io.run(program, ['--version']).stdout);
-      if (!atLeast(version, CLAUDE_MIN_VERSION)) {
-        io.out(
-          `  claude-code: needs Claude Code ${CLAUDE_MIN_VERSION.join('.')} or later; left out`,
-        );
-        continue;
-      }
-      const notReady = claudeReady(io.home);
-      if (notReady !== undefined) {
-        io.out(`  claude-code: ${notReady}; left out`);
-        continue;
-      }
-      const argvNow = claudeArgv(program);
-      const problem = argvProblem(argvNow);
-      if (problem !== undefined) {
-        io.out(`  claude-code: ${problem}; left out`);
-        continue;
-      }
-      harnesses[harness] = argvNow;
+      io.out('  claude-code: ok');
+      harnesses[harness] = checked.argv;
     } else if (harness === 'codex') {
       const program = io.which('codex');
-      if (program === undefined) continue;
-      const typed = await io.ask(
+      if (program === undefined) {
+        io.out('  codex: `codex` is not on PATH; left out');
+        continue;
+      }
+      const argvNow = codexArgv(program, io.laika, credential.url);
+      const where = programProblem(argvNow, 'codex');
+      if (where !== undefined) {
+        printProblems(io, 'codex', [where]);
+        continue;
+      }
+      const typed = await ask(
         'Codex can commit in a worktree only with full access (workspace-write keeps git read-only).\n' +
           'Type danger-full-access to let the launcher start Codex, or press Enter to leave it off: ',
       );
@@ -639,12 +920,7 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
         io.out('  codex: left off (the default)');
         continue;
       }
-      const argvNow = codexArgv(program, io.laika, credential.url);
-      const problem = argvProblem(argvNow);
-      if (problem !== undefined) {
-        io.out(`  codex: ${problem}; left out`);
-        continue;
-      }
+      io.out('  codex: ok');
       harnesses[harness] = argvNow;
     } else if (harness === 'omnigent') {
       const program = io.which('omni');
@@ -656,30 +932,83 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
         continue;
       }
       wakeSessions = yes(
-        await io.ask(
+        await ask(
           'When Laika selects or offers work to this Omnigent agent and the launcher does not start it,\n' +
             'post a one-line notice to its running local session? Type yes to allow [no]: ',
         ),
       );
-      const start = await io.ask(
+      const start = await ask(
         `Start Omnigent (omni run ${laikaPollyDir(io.home)} -p) for this agent too? Type yes to allow [no]: `,
       );
       if (!yes(start)) continue;
       const argvNow = omnigentArgv(program, io.home);
-      const problem = argvProblem(argvNow);
-      if (problem !== undefined) {
-        io.out(`  omnigent: ${problem}; left out`);
+      const where = programProblem(argvNow, 'omnigent');
+      if (where !== undefined) {
+        printProblems(io, 'omnigent', [where]);
         continue;
       }
       harnesses[harness] = argvNow;
       promptVia[harness] = 'argv';
     }
   }
+  if (!gitOk) return refuse('the launcher needs a newer git; see above');
   if (Object.keys(harnesses).length === 0 && !wakeSessions) {
-    return refuse('no harness here can be started unattended');
+    return refuse(
+      'no harness here can be started unattended; fix what is listed above and run enable again',
+    );
   }
 
-  // 4. The whole config, shown before anything is written.
+  // 3. The projects, and a checkout of each one's repository.
+  const seen = new Map<string, BoardProject>();
+  for (const c of usable) {
+    for (const p of (await projectsOf(io.fetch, c.credential)) ?? []) seen.set(p.id, p);
+  }
+  const projects: { project_id: string; repo: string; remote: string; work_requests: boolean }[] =
+    [];
+  for (const p of seen.values()) {
+    if (p.repo === null) {
+      io.out(`  ${p.slug}: no repository is configured on the board; left out`);
+      continue;
+    }
+    let checked: { repo: string; remote: string } | undefined;
+    for (let tries = 1; checked === undefined; tries += 1) {
+      const typed = await ask(
+        `Checkout of ${p.repo} for project ${p.slug} (path; ~ and relative paths are fine; blank skips): `,
+      );
+      if (typed === '') {
+        io.out(`  ${p.slug}: skipped`);
+        break;
+      }
+      const where = checkoutPath(typed, io.home, io.cwd);
+      if (typeof where !== 'string' && where.resolved) io.out(`  (read as ${where.path})`);
+      const result = typeof where === 'string' ? where : checkRepo(where.path, p.repo, io.env);
+      if (typeof result !== 'string') {
+        checked = result;
+        break;
+      }
+      const [first, ...rest] = result.split('\n');
+      io.out(`  ${p.slug}: ${first ?? ''}`);
+      for (const line of rest) io.out(`    ${line}`);
+      if (tries >= CHECKOUT_TRIES) {
+        io.out(`  ${p.slug}: left out after ${String(CHECKOUT_TRIES)} answers`);
+        break;
+      }
+      io.out('  Try again, or press Enter to skip this project.');
+    }
+    if (checked === undefined) continue;
+    const wr = await ask(
+      `Start a work request selected for an agent in ${p.slug} by itself? Type yes to allow [no]: `,
+    );
+    projects.push({
+      project_id: p.id,
+      repo: checked.repo,
+      remote: checked.remote,
+      work_requests: yes(wr),
+    });
+  }
+  if (projects.length === 0) return refuse('no project has a checkout here');
+
+  // 4. The whole config, shown before anything is written, and loaded as the launcher will.
   const label = readDevice(io.home)?.display_name;
   const config = {
     version: 2,
@@ -713,6 +1042,12 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
   io.out('');
   io.out(`This is the config that would be written to ${configPath(io.home)} (0600):`);
   for (const line of JSON.stringify(config, null, 2).split('\n')) io.out(`  ${line}`);
+  const invalid = configProblems(config);
+  if (invalid.length > 0) {
+    for (const e of invalid) io.out(`  ! ${e}`);
+    return refuse('this config would not load in the launcher (above)');
+  }
+  io.out('It loads as the launcher will read it.');
   io.out('');
   if (service === undefined) {
     io.out(`No login service on ${io.platform}: run \`laika agent launcher run\` yourself.`);
@@ -720,12 +1055,22 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
     io.out(`and the login service at ${service.path}, which runs:`);
     io.out(`  ${[spec.node, spec.entry, ...SERVICE_RUN].join(' ')}`);
     io.out('It restarts after a crash, never after `laika agent launcher stop`.');
+    const checkout = entryCheckout(io);
+    if (checkout !== undefined) {
+      io.out(
+        `That is the CLI in the checkout at ${checkout.top}${checkout.branch === '' ? '' : ` (on ${checkout.branch} now)`}:`,
+      );
+      io.out(
+        '  switching branches, pulling or editing there changes the launcher’s code at its next start.',
+      );
+      io.out('  Keep that checkout on the default branch, or enable from one kept for this.');
+    }
   }
   if (dryRun) {
     io.out('--dry-run: nothing was written.');
     return 0;
   }
-  const typed = await io.ask('Type enable to write this and start the launcher: ');
+  const typed = await ask('Type enable to write this and start the launcher: ');
   if (typed !== 'enable') return refuse('not confirmed');
 
   // 5. Written, then installed.

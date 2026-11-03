@@ -25,14 +25,29 @@ export function isToolEntry(entry: unknown): boolean {
 }
 
 /**
- * Where `~/.claude.json` really is. A symlink is written **through**, to its
- * target — `apply`'s temp-file-and-rename would otherwise replace the link
- * with a file (LAI-1074). A link that leads nowhere is refused.
+ * The `.claude.json` Claude Code reads: under `CLAUDE_CONFIG_DIR` when that is
+ * set, as `claudeConfigFile` in `mcp-headers.ts` reads it, `~/.claude.json`
+ * otherwise (LAI-1111). Not resolved through a symlink.
+ */
+export function claudeJsonLink(
+  home: string,
+  env: Readonly<Record<string, string | undefined>> = {},
+): string {
+  const dir = env.CLAUDE_CONFIG_DIR;
+  return dir !== undefined && dir !== '' ? join(dir, '.claude.json') : join(home, '.claude.json');
+}
+
+/**
+ * Where `.claude.json` really is ({@link claudeJsonLink}). A symlink is
+ * written **through**, to its target — `apply`'s temp-file-and-rename would
+ * otherwise replace the link with a file (LAI-1074). A link that leads
+ * nowhere is refused. Without `env`, `~/.claude.json`, as before.
  */
 export function claudeJsonPath(
   home: string,
+  env: Readonly<Record<string, string | undefined>> = {},
 ): { readonly path: string } | { readonly refused: string } {
-  const link = join(home, '.claude.json');
+  const link = claudeJsonLink(home, env);
   let isLink = false;
   try {
     isLink = lstatSync(link).isSymbolicLink();
@@ -83,9 +98,16 @@ export function entryKind(entry: unknown): EntryKind {
   return variable === undefined ? { kind: 'literal' } : { kind: 'env', variable };
 }
 
-/** The `mcpServers.laika` in `~/.claude.json`, through a symlink; `undefined` when there is none. */
-export function readClaudeLaika(home: string): unknown {
-  const where = claudeJsonPath(home);
+/**
+ * The `mcpServers.laika` in `.claude.json` ({@link claudeJsonLink}: under
+ * `CLAUDE_CONFIG_DIR` when `env` sets it), through a symlink; `undefined`
+ * when there is none.
+ */
+export function readClaudeLaika(
+  home: string,
+  env: Readonly<Record<string, string | undefined>> = {},
+): unknown {
+  const where = claudeJsonPath(home, env);
   if ('refused' in where) return undefined;
   try {
     const doc: unknown = JSON.parse(readFileSync(where.path, 'utf8'));
