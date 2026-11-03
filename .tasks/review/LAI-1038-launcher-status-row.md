@@ -108,3 +108,13 @@ a reply after expiry accepted; an unaddressed agent's reply accepted; the
 ping delivered to every granted agent; an extra key in a reply accepted
 (top-level `strictObject` → `z.object`); presence `on` past 180 s (freshness
 dropped, and separately `<` → `<=` at the boundary); the rate bucket skipped.
+
+## Review round 1 — fixes added (2026-11-03, core)
+
+CHIEF's review of #253 (PASS) asked for four fixes and a sentence, as new
+commits: an answered or expired ping leaves `state=undelivered` (`2d9aba91`);
+one held request per requester per ping (`3b5106ea`); capacity reads only the
+project asked (`047d461e`); `cli_version` is `MAJOR.MINOR.PATCH`, `+commit` or
+`unknown` (`94fef10a`); §4.84's presence-off sentence (`0e53f804`). Each has a
+test that goes red when its fix is undone (measured). The five web reds above
+are unchanged.
