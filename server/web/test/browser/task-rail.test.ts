@@ -455,13 +455,23 @@ void describe('the rail, to the 2026-11-04 design', () => {
       );
       assert.equal(await effort.locator('.fc-change').count(), 1, 'the override went missing');
 
-      // Similar: each key a link with how long it took; the reason folded.
+      // Similar: each key a link beside its title, how long it took under
+      // them (LAI-1123); the reason folded.
       await until(() => h.calls.some((c) => c.path === '/api/v1/tasks/t1/similar'));
       await until(async () => (await est.locator('details.est-sent-back').count()) === 1);
-      const lines = await est
-        .locator('.est-similar-line')
-        .evaluateAll((els) => els.map((el) => (el.textContent ?? '').replace(/\s+/g, ' ').trim()));
-      assert.deepEqual(lines, ['LC-5 took 44 min', 'LC-6 took 38 min']);
+      const rows = await est
+        .locator('.est-similar-item')
+        .evaluateAll((els) =>
+          els.map((el) => [
+            el.querySelector('.est-similar-link')?.textContent?.trim(),
+            el.querySelector('.est-similar-title')?.textContent?.trim(),
+            el.querySelector('.est-similar-time')?.textContent?.trim(),
+          ]),
+        );
+      assert.deepEqual(rows, [
+        ['LC-5', 'Launcher logs', 'took 44 min'],
+        ['LC-6', 'Launcher retry', 'took 38 min'],
+      ]);
       const back = est.locator('.est-similar-item', { hasText: 'LC-6' }).locator('details');
       assert.equal(await back.getAttribute('open'), null, 'the reason is not folded');
       await back.locator('summary').click();

@@ -796,7 +796,7 @@ void describe('the live claim (LAI-597)', () => {
       // The chip still names the agent; the line is beneath it, not instead.
       assert.match(
         await found.locator('[data-working-session]').innerText(),
-        /^Claude Code · Belka\s+Claude Code · Belka · Codex · gpt-5\.5$/,
+        /^Claude Code · Belka\s+Codex · gpt-5\.5$/,
       );
       // The card stays the agent alone (D-118): no session words on it.
       assert.doesNotMatch(await card(h.page, 't4').innerText(), /gpt-5\.5|Codex/);

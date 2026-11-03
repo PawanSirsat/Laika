@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { describeEvent, pushSummary, type ActivityEvent } from '../../../api/activity.ts';
-import { sessionHarnessName, sessionWords } from '../../../api/agent-session.ts';
+import { sessionHarnessName, sessionWordsAfter } from '../../../api/agent-session.ts';
 import { isAgentComment, mayChangeComment, type Comment } from '../../../api/comments.ts';
 import type { Round } from '../../../api/review.ts';
 import { agentVia, type AgentNaming } from '../../../api/selected-agent.ts';
@@ -168,7 +168,12 @@ export function ActivityFeed({
   const agentParts = (row: ActivityEvent) => ({
     row,
     plain: undefined,
-    session: row.agent_redacted === true ? undefined : sessionWords(row.agent_session),
+    // What the session ran beyond the chip's own words — never *Claude Code*
+    // twice (LAI-1123).
+    session:
+      row.agent_redacted === true
+        ? undefined
+        : sessionWordsAfter(chipLabel(row), row.agent_session),
   });
 
   const commentActor = (comment: Comment): Actor => {
