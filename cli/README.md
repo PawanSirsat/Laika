@@ -1904,13 +1904,24 @@ file you can read — and the real guard on master is GitHub branch protection
 
 **The launcher holds the argv to that choice when it loads the config.** An
 argv that skips permission checks — `--dangerously-skip-permissions`,
-`--allow-dangerously-skip-permissions`, or `--permission-mode` with the value
-`bypassPermissions` (those exact words, not any rule that mentions one) — is
-refused without `"permissions": "skip"`. **A `skip` argv must be the shape
-`enable` writes:** `--dangerously-skip-permissions`; one `--disallowedTools`
-followed by every one of the launcher's deny rules (more is fine); one
-`--max-turns` and one `--max-budget-usd`, each with a number above 0; and none
-of `--permission-mode`, `--permission-prompts` or `--allowedTools`.
+`--allow-dangerously-skip-permissions`, `--permission-mode` with the value
+`bypassPermissions` (those exact words, not any rule that mentions one), or a
+`--settings` whose inline JSON names `bypassPermissions` — is refused without
+`"permissions": "skip"`. **A `--settings` that names a file cannot be checked**:
+the launcher would read it once and it can change after; the argv `enable`
+writes carries `--permission-mode dontAsk`, which Claude Code's docs rank above
+any settings file's `permissions.defaultMode`, but a hand-written argv without
+it has no such protection. **A `skip` argv must be the shape `enable`
+writes:** `--dangerously-skip-permissions`; one `--disallowedTools` followed by
+every one of the launcher's deny rules (more is fine); one `--max-turns` and
+one `--max-budget-usd`, each with a number above 0; and none of
+`--permission-mode`, `--permission-prompts` or `--allowedTools`. **"One" counts
+every spelling**: a `--max-turns=…`, `--max-budget-usd=…`, `--disallowedTools=…`
+or `--disallowed-tools` anywhere is a second occurrence, so an argv that adds a
+higher cap or another deny list in that form is refused, and a lone
+`--flag=value` is refused too — the launcher reads the flag and its value as
+two words. So the caps and the deny list `check` shows are the only ones in
+the argv.
 
 **Upgrading with a hand-written skip argv.** A config written before LAI-1113
 whose `harnesses.claude-code` argv already carried
