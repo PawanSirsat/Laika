@@ -717,6 +717,26 @@ describe('review fixes (LAI-1038)', () => {
     expect((there.latest_answer as Ping).id).toBe((elsewhere.ping as Ping).id);
   });
 
+  it('a CLI version is MAJOR.MINOR.PATCH, +commit or unknown — never a dotted host name', async () => {
+    const ping = await pinged({ Cookie: cookie }, mine.id);
+    const clientReport = (cli_version: string) =>
+      send('POST', '/api/v1/agents/me/client-report', bearer(mine.secret), {
+        cli_version,
+        protocol: 2,
+        capabilities: [],
+      });
+    for (const host of ['pawans-macbook.local', 'build.kvelld.internal', '0.9.3.local']) {
+      await errorOf(await report(mine.secret, { ...LAUNCHER, cli_version: host }), 422);
+      await errorOf(await reply(mine.secret, ping.id, { ...ANSWER, cli_version: host }), 422);
+      await errorOf(await clientReport(host), 422);
+    }
+    // What `laika` sends today, and its fallback, are all taken.
+    for (const version of ['0.1.0', '0.1.0+abc1234', 'unknown']) {
+      await ok(await report(mine.secret, { ...LAUNCHER, cli_version: version }), 200);
+      await ok(await clientReport(version), 200);
+    }
+    await ok(await reply(mine.secret, ping.id, { ...ANSWER, cli_version: '0.1.0+abc1234' }), 200);
+  });
 });
 
 // ------------------------------------------------------------------ presence

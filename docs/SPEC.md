@@ -3296,7 +3296,7 @@ Devices screen shows (plan §H), and that word is the client's to compute.
 | `agent_id` | FK `agents`, cascade; with `source`, the key |
 | `source` | `cli` \| `mcp_initialize` (CHECK) |
 | `token_id` | nullable, FK `tokens`, set null — the agent's own token that reported |
-| `cli_version`, `cli_commit` | nullable — `cli`: at most 64 printable characters; a 7–40 hex commit |
+| `cli_version`, `cli_commit` | nullable — `cli`: `MAJOR.MINOR.PATCH`, optionally `+` a 7–12 hex commit, or `unknown` (LAI-1038: never a dotted host name); a 7–40 hex commit |
 | `protocol` | nullable — `cli`: an integer, 1 to 1000 |
 | `capabilities_json` | nullable — `cli`: a JSON list from a closed vocabulary, at most 32, sorted, once each |
 | `harness_version` | nullable — `cli`: at most 64 printable characters |
@@ -3389,7 +3389,7 @@ claim reads it.
 | `auto_pickup_work_requests`, `auto_pickup_handoffs` | its two switches (D-117a item 2) |
 | `running` | 0 to 4 (CHECK) — the runs it has going |
 | `max_concurrent` | 1 to 4 (CHECK) |
-| `cli_version` | at most 64 printable characters, as a client report's (§4.81) |
+| `cli_version` | as a client report's (§4.81): `MAJOR.MINOR.PATCH`, optionally `+` a short commit, or `unknown` — never a host name |
 | `started_at` | nullable — when the launcher process started, as the device says |
 | `reported_at` | nullable — the board's clock at the report; **null while the org has presence off** (§4.2) |
 
