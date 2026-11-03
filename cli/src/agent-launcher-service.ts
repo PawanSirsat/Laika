@@ -27,8 +27,11 @@ import {
   loadConfig,
   MIN_GIT,
   parseGitVersion,
+  type Permissions,
+  SKIP_PERMISSIONS,
   statusPath,
 } from './agent-launcher.ts';
+import { laikaPathProblem } from './agent-launcher-visible.ts';
 import {
   type AgentCredential,
   type Fetch,
@@ -258,18 +261,31 @@ export const BRANCH_PROTECTION_NOTE =
   'Deny rules are best effort, not a boundary: on GitHub, protect the default branch — require a pull request AND turn on "Do not allow bypassing the above settings" (a run uses your credentials, and an admin bypasses otherwise).';
 export const CLAUDE_MIN_VERSION: readonly [number, number, number] = [2, 1, 259];
 
-export function claudeArgv(program: string): string[] {
+/**
+ * The Claude Code argv for `permissions` (LAI-1113). `skip` puts
+ * `--dangerously-skip-permissions` where the allowlist's three flags were, and
+ * keeps everything else: the whole deny list, `--max-turns`, `--max-budget-usd`.
+ * See {@link SKIP_PERMISSIONS_FINDING} for what Claude Code's docs say that mode
+ * still enforces.
+ */
+export function claudeArgv(program: string, permissions: Permissions = 'allowlist'): string[] {
+  const mode =
+    permissions === 'skip'
+      ? [SKIP_PERMISSIONS]
+      : [
+          '--permission-mode',
+          'dontAsk',
+          '--permission-prompts',
+          'none',
+          '--allowedTools',
+          ...CLAUDE_ALLOWED,
+        ];
   return [
     program,
     '-p',
     '--output-format',
     'json',
-    '--permission-mode',
-    'dontAsk',
-    '--permission-prompts',
-    'none',
-    '--allowedTools',
-    ...CLAUDE_ALLOWED,
+    ...mode,
     '--disallowedTools',
     ...CLAUDE_DENIED,
     '--max-turns',
@@ -278,6 +294,34 @@ export function claudeArgv(program: string): string[] {
     '5',
   ];
 }
+
+/** Where the finding below was read, as raw Markdown, on 2026-11-03. */
+export const SKIP_PERMISSIONS_DOCS = 'https://code.claude.com/docs/en/permission-modes.md';
+
+/**
+ * What Claude Code's own docs say of `--dangerously-skip-permissions`, read
+ * 2026-11-03 (`permission-modes.md`, `cli-reference.md`, `permissions.md`): it
+ * is `--permission-mode bypassPermissions`; "Deny rules block in every mode,
+ * including `bypassPermissions`", and `--disallowedTools` *is* deny rules;
+ * `-p` takes it with no dialog, and the few calls that would still prompt are
+ * denied; it refuses to start as root. But a Bash deny rule matches the
+ * command as written, not the program (`git -C . push` is not
+ * `Bash(git push *)`), and the docs keep the mode for isolated containers and
+ * VMs. `enable` prints these lines before it asks.
+ */
+export const SKIP_PERMISSIONS_FINDING: readonly string[] = [
+  `Claude Code runs use an allowlist by default (--permission-mode dontAsk with --allowedTools).`,
+  `They can skip permission checks instead (${SKIP_PERMISSIONS}). Then:`,
+  '  ! an unattended run can run any command with your local credentials: your git, gh and ssh',
+  '    logins, your cloud command lines, every file you can read.',
+  `  ! Claude Code's docs (${SKIP_PERMISSIONS_DOCS}, read 2026-11-03) say deny rules still`,
+  '    block in that mode, so the launcher keeps its --disallowedTools list, --max-turns and',
+  '    --max-budget-usd; and that -p takes it with no dialog. But a Bash deny rule matches only',
+  '    the command as written (`git -C . push` is not `git push`), and the docs advise the mode',
+  '    only in an isolated container or VM.',
+  '  ! The real guard is GitHub branch protection on master: require a pull request AND turn on',
+  '    "Do not allow bypassing the above settings".',
+];
 
 /** `2.1.280 (Claude Code)` → `[2, 1, 280]`. */
 export function parseSemver(text: string): [number, number, number] | undefined {
@@ -871,6 +915,8 @@ function entryCheckout(io: ServiceIo): { top: string; branch: string } | undefin
 /* -------------------------------------------------------------------------- */
 
 const yes = (answer: string | undefined): boolean => /^(y|yes)$/i.test(answer ?? '');
+/** A `[yes]` question: only `n` or `no` says no. */
+const no = (answer: string | undefined): boolean => /^(n|no)$/i.test(answer ?? '');
 
 /** A question asked after input ended: `enable` stops, having written nothing. */
 class InputEnded extends Error {}
@@ -1076,7 +1122,45 @@ async function enableSteps(io: ServiceIo, argv: readonly string[]): Promise<numb
   }
   if (projects.length === 0) return refuse('no project has a checkout here');
 
-  // 4. The whole config, shown before anything is written, and loaded as the launcher will.
+  // 4. What the owner sees of a run, and how Claude Code may work (LAI-1113).
+  io.out('');
+  const notify = !no(
+    await ask('Show a notification on this computer when a run starts and when it ends? [yes]: '),
+  );
+  let laika: string | undefined;
+  if (io.platform === 'darwin') {
+    const why = laikaPathProblem(io.laika) ?? argvProblem([io.laika]);
+    if (why !== undefined) {
+      io.out(`  A Terminal window per run: off — ${why}`);
+    } else if (
+      !no(
+        await ask(
+          `Open a Terminal window for each run that shows it working (${io.laika} agent launcher watch;\n` +
+            'closing the window never stops the run)? [yes]: ',
+        ),
+      )
+    ) {
+      laika = io.laika;
+    }
+  }
+  let permissions: Permissions | undefined;
+  const claude = harnesses['claude-code'];
+  if (claude !== undefined) {
+    io.out('');
+    for (const line of SKIP_PERMISSIONS_FINDING) io.out(line);
+    const typed = await ask(
+      'Type skip-permissions to run Claude Code that way, or press Enter to keep the allowlist: ',
+    );
+    permissions = typed === 'skip-permissions' ? 'skip' : 'allowlist';
+    harnesses['claude-code'] = claudeArgv(claude[0]!, permissions);
+    io.out(
+      permissions === 'skip'
+        ? `  claude-code: ${SKIP_PERMISSIONS}, with the deny list, --max-turns and --max-budget-usd kept`
+        : '  claude-code: the allowlist (the default)',
+    );
+  }
+
+  // 5. The whole config, shown before anything is written, and loaded as the launcher will.
   const label = readDevice(io.home)?.display_name;
   const config = {
     version: 2,
@@ -1092,6 +1176,10 @@ async function enableSteps(io: ServiceIo, argv: readonly string[]): Promise<numb
     max_runs_per_day: DEFAULT_RUNS_PER_DAY,
     auto_pickup: { handoffs: true },
     pass_ssh_agent: false,
+    notify,
+    open_terminal: laika !== undefined,
+    ...(laika === undefined ? {} : { laika }),
+    ...(permissions === undefined ? {} : { permissions }),
   };
   const spec: ServiceSpec = {
     node: io.node,
@@ -1141,7 +1229,7 @@ async function enableSteps(io: ServiceIo, argv: readonly string[]): Promise<numb
   const typed = await ask('Type enable to write this and start the launcher: ');
   if (typed !== 'enable') return refuse('not confirmed');
 
-  // 5. Written, then installed.
+  // 6. Written, then installed.
   privateDir(join(io.home, '.laika'));
   if (existsSync(configPath(io.home))) {
     writePrivate(`${configPath(io.home)}.bak`, readFileSync(configPath(io.home), 'utf8'));

@@ -49,6 +49,10 @@ const PROJECT = '01M50CDWK51GKGJ3JQEDM0S507';
 const TOKEN = 'lai_PTY_TOKEN_SENTINEL';
 const CHECKOUT = /Checkout of kvell\/laika for project laika[^\n]*: /;
 const WORK_REQUESTS = /Start a work request selected for an agent in laika by itself\?[^\n]*: /;
+/** The LAI-1113 questions: a notification, a Terminal per run (macOS only), Claude Code's permissions. */
+const NOTIFY = /Show a notification on this computer[^\n]*: /;
+const TERMINAL = /closing the window never stops the run\)\? \[yes\]: /;
+const PERMISSIONS = /Type skip-permissions[^\n]*: /;
 /** Long enough for a loaded laptop to start node twice; a hang fails well before the test's own limit. */
 const WAIT_SECONDS = 25;
 
@@ -105,6 +109,15 @@ const skip =
     : gitDir === undefined
       ? `needs git ${MIN_GIT.join('.')} or later, which enable requires before its first question; found ${gitDirs.map((g) => `${g.version} in ${g.dir}`).join(', ') || 'none'}`
       : false;
+
+/** Each LAI-1113 question answered with Enter, its default; the Terminal one is asked on macOS only. */
+function visibleDefaults(): Step[] {
+  return [
+    { prompt: NOTIFY, send: '\r' },
+    ...(process.platform === 'darwin' ? [{ prompt: TERMINAL, send: '\r' }] : []),
+    { prompt: PERMISSIONS, send: '\r' },
+  ];
+}
 
 /** One step of the owner: wait for `prompt`, then type `send` (`\r` is Enter, `\x04` is ^D). */
 interface Step {
@@ -280,6 +293,8 @@ function laptop(): { home: string; repo: string; env: NodeJS.ProcessEnv } {
   mkdirSync(bin, { recursive: true });
   chmodSync(bin, 0o755);
   writeFileSync(join(bin, 'claude'), '#!/bin/sh\necho "2.1.280 (Claude Code)"\n', { mode: 0o755 });
+  // `laika` on PATH, as plugin/scripts/install.sh puts it: what a Terminal viewer runs (LAI-1113).
+  symlinkSync(BIN, join(bin, 'laika'));
   // Only the git found above, ahead of /usr/bin: its folder may hold another node too.
   const gitbin = join(home, 'gitbin');
   mkdirSync(gitbin);
@@ -307,10 +322,14 @@ void describe('enable --dry-run on a real terminal', { skip }, () => {
     const s = await drive(l.home, l.env, [
       { prompt: CHECKOUT, send: `${l.repo}\r` },
       { prompt: WORK_REQUESTS, send: 'yes\r' },
+      ...visibleDefaults(),
     ]);
     assert.equal(s.code, 0, s.out);
     assert.match(s.out, /--dry-run: nothing was written/);
     assert.match(s.out, /"work_requests": true/);
+    assert.match(s.out, /"notify": true/);
+    assert.match(s.out, /"permissions": "allowlist"/);
+    assert.match(s.out, new RegExp(`"open_terminal": ${String(process.platform === 'darwin')}`));
     assert.ok(s.out.includes(`"repo": "${l.repo}"`), s.out);
     assert.ok(!s.out.includes(TOKEN), 'the token is never printed');
     assert.equal(existsSync(configPath(l.home)), false);
@@ -318,7 +337,8 @@ void describe('enable --dry-run on a real terminal', { skip }, () => {
 
   void test('every answer pasted at once, at the first question', async () => {
     const l = laptop();
-    const s = await drive(l.home, l.env, [{ prompt: CHECKOUT, send: `${l.repo}\ryes\r` }]);
+    // Enter for each LAI-1113 question too; one more than Linux asks is never read.
+    const s = await drive(l.home, l.env, [{ prompt: CHECKOUT, send: `${l.repo}\ryes\r\r\r\r` }]);
     assert.ok(
       !s.out.includes('PTY_TIMEOUT'),
       `a pasted answer was lost and enable waited:\n${s.out}`,
@@ -333,6 +353,7 @@ void describe('enable --dry-run on a real terminal', { skip }, () => {
     const s = await drive(l.home, l.env, [
       { prompt: CHECKOUT, send: '~/src/laika\r' },
       { prompt: WORK_REQUESTS, send: '\r' },
+      ...visibleDefaults(),
     ]);
     assert.equal(s.code, 0, s.out);
     assert.ok(s.out.includes(`"repo": "${l.repo}"`), s.out);
