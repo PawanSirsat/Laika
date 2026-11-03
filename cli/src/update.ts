@@ -2,10 +2,13 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
+  closeSync,
+  constants,
   copyFileSync,
   existsSync,
-  lstatSync,
+  fstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -15,11 +18,12 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
+import { setTimeout as wait } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { ADAPTERS, HARNESSES, HOOK_HARNESSES, type Harness, isHarness } from './agent-adapters.ts';
 import { AGENT_MARKER, hookFile } from './agent-hooks.ts';
-import { agentsDir, credentialPath, isRecord, readCredential, readJson } from './agent-session.ts';
+import { agentsDir, credentialPath, isRecord, readCredential } from './agent-session.ts';
 import { codexLaikaLines, USER_CONFIG } from './agents.ts';
 import { normaliseUrl } from './api.ts';
 import { type Helper, reportOutcome, sendClientReport } from './client-report.ts';
@@ -162,6 +166,8 @@ export interface UpdateIo {
   readonly cliDir?: string;
   readonly run?: Runner;
   readonly now?: () => Date;
+  /** The MCP guard's wait before it reads a file again (LAI-1092); a timer by default. */
+  readonly sleep?: Sleep;
 }
 
 const realRun: Runner = (program, args, options) => {
@@ -544,8 +550,10 @@ function hooksOn(home: string, harness: Harness): boolean {
 }
 
 /**
- * The laika entries in one MCP config's text, `undefined` when it has none;
- * throws when the text is not the format at all.
+ * The laika entries in one MCP config's text, `undefined` when it has none.
+ * The JSON readers throw when the text does not parse. Codex's never throws:
+ * `codexLaikaLines` scans `config.toml` line by line and keeps the laika
+ * table's lines, whatever the rest of the file holds.
  */
 type LaikaEntries = (text: string) => unknown;
 
@@ -608,28 +616,56 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 
-/**
- * What the MCP guard compares (LAI-1089): a digest of the file's laika
- * entries, never of the rest of it, which Claude Code rewrites every few
- * seconds while it runs. Nothing else is kept, and only the path is ever
- * printed. `none` for no file or no entry; a file that is not the format at
- * all is compared whole, as before.
- */
-export function entriesDigest(file: McpFile): string {
+type Sleep = (ms: number) => Promise<void>;
+
+/** How many times, and how far apart, the guard reads again a file that did not parse. */
+const REREADS = 2;
+const REREAD_MS = 150;
+
+interface EntriesRead {
+  readonly text: string;
+  readonly parsed: boolean;
+  readonly entries: unknown;
+}
+
+/** One read of an MCP config: `undefined` when there is no file to read. */
+function readEntries(file: McpFile): EntriesRead | undefined {
   let text: string;
   try {
     text = readFileSync(file.path, 'utf8');
   } catch {
-    return 'none';
+    return undefined;
   }
-  let entries: unknown;
   try {
-    entries = file.entries(text);
+    return { text, parsed: true, entries: file.entries(text) };
   } catch {
-    return `whole:${createHash('sha256').update(text).digest('hex')}`;
+    return { text, parsed: false, entries: undefined };
   }
-  if (entries === undefined) return 'none';
-  return createHash('sha256').update(canonical(entries)).digest('hex');
+}
+
+/**
+ * What the MCP guard compares (LAI-1089): a digest of the file's laika
+ * entries, never of the rest of it, which Claude Code rewrites every few
+ * seconds while it runs. Nothing else is kept, and only the path is ever
+ * printed. `none` for no file or no entry.
+ *
+ * A JSON file that does not parse may have been caught half-written, so it is
+ * read again, at most `REREADS` times, `REREAD_MS` apart (LAI-1092). One that
+ * still does not parse is compared whole: any change to it, or a parse that
+ * succeeds on only one side, rolls back. Codex's `config.toml` always yields
+ * its laika lines (see `LaikaEntries`), so it is never read again and never
+ * compared whole.
+ */
+export async function entriesDigest(file: McpFile, sleep: Sleep = wait): Promise<string> {
+  let read = readEntries(file);
+  for (let reread = 0; read?.parsed === false && reread < REREADS; reread += 1) {
+    await sleep(REREAD_MS);
+    read = readEntries(file);
+  }
+  if (read === undefined) return 'none';
+  if (!read.parsed) return `whole:${createHash('sha256').update(read.text).digest('hex')}`;
+  if (read.entries === undefined) return 'none';
+  return createHash('sha256').update(canonical(read.entries)).digest('hex');
 }
 
 export function digest(path: string): string {
@@ -1278,18 +1314,29 @@ interface Credentials {
 /**
  * The token in a credential file not named for a tool, read only to compare
  * it: a plain file directly in the directory, never a symlink (LAI-1088's
- * rule). Never sent, never printed.
+ * rule). One descriptor is both checked and read (LAI-1092), so the path
+ * cannot be swapped between the two: it is opened without following a link
+ * and without waiting for a FIFO's writer, and only a regular file is read.
+ * Never sent, never printed.
  */
 function tokenIn(path: string): string | undefined {
+  let fd: number;
   try {
-    if (!lstatSync(path).isFile()) return undefined;
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch {
     return undefined;
   }
-  const saved = readJson(path);
-  return isRecord(saved) && typeof saved.token === 'string' && saved.token !== ''
-    ? saved.token
-    : undefined;
+  try {
+    if (!fstatSync(fd).isFile()) return undefined;
+    const saved: unknown = JSON.parse(readFileSync(fd, 'utf8'));
+    return isRecord(saved) && typeof saved.token === 'string' && saved.token !== ''
+      ? saved.token
+      : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**
@@ -1490,7 +1537,10 @@ async function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): Pro
       mode: 0o600,
     });
     io.out(`  ✓ backed up to ${tildePath(backup, io.home)}/`);
-    const mcpBefore = mcpFiles(io.home).map((file) => [file, entriesDigest(file)] as const);
+    const sleep = io.sleep ?? wait;
+    const mcpBefore = await Promise.all(
+      mcpFiles(io.home).map(async (file) => [file, await entriesDigest(file, sleep)] as const),
+    );
 
     // Stage.
     const added = git.run(['worktree', 'add', '--quiet', '--detach', state.staging, p.target]);
@@ -1557,8 +1607,9 @@ async function switchTo(io: UpdateIo, run: Runner, git: Git, p: SwitchPlan): Pro
       }
     }
     if (failures.length === 0) {
+      const after = await Promise.all(mcpBefore.map(([file]) => entriesDigest(file, sleep)));
       const moved = mcpBefore
-        .filter(([file, before]) => entriesDigest(file) !== before)
+        .filter(([, before], i) => after[i] !== before)
         .map(([file]) => tildePath(file.path, io.home));
       if (moved.length > 0)
         failures.push(`a laika MCP entry changed during the update: ${moved.join(', ')}`);

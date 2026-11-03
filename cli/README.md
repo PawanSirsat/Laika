@@ -240,12 +240,16 @@ during the update: <file>`). **Only the laika entries are compared** (LAI-1089)
 `mcp.laika` for OpenCode, and the `mcp_servers.laika` table in
 `~/.codex/config.toml` — never the rest of the file, which Claude Code rewrites
 every few seconds while a session is open. Nothing else in those files is kept
-or printed; a file that is not JSON (or TOML) at all is compared whole. The one
-copy that may hold a token is `~/.claude/settings.json` when `laika init` put
-one there and its hooks are on: the copy is `0600` in a `0700` directory and is
-deleted on every way out — success, refusal, rollback, error and recovery —
-except an incomplete rollback, where it is kept for the next run. Only each
-run's `state.json` (paths and digests) stays.
+or printed. A JSON file that does not parse may have been caught mid-write, so
+it is read again, at most twice and 150 ms apart (LAI-1092); one that still
+does not parse is compared whole, so any change to it rolls back. The Codex
+file is scanned line by line for the laika table's lines, whatever else it
+holds, so it is never read again and never compared whole. The one copy that
+may hold a token is `~/.claude/settings.json` when `laika init` put one there
+and its hooks are on: the copy is `0600` in a `0700` directory and is deleted
+on every way out — success, refusal, rollback, error and recovery — except an
+incomplete rollback, where it is kept for the next run. Only each run's
+`state.json` (paths and digests) stays.
 
 **Version reports** (LAI-1068, LAI-1085). When the board's manifest says
 `client_reports`, each tool set up on this machine for **this** board

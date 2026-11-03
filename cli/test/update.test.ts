@@ -15,20 +15,25 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import {
+import fs, {
+  closeSync,
+  constants,
   copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
+  writeSync,
 } from 'node:fs';
 import { createServer, type Server } from 'node:http';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,6 +51,7 @@ import {
   sourceProblem,
   update,
   updateDir,
+  type UpdateIo,
 } from '../src/update.ts';
 
 const CLI = fileURLToPath(new URL('..', import.meta.url));
@@ -342,6 +348,7 @@ interface RunOptions {
   readonly runner?: Runner;
   readonly fetch?: typeof fetch;
   readonly env?: Record<string, string>;
+  readonly sleep?: UpdateIo['sleep'];
 }
 
 async function run(w: World, argv: readonly string[], options: RunOptions = {}): Promise<Run> {
@@ -355,6 +362,7 @@ async function run(w: World, argv: readonly string[], options: RunOptions = {}):
     fetch: options.fetch ?? ((input, init) => fetch(input, init)),
     cliDir: join(w.checkout, 'cli'),
     ...(options.runner === undefined ? {} : { run: options.runner }),
+    ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
   });
   const result = { code, out: out.join('\n'), err: err.join('\n') };
   // No path through laika update prints a credential.
@@ -424,6 +432,47 @@ function midUpdate(w: World, meanwhile: () => void): { runner: Runner; ran: () =
     return 'real';
   });
   return { runner, ran: () => ran };
+}
+
+/**
+ * Swap `path` for a symlink to `target` the moment the code under test checks
+ * it: by path (`lstatSync`, `statSync`), or by a descriptor it opened on it
+ * (`fstatSync`). A read that goes back to the path then follows the link; a
+ * read from the descriptor it checked does not. `node:fs` is patched for named
+ * imports too (`syncBuiltinESMExports`), and `restore` puts it back.
+ */
+function swapAfterCheck(
+  path: string,
+  target: string,
+): { swapped: () => boolean; restore: () => void } {
+  type Fn = (...args: unknown[]) => unknown;
+  const patched = fs as unknown as Record<string, Fn>;
+  const names = ['openSync', 'lstatSync', 'statSync', 'fstatSync'] as const;
+  const real = new Map(names.map((name) => [name, patched[name]] as const));
+  const opened = new Set<unknown>();
+  let swapped = false;
+  for (const name of names) {
+    const original = real.get(name)!;
+    patched[name] = (...args: unknown[]): unknown => {
+      const result = original(...args);
+      if (name === 'openSync') {
+        if (args[0] === path) opened.add(result);
+      } else if (!swapped && (args[0] === path || opened.has(args[0]))) {
+        swapped = true;
+        rmSync(path);
+        symlinkSync(target, path);
+      }
+      return result;
+    };
+  }
+  syncBuiltinESMExports();
+  return {
+    swapped: () => swapped,
+    restore: () => {
+      for (const [name, original] of real) patched[name] = original!;
+      syncBuiltinESMExports();
+    },
+  };
 }
 
 /** The real runner, but the switched checkout's own `laika version --json` says `dirty`. */
@@ -1095,6 +1144,9 @@ void describe('laika update — the MCP guard compares only laika’s entries (L
   const codexPath = (w: World): string => join(w.home, '.codex', 'config.toml');
   const cursorPath = (w: World): string => join(w.home, '.cursor', 'mcp.json');
   const opencodePath = (w: World): string => join(w.home, '.config', 'opencode', 'opencode.json');
+  const geminiPath = (w: World): string => join(w.home, '.gemini', 'settings.json');
+  const antigravityPath = (w: World): string =>
+    join(w.home, '.gemini', 'config', 'mcp_config.json');
   const writeJson = (path: string, value: unknown): void => {
     mkdirSync(join(path, '..'), { recursive: true });
     writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -1125,11 +1177,16 @@ void describe('laika update — the MCP guard compares only laika’s entries (L
       theme: 'dark',
       mcp: { laika: entry(url), other: { type: 'local' } },
     });
+    writeJson(geminiPath(w), {
+      theme: 'Default',
+      mcpServers: { laika: entry(url), other: { command: 'o' } },
+    });
+    writeJson(antigravityPath(w), { mcpServers: { laika: entry(url), other: { command: 'o' } } });
   }
 
   // Hash the whole file again and this is the test that fails: on Belka, every
   // update rolled back while a Claude Code session was open.
-  void test('Claude Code, Codex, Cursor and OpenCode rewriting their own settings meanwhile is no change', async () => {
+  void test('Claude Code, Codex, Cursor, OpenCode, Gemini CLI and Antigravity rewriting their own settings meanwhile is no change', async () => {
     const w = world();
     const url = await board(w);
     plant(w, url);
@@ -1155,6 +1212,13 @@ void describe('laika update — the MCP guard compares only laika’s entries (L
       writeJson(opencodePath(w), {
         theme: 'light',
         mcp: { laika: entry(url), other: { type: 'remote' } },
+      });
+      writeJson(geminiPath(w), {
+        theme: 'GitHub',
+        mcpServers: { other: { command: 'o2' }, laika: entry(url) },
+      });
+      writeJson(antigravityPath(w), {
+        mcpServers: { laika: entry(url), other: { command: 'o2', args: ['--x'] } },
       });
     });
 
@@ -1212,6 +1276,27 @@ void describe('laika update — the MCP guard compares only laika’s entries (L
         });
       },
     ],
+    // LAI-1092: read either from the wrong container and both sides are `none`,
+    // so these two pass a changed entry silently.
+    [
+      'Gemini CLI’s mcpServers.laika',
+      '~/.gemini/settings.json',
+      (w) => {
+        writeJson(geminiPath(w), {
+          theme: 'Default',
+          mcpServers: { laika: entry('https://elsewhere.example'), other: { command: 'o' } },
+        });
+      },
+    ],
+    [
+      'Antigravity’s mcpServers.laika',
+      '~/.gemini/config/mcp_config.json',
+      (w, url) => {
+        writeJson(antigravityPath(w), {
+          mcpServers: { laika: { ...entry(url), disabled: true }, other: { command: 'o' } },
+        });
+      },
+    ],
   ];
   for (const [label, shown, change] of changes) {
     void test(`a change to ${label} still rolls back, naming the file`, async () => {
@@ -1237,6 +1322,99 @@ void describe('laika update — the MCP guard compares only laika’s entries (L
       assertOnlyStateFiles(w);
     });
   }
+
+  /** `~/.claude.json` cut off part-way, as a read that lands mid-write sees it. */
+  function halfWritten(url: string): string {
+    const text = JSON.stringify(claudeJson(url, 2), null, 2).slice(0, 120);
+    assert.throws(() => JSON.parse(text), SyntaxError, 'setup: the half-written file parses');
+    return text;
+  }
+
+  /** The guard's waits, recorded; `meanwhile` runs during each, as a writer finishing would. */
+  function waits(meanwhile: () => void = () => undefined): {
+    sleep: NonNullable<UpdateIo['sleep']>;
+    waited: number[];
+  } {
+    const waited: number[] = [];
+    return {
+      waited,
+      sleep: (ms) => {
+        waited.push(ms);
+        // An unbounded re-read would spin here for ever: this ends it, and the count shows it.
+        if (waited.length > 10) return Promise.reject(new Error('the guard kept reading again'));
+        meanwhile();
+        return Promise.resolve();
+      },
+    };
+  }
+
+  // LAI-1092: take the re-read out and this and the next go red. Claude Code
+  // rewrites ~/.claude.json every few seconds, so either guard read can land
+  // mid-write.
+  void test('~/.claude.json caught half-written after the switch, whole on the re-read, is no change', async () => {
+    const w = world();
+    const url = await board(w);
+    plant(w, url);
+    configs(w, url);
+    const mid = midUpdate(w, () => {
+      writeFileSync(claudePath(w), halfWritten(url));
+    });
+    const guard = waits(() => {
+      writeJson(claudePath(w), claudeJson(url, 2));
+    });
+
+    const r = await run(w, ['--board', url], { runner: mid.runner, sleep: guard.sleep });
+    assert.ok(mid.ran(), 'setup: nothing was half-written during the update');
+    assert.equal(r.code, 0, r.err);
+    assert.equal(head(w), w.b);
+    assert.doesNotMatch(r.err, /MCP entry changed|Rolling back/);
+    assert.deepEqual(guard.waited, [150], 'the guard did not wait and read again');
+  });
+
+  void test('~/.claude.json caught half-written before the switch, whole on the re-read, is no change', async () => {
+    const w = world();
+    const url = await board(w);
+    plant(w, url);
+    configs(w, url);
+    writeFileSync(claudePath(w), halfWritten(url));
+    const guard = waits(() => {
+      writeJson(claudePath(w), claudeJson(url, 2));
+    });
+    // Claude Code writes it whole again long before the update is done.
+    const mid = midUpdate(w, () => {
+      writeJson(claudePath(w), claudeJson(url, 3));
+    });
+
+    const r = await run(w, ['--board', url], { runner: mid.runner, sleep: guard.sleep });
+    assert.ok(mid.ran(), 'setup: nothing was rewritten during the update');
+    assert.equal(r.code, 0, r.err);
+    assert.equal(head(w), w.b);
+    assert.doesNotMatch(r.err, /MCP entry changed|Rolling back/);
+    assert.deepEqual(guard.waited, [150], 'the guard did not wait and read again');
+  });
+
+  // LAI-1092: give up on a file that never parses by calling it unchanged, or
+  // re-read it without a bound, and this goes red.
+  void test('~/.claude.json still half-written after every re-read rolls back, after two waits', async () => {
+    const w = world();
+    const url = await board(w);
+    plant(w, url);
+    configs(w, url);
+    const mid = midUpdate(w, () => {
+      writeFileSync(claudePath(w), halfWritten(url));
+    });
+    const guard = waits();
+
+    const r = await run(w, ['--board', url], { runner: mid.runner, sleep: guard.sleep });
+    assert.ok(mid.ran(), 'setup: nothing was half-written during the update');
+    assert.deepEqual(guard.waited, [150, 150], 'the re-reads are not bounded at two');
+    assert.equal(r.code, 1);
+    assert.match(r.err, /! a laika MCP entry changed during the update: ~\/\.claude\.json$/m);
+    assert.match(r.err, /Rolled back: .* is at [0-9a-f]{7} again/);
+    assert.equal(head(w), w.a);
+    assert.equal(onBranch(w), 'main');
+    assertOnlyStateFiles(w);
+  });
 });
 
 void describe('laika update — the client report after an update (LAI-1068)', () => {
@@ -1526,6 +1704,63 @@ void describe('laika update on a checkout already at the board’s commit (LAI-1
         `\\nVersion report for ${c.slice(0, 7)}: sent for Claude Code, Omnigent\\.\\nPassed over in ~/\\.laika/agents: link\\.json \\(not a tool laika knows\\), polly\\.json \\(the same credential as omnigent\\.json\\)\\.$`,
       ),
     );
+    // Compared, never printed: not even without its `lai_`, which is all `run()` looks for.
+    assert.doesNotMatch(`${r.out}\n${r.err}`, /POLLYPLANTED/);
+  });
+
+  // LAI-1092: check the path and then read it again by path, and this goes red.
+  // The swap lands between the two, and the read follows the link to
+  // claude-code.json's credential.
+  void test('a credential file swapped for a symlink after its check is not read through the link', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    const agents = join(w.home, '.laika', 'agents');
+    const polly = join(agents, 'polly.json');
+    writeFileSync(polly, `${JSON.stringify({ url, token: POLLY_TOKEN })}\n`, { mode: 0o600 });
+    const swap = swapAfterCheck(polly, join(agents, 'claude-code.json'));
+    let r: Run;
+    try {
+      r = await run(w, ['--board', url]);
+    } finally {
+      swap.restore();
+    }
+    assert.ok(swap.swapped(), 'setup: polly.json was never checked');
+    assert.equal(r.code, 0, r.err);
+    assert.match(
+      r.out,
+      /\nPassed over in ~\/\.laika\/agents: polly\.json \(not a tool laika knows\)\.$/,
+    );
+  });
+
+  // LAI-1092: read without checking for a regular file and this goes red, the
+  // FIFO's token taken for claude-code.json's. Open it without O_NONBLOCK and
+  // this never finishes: the open waits for a writer that never comes.
+  void test('a FIFO among the credential files is neither read nor waited on', async () => {
+    const w = world();
+    const c = alreadyCurrent(w);
+    const url = await board(w, { commit: c, features: { client_reports: true } });
+    plant(w, url);
+    const fifo = join(w.home, '.laika', 'agents', 'pipe.json');
+    execFileSync('mkfifo', [fifo]);
+    // A reader held open keeps what was written after its writer has gone, so a
+    // read of the FIFO would find claude-code.json's own credential.
+    const held = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
+    try {
+      const writer = openSync(fifo, constants.O_WRONLY | constants.O_NONBLOCK);
+      writeSync(writer, `${JSON.stringify({ url, token: AGENT_TOKEN })}\n`);
+      closeSync(writer);
+
+      const r = await run(w, ['--board', url]);
+      assert.equal(r.code, 0, r.err);
+      assert.match(
+        r.out,
+        /\nPassed over in ~\/\.laika\/agents: pipe\.json \(not a tool laika knows\)\.$/,
+      );
+    } finally {
+      closeSync(held);
+    }
   });
 
   // LAI-1089: compare hosts only, or the raw strings, and one of these goes red.
