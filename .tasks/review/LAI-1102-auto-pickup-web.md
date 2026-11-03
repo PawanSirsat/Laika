@@ -6,8 +6,9 @@ assignee: shell
 priority: p2
 depends-on: [LAI-1038]
 discovered-from: LAI-1038
-status: in-progress
+status: review
 started: 2026-11-03T15:26:56+05:30
+finished: 2026-11-03T16:18:36+05:30
 ---
 
 ## Goal
@@ -93,16 +94,16 @@ it. `LauncherReportView` stays: only the CLI reads it.
 
 ## Acceptance criteria
 
-- [ ] Every web assertion LAI-1038's review note quotes is green, and no other
+- [x] Every web assertion LAI-1038's review note quotes is green, and no other
       changes colour.
-- [ ] The chip says *on* only from `launcher.state === 'on'`; a stale report
+- [x] The chip says *on* only from `launcher.state === 'on'`; a stale report
       reads *not heard since …*, never *on* (mutation: chip from a stale
       report goes red).
-- [ ] Ping is offered only for an agent the viewer may ping (their own
+- [x] Ping is offered only for an agent the viewer may ping (their own
       selectable agent), and shows the answer or *pending → expired*
       (mutation: Ping shown for an ineligible agent goes red).
-- [ ] Playwright evidence in light and dark.
-- [ ] Repo-root gate exits 0 on the merge of LAI-1038 and this.
+- [x] Playwright evidence in light and dark.
+- [x] Repo-root gate exits 0 on the merge of LAI-1038 and this.
 
 ## Claim note (2026-11-03, shell, dispatched by CHIEF)
 
@@ -113,3 +114,52 @@ CHIEF dispatched this slice to land on top of it. The branch
 `LAI-1102-capacity-web` is cut from `origin/LAI-1038-capacity-ping-presence`
 at b913cb28 (PR #253), and its PR into `master` is stacked on #253 — merge
 after it.
+
+## Builder's review note (2026-11-03, shell)
+
+PR #255 into `master`, **merge after #253**. The branch carries LAI-1038's
+final head (9ea96dee) by merge commit 469180d1. The log is
+`logs/shell-2026-11-03-LAI-1102.md`.
+
+**Criterion 1: LAI-1038's five web reds are green.** Each file was run on its
+own with `node --test --test-concurrency=1`: `use-events`, `activity-labels`,
+`dashboard-derive`, `view-type-drift` and `endpoint-coverage` all exit 0.
+The other 235 non-browser web test files were run one at a time too, and all
+exit 0.
+
+The task asked for one more thing that this branch **does not do**:
+`AgentCapacityView`, `CapacityPingView`, `LauncherView` and `PingAgentResult`
+are **not** in `view-type-drift`'s `PAIRS`. A `PAIRS` entry turns CORE's
+`response-type-coverage` staleness check red until `UNPAIRED` drops the same
+entry, and the dispatch required a fully green gate. So:
+
+- `test/api/capacity.test.ts` compares the six shapes' top-level fields in
+  both directions, plus their closed word lists.
+- **LAI-1106** (LAIKA-961) does the swap: SHELL's `PAIRS` entries plus a
+  named crossing on CORE's `UNPAIRED`, for CHIEF to grant or split.
+
+**Criteria 2 and 3: the mutations.** Seven edits, each on an anchor that
+matched exactly once, each confirmed on disk, each file restored byte for
+byte. Every one goes red on a named assertion:
+
+- The chip re-derives *on* from `reported_at`.
+- The chip says *on* for `unknown`.
+- The grant check is dropped, so Ping shows for an ineligible tool.
+- The drawer's `ineligibleReason` is dropped. This one first survived; see
+  the log.
+- The drawer's `mayEdit` is dropped.
+- An early `pending` reads as *no answer*.
+- `startsOnSelect` ignores `work_requests`.
+
+**Criterion 4: evidence.** Twenty screenshots, light and dark at 1440 and
+390 px, are in `.polly/evidence/LAI-1102/` on Belka.
+
+**Criterion 5: the gate.** PR #255's Gate covers the merge of LAI-1038 and
+this branch; the numbers are on the card and in the PR. First run:
+`web 3/4` failed once, in `dropdown-global.test.ts` › *opens inside the
+drawer's modal panel*: the panel was placed during the drawer's rise. That
+file's stub serves no `/agents`, so nothing this branch adds renders there,
+and three local runs pass. The re-run failed instead in this branch's own
+429 case — *try again in 13 s* where the board said 12, two clock readings
+rounding up a second. A real bug, fixed with one reading
+(`PingButton.tsx`); the gate result on the final head is on the card.
