@@ -4,6 +4,7 @@ import type { Device } from '../../../../api/devices.ts';
 import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../../components/LoadingState.tsx';
 import { AgentMark } from '../../../../components/agent-mark/AgentMark.tsx';
+import { AutoPickupChip } from './AutoPickupChip.tsx';
 import { DxIcon } from './DxIcon.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
@@ -270,6 +271,9 @@ function ToolRecord({
           />
         </span>
         {active && <UpdateChip status={update} label={label} />}
+        {active && (
+          <AutoPickupChip launcher={agent.launcher} now={now} device={listed.device.display_name} />
+        )}
         {inConflict && (
           <span data-duplicate="">
             <HintChip

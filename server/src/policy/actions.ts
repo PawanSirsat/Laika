@@ -105,6 +105,9 @@ export const PROJECT_ACTIONS = [
   'task.handoff.decline',
   'task.handoff.cancel',
   'project.handoff_policy.edit',
+  // D-126 item 1 (LAI-1038): ask an agent's device for its capacity — who may
+  // delegate to it here, which the service decides from the agent's facts.
+  'agent.ping',
   'task.assign_other',
   'comment.create',
   'comment.edit',

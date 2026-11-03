@@ -74,6 +74,7 @@ void describe('the tool surface, from both sides', () => {
     // (D-088 item 13: an agent proposes time, a person confirms it). Phase 3
     // added four on 2026-10-29: checkpoint_task (LAI-545), and agent_sync,
     // offer_handoff and respond_handoff (LAI-546) — mirrored here by LAI-549.
+    // D-126 added ping_agent and get_agent_capacity on 2026-11-03 (LAI-1038).
     assert.deepEqual(registeredTools(), [
       'add_comment',
       'agent_sync',
@@ -81,6 +82,7 @@ void describe('the tool surface, from both sides', () => {
       'create_sprint',
       'create_task',
       'finish_task',
+      'get_agent_capacity',
       'get_project_context',
       'get_task_context',
       'laika_whoami',
@@ -90,6 +92,7 @@ void describe('the tool surface, from both sides', () => {
       'list_sprints',
       'log_unlisted_work',
       'offer_handoff',
+      'ping_agent',
       'propose_time_entry',
       'respond_handoff',
       'set_task_sprint',

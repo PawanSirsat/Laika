@@ -284,6 +284,9 @@ const EXEMPT: Record<string, string> = {
   list_sprints: 'a read',
   list_members: 'a read',
   agent_sync: 'a read',
+  // D-126 (LAI-1038): about an agent, never a change to a task it may name.
+  ping_agent: 'asks an agent’s device for its capacity; may name a task and changes nothing on it',
+  get_agent_capacity: 'a read',
   respond_handoff:
     'answers an offer by id, not a task: the accept moves the claim itself, in one transaction (test/services/handoffs.test.ts)',
   create_sprint: 'a sprint, not a task',

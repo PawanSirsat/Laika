@@ -60,6 +60,7 @@ import {
 } from '../../src/services/handoffs.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
 import { registerAgent } from '../../src/services/agents.ts';
+import { pingAgent } from '../../src/services/agent-capacity.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
 import {
   setOrgRole,
@@ -550,6 +551,9 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
         grants: [{ projectId: task.project_id, scope: 'full' }],
       });
       updateTask(t.db, owner(), task.id, { selected_agent_id: agent.id });
+
+      // --- agent-capacity.ts: agent.capacity_requested (LAI-1038) ---------
+      pingAgent(t.sqlite, t.db, owner(), agent.id, { projectSlug: 'core', taskId: task.id });
 
       // --- claims.ts: task.claim_expired, task.claim_reclaimed (LAI-541) ----
       // The agent's own token takes the claim; the scan, with a clock past

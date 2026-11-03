@@ -14,6 +14,7 @@ import {
   offerHandoff,
 } from '../services/handoffs.ts';
 import { addComment } from '../services/comments.ts';
+import { CAPACITY_PING_LIMITS, pingAndWait } from '../services/agent-capacity.ts';
 import { listMembers, projectSlugById, reviseProjectContext } from '../services/projects.ts';
 import {
   addTasksToSprint,
@@ -41,7 +42,7 @@ import {
   updateTask,
   type TaskView,
 } from '../services/tasks.ts';
-import { ago, answer, isoDate, statusText, toolError } from './present.ts';
+import { ago, answer, capacityText, isoDate, statusText, toolError } from './present.ts';
 
 /**
  * The tools that let an agent actually work the board (SPEC §7.1, LAI-408).
@@ -723,6 +724,45 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           `Offer \`${offer.id}\` is **${offer.state}**; the sender's paused claim resumes.`,
           { offer },
         );
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  // ------------------------------------------------------------ ping_agent
+
+  server.registerTool(
+    'ping_agent',
+    {
+      title: "Ask an agent's device for its capacity",
+      description:
+        "Ask a registered agent's device whether it can take work now: its launcher (on or off, auto-pickup, runs going), whether its harness is ready, a live session, battery and memory — `POST /agents/:id/capacity-pings`'s twin. You may ping an agent you could hand this project's work to (§4.73's receiver rule, `allow_other_owners` included); any other id answers `not_found`, exactly as one that names no agent. The device answers with that agent's own token, within 60 s; `wait_seconds` (0–10) holds this call for it, and `state` says `answered`, `pending` or `expired`. The answer carries no free text and is shown only to you and the agent's owner. Repeating within 15 s returns the ping still open; at most 4 a minute per agent from you, and 30 a minute to one agent from everyone (`rate_limited`).",
+      inputSchema: z.strictObject({
+        project: PROJECT_REF,
+        agent: z.string().trim().min(1).max(64).describe('The agent’s id.'),
+        task: TASK_REF.optional().describe('The task you would hand it, if there is one.'),
+        wait_seconds: z
+          .number()
+          .int()
+          .min(0)
+          .max(CAPACITY_PING_LIMITS.maxWaitMs / 1000)
+          .optional()
+          .describe('How long to hold for the answer, 0–10. Absent is 0.'),
+      }),
+    },
+    async (args) => {
+      try {
+        const result = await pingAndWait(sqlite, db, actor, args.agent, {
+          projectSlug: args.project,
+          taskId: args.task === undefined ? null : resolveTaskRef(db, args.task, actor),
+          waitMs: (args.wait_seconds ?? 0) * 1000,
+          clock,
+        });
+        return answer(capacityText(result.ping, clock()), {
+          ping: result.ping,
+          created: result.created,
+        });
       } catch (error) {
         return toolError(error);
       }

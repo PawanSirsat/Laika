@@ -33,6 +33,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { pick } from './dropdown.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 const SHOTS = process.env.LAIKA_SHOTS;
 
@@ -81,6 +82,7 @@ const AGENTS = [
     created_at: 1,
     revoked_at: null,
     last_seen_at: NOW - 60_000,
+    launcher: NEVER_REPORTED,
   },
   {
     id: 'ag-codex',
@@ -94,6 +96,7 @@ const AGENTS = [
     created_at: 1,
     revoked_at: null,
     last_seen_at: NOW - 60_000,
+    launcher: NEVER_REPORTED,
   },
 ];
 

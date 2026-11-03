@@ -36,6 +36,7 @@ import {
   LIVE_BUDGET_MS,
   LIVE_POLL_MS,
 } from '../../../../src/routes/screens/connect/connect-live.ts';
+import { NEVER_REPORTED } from '../../../helpers/launcher.ts';
 
 void describe('the five steps', () => {
   void test('each has a name in LAI-536’s list, and the list has no step without one', () => {
@@ -236,6 +237,7 @@ void describe('what Rotate replaces (LAI-592)', () => {
       created_at: 1,
       revoked_at: null,
       last_seen_at: null,
+      launcher: NEVER_REPORTED,
       ...over,
     }) satisfies RegisteredAgent;
 

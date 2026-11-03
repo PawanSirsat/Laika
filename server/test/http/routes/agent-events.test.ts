@@ -391,13 +391,14 @@ describe('the envelope (§4.76)', () => {
 
     // One envelope, keyed by the activity row and carrying its sequence.
     const stored = h.db.select().from(agentEvents).where(eq(agentEvents.activityId, row.id)).all();
-    expect(stored.map((e) => [e.offerId, e.schemaVersion])).toEqual([[offerId, 1]]);
+    // `2` since LAI-1038 added `ping` (§4.76).
+    expect(stored.map((e) => [e.offerId, e.schemaVersion])).toEqual([[offerId, 2]]);
     expect(stored[0]!.seq).toBe(latestActivitySeq(h.db));
     // One delivery: the receiver. Not the sender who wrote it, not the bystander.
     expect(deliveryRows(row.id).map((d) => d.agentId)).toEqual([receiver.id]);
 
     expect(event).toMatchObject({
-      schema_version: 1,
+      schema_version: 2,
       event_id: row.id,
       cursor: stored[0]!.seq,
       type: 'task.handoff_offered',

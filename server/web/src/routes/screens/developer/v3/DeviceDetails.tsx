@@ -7,6 +7,7 @@ import { Spinner } from '../../../../components/Spinner.tsx';
 import { AgentMark } from '../../../../components/agent-mark/AgentMark.tsx';
 import { RenameForm } from '../AgentsTab.tsx';
 import { DesignChip } from './DesignChip.tsx';
+import { AutoPickupChip } from './AutoPickupChip.tsx';
 import { DetailTiles } from './DetailTiles.tsx';
 import { pairedDevice } from './add-flow.ts';
 import {
@@ -202,6 +203,22 @@ export function DeviceDetails({
                   ),
                 id: 'last-seen',
               },
+              ...(live
+                ? [
+                    {
+                      label: 'Auto-pickup',
+                      value: (
+                        <AutoPickupChip
+                          launcher={device.launcher}
+                          now={now}
+                          device={device.display_name}
+                          layout="panel"
+                        />
+                      ),
+                      id: 'auto-pickup',
+                    },
+                  ]
+                : []),
               ...(device.key_fingerprint === null
                 ? []
                 : [

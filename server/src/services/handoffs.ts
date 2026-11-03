@@ -692,6 +692,29 @@ function receiverRule(
 }
 
 /**
+ * {@link receiverRule} for one agent, as a yes or no: could an agent of
+ * `fromOwnerId` offer this project's work to it now? A capacity ping asks it
+ * (D-126 item 1, LAI-1038) — an agent may ping exactly the agents it could
+ * hand off to, `allow_other_owners` included — so the two cannot drift.
+ */
+export function mayReceiveFrom(
+  db: Db,
+  project: ProjectRow,
+  agentId: string,
+  fromOwnerId: string,
+): boolean {
+  return (
+    receiverRule(
+      loadReceiverFacts(db, [agentId]),
+      project,
+      readPolicy(db, project.id),
+      agentId,
+      fromOwnerId,
+    ) !== null
+  );
+}
+
+/**
  * {@link receiverRule} for one agent, as a write asks it: every refusal is the
  * one `422 receiver_not_eligible`, whichever check failed — an agent id that
  * names nothing included — so the answer names no more than the caller sent.

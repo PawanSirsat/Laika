@@ -754,6 +754,17 @@ function canProjectAction(
     case 'project.handoff_policy.edit':
       return isLead;
 
+    // | Ping an agent for its capacity | ✓ | ✓ | — |
+    //
+    // D-126 item 1: whoever may delegate to an agent here. Asked of the
+    // caller's role — a person's, or an agent's owner's narrowed by its grant
+    // and token, so a `read_only` grant, an `agents_off` space and a viewer are
+    // all refused here. **Which** agent may be pinged is the service's to ask
+    // of other rows: a person's own selectable agent, or one an agent's
+    // hand-off policy lets it offer to (§4.73), `allow_other_owners` included.
+    case 'agent.ping':
+      return isMemberUp;
+
     // | Assign a task to someone else | ✓ | ✓ | — |
     case 'task.assign_other':
       return isMemberUp;

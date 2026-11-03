@@ -22,6 +22,7 @@ import {
   toolAddress,
 } from '../../src/routes/screens/developer/v3/overview-state.ts';
 import { closeBrowser, open, refuse, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -89,6 +90,7 @@ const agentRow = (over: Partial<AgentRow> & { id: string }) => ({
   created_at: 1,
   revoked_at: null,
   last_seen_at: null,
+  launcher: NEVER_REPORTED,
   ...over,
 });
 
@@ -110,6 +112,7 @@ function devicesOf(agents: readonly Agent[]) {
       active_count: active,
       revoked_count: list.length - active,
       agents: list,
+      launcher: NEVER_REPORTED,
     };
   });
 }
@@ -131,6 +134,7 @@ function v3DevicesOf(agents: readonly Agent[]) {
     active_count: d.active_count,
     revoked_count: d.revoked_count,
     agents: d.agents,
+    launcher: NEVER_REPORTED,
     created_at: 1,
     revoked_at: null,
   }));
@@ -478,6 +482,7 @@ const deviceRow = (
     active_count: active,
     revoked_count: tools.length - active,
     agents: tools,
+    launcher: NEVER_REPORTED,
     created_at: 1,
     revoked_at: null,
   };

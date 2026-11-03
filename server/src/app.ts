@@ -55,6 +55,7 @@ import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts
 import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
 import { eventRoutes } from './http/routes/events.ts';
 import { agentRoutes } from './http/routes/agents.ts';
+import { capacityPingRoutes } from './http/routes/capacity-pings.ts';
 import { deviceRoutes } from './http/routes/devices.ts';
 import { devicePairingRequestRoutes, devicePairingRoutes } from './http/routes/device-pairing.ts';
 import { deviceToolRoutes, toolSetupRoutes } from './http/routes/tool-setup.ts';
@@ -400,6 +401,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/tokens`, tokenRoutes({ db, sqlite: options.sqlite }));
     // D-114 (LAI-534): a person's registered agents and their credentials.
     app.route(`${API_BASE}/agents`, agentRoutes({ db, sqlite: options.sqlite }));
+    // LAI-1038: one capacity ping, read back (§4.84, D-126).
+    app.route(`${API_BASE}/capacity-pings`, capacityPingRoutes({ db }));
     // LAI-1050: pairing a device (§4.79). The owner's side is mounted before
     // `/devices`, whose `/:id` would otherwise be asked first; the device's
     // side has no actor, and its own buckets.

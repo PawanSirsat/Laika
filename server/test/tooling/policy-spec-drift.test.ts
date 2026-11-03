@@ -142,6 +142,7 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Decline a hand-off or recovery offer', ['task.handoff.decline']],
   ['Cancel a hand-off offer', ['task.handoff.cancel']],
   ["Edit the project's hand-off policy", ['project.handoff_policy.edit']],
+  ['Ping an agent for its capacity', ['agent.ping']],
   ['Assign a task to someone else', ['task.assign_other']],
   ['Add comment', ['comment.create']],
   ['Edit / delete comment', ['comment.edit', 'comment.delete']],

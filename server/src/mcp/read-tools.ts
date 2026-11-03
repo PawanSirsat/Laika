@@ -34,7 +34,18 @@ import {
 } from '../services/tasks.ts';
 import { listInbox } from '../services/handoffs.ts';
 import { AGENT_EVENTS_DEFAULT_LIMIT, listAgentEvents } from '../services/agent-events.ts';
-import { ago, answer, bullets, isoDate, nameLookup, statusText, toolError } from './present.ts';
+import { getAgentCapacity } from '../services/agent-capacity.ts';
+import {
+  ago,
+  answer,
+  bullets,
+  capacityText,
+  isoDate,
+  launcherText,
+  nameLookup,
+  statusText,
+  toolError,
+} from './present.ts';
 
 /**
  * The four tools an agent calls before it does anything (SPEC §7.1, LAI-407).
@@ -761,6 +772,39 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           has_more: events.has_more,
           gap: events.gap,
         });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  // ------------------------------------------------------ get_agent_capacity
+
+  server.registerTool(
+    'get_agent_capacity',
+    {
+      title: "An agent's launcher and its latest capacity answer",
+      description:
+        "What the board knows of an agent's device without asking it again: its launcher — `on` only from a report under three minutes old that says enabled, `unknown` for an older one, `off` otherwise — and the newest capacity answer you may see (any, to the agent's owner; your own pings', in this project, to anyone else). `GET /agents/:id/capacity`'s twin. The same agents as `ping_agent`, and any other id is `not_found`. Reads, and records nothing.",
+      inputSchema: z.strictObject({
+        project: PROJECT_REF,
+        agent: z.string().trim().min(1).max(64).describe('The agent’s id.'),
+      }),
+    },
+    ({ project, agent }) => {
+      try {
+        const now = clock();
+        const capacity = getAgentCapacity(db, actor, agent, project, now);
+        const markdown = [
+          `## Agent \`${agent}\``,
+          '',
+          `Launcher: ${launcherText(capacity.launcher, now)}`,
+          '',
+          capacity.latest_answer === null
+            ? 'No capacity answer you may see yet — `ping_agent` asks for one.'
+            : capacityText(capacity.latest_answer, now),
+        ].join('\n');
+        return answer(markdown, { ...capacity });
       } catch (error) {
         return toolError(error);
       }

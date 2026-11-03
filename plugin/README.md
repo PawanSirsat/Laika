@@ -106,7 +106,7 @@ and how to set them, and it never prints your token.
 
 | | Status |
 | --- | --- |
-| MCP tools — **eighteen**, §7.1 | ✅ served at `${LAIKA_URL}/mcp` |
+| MCP tools — every one §7.1 names | ✅ served at `${LAIKA_URL}/mcp` |
 | Heartbeat hooks | ✅ LAI-418 — `SessionStart`, `Stop`, throttled `PostToolUse` (per session, 90 s — LAI-752) |
 | Local activity hooks | ✅ LAI-752 — `scripts/laika-activity-hook`, installed by `laika activity on`; automated sessions skipped (LAI-757) |
 | Agent-session hooks | LAI-542 — `scripts/laika-agent-hook`, installed by `laika agent hooks on` (opt-in, not in `hooks.json`); a registered agent's session renewed only while its harness runs — `cli/README.md` has the harness matrix |
@@ -115,11 +115,11 @@ and how to set them, and it never prints your token.
 | `/laika:setup`, `/laika:tasks`, `/laika:standup` | LAI-420 |
 | Agent protocol skill | LAI-421 |
 
-**Eighteen tools since LAI-611** (eleven before it). §7.1's table and
-`server/src/mcp/` agree at eighteen; smaller stale counts have appeared in task
-files and in `CLAUDE.md`, and the count is asserted in
-`cli/test/plugin-mcp.test.ts` against the spec and the registry so the next drift
-is loud rather than repeated.
+**No count is written here** (LAI-1038). This said *eighteen* for weeks after
+the tool surface had grown past it — the drift CLAUDE.md §2 describes. The
+names, not a number, are asserted in `cli/test/plugin-mcp.test.ts` against
+§7.1 and the registry, so the next tool added is loud there rather than a
+number going stale here.
 
 ## Local activity (LAI-752)
 

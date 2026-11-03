@@ -8,6 +8,7 @@
  */
 
 import type { ApiStub } from './harness.ts';
+import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
 export const NOW = Date.now();
 const MIN = 60_000;
@@ -88,6 +89,7 @@ export const agentRow = (id: string, harness: string, revoked = false, device = 
   created_at: 1,
   revoked_at: revoked ? NOW - 60 * MIN : null,
   last_seen_at: NOW - 31 * MIN,
+  launcher: NEVER_REPORTED,
 });
 
 export type Agent = ReturnType<typeof agentRow>;
@@ -116,6 +118,7 @@ export const deviceRow = (agents: readonly Agent[], over: object = {}) => ({
   active_count: agents.filter((a) => a.status === 'active').length,
   revoked_count: agents.filter((a) => a.status !== 'active').length,
   agents,
+  launcher: NEVER_REPORTED,
   created_at: 1,
   revoked_at: null,
   ...over,

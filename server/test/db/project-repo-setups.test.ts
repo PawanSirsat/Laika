@@ -34,10 +34,32 @@ function folderBefore0073(): string {
   const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: { tag: string }[] };
   const at = journal.entries.findIndex((e) => e.tag === TAG);
   expect(at, 'the LAI-1066 migration is in the journal').toBeGreaterThan(0);
-  // The guard on this guard: 0073 is the newest migration, so the cut drops
-  // exactly it. A later migration lands here and says so.
-  expect(journal.entries.slice(at).map((e) => e.tag)).toEqual([TAG]);
+  // The guard on this guard: the cut drops exactly 0073 and what came after
+  // it — LAI-1038's capacity pings, which a 0072 database also upgrades
+  // through. A later migration lands here and says so.
+  expect(journal.entries.slice(at).map((e) => e.tag)).toEqual([TAG, '0074_agent_capacity']);
   journal.entries.splice(at);
+  writeFileSync(journalPath, JSON.stringify(journal));
+  return dir;
+}
+
+/**
+ * A copy of the migrations that ends **at** `0073`, so an upgrade through it
+ * applies this migration and nothing later: 0074 rebuilds `activity` for its
+ * new verb (LAI-1038), which is that migration's to prove, not this one's.
+ */
+function folderThrough0073(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+  cpSync(MIGRATIONS_FOLDER, dir, {
+    recursive: true,
+    filter: (source) => !source.endsWith('_snapshot.json'),
+  });
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const journalPath = join(dir, 'meta', '_journal.json');
+  const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: { tag: string }[] };
+  const at = journal.entries.findIndex((e) => e.tag === TAG);
+  journal.entries.splice(at + 1);
+  expect(journal.entries.at(-1)?.tag).toBe(TAG);
   writeFileSync(journalPath, JSON.stringify(journal));
   return dir;
 }
@@ -93,8 +115,9 @@ describe('0073 project_repo_setups', () => {
     const { db, sqlite } = dbAt0072(folderBefore0073());
     const s = seed(db);
     const before = everythingElse(db);
+    const through = folderThrough0073();
 
-    runMigrations(db);
+    runMigrations(db, { migrationsFolder: through });
     expect(everythingElse(db)).toEqual(before);
     expect(db.all(sql`SELECT * FROM project_repo_setups`)).toEqual([]);
 
@@ -109,7 +132,7 @@ describe('0073 project_repo_setups', () => {
     `);
     const upgraded = everythingElse(db);
     const migrations = db.all(sql`SELECT * FROM __drizzle_migrations`);
-    runMigrations(db);
+    runMigrations(db, { migrationsFolder: through });
     expect(everythingElse(db)).toEqual(upgraded);
     expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toEqual(migrations);
     expect(db.all(sql`SELECT id FROM project_repo_setups`)).toEqual([{ id }]);

@@ -1,5 +1,6 @@
 import { agentClientName, AGENT_CLIENTS, type AgentClient } from './agent-clients.ts';
 import type { RegisteredAgent } from './agents.ts';
+import { startsOnSelect } from './capacity.ts';
 import { ApiError } from './errors.ts';
 import { request } from './client.ts';
 import type { Task, TaskEdit, TaskSummary } from './tasks.ts';
@@ -376,6 +377,11 @@ interface PickerChoiceBase {
   readonly device: string;
   /** {@link twinNames}' mark, when another listed agent shares harness and device. */
   readonly twin?: string | undefined;
+  /**
+   * Its device's launcher picks a work request up by itself (`startsOnSelect`,
+   * LAI-1102): on the board's word, never guessed from a time.
+   */
+  readonly autoPickup?: boolean | undefined;
 }
 
 /**
@@ -427,7 +433,11 @@ export function pickerChoices(input: {
     };
     rows.push(
       refusal === undefined
-        ? { ...base, availability: availabilityOf(agent, now) }
+        ? {
+            ...base,
+            availability: availabilityOf(agent, now),
+            autoPickup: startsOnSelect(agent.launcher),
+          }
         : { ...base, availability: 'unavailable', reason: INELIGIBLE_SHORT[refusal] },
     );
   }

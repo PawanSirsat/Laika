@@ -2,6 +2,7 @@ import type { Ref } from 'react';
 import type { Device } from '../../../../api/devices.ts';
 import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../../components/LoadingState.tsx';
+import { AutoPickupChip } from './AutoPickupChip.tsx';
 import { DxIcon } from './DxIcon.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
@@ -260,6 +261,9 @@ function DeviceRecord({
               .filter((agent) => agent.status === 'active')
               .map((agent) => agent.id)}
           />
+        )}
+        {device.status === 'active' && (
+          <AutoPickupChip launcher={device.launcher} now={now} device={device.display_name} />
         )}
         {canManage && pairedDevice(device) && (
           <button

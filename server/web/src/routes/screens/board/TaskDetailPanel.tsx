@@ -416,10 +416,12 @@ export function TaskDetailPanel({
       ? detail.activity.filter((event) => event.type.startsWith('webhook.'))
       : [];
   /**
-   * The reader's own agents, read once for the drawer (LAI-538): the Agent
-   * row's choices, and half of what names an agent in the activity below.
+   * The reader's own agents, read for the drawer (LAI-538): the Agent row's
+   * choices, and half of what names an agent in the activity below. Read
+   * again quietly while it is open, since the row's *Starts automatically
+   * on …* follows each agent's launcher (LAI-1102).
    */
-  const myAgents = useMyAgents();
+  const myAgents = useMyAgents({ refresh: true });
   /**
    * Agents this reader may see, by id (LAI-538 review): their own, and every
    * one selected on a task the board holds — this one's included. A row by

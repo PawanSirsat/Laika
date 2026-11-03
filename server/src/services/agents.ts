@@ -18,6 +18,7 @@ import {
   users,
 } from '../db/schema.ts';
 import { type AgentSessionView, endSessionsOfRevokedAgent, recentAgentSessions } from './claims.ts';
+import { launcherOf, type LauncherView } from './agent-capacity.ts';
 import { closeOffersOfRevokedAgent } from './handoffs.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, forcedTokenScope } from '../policy/can.ts';
@@ -128,6 +129,12 @@ export interface AgentView {
   created_at: number;
   revoked_at: number | null;
   last_seen_at: number | null;
+  /**
+   * Its launcher, as its own token last reported it (§4.83, D-126 item 4):
+   * `on` only from a report under three minutes old that says enabled.
+   * Read-only — nothing on the board starts or configures a launcher.
+   */
+  launcher: LauncherView;
 }
 
 /**
@@ -613,7 +620,7 @@ function requireOwnDeviceAgents(db: Db, actor: ResolvedActor, key: string): Agen
 
 // ------------------------------------------------------------------ helpers
 
-export function agentView(db: Db, row: AgentRow): AgentView {
+export function agentView(db: Db, row: AgentRow, now: number = Date.now()): AgentView {
   const grants = db
     .select({ projectId: agentProjectGrants.projectId, scope: agentProjectGrants.scope })
     .from(agentProjectGrants)
@@ -647,6 +654,7 @@ export function agentView(db: Db, row: AgentRow): AgentView {
     created_at: row.createdAt,
     revoked_at: row.revokedAt,
     last_seen_at: row.lastSeenAt,
+    launcher: launcherOf(db, row.id, row.status, now),
   };
 }
 

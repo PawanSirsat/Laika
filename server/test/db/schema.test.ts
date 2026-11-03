@@ -79,6 +79,8 @@ describe('migrations', () => {
     // LAI-553: agent event envelopes and their per-agent deliveries.
     'agent_event_deliveries',
     'agent_events',
+    // LAI-1038, D-126: what each agent's launcher last said about itself.
+    'agent_launcher_reports',
     // LAI-534, D-114: what each registered agent may reach.
     'agent_project_grants',
     // LAI-555: the context revision last delivered to a session, per project.
@@ -94,6 +96,8 @@ describe('migrations', () => {
     // LAI-957, D-102: who looked at a person's analytics.
     'analytics_views',
     'board_activity_days',
+    // LAI-1038, D-126: capacity pings and the one answer each got.
+    'capacity_pings',
     // LAI-545, D-116: every ref a checkpoint has, and every push that moved one.
     'checkpoint_ref_transitions',
     'checkpoint_refs',

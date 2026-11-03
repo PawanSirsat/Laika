@@ -220,6 +220,20 @@ describe('context_revision on every answer (census over the registry)', () => {
     await writeBrief('The brief', 0);
     const client = await connect(await ownerToken());
     const ctx: { key?: string; sprint?: string } = {};
+    // An agent of the owner's own, which their token may ping (D-126, LAI-1038).
+    const pingable = (await must(
+      '/api/v1/agents',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          display_name: 'Pinged',
+          harness: 'claude-code',
+          device_label: `device-${++fixtureDevices}`,
+          grants: [{ project_id: alpha, scope: 'full' }],
+        }),
+      },
+      ownerCookie,
+    )) as unknown as { agent: { id: string } };
 
     const steps: [string, () => Record<string, unknown>, 'alpha' | null][] = [
       ['laika_whoami', () => ({}), null],
@@ -253,6 +267,8 @@ describe('context_revision on every answer (census over the registry)', () => {
         'alpha',
       ],
       ['log_unlisted_work', () => ({ repo: 'acme/tools', note: 'An idea' }), null],
+      ['ping_agent', () => ({ project: 'alpha', agent: pingable.agent.id }), 'alpha'],
+      ['get_agent_capacity', () => ({ project: 'alpha', agent: pingable.agent.id }), 'alpha'],
     ];
     // Refused by design on this org (time drafts are off), so there is no
     // answer to stamp — and a refusal must stay §6.3's envelope, unstamped.

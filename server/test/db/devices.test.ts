@@ -60,13 +60,14 @@ function folderBefore0070(): { dir: string; restore: () => void } {
   expect(at, 'the LAI-1045 migration is in the journal').toBeGreaterThan(0);
   const dropped = journal.entries.splice(at);
   // The guard on this guard: the cut is exactly this migration, LAI-1050's
-  // pairing requests, LAI-1056's tool setup and LAI-1066's project setups,
-  // which a 0069 database also upgrades through.
+  // pairing requests, LAI-1056's tool setup, LAI-1066's project setups and
+  // LAI-1038's capacity pings, which a 0069 database also upgrades through.
   expect(dropped.map((e) => e.tag)).toEqual([
     '0070_devices',
     '0071_device_pairing_requests',
     '0072_tool_setup_exchanges',
     '0073_project_repo_setups',
+    '0074_agent_capacity',
   ]);
   writeFileSync(journalPath, JSON.stringify(journal));
   return {
@@ -124,9 +125,9 @@ function addAgent(db: Db, orgId: string, a: AgentFixture): string {
 
 /**
  * Every table but the two this migration writes, row for row. LAI-1050's
- * pairing requests, LAI-1056's two tables and LAI-1066's project setups are
- * left out too: the cut migrates through 0071 to 0073, which create them
- * empty, so they exist only on one side of the comparison.
+ * pairing requests, LAI-1056's two tables, LAI-1066's project setups and
+ * LAI-1038's two are left out too: the cut migrates through 0071 to 0074,
+ * which create them empty, so they exist only on one side of the comparison.
  */
 function everythingElse(db: Db): Record<string, unknown[]> {
   const names = db
@@ -134,7 +135,7 @@ function everythingElse(db: Db): Record<string, unknown[]> {
       sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
           AND name NOT IN ('agents', 'devices', 'device_pairing_requests',
                            'tool_setup_exchanges', 'agent_client_reports', 'project_repo_setups',
-                           '__drizzle_migrations')
+                           'agent_launcher_reports', 'capacity_pings', '__drizzle_migrations')
           ORDER BY name`,
     )
     .map((r) => r.name);

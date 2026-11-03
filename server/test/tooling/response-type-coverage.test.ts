@@ -205,6 +205,14 @@ const UNPAIRED = new Map<string, string>([
   // slice C3). LAI-1061 paired the owner's tool setup and verification.
   ['ToolRedeemView', 'no client type exists'],
   ['ClientReportView', 'no client type exists'],
+  // LAI-1038 (D-126): served ahead of the web half, LAI-1102, which mirrors
+  // the ping, the capacity read and the launcher word — each leaves this group
+  // when its client type exists. The report's answer is the CLI's alone.
+  ['AgentCapacityView', 'no client type exists'],
+  ['CapacityPingView', 'no client type exists'],
+  ['LauncherView', 'no client type exists'],
+  ['PingAgentResult', 'no client type exists'],
+  ['LauncherReportView', 'no client type exists'],
   // LAI-1043: served ahead of the Developer access V3 screens that read it;
   // `laika doctor` is its only reader until then.
   ['CompatibilityBody', 'no client type exists'],

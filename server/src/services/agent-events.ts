@@ -1,9 +1,10 @@
 import type Database from 'better-sqlite3';
-import { and, asc, eq, getTableColumns, gt, inArray, isNull, type SQL } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, gt, inArray, isNull, ne, or, type SQL } from 'drizzle-orm';
 import { reloadActor, withProject, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { TokenAuthError } from '../auth/tokens.ts';
 import { latestActivitySeq, type ActivityEvent } from '../db/activity.ts';
 import {
+  CAPACITY_PING_OPEN_MS,
   type AgentEventDetail,
   type AgentEventType,
   type AgentIdentity,
@@ -220,7 +221,12 @@ function envelopes(
         agent_id: writerShown ? row.agentId : null,
         session_id: writerShown ? row.agentSessionId : null,
       },
+      // An envelope written at schema version 1 has none of the three fields
+      // version 2 added (LAI-1038): each reads as null, which it would have said.
       ...detail,
+      ping: detail.ping ?? null,
+      task_key: detail.task_key ?? null,
+      project_slug: detail.project_slug ?? null,
       from,
       to,
       agent_redacted: redacted,
@@ -243,6 +249,7 @@ export interface ListAgentEventsOptions {
   limit: number;
   /** Only this project's events: a slug the agent may read now (`agent_sync`'s `project`). */
   projectSlug?: string | null | undefined;
+  now?: number;
 }
 
 /**
@@ -285,6 +292,7 @@ export function listAgentEvents(
   options: ListAgentEventsOptions,
 ): AgentEventsPage {
   assertCan(actor, 'agent.read_own');
+  const now = options.now ?? Date.now();
   const agentId = requireAgentToken(actor);
 
   let after = options.after;
@@ -328,6 +336,18 @@ export function listAgentEvents(
       ];
       if (options.state === 'undelivered') {
         conditions.push(isNull(agentEventDeliveries.receivedAt));
+        // A capacity ping is undelivered only while it can still be answered
+        // (§4.84, LAI-1038 review): a helper that predates the verb drops it
+        // unacknowledged, and a question nobody can answer any more must not
+        // sit at the head of every page, oldest first, for ever. An answer is
+        // its receipt (`replyToPing`); this is the minute running out. No
+        // other verb is touched.
+        conditions.push(
+          or(
+            ne(activity.type, 'agent.capacity_requested'),
+            gt(agentEventDeliveries.availableAt, now - CAPACITY_PING_OPEN_MS),
+          )!,
+        );
       }
       return joined(db, conditions, options.limit + 1);
     })

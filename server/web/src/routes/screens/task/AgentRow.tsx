@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import type { MyAgents } from '../../../api/use-my-agents.ts';
 import {
   agentLabel,
+  ineligibleReason,
   pickerChoices,
   selectedAgentOf,
   selectedHarness,
@@ -27,6 +28,7 @@ import {
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
 import { AgentPicker, NO_AGENT } from '../../../components/agent/AgentPicker.tsx';
 import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
+import { PingButton } from '../../../components/agent/PingButton.tsx';
 import { cardExecutionState } from '../../../components/agent/execution-derive.ts';
 
 export interface AgentRowProps {
@@ -54,6 +56,11 @@ export interface AgentRowProps {
   readonly readOrder: number;
   /** The task changed on the server — the drawer reads it again. */
   readonly onChanged: () => void;
+  /**
+   * The space's slug, which a capacity ping is asked in (LAI-1102). Absent,
+   * no Ping is offered.
+   */
+  readonly projectSlug?: string | undefined;
 }
 
 /** A selection on its way to the server: which request, on which task. */
@@ -106,6 +113,7 @@ export function AgentRow({
   myAgents: load,
   readOrder,
   onChanged,
+  projectSlug,
 }: AgentRowProps) {
   const [pendingWrite, setPending] = useState<Pending | undefined>(undefined);
   const [errorFor, setError] = useState<{ taskId: string; words: string } | undefined>(undefined);
@@ -287,6 +295,22 @@ export function AgentRow({
 
   const value = pending ?? current?.id ?? NO_AGENT;
 
+  /*
+   * **Ping, for the reader's own agent they could select here** (D-126 item
+   * 1, LAI-1102): one of `GET /agents` — which lists only the reader's — that
+   * passes the picker's own checks, on a task the reader may edit. Another
+   * member's agent, a revoked one, or one without full access here is not
+   * offered one; the board would answer `404`.
+   */
+  const own =
+    current === null || load.kind !== 'ready'
+      ? undefined
+      : load.agents.find((a) => a.id === current.id);
+  const pingable =
+    mayEdit &&
+    own !== undefined &&
+    ineligibleReason(own, task.project_id, agentsAllowed) === undefined;
+
   return (
     <div className="meta-row meta-row-agent" data-editable={mayEdit ? 'agent' : undefined}>
       {mayEdit && load.kind === 'ready' ? (
@@ -348,6 +372,19 @@ export function AgentRow({
         <p className="meta-sub meta-agent-error" role="alert">
           {error}
         </p>
+      )}
+
+      {pingable && projectSlug !== undefined && current !== null && !savingHere && (
+        <div className="meta-sub meta-agent-ping" data-agent-ping>
+          <PingButton
+            key={`${task.id}:${current.id}`}
+            agentId={current.id}
+            project={projectSlug}
+            taskId={task.id}
+            target={agentLabel(shown ?? current)}
+            variant="link"
+          />
+        </div>
       )}
     </div>
   );
