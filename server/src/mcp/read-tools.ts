@@ -23,6 +23,7 @@ import {
   type TaskEstimateView,
 } from '../services/estimates.ts';
 import { FORECAST_AFTER, formatBuild } from '../services/estimate-model.ts';
+import { deliverableMark, deliveredCount } from '../services/deliverables.ts';
 import { ciLine } from '../services/github-proof.ts';
 import { listSprints, sprintTaskCounts } from '../services/sprints.ts';
 import {
@@ -310,7 +311,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
     {
       title: 'Get task context',
       description:
-        'Everything needed to start on one task in a single call. If a person sent it back from review, `send_back` comes first with their reason: read it before anything else, it is what to fix. Then the task, the proof attached to its latest finish (`evidence`), what it depends on and whether those are done, what it blocks, its parent and its subtasks with how many are done, its comments, its recent activity, and the chain of tasks it was discovered from.',
+        'Everything needed to start on one task in a single call. If a person sent it back from review, `send_back` comes first with their reason: read it before anything else, it is what to fix. Then the task — what it delivers and where each item stands, what it solves and unlocks — the proof attached to its latest finish (`evidence`), what it depends on and whether those are done, what it blocks, its parent and its subtasks with how many are done, its comments, its recent activity, and the chain of tasks it was discovered from.',
       inputSchema: z.strictObject({ task: TASK_REF }),
     },
     ({ task }) => {
@@ -439,6 +440,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           '### Done means',
           view.acceptance_md ?? '_Not stated._',
           '',
+          ...deliversText(view),
           ...sizeText(estimate),
           ...similarText(similar),
           `### Proof (${evidence === null ? 'none' : `round ${String(evidence.number)}`})`,
@@ -942,6 +944,32 @@ const EFFORT_WORDS = {
  * a level or more, and the similar finished tasks by key. Called *effort*, as
  * the board calls it (LAI-785); the field an agent sets is still `size`.
  */
+/**
+ * "What this delivers" (§4.5, LAI-1115): the Ships list with each item's id
+ * beside its title — the id is what `checkpoint_task` and `finish_task` take
+ * back — then what it solves and unlocks. Printed only when something is
+ * stated, so a task with none says so in one line.
+ */
+function deliversText(view: TaskView): string[] {
+  const { done, total } = deliveredCount(view.deliverables);
+  return [
+    `### Delivers (${total === 0 ? 'none stated' : `${String(done)} of ${String(total)} built`})`,
+    ...(total === 0
+      ? ['_None stated — `update_task` takes `deliverables`, `solves` and `unlocks`._']
+      : view.deliverables.map(
+          (d) =>
+            `- ${deliverableMark(d.state)} ${d.title} \`${d.id}\`${d.detail === null ? '' : ` — ${d.detail}`}`,
+        )),
+    '',
+    '### Solves',
+    bullets(view.solves, 'Not stated.'),
+    '',
+    '### Unlocks',
+    bullets(view.unlocks, 'Not stated.'),
+    '',
+  ];
+}
+
 function sizeText(estimate: TaskEstimateView | null): string[] {
   if (estimate === null)
     return ['### Effort', '_Unavailable: the effort could not be read just now._', ''];

@@ -41,6 +41,7 @@ import {
   TASK_STATUSES,
   updateTask,
   type TaskView,
+  DELIVERABLE_STATES,
 } from '../services/tasks.ts';
 import { ago, answer, capacityText, isoDate, statusText, toolError } from './present.ts';
 
@@ -148,6 +149,48 @@ const TASK_FIELDS = {
     .describe(
       'The id this task has somewhere else — a repo task file’s `LAI-123`, a Jira key such as `DATA_ENG-12`. Every tool that takes a task takes it too.',
     ),
+  // "What this delivers" (§4.5, LAI-1115). Sanity bounds; the counts, lengths
+  // and id rules are the service's, so its refusal names the field and a reason.
+  deliverables: z
+    .array(
+      z.strictObject({
+        id: z
+          .string()
+          .min(1)
+          .max(64)
+          .optional()
+          .describe('Keep an existing item: its id from the task. Omit for a new one.'),
+        title: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .describe(
+            'One thing this task ships — a noun, not a step: “Terminal viewer”, not “Build the viewer”.',
+          ),
+        detail: z.string().max(5_000).nullable().optional(),
+        state: z
+          .enum(DELIVERABLE_STATES)
+          .optional()
+          .describe(
+            'Leave this out: `checkpoint_task` marks an item in progress and `finish_task` marks it done.',
+          ),
+      }),
+    )
+    .max(50)
+    .describe(
+      'What this task delivers, in order — the Ships list a person reads as its promise. Replaces the whole list on `update_task`; keep an item’s `id` to keep its state.',
+    ),
+  solves: z
+    .array(z.string().trim().min(1).max(1_000))
+    .max(50)
+    .describe('The problems this removes, one short line each. Replaces the whole list.'),
+  unlocks: z
+    .array(z.string().trim().min(1).max(1_000))
+    .max(50)
+    .describe(
+      'What finishing it makes possible, one line each — name a decision (`D-128`) when it is one. Replaces the whole list.',
+    ),
 } as const;
 
 /**
@@ -200,12 +243,15 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Create a task',
       description:
-        'File a task on a project. If no task covers the work you are about to do, create one before starting it. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight. Pass `agent` — your own registered agent’s id — to select it in the same call, before you claim.',
+        'File a task on a project. If no task covers the work you are about to do, create one before starting it. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight. Pass `agent` — your own registered agent’s id — to select it in the same call, before you claim. Fill `deliverables` (what it ships, as nouns), `solves` (the problems it removes) and `unlocks` (what it makes possible) when you file it: a person reads them as the task’s promise, `checkpoint_task` marks a deliverable in progress and `finish_task` ticks it off.',
       inputSchema: z.strictObject({
         project: PROJECT_REF,
         title: TASK_FIELDS.title,
         description: TASK_FIELDS.description.optional(),
         acceptance: TASK_FIELDS.acceptance.optional().describe('What "done" means here.'),
+        deliverables: TASK_FIELDS.deliverables.optional(),
+        solves: TASK_FIELDS.solves.optional(),
+        unlocks: TASK_FIELDS.unlocks.optional(),
         priority: TASK_FIELDS.priority.optional(),
         tags: TASK_FIELDS.tags.optional(),
         assignee: ASSIGNEE_REF.optional(),
@@ -238,6 +284,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       title,
       description,
       acceptance,
+      deliverables,
+      solves,
+      unlocks,
       priority,
       tags,
       assignee,
@@ -264,6 +313,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           title,
           ...(description === undefined ? {} : { description_md: description }),
           ...(acceptance === undefined ? {} : { acceptance_md: acceptance }),
+          ...(deliverables === undefined ? {} : { deliverables }),
+          ...(solves === undefined ? {} : { solves }),
+          ...(unlocks === undefined ? {} : { unlocks }),
           ...(priority === undefined ? {} : { priority }),
           ...(tags === undefined ? {} : { tags }),
           ...(assignee === undefined
@@ -456,11 +508,17 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Hand a task back for review',
       description:
-        'Move a task to review, post your summary as a comment, and attach your proof so a person can check it: the `commits` you made (sha and first line), the `branch`, the `pull_request` URL, and the `tests` you ran with their exit codes. Proof is optional but it is what the reviewer reads first, so send what you have. This is as far as an agent takes a task: an agent never marks work done — a person accepts it, or sends it back with a reason that `get_task_context` shows you first.',
+        'Move a task to review, post your summary as a comment, attach your proof so a person can check it — the `commits` you made (sha and first line), the `branch`, the `pull_request` URL, and the `tests` you ran with their exit codes — and tick the Ships items you delivered: each `checklist` line that is a deliverable’s id or exact title marks it done; any other line is kept as a `- [x]` note under your summary. Proof is optional but it is what the reviewer reads first, so send what you have. This is as far as an agent takes a task: an agent never marks work done — a person accepts it, or sends it back with a reason that `get_task_context` shows you first.',
       inputSchema: z.strictObject({
         task: TASK_REF,
         summary: z.string().trim().min(1).max(50_000),
-        checklist: z.array(z.string().min(1).max(500)).max(50).optional(),
+        checklist: z
+          .array(z.string().min(1).max(500))
+          .max(50)
+          .optional()
+          .describe(
+            'Ships items you delivered, by id or exact title from `get_task_context` — each becomes done. Any other line is appended `- [x]` under the summary.',
+          ),
         commits: z
           .array(
             z.strictObject({
@@ -562,7 +620,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Register a checkpoint you pushed',
       description:
-        'Register a save of the task your session holds, **after** you pushed it: first the work branch, then the one lightweight tag `refs/tags/laika-ckpt/<task>/<id>` at the commit, alone in its own `git push` — never an annotated tag, never several tags in one push. `id` is a ULID you mint before the push; the tag ends in it. Send `idempotency_key`, and the same key again if a registration failed after the push: it answers the checkpoint already saved. `manifest` names the files you changed with their line counts — never contents, a diff or a prompt. `summary` is your note for whoever continues (work done, next step, decisions, open questions, known failing tests or builds); failing tests do not invalidate a save. The checkpoint is `pending` until a signed push notice from GitHub verifies it: Laika never fetches anything to check, and nothing you send can mark it verified.',
+        'Register a save of the task your session holds, **after** you pushed it: first the work branch, then the one lightweight tag `refs/tags/laika-ckpt/<task>/<id>` at the commit, alone in its own `git push` — never an annotated tag, never several tags in one push. `id` is a ULID you mint before the push; the tag ends in it. Send `idempotency_key`, and the same key again if a registration failed after the push: it answers the checkpoint already saved. `manifest` names the files you changed with their line counts — never contents, a diff or a prompt. `summary` is your note for whoever continues (work done, next step, decisions, open questions, known failing tests or builds); failing tests do not invalidate a save. The checkpoint is `pending` until a signed push notice from GitHub verifies it: Laika never fetches anything to check, and nothing you send can mark it verified. `working_on` names the Ships items this save advances, by id or exact title from `get_task_context`; they move to in progress, and a name the task does not list refuses the save.',
       inputSchema: z.strictObject({
         task: TASK_REF,
         id: z.string().trim().min(1).max(64).describe('The ULID you minted; the tag ends in it.'),
@@ -597,6 +655,13 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         summary_commit_sha: COMMIT.nullable()
           .optional()
           .describe('The commit your note describes — required with `summary`.'),
+        working_on: z
+          .array(z.string().trim().min(1).max(500))
+          .max(50)
+          .optional()
+          .describe(
+            'Ships items you are working on now, by id or exact title; they move to in progress. Names nothing on the task → the save is refused and nothing is registered.',
+          ),
         claim_generation: CLAIM_GENERATION,
       }),
     },
@@ -617,6 +682,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
             manifest: args.manifest,
             summary: args.summary ?? null,
             summaryCommitSha: args.summary_commit_sha ?? null,
+            ...(args.working_on === undefined ? {} : { workingOn: args.working_on }),
             now: clock(),
           },
         );
@@ -862,7 +928,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Edit a task',
       description:
-        'Change a task after it exists: its title, prose, priority, tags, who holds it, which sprint it sits in, its parent, its due and planned-start dates, its effort (`size`), the outside id it carries, and the registered `agent` selected to do it. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on`, `planned_start`, `size` or `external_ref` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
+        'Change a task after it exists: its title, prose, its Ships list (`deliverables`), what it `solves` and what it `unlocks` — each replaces the whole list; keep an item’s `id` to keep its state — priority, tags, who holds it, which sprint it sits in, its parent, its due and planned-start dates, its effort (`size`), the outside id it carries, and the registered `agent` selected to do it. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on`, `planned_start`, `size` or `external_ref` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
       inputSchema: z.strictObject({
         task: TASK_REF,
         title: TASK_FIELDS.title.optional(),
@@ -870,6 +936,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         // `null` clears it, absent leaves it alone — different requests, the
         // same distinction `PATCH /tasks/:id` draws.
         acceptance: TASK_FIELDS.acceptance.nullable().optional(),
+        deliverables: TASK_FIELDS.deliverables.optional(),
+        solves: TASK_FIELDS.solves.optional(),
+        unlocks: TASK_FIELDS.unlocks.optional(),
         priority: TASK_FIELDS.priority.optional(),
         tags: TASK_FIELDS.tags.optional().describe('Replaces the whole set.'),
         assignee: ASSIGNEE_REF.nullable().optional(),
@@ -901,6 +970,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       title,
       description,
       acceptance,
+      deliverables,
+      solves,
+      unlocks,
       priority,
       tags,
       assignee,
@@ -932,6 +1004,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           ...(title === undefined ? {} : { title }),
           ...(description === undefined ? {} : { description_md: description }),
           ...(acceptance === undefined ? {} : { acceptance_md: acceptance }),
+          ...(deliverables === undefined ? {} : { deliverables }),
+          ...(solves === undefined ? {} : { solves }),
+          ...(unlocks === undefined ? {} : { unlocks }),
           ...(priority === undefined ? {} : { priority }),
           ...(tags === undefined ? {} : { tags }),
           ...(assigneeId === undefined ? {} : { assignee_id: assigneeId }),

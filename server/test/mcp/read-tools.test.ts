@@ -290,6 +290,52 @@ describe('list_ready_tasks', () => {
 });
 
 describe('get_task_context', () => {
+  it('prints what the task delivers, each Ships item with its id and state (LAI-1115)', async () => {
+    await project('core', 'COR');
+    const created = await task('core', {
+      title: 'Delivers',
+      deliverables: [{ title: 'Terminal viewer', detail: 'opt-in' }, { title: 'Watch view' }],
+      solves: ['nobody sees a run'],
+      unlocks: ['watching runs from the laptop'],
+    });
+    const items = created.deliverables as unknown as { id: string; title: string }[];
+    expect(items).toHaveLength(2);
+
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: created.key },
+    });
+
+    const md = text(result);
+    expect(md).toContain('### Delivers (0 of 2 built)');
+    expect(md).toContain(`- [ ] Terminal viewer \`${items[0]!.id}\` — opt-in`);
+    expect(md).toContain(`- [ ] Watch view \`${items[1]!.id}\``);
+    expect(md).toContain('### Solves\n- nobody sees a run');
+    expect(md).toContain('### Unlocks\n- watching runs from the laptop');
+    const view = payload(result).task as { deliverables: unknown[]; solves: string[] };
+    expect(view.deliverables).toEqual([
+      { id: items[0]!.id, title: 'Terminal viewer', detail: 'opt-in', state: 'pending' },
+      { id: items[1]!.id, title: 'Watch view', detail: null, state: 'pending' },
+    ]);
+    expect(view.solves).toEqual(['nobody sees a run']);
+
+    await client.close();
+  });
+
+  it('says none stated, in one line, when a task delivers nothing yet (LAI-1115)', async () => {
+    await project('core', 'COR');
+    const created = await task('core', { title: 'Bare' });
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: created.key },
+    });
+    expect(text(result)).toContain('### Delivers (none stated)');
+    expect(text(result)).toContain('### Solves\n_Not stated._');
+    await client.close();
+  });
+
   it('returns the size, the forecast and the why (D-085, LAI-771)', async () => {
     await project('core', 'COR');
     const created = await task('core', {

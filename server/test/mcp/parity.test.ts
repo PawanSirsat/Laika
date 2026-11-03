@@ -331,11 +331,16 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
       rest: async (s) => {
         await must(s, '/api/v1/projects/core/tasks', {
           method: 'POST',
-          body: JSON.stringify({ title: 'A task', priority: 'p1' }),
+          body: JSON.stringify({ title: 'A task', priority: 'p1', ...DELIVERS }),
         });
       },
       mcp: async (_s, c) => {
-        await callTool(c, 'create_task', { project: 'core', title: 'A task', priority: 'p1' });
+        await callTool(c, 'create_task', {
+          project: 'core',
+          title: 'A task',
+          priority: 'p1',
+          ...DELIVERS,
+        });
       },
     },
   ],
@@ -400,11 +405,19 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
         );
         await must(
           s,
+          `/api/v1/tasks/${task}`,
+          { method: 'PATCH', body: JSON.stringify(DELIVERS) },
+          200,
+        );
+        await must(
+          s,
           `/api/v1/tasks/${task}/finish`,
           {
             method: 'POST',
             body: JSON.stringify({
               summary: 'Did the thing',
+              // One line ticks the Ships item, one stays a note (LAI-1115).
+              checklist: ['The thing', 'tests green'],
               tests: [{ command: 'pnpm test', exit_code: 0 }],
             }),
           },
@@ -414,9 +427,11 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
       mcp: async (s, c) => {
         await seedTask(s);
         await callTool(c, 'update_status', { task: 'COR-1', status: 'in_progress' });
+        await callTool(c, 'update_task', { task: 'COR-1', ...DELIVERS });
         await callTool(c, 'finish_task', {
           task: 'COR-1',
           summary: 'Did the thing',
+          checklist: ['The thing', 'tests green'],
           tests: [{ command: 'pnpm test', exit_code: 0 }],
         });
       },
@@ -543,13 +558,13 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
         await must(
           s,
           `/api/v1/tasks/${task}`,
-          { method: 'PATCH', body: JSON.stringify({ title: 'Renamed' }) },
+          { method: 'PATCH', body: JSON.stringify({ title: 'Renamed', ...DELIVERS }) },
           200,
         );
       },
       mcp: async (s, c) => {
         await seedTask(s);
-        await callTool(c, 'update_task', { task: 'COR-1', title: 'Renamed' });
+        await callTool(c, 'update_task', { task: 'COR-1', title: 'Renamed', ...DELIVERS });
       },
     },
   ],
@@ -639,6 +654,13 @@ async function seedTask(side: Side): Promise<string> {
 }
 
 /** One save, the same on both sides (§4.70): names and counts only. */
+/** "What this delivers" on both surfaces (§4.5, LAI-1115): the same three lists. */
+const DELIVERS = {
+  deliverables: [{ title: 'The thing', detail: 'as a noun' }],
+  solves: ['a problem'],
+  unlocks: ['a door'],
+};
+
 const CHECKPOINT = {
   id: '01JCPAR1TYSAVE0000000000XX',
   idempotency_key: 'parity-save',

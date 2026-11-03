@@ -531,6 +531,54 @@ describe('finish_task', () => {
     await client.close();
   });
 
+  it('ticks the Ships items the checklist names, and keeps the other lines as notes (LAI-1115)', async () => {
+    const client = await connect(await mint());
+    await client.callTool({
+      name: 'create_task',
+      arguments: {
+        project: 'core',
+        title: 'Work',
+        deliverables: [{ title: 'Terminal viewer' }, { title: 'Watch view' }],
+        solves: ['nobody sees a run'],
+        unlocks: ['watching runs from the laptop'],
+      },
+    });
+    await client.callTool({ name: 'start_working', arguments: { task: 'COR-1' } });
+
+    const result = await client.callTool({
+      name: 'finish_task',
+      arguments: {
+        task: 'COR-1',
+        summary: 'Did the thing',
+        // The exact title ticks; a near miss and a free line stay notes.
+        checklist: ['Terminal viewer', 'watch view', 'tests green'],
+      },
+    });
+    expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+    const task = payload(result).task as {
+      deliverables: { title: string; state: string }[];
+      solves: string[];
+    };
+    expect(task.deliverables.map((d) => [d.title, d.state])).toEqual([
+      ['Terminal viewer', 'done'],
+      ['Watch view', 'pending'],
+    ]);
+    expect(task.solves).toEqual(['nobody sees a run']);
+
+    const body = h.db
+      .select()
+      .from(comments)
+      .all()
+      .map((r) => r.bodyMd)
+      .find((b) => b.includes('Did the thing'));
+    expect(body).toContain('- [x] watch view');
+    expect(body).toContain('- [x] tests green');
+    // Ticked is state now, not prose: it is not written twice.
+    expect(body).not.toContain('- [x] Terminal viewer');
+
+    await client.close();
+  });
+
   it('takes the proof and stores it as a claimed round (LAIKA-476)', async () => {
     const client = await connect(await mint());
     await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });

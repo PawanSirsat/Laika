@@ -55,6 +55,9 @@ const RegisterBody = strictObject({
   manifest: z.array(ManifestEntry).max(CHECKPOINT_LIMITS.manifestEntries),
   summary: CheckpointNote.nullable().optional(),
   summary_commit_sha: SHA.nullable().optional(),
+  // The Ships items this save advances, by id or exact title (§4.5,
+  // LAI-1115). A sanity bound; the service refuses a ref that names nothing.
+  working_on: z.array(z.string().trim().min(1).max(500)).max(50).optional(),
 });
 
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
@@ -90,6 +93,7 @@ export function taskCheckpointRoutes(options: CheckpointRouteOptions): Hono<AppE
       manifest: body.manifest,
       summary: body.summary ?? null,
       summaryCommitSha: body.summary_commit_sha ?? null,
+      ...(body.working_on === undefined ? {} : { workingOn: body.working_on }),
     });
     return c.json<CheckpointView>(checkpoint, created ? 201 : 200);
   });
