@@ -57,6 +57,8 @@ import {
   launcherDir,
 } from '../src/agent-launcher.ts';
 import { readProc, writeCredential } from '../src/agent-session.ts';
+import { pollyTurn } from '../src/agent.ts';
+import { omnigentMarker } from '../src/agent-omnigent-marker.ts';
 
 const OWNER = '01M2ZHT4HVYDPS7GE8S24CF4HH';
 const PROJECT = '01M50CDWK51GKGJ3JQEDM0S507';
@@ -2147,5 +2149,91 @@ void describe('LAI-1039 review: N1, N2, N3, N4, N9', () => {
       auditLines(r.home).some((l) => l.event === 'start'),
       false,
     );
+  });
+});
+
+void describe('LAI-1039 with slice D final: identity per run', () => {
+  void test('an Omnigent run’s session is the Omnigent agent’s, a Claude Code run’s the Claude Code agent’s, and a launched Claude Code is never judged an Omnigent run', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    const OMNI_AGENT = '01M6G1HJKXN3BJYNJNTYWVK8K5';
+    const OMNI_TOKEN = 'lai_OMNIGENT_TOKEN_SENTINEL';
+    const OMNI_TASK = '01M5ZDB5XRCGY0H3NE8EB8NR9S';
+    const opened: { harness: string; token: string }[] = [];
+    const claudeEvent = selectedAs(rid(20), rid(21));
+    const omniEvent = record({
+      event_id: rid(22),
+      offer_id: rid(23),
+      cursor: 2,
+      type: 'task.agent_selected',
+      offer_kind: 'work_request',
+      // Another task: one selection names one agent, so the same task would deselect the other.
+      task_id: OMNI_TASK,
+      task_key: 'LAI-1040',
+      to: { agent_id: OMNI_AGENT, harness: 'omnigent', device: 'KvellD’s MacBook 36 GB' },
+    });
+    const r = workRig(() => [], {});
+    writeCredential(r.home, 'omnigent', { url: 'http://board.invalid', token: OMNI_TOKEN });
+    let n = 0;
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 2,
+        // The launcher itself runs under an Omnigent-launched shell: its env says so.
+        env: { ...r.deps.env, OMNIGENT: '1', CLAUDE_CODE_ENTRYPOINT: 'sdk-py' },
+        poll: (h) => Promise.resolve(h === 'omnigent' ? [omniEvent] : [claudeEvent]),
+        workRequest: (c, offerId) =>
+          Promise.resolve({
+            id: offerId,
+            task_id: c.token === OMNI_TOKEN ? OMNI_TASK : TASK,
+            task_key: c.token === OMNI_TOKEN ? 'LAI-1040' : 'LAI-1039',
+            project_id: PROJECT,
+            agent_id: c.token === OMNI_TOKEN ? OMNI_AGENT : AGENT,
+          }),
+        task: (c) =>
+          Promise.resolve({
+            key: c.token === OMNI_TOKEN ? 'LAI-1040' : 'LAI-1039',
+            project_id: PROJECT,
+            status: 'todo',
+            selected_agent_id: c.token === OMNI_TOKEN ? OMNI_AGENT : AGENT,
+            claim_agent_id: null,
+            claimed: false,
+          }),
+        openSession: (c, harness) => {
+          opened.push({ harness, token: c.token });
+          n += 1;
+          return Promise.resolve(rid(30 + n));
+        },
+      },
+      workConfig([process.execPath, script, '--ms', '30'], {
+        max_concurrent: 2,
+        harnesses: {
+          'claude-code': [process.execPath, script, '--ms', '30'],
+          omnigent: [process.execPath, script, '--ms', '30'],
+        },
+        prompt_via: { omnigent: 'argv' },
+      }),
+    ).finished;
+    // Each run's session was opened with its own harness's credential (D's decideIdentity agrees).
+    assert.deepEqual(
+      opened.sort((a, b) => a.harness.localeCompare(b.harness)),
+      [
+        { harness: 'claude-code', token: TOKEN },
+        { harness: 'omnigent', token: OMNI_TOKEN },
+      ],
+    );
+    // The Claude Code child carries no Omnigent marker, so its hooks speak as the
+    // Claude Code agent (`own`), matching the session it was handed.
+    await until(() => existsSync(join(runDir(r.home, rid(21)), 'seen.json'))).catch(() => {
+      throw new Error(JSON.stringify(auditLines(r.home)));
+    });
+    const seen = JSON.parse(readFileSync(join(runDir(r.home, rid(21)), 'seen.json'), 'utf8')) as {
+      env: Record<string, string>;
+    };
+    assert.equal(seen.env.OMNIGENT, undefined);
+    assert.equal(seen.env.CLAUDE_CODE_ENTRYPOINT, undefined);
+    assert.equal(pollyTurn(seen.env), false);
+    assert.equal(omnigentMarker(seen.env, process.pid, 'claude-code'), 'plain');
+    assert.match(seen.env.LAIKA_LAUNCH_SESSION ?? '', /^[0-9A-HJKMNP-TV-Z]{26}$/);
   });
 });
