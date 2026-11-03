@@ -12,6 +12,7 @@ import { afterEach, describe, test } from 'node:test';
 
 import {
   batteryState,
+  CLI_VERSION,
   capacityAnswer,
   launcherAnswerer,
   memoryState,
@@ -56,7 +57,7 @@ void describe('the answer', () => {
   void test('is the closed object, and nothing else', () => {
     const a = capacityAnswer({
       snapshot,
-      harnessReady: true,
+      harnessReady: { credential: true, argv: true, hooks: false },
       sessionLive: false,
       battery: { kind: 'battery', percent: 64.4, onBattery: true },
       memory: { kind: 'memory', elevated: false, detail: 'kernel level 1, normal' },
@@ -70,7 +71,7 @@ void describe('the answer', () => {
         running: 1,
         max_concurrent: 1,
       },
-      harness_ready: true,
+      harness_ready: { credential: true, argv: true, hooks: false },
       session_live: false,
       battery: { state: 'ok', percent: 64, plugged: false },
       memory: { state: 'normal' },
@@ -79,22 +80,18 @@ void describe('the answer', () => {
     });
   });
 
-  void test('no launcher is off with nothing picked up; an unknown reading is never a number', () => {
+  void test('no launcher is off and says nothing more; an unknown reading is never a number', () => {
     const a = capacityAnswer({
       snapshot: undefined,
-      harnessReady: false,
+      harnessReady: { credential: false, argv: false, hooks: false },
       sessionLive: true,
       battery: { kind: 'unsupported', why: 'no battery' },
       memory: { kind: 'unavailable', why: 'sysctl failed' },
       cliVersion: 'weird version; rm -rf',
       answeredBy: 'session',
     });
-    assert.deepEqual(a.launcher, {
-      state: 'off',
-      auto_pickup: { work_requests: false, handoffs: false },
-      running: 0,
-      max_concurrent: 1,
-    });
+    // SPEC §4.84: `{ state: 'off' }` and nothing else — the board's schema is strict.
+    assert.deepEqual(a.launcher, { state: 'off' });
     assert.deepEqual(a.battery, { state: 'unsupported' });
     assert.deepEqual(a.memory, { state: 'unavailable' });
     assert.equal(a.cli_version, 'unknown');
@@ -122,12 +119,29 @@ void describe('the answer', () => {
 void describe('the reply', () => {
   const answer = capacityAnswer({
     snapshot,
-    harnessReady: true,
+    harnessReady: { credential: true, argv: true, hooks: true },
     sessionLive: false,
     battery: { kind: 'unsupported', why: 'x' },
     memory: { kind: 'unsupported', why: 'x' },
     cliVersion: '0.1.0',
     answeredBy: 'launcher',
+  });
+
+  void test('a CLI version the board would refuse is sent as unknown', () => {
+    for (const bad of ['0.1.0-beta', 'laika.kvelld.internal', '1.2', '0.1.0+XYZ']) {
+      const a = capacityAnswer({
+        snapshot,
+        harnessReady: { credential: true, argv: true, hooks: true },
+        sessionLive: false,
+        battery: { kind: 'unsupported', why: 'x' },
+        memory: { kind: 'unsupported', why: 'x' },
+        cliVersion: bad,
+        answeredBy: 'launcher',
+      });
+      assert.equal(a.cli_version, 'unknown', bad);
+    }
+    assert.equal(CLI_VERSION.test('0.1.0+668092cc0000'), true);
+    assert.equal(CLI_VERSION.test('0.1.0'), true);
   });
 
   void test('goes to the ping’s reply route with the agent’s own token', async () => {
@@ -185,7 +199,7 @@ void describe('the reply', () => {
     assert.equal(settled, true);
     const sent = JSON.parse(b.calls[0]?.init.body as string) as Record<string, unknown>;
     assert.equal(sent.answered_by, 'launcher');
-    assert.equal(sent.harness_ready, true);
+    assert.deepEqual(sent.harness_ready, { credential: true, argv: true, hooks: false });
     assert.deepEqual(sent.battery, { state: 'ok', percent: 80, plugged: true });
     assert.deepEqual((sent.launcher as Record<string, unknown>).state, 'on');
   });

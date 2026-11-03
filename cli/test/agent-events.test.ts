@@ -616,12 +616,16 @@ void describe('a capacity ping (agent.capacity_requested)', () => {
     rmSync(home, { recursive: true, force: true });
   });
 
+  // Envelope v2 (slice A): `ping { id, expires_at }` and the task's key.
   const ping = (pingId: string): Record<string, unknown> =>
     envelope({
+      schema_version: 2,
       type: 'agent.capacity_requested',
       offer: null,
       task_id: null,
-      ping: { id: pingId },
+      task_key: null,
+      project_slug: 'laika',
+      ping: { id: pingId, expires_at: Date.now() + 60_000 },
     });
 
   void test('is read with its ping id and produces no notice line', () => {
@@ -647,6 +651,7 @@ void describe('a capacity ping (agent.capacity_requested)', () => {
       },
       answerPing: (_d, record) => {
         answered.push(record.ping_id ?? '');
+        calls.push('answer');
         return Promise.resolve(true);
       },
     };
@@ -657,8 +662,12 @@ void describe('a capacity ping (agent.capacity_requested)', () => {
     assert.equal(store.records[0]!.state, 'presented');
     assert.equal(store.records[0]!.presented_unacked, undefined);
     assert.equal(pending(store.records[0]!), false);
-    // Only the `received` acknowledgement went to the board; no `presented` one.
-    assert.equal(calls.filter((c) => c.endsWith('/events/ack')).length, 1);
+    // Only the `received` acknowledgement went to the board, no `presented` one —
+    // and it went **after** the answer, so the delivery never sits undelivered.
+    assert.deepEqual(
+      calls.map((c) => (c.endsWith('/events/ack') ? 'ack' : c)),
+      ['answer', 'ack'],
+    );
     // A replay of the same event answers nothing again.
     await receive(deps, KEY, credential, [e], undefined);
     assert.equal(await settlePings(deps, KEY, credential), 0);
@@ -677,6 +686,7 @@ void describe('a capacity ping (agent.capacity_requested)', () => {
     };
     await receive(deps, KEY, credential, [ping(pid)], undefined);
     assert.equal(readStore(home, KEY).records[0]!.state, 'received');
+    // Past `ping.expires_at` and the skew allowance, nothing can answer it: settled.
     now += 121_000;
     assert.equal(await settlePings(deps, KEY, credential), 1);
     assert.equal(readStore(home, KEY).records[0]!.state, 'presented');

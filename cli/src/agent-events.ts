@@ -167,6 +167,8 @@ export interface EventRecord {
   readonly context_revision: number | null;
   /** A capacity ping's id (`agent.capacity_requested`, D-126), when the envelope names one. */
   readonly ping_id?: string;
+  /** When the board stops taking an answer to it (envelope v2's `ping.expires_at`). */
+  readonly ping_expires_at?: number;
   /** The revision this helper last knew for the project, when it knew one. */
   context_before?: number;
   state: LocalState;
@@ -340,8 +342,13 @@ export function asRecord(value: unknown, now: number): EventRecord | undefined {
     typeof offer.kind === 'string' &&
     OFFER_KINDS.has(offer.kind);
   const revision = posInt(value.context_revision) ? value.context_revision : null;
-  // Plan §4: the ping travels as its own envelope; its id is the one field it adds.
-  const ping = isRecord(value.ping) ? value.ping.id : value.ping_id;
+  // Envelope v2 (SPEC §4.76, slice A): `ping { id, expires_at }`, and the task's key.
+  const ping = isRecord(value.ping) ? value.ping.id : undefined;
+  const expires = isRecord(value.ping) ? value.ping.expires_at : undefined;
+  const key =
+    typeof value.task_key === 'string' && TASK_KEY.test(value.task_key)
+      ? value.task_key
+      : undefined;
   const delivery = isRecord(value.delivery) ? value.delivery : null;
   const boardState =
     typeof delivery?.state === 'string' &&
@@ -359,7 +366,9 @@ export function asRecord(value: unknown, now: number): EventRecord | undefined {
     from: asParty(value.from),
     to: asParty(value.to),
     context_revision: revision,
+    ...(key === undefined ? {} : { task_key: key }),
     ...(type === 'agent.capacity_requested' && isLaikaId(ping) ? { ping_id: ping } : {}),
+    ...(type === 'agent.capacity_requested' && posInt(expires) ? { ping_expires_at: expires } : {}),
     state: 'available',
     ...(boardState === undefined ? {} : { board_state: boardState }),
     at: now,
@@ -596,15 +605,18 @@ export async function settlePings(
   deps: EventDeps,
   key: StoreKey,
   credential: AgentCredential,
+  timeoutMs = 5000,
 ): Promise<number> {
   const due = readStore(deps.home, key).records.filter(
-    (r) => r.type === 'agent.capacity_requested' && r.state === 'received',
+    (r) => r.type === 'agent.capacity_requested' && r.state !== 'presented',
   );
   if (due.length === 0) return 0;
   const settled: string[] = [];
   for (const record of due.slice(0, 5)) {
+    const closes = record.ping_expires_at ?? record.at + PING_OPEN_MS;
     let done: boolean;
-    if (deps.now() - record.at > 2 * PING_OPEN_MS) done = true;
+    // Past its window (and the clock skew a device may have), nothing can answer it.
+    if (deps.now() > closes + PING_OPEN_MS) done = true;
     else {
       try {
         const answer = deps.answerPing ?? (await import('./agent-capacity.ts')).sessionAnswer;
@@ -615,11 +627,21 @@ export async function settlePings(
     }
     if (done) settled.push(record.event_id);
   }
-  if (settled.length > 0) {
-    mutate(deps.home, key, (s) => {
-      for (const r of s.records) if (settled.includes(r.event_id)) r.state = 'presented';
-    });
-  }
+  if (settled.length === 0) return 0;
+  // **Acknowledged after it is answered**, so its delivery never sits undelivered:
+  // the board counts an answer as its receipt, and a ping settled unanswered
+  // (expired, or not this board's) is received all the same.
+  const owed = readStore(deps.home, key)
+    .records.filter((r) => settled.includes(r.event_id) && r.state === 'available')
+    .map((r) => r.event_id);
+  const { recorded } = await ack(deps, key, credential, owed, 'received', undefined, timeoutMs);
+  mutate(deps.home, key, (s) => {
+    for (const r of s.records) {
+      if (!settled.includes(r.event_id)) continue;
+      if (r.state === 'received' || recorded.includes(r.event_id)) r.state = 'presented';
+    }
+    if (recorded.length > 0) delete s.refused_at;
+  });
   return settled.length;
 }
 
@@ -731,10 +753,16 @@ export async function receive(
     .slice(0, 500)
     .map((e) => asRecord(e, now))
     .filter((r): r is EventRecord => r !== undefined);
-  const unreceived = mutate(deps.home, key, (s) => {
+  mutate(deps.home, key, (s) => {
     ingest(s, records);
-    return s.records.filter((r) => r.state === 'available').map((r) => r.event_id);
   });
+  // A capacity ping is answered first and acknowledged after (`settlePings`).
+  if (records.some((r) => SILENT_TYPES.has(r.type))) {
+    await settlePings(deps, key, credential, timeoutMs);
+  }
+  const unreceived = readStore(deps.home, key)
+    .records.filter((r) => r.state === 'available')
+    .map((r) => r.event_id);
   const { recorded, outcome } = await ack(
     deps,
     key,
@@ -745,9 +773,6 @@ export async function receive(
     timeoutMs,
   );
   markReceived(deps, key, recorded);
-  if (outcome === 'ok' && records.some((r) => SILENT_TYPES.has(r.type))) {
-    await settlePings(deps, key, credential);
-  }
   return outcome;
 }
 

@@ -1,8 +1,8 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import type { EventDeps, EventRecord, PingAnswerer, StoreKey } from './agent-events.ts';
+import { AGENT_MARKER, hookFile } from './agent-hooks.ts';
 import {
-  configPath,
   handoffsOn,
   type LauncherSnapshot,
   loadConfig,
@@ -51,21 +51,29 @@ import { versionInfo } from './version.ts';
  * again hourly, and a ping on such a board is settled unanswered.
  */
 
-/** The closed answer (plan §4): every field fixed, numbers capped, no free text. */
+/**
+ * The closed answer, exactly as the board takes it (SPEC §4.84, slice A's
+ * `AnswerBody`): every level strict, every string a closed word but the CLI
+ * version, and a reading the device could not take a word, never a number.
+ */
 export interface CapacityAnswer {
-  readonly launcher: {
-    readonly state: 'on' | 'off';
-    readonly auto_pickup: { readonly work_requests: boolean; readonly handoffs: boolean };
-    readonly running: number;
-    readonly max_concurrent: number;
+  readonly launcher:
+    | {
+        readonly state: 'on';
+        readonly auto_pickup: { readonly work_requests: boolean; readonly handoffs: boolean };
+        readonly running: number;
+        readonly max_concurrent: number;
+      }
+    | { readonly state: 'off' };
+  readonly harness_ready: {
+    readonly credential: boolean;
+    readonly argv: boolean;
+    readonly hooks: boolean;
   };
-  readonly harness_ready: boolean;
   readonly session_live: boolean;
-  readonly battery: {
-    readonly state: 'ok' | 'low' | 'unsupported' | 'unavailable';
-    readonly percent?: number;
-    readonly plugged?: boolean;
-  };
+  readonly battery:
+    | { readonly state: 'ok' | 'low'; readonly percent: number; readonly plugged?: boolean }
+    | { readonly state: 'unsupported' | 'unavailable' };
   readonly memory: {
     readonly state: 'normal' | 'warn' | 'critical' | 'unsupported' | 'unavailable';
   };
@@ -76,18 +84,34 @@ export interface CapacityAnswer {
 const clamp = (n: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, Math.round(n)));
 
-/** The CLI's version as one short token: `0.1.0+<12 hex>`, or `0.1.0`. */
+/**
+ * The board's shape for a CLI version (slice A's `CliVersion`): `MAJOR.MINOR.PATCH`,
+ * optionally `+` a short commit, or `unknown` — never a dotted host name.
+ */
+export const CLI_VERSION = /^\d{1,5}\.\d{1,5}\.\d{1,6}(?:\+[0-9a-f]{7,12})?$/;
+
+/** The CLI's version as the board takes it: `0.1.0+<12 hex>`, `0.1.0`, or `unknown`. */
 export function cliVersion(): string {
   try {
     const info = versionInfo();
-    const base = /^[0-9A-Za-z.+-]{1,32}$/.test(info.version) ? info.version : 'unknown';
+    if (!/^\d{1,5}\.\d{1,5}\.\d{1,6}$/.test(info.version)) return 'unknown';
     const commit =
       info.commit !== null && /^[0-9a-f]{7,40}$/.test(info.commit)
         ? `+${info.commit.slice(0, 12)}`
         : '';
-    return `${base}${commit}`;
+    return `${info.version}${commit}`;
   } catch {
     return 'unknown';
+  }
+}
+
+/** Whether this harness's Laika session hooks are installed (the marker in its hook file). */
+export function hooksOn(home: string, harness: Harness): boolean {
+  if (harness !== 'claude-code' && harness !== 'codex') return false;
+  try {
+    return readFileSync(hookFile(home, harness), 'utf8').includes(AGENT_MARKER);
+  } catch {
+    return false;
   }
 }
 
@@ -110,7 +134,7 @@ export function memoryState(r: MemoryReading): CapacityAnswer['memory'] {
 
 export interface AnswerInput {
   readonly snapshot: LauncherSnapshot | undefined;
-  readonly harnessReady: boolean;
+  readonly harnessReady: CapacityAnswer['harness_ready'];
   readonly sessionLive: boolean;
   readonly battery: BatteryReading;
   readonly memory: MemoryReading;
@@ -122,20 +146,28 @@ export interface AnswerInput {
 export function capacityAnswer(input: AnswerInput): CapacityAnswer {
   const s = input.snapshot;
   return {
-    launcher: {
-      state: s?.enabled === true ? 'on' : 'off',
-      auto_pickup: {
-        work_requests: s?.enabled === true && s.auto_pickup.work_requests,
-        handoffs: s?.enabled === true && s.auto_pickup.handoffs,
-      },
-      running: clamp(s?.running ?? 0, 0, 4),
-      max_concurrent: clamp(s?.max_concurrent ?? 1, 1, 4),
+    // `off` carries nothing else: nothing here picks work up, so there is nothing to count.
+    launcher:
+      s?.enabled === true
+        ? {
+            state: 'on',
+            auto_pickup: {
+              work_requests: s.auto_pickup.work_requests,
+              handoffs: s.auto_pickup.handoffs,
+            },
+            running: clamp(s.running, 0, 4),
+            max_concurrent: clamp(s.max_concurrent, 1, 4),
+          }
+        : { state: 'off' },
+    harness_ready: {
+      credential: input.harnessReady.credential,
+      argv: input.harnessReady.argv,
+      hooks: input.harnessReady.hooks,
     },
-    harness_ready: input.harnessReady,
     session_live: input.sessionLive,
     battery: batteryState(input.battery),
     memory: memoryState(input.memory),
-    cli_version: /^[0-9A-Za-z.+-]{1,64}$/.test(input.cliVersion) ? input.cliVersion : 'unknown',
+    cli_version: CLI_VERSION.test(input.cliVersion) ? input.cliVersion : 'unknown',
     answered_by: input.answeredBy,
   };
 }
@@ -183,8 +215,8 @@ export async function reportPresence(
     auto_pickup: snapshot.auto_pickup,
     running: clamp(snapshot.running, 0, 4),
     max_concurrent: clamp(snapshot.max_concurrent, 1, 4),
-    cli_version: version,
-    started_at: snapshot.started_at,
+    cli_version: CLI_VERSION.test(version) ? version : 'unknown',
+    ...(snapshot.started_at > 0 ? { started_at: snapshot.started_at } : {}),
   };
   let response: Response;
   try {
@@ -235,7 +267,7 @@ async function answerOne(
   key: StoreKey,
   credential: AgentCredential,
   snapshot: LauncherSnapshot | undefined,
-  harnessReady: boolean,
+  harnessReady: CapacityAnswer['harness_ready'],
   answeredBy: 'launcher' | 'session',
 ): Promise<boolean> {
   if (record.ping_id === undefined) return true; // Nothing to answer: settled.
@@ -270,7 +302,12 @@ export function launcherAnswerer(snapshot: () => LauncherSnapshot): PingAnswerer
       key,
       credential,
       now,
-      now.harnesses.includes(key.harness),
+      {
+        // It answers with this harness's saved credential, so that one is there.
+        credential: true,
+        argv: now.harnesses.includes(key.harness),
+        hooks: hooksOn(deps.home, key.harness),
+      },
       'launcher',
     );
   };
@@ -301,9 +338,10 @@ export const sessionAnswer: PingAnswerer = async (deps, record, key, credential)
           harnesses: Object.keys(config.config.harnesses) as Harness[],
         }
       : undefined;
-  const ready =
-    configured &&
-    existsSync(credentialPath(deps.home, key.harness)) &&
-    existsSync(configPath(deps.home));
+  const ready = {
+    credential: existsSync(credentialPath(deps.home, key.harness)),
+    argv: configured,
+    hooks: hooksOn(deps.home, key.harness),
+  };
   return answerOne(deps, record, key, credential, snapshot, ready, 'session');
 };
