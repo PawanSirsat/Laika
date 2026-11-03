@@ -35,6 +35,8 @@ export function statusSubline(
   input: { readonly rounds: number; readonly reviewSince: number | null; readonly now: number },
 ): string | null {
   const round = input.rounds > 0 ? ` · round ${String(input.rounds)}` : '';
+  // `??`: a view served before LAI-758 carries no `send_back` at all.
+  const sentBack = task.send_back ?? null;
   switch (task.status) {
     case 'review':
       return input.reviewSince === null
@@ -46,13 +48,13 @@ export function statusSubline(
       return null;
     case 'backlog':
     case 'todo':
-      if (task.send_back !== null) {
-        return `Sent back ${ago(task.send_back.created_at, input.now)} · round ${String(input.rounds + 1)}`;
+      if (sentBack !== null) {
+        return `Sent back ${ago(sentBack.created_at, input.now)} · round ${String(input.rounds + 1)}`;
       }
       return task.started_at === null ? 'Not started' : null;
     case 'in_progress':
-      if (task.send_back !== null) {
-        return `Sent back ${ago(task.send_back.created_at, input.now)} · round ${String(input.rounds + 1)}`;
+      if (sentBack !== null) {
+        return `Sent back ${ago(sentBack.created_at, input.now)} · round ${String(input.rounds + 1)}`;
       }
       return task.started_at === null ? null : `Started ${ago(task.started_at, input.now)}`;
   }

@@ -76,6 +76,12 @@ export interface TaskMetaProps {
   readonly myAgents: MyAgents;
   /** When the read behind `task` started, in the page's order (`read-order.ts`). */
   readonly readOrder?: number | undefined;
+  /**
+   * The status control's sub-line (§11.4.2.1, LAI-1117): *In review for 24
+   * min · round 1*, *Sent back 6 min ago · round 2*, *Not started*. Absent:
+   * the older *claimed …* line.
+   */
+  readonly statusSub?: string | null | undefined;
 }
 
 /** `4m`, `6d` — the design's short form beside a field. */
@@ -151,6 +157,7 @@ export function TaskMeta({
   agentsAllowed,
   myAgents,
   readOrder = 0,
+  statusSub,
 }: TaskMetaProps) {
   const now = Date.now();
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
@@ -265,10 +272,16 @@ export function TaskMeta({
             </button>
           )}
       </div>
-      {/* `started_at` is when it was claimed — the design's second line. */}
-      {since(task.started_at, now) !== undefined && (
-        <p className="meta-sub meta-status-sub">claimed {since(task.started_at, now)}</p>
-      )}
+      {/* The design's second line: where the task stands, in words (LAI-1117). */}
+      {statusSub !== undefined
+        ? statusSub !== null && (
+            <p className="meta-sub meta-status-sub" data-status-sub>
+              {statusSub}
+            </p>
+          )
+        : since(task.started_at, now) !== undefined && (
+            <p className="meta-sub meta-status-sub">claimed {since(task.started_at, now)}</p>
+          )}
       {/*
         **No coupling, but a sentence** (D-066). A parent may be closed with
         open subtasks — Jira's default — and the rail says so rather than

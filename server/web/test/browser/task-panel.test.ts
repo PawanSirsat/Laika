@@ -778,9 +778,17 @@ void describe('the Jira-shaped task view (D-066)', () => {
       assert.match(on, /All/);
       const rows = await h.page
         .locator('#panel-all > ul > li')
-        .evaluateAll((els: Element[]) => els.map((el) => el.className));
+        .evaluateAll((els: Element[]) =>
+          els.map((el) => [el.getAttribute('data-feed-item'), el.className]),
+        );
       // Oldest first: the 2h-old comment, the 1h-old event, the 2-minute comment.
-      assert.deepEqual(rows, ['cmt', 'panel-event', 'cmt']);
+      // Since D-129 the feed runs by actor: Ada's event continues Ada's comment,
+      // and the agent's comment (`created_via: mcp`) starts a run of its own.
+      assert.deepEqual(rows, [
+        ['comment', 'cmt'],
+        ['event', 'panel-event panel-event-cont'],
+        ['comment', 'cmt'],
+      ]);
     } finally {
       await h.close();
     }

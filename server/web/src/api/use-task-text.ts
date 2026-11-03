@@ -27,7 +27,16 @@ export function needsText(
  */
 export function withText(summary: TaskSummary, held: Task | undefined): Task | undefined {
   if (held?.id !== summary.id) return undefined;
-  return { ...summary, description_md: held.description_md, acceptance_md: held.acceptance_md };
+  return {
+    ...summary,
+    description_md: held.description_md,
+    acceptance_md: held.acceptance_md,
+    // The detail fields since LAI-1115 travel with the texts: a slim list
+    // has none of them (SLIM_OMITS), so the held read is their only source.
+    ...(held.deliverables === undefined ? {} : { deliverables: held.deliverables }),
+    ...(held.solves === undefined ? {} : { solves: held.solves }),
+    ...(held.unlocks === undefined ? {} : { unlocks: held.unlocks }),
+  };
 }
 
 export interface TaskText {

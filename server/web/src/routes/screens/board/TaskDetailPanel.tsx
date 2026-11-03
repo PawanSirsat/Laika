@@ -20,10 +20,13 @@ import { useDelayed } from '../../../components/use-delayed.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { actorLine, describeActor, viaLine } from './actor-presentation.ts';
 import { threadOrder, type ThreadItem } from './thread-order.ts';
-import { agentNamesFrom } from '../../../api/selected-agent.ts';
+import { agentNamesFrom, agentVia } from '../../../api/selected-agent.ts';
+import { sessionHarnessName } from '../../../api/agent-session.ts';
+import { WhoDidThis } from '../task/WhoDidThis.tsx';
 import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import {
   getTask,
+  isOutsideId,
   listWatchers,
   unwatchTask,
   updateTask,
@@ -43,6 +46,21 @@ import { CommentComposer } from '../task/CommentComposer.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { ForecastSection } from '../task/ForecastSection.tsx';
 import { TokensSection } from '../task/TokensSection.tsx';
+import { StateHero } from '../task/StateHero.tsx';
+import { DeliversPanel } from '../task/DeliversPanel.tsx';
+import { heroKind, mayDecideReview } from '../task/hero-derive.ts';
+import { reviewSince, statusSubline } from '../task/rail-derive.ts';
+import { checklistProgress } from '../task/acceptance-derive.ts';
+import { actorKey, commentKind, firstLine, groupRuns } from '../task/feed-groups.ts';
+import { SendBackDialog } from '../review/SendBackDialog.tsx';
+import { PingButton } from '../../../components/agent/PingButton.tsx';
+import {
+  acceptReview,
+  getTaskRounds,
+  sendBackReview,
+  type TaskRounds,
+} from '../../../api/review.ts';
+import { agentLabel } from '../../../api/selected-agent.ts';
 import { ExecutionPanel } from '../../../components/agent/ExecutionPanel.tsx';
 import { useClaimClock } from '../../../components/agent/use-claim-clock.ts';
 import { executionView, hasExecution } from '../../../components/agent/execution-derive.ts';
@@ -153,6 +171,11 @@ export interface TaskDetailPanelProps {
   readonly listReadAt?: number | null | undefined;
   /** When the read behind `task` started, in the page's order (LAI-538). */
   readonly listReadOrder?: number | undefined;
+  /**
+   * A review decided from this panel (D-129 item 5): the shell re-reads the
+   * Review badge, as it does after a decision on the Review screen.
+   */
+  readonly onReviewDecided?: (() => void) | undefined;
 }
 
 /**
@@ -221,6 +244,7 @@ export function TaskDetailPanel({
   listReadAt = null,
   listReadOrder = 0,
   executionSignal,
+  onReviewDecided,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
   /*
@@ -363,6 +387,80 @@ export function TaskDetailPanel({
   const { theme } = useTheme();
   const now = Date.now();
 
+  /*
+   * **The rounds, read once** (LAI-1117) for the state panel, the proof and
+   * the feed's finish summaries — keyed on `updated_at`, which the store keeps
+   * current from the stream, as the proof section always was.
+   */
+  const [roundsRead, setRoundsRead] = useState<{
+    readonly rounds: TaskRounds | undefined;
+    readonly failed: boolean;
+  }>({ rounds: undefined, failed: false });
+  useEffect(() => {
+    const controller = new AbortController();
+    setRoundsRead((was) => ({ rounds: was.rounds, failed: false }));
+    getTaskRounds(task.id, controller.signal)
+      .then((answer) => {
+        if (!controller.signal.aborted) setRoundsRead({ rounds: answer, failed: false });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setRoundsRead((was) => ({ rounds: was.rounds, failed: true }));
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [task.id, task.updated_at]);
+  const rounds = roundsRead.rounds;
+
+  /*
+   * **Approve and Send back from the panel** (D-129 item 5): the Review
+   * screen's endpoints and dialog, offered to the reader the server lets
+   * decide. A refusal is shown as the server words it.
+   */
+  const [deciding, setDeciding] = useState<'accept' | 'send_back' | null>(null);
+  const [decideError, setDecideError] = useState<string | undefined>(undefined);
+  const [sendingBack, setSendingBack] = useState(false);
+  const [sendBackError, setSendBackError] = useState<string | undefined>(undefined);
+  const sendBackOpener = useRef<HTMLElement | null>(null);
+  const decided = (): void => {
+    onTaskEdited();
+    detail.refresh();
+    onReviewDecided?.();
+  };
+  const approve = (): void => {
+    setDeciding('accept');
+    setDecideError(undefined);
+    acceptReview(task.id)
+      .then(decided)
+      .catch((cause: unknown) => {
+        setDecideError(
+          cause instanceof Error && cause.message !== '' ? cause.message : 'Something went wrong.',
+        );
+      })
+      .finally(() => {
+        setDeciding(null);
+      });
+  };
+  const sendBack = (reason: string): void => {
+    setDeciding('send_back');
+    setSendBackError(undefined);
+    sendBackReview(task.id, reason)
+      .then(() => {
+        setSendingBack(false);
+        decided();
+      })
+      .catch((cause: unknown) => {
+        setSendBackError(
+          cause instanceof Error && cause.message !== '' ? cause.message : 'Something went wrong.',
+        );
+      })
+      .finally(() => {
+        setDeciding(null);
+      });
+  };
+  const [copied, setCopied] = useState('');
+
   /**
    * Who is watching, read once and used twice — the header's Watch button and
    * the rail's list. Two independent reads would let the button and the list
@@ -449,6 +547,56 @@ export function TaskDetailPanel({
     return found;
   }, [detail, agentNames]);
   /**
+   * Each comment's `comment.added` row (LAI-1117): who wrote it, through which
+   * agent and session — the run it belongs to, and its *Who did this*.
+   */
+  const addedRows = useMemo(() => {
+    const found = new Map<string, ActivityEvent>();
+    if (detail.status !== 'ready') return found;
+    for (const event of detail.activity) {
+      if (event.type !== 'comment.added') continue;
+      const id = (event.payload as { comment_id?: unknown } | null)?.comment_id;
+      if (typeof id === 'string') found.set(id, event);
+    }
+    return found;
+  }, [detail]);
+  const commentKey = (comment: Comment): string => {
+    const row = addedRows.get(comment.id);
+    if (row !== undefined) return actorKey(row);
+    // No row loaded: an agent's comment is still not its person's (D-114).
+    return `${comment.author_id ?? 'system'}|${isAgentComment(comment) ? 'agent' : ''}|`;
+  };
+  /** Which items continue the run above them (D-129): same actor, same session. */
+  const continues = <T,>(items: readonly T[], keyOf: (item: T) => string): boolean[] =>
+    groupRuns(items, keyOf).flatMap((run) => run.items.map((_, i) => i > 0));
+  /** *Who did this* for an agent's row; nothing for a person's or Laika's. */
+  const whoFor = (row: ActivityEvent | undefined) => {
+    if (row?.actor_kind !== 'agent') return null;
+    const redacted =
+      row.agent_redacted === true || row.agent_id === null || row.agent_id === undefined;
+    const session = row.agent_session ?? null;
+    const harness = session?.harness ?? null;
+    return (
+      <WhoDidThis
+        person={personName(row.actor_id, members)}
+        agent={agentVia(row, agentNames) ?? 'an agent'}
+        redacted={redacted}
+        device={
+          row.agent_id === null || row.agent_id === undefined
+            ? undefined
+            : (agentNames.get(row.agent_id)?.device_label ?? undefined)
+        }
+        tool={
+          harness === null
+            ? undefined
+            : `${sessionHarnessName(harness)}${session?.harness_version === null || session?.harness_version === undefined ? '' : ` ${session.harness_version}`}`
+        }
+        model={session?.model ?? undefined}
+      />
+    );
+  };
+
+  /**
    * The execution panel's facts: the task view, its live claim (LAI-597) and
    * its claim rows (LAI-543). The live claim is read on this reader's clock,
    * which re-renders the panel when its heartbeat goes stale and every half
@@ -467,7 +615,12 @@ export function TaskDetailPanel({
    * focus stays where the reader left it.
    */
   const [pollMs, setPollMs] = useState<number | undefined>(undefined);
-  const handoffs = useTaskHandoffs(task.id, hasExecution(execution), pollMs);
+  // Also while a work request waits, for *Work request sent …* (LAI-1117).
+  const handoffs = useTaskHandoffs(
+    task.id,
+    hasExecution(execution) || heroKind(task) === 'waiting',
+    pollMs,
+  );
   const { refresh: refreshHandoffs } = handoffs;
   // Poll only while a save waits for its notice; the server decides when it is late.
   const polling = pollsForNotice(handoffs.checkpoints);
@@ -601,12 +754,19 @@ export function TaskDetailPanel({
    */
 
   /** One comment, as the thread draws it — used by the All and Comments tabs alike. */
-  const renderComment = (comment: Comment) => {
+  const renderComment = (comment: Comment, cont = false) => {
     const agent = isAgentComment(comment);
     const who = personName(comment.author_id, members);
     const ink = comment.author_id === null ? undefined : avatarColorSolid(comment.author_id, theme);
+    const kind = commentKind(comment, rounds?.rounds ?? []);
     return (
-      <li key={comment.id} className="cmt">
+      <li
+        key={comment.id}
+        className={['cmt', cont ? 'cmt-cont' : '', comment.sent_back ? 'cmt-reason' : '']
+          .filter((c) => c !== '')
+          .join(' ')}
+        data-feed-item="comment"
+      >
         <span
           className="cmt-avatar"
           aria-hidden="true"
@@ -654,6 +814,7 @@ export function TaskDetailPanel({
                 : who}
             </span>
             {agent && <span className="cmt-agent">AGENT</span>}
+            {!cont && whoFor(addedRows.get(comment.id))}
             {comment.edited_at !== null && <span className="cmt-edited">edited</span>}
             {/* The reason a person sent the task back from review (D-082). */}
             {comment.sent_back && (
@@ -674,14 +835,25 @@ export function TaskDetailPanel({
             </time>
           </p>
 
-          <CommentBody body={comment.body_md} people={people} meId={meId} />
+          {kind.kind === 'finish_summary' ? (
+            /* A round's summary, folded to its first line (D-129). */
+            <details className="cmt-finish">
+              <summary>
+                Finish summary · round {kind.round}
+                <span className="cmt-finish-first">{firstLine(comment.body_md)}</span>
+              </summary>
+              <CommentBody body={comment.body_md} people={people} meId={meId} />
+            </details>
+          ) : (
+            <CommentBody body={comment.body_md} people={people} meId={meId} />
+          )}
         </div>
       </li>
     );
   };
 
   /** One activity row — the History tab's shape, reused inside All. */
-  const renderEvent = (event: ActivityEvent) => {
+  const renderEvent = (event: ActivityEvent, cont = false) => {
     // The status **names** — two columns of one kind would otherwise read
     // `review → review` (LAI-739).
     const move = statusMoveNames(event);
@@ -690,9 +862,14 @@ export function TaskDetailPanel({
     // unidentified human (LAI-411).
     const actor = describeActor(event, members, agentNames);
     return (
-      <li key={`${event.id}-${String(event.seq)}`} className="panel-event">
+      <li
+        key={`${event.id}-${String(event.seq)}`}
+        className={cont ? 'panel-event panel-event-cont' : 'panel-event'}
+        data-feed-item="event"
+      >
         {/* *Pawan via Claude Code · laptop-1* on an agent's row (LAI-538). */}
         <span className="panel-event-who">{actorLine(actor)}</span>
+        {!cont && whoFor(event)}
         {/* The word itself, not a colour — an `agent` and a `system` marker
             must be told apart by someone who cannot separate violet from
             grey (AC3). */}
@@ -775,6 +952,12 @@ export function TaskDetailPanel({
           <span className="panel-key" aria-current="page">
             {task.key}
           </span>
+          {/* The card's id elsewhere, beside its key (LAI-780, D-129). */}
+          {task.external_ref !== null && isOutsideId(task.external_ref) && (
+            <span className="panel-outside-id" title="Outside id">
+              {task.external_ref}
+            </span>
+          )}
         </nav>
 
         <div className="panel-head-actions">
@@ -819,8 +1002,13 @@ export function TaskDetailPanel({
             onClick={(event) => {
               // Through the one clipboard implementation (CopyButton's), not a
               // second call site of its own. The button is passed so the copy
-              // stays inside this modal (LAI-760).
-              void copyText(window.location.href, event.currentTarget);
+              // stays inside this modal (LAI-760). Share is this (D-129 item 6).
+              void copyText(window.location.href, event.currentTarget).then((outcome) => {
+                setCopied(outcome === 'copied' ? 'Copied' : 'Press ⌘C to copy');
+                window.setTimeout(() => {
+                  setCopied('');
+                }, 2_000);
+              });
             }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -830,6 +1018,10 @@ export function TaskDetailPanel({
               <path d="M8.2 10.8 15.8 6.2M8.2 13.2l7.6 4.6" stroke="currentColor" strokeWidth="2" />
             </svg>
           </button>
+          {/* Present before the click, so the words are announced (LAI-1117). */}
+          <span className="panel-copied" role="status" aria-live="polite">
+            {copied}
+          </span>
 
           <button
             type="button"
@@ -920,6 +1112,79 @@ export function TaskDetailPanel({
             <p className="panel-alert" role="alert">
               {moveError}
             </p>
+          )}
+
+          {/* What this delivers (§4.5, D-129): drawn when the server sent it. */}
+          {full !== undefined && (
+            <DeliversPanel
+              task={full}
+              status={task.status}
+              blocks={task.blocks}
+              byId={byId}
+              mayEdit={mayEdit === true && !text.stale}
+              onOpen={onOpen}
+              onSave={async (edit) => {
+                text.accept(await updateTask(task.id, edit));
+                onTaskEdited();
+              }}
+            />
+          )}
+
+          {/* Where the task stands, one panel per status (§11.4.2.1, D-129). */}
+          <StateHero
+            task={task}
+            rounds={rounds}
+            activity={detail.status === 'ready' ? detail.activity : []}
+            offers={handoffs.offers}
+            nameOf={(id) => personName(id, members)}
+            claimNow={claimNow}
+            mayDecide={mayDecideReview({ meId, assigneeId: task.assignee_id, leads })}
+            deciding={deciding}
+            decideError={decideError}
+            onApprove={approve}
+            onSendBack={(opener) => {
+              sendBackOpener.current = opener;
+              setSendBackError(undefined);
+              setSendingBack(true);
+            }}
+            ping={
+              mayEdit === true &&
+              task.selected_agent !== undefined &&
+              task.selected_agent !== null &&
+              myAgentIds.has(task.selected_agent.id) ? (
+                <PingButton
+                  key={`hero:${task.id}:${task.selected_agent.id}`}
+                  agentId={task.selected_agent.id}
+                  project={slug}
+                  taskId={task.id}
+                  target={agentLabel(task.selected_agent)}
+                />
+              ) : undefined
+            }
+            onChangeAgent={
+              mayEdit === true
+                ? () => {
+                    const row = panelRef.current?.querySelector<HTMLElement>('.meta-row-agent');
+                    row?.scrollIntoView({ block: 'center' });
+                    row?.querySelector<HTMLElement>('button, [role="combobox"]')?.focus();
+                  }
+                : undefined
+            }
+            people={people}
+            meId={meId}
+          />
+          {sendingBack && (
+            <SendBackDialog
+              taskKey={task.key}
+              title={task.title}
+              busy={deciding === 'send_back'}
+              error={sendBackError}
+              onSend={sendBack}
+              onClose={() => {
+                setSendingBack(false);
+              }}
+              restoreFocus={() => sendBackOpener.current}
+            />
           )}
 
           <section className="panel-section" data-section="description">
@@ -1046,7 +1311,18 @@ export function TaskDetailPanel({
                 Acceptance
               </button>
               {acceptanceOpen && (
-                <div className="panel-acceptance">
+                <div
+                  className="panel-acceptance"
+                  data-acceptance={
+                    checklistProgress(full.acceptance_md) === null ? 'prose' : 'checklist'
+                  }
+                >
+                  {checklistProgress(full.acceptance_md) !== null && (
+                    <p className="panel-acceptance-progress">
+                      {checklistProgress(full.acceptance_md)?.done} of{' '}
+                      {checklistProgress(full.acceptance_md)?.total} met
+                    </p>
+                  )}
                   {/* The description's editor and its stale-text rule (LAI-827). */}
                   <DocumentField
                     name="acceptance"
@@ -1103,6 +1379,7 @@ export function TaskDetailPanel({
             hideWhenEmpty
             people={people}
             meId={meId}
+            read={roundsRead}
           />
 
           {/*
@@ -1209,11 +1486,18 @@ export function TaskDetailPanel({
                       <p className="cmt-none">Nothing yet</p>
                     ) : (
                       <ul className="cmt-list panel-everything">
-                        {everything.map((item) =>
-                          item.kind === 'comment'
-                            ? renderComment(item.comment)
-                            : renderEvent(item.event),
-                        )}
+                        {(() => {
+                          const cont = continues(everything, (item) =>
+                            item.kind === 'comment'
+                              ? commentKey(item.comment)
+                              : actorKey(item.event),
+                          );
+                          return everything.map((item, i) =>
+                            item.kind === 'comment'
+                              ? renderComment(item.comment, cont[i])
+                              : renderEvent(item.event, cont[i]),
+                          );
+                        })()}
                       </ul>
                     )}
                   </section>
@@ -1235,7 +1519,14 @@ export function TaskDetailPanel({
                        */
                       <p className="cmt-none">No comments yet</p>
                     ) : (
-                      <ul className="cmt-list">{detail.comments.map(renderComment)}</ul>
+                      <ul className="cmt-list">
+                        {(() => {
+                          const cont = continues(detail.comments, commentKey);
+                          return detail.comments.map((comment, i) =>
+                            renderComment(comment, cont[i]),
+                          );
+                        })()}
+                      </ul>
                     )}
                   </section>
                 )}
@@ -1250,7 +1541,12 @@ export function TaskDetailPanel({
                     {detail.activity.length === 0 ? (
                       <p className="panel-muted">Nothing recorded yet.</p>
                     ) : (
-                      <ol className="panel-activity">{detail.activity.map(renderEvent)}</ol>
+                      <ol className="panel-activity">
+                        {(() => {
+                          const cont = continues(detail.activity, actorKey);
+                          return detail.activity.map((event, i) => renderEvent(event, cont[i]));
+                        })()}
+                      </ol>
                     )}
                   </section>
                 )}
@@ -1331,6 +1627,11 @@ export function TaskDetailPanel({
             agentsAllowed={agentsAllowed}
             myAgents={myAgents}
             readOrder={listReadOrder}
+            statusSub={statusSubline(task, {
+              rounds: rounds?.rounds.length ?? 0,
+              reviewSince: detail.status === 'ready' ? reviewSince(detail.activity) : null,
+              now,
+            })}
           />
 
           {/*

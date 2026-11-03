@@ -24,7 +24,8 @@ export function heroKind(
   if (task.status === 'review') return 'review';
   if (task.status === 'done') return 'done';
   if (task.status === 'cancelled') return null;
-  if (task.send_back !== null) return 'sent_back';
+  // `??`: a view served before LAI-758 carries no `send_back` at all.
+  if ((task.send_back ?? null) !== null) return 'sent_back';
   if (task.claim !== undefined && task.claim !== null) return 'progress';
   if (task.selected_agent !== undefined && task.selected_agent !== null) return 'waiting';
   return null;

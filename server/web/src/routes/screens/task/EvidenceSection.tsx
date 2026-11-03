@@ -36,6 +36,11 @@ export interface EvidenceSectionProps {
   /** Whose `@` mention in a send-back is a pill, and who is reading (LAI-868). */
   readonly people?: readonly MentionCandidate[] | undefined;
   readonly meId?: string | undefined;
+  /**
+   * The rounds already read by the panel (LAI-1117), so the state panel, the
+   * feed and this section share one request. Absent: this section reads them.
+   */
+  readonly read?: { readonly rounds: TaskRounds | undefined; readonly failed: boolean } | undefined;
 }
 
 /**
@@ -282,12 +287,17 @@ export function EvidenceSection({
   hideWhenEmpty,
   people,
   meId,
+  read,
 }: EvidenceSectionProps) {
-  const [rounds, setRounds] = useState<TaskRounds | undefined>(undefined);
-  const [failed, setFailed] = useState(false);
+  const [ownRounds, setRounds] = useState<TaskRounds | undefined>(undefined);
+  const [ownFailed, setFailed] = useState(false);
+  const rounds = read === undefined ? ownRounds : read.rounds;
+  const failed = read === undefined ? ownFailed : read.failed;
   const now = Date.now();
+  const reads = read === undefined;
 
   useEffect(() => {
+    if (!reads) return;
     const controller = new AbortController();
     setFailed(false);
     getTaskRounds(taskId, controller.signal)
@@ -300,7 +310,7 @@ export function EvidenceSection({
     return () => {
       controller.abort();
     };
-  }, [taskId, refreshKey]);
+  }, [taskId, refreshKey, reads]);
 
   const latest = rounds?.rounds[0];
   const earlier = rounds?.rounds.slice(1) ?? [];

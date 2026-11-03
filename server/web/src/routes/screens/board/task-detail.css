@@ -364,3 +364,39 @@
 .panel-tab-on .panel-tab-count {
   color: var(--accent);
 }
+
+/* The card's outside id beside its key (LAI-780, D-129). */
+.panel-outside-id {
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 1px 6px;
+}
+
+/* *Copied*, said where the share icon is (D-129 item 6). */
+.panel-copied {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.panel-copied:empty {
+  display: none;
+}
+
+/* Acceptance drawn as a checklist when every line is one (D-129). */
+.panel-acceptance-progress {
+  margin: 0 0 var(--space-2);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.panel-acceptance[data-acceptance='checklist'] li:has(> input[type='checkbox']) {
+  list-style: none;
+}

@@ -827,7 +827,8 @@
 /* The rail scrolls independently, so the actions at its foot stay reachable
    while a long comment thread moves beside them. */
 .panel-side {
-  width: 18rem;
+  /* 352px since D-129 (288 before): the Estimate card and the agent's line. */
+  width: 22rem;
   flex: none;
   display: flex;
   flex-direction: column;

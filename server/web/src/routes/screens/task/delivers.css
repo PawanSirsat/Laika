@@ -1,0 +1,257 @@
+/* "What this delivers" (§11.4.2.1, D-129, LAI-1117). Tokens only. */
+
+.dl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0 0;
+}
+
+.dl-empty {
+  border-style: dashed;
+  padding: var(--space-2) var(--space-4);
+}
+
+.dl-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.dl-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.dl-progress {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.dl-edit {
+  margin-left: auto;
+}
+
+.dl-edit,
+.dl-add,
+.dl-task-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.dl-add:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.dl-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-5);
+}
+
+@media (max-width: 1000px) {
+  .dl-cols {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+}
+
+.dl-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+
+.dl-col-title {
+  font-size: 12px;
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.dl-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.dl-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.dl-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dl-item-title {
+  font-weight: var(--weight-semibold);
+}
+
+.dl-item-detail {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.dl-mark {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--border-default);
+}
+
+.dl-mark-in_progress {
+  background: var(--chip-blue);
+}
+
+.dl-mark-done {
+  background: var(--chip-green);
+}
+
+.dl-point {
+  overflow-wrap: anywhere;
+}
+
+.dl-none,
+.dl-blocks {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.dl-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (max-width: 1000px) {
+  .dl-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.dl-fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.dl-edit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.dl-edit-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 22px;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.dl-state-toggle,
+.dl-remove {
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dl-state-toggle .dl-mark {
+  margin-top: 0;
+}
+
+.dl-state-toggle:hover,
+.dl-remove:hover {
+  border-color: var(--border-default);
+}
+
+.dl-input,
+.dl-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+.dl-textarea {
+  resize: vertical;
+}
+
+.dl-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--overdue);
+  font-size: 13px;
+}
+
+.dl-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.dl-save,
+.dl-cancel {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  font: inherit;
+  font-size: 13px;
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.dl-save {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.dl-cancel {
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-primary);
+}

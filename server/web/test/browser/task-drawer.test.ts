@@ -107,7 +107,7 @@ void after(async () => {
 });
 
 void describe('the task drawer', () => {
-  void test('is the design’s 1120px, centred, with the scrim over everything', async () => {
+  void test('is 1280px, centred, with the scrim over everything', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
@@ -116,11 +116,11 @@ void describe('the task drawer', () => {
       const drawer = await h.page.locator('.drawer').boundingBox();
       assert.ok(drawer);
       /*
-        **1120, not 840** (LAI-285). The drawer became two columns — the task as
-        a document beside a 288px rail of fields — and at 840 the two together
-        left the description narrower than the board card the reader came from.
+        **1280** (D-129, LAI-1117), after LAI-285's 1120 and the first 840: a
+        little wider for the delivers panel's three columns and the state
+        panel's four facts beside the rail — "not too much", the owner said.
       */
-      assert.equal(Math.round(drawer.width), 1120, 'the drawer is the design’s 1120px');
+      assert.equal(Math.round(drawer.width), 1280, 'the drawer is not 1280px');
 
       /*
        * **The scrim covers everything, the rail included** (LAI-604).
@@ -170,7 +170,7 @@ void describe('the task drawer', () => {
     }
   });
 
-  void test('shrinks to the window when there is not 1120px to give', async () => {
+  void test('shrinks to the window when there is not 1280px to give', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 700, height: 900 });
@@ -179,11 +179,12 @@ void describe('the task drawer', () => {
       const drawer = await h.page.locator('.drawer').boundingBox();
       assert.ok(drawer);
       /*
-       * `92vw` since LAI-604 — a modal keeps a margin rather than filling the
-       * window edge to edge, which is what stops it reading as a page. What
-       * still matters, and is asserted below, is that it never overflows.
+       * `94vw` since D-129 (`92vw` from LAI-604) — a modal keeps a margin rather
+       * than filling the window edge to edge, which is what stops it reading as
+       * a page. What still matters, and is asserted below, is that it never
+       * overflows.
        */
-      assert.equal(Math.round(drawer.width), 644, 'the dialog is not 92vw of a 700px window');
+      assert.equal(Math.round(drawer.width), 658, 'the dialog is not 94vw of a 700px window');
       assert.ok(drawer.x > 0 && drawer.x + drawer.width < 700, 'the dialog touches an edge');
       const overflow = await h.page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

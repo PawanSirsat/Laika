@@ -54,12 +54,12 @@
   max-height: 86vh;
   border-radius: var(--radius-card);
   /*
-   * **1120px, not 840** (LAI-285). The design's drawer is two columns — the
-   * task as a document beside a 288px rail of fields — and at 840 the two
-   * together left the description about 500px wide, narrower than the board
-   * card the reader came from.
+   * **1280px** (D-129, LAI-1117): a little wider than LAI-285's 1120 — "not
+   * too much", the owner said — so the delivers panel's three columns and the
+   * state panel's four facts fit beside a 380px rail. Still a centred modal
+   * (D-063), never the design's 1700px canvas.
    */
-  width: min(1120px, 92vw);
+  width: min(1280px, 94vw);
   /* 840px is the whole drawer, border included — without this the 1px
      border-left makes it 841 and the design's number stops being the one on
      screen. The same trap as the tab strip's 34px. */
