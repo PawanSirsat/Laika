@@ -7,6 +7,7 @@ import {
   effortWord,
   getEstimateAccuracy,
   getTaskEstimate,
+  getTaskSimilar,
   isRough,
   scopeGrewNote,
   setTaskSize,
@@ -22,10 +23,13 @@ import {
   type EstimateAccuracy,
   type SizeLevel,
   type TaskEstimate,
+  type TaskSimilar,
 } from '../../../api/estimates.ts';
 import { ApiError } from '../../../api/errors.ts';
 import { type TaskSummary } from '../../../api/tasks.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { similarRows } from './rail-derive.ts';
+import '../../../components/size-chip.css';
 import './forecast.css';
 
 export interface ForecastSectionProps {
@@ -41,6 +45,12 @@ export interface ForecastSectionProps {
   readonly onOpen: (taskId: string) => void;
   /** After an effort is set or cleared: the board refetches the task. */
   readonly onChanged: () => void;
+  /**
+   * The rail's Estimate card (LAI-1122): label-and-value rows — *Effort*,
+   * *Similar* with each task's time and why it was sent back, *Actual* — in
+   * place of the main column's section. Every control and hook stays.
+   */
+  readonly compact?: boolean;
 }
 
 /** The Change control's value for "no person's effort": Laika's own. */
@@ -89,6 +99,7 @@ export function ForecastSection({
   nameOf,
   onOpen,
   onChanged,
+  compact = false,
 }: ForecastSectionProps) {
   const [estimate, setEstimate] = useState<TaskEstimate | undefined>(undefined);
   const [accuracy, setAccuracy] = useState<EstimateAccuracy | undefined>(undefined);
@@ -113,6 +124,24 @@ export function ForecastSection({
       controller.abort();
     };
   }, [task.id, refreshKey, sized]);
+
+  // The similar tasks' send-back reasons (LAI-1122), read apart: without
+  // them the estimate's own list of similar tasks still stands.
+  const [similar, setSimilar] = useState<{ taskId: string; view: TaskSimilar } | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    if (!sized || !compact) return undefined;
+    const controller = new AbortController();
+    getTaskSimilar(task.id, controller.signal)
+      .then((answer) => {
+        if (!controller.signal.aborted) setSimilar({ taskId: task.id, view: answer });
+      })
+      .catch(() => undefined);
+    return () => {
+      controller.abort();
+    };
+  }, [task.id, refreshKey, sized, compact]);
 
   useEffect(() => {
     if (!sized) return undefined;
@@ -182,12 +211,17 @@ export function ForecastSection({
     tokens === null || accuracy === undefined ? null : tokenAccuracySentence(accuracy);
   const hint = estimate === undefined || tokens !== null ? null : tokenHint(estimate.tokens);
 
-  return (
-    <section className="panel-section fc" aria-label="Effort" data-section="effort">
-      <h3 className="panel-section-title">Effort</h3>
-
+  const headline = (
+    <>
       <div className="fc-headline">
         <p className="fc-head-text">
+          {/* The design's level, as the card's chip draws it (LAI-1122); the
+              word beside it is what a screen reader says. */}
+          {compact && (
+            <span className={`size-chip size-chip-${size.level} fc-level`} aria-hidden="true">
+              {size.level}
+            </span>
+          )}
           <strong className={`fc-effort fc-effort-${size.level}`} data-level={size.level}>
             {effortWord(size.level)}
           </strong>
@@ -233,7 +267,10 @@ export function ForecastSection({
           </span>
         )}
       </div>
-
+    </>
+  );
+  const extras = (
+    <>
       {time === null && (
         <p className="panel-muted fc-wait">
           Time estimate after {waitFor} finished tasks{soFar}
@@ -251,13 +288,20 @@ export function ForecastSection({
           {saveError}
         </p>
       )}
-
+    </>
+  );
+  const actualLines = (
+    <>
       {compared !== null && (
         <p className="fc-compare" data-verdict={compared.verdict ?? undefined}>
           {compared.text}
         </p>
       )}
       {timeline !== null && <p className="fc-timeline">{timeline}</p>}
+    </>
+  );
+  const tokenAndNotes = (
+    <>
       {tokens !== null && <p className="fc-tokens">{tokens}</p>}
       {notes.length > 0 && (
         <ul className="fc-notes">
@@ -268,7 +312,10 @@ export function ForecastSection({
           ))}
         </ul>
       )}
-
+    </>
+  );
+  const whyFold = (
+    <>
       {failed ? (
         <p className="panel-alert" role="alert">
           Could not load why Laika estimated this.
@@ -333,6 +380,103 @@ export function ForecastSection({
           {tokenRecord !== null && <p className="fc-accuracy-tokens">{tokenRecord}</p>}
           {hint !== null && <p className="fc-token-hint">{hint}</p>}
         </details>
+      )}
+    </>
+  );
+
+  if (!compact) {
+    return (
+      <section className="panel-section fc" aria-label="Effort" data-section="effort">
+        <h3 className="panel-section-title">Effort</h3>
+        {headline}
+        {extras}
+        {actualLines}
+        {tokenAndNotes}
+        {whyFold}
+      </section>
+    );
+  }
+
+  /*
+   * **The rail's rows** (LAI-1122): *Effort* — the level, the headline, Change,
+   * what the time waits for, who set it, the token line and the notes, and
+   * *Why …?* folded under it; *Similar* — each finished task as a link with
+   * how long it took and, folded, why it was sent back; *Actual* — the
+   * comparison with its verdict and where the time went, or how long it has
+   * run so far.
+   */
+  const similarList =
+    why === null
+      ? []
+      : similarRows(why.similar, similar?.taskId === task.id ? similar.view.similar : undefined);
+  const runningMs =
+    actual?.build_ms == null && task.started_at !== null && task.status === 'in_progress'
+      ? Date.now() - task.started_at
+      : null;
+  return (
+    <section className="panel-section fc fc-compact" aria-label="Effort" data-section="effort">
+      <div className="est-row">
+        <h3 className="panel-section-title est-label">Effort</h3>
+        <div className="est-value">
+          {headline}
+          {extras}
+          {tokenAndNotes}
+          {whyFold}
+        </div>
+      </div>
+      {similarList.length > 0 && (
+        <div className="est-row est-similar-row">
+          <p className="est-label">Similar</p>
+          <ul className="est-value est-similar">
+            {similarList.map((s) => (
+              <li key={s.task_id} className="est-similar-item">
+                <span className="est-similar-line">
+                  <button
+                    type="button"
+                    className="est-similar-link"
+                    title={s.title}
+                    onClick={() => {
+                      onOpen(s.task_id);
+                    }}
+                  >
+                    {s.key}
+                  </button>
+                  {s.took !== null && <span className="est-similar-time"> {s.took}</span>}
+                </span>
+                {s.sentBack.length > 0 && (
+                  <details className="est-sent-back">
+                    <summary>
+                      Sent back
+                      {s.sentBack.length > 1 ? ` ${String(s.sentBack.length)} times` : ''}
+                    </summary>
+                    <ul className="est-sent-back-list">
+                      {s.sentBack.map((b, i) => (
+                        <li
+                          key={`${String(b.round)}-${String(i)}`}
+                          className="est-sent-back-reason"
+                        >
+                          sent back{b.round === null ? '' : ` in round ${String(b.round)}`}:{' '}
+                          {b.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(compared !== null || timeline !== null || runningMs !== null) && (
+        <div className="est-row est-actual-row">
+          <p className="est-label">Actual</p>
+          <div className="est-value">
+            {runningMs !== null && compared === null && (
+              <p className="fc-so-far">{buildLabel(runningMs)} so far</p>
+            )}
+            {actualLines}
+          </div>
+        </div>
       )}
     </section>
   );

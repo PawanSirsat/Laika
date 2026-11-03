@@ -2022,6 +2022,20 @@ export function similarFinishedTasks(
   });
 }
 
+/**
+ * `GET /tasks/:id/similar` (§6.4, LAI-1122): what `get_task_context` calls
+ * `similar`, for the task panel's Estimate card — the same finished tasks and
+ * why each was sent back, and nobody's name. Asked under `project.read` by
+ * {@link similarFinishedTasks}.
+ */
+export interface TaskSimilarView {
+  similar: SimilarPastTask[];
+}
+
+export function getTaskSimilar(db: Db, actor: ResolvedActor, taskId: string): TaskSimilarView {
+  return { similar: similarFinishedTasks(db, actor, taskId) };
+}
+
 /** Finished below this share of its frozen p50, a round is worth a second look (the R&D's idea 7). */
 export const FAST_FINISH_RATIO = 0.25;
 

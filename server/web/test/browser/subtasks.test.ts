@@ -196,7 +196,8 @@ void describe('the Subtasks section', () => {
       await section.locator('.sub-row', { hasText: 'LC-5' }).waitFor({ timeout: 10_000 });
       await until(async () => (await section.locator('.sub-row').count()) === 3);
       assert.equal(await section.locator('.sub-row').count(), 3);
-      assert.match(await section.locator('.sub-count').innerText(), /1\/3 done/);
+      // *n of m done*, as the 2026-11-04 design writes it (LAI-1122).
+      assert.match(await section.locator('.sub-count').innerText(), /1 of 3 done/);
       const bar = section.locator('.sub-progress');
       assert.equal(await bar.getAttribute('aria-valuenow'), '1');
       assert.equal(await bar.getAttribute('aria-valuemax'), '3');

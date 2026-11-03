@@ -32,7 +32,13 @@ import {
 import { reclaimTask, type ReclaimView } from '../../services/claims.ts';
 import { EVIDENCE_LIMITS, listTaskRounds } from '../../services/rounds.ts';
 import { acceptTask, sendBackTask } from '../../services/review.ts';
-import { getTaskEstimate, type TaskEstimateView } from '../../services/estimates.ts';
+import {
+  getTaskEstimate,
+  getTaskSimilar,
+  type TaskEstimateView,
+  type TaskSimilarView,
+} from '../../services/estimates.ts';
+import { getTaskTime, type TaskTimeView } from '../../services/task-time.ts';
 import { getTaskUsage, type TaskUsageView } from '../../services/token-usage.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
@@ -473,6 +479,23 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
    */
   app.get('/:id/estimate', (c) =>
     c.json<TaskEstimateView>(getTaskEstimate(db, requireActor(c), c.req.param('id'))),
+  );
+
+  /**
+   * The similar finished tasks and why each was sent back, as
+   * `get_task_context` has them (§6.4, LAI-1122) — the Estimate card's
+   * *Similar*. A read, under `project.read`; nobody's name.
+   */
+  app.get('/:id/similar', (c) =>
+    c.json<TaskSimilarView>(getTaskSimilar(db, requireActor(c), c.req.param('id'))),
+  );
+
+  /**
+   * The confirmed time on it, totals only (§6.4, LAI-1122): minutes, entries
+   * and how many people. A read, under `project.read`; drafts never count.
+   */
+  app.get('/:id/time', (c) =>
+    c.json<TaskTimeView>(getTaskTime(db, requireActor(c), c.req.param('id'))),
   );
 
   /**

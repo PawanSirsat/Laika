@@ -531,7 +531,10 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
     const server: Server = { t3: subject() };
     const h = await panel(server);
     try {
-      await h.page.setViewportSize({ width: 1440, height: 1000 });
+      // 760px tall: since the Effort, Tokens, Subtasks and Linked tasks
+      // sections moved to the rail (LAI-1122), the main column is shorter, and
+      // at 1000px this fixture no longer gives it room to scroll.
+      await h.page.setViewportSize({ width: 1440, height: 760 });
       const main = h.page.locator('.panel-main');
       const room = await main.evaluate((el) => el.scrollHeight - el.clientHeight);
       assert.ok(room > 100, `positive control: the panel cannot scroll (${String(room)}px)`);

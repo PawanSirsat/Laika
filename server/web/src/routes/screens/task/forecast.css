@@ -210,3 +210,162 @@
   font-size: var(--text-small);
   color: var(--text-muted);
 }
+
+/* ===========================================================================
+ * The rail's Estimate card (LAI-1122): label-and-value rows, as the Details
+ * card draws them. The card is not drawn when no part of it has anything.
+ * ======================================================================== */
+
+.est-card:not(:has(.est-row)) {
+  display: none;
+}
+
+.est-card > .panel-section {
+  margin: 0;
+}
+
+/* Effort's section holds rows of its own; Tokens' section is one. */
+.est-card > .fc-compact {
+  padding: 0;
+  border: none;
+}
+
+.est-row {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  column-gap: 0.75rem;
+  row-gap: 0.25rem;
+  align-items: start;
+  padding: 0.625rem 0.875rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.est-row > * {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.est-row > .est-label,
+.est-card .est-row > .panel-section-title.est-label {
+  grid-column: 1;
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+.est-value {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+}
+
+.fc-compact .fc-headline {
+  margin-bottom: 0;
+}
+
+.fc-compact .fc-head-text {
+  flex-basis: 8rem;
+}
+
+.fc-level {
+  margin-right: 0.375rem;
+  vertical-align: 0.0625rem;
+}
+
+.fc-compact .fc-effort {
+  font-weight: var(--weight-semibold);
+}
+
+.fc-compact .fc-why > summary {
+  color: var(--accent);
+  padding: 0.125rem 0;
+}
+
+.fc-compact .fc-wait,
+.fc-compact .fc-set,
+.fc-compact .fc-tokens {
+  margin: 0.125rem 0 0;
+  font-size: var(--text-small);
+}
+
+/* *Similar*: each key a link, how long it took, why it went back folded. */
+.est-similar {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0;
+  list-style: none;
+}
+
+.est-similar-line {
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.est-similar-link {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.est-similar-link:hover,
+.est-similar-link:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.est-sent-back > summary {
+  cursor: pointer;
+  width: fit-content;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--chip-orange);
+}
+
+.est-sent-back-list {
+  margin: 0.125rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.est-sent-back-reason {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* *Actual*: the comparison first, where the time went quieter under it. */
+.est-actual-row .fc-compare,
+.est-actual-row .fc-so-far {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.est-actual-row .fc-compare[data-verdict='well over'] {
+  color: var(--chip-orange);
+}
+
+.est-actual-row .fc-timeline {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.est-time-value {
+  font-weight: var(--weight-semibold);
+}

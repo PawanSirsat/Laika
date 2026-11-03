@@ -4030,6 +4030,8 @@ POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits
 GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back }
 GET    /api/v1/tasks/:id/estimate            size, why, forecast frozen at start, actual, history (D-085)
 GET    /api/v1/tasks/:id/usage               ?tz= — its tokens: per person and agent, per round, attributed share (D-084, LAI-770); cost, budget, runaway (LAI-773)
+GET    /api/v1/tasks/:id/similar             { similar: [{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }] } — get_task_context's similar finished tasks; nobody's name (LAI-1122)
+GET    /api/v1/tasks/:id/time                { total_minutes, people, entries } — its confirmed time, totals only; drafts never count (D-088, LAI-1122)
 PUT    /api/v1/tasks/:id/budget              body { tokens | null } — null goes back to the frozen forecast's p80   (lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/estimates/accuracy  per project, and per agent client with ≥ 3 people; never per person
 POST   /api/v1/tasks/:id/accept              → the first visible done status   (session only; the done rule, §5)
@@ -5345,6 +5347,18 @@ another (D-084 item 6) — or `null` when they see nobody's. `totals`,
 marked `automated` included; `by_person` and `attributed` hold the people's own
 rows only (D-091, §4.33), so `by_person` may sum to less than `totals`.
 
+**A task's similar finished tasks and confirmed time (LAI-1122).** `GET
+/tasks/:id/similar` answers `{ similar }` under `project.read`: the list
+`get_task_context` serves as `similar` (§7.1), up to five finished tasks of
+the same project, closest first, each `{ task_id, key, title, status,
+similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back,
+each reason cut at 400 characters, and nobody's name. `GET /tasks/:id/time`
+answers `{ total_minutes, people, entries }` under `project.read`: the sum of
+the task's live `time_entries` (§4.48) — confirmed time only, so a draft is
+never counted, and a deleted entry neither — with how many entries and how
+many distinct people they are from. A count of people, never who: per-person
+hours stay where D-088 puts them.
+
 **Sizes and forecasts (D-085, LAI-771).** `POST /projects/:slug/tasks` and
 `PATCH /tasks/:id` take an optional `size` — `XS` to `XL`, or `null` on `PATCH`
 to go back to the computed one — under `task.write`, so anyone who may edit the
@@ -6340,7 +6354,7 @@ call MCP; agents do.
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
 | **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
-| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
+| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read | `propose_time_entry` | ✅ D-088, LAI-796 |
