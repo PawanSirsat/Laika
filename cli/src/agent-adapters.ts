@@ -110,9 +110,9 @@ export const ADAPTERS: Readonly<Record<Harness, HarnessAdapter>> = {
   // Code through `claude-sdk`, which loads `~/.claude/settings.json`, and its
   // workers on Claude Code or Codex. Every one carries `OMNIGENT=1`. On a
   // device holding this agent's credential those hooks end the session at
-  // each turn's Stop, and open it with this agent's credential where that
-  // harness's MCP entry follows Omnigent runs too (`hookCredential` in
-  // `agent.ts`, review B1).
+  // each turn's Stop; polly's own turns open it with this agent's
+  // credential, and a worker does where its harness's MCP entry follows
+  // Omnigent runs too (`decideIdentity` in `agent.ts`, reviews B1 and B2).
   omnigent: {
     harness: 'omnigent',
     name: 'Omnigent',
@@ -140,9 +140,9 @@ export function explicitCommands(harness: Harness): string[] {
       'Its sessions open through the hooks of the harness that runs them — polly runs on',
       'Claude Code (claude-sdk) — so install those: laika agent hooks on --harness claude-code',
       '(and codex, if its workers run Codex). Inside Omnigent they act as this agent, with',
-      `~/.laika/agents/${h}.json, where their Laika MCP entry is the switching helper`,
-      '`laika tool add` writes; otherwise as their own. polly’s MCP is the bridge',
-      '`laika tool add omnigent` installs.',
+      `~/.laika/agents/${h}.json: polly’s own turns always (its MCP is the bridge`,
+      '`laika tool add omnigent` installs), a worker where its Laika MCP entry is the',
+      'switching helper `laika tool add` writes, and as its own agent otherwise.',
     ];
   }
   if (ADAPTERS[h].credentialOnly === true) {

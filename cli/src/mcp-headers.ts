@@ -1,26 +1,34 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { codexLaikaLines } from './agents.ts';
 import { isRecord } from './agent-session.ts';
-import { claudeJsonPath } from './claude-mcp.ts';
 
 /**
  * The MCP headers helpers `laika tool add` writes for Claude Code and Codex,
  * and whether a harness's MCP entry is one of them (LAI-1101 review B1).
  *
- * Its own small module so the hook path (`agent.ts`) can ask "does this
- * harness's MCP follow Omnigent runs?" without loading `tool-add.ts`.
+ * Its own small module, importing nothing that writes, so the hook path
+ * (`agent.ts`) and `claude-mcp.ts` (`isToolEntry`) can both use it without
+ * loading `tool-add.ts`.
  *
  * ## Why the hooks ask
  *
  * The board refuses a claim whose session belongs to another agent
- * (`requireOwnSession`, 404). So a hook may open an Omnigent run's session
- * as the Omnigent agent **only** when that harness's MCP calls carry the
- * Omnigent agent's token too — which is true exactly when its MCP entry is
- * the helper below. A person-written entry, or a helper an older `tool add`
- * wrote, always sends the harness's own token, and then the hooks keep the
- * harness's own credential as well. Hooks and MCP always agree.
+ * (`requireOwnSession`, 404). So for an Omnigent **worker** a hook opens the
+ * session as the Omnigent agent only when that harness's MCP calls carry the
+ * Omnigent agent's token too — true exactly when its effective MCP entry is
+ * the switching helper below; any other entry sends the harness's own token,
+ * and the hook keeps the harness's own credential as well.
+ *
+ * **polly's own turns are the exception** (review round 2, B2): its Laika MCP
+ * is Omnigent's in-process pool — the bridge, always the Omnigent agent — and
+ * never a Claude Code entry, so its hooks use the Omnigent agent whatever any
+ * entry says (`decideIdentity` in `agent.ts`). Nothing here applies to them.
+ *
+ * Known limitation (N2): a project `laika` server Claude Code never loaded —
+ * a `.mcp.json` nobody approved — still counts as overriding the switching
+ * helper, so such a worker keeps its own agent although its MCP would not.
  */
 
 /**
@@ -90,6 +98,88 @@ export const CODEX_HEADERS_HELPER = headersHelper('codex');
 /** The `http_headers_helper` line of Codex's table, as `tool add` writes it. */
 export const CODEX_HELPER_LINE = `http_headers_helper = ${JSON.stringify(CODEX_HEADERS_HELPER)}`;
 
+/**
+ * Every Claude Code helper `tool add` wrote before LAI-1101, exactly, from
+ * `master`'s history (review round 2, N5): LAI-1072's, then LAI-1074's with
+ * the empty-token guard. Both always read `claude-code.json`.
+ */
+export const OLDER_CLAUDE_HELPERS: readonly string[] = [
+  `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$HOME/.laika/agents/claude-code.json")" && ` +
+    `printf '{"Authorization":"Bearer %s"}' "$t"`,
+  `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$HOME/.laika/agents/claude-code.json")" && ` +
+    `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`,
+];
+
+/**
+ * The switching helper's shape, as a pattern: its exact statements in their
+ * order, with any run of whitespace where it has one and optional whitespace
+ * around `;` (review round 2, N4). A helper matches when it **does what
+ * {@link headersHelper} does** — the same files, the same test, the same
+ * read and print — however it is laid out; a change to any of those is a
+ * different helper and does not match. The exact text is pinned by a test,
+ * so an edit to it is a deliberate one.
+ */
+function shapeOf(text: string): RegExp {
+  const escaped = text
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/;/g, '\\s*;'))
+    .join('\\s+');
+  return new RegExp(`^\\s*${escaped}\\s*$`);
+}
+
+const SHAPES = {
+  'claude-code': shapeOf(CLAUDE_HEADERS_HELPER),
+  codex: shapeOf(CODEX_HEADERS_HELPER),
+} as const;
+
+/** Whether `text` is the switching helper for `harness`, by its shape (N4). */
+export function isSwitchingHelper(text: unknown, harness: 'claude-code' | 'codex'): boolean {
+  return typeof text === 'string' && SHAPES[harness].test(text);
+}
+
+/**
+ * Whether a `headersHelper` is one `tool add` wrote for Claude Code: an
+ * older revision exactly, or the switching one by its shape. Never "any
+ * command that mentions `claude-code.json`" (N5).
+ */
+export function isClaudeToolHelper(text: unknown): boolean {
+  return (
+    typeof text === 'string' &&
+    (OLDER_CLAUDE_HELPERS.includes(text) || isSwitchingHelper(text, 'claude-code'))
+  );
+}
+
+/**
+ * The file Claude Code keeps its `.claude.json` in: under `CLAUDE_CONFIG_DIR`
+ * when that is set ("every `~/.claude` path … lives under that directory
+ * instead. The same applies to `.claude.json`", code.claude.com
+ * `claude-directory.md`), `~/.claude.json` otherwise; through a symlink to
+ * its target (N3).
+ */
+export function claudeConfigFile(
+  home: string,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const dir = env.CLAUDE_CONFIG_DIR;
+  const path =
+    dir !== undefined && dir !== '' ? join(dir, '.claude.json') : join(home, '.claude.json');
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/** Codex's `config.toml`: under `CODEX_HOME` when that is set — Omnigent gives each Codex worker a private one (N3). */
+export function codexConfigFile(
+  home: string,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const dir = env.CODEX_HOME;
+  return join(dir !== undefined && dir !== '' ? dir : join(home, '.codex'), 'config.toml');
+}
+
 /** `dir` and each folder above it, nearest first. */
 function upward(dir: string): string[] {
   const out: string[] = [];
@@ -112,23 +202,30 @@ const hasLaika = (doc: unknown): boolean =>
 
 /**
  * Whether Claude Code's Laika MCP entry, for a session working in `cwd`, is
- * {@link CLAUDE_HEADERS_HELPER}: the user-scope `mcpServers.laika` in
- * `~/.claude.json` is exactly that helper, and nothing nearer overrides it —
- * no local-scope `projects[<dir>].mcpServers.laika` in the same file and no
- * project `.mcp.json` with a `laika` server, for `cwd` or a folder above it.
+ * the switching helper: the user-scope `mcpServers.laika` in its
+ * `.claude.json` ({@link claudeConfigFile}) has that shape and no `headers`,
+ * and nothing nearer overrides it — no local-scope
+ * `projects[<dir>].mcpServers.laika` in the same file and no project
+ * `.mcp.json` with a `laika` server, for `cwd` or a folder above it.
  */
-export function claudeMcpFollowsOmnigent(home: string, cwd: string | undefined): boolean {
-  const where = claudeJsonPath(home);
-  if ('refused' in where) return false;
+export function claudeMcpFollowsOmnigent(
+  home: string,
+  env: Readonly<Record<string, string | undefined>>,
+  cwd: string | undefined,
+): boolean {
   let doc: unknown;
   try {
-    doc = JSON.parse(readIf(where.path) ?? '') as unknown;
+    doc = JSON.parse(readIf(claudeConfigFile(home, env)) ?? '') as unknown;
   } catch {
     return false;
   }
   if (!isRecord(doc) || !isRecord(doc.mcpServers)) return false;
   const laika = doc.mcpServers.laika;
-  if (!isRecord(laika) || laika.headersHelper !== CLAUDE_HEADERS_HELPER || 'headers' in laika) {
+  if (
+    !isRecord(laika) ||
+    !isSwitchingHelper(laika.headersHelper, 'claude-code') ||
+    'headers' in laika
+  ) {
     return false;
   }
   if (cwd === undefined) return true;
@@ -146,30 +243,54 @@ export function claudeMcpFollowsOmnigent(home: string, cwd: string | undefined):
   return true;
 }
 
-/** The keys of a `[mcp_servers.laika]` table that `tool add codex` writes, and only those. */
+/** The value of an `http_headers_helper = "…"` line, as TOML's basic string (JSON's escapes). */
+function helperValue(line: string): unknown {
+  const m = /^http_headers_helper\s*=\s*(".*")$/.exec(line);
+  if (m === null) return undefined;
+  try {
+    return JSON.parse(m[1] ?? '') as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The keys of a `[mcp_servers.laika]` table that `tool add codex` writes,
+ * and only those: its `url`, and an `http_headers_helper` that is the
+ * switching helper by shape (N4).
+ */
 export function isSwitchingCodexTable(lines: readonly string[]): boolean {
   if (lines[0] !== '[mcp_servers.laika]') return false;
   const rest = lines.slice(1).filter((l) => l !== '' && !l.startsWith('#'));
+  const helpers = rest.filter((l) => /^http_headers_helper\s*=/.test(l));
   return (
-    rest.includes(CODEX_HELPER_LINE) &&
-    rest.every((l) => l === CODEX_HELPER_LINE || /^url = "[^"]*"$/.test(l))
+    helpers.length === 1 &&
+    isSwitchingHelper(helperValue(helpers[0] ?? ''), 'codex') &&
+    rest.every((l) => helpers.includes(l) || /^url\s*=\s*"[^"]*"$/.test(l))
   );
 }
 
 /**
- * Whether Codex's Laika MCP entry is {@link CODEX_HEADERS_HELPER}: the
- * `[mcp_servers.laika]` table in `~/.codex/config.toml` holds its `url` and
- * that helper and nothing else, and no project `.codex/config.toml` for `cwd`
- * or a folder above it defines `laika`.
+ * Whether Codex's Laika MCP entry is the switching helper: the
+ * `[mcp_servers.laika]` table in its `config.toml` ({@link codexConfigFile},
+ * `CODEX_HOME` honoured) holds its `url` and that helper and nothing else,
+ * and no project `.codex/config.toml` for `cwd` or a folder above it defines
+ * `laika`.
  */
-export function codexMcpFollowsOmnigent(home: string, cwd: string | undefined): boolean {
-  const toml = readIf(join(home, '.codex', 'config.toml'));
+export function codexMcpFollowsOmnigent(
+  home: string,
+  env: Readonly<Record<string, string | undefined>>,
+  cwd: string | undefined,
+): boolean {
+  const user = codexConfigFile(home, env);
+  const toml = readIf(user);
   if (toml === undefined || !isSwitchingCodexTable(codexLaikaLines(toml))) return false;
   if (cwd === undefined) return true;
   for (const dir of upward(cwd)) {
-    if (dir === home) continue;
-    const project = readIf(join(dir, '.codex', 'config.toml'));
-    if (project !== undefined && codexLaikaLines(project).length > 0) return false;
+    const project = join(dir, '.codex', 'config.toml');
+    if (project === user || dir === home) continue;
+    const text = readIf(project);
+    if (text !== undefined && codexLaikaLines(text).length > 0) return false;
   }
   return true;
 }
@@ -178,9 +299,10 @@ export function codexMcpFollowsOmnigent(home: string, cwd: string | undefined): 
 export function mcpFollowsOmnigent(
   home: string,
   harness: 'claude-code' | 'codex',
+  env: Readonly<Record<string, string | undefined>>,
   cwd: string | undefined,
 ): boolean {
   return harness === 'claude-code'
-    ? claudeMcpFollowsOmnigent(home, cwd)
-    : codexMcpFollowsOmnigent(home, cwd);
+    ? claudeMcpFollowsOmnigent(home, env, cwd)
+    : codexMcpFollowsOmnigent(home, env, cwd);
 }

