@@ -2255,6 +2255,11 @@ void describe('Ping on the drawer’s agent (LAI-1102)', () => {
     try {
       const row = await agentRow(viewer);
       await until(async () => (await row.innerText()).includes('laptop-1'));
+      // The setup is checked, not assumed: `until` never fails by itself. And
+      // an absence is read only once the reads that decide it are in — the
+      // agent shows before the reader's permissions do.
+      assert.match(await row.innerText(), /laptop-1/);
+      await viewer.page.waitForLoadState('networkidle');
       assert.equal(await pingIn(viewer).count(), 0);
     } finally {
       await viewer.close();
@@ -2266,8 +2271,11 @@ void describe('Ping on the drawer’s agent (LAI-1102)', () => {
     plain.selected_agent = viewOf('ag-ro');
     const reader = await open('/board?project=laika-core&task=t1', w.stub);
     try {
+      // The picker is drawn only once the reader may edit and their agents
+      // are in: the state Ping is decided in, so its absence means something.
+      await agentBox(reader);
       const row = await agentRow(reader);
-      await until(async () => (await row.innerText()).includes('tablet'));
+      assert.match(await row.innerText(), /tablet/);
       assert.equal(await pingIn(reader).count(), 0);
     } finally {
       await reader.close();
