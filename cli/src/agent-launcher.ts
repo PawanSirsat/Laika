@@ -756,9 +756,9 @@ export const CREDENTIAL_REFUSED: { readonly credential: 'refused' } = Object.fre
   credential: 'refused',
 });
 
-export const readFailed = (v: unknown): v is typeof READ_FAILED => readFailed(v);
+export const readFailed = (v: unknown): v is typeof READ_FAILED => v === READ_FAILED;
 export const credentialRefusedBy = (v: unknown): v is typeof CREDENTIAL_REFUSED =>
-  credentialRefusedBy(v);
+  v === CREDENTIAL_REFUSED;
 
 /** What the launcher reports and answers about itself (D-126 items 3–4). */
 export interface LauncherSnapshot {
