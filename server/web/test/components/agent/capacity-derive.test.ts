@@ -18,8 +18,10 @@ import {
   answeredAgo,
   autoPickupWords,
   isStale,
+  noPingWords,
   pingProjectFor,
   pingRefusal,
+  whyNoPing,
 } from '../../../src/components/agent/capacity-derive.ts';
 import { NEVER_REPORTED, reported } from '../../helpers/launcher.ts';
 
@@ -32,9 +34,10 @@ void describe('the Auto-pickup chip says the board’s word', () => {
     assert.equal(w.state, 'on');
     assert.equal(w.word, 'Auto-pickup: on · 40 s');
     assert.equal(w.tone, 'ok');
-    assert.match(w.reason, /^The launcher on Belka reported just now that it is on; /);
-    assert.match(w.reason, /it starts work requests and hand-offs addressed here by itself\./);
-    assert.match(w.reason, /0 of 1 running\.$/);
+    assert.equal(
+      w.reason,
+      'The launcher on Belka reported just now that it is running. It starts work requests and hand-offs addressed here by itself. 0 of 1 running.',
+    );
   });
 
   void test('a report two minutes old is still on, in minutes', () => {
@@ -95,12 +98,37 @@ void describe('the Auto-pickup chip says the board’s word', () => {
     );
   });
 
-  void test('on with a switch off says which', () => {
+  void test('on with a switch off says which, in a whole sentence', () => {
+    const only = (work_requests: boolean, handoffs: boolean): string =>
+      autoPickupWords(
+        { ...reported('on', NOW - 5000), auto_pickup: { work_requests, handoffs } },
+        NOW,
+        'Belka',
+      ).reason;
+    assert.match(
+      only(false, true),
+      / It starts hand-offs addressed here by itself, but not work requests\. /,
+    );
+    assert.match(
+      only(true, false),
+      / It starts work requests addressed here by itself, but not hand-offs\. /,
+    );
+  });
+
+  void test('both switches off: listening, picks up nothing — never on (review round 1)', () => {
     const l: Launcher = {
       ...reported('on', NOW - 5000),
-      auto_pickup: { work_requests: false, handoffs: true },
+      auto_pickup: { work_requests: false, handoffs: false },
     };
-    assert.match(autoPickupWords(l, NOW, 'Belka').reason, /hand-offs only, not work requests/);
+    const w = autoPickupWords(l, NOW, 'Belka');
+    assert.equal(w.state, 'on', 'the board’s word is kept for the data hook');
+    assert.equal(w.word, 'Auto-pickup: listening · picks up nothing · 5 s');
+    assert.doesNotMatch(w.word, /: on\b/);
+    assert.equal(w.tone, 'neutral');
+    assert.equal(
+      w.reason,
+      'The launcher on Belka reported just now that it is running. Both of its switches are off, so it starts neither work requests nor hand-offs. 0 of 1 running.',
+    );
   });
 });
 
@@ -202,6 +230,41 @@ void describe('Ping is offered only where the reader may ping (D-126 item 1)', (
   });
 });
 
+void describe('no Ping, and why — the role named when the role is the reason', () => {
+  const spaces = [{ id: 'p2', name: 'Laika', agents_allowed: true, archived_at: null }];
+
+  void test('an organisation viewer is told they are a viewer', () => {
+    const why = whyNoPing(agent(), spaces, me({ org_role: 'viewer' }));
+    assert.deepEqual(why, { kind: 'viewer' });
+    assert.equal(
+      noPingWords(why, 'Codex · Belka'),
+      'Your role in this organisation is viewer, and pinging a tool is for members and above. You can still see Codex · Belka’s launcher above.',
+    );
+  });
+
+  void test('a viewer of the one space it could be pinged in is told which', () => {
+    const why = whyNoPing(
+      agent(),
+      spaces,
+      me({ memberships: [{ project_id: 'p2', role: 'viewer' }] }),
+    );
+    assert.deepEqual(why, { kind: 'space-viewer', space: 'Laika' });
+    assert.equal(
+      noPingWords(why, 'Codex · Belka'),
+      'Your role in Laika is viewer, and pinging Codex · Belka there is for members and above.',
+    );
+  });
+
+  void test('no full grant with agents allowed: the tool’s access, not the role', () => {
+    const why = whyNoPing(agent({ grants: [] }), spaces, me());
+    assert.deepEqual(why, { kind: 'no-space' });
+    assert.match(
+      noPingWords(why, 'Codex · Belka'),
+      /^Codex · Belka has no space you could select it in/,
+    );
+  });
+});
+
 // ------------------------------------------------------------------ an answer
 
 const answer = (over: Partial<CapacityAnswer> = {}): CapacityAnswer => ({
@@ -234,6 +297,20 @@ void describe('the answer, in words, every fact its own', () => {
       memory: 'Memory: normal',
       cli: 'Laika CLI 0.4.2',
     });
+  });
+
+  void test('a launcher on with both switches off picks up nothing, and says so', () => {
+    const t = texts(
+      answer({
+        launcher: {
+          state: 'on',
+          auto_pickup: { work_requests: false, handoffs: false },
+          running: 0,
+          max_concurrent: 1,
+        },
+      }),
+    );
+    assert.equal(t.pickup, 'Auto-pickup: listening, picks up nothing — both switches off');
   });
 
   void test('answered by its session with no launcher: off, and no run count invented', () => {
@@ -327,5 +404,17 @@ void describe('a ping that did not answer, in the screen’s terms', () => {
       'Too many pings for Claude Code · Belka — try again in 12 s.',
     );
     assert.match(PING_WORDS.refused(target), /^Claude Code · Belka cannot be pinged here/);
+    assert.equal(
+      PING_WORDS.waitingLost(target),
+      'Waiting for Claude Code · Belka… The board did not answer the last check; asking again.',
+    );
+    assert.equal(
+      PING_WORDS.noAnswerLost(8, '4:05:31 PM'),
+      'No answer within 8 s, and the board could not be reached to check again. Retrying until the ping expires at 4:05:31 PM.',
+    );
+    assert.equal(
+      PING_WORDS.expiredUnread(target),
+      'The ping expired while the board could not be reached, so whether Claude Code · Belka answered is unknown. Ping again to ask.',
+    );
   });
 });

@@ -1,6 +1,7 @@
 import type { RegisteredAgent } from '../../api/agents.ts';
 import {
   ANSWER_STALE_MS,
+  type AutoPickup,
   type CapacityAnswer,
   type CapacityPing,
   type Launcher,
@@ -53,13 +54,22 @@ function reportedAgo(at: number, now: number): string {
   return /ago$|^just now$/.test(text) ? `reported ${text}` : `last reported ${text}`;
 }
 
-function pickupScope(launcher: Launcher): string {
-  const pickup = launcher.auto_pickup;
+/**
+ * What the launcher starts by itself, as the rest of a sentence that begins
+ * *it starts …* — or, with both switches off, a sentence of its own.
+ */
+function pickupSentence(pickup: AutoPickup | null): string {
   if (pickup === null) return '';
-  if (pickup.work_requests && pickup.handoffs) return 'work requests and hand-offs';
-  if (pickup.work_requests) return 'work requests only, not hand-offs';
-  if (pickup.handoffs) return 'hand-offs only, not work requests';
-  return 'nothing — both switches are off in its config';
+  if (pickup.work_requests && pickup.handoffs) {
+    return 'It starts work requests and hand-offs addressed here by itself.';
+  }
+  if (pickup.work_requests) {
+    return 'It starts work requests addressed here by itself, but not hand-offs.';
+  }
+  if (pickup.handoffs) {
+    return 'It starts hand-offs addressed here by itself, but not work requests.';
+  }
+  return 'Both of its switches are off, so it starts neither work requests nor hand-offs.';
 }
 
 /**
@@ -75,13 +85,18 @@ export function autoPickupWords(launcher: Launcher, now: number, device: string)
       launcher.running === null || launcher.max_concurrent === null
         ? ''
         : ` ${String(launcher.running)} of ${String(launcher.max_concurrent)} running.`;
+    const said = `The launcher on ${device} ${at === null ? 'says' : `${reportedAgo(at, now)} that`} it is running.`;
+    const age = at === null ? '' : ` · ${shortAge(at, now)}`;
+    const pickup = launcher.auto_pickup;
+    // The board's `on` is a launcher that reported; it picks nothing up when
+    // both of its switches are off, and the chip does not call that *on*
+    // (LAI-1102 review).
+    const nothing = pickup !== null && !pickup.work_requests && !pickup.handoffs;
     return {
       state,
-      word: at === null ? 'Auto-pickup: on' : `Auto-pickup: on · ${shortAge(at, now)}`,
-      reason:
-        `The launcher on ${device} ${at === null ? 'says' : reportedAgo(at, now) + ' that'} it is on; ` +
-        `it starts ${pickupScope(launcher)} addressed here by itself.${running}`,
-      tone: 'ok',
+      word: nothing ? `Auto-pickup: listening · picks up nothing${age}` : `Auto-pickup: on${age}`,
+      reason: `${said} ${pickupSentence(pickup)}${running}`,
+      tone: nothing ? 'neutral' : 'ok',
     };
   }
   if (state === 'unknown') {
@@ -150,6 +165,45 @@ export function pingProjectFor(
   return undefined;
 }
 
+/** Why a tool panel offers no Ping, when {@link pingProjectFor} found no space. */
+export type NoPing =
+  /** The organisation role is viewer: pinging is for members and above. */
+  | { readonly kind: 'viewer' }
+  /** A space the tool could be selected in, where the reader is only a viewer. */
+  | { readonly kind: 'space-viewer'; readonly space: string }
+  /** No space where it has full access with agents allowed. */
+  | { readonly kind: 'no-space' };
+
+/**
+ * The reason, named by the role when the role is it (LAI-1102 review): a
+ * viewer is told they are a viewer, not that the tool lacks access.
+ */
+export function whyNoPing(
+  agent: Pick<RegisteredAgent, 'grants'>,
+  projects: readonly Pick<Project, 'id' | 'name' | 'agents_allowed' | 'archived_at'>[],
+  me: Pick<MeProfile, 'org_role' | 'memberships'>,
+): NoPing {
+  if (me.org_role === 'viewer') return { kind: 'viewer' };
+  for (const project of projects) {
+    if (project.archived_at !== null || !project.agents_allowed) continue;
+    if (agent.grants.find((g) => g.project_id === project.id)?.scope !== 'full') continue;
+    return { kind: 'space-viewer', space: project.name };
+  }
+  return { kind: 'no-space' };
+}
+
+/** {@link NoPing} in words, `target` being *Claude Code · Belka*. */
+export function noPingWords(why: NoPing, target: string): string {
+  switch (why.kind) {
+    case 'viewer':
+      return `Your role in this organisation is viewer, and pinging a tool is for members and above. You can still see ${target}’s launcher above.`;
+    case 'space-viewer':
+      return `Your role in ${why.space} is viewer, and pinging ${target} there is for members and above.`;
+    case 'no-space':
+      return `${target} has no space you could select it in — full access, with agents allowed — so there is nowhere to ping it.`;
+  }
+}
+
 // ------------------------------------------------------------------ an answer
 
 /** *answered 3 s ago*, *answered 4 min ago* — whatever the clocks disagree by, never negative. */
@@ -212,9 +266,15 @@ export function answerItems(answer: CapacityAnswer): readonly AnswerItem[] {
           ? 'work requests only'
           : l.auto_pickup.handoffs
             ? 'hand-offs only'
-            : 'nothing — both switches off';
+            : undefined;
     items.push(
-      { key: 'pickup', text: `Auto-pickup: on, for ${scope}` },
+      {
+        key: 'pickup',
+        text:
+          scope === undefined
+            ? 'Auto-pickup: listening, picks up nothing — both switches off'
+            : `Auto-pickup: on, for ${scope}`,
+      },
       {
         key: 'runs',
         text: `Free runs: ${String(Math.max(0, l.max_concurrent - l.running))} of ${String(l.max_concurrent)}`,
@@ -276,9 +336,18 @@ export function pingRefusal(error: unknown): PingRefusal {
 /** The words for each outcome that is not an answer. `target` is *Claude Code · Belka*. */
 export const PING_WORDS = {
   waiting: (target: string): string => `Waiting for ${target}…`,
+  /** A check inside the wait failed: still waiting, and saying so. */
+  waitingLost: (target: string): string =>
+    `Waiting for ${target}… The board did not answer the last check; asking again.`,
   noAnswer: (seconds: number): string =>
     `No answer within ${String(seconds)} s — the device may be offline or its launcher is off. Still listening until the ping expires.`,
+  /** No answer within the wait, and the board could not be reached to check again. */
+  noAnswerLost: (seconds: number, until: string): string =>
+    `No answer within ${String(seconds)} s, and the board could not be reached to check again. Retrying until the ping expires at ${until}.`,
   expired: 'Expired: no answer within a minute — the device may be offline or its launcher is off.',
+  /** It expired while the board could not be reached: answered or not is unknown. */
+  expiredUnread: (target: string): string =>
+    `The ping expired while the board could not be reached, so whether ${target} answered is unknown. Ping again to ask.`,
   refused: (target: string): string =>
     `${target} cannot be pinged here: the board knows no agent of yours by that id with full access to this space. It may have been revoked or lost its access.`,
   limited: (target: string, seconds: number): string =>

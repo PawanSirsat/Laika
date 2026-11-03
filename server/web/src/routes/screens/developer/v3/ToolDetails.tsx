@@ -15,7 +15,12 @@ import { timeLabel } from '../../../../api/time-label.ts';
 import type { useConfirm } from '../../../../components/ConfirmProvider.tsx';
 import { SidePanel } from '../../../../components/SidePanel.tsx';
 import { PingButton } from '../../../../components/agent/PingButton.tsx';
-import { pingProjectFor } from '../../../../components/agent/capacity-derive.ts';
+import {
+  noPingWords,
+  pingProjectFor,
+  whyNoPing,
+  type NoPing,
+} from '../../../../components/agent/capacity-derive.ts';
 import { CheckIcon } from '../../../../components/wizard/CheckIcon.tsx';
 import { AccessForm, RenameForm, SecretPanel, grantSummary, useOnceSecret } from '../AgentsTab.tsx';
 import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
@@ -484,6 +489,7 @@ function ToolPanel({
               <ToolPing
                 agentId={agent.id}
                 project={pingProjectFor(agent, projects, me)}
+                why={whyNoPing(agent, projects, me)}
                 target={label}
                 onPinged={onPinged}
               />
@@ -651,11 +657,14 @@ function errorText(cause: unknown, fallback: string): string {
 function ToolPing({
   agentId,
   project,
+  why,
   target,
   onPinged,
 }: {
   readonly agentId: string;
   readonly project: string | undefined;
+  /** Why there is no space to ping in — read only when `project` is undefined. */
+  readonly why: NoPing;
   readonly target: string;
   readonly onPinged: (() => void) | undefined;
 }) {
@@ -681,10 +690,10 @@ function ToolPing({
 
   if (project === undefined || refused) {
     return (
-      <p className="dv3-note" data-ping-none>
+      <p className="dv3-note" data-ping-none={refused ? 'refused' : why.kind}>
         {refused
           ? `${target} cannot be pinged here: the board knows no agent of yours by that id with full access to a space.`
-          : `${target} has no space you could select it in — full access, with agents allowed — so there is nowhere to ping it.`}
+          : noPingWords(why, target)}
       </p>
     );
   }
