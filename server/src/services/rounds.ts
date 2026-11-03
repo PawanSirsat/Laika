@@ -130,6 +130,25 @@ export interface RoundView {
    * when no CI result was reported for it. The test items' states follow it.
    */
   ci: RoundCi | null;
+  /**
+   * How a person decided this round (§4.27): accepted or sent back, by whom,
+   * when, and the send-back's reason. Null while it waits for a decision —
+   * and for a round finished again before anyone decided it.
+   */
+  decision: RoundDecision | null;
+  created_at: number;
+}
+
+/**
+ * One round's review decision, from `task_reviews` (§4.27, LAI-1122). The
+ * latest wins where a round was decided twice — accepted, moved back to
+ * review by hand, decided again.
+ */
+export interface RoundDecision {
+  kind: 'accepted' | 'sent_back';
+  decided_by: string;
+  /** The send-back's reason; null for an acceptance. */
+  reason_md: string | null;
   created_at: number;
 }
 
@@ -360,6 +379,27 @@ function toRoundViews(
     )
     .orderBy(taskEvidence.roundId, taskEvidence.position)
     .all();
+  // Each round's latest decision (§4.27), in one query whatever the count.
+  const decisionByRound = new Map<string, RoundDecision>();
+  for (const d of db
+    .select()
+    .from(taskReviews)
+    .where(
+      inArray(
+        taskReviews.roundId,
+        rows.map((r) => r.id),
+      ),
+    )
+    .orderBy(desc(taskReviews.createdAt), desc(taskReviews.id))
+    .all()) {
+    if (d.roundId === null || decisionByRound.has(d.roundId)) continue;
+    decisionByRound.set(d.roundId, {
+      kind: d.decision,
+      decided_by: d.decidedBy,
+      reason_md: d.reasonMd,
+      created_at: d.createdAt,
+    });
+  }
   // The agent behind each round's token (D-120), in one query whatever the count.
   const tokenIds = [...new Set(rows.flatMap((r) => (r.tokenId === null ? [] : [r.tokenId])))];
   const agentByToken = new Map(
@@ -432,6 +472,7 @@ function toRoundViews(
         .filter((i) => i.kind === 'test_run')
         .map((i) => ({ ...state(i), command: i.value, exit_code: i.exitCode ?? 0 })),
       ci: said?.ci ?? null,
+      decision: decisionByRound.get(row.id) ?? null,
       created_at: row.createdAt,
     };
   });

@@ -5291,14 +5291,17 @@ and only the lines that named nothing are appended `- [x]` under the summary.
 limits are §4.26's and a breach is `422` naming the field, with nothing moved.
 `GET /tasks/:id/rounds` answers `{ rounds, send_back }`: each round as
 `{ id, task_id, number, finished_by, client_name, agent, by_registered_agent,
-summary_md, commits, branch, pull_request, tests, ci, created_at }`, each item
+summary_md, commits, branch, pull_request, tests, ci, decision, created_at }`, each item
 with `id`, `state`,
 `state_source` and `state_at` beside its own fields (`sha` and `message`,
 `name`, `url` and `merged`, `command` and `exit_code`), newest round first;
 `project.read`. `pull_request.merged` is `true` or `false` once a GitHub
 delivery named it, `null` before (D-083). `ci` is `{ head_sha, total, passed,
 failed, pending, failed_names }` from §4.31, or `null` when no CI result was
-reported for the round's head commit.
+reported for the round's head commit. `decision` is the round's latest
+§4.27 review as `{ kind, decided_by, reason_md, created_at }` — `kind`
+`accepted` or `sent_back`, `reason_md` the send-back's reason and `null` for an
+acceptance — or `null` while the round is undecided (LAI-1122).
 
 **Which agent finished a round (D-120, LAI-1001).** `agent` is `{ id,
 harness, device_label }` for the registered agent whose token finished the

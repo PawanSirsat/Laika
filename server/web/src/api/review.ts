@@ -83,6 +83,17 @@ export interface Round {
   readonly tests: readonly TestEvidence[];
   /** Null when GitHub reported no CI for the round's head commit. */
   readonly ci: RoundCi | null;
+  /** How a person decided it (§4.27), or null while it waits (LAI-1122). */
+  readonly decision: RoundDecision | null;
+  readonly created_at: number;
+}
+
+/** `RoundDecision` in `server/src/services/rounds.ts`: one round's latest review. */
+export interface RoundDecision {
+  readonly kind: 'accepted' | 'sent_back';
+  readonly decided_by: string;
+  /** The send-back's reason; null for an acceptance. */
+  readonly reason_md: string | null;
   readonly created_at: number;
 }
 

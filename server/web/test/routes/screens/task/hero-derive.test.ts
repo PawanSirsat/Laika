@@ -8,11 +8,16 @@ import type { Round } from '../../../../src/api/review.ts';
 import type { TaskLiveClaim, TaskSummary } from '../../../../src/api/tasks.ts';
 import {
   confirmedSentence,
+  confirmedShort,
   heroKind,
   mayDecideReview,
   openWorkRequest,
   progressFraction,
   reviewFacts,
+  roundEvidence,
+  testsShown,
+  testsToggle,
+  TESTS_SHOWN,
   workingFor,
   workingSince,
 } from '../../../../src/routes/screens/task/hero-derive.ts';
@@ -66,6 +71,7 @@ function round(over: Partial<Round> = {}): Round {
     pull_request: null,
     tests: [],
     ci: null,
+    decision: null,
     created_at: 1,
     ...over,
   };
@@ -190,5 +196,97 @@ void describe('progressFraction, openWorkRequest, mayDecideReview', () => {
     assert.equal(mayDecideReview({ meId: 'u', assigneeId: 'v', leads: true }), true);
     assert.equal(mayDecideReview({ meId: 'u', assigneeId: 'v', leads: false }), false);
     assert.equal(mayDecideReview({ meId: undefined, assigneeId: null, leads: true }), false);
+  });
+});
+
+const test0 = (command: string, exit_code = 0) => ({ ...item('claimed'), command, exit_code });
+
+void describe('testsShown and testsToggle (LAI-1122)', () => {
+  void test('four runs show, the rest behind Show all N runs, and back with Show fewer', () => {
+    const runs = ['a', 'b', 'c', 'd', 'e', 'f'];
+    assert.equal(TESTS_SHOWN, 4);
+    assert.deepEqual(testsShown(runs, false), ['a', 'b', 'c', 'd']);
+    assert.deepEqual(testsShown(runs, true), runs);
+    assert.equal(testsToggle(6, false), 'Show all 6 runs');
+    assert.equal(testsToggle(6, true), 'Show fewer');
+  });
+
+  void test('offers no toggle when every run already shows', () => {
+    assert.equal(testsToggle(4, false), null);
+    assert.equal(testsToggle(0, true), null);
+  });
+});
+
+void describe('roundEvidence (LAI-1122)', () => {
+  void test('the sent-back round in one line: PR, merge, CI, commits, tests', () => {
+    const line = roundEvidence(
+      round({
+        commits: [
+          { ...item('confirmed'), sha: 'a', message: null },
+          { ...item('confirmed'), sha: 'b', message: null },
+        ],
+        pull_request: {
+          ...item('confirmed'),
+          url: 'https://github.com/o/r/pull/260',
+          merged: false,
+        },
+        tests: [test0('pnpm test'), test0('pnpm lint')],
+        ci: { head_sha: 'abc', total: 13, passed: 13, failed: 0, pending: 0, failed_names: [] },
+      }),
+    );
+    assert.deepEqual(line, {
+      pullRequest: { url: 'https://github.com/o/r/pull/260', label: '#260', merged: 'not merged' },
+      ci: 'CI 13/13 passed',
+      ciTone: 'ok',
+      commits: '2 commits',
+      tests: '2 tests passed',
+    });
+  });
+
+  void test('says what is missing, failed or not reported, in the singular where it is one', () => {
+    const line = roundEvidence(
+      round({
+        commits: [{ ...item('claimed'), sha: 'a', message: null }],
+        pull_request: { ...item('claimed'), url: 'https://example.com/review', merged: null },
+        tests: [test0('pnpm test'), test0('pnpm lint', 1)],
+        ci: { head_sha: 'abc', total: 3, passed: 2, failed: 1, pending: 0, failed_names: ['x'] },
+      }),
+    );
+    assert.equal(line.pullRequest?.label, 'link');
+    assert.equal(line.pullRequest?.merged, 'merge not reported');
+    assert.equal(line.ci, 'CI 1/3 failed');
+    assert.equal(line.ciTone, 'failed');
+    assert.equal(line.commits, '1 commit');
+    assert.equal(line.tests, '1 passed · 1 failed');
+
+    const bare = roundEvidence(round());
+    assert.equal(bare.pullRequest, null);
+    assert.equal(bare.ci, 'No CI reported');
+    assert.equal(bare.tests, 'No tests run');
+    assert.equal(bare.commits, '0 commits');
+  });
+});
+
+void describe('confirmedShort (LAI-1122)', () => {
+  void test('agrees with the sentence it shortens, in each case', () => {
+    const c = (state: 'claimed' | 'confirmed' | 'failed') => ({
+      ...item(state),
+      sha: state,
+      message: null,
+    });
+    assert.equal(confirmedShort(round()), 'no proof attached');
+    assert.equal(
+      confirmedShort(round({ commits: [c('confirmed'), c('confirmed')] })),
+      'all 2 confirmed',
+    );
+    assert.equal(
+      confirmedShort(round({ commits: [c('confirmed'), c('claimed')] })),
+      '1 of 2 confirmed',
+    );
+    assert.equal(
+      confirmedShort(round({ commits: [c('failed'), c('confirmed')] })),
+      '1 of 2 contradicted',
+    );
+    assert.equal(confirmedShort(round({ commits: [c('claimed')] })), 'nothing confirmed yet');
   });
 });

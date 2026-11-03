@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { ActivityEvent } from '../../../api/activity.ts';
 import { sessionHarnessName } from '../../../api/agent-session.ts';
 import { shortRange } from '../../../api/estimates.ts';
@@ -8,6 +8,7 @@ import {
   safeHttpUrl,
   shortSha,
   waitingFor,
+  type Round,
   type TaskRounds,
 } from '../../../api/review.ts';
 import { agentLabel, agentProductName } from '../../../api/selected-agent.ts';
@@ -24,6 +25,9 @@ import {
   openWorkRequest,
   progressFraction,
   reviewFacts,
+  roundEvidence,
+  testsShown,
+  testsToggle,
   workingFor,
   workingSince,
 } from './hero-derive.ts';
@@ -87,6 +91,169 @@ function Fact({
 }
 
 /**
+ * The agent's mark (D-129): the first letter of its harness's product name on
+ * a tile — *O* for Omnigent. Decoration; the name beside it says who it is.
+ */
+function AgentMark({ harness, small }: { readonly harness: string; readonly small?: boolean }) {
+  return (
+    <span
+      className={small === true ? 'hero-agentmark hero-agentmark-sm' : 'hero-agentmark'}
+      aria-hidden="true"
+    >
+      {agentProductName({ harness }).slice(0, 1)}
+    </span>
+  );
+}
+
+/**
+ * A round's commits and test runs, side by side (LAI-1122). `limit` lists the
+ * first few runs and offers the rest — the review panel's shape; without it,
+ * every run, as the sent-back panel's folded round shows them.
+ */
+function RoundLists({ round, limit }: { readonly round: Round; readonly limit: boolean }) {
+  const [all, setAll] = useState(false);
+  if (round.commits.length === 0 && round.tests.length === 0) return null;
+  const runs = limit ? testsShown(round.tests, all) : round.tests;
+  const toggle = limit ? testsToggle(round.tests.length, all) : null;
+  return (
+    <div className="hero-lists">
+      {round.commits.length > 0 && (
+        <div className="hero-list" data-list="commits">
+          <span className="hero-list-label">Commits</span>
+          <ul className="hero-list-items">
+            {round.commits.map((commit) => (
+              <li key={commit.id} className="hero-commit">
+                <code className="hero-sha" title={commit.sha}>
+                  {shortSha(commit.sha)}
+                </code>
+                <span className="hero-commit-text">{commit.message ?? 'No message given'}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {round.tests.length > 0 && (
+        <div className="hero-list" data-list="tests">
+          <span className="hero-list-label">Test runs</span>
+          <ul className="hero-list-items">
+            {runs.map((run) => (
+              <li
+                key={run.id}
+                className="hero-run"
+                data-exit={run.exit_code === 0 ? 'pass' : 'fail'}
+              >
+                <span
+                  className={
+                    run.exit_code === 0
+                      ? 'hero-run-mark hero-tone-ok'
+                      : 'hero-run-mark hero-tone-failed'
+                  }
+                  aria-label={run.exit_code === 0 ? 'Passed' : 'Failed'}
+                >
+                  {run.exit_code === 0 ? '✓' : '✗'}
+                </span>
+                <code className="hero-run-command">{run.command}</code>
+                <span className="hero-run-exit">exit {run.exit_code}</span>
+              </li>
+            ))}
+          </ul>
+          {toggle !== null && (
+            <button
+              type="button"
+              className="hero-textbutton"
+              aria-expanded={all}
+              onClick={() => {
+                setAll(!all);
+              }}
+            >
+              {toggle}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A constant rather than JSX text: `endpoint-coverage.test.ts` scans source
+ * for the client's call sites, and the words followed by a closing tag read
+ * to it as one.
+ */
+const NO_PULL_REQUEST = 'No pull request';
+
+/**
+ * The sent-back panel's line about the round that was sent back, with its
+ * commits and runs behind *Show commits & tests* (LAI-1122).
+ */
+function RoundEvidenceRow({ round }: { readonly round: Round }) {
+  const [open, setOpen] = useState(false);
+  const line = roundEvidence(round);
+  const prHref = line.pullRequest === null ? null : safeHttpUrl(line.pullRequest.url);
+  const hasLists = round.commits.length > 0 || round.tests.length > 0;
+  return (
+    <>
+      <div className="hero-evline" data-round-evidence={round.number}>
+        <span className="hero-strong">Round {round.number} evidence</span>
+        {line.pullRequest === null ? (
+          <span>{NO_PULL_REQUEST}</span>
+        ) : (
+          <span>
+            PR{' '}
+            {prHref === null ? (
+              line.pullRequest.label
+            ) : (
+              <a className="hero-link" href={prHref} target="_blank" rel="noopener noreferrer">
+                {line.pullRequest.label}
+              </a>
+            )}{' '}
+            {line.pullRequest.merged}
+          </span>
+        )}
+        <span className={`hero-tone-${line.ciTone}`}>{line.ci}</span>
+        <span>{line.commits}</span>
+        <span>{line.tests}</span>
+        {hasLists && (
+          <button
+            type="button"
+            className="hero-textbutton hero-evline-toggle"
+            aria-expanded={open}
+            onClick={() => {
+              setOpen(!open);
+            }}
+          >
+            {open ? 'Hide' : 'Show commits & tests'}
+          </button>
+        )}
+      </div>
+      {open && <RoundLists round={round} limit={false} />}
+    </>
+  );
+}
+
+/**
+ * *Full summary in activity ↓* (LAI-1122): open the round's finish summary in
+ * the feed and bring it into view — or the feed itself, when that summary is
+ * not drawn (another tab, or the feed still loading).
+ */
+function revealFinishSummary(round: number): void {
+  const feed =
+    document.getElementById('activity') ?? document.querySelector('.panel-activity-section');
+  const finishes = [
+    ...(feed ?? document).querySelectorAll<HTMLDetailsElement>('details.cmt-finish'),
+  ];
+  const named = new RegExp(`round ${String(round)}(?!\\d)`);
+  const mine =
+    finishes.find((d) => named.test(d.querySelector('summary')?.textContent ?? '')) ?? finishes[0];
+  if (mine !== undefined) {
+    mine.open = true;
+    mine.scrollIntoView({ block: 'start' });
+    return;
+  }
+  feed?.scrollIntoView({ block: 'start' });
+}
+
+/**
  * The state panel at the top of the task detail (§11.4.2.1, D-129): one per
  * status — in review, in progress, sent back, waiting for an agent, done —
  * drawn only from what the server sends. The proof's detail, the saves and
@@ -130,7 +297,12 @@ export function StateHero({
             <span className="hero-byline">
               Round {latest.number} · finished by{' '}
               <strong className="hero-strong">{nameOf(latest.finished_by)}</strong>
-              {agent !== null && <span className="hero-agent">{agent}</span>}
+              {agent !== null && (
+                <span className="hero-agent">
+                  {latest.agent !== null && <AgentMark harness={latest.agent.harness} small />}
+                  {agent}
+                </span>
+              )}
               <time dateTime={when.iso} title={when.full} className="hero-when">
                 {when.text}
               </time>
@@ -176,7 +348,19 @@ export function StateHero({
           </p>
         ) : (
           <>
-            <p className="hero-summary">{firstLine(latest.summary_md)}</p>
+            <p className="hero-summary">
+              {firstLine(latest.summary_md)}{' '}
+              <a
+                className="hero-link hero-more"
+                href="#activity"
+                onClick={(event) => {
+                  event.preventDefault();
+                  revealFinishSummary(latest.number);
+                }}
+              >
+                Full summary in activity ↓
+              </a>
+            </p>
             {facts !== undefined && (
               <div className="hero-grid">
                 <Fact label="Pull request" sub={facts.pullRequest.merged}>
@@ -203,6 +387,7 @@ export function StateHero({
                 <Fact label="Commits" value={facts.commits} sub={facts.commitsSub} />
               </div>
             )}
+            <RoundLists key={latest.id} round={latest} limit />
             {sentence !== undefined && (
               <p
                 className={`hero-confirmed hero-tone-${sentence.tone}`}
@@ -284,6 +469,7 @@ export function StateHero({
           {ping !== undefined && <span className="hero-actions">{ping}</span>}
         </div>
         <p className="hero-agentline">
+          <AgentMark harness={claim.harness ?? 'other'} />
           <strong className="hero-strong">{claimAgent}</strong>
           {task.selected_agent?.owner !== undefined && (
             <span className="hero-quiet"> · owned by {task.selected_agent.owner.name}</span>
@@ -326,7 +512,10 @@ export function StateHero({
                 Round {String((prior?.number ?? 0) + 1)} ·{' '}
                 {live === 'live' ? 'working now' : 'connection lost'}
               </strong>
-              <span className="hero-agent">{claimAgent}</span>
+              <span className="hero-agent">
+                <AgentMark harness={claim.harness ?? 'other'} small />
+                {claimAgent}
+              </span>
             </p>
             {sessionFacts}
           </>
@@ -334,6 +523,7 @@ export function StateHero({
         {claim === null && (
           <p className="hero-quiet">Round {String((prior?.number ?? 0) + 1)} has not started.</p>
         )}
+        {prior !== undefined && <RoundEvidenceRow key={prior.id} round={prior} />}
       </section>
     );
   }
@@ -345,9 +535,7 @@ export function StateHero({
   return (
     <section className="hero hero-waiting" data-hero="waiting" aria-labelledby="hero-title">
       <div className="hero-head">
-        <span className="hero-agentmark" aria-hidden="true">
-          {agentProductName(agent).slice(0, 1)}
-        </span>
+        <AgentMark harness={agent.harness} />
         <span className="hero-waiting-text">
           <span id="hero-title" className="hero-title" role="status">
             Waiting for {agentLabel(agent)} to accept
