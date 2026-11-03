@@ -280,8 +280,11 @@ void describe('Overview', () => {
       const items = h.page.locator('[data-attention] li');
       assert.deepEqual(await items.evaluateAll((els) => els.map((el) => el.dataset.agent)), ['a2']);
       await items.getByRole('link', { name: /^Open details →\s*: Codex · Belka$/ }).click();
-      // Tool details, where the guide is offered (as the first describe asserts).
-      await toolPanel(h.page, 'a2').waitFor({ timeout: 20_000 });
+      // Tool details, where the guide is offered (as the first describe asserts)
+      // once the panel has read the tool's report again.
+      await toolPanel(h.page, 'a2')
+        .locator('[data-update-cli="tool"]')
+        .waitFor({ timeout: 20_000 });
       assert.equal(await toolPanel(h.page, 'a2').locator('[data-update-cli="tool"]').count(), 1);
     } finally {
       await h.close();
