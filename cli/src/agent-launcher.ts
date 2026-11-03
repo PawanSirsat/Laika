@@ -141,6 +141,12 @@ export interface LauncherConfig {
   readonly auto_pickup?: { readonly handoffs: boolean };
   /** Per harness; `stdin` when unset. */
   readonly prompt_via?: Readonly<Partial<Record<Harness, PromptVia>>>;
+  /**
+   * D-117a item 10: when the launcher does not start work addressed to this
+   * device's Omnigent agent, post a one-line notice to its running local
+   * session instead (slice D's `wakeOmnigentSession`). Off unless set.
+   */
+  readonly omnigent?: { readonly wake_sessions: boolean };
 }
 
 export type ConfigResult =
@@ -174,10 +180,11 @@ const TOP_KEYS = new Set([
   'max_runs_per_day',
   'auto_pickup',
   'prompt_via',
+  'omnigent',
 ]);
 const PROJECT_KEYS = new Set(['project_id', 'repo', 'remote', 'work_requests']);
 /** Keys a v1 file may not carry: they are what v2 added. */
-const V2_ONLY = new Set(['max_runs_per_day', 'auto_pickup', 'prompt_via']);
+const V2_ONLY = new Set(['max_runs_per_day', 'auto_pickup', 'prompt_via', 'omnigent']);
 
 /**
  * A program that reads its arguments as a command of its own. Refused as a
@@ -428,6 +435,16 @@ export function loadConfig(
       }
     }
   }
+  let wakeSessions = false;
+  if (raw.omnigent !== undefined) {
+    if (
+      !isRecord(raw.omnigent) ||
+      Object.keys(raw.omnigent).some((k) => k !== 'wake_sessions') ||
+      typeof raw.omnigent.wake_sessions !== 'boolean'
+    ) {
+      errors.push('omnigent must be { "wake_sessions": true | false }');
+    } else wakeSessions = raw.omnigent.wake_sessions;
+  }
   if (errors.length > 0) return { kind: 'invalid', errors };
   return {
     kind: 'enabled',
@@ -443,6 +460,7 @@ export function loadConfig(
       max_runs_per_day: (raw.max_runs_per_day as number | undefined) ?? DEFAULT_RUNS_PER_DAY,
       auto_pickup: { handoffs },
       prompt_via: promptVia,
+      omnigent: { wake_sessions: wakeSessions },
     },
   };
 }
@@ -537,7 +555,11 @@ export type AuditEvent =
   | 'exit'
   | 'timeout'
   | 'stopped'
-  | 'reaped';
+  | 'reaped'
+  /** An Omnigent run asked to stop server-side, before its SIGTERM (slice D's spike). */
+  | 'omnigent_stop'
+  /** A notice posted to a running local Omnigent session instead of a start. */
+  | 'woken';
 
 /**
  * Only these fields reach the audit log, each a fixed word, an id, a number
@@ -712,6 +734,7 @@ export interface Running {
   readonly started_at: number;
   readonly deadline: number;
   readonly child: ChildProcess;
+  readonly worktree: string;
   timedOut: boolean;
   stopping: boolean;
   /** Why the launcher ended it, when it did: `launcher_stopped`, `deselected`, `credential_refused`. */
@@ -863,6 +886,20 @@ export interface LauncherDeps {
   ) => Promise<PresenceOutcome>;
   /** How a ping is answered while this launcher runs: built from its own snapshot. */
   readonly pingAnswerer?: (snapshot: () => LauncherSnapshot) => PingAnswerer;
+
+  /* Omnigent (slice D's `agent-omnigent.ts`). Each optional. */
+
+  /**
+   * `stopOmnigentRun` for the run in `worktree`: SIGTERM to `omni … -p` leaves
+   * the server-side turn running, `stop_session` ends it. Answers a fixed word.
+   */
+  readonly stopOmnigent?: (worktree: string) => Promise<string>;
+  /** `wakeOmnigentSession` with the launcher's own words; answers a fixed word. */
+  readonly wakeOmnigent?: (notice: {
+    kind: 'selected' | 'handoff' | 'recovery';
+    taskKey: string;
+    projectSlug?: string;
+  }) => Promise<string>;
 }
 
 const OFFER_EVENTS: ReadonlySet<string> = new Set([
@@ -874,6 +911,13 @@ const OFFER_EVENTS: ReadonlySet<string> = new Set([
 
 const OFFER_KINDS: ReadonlySet<string> = new Set(['work_request', 'handoff', 'recovery']);
 
+/** Work an allowlisted project's Omnigent agent was given that this device does not start. */
+const WAKEABLE: ReadonlySet<string> = new Set([
+  'work_requests_off',
+  'handoffs_off',
+  'harness_not_allowed',
+]);
+
 /* -------------------------------------------------------------------------- */
 /* What has been handled, on disk (D-117a item 5, F3)                          */
 /* -------------------------------------------------------------------------- */
@@ -884,7 +928,7 @@ export const handledPath = (home: string): string => join(launcherDir(home), 'ha
 export const MAX_HANDLED = 5000;
 
 export interface Handled {
-  /** Event ids decided: started, or refused for good. A replay of one starts nothing. */
+  /** `<harness>:<event id>` decided: started, or refused for good. A replay starts nothing. */
   readonly events: string[];
   /** Offer ids a run was started for: a later event for the same offer starts nothing. */
   readonly offers: string[];
@@ -893,16 +937,22 @@ export interface Handled {
   runs: number;
 }
 
+const HANDLED_EVENT = /^[a-z0-9-]{1,32}:[0-9A-HJKMNP-TV-Z]{26}$/;
+
 export const utcDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 
 export function loadHandled(home: string): Handled {
   const value = readJson(handledPath(home));
-  const list = (v: unknown): string[] =>
-    Array.isArray(v) ? v.filter((x): x is string => isLaikaId(x)).slice(-MAX_HANDLED) : [];
+  const list = (v: unknown, ok: (x: string) => boolean): string[] =>
+    Array.isArray(v)
+      ? v.filter((x): x is string => typeof x === 'string' && ok(x)).slice(-MAX_HANDLED)
+      : [];
   if (!isRecord(value) || value.version !== 1) return { events: [], offers: [], day: '', runs: 0 };
   return {
-    events: list(value.events),
-    offers: list(value.offers),
+    // `<harness>:<event id>`: one event reaches the selected agent and the one it
+    // replaced, and both may be on this device, each deciding it for itself.
+    events: list(value.events, (x) => HANDLED_EVENT.test(x)),
+    offers: list(value.offers, isLaikaId),
     day: typeof value.day === 'string' ? value.day : '',
     runs: whole(value.runs, 0, 100_000) ? value.runs : 0,
   };
@@ -1241,6 +1291,34 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     writeStatus(deps, memory, running, live, statusPresence());
   };
 
+  /**
+   * End a run. An Omnigent run is first asked to stop on its local server —
+   * a signal to `omni … -p` does not stop the turn there (slice D, measured) —
+   * and only then signalled; the ask is bounded, so a server that never
+   * answers delays the SIGTERM by at most 15 s.
+   */
+  const end = (run: Running): void => {
+    if (run.harness !== 'omnigent' || deps.stopOmnigent === undefined) {
+      terminate(run, graceMs);
+      return;
+    }
+    const asked = deps.stopOmnigent(run.worktree).catch(() => 'error');
+    const bounded = Promise.race([
+      asked,
+      new Promise<string>((resolve) => setTimeout(() => resolve('timeout'), 15_000).unref()),
+    ]);
+    void bounded.then((outcome) => {
+      audit(deps.home, deps.now(), {
+        event: 'omnigent_stop',
+        offer_id: run.offer_id,
+        harness: run.harness,
+        pid: run.pid,
+        detail: /^[a-z_]{1,40}$/.test(outcome) ? outcome : 'unknown',
+      });
+      terminate(run, graceMs);
+    });
+  };
+
   const audited = (key: string): boolean => {
     if (memory.deferred.has(key)) return true;
     memory.deferred.add(key);
@@ -1264,7 +1342,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         harness,
         pid: run.pid,
       });
-      terminate(run, graceMs);
+      end(run);
     }
   };
 
@@ -1336,7 +1414,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         harness: run.harness,
         pid: run.pid,
       });
-      terminate(run, graceMs);
+      end(run);
     }
   };
 
@@ -1599,6 +1677,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       started_at: runStarted,
       deadline: runStarted + config.max_runtime_seconds * 1000,
       child,
+      worktree: plan.worktree,
       timedOut: false,
       stopping: false,
       done: new Promise<void>((r) => {
@@ -1613,7 +1692,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         pid: run.pid,
         runtime_ms: deps.now() - runStarted,
       });
-      terminate(run, graceMs);
+      end(run);
     }, config.max_runtime_seconds * 1000);
     child.on('error', () => undefined);
     child.on('exit', (exitCode, signal) => {
@@ -1704,6 +1783,60 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     }
   };
 
+  const wakeOn = (): boolean =>
+    config.omnigent?.wake_sessions === true && deps.wakeOmnigent !== undefined;
+
+  /**
+   * Work this device will not start, addressed to its Omnigent agent: a notice
+   * to the agent's running local session instead (D-117a item 10). The
+   * addressing is confirmed through the credential's own inbox first, exactly
+   * as for a start, and the notice is fixed words, the key and the slug.
+   */
+  const wakeSession = async (
+    record: EventRecord,
+    credential: AgentCredential,
+    fp: string,
+  ): Promise<'done' | 'retry'> => {
+    const resolved = await resolve(record, credential, fp);
+    if (readFailed(resolved)) return 'retry';
+    if (resolved === undefined || resolved !== record.to?.agent_id) {
+      refuse(record, 'omnigent', resolved === undefined ? 'agent_unresolved' : 'other_agent');
+      return 'done';
+    }
+    const kind =
+      record.offer_kind === 'work_request'
+        ? 'selected'
+        : record.offer_kind === 'recovery'
+          ? 'recovery'
+          : 'handoff';
+    const key = record.task_key;
+    if (key === undefined || !TASK_KEY.test(key)) {
+      refuse(record, 'omnigent', 'bad_prompt_fields');
+      return 'done';
+    }
+    const project =
+      deps.project === undefined || record.project_id === null
+        ? undefined
+        : await deps.project(credential, record.project_id);
+    if (readFailed(project)) return 'retry';
+    let outcome: string;
+    try {
+      outcome = await deps.wakeOmnigent!({
+        kind,
+        taskKey: key,
+        ...(project === undefined || !SLUG.test(project.slug) ? {} : { projectSlug: project.slug }),
+      });
+    } catch {
+      outcome = 'error';
+    }
+    audit(deps.home, deps.now(), {
+      event: 'woken',
+      ...base(record, 'omnigent'),
+      detail: /^[a-z_0-9]{1,40}$/.test(outcome) ? outcome : 'unknown',
+    });
+    return 'done';
+  };
+
   const tickHarness = async (harness: Harness): Promise<void> => {
     // Saved credential only: an inherited env token is not this device's agent.
     const credential = readCredential(deps.home, harness, {});
@@ -1743,12 +1876,13 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       memory.agentIds.get(fp) ?? readStore(deps.home, storeKey(harness, credential)).agent_id;
     for (const record of records) {
       if (deps.stopped() || memory.refused.has(fp)) break;
-      if (memory.handledEvents.has(record.event_id)) continue;
+      const handledKey = `${harness}:${record.event_id}`;
+      if (memory.handledEvents.has(handledKey)) continue;
       if (record.type === 'task.agent_selected' && record.task_id !== null) {
         await stopDeselected(record, credential);
       }
       if (record.offer_id !== null && memory.launchedOffers.has(record.offer_id)) {
-        markHandled(deps.home, memory, record.event_id);
+        markHandled(deps.home, memory, handledKey);
         continue;
       }
       let verdict = judge(record, harness, known(), config);
@@ -1766,11 +1900,17 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
             : judge(record, harness, resolved, config);
       }
       if (verdict === 'not_an_offer') {
-        markHandled(deps.home, memory, record.event_id);
+        markHandled(deps.home, memory, handledKey);
+        continue;
+      }
+      if (harness === 'omnigent' && WAKEABLE.has(verdict) && wakeOn()) {
+        const woke = await wakeSession(record, credential, fp);
+        if (woke === 'retry') continue;
+        markHandled(deps.home, memory, handledKey);
         continue;
       }
       if (verdict !== 'ok' || agentId === undefined) {
-        markHandled(deps.home, memory, record.event_id);
+        markHandled(deps.home, memory, handledKey);
         refuse(
           record,
           harness,
@@ -1804,14 +1944,14 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         }
         continue;
       }
-      markHandled(deps.home, memory, record.event_id);
+      markHandled(deps.home, memory, handledKey);
       let outcome: Disposition;
       try {
         outcome = await launch(record, harness, credential, agentId);
       } catch {
         outcome = refuse(record, harness, 'launch_error');
       }
-      if (outcome === 'retry') unmarkHandled(deps.home, memory, record.event_id);
+      if (outcome === 'retry') unmarkHandled(deps.home, memory, handledKey);
     }
   };
 
@@ -1824,7 +1964,10 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     for (let tick = 0; deps.maxTicks === undefined || tick < deps.maxTicks; tick += 1) {
       if (deps.stopped()) break;
       woken = false;
-      for (const harness of Object.keys(config.harnesses) as Harness[]) {
+      // Omnigent's credential is read for a wake even when it is not a harness to start.
+      const ticked = new Set<Harness>(Object.keys(config.harnesses) as Harness[]);
+      if (wakeOn()) ticked.add('omnigent');
+      for (const harness of ticked) {
         if (deps.stopped()) break;
         await tickHarness(harness);
       }
@@ -1849,7 +1992,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         harness: run.harness,
         pid: run.pid,
       });
-      terminate(run, graceMs);
+      end(run);
     }
     for (const s of streams.values()) s.abort.abort();
     await Promise.all([...running.values()].map((r) => r.done));
@@ -2389,6 +2532,16 @@ export function launcherDeps(io: LauncherIo, stopped: () => boolean): LauncherDe
       ),
     presence: async (credential, snapshot) =>
       (await import('./agent-capacity.ts')).reportPresence(fetchFn, credential, snapshot),
+    stopOmnigent: async (worktree) => {
+      const { stopOmnigentRun } = await import('./agent-omnigent.ts');
+      const outcome = await stopOmnigentRun({ home: io.home, fetch: fetchFn }, worktree);
+      return outcome.kind === 'skipped' ? outcome.reason : outcome.kind;
+    },
+    wakeOmnigent: async (notice) => {
+      const { wakeOmnigentSession } = await import('./agent-omnigent.ts');
+      const outcome = await wakeOmnigentSession({ home: io.home, fetch: fetchFn }, notice);
+      return outcome.kind === 'skipped' ? outcome.reason : outcome.kind;
+    },
     pingAnswerer: (snapshot) => async (deps, record, key, credential) =>
       (await import('./agent-capacity.ts')).launcherAnswerer(snapshot)(
         deps,

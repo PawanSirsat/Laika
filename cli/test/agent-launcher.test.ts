@@ -1451,7 +1451,11 @@ void describe('LAI-1039: handled.json (F3) and the day cap', () => {
       runs: number;
     };
     assert.equal(handled.runs, 1);
-    assert.ok(!handled.events.includes(ids(66)), 'the deferred event is still to do');
+    assert.ok(handled.events.includes(`claude-code:${ids(64)}`), JSON.stringify(handled));
+    assert.ok(
+      !handled.events.includes(`claude-code:${ids(66)}`),
+      'the deferred event is still to do',
+    );
   });
 });
 
@@ -1794,5 +1798,181 @@ void describe('LAI-1039: the prompt and the run summary', () => {
       total_cost_usd: 0.1235,
     });
     assert.ok(!JSON.stringify(s).includes('TITLE_SENTINEL'));
+  });
+});
+
+void describe('LAI-1039 with slice D: Omnigent', () => {
+  const OMNI_AGENT = '01M6G1HJKXN3BJYNJNTYWVK8K5';
+  const omniRecord = (n: number, over: Partial<EventRecord> = {}): EventRecord =>
+    selected(n, {
+      to: { agent_id: OMNI_AGENT, harness: 'omnigent', device: 'KvellD’s MacBook 36 GB' },
+      ...over,
+    });
+
+  void test('an Omnigent run is asked to stop on its server before it is signalled', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    const asked: { worktree: string; alive: boolean }[] = [];
+    const r = workRig(() => [omniRecord(90)], {
+      request: () => ({
+        id: ids(91),
+        task_id: TASK,
+        task_key: 'LAI-1039',
+        project_id: PROJECT,
+        agent_id: OMNI_AGENT,
+      }),
+      task: () => ({
+        key: 'LAI-1039',
+        project_id: PROJECT,
+        status: 'todo',
+        selected_agent_id: OMNI_AGENT,
+        claim_agent_id: null,
+        claimed: false,
+      }),
+    });
+    writeCredential(r.home, 'omnigent', { url: 'http://board.invalid', token: TOKEN });
+    let pid = 0;
+    const launcher = startLauncher(
+      {
+        ...r.deps,
+        poll: (h) => Promise.resolve(h === 'omnigent' ? [omniRecord(90)] : []),
+        // Waits before looking: had the run been signalled first, it would be gone by now.
+        stopOmnigent: async (worktree) => {
+          await new Promise((done) => setTimeout(done, 400));
+          let alive = true;
+          try {
+            process.kill(pid, 0);
+          } catch {
+            alive = false;
+          }
+          asked.push({ worktree, alive });
+          return 'stopped';
+        },
+      },
+      workConfig([process.execPath, script, '--ms', '30000'], {
+        harnesses: { omnigent: [process.execPath, script, '--ms', '30000'] },
+        prompt_via: { omnigent: 'argv' },
+      }),
+    );
+    await until(() => auditLines(r.home).some((l) => l.event === 'start'));
+    pid = Number(auditLines(r.home).find((l) => l.event === 'start')!.pid);
+    r.stop();
+    await launcher.finished;
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0]!.worktree, join(r.home, `wt-${ids(91)}`));
+    assert.equal(asked[0]!.alive, true, 'asked while the run was still alive: before any signal');
+    const order = auditLines(r.home).map((l) => l.event);
+    assert.ok(order.indexOf('omnigent_stop') < order.indexOf('exit'), order.join(' '));
+    assert.equal(auditLines(r.home).find((l) => l.event === 'omnigent_stop')?.detail, 'stopped');
+  });
+
+  for (const wakeSessions of [true, false]) {
+    void test(`work this device does not start wakes the Omnigent session only when asked (wake_sessions ${String(wakeSessions)})`, async () => {
+      const notices: unknown[] = [];
+      const r = workRig(() => [], {
+        request: () => ({
+          id: ids(93),
+          task_id: TASK,
+          task_key: 'LAI-1039',
+          project_id: PROJECT,
+          agent_id: OMNI_AGENT,
+        }),
+      });
+      writeCredential(r.home, 'omnigent', { url: 'http://board.invalid', token: TOKEN });
+      await startLauncher(
+        {
+          ...r.deps,
+          maxTicks: 1,
+          poll: (h) => Promise.resolve(h === 'omnigent' ? [omniRecord(92)] : []),
+          wakeOmnigent: (notice) => {
+            notices.push(notice);
+            return Promise.resolve('delivered');
+          },
+        },
+        // Omnigent is not a harness to start here, and work requests are off.
+        config({ argv: [process.execPath], omnigent: { wake_sessions: wakeSessions } }),
+      ).finished;
+      assert.deepEqual(r.workspaces, [], 'nothing was made');
+      assert.equal(
+        auditLines(r.home).some((l) => l.event === 'start'),
+        false,
+      );
+      if (wakeSessions) {
+        assert.deepEqual(notices, [
+          { kind: 'selected', taskKey: 'LAI-1039', projectSlug: 'laika' },
+        ]);
+        assert.equal(auditLines(r.home).find((l) => l.event === 'woken')?.detail, 'delivered');
+      } else {
+        assert.deepEqual(notices, []);
+      }
+    });
+  }
+
+  void test('a work request the inbox names for another agent wakes nothing', async () => {
+    const notices: unknown[] = [];
+    const r = workRig(() => [], {
+      request: () => ({
+        id: ids(97),
+        task_id: TASK,
+        task_key: 'LAI-1039',
+        project_id: PROJECT,
+        agent_id: ids(9),
+      }),
+    });
+    writeCredential(r.home, 'omnigent', { url: 'http://board.invalid', token: TOKEN });
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 1,
+        poll: (h) => Promise.resolve(h === 'omnigent' ? [omniRecord(96)] : []),
+        wakeOmnigent: (notice) => {
+          notices.push(notice);
+          return Promise.resolve('delivered');
+        },
+      },
+      config({ argv: [process.execPath], omnigent: { wake_sessions: true } }),
+    ).finished;
+    assert.deepEqual(notices, []);
+    assert.equal(auditLines(r.home).find((l) => l.event === 'refused')?.reason, 'other_agent');
+  });
+
+  void test('one selection seen by two agents on this device: each harness decides it for itself', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    // The selection moved from this device's Claude Code agent to its Omnigent agent:
+    // the same event reaches both credentials.
+    const moved = omniRecord(94, {
+      from: { agent_id: AGENT, harness: 'claude-code', device: 'KvellD’s MacBook 36 GB' },
+    });
+    const r = workRig(() => [moved], {
+      request: () => ({
+        id: ids(95),
+        task_id: TASK,
+        task_key: 'LAI-1039',
+        project_id: PROJECT,
+        agent_id: OMNI_AGENT,
+      }),
+      task: () => ({
+        key: 'LAI-1039',
+        project_id: PROJECT,
+        status: 'todo',
+        selected_agent_id: OMNI_AGENT,
+        claim_agent_id: null,
+        claimed: false,
+      }),
+    });
+    writeCredential(r.home, 'omnigent', { url: 'http://board.invalid', token: TOKEN });
+    await startLauncher(
+      { ...r.deps, maxTicks: 2 },
+      workConfig([process.execPath, script, '--ms', '50'], {
+        harnesses: {
+          'claude-code': [process.execPath, script, '--ms', '50'],
+          omnigent: [process.execPath, script, '--ms', '50'],
+        },
+      }),
+    ).finished;
+    // Claude Code's tick refuses it (another harness's agent); Omnigent's still starts it.
+    assert.ok(auditLines(r.home).some((l) => l.event === 'refused' && l.harness === 'claude-code'));
+    assert.ok(auditLines(r.home).some((l) => l.event === 'start' && l.harness === 'omnigent'));
   });
 });

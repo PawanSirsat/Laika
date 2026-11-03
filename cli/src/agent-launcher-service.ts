@@ -34,6 +34,7 @@ import {
   readJson,
   writePrivate,
 } from './agent-session.ts';
+import { laikaPollyDir } from './agent-omnigent.ts';
 import { isToolEntry, readClaudeLaika } from './claude-mcp.ts';
 import { readDevice } from './device.ts';
 
@@ -265,9 +266,14 @@ export function codexArgv(program: string, laika: string, boardUrl: string): str
   ];
 }
 
-/** `omni polly -p <prompt>`: the prompt is the argv's last item; the worktree is the cwd. */
-export function omnigentArgv(program: string): string[] {
-  return [program, 'polly', '-p'];
+/**
+ * `omni run <laika-polly> -p <prompt>` (slice D, LAI-1101): the Laika-connected
+ * copy of polly that `laika tool add omnigent` installs, never the bundled
+ * `omni polly`, which has no Laika connection. The prompt is the argv's last
+ * item (`prompt_via: argv`); the worktree is the cwd.
+ */
+export function omnigentArgv(program: string, home: string): string[] {
+  return [program, 'run', laikaPollyDir(home), '-p'];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -534,6 +540,7 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
   // 3. The harness programs, checked as the launcher will check them.
   const harnesses: Partial<Record<Harness, string[]>> = {};
   const promptVia: Partial<Record<Harness, 'stdin' | 'argv'>> = {};
+  let wakeSessions = false;
   for (const { harness, credential } of usable) {
     if (harness === 'claude-code') {
       const program = io.which('claude');
@@ -581,16 +588,23 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
     } else if (harness === 'omnigent') {
       const program = io.which('omni');
       if (program === undefined) continue;
-      if (
-        !yes(
-          await io.ask(
-            'Start Omnigent (`omni polly -p`) for this agent too? Type yes to allow [no]: ',
-          ),
-        )
-      ) {
+      if (!existsSync(laikaPollyDir(io.home))) {
+        io.out(
+          '  omnigent: no Laika-connected polly here (run `laika tool add omnigent`); left out',
+        );
         continue;
       }
-      const argvNow = omnigentArgv(program);
+      wakeSessions = yes(
+        await io.ask(
+          'When Laika selects or offers work to this Omnigent agent and the launcher does not start it,\n' +
+            'post a one-line notice to its running local session? Type yes to allow [no]: ',
+        ),
+      );
+      const start = await io.ask(
+        `Start Omnigent (omni run ${laikaPollyDir(io.home)} -p) for this agent too? Type yes to allow [no]: `,
+      );
+      if (!yes(start)) continue;
+      const argvNow = omnigentArgv(program, io.home);
       const problem = argvProblem(argvNow);
       if (problem !== undefined) {
         io.out(`  omnigent: ${problem}; left out`);
@@ -600,8 +614,9 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
       promptVia[harness] = 'argv';
     }
   }
-  if (Object.keys(harnesses).length === 0)
+  if (Object.keys(harnesses).length === 0 && !wakeSessions) {
     return refuse('no harness here can be started unattended');
+  }
 
   // 4. The whole config, shown before anything is written.
   const label = readDevice(io.home)?.display_name;
@@ -613,6 +628,7 @@ export async function enable(io: ServiceIo, argv: readonly string[]): Promise<nu
     projects,
     harnesses,
     ...(Object.keys(promptVia).length === 0 ? {} : { prompt_via: promptVia }),
+    ...(wakeSessions ? { omnigent: { wake_sessions: true } } : {}),
     max_concurrent: 1,
     max_runtime_seconds: 7200,
     max_runs_per_day: DEFAULT_RUNS_PER_DAY,

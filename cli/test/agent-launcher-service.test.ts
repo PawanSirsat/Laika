@@ -31,6 +31,7 @@ import {
   disable,
   enable,
   launchAgentPlist,
+  omnigentArgv,
   plistPath,
   type RunResult,
   SERVICE_LABEL,
@@ -111,6 +112,15 @@ void describe('the service files', () => {
 });
 
 void describe('the harness argv', () => {
+  void test('Omnigent: `omni run <laika-polly> -p`, never the bundled `omni polly`', () => {
+    assert.deepEqual(omnigentArgv('/opt/bin/omni', '/Users/kvelld'), [
+      '/opt/bin/omni',
+      'run',
+      '/Users/kvelld/.laika/omnigent/laika-polly',
+      '-p',
+    ]);
+  });
+
   void test('Claude Code: headless, dontAsk with an allowlist, no prompts, the denies, caps', () => {
     const argv = claudeArgv('/usr/local/bin/claude');
     const at = (flag: string): string | undefined => argv[argv.indexOf(flag) + 1];
