@@ -1494,6 +1494,56 @@ void describe('laika tool add', () => {
     assert.deepEqual(s.received, []);
     assert.deepEqual(files(home), before);
   });
+
+  void test('LAI-1108 (h): claude-code under CLAUDE_CONFIG_DIR writes the .claude.json Claude Code reads there; ~/.claude.json untouched', async () => {
+    const home = sandbox();
+    const s = await board();
+    await paired(home, s);
+    const dir = join(home, '.claude-work');
+    const mine = `${JSON.stringify({ mcpServers: { other: { type: 'http', url: 'https://x/mcp' } } }, null, 2)}\n`;
+    write(home, '.claude.json', mine);
+    write(home, '.claude-work/.claude.json', '{"numStartups": 3}\n');
+    const run = await laika(
+      home,
+      ['tool', 'add', 'claude-code', '--exchange', 'EX1', '--no-hooks'],
+      { CLAUDE_CONFIG_DIR: dir },
+    );
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    const doc = JSON.parse(readFileSync(join(dir, '.claude.json'), 'utf8')) as {
+      numStartups: number;
+      mcpServers: { laika: unknown };
+    };
+    assert.deepEqual(doc.mcpServers.laika, claudeToolEntry(s.url));
+    assert.equal(doc.numStartups, 3, 'the rest of that file was not kept');
+    assert.equal(
+      readFileSync(join(home, '.claude.json'), 'utf8'),
+      mine,
+      '~/.claude.json was written',
+    );
+    assert.ok(run.stdout.includes(`in ${join(dir, '.claude.json')}`), run.stdout);
+    assertNoLeak(home, [run], '.laika/agents/claude-code.json');
+  });
+
+  void test('LAI-1108 (h): codex under CODEX_HOME writes the config.toml Codex reads there; ~/.codex untouched', async () => {
+    const home = sandbox();
+    const s = await board({ agentHarness: 'codex' });
+    await paired(home, s);
+    const codexHome = join(home, 'codex-home');
+    write(home, '.codex/config.toml', CODEX_TOML);
+    write(home, 'codex-home/config.toml', 'model = "o3"\n');
+    const run = await laika(home, ['tool', 'add', 'codex', '--exchange', 'EX1', '--no-hooks'], {
+      CODEX_HOME: codexHome,
+    });
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    assert.equal(
+      readFileSync(join(codexHome, 'config.toml'), 'utf8'),
+      `model = "o3"\n\n[mcp_servers.laika]\nurl = "${s.url}/mcp"\n` +
+        `http_headers_helper = ${JSON.stringify(CODEX_HEADERS_HELPER)}\n`,
+    );
+    assert.equal(readFileSync(join(home, '.codex', 'config.toml'), 'utf8'), CODEX_TOML);
+    assert.ok(!existsSync(join(home, '.codex', 'config.toml.bak')), '~/.codex was written');
+    assertNoLeak(home, [run], '.laika/agents/codex.json');
+  });
 });
 
 void describe('laika tool add asks the manifest first (LAI-1064)', () => {

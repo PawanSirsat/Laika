@@ -153,6 +153,16 @@ claim whose session belongs to another agent. So on a device that holds
   - Omnigent gives each Codex worker a private `CODEX_HOME` holding a copy
     of that file. A conversation that was already running keeps its old copy
     until it is restarted.
+  - A Codex hook takes `CODEX_HOME` from the `codex` process itself — the
+    process it reads `OMNIGENT` from — not from its own environment, so it
+    reads the same copy the worker's MCP reads (LAI-1108).
+  - `laika tool add claude-code` and `laika tool add codex` write their entry
+    to the same effective file: under `CLAUDE_CONFIG_DIR` or `CODEX_HOME`
+    when it is set (LAI-1108).
+  - Every switching helper `tool add` has written stays recognised: a later
+    revision of the helper is added to the list in `mcp-headers.ts`
+    (`SWITCHING_HELPERS`), never swapped for it, so a device that still holds
+    an earlier one is not split (LAI-1108).
 - **A worker whose entry is anything else** keeps acting as its own agent in
   an Omnigent run, hooks included. "Anything else" means your own entry, an
   older helper, a nearer local-scope or project `laika` server, or none.
@@ -164,6 +174,12 @@ session, and recorded in the session's state file. The watcher, a
 checkpoint, the end at Stop and a reopen all use the recorded choice, even
 after the working directory moves into a folder with a project `laika`
 server, such as this repository's `plugin/.mcp.json`.
+
+**Unless the session is resumed in another kind of run** (LAI-1108). Whether
+the run was Omnigent's is recorded beside the choice. A `SessionStart` whose
+run differs — an Omnigent worker resumed by hand with `claude --resume`, or
+a session resumed inside Omnigent that began outside it — decides again,
+because its MCP helper follows the run it is in now.
 
 **Fail closed.** When a run cannot be told apart for Codex (no harness
 found, `ps` failed, or the environment unreadable), the hook opens no

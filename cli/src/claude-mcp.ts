@@ -25,14 +25,19 @@ export function isToolEntry(entry: unknown): boolean {
 }
 
 /**
- * Where `~/.claude.json` really is. A symlink is written **through**, to its
- * target — `apply`'s temp-file-and-rename would otherwise replace the link
- * with a file (LAI-1074). A link that leads nowhere is refused.
+ * Where Claude Code's `.claude.json` really is: `~/.claude.json`, or under
+ * `CLAUDE_CONFIG_DIR` when `env` sets it, as Claude Code itself and the hooks
+ * read it (`claudeConfigFile`; LAI-1108 for `tool add`). A symlink is written
+ * **through**, to its target — `apply`'s temp-file-and-rename would otherwise
+ * replace the link with a file (LAI-1074). A link that leads nowhere is
+ * refused.
  */
 export function claudeJsonPath(
   home: string,
+  env: Readonly<Record<string, string | undefined>> = {},
 ): { readonly path: string } | { readonly refused: string } {
-  const link = join(home, '.claude.json');
+  const dir = env.CLAUDE_CONFIG_DIR;
+  const link = join(dir !== undefined && dir !== '' ? dir : home, '.claude.json');
   let isLink = false;
   try {
     isLink = lstatSync(link).isSymbolicLink();

@@ -5,7 +5,7 @@ import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { adapter, HOOK_HARNESSES } from './agent-adapters.ts';
-import { omnigentMarker, type OmnigentVerdict } from './agent-omnigent-marker.ts';
+import { harnessConfigEnv, omnigentMarker, type OmnigentVerdict } from './agent-omnigent-marker.ts';
 import { mcpFollowsOmnigent } from './mcp-headers.ts';
 import {
   type AgentCredential,
@@ -604,6 +604,7 @@ async function open(
   pid?: number,
   self?: SelfReport,
   identity?: 'omnigent' | 'own',
+  omnigentRun?: boolean,
 ): Promise<{ state?: SessionState; why?: string }> {
   const named = pid === undefined ? undefined : readProc(pid);
   const proc =
@@ -629,6 +630,7 @@ async function open(
     clientVersion: `laika-agent/${harness}`,
     ...(self === undefined ? {} : { self }),
     ...(identity === undefined ? {} : { identity }),
+    ...(omnigentRun === undefined ? {} : { omnigentRun }),
   });
   if (outcome.kind === 'busy') return { why: 'another start for this session is in progress' };
   if (outcome.kind === 'failed') return { state: outcome.state, why: outcome.why };
@@ -729,6 +731,20 @@ export type Marker = (io: AgentIo, harness: Harness) => OmnigentVerdict;
 
 export const marker: Marker = (io, harness) => omnigentMarker(io.env, process.ppid, harness);
 
+/** The environment a harness's own config is read under, for a hook. */
+export type ConfigEnv = (
+  io: AgentIo,
+  harness: Harness,
+) => Readonly<Record<string, string | undefined>>;
+
+/**
+ * For Codex, `CODEX_HOME` as the `codex` process has it — the process the
+ * marker reads `OMNIGENT` from — so a hook reads the config copy its MCP
+ * reads (LAI-1108, `harnessConfigEnv`). The hook's own environment otherwise.
+ */
+export const configEnv: ConfigEnv = (io, harness) =>
+  harnessConfigEnv(io.env, process.ppid, harness);
+
 /**
  * Whether Omnigent's rules apply on this device at all: it holds the Omnigent
  * agent's credential, `~/.laika/agents/omnigent.json` (`laika tool add
@@ -772,17 +788,22 @@ export const pollyTurn = (env: Readonly<Record<string, string | undefined>>): bo
  *   `undefined` when the run cannot be told; `own` otherwise (B1).
  *
  * Decided **once per harness session** and kept in its state file
- * (`identity`, N1): see {@link hookResult}.
+ * (`identity`, N1), with the run it was decided for (`omnigent_run`): a
+ * session resumed in another kind of run decides again at its start
+ * (LAI-1108). See {@link hookResult}.
  */
 export function decideIdentity(
   io: AgentIo,
   harness: Harness,
   verdict: () => OmnigentVerdict,
   cwd: string | undefined,
+  harnessEnv: () => Readonly<Record<string, string | undefined>> = () => io.env,
 ): 'omnigent' | 'own' | undefined {
   if ((harness !== 'claude-code' && harness !== 'codex') || !omnigentDevice(io)) return 'own';
   if (harness === 'claude-code' && pollyTurn(io.env)) return 'omnigent';
-  if (!mcpFollowsOmnigent(io.home, harness, io.env, cwd)) return 'own';
+  // The harness's config as the harness reads it: for Codex, under the
+  // `codex` process's own `CODEX_HOME` ({@link configEnv}, LAI-1108).
+  if (!mcpFollowsOmnigent(io.home, harness, harnessEnv(), cwd)) return 'own';
   const v = verdict();
   if (v === 'unknown') {
     log(io.home, `hook ${harness}: cannot tell whether Omnigent started this run — no session`);
@@ -808,8 +829,9 @@ export function hookCredential(
   harness: Harness,
   verdict: () => OmnigentVerdict,
   cwd: string | undefined,
+  harnessEnv: () => Readonly<Record<string, string | undefined>> = () => io.env,
 ): AgentCredential | undefined {
-  const identity = decideIdentity(io, harness, verdict, cwd);
+  const identity = decideIdentity(io, harness, verdict, cwd, harnessEnv);
   return identity === undefined ? undefined : credentialFor(io, harness, identity);
 }
 
@@ -861,6 +883,7 @@ export async function hookResult(
   event: HookEvent,
   harness: Harness,
   isOmnigent: Marker = marker,
+  readConfigEnv: ConfigEnv = configEnv,
 ): Promise<HookResult> {
   const out = (text: string): HookResult => ({ out: text });
   const raw = io.readHookInput === undefined ? io.stdin() : await io.readHookInput();
@@ -874,12 +897,42 @@ export async function hookResult(
   // Asked at most once a hook, and only where an answer changes something.
   let asked: OmnigentVerdict | undefined;
   const verdict = (): OmnigentVerdict => (asked ??= isOmnigent(io, harness));
+  let read: Readonly<Record<string, string | undefined>> | undefined;
+  const harnessEnv = (): Readonly<Record<string, string | undefined>> =>
+    (read ??= readConfigEnv(io, harness));
   const cwd = typeof input.cwd === 'string' && isAbsolute(input.cwd) ? input.cwd : undefined;
   const path = statePath(io.home, harness, harnessSessionId);
+  const stored = readState(path);
+  // A session started in a run unlike the one its identity was decided for —
+  // an Omnigent worker resumed by hand with `claude --resume`, or the other
+  // way round — decides again (LAI-1108): its MCP follows this run, and the
+  // recorded identity was for another.
+  const rerun =
+    event === 'session-start' &&
+    stored?.identity !== undefined &&
+    stored.omnigent_run !== undefined &&
+    omnigentDevice(io) &&
+    (verdict() === 'omnigent') !== stored.omnigent_run;
+  if (rerun) {
+    log(
+      io.home,
+      `hook ${harness}: this run is ${verdict()}, not the run session ${stored.session_id ?? ''} was decided for — deciding again`,
+    );
+  }
   // Whose credential: the one this session's state recorded when it opened,
   // or decided now and recorded below (N1).
-  const identity = readState(path)?.identity ?? decideIdentity(io, harness, verdict, cwd);
+  const kept = rerun ? undefined : stored?.identity;
+  const identity = kept ?? decideIdentity(io, harness, verdict, cwd, harnessEnv);
   if (identity === undefined) return out('');
+  // The run it was decided for, recorded beside it (LAI-1108) — and carried
+  // into the fresh state a reopen starts. Only on an Omnigent device:
+  // elsewhere the identity is always `own`.
+  const runRecord =
+    kept !== undefined
+      ? stored?.omnigent_run
+      : omnigentDevice(io)
+        ? verdict() === 'omnigent'
+        : undefined;
   const credential = credentialFor(io, harness, identity);
   // Turn-scoped sessions are an Omnigent device's rule too (review #5/#6).
   const omnigentRun = (): boolean => omnigentDevice(io) && verdict() === 'omnigent';
@@ -922,7 +975,16 @@ export async function hookResult(
     );
   }
   if (event === 'session-start' || state === undefined || state.status === 'starting' || reopen) {
-    const opened = await open(io, harness, harnessSessionId, credential, undefined, self, identity);
+    const opened = await open(
+      io,
+      harness,
+      harnessSessionId,
+      credential,
+      undefined,
+      self,
+      identity,
+      runRecord,
+    );
     if (opened.state?.status === 'live') {
       state = opened.state;
       const context = sessionContext(state);
@@ -940,6 +1002,7 @@ export async function hookResult(
   // fresh state starts without it (N1).
   if (state !== undefined && state.identity === undefined) {
     state.identity = identity;
+    if (runRecord !== undefined) state.omnigent_run = runRecord;
     writeState(io.home, state);
   }
   if (

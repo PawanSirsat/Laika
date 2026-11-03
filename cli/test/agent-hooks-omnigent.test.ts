@@ -18,9 +18,15 @@ import { after, afterEach, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { hookCredential, type AgentIo } from '../src/agent.ts';
+import type { Harness as AdapterHarness } from '../src/agent-adapters.ts';
 import { runBridge } from '../src/agent-mcp-bridge.ts';
 import { agentHookCommand, type AgentHookEvent } from '../src/agent-hooks.ts';
-import { environReader, omnigentMarker, type EnvironReader } from '../src/agent-omnigent-marker.ts';
+import {
+  environReader,
+  harnessConfigEnv,
+  omnigentMarker,
+  type EnvironReader,
+} from '../src/agent-omnigent-marker.ts';
 import {
   type Deps,
   type ProcInfo,
@@ -35,6 +41,7 @@ import {
   CODEX_HELPER_LINE,
   isSwitchingHelper,
   OLDER_CLAUDE_HELPERS,
+  SWITCHING_HELPERS,
 } from '../src/mcp-headers.ts';
 
 /**
@@ -778,8 +785,26 @@ interface Harness {
   ): Promise<{ stdout: string; code: number }>;
 }
 
-function startHarness(home: string, bin: string, extra: Record<string, string>): Harness {
-  const child = spawn(join(bin, 'claude'), [FAKE], {
+/**
+ * `name` is the stand-in's process name, `harness` the hooks it runs, and
+ * `unset` the variables its hooks do not get (`env -u`), as a harness that
+ * runs its hooks with an allowlisted environment would (LAI-1108).
+ */
+interface HarnessOptions {
+  readonly name?: 'claude' | 'codex';
+  readonly harness?: AdapterHarness;
+  readonly unset?: readonly string[];
+}
+
+function startHarness(
+  home: string,
+  bin: string,
+  extra: Record<string, string>,
+  options: HarnessOptions = {},
+): Harness {
+  const harness = options.harness ?? 'claude-code';
+  const unset = (options.unset ?? []).map((v) => `-u ${v} `).join('');
+  const child = spawn(join(bin, options.name ?? 'claude'), [FAKE], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: {
       PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
@@ -812,8 +837,9 @@ function startHarness(home: string, bin: string, extra: Record<string, string>):
           cwd,
           ...(event === 'session-start' ? { source: 'startup' } : {}),
         });
+        const command = agentHookCommand(HOOK, event, harness);
         child.stdin.write(
-          `${JSON.stringify({ command: agentHookCommand(HOOK, event, 'claude-code'), payload })}\n`,
+          `${JSON.stringify({ command: unset === '' ? command : `env ${unset}${command}`, payload })}\n`,
         );
       }),
   };
@@ -829,9 +855,9 @@ async function until<T>(what: string, probe: () => T | undefined, ms = 10_000): 
   }
 }
 
-const stateOf = (home: string, id: string): SessionState =>
+const stateOf = (home: string, id: string, harness: AdapterHarness = 'claude-code'): SessionState =>
   JSON.parse(
-    readFileSync(join(home, '.laika', 'agent-sessions', `claude-code-${id}.json`), 'utf8'),
+    readFileSync(join(home, '.laika', 'agent-sessions', `${harness}-${id}.json`), 'utf8'),
   ) as SessionState;
 
 void describe('a session records its identity from its first state (review round 2, N1)', () => {
@@ -1079,5 +1105,254 @@ void describe('an Omnigent run through the real hook', () => {
     );
     assert.equal((await h.run('prompt', 'plain-1')).code, 0);
     assert.equal(stateOf(home, 'plain-1').session_id, first.session_id);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* LAI-1108: review follow-ups from PR #252                                    */
+/* -------------------------------------------------------------------------- */
+
+void describe('LAI-1108 (e): a Codex hook reads the config copy its codex process was given', () => {
+  // hook (node) ← sh ← codex ← python (runner)
+  const chain = proc({
+    9: { ppid: 8, comm: 'sh' },
+    8: { ppid: 7, comm: 'codex-aarch64-apple-darwin' },
+    7: { ppid: 1, comm: 'python3' },
+  });
+  const codexWith =
+    (...entries: string[]): EnvironReader =>
+    (pid) =>
+      pid === 8 ? ['HOME=/h', ...entries] : ['CODEX_HOME=/not-the-harness'];
+
+  void test('CODEX_HOME is codex’s own — over the hook’s, and absent when codex has none', () => {
+    const copy = harnessConfigEnv(
+      { CODEX_HOME: '/hook', PATH: '/bin' },
+      9,
+      'codex',
+      chain,
+      codexWith('OMNIGENT=1', 'CODEX_HOME=/copy'),
+    );
+    assert.equal(copy.CODEX_HOME, '/copy');
+    assert.equal(copy.PATH, '/bin', 'the rest of the hook’s environment is kept');
+    const none = harnessConfigEnv({ CODEX_HOME: '/hook' }, 9, 'codex', chain, codexWith());
+    assert.equal(none.CODEX_HOME, undefined, 'codex reads ~/.codex, so the hook must too');
+  });
+
+  void test('unreadable, or not Codex: the hook’s own environment, untouched', () => {
+    const env = { CODEX_HOME: '/hook' };
+    assert.equal(
+      harnessConfigEnv(env, 9, 'codex', chain, () => undefined),
+      env,
+    );
+    const never = (): never => {
+      throw new Error('the process table was read for Claude Code');
+    };
+    assert.equal(harnessConfigEnv(env, 9, 'claude-code', never, never), env);
+  });
+
+  void test('the decision follows codex’s copy, not ~/.codex, when the hook has no CODEX_HOME', () => {
+    const home = join(root(), 'home');
+    credentials(home, 'http://b', ['omnigent']);
+    writeFileSync(
+      join(home, '.laika', 'agents', 'codex.json'),
+      `${JSON.stringify({ url: 'http://b', token: 'lai_CODEXownTOKEN' })}\n`,
+    );
+    // ~/.codex is the older table; the copy Omnigent gave codex is switching.
+    codexToml(
+      home,
+      '[mcp_servers.laika]\nurl = "http://b/mcp"\nbearer_token_env_var = "LAIKA_AGENT_TOKEN_CODEX"\n',
+    );
+    const copy = join(home, 'omnigent-codex-home');
+    mkdirSync(copy);
+    writeFileSync(
+      join(copy, 'config.toml'),
+      `[mcp_servers.laika]\nurl = "http://b/mcp"\n${CODEX_HELPER_LINE}\n`,
+    );
+    const io: AgentIo = {
+      out: () => undefined,
+      err: () => undefined,
+      home,
+      env: {},
+      stdin: () => '',
+      isTTY: false,
+    };
+    const env = () =>
+      harnessConfigEnv(io.env, 9, 'codex', chain, codexWith('OMNIGENT=1', `CODEX_HOME=${copy}`));
+    assert.equal(hookCredential(io, 'codex', () => 'omnigent', home, env)?.token, OMNI_TOKEN);
+    // Asked of the hook's own environment, it would read ~/.codex and split.
+    assert.equal(hookCredential(io, 'codex', () => 'omnigent', home)?.token, 'lai_CODEXownTOKEN');
+  });
+
+  void test('through the real hook: a Codex whose hooks get no CODEX_HOME still opens as the Omnigent agent', async () => {
+    const r = root();
+    const home = join(r, 'home');
+    const bin = join(r, 'bin');
+    mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, 'codex'));
+    const board = await stubBoard();
+    credentials(home, board.url, ['omnigent']);
+    writeFileSync(
+      join(home, '.laika', 'agents', 'codex.json'),
+      `${JSON.stringify({ url: board.url, token: 'lai_CODEXownTOKEN' })}\n`,
+      { mode: 0o600 },
+    );
+    codexToml(
+      home,
+      `[mcp_servers.laika]\nurl = "${board.url}/mcp"\nbearer_token_env_var = "LAIKA_AGENT_TOKEN_CODEX"\n`,
+    );
+    const copy = join(home, 'omnigent-codex-home');
+    mkdirSync(copy);
+    writeFileSync(
+      join(copy, 'config.toml'),
+      `[mcp_servers.laika]\nurl = "${board.url}/mcp"\n${CODEX_HELPER_LINE}\n`,
+    );
+    const h = startHarness(
+      home,
+      bin,
+      { OMNIGENT: '1', CODEX_HOME: copy },
+      { name: 'codex', harness: 'codex', unset: ['CODEX_HOME', 'OMNIGENT'] },
+    );
+    assert.equal((await h.run('session-start', 'cx-1')).code, 0);
+    const start = await until('the session to be opened', () =>
+      board.requests.find((q) => q.path === '/api/v1/agent-sessions'),
+    );
+    assert.equal(
+      start.auth,
+      `Bearer ${OMNI_TOKEN}`,
+      'the hook read ~/.codex while codex’s MCP reads its CODEX_HOME copy',
+    );
+    assert.equal(stateOf(home, 'cx-1', 'codex').identity, 'omnigent');
+  });
+});
+
+void describe('LAI-1108 (f): a session resumed in another run decides its identity again', () => {
+  void test('an Omnigent worker resumed by hand opens as Claude Code, and back inside Omnigent as Omnigent — the run kept through a reopen', async () => {
+    const r = root();
+    const home = join(r, 'home');
+    const bin = join(r, 'bin');
+    mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, 'claude'));
+    const board = await stubBoard();
+    credentials(home, board.url, ['omnigent', 'claude-code']);
+    claudeJson(home, SWITCHING(board.url));
+    const starts = () => board.requests.filter((q) => q.path === '/api/v1/agent-sessions');
+
+    // Inside Omnigent: opens, ends at Stop, reopens at the next prompt.
+    const omni = startHarness(home, bin, { OMNIGENT: '1' });
+    assert.equal((await omni.run('session-start', 'res-1')).code, 0);
+    assert.equal(starts()[0]?.auth, `Bearer ${OMNI_TOKEN}`);
+    assert.equal(stateOf(home, 'res-1').omnigent_run, true);
+    const first = stateOf(home, 'res-1');
+    assert.equal((await omni.run('stop', 'res-1')).code, 0);
+    await until('the session to be ended at Stop', () =>
+      board.requests.find((q) => q.path === `/api/v1/agent-sessions/${first.session_id ?? ''}/end`),
+    );
+    assert.equal((await omni.run('prompt', 'res-1')).code, 0);
+    assert.equal(starts().length, 2, 'the next prompt did not reopen');
+    assert.equal(stateOf(home, 'res-1').omnigent_run, true, 'the reopen dropped the run');
+
+    // `claude --resume res-1` by hand: a new process, no OMNIGENT. Its MCP
+    // (the switching helper) sends Claude Code's token, so must its session.
+    const byHand = startHarness(home, bin, {});
+    assert.equal((await byHand.run('session-start', 'res-1')).code, 0);
+    assert.equal(starts().length, 3);
+    assert.equal(
+      starts()[2]?.auth,
+      `Bearer ${CLAUDE_TOKEN}`,
+      'the resumed session kept the Omnigent identity its MCP no longer has',
+    );
+    assert.equal(stateOf(home, 'res-1').identity, 'own');
+    assert.equal(stateOf(home, 'res-1').omnigent_run, false);
+
+    // And resumed inside Omnigent again: the Omnigent agent once more.
+    const again = startHarness(home, bin, { OMNIGENT: '1' });
+    assert.equal((await again.run('session-start', 'res-1')).code, 0);
+    assert.equal(starts()[3]?.auth, `Bearer ${OMNI_TOKEN}`);
+    assert.equal(stateOf(home, 'res-1').identity, 'omnigent');
+  });
+
+  void test('a resume in the same kind of run keeps the identity it was decided with (N1 stands)', async () => {
+    const r = root();
+    const home = join(r, 'home');
+    const bin = join(r, 'bin');
+    mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, 'claude'));
+    const board = await stubBoard();
+    credentials(home, board.url, ['omnigent', 'claude-code']);
+    claudeJson(home, SWITCHING(board.url));
+    const omni = startHarness(home, bin, { OMNIGENT: '1' });
+    assert.equal((await omni.run('session-start', 'same-1')).code, 0);
+    // The entry changes under it — N1: a session never changes agent for that.
+    claudeJson(home, PERSONS(board.url));
+    const resumed = startHarness(home, bin, { OMNIGENT: '1' });
+    assert.equal((await resumed.run('session-start', 'same-1')).code, 0);
+    const starts = board.requests.filter((q) => q.path === '/api/v1/agent-sessions');
+    assert.equal(starts.length, 2);
+    assert.equal(starts[1]?.auth, `Bearer ${OMNI_TOKEN}`);
+  });
+});
+
+void describe('LAI-1108 (g): every switching helper ever written stays recognised', () => {
+  /** LAI-1101's helpers, verbatim: a later edit to the helper adds to the list, never drops these. */
+  const LAI_1101 = {
+    'claude-code':
+      'p="$HOME/.laika/agents/claude-code.json"; o="$HOME/.laika/agents/omnigent.json"; ' +
+      'if [ "${OMNIGENT:-}" = 1 ] && [ -r "$o" ]; then p="$o"; fi; ' +
+      `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$p")" && ` +
+      `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`,
+    codex:
+      'p="$HOME/.laika/agents/codex.json"; o="$HOME/.laika/agents/omnigent.json"; ' +
+      'if [ -r "$o" ]; then ' +
+      `if e="$(tr '\\0' '\\n' 2>/dev/null < "/proc/$PPID/environ")"; then :; ` +
+      'else a="$(ps -ww -o command= -p "$PPID" 2>/dev/null)" && ' +
+      'f="$(ps -E -ww -o command= -p "$PPID" 2>/dev/null)" && ' +
+      `case "$f" in "$a "*) e="$(printf '%s' "\${f#"$a "}" | tr ' ' '\\n')" ;; *) exit 1 ;; esac; fi; ` +
+      '[ -n "$e" ] || exit 1; ' +
+      `if printf '%s\\n' "$e" | grep -qx 'OMNIGENT=1'; then p="$o"; fi; fi; ` +
+      `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$p")" && ` +
+      `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`,
+  } as const;
+  const CURRENT = { 'claude-code': CLAUDE_HEADERS_HELPER, codex: CODEX_HEADERS_HELPER } as const;
+
+  void test('the list keeps LAI-1101’s texts and holds the current helper; each is recognised', () => {
+    for (const h of ['claude-code', 'codex'] as const) {
+      assert.ok(
+        SWITCHING_HELPERS[h].includes(LAI_1101[h]),
+        `${h}: LAI-1101’s helper left the list`,
+      );
+      assert.ok(
+        SWITCHING_HELPERS[h].includes(CURRENT[h]),
+        `${h}: the current helper is not in SWITCHING_HELPERS — add it there, and keep the older ones`,
+      );
+      for (const text of SWITCHING_HELPERS[h]) assert.ok(isSwitchingHelper(text, h), text);
+      assert.ok(
+        isSwitchingHelper(LAI_1101[h], h),
+        `${h}: a device with LAI-1101’s helper is stranded`,
+      );
+    }
+  });
+
+  void test('a device still holding LAI-1101’s helpers follows Omnigent runs, hooks and tool add alike', () => {
+    const home = join(root(), 'home');
+    credentials(home, 'http://b', ['omnigent', 'claude-code']);
+    writeFileSync(
+      join(home, '.laika', 'agents', 'codex.json'),
+      `${JSON.stringify({ url: 'http://b', token: 'lai_CODEXownTOKEN' })}\n`,
+    );
+    claudeJson(home, { type: 'http', url: 'http://b/mcp', headersHelper: LAI_1101['claude-code'] });
+    codexToml(
+      home,
+      `[mcp_servers.laika]\nurl = "http://b/mcp"\nhttp_headers_helper = ${JSON.stringify(LAI_1101.codex)}\n`,
+    );
+    const io: AgentIo = {
+      out: () => undefined,
+      err: () => undefined,
+      home,
+      env: {},
+      stdin: () => '',
+      isTTY: false,
+    };
+    assert.equal(hookCredential(io, 'claude-code', () => 'omnigent', home)?.token, OMNI_TOKEN);
+    assert.equal(hookCredential(io, 'codex', () => 'omnigent', home)?.token, OMNI_TOKEN);
   });
 });
