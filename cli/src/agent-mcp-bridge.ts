@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { isHarness, type Harness, HARNESSES } from './agent-adapters.ts';
 import type { BridgeCommand } from './agents.ts';
 import { type AgentCredential, log, readCredential } from './agent-session.ts';
+import { boardOriginOf } from './device.ts';
 
 /**
  * `laika agent mcp-bridge [--credential <harness>]` — a stdio MCP server that
@@ -205,12 +206,14 @@ export async function runBridge(io: BridgeIo, harness: Harness): Promise<number>
   // Read once, from the file only: an empty environment means
   // `LAIKA_AGENT_TOKEN` is never consulted.
   const credential: AgentCredential | undefined = readCredential(io.home, harness, {});
-  const endpoint =
-    credential === undefined ? undefined : `${credential.url.replace(/\/+$/, '')}/mcp`;
-  if (credential === undefined) {
+  // Only ever an http(s) board's own origin (review #8): a file whose `url`
+  // is anything else is no usable credential, and nothing is sent.
+  const origin = credential === undefined ? undefined : boardOriginOf(credential.url);
+  const endpoint = origin === undefined ? undefined : `${origin}/mcp`;
+  if (endpoint === undefined) {
     log(
       io.home,
-      `mcp-bridge ${harness}: no credential in ~/.laika/agents/${harness}.json — sending nothing`,
+      `mcp-bridge ${harness}: no usable credential in ~/.laika/agents/${harness}.json — sending nothing`,
     );
   }
   const emit = (message: unknown): void => io.write(JSON.stringify(message));
@@ -329,7 +332,7 @@ export async function runBridge(io: BridgeIo, harness: Harness): Promise<number>
           errorLine(
             id,
             NO_CREDENTIAL_CODE,
-            `${harness} has no Laika credential on this machine (~/.laika/agents/${harness}.json); ` +
+            `${harness} has no usable Laika credential on this machine (~/.laika/agents/${harness}.json); ` +
               'nothing was sent to the board. Add the tool in the browser: Developer access → this device → Add tool.',
           ),
         );
