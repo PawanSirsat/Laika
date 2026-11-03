@@ -36,7 +36,10 @@ import {
   configPath,
   CREDENTIAL_REFUSED,
   loadHandled,
+  openRunSession,
   READ_FAILED,
+  SESSION_BACKOFF_MS,
+  SESSION_RATE_LIMITED,
   runSummary,
   workRequestPrompt,
   gitNewEnough,
@@ -2124,7 +2127,7 @@ void describe('LAI-1039 review: N1, N2, N3, N4, N9', () => {
     assert.equal(auditLines(r.home).filter((l) => l.event === 'start').length, 1);
   });
 
-  void test('N9: the task is read once more the instant before the start', async () => {
+  void test('N9: the task is read once more the instant before anything is made', async () => {
     let reads = 0;
     const r = workRig(() => [selectedAs(rid(8), rid(9))], {
       task: () => {
@@ -2141,7 +2144,7 @@ void describe('LAI-1039 review: N1, N2, N3, N4, N9', () => {
       },
     });
     await startLauncher({ ...r.deps, maxTicks: 1 }, workConfig([process.execPath])).finished;
-    assert.deepEqual(r.workspaces, [rid(9)], 'the worktree was made');
+    assert.deepEqual(r.workspaces, [], 'the final read comes before the worktree: nothing made');
     const refused = auditLines(r.home).find((l) => l.event === 'refused')!;
     assert.equal(refused.reason, 'request_closed');
     assert.equal(refused.detail, 'claimed');
@@ -2235,5 +2238,186 @@ void describe('LAI-1039 with slice D final: identity per run', () => {
     assert.equal(pollyTurn(seen.env), false);
     assert.equal(omnigentMarker(seen.env, process.pid, 'claude-code'), 'plain');
     assert.match(seen.env.LAIKA_LAUNCH_SESSION ?? '', /^[0-9A-HJKMNP-TV-Z]{26}$/);
+  });
+});
+
+void describe('LAI-1039 review round 2: items 1, 3, 4', () => {
+  void test('item 1, hand-off: a session open that fails once costs nothing — prepared once, started once', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let opens = 0;
+    const r = rig(() => [record({ event_id: rid(40), offer_id: rid(41) })], {
+      openSession: () => {
+        opens += 1;
+        return Promise.resolve(opens === 1 ? READ_FAILED : rid(42));
+      },
+    });
+    await startLauncher(
+      { ...r.deps, maxTicks: 3 },
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    ).finished;
+    assert.deepEqual(r.prepared, [rid(41)], 'prepare ran once, after the session opened');
+    assert.equal(
+      auditLines(r.home).some((l) => l.reason === 'prepare_refused'),
+      false,
+    );
+    assert.equal(auditLines(r.home).filter((l) => l.event === 'start').length, 1);
+  });
+
+  void test('item 1, work request: two failed session opens make no second worktree', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let opens = 0;
+    const r = workRig(() => [selectedAs(rid(43), rid(44))]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 4,
+        openSession: () => {
+          opens += 1;
+          return Promise.resolve(opens <= 2 ? READ_FAILED : rid(45));
+        },
+      },
+      workConfig([process.execPath, script, '--ms', '30']),
+    ).finished;
+    assert.equal(opens, 3);
+    assert.deepEqual(r.workspaces, [rid(44)], 'one worktree, made after the session opened');
+    assert.equal(auditLines(r.home).filter((l) => l.event === 'start').length, 1);
+  });
+
+  void test('item 1: a stop after the worktree was made — the next launcher reuses it, never makes another', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let stop = false;
+    const r = workRig(() => [selectedAs(rid(46), rid(47))]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 1,
+        stopped: () => stop,
+        workspace: (args) => {
+          const made = r.deps.workspace!(args);
+          stop = true; // The launcher is stopped while the worktree is being made.
+          return made;
+        },
+      },
+      workConfig([process.execPath, script, '--ms', '30']),
+    ).finished;
+    assert.equal(
+      auditLines(r.home).some((l) => l.event === 'start'),
+      false,
+    );
+    assert.equal(loadHandled(r.home).events.length, 0, 'not handled: it is still to do');
+    await startLauncher(
+      { ...r.deps, maxTicks: 2 },
+      workConfig([process.execPath, script, '--ms', '30']),
+    ).finished;
+    assert.deepEqual(r.workspaces, [rid(47)], 'made once, reused by the next launcher');
+    assert.equal(auditLines(r.home).filter((l) => l.event === 'start').length, 1);
+  });
+
+  void test('item 1: a stop after prepare — the next launcher reuses the prepared worktree', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let stop = false;
+    const r = rig(() => [record({ event_id: rid(48), offer_id: rid(49) })]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 1,
+        stopped: () => stop,
+        prepare: async (args) => {
+          const code = await r.deps.prepare(args);
+          stop = true;
+          return code;
+        },
+      },
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    ).finished;
+    assert.equal(
+      auditLines(r.home).some((l) => l.event === 'start'),
+      false,
+    );
+    await startLauncher(
+      { ...r.deps, maxTicks: 2 },
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    ).finished;
+    assert.deepEqual(r.prepared, [rid(49)], 'prepare ran once; its record was reused');
+    assert.equal(
+      auditLines(r.home).some((l) => l.reason === 'prepare_refused'),
+      false,
+    );
+    assert.equal(auditLines(r.home).filter((l) => l.event === 'start').length, 1);
+  });
+
+  void test('item 3: a stop that comes during the session open starts nothing, and the session is ended', async () => {
+    let stop = false;
+    const ended: string[] = [];
+    const r = workRig(() => [selectedAs(rid(50), rid(51))]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 1,
+        stopped: () => stop,
+        openSession: () => {
+          stop = true;
+          return Promise.resolve(rid(52));
+        },
+        endSession: (_c, id) => {
+          ended.push(id);
+          return Promise.resolve();
+        },
+      },
+      workConfig([process.execPath]),
+    ).finished;
+    assert.equal(
+      auditLines(r.home).some((l) => l.event === 'start'),
+      false,
+    );
+    assert.deepEqual(r.workspaces, [], 'nothing was made');
+    assert.equal(loadHandled(r.home).events.length, 0, 'not handled: it is still to do');
+    assert.deepEqual(ended, [rid(52)]);
+  });
+
+  void test('item 4: a 429 on the session open is backed off and retried, never refused', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let opens = 0;
+    let shift = 0;
+    const r = workRig(() => [selectedAs(rid(53), rid(54))]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 4,
+        now: () => Date.now() + shift,
+        openSession: () => {
+          opens += 1;
+          if (opens === 1) return Promise.resolve(SESSION_RATE_LIMITED);
+          return Promise.resolve(rid(55));
+        },
+        sleep: (ms) =>
+          new Promise((done) => {
+            shift += SESSION_BACKOFF_MS + 1000; // Time passes past the backoff between ticks.
+            setTimeout(done, Math.min(ms, 50));
+          }),
+      },
+      workConfig([process.execPath, script, '--ms', '30']),
+    ).finished;
+    const lines = auditLines(r.home);
+    assert.equal(
+      lines.some((l) => l.reason === 'session_refused'),
+      false,
+    );
+    assert.equal(lines.filter((l) => l.reason === 'session_rate_limited').length, 1);
+    assert.equal(lines.filter((l) => l.event === 'start').length, 1);
+    // And the real board answer: a 429 maps to the backoff, not to a refusal.
+    const at = (status: number) => (): Promise<Response> =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: { code: 'rate_limited' } }), { status }),
+      );
+    const cred = { url: 'http://board.invalid', token: TOKEN };
+    assert.equal(await openRunSession(at(429), cred, 'claude-code'), SESSION_RATE_LIMITED);
+    assert.equal(await openRunSession(at(503), cred, 'claude-code'), READ_FAILED);
+    assert.equal(await openRunSession(at(403), cred, 'claude-code'), undefined);
   });
 });

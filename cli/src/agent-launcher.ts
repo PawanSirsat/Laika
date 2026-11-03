@@ -5,6 +5,7 @@ import {
   appendFileSync,
   closeSync,
   constants,
+  existsSync,
   fstatSync,
   linkSync,
   lstatSync,
@@ -780,6 +781,14 @@ export interface ProjectInfo {
 
 /** A read the board could not answer (the network, a 5xx): retried later, never taken as an answer. */
 export const READ_FAILED: { readonly read: 'failed' } = Object.freeze({ read: 'failed' });
+/** `POST /agent-sessions` answered 429: backed off and tried again, never a refusal. */
+export const SESSION_RATE_LIMITED: { readonly session: 'rate_limited' } = Object.freeze({
+  session: 'rate_limited',
+});
+export const SESSION_BACKOFF_MS = 30_000;
+export const sessionRateLimited = (v: unknown): v is typeof SESSION_RATE_LIMITED =>
+  v === SESSION_RATE_LIMITED;
+
 /** `GET /api/v1/me` answered 401: this credential is revoked or expired. */
 export const CREDENTIAL_REFUSED: { readonly credential: 'refused' } = Object.freeze({
   credential: 'refused',
@@ -905,7 +914,7 @@ export interface LauncherDeps {
   readonly openSession?: (
     credential: AgentCredential,
     harness: Harness,
-  ) => Promise<string | undefined | typeof READ_FAILED>;
+  ) => Promise<string | undefined | typeof READ_FAILED | typeof SESSION_RATE_LIMITED>;
   /** Keep it live while the run lives; end it when the run ends. */
   readonly beatSession?: (credential: AgentCredential, sessionId: string) => Promise<void>;
   readonly endSession?: (credential: AgentCredential, sessionId: string) => Promise<void>;
@@ -1349,6 +1358,21 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     });
   };
 
+  /** Why a work request's task no longer wants this run, or `undefined` when it still does. */
+  const taskClosed = (task: TaskInfo | undefined, agentId: string): string | undefined =>
+    task === undefined
+      ? 'task_unreadable'
+      : task.selected_agent_id !== agentId
+        ? 'deselected'
+        : task.claimed
+          ? 'claimed'
+          : ['review', 'done', 'cancelled'].includes(task.status)
+            ? 'status'
+            : undefined;
+
+  /** After a 429 on a session open, that harness waits this long before the next (item 4). */
+  const sessionBackoff = new Map<Harness, number>();
+
   const audited = (key: string): boolean => {
     if (memory.deferred.has(key)) return true;
     memory.deferred.add(key);
@@ -1476,14 +1500,21 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
   ): Promise<LaunchPlan | Disposition> => {
     const offerId = record.offer_id!;
     const project = config.projects.find((p) => p.project_id === record.project_id)!;
-    const code = await deps.prepare({
-      offerId,
-      harness,
-      credential,
-      repoDir: project.repo,
-      ...(project.remote === undefined ? {} : { remote: project.remote }),
-    });
-    if (code !== 0) return refuse(record, harness, 'prepare_refused', { code });
+    // An attempt that prepared and then did not start (a stop, a crash) left its
+    // worktree prepared: it is reused, since `prepare` refuses an offer prepared once.
+    const before = readRecord(deps.home, offerId);
+    const reuse =
+      before?.status === 'prepared' && before.harness === harness && existsSync(before.worktree);
+    if (!reuse) {
+      const code = await deps.prepare({
+        offerId,
+        harness,
+        credential,
+        repoDir: project.repo,
+        ...(project.remote === undefined ? {} : { remote: project.remote }),
+      });
+      if (code !== 0) return refuse(record, harness, 'prepare_refused', { code });
+    }
     const prepared = readRecord(deps.home, offerId);
     if (prepared?.status !== 'prepared' || prepared.harness !== harness) {
       return refuse(record, harness, 'not_prepared');
@@ -1534,17 +1565,26 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     };
   };
 
+  /** What the board said about a work request, read before anything is made. */
+  interface WorkCheck {
+    readonly taskId: string;
+    readonly taskKey: string;
+    readonly slug: string;
+    readonly boardRepo: string;
+    readonly rule: ProjectRule;
+  }
+
   /**
-   * A work request (D-117a item 3): the request and its task are read again
-   * **just before** anything is made, then a fresh worktree from the default
-   * branch's head, then the fixed prompt.
+   * A work request (D-117a item 3): the request, its task and its project are
+   * read again **before anything is made**, here; the worktree comes after the
+   * run's session is open ({@link makeWorkspace}).
    */
-  const planWorkRequest = async (
+  const checkWorkRequest = async (
     record: EventRecord,
     harness: Harness,
     credential: AgentCredential,
     agentId: string,
-  ): Promise<LaunchPlan | Disposition> => {
+  ): Promise<WorkCheck | Disposition> => {
     const offerId = record.offer_id!;
     const taskId = record.task_id;
     if (
@@ -1569,16 +1609,9 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     }
     const task = await deps.task(credential, taskId);
     if (readFailed(task)) return 'retry';
-    if (task === undefined)
-      return refuse(record, harness, 'request_closed', { detail: 'task_unreadable' });
-    if (task.selected_agent_id !== agentId) {
-      return refuse(record, harness, 'request_closed', { detail: 'deselected' });
-    }
-    if (task.claimed) return refuse(record, harness, 'request_closed', { detail: 'claimed' });
-    if (['review', 'done', 'cancelled'].includes(task.status)) {
-      return refuse(record, harness, 'request_closed', { detail: 'status' });
-    }
-    const taskKey = task.key !== null && TASK_KEY.test(task.key) ? task.key : request.task_key;
+    const closed = taskClosed(task, agentId);
+    if (closed !== undefined) return refuse(record, harness, 'request_closed', { detail: closed });
+    const taskKey = task!.key !== null && TASK_KEY.test(task!.key) ? task!.key : request.task_key;
     if (!TASK_KEY.test(taskKey)) return refuse(record, harness, 'bad_prompt_fields');
     const project = await deps.project(credential, record.project_id);
     if (readFailed(project)) return 'retry';
@@ -1587,27 +1620,64 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     }
     if (project.repo === null) return refuse(record, harness, 'project_has_no_repo');
     const rule = config.projects.find((p) => p.project_id === record.project_id)!;
+    return { taskId, taskKey, slug: project.slug, boardRepo: project.repo, rule };
+  };
 
+  /**
+   * The work request's worktree and prompt. **An attempt that made its worktree
+   * and then did not start** (a stop, a crash) recorded it in `workspace.json`:
+   * it is reused, never made again, so a retry costs no second branch.
+   */
+  const makeWorkspace = (
+    record: EventRecord,
+    harness: Harness,
+    check: WorkCheck,
+    agentId: string,
+  ): LaunchPlan | Disposition => {
+    const offerId = record.offer_id!;
     const dir = runDir(deps.home, offerId);
     privateDir(join(launcherDir(deps.home), 'runs'));
     privateDir(dir);
-    const ws = deps.workspace({
-      repoDir: rule.repo,
-      boardRepo: project.repo,
-      ...(rule.remote === undefined ? {} : { remote: rule.remote }),
-      offerId,
-      taskKey,
-    });
-    if (typeof ws === 'string') {
-      // The reason may name remotes and paths: kept beside the run, never in the audit line.
-      writePrivate(join(dir, 'workspace-refused.txt'), `${inert(ws, 2000)}\n`);
-      return refuse(record, harness, 'workspace_refused', { task_key: taskKey });
+    const recorded = readJson(join(dir, 'workspace.json'));
+    let ws: Workspace | string;
+    if (
+      isRecord(recorded) &&
+      typeof recorded.worktree === 'string' &&
+      typeof recorded.branch === 'string' &&
+      typeof recorded.base_sha === 'string' &&
+      typeof recorded.default_branch === 'string' &&
+      typeof recorded.local_ref === 'string' &&
+      typeof recorded.repo_dir === 'string' &&
+      existsSync(recorded.worktree)
+    ) {
+      ws = {
+        worktree: recorded.worktree,
+        branch: recorded.branch,
+        base_sha: recorded.base_sha,
+        default_branch: recorded.default_branch,
+        local_ref: recorded.local_ref,
+        repo_dir: recorded.repo_dir,
+      };
+    } else {
+      ws = deps.workspace!({
+        repoDir: check.rule.repo,
+        boardRepo: check.boardRepo,
+        ...(check.rule.remote === undefined ? {} : { remote: check.rule.remote }),
+        offerId,
+        taskKey: check.taskKey,
+      });
+      if (typeof ws === 'string') {
+        // The reason may name remotes and paths: kept beside the run, never in the audit line.
+        writePrivate(join(dir, 'workspace-refused.txt'), `${inert(ws, 2000)}\n`);
+        return refuse(record, harness, 'workspace_refused', { task_key: check.taskKey });
+      }
+      writePrivate(join(dir, 'workspace.json'), `${JSON.stringify(ws, null, 2)}\n`);
     }
     let prompt: string;
     try {
       prompt = workRequestPrompt({
-        taskKey,
-        slug: project.slug,
+        taskKey: check.taskKey,
+        slug: check.slug,
         branch: ws.branch,
         defaultBranch: ws.default_branch,
         sha: ws.base_sha,
@@ -1621,10 +1691,10 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         {
           offer_id: offerId,
           offer_kind: 'work_request',
-          task_id: taskId,
-          task_key: taskKey,
+          task_id: check.taskId,
+          task_key: check.taskKey,
           project_id: record.project_id,
-          project_slug: project.slug,
+          project_slug: check.slug,
           harness,
           branch: ws.branch,
           base_sha: ws.base_sha,
@@ -1638,8 +1708,8 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     return {
       offer_id: offerId,
       offer_kind: 'work_request',
-      task_id: taskId,
-      task_key: taskKey,
+      task_id: check.taskId,
+      task_key: check.taskKey,
       agent_id: agentId,
       cursor: record.cursor,
       worktree: ws.worktree,
@@ -1799,41 +1869,61 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     agentId: string,
   ): Promise<Disposition> => {
     if (!isLaikaId(record.offer_id)) return refuse(record, harness, 'bad_offer_id');
-    const plan =
-      record.offer_kind === 'work_request'
-        ? await planWorkRequest(record, harness, credential, agentId)
-        : await planHandoff(record, harness, credential, agentId);
-    if (typeof plan === 'string') return plan;
-    if (deps.stopped()) return 'retry';
-    if (plan.offer_kind === 'work_request' && deps.task !== undefined) {
-      // Once more, the instant before the start (N9): the worktree took seconds,
-      // and a person may have claimed, moved or deselected it meanwhile.
-      const again = await deps.task(credential, plan.task_id);
-      if (readFailed(again)) return 'retry';
-      const why =
-        again === undefined
-          ? 'task_unreadable'
-          : again.selected_agent_id !== agentId
-            ? 'deselected'
-            : again.claimed
-              ? 'claimed'
-              : ['review', 'done', 'cancelled'].includes(again.status)
-                ? 'status'
-                : undefined;
-      if (why !== undefined) {
-        return refuse(record, harness, 'request_closed', {
-          detail: why,
-          branch: String(plan.extra.branch ?? ''),
-        });
-      }
+    const work = record.offer_kind === 'work_request';
+    // 1. What the board must say, before anything is made on disk.
+    let check: WorkCheck | undefined;
+    if (work) {
+      const checked = await checkWorkRequest(record, harness, credential, agentId);
+      if (typeof checked === 'string') return checked;
+      check = checked;
     }
+    // 2. The run's own session (N4), **before** prepare or the worktree (round 2,
+    //    item 1): a failure here is retried at no cost, with nothing made yet.
     let sessionId: string | undefined;
     if (deps.openSession !== undefined) {
+      if (deps.now() < (sessionBackoff.get(harness) ?? 0)) return 'retry';
       const opened = await deps.openSession(credential, harness);
+      if (sessionRateLimited(opened)) {
+        // A 429 is backed off, never taken as a refusal (round 2, item 4).
+        sessionBackoff.set(harness, deps.now() + SESSION_BACKOFF_MS);
+        if (!audited(`session:${record.event_id}`)) {
+          audit(deps.home, deps.now(), {
+            event: 'deferred',
+            reason: 'session_rate_limited',
+            ...base(record, harness),
+          });
+        }
+        return 'retry';
+      }
       if (readFailed(opened)) return 'retry';
       if (opened === undefined) return refuse(record, harness, 'session_refused');
       sessionId = opened;
     }
+    // A session opened for an attempt that does not start is ended with it.
+    const release = (outcome: Disposition): Disposition => {
+      if (sessionId !== undefined && deps.endSession !== undefined) {
+        void deps.endSession(credential, sessionId).catch(() => undefined);
+      }
+      return outcome;
+    };
+    // 3. Once more, the instant before anything is made (N9): a person may have
+    //    claimed, moved or deselected it meanwhile.
+    if (work && deps.task !== undefined) {
+      const again = await deps.task(credential, check!.taskId);
+      if (readFailed(again)) return release('retry');
+      const closed = taskClosed(again, agentId);
+      if (closed !== undefined) {
+        return release(refuse(record, harness, 'request_closed', { detail: closed }));
+      }
+    }
+    if (deps.stopped()) return release('retry');
+    // 4. Prepare, or the worktree — each reused if an earlier attempt made it.
+    const plan = work
+      ? makeWorkspace(record, harness, check!, agentId)
+      : await planHandoff(record, harness, credential, agentId);
+    if (typeof plan === 'string') return release(plan);
+    // 5. A stop that came while all that ran starts nothing (round 2, item 3).
+    if (deps.stopped()) return release('retry');
     spawnRun(plan, harness, base(record, harness), credential, sessionId);
     return 'done';
   };
@@ -2031,9 +2121,10 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         continue;
       }
       clearDeferred(memory, record.event_id);
-      // Marked handled only once it is decided (N1): a crash before the start
-      // leaves it to do again, and one after it finds the offer in the
-      // launched list, which the start itself wrote to disk.
+      // Marked handled only once it is decided (N1). A crash before the start
+      // leaves it to do again — reusing a prepared record or a recorded worktree,
+      // so the retry makes nothing twice — and one after the start finds the
+      // offer in the launched list, which the start wrote to disk.
       let outcome: Disposition;
       try {
         outcome = await launch(record, harness, credential, agentId);
@@ -2477,6 +2568,26 @@ export function asTaskInfo(body: unknown): TaskInfo | undefined {
   };
 }
 
+/**
+ * Open this agent's own session for a run: the id; {@link SESSION_RATE_LIMITED}
+ * on a 429 (backed off, round 2 item 4); {@link READ_FAILED} on a network
+ * failure or a 5xx (tried again); `undefined` for any other refusal.
+ */
+export async function openRunSession(
+  fetchFn: Fetch,
+  credential: AgentCredential,
+  harness: Harness,
+): Promise<string | undefined | typeof READ_FAILED | typeof SESSION_RATE_LIMITED> {
+  const result = await callBoard(fetchFn, credential, '/api/v1/agent-sessions', { harness });
+  if (result.kind === 'ok') {
+    return isRecord(result.body) && isLaikaId(result.body.id) ? result.body.id : undefined;
+  }
+  if (result.kind === 'http' && result.status === 429) return SESSION_RATE_LIMITED;
+  return result.kind === 'http' && result.status >= 400 && result.status < 500
+    ? undefined
+    : READ_FAILED;
+}
+
 /** Agent events and the stream's catch-ups wake the loop; project chatter does not. */
 const WAKE_FRAMES: ReadonlySet<string> = new Set([...EVENT_TYPES, 'ready', 'gap']);
 
@@ -2626,15 +2737,7 @@ export function launcherDeps(io: LauncherIo, stopped: () => boolean): LauncherDe
       ),
     presence: async (credential, snapshot) =>
       (await import('./agent-capacity.ts')).reportPresence(fetchFn, credential, snapshot),
-    openSession: async (credential, harness) => {
-      const result = await callBoard(fetchFn, credential, '/api/v1/agent-sessions', { harness });
-      if (result.kind === 'ok') {
-        return isRecord(result.body) && isLaikaId(result.body.id) ? result.body.id : undefined;
-      }
-      return result.kind === 'http' && result.status >= 400 && result.status < 500
-        ? undefined
-        : READ_FAILED;
-    },
+    openSession: (credential, harness) => openRunSession(fetchFn, credential, harness),
     beatSession: async (credential, sessionId) => {
       await callBoard(fetchFn, credential, `/api/v1/agent-sessions/${sessionId}/heartbeat`, {});
     },
