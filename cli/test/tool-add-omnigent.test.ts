@@ -350,7 +350,7 @@ void describe('laika tool add omnigent — entries tool add wrote follow Omnigen
         `${join(w.home, '.claude.json').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} has an mcpServers\\.laika that laika tool add did not write — left alone`,
       ),
     );
-    assert.match(said, /keeps acting as its own agent/);
+    assert.match(said, /keep acting as their own agent/);
   });
 
   void test('B1: the older tool-add Codex table gets the helper line and its rc export goes; a person’s is named', () => {
@@ -397,5 +397,85 @@ void describe('laika tool add omnigent — entries tool add wrote follow Omnigen
     followOmnigent(w.io);
     assert.equal(readFileSync(join(w.home, '.claude.json'), 'utf8'), '{"numStartups": 1}\n');
     assert.deepEqual(w.printed, []);
+  });
+});
+
+void describe('laika tool add omnigent — round 2 (N3, N5)', () => {
+  const doc = (laika: unknown) => `${JSON.stringify({ mcpServers: { laika } }, null, 2)}\n`;
+
+  void test('N5: a switched Claude entry keeps every other key it had', () => {
+    const w = world();
+    writeFileSync(
+      join(w.home, '.claude.json'),
+      doc({
+        type: 'http',
+        url: 'http://board.test/mcp',
+        headersHelper: OLD_CLAUDE_HELPER,
+        timeout: 30000,
+        alwaysAllow: ['laika_whoami'],
+      }),
+    );
+    followOmnigent(w.io);
+    const after = JSON.parse(readFileSync(join(w.home, '.claude.json'), 'utf8')) as {
+      mcpServers: { laika: unknown };
+    };
+    assert.deepEqual(after.mcpServers.laika, {
+      type: 'http',
+      url: 'http://board.test/mcp',
+      headersHelper: CLAUDE_HEADERS_HELPER,
+      timeout: 30000,
+      alwaysAllow: ['laika_whoami'],
+    });
+  });
+
+  void test('N5: a person’s own helper that reads claude-code.json is not one tool add wrote — left alone and named', () => {
+    const w = world();
+    const mine = doc({
+      type: 'http',
+      url: 'http://board.test/mcp',
+      headersHelper: `jq -r '{Authorization: ("Bearer " + .token)}' "$HOME/.laika/agents/claude-code.json"`,
+    });
+    writeFileSync(join(w.home, '.claude.json'), mine);
+    followOmnigent(w.io);
+    assert.equal(readFileSync(join(w.home, '.claude.json'), 'utf8'), mine);
+    assert.ok(
+      w.printed.some((l) =>
+        l.includes('has an mcpServers.laika that laika tool add did not write'),
+      ),
+      w.printed.join('\n'),
+    );
+  });
+
+  void test('N5: the Codex line says to restart Codex, and that a running Omnigent Codex conversation keeps its copy', () => {
+    const w = world();
+    mkdirSync(join(w.home, '.codex'));
+    writeFileSync(
+      join(w.home, '.codex', 'config.toml'),
+      '[mcp_servers.laika]\nurl = "http://board.test/mcp"\nbearer_token_env_var = "LAIKA_AGENT_TOKEN_CODEX"\n',
+    );
+    followOmnigent(w.io);
+    const said = w.printed.join('\n');
+    assert.match(said, /codex: .* now follows Omnigent runs.*; restart Codex/);
+    assert.match(said, /A Codex conversation Omnigent is running keeps its own copy of this file/);
+    assert.match(said, /until that conversation is restarted/);
+  });
+
+  void test('N3: under CLAUDE_CONFIG_DIR the entry Claude Code reads there is the one switched; ~/.claude.json is untouched', () => {
+    const w = world();
+    const dir = join(w.home, '.claude-work');
+    mkdirSync(dir);
+    const home = doc({
+      type: 'http',
+      url: 'http://board.test/mcp',
+      headersHelper: OLD_CLAUDE_HELPER,
+    });
+    writeFileSync(join(w.home, '.claude.json'), home);
+    writeFileSync(join(dir, '.claude.json'), home);
+    followOmnigent({ ...w.io, env: { ...w.io.env, CLAUDE_CONFIG_DIR: dir } });
+    assert.equal(readFileSync(join(w.home, '.claude.json'), 'utf8'), home);
+    const switched = JSON.parse(readFileSync(join(dir, '.claude.json'), 'utf8')) as {
+      mcpServers: { laika: { headersHelper: string } };
+    };
+    assert.equal(switched.mcpServers.laika.headersHelper, CLAUDE_HEADERS_HELPER);
   });
 });

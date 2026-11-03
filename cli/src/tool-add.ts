@@ -13,6 +13,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { type AgentHookReport, installAgentHooks } from './agent-hooks.ts';
 import { ADAPTERS, type Harness } from './agent-adapters.ts';
@@ -34,13 +35,16 @@ import {
   SUPPORTED_OMNIGENT,
 } from './agent-omnigent.ts';
 import { AGENT_HOOK_SCRIPT } from './agent-setup.ts';
-import { codexLaikaLines, omnigentSidecar } from './agents.ts';
+import { codexLaikaLines, type JsonObject, omnigentSidecar } from './agents.ts';
 import {
+  claudeConfigFile,
   CLAUDE_HEADERS_HELPER,
+  codexConfigFile,
   CODEX_HEADERS_HELPER,
   CODEX_HELPER_LINE,
   headersHelper,
   isSwitchingCodexTable,
+  isSwitchingHelper,
 } from './mcp-headers.ts';
 import { reportOutcome, sendClientReport } from './client-report.ts';
 import { apply, prepare, rcFileFor } from './connect.ts';
@@ -951,15 +955,20 @@ function firstSymlink(dir: string): string | undefined {
  * Claude Code's and Codex's Laika MCP entries, brought to the helpers that
  * follow an Omnigent run to `~/.laika/agents/omnigent.json` (LAI-1101 review
  * B1, CHIEF's decision (a)). The board refuses a claim whose session is
- * another agent's, so an Omnigent worker's hooks and its MCP must speak as
- * the same agent: the hooks switch only when the MCP entry is the switching
- * helper (`hookCredential`, decision (b)), and here every entry `tool add`
- * itself wrote becomes that helper, so the switch happens where it can.
+ * another agent's, so an Omnigent **worker's** hooks and its MCP must speak
+ * as the same agent: a worker's hooks switch only when its effective MCP
+ * entry is the switching helper (`decideIdentity`, decision (b)), and here
+ * every entry `tool add` itself wrote becomes that helper, so the switch
+ * happens where it can. (polly's own turns use the Omnigent agent whatever
+ * these files say: their MCP is the bridge — review round 2, B2.)
  *
- * - An `mcpServers.laika` in `~/.claude.json` that `tool add` wrote, any
- *   helper revision (`isToolEntry`), gets the current helper; its URL kept,
- *   the file backed up once as `.bak`, read back after writing.
- * - A `[mcp_servers.laika]` in `~/.codex/config.toml` exactly as an older
+ * - An `mcpServers.laika` in Claude Code's `.claude.json` (under
+ *   `CLAUDE_CONFIG_DIR` when set) that `tool add` wrote — a revision it
+ *   actually wrote (`isToolEntry`) — gets the current helper, every other key
+ *   of the entry kept, the file backed up once as `.bak`, read back after
+ *   writing.
+ * - A `[mcp_servers.laika]` in Codex's `config.toml` (under `CODEX_HOME` when
+ *   set) exactly as an older
  *   `tool add codex` wrote it (`bearer_token_env_var =
  *   "LAIKA_AGENT_TOKEN_CODEX"`) gets the helper line instead, the file backed
  *   up once, and that command's shell-rc export removed.
@@ -969,60 +978,47 @@ function firstSymlink(dir: string): string | undefined {
  * Needs no token and no exchange: it reads and rewrites the two files only.
  */
 export function followOmnigent(io: ToolAddIo): void {
-  const where = claudeJsonPath(io.home);
-  if ('refused' in where) {
-    io.out(`  ! claude code: ${where.refused}.`);
-  } else {
-    const path = where.path;
-    const laika = existingLaika(path);
-    if (laika === undefined) {
-      // No Laika entry: Claude Code has no Laika MCP to switch.
-    } else if (
-      isRecord(laika) &&
-      laika.headersHelper === CLAUDE_HEADERS_HELPER &&
-      isToolEntry(laika)
-    ) {
-      io.out(`  · claude code: mcpServers.laika in ${path} already follows Omnigent runs`);
-    } else if (isToolEntry(laika) && isRecord(laika) && typeof laika.url === 'string') {
-      const entry = { type: 'http', url: laika.url, headersHelper: CLAUDE_HEADERS_HELPER };
-      const prepared = prepare({
-        kind: 'json',
-        path,
-        container: 'mcpServers',
-        entry,
-        secret: true,
-      });
-      if (!prepared.ok) {
-        io.out(`  ! claude code: ${prepared.message.split('\n').join(' ')}`);
-      } else {
-        const backup = apply(prepared);
-        if (holdsEntry(path, entry)) {
-          io.out(
-            `  ✓ claude code: mcpServers.laika in ${path} now follows Omnigent runs` +
-              `${backup === undefined ? '' : ` (backup: ${backup})`}; restart Claude Code`,
-          );
-        } else {
-          io.out(
-            `  ! claude code: ${path} does not hold the new entry after writing it — a running`,
-          );
-          io.out(
-            '      Claude Code most likely wrote its own copy back. Quit it and run this again.',
-          );
-        }
-      }
+  const env = io.env ?? process.env;
+  // The files Claude Code and Codex read in this environment (N3).
+  const path = claudeConfigFile(io.home, env);
+  const laika = existingLaika(path);
+  if (laika === undefined) {
+    // No Laika entry: Claude Code has no Laika MCP to switch.
+  } else if (
+    isSwitchingHelper(isRecord(laika) ? laika.headersHelper : undefined, 'claude-code') &&
+    isToolEntry(laika)
+  ) {
+    io.out(`  · claude code: mcpServers.laika in ${path} already follows Omnigent runs`);
+  } else if (isToolEntry(laika) && isRecord(laika)) {
+    // Every other key of the entry is kept (N5): only the helper changes.
+    const entry = { ...laika, headersHelper: CLAUDE_HEADERS_HELPER } as JsonObject;
+    const prepared = prepare({ kind: 'json', path, container: 'mcpServers', entry, secret: true });
+    if (!prepared.ok) {
+      io.out(`  ! claude code: ${prepared.message.split('\n').join(' ')}`);
     } else {
-      io.out(
-        `  ! claude code: ${path} has an mcpServers.laika that laika tool add did not write — left alone.`,
-      );
-      io.out(
-        '      Inside Omnigent, Claude Code keeps acting as its own agent, hooks and MCP alike.',
-      );
-      io.out('      To have it act as the Omnigent agent there, switch that entry to Laika’s:');
-      io.out('      `laika tool add claude-code` prints how.');
+      const backup = apply(prepared);
+      if (isDeepStrictEqual(existingLaika(path), entry)) {
+        io.out(
+          `  ✓ claude code: mcpServers.laika in ${path} now follows Omnigent runs` +
+            `${backup === undefined ? '' : ` (backup: ${backup})`}; restart Claude Code`,
+        );
+      } else {
+        io.out(`  ! claude code: ${path} does not hold the new entry after writing it — a running`);
+        io.out(
+          '      Claude Code most likely wrote its own copy back. Quit it and run this again.',
+        );
+      }
     }
+  } else {
+    io.out(
+      `  ! claude code: ${path} has an mcpServers.laika that laika tool add did not write — left alone.`,
+    );
+    io.out('      Inside Omnigent, Claude Code workers keep acting as their own agent, hooks and');
+    io.out('      MCP alike. To have them act as the Omnigent agent there, switch that entry to');
+    io.out('      Laika’s: `laika tool add claude-code` prints how.');
   }
 
-  const toml = join(io.home, '.codex', 'config.toml');
+  const toml = codexConfigFile(io.home, env);
   const raw = existsSync(toml) ? readFileSync(toml, 'utf8') : undefined;
   if (raw === undefined || codexLaikaLines(raw).length === 0) return;
   if (isSwitchingCodexTable(codexLaikaLines(raw))) {
@@ -1034,10 +1030,9 @@ export function followOmnigent(io: ToolAddIo): void {
     io.out(
       `  ! codex: ${toml} has a [mcp_servers.laika] that laika tool add did not write — left alone.`,
     );
-    io.out('      Inside Omnigent, Codex keeps acting as its own agent, hooks and MCP alike.');
-    io.out(
-      '      To have it act as the Omnigent agent there: `laika tool add codex` prints the line.',
-    );
+    io.out('      Inside Omnigent, Codex workers keep acting as their own agent, hooks and MCP');
+    io.out('      alike. To have them act as the Omnigent agent there: `laika tool add codex`');
+    io.out('      prints the line.');
     return;
   }
   const content = raw.replace(
@@ -1054,8 +1049,10 @@ export function followOmnigent(io: ToolAddIo): void {
   });
   io.out(
     `  ✓ codex: [mcp_servers.laika] in ${toml} now follows Omnigent runs` +
-      `${backup === undefined ? '' : ` (backup: ${backup})`}`,
+      `${backup === undefined ? '' : ` (backup: ${backup})`}; restart Codex`,
   );
+  io.out('      A Codex conversation Omnigent is running keeps its own copy of this file (its');
+  io.out('      private CODEX_HOME) until that conversation is restarted.');
   retireRcExport(io);
 }
 
