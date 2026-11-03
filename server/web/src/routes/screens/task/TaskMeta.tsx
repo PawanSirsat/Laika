@@ -8,7 +8,7 @@ import { statusNameOf } from '../../../api/status-derive.ts';
 import { statusOptions } from '../board/status-options.ts';
 import type { Round } from '../../../api/review.ts';
 import type { Sprint } from '../../../api/sprints.ts';
-import { timeLabel } from '../../../api/time-label.ts';
+import { dateTime, timeLabel } from '../../../api/time-label.ts';
 import {
   isOutsideId,
   updateTask,
@@ -335,17 +335,31 @@ export function TaskMeta({
                 className="meta-value meta-person"
                 data-editable={mayAssign ? 'assignee' : undefined}
               >
-                <span
-                  className={
-                    assignee === undefined ? 'meta-avatar meta-avatar-empty' : 'meta-avatar'
-                  }
-                  aria-hidden="true"
-                  {...(ink === undefined
-                    ? {}
-                    : { style: { background: ink.background, color: ink.foreground } })}
-                >
-                  {assignee === undefined ? '—' : initials(assignee.name)}
-                </span>
+                {/* Their profile is the avatar (LAI-959, LAI-1123): a link
+                    for a reader who may open it, so the name beside it keeps
+                    the room the row has. */}
+                {assignee !== undefined && task.assignee_id !== null ? (
+                  <PersonLink
+                    userId={task.assignee_id}
+                    className="meta-person-link"
+                    label={`${assignee.name}’s profile`}
+                    onlyLink
+                  >
+                    <span
+                      className="meta-avatar"
+                      aria-hidden="true"
+                      {...(ink === undefined
+                        ? {}
+                        : { style: { background: ink.background, color: ink.foreground } })}
+                    >
+                      {initials(assignee.name)}
+                    </span>
+                  </PersonLink>
+                ) : (
+                  <span className="meta-avatar meta-avatar-empty" aria-hidden="true">
+                    —
+                  </span>
+                )}
                 <AssignControl
                   task={task}
                   members={members}
@@ -353,17 +367,6 @@ export function TaskMeta({
                   mayAssign={mayAssign}
                   onChanged={onAssigned}
                 />
-                {/* Their profile, for a reader who may open it (LAI-959). */}
-                {assignee !== undefined && task.assignee_id !== null && (
-                  <PersonLink
-                    userId={task.assignee_id}
-                    className="meta-person-link"
-                    label={`${assignee.name}’s profile`}
-                    onlyLink
-                  >
-                    Profile
-                  </PersonLink>
-                )}
               </div>
             </div>
 
@@ -589,9 +592,11 @@ export function TaskMeta({
           >
             <span className={devOpen ? 'meta-chevron meta-chevron-open' : 'meta-chevron'} />
             Development
-            <span className="meta-card-note">
-              {changesCount} {changesCount === 1 ? 'commit' : 'commits'}
-            </span>
+            {changesCount > 0 && (
+              <span className="meta-card-note">
+                {changesCount} {changesCount === 1 ? 'commit' : 'commits'}
+              </span>
+            )}
           </button>
           {devOpen && (
             <div className="meta-rows">
@@ -637,17 +642,27 @@ export function TaskMeta({
       {estimate}
 
       <div className="panel-side-foot">
-        {/* In full, as the screenshot has it; the relative form lives on the List. */}
+        {/* Short dates, the full one on hover; never *ago* here — the
+            relative form lives on the List (LAI-1123). */}
         <p className="panel-foot-times">
-          Created via {createdViaLine(task)} ·{' '}
-          <time dateTime={timeLabel(task.created_at, now).iso}>
-            {timeLabel(task.created_at, now).full}
-          </time>
-          <br />
-          Updated{' '}
-          <time dateTime={timeLabel(task.updated_at, now).iso}>
-            {timeLabel(task.updated_at, now).full}
-          </time>
+          <span className="panel-foot-line">
+            Created via {createdViaLine(task)} ·{' '}
+            <time
+              dateTime={timeLabel(task.created_at, now).iso}
+              title={timeLabel(task.created_at, now).full}
+            >
+              {dateTime(task.created_at, now)}
+            </time>
+          </span>{' '}
+          <span className="panel-foot-line">
+            Updated{' '}
+            <time
+              dateTime={timeLabel(task.updated_at, now).iso}
+              title={timeLabel(task.updated_at, now).full}
+            >
+              {dateTime(task.updated_at, now)}
+            </time>
+          </span>
         </p>
         {named.length > 0 && <p className="panel-foot-watching">Watching: {named.join(', ')}</p>}
         <p className="panel-permission">

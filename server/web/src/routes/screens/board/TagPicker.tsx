@@ -41,6 +41,15 @@ export function TagPicker({ slug, taskId, tags, mayEdit, onChanged }: TagPickerP
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
+  /*
+   * **Closed until asked** (LAI-1123): the chips and a *+ Add* button; the
+   * field, its button and the suggestions open on the press, focused, and
+   * close on Escape — spent here, so the task drawer underneath stays open.
+   */
+  const [adding, setAdding] = useState(false);
+  useEffect(() => {
+    if (adding) inputRef.current?.focus();
+  }, [adding]);
 
   useEffect(() => {
     if (!mayEdit) return;
@@ -140,63 +149,97 @@ export function TagPicker({ slug, taskId, tags, mayEdit, onChanged }: TagPickerP
             </button>
           </li>
         ))}
-        {tags.length === 0 && <li className="tagp-none">None yet</li>}
+        {tags.length === 0 && !adding && <li className="tagp-none">None</li>}
+        {!adding && (
+          <li>
+            <button
+              type="button"
+              className="tagp-open"
+              onClick={() => {
+                setAdding(true);
+              }}
+            >
+              + Add
+            </button>
+          </li>
+        )}
       </ul>
 
-      <div className="tagp-add">
-        <input
-          ref={inputRef}
-          type="text"
-          className="input tagp-input"
-          placeholder="Add a tag"
-          value={draft}
-          disabled={busy}
-          maxLength={64}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setError(undefined);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter') return;
-            // The panel is inside a form-less dialog, but Enter still bubbles
-            // to whatever is listening; adding a tag is the whole intent here.
-            event.preventDefault();
-            add(draft);
-          }}
-        />
-        <button
-          type="button"
-          className="tagp-apply"
-          disabled={busy || normaliseTagInput(draft) === ''}
-          onClick={() => {
-            add(draft);
-          }}
-        >
-          {busy && <Spinner size="sm" />}
-          Add
-        </button>
-      </div>
+      {adding && (
+        <>
+          <div className="tagp-add">
+            <input
+              ref={inputRef}
+              type="text"
+              className="input tagp-input"
+              placeholder="Add a tag"
+              value={draft}
+              disabled={busy}
+              maxLength={64}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                setError(undefined);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setAdding(false);
+                  setDraft('');
+                  return;
+                }
+                if (event.key !== 'Enter') return;
+                // The panel is inside a form-less dialog, but Enter still bubbles
+                // to whatever is listening; adding a tag is the whole intent here.
+                event.preventDefault();
+                add(draft);
+              }}
+            />
+            <button
+              type="button"
+              className="tagp-apply"
+              disabled={busy || normaliseTagInput(draft) === ''}
+              onClick={() => {
+                add(draft);
+              }}
+            >
+              {busy && <Spinner size="sm" />}
+              Add
+            </button>
+          </div>
 
-      {suggestions.length > 0 && (
-        <ul className="tagp-suggest">
-          {suggestions.map((tag) => (
-            <li key={tag.name}>
-              <button
-                type="button"
-                className="tagp-suggestion"
-                disabled={busy}
-                onClick={() => {
-                  add(tag.name);
-                }}
-              >
-                {tag.name}
-                {/* The count is why this list exists — it is what stops someone
+          {suggestions.length > 0 && (
+            <ul className="tagp-suggest">
+              {suggestions.map((tag) => (
+                <li key={tag.name}>
+                  <button
+                    type="button"
+                    className="tagp-suggestion"
+                    disabled={busy}
+                    onClick={() => {
+                      add(tag.name);
+                    }}
+                  >
+                    {tag.name}
+                    {/* The count is why this list exists — it is what stops someone
                     minting `frontend` when `ui` is already on forty tasks. */}
-                <span className="tagp-count">{tag.task_count}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+                    <span className="tagp-count">{tag.task_count}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            type="button"
+            className="tagp-close"
+            onClick={() => {
+              setAdding(false);
+              setDraft('');
+            }}
+          >
+            Done
+          </button>
+        </>
       )}
 
       {error !== undefined && (

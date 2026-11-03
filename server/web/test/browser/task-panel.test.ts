@@ -731,7 +731,8 @@ void describe('the Jira-shaped task view (D-066)', () => {
       // How it came in, then the moment (the 2026-11-04 design, LAI-1122).
       assert.match(
         foot,
-        /^Created via .+ · \w{3} \d{1,2} \w{3} \d{4}, \d{1,2}:\d{2}:\d{2} [AP]M Updated \w{3} /,
+        // Short dates since LAI-1123; the full one is on hover.
+        /^Created via .+ · \d{1,2} \w{3}(?: \d{4})?, \d{1,2}:\d{2} [AP]M Updated \d{1,2} \w{3}/,
       );
       assert.doesNotMatch(foot, /ago/);
 

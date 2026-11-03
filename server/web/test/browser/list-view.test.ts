@@ -803,7 +803,8 @@ void describe('timestamps read as moments (LAI-486)', () => {
       assert.match(
         text,
         // How it came in, then the moment (the 2026-11-04 design, LAI-1122).
-        /^Created via .+ · \w{3} \d{1,2} \w{3} \d{4}, \d{1,2}:\d{2}:\d{2} [AP]M Updated /,
+        // Short dates since LAI-1123; the full one is on hover.
+        /^Created via .+ · \d{1,2} \w{3}(?: \d{4})?, \d{1,2}:\d{2} [AP]M Updated /,
         `the foot reads "${text}"`,
       );
       assert.doesNotMatch(text, /ago/);

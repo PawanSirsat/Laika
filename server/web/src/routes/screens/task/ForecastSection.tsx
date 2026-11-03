@@ -441,8 +441,9 @@ export function ForecastSection({
                   >
                     {s.key}
                   </button>
-                  {s.took !== null && <span className="est-similar-time"> {s.took}</span>}
+                  <span className="est-similar-title">{s.title}</span>
                 </span>
+                {s.took !== null && <span className="est-similar-time">{s.took}</span>}
                 {s.sentBack.length > 0 && (
                   <details className="est-sent-back">
                     <summary>

@@ -463,7 +463,8 @@ void describe('the task panel’s Tokens section, per reader', () => {
       const section = h.page.locator('[data-section="tokens"]');
       assert.equal(
         await section.locator('.tk-empty').innerText(),
-        'No tokens tied to this task yet (an agent ties them by working on a branch named LC-3-…).',
+        // The rail's short form (LAI-1123).
+        'None yet\nAn agent working on a branch named LC-3-… adds them.',
       );
       assert.equal(await section.locator('.tk-total, details, .tk-headline').count(), 0);
       assert.doesNotMatch(await section.innerText(), /—|Early|\$0/);

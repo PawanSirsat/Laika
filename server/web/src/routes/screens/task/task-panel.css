@@ -1191,14 +1191,115 @@
 /* --------------------------------------------- the execution panel (LAI-543) */
 
 .panel-side-exec {
-  padding: 0.875rem;
+  padding: 0 0.875rem 0.875rem;
 }
 
-/* The rail is narrower than the panel was drawn for, so each fact stacks —
-   label over value — and the agent's chip keeps its full name. */
+/*
+ * **The agent card** (LAI-1123): the execution panel as one card like the
+ * rail's others — a title, the state and its meaning, then label/value rows
+ * on the same 6rem column the Details card uses, so the rail reads as one
+ * table rather than a stack of loose lines.
+ */
+.panel-side-exec .exec-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  gap: 0;
+  overflow: hidden;
+}
+
+.panel-side-exec .exec-title {
+  margin: 0;
+  padding: 0.625rem 0.875rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* The state and any notice as tinted rows, not boxes inside the card. */
+.panel-side-exec .exec-state-panel {
+  margin: 0.625rem 0.875rem 0;
+  font-size: var(--text-small);
+  border: none;
+  background: var(--bg-column);
+}
+
+.panel-side-exec .exec-state-panel[data-no-recent-save],
+.panel-side-exec .exec-state-panel[data-claim-expired] {
+  background: var(--chip-orange-bg);
+}
+
+/* The agent's chip may take two lines here rather than lose its device. */
+.panel-side-exec .exec-facts .agent-chip {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+}
+
+.panel-side-exec .exec-facts .agent-chip-text {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* The rail's avatar is the profile link: a plain ring on focus. */
+.panel-meta .meta-person-link {
+  display: inline-flex;
+  border-radius: var(--radius-pill);
+}
+
+.panel-meta .meta-person-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.panel-side-exec .exec-facts {
+  gap: 0;
+  margin-top: 0.625rem;
+}
+
 .panel-side-exec .exec-facts > div {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.125rem;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.5rem 0.875rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.panel-side-exec .exec-facts dt {
+  padding-top: 0;
+  font-weight: var(--weight-normal);
+  font-size: var(--text-small);
+}
+
+.panel-side-exec .exec-facts dd {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  font-size: var(--text-small);
+}
+
+.panel-side-exec .exec-session-line,
+.panel-side-exec .exec-quiet {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+
+.panel-side-exec .exec-quiet {
+  font-family: var(--font-ui);
+}
+
+.panel-side-exec .exec-details {
+  padding: 0.5rem 0.875rem 0.625rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.panel-side-exec .exec-details .exec-facts > div {
+  padding: 0.375rem 0;
+  border-top: none;
 }
 
 /* ------------------------------------------------- stacked, on a narrow window */
@@ -2588,6 +2689,146 @@
   row-gap: var(--space-1);
 }
 
+/* The name takes its own width (LAI-1123): *unassigned* and *Claim* share
+   the line, and a long name still ellipses rather than wrapping the row. */
 .panel-meta .assign-pick {
-  min-width: 8rem;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* One line of controls: the label centres on it, as on a single-line row. */
+.panel-meta .meta-card .meta-rows .meta-row:has(> .meta-person) {
+  align-items: center;
+}
+
+/* ------------------------------------------------- the rail's polish (LAI-1123) */
+
+/*
+ * The status row: the pill and *Move to <review>* on one line, the sub-line
+ * under them across the row — before, the sub-line sat between the two and
+ * pushed the button onto a line of its own.
+ */
+.panel-meta .meta-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.625rem;
+  row-gap: 0.375rem;
+}
+
+.panel-meta .meta-status-row .meta-review {
+  order: 1;
+  margin-left: auto;
+}
+
+.panel-meta .meta-status-row .meta-status-sub {
+  order: 2;
+  flex-basis: 100%;
+}
+
+/*
+ * Every row's label sits on its value's first line: a control, a chip, a
+ * name with an avatar or two lines of text all share one baseline, so the
+ * labels stop floating to the middle of tall values.
+ */
+.panel-meta .meta-card .meta-rows .meta-row {
+  align-items: baseline;
+}
+
+.panel-meta .meta-card .meta-rows .meta-row-agent {
+  align-items: start;
+}
+
+/* *(you)* is already in the name; the profile is a small ↗ beside it. */
+.panel-meta .assign-mine {
+  display: none;
+}
+
+.panel-meta .meta-person {
+  flex-wrap: nowrap;
+  align-items: center;
+  /* The whole column, not its content's width: the name and Claim fit. */
+  justify-self: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.panel-meta .meta-person .assign {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+/* The tags: chips and *+ Add* on one line; the field opens below. */
+.panel-meta .tagp-list {
+  align-items: center;
+}
+
+/* Similar tasks: the key and the title on one line, the time under them. */
+.est-similar-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.est-similar-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.est-similar-time {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.tk-empty-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+}
+
+.tk-empty-head {
+  color: var(--text-primary);
+}
+
+.tk-empty-hint {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+/* The foot: one line each, quiet. */
+.panel-foot-line {
+  display: block;
+}
+
+.panel-side-foot {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+/* A similar task's key never breaks, and its title stops at the card's edge. */
+.est-similar,
+.est-similar-item {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.est-similar-item {
+  display: block;
+  overflow: hidden;
+}
+
+.est-similar-link {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Unassigned says so in words; the empty circle only took the room Claim needs. */
+.panel-meta .meta-person .meta-avatar-empty {
+  display: none;
 }

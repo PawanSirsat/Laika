@@ -162,7 +162,15 @@ export function TokensSection({
         <p className="panel-alert" role="alert">
           Could not load this task’s tokens.
         </p>
-      ) : view === undefined ? null : empty ? (
+      ) : view === undefined ? null : empty && compact ? (
+        /* The rail's short form (LAI-1123): what it is, then how it comes. */
+        <p className="panel-muted tk-empty tk-empty-compact">
+          <span className="tk-empty-head">None yet</span>
+          <span className="tk-empty-hint">
+            An agent working on a branch named <code>{taskKey}-…</code> adds them.
+          </span>
+        </p>
+      ) : empty ? (
         <p className="panel-muted tk-empty">
           No tokens tied to this task yet (an agent ties them by working on a branch named{' '}
           <code>{taskKey}-…</code>).

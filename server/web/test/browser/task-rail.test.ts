@@ -557,8 +557,16 @@ void describe('the rail, to the 2026-11-04 design', () => {
       const foot = h.page.locator('.panel-side-foot');
       await until(async () => (await foot.locator('.panel-foot-watching').count()) === 1);
       const times = (await foot.locator('.panel-foot-times').innerText()).replace(/\s+/g, ' ');
-      assert.match(times, /^Created via MCP · claude-code · \w{3} \d{1,2} \w{3} \d{4}, /);
-      assert.match(times, / Updated \w{3} \d{1,2} \w{3} \d{4}, /);
+      // Short dates, the full one on hover (LAI-1123).
+      assert.match(
+        times,
+        /^Created via MCP · claude-code · \d{1,2} \w{3}(?: \d{4})?, \d{1,2}:\d{2} [AP]M/,
+      );
+      assert.match(times, / Updated \d{1,2} \w{3}(?: \d{4})?, \d{1,2}:\d{2} [AP]M/);
+      assert.match(
+        (await foot.locator('.panel-foot-times time').first().getAttribute('title')) ?? '',
+        /\w{3} \d{1,2} \w{3} \d{4}, /,
+      );
       assert.equal(
         await foot.locator('.panel-foot-watching').innerText(),
         'Watching: Ada Lovelace',
