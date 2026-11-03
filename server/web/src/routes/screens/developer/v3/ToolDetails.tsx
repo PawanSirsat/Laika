@@ -7,16 +7,21 @@ import {
   type AgentSession,
   type RegisteredAgent,
 } from '../../../../api/agents.ts';
+import { getAgentCapacity, type CapacityPing } from '../../../../api/capacity.ts';
+import { ApiError } from '../../../../api/errors.ts';
 import type { MeProfile } from '../../../../api/me.ts';
 import type { Project } from '../../../../api/projects.ts';
 import { timeLabel } from '../../../../api/time-label.ts';
 import type { useConfirm } from '../../../../components/ConfirmProvider.tsx';
 import { SidePanel } from '../../../../components/SidePanel.tsx';
+import { PingButton } from '../../../../components/agent/PingButton.tsx';
+import { pingProjectFor } from '../../../../components/agent/capacity-derive.ts';
 import { CheckIcon } from '../../../../components/wizard/CheckIcon.tsx';
 import { AccessForm, RenameForm, SecretPanel, grantSummary, useOnceSecret } from '../AgentsTab.tsx';
 import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
 import { cloudExpiry, cloudExpiryProblem, isCloudDevice, rotatableToken } from '../agent-wizard.ts';
 import { showsConsent } from '../checkpoint-consent.ts';
+import { AutoPickupChip } from './AutoPickupChip.tsx';
 import { DesignChip } from './DesignChip.tsx';
 import { DetailTiles } from './DetailTiles.tsx';
 import { pairedDevice } from './add-flow.ts';
@@ -54,6 +59,8 @@ export interface ToolDetailsProps {
   readonly confirm: ReturnType<typeof useConfirm>;
   readonly onClose: () => void;
   readonly restore: () => HTMLElement | null | undefined;
+  /** A ping was answered: the list reads presence again (LAI-1102). */
+  readonly onPinged?: (() => void) | undefined;
 }
 
 type Form = 'none' | 'rename' | 'access';
@@ -69,6 +76,8 @@ type Form = 'none' | 'rename' | 'access';
  *   from that evidence; until it is in, the agent's own stamps, which never
  *   say *Ready*.
  * - **Helper**: its update status, *How to update* and *What's new*.
+ * - **Launcher**: *Auto-pickup* from its presence report, the newest answer
+ *   this reader may see, and *Ping* (LAI-1102, D-126).
  * - **Projects** it reaches, *Change access* on Project setup, and the same
  *   grants form here.
  * - **Credential** by prefix, and *Reconnect*: an exchange its paired device
@@ -95,6 +104,7 @@ export function ToolDetails({
   confirm,
   onClose,
   restore,
+  onPinged,
 }: ToolDetailsProps) {
   if (listed === undefined) {
     return (
@@ -130,6 +140,7 @@ export function ToolDetails({
       confirm={confirm}
       onClose={onClose}
       restore={restore}
+      onPinged={onPinged}
     />
   );
 }
@@ -151,6 +162,7 @@ function ToolPanel({
   confirm,
   onClose,
   restore,
+  onPinged,
 }: ToolDetailsProps & { readonly listed: ListedTool }) {
   const { agent, device, label, inConflict } = listed;
   const verification = useVerification(agent.id);
@@ -457,6 +469,28 @@ function ToolPanel({
           </section>
         )}
 
+        {active && (
+          <section className="side-panel-section" aria-labelledby="dv3-tool-launcher" data-launcher>
+            <h3 className="side-panel-label" id="dv3-tool-launcher">
+              Launcher
+            </h3>
+            <AutoPickupChip
+              launcher={agent.launcher}
+              now={now}
+              device={device.display_name}
+              layout="panel"
+            />
+            {projects !== undefined && me !== undefined && (
+              <ToolPing
+                agentId={agent.id}
+                project={pingProjectFor(agent, projects, me)}
+                target={label}
+                onPinged={onPinged}
+              />
+            )}
+          </section>
+        )}
+
         <section className="side-panel-section" aria-labelledby="dv3-tool-projects">
           <h3 className="side-panel-label" id="dv3-tool-projects">
             Projects
@@ -606,4 +640,63 @@ function InlineCode({ text }: { readonly text: string }) {
 
 function errorText(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message !== '' ? cause.message : fallback;
+}
+
+/**
+ * The panel's *Ping* (LAI-1102): offered only in a space where the reader
+ * may ping this tool (`pingProjectFor`), with the newest answer they may see
+ * there until they ask again. The board's `404` for that read is its answer
+ * for an agent this reader may not ping, so it says so and offers nothing.
+ */
+function ToolPing({
+  agentId,
+  project,
+  target,
+  onPinged,
+}: {
+  readonly agentId: string;
+  readonly project: string | undefined;
+  readonly target: string;
+  readonly onPinged: (() => void) | undefined;
+}) {
+  const [latest, setLatest] = useState<CapacityPing | null | undefined>(undefined);
+  const [refused, setRefused] = useState(false);
+  useEffect(() => {
+    if (project === undefined) return;
+    const controller = new AbortController();
+    getAgentCapacity(agentId, project, controller.signal)
+      .then((capacity) => {
+        setLatest(capacity.latest_answer);
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        // Anything but the refusal leaves Ping offered, with no earlier answer.
+        if (cause instanceof ApiError && cause.status === 404) setRefused(true);
+        setLatest(null);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [agentId, project]);
+
+  if (project === undefined || refused) {
+    return (
+      <p className="dv3-note" data-ping-none>
+        {refused
+          ? `${target} cannot be pinged here: the board knows no agent of yours by that id with full access to a space.`
+          : `${target} has no space you could select it in — full access, with agents allowed — so there is nowhere to ping it.`}
+      </p>
+    );
+  }
+  return (
+    <div className="dx-actions dv3-panel-actions">
+      <PingButton
+        agentId={agentId}
+        project={project}
+        target={target}
+        initial={latest}
+        onAnswered={onPinged}
+      />
+    </div>
+  );
 }

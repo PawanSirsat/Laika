@@ -63,6 +63,9 @@ const PANEL_PARAM: Readonly<Record<RosterTab, string>> = { devices: 'device', to
  */
 const PANEL_MARK = 'laikaDetails';
 
+/** How often the list is read again for launcher presence while it is shown (plan §6). */
+const PRESENCE_REREAD_MS = 60_000;
+
 function panelMarked(key: string): boolean {
   const state: unknown = window.history.state;
   return (
@@ -139,7 +142,7 @@ export function DeviceRoster({
   const readGen = useRef(0);
 
   const load = useCallback(
-    (signal?: AbortSignal): void => {
+    (signal?: AbortSignal, quiet = false): void => {
       readGen.current += 1;
       const gen = readGen.current;
       listDevices(signal)
@@ -148,7 +151,9 @@ export function DeviceRoster({
           setDevices(data);
           setError(null);
           setNow(Date.now());
-          announce(devicesSummary(deviceCounts(data)));
+          // A re-read for presence alone says nothing: the list did not change
+          // because of anything the reader did.
+          if (!quiet) announce(devicesSummary(deviceCounts(data)));
         })
         .catch((cause: unknown) => {
           if (cause instanceof DOMException && cause.name === 'AbortError') return;
@@ -182,6 +187,24 @@ export function DeviceRoster({
       controller.abort();
     };
   }, [load, loadProjects]);
+
+  // A launcher's presence moves on its own (§4.83, LAI-1102), and these
+  // screens hold no event stream: read the list again, quietly, when the
+  // window comes back and every minute while it is shown. Rows keep their
+  // keys, so nothing a reader is on moves or loses focus.
+  const reread = useCallback((): void => {
+    if (document.visibilityState === 'visible') load(undefined, true);
+  }, [load]);
+  useEffect(() => {
+    const timer = setInterval(reread, PRESENCE_REREAD_MS);
+    window.addEventListener('focus', reread);
+    document.addEventListener('visibilitychange', reread);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', reread);
+      document.removeEventListener('visibilitychange', reread);
+    };
+  }, [reread]);
 
   // A panel named by the address for something *Show revoked* hides: show
   // the revoked too, so its row is there for focus to come back to. Once per
@@ -545,6 +568,7 @@ export function DeviceRoster({
           confirm={confirm}
           onClose={closeDetails}
           restore={restoreFor(panelKey)}
+          onPinged={reread}
         />
       )}
     </>
