@@ -7,8 +7,8 @@ priority: p1
 depends-on: []
 discovered-from: LAI-1039
 started: 2026-11-03T14:20:32+05:30
-status: in-progress
-finished:
+status: review
+finished: 2026-11-03T15:14:17+05:30
 ---
 
 ## Why
@@ -36,6 +36,10 @@ SHELL: `cli/` only.
 - New: `cli/src/agent-mcp-bridge.ts`, `cli/src/agent-omnigent.ts` (daemon
   discovery, version gate, session wake — the module the launcher, slice B,
   calls; its signature is agreed in the PR description), `cli/docs/omnigent.md`.
+- Added while building (named here so the reviewer sees them):
+  `cli/src/agent-omnigent-marker.ts` (the marker, kept out of the wake
+  module so the hook path loads only it), and the Omnigent section of
+  `cli/agent-adapters/CAPABILITIES.md`, which said "does nothing else".
 - Tests: `cli/test/agent-mcp-bridge.test.ts`, `tool-add-omnigent.test.ts`,
   `agent-hooks-omnigent.test.ts`, `agent-omnigent.test.ts`, and the existing
   tests of the files changed.
@@ -46,34 +50,41 @@ loopback servers.
 
 ## Acceptance criteria
 
-- [ ] Spikes run first and reported in the log and PR: whether stopping
+- [x] Spikes run first and reported in the log and PR: whether stopping
       `omni polly -p` stops the server-side turn, and whether the Laika hook
       path fires inside a polly run.
-- [ ] `laika tool add omnigent` copies a polly agent dir (never edits inside
+- [x] `laika tool add omnigent` copies a polly agent dir (never edits inside
       site-packages) to `~/.laika/omnigent/laika-polly/`, writes
       `tools/mcp/laika.yaml` as `transport: stdio` with an absolute `command`
       and `args`, refuses to write any `${`, backs up what it replaces, runs
       `omni agent add <dir>` only after confirmation, and prints that Omnigent
       must be restarted fully.
-- [ ] `laika agent mcp-bridge` relays newline-delimited JSON-RPC between stdio
+- [x] `laika agent mcp-bridge` relays newline-delimited JSON-RPC between stdio
       and the board's `/mcp`, carrying `Mcp-Session-Id` and reading JSON and
       SSE answers, with the token read once from the Omnigent tool's own
       credential file; no credential sends nothing to the board and answers
       every request with a JSON-RPC error.
-- [ ] `laika connect omnigent`'s sidecar contains no `${`.
-- [ ] `tool add codex` writes `http_headers_helper` and no longer exports the
+- [x] `laika connect omnigent`'s sidecar contains no `${`.
+- [x] `tool add codex` writes `http_headers_helper` and no longer exports the
       token from the shell rc.
-- [ ] `OMNIGENT=1` is detected from the nearest harness ancestor (the
+- [x] `OMNIGENT=1` is detected from the nearest harness ancestor (the
       `omnigent-marker` rule), and an Omnigent session ends at Stop and reopens
       on its next turn (the `session-reopen` rule).
-- [ ] `cli/src/agent-omnigent.ts` finds the local Omnigent server from
+- [x] `cli/src/agent-omnigent.ts` finds the local Omnigent server from
       `~/.omnigent/daemons/*.json`, refuses anything but loopback, is gated to
       Omnigent 0.19.x, finds the target through `GET /v1/sessions`, and POSTs
       fixed words plus validated fields to `/v1/sessions/{id}/events` with
       `Content-Type: application/json` and no `Origin`, never retrying after a
       4xx or 5xx.
-- [ ] Each of these mutations turns a named assertion red, anchor confirmed:
+- [x] Each of these mutations turns a named assertion red, anchor confirmed:
       `${` written into the Omnigent yaml; a non-loopback wake URL; the version
       gate skipped; the bridge sending without a credential.
-- [ ] The CLI's tests, lint and format pass for the files touched; CI's Gate
+- [x] The CLI's tests, lint and format pass for the files touched; CI's Gate
       is green on the PR.
+
+## Result
+
+PR #252. On head `162dbe58`, every job of Gate — test, lint, format passed:
+cli, lint/format, server 1–4 and web 1–4. Spikes, the verification and the
+mutation runs are in the PR description and in
+`logs/shell-2026-11-03-LAI-1101.md`.
