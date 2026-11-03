@@ -42,6 +42,7 @@ function round(patch: Partial<Round> = {}): Round {
     pull_request: null,
     tests: [],
     ci: null,
+    decision: null,
     created_at: 0,
     ...patch,
   };

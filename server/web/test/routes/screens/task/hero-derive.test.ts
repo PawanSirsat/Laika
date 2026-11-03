@@ -66,6 +66,7 @@ function round(over: Partial<Round> = {}): Round {
     pull_request: null,
     tests: [],
     ci: null,
+    decision: null,
     created_at: 1,
     ...over,
   };

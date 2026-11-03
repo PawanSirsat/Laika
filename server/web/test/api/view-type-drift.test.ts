@@ -582,6 +582,8 @@ const PAIRS: readonly Pair[] = [
       ['TestEvidence', 'services/rounds.ts'],
       // GitHub's CI line on a round (D-083, LAI-766).
       ['RoundCi', 'services/github-proof.ts'],
+      // How a person decided a round (§4.27, LAI-1122).
+      ['RoundDecision', 'services/rounds.ts'],
     ] as const
   ).map(([name, serverFile]) => ({
     server: name,
