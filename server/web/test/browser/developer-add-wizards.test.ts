@@ -28,6 +28,8 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
+import { offered } from './dropdown.ts';
+import { featuredTools, moreTools } from '../../src/routes/screens/developer/v3/tool-catalog.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -488,13 +490,18 @@ void describe('Add tool: the command, and checks from evidence', () => {
       const page = h.page;
       await wizard(page, 'tool').waitFor({ timeout: 20_000 });
       assert.equal(await page.getByRole('radio', { name: /Claude Code/ }).isChecked(), true);
-      assert.equal(await page.getByRole('radio', { name: /Belka/ }).isChecked(), true);
-      // Modes are said in words, with no tool count anywhere.
+      // One paired device is a line, not a choice (LAI-1097, the owner's design).
+      assert.equal(
+        (await wizard(page, 'tool').locator('[data-on-device="d1"]').innerText()).trim(),
+        'Belka · Local computer',
+      );
+      assert.equal(await page.getByRole('radio', { name: /Belka/ }).count(), 0);
+      // How each tool is set up is said in words on its tile, and for the chosen one
+      // beside its mode; with no tool count anywhere.
       const choose = await wizard(page, 'tool').innerText();
-      assert.match(choose, /Automatic/i);
-      assert.match(choose, /MCP only/i);
-      assert.match(choose, /Manual/i);
-      assert.match(choose, /Unverified/i);
+      assert.match(choose, /set up automatically/);
+      assert.match(choose, /MCP entry by hand/);
+      assert.match(choose, /Automatic: Credential, MCP entry and session hooks/);
       assert.doesNotMatch(choose, /\b\d+ (tools|agents)\b/);
 
       await page.getByRole('button', { name: /Get the command/ }).click();
@@ -514,8 +521,7 @@ void describe('Add tool: the command, and checks from evidence', () => {
       await page.getByRole('button', { name: /^I ran it/ }).click();
       await until(async () => (await step(page, 'tool')) === '3');
 
-      const readiness = () =>
-        wizard(page, 'tool').locator('[data-readiness]').getAttribute('data-readiness');
+      const readiness = () => wizard(page, 'tool').getAttribute('data-status');
       const check = (id: string) =>
         wizard(page, 'tool').locator(`[data-check="${id}"]`).getAttribute('data-state');
 
@@ -546,14 +552,46 @@ void describe('Add tool: the command, and checks from evidence', () => {
       // Its hooks open a session: Ready.
       phase = 3;
       await until(async () => (await readiness()) === 'ready', 25_000);
-      assert.equal(await wizard(page, 'tool').getAttribute('data-status'), 'ready');
+      assert.equal(
+        await wizard(page, 'tool')
+          .locator('[data-verify-status]')
+          .getAttribute('data-verify-status'),
+        'ready',
+      );
+      assert.match(
+        await wizard(page, 'tool').locator('.dv3w-status-word').innerText(),
+        /^Claude Code is Ready$/,
+      );
 
       assert.equal(await step(page, 'tool'), '3');
-      assert.match(await wizard(page, 'tool').innerText(), /Off until you turn it on/);
-      const consent = wizard(page, 'tool').getByRole('switch');
-      await consent.waitFor({ timeout: 10_000 });
-      assert.equal(await consent.getAttribute('aria-checked'), 'false');
+      // Four checks (LAI-1097): paired, credential, its own request, its hooks.
+      assert.deepEqual(
+        await wizard(page, 'tool')
+          .locator('[data-check]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('data-check'))),
+        ['device_paired', 'credential_installed', 'tool_request', 'session_hooks'],
+      );
+      // Checkpoints are one line, what the board holds; the switch is the tool's details'.
+      await until(
+        async () =>
+          (await wizard(page, 'tool')
+            .locator('[data-consent-line]')
+            .getAttribute('data-consent-line')) === 'false',
+      );
+      assert.match(
+        await wizard(page, 'tool').locator('[data-consent-line]').innerText(),
+        /^Automatic checkpoints: Off · change in its details$/,
+      );
+      assert.equal(await wizard(page, 'tool').getByRole('switch').count(), 0);
       assert.equal(writes(h.calls).filter((w) => w.includes('checkpoint-consent')).length, 0);
+      // The footer is Back and one primary; nothing else to choose between.
+      assert.deepEqual(
+        (await wizard(page, 'tool').locator('.dx-wizard-foot button').allTextContents()).map((t) =>
+          t.replace(/\s+/g, ' ').trim(),
+        ),
+        ['Back', 'Set up a project →'],
+      );
+      assert.equal(await page.getByRole('button', { name: 'Add another tool' }).count(), 0);
 
       await page.getByRole('button', { name: /Set up a project/ }).click();
       await until(() => page.url().includes('tab=projects'));
@@ -914,6 +952,228 @@ void describe('review round 1 (PR #215)', () => {
   });
 });
 
+void describe('the owner’s design: the steps as he draws them (LAI-1097)', () => {
+  void test('Add tool, step 1: the helper’s tools as option cards, the rest behind More tools', async () => {
+    const h = await open(
+      '/developer?tab=tools&add=tool',
+      stub('v3', [deviceRow('d1', 'Belka', true), deviceRow('d2', 'Strelka', true)]),
+    );
+    try {
+      const page = h.page;
+      const w = wizard(page, 'tool');
+      await w.locator('[data-tools="featured"]').waitFor({ timeout: 20_000 });
+      // The tools `laika tool add` sets up, each with its line: the catalog's, by name.
+      assert.deepEqual(
+        await w.locator('[data-tools="featured"] .dx-option-name').allInnerTexts(),
+        featuredTools().map((t) => t.name),
+      );
+      assert.match(
+        await w.locator('[data-tool="claude-code"]').innerText(),
+        /Claude Code\s+Direct coding tool · set up automatically/,
+      );
+      // The rest wait behind one disclosure, its count the catalog's.
+      const more = w.getByRole('button', { name: `More tools (${String(moreTools().length)})` });
+      assert.equal(await more.getAttribute('aria-expanded'), 'false');
+      assert.equal(await w.locator('[data-tools="more"]').count(), 0);
+      assert.equal(await page.getByRole('radio', { name: /Zed/ }).count(), 0);
+      await more.click();
+      assert.deepEqual(
+        await w.locator('[data-tools="more"] .dx-option-name').allInnerTexts(),
+        moreTools().map((t) => t.name),
+      );
+      assert.equal(
+        await w.getByRole('button', { name: 'Fewer tools' }).getAttribute('aria-expanded'),
+        'true',
+      );
+      // One radio group across both: choosing Zed unchooses nothing else, and says why it is by hand.
+      await w.locator('[data-tool="zed"]').click();
+      await w.locator('[data-manual="zed"]').waitFor({ timeout: 10_000 });
+      assert.equal(await page.getByRole('radio', { name: /Zed/ }).isChecked(), true);
+      assert.equal(await page.getByRole('radio', { name: /Claude Code/ }).isChecked(), false);
+      await w.locator('[data-tool="claude-code"]').click();
+      assert.equal(await page.getByRole('radio', { name: /Claude Code/ }).isChecked(), true);
+      // Two paired devices are a dropdown, not cards, and neither is guessed.
+      const device = w.getByRole('combobox');
+      assert.deepEqual(await offered(device), [
+        'Belka · Local computer',
+        'Strelka · Local computer',
+      ]);
+      assert.equal(await page.getByRole('radio', { name: /Belka|Strelka/ }).count(), 0);
+      assert.equal(await page.getByRole('button', { name: /Get the command/ }).isDisabled(), true);
+      assert.match(await w.locator('.dx-wizard-note').innerText(), /Choose a device\./);
+      // Still three steps: authorising is Get the command, never a step of its own.
+      assert.equal((await w.locator('.conn-eyebrow').textContent())?.trim(), 'Step 1 of 3 · Tool');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Add tool, verify: checkpoints are read from the board, and changed in the tool’s details', async () => {
+    const a1 = agentRow('a1', 'claude-code', 'Belka', []);
+    const pass = (detail: unknown) => ({ state: 'pass', at: NOW - 30_000, detail });
+    const fail = (detail: unknown) => ({ state: 'fail', at: null, detail });
+    const h = await open(
+      '/developer?tab=tools&add=tool&exchange=x1',
+      stub('v3', [deviceRow('d1', 'Belka', true, [a1])], {
+        '/api/v1/tool-setup/x1': () => ({
+          id: 'x1',
+          state: 'redeemed',
+          purpose: 'install',
+          agent_id: 'a1',
+          device_id: 'd1',
+          created_at: NOW,
+          expires_at: NOW + 600_000,
+          redeemed_at: NOW,
+        }),
+        '/api/v1/agents/a1/verification': () => ({
+          agent_id: 'a1',
+          harness: 'claude-code',
+          status: 'active',
+          now: Date.now(),
+          last_seen_at: Date.now() - 30_000,
+          checks: {
+            device_paired: pass({ device_id: 'd1' }),
+            credential_installed: pass({ token_id: 't1', via_exchange: true }),
+            credential_used: pass(null),
+            tool_request: fail({
+              evidence: null,
+              mcp_client_name: 'specific',
+              client_slug: null,
+              client_name: null,
+              client_version: null,
+              self_reported: true,
+            }),
+            required_capabilities: {
+              state: 'pass',
+              at: null,
+              detail: { required: [], missing: [] },
+            },
+            session_hooks: fail({ harness: null }),
+          },
+          client_report: null,
+        }),
+        // Given before: the line says what the board holds, not a default.
+        '/api/v1/agents/a1/checkpoint-consent': {
+          given: true,
+          given_by_user_id: 'u1',
+          given_at: NOW - 60_000,
+          withdrawn_at: null,
+        },
+      }),
+    );
+    try {
+      const page = h.page;
+      await until(async () => (await step(page, 'tool')) === '2', 20_000);
+      await page.getByRole('button', { name: /^I ran it/ }).click();
+      await until(async () => (await step(page, 'tool')) === '3');
+      const w = wizard(page, 'tool');
+      await until(async () => (await w.getAttribute('data-status')) === 'connected', 15_000);
+      // Connected is never Ready: its own request is missing, and the line says so.
+      assert.match(await w.locator('.dv3w-status-word').innerText(), /^Claude Code is Connected$/);
+      assert.match(
+        await w.locator('[data-check="tool_request"]').innerText(),
+        /Missing[\s\S]*not from Claude Code itself/,
+      );
+      // A check met says only Done: its evidence is in the details.
+      assert.equal(
+        (await w.locator('[data-check="device_paired"]').innerText()).replace(/\s+/g, ' ').trim(),
+        'Device paired Done',
+      );
+      await until(
+        async () =>
+          (await w.locator('[data-consent-line]').getAttribute('data-consent-line')) === 'true',
+      );
+      assert.match(
+        await w.locator('[data-consent-line]').innerText(),
+        /^Automatic checkpoints: On ·/,
+      );
+      await w.getByRole('button', { name: 'change in its details' }).click();
+      await page.locator('.side-panel [data-agent="a1"]').waitFor({ timeout: 10_000 });
+      const url = new URL(page.url());
+      assert.equal(url.searchParams.get('agent'), 'a1');
+      assert.equal(url.searchParams.get('add'), null);
+      assert.equal(await w.count(), 0);
+      // There, the switch itself.
+      assert.equal(await page.locator('.side-panel').getByRole('switch').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Add device, step 3: Approve and Deny are the footer’s; four tiles; when it was claimed', async () => {
+    const h = await open(
+      '/developer?tab=devices&add=device&pairing=p1',
+      stub('v3', [], {
+        '/api/v1/devices/pairing-requests/p1': () => pairingView('claimed', true),
+      }),
+    );
+    try {
+      const page = h.page;
+      await until(async () => (await step(page, 'device')) === '3', 20_000);
+      const w = wizard(page, 'device');
+      const foot = w.locator('.dx-wizard-foot');
+      assert.deepEqual(
+        (await foot.locator('button').allTextContents()).map((t) => t.replace(/\s+/g, ' ').trim()),
+        ['Cancel pairing', 'Deny', 'Approve Belka'],
+      );
+      assert.equal(
+        await foot.getByRole('button', { name: 'Approve Belka' }).getAttribute('class'),
+        'dx-btn dx-btn-primary',
+      );
+      // Nothing to decide in the body: the fingerprint to compare, the facts, one warning.
+      assert.equal(await w.locator('.conn-card-body button').count(), 0);
+      assert.equal(
+        (await w.locator('[data-fingerprint]').innerText()).replace(/\s/g, ''),
+        FINGERPRINT,
+      );
+      assert.deepEqual(await w.locator('.dx-detail dt').allInnerTexts(), [
+        'Device',
+        'System',
+        'Helper',
+        'Tool credentials',
+      ]);
+      assert.match(
+        await w.locator('.conn-card-head').innerText(),
+        /Belka claimed the code (just now|\d+ min ago) with this key\./,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Add device, step 1: the design’s option cards, a full-width name, the helper as one line', async () => {
+    const h = await open('/developer?tab=devices&add=device', stub('v3', []));
+    try {
+      const page = h.page;
+      await page.setViewportSize({ width: 1440, height: 900 });
+      const w = wizard(page, 'device');
+      await w.getByLabel('Device name').waitFor({ timeout: 20_000 });
+      // The kind cards are the prototype's size: one line of sub, about 77 px tall.
+      for (const name of ['My computer', 'Cloud runner']) {
+        const box = await w.locator('.dx-option', { hasText: name }).boundingBox();
+        assert.ok(box !== null);
+        assert.ok(box.height <= 80, `${name} is ${String(box.height)} px tall`);
+      }
+      // The name fills its column.
+      const input = await w.getByLabel('Device name').boundingBox();
+      const column = await w.locator('.conn-field').boundingBox();
+      assert.ok(input !== null && column !== null);
+      assert.ok(Math.abs(input.width - column.width) <= 1, 'the name is not full width');
+      // Helper installed? Two radios in one compact line, not a second pair of cards.
+      const choice = w.locator('[data-installed-choice]');
+      assert.equal(await choice.locator('.dx-option').count(), 0);
+      assert.equal(await choice.getByRole('radio', { name: 'No, install it' }).isChecked(), true);
+      const row = await choice.locator('.dv3w-segments').boundingBox();
+      assert.ok(row !== null && row.height <= 48, 'the helper choice is not one line');
+      await choice.locator('.dv3w-segment', { hasText: 'Yes' }).click();
+      assert.equal(await choice.getByRole('radio', { name: 'Yes' }).isChecked(), true);
+      assert.equal(await choice.getByRole('radio', { name: 'No, install it' }).isChecked(), false);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('an open wizard stands in place of its list (LAI-1081)', () => {
   for (const [tab, open_, back, which] of [
     ['devices', '+ Add device', 'Back to devices', 'device'],
@@ -965,11 +1225,14 @@ void describe('screenshots of each step (LAI-1081)', { skip: EVIDENCE === undefi
     for (const width of [1440, 390] as const) {
       void test(`${theme}, ${String(width)}px`, async () => {
         const size = { width, height: width === 390 ? 844 : 900 };
-        const shot = (page: Page, name: string) =>
-          page.screenshot({
+        const shot = async (page: Page, name: string) => {
+          // A step's buttons ease into their new look; shoot them settled.
+          await page.waitForTimeout(400);
+          await page.screenshot({
             path: `${EVIDENCE ?? ''}/wizard-${name}-${theme}-${String(width)}.png`,
             fullPage: true,
           });
+        };
 
         let pairing: 'open' | 'claimed' | 'completed' = 'open';
         const h = await open(

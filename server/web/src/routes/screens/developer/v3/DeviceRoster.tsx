@@ -87,7 +87,7 @@ function present(value: string | null): string | undefined {
  * each tool's verification (`UpdatesProvider`), the live region, and every
  * write with what it changes.
  *
- * - **A row is one line**; *Details* opens a side panel addressed by the URL
+ * - **A row is one line**, and opens a side panel addressed by the URL
  *   — `?tab=devices&device=<id>`, `?tab=tools&agent=<id>` — so a link can
  *   name it and Back closes it. Opening pushes; closing goes Back when this
  *   page opened it, and otherwise replaces.
@@ -295,7 +295,7 @@ export function DeviceRoster({
     setParams(next);
   };
 
-  /** Focus after a panel closes: its row's *Details*, or the list's heading when the row went. */
+  /** Focus after a panel closes: its row, or the list's heading when the row went. */
   const restoreFor = (key: string) => (): HTMLElement | null =>
     document.querySelector<HTMLElement>(`[data-details="${CSS.escape(key)}"]`) ??
     document.getElementById(key.startsWith('devices:') ? DEVICES_TITLE : TOOLS_TITLE);
@@ -573,7 +573,6 @@ export function DeviceRoster({
         <AddToolWizard
           key={`tool-${params.get('reconnect') ?? ''}`}
           devices={devices}
-          me={me}
           canManage={canManage}
           initialDeviceId={params.get('device') ?? undefined}
           initialTool={params.get('tool') ?? undefined}
@@ -602,6 +601,11 @@ export function DeviceRoster({
           }}
           onSetUpProject={(agentId) => {
             navigate(projectHref(agentId));
+          }}
+          onOpenDetails={(agentId) => {
+            closeWizard(true, { agent: agentId });
+            // Focus goes into the panel that opens, not back to + Add tool.
+            lastAdd.current = undefined;
           }}
           onClose={closeWizard}
         />

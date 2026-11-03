@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import type { RegisteredAgent } from '../../../../api/agents.ts';
+import { getCheckpointConsent, type RegisteredAgent } from '../../../../api/agents.ts';
 import type { Device } from '../../../../api/devices.ts';
 import { ApiError } from '../../../../api/errors.ts';
-import type { MeProfile } from '../../../../api/me.ts';
 import {
   addToolToDevice,
   cancelToolSetup,
@@ -12,6 +11,8 @@ import {
   type AgentVerification,
   type ToolSetup,
 } from '../../../../api/tool-setup.ts';
+import { AgentMark } from '../../../../components/agent-mark/AgentMark.tsx';
+import { Dropdown } from '../../../../components/Dropdown.tsx';
 import { CheckIcon } from '../../../../components/wizard/CheckIcon.tsx';
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
 import { UpdateCliHelp } from './UpdateCliGuide.tsx';
@@ -19,10 +20,8 @@ import { WIZARD_SUMMARY } from './update-cli.ts';
 import { Help } from '../../../../components/wizard/Help.tsx';
 import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
 import { StatusChip } from '../../../../components/wizard/StatusChip.tsx';
-import { ToolTile } from '../../../../components/wizard/ToolTile.tsx';
 import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import { useConfirm } from '../../../../components/ConfirmProvider.tsx';
-import { CheckpointConsentSwitch } from '../CheckpointConsentSwitch.tsx';
 import {
   POLL_FIRST_MS,
   exchangeEnded,
@@ -35,11 +34,20 @@ import {
 import {
   MODE_MEANING,
   MODE_WORDS,
-  catalogGroups,
   catalogTool,
+  featuredTools,
+  moreTools,
+  toolSub,
   type ToolCapability,
 } from './tool-catalog.ts';
-import { checkLines, readiness, readinessSummary } from './tool-readiness.ts';
+import { kindName } from './devices-view.ts';
+import {
+  checkLines,
+  readiness,
+  readinessSummary,
+  type CheckId,
+  type CheckLine,
+} from './tool-readiness.ts';
 import { DesignWizard } from './DesignWizard.tsx';
 import { DxIcon } from './DxIcon.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
@@ -48,7 +56,6 @@ import './add-wizards.css';
 
 export interface AddToolWizardProps {
   readonly devices: readonly Device[] | undefined;
-  readonly me: MeProfile | undefined;
   readonly canManage: boolean;
   /** `?device=`: a device to start on, when it is one of the reader's paired ones. */
   readonly initialDeviceId: string | undefined;
@@ -66,6 +73,8 @@ export interface AddToolWizardProps {
   readonly onResolveConflict: (agentId: string) => void;
   /** Project setup, for this agent. */
   readonly onSetUpProject: (agentId: string) => void;
+  /** This tool's details panel: where its checkpoint switch and every check are. */
+  readonly onOpenDetails: (agentId: string) => void;
   /** Advanced, for a tool the helper cannot set up: a personal token, by hand. */
   readonly onOpenAdvanced: () => void;
   readonly onClose: (changed: boolean) => void;
@@ -103,16 +112,19 @@ interface Setup {
  * *Add tool* and *Reconnect* (LAI-1061, plan LAI-1042 §E.2, §E.3, §F.4, §H,
  * §M).
  *
- * 1. **Choose** a paired device and a tool. Each tool says, before it is
- *    picked, what Laika can honestly do with it — automatic, MCP only,
- *    manual, or unverified — and the list is the catalog's, never a count.
+ * 1. **Choose** a paired device and a tool. The tools the helper sets up are
+ *    the design's option cards, each saying what kind it is and how it is set
+ *    up; the ones connected by hand are behind *More tools*. The lists are
+ *    the catalog's, never a count.
  * 2. **Run** the command the board returned on the device: it redeems the
  *    exchange with the device's own key and writes the credential to a 0600
  *    file there. **The browser never sees the secret.** Below it, the checks,
  *    asked of `GET /agents/:id/verification` with backoff: each passes only
  *    on evidence from this tool's own credential, and says what is missing.
- * 3. **Finish**: checkpoint consent for a tool that has sessions — offered,
- *    off until given — and *Set up a project* next.
+ * 3. **Verify**: the tool's status, from `readiness()` alone, and four checks
+ *    — each not met saying what is missing. Automatic checkpoints are one
+ *    line: the board's answer, and a way to its details, where the switch is.
+ *    *Set up a project* next.
  *
  * A reconnect skips step 1: `POST /agents/:id/reconnect` makes a `rotate`
  * exchange for the agent's own paired device, and the same command and
@@ -120,7 +132,6 @@ interface Setup {
  */
 export function AddToolWizard({
   devices,
-  me,
   canManage,
   initialDeviceId,
   initialTool,
@@ -130,6 +141,7 @@ export function AddToolWizard({
   onAddDevice,
   onResolveConflict,
   onSetUpProject,
+  onOpenDetails,
   onOpenAdvanced,
   onClose,
 }: AddToolWizardProps) {
@@ -145,6 +157,8 @@ export function AddToolWizard({
     paired.find((d) => d.id === deviceId) ?? (paired.length === 1 ? paired[0] : undefined);
   const [harness, setHarness] = useState<string | undefined>(catalogTool(initialTool)?.harness);
   const tool = catalogTool(harness);
+  // *More tools* starts open when the address chose one of them.
+  const [more, setMore] = useState(() => moreTools().some((t) => t.harness === harness));
 
   const [setup, setSetup] = useState<Setup | undefined>(undefined);
   const [step, setStep] = useState<Step>(1);
@@ -370,31 +384,78 @@ export function AddToolWizard({
         </div>
       ) : (
         <div className="dv3w-stack">
-          <fieldset className="dv3w-set">
-            <legend className="dx-label">On device</legend>
-            <div className="dx-options">
-              {paired.map((d) => (
-                <label key={d.id} className="dx-option">
-                  <input
-                    type="radio"
-                    name={`${ids}-device`}
-                    checked={device?.id === d.id}
-                    onChange={() => {
-                      setDeviceId(d.id);
-                    }}
-                  />
-                  <span className="dx-icon">
-                    <DxIcon name={d.kind === 'cloud' ? 'cloud' : 'device'} />
-                  </span>
-                  <span>
-                    <strong className="dx-option-name">{d.display_name}</strong>
-                    <span className="dx-option-sub">
-                      {d.kind === 'cloud' ? 'Cloud runner' : 'Local computer'}, paired
-                    </span>
-                  </span>
-                </label>
+          <fieldset className="dv3w-picker">
+            <legend className="dx-label">Choose the app that will connect to Laika</legend>
+            <div className="dx-options" data-tools="featured">
+              {featuredTools().map((t) => (
+                <ToolOption
+                  key={t.harness}
+                  tool={t}
+                  group={`${ids}-tool`}
+                  checked={harness === t.harness}
+                  onChange={setHarness}
+                />
               ))}
             </div>
+            <button
+              type="button"
+              className="dx-btn dx-btn-sm dx-btn-ghost dv3w-more"
+              aria-expanded={more}
+              aria-controls={`${ids}-more`}
+              onClick={() => {
+                setMore((open) => !open);
+              }}
+            >
+              {more ? 'Fewer tools' : `More tools (${String(moreTools().length)})`}
+            </button>
+            {more && (
+              <div className="dv3w-more-tools" id={`${ids}-more`}>
+                <Help>Laika’s helper cannot set these up: you connect them by hand.</Help>
+                <div className="dx-options" data-tools="more">
+                  {moreTools().map((t) => (
+                    <ToolOption
+                      key={t.harness}
+                      tool={t}
+                      group={`${ids}-tool`}
+                      checked={harness === t.harness}
+                      onChange={setHarness}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </fieldset>
+          {tool !== undefined && (
+            <Help>
+              <span id={`${ids}-mode`} data-mode-meaning={tool.mode}>
+                <strong>{MODE_WORDS[tool.mode]}:</strong>{' '}
+                <InlineCode text={MODE_MEANING[tool.mode]} />
+              </span>
+            </Help>
+          )}
+          <div className="dv3w-set" data-device-choice>
+            <span className="dx-label" id={`${ids}-device`}>
+              On device
+            </span>
+            {paired.length === 1 && device !== undefined ? (
+              <p className="dv3w-on-device" data-on-device={device.id}>
+                <strong>{device.display_name}</strong> · {kindName(device)}
+              </p>
+            ) : (
+              <div className="dv3w-device-pick">
+                <Dropdown
+                  value={device?.id ?? ''}
+                  options={paired.map((d) => ({
+                    value: d.id,
+                    label: `${d.display_name} · ${kindName(d)}`,
+                  }))}
+                  onChange={setDeviceId}
+                  aria-labelledby={`${ids}-device`}
+                  placeholder="Choose a device"
+                  noun="Device"
+                />
+              </div>
+            )}
             {unpaired.map((d) => (
               <div key={d.id} className="dv3w-option dv3w-option-off">
                 <span>
@@ -411,39 +472,8 @@ export function AddToolWizard({
                 </button>
               </div>
             ))}
-          </fieldset>
+          </div>
 
-          <fieldset
-            className="conn-picker dv3w-picker"
-            role="radiogroup"
-            aria-labelledby={`${ids}-tools`}
-          >
-            <legend className="dx-label" id={`${ids}-tools`}>
-              Choose the app that will connect to Laika
-            </legend>
-            {catalogGroups().map((group) => (
-              <div key={group.mode} className="conn-group" data-mode={group.mode}>
-                <h3 className="conn-group-title">
-                  {MODE_WORDS[group.mode]}
-                  <span className="dv3w-mode-meaning">{MODE_MEANING[group.mode]}</span>
-                </h3>
-                <div className="conn-agents">
-                  {group.tools.map((t) => (
-                    <ToolTile
-                      key={t.harness}
-                      id={t.harness}
-                      name={t.name}
-                      client={t.harness}
-                      beta={t.harness === 'antigravity'}
-                      checked={harness === t.harness}
-                      group={`${ids}-tool`}
-                      onChange={setHarness}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </fieldset>
           {tool !== undefined && !tool.cliSetup && (
             <div className="dv3w-manual" data-manual={tool.harness}>
               <Help tone="warn">
@@ -606,67 +636,45 @@ export function AddToolWizard({
     line = `Checks for ${t.name} on ${setup.device.display_name}, from its own requests.`;
     body = (
       <div className="dv3w-stack">
-        <div className="dx-status-head">
-          <span className="dx-orb" data-tone={current?.key === 'ready' ? undefined : 'accent'}>
+        <div className="dx-status-head dv3w-verify-head" data-verify-status={current?.key}>
+          <span
+            className="dx-orb"
+            data-tone={
+              current?.key === 'ready'
+                ? undefined
+                : current?.key === 'needs-setup' || current?.key === 'offline'
+                  ? 'warn'
+                  : 'accent'
+            }
+          >
             <DxIcon name={current?.key === 'ready' ? 'check' : 'tool'} />
           </span>
           <div>
             <p className="dv3w-status-word">
               {current === undefined ? 'Checking' : `${t.name} is ${current.word}`}
-              {current?.versionUnknown === true && (
-                <span className="dv3-tag dv3-tag-quiet">Version unknown</span>
-              )}
             </p>
             <p className="dv3w-quiet">
               {current?.reason ?? 'Not read from the board yet'} · on {setup.device.display_name}
             </p>
           </div>
         </div>
-        <Checklist tool={t} verification={verification} lines={lines} trouble={pollTrouble} />
-        {current?.key !== 'ready' && (
-          <Help>
-            Not Ready yet: the checks keep going here and on the tool’s details, which say what is
-            still missing. You can finish now and come back.
-          </Help>
-        )}
-        {t.sessions ? (
-          <div className="dv3w-consent">
-            <p className="conn-label">Automatic checkpoints</p>
-            <Help>
-              Off until you turn it on. With it on, {t.name}’s hooks save a checkpoint of its work
-              on a task as it goes, so another session can pick it up.
-            </Help>
-            <CheckpointConsentSwitch agent={agent} me={me} canManage={canManage} now={Date.now()} />
-          </div>
-        ) : (
-          <Help>
-            {t.name} has no session hooks, so there are no automatic checkpoints to turn on.
-          </Help>
-        )}
-        <Help>
-          A new tool reaches no project until you give it one. Set up a project next: its access,
-          and the instructions its repository needs.
-        </Help>
-        <div className="dv3w-actions">
-          <button
-            type="button"
-            className="bar-control"
-            onClick={() => {
+        <Checklist tool={t} lines={lines} trouble={pollTrouble} />
+        {t.sessions && (
+          <ConsentLine
+            agentId={agent.id}
+            onDetails={() => {
               leave(() => {
-                setSetup(undefined);
-                setVerification(undefined);
-                setHarness(undefined);
-                setStep(1);
-                onExchange(undefined);
+                onOpenDetails(agent.id);
               });
             }}
-          >
-            Add another tool
-          </button>
-        </div>
+          />
+        )}
       </div>
     );
-    hint = 'Next, give it a project.';
+    hint =
+      current?.key === 'ready'
+        ? 'A new tool reaches no project until you set one up.'
+        : 'Not Ready yet: the checks keep going here and in its details. You can set up a project now.';
     primary = (
       <button
         type="button"
@@ -752,10 +760,7 @@ export function AddToolWizard({
         noteId={`${ids}-hint`}
         actions={
           <>
-            <button type="button" className="dx-btn" onClick={close}>
-              {shownStep === 1 ? 'Cancel' : 'Done'}
-            </button>
-            {shownStep === 3 && (
+            {shownStep === 3 ? (
               <button
                 type="button"
                 className="dx-btn"
@@ -764,6 +769,10 @@ export function AddToolWizard({
                 }}
               >
                 Back
+              </button>
+            ) : (
+              <button type="button" className="dx-btn" onClick={close}>
+                {shownStep === 1 ? 'Cancel' : 'Done'}
               </button>
             )}
             {primary}
@@ -804,39 +813,78 @@ export function AddToolWizard({
   );
 }
 
-/** The checks, each with what passed it or what it is missing. */
+/** One tool as the design's option card: its mark, its name, and its line (`toolSub`). */
+function ToolOption({
+  tool,
+  group,
+  checked,
+  onChange,
+}: {
+  readonly tool: ToolCapability;
+  readonly group: string;
+  readonly checked: boolean;
+  readonly onChange: (harness: string) => void;
+}) {
+  return (
+    <label className="dx-option" data-tool={tool.harness}>
+      <input
+        type="radio"
+        name={group}
+        value={tool.harness}
+        checked={checked}
+        onChange={() => {
+          onChange(tool.harness);
+        }}
+      />
+      <span className="dx-icon">
+        <AgentMark client={tool.harness} size="sm" />
+      </span>
+      <span>
+        <strong className="dx-option-name">{tool.name}</strong>
+        <span className="dx-option-sub">{toolSub(tool)}</span>
+      </span>
+    </label>
+  );
+}
+
+/**
+ * The four checks a tool is set up by (LAI-1097, the owner's verify step is a
+ * status and a short note): its device paired, its credential installed, its
+ * own request, and its hooks where it has them. A check not met says what is
+ * missing, in `checkLines`' words; one met says only *Done* — its evidence is
+ * in the tool's details, with every other check. `readiness()` alone says
+ * *Ready*, in the status above.
+ */
+export const VERIFY_CHECKS: readonly CheckId[] = [
+  'device_paired',
+  'credential_installed',
+  'tool_request',
+  'session_hooks',
+];
+
+const CHECK_STATE: Readonly<Record<CheckLine['state'], string>> = {
+  pass: 'Done',
+  fail: 'Missing',
+  unsupported: 'Not needed: it has no hooks',
+};
+
 function Checklist({
   tool,
-  verification,
   lines,
   trouble,
 }: {
   readonly tool: ToolCapability;
-  readonly verification: AgentVerification | undefined;
-  readonly lines: ReturnType<typeof checkLines> | undefined;
+  readonly lines: readonly CheckLine[] | undefined;
   readonly trouble: string | undefined;
 }) {
-  const r = verification === undefined ? undefined : readiness(verification, tool);
+  const shown = lines?.filter((l) => VERIFY_CHECKS.includes(l.id));
   return (
     <section className="dv3w-checks" aria-label={`Checks for ${tool.name}`} data-checks>
-      <div className="dv3w-checks-head">
-        <h3 className="dv3w-checks-title">Checks</h3>
-        {r !== undefined ? (
-          <span data-readiness={r.key}>
-            <StatusChip tone={r.tone} word={r.word} reason={r.reason} />
-          </span>
-        ) : (
-          <StatusChip tone="waiting" word="Checking" reason="Asking the board" />
-        )}
-        {r?.versionUnknown === true && (
-          <span className="dv3-tag dv3-tag-quiet">Version unknown</span>
-        )}
-      </div>
-      {lines === undefined ? (
+      {shown === undefined ? (
         <p className="dv3w-quiet">Asking the board what it has seen…</p>
       ) : (
         <ul className="dv3w-check-list">
-          {lines.map((l) => (
+          {shown.map((l) => (
             <li key={l.id} className="dv3w-check" data-check={l.id} data-state={l.state}>
               <span className="dv3w-check-mark" aria-hidden="true">
                 {l.state === 'pass' ? <CheckIcon /> : l.state === 'unsupported' ? '–' : '○'}
@@ -844,28 +892,68 @@ function Checklist({
               <span className="dv3w-check-text">
                 <span className="dv3w-check-label">
                   {l.label}
-                  <span className="dv3w-check-state">
-                    {l.state === 'pass'
-                      ? 'Done'
-                      : l.state === 'unsupported'
-                        ? 'Not supported'
-                        : 'Missing'}
+                  <span className="dv3w-check-state">{CHECK_STATE[l.state]}</span>
+                </span>
+                {l.state === 'fail' && (
+                  <span className="dv3w-check-detail">
+                    <InlineCode text={l.detail} />
                   </span>
-                </span>
-                <span className="dv3w-check-detail">
-                  <InlineCode text={l.detail} />
-                </span>
+                )}
               </span>
             </li>
           ))}
         </ul>
       )}
-      <p className="dv3w-quiet dv3w-honest">
-        {tool.name}’s name for itself is what it reports; Ready means its own credential, announcing
-        itself as {tool.name}.
-      </p>
       {trouble !== undefined && <p className="dv3w-quiet">{trouble}</p>}
     </section>
+  );
+}
+
+/**
+ * Automatic checkpoints, in one line: what the board holds, read from it, and
+ * where to change it — the switch is in the tool's details (LAI-1097), not in
+ * this wizard.
+ */
+function ConsentLine({
+  agentId,
+  onDetails,
+}: {
+  readonly agentId: string;
+  readonly onDetails: () => void;
+}) {
+  const [given, setGiven] = useState<boolean | 'failed' | undefined>(undefined);
+  useEffect(() => {
+    const controller = new AbortController();
+    getCheckpointConsent(agentId, controller.signal)
+      .then((consent) => {
+        setGiven(consent.given);
+      })
+      .catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === 'AbortError') return;
+        setGiven('failed');
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [agentId]);
+  return (
+    <p
+      className="dv3w-quiet dv3w-consent-line"
+      data-consent-line={given === undefined ? 'reading' : String(given)}
+    >
+      Automatic checkpoints:{' '}
+      {given === undefined
+        ? 'reading…'
+        : given === 'failed'
+          ? 'could not be read'
+          : given
+            ? 'On'
+            : 'Off'}{' '}
+      ·{' '}
+      <button type="button" className="conn-link-button" onClick={onDetails}>
+        change in its details
+      </button>
+    </p>
   );
 }
 
