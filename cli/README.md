@@ -1562,21 +1562,64 @@ It reads what is already here and asks only what it cannot read:
 1. Each saved agent credential (`~/.laika/agents/<harness>.json`, as
    `laika tool add` writes them) and whose it is (`GET /api/v1/me`). Every one
    must be the same person's.
-2. Each project those agents can read, and its repository on the board. You
-   give the path of your checkout of each, and it must have a remote whose URL
-   is exactly that repository (as `handoff prepare` checks one). A project with
-   no repository on the board is left out. **Work requests are off unless you
+2. **This device, before any project question** (LAI-1111): git 2.41 or later,
+   and each harness program on `PATH`, checked as the daemon will check it.
+   Too old a git refuses before anything is asked. Every problem is printed at
+   once, each with its fix, so one run tells you everything:
+   - Claude Code needs 2.1.259 or later (`claude update`).
+   - Its program, and the folder that holds it, may be written only by you or
+     root: the launcher runs it unattended. Homebrew's `/opt/homebrew/bin` is
+     writable by the `admin` group, so a `claude` there is refused; install it
+     where only you can write (Claude Code's native installer uses
+     `~/.local/bin`) and put that first on `PATH`, or `chmod go-w` the folder
+     if nobody else can write it in practice.
+   - Its user-level `laika` MCP entry in `~/.claude.json` must be the one
+     `laika tool add` writes. **`~/.claude.json` even when your shell sets
+     `CLAUDE_CONFIG_DIR`**: the service starts the launcher with only `HOME`
+     and `PATH`, and a run gets no `CLAUDE_CONFIG_DIR`, so a launched Claude
+     Code reads `~/.claude.json` and `~/.claude/settings.json`. `enable` says
+     so when `CLAUDE_CONFIG_DIR` is set; run the fixes in a shell without it.
+     `tool add` never replaces an entry it did not write, such as a
+     token an older `laika init` or `laika connect` wrote into the file: quit
+     Claude Code, run `claude mcp remove laika --scope user`, then in the
+     browser open Developer access → Tools → the tool → Reconnect (new
+     credential)…, and run the `laika tool add claude-code --exchange <id>` it
+     shows.
+   - Its session hooks are read from the commands in
+     `~/.claude/settings.json`: a `laika-agent-hook` command for every event
+     `laika agent hooks on` installs, and a script that exists. If not, run
+     `laika agent hooks on --harness claude-code` with the laika of an
+     up-to-date checkout.
+
+   **Codex is added only if you type `danger-full-access`** (below). Omnigent
+   only if `laika tool add omnigent` installed its Laika-connected polly and
+   you type `yes`; it is asked separately whether a notice may wake its running
+   session (below).
+3. Each project those agents can read, and its repository on the board. You
+   give the path of your checkout of each — `~/…` and a path relative to where
+   you run `enable` are read, and what they were read as is printed — and it
+   must have a remote whose URL is exactly that repository (as
+   `handoff prepare` checks one). Each remote that is not says why: an SSH
+   host alias such as `git@github-personal:owner/name.git` is not
+   `github.com`, because the launcher fetches from github.com itself and never
+   through `~/.ssh/config`; a URL with a password or token in it is never
+   fetched from. Add an `https://github.com/owner/name.git` remote. Whatever
+   stands before a remote's host — a user, a token — is printed as `***`.
+   A wrong path is asked again, three times at most. A project with no
+   repository on the board is left out. **Work requests are off unless you
    type `yes` for that project.**
-3. Each harness program on `PATH`, checked as the daemon will check it.
-   Claude Code needs 2.1.259 or later, its launcher-safe MCP entry
-   (`laika tool add claude-code`) and its session hooks
-   (`laika agent hooks on --harness claude-code`); without either it is left
-   out, with the command that fixes it. **Codex is added only if you type
-   `danger-full-access`** (below). Omnigent only if `laika tool add omnigent`
-   installed its Laika-connected polly and you type `yes`; it is asked
-   separately whether a notice may wake its running session (below).
-4. It prints the whole config and the service file, and does nothing until you
-   type `enable`. `--dry-run` prints and stops.
+4. It prints the whole config, loads it exactly as the launcher will (so
+   `--dry-run` refuses one that would not load), and prints the service file
+   and **the checkout the service runs the CLI from**: the service runs
+   `node <that checkout>/cli/…/index… agent launcher run --service`, so
+   switching branches, pulling or editing there changes the launcher's code at
+   its next start. It does nothing until you type `enable`; `--dry-run` prints
+   and stops.
+
+All the questions are asked on one terminal reader, so answers typed or pasted
+ahead are read in order. Input ending before every question is answered stops
+with `input ended`, Ctrl+C at a question with `interrupted`, and nothing is
+written.
 
 The defaults: one run at a time, 7200 s each, 10 a day, hand-off and recovery
 offers on, work requests only where you said yes, no ssh agent.
