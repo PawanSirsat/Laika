@@ -583,6 +583,37 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
     'list_members',
     { rest: readsNothingRest, mcp: readsNothingMcp('list_members', { project: 'core' }) },
   ],
+  [
+    'ping_agent',
+    {
+      note: 'Its twin is `POST /agents/:id/capacity-pings` (§6.4, D-126, LAI-1038). The person pings their own agent on both sides — over REST signed in, over MCP with their token — and each writes one `agent.capacity_requested` row.',
+      rest: async (s) => {
+        const agent = await pingable(s);
+        await must(s, `/api/v1/agents/${agent}/capacity-pings`, {
+          method: 'POST',
+          body: JSON.stringify({ project: 'core' }),
+        });
+      },
+      mcp: async (s, c) => {
+        const agent = await pingable(s);
+        await callTool(c, 'ping_agent', { project: 'core', agent });
+      },
+    },
+  ],
+  [
+    'get_agent_capacity',
+    {
+      note: 'Its twin is `GET /agents/:id/capacity` (§6.4, LAI-1038). A read on both sides: the setup writes, the read writes nothing.',
+      rest: async (s) => {
+        const agent = await pingable(s);
+        await must(s, `/api/v1/agents/${agent}/capacity?project=core`, { method: 'GET' }, 200);
+      },
+      mcp: async (s, c) => {
+        const agent = await pingable(s);
+        await callTool(c, 'get_agent_capacity', { project: 'core', agent });
+      },
+    },
+  ],
 ]);
 
 /** January 2026, so a date in a fixture reads as a date. */
@@ -618,6 +649,24 @@ const CHECKPOINT = {
   summary: { work_done: 'Half of it', next_step: 'The rest', failing: 'a.test.ts' },
   summary_commit_sha: 'c'.repeat(40),
 };
+
+/** A registered agent of the side's person, granted `full` on core: one they may ping (D-126). */
+async function pingable(side: Side): Promise<string> {
+  const project = (await (
+    await must(side, '/api/v1/projects/core', { method: 'GET' }, 200)
+  ).json()) as { id: string };
+  const registered = (await (
+    await must(side, '/api/v1/agents', {
+      method: 'POST',
+      body: JSON.stringify({
+        display_name: 'Parity pinged',
+        harness: 'claude-code',
+        grants: [{ project_id: project.id, scope: 'full' }],
+      }),
+    })
+  ).json()) as { agent: { id: string } };
+  return registered.agent.id;
+}
 
 /**
  * A registered agent of the side's person, holding COR-1's live claim in a

@@ -432,6 +432,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Decline a hand-off or recovery offer | ✓ | ✓ | — |
 | Cancel a hand-off offer | ✓ | own agent's or task's assignee | — |
 | Edit the project's hand-off policy | ✓ | — | — |
+| Ping an agent for its capacity | ✓ | ✓ | — |
 | Assign a task to someone else | ✓ | ✓ | — |
 | Add comment | ✓ | ✓ | — |
 | Edit / delete comment | own + any | own | — |
@@ -481,6 +482,18 @@ offer sent by a session of the caller's own agent, or any offer on a task
 assigned to the caller (§4.73: the sender, the task's assignee or a lead
 cancels); a lead cancels any. Reading checkpoints and offers follows *Read
 tasks*.
+
+**Capacity pings** (§4.84, D-126, LAI-1038). *Ping an agent for its capacity*
+is `agent.ping`, asked of the caller's role — for an agent's token, its
+owner's, narrowed by its grant and token as every row is, so a `read_only`
+grant and an `agents_off` space refuse it. **Which** agent is the service's
+to ask: a **person** may ping an agent they could select on that project
+(§4.5: their own, active, granted `full`, in a space that lets agents write);
+an **agent** may ping one it could offer the project's work to — it holds
+*Offer* there and §4.73's receiver rule accepts the target, `allow_other_owners`
+included. **Every refusal is the agent `404`**, byte for byte an id that names
+no agent (D-121 item 7). The answer is the pinged agent's own record about
+itself, posted under *Send own heartbeat* (§3.1, `heartbeat.send_own`).
 
 ### 3.3 The `can()` module is the only authority
 
@@ -830,7 +843,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `meeting_review.discarded`, `task.agent_selected`, `task.claim_expired`,
 `task.claim_reclaimed`, `task.checkpoint_saved`, `task.handoff_offered`,
 `task.handoff_approved`, `task.handoff_accepted`, `task.handoff_declined`,
-`task.handoff_cancelled`, `task.handoff_expired`, `task.recovered`.
+`task.handoff_cancelled`, `task.handoff_expired`, `task.recovered`,
+`agent.capacity_requested`.
 
 **`task.agent_selected`** (D-114 item 7, LAI-535) is a task's selected agent
 set, changed or cleared — one verb for every direction, payload `{ from, to }`,
@@ -875,6 +889,18 @@ a reader filtering on `type` should not open a payload to learn it.
 A work request's opening and withdrawal stay `task.agent_selected` (LAI-535),
 and its acceptance by the selected agent's claim writes no hand-off verb: no
 claim moved between sessions.
+
+**`agent.capacity_requested`** (D-126 item 2, LAI-1038) is somebody who may
+delegate to an agent asking its device for its capacity (§4.84). Actor:
+whoever pinged — a person, or an agent of theirs. Project-scoped, `task_id`
+when the ping named one. Payload `{ ping_id, agent_id, expires_at }` — the
+ping, the agent pinged (withheld as every payload `agent_id` is) and when it
+stops taking an answer; **no free text**. Delivered to the pinged agent only
+(§4.77). **The answer is never a row**: the project's activity reaches every
+reader, and the answer is shown only to whoever pinged and the agent's owner.
+Its own verb because *"who asked that agent whether it could take work, and
+when"* is the question. Three owners (CLAUDE.md §4.4): this row and the enum
+and CHECK (LAI-1038), and the web mirror and its wording (D-126's web slice).
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -2964,8 +2990,8 @@ Given, read and withdrawn through `/agents/:id/checkpoint-consent` (§6.4).
 The versioned envelope of one agent event (proposal §4.6, LAI-553): every
 `activity` row of `task.agent_selected`, `task.handoff_offered`,
 `task.handoff_approved`, `task.handoff_accepted`, `task.handoff_declined`,
-`task.handoff_cancelled`, `task.handoff_expired`, `task.recovered` and
-`project.context_updated` gets one, **written by `appendActivity` in the same
+`task.handoff_cancelled`, `task.handoff_expired`, `task.recovered`,
+`project.context_updated` and `agent.capacity_requested` gets one, **written by `appendActivity` in the same
 transaction as the row** — so an envelope exists exactly when its row does,
 and a refused or rolled-back write leaves neither. **Never updated**: it says
 what was true when it was written, as the row does.
@@ -2974,7 +3000,7 @@ what was true when it was written, as the row does.
 | --- | --- |
 | `activity_id` | primary key, FK `activity` (§4.8), cascade — the event id a client de-duplicates by |
 | `seq` | the row's sequence (§11.5), unique — the ordering cursor |
-| `schema_version` | the envelope's shape version, `1` |
+| `schema_version` | the envelope's shape version: `2` since LAI-1038 added `ping`; an envelope written at `1` is served with `ping: null` |
 | `offer_id` | nullable, **a copy, no FK** — the offer (§4.73) it is about: the payload's, or for a selection the work request it opened |
 | `detail_json` | the frozen part of the envelope, below |
 
@@ -2986,7 +3012,11 @@ device, never the registered name** (D-120); `reason` (the sender's, or a
 decline's; untrusted data, D-115 item 7) and `closed_reason`; `checkpoint`
 (`id`, `commit_sha`, the newest `ref`); `note_hash` — **the note's hash, never
 its text**; `context_revision`; `approval` (`required`, `approved_by_user_id`,
-`approved_at`); `state` `{ before, after }`; `claim_generation` `{ from, to }`.
+`approved_at`); `state` `{ before, after }`; `claim_generation` `{ from, to }`;
+`ping` — a capacity ping's `{ id, expires_at }` (§4.84), else `null`. Read when
+it is served, beside the row's facts: **`task_key`** and **`project_slug`**
+(LAI-1038), so a device can name the task and the project in a fixed prompt
+or a branch without a second read — both readable wherever the event is.
 No token, secret or note text is in it. **Its agents are named as the
 row's are** (§4.8 `agent_id`, D-121 item 7, LAI-1011): `from`, `to` and the
 writing agent and its session are served only where the receiving agent's
@@ -3028,7 +3058,8 @@ replaced; an offer or recovery made, its named receiver, or for an unnamed
 recovery every agent that could take it then (active, a `full` grant, the
 expired claim's owner's unless the space allows other owners); an offer
 approved, answered or closed, everyone an earlier event of it reached and the
-agents it moves between; a context change, every agent granted the project.
+agents it moves between; a context change, every agent granted the project; a
+capacity ping, the agent pinged and nobody else (D-126 item 2).
 **The writer gets no delivery of its own write**, and a revoked agent none.
 What actually reaches an agent is asked again on every read and every frame
 (§6.4, §11.5). No activity row: a delivery is presence, as a session is.
@@ -3335,6 +3366,101 @@ outside them). A personal token is refused `403`, `not_an_agent`, **whatever bod
 /project-setups`** answers the caller's own rows for one project; an agent's
 token reads only its own. Another owner's agent and an id that names nothing
 are the same `404`. No activity row is written.
+
+### 4.83 `agent_launcher_reports`
+
+What an agent's launcher last said about itself (D-126 item 4, D-117a,
+LAI-1038): one row per agent, replaced by each report **the agent's own
+token** sends — at start, every 60 s, on a change, and `enabled: false` on a
+clean stop. **Self-reported, read-only and never a command channel**: nothing
+on the board starts, stops or configures a launcher, and no `can()`, fence or
+claim reads it.
+
+| field | notes |
+| --- | --- |
+| `agent_id` | primary key, FK `agents`, cascade |
+| `enabled` | whether the launcher says it is switched on |
+| `auto_pickup_work_requests`, `auto_pickup_handoffs` | its two switches (D-117a item 2) |
+| `running` | 0 to 4 (CHECK) — the runs it has going |
+| `max_concurrent` | 1 to 4 (CHECK) |
+| `cli_version` | at most 64 printable characters, as a client report's (§4.81) |
+| `started_at` | nullable — when the launcher process started, as the device says |
+| `reported_at` | nullable — the board's clock at the report; **null while the org has presence off** (§4.2) |
+
+**`PUT /agents/me/launcher`** writes it (`heartbeat.send_own`; `403`,
+`not_an_agent`, for a personal token or a session). Every agent view —
+`GET /agents`, `/agents/:id`, `/agents/devices`, `/devices` — carries
+`launcher { state, reported_at, started_at, running, max_concurrent,
+auto_pickup, cli_version }`: **`on` only for a report under 180 s old that
+says enabled, from an active agent** (D-126 item 4); `off` for one that says
+disabled, for a revoked agent, and for none at all, every other field then
+`null`; `unknown` for an enabled report too old — or, with presence off, of no
+known age — to say. While presence is off both times are `null`, whatever is
+stored. A device's `launcher` (§4.78) is its active tools' best: `on` if any
+is (the freshest), else `unknown` if any is, else `off`. No activity row.
+
+### 4.84 `capacity_pings`
+
+One capacity ping (D-126 items 1–3, LAI-1038): who asked which agent, in which
+project, and the one answer its device gave with that agent's own token.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `org_id` | FK `orgs`, cascade |
+| `project_id` | FK `projects`, cascade — required: a delivery is a project's (§4.77) |
+| `task_id` | nullable, FK `tasks`, set null — the task the pinger would hand it |
+| `agent_id` | FK `agents`, cascade — the agent pinged |
+| `requested_by_user_id` | FK `users`, cascade — the person who pinged, or whose agent did |
+| `requested_by_agent_id` | nullable, FK `agents`, cascade — the pinging agent; null for a person |
+| `activity_id` | FK `activity`, cascade — its `agent.capacity_requested` row (§4.8) |
+| `created_at` | |
+| `expires_at` | `created_at` + 60 s: an answer is taken until then |
+| `answered_at` | nullable |
+| `reply_json` | nullable — the answer, below. Set exactly when `answered_at` is (CHECK) |
+
+Indexes `(agent_id, created_at)` and `(created_at)`. **Rows older than seven
+days are deleted when the next ping is written**, in its transaction.
+
+**Who may ping** is §3.2's *Ping an agent for its capacity*: a person, an agent
+they could select on that project; an agent, one it could offer the project's
+work to. Every refusal is the agent `404` (D-121 item 7), decided **before any
+rate bucket is spent**, so nobody who may not ping can drain one. **A repeat**
+by the same requester — the person, and the same agent or none — to the same
+agent, project and task within **15 s** returns the ping still open, `200`,
+and writes nothing. **The limits** are token buckets a minute wide: **4 per
+requester per agent** and **30 per agent** from everyone; past either, `429`,
+`reason: capacity_ping_rate`, with `Retry-After`. A ping writes this row and
+its activity row in one transaction, and the event reaches the pinged agent
+only.
+
+**The answer** — `POST /agents/me/capacity-pings/:id/reply`, **the pinged
+agent's own token**, `heartbeat.send_own` — is accepted **once, before
+`expires_at`**: a second is `409 already_answered`, a first one at or after it
+`409 ping_expired`, and a ping not addressed to the calling agent is the `404`
+of one that does not exist. It is a closed object, every level strict and every
+string a closed word but the CLI version — **no path, host name, repository or
+task text fits in it**, and a reading the device could not take is a word,
+never a number:
+
+```
+{ launcher: { state: 'on', auto_pickup: { work_requests, handoffs }, running: 0–4, max_concurrent: 1–4 }
+          | { state: 'off' },
+  harness_ready: { credential, argv, hooks },
+  session_live,
+  battery: { state: 'ok' | 'low', percent: 0–100, plugged? } | { state: 'unsupported' | 'unavailable' },
+  memory: { state: 'normal' | 'warn' | 'critical' | 'unsupported' | 'unavailable' },
+  cli_version,
+  answered_by: 'launcher' | 'session' }
+```
+
+**Read** as `{ id, agent_id, project_id, task_id, state: pending | answered |
+expired, requested_by: { user_id, agent_id }, created_at, expires_at,
+answered_at, answer }` **by whoever pinged** — the person, through any of their
+credentials — **and by the agent's owner**, while they may read the project;
+anyone else gets the `404` of no ping. `requested_by.agent_id` is shown only to
+the pinging agent's own owner (D-121 item 7). It is **not an activity row**. A
+client calls an answer older than 5 minutes stale.
 
 ## 5. Task lifecycle
 
@@ -3898,7 +4024,7 @@ GET    /api/v1/agents                        POST /api/v1/agents  body { display
 GET    /api/v1/agents/devices                own agents grouped by device → { data: [{ device_label, display_name, recognised, last_seen_at, active_count, revoked_count, agents }] } (§4.63, agent.read_own)
 POST   /api/v1/agents/devices/confirm        body { device_label: string | null } → { device_label, recognised: true } (agent.manage_own, session only)
 POST   /api/v1/agents/devices/revoke         body { device_label: string | null } → { revoked_agent_ids: string[] } (agent.manage_own, session only)
-GET    /api/v1/devices                       own devices (§4.78), active first → { data: [{ id, display_name, device_label, kind, origin, status, confirmed, confirmed_at, paired_at, key_fingerprint, last_seen_at, active_count, revoked_count, agents, created_at, revoked_at }] } (agent.read_own; not paginated)
+GET    /api/v1/devices                       own devices (§4.78), active first → { data: [{ id, display_name, device_label, kind, origin, status, confirmed, confirmed_at, paired_at, key_fingerprint, last_seen_at, active_count, revoked_count, agents, launcher, created_at, revoked_at }] } (agent.read_own; not paginated; launcher is §4.83's)
 GET    /api/v1/devices/:id                   one own device, the same shape; another owner's or an unknown id is the same 404 (agent.read_own)
 PATCH  /api/v1/devices/:id                   body { display_name } → the device, renamed with its agents' device_label (§4.78, LAI-1095); 422 invalid_device_name, 409 device_name_taken / device_revoked (agent.manage_own, session only)
 POST   /api/v1/devices/pairing-requests      body { kind: 'local'|'cloud', display_name, device_id? } → 201 { pairing, user_code, command }; the code is shown once (§4.79, agent.manage_own, session only)
@@ -3915,6 +4041,11 @@ POST   /api/v1/tool-setup/:id/redeem         the paired device; body { device_id
 POST   /api/v1/agents/:id/reconnect          a rotate exchange on the agent's paired device → 201, as /devices/:id/tools (§4.80, agent.manage_own, session only)
 GET    /api/v1/agents/:id/verification       → { agent_id, harness, status, now, last_seen_at, checks: { device_paired, credential_installed, credential_used, tool_request, session_hooks, required_capabilities }, client_report } (§4.81, agent.read_own; the owner or the agent's own token)
 POST   /api/v1/agents/me/client-report       an agent's token only; body { cli_version, cli_commit?, protocol, capabilities[], harness_version?, harness? } → the report (§4.81, heartbeat.send_own)
+PUT    /api/v1/agents/me/launcher            an agent's token only; body { enabled, auto_pickup: { work_requests, handoffs }, running 0–4, max_concurrent 1–4, cli_version, started_at? } → { agent_id, enabled, state, reported_at, started_at, running, max_concurrent, auto_pickup, cli_version } (§4.83, heartbeat.send_own); a report, never a command
+POST   /api/v1/agents/:id/capacity-pings     body { project, task_id?, wait_ms? ≤ 10000 } → 201 { ping, created: true }, or 200 { ping, created: false } for the one still open from a repeat within 15 s; held up to wait_ms for the answer; anyone who may not ping it the agent 404; 429 capacity_ping_rate with Retry-After (§4.84, agent.ping)
+GET    /api/v1/capacity-pings/:id            → { ping } — to whoever pinged and the agent's owner; anyone else the 404 of no ping (§4.84, project.read)
+POST   /api/v1/agents/me/capacity-pings/:id/reply   the pinged agent's own token; body the answer (§4.84) → { ping }; 409 already_answered or ping_expired; a ping addressed to another agent the 404 of none (heartbeat.send_own)
+GET    /api/v1/agents/:id/capacity           ?project= → { agent_id, launcher, latest_answer, now } — the agents the caller may ping (else the agent 404); latest_answer is the newest answered ping it may read: any, to the owner; its own in this project, to anyone else (§4.84, agent.ping)
 POST   /api/v1/project-setups            the owner signed in: body { agent_id: string | null, project_slug, template_revision, instructions_path? } → 201 a self_reported_browser record (agent.manage_own, session only); an agent's own token: body { project_slug, repo_key, repo_label, instructions_path, block_found, template_revision, block_project, block_prefix } → 201 a local_check record for that agent (heartbeat.send_own); a personal token 403 not_an_agent (§4.82)
 GET    /api/v1/project-setups            ?project= optional, agent_id= optional → { data: [{ id, agent_id, device_label, project_id, project_slug, repo_label, instructions_path, block_found, template_revision, project_match, prefix_match, source, checked_at }] } — own rows, for the one project; with no project, across every project the caller can read, newest first — each project asked the same project.read, and one the caller cannot read contributes nothing and is named nowhere (LAI-1077); an agent's token its own (§4.82, agent.read_own; not paginated)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
@@ -5398,6 +5529,8 @@ matched.
 | `agent_sync` | `{ project?, after? }` | a registered agent's inbox: its **live** work requests and the hand-off and recovery offers it may accept, newest first — `GET /agents/me/inbox`'s twin (§6.4, LAI-546), each item with its `delivery` (§4.77); and `{ after? }` returns `events` — `GET /agents/me/events` with `state=undelivered` and the same `project` — with `cursor`, `has_more` and `gap` (LAI-553). Any other token is `forbidden`, `reason: not_an_agent`. It reads, and records nothing: acknowledging is `POST /agents/me/events/ack` |
 | `checkpoint_task` | `{ task, id, idempotency_key, repo, branch, commit_sha, manifest, summary?, summary_commit_sha?, claim_generation }` | the checkpoint, `verification: 'pending'` until a signed push delivery verifies it — `POST /tasks/:id/checkpoints`'s twin (§4.70, LAI-545). Register **after** the push; the server never fetches anything (D-083) |
 | `offer_handoff` | `{ task, to_agent, checkpoint, reason, idempotency_key, claim_generation }` | the offer, `open` or `pending_approval`; the caller's claim is `paused` — `POST /tasks/:id/handoff-offers`'s twin (§4.73, LAI-546). `to_agent` is an agent id |
+| `ping_agent` | `{ project, agent, task?, wait_seconds? }` | the ping — `POST /agents/:id/capacity-pings`'s twin (§4.84, D-126, LAI-1038): asks the agent's device whether it can take work, and holds up to `wait_seconds` (0–10) for the answer; `state` is `answered`, `pending` or `expired`. `agent` is an agent id the caller could delegate to (§3.2) — any other is `not_found`, as an id that names nothing; `task` is a task ref. A repeat within 15 s returns the ping still open; past the limits, `rate_limited` |
+| `get_agent_capacity` | `{ project, agent }` | `{ agent_id, launcher, latest_answer, now }` — `GET /agents/:id/capacity`'s twin (§4.83, §4.84, LAI-1038): the agent's launcher presence and the newest answer the caller may read. The same agents as `ping_agent`. Reads, and records nothing |
 | `respond_handoff` | `{ offer, action, verified_commit_sha?, reason?, session_id? }` | `action` is `accept`, `decline` or `cancel` — the twins of `POST /handoff-offers/:id/accept`, `/decline` and `/cancel` (LAI-546). `accept` needs `verified_commit_sha` and returns the offer, the new claim and its `generation`; approving is a person's and has no tool |
 
 `get_task_context` and `get_project_context` are deliberately **fat** — one call
@@ -6740,6 +6873,14 @@ reconnect, the agent's helper catches up from `GET /agents/me/events`, which
 holds every undelivered event however long it was away. A client
 de-duplicates by `envelope.event_id`; acknowledging twice records one
 `received`. Delivery is **at least once**.
+
+**A capacity ping travels the same way** (D-126 item 2, LAI-1038): its
+`agent.capacity_requested` row reaches the pinged agent's stream with its
+envelope — `envelope.ping` names the ping to answer — and waits in its inbox
+until acknowledged. **The answer is a POST, never a frame**, and launcher
+presence is never pushed either: the web app has no per-user stream, and a
+frame on the project stream would reach every project reader. A client reads
+both from the views.
 
 **Why SSE and a durable inbox, not webhooks.** Laika is self-hosted, and the
 helpers that receive hand-offs run on laptops behind NAT and firewalls: an

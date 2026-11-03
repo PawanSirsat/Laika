@@ -593,6 +593,8 @@ describe('the parser itself', () => {
       // LAI-553: keyed by (event, agent), and by the activity row's id.
       'agent_event_deliveries',
       'agent_events',
+      // LAI-1038: one launcher report per agent; the row is that report.
+      'agent_launcher_reports',
       'agent_project_grants',
       // LAI-555: keyed by (session, project).
       'agent_session_context_deliveries',
