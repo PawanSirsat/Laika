@@ -2,11 +2,12 @@
 id: LAI-1116
 title: 'SPEC and decision for the task detail redesign and the deliverables fields'
 area: docs
-assignee: unclaimed
+assignee: strelka
 priority: p1
 depends-on: [LAI-1115]
 discovered-from: []
-status: backlog
+status: in-progress
+started: 2026-11-03T20:09:02Z
 ---
 
 ## Goal
