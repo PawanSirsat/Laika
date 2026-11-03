@@ -453,4 +453,52 @@ void describe('the task detail redesign (D-129)', () => {
       await h.close();
     }
   });
+
+  void test('on a phone the task is a bottom sheet, in the design’s order, closed by its handle (LAI-1122)', async () => {
+    const h = await openTask('/board?project=laika-core', 'Launcher runs');
+    try {
+      // No handle on a desktop.
+      assert.equal(await h.page.locator('.drawer-handle').isVisible(), false);
+
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      await h.page.locator('.drawer-handle').waitFor({ state: 'visible', timeout: 5_000 });
+      // The sheet rises into place (0.22s); measure where it settles.
+      await until(async () => {
+        const b = await h.page.locator('.drawer').boundingBox();
+        return b !== null && Math.round(b.y + b.height) === 844;
+      });
+      const box = await h.page.locator('.drawer').boundingBox();
+      assert.ok(box);
+      assert.equal(Math.round(box.width), 390, 'the sheet is not full width');
+      assert.equal(Math.round(box.y + box.height), 844, 'the sheet does not reach the bottom edge');
+
+      await h.page.locator('[data-hero="review"]').waitFor({ timeout: 10_000 });
+      const top = async (selector: string) =>
+        (await h.page.locator(selector).first().boundingBox())?.y ?? Number.NaN;
+      const order = [
+        await top('.panel-title'),
+        await top('.meta-status-row'),
+        await top('[data-section="delivers"]'),
+        await top('[data-hero="review"]'),
+        await top('[data-section="description"]'),
+        await top('.meta-card'),
+        await top('.panel-activity-section'),
+      ];
+      for (let i = 1; i < order.length; i += 1) {
+        assert.ok(
+          order[i]! > order[i - 1]!,
+          `section ${String(i)} is not below section ${String(i - 1)}: ${order.join(', ')}`,
+        );
+      }
+      const overflow = await h.page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      assert.equal(overflow, 0, 'the sheet scrolls sideways');
+
+      await h.page.getByRole('button', { name: 'Close the task' }).click();
+      await h.page.locator('.drawer').waitFor({ state: 'detached', timeout: 5_000 });
+    } finally {
+      await h.close();
+    }
+  });
 });

@@ -2511,3 +2511,66 @@
 .panel-meta .meta-line .meta-quiet {
   color: var(--text-muted);
 }
+
+/*
+ * **The phone's one column, in the design's order** (D-129, LAI-1122). The two
+ * columns and the rail's wrapper step aside (`display: contents`) so their
+ * sections line up in one flex column, ordered by `order` — the same DOM as
+ * the desktop, never a second render tree: the title, the status, what it
+ * delivers and where it stands, the description and acceptance, the proof,
+ * the rail's cards, the activity, and the foot.
+ */
+@media (max-width: 600px) {
+  .panel-columns {
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4) var(--space-6);
+  }
+
+  .panel-main,
+  .panel-side,
+  .panel-meta {
+    display: contents;
+  }
+
+  .panel-main > *,
+  .panel-side > *,
+  .panel-meta > * {
+    order: 5;
+    min-width: 0;
+  }
+
+  .panel-main > .panel-title {
+    order: 1;
+  }
+
+  .panel-meta > .meta-status-row,
+  .panel-meta > .meta-status-sub,
+  .panel-meta > .meta-warn {
+    order: 2;
+  }
+
+  .panel-main > [data-section='delivers'],
+  .panel-main > .hero {
+    order: 3;
+  }
+
+  .panel-main > [data-section='description'],
+  .panel-main > [data-section='acceptance'],
+  .panel-main > [data-section='proof'] {
+    order: 4;
+  }
+
+  .panel-main > .panel-activity-section {
+    order: 8;
+  }
+
+  .panel-meta > .panel-side-foot,
+  .panel-side > .panel-side-foot {
+    order: 9;
+  }
+
+  .panel-side > .panel-side-exec {
+    order: 7;
+  }
+}
