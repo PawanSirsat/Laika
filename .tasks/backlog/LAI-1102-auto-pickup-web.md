@@ -82,6 +82,14 @@ that read the server's source, and `endpoint-coverage` and
 
 Nothing else may be red.
 
+**Also expiring with this task:** LAI-1038 named `AgentCapacityView`,
+`CapacityPingView`, `LauncherView` and `PingAgentResult` in
+`server/test/tooling/response-type-coverage.test.ts`'s `UNPAIRED` as *no
+client type exists*. When the client types exist, pair them in
+`view-type-drift.test.ts` (`PAIRS`) and that file's staleness guard asks for
+the entries to go — CORE's file, so say so in the review rather than editing
+it. `LauncherReportView` stays: only the CLI reads it.
+
 ## Acceptance criteria
 
 - [ ] Every web assertion LAI-1038's review note quotes is green, and no other
