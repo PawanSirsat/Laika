@@ -2498,7 +2498,6 @@
 .panel-meta .meta-avatar {
   width: 22px;
   height: 22px;
-  font-size: var(--text-tiny);
 }
 
 .panel-meta .sub-count {
