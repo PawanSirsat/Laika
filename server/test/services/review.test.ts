@@ -534,12 +534,10 @@ describe('each round carries its decision (§4.27, LAI-1122)', () => {
 
     finishTask(t.sqlite, t.db, by, task.id, { summary: 'Fixed lint' });
     const { rounds } = listTaskRounds(t.db, actor(adminId), task.id);
-    expect(rounds.map((r) => [r.number, r.decision?.kind ?? null, r.decision?.reason_md])).toEqual(
-      [
-        [2, null, undefined],
-        [1, 'sent_back', 'Lint is red'],
-      ],
-    );
+    expect(rounds.map((r) => [r.number, r.decision?.kind ?? null, r.decision?.reason_md])).toEqual([
+      [2, null, undefined],
+      [1, 'sent_back', 'Lint is red'],
+    ]);
     expect(rounds[0]?.decision).toBeNull();
   });
 
@@ -569,7 +567,7 @@ describe('each round carries its decision (§4.27, LAI-1122)', () => {
     });
   });
 
-  it('reads every round\'s decision in one statement, not one per round', () => {
+  it("reads every round's decision in one statement, not one per round", () => {
     const by = agent(adminId);
     const statementsDuring = <T>(run: () => T): [T, string[]] => {
       const recorded: string[] = [];
