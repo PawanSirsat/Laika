@@ -204,7 +204,12 @@ void describe('the harness argv', () => {
     ]) {
       assert.ok(denied.includes(deny), deny);
     }
-    assert.equal(argvProblem(argv.map((a, i) => (i === 0 ? process.execPath : a))), undefined);
+    // An owner-only program, not process.execPath: a CI runner's node is group-writable,
+    // which the launcher rightly refuses.
+    const program = join(scratch(), 'claude');
+    writeFileSync(program, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    chmodSync(program, 0o755);
+    assert.equal(argvProblem(claudeArgv(program)), undefined, 'the whole argv passes the launcher');
   });
 
   void test('B2: enable prints that deny rules are not a boundary and branch protection is', async () => {
