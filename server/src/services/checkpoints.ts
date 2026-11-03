@@ -29,6 +29,7 @@ import {
   requireVisibleTaskToClaim,
 } from './claims.ts';
 import { type AgentReader, agentLens, agentReader } from './agent-visibility.ts';
+import { DELIVERABLE_LIMITS, markDeliverables } from './deliverables.ts';
 import { foldRepo } from './github-proof.ts';
 import { resolveRepoProjects } from './heartbeats.ts';
 
@@ -350,6 +351,12 @@ export interface RegisterCheckpointInput {
   manifest: readonly CheckpointManifestEntry[];
   summary?: { [K in keyof CheckpointSummary]?: string | undefined } | null | undefined;
   summaryCommitSha?: string | null | undefined;
+  /**
+   * The Ships items this save advances, by id or exact title (§4.5,
+   * LAI-1115): they move to `in_progress`. A request to the task, not a
+   * column of the checkpoint — so it is not part of what a retry compares.
+   */
+  workingOn?: readonly string[] | undefined;
   now?: number;
 }
 
@@ -368,6 +375,7 @@ interface CleanInput {
   manifest: CheckpointManifestEntry[];
   summary: CheckpointSummary | null;
   summaryCommitSha: string | null;
+  workingOn: string[];
 }
 
 /**
@@ -443,6 +451,16 @@ function cleanInput(input: RegisterCheckpointInput): CleanInput {
     summary = note;
   }
 
+  const workingOn = (input.workingOn ?? []).map((ref) => ref.trim());
+  if (workingOn.length > DELIVERABLE_LIMITS.items) {
+    throw unprocessable('working_on', 'A save names at most the task’s own deliverables');
+  }
+  for (const ref of workingOn) {
+    if (ref === '' || ref.length > DELIVERABLE_LIMITS.title) {
+      throw unprocessable('working_on', 'Each entry is a deliverable’s id or exact title');
+    }
+  }
+
   return {
     id,
     idempotencyKey,
@@ -452,6 +470,7 @@ function cleanInput(input: RegisterCheckpointInput): CleanInput {
     manifest,
     summary,
     summaryCommitSha: noteSha,
+    workingOn,
   };
 }
 
@@ -564,6 +583,17 @@ export function registerCheckpoint(
       );
     }
 
+    // The Ships items this save names (§4.5, LAI-1115): resolved before the
+    // row exists, so a save naming work the task does not list is refused
+    // whole — the agent sees its mistake now, not after a push it cannot undo.
+    const marks = markDeliverables(task.deliverables, clean.workingOn, 'in_progress');
+    if (marks.unmatched.length > 0) {
+      throw unprocessable('working_on', 'Names no Ships item of this task', {
+        reason: 'unknown_deliverable',
+        refs: marks.unmatched,
+      });
+    }
+
     const remoteRef = `${CHECKPOINT_TAG_PREFIX}${taskSegment(task, project.prefix)}/${clean.id}`;
     db.insert(taskCheckpoints)
       .values({
@@ -604,6 +634,26 @@ export function registerCheckpoint(
       },
       now,
     });
+
+    if (marks.marked.length > 0) {
+      db.update(tasks)
+        .set({ deliverables: marks.deliverables, updatedAt: now })
+        .where(eq(tasks.id, taskId))
+        .run();
+      appendActivity(db, {
+        orgId: project.orgId,
+        projectId: project.id,
+        taskId,
+        actorId: fresh.userId,
+        actorKind: 'agent',
+        actorTokenId: fresh.token.id,
+        agentSessionId: live.sessionId,
+        // `task.updated` with the field named, as tags and size are (D-027).
+        type: 'task.updated',
+        payload: { field: 'deliverables', marked: marks.marked },
+        now,
+      });
+    }
 
     const row = db.select().from(taskCheckpoints).where(eq(taskCheckpoints.id, clean.id)).get()!;
     return { checkpoint: viewOf(db, agentReader(actor), row, now), created: true };
