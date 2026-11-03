@@ -503,6 +503,114 @@ describe('accept and send back (LAIKA-478)', () => {
   });
 });
 
+describe('each round carries its decision (§4.27, LAI-1122)', () => {
+  it('an accepted round names who accepted it and when, with no reason', () => {
+    const task = inReview();
+    acceptTask(t.sqlite, t.db, actor(adminId), task.id);
+
+    const [round] = listTaskRounds(t.db, actor(adminId), task.id).rounds;
+    const stored = t.db.select().from(taskReviews).get()!;
+    expect(round?.decision).toEqual({
+      kind: 'accepted',
+      decided_by: adminId,
+      reason_md: null,
+      created_at: stored.createdAt,
+    });
+  });
+
+  it('a sent-back round carries its reason, and the round finished since is undecided', () => {
+    const by = agent(adminId);
+    const task = inReview(by);
+    sendBackTask(t.sqlite, t.db, actor(adminId), task.id, 'Lint is red');
+
+    // While sent back, the round that was sent back is the newest and says so.
+    const [sent] = listTaskRounds(t.db, actor(adminId), task.id).rounds;
+    expect(sent?.number).toBe(1);
+    expect(sent?.decision).toMatchObject({
+      kind: 'sent_back',
+      decided_by: adminId,
+      reason_md: 'Lint is red',
+    });
+
+    finishTask(t.sqlite, t.db, by, task.id, { summary: 'Fixed lint' });
+    const { rounds } = listTaskRounds(t.db, actor(adminId), task.id);
+    expect(rounds.map((r) => [r.number, r.decision?.kind ?? null, r.decision?.reason_md])).toEqual(
+      [
+        [2, null, undefined],
+        [1, 'sent_back', 'Lint is red'],
+      ],
+    );
+    expect(rounds[0]?.decision).toBeNull();
+  });
+
+  it('a round decided twice reads its latest decision', () => {
+    const task = inReview();
+    acceptTask(t.sqlite, t.db, actor(adminId), task.id);
+    const [first] = t.db.select().from(taskReviews).all();
+    // Moved back to review by hand and sent back, with no new finish between.
+    t.db
+      .insert(taskReviews)
+      .values({
+        id: newId(),
+        taskId: task.id,
+        roundId: first!.roundId,
+        decision: 'sent_back',
+        reasonMd: 'Reopened: the docs are missing',
+        commentId: null,
+        decidedBy: adminId,
+        createdAt: first!.createdAt + 1_000,
+      })
+      .run();
+
+    const [round] = listTaskRounds(t.db, actor(adminId), task.id).rounds;
+    expect(round?.decision).toMatchObject({
+      kind: 'sent_back',
+      reason_md: 'Reopened: the docs are missing',
+    });
+  });
+
+  it('reads every round\'s decision in one statement, not one per round', () => {
+    const by = agent(adminId);
+    const statementsDuring = <T>(run: () => T): [T, string[]] => {
+      const recorded: string[] = [];
+      const real = t.sqlite.prepare.bind(t.sqlite);
+      (t.sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
+        recorded.push(source);
+        return real(source);
+      };
+      try {
+        return [run(), recorded];
+      } finally {
+        (t.sqlite as unknown as { prepare: typeof real }).prepare = real;
+      }
+    };
+    const decidedRounds = (count: number): string => {
+      const task = inReview(by);
+      for (let i = 1; i < count; i += 1) {
+        sendBackTask(t.sqlite, t.db, actor(adminId), task.id, `Round ${String(i)} is red`);
+        finishTask(t.sqlite, t.db, by, task.id, { summary: `Round ${String(i + 1)}` });
+      }
+      return task.id;
+    };
+
+    // Two against six, both with a send-back behind them: the send-back's own
+    // read stops early for a task never sent back, which is not this property.
+    const two = decidedRounds(2);
+    const six = decidedRounds(6);
+    const [few, fewSql] = statementsDuring(() => listTaskRounds(t.db, actor(adminId), two));
+    const [many, manySql] = statementsDuring(() => listTaskRounds(t.db, actor(adminId), six));
+
+    expect(few.rounds).toHaveLength(2);
+    expect(many.rounds).toHaveLength(6);
+    expect(many.rounds.filter((r) => r.decision?.kind === 'sent_back')).toHaveLength(5);
+    // The property: the count is the read's shape, not how many rounds it has.
+    expect(manySql.length).toBe(fewSql.length);
+    expect(manySql.filter((q) => q.includes('"task_reviews"')).length).toBe(
+      fewSql.filter((q) => q.includes('"task_reviews"')).length,
+    );
+  });
+});
+
 describe('the review queue', () => {
   it('lists review tasks oldest waiting first, with the round, names and who may decide', () => {
     const memberId = makeUser('member', 'Bea');
