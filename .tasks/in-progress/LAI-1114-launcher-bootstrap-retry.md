@@ -2,10 +2,11 @@
 id: LAI-1114
 title: 'Launcher enable survives a re-run (bootout settles before bootstrap), and an unreachable board is a skipped check, not a refusal'
 area: cli
-assignee: unclaimed
+assignee: shell/belka
 priority: p2
 depends-on: []
-status: backlog
+started: 2026-11-04T00:40:00+05:30
+status: in-progress
 discovered-from: LAI-1113
 ---
 
