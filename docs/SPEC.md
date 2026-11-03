@@ -3469,9 +3469,12 @@ answered_at, answer }` **by whoever pinged** — the person, through any of thei
 credentials — **and by the agent's owner**, while they may read the project;
 anyone else gets the `404` of no ping. `requested_by.agent_id` is shown only to
 the pinging agent's own owner (D-121 item 7). It is **not an activity row**. A
-client calls an answer older than 5 minutes stale. `GET /agents/:id/capacity`
-reads only **the project asked**, which the reader may read: its owner, the
-newest answer to anyone's ping there; anyone else, to its own there.
+client calls an answer older than 5 minutes stale. **With presence off (§4.2)
+an answer's `answered_at` and `session_live` stay visible**: a ping is an
+explicit request, not presence collected in the background. `GET
+/agents/:id/capacity` reads only **the project asked**, which the reader may
+read: its owner, the newest answer to anyone's ping there; anyone else, to its
+own there.
 
 ## 5. Task lifecycle
 
