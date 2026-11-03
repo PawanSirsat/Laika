@@ -14,7 +14,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs, {
   closeSync,
   constants,
@@ -438,25 +438,40 @@ function midUpdate(w: World, meanwhile: () => void): { runner: Runner; ran: () =
  * Swap `path` for a symlink to `target` the moment the code under test checks
  * it: by path (`lstatSync`, `statSync`), or by a descriptor it opened on it
  * (`fstatSync`). A read that goes back to the path then follows the link; a
- * read from the descriptor it checked does not. `node:fs` is patched for named
- * imports too (`syncBuiltinESMExports`), and `restore` puts it back.
+ * read from the descriptor it checked does not. `closeSync` is watched too:
+ * `opens` counts the descriptors opened on `path`, and `unclosed` lists those
+ * never closed (LAI-1094). `node:fs` is patched for named imports too
+ * (`syncBuiltinESMExports`), and `restore` puts it back.
  */
 function swapAfterCheck(
   path: string,
   target: string,
-): { swapped: () => boolean; restore: () => void } {
+): {
+  swapped: () => boolean;
+  opens: () => number;
+  unclosed: () => unknown[];
+  restore: () => void;
+} {
   type Fn = (...args: unknown[]) => unknown;
   const patched = fs as unknown as Record<string, Fn>;
-  const names = ['openSync', 'lstatSync', 'statSync', 'fstatSync'] as const;
+  const names = ['openSync', 'closeSync', 'lstatSync', 'statSync', 'fstatSync'] as const;
   const real = new Map(names.map((name) => [name, patched[name]] as const));
   const opened = new Set<unknown>();
+  const open = new Set<unknown>();
+  let opens = 0;
   let swapped = false;
   for (const name of names) {
     const original = real.get(name)!;
     patched[name] = (...args: unknown[]): unknown => {
       const result = original(...args);
       if (name === 'openSync') {
-        if (args[0] === path) opened.add(result);
+        if (args[0] === path) {
+          opened.add(result);
+          open.add(result);
+          opens += 1;
+        }
+      } else if (name === 'closeSync') {
+        open.delete(args[0]);
       } else if (!swapped && (args[0] === path || opened.has(args[0]))) {
         swapped = true;
         rmSync(path);
@@ -468,6 +483,8 @@ function swapAfterCheck(
   syncBuiltinESMExports();
   return {
     swapped: () => swapped,
+    opens: () => opens,
+    unclosed: () => [...open],
     restore: () => {
       for (const [name, original] of real) patched[name] = original!;
       syncBuiltinESMExports();
@@ -1727,6 +1744,9 @@ void describe('laika update on a checkout already at the board’s commit (LAI-1
       swap.restore();
     }
     assert.ok(swap.swapped(), 'setup: polly.json was never checked');
+    // LAI-1094: drop tokenIn's closeSync and this goes red.
+    assert.ok(swap.opens() > 0, 'setup: polly.json was never opened');
+    assert.deepEqual(swap.unclosed(), [], 'a descriptor opened on polly.json was never closed');
     assert.equal(r.code, 0, r.err);
     assert.match(
       r.out,
@@ -1736,7 +1756,10 @@ void describe('laika update on a checkout already at the board’s commit (LAI-1
 
   // LAI-1092: read without checking for a regular file and this goes red, the
   // FIFO's token taken for claude-code.json's. Open it without O_NONBLOCK and
-  // this never finishes: the open waits for a writer that never comes.
+  // the open waits for a writer, blocking the thread, so no test timeout can
+  // fire. A watchdog in another process writes a marker after 10 s and then
+  // opens the FIFO for writing, which lets that open finish; the marker then
+  // says it waited, and this goes red (LAI-1094).
   void test('a FIFO among the credential files is neither read nor waited on', async () => {
     const w = world();
     const c = alreadyCurrent(w);
@@ -1747,18 +1770,25 @@ void describe('laika update on a checkout already at the board’s commit (LAI-1
     // A reader held open keeps what was written after its writer has gone, so a
     // read of the FIFO would find claude-code.json's own credential.
     const held = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
+    const marker = join(w.home, 'watchdog-fired');
+    // `$0` is the FIFO, `$1` the marker.
+    const watchdog = spawn('sh', ['-c', 'sleep 10; : > "$1"; : > "$0"', fifo, marker], {
+      stdio: 'ignore',
+    });
     try {
       const writer = openSync(fifo, constants.O_WRONLY | constants.O_NONBLOCK);
       writeSync(writer, `${JSON.stringify({ url, token: AGENT_TOKEN })}\n`);
       closeSync(writer);
 
       const r = await run(w, ['--board', url]);
+      assert.ok(!existsSync(marker), 'tokenIn waited on the FIFO');
       assert.equal(r.code, 0, r.err);
       assert.match(
         r.out,
         /\nPassed over in ~\/\.laika\/agents: pipe\.json \(not a tool laika knows\)\.$/,
       );
     } finally {
+      watchdog.kill();
       closeSync(held);
     }
   });

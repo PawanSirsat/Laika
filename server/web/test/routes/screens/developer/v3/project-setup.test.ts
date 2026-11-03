@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { AGENT_CLIENTS } from '../../../../../src/api/agent-clients.ts';
 import type { RegisteredAgent } from '../../../../../src/api/agents.ts';
 import type { ProjectAccess } from '../../../../../src/api/project-access.ts';
 import type { ProjectSetup } from '../../../../../src/api/project-setups.ts';
@@ -19,6 +20,7 @@ import {
   grantOptions,
   hasRecord,
   levelChip,
+  noDeviceCheck,
   parseStep,
   projectCheckCommand,
   recordChip,
@@ -31,6 +33,10 @@ import {
   verificationWords,
   withOneGrant,
 } from '../../../../../src/routes/screens/developer/v3/project-setup.ts';
+import {
+  catalogTool,
+  TOOL_CATALOG,
+} from '../../../../../src/routes/screens/developer/v3/tool-catalog.ts';
 import { hazardsIn } from './shell-words.ts';
 
 const agent = (over: Partial<RegisteredAgent> & { id: string }): RegisteredAgent => ({
@@ -268,13 +274,73 @@ void describe('what the records say (LAI-1066)', () => {
     );
   });
 
-  void test('a tool the CLI cannot name for certain gets no --harness rather than a wrong one', () => {
-    // `other` is both Copilot CLI and Copilot cloud; Claude Desktop has no adapter.
-    assert.equal(projectCheckCommand('onroute', 'other'), 'laika project check --project onroute');
-    assert.equal(
-      projectCheckCommand('onroute', 'claude-desktop'),
-      'laika project check --project onroute',
+  void test('a tool the CLI refuses, or cannot name, gets no command at all (LAI-1091)', () => {
+    // Antigravity: `laika tool add` refuses it, so --harness antigravity exits 2.
+    assert.equal(projectCheckCommand('onroute', 'antigravity'), null);
+    // `other` is Copilot CLI or Copilot cloud, both refused; Claude Desktop has no adapter.
+    assert.equal(projectCheckCommand('onroute', 'other'), null);
+    assert.equal(projectCheckCommand('onroute', 'claude-desktop'), null);
+    // Every tool the CLI sets up still gets its command.
+    for (const tool of TOOL_CATALOG.filter((t) => t.cliSetup)) {
+      assert.match(
+        projectCheckCommand('onroute', tool.harness) ?? '',
+        /^laika project check --project onroute --harness [a-z-]+$/,
+        tool.harness,
+      );
+    }
+  });
+
+  void test('the harnesses that get a command are the ones laika tool add does not refuse (LAI-1091)', () => {
+    const adapters = readFileSync(
+      fileURLToPath(new URL('../../../../../../../cli/src/agent-adapters.ts', import.meta.url)),
+      'utf8',
     );
+    const list = /export const HARNESSES = \[([^\]]*)\]/.exec(adapters)?.[1] ?? '';
+    const harnesses = [...list.matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1] ?? '');
+    assert.ok(harnesses.includes('claude-code') && harnesses.length >= 8, String(harnesses));
+
+    // planFor's `case` labels above each `kind:`, and `default` for the rest.
+    const toolAdd = readFileSync(
+      fileURLToPath(new URL('../../../../../../../cli/src/tool-add.ts', import.meta.url)),
+      'utf8',
+    );
+    const start = toolAdd.indexOf('export function planFor(');
+    assert.ok(start >= 0, 'cli/src/tool-add.ts no longer exports planFor');
+    const kinds = new Map<string, string>();
+    let pending: string[] = [];
+    let fallback: string | undefined;
+    let inDefault = false;
+    for (const line of toolAdd.slice(start, toolAdd.indexOf('\n}\n', start)).split('\n')) {
+      const label = /^\s*case '([^']+)':/.exec(line)?.[1];
+      if (label !== undefined) pending.push(label);
+      if (/^\s*default:/.test(line)) inDefault = true;
+      const kind = /kind: '([a-z-]+)'/.exec(line)?.[1];
+      if (kind === undefined) continue;
+      for (const slug of pending) kinds.set(slug, kind);
+      if (inDefault) fallback = kind;
+      pending = [];
+    }
+    const refused = harnesses.filter((h) => (kinds.get(h) ?? fallback) === 'refused');
+    // The scan read the real thing.
+    assert.deepEqual([...refused].sort(), ['antigravity', 'copilot-cli', 'copilot-cloud']);
+
+    const commanded = AGENT_CLIENTS.map((client) => projectCheckCommand('p', client))
+      .filter((command): command is string => command !== null)
+      .map((command) => /--harness (\S+)$/.exec(command)?.[1] ?? command);
+    assert.deepEqual(
+      [...new Set(commanded)].sort(),
+      harnesses.filter((h) => !refused.includes(h)).sort(),
+    );
+  });
+
+  void test('instead of a command: the device cannot check it yet, I’ve added it, and the manual note (LAI-1091)', () => {
+    const words = noDeviceCheck('Antigravity', 'antigravity');
+    assert.equal(words.title, 'Laika can’t check Antigravity’s repository from your device yet');
+    assert.equal(words.body, 'Record it yourself instead, with I’ve added it below.');
+    assert.equal(words.note, catalogTool('antigravity')?.notes[0]);
+    assert.match(words.note ?? '', /refuses Antigravity/);
+    // `other` has no catalogue entry, so no note of one.
+    assert.equal(noDeviceCheck('Copilot CLI', 'other').note, null);
   });
 
   void test('CLI_HARNESS is the CLI’s ADAPTERS read backwards, and shell-safe', () => {
@@ -333,10 +399,12 @@ void describe('the hint for a CLI older than the board (LAI-1084)', () => {
   void test('every command in it pastes as it stands: nothing a shell acts on unquoted', () => {
     const hint = cliMatchHint({ url: 'https://github.com/PawanSirsat/Laika.git', commit: null });
     assert.deepEqual(hazardsIn([hint.version, hint.update]), []);
-    // The check command above it, too, for every harness.
-    for (const client of Object.keys(CLI_HARNESS) as (keyof typeof CLI_HARNESS)[]) {
-      assert.deepEqual(hazardsIn([projectCheckCommand('laika', client)]), [], client);
-    }
+    // The check command above it, too, for every tool that gets one.
+    const commands = (Object.keys(CLI_HARNESS) as (keyof typeof CLI_HARNESS)[])
+      .map((client) => projectCheckCommand('laika', client))
+      .filter((command): command is string => command !== null);
+    assert.ok(commands.length > 0);
+    assert.deepEqual(hazardsIn(commands), []);
   });
 });
 

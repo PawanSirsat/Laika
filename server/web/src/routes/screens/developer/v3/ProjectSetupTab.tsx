@@ -60,6 +60,7 @@ import {
   grantOptions,
   hasRecord,
   levelChip,
+  noDeviceCheck,
   parseStep,
   projectCheckCommand,
   recordFinding,
@@ -761,7 +762,9 @@ function SetupWizard({
     );
     const why = recorded
       ? 'A project setup does not register a tool or mint a credential.'
-      : 'Run the check, or record it yourself, to finish.';
+      : projectCheckCommand(project.slug, tool.client) === null
+        ? 'Record it yourself to finish.'
+        : 'Run the check, or record it yourself, to finish.';
     note = <span id={`${ids}-finish-why`}>{why}</span>;
     actions = (
       <>
@@ -1236,6 +1239,7 @@ function ReviewStep({
   const [recording, setRecording] = useState(false);
   const [recordError, setRecordError] = useState<unknown>(null);
   const checkCommand = projectCheckCommand(project.slug, tool.client);
+  const manual = noDeviceCheck(tool.toolName, tool.client);
   const [cliSource, setCliSource] = useState<CliSource | undefined>(undefined);
   const hint = cliMatchHint(cliSource);
 
@@ -1318,27 +1322,42 @@ function ReviewStep({
           <h4 className="dx-ps-way-title" id={`${ids}-check`}>
             Check it from your device
           </h4>
-          <DesignChip tone="accent">Recommended</DesignChip>
+          {checkCommand !== null && <DesignChip tone="accent">Recommended</DesignChip>}
         </div>
-        <p className="conn-body" data-note="project-check">
-          Run this in the repository. It reads the instructions file, changes nothing, and records
-          what it found with {tool.toolName}’s own credential.
-        </p>
-        <CodeBlock label="Terminal, in the repository" text={checkCommand} what="the command" />
-        <p className="conn-note" data-note="cli-match">
-          This needs a Laika CLI that matches this board
-          {hint.commit !== null && (
-            <>
-              {' '}
-              (commit <code>{hint.commit}</code>)
-            </>
-          )}
-          . Check with <code>{hint.version}</code>: if it prints a commit,{' '}
-          <code>{hint.update}</code> brings it to this board’s. If either says unknown command, your
-          CLI predates this board: {GUIDE_TITLE}, below, shows where it comes from and installs a
-          current one beside it, wherever the old one is.
-        </p>
-        <UpdateCliHelp place="project-setup" />
+        {checkCommand === null ? (
+          // LAI-1091: `laika tool add` refuses this tool, so the check would
+          // exit 2 and record nothing. Say so rather than offer it.
+          <NoteBlock tone="warn" title={manual.title} note="no-device-check">
+            <p className="conn-body">{manual.body}</p>
+            {manual.note !== null && (
+              <p className="conn-note" data-note="manual">
+                <InlineCode text={manual.note} />
+              </p>
+            )}
+          </NoteBlock>
+        ) : (
+          <>
+            <p className="conn-body" data-note="project-check">
+              Run this in the repository. It reads the instructions file, changes nothing, and
+              records what it found with {tool.toolName}’s own credential.
+            </p>
+            <CodeBlock label="Terminal, in the repository" text={checkCommand} what="the command" />
+            <p className="conn-note" data-note="cli-match">
+              This needs a Laika CLI that matches this board
+              {hint.commit !== null && (
+                <>
+                  {' '}
+                  (commit <code>{hint.commit}</code>)
+                </>
+              )}
+              . Check with <code>{hint.version}</code>: if it prints a commit,{' '}
+              <code>{hint.update}</code> brings it to this board’s. If either says unknown command,
+              your CLI predates this board: {GUIDE_TITLE}, below, shows where it comes from and
+              installs a current one beside it, wherever the old one is.
+            </p>
+            <UpdateCliHelp place="project-setup" />
+          </>
+        )}
         {records.kind === 'loading' ? (
           <LoadingState shape="row" count={1} label="Loading what is recorded" />
         ) : records.kind === 'error' ? (
@@ -1351,7 +1370,7 @@ function ReviewStep({
         ) : evidence === null ? null : (
           <>
             <p className="dx-ps-status" data-status={evidence.overall} aria-live="polite">
-              <EvidenceChip evidence={evidence} />
+              <EvidenceChip evidence={evidence} canCheck={checkCommand !== null} />
             </p>
             {hasRecord(evidence) && (
               <ul
@@ -1420,13 +1439,24 @@ function ReviewStep({
   );
 }
 
-function EvidenceChip({ evidence }: { readonly evidence: SetupEvidence }) {
+function EvidenceChip({
+  evidence,
+  canCheck,
+}: {
+  readonly evidence: SetupEvidence;
+  /** `false` when step 3 offers no `laika project check` for the tool (LAI-1091). */
+  readonly canCheck: boolean;
+}) {
   if (evidence.overall === 'not-recorded') {
     return (
       <StatusChip
         tone="neutral"
         word="Not recorded"
-        reason="Laika cannot see your repository. Run laika project check in it to find out."
+        reason={
+          canCheck
+            ? 'Laika cannot see your repository. Run laika project check in it to find out.'
+            : 'Laika cannot see your repository. Record it yourself with I’ve added it.'
+        }
       />
     );
   }
@@ -1713,4 +1743,17 @@ function SetupsList({ titleId, agents, projects, setAddress }: SetupsListProps) 
       </section>
     </>
   );
+}
+
+/** Text with `backticked` runs set as code, as `AddToolWizard` shows a manual note. */
+function InlineCode({ text }: { readonly text: string }) {
+  return text
+    .split(/(`[^`]+`)/)
+    .map((part, i) =>
+      part.startsWith('`') && part.endsWith('`') && part.length > 1 ? (
+        <code key={i}>{part.slice(1, -1)}</code>
+      ) : (
+        part
+      ),
+    );
 }

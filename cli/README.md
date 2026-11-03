@@ -178,18 +178,54 @@ file contents, no local path, and never your personal `LAIKA_TOKEN`.** With no
 credential, or `--offline`, it only prints. **`--harness <tool>` asks for a
 record** (LAI-1090): with no credential for that tool it records nothing,
 says to add it first (Developer access → Tools → Add tool gives its
-`laika tool add` command), names any other tools set up here only after that,
-and exits `2`. Before recording it asks the board's
+`laika tool add` command), and names any other tools set up here only after
+that. Before recording it asks the board's
 `GET /developer/compatibility`, as `device pair` and `tool add` do: a board
 with `project_setups` off, or needing a newer protocol, gets nothing and you
 are told which (`laika update`, or ask your admin to update the board).
 
-Exit codes: `0` current, `1` needs action (no block, an older revision, another
-project or prefix), `2` could not record (the board did not answer or refused;
-several tools are set up here and no `--harness` says which; or `--harness`
-names a tool with no credential here, whether or not another tool has one),
-`64` usage. A run with no `--harness` and no credential at all only prints,
-and exits `0`.
+For a tool `laika tool add` refuses (Antigravity, Copilot CLI, Copilot cloud
+agent) there is nothing to add, so it says instead (LAI-1091):
+
+```
+no credential for antigravity on this machine — nothing recorded; laika tool add cannot set up antigravity; this check records for it only with antigravity's own agent token, saved by laika agent login antigravity or set as LAIKA_AGENT_TOKEN with LAIKA_AGENT_URL
+```
+
+That is all a credential can be here: the tool's own file
+(`~/.laika/agents/<tool>.json`); or `LAIKA_AGENT_TOKEN`, with its board from
+`LAIKA_AGENT_URL` or, when that is not set, from the tool's own file.
+The board's Project setup does not offer the check command for these tools;
+it asks you to record the block yourself with *I've added it*.
+
+Exit codes (LAI-1091; the usage text and the comment in
+`src/project-check.ts` give the same statement, word for word), the first
+that applies:
+
+- `64` the command line was wrong.
+- `1` the block needs action: missing, an older revision, or naming a
+  project other than `--project`. These give `1` whatever else is true,
+  `--offline` included. A wrong task-key prefix gives `1` only once the board
+  has recorded the check and says so, as does a project the board says is
+  wrong.
+- `2` nothing this run can see needs action, but the record was not made:
+  `--harness` names a tool with no credential here, or names one but no
+  project is named; several tools are set up here and no `--harness` picks
+  one; the credential's board URL is not a plain address; or the board did
+  not answer, refused, or is too old to take it.
+- `0` nothing this run can see needs action, and the check was recorded or
+  only printed: `--offline`; or no `--harness`, and no credential here or no
+  project named.
+
+So: a current block, no credential and no `--harness` prints and exits `0`; a
+missing or old block exits `1` whatever else is true; `--harness X` with no
+credential for X exits `2`, unless `--offline` (`0`) or the block needs action
+(`1`). `LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL` in the environment is a
+credential for whichever tool is asked for, and it wins over the
+several-tools rule. Every other rule above applies to it as written: no
+project named only prints, or is `2` with `--harness`; a board that does not
+answer, refuses, or is too old to take it is `2`. Whether a record can be
+made is decided before whether a project is named, so the order of the
+checks never turns a `2` into a `0`.
 
 ## `laika version` — which CLI this is (LAI-1043)
 
