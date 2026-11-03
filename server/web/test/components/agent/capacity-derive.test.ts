@@ -130,19 +130,18 @@ const project = (id: string, over: { agents_allowed?: boolean; archived_at?: num
   archived_at: over.archived_at ?? null,
 });
 
-const me = (over: Partial<MeProfile> = {}): MeProfile =>
-  ({
-    id: 'u1',
-    email: 'ada@example.com',
-    name: 'Ada',
-    org_role: 'member',
-    is_active: true,
-    memberships: [
-      { project_id: 'p1', role: 'member' },
-      { project_id: 'p2', role: 'member' },
-    ],
-    ...over,
-  }) as MeProfile;
+const me = (over: Partial<MeProfile> = {}): MeProfile => ({
+  id: 'u1',
+  email: 'ada@example.com',
+  name: 'Ada',
+  org_role: 'member',
+  is_active: true,
+  memberships: [
+    { project_id: 'p1', role: 'member' },
+    { project_id: 'p2', role: 'member' },
+  ],
+  ...over,
+});
 
 void describe('Ping is offered only where the reader may ping (D-126 item 1)', () => {
   const projects = [project('p1'), project('p2')];
@@ -181,7 +180,11 @@ void describe('Ping is offered only where the reader may ping (D-126 item 1)', (
   void test('none for a viewer: of the organisation, or of that space', () => {
     assert.equal(pingProjectFor(agent(), projects, me({ org_role: 'viewer' })), undefined);
     assert.equal(
-      pingProjectFor(agent(), projects, me({ memberships: [{ project_id: 'p2', role: 'viewer' }] })),
+      pingProjectFor(
+        agent(),
+        projects,
+        me({ memberships: [{ project_id: 'p2', role: 'viewer' }] }),
+      ),
       undefined,
     );
   });
@@ -247,7 +250,10 @@ void describe('the answer, in words, every fact its own', () => {
     assert.equal(t.battery, 'Battery: unsupported on this device');
     assert.equal(t.memory, 'Memory: could not be read');
     assert.doesNotMatch(`${t.battery ?? ''} ${t.memory ?? ''}`, /\d/);
-    assert.equal(texts(answer({ battery: { state: 'unavailable' } })).battery, 'Battery: could not be read');
+    assert.equal(
+      texts(answer({ battery: { state: 'unavailable' } })).battery,
+      'Battery: could not be read',
+    );
   });
 
   void test('low and on battery, a full launcher, a tool not ready', () => {
