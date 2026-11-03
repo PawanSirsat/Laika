@@ -2285,6 +2285,10 @@ void describe('Ping on the drawer’s agent (LAI-1102)', () => {
 
 const EVIDENCE = process.env.LAIKA_EVIDENCE_DIR;
 
+/** Theme colours ease in; a screenshot taken mid-way shows neither theme. */
+const settled = (page: Page) =>
+  page.evaluate(() => new Promise<void>((done) => setTimeout(done, 600)));
+
 void describe('evidence: Ping in the drawer', { skip: EVIDENCE === undefined }, () => {
   void test('screenshots', async () => {
     const dir = EVIDENCE ?? '';
@@ -2301,6 +2305,8 @@ void describe('evidence: Ping in the drawer', { skip: EVIDENCE === undefined }, 
           await setTheme(h.page, theme);
           await pingIn(h).click();
           await h.page.locator('.meta-row-agent [data-answer="cli"]').waitFor({ timeout: 10_000 });
+          await h.page.locator('.meta-row-agent').scrollIntoViewIfNeeded();
+          await settled(h.page);
           await h.page.screenshot({
             path: join(dir, `drawer-ping-answer-${theme}-${String(width)}.png`),
           });

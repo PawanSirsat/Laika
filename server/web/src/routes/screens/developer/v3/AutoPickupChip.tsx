@@ -31,7 +31,8 @@ export function AutoPickupChip({
     return (
       <span className="dv3-panel-status" data-auto-pickup={words.state}>
         <DesignChip tone={words.tone}>{words.word}</DesignChip>
-        <span className="dv3-panel-reason">{words.reason}</span>
+        {/* Read at the size of the panel's other notes, not its values. */}
+        <span className="dv3-panel-reason dv3-note">{words.reason}</span>
       </span>
     );
   }

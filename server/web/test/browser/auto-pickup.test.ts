@@ -471,6 +471,10 @@ void describe('390 px, both themes', () => {
 
 const EVIDENCE = process.env.LAIKA_EVIDENCE_DIR;
 
+/** Theme colours ease in; a screenshot taken mid-way shows neither theme. */
+const settled = (page: Page) =>
+  page.evaluate(() => new Promise<void>((done) => setTimeout(done, 600)));
+
 void describe('evidence: Auto-pickup and Ping', { skip: EVIDENCE === undefined }, () => {
   void test('screenshots', async () => {
     const dir = EVIDENCE ?? '';
@@ -486,6 +490,7 @@ void describe('evidence: Auto-pickup and Ping', { skip: EVIDENCE === undefined }
         const list = await openTools({}, options);
         try {
           await setTheme(list.page, theme);
+          await settled(list.page);
           await list.page.screenshot({
             path: join(dir, `tools-auto-pickup-${tag}.png`),
             fullPage: true,
@@ -502,6 +507,7 @@ void describe('evidence: Auto-pickup and Ping', { skip: EVIDENCE === undefined }
             .locator('.side-panel [data-detail="auto-pickup"]')
             .waitFor({ timeout: 20_000 });
           await setTheme(devices.page, theme);
+          await settled(devices.page);
           await devices.page.screenshot({ path: join(dir, `device-auto-pickup-${tag}.png`) });
         } finally {
           await devices.close();
@@ -517,6 +523,7 @@ void describe('evidence: Auto-pickup and Ping', { skip: EVIDENCE === undefined }
           await setTheme(details.page, theme);
           await pingButton(details.page).click();
           await status(details.page).locator('[data-answer="cli"]').waitFor({ timeout: 10_000 });
+          await settled(details.page);
           await details.page.screenshot({ path: join(dir, `tool-ping-answer-${tag}.png`) });
         } finally {
           await details.close();
