@@ -21,9 +21,7 @@ import { isClaudeToolHelper } from './mcp-headers.ts';
  * is kept.
  */
 export function isToolEntry(entry: unknown): boolean {
-  return (
-    isRecord(entry) && isClaudeToolHelper(entry.headersHelper) && entry.headers === undefined
-  );
+  return isRecord(entry) && isClaudeToolHelper(entry.headersHelper) && entry.headers === undefined;
 }
 
 /**
