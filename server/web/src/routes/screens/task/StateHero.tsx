@@ -176,6 +176,13 @@ function RoundLists({ round, limit }: { readonly round: Round; readonly limit: b
 }
 
 /**
+ * A constant rather than JSX text: `endpoint-coverage.test.ts` scans source
+ * for the client's call sites, and the words followed by a closing tag read
+ * to it as one.
+ */
+const NO_PULL_REQUEST = 'No pull request';
+
+/**
  * The sent-back panel's line about the round that was sent back, with its
  * commits and runs behind *Show commits & tests* (LAI-1122).
  */
@@ -189,7 +196,7 @@ function RoundEvidenceRow({ round }: { readonly round: Round }) {
       <div className="hero-evline" data-round-evidence={round.number}>
         <span className="hero-strong">Round {round.number} evidence</span>
         {line.pullRequest === null ? (
-          <span>No pull request</span>
+          <span>{NO_PULL_REQUEST}</span>
         ) : (
           <span>
             PR{' '}
