@@ -776,7 +776,11 @@ export function isCloudAgent(db: Db, row: AgentRow): boolean {
  * broken. An expiry already past gives the token no life at all, so it breaks
  * the same rule as none: `cloud_token_expiry_required`.
  */
-function assertCloudExpiry(expiresAt: number | null, now: number, mintedAt: number = now): void {
+export function assertCloudExpiry(
+  expiresAt: number | null,
+  now: number,
+  mintedAt: number = now,
+): void {
   if (expiresAt === null || expiresAt <= now) {
     throw new ApiError('unprocessable', 'A cloud agent’s token must have a future expiry', {
       reason: 'cloud_token_expiry_required',

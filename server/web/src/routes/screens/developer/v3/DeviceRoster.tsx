@@ -26,6 +26,7 @@ import {
   runningSessions,
   withAgent,
   withConfirmed,
+  withDevice,
   withRevokedAgents,
   type ListedTool,
 } from './devices-view.ts';
@@ -307,6 +308,12 @@ export function DeviceRoster({
     setNow(Date.now());
   };
 
+  /** A device renamed (LAI-1095): the server's answer, its tools relabelled, replaces it. */
+  const renamed = (device: Device): void => {
+    setDevices((current) => (current === undefined ? current : withDevice(current, device)));
+    setNow(Date.now());
+  };
+
   const recognise = (device: Device): void => {
     setConfirming(device.id);
     setDeviceErrors((errors) => without(errors, device.id));
@@ -511,6 +518,7 @@ export function DeviceRoster({
             if (panelId !== undefined) openAdd('tool', { device: panelId });
           }}
           onChanged={put}
+          onRenamed={renamed}
           announce={announce}
           onClose={closeDetails}
           restore={restoreFor(panelKey)}

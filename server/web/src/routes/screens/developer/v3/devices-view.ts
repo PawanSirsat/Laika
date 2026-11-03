@@ -555,6 +555,22 @@ export function withConfirmed(devices: readonly Device[], deviceId: string): Dev
   );
 }
 
+/**
+ * The list after a rename (LAI-1095): the server's answer replaces that device
+ * whole, since its tools' labels and default names changed with it.
+ */
+export function withDevice(devices: readonly Device[], next: Device): Device[] {
+  return devices.map((device) => (device.id === next.id ? next : device));
+}
+
+/** What is wrong with a device name before it is sent: the server's 1 to 80, trimmed. */
+export function deviceNameProblem(name: string): string | undefined {
+  const trimmed = name.trim();
+  if (trimmed === '') return 'Give the device a name.';
+  if (trimmed.length > 80) return 'At most 80 characters.';
+  return undefined;
+}
+
 /** The device holding an agent, for `?agent=<id>`. */
 export function deviceOf(devices: readonly Device[], agentId: string): Device | undefined {
   return devices.find((device) => device.agents.some((agent) => agent.id === agentId));

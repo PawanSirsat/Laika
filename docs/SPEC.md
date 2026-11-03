@@ -3081,9 +3081,24 @@ D-120; the cloud rule reads the label and the device's `kind` (§4.63, D-122).
 Devices are revoked, never deleted: the agent's link has no cascade, and an
 owner's deletion removes both through their own cascades.
 
-Reading is `agent.read_own`, filtered to the caller's own devices; another
-owner's device is a `404` identical to an id that does not exist. No §3.1
-action and no §4.8 verb of its own (D-122).
+**Renaming** (LAI-1095; plan LAI-1042 §D.2) is the owner's, on an active
+device: `PATCH /devices/:id` with a `display_name` of 1 to 80 characters once
+trimmed (`422 invalid_device_name`), whose key no other active device of
+theirs holds (`409 device_name_taken`); a revoked device is
+`409 device_revoked`. In one transaction it sets the name and its key, and
+gives **every agent on the device, revoked ones included, the new
+`device_label`** — the label stays the authority, and an agent left on the old
+one would be relinked by the next boot. An agent still named
+`<tool> · <old name>` becomes `<tool> · <new name>`, its tokens with it; a
+name the owner chose is kept. A device confirmed only by its label keeps its
+confirmation under the new one, and a live pairing request for it carries the
+new name. Renaming onto `Cloud` asks the 24 h rule of every live token on the
+device, as a relabel does (§4.63).
+
+Reading is `agent.read_own`, filtered to the caller's own devices; renaming is
+`agent.manage_own`, session only. Another owner's device is a `404` identical
+to an id that does not exist. No §3.1 action and no §4.8 verb of its own
+(D-122).
 
 ### 4.79 `device_pairing_requests`
 
@@ -3885,6 +3900,7 @@ POST   /api/v1/agents/devices/confirm        body { device_label: string | null 
 POST   /api/v1/agents/devices/revoke         body { device_label: string | null } → { revoked_agent_ids: string[] } (agent.manage_own, session only)
 GET    /api/v1/devices                       own devices (§4.78), active first → { data: [{ id, display_name, device_label, kind, origin, status, confirmed, confirmed_at, paired_at, key_fingerprint, last_seen_at, active_count, revoked_count, agents, created_at, revoked_at }] } (agent.read_own; not paginated)
 GET    /api/v1/devices/:id                   one own device, the same shape; another owner's or an unknown id is the same 404 (agent.read_own)
+PATCH  /api/v1/devices/:id                   body { display_name } → the device, renamed with its agents' device_label (§4.78, LAI-1095); 422 invalid_device_name, 409 device_name_taken / device_revoked (agent.manage_own, session only)
 POST   /api/v1/devices/pairing-requests      body { kind: 'local'|'cloud', display_name, device_id? } → 201 { pairing, user_code, command }; the code is shown once (§4.79, agent.manage_own, session only)
 GET    /api/v1/devices/pairing-requests/:id  one own request → { id, state, kind, display_name, device_id, claimed: { key_fingerprint, os, cli_version, claimed_at } | null, created_at, expires_at, decided_at, completed_at }; never the code (agent.read_own)
 POST   /api/v1/devices/pairing-requests/:id/approve   body { key_fingerprint } → the request; from claimed only (agent.manage_own, session only)
