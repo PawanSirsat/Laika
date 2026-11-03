@@ -6,7 +6,8 @@ assignee: strelka
 priority: p1
 depends-on: [LAI-1117]
 discovered-from: LAI-1117
-status: in-progress
+status: review
+finished: 2026-11-03T23:24:13Z
 started: 2026-11-03T21:11:02Z
 ---
 
@@ -22,7 +23,7 @@ become its subtasks.
 
 ## Acceptance criteria
 
-- [ ] **1. Activity and comments.** One header row per run (avatar, name, the
+- [x] **1. Activity and comments.** One header row per run (avatar, name, the
       agent chip `<harness> · <device>` that opens *Who did this* on hover,
       focus or click, the time on the right) and a vertical rail joining the
       run's items. Event rows with an icon circle per kind, from → to as
@@ -34,11 +35,11 @@ become its subtasks.
       *Show full summary · N more points*; a send-back reason card. The
       empty line and the composer footer (*Markdown · @ to mention someone*,
       Comment). A deliverable ticked or started reads as such in the feed.
-- [ ] **2. State panel.** In review: the commit list and the test runs with
+- [x] **2. State panel.** In review: the commit list and the test runs with
       *Show all N runs* inside the panel, *Full summary in activity ↓*, the
       Proof section folded below. Sent back: *Round n evidence* with
       *Show commits & tests*. The agent's mark in the panel's lines.
-- [ ] **3. Rail.** The status control as a pill with its colour dot; a
+- [x] **3. Rail.** The status control as a pill with its colour dot; a
       **Links & dates** card (parent, subtasks *n of m done* with add and
       detach, blocked by, blocks with link and unlink, due, planned start);
       an **Estimate** card (effort with its override and *Why <level>?*,
@@ -47,18 +48,18 @@ become its subtasks.
       control TokensSection has); Details in the design's order with priority
       as *▲ P1 · High*; the footer as the design draws it. Nothing the rail
       or the main column could do before is lost.
-- [ ] **4. Data that had no screen.** Comment edit and delete (LAI-234). Each
+- [x] **4. Data that had no screen.** Comment edit and delete (LAI-234). Each
       round's decision — accepted or sent back, by whom, the reason — in the
       Proof section (`RoundView.decision`). Similar finished tasks with why
       each was sent back, in the Estimate card (`GET /tasks/:id/similar`).
       Time people confirmed on the task, in the Estimate card
       (`GET /tasks/:id/time`, totals only, LAI-812).
-- [ ] **5. Phone.** Below 600px the drawer is a bottom sheet with a handle;
+- [x] **5. Phone.** Below 600px the drawer is a bottom sheet with a handle;
       one column in the design's order by CSS `order`; closes by Escape, the
       scrim, the handle and Back.
-- [ ] **6. Design check.** Each mockup state seeded locally and screenshotted
+- [x] **6. Design check.** Each mockup state seeded locally and screenshotted
       at desktop and 390px in both themes; the pairs shown to the owner.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0.
 
 ## Notes / context
 
