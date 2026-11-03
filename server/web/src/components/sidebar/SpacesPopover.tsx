@@ -135,7 +135,7 @@ export function SpacesPopover({
                       style={{ background: colour.background, color: colour.foreground }}
                       aria-hidden="true"
                     >
-                      {space.key}
+                      {space.name.trim().charAt(0).toUpperCase()}
                     </span>
                     <span className="spaces-pop-text">
                       <span className="spaces-pop-name">{space.name}</span>
