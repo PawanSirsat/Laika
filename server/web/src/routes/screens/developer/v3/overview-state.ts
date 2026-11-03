@@ -1,7 +1,7 @@
 import type { RegisteredAgent } from '../../../../api/agents.ts';
 import type { Device } from '../../../../api/devices.ts';
 import type { ProjectSetup } from '../../../../api/project-setups.ts';
-import { agentLabel } from '../../../../api/selected-agent.ts';
+import { agentLabel, agentProductName } from '../../../../api/selected-agent.ts';
 import type { ChipTone } from './DesignChip.tsx';
 import { deviceCounts, deviceLive, toolStatus, type DeviceCounts } from './devices-view.ts';
 import { recordState, setupEvidence } from './project-setup.ts';
@@ -264,7 +264,7 @@ export function heroOf(
         kind: state.hero,
         eyebrow: 'Start here',
         title,
-        sub: 'Pair your laptop or a cloud runner with this board, once. You choose a coding tool after that.',
+        sub: 'Pair your laptop or cloud runner with Laika. No coding tool selection is needed yet.',
         primary: { label: 'Add a device →', href: OVERVIEW_ADDRESSES.addDevice },
       };
     case 'no-tool':
@@ -326,6 +326,12 @@ export interface AttentionItem {
   /** Why, in a few words, lower case to follow the label. */
   readonly why: string;
   readonly href: string;
+  /** Its own credential has not reached the board, or no longer works. */
+  readonly setup: boolean;
+  /** Its helper is one the board needs updated: `updateStatus`'s *Update required*. */
+  readonly update: boolean;
+  /** The link's words: *Finish setup →* for a tool not connected, else *Open details →*. */
+  readonly action: string;
 }
 
 function lowerFirst(text: string): string {
@@ -333,10 +339,11 @@ function lowerFirst(text: string): string {
 }
 
 /**
- * Tools that need the reader, under the hero: one not connected yet (except
- * the one the hero is already about), and one whose helper the board needs
- * updated — `updateStatus`'s *Update required*, never a guess. Each links to
- * its row.
+ * Tools that need the reader, behind the Connection status card's tools chip
+ * (LAI-1096): every one not connected yet, and every one whose helper the
+ * board needs updated — `updateStatus`'s *Update required*, never a guess.
+ * Each links to its row, its Details open. The tool the hero is about is
+ * listed too: the list is opened from a count, and has to match it.
  */
 export function attentionItems(
   state: OverviewState,
@@ -346,7 +353,7 @@ export function attentionItems(
   const items: AttentionItem[] = [];
   for (const agent of state.tools) {
     const update = updates.get(agent.id);
-    const notConnected = state.needSetup.includes(agent) && agent !== state.pending;
+    const notConnected = state.needSetup.includes(agent);
     const required = update?.key === 'required';
     if (!notConnected && !required) continue;
     const why = [
@@ -358,9 +365,28 @@ export function attentionItems(
       label: agentLabel(agent),
       why: why.join('; '),
       href: toolAddress(agent.id),
+      setup: notConnected,
+      update: required,
+      action: notConnected ? 'Finish setup →' : 'Open details →',
     });
   }
   return items;
+}
+
+/**
+ * The tools chip's word when some need the reader: what they all need, when
+ * it is one thing — *2 need setup*, *1 needs an update* — and *3 need
+ * attention* when it is not.
+ */
+export function attentionWord(items: readonly Pick<AttentionItem, 'setup' | 'update'>[]): string {
+  const n = items.length;
+  const verb = n === 1 ? 'needs' : 'need';
+  const what = items.every((item) => item.setup && !item.update)
+    ? 'setup'
+    : items.every((item) => item.update && !item.setup)
+      ? 'an update'
+      : 'attention';
+  return `${String(n)} ${verb} ${what}`;
 }
 
 // ------------------------------------------------------------------ the journey
@@ -408,7 +434,7 @@ export function journeyRows(
         step: 'device',
         name: STEP_NAMES.device,
         state: 'active',
-        line: 'Pair your laptop or a cloud runner, once',
+        line: 'Pair laptop or cloud runner only',
         action: { label: 'Start', href: OVERVIEW_ADDRESSES.addDevice },
       };
 
@@ -427,7 +453,7 @@ export function journeyRows(
         state: deviceDone ? 'active' : 'pending',
         line:
           firstPending === undefined
-            ? 'Give the tool its own credential, then check it connects'
+            ? 'Give the tool its own credential and verify it'
             : state.tools.length === 1
               ? `${agentLabel(firstPending)} registered, not connected yet`
               : `${plural(state.tools.length, 'tool', 'tools')} registered, none connected yet`,
@@ -451,7 +477,7 @@ export function journeyRows(
         step: 'project',
         name: STEP_NAMES.project,
         state: toolDone ? 'active' : 'pending',
-        line: 'A prompt for the repository’s instructions file · no token in it',
+        line: 'Project-specific prompt · no new token · no re-install',
         action: { label: 'Start', href: projectsHref },
         ...(toolDone ? {} : { locked: 'Connect a tool first' }),
       };
@@ -480,13 +506,19 @@ export interface StatusLine {
  *
  * - Devices: *Paired* only when every one was paired; one imported from its
  *   tools' labels before pairing existed says so.
- * - Tools: *Connected* only when every one has reached the board.
+ * - Tools: *Connected* only when none needs the reader (`attention`, from
+ *   {@link attentionItems}); else what they need, which the page makes the
+ *   button that lists them (LAI-1096). Its line names the tools alone — the
+ *   devices are the line above (*Claude Code, Codex*), each name once.
  * - Setups: the most useful true thing, in this order — any that needs an
  *   update or has no block (warn, naming how many); else any the reader only
  *   recorded (*n to verify*); else *Checked*, when `laika project check` found
  *   every one current; with none, *Next step*.
  */
-export function statusLines(state: OverviewState): StatusLine[] {
+export function statusLines(
+  state: OverviewState,
+  attention: readonly Pick<AttentionItem, 'setup' | 'update'>[],
+): StatusLine[] {
   const counts = state.counts;
   const imported = state.devices.filter((device) => device.origin === 'imported').length;
   const deviceChip =
@@ -498,15 +530,11 @@ export function statusLines(state: OverviewState): StatusLine[] {
           ? { word: 'Imported', tone: 'neutral' as const }
           : { word: `${String(imported)} imported`, tone: 'neutral' as const };
 
-  const waiting = state.needSetup.length;
   const toolChip =
     counts.tools === 0
       ? { word: 'Not added', tone: 'neutral' as const }
-      : waiting > 0
-        ? {
-            word: `${String(waiting)} ${waiting === 1 ? 'needs' : 'need'} setup`,
-            tone: 'warn' as const,
-          }
+      : attention.length > 0
+        ? { word: attentionWord(attention), tone: 'warn' as const }
         : { word: 'Connected', tone: 'ok' as const };
 
   const recorded = state.setups.filter((row) => row.chip === 'recorded').length;
@@ -554,7 +582,10 @@ export function statusLines(state: OverviewState): StatusLine[] {
       key: 'tools',
       icon: 'tool',
       count: plural(counts.tools, 'tool', 'tools'),
-      names: state.tools.length === 0 ? 'No tools yet' : state.tools.map(agentLabel).join(', '),
+      names:
+        state.tools.length === 0
+          ? 'No tools yet'
+          : [...new Set(state.tools.map(agentProductName))].join(', '),
       chip: toolChip,
     },
     {
