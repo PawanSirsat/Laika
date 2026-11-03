@@ -1784,7 +1784,10 @@ run stays the launcher's child, in a process group of its own.
   macOS it is `/usr/bin/osascript` with an argv array — the script is fixed
   `on run argv` lines and the two values arrive as its arguments, so they are
   never AppleScript source. On Linux it is `notify-send` when one is on `PATH`,
-  and nothing, silently, when not. One that cannot be shown changes nothing.
+  and nothing, silently, when not. Either runs with `PATH`, `HOME`, `LANG` and,
+  so a Linux desktop's notification can reach its session bus,
+  `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` from the launcher's
+  environment — nothing else of it. One that cannot be shown changes nothing.
 - **`laika agent launcher watch [--run <id>] [--once]`**, a live view in any
   terminal. It prints the audit log's events — started, ended (with its exit
   code, time, turns and cost), refused, timed out, stopped — and, for the run
@@ -1794,7 +1797,9 @@ run stays the launcher's child, in a process group of its own.
   or query, else a few `key=value`s), capped at 120 characters. Thinking, tool
   results, hooks and the prompt are not printed. **Every value is stripped of
   control, bidi and zero-width characters and capped**, because a transcript
-  quotes whatever the run read, board text included. `--run` stops by itself
+  quotes whatever the run read, board text included — the transcript's file
+  name too. **A Laika token (`lai_…`) or an `Authorization: Bearer` value in
+  it is shown as `lai_…[redacted]` / `Bearer [redacted]`.** `--run` stops by itself
   when that run ends; `--once` prints what is there and stops. It writes
   nothing, signals nothing and takes no lock.
 
@@ -1816,14 +1821,19 @@ run stays the launcher's child, in a process group of its own.
   "Terminal" to do script`, again with the line as an `on run argv` argument).
   **The only two values in that line are the config's `laika` path,
   single-quoted, and the run id, which must be a ULID**; a path holding a
-  control character is refused at load. Closing the window ends `watch` and
+  control character or a backslash is refused at load (fish reads `\\` and
+  `\'` inside single quotes as escapes, so a backslash would not stay quoted
+  there). Closing the window ends `watch` and
   nothing else. If the window cannot open — no GUI session, or macOS has not
   allowed the launcher to control Terminal (AppleScript error -1743: System
   Settings → Privacy & Security → Automation) — one line goes to the daemon's
   log and the run goes on. The first window may make macOS ask you to allow
   that.
 
-`check` and `status` print all three settings.
+`check` and `status` print all three settings. The Claude Code line is read
+from the argv itself — its deny list (how many rules, and whether every one of
+the launcher's is among them), `--max-turns` and `--max-budget-usd` — never
+from what the mode should have.
 
 ### The harness commands `enable` writes
 
@@ -1890,9 +1900,25 @@ So **an unattended run can then run any command with your local
 credentials** — your git, gh and ssh logins, your cloud command lines, every
 file you can read — and the real guard on master is GitHub branch protection
 (require a pull request and "Do not allow bypassing the above settings").
-`enable` prints exactly this before it asks. **The launcher refuses an argv
-that skips permission checks without `"permissions": "skip"`**, and a `skip`
-argv without `--disallowedTools`.
+`enable` prints exactly this before it asks.
+
+**The launcher holds the argv to that choice when it loads the config.** An
+argv that skips permission checks — `--dangerously-skip-permissions`,
+`--allow-dangerously-skip-permissions`, or `--permission-mode` with the value
+`bypassPermissions` (those exact words, not any rule that mentions one) — is
+refused without `"permissions": "skip"`. **A `skip` argv must be the shape
+`enable` writes:** `--dangerously-skip-permissions`; one `--disallowedTools`
+followed by every one of the launcher's deny rules (more is fine); one
+`--max-turns` and one `--max-budget-usd`, each with a number above 0; and none
+of `--permission-mode`, `--permission-prompts` or `--allowedTools`.
+
+**Upgrading with a hand-written skip argv.** A config written before LAI-1113
+whose `harnesses.claude-code` argv already carried
+`--dangerously-skip-permissions` or `bypassPermissions` is **refused from now
+on**, until it says `"permissions": "skip"` and its argv has that shape — run
+`laika agent launcher enable` again, or edit both. Until then the login
+service's `run --service` writes one `refused` audit line, `config_invalid`,
+exits 0 and starts nothing; `laika agent launcher check` names the reason.
 
 Codex (`codex exec --help`, 0.162.1; developers.openai.com `codex/mcp.md`) —
 **off unless you type `danger-full-access`**:
@@ -1935,10 +1961,10 @@ relative, missing or reached through a symlink; an unknown key; a v2 key in a
 v1 file; a device label holding a control character; a config that is a
 symlink, writable by group or others, or someone else's; a `~/.laika` that is a
 symlink or writable by others; a Claude Code argv that skips permission checks
-(`--dangerously-skip-permissions`, `bypassPermissions`) without `"permissions":
-"skip"`, or a `skip` one without `--disallowedTools`; `"open_terminal": true`
-without `"laika"`; a `laika` path that is relative, holds a control character,
-or fails the program rules above. A v1 file is still read: hand-offs on, work
+(above) without `"permissions": "skip"`, or a `skip` one that is not the shape
+`enable` writes; `"open_terminal": true` without `"laika"`; a `laika` path that
+is relative, holds a control character or a backslash, or fails the program
+rules above. A v1 file is still read: hand-offs on, work
 requests off.
 
 **The shell and wrapper list is a guard against an obvious mistake, not a
