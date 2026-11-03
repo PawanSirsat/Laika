@@ -2,11 +2,12 @@
 id: LAI-1117
 title: 'Task detail redesign, desktop: delivers panel, state hero with Approve / Send back, grouped activity, estimate rail'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p1
 depends-on: [LAI-1115, LAI-1116]
 discovered-from: []
-status: backlog
+status: in-progress
+started: 2026-11-03T20:18:07Z
 ---
 
 ## Goal
