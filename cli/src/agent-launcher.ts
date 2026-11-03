@@ -639,6 +639,7 @@ export function launchEnv(
   dir: string,
   offerId: string,
   passSshAgent = false,
+  sessionId?: string,
 ): Record<string, string> {
   const next: Record<string, string> = {};
   for (const name of passSshAgent ? [...LAUNCH_ENV, 'SSH_AUTH_SOCK'] : LAUNCH_ENV) {
@@ -647,6 +648,8 @@ export function launchEnv(
   }
   next.LAIKA_LAUNCH_DIR = dir;
   next.LAIKA_LAUNCH_OFFER = offerId;
+  // An agent-session id (D-117a item 6): an id the run claims under, never a credential.
+  if (sessionId !== undefined && isLaikaId(sessionId)) next.LAIKA_LAUNCH_SESSION = sessionId;
   return next;
 }
 
@@ -728,6 +731,8 @@ export interface Running {
   readonly agent_id: string;
   /** The event's position in the agent's stream: only a later selection can end this run. */
   readonly cursor: number;
+  /** The agent session the launcher opened for this run (`LAIKA_LAUNCH_SESSION`), if any. */
+  readonly session_id?: string;
   readonly pid: number;
   /** The process's own start time (`ps`), so a later reap cannot hit a reused pid. */
   readonly started: string;
@@ -741,6 +746,7 @@ export interface Running {
   stopReason?: string;
   timer?: ReturnType<typeof setTimeout>;
   killTimer?: ReturnType<typeof setTimeout>;
+  beatTimer?: ReturnType<typeof setInterval>;
   readonly done: Promise<void>;
 }
 
@@ -825,7 +831,10 @@ export interface LauncherDeps {
    * The agent a hand-off or recovery offer in this credential's own inbox is
    * addressed to, or `undefined` when it is not there.
    */
-  readonly addressee: (credential: AgentCredential, offerId: string) => Promise<string | undefined>;
+  readonly addressee: (
+    credential: AgentCredential,
+    offerId: string,
+  ) => Promise<string | undefined | typeof READ_FAILED>;
   /** The sender's note as a delimited untrusted block, for the data file. */
   readonly note: (offerId: string, credential: AgentCredential) => Promise<string>;
   readonly spawn: typeof spawn;
@@ -886,6 +895,20 @@ export interface LauncherDeps {
   ) => Promise<PresenceOutcome>;
   /** How a ping is answered while this launcher runs: built from its own snapshot. */
   readonly pingAnswerer?: (snapshot: () => LauncherSnapshot) => PingAnswerer;
+
+  /**
+   * Open this agent's own session for a run (`POST /agent-sessions`, the
+   * agent's token), so a harness with no session hook — Omnigent, Codex — can
+   * claim with `start_working` under it (D-117a item 6). The id, `undefined`
+   * when refused, {@link READ_FAILED} when the board could not answer.
+   */
+  readonly openSession?: (
+    credential: AgentCredential,
+    harness: Harness,
+  ) => Promise<string | undefined | typeof READ_FAILED>;
+  /** Keep it live while the run lives; end it when the run ends. */
+  readonly beatSession?: (credential: AgentCredential, sessionId: string) => Promise<void>;
+  readonly endSession?: (credential: AgentCredential, sessionId: string) => Promise<void>;
 
   /* Omnigent (slice D's `agent-omnigent.ts`). Each optional. */
 
@@ -987,19 +1010,24 @@ interface Memory {
   lastStartAt?: number;
 }
 
-function markHandled(home: string, memory: Memory, eventId: string): void {
-  if (memory.handledEvents.has(eventId)) return;
-  memory.handledEvents.add(eventId);
-  memory.handled.events.push(eventId);
-  if (memory.handled.events.length > MAX_HANDLED) memory.handled.events.shift();
+function markHandled(home: string, memory: Memory, key: string, eventId: string): void {
+  clearDeferred(memory, eventId);
+  if (memory.handledEvents.has(key)) return;
+  memory.handledEvents.add(key);
+  memory.handled.events.push(key);
+  // The set in memory is trimmed with the array on disk (N3): bounded both ways.
+  while (memory.handled.events.length > MAX_HANDLED) {
+    memory.handledEvents.delete(memory.handled.events.shift()!);
+  }
   persist(home, memory);
 }
 
-function unmarkHandled(home: string, memory: Memory, eventId: string): void {
-  if (!memory.handledEvents.delete(eventId)) return;
-  const at = memory.handled.events.lastIndexOf(eventId);
-  if (at !== -1) memory.handled.events.splice(at, 1);
-  persist(home, memory);
+/** An event decided, or let through: its audit-once deferral keys go with it (N3). */
+function clearDeferred(memory: Memory, eventId: string): void {
+  memory.deferred.delete(`concurrent:${eventId}`);
+  for (const key of memory.deferred) {
+    if (key.startsWith(`daily:${eventId}:`)) memory.deferred.delete(key);
+  }
 }
 
 function persist(home: string, memory: Memory): void {
@@ -1023,7 +1051,9 @@ function countRun(home: string, memory: Memory, now: number, offerId: string): n
   memory.handled.runs += 1;
   memory.launchedOffers.add(offerId);
   memory.handled.offers.push(offerId);
-  if (memory.handled.offers.length > MAX_HANDLED) memory.handled.offers.shift();
+  while (memory.handled.offers.length > MAX_HANDLED) {
+    memory.launchedOffers.delete(memory.handled.offers.shift()!);
+  }
   persist(home, memory);
   return memory.handled.runs;
 }
@@ -1635,7 +1665,13 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     );
   };
 
-  const spawnRun = (plan: LaunchPlan, harness: Harness, auditBase: Partial<AuditEntry>): void => {
+  const spawnRun = (
+    plan: LaunchPlan,
+    harness: Harness,
+    auditBase: Partial<AuditEntry>,
+    credential: AgentCredential,
+    sessionId: string | undefined,
+  ): void => {
     const argv = config.harnesses[harness]!;
     const viaArgv = config.prompt_via?.[harness] === 'argv';
     const args = viaArgv ? [...argv.slice(1), plan.prompt] : argv.slice(1);
@@ -1644,7 +1680,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     try {
       child = deps.spawn(argv[0]!, args, {
         cwd: plan.worktree,
-        env: launchEnv(deps.env, plan.dir, plan.offer_id, config.pass_ssh_agent),
+        env: launchEnv(deps.env, plan.dir, plan.offer_id, config.pass_ssh_agent, sessionId),
         stdio: ['pipe', output, output],
         detached: true,
         shell: false,
@@ -1672,6 +1708,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       harness,
       agent_id: plan.agent_id,
       cursor: plan.cursor,
+      ...(sessionId === undefined ? {} : { session_id: sessionId }),
       pid: child.pid,
       started,
       started_at: runStarted,
@@ -1694,10 +1731,21 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       });
       end(run);
     }, config.max_runtime_seconds * 1000);
+    if (sessionId !== undefined && deps.beatSession !== undefined) {
+      const beat = deps.beatSession;
+      run.beatTimer = setInterval(() => {
+        void beat(credential, sessionId).catch(() => undefined);
+      }, 30_000);
+      run.beatTimer.unref();
+    }
     child.on('error', () => undefined);
     child.on('exit', (exitCode, signal) => {
       clearTimeout(run.timer);
       clearTimeout(run.killTimer);
+      clearInterval(run.beatTimer);
+      if (sessionId !== undefined && deps.endSession !== undefined) {
+        void deps.endSession(credential, sessionId).catch(() => undefined);
+      }
       // The harness's process group goes with it. A process the harness moved
       // into a session or group of its own (setsid, a detached spawn) is not in
       // that group, is not seen here, and is not killed.
@@ -1757,7 +1805,36 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         : await planHandoff(record, harness, credential, agentId);
     if (typeof plan === 'string') return plan;
     if (deps.stopped()) return 'retry';
-    spawnRun(plan, harness, base(record, harness));
+    if (plan.offer_kind === 'work_request' && deps.task !== undefined) {
+      // Once more, the instant before the start (N9): the worktree took seconds,
+      // and a person may have claimed, moved or deselected it meanwhile.
+      const again = await deps.task(credential, plan.task_id);
+      if (readFailed(again)) return 'retry';
+      const why =
+        again === undefined
+          ? 'task_unreadable'
+          : again.selected_agent_id !== agentId
+            ? 'deselected'
+            : again.claimed
+              ? 'claimed'
+              : ['review', 'done', 'cancelled'].includes(again.status)
+                ? 'status'
+                : undefined;
+      if (why !== undefined) {
+        return refuse(record, harness, 'request_closed', {
+          detail: why,
+          branch: String(plan.extra.branch ?? ''),
+        });
+      }
+    }
+    let sessionId: string | undefined;
+    if (deps.openSession !== undefined) {
+      const opened = await deps.openSession(credential, harness);
+      if (readFailed(opened)) return 'retry';
+      if (opened === undefined) return refuse(record, harness, 'session_refused');
+      sessionId = opened;
+    }
+    spawnRun(plan, harness, base(record, harness), credential, sessionId);
     return 'done';
   };
 
@@ -1863,6 +1940,15 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
       }
       return;
     }
+    // The owner matches again: a later mismatch is worth a line again (N3).
+    for (const key of memory.deferred) {
+      if (key.startsWith(`owner:${harness}:`)) memory.deferred.delete(key);
+    }
+    // Yesterday's day-cap deferrals are history.
+    const today = utcDay(deps.now());
+    for (const key of memory.deferred) {
+      if (key.startsWith('daily:') && !key.endsWith(`:${today}`)) memory.deferred.delete(key);
+    }
     reported.set(harness, credential);
     ensureStream(harness, credential, fp);
     await report(harness, credential);
@@ -1882,7 +1968,7 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         await stopDeselected(record, credential);
       }
       if (record.offer_id !== null && memory.launchedOffers.has(record.offer_id)) {
-        markHandled(deps.home, memory, handledKey);
+        markHandled(deps.home, memory, handledKey, record.event_id);
         continue;
       }
       let verdict = judge(record, harness, known(), config);
@@ -1900,17 +1986,17 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
             : judge(record, harness, resolved, config);
       }
       if (verdict === 'not_an_offer') {
-        markHandled(deps.home, memory, handledKey);
+        markHandled(deps.home, memory, handledKey, record.event_id);
         continue;
       }
       if (harness === 'omnigent' && WAKEABLE.has(verdict) && wakeOn()) {
         const woke = await wakeSession(record, credential, fp);
         if (woke === 'retry') continue;
-        markHandled(deps.home, memory, handledKey);
+        markHandled(deps.home, memory, handledKey, record.event_id);
         continue;
       }
       if (verdict !== 'ok' || agentId === undefined) {
-        markHandled(deps.home, memory, handledKey);
+        markHandled(deps.home, memory, handledKey, record.event_id);
         refuse(
           record,
           harness,
@@ -1944,14 +2030,17 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
         }
         continue;
       }
-      markHandled(deps.home, memory, handledKey);
+      clearDeferred(memory, record.event_id);
+      // Marked handled only once it is decided (N1): a crash before the start
+      // leaves it to do again, and one after it finds the offer in the
+      // launched list, which the start itself wrote to disk.
       let outcome: Disposition;
       try {
         outcome = await launch(record, harness, credential, agentId);
       } catch {
         outcome = refuse(record, harness, 'launch_error');
       }
-      if (outcome === 'retry') unmarkHandled(deps.home, memory, handledKey);
+      if (outcome === 'done') markHandled(deps.home, memory, handledKey, record.event_id);
     }
   };
 
@@ -2446,11 +2535,16 @@ export function launcherDeps(io: LauncherIo, stopped: () => boolean): LauncherDe
       return readStore(io.home, key).records;
     },
     prepare: (args) => prepare(handoffIo(true), args),
+    // A failed read is READ_FAILED, tried again next tick (N2) — never taken as "not there".
     addressee: async (credential, offerId) => {
-      const offer = await findOffer(handoffIo(true), credential, offerId);
-      return typeof offer === 'string' || offer.to_agent_id === null
-        ? undefined
-        : offer.to_agent_id;
+      const hit = await pages(
+        fetchFn,
+        credential,
+        '/api/v1/agents/me/inbox',
+        (item) => item.id === offerId,
+      );
+      if (hit === undefined || readFailed(hit)) return hit;
+      return isLaikaId(hit.to_agent_id) ? hit.to_agent_id : undefined;
     },
     note: async (offerId, credential) => {
       const offer = await findOffer(handoffIo(true), credential, offerId);
@@ -2532,6 +2626,21 @@ export function launcherDeps(io: LauncherIo, stopped: () => boolean): LauncherDe
       ),
     presence: async (credential, snapshot) =>
       (await import('./agent-capacity.ts')).reportPresence(fetchFn, credential, snapshot),
+    openSession: async (credential, harness) => {
+      const result = await callBoard(fetchFn, credential, '/api/v1/agent-sessions', { harness });
+      if (result.kind === 'ok') {
+        return isRecord(result.body) && isLaikaId(result.body.id) ? result.body.id : undefined;
+      }
+      return result.kind === 'http' && result.status >= 400 && result.status < 500
+        ? undefined
+        : READ_FAILED;
+    },
+    beatSession: async (credential, sessionId) => {
+      await callBoard(fetchFn, credential, `/api/v1/agent-sessions/${sessionId}/heartbeat`, {});
+    },
+    endSession: async (credential, sessionId) => {
+      await callBoard(fetchFn, credential, `/api/v1/agent-sessions/${sessionId}/end`, {});
+    },
     stopOmnigent: async (worktree) => {
       const { stopOmnigentRun } = await import('./agent-omnigent.ts');
       const outcome = await stopOmnigentRun({ home: io.home, fetch: fetchFn }, worktree);

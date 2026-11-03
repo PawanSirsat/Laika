@@ -94,9 +94,15 @@ async function launcherMode(): Promise<void> {
     };
   };
 
-  const session = await call('/api/v1/agent-sessions', { harness: 'claude-code' });
+  // The launcher's own session for this run, when it opened one (D-117a item 6);
+  // otherwise one of its own, as a session hook would open.
+  const launched = process.env.LAIKA_LAUNCH_SESSION;
+  const session =
+    launched === undefined
+      ? await call('/api/v1/agent-sessions', { harness: 'claude-code' })
+      : { status: 0, body: { id: launched } };
   const sessionId = (session.body as { id?: string } | null)?.id;
-  seen.session = { status: session.status, id: sessionId };
+  seen.session = { status: session.status, id: sessionId, from_launcher: launched !== undefined };
   const started = await tool('start_working', { task: key, branch, session_id: sessionId });
   seen.start_working = started;
   write();

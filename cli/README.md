@@ -1578,7 +1578,8 @@ offers on, work requests only where you said yes, no ssh agent.
   `~/.laika/launcher/daemon.log`. Check it with
   `launchctl print gui/$(id -u)/ai.laika.launcher`.
 - Linux: `~/.config/systemd/user/laika-launcher.service`, `Restart=on-failure`,
-  `systemctl --user enable --now`. It runs while you are logged in;
+  `systemctl --user enable --now`; its output is in the user journal
+  (`journalctl --user -u laika-launcher`). It runs while you are logged in;
   `loginctl enable-linger` keeps it after logout, and is not done for you.
 
 The service runs `laika agent launcher run --service`: a config that is off or
@@ -1629,8 +1630,11 @@ event twice. Work requests never expire, which is why this matters.
 **How it hears.** It holds `GET /api/v1/events` open with each agent's token,
 catches up from `/agents/me/events` on connect and on every gap, and an agent
 event wakes it at once; polling every `poll_seconds` (default 30) stays as the
-fallback. A 401 anywhere — the agent was revoked — ends that credential's runs
-(SIGTERM, audited `credential_refused`) and it is never used again.
+fallback. **A 401 on `/api/v1/me`** (asked every tick), **on the stream, or on
+the presence report** — the agent was revoked — ends that credential's runs
+(SIGTERM, audited `credential_refused`) and it is never used again. A 401 on
+any other read is retried like a network failure, and the next tick's `/me`
+answers it.
 
 **Presence and capacity pings** (D-126). Every 60 s and on any change it sends
 `PUT /api/v1/agents/me/launcher` with each agent's token — enabled, auto-pickup,
@@ -1659,8 +1663,12 @@ asked again hourly, a ping is settled unanswered, and nothing else changes.
   the harness reads the task over MCP, as an interactive session does. For a
   hand-off: fixed words, the offer id and the task key.
 - **environment**: `HOME PATH TMPDIR LANG LC_ALL USER LOGNAME TERM
-  XDG_CONFIG_HOME`, plus `LAIKA_LAUNCH_DIR` and `LAIKA_LAUNCH_OFFER`.
-  `SSH_AUTH_SOCK` only with `"pass_ssh_agent": true`. **No token of any name.**
+  XDG_CONFIG_HOME`, plus `LAIKA_LAUNCH_DIR`, `LAIKA_LAUNCH_OFFER` and
+  `LAIKA_LAUNCH_SESSION` — the agent session the launcher opened for this run
+  with the agent's own token, kept live while it runs and ended after, so a
+  harness with no session hook (Omnigent, Codex) can claim under it. An id,
+  never a credential. `SSH_AUTH_SOCK` only with `"pass_ssh_agent": true`.
+  **No token of any name.**
   The harness reaches the board's MCP through a helper that reads its saved
   credential file: Claude Code's `headersHelper` (`laika tool add`), Codex's
   `http_headers_helper` running `laika agent launcher headers codex`.
@@ -1712,11 +1720,11 @@ Measured on Belka with `codex sandbox -P :workspace` (the `workspace-write`
 profile): a `git commit` fails with `index.lock: Operation not permitted` in a
 worktree **and in a plain checkout**, so a `workspace-write` run cannot commit
 at all; `danger-full-access` commits. The docs say an explicit bearer token
-takes precedence over a helper's header. Today `laika tool add codex` writes
-`bearer_token_env_var` into `~/.codex/config.toml` (slice D replaces it with
-the helper); that variable is unset in the launcher's child, and whether Codex
-then falls back to the helper is **unverified**, as is a live `codex exec` run
-through the launcher (no model run was possible when this was written).
+takes precedence over a helper's header. `laika tool add codex` now writes
+`http_headers_helper` into `~/.codex/config.toml` and brings an older table's
+`bearer_token_env_var` up to date (LAI-1101); the launcher's argv sets the
+helper again with `-c`. A live `codex exec` run through the launcher is
+**unverified** (no model run was possible when this was written; LAI-1104).
 
 ### Limits and refusals
 

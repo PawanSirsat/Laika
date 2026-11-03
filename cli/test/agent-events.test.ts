@@ -33,6 +33,7 @@ import {
   storeKey,
   storePath,
   type StoreKey,
+  runEventStream,
   settlePings,
   syncOnce,
 } from '../src/agent-events.ts';
@@ -688,6 +689,51 @@ void describe('a capacity ping (agent.capacity_requested)', () => {
     await receive(deps, KEY, credential, [e], undefined);
     assert.equal(await settlePings(deps, KEY, credential), 0);
     assert.deepEqual(answered, [pid]);
+  });
+
+  void test('N8: a hook never answers a ping; the event stream, in the background, does', async () => {
+    const replies: string[] = [];
+    const answer = (input: string): Promise<Response> => {
+      if (input.includes('/capacity-pings/')) replies.push(input);
+      return Promise.resolve(Response.json({ data: [] }));
+    };
+    // A hook's sync: no answerer, a few seconds' budget.
+    const hook: EventDeps = {
+      home,
+      now: () => Date.now(),
+      sleep: () => Promise.resolve(),
+      fetch: (input) => answer(input),
+    };
+    const left = id();
+    await receive(hook, KEY, credential, [ping(left)], undefined);
+    assert.deepEqual(replies, [], 'nothing answered inside a hook');
+    assert.equal(readStore(home, KEY).records[0]!.state, 'received', 'acknowledged, not answered');
+
+    // The stream: the session's own answer, `launcher: off` (no launcher here).
+    const pid = id();
+    let served = false;
+    const stream: EventDeps = {
+      home,
+      now: () => Date.now(),
+      sleep: () => Promise.resolve(),
+      fetch: (input) => {
+        if (input.endsWith('/api/v1/events')) {
+          if (served) return Promise.resolve(new Response('', { status: 503 }));
+          served = true;
+          const frame = `event: agent.capacity_requested\nid: 9\ndata: ${JSON.stringify({ envelope: ping(pid) })}\n\n`;
+          return Promise.resolve(
+            new Response(frame, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+          );
+        }
+        return answer(input);
+      },
+    };
+    await runEventStream(stream, KEY, credential, { shouldStop: () => replies.length >= 2 });
+    // The ping the hook left is answered there too, then the one the frame brought.
+    assert.deepEqual(replies, [
+      `http://board.invalid/api/v1/agents/me/capacity-pings/${left}/reply`,
+      `http://board.invalid/api/v1/agents/me/capacity-pings/${pid}/reply`,
+    ]);
   });
 
   void test('left for another answerer stays received; past twice the open window it is settled unanswered', async () => {

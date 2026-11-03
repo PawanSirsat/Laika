@@ -320,8 +320,12 @@ void describe('the launcher against a real board (LAI-1039)', () => {
       env_values_with_token: number;
       start_working: { isError: boolean };
       finish_task: { isError: boolean };
+      session: { id: string; from_launcher: boolean };
     };
     assert.equal(seen.start_working.isError, false, JSON.stringify(seen.start_working));
+    // N4: it claimed under the session the launcher opened for it, with the agent's own token.
+    assert.equal(seen.session.from_launcher, true, JSON.stringify(seen.session));
+    assert.match(seen.session.id, /^[0-9A-HJKMNP-TV-Z]{26}$/);
     assert.equal(seen.finish_task.isError, false, JSON.stringify(seen.finish_task));
     assert.deepEqual(
       seen.env_names.filter((n) => /TOKEN/i.test(n)),

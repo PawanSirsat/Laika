@@ -149,8 +149,18 @@ export function launchAgentPlist(spec: ServiceSpec): string {
 }
 
 /** systemd's own quoting for one ExecStart word. */
-const unitWord = (word: string): string =>
-  /^[A-Za-z0-9/_.,:+@=-]+$/.test(word) ? word : `"${word.replace(/(["\\])/g, '\\$1')}"`;
+/**
+ * One word of a unit file, as systemd reads it (`systemd.service(5)`, "Command
+ * lines"; `systemd.unit(5)`, "Specifiers"): `%` is a specifier, so `%%`; in
+ * `ExecStart=` `$` expands a variable, so `$$`; a word with a space, quote or
+ * backslash is double-quoted with `\` escapes. A HOME such as `/home/a b/%x$y`
+ * reaches the process as itself (review N5).
+ */
+export function unitWord(word: string, exec = true): string {
+  let out = word.replace(/%/g, '%%');
+  if (exec) out = out.replace(/\$/g, '$$$$');
+  return /^[A-Za-z0-9/_.,:+@=%$-]+$/.test(out) ? out : `"${out.replace(/(["\\])/g, '\\$1')}"`;
+}
 
 /** The systemd `--user` unit: restarted on failure only, so a clean stop stays stopped. */
 export function systemdUnit(spec: ServiceSpec): string {
@@ -159,14 +169,14 @@ export function systemdUnit(spec: ServiceSpec): string {
     'Description=Laika launcher (laika agent launcher run)',
     '',
     '[Service]',
-    `ExecStart=${[spec.node, spec.entry, ...SERVICE_RUN].map(unitWord).join(' ')}`,
-    `Environment=${unitWord(`PATH=${spec.path}`)}`,
-    `Environment=${unitWord(`HOME=${spec.home}`)}`,
-    `WorkingDirectory=${unitWord(spec.home)}`,
+    `ExecStart=${[spec.node, spec.entry, ...SERVICE_RUN].map((w) => unitWord(w)).join(' ')}`,
+    // Environment= expands specifiers but not variables: `%%`, and `$` as itself.
+    `Environment=${unitWord(`PATH=${spec.path}`, false)}`,
+    `Environment=${unitWord(`HOME=${spec.home}`, false)}`,
+    // No WorkingDirectory= or append: path — neither takes the quoting above, and
+    // the launcher needs neither; its output goes to the user journal.
     'Restart=on-failure',
     'RestartSec=30',
-    `StandardOutput=append:${daemonLogPath(spec.home)}`,
-    `StandardError=append:${daemonLogPath(spec.home)}`,
     '',
     '[Install]',
     'WantedBy=default.target',

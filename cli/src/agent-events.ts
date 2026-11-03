@@ -581,8 +581,10 @@ export interface EventDeps {
   /**
    * Answers a capacity ping (D-126 item 3). `true` when it is settled here —
    * answered, refused or not this board's to answer — and `false` to leave it
-   * for another answerer (a session leaves it to a running launcher). Absent:
-   * the session's own answer, `sessionAnswer` in `agent-capacity.ts`.
+   * for another answerer (a session leaves it to a running launcher). **Absent,
+   * nothing is answered** (review N8): a hook's budget is a few seconds. The
+   * event stream — the launcher's, or the session watcher's in the background —
+   * supplies the session's own answer, `sessionAnswer` in `agent-capacity.ts`.
    */
   readonly answerPing?: PingAnswerer;
 }
@@ -619,10 +621,12 @@ export async function settlePings(
     let done: boolean;
     // Past its window (and the clock skew a device may have), nothing can answer it.
     if (deps.now() > closes + PING_OPEN_MS) done = true;
+    // No answerer: a hook's short budget is not the place (review N8) — the
+    // launcher, or the event stream's background path, answers it.
+    else if (deps.answerPing === undefined) done = false;
     else {
       try {
-        const answer = deps.answerPing ?? (await import('./agent-capacity.ts')).sessionAnswer;
-        done = await answer(deps, record, key, credential);
+        done = await deps.answerPing(deps, record, key, credential);
       } catch {
         done = false;
       }
@@ -1072,6 +1076,14 @@ export async function runEventStream(
   credential: AgentCredential,
   options: StreamOptions = {},
 ): Promise<StreamOutcome> {
+  // The background path answers pings; a hook never does (N8).
+  if (deps.answerPing === undefined) {
+    deps = {
+      ...deps,
+      answerPing: async (d, record, k, c) =>
+        (await import('./agent-capacity.ts')).sessionAnswer(d, record, k, c),
+    };
+  }
   const maxBackoff = options.maxBackoffMs ?? 30_000;
   let failures = 0;
   const stopped = (): boolean =>

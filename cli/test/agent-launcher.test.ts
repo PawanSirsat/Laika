@@ -35,6 +35,7 @@ import {
   auditPath,
   configPath,
   CREDENTIAL_REFUSED,
+  loadHandled,
   READ_FAILED,
   runSummary,
   workRequestPrompt,
@@ -1996,5 +1997,155 @@ void describe('LAI-1039 with slice D: Omnigent', () => {
     // Claude Code's tick refuses it (another harness's agent); Omnigent's still starts it.
     assert.ok(auditLines(r.home).some((l) => l.event === 'refused' && l.harness === 'claude-code'));
     assert.ok(auditLines(r.home).some((l) => l.event === 'start' && l.harness === 'omnigent'));
+  });
+});
+
+/** Ids for the review's tests: a second series, since `ids(n)` is two digits wide. */
+const rid = (n: number): string => `01M6C05HQA4TCKRAJTZ67SG8${String(n).padStart(2, '0')}`;
+const selectedAs = (event: string, offer: string): EventRecord =>
+  record({
+    event_id: event,
+    offer_id: offer,
+    cursor: 1,
+    type: 'task.agent_selected',
+    offer_kind: 'work_request',
+    task_key: 'LAI-1039',
+  });
+
+void describe('LAI-1039 review: N1, N2, N3, N4, N9', () => {
+  void test('N1: an event is on disk as handled only once its start is decided', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let onDiskDuringStart: string[] | undefined;
+    const r = workRig(() => [selectedAs(rid(0), rid(1))]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 2,
+        workspace: (args) => {
+          // The crash window: were the process to die here, would the event be lost?
+          onDiskDuringStart = loadHandled(r.home).events;
+          return r.deps.workspace!(args);
+        },
+      },
+      workConfig([process.execPath, script, '--ms', '30']),
+    ).finished;
+    assert.deepEqual(onDiskDuringStart, [], 'not yet handled while it is being started');
+    assert.ok(loadHandled(r.home).events.includes(`claude-code:${rid(0)}`));
+    assert.ok(loadHandled(r.home).offers.includes(rid(1)), 'the start wrote its offer down');
+    assert.equal(auditLines(r.home).filter((l) => l.event === 'start').length, 1);
+  });
+
+  void test('N2: a hand-off inbox that cannot be read is tried again, not refused', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let reads = 0;
+    const r = rig(() => [record({ event_id: rid(2), offer_id: rid(3) })], {
+      addressee: () => {
+        reads += 1;
+        return Promise.resolve(reads === 1 ? READ_FAILED : AGENT);
+      },
+    });
+    await startLauncher(
+      { ...r.deps, maxTicks: 3 },
+      config({ argv: [process.execPath, script, '--ms', '30'] }),
+    ).finished;
+    assert.deepEqual(r.prepared, [rid(3)]);
+    assert.equal(
+      auditLines(r.home).some((l) => l.event === 'refused'),
+      false,
+    );
+  });
+
+  void test('N3: an audit-once key clears with its condition — a later owner mismatch is told again', async () => {
+    const owners = ['01M2ZHT4HVYDPS7GE8S24CF4HJ', OWNER, '01M2ZHT4HVYDPS7GE8S24CF4HJ'];
+    let n = 0;
+    const r = rig(() => [], { ownerOf: () => Promise.resolve(owners[Math.min(n++, 2)]) });
+    await startLauncher({ ...r.deps, maxTicks: 3 }, config({ argv: [process.execPath] })).finished;
+    assert.equal(
+      auditLines(r.home).filter((l) => l.reason === 'owner_mismatch').length,
+      2,
+      'told, cleared when it matched, told again',
+    );
+  });
+
+  void test('N4: the run gets this agent’s own session id, kept live and ended with it', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    const SESSION = '01M6GEN7FB338D6YP34BJ3TE15';
+    const ended: string[] = [];
+    const r = workRig(() => [selectedAs(rid(4), rid(5))], {}, {});
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 2,
+        openSession: (_c, harness) => {
+          assert.equal(harness, 'claude-code');
+          return Promise.resolve(SESSION);
+        },
+        endSession: (_c, id) => {
+          ended.push(id);
+          return Promise.resolve();
+        },
+      },
+      workConfig([process.execPath, script, '--ms', '30']),
+    ).finished;
+    await until(() => existsSync(join(runDir(r.home, rid(5)), 'seen.json')));
+    const seen = JSON.parse(readFileSync(join(runDir(r.home, rid(5)), 'seen.json'), 'utf8')) as {
+      env: Record<string, string>;
+    };
+    assert.equal(seen.env.LAIKA_LAUNCH_SESSION, SESSION);
+    assert.deepEqual(
+      Object.keys(seen.env).filter((k) => /TOKEN/i.test(k)),
+      [],
+    );
+    await until(() => ended.length === 1);
+    assert.deepEqual(ended, [SESSION]);
+  });
+
+  void test('N4: a session the board cannot open now starts nothing yet, and is tried again', async () => {
+    const dir = scratch();
+    const script = fakeHarness(dir);
+    let opens = 0;
+    const r = workRig(() => [selectedAs(rid(6), rid(7))]);
+    await startLauncher(
+      {
+        ...r.deps,
+        maxTicks: 3,
+        openSession: () => {
+          opens += 1;
+          return Promise.resolve(opens === 1 ? READ_FAILED : '01M6GEN7FB338D6YP34BJ3TE16');
+        },
+      },
+      workConfig([process.execPath, script, '--ms', '30']),
+    ).finished;
+    assert.equal(auditLines(r.home).filter((l) => l.event === 'start').length, 1);
+  });
+
+  void test('N9: the task is read once more the instant before the start', async () => {
+    let reads = 0;
+    const r = workRig(() => [selectedAs(rid(8), rid(9))], {
+      task: () => {
+        reads += 1;
+        // Open when the request is re-read; claimed by the time the worktree is ready.
+        return {
+          key: 'LAI-1039',
+          project_id: PROJECT,
+          status: reads === 1 ? 'todo' : 'in_progress',
+          selected_agent_id: AGENT,
+          claim_agent_id: reads === 1 ? null : ids(9),
+          claimed: reads !== 1,
+        };
+      },
+    });
+    await startLauncher({ ...r.deps, maxTicks: 1 }, workConfig([process.execPath])).finished;
+    assert.deepEqual(r.workspaces, [rid(9)], 'the worktree was made');
+    const refused = auditLines(r.home).find((l) => l.event === 'refused')!;
+    assert.equal(refused.reason, 'request_closed');
+    assert.equal(refused.detail, 'claimed');
+    assert.equal(
+      auditLines(r.home).some((l) => l.event === 'start'),
+      false,
+    );
   });
 });

@@ -40,6 +40,7 @@ import {
   type ServiceIo,
   systemdUnit,
   unitPath,
+  unitWord,
 } from '../src/agent-launcher-service.ts';
 import { argvProblem, configPath, loadConfig } from '../src/agent-launcher.ts';
 import { writeCredential } from '../src/agent-session.ts';
@@ -100,6 +101,24 @@ void describe('the service files', () => {
   void test('an odd path is escaped, never markup', () => {
     const plist = launchAgentPlist({ ...spec, home: '/Users/a&b <c>' });
     assert.ok(plist.includes('/Users/a&amp;b &lt;c&gt;'));
+  });
+
+  void test('N5: a HOME with spaces, % and $ reaches the unit as itself', () => {
+    const unit = systemdUnit({
+      node: '/opt/node 22/bin/node',
+      entry: '/home/a b/%x$y/laika/cli/dist/index.js',
+      path: '/usr/bin:/home/a b/%x$y/bin',
+      home: '/home/a b/%x$y',
+    });
+    assert.match(
+      unit,
+      /^ExecStart="\/opt\/node 22\/bin\/node" "\/home\/a b\/%%x\$\$y\/laika\/cli\/dist\/index\.js" agent launcher run --service$/m,
+    );
+    assert.match(unit, /^Environment="HOME=\/home\/a b\/%%x\$y"$/m);
+    assert.match(unit, /^Environment="PATH=\/usr\/bin:\/home\/a b\/%%x\$y\/bin"$/m);
+    assert.doesNotMatch(unit, /^WorkingDirectory=|^StandardOutput=|^StandardError=/m);
+    assert.equal(unitWord('plain/path'), 'plain/path');
+    assert.equal(unitWord('say "hi"'), '"say \\"hi\\""');
   });
 
   void test('the systemd unit restarts on failure only', () => {
