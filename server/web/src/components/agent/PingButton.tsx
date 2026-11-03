@@ -172,11 +172,13 @@ export function PingButton({
       .catch((cause: unknown) => {
         if (next.signal.aborted) return;
         const refusal = pingRefusal(cause);
-        setNow(Date.now());
+        // One reading of the clock for both: two would put `until` a moment
+        // past `now + seconds`, and the wait would round up to a second more
+        // than the board said.
+        const at = Date.now();
+        setNow(at);
         setOutcome(
-          refusal.kind === 'limited'
-            ? { ...refusal, until: Date.now() + refusal.seconds * 1000 }
-            : refusal,
+          refusal.kind === 'limited' ? { ...refusal, until: at + refusal.seconds * 1000 } : refusal,
         );
       });
   };
