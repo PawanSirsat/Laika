@@ -16,8 +16,6 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   AGENTS,
   ALIASES,
-  OMNIGENT_INLINE,
-  OMNIGENT_SIDECAR,
   USER_CONFIG,
   antigravityEntry,
   claudeProjectEntry,
@@ -32,8 +30,11 @@ import {
   vscodeEntry,
   type Agent,
   type AgentSlug,
+  type BridgeCommand,
   type JsonObject,
+  omnigentSidecar,
 } from './agents.ts';
+import { bridgeCommand } from './agent-mcp-bridge.ts';
 import { normaliseUrl } from './api.ts';
 import { ask, askSecret, closePrompt } from './prompt.ts';
 import { readEnvFile } from './whoami.ts';
@@ -93,6 +94,8 @@ export interface ConnectOptions {
   readonly cwd: string;
   readonly project: boolean;
   readonly dir?: string;
+  /** How Omnigent starts Laika's MCP bridge; `bridgeCommand(process.env)` when absent. */
+  readonly bridge?: BridgeCommand;
 }
 
 /** One file connect will write. Nothing is written until every one is prepared. */
@@ -288,28 +291,42 @@ export function planConnect(slug: AgentSlug, o: ConnectOptions): Plan {
       };
 
     case 'omnigent': {
+      // LAI-1101 (plan auto-pickup F7): a stdio bridge, never ${LAIKA_URL} /
+      // ${LAIKA_TOKEN}, and Omnigent's own credential, never the person's.
+      const sidecar = omnigentSidecar(o.bridge ?? bridgeCommand(process.env));
+      if ('refused' in sidecar) {
+        return { actions: [], notes: [`! ${sidecar.refused}`], exportsEnv: false };
+      }
+      const credential = [
+        'The sidecar runs Laika’s stdio bridge (`laika agent mcp-bridge`) by absolute path,',
+        'so there is no ${VAR} for Omnigent’s server to resolve: a Dock-launched Omnigent',
+        'cannot be stopped by an unset one. The bridge reads Omnigent’s own credential,',
+        '~/.laika/agents/omnigent.json, and acts as that agent — add Omnigent as a tool in the',
+        'browser (Developer access → this device → Add tool → Omnigent) to create it;',
+        '`laika tool add omnigent` also installs a Laika-connected copy of polly. Until then',
+        'every Laika tool call answers an error, and nothing is sent to the board.',
+      ];
       const agentDir = o.dir !== undefined ? resolve(o.cwd, o.dir) : o.project ? o.cwd : undefined;
       if (agentDir === undefined) {
         return {
           actions: [],
           notes: [
             'Omnigent has no user-level MCP registry (~/.omnigent/config.yaml holds only',
-            'defaults), so the server goes in each agent spec. Either inline, in the',
-            "agent's config.yaml:",
+            'defaults), so the server goes in each agent folder, as a sidecar file,',
+            '<agent-dir>/tools/mcp/laika.yaml:',
             '',
-            ...OMNIGENT_INLINE.trimEnd().split('\n'),
+            ...sidecar.yaml.trimEnd().split('\n'),
             '',
-            'or as a sidecar file, <agent-dir>/tools/mcp/laika.yaml:',
+            'To write it: laika connect omnigent --dir <agent-folder>',
+            '(or --project, from inside the agent folder). Never into an agent inside',
+            'Omnigent’s installed package: an upgrade deletes it.',
             '',
-            ...OMNIGENT_SIDECAR.trimEnd().split('\n'),
-            '',
-            'To write the sidecar: laika connect omnigent --dir <agent-folder>',
-            '(or --project, from inside the agent folder).',
+            ...credential,
             '',
             "Omnigent's Claude Code workers load a project .mcp.json automatically, so",
             '`laika connect claude-code --project` covers them too.',
           ],
-          exportsEnv: true,
+          exportsEnv: false,
         };
       }
       return {
@@ -317,13 +334,15 @@ export function planConnect(slug: AgentSlug, o: ConnectOptions): Plan {
           {
             kind: 'text',
             path: join(agentDir, 'tools', 'mcp', 'laika.yaml'),
-            content: OMNIGENT_SIDECAR,
+            content: sidecar.yaml,
           },
         ],
         notes: [
-          'Omnigent expands both variables when it loads the spec; an unset one is an error.',
+          ...credential,
+          '',
+          `Then install the agent, so Omnigent loads it: omni agent add ${shellQuote(agentDir)}`,
         ],
-        exportsEnv: true,
+        exportsEnv: false,
       };
     }
 

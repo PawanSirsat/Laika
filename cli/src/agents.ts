@@ -393,21 +393,54 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Omnigent's sidecar spec. Omnigent expands both variables itself. */
-export const OMNIGENT_SIDECAR =
-  'name: laika\n' +
-  'transport: http\n' +
-  'url: ${LAIKA_URL}/mcp\n' +
-  'headers:\n' +
-  '  Authorization: "Bearer ${LAIKA_TOKEN}"\n';
+/**
+ * How Omnigent starts Laika's stdio MCP bridge: absolute paths only
+ * (`bridgeCommand` in `agent-mcp-bridge.ts`), so a Dock-launched Omnigent,
+ * whose `PATH` has no `node`, starts it all the same.
+ */
+export interface BridgeCommand {
+  readonly command: string;
+  readonly args: readonly string[];
+}
 
-export const OMNIGENT_INLINE =
-  'tools:\n' +
-  '  laika:\n' +
-  '    type: mcp\n' +
-  '    url: ${LAIKA_URL}/mcp\n' +
-  '    headers:\n' +
-  '      Authorization: "Bearer ${LAIKA_TOKEN}"\n';
+/**
+ * Omnigent's sidecar, `<agent>/tools/mcp/laika.yaml` (LAI-1101, plan
+ * auto-pickup F7): `transport: stdio`, running Laika's bridge, which reads
+ * the Omnigent tool's own credential file. **No `${VAR}` anywhere.** An
+ * Omnigent server expands one from its own process environment, which a
+ * Dock-launched app does not share with the person's shell, and an unset one
+ * fails the agent spec inside input-policy evaluation — every turn of that
+ * agent then answers only "Denied by policy (policy evaluation error)" (the
+ * 15 Oct incident). Omnigent 0.19 expands `url`, `headers` and `env` and
+ * never `command` or `args` (`spec/parser.py`), and this file has only those
+ * two — but a `$`, a quote, a backslash or a control character in a path is
+ * refused all the same, rather than written for a parser to interpret.
+ *
+ * Each value is a JSON string, which is a valid YAML double-quoted scalar.
+ */
+export function omnigentSidecar(
+  bridge: BridgeCommand,
+): { readonly yaml: string } | { readonly refused: string } {
+  for (const part of [bridge.command, ...bridge.args]) {
+    if (part === '' || /[$"\\\u0000-\u001f\u007f]/.test(part)) {
+      return {
+        refused:
+          `the bridge's path ${JSON.stringify(part)} has a character Omnigent's YAML could ` +
+          'interpret ($, a quote, a backslash or a control character). Move the Laika checkout ' +
+          'or Node to a plain path and run this again.',
+      };
+    }
+  }
+  const yaml =
+    'name: laika\n' +
+    'transport: stdio\n' +
+    `command: ${JSON.stringify(bridge.command)}\n` +
+    'args:\n' +
+    bridge.args.map((a) => `  - ${JSON.stringify(a)}\n`).join('');
+  // The one property this file exists for, checked on what is about to be written.
+  if (yaml.includes('${')) return { refused: 'the sidecar would hold a ${VAR}; nothing written' };
+  return { yaml };
+}
 
 /** Where each written agent's user-scope file lives. */
 export const USER_CONFIG = {
