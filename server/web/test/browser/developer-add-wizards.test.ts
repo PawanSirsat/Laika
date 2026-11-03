@@ -1337,6 +1337,9 @@ void describe('screenshots of each step (LAI-1081)', { skip: EVIDENCE === undefi
           await setTheme(t.page, theme);
           await wizard(t.page, 'tool').waitFor({ timeout: 20_000 });
           await shot(t.page, 'tool-1');
+          await t.page.getByRole('button', { name: /^More tools/ }).click();
+          await shot(t.page, 'tool-1-more');
+          await t.page.getByRole('button', { name: 'Fewer tools' }).click();
           await t.page.getByRole('button', { name: /Get the command/ }).click();
           await until(async () => (await step(t.page, 'tool')) === '2');
           await shot(t.page, 'tool-2');

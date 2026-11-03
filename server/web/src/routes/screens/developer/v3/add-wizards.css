@@ -332,8 +332,9 @@
   margin-bottom: 0;
 }
 
+/* The link is the line's size: the line is `dv3w-quiet`'s small step. */
 .dv3w-consent-line .conn-link-button {
-  font-size: inherit;
+  font-size: var(--text-small);
 }
 
 @media (max-width: 600px) {
