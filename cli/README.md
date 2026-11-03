@@ -1642,7 +1642,13 @@ them off and the allowlist**, as before LAI-1113.
   `launchctl bootstrap gui/$UID`. `KeepAlive { SuccessfulExit = false }`:
   restarted after a crash, **never after `stop`**, which exits 0. Its log is
   `~/.laika/launcher/daemon.log`. Check it with
-  `launchctl print gui/$(id -u)/ai.laika.launcher`.
+  `launchctl print gui/$(id -u)/ai.laika.launcher`. Running `enable` again
+  while it is on unloads the old job and **waits, up to about 10 s, until
+  `launchctl print` no longer finds it**, then loads the new one; a `bootstrap`
+  launchd answers with error 5 or 37 (still busy) is retried three times, after
+  0.5, 1 and 2 s (LAI-1114). If it still fails, `enable` exits 1 and prints the
+  command to run by hand:
+  `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.laika.launcher.plist`.
 - Linux: `~/.config/systemd/user/laika-launcher.service`, `Restart=on-failure`,
   `systemctl --user enable --now`; its output is in the user journal
   (`journalctl --user -u laika-launcher`). It runs while you are logged in;
@@ -1790,18 +1796,18 @@ run stays the launcher's child, in a process group of its own.
   environment — nothing else of it. One that cannot be shown changes nothing.
 - **`laika agent launcher watch [--run <id>] [--once]`**, a live view in any
   terminal. It prints the audit log's events — started, ended (with its exit
-  code, time, turns and cost), refused, timed out, stopped — and, for the run
-  started last that has not ended (or the one `--run` names, by its offer id),
-  that run's transcript as it is written: 💬 the assistant's text and 🔧 each
-  tool it calls with a one-line summary of the call (its command, file, pattern
-  or query, else a few `key=value`s), capped at 120 characters. Thinking, tool
-  results, hooks and the prompt are not printed. **Every value is stripped of
-  control, bidi and zero-width characters and capped**, because a transcript
-  quotes whatever the run read, board text included — the transcript's file
-  name too. **A Laika token (`lai_…`) or an `Authorization: Bearer` value in
-  it is shown as `lai_…[redacted]` / `Bearer [redacted]`.** `--run` stops by itself
-  when that run ends; `--once` prints what is there and stops. It writes
-  nothing, signals nothing and takes no lock.
+  code, time, turns and cost), refused, skipped, timed out, stopped — and, for
+  the run started last that has not ended (or the one `--run` names, by its
+  offer id), that run's transcript as it is written: 💬 the assistant's text and
+  🔧 each tool it calls with a one-line summary of the call (its command, file,
+  pattern or query, else a few `key=value`s), capped at 120 characters.
+  Thinking, tool results, hooks and the prompt are not printed. **Every value is
+  stripped of control, bidi and zero-width characters and capped**, because a
+  transcript quotes whatever the run read, board text included — the
+  transcript's file name too. **A Laika token (`lai_…`) or an `Authorization:
+  Bearer` value in it is shown as `lai_…[redacted]` / `Bearer [redacted]`.**
+  `--run` stops by itself when that run ends; `--once` prints what is there and
+  stops. It writes nothing, signals nothing and takes no lock.
 
   A Claude Code run's transcript is
   `~/.claude/projects/<its worktree's path, every character that is not a
@@ -1992,12 +1998,17 @@ deadline, `stop` ends every one, the next `run` ends them first. A record that
 cannot be checked is kept and shown, never signalled. A process the harness
 moved out of its group is **not** ended.
 
-**The audit log** is `~/.laika/launcher/audit.jsonl`: `daemon_start`,
-`refused` (its `reason`, and a fixed-word `detail`), `deferred`, `start`,
+**The audit log** is `~/.laika/launcher/audit.jsonl`: `daemon_start`, `refused`
+(its `reason`, and a fixed-word `detail`), `skipped`, `deferred`, `start`,
 `timeout`, `exit`, `stopped`, `reaped`, `daemon_stop` — ids, harness, branch,
 base, pid, exit code, signal, runtime, runs today, and on `start` the run's
 `worktree` and Claude Code's `transcript_dir`. No token, URL, note, title or
-output is written to it.
+output is written to it. **`skipped` is a check that could not be made and is
+tried again next tick, not a refusal** (LAI-1114): `reason: owner_unknown` when
+the board could not be asked whose the credential is — a network drop — shown in
+`watch` as `skipped a check: could not reach the board to confirm the owner
+(will retry)`. A credential that belongs to someone else stays `refused`,
+`reason: owner_mismatch`.
 
 **Waking an Omnigent session** (D-117a item 10; `"omnigent": {"wake_sessions":
 true}`, asked at `enable`). Work addressed to this device's Omnigent agent that

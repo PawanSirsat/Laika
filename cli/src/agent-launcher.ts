@@ -860,7 +860,13 @@ export type AuditEvent =
   /** An Omnigent run asked to stop server-side, before its SIGTERM (slice D's spike). */
   | 'omnigent_stop'
   /** A notice posted to a running local Omnigent session instead of a start. */
-  | 'woken';
+  | 'woken'
+  /**
+   * A check that could not be made this tick and is tried again on the next:
+   * `owner_unknown`, the board could not be asked whose the credential is (a
+   * network drop). Nothing was refused (LAI-1114).
+   */
+  | 'skipped';
 
 /**
  * Only these fields reach the audit log, each a fixed word, an id, a number
@@ -2523,8 +2529,9 @@ export function startLauncher(deps: LauncherDeps, config: LauncherConfig): Launc
     }
     if (owner !== config.owner_user_id) {
       if (!audited(`owner:${harness}:${owner ?? 'unknown'}`)) {
+        // Not knowing the owner is a check skipped, not a refusal (LAI-1114).
         audit(deps.home, deps.now(), {
-          event: 'refused',
+          event: owner === undefined ? 'skipped' : 'refused',
           reason: owner === undefined ? 'owner_unknown' : 'owner_mismatch',
           harness,
         });

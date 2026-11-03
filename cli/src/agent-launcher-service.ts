@@ -373,6 +373,8 @@ export interface ServiceIo {
   readonly laika: string;
   /** A harness program on PATH, as PATH names it, or `undefined`. */
   readonly which: (name: string) => string | undefined;
+  /** Waits; `enable` uses it between `launchctl` calls while launchd settles (LAI-1114). */
+  readonly sleep: (ms: number) => Promise<void>;
 }
 
 export interface TerminalAsker {
@@ -504,6 +506,7 @@ export function realServiceIo(io: LauncherIo): ServiceIo {
       const found = run('/usr/bin/which', [name]).stdout.trim();
       return found !== '' && isAbsolute(found) && existsSync(found) ? found : undefined;
     },
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   };
 }
 
@@ -1202,17 +1205,48 @@ async function enableSteps(io: ServiceIo, argv: readonly string[]): Promise<numb
   privateDir(launcherDir(io.home));
   mkdirSync(dirname(service.path), { recursive: true });
   writeFileSync(service.path, service.text, { mode: 0o644 });
-  return installService(io) ? 0 : 1;
+  return (await installService(io)) ? 0 : 1;
 }
 
-function installService(io: ServiceIo): boolean {
+/** How often, and how many times, `enable` asks launchd whether the old job is gone: ~10 s. */
+export const BOOTOUT_POLL_MS = 250;
+export const BOOTOUT_POLLS = 40;
+/** The waits before each retry of a `bootstrap` launchd was not ready for. */
+export const BOOTSTRAP_BACKOFF_MS: readonly number[] = [500, 1000, 2000];
+/** What to run by hand when `enable` could not start the LaunchAgent. */
+export const MANUAL_BOOTSTRAP = `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/${SERVICE_LABEL}.plist`;
+
+/**
+ * `bootstrap` errors that mean launchd is still busy with the old job, not that
+ * the plist is wrong: 5 (`Input/output error`, the old job not yet removed) and
+ * 37 (`Operation already in progress`). launchctl exits with the number and
+ * prints it as `Bootstrap failed: 5: …`.
+ */
+function launchdBusy(r: RunResult): boolean {
+  return r.code === 5 || r.code === 37 || /Bootstrap failed: (5|37):/.test(r.stderr);
+}
+
+async function installService(io: ServiceIo): Promise<boolean> {
   if (io.platform === 'darwin') {
     const domain = `gui/${String(io.uid)}`;
+    const target = `${domain}/${SERVICE_LABEL}`;
     // A service loaded already is replaced: unloaded first, ignoring "not loaded".
-    io.run('/bin/launchctl', ['bootout', `${domain}/${SERVICE_LABEL}`]);
-    const r = io.run('/bin/launchctl', ['bootstrap', domain, plistPath(io.home)]);
+    io.run('/bin/launchctl', ['bootout', target]);
+    // bootout returns before launchd has removed the job; bootstrapping over it
+    // fails with error 5 (LAI-1114). Wait, bounded, until `print` cannot find it.
+    for (let i = 0; i < BOOTOUT_POLLS; i++) {
+      if (io.run('/bin/launchctl', ['print', target]).code !== 0) break;
+      await io.sleep(BOOTOUT_POLL_MS);
+    }
+    let r = io.run('/bin/launchctl', ['bootstrap', domain, plistPath(io.home)]);
+    for (const wait of BOOTSTRAP_BACKOFF_MS) {
+      if (r.code === 0 || !launchdBusy(r)) break;
+      await io.sleep(wait);
+      r = io.run('/bin/launchctl', ['bootstrap', domain, plistPath(io.home)]);
+    }
     if (r.code !== 0) {
       io.err(`launchctl bootstrap failed: ${r.stderr.trim().split('\n')[0] ?? ''}`);
+      io.err(`The config and the plist are written. Start it by hand: ${MANUAL_BOOTSTRAP}`);
       return false;
     }
     io.out(
