@@ -70,3 +70,26 @@ has: Developer access → Tools → the tool → *Reconnect (new credential)…*
 is no ⋯ menu on that panel). The `CLAUDE_CONFIG_DIR` part of LAI-1110 that this
 covers is enable's MCP check only (`claude-mcp.ts`); `doctor`, the hook install
 and `connect` still read the default paths, as LAI-1110 says.
+
+## Review fixes (PR #259, independent review of `7039ba68`: FAIL)
+
+- **B1, a token in a remote URL was printed.** `checkRepo` echoed
+  `git remote get-url` as written. Every remote URL printed now goes through
+  `redactedUrl`, so whatever stands before the host is `***`; only scp-style
+  `git@` is kept. A URL with `user:secret@` gets its own reason. A census of
+  every interpolated value in the diff's output strings found no other print
+  of a remote URL. A sentinel test covers `user:token@`, `token@` and
+  scp-style URLs, and goes red with the redaction removed.
+- **B2, the MCP check followed this shell's `CLAUDE_CONFIG_DIR`.** A launched
+  run never gets it: the service passes only HOME and PATH, and `LAUNCH_ENV`
+  has no `CLAUDE_CONFIG_DIR`. The check now reads `~/.claude.json`, as it
+  already read `~/.claude/settings.json`. A `CLAUDE_CONFIG_DIR` in the shell
+  is printed as a note. `claude-mcp.ts` still follows `env` for the callers
+  that pass it. Passing `CLAUDE_CONFIG_DIR` through to runs is not done here:
+  it is LAI-1110's.
+- **N1:** `close()` ends the asker, so it never opens a reader again.
+- **N2:** the pty test links a git of 2.41 or later into its PATH, or skips
+  saying which gits it found.
+- **N3:** too old a git asks nothing before refusing.
+- **Optional, both done:** Ctrl+C at a question says `interrupted`, and the
+  suggested `remote add` name is one the checkout does not have yet.
