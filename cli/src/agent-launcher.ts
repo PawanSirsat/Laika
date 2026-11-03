@@ -2248,7 +2248,11 @@ export function asTaskInfo(body: unknown): TaskInfo | undefined {
 /** Agent events and the stream's catch-ups wake the loop; project chatter does not. */
 const WAKE_FRAMES: ReadonlySet<string> = new Set([...EVENT_TYPES, 'ready', 'gap']);
 
-function realDeps(io: LauncherIo, stopped: () => boolean): LauncherDeps {
+/**
+ * The board, git and the process table as the launcher really uses them. Exported for the
+ * end-to-end test (`agent-launcher-e2e.test.ts`), which drives a real server with exactly these.
+ */
+export function launcherDeps(io: LauncherIo, stopped: () => boolean): LauncherDeps {
   const fetchFn: Fetch = (input, init) => fetch(input, init);
   const handoffIo = (quiet: boolean): HandoffIo => ({
     out: quiet ? () => undefined : io.out,
@@ -2546,7 +2550,7 @@ export async function launcherCommand(io: LauncherIo, argv: readonly string[]): 
   try {
     io.out('Launcher running. `laika agent launcher stop` to stop it.');
     const launcher = startLauncher(
-      realDeps(io, () => stopping),
+      launcherDeps(io, () => stopping),
       result.config,
     );
     await launcher.finished;
