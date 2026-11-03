@@ -612,6 +612,20 @@ const PAIRS: readonly Pair[] = [
     client: 'TaskUsage',
     clientFile: 'usage.ts',
   },
+  // The task panel's Estimate card (LAI-1122): similar finished tasks with
+  // why each was sent back, and the confirmed time on the task.
+  {
+    server: 'TaskSimilarView',
+    serverFile: 'services/estimates.ts',
+    client: 'TaskSimilar',
+    clientFile: 'estimates.ts',
+  },
+  {
+    server: 'TaskTimeView',
+    serverFile: 'services/task-time.ts',
+    client: 'TaskTime',
+    clientFile: 'task-time.ts',
+  },
   /*
    * Token usage, phase 3 (LAI-773), paired the moment each client existed:
    * budgets and the runaway banner, a person's alerts, their plan limit, and
