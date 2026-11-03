@@ -250,10 +250,10 @@ export function gitRunner(env: Readonly<Record<string, string | undefined>>): Gi
   };
 }
 
-const firstLine = (text: string): string => inert(text.trim().split('\n')[0] ?? '', 300);
+export const firstLine = (text: string): string => inert(text.trim().split('\n')[0] ?? '', 300);
 
 /** A full commit SHA, lower case. */
-const FULL_SHA = /^[0-9a-f]{40}$/;
+export const FULL_SHA = /^[0-9a-f]{40}$/;
 
 /**
  * A checkpoint ref as the server builds it (§6.4): `refs/tags/laika-ckpt/
@@ -263,7 +263,7 @@ const FULL_SHA = /^[0-9a-f]{40}$/;
 const CHECKPOINT_REF =
   /^refs\/tags\/laika-ckpt\/([A-Za-z][A-Za-z0-9]{0,19}-\d{1,9})\/([0-9A-HJKMNP-TV-Z]{26})(-r\d{1,4})?$/;
 
-const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+export const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 /** `owner/name` as GitHub spells one, lower case. */
 const OWNER_REPO = /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9._-]{1,100}$/;
@@ -1109,7 +1109,7 @@ function label(io: HandoffIo, record: PreparedOffer, why: string): string | unde
  * which moved or created anything else — through a symbolic ref, a refmap or
  * anything else — is caught.
  */
-function refSnapshot(git: GitRunner, top: string, except: readonly string[]): string {
+export function refSnapshot(git: GitRunner, top: string, except: readonly string[]): string {
   const refs = git(top, ['for-each-ref', '--format=%(refname) %(objectname) %(symref)']).stdout;
   const head = git(top, ['rev-parse', '--symbolic-full-name', 'HEAD']).stdout.trim();
   const at = git(top, ['rev-parse', 'HEAD']).stdout.trim();
@@ -1122,7 +1122,7 @@ function refSnapshot(git: GitRunner, top: string, except: readonly string[]): st
 }
 
 /** `git symbolic-ref -q` answers 0 for a symbolic ref — dangling or not — and 1 for anything else. */
-function isSymref(git: GitRunner, top: string, ref: string): boolean {
+export function isSymref(git: GitRunner, top: string, ref: string): boolean {
   return git(top, ['symbolic-ref', '-q', '--', ref]).code !== 1;
 }
 
@@ -1148,7 +1148,12 @@ export function refTaken(git: GitRunner, top: string, ref: string): boolean {
  * is: written through a symbolic ref, it would still resolve, so its kind is
  * checked as well as its value.
  */
-function plainRef(git: GitRunner, top: string, ref: string, sha?: string): string | undefined {
+export function plainRef(
+  git: GitRunner,
+  top: string,
+  ref: string,
+  sha?: string,
+): string | undefined {
   if (isSymref(git, top, ref)) return 'is a symbolic ref, so a write went through it';
   const r = git(top, ['show-ref', '--verify', ref]);
   const at = r.stdout.trim().split(' ')[0]?.toLowerCase();
@@ -1176,8 +1181,8 @@ const ZERO_OID = '0'.repeat(40);
  * in one transaction. Either way it is never followed: nothing is written
  * where it pointed. Answers why it failed, or undefined.
  */
-function createRef(
-  io: HandoffIo,
+export function createRef(
+  io: Pick<HandoffIo, 'beforeRefWrite'>,
   git: GitRunner,
   top: string,
   ref: string,
@@ -1253,7 +1258,7 @@ export function cleanupCommand(top: string, leftover: Leftover): string {
  * whose value is `<x>` exactly, which git keeps first — is refused, and so is
  * a URL that is also a remote's name.
  */
-function rewriteRefusal(
+export function rewriteRefusal(
   git: GitRunner,
   top: string,
   names: readonly string[],
