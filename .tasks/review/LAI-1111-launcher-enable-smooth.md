@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p1
 depends-on: [LAI-1109]
 discovered-from: LAI-1109
-status: in-progress
+status: review
 started: 2026-11-03T18:50:00+05:30
+finished: 2026-11-03T19:12:00+05:30
 ---
 
 ## Why
@@ -22,34 +23,34 @@ does, so a service could exit silently on the first start.
 
 ## Acceptance criteria
 
-- [ ] **One readline for the whole enable flow.** Answers typed or pasted ahead
+- [x] **One readline for the whole enable flow.** Answers typed or pasted ahead
       are read by the next prompt instead of being swallowed. End of input says
       `input ended`, not `enable needs a terminal to answer in`. A typed answer
       still wins over a close that arrives with it (LAI-1109).
-- [ ] **Harness checks come before the project questions**, and every failing
+- [x] **Harness checks come before the project questions**, and every failing
       Claude Code check is reported at once (version, program location and
       permissions, launcher-safe MCP entry, hooks), each with its exact fix.
-- [ ] **Checkout path**: a leading `~` is expanded, a relative path is resolved
+- [x] **Checkout path**: a leading `~` is expanded, a relative path is resolved
       against the current directory and the resolved path is printed, a bad
       answer is asked again (at most 3 times), and each rejected remote says why
       (for example an SSH host alias such as `git@github-personal:…` is not
       `github.com`).
-- [ ] **The launcher-safe MCP hint names the real fix** when the user-level
+- [x] **The launcher-safe MCP hint names the real fix** when the user-level
       `laika` entry is not tool-add's: quit Claude Code, `claude mcp remove
       laika --scope user`, then in the browser Tools → the tool → ⋯ → Reconnect
       and run the `laika tool add claude-code --exchange <id>` it shows.
       `claude-mcp.ts` follows `CLAUDE_CONFIG_DIR` as `mcp-headers.ts` does.
-- [ ] **The hooks check reads the hook commands** in `settings.json`: a
+- [x] **The hooks check reads the hook commands** in `settings.json`: a
       `laika-agent-hook` command for each needed event, and its script exists.
       The hint is `laika agent hooks on --harness claude-code` from the updated
       checkout.
-- [ ] **A refused program location says why** (a group- or other-writable
+- [x] **A refused program location says why** (a group- or other-writable
       folder such as Homebrew's `/opt/homebrew/bin`) and gives the fix options.
-- [ ] **`--dry-run` loads and validates the generated config and checks git >=
+- [x] **`--dry-run` loads and validates the generated config and checks git >=
       2.41**, as `run` does.
-- [ ] **Enable prints which checkout the service runs from** and warns that
+- [x] **Enable prints which checkout the service runs from** and warns that
       switching branches there changes the launcher's code.
-- [ ] An end-to-end `enable --dry-run` through a real pty with `expect`,
+- [x] An end-to-end `enable --dry-run` through a real pty with `expect`,
       answering one prompt at a time and with every answer pasted at once (red
       before the first criterion), and unit tests for the rest.
 
@@ -60,3 +61,12 @@ check helper in `cli/src/agent-hooks.ts`, their tests, and `cli/README.md`. A
 parallel builder is in `agent-launcher.ts`, `agent-workspace.ts`,
 `agent-omnigent*`, `mcp-headers.ts` and `tool-add.ts`; this task does not edit
 those. Linux CI skips the pty test with a clear reason when `expect` is absent.
+
+**As built.** CI's Ubuntu image has no `expect`, so on Linux the pty test
+drives util-linux `script -qec` from node instead of skipping; it skips only
+where neither driver exists. Verified in a Debian trixie container (git 2.47, no
+`expect`): 4/4. The browser path the MCP hint names is the one the V3 screen
+has: Developer access → Tools → the tool → *Reconnect (new credential)…* (there
+is no ⋯ menu on that panel). The `CLAUDE_CONFIG_DIR` part of LAI-1110 that this
+covers is enable's MCP check only (`claude-mcp.ts`); `doctor`, the hook install
+and `connect` still read the default paths, as LAI-1110 says.
