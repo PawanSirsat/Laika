@@ -38,4 +38,4 @@ helper's header.
 
 ## Notes / context
 
-Measured commands and outputs are in `logs/chief-builder-2026-11-03-LAI-1039.md`.
+Measured commands and outputs are in `logs/shell-2026-11-03-LAI-1039.md`.
