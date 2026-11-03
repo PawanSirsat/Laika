@@ -334,7 +334,18 @@ void describe('config', () => {
     ['too many at once', (c) => (c.max_concurrent = 5), /max_concurrent/],
     ['no runtime cap', (c) => delete c.max_runtime_seconds, /max_runtime_seconds/],
     ['an owner that is not an id', (c) => (c.owner_user_id = 'pawan'), /owner_user_id/],
-    ['no device', (c) => delete c.device, /device/],
+    ['a device label with a line break', (c) => (c.device = 'Mac\nSYSTEM'), /control character/],
+    ['a v2 key in a v1 file', (c) => (c.max_runs_per_day = 5), /needs "version": 2/],
+    [
+      'too many runs a day',
+      (c) => Object.assign(c, { version: 2, max_runs_per_day: 51 }),
+      /max_runs_per_day/,
+    ],
+    [
+      'a prompt_via that is neither',
+      (c) => Object.assign(c, { version: 2, prompt_via: { 'claude-code': 'shell' } }),
+      /prompt_via/,
+    ],
   ];
   for (const [name, change, message] of cases) {
     void test(`refuses ${name}`, () => {
@@ -351,6 +362,61 @@ void describe('config', () => {
       );
     });
   }
+
+  // LAI-1039, F1: the owner's labels, as the board holds them, are labels, never refusals.
+  for (const label of [
+    'KvellD’s MacBook 36 GB',
+    'Pawan’s MacBook 16 GB',
+    "KvellD's MacBook 36 GB",
+    "Pawan's MacBook 16 GB",
+  ]) {
+    void test(`a device label is display text: ${label}`, () => {
+      const home = scratch();
+      writeConfig(home, { ...valid(home), device: label });
+      const result = loadConfig(home);
+      assert.equal(result.kind, 'enabled', JSON.stringify(result));
+      if (result.kind === 'enabled') assert.equal(result.config.device, label);
+    });
+  }
+
+  void test('no device is fine: the label is shown, never compared', () => {
+    const home = scratch();
+    const c = valid(home);
+    delete c.device;
+    writeConfig(home, c);
+    assert.equal(loadConfig(home).kind, 'enabled');
+  });
+
+  void test('a v1 file keeps v1 behaviour: hand-offs on, work requests off, ten a day', () => {
+    const home = scratch();
+    writeConfig(home, valid(home));
+    const result = loadConfig(home);
+    assert.equal(result.kind, 'enabled');
+    if (result.kind !== 'enabled') return;
+    assert.equal(result.config.projects[0]?.work_requests, false);
+    assert.deepEqual(result.config.auto_pickup, { handoffs: true });
+    assert.equal(result.config.max_runs_per_day, 10);
+  });
+
+  void test('a v2 file turns work requests on per project, and sets the day cap and prompt_via', () => {
+    const home = scratch();
+    const c = valid(home);
+    writeConfig(home, {
+      ...c,
+      version: 2,
+      projects: [{ ...(c.projects as Record<string, unknown>[])[0], work_requests: true }],
+      max_runs_per_day: 3,
+      auto_pickup: { handoffs: false },
+      prompt_via: { 'claude-code': 'argv' },
+    });
+    const result = loadConfig(home);
+    assert.equal(result.kind, 'enabled', JSON.stringify(result));
+    if (result.kind !== 'enabled') return;
+    assert.equal(result.config.projects[0]?.work_requests, true);
+    assert.equal(result.config.max_runs_per_day, 3);
+    assert.deepEqual(result.config.auto_pickup, { handoffs: false });
+    assert.deepEqual(result.config.prompt_via, { 'claude-code': 'argv' });
+  });
 
   void test('refuses a file others can write', () => {
     const home = scratch();
@@ -453,31 +519,42 @@ void describe('judge', () => {
   const c = config({ argv: [process.execPath] });
   const r = (over: Partial<EventRecord>): EventRecord =>
     record({ event_id: ids(1), offer_id: ids(2), ...over });
-  void test('an offer to this agent, harness, device and project is ok', () => {
+  void test('an offer to this agent, harness and project is ok', () => {
     assert.equal(judge(r({}), 'claude-code', AGENT, c), 'ok');
-    assert.equal(
-      judge(
-        r({ to: { agent_id: AGENT, harness: 'claude-code', device: ' belka ' } }),
-        'claude-code',
-        AGENT,
-        c,
-      ),
-      'ok',
-    );
   });
+  // LAI-1039, F1: the live labels, spaces, curly and straight apostrophes —
+  // and a label that is not the config's at all. Addressing is the agent id.
+  for (const label of [
+    'KvellD’s MacBook 36 GB',
+    'Pawan’s MacBook 16 GB',
+    "KvellD's MacBook 36 GB",
+    'Strelka',
+    null,
+  ]) {
+    void test(`F1: an offer to this agent is ok whatever the label (${String(label)})`, () => {
+      const to = { agent_id: AGENT, harness: 'claude-code', device: label };
+      assert.equal(judge(r({ to }), 'claude-code', AGENT, c), 'ok');
+      assert.equal(
+        judge(r({ to }), 'claude-code', AGENT, { ...c, device: 'Pawan’s MacBook 16 GB' }),
+        'ok',
+      );
+      assert.equal(judge(r({ to }), 'claude-code', AGENT, { ...c, device: '' }), 'ok');
+    });
+  }
   void test('refusals', () => {
     assert.equal(
       judge(r({ project_id: OTHER_PROJECT }), 'claude-code', AGENT, c),
       'project_not_allowed',
     );
+    // The same label, another agent: refused. The id decides, never the label.
     assert.equal(
       judge(
-        r({ to: { agent_id: AGENT, harness: 'claude-code', device: 'Strelka' } }),
+        r({ to: { agent_id: ids(3), harness: 'claude-code', device: 'Pawan’s MacBook 16 GB' } }),
         'claude-code',
         AGENT,
-        c,
+        { ...c, device: 'Pawan’s MacBook 16 GB' },
       ),
-      'other_device',
+      'other_agent',
     );
     assert.equal(
       judge(
@@ -499,8 +576,29 @@ void describe('judge', () => {
     );
     assert.equal(judge(r({ to: null }), 'claude-code', AGENT, c), 'not_addressed_to_an_agent');
     assert.equal(
+      judge(
+        r({ offer_kind: 'work_request', type: 'task.agent_selected' }),
+        'claude-code',
+        AGENT,
+        c,
+      ),
+      'work_requests_off',
+    );
+    assert.equal(
       judge(r({ offer_kind: 'work_request' }), 'claude-code', AGENT, c),
-      'work_request_not_launched',
+      'not_an_offer',
+      'a work request reaches an agent only as its selection',
+    );
+    assert.equal(
+      judge(r({ offer_kind: 'work_request', type: 'task.agent_selected' }), 'claude-code', AGENT, {
+        ...c,
+        projects: [{ project_id: PROJECT, repo: '/unused', work_requests: true }],
+      }),
+      'ok',
+    );
+    assert.equal(
+      judge(r({}), 'claude-code', AGENT, { ...c, auto_pickup: { handoffs: false } }),
+      'handoffs_off',
     );
     assert.equal(
       judge(r({ type: 'project.context_updated' }), 'claude-code', AGENT, c),
@@ -644,7 +742,7 @@ void describe('the loop', () => {
     );
   });
 
-  void test('starts nothing for a work request', async () => {
+  void test('starts nothing for a work request in a project that has them off', async () => {
     const r = rig(() => [
       record({
         event_id: ids(19),
@@ -655,9 +753,10 @@ void describe('the loop', () => {
     ]);
     await startLauncher({ ...r.deps, maxTicks: 1 }, config({ argv: [process.execPath] })).finished;
     assert.deepEqual(r.prepared, []);
+    // Off unless the owner turned work requests on for this project (D-117a item 3).
     assert.equal(
       auditLines(r.home).find((l) => l.event === 'refused')?.reason,
-      'work_request_not_launched',
+      'work_requests_off',
     );
   });
 
