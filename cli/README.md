@@ -1552,6 +1552,7 @@ laika agent launcher status    # enabled?, service installed/loaded/running, pre
 laika agent launcher check     # validate the file and git; starts nothing
 laika agent launcher run       # the daemon in the foreground (the service runs it with --service)
 laika agent launcher stop      # stops the daemon and every run it started
+laika agent launcher watch [--run <id>] [--once]   # follow runs live, read-only (LAI-1113)
 laika agent launcher headers <harness>   # the MCP Authorization header from that harness's saved file
 ```
 
@@ -1608,7 +1609,15 @@ It reads what is already here and asks only what it cannot read:
    A wrong path is asked again, three times at most. A project with no
    repository on the board is left out. **Work requests are off unless you
    type `yes` for that project.**
-4. It prints the whole config, loads it exactly as the launcher will (so
+4. **What you see of a run, and how Claude Code may work** (LAI-1113, D-128):
+   a notification when a run starts and when it ends (`[yes]`); on macOS, a
+   Terminal window per run showing it work (`[yes]`, asked only when the
+   `laika` on your `PATH` is one the launcher may name — see
+   [Seeing a run](#seeing-a-run-lai-1113-d-128)); and, when Claude Code is one
+   of the harnesses, its permissions: the allowlist, or — **only if you type
+   `skip-permissions`**, after the warning below — `--dangerously-skip-permissions`.
+   Only `n` or `no` says no to a `[yes]` question.
+5. It prints the whole config, loads it exactly as the launcher will (so
    `--dry-run` refuses one that would not load), and prints the service file
    and **the checkout the service runs the CLI from**: the service runs
    `node <that checkout>/cli/…/index… agent launcher run --service`, so
@@ -1622,7 +1631,10 @@ with `input ended`, Ctrl+C at a question with `interrupted`, and nothing is
 written.
 
 The defaults: one run at a time, 7200 s each, 10 a day, hand-off and recovery
-offers on, work requests only where you said yes, no ssh agent.
+offers on, work requests only where you said yes, no ssh agent, notifications
+and a Terminal per run when you press Enter, and Claude Code's allowlist. **A
+config file that does not name `notify`, `open_terminal` or `permissions` has
+them off and the allowlist**, as before LAI-1113.
 
 **The service** is a per-user one, started at login:
 
@@ -1757,6 +1769,62 @@ asked again hourly, a ping is settled unanswered, and nothing else changes.
   untrusted block. Output goes to `output.log` (all 0600, under
   `~/.laika/launcher/runs/<offer>/`).
 
+### Seeing a run (LAI-1113, D-128)
+
+An unattended run happens where you cannot see it. Three things show it on the
+laptop itself, and **none of them can change a run**: each only reads, and the
+run stays the launcher's child, in a process group of its own.
+
+- **A notification** when a run starts and when it ends (`"notify": true`):
+  *Laika — started LAIKA-970 (Claude Code)*, *Laika — LAIKA-970 (Claude Code)
+  finished → exit 0, 18 s*. It is built **only** from values the launcher
+  checked: a task key matching `^[A-Z][A-Z0-9]*-[0-9]+$` (anything else is
+  shown as "a run", never escaped into the text), the harness's own name from
+  the known list, and numbers. No card text, no device label, no note. On
+  macOS it is `/usr/bin/osascript` with an argv array — the script is fixed
+  `on run argv` lines and the two values arrive as its arguments, so they are
+  never AppleScript source. On Linux it is `notify-send` when one is on `PATH`,
+  and nothing, silently, when not. One that cannot be shown changes nothing.
+- **`laika agent launcher watch [--run <id>] [--once]`**, a live view in any
+  terminal. It prints the audit log's events — started, ended (with its exit
+  code, time, turns and cost), refused, timed out, stopped — and, for the run
+  started last that has not ended (or the one `--run` names, by its offer id),
+  that run's transcript as it is written: 💬 the assistant's text and 🔧 each
+  tool it calls with a one-line summary of the call (its command, file, pattern
+  or query, else a few `key=value`s), capped at 120 characters. Thinking, tool
+  results, hooks and the prompt are not printed. **Every value is stripped of
+  control, bidi and zero-width characters and capped**, because a transcript
+  quotes whatever the run read, board text included. `--run` stops by itself
+  when that run ends; `--once` prints what is there and stops. It writes
+  nothing, signals nothing and takes no lock.
+
+  A Claude Code run's transcript is
+  `~/.claude/projects/<its worktree's path, every character that is not a
+  letter or digit as ->/<session>.jsonl` — measured on Belka, where
+  `/…/Laika-LAIKA-968-auto-sy6csr` is
+  `-Users-…-Laika-LAIKA-968-auto-sy6csr` — the `.jsonl` there written to last
+  since the run started. A launched run reads `~/.claude`, never a
+  `CLAUDE_CONFIG_DIR`. **The `start` audit line records the run's `worktree`
+  and, for Claude Code, its `transcript_dir`**, so `watch` does not guess; a run
+  started before LAI-1113 is found from its `workspace.json`. Only a folder
+  directly under `~/.claude/projects` is read. **An Omnigent run's transcript
+  lives in Omnigent**, in its own session: `watch` shows its events and says
+  so. A Codex run's events are in its `output.log`.
+- **A Terminal window per run** (macOS, `"open_terminal": true` and `"laika":
+  "<absolute path of the laika command>"`): when a run starts, Terminal opens
+  running `'<laika>' agent launcher watch --run <offer id>` (`tell application
+  "Terminal" to do script`, again with the line as an `on run argv` argument).
+  **The only two values in that line are the config's `laika` path,
+  single-quoted, and the run id, which must be a ULID**; a path holding a
+  control character is refused at load. Closing the window ends `watch` and
+  nothing else. If the window cannot open — no GUI session, or macOS has not
+  allowed the launcher to control Terminal (AppleScript error -1743: System
+  Settings → Privacy & Security → Automation) — one line goes to the daemon's
+  log and the run goes on. The first window may make macOS ask you to allow
+  that.
+
+`check` and `status` print all three settings.
+
 ### The harness commands `enable` writes
 
 Claude Code (verified against code.claude.com `headless.md`,
@@ -1787,6 +1855,44 @@ settings"** — a run uses your credentials, and an admin bypasses the rule
 otherwise. You turn both on; `enable` prints that line. The mode is written out because before Claude Code 2.1.302 a `-p` run
 with no mode could start in auto mode (F6). The audit keeps only the result's
 `subtype`, `is_error`, `num_turns` and `total_cost_usd`.
+
+**With `"permissions": "skip"`** (LAI-1113, D-128 — only after you type
+`skip-permissions` at `enable`) the three allowlist flags are replaced by one,
+and everything else is kept:
+
+```
+claude -p --output-format json --dangerously-skip-permissions
+  --disallowedTools <the same deny list>
+  --max-turns 200 --max-budget-usd 5
+```
+
+What Claude Code's docs say of that mode, read as raw Markdown on 2026-11-03
+([permission-modes.md](https://code.claude.com/docs/en/permission-modes.md),
+[cli-reference.md](https://code.claude.com/docs/en/cli-reference.md),
+[permissions.md](https://code.claude.com/docs/en/permissions.md)):
+
+- `--dangerously-skip-permissions` is "Equivalent to `--permission-mode
+  bypassPermissions`".
+- **"Deny rules block in every mode, including `bypassPermissions`"**, and
+  `--disallowedTools` *is* deny rules — so the deny list still applies.
+  "Allow rules have no effect in `bypassPermissions`", which is why there is no
+  `--allowedTools`.
+- `-p` takes it: "Run fully unattended inside a container | `claude -p
+  "<prompt>" --dangerously-skip-permissions`"; "in non-interactive mode no
+  dialog is shown", and in a `-p` run "the few calls that would still prompt
+  are denied instead". It refuses to start as root or under `sudo`.
+- But a Bash deny rule "matches the command text Claude writes … It doesn't
+  match the same program invoked in a different form" — `git -C . push` is not
+  `Bash(git push *)` — so the deny list is **not a boundary**, and the docs
+  keep the mode for "Isolated containers and VMs only".
+
+So **an unattended run can then run any command with your local
+credentials** — your git, gh and ssh logins, your cloud command lines, every
+file you can read — and the real guard on master is GitHub branch protection
+(require a pull request and "Do not allow bypassing the above settings").
+`enable` prints exactly this before it asks. **The launcher refuses an argv
+that skips permission checks without `"permissions": "skip"`**, and a `skip`
+argv without `--disallowedTools`.
 
 Codex (`codex exec --help`, 0.162.1; developers.openai.com `codex/mcp.md`) —
 **off unless you type `danger-full-access`**:
@@ -1828,7 +1934,11 @@ wrapper as the program (`sh`, `bash`, `zsh`, `env`, `sudo`, …); a `repo` that 
 relative, missing or reached through a symlink; an unknown key; a v2 key in a
 v1 file; a device label holding a control character; a config that is a
 symlink, writable by group or others, or someone else's; a `~/.laika` that is a
-symlink or writable by others. A v1 file is still read: hand-offs on, work
+symlink or writable by others; a Claude Code argv that skips permission checks
+(`--dangerously-skip-permissions`, `bypassPermissions`) without `"permissions":
+"skip"`, or a `skip` one without `--disallowedTools`; `"open_terminal": true`
+without `"laika"`; a `laika` path that is relative, holds a control character,
+or fails the program rules above. A v1 file is still read: hand-offs on, work
 requests off.
 
 **The shell and wrapper list is a guard against an obvious mistake, not a
@@ -1848,8 +1958,9 @@ moved out of its group is **not** ended.
 **The audit log** is `~/.laika/launcher/audit.jsonl`: `daemon_start`,
 `refused` (its `reason`, and a fixed-word `detail`), `deferred`, `start`,
 `timeout`, `exit`, `stopped`, `reaped`, `daemon_stop` — ids, harness, branch,
-base, pid, exit code, signal, runtime, runs today. No token, URL, note, title
-or output is written to it.
+base, pid, exit code, signal, runtime, runs today, and on `start` the run's
+`worktree` and Claude Code's `transcript_dir`. No token, URL, note, title or
+output is written to it.
 
 **Waking an Omnigent session** (D-117a item 10; `"omnigent": {"wake_sessions":
 true}`, asked at `enable`). Work addressed to this device's Omnigent agent that
@@ -1877,6 +1988,10 @@ waits on the board, and the catch-up on reconnect starts it afterwards.
 | Presence and the ping answer | Verified-and-tested against a real server with slice A's routes (`agent-launcher-e2e.test.ts`: a held ping answered in the closed shape, its delivery out of `undelivered`; presence `on`, then `off` after stop) | Documented-not-tested | — |
 | A real `claude -p` run through the launcher | Unverified: the flags are from the docs and `claude --help` 2.1.280; no model run in the tests | Unverified | Unsupported |
 | A real `codex exec` run | Unverified (and off by default): Codex's usage limit blocked a live run; the sandbox result above was measured without a model | Unverified | Unsupported |
+| Notifications: words from checked values only, argv not a shell | Unit-tested (`agent-launcher-visible.test.ts`: hostile keys left out, the daemon passes no device text; osascript returns a hostile `on run argv` value verbatim and runs nothing); **no notification is shown in the tests** | Unit-tested (`notify-send` argv; none when absent) | Unsupported |
+| `watch`: the transcript found and rendered, read-only, closing it leaves the run | Verified-and-tested (`agent-launcher-watch.test.ts`, a real-format sample; a hang-up to the viewer's group leaves a detached run alive); run by hand on Belka against LAIKA-968's real transcript | Documented-not-tested (no OS-specific code) | Unsupported |
+| A Terminal window per run | Unit-tested (the line's quoting under `sh`, `zsh` and `bash` with a hostile path; the osascript argv); **no window is opened in the tests**, and the first real one may need Automation allowed | Unsupported: macOS only (one log line) | Unsupported |
+| `"permissions": "skip"` | Unit-tested (the argv, the deny list kept, the config refusals, `enable` asking for the exact word); the mode's behaviour is Claude Code's docs', not measured here | Same | Unsupported |
 
 ## `laika agent events` — hand-off and context notices at the next boundary (LAI-554)
 
