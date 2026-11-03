@@ -616,6 +616,150 @@ void describe('a check that fails (review round 1, B2)', () => {
   });
 });
 
+/** Record each different thing the live region says, in order, from the moment this runs. */
+async function recordSaid(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const said: string[] = [];
+    (window as unknown as { __said: string[] }).__said = said;
+    const region = document.querySelector('.side-panel .agent-ping-live');
+    if (region === null) throw new Error('no live region');
+    new MutationObserver(() => {
+      const text = (region.textContent ?? '').trim();
+      if (said.at(-1) !== text) said.push(text);
+    }).observe(region, { childList: true, subtree: true, characterData: true });
+  });
+}
+
+const said = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __said: string[] }).__said);
+
+const WAITING = 'Waiting for Claude Code · Belka…';
+const WAITING_LOST =
+  'Waiting for Claude Code · Belka… The board did not answer the last check; asking again.';
+
+void describe('LAI-1108: Ping review follow-ups (PR #255)', () => {
+  void test('LAI-1108 (k): an idle Ping is as tall as its button — no empty row under it', async () => {
+    const h = await openPanel();
+    try {
+      assert.equal(await pingState(h.page), 'idle');
+      const box = await panel(h.page).locator('.agent-ping').boundingBox();
+      const button = await pingButton(h.page).boundingBox();
+      assert.ok(box !== null && button !== null, 'the Ping or its button is not drawn');
+      assert.ok(
+        Math.abs(box.height - button.height) <= 0.5,
+        `the idle Ping is ${String(box.height)}px tall, its button ${String(button.height)}px`,
+      );
+      // The live region is still in the tree, ready before it fills.
+      assert.equal(await live(h.page).getAttribute('aria-live'), 'polite');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('LAI-1108 (i): a check that never comes back is a failed check, and the answer still arrives', async () => {
+    let gets = 0;
+    let free: () => void = () => undefined;
+    const hung = new Promise<void>((done) => {
+      free = done;
+    });
+    const h = await openPanel({
+      '/api/v1/agents/a1/capacity-pings': () =>
+        reply(200, { ping: ping('pending', Date.now() + MIN), created: false }),
+      '/api/v1/capacity-pings/cp1': () => ({ ping: ping('answered', Date.now() + MIN) }),
+    });
+    try {
+      // The first check is never answered; the board is back for the next.
+      await h.page.route('**/api/v1/capacity-pings/cp1', async (route) => {
+        gets += 1;
+        if (gets === 1) {
+          await hung;
+          await route.abort('failed').catch(() => undefined);
+          return;
+        }
+        await route.continue();
+      });
+      await pingButton(h.page).click();
+      // The first check goes out a second in and times out five later.
+      await until(async () => (await live(h.page).innerText()).includes('did not answer'), 9_000);
+      assert.equal((await live(h.page).innerText()).trim(), WAITING_LOST);
+      await status(h.page).locator('[data-answer="online"]').waitFor({ timeout: 15_000 });
+      assert.ok(gets >= 2, `asked ${String(gets)} times`);
+      assert.equal(await pingButton(h.page).getAttribute('aria-disabled'), null);
+    } finally {
+      free();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('LAI-1108 (i): a ping the board never answers fails after the wait and a margin, and Ping is offered again', async () => {
+    let free: () => void = () => undefined;
+    const hung = new Promise<void>((done) => {
+      free = done;
+    });
+    const h = await openPanel();
+    try {
+      await h.page.route('**/api/v1/agents/a1/capacity-pings', async (route) => {
+        await hung;
+        await route.abort('failed').catch(() => undefined);
+      });
+      const clicked = Date.now();
+      await pingButton(h.page).click();
+      await until(async () => (await live(h.page).innerText()).includes('failed'), 16_000);
+      assert.equal(
+        (await live(h.page).innerText()).trim(),
+        'The ping failed: the board did not answer within 13 s. Ping again to ask.',
+      );
+      const after = Date.now() - clicked;
+      assert.ok(after >= 12_500, `given up after ${String(after)} ms, before the wait and margin`);
+      assert.equal(await pingButton(h.page).getAttribute('aria-disabled'), null);
+    } finally {
+      free();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('LAI-1108 (l): a board that flaps inside the wait is said lost once, not on every flap', async () => {
+    let gets = 0;
+    const h = await openPanel({
+      '/api/v1/agents/a1/capacity-pings': () =>
+        reply(200, { ping: ping('pending', Date.now() + MIN), created: false }),
+      '/api/v1/capacity-pings/cp1': () => ({
+        ping: ping(gets < 5 ? 'pending' : 'answered', Date.now() + MIN),
+      }),
+    });
+    try {
+      // Checks 1 and 3 fail, 2 and 4 find it still pending, 5 the answer:
+      // all a second or so apart, inside the eight-second wait.
+      await h.page.route('**/api/v1/capacity-pings/cp1', async (route) => {
+        gets += 1;
+        if (gets === 1 || gets === 3) await route.abort('internetdisconnected');
+        else await route.continue();
+      });
+      await recordSaid(h.page);
+      await pingButton(h.page).click();
+      await status(h.page).locator('[data-answer="online"]').waitFor({ timeout: 12_000 });
+      const lines = await said(h.page);
+      assert.ok(gets >= 5, `asked ${String(gets)} times`);
+      assert.deepEqual(lines.slice(0, 2), [WAITING, WAITING_LOST], JSON.stringify(lines));
+      assert.equal(
+        lines.filter((line) => line === WAITING_LOST).length,
+        1,
+        `the lost check was said again: ${JSON.stringify(lines)}`,
+      );
+      assert.ok(
+        !lines.slice(2).includes(WAITING),
+        `a recovered check was said inside the wait: ${JSON.stringify(lines)}`,
+      );
+      assert.match(lines.at(-1) ?? '', /Claude Code · Belka answered\./);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+});
+
 void describe('390 px, both themes', () => {
   for (const theme of ['light', 'dark'] as const) {
     void test(`${theme}: chips and an answer stay on screen`, async () => {

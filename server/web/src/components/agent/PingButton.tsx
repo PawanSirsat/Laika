@@ -15,6 +15,17 @@ const WATCH_EVERY_MS = 10_000;
 const WAIT_POLL_MS = 1_000;
 /** How often the answer's age is re-read on screen. */
 const TICK_MS = 10_000;
+/**
+ * How long one check may take. A check is a read the board answers at once,
+ * so one that has not come back by then is a failed check, retried like any
+ * other: a request that hangs can never hold Ping (LAI-1108).
+ */
+const CHECK_TIMEOUT_MS = 5_000;
+/**
+ * How long the ping itself may take. The board holds it at most the wait, so
+ * an answer later than the wait and this margin is not coming (LAI-1108).
+ */
+const POST_TIMEOUT_MS = PING_WAIT_MS + 5_000;
 
 type Outcome =
   | { readonly kind: 'idle' }
@@ -129,7 +140,9 @@ export function PingButton({
     failures: number,
   ): void => {
     watch.current = setTimeout(() => {
-      getCapacityPing(ping.id, signal)
+      // Its own deadline beside the button's lifetime; `signal.aborted` below
+      // is the button's alone, so a check that timed out is lost, not dropped.
+      getCapacityPing(ping.id, AbortSignal.any([signal, AbortSignal.timeout(CHECK_TIMEOUT_MS)]))
         .then(({ ping: again }) => {
           settle(again, signal, waitUntil);
         })
@@ -157,7 +170,12 @@ export function PingButton({
     // Inside the wait it is still *Waiting…*; after it, *no answer*, asked
     // about again until it expires, and once just after.
     if (at < waitUntil) {
-      setOutcome({ kind: 'waiting', lost: false });
+      // A failed check, once said inside the wait, stays said until the
+      // outcome changes kind: a board that flaps failed / recovered is not
+      // read out again on every flap (LAI-1108).
+      setOutcome((was) =>
+        was.kind === 'waiting' && was.lost ? was : { kind: 'waiting', lost: false },
+      );
       check(ping, signal, waitUntil, Math.min(WAIT_POLL_MS, waitUntil - at), 0);
       return;
     }
@@ -211,17 +229,20 @@ export function PingButton({
     controller.current = next;
     const waitUntil = Date.now() + PING_WAIT_MS;
     setOutcome({ kind: 'waiting', lost: false });
+    const deadline = AbortSignal.timeout(POST_TIMEOUT_MS);
     pingAgent(
       agentId,
       { project, wait_ms: PING_WAIT_MS, ...(taskId === undefined ? {} : { task_id: taskId }) },
-      next.signal,
+      AbortSignal.any([next.signal, deadline]),
     )
       .then(({ ping: first }) => {
         settle(first, next.signal, waitUntil);
       })
       .catch((cause: unknown) => {
         if (next.signal.aborted) return;
-        const refusal = pingRefusal(cause);
+        const refusal = deadline.aborted
+          ? { kind: 'failed' as const, message: PING_WORDS.unanswered(POST_TIMEOUT_MS / 1000) }
+          : pingRefusal(cause);
         // One reading of the clock for both: two would put `until` a moment
         // past `now + seconds`, and the wait would round up to a second more
         // than the board said.
