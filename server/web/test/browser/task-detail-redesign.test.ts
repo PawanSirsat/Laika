@@ -490,6 +490,9 @@ void describe('the task detail redesign (D-129)', () => {
           `section ${String(i)} is not below section ${String(i - 1)}: ${order.join(', ')}`,
         );
       }
+      // No section is squashed in the one column: the state panel keeps its height.
+      const heroHeight = (await h.page.locator('[data-hero="review"]').boundingBox())?.height ?? 0;
+      assert.ok(heroHeight > 150, `the state panel is squashed to ${String(heroHeight)}px`);
       const overflow = await h.page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       );

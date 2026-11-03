@@ -2538,6 +2538,9 @@
   .panel-meta > * {
     order: 5;
     min-width: 0;
+    /* Items of one scrolling column: none may shrink, or a section that clips
+       its overflow (the state panel) folds to a sliver (LAI-1122). */
+    flex-shrink: 0;
   }
 
   .panel-main > .panel-title {
@@ -2573,4 +2576,18 @@
   .panel-side > .panel-side-exec {
     order: 7;
   }
+}
+
+/*
+ * The rail's assignee (LAI-1122): at 22rem the avatar, the picker and Claim
+ * squeezed the name to "unassig…". The picker keeps room for a name, and
+ * Claim drops to its own line when it would not fit beside it.
+ */
+.panel-meta .assign {
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
+}
+
+.panel-meta .assign-pick {
+  min-width: 8rem;
 }
