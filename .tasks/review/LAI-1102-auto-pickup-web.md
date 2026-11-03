@@ -163,3 +163,35 @@ and three local runs pass. The re-run failed instead in this branch's own
 429 case — *try again in 13 s* where the board said 12, two clock readings
 rounding up a second. A real bug, fixed with one reading
 (`PingButton.tsx`); the gate result on the final head is on the card.
+
+## Review round 1 — fixed (2026-11-03, shell)
+
+The review of #255 at 3ceb98f6 failed on two blockers, both reached only
+when a request fails, plus four smaller items. All are fixed as new commits
+on the same branch; nothing was rebased.
+
+- **B1** (782b72f1): a quiet `/devices` re-read that fails keeps the list
+  once one is shown, so focus stays where the reader put it. Test:
+  `auto-pickup.test.ts` › *B1: a failed presence re-read keeps the list, and
+  focus on the row control*.
+- **B2** (3323042b): a failed `GET /capacity-pings/:id` backs off and keeps
+  asking, bounded by the end of the wait and by `expires_at`. A failure
+  inside the wait still reads *Waiting…, asking again*, and after the wait,
+  *no answer, retrying until <time>*. At the expiry it reads *expired,
+  answered or not unknown*. A ping whose checks are failing no longer holds
+  the button. Tests: `auto-pickup.test.ts` ›
+  - *B2: a check that fails inside the wait keeps waiting, says so, and the
+    answer still arrives*;
+  - *B2: checks that keep failing retry until the ping expires, then say so,
+    and Ping is offered again*.
+- **Live region** (3323042b): *answered N s ago* is outside the aria-atomic
+  region, and the rate limit's wait is said once, not counted down aloud.
+- **Both switches off** (1bd2512e): the chip reads *Auto-pickup: listening ·
+  picks up nothing*, in neutral, and every reason is a whole sentence.
+- **The drawer** (b064c101): `useMyAgents({ refresh: true })` re-reads
+  quietly on focus, on return, and every 60 s, so *Starts automatically on …*
+  cannot outlive the board's three minutes.
+- **A viewer** (1bd2512e): the no-Ping note names the role.
+
+Each fix was undone in turn by a mutation, and its named test went red:
+seven runs in all, with every file restored byte for byte.
