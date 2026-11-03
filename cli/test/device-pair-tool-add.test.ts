@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { type ChildProcess, spawn } from 'node:child_process';
 import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -20,7 +21,14 @@ import { after, afterEach, describe, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { holdsEntry } from '../src/claude-mcp.ts';
-import { CLAUDE_HEADERS_HELPER, claudeToolEntry } from '../src/tool-add.ts';
+import {
+  CLAUDE_HEADERS_HELPER,
+  claudeToolEntry,
+  CODEX_HEADERS_HELPER,
+  CODEX_RC_LINE,
+  CODEX_RC_MARKER,
+  CODEX_TOKEN_VAR,
+} from '../src/tool-add.ts';
 
 /**
  * `laika device pair` and `laika tool add` (LAI-1060), run as the real CLI in
@@ -343,10 +351,10 @@ interface Started {
 }
 
 /** The real CLI, asynchronously: the stub answers from this same process. */
-function start(home: string, args: readonly string[]): Started {
+function start(home: string, args: readonly string[], env: Record<string, string> = {}): Started {
   const argv = [ENTRY, ...args];
   const child = spawn(process.execPath, argv, {
-    env: { PATH: process.env.PATH ?? '', HOME: home, SHELL: '/bin/zsh' },
+    env: { PATH: process.env.PATH ?? '', HOME: home, SHELL: '/bin/zsh', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '';
@@ -361,7 +369,15 @@ function start(home: string, args: readonly string[]): Started {
   return { child, stdout: () => stdout, done };
 }
 
-const laika = (home: string, args: readonly string[]): Promise<Run> => start(home, args).done;
+const laika = (home: string, args: readonly string[], env?: Record<string, string>): Promise<Run> =>
+  start(home, args, env).done;
+
+/**
+ * A `PATH` with Node and the system tools and nothing else — no real `omni`
+ * (LAI-1101): `tool add omnigent` looks for one, and the machine running the
+ * tests may be a live Omnigent host.
+ */
+const BARE_PATH = `${dirname(process.execPath)}:/usr/bin:/bin`;
 
 const homes: string[] = [];
 const stubs: Stub[] = [];
@@ -793,7 +809,9 @@ void describe('laika tool add', () => {
     write(home, '.laika/agents/other-board.json', '{"url":"http://other.test","token":"lai_X"}\n');
     s.received.length = 0;
 
-    const run = await laika(home, ['tool', 'add', 'omnigent', '--exchange', 'EX9']);
+    const run = await laika(home, ['tool', 'add', 'omnigent', '--exchange', 'EX9'], {
+      PATH: BARE_PATH,
+    });
     assert.equal(run.code, 0, run.stdout + run.stderr);
 
     const pollyPath = join(home, '.laika', 'agents', 'polly.json');
@@ -880,38 +898,63 @@ void describe('laika tool add', () => {
     assert.equal(run.code, 0, run.stdout + run.stderr);
     const toml = readFileSync(join(home, '.codex', 'config.toml'), 'utf8');
     assert.ok(toml.startsWith(CODEX_TOML), 'the other server was changed');
-    assert.match(
+    // LAI-1101: a headers helper that reads the credential file — no variable.
+    assert.ok(
+      toml.endsWith(
+        `[mcp_servers.laika]\nurl = "${s.url}/mcp"\nhttp_headers_helper = ${JSON.stringify(CODEX_HEADERS_HELPER)}\n`,
+      ),
       toml,
-      /\[mcp_servers\.laika\]\nurl = ".*\/mcp"\nbearer_token_env_var = "LAIKA_AGENT_TOKEN_CODEX"\n/,
     );
+    assert.doesNotMatch(toml, /bearer_token_env_var/);
     assert.equal(readFileSync(join(home, '.codex', 'config.toml.bak'), 'utf8'), CODEX_TOML);
     assert.match(run.stdout, /\/hooks/);
     assert.ok(existsSync(join(home, '.codex', 'hooks.json')), 'codex hooks not installed');
 
     const again = await laika(home, ['tool', 'add', 'codex', '--exchange', 'EX2']);
     assert.equal(again.code, 0, again.stdout + again.stderr);
-    const rc = readFileSync(join(home, '.zshrc'), 'utf8');
-    assert.equal(rc.split('laika tool add codex').length - 1, 1, 'the rc block was added twice');
-    assert.ok(!rc.includes('lai_'));
-    assert.equal(readFileSync(join(home, '.zshrc.laika-backup'), 'utf8'), 'export EDITOR=vim\n');
+    // Nothing is exported from the shell any more: the rc is untouched.
+    assert.equal(readFileSync(join(home, '.zshrc'), 'utf8'), 'export EDITOR=vim\n');
+    assert.ok(!existsSync(join(home, '.zshrc.laika-backup')));
 
-    // The rc line reads the token out of the 0600 file — run it the way a shell would.
-    const exported = await new Promise<string>((resolve) => {
-      const child = spawn(
-        '/bin/sh',
-        ['-c', `. "${join(home, '.zshrc')}"; printf %s "$LAIKA_AGENT_TOKEN_CODEX"`],
-        {
-          env: { HOME: home, PATH: '/usr/bin:/bin' },
-        },
-      );
+    // The helper, run the way Codex runs it (a shell, an allowlisted
+    // environment), prints the header from the 0600 file.
+    const printed = await new Promise<string>((resolve) => {
+      const child = spawn('/bin/sh', ['-c', CODEX_HEADERS_HELPER], {
+        env: { HOME: home, PATH: '/usr/bin:/bin' },
+      });
       let out = '';
       child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString('utf8')));
       child.on('close', () => {
         resolve(out);
       });
     });
-    assert.equal(exported, SECRET);
+    assert.deepEqual(JSON.parse(printed), { Authorization: `Bearer ${SECRET}` });
     assertNoLeak(home, [run, again], '.laika/agents/codex.json');
+  });
+
+  void test('codex: what an older tool add wrote is brought up to date, and its rc export removed (LAI-1101)', async () => {
+    const home = sandbox();
+    const s = await board({ agentHarness: 'codex' });
+    await paired(home, s);
+    const older =
+      `${CODEX_TOML}\n[mcp_servers.laika]\nurl = "${s.url}/mcp"\n` +
+      `bearer_token_env_var = "${CODEX_TOKEN_VAR}"\n\n[profiles.x]\nmodel = "o3"\n`;
+    write(home, '.codex/config.toml', older);
+    const rcBefore = 'export EDITOR=vim\n';
+    write(home, '.zshrc', `${rcBefore}\n${CODEX_RC_MARKER}\n${CODEX_RC_LINE}\nalias ll="ls -l"\n`);
+
+    const run = await laika(home, ['tool', 'add', 'codex', '--exchange', 'EX1', '--no-hooks']);
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    assert.equal(
+      readFileSync(join(home, '.codex', 'config.toml'), 'utf8'),
+      `${CODEX_TOML}\n[mcp_servers.laika]\nurl = "${s.url}/mcp"\n` +
+        `http_headers_helper = ${JSON.stringify(CODEX_HEADERS_HELPER)}\n\n[profiles.x]\nmodel = "o3"\n`,
+    );
+    assert.equal(readFileSync(join(home, '.codex', 'config.toml.bak'), 'utf8'), older);
+    assert.match(run.stdout, /brought up to date/);
+    assert.equal(readFileSync(join(home, '.zshrc'), 'utf8'), `${rcBefore}alias ll="ls -l"\n`);
+    assert.match(run.stdout, /removed the LAIKA_AGENT_TOKEN_CODEX export/);
+    assert.ok(existsSync(join(home, '.zshrc.laika-backup')));
   });
 
   void test('codex: an existing [mcp_servers.laika] is kept byte for byte, and the edit printed', async () => {
@@ -926,7 +969,7 @@ void describe('laika tool add', () => {
     assert.equal(readFileSync(join(home, '.codex', 'config.toml'), 'utf8'), mine);
     assert.ok(!existsSync(join(home, '.codex', 'config.toml.bak')));
     assert.match(run.stdout, /kept as it is/);
-    assert.match(run.stdout, /bearer_token_env_var = "LAIKA_AGENT_TOKEN_CODEX"/);
+    assert.match(run.stdout, /http_headers_helper = /);
     assert.ok(!existsSync(join(home, '.codex', 'hooks.json')), '--no-hooks installed hooks');
   });
 
@@ -1251,11 +1294,13 @@ void describe('laika tool add', () => {
     assert.deepEqual(s.received, []);
   });
 
-  void test('omnigent: the credential and nothing else; no sessions for it', async () => {
+  void test('omnigent with no polly to copy: the credential only, and the step that remains', async () => {
     const home = sandbox();
     const s = await board({ agentHarness: 'omnigent' });
     await paired(home, s);
-    const run = await laika(home, ['tool', 'add', 'omnigent', '--exchange', 'EX1']);
+    const run = await laika(home, ['tool', 'add', 'omnigent', '--exchange', 'EX1'], {
+      PATH: BARE_PATH,
+    });
     assert.equal(run.code, 0, run.stdout + run.stderr);
     assert.equal(mode(join(home, '.laika', 'agents', 'omnigent.json')), 0o600);
     assert.deepEqual(
@@ -1263,7 +1308,8 @@ void describe('laika tool add', () => {
       ['.laika/agents/omnigent.json'],
       'something besides the credential was written',
     );
-    assert.match(run.stdout, /credential only: no hooks, no sessions/);
+    assert.match(run.stdout, /polly agent was not found/);
+    assert.match(run.stdout, /run this again\s+with --from <polly agent folder>/);
     const report = s.received.find((r) => r.path === '/api/v1/agents/me/client-report');
     assert.ok(report !== undefined);
     assert.ok(
@@ -1284,6 +1330,53 @@ void describe('laika tool add', () => {
     assert.equal(session.code, 1);
     assert.match(session.stderr, /Omnigent is credential only/);
     assertNoLeak(home, [run, session], '.laika/agents/omnigent.json');
+  });
+
+  void test('omnigent: polly copied with the bridge, installed with omni agent add, restart said (LAI-1101)', async () => {
+    const home = sandbox();
+    const s = await board({ agentHarness: 'omnigent' });
+    await paired(home, s);
+    // A polly folder, as the installed package has one, and a fake `omni`.
+    write(home, 'pkg/polly/config.yaml', 'name: polly\nharness: claude-sdk\n');
+    write(home, 'pkg/polly/agents/claude_code/config.yaml', 'name: claude_code\n');
+    const calls = join(home, 'omni-calls.txt');
+    write(
+      home,
+      'bin/omni',
+      `#!/bin/sh\n[ "$1" = --version ] && { echo "omnigent 0.19.1 (built x)"; exit 0; }\n` +
+        `printf 'ARGS %s\\n' "$*" >> ${JSON.stringify(calls)}\nenv >> ${JSON.stringify(calls)}\n`,
+    );
+    chmodSync(join(home, 'bin', 'omni'), 0o755);
+    const run = await laika(
+      home,
+      [
+        'tool',
+        'add',
+        'omnigent',
+        '--exchange',
+        'EX1',
+        '--from',
+        join(home, 'pkg', 'polly'),
+        '--yes',
+      ],
+      { PATH: `${join(home, 'bin')}:${BARE_PATH}` },
+    );
+    assert.equal(run.code, 0, run.stdout + run.stderr);
+    const dest = join(home, '.laika', 'omnigent', 'laika-polly');
+    assert.match(readFileSync(join(dest, 'config.yaml'), 'utf8'), /^name: laika-polly$/m);
+    const yaml = readFileSync(join(dest, 'tools', 'mcp', 'laika.yaml'), 'utf8');
+    assert.match(yaml, /^transport: stdio$/m);
+    assert.ok(!yaml.includes('${'), 'the sidecar holds a ${VAR}');
+    assert.ok(!existsSync(join(home, 'pkg', 'polly', 'tools')), 'the source was written');
+    const called = readFileSync(calls, 'utf8');
+    assert.match(
+      called,
+      new RegExp(`^ARGS agent add ${dest.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'),
+    );
+    assert.ok(!called.includes(SECRET), 'the token reached omni');
+    assert.match(run.stdout, /quit Omnigent fully \(Omnigent menu → Quit, not just the window\)/);
+    assert.match(run.stdout, /laika agent hooks on --harness claude-code/);
+    assertNoLeak(home, [run], '.laika/agents/omnigent.json');
   });
 
   void test('a claude-code command redeeming an antigravity exchange saves nothing anywhere (S1)', async () => {

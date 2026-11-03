@@ -29,7 +29,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
-import { AGENTS, codexLaikaLines, codexLaikaState, resolveAgent } from '../src/agents.ts';
+import {
+  AGENTS,
+  codexLaikaLines,
+  codexLaikaState,
+  omnigentSidecar,
+  resolveAgent,
+} from '../src/agents.ts';
+import { bridgeCommand } from '../src/agent-mcp-bridge.ts';
 import { connect, planConnect, rcFileFor, writeEnvFile, type ConnectIo } from '../src/connect.ts';
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -328,10 +335,15 @@ void describe('each written format has the shape its client reads', () => {
     mkdirSync(agentDir);
     assert.equal(await connect(['omnigent', '--dir', agentDir], h.io), 0, h.printed());
     const path = join(agentDir, 'tools', 'mcp', 'laika.yaml');
-    const expected =
-      'name: laika\ntransport: http\nurl: ${LAIKA_URL}/mcp\nheaders:\n' +
-      '  Authorization: "Bearer ${LAIKA_TOKEN}"\n';
-    assert.equal(readFileSync(path, 'utf8'), expected);
+    // LAI-1101: Laika's stdio bridge by absolute path — no ${VAR} for a
+    // Dock-launched Omnigent to fail on, and Omnigent's own credential.
+    const sidecar = omnigentSidecar(bridgeCommand(process.env));
+    assert.ok('yaml' in sidecar);
+    assert.equal(readFileSync(path, 'utf8'), sidecar.yaml);
+    assert.match(sidecar.yaml, /^transport: stdio$/m);
+    assert.ok(!readFileSync(path, 'utf8').includes('${'), 'the sidecar holds a ${VAR}');
+    assert.match(h.printed(), /omni agent add/);
+    assert.doesNotMatch(h.printed(), /now exports LAIKA_URL/, 'the rc was edited for Omnigent');
 
     const again = harness(h.io.env);
     const second = { ...again.io, home: h.home, cwd: h.cwd };
@@ -352,16 +364,22 @@ void describe('each written format has the shape its client reads', () => {
     const backups = filesUnder(join(h.home, '.laika', 'backups'));
     assert.equal(backups.length, 1);
     assert.equal(readFileSync(backups[0] ?? '', 'utf8'), 'name: laika\nold: true\n');
-    assert.match(readFileSync(join(dir, 'laika.yaml'), 'utf8'), /^transport: http$/m);
+    assert.match(readFileSync(join(dir, 'laika.yaml'), 'utf8'), /^transport: stdio$/m);
   });
 
-  void test('omnigent with neither --dir nor --project prints both snippets and writes none', async () => {
+  void test('omnigent with neither --dir nor --project prints the sidecar and writes none', async () => {
     const h = harness();
     assert.equal(await connect(['omnigent'], h.io), 0, h.printed());
     assert.ok(!existsSync(join(h.cwd, 'tools')), 'a sidecar was written');
-    assert.match(h.printed(), /type: mcp/);
-    assert.match(h.printed(), /transport: http/);
+    assert.match(h.printed(), /transport: stdio/);
+    assert.match(h.printed(), /"mcp-bridge"/);
     assert.match(h.printed(), /no user-level/i);
+    assert.match(h.printed(), /~\/\.laika\/agents\/omnigent\.json/);
+    assert.doesNotMatch(
+      h.printed(),
+      /\$\{LAIKA_(URL|TOKEN)\}/,
+      'the printed sidecar holds a ${VAR}',
+    );
   });
 
   void test('bridge clients get mcp-remote with --allow-http and a token placeholder', async () => {

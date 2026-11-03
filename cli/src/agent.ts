@@ -1,15 +1,17 @@
 import { spawn } from 'node:child_process';
-import { readSync } from 'node:fs';
+import { existsSync, readSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { adapter, HOOK_HARNESSES } from './agent-adapters.ts';
+import { omnigentMarker, type OmnigentVerdict } from './agent-omnigent-marker.ts';
 import {
   type AgentCredential,
   asLost,
   beatOnce,
   credentialFingerprint,
+  credentialPath,
   type Deps,
   endSession,
   findHarness,
@@ -234,6 +236,7 @@ const USAGE = [
   '  laika agent watch [--battery-percent 15] [--memory-seconds 60] [--offer-to AGENT]',
   '                                  opt-in: ask for a checkpoint before battery or memory runs out',
   '  laika agent launcher check|run|status|stop   optional, off by default (D-117; laika agent launcher --help)',
+  '  laika agent mcp-bridge [--credential omnigent]   a stdio MCP server relaying to the board, as that tool (Omnigent)',
   '',
   'The token is the agent’s, from the Agents screen — never your own. It is kept',
   'in ~/.laika/agents/<harness>.json (0600), or read from LAIKA_AGENT_TOKEN, and',
@@ -718,6 +721,72 @@ async function eventNotices(
   };
 }
 
+/** Is the harness this hook runs under one Omnigent started? (`agent-omnigent-marker.ts`) */
+export type Marker = (io: AgentIo) => OmnigentVerdict;
+
+export const marker: Marker = (io) => omnigentMarker(io.env, process.ppid);
+
+/**
+ * The credential a hook speaks with (D-118, LAI-1101; LAI-589's
+ * `agent-hook.sh` and `polly-home`, ported). **A manager is a harness**: every
+ * worker Omnigent starts, and polly's own turns (which run on Claude Code
+ * through `claude-sdk`), is a session of the Omnigent agent — so when this
+ * device holds that agent's credential (`~/.laika/agents/omnigent.json`,
+ * from `laika tool add omnigent`) an Omnigent run opens its session with it,
+ * and its MCP calls carry the same one (`headersHelper` in `tool-add.ts`), so
+ * the `session_id` a model is told is one its own token may claim with.
+ *
+ * - **No Omnigent credential here**: the harness's own, as before. Nothing
+ *   reads the process table.
+ * - **An Omnigent run**: the Omnigent agent's file, and never the
+ *   environment's `LAIKA_AGENT_TOKEN`. No such file is no session.
+ * - **Cannot tell** (no harness above this hook, or `ps` failed): no session
+ *   at all — never a guess between two agents.
+ */
+export function hookCredential(
+  io: AgentIo,
+  harness: Harness,
+  verdict: () => OmnigentVerdict,
+): AgentCredential | undefined {
+  if (
+    (harness === 'claude-code' || harness === 'codex') &&
+    existsSync(credentialPath(io.home, 'omnigent'))
+  ) {
+    const v = verdict();
+    if (v === 'omnigent') return readCredential(io.home, 'omnigent', {});
+    if (v === 'unknown') {
+      log(io.home, `hook ${harness}: cannot tell whether Omnigent started this run — no session`);
+      return undefined;
+    }
+  }
+  return readCredential(io.home, harness, io.env);
+}
+
+/**
+ * At `Stop`, an Omnigent run's live session is ended in the background, as
+ * `SessionEnd` ends one (LAI-1101; LAI-589 runbook §F, `session-reopen`).
+ * Omnigent keeps a finished worker's harness process alive, and the watcher
+ * renews a session for as long as its process lives — so the claims of a
+ * worker that stopped mid-task never lapsed (LAIKA-844, twice). The next
+ * prompt or tool call opens a new session and tells the model its
+ * `session_id`. A plain session keeps one session for its whole life, as
+ * LAI-542 does.
+ */
+function endTurn(
+  io: AgentIo,
+  harness: Harness,
+  harnessSessionId: string,
+  credential: AgentCredential,
+): void {
+  const state = readState(statePath(io.home, harness, harnessSessionId));
+  if (state?.status !== 'live') return;
+  spawnChild(io, '_end', harness, harnessSessionId, credential);
+  log(
+    io.home,
+    `turn end ${harness} ${state.session_id ?? ''}: an Omnigent run's session ends at Stop; the next prompt or tool call opens a new one`,
+  );
+}
+
 /**
  * What an installed hook runs. **Never fails the harness and never prints
  * anything but the documented JSON**: every path exits 0, and errors go to
@@ -734,6 +803,7 @@ export async function hookResult(
   io: AgentIo,
   event: HookEvent,
   harness: Harness,
+  isOmnigent: Marker = marker,
 ): Promise<HookResult> {
   const out = (text: string): HookResult => ({ out: text });
   const raw = io.readHookInput === undefined ? io.stdin() : await io.readHookInput();
@@ -744,7 +814,10 @@ export async function hookResult(
     // will not touch the worktree — so a PreToolUse is held to the safe side.
     return out(event === 'pre-tool' ? unreadablePreTool(io, harness) : '');
   }
-  const credential = readCredential(io.home, harness, io.env);
+  // Asked at most once a hook, and only where an answer changes something.
+  let asked: OmnigentVerdict | undefined;
+  const verdict = (): OmnigentVerdict => (asked ??= isOmnigent(io));
+  const credential = hookCredential(io, harness, verdict);
   if (credential === undefined) return out('');
   const path = statePath(io.home, harness, harnessSessionId);
 
@@ -761,6 +834,10 @@ export async function hookResult(
     } catch (cause) {
       log(io.home, `checkpoint hook ${event}: ${cause instanceof Error ? cause.name : 'error'}`);
     }
+    // After the Stop bookkeeping above, which reads the session it ends.
+    if (event === 'stop' && verdict() === 'omnigent') {
+      endTurn(io, harness, harnessSessionId, credential);
+    }
     // `Stop` prints nothing, and `PreToolUse` prints only the deny above:
     // never an `allow`, which would skip the person's own permission rules.
     if (event !== 'tool') return out(printed);
@@ -771,7 +848,18 @@ export async function hookResult(
   // Read at every hook, so a model switched mid-session reaches the next
   // heartbeat (LAI-588). A file read, bounded; no network.
   const self = readSelfReport(harness, input);
-  if (event === 'session-start' || state === undefined || state.status === 'starting') {
+  // An Omnigent run's session ended at the last Stop: its next turn opens a new one.
+  const reopen =
+    (event === 'prompt' || event === 'tool') &&
+    state?.status === 'ended' &&
+    verdict() === 'omnigent';
+  if (reopen) {
+    log(
+      io.home,
+      `reopen ${harness}: previous session ${state?.session_id ?? ''} ended at turn end`,
+    );
+  }
+  if (event === 'session-start' || state === undefined || state.status === 'starting' || reopen) {
     const opened = await open(io, harness, harnessSessionId, credential, undefined, self);
     if (opened.state?.status === 'live') {
       state = opened.state;
@@ -1102,6 +1190,11 @@ export async function agent(argv: readonly string[], io: AgentIo = CONSOLE): Pro
   if (command === 'git-home') {
     const { gitHome } = await import('./agent-git-home.ts');
     return gitHome(io, argv.slice(1));
+  }
+
+  if (command === 'mcp-bridge') {
+    const { mcpBridgeCommand } = await import('./agent-mcp-bridge.ts');
+    return mcpBridgeCommand(argv.slice(1), io.home, io.err);
   }
 
   if (command === 'launcher') {
