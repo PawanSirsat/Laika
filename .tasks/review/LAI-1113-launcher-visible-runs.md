@@ -109,3 +109,37 @@ is in the PR description.
   the tests; the first real window may need macOS Automation allowed. The
   `laika` a viewer runs must be from a checkout that has this change.
 
+## Review fixes (PR #260, review of `3d8662ab`: FAIL)
+
+- **B1, skip-mode validation too weak; check/status overclaimed.**
+  `CLAUDE_ALLOWED` and `CLAUDE_DENIED` moved from `agent-launcher-service.ts`
+  to `agent-launcher.ts` (re-exported from the service; no cycle).
+  `permissionsProblem(argv, 'skip')` now needs the shape `claudeArgv(…, 'skip')`
+  writes: `--dangerously-skip-permissions`; one `--disallowedTools` followed
+  by every `CLAUDE_DENIED` rule (extra rules allowed); one `--max-turns` and
+  one `--max-budget-usd`, each a number above 0; none of `--permission-mode`,
+  `--permission-prompts`, `--allowedTools` (also `--flag=value`). Both review
+  argvs are refused, with tests at `permissionsProblem` and at `loadConfig`;
+  the enable-written argv is accepted. The `check` / `status` line is
+  `permissionsLine(argv)`, read from the argv: rule count, whether every
+  launcher rule is there, and the two caps as written.
+- **B2, the closing-watch test could not fail.** It now runs the real
+  `startLauncher` (shared rig, `test/support/launch-rig.ts`), so the start
+  line carries the run's `pid` and `status.json` lists the running run, both
+  asserted. Proven: a temporary mutant in `watchCommand` that, on SIGHUP, kills
+  every audited start `pid` and then dies by SIGHUP made the test fail on
+  "the launcher still has the run"; reverted (checksum matched) and the test
+  passes. A first mutant using `require` failed for the wrong reason
+  (`ReferenceError`) and was not counted.
+- **Also:** README says plainly that a pre-LAI-1113 skip argv is refused until
+  `"permissions": "skip"` and the shape (and that `run --service` then writes
+  one `refused` `config_invalid` line, exits 0 and starts nothing — tested).
+  `skipsChecks` matches only the exact flags and `--permission-mode
+  bypassPermissions` / `=bypassPermissions`. osascript and notify-send run
+  with `PATH`, `HOME`, `LANG`, `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`
+  only (`commandEnv`, tested through the real runner). `watch` prints the
+  transcript path through `oneLine`. `laikaPathProblem` refuses a backslash.
+  `oneLine` redacts `lai_…` tokens and `Bearer …` values after stripping. The
+  exit notification takes its words from `exitReason(run)`, the audit's own
+  reason, so a stop outranks an earlier timeout in both.
+
