@@ -51,6 +51,7 @@ const launcher = startLauncher(
     sleep: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 200))),
     ownerOf: () => Promise.resolve(OWNER),
     poll: () => Promise.resolve(mode === 'offer' ? [record] : []),
+    worktreeProblem: () => undefined,
     prepare: (args) => {
       mkdirSync(handoffsDir(home), { recursive: true });
       writeFileSync(

@@ -934,7 +934,7 @@ const LOCK_WAIT_TRIES = 100;
  * Worth sending again: the network, or an answer that says "not now" — 5xx,
  * 408, 429. Any other 4xx is the board refusing, and resending will not change it.
  */
-function retryable(result: ApiResult): boolean {
+export function retryable(result: ApiResult): boolean {
   if (result.kind === 'network') return true;
   if (result.kind === 'ok') return false;
   return result.status >= 500 || result.status === 408 || result.status === 429;

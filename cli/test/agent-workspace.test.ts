@@ -13,23 +13,38 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 
-import { gitRunner, LOCAL_ROOT_ENV } from '../src/agent-handoff.ts';
+import { type GitRunner, gitRunner, LOCAL_ROOT_ENV } from '../src/agent-handoff.ts';
 import {
   autoBranch,
   branchAllowed,
   parseSymrefHead,
   prepareWorkspace,
+  reusedWorktreeProblem,
   validDefaultBranch,
+  type Workspace,
+  workspaceUnreachable,
+  type WorkspaceUnreachable,
 } from '../src/agent-workspace.ts';
 
 const REPO = 'kvell/laika';
 /** A refusal's words, or the workspace as JSON: what an assertion message can show. */
 const text = (v: unknown): string => (typeof v === 'string' ? v : JSON.stringify(v));
+/** A worktree was made: neither a refusal nor a remote that could not be reached. */
+const made = (v: Workspace | string | WorkspaceUnreachable): v is Workspace =>
+  typeof v !== 'string' && !workspaceUnreachable(v);
 const OFFER = '01M6G9MFEQ5GT1Q7NBFDVMY12B';
 let root: string;
 let bare: string;
@@ -129,8 +144,7 @@ void describe('prepareWorkspace (real git)', () => {
       offerId: OFFER,
       taskKey: 'LAI-1039',
     });
-    assert.equal(typeof ws, 'object', text(ws));
-    if (typeof ws === 'string') return;
+    assert.ok(made(ws), text(ws));
     assert.equal(ws.branch, 'LAI-1039-auto-vmy12b');
     assert.equal(ws.default_branch, 'main');
     assert.equal(ws.base_sha, head);
@@ -154,11 +168,7 @@ void describe('prepareWorkspace (real git)', () => {
     };
     const first = prepareWorkspace(args);
     const second = prepareWorkspace(args);
-    assert.ok(
-      typeof first === 'object' && typeof second === 'object',
-      `${text(first)} ${text(second)}`,
-    );
-    if (typeof first === 'string' || typeof second === 'string') return;
+    assert.ok(made(first) && made(second), `${text(first)} ${text(second)}`);
     assert.equal(second.branch, 'LAI-7-auto-vmy12b-2');
     assert.ok(existsSync(first.worktree), 'the first worktree is still there');
   });
@@ -225,5 +235,132 @@ void describe('prepareWorkspace (real git)', () => {
       taskKey: 'LAI-11',
     });
     assert.match(text(ws), /only under LAIKA_HANDOFF_LOCAL_REMOTE_ROOT/);
+  });
+});
+
+void describe('LAI-1107: a remote that could not be reached is not a refusal', () => {
+  void test('ls-remote fails (the remote is unreadable): unreachable, nothing made', () => {
+    const repo = clone();
+    const refs = git(repo, 'for-each-ref', '--format=%(refname)');
+    const objects = join(bare, 'objects');
+    renameSync(objects, `${objects}.away`);
+    let ws: ReturnType<typeof prepareWorkspace>;
+    try {
+      ws = prepareWorkspace({
+        git: gitRunner(env()),
+        env: env(),
+        repoDir: repo,
+        boardRepo: REPO,
+        offerId: OFFER,
+        taskKey: 'LAI-12',
+      });
+    } finally {
+      renameSync(`${objects}.away`, objects);
+    }
+    assert.ok(workspaceUnreachable(ws), text(ws));
+    assert.match(ws.unreachable, /the remote could not be read/);
+    assert.equal(git(repo, 'for-each-ref', '--format=%(refname)'), refs, 'no ref was made');
+    assert.equal(existsSync(join(dirname(repo), 'laika-LAI-12-auto-vmy12b')), false);
+  });
+
+  /** The real runner, with `fetch` answering as `stderr` says. */
+  const failingFetch =
+    (stderr: string): GitRunner =>
+    (cwd, args) =>
+      args.includes('fetch') ? { code: 128, stdout: '', stderr } : gitRunner(env())(cwd, args);
+
+  void test('the fetch fails on the network: unreachable, nothing made', () => {
+    const repo = clone();
+    const ws = prepareWorkspace({
+      git: failingFetch("fatal: unable to access 'x': Could not resolve host: github.com\n"),
+      env: env(),
+      repoDir: repo,
+      boardRepo: REPO,
+      offerId: OFFER,
+      taskKey: 'LAI-13',
+    });
+    assert.ok(workspaceUnreachable(ws), text(ws));
+    assert.match(ws.unreachable, /main could not be fetched: .*Could not resolve host/);
+  });
+
+  void test('the remote answers that it has no such branch: still a refusal', () => {
+    const repo = clone();
+    const ws = prepareWorkspace({
+      git: failingFetch("fatal: couldn't find remote ref refs/heads/main\n"),
+      env: env(),
+      repoDir: repo,
+      boardRepo: REPO,
+      offerId: OFFER,
+      taskKey: 'LAI-14',
+    });
+    assert.equal(typeof ws, 'string', text(ws));
+    assert.match(text(ws), /main could not be fetched: fatal: couldn't find remote ref/);
+  });
+});
+
+void describe('LAI-1107: reusedWorktreeProblem (real git)', () => {
+  function fresh(taskKey: string): Workspace {
+    const ws = prepareWorkspace({
+      git: gitRunner(env()),
+      env: env(),
+      repoDir: clone(),
+      boardRepo: REPO,
+      offerId: OFFER,
+      taskKey,
+    });
+    assert.ok(made(ws), text(ws));
+    return ws;
+  }
+  const problem = (ws: Workspace, over: Partial<Workspace> = {}): string | undefined => {
+    const w = { ...ws, ...over };
+    return reusedWorktreeProblem(gitRunner(env()), w.worktree, w.branch, w.base_sha);
+  };
+
+  void test('as it was left, or with a commit made on its branch: may start', () => {
+    const ws = fresh('LAI-20');
+    assert.equal(problem(ws), undefined);
+    git(ws.worktree, 'commit', '-q', '--allow-empty', '-m', 'later');
+    assert.equal(problem(ws), undefined, 'a descendant on the branch');
+  });
+
+  void test('a changed or an untracked file: refused', () => {
+    const ws = fresh('LAI-21');
+    writeFileSync(join(ws.worktree, 'README'), 'changed\n');
+    assert.match(problem(ws) ?? '', /changes or untracked files/);
+    git(ws.worktree, 'checkout', '-q', '--', 'README');
+    assert.equal(problem(ws), undefined);
+    writeFileSync(join(ws.worktree, 'stray'), 'x\n');
+    assert.match(problem(ws) ?? '', /changes or untracked files/);
+  });
+
+  void test('on another branch, or detached: refused', () => {
+    const ws = fresh('LAI-22');
+    git(ws.worktree, 'checkout', '-q', '-b', 'elsewhere');
+    assert.match(problem(ws) ?? '', /on refs\/heads\/elsewhere, not LAI-22-auto-vmy12b/);
+    git(ws.worktree, 'checkout', '-q', '--detach');
+    assert.match(problem(ws) ?? '', /on no branch, not LAI-22-auto-vmy12b/);
+  });
+
+  void test('HEAD moved to a commit that is not after the recorded one: refused', () => {
+    const ws = fresh('LAI-23');
+    git(ws.worktree, 'commit', '-q', '--allow-empty', '-m', 'one');
+    const later = git(ws.worktree, 'rev-parse', 'HEAD');
+    git(ws.worktree, 'reset', '-q', '--hard', ws.base_sha);
+    // Recorded at the later commit: the branch is now behind it.
+    assert.match(problem(ws, { base_sha: later }) ?? '', /neither .* nor a commit after it/);
+    // An unrelated history entirely.
+    git(ws.worktree, 'checkout', '-q', '--orphan', 'tmp');
+    git(ws.worktree, 'commit', '-q', '--allow-empty', '-m', 'other root');
+    git(ws.worktree, 'branch', '-q', '-f', 'LAI-23-auto-vmy12b', 'HEAD');
+    git(ws.worktree, 'checkout', '-q', 'LAI-23-auto-vmy12b');
+    assert.match(problem(ws) ?? '', /neither .* nor a commit after it/);
+  });
+
+  void test('gone, or a plain directory now: refused', () => {
+    const ws = fresh('LAI-24');
+    assert.match(problem(ws, { worktree: join(root, 'no-such-dir') }) ?? '', /gone/);
+    const plain = join(mkdtempSync(join(root, 'plain-')), 'x');
+    mkdirSync(plain);
+    assert.match(problem(ws, { worktree: plain }) ?? '', /no longer its own worktree/);
   });
 });

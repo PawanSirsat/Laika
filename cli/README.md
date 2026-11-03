@@ -1135,6 +1135,13 @@ laika agent handoff decline <offer> --reason "busy"
 
 `laika agent inbox` and `laika agent accept <offer>` are the same commands.
 
+**`prepare`'s exit codes** (LAI-1107): `0` prepared; `1` refused; `75`
+(`EX_TEMPFAIL`) when it **could not read the board** (the network, a 5xx, a 408
+or a 429) **or reach the repository** (a fetch or `ls-remote` that failed for
+any reason but the remote saying it has no such ref). Nothing was checked out
+and trying again can pass; a failed fetch leaves the record `needs_attention`
+with its reason, which a retry is allowed over.
+
 - **`prepare`** reads the offer and the checkpoint's newest ref, finds the
   remote of this repository whose URL is **exactly** the project's configured
   repo on github.com (`--remote` to name one) — `https://[user@]github.com/
@@ -1626,6 +1633,20 @@ A later selection of another agent stops a run that has not claimed yet.
 **What has been handled is on disk** (`~/.laika/launcher/handled.json`): a
 restarted launcher, or one the service brought back, never starts the same
 event twice. Work requests never expire, which is why this matters.
+
+**Could not reach is not a refusal** (LAI-1107). A `prepare` that exits `75`,
+or a work request's worktree whose remote could not be read or fetched from, is
+audited `deferred` (`prepare_unreachable`, `workspace_unreachable`, with
+`retry_ms`) and nothing about that offer is asked again for 30 s, doubling to at
+most 15 minutes; it is never marked handled. **A hand-off you prepared yourself
+stays yours**: the launcher writes `runs/<offer>/launcher-prepare.json` before
+it runs `prepare`, and reuses a prepared worktree only beside that marker — an
+offer prepared by hand is refused `prepared_by_hand` and never started in. **A
+reused worktree is checked first**: the recorded branch, `HEAD` at the recorded
+commit or after it on that branch, nothing changed or untracked — otherwise
+refused `reuse_refused`, the reason in `reuse-refused.txt` beside the run. A
+session opened for an attempt that throws, or whose harness cannot be spawned,
+is ended at once rather than left to lapse.
 
 **How it hears.** It holds `GET /api/v1/events` open with each agent's token,
 catches up from `/agents/me/events` on connect and on every gap, and an agent
