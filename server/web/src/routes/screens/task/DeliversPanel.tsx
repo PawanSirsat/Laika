@@ -9,6 +9,7 @@ import type {
   TaskSummary,
 } from '../../../api/tasks.ts';
 import { blocksLine, hasDelivers, linesOf, progressLine, STATE_WORDS } from './delivers-derive.ts';
+import { Spinner } from '../../../components/Spinner.tsx';
 import './delivers.css';
 
 export interface DeliversPanelProps {
@@ -225,7 +226,8 @@ export function DeliversPanel({
           )}
           <div className="dl-form-actions">
             <button type="submit" className="dl-save" disabled={busy}>
-              {busy ? 'Saving…' : 'Save'}
+              {busy && <Spinner size="sm" />}
+              Save
             </button>
             <button
               type="button"

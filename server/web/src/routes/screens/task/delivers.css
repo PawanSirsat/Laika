@@ -24,13 +24,13 @@
 
 .dl-title {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
 
 .dl-progress {
-  font-size: 12.5px;
+  font-size: var(--text-small);
   color: var(--text-secondary);
 }
 
@@ -46,7 +46,7 @@
   padding: 0;
   color: var(--accent);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   cursor: pointer;
 }
@@ -74,12 +74,12 @@
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
-  font-size: 13.5px;
+  font-size: var(--text-body);
   color: var(--text-primary);
 }
 
 .dl-col-title {
-  font-size: 12px;
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
 }
@@ -111,7 +111,7 @@
 }
 
 .dl-item-detail {
-  font-size: 12.5px;
+  font-size: var(--text-small);
   color: var(--text-secondary);
 }
 
@@ -138,7 +138,7 @@
 
 .dl-none,
 .dl-blocks {
-  font-size: 12.5px;
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
@@ -212,7 +212,7 @@
   background: var(--bg-input);
   color: var(--text-primary);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-body);
   padding: 4px 8px;
 }
 
@@ -224,7 +224,7 @@
   grid-column: 1 / -1;
   margin: 0;
   color: var(--overdue);
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 
 .dl-form-actions {
@@ -239,7 +239,7 @@
   padding: 0 12px;
   border-radius: var(--radius-control);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   cursor: pointer;
 }

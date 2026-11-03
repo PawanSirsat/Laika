@@ -161,13 +161,20 @@ void describe('toSummary (LAI-795)', () => {
     title: 'A task',
     description_md: 'Long prose',
     acceptance_md: '- [ ] done',
+    deliverables: [],
+    solves: [],
+    unlocks: [],
     updated_at: 5,
   } as unknown as Task;
 
-  void test('drops exactly the two texts a slim list leaves out', () => {
+  void test('drops exactly the detail fields a slim list leaves out', () => {
     const summary = toSummary(full);
     assert.deepEqual(Object.keys(summary), ['id', 'title', 'updated_at']);
-    assert.deepEqual([...SLIM_OMITS], ['description_md', 'acceptance_md']);
+    // The two texts, and since LAI-1115 what the task delivers (§6.4).
+    assert.deepEqual(
+      [...SLIM_OMITS],
+      ['description_md', 'acceptance_md', 'deliverables', 'solves', 'unlocks'],
+    );
     assert.equal('description_md' in full, true, 'the full task was changed');
   });
 

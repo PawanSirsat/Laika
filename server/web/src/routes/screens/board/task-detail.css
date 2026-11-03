@@ -371,7 +371,7 @@
   flex-shrink: 0;
   margin-left: var(--space-2);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-muted);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xs);
@@ -380,7 +380,7 @@
 
 /* *Copied*, said where the share icon is (D-129 item 6). */
 .panel-copied {
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-secondary);
   min-width: 0;
   white-space: nowrap;
@@ -393,7 +393,7 @@
 /* Acceptance drawn as a checklist when every line is one (D-129). */
 .panel-acceptance-progress {
   margin: 0 0 var(--space-2);
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 

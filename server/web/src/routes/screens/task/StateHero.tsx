@@ -30,6 +30,7 @@ import {
 import { firstLine } from './feed-groups.ts';
 import { TaskMarkdown } from './TaskMarkdown.tsx';
 import type { MentionCandidate } from './LazyRichEditor.tsx';
+import { Spinner } from '../../../components/Spinner.tsx';
 import './hero.css';
 
 export interface StateHeroProps {
@@ -153,7 +154,8 @@ export function StateHero({
                 disabled={deciding !== null}
                 onClick={onApprove}
               >
-                {deciding === 'accept' ? 'Approving…' : 'Approve'}
+                {deciding === 'accept' && <Spinner size="sm" />}
+                Approve
               </button>
             </span>
           )}
