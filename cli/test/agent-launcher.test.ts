@@ -1494,7 +1494,7 @@ void describe('LAI-1039: a work request', () => {
     const r = workRig(() => [selected(70)]);
     await startLauncher(
       { ...r.deps, maxTicks: 3 },
-      workConfig([process.execPath, script, '--ms', '50']),
+      workConfig([process.execPath, script, '--ms', '2000']),
     ).finished;
     assert.deepEqual(r.workspaces, [ids(71)]);
     assert.deepEqual(r.prepared, [], 'a work request never runs handoff prepare');
@@ -1622,7 +1622,7 @@ void describe('LAI-1039: a work request', () => {
     const r = workRig(() => [selected(76)]);
     await startLauncher(
       { ...r.deps, maxTicks: 2 },
-      workConfig([process.execPath, script, '--ms', '50'], {
+      workConfig([process.execPath, script, '--ms', '2000'], {
         prompt_via: { 'claude-code': 'argv' },
       }),
     ).finished;
@@ -2093,7 +2093,7 @@ void describe('LAI-1039 review: N1, N2, N3, N4, N9', () => {
           return Promise.resolve();
         },
       },
-      workConfig([process.execPath, script, '--ms', '30']),
+      workConfig([process.execPath, script, '--ms', '2000']),
     ).finished;
     await until(() => existsSync(join(runDir(r.home, rid(5)), 'seen.json')));
     const seen = JSON.parse(readFileSync(join(runDir(r.home, rid(5)), 'seen.json'), 'utf8')) as {
@@ -2208,11 +2208,11 @@ void describe('LAI-1039 with slice D final: identity per run', () => {
           return Promise.resolve(rid(30 + n));
         },
       },
-      workConfig([process.execPath, script, '--ms', '30'], {
+      workConfig([process.execPath, script, '--ms', '2000'], {
         max_concurrent: 2,
         harnesses: {
-          'claude-code': [process.execPath, script, '--ms', '30'],
-          omnigent: [process.execPath, script, '--ms', '30'],
+          'claude-code': [process.execPath, script, '--ms', '2000'],
+          omnigent: [process.execPath, script, '--ms', '2000'],
         },
         prompt_via: { omnigent: 'argv' },
       }),
