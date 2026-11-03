@@ -500,7 +500,9 @@ export function AddDeviceWizard({
               />
               <span>
                 <strong className="dx-option-name">Yes</strong>
-                <span className="dx-option-sub">There is a checkout at ~/laika</span>
+                <span className="dx-option-sub">
+                  Its terminal has a laika command, from any folder
+                </span>
               </span>
             </label>
           </div>
@@ -546,7 +548,9 @@ export function AddDeviceWizard({
               <Help>
                 <span data-update-first="">
                   Bring its Laika helper up to date first: the line above has the commands, for a
-                  helper with <code>laika update</code> and for one without it. Then pair:
+                  helper with <code>laika update</code> and for one too old to have it, wherever its
+                  checkout is. This code lasts ten minutes: if updating takes longer, cancel this
+                  pairing and start again for a fresh code. Then pair:
                 </span>
               </Help>
             )}

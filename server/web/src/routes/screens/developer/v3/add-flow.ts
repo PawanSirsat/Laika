@@ -20,7 +20,7 @@ import { ApiError, NetworkError } from '../../../../api/errors.ts';
 export const CHECKOUT = '~/laika';
 
 /** A value pasted into a terminal: as is when it is plainly safe, quoted otherwise. */
-function shellWord(value: string): string {
+export function shellWord(value: string): string {
   return /^[\w@%+=:,./~-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
@@ -79,7 +79,7 @@ export function bootstrapCommands(
     text: [clone, `${CHECKOUT}/plugin/scripts/install.sh --no-credential`, pair].join('\n'),
     versionNote:
       source.commit === null
-        ? `Version unknown: this board does not know which commit it was built from. Keep the helper current with \`git -C ${CHECKOUT} pull\`.`
+        ? 'Version unknown: this board does not know which commit it was built from, so this installs the newest on its repository’s default branch. How to update your Laika CLI has the ways to keep it current.'
         : undefined,
     updateFirst: false,
   };

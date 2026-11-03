@@ -1,9 +1,13 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
-import { loadBoardBuild, type BoardBuild } from '../../../../api/developer-compat.ts';
+import { loadBoardFacts, type BoardFacts } from '../../../../api/developer-compat.ts';
 import { CodeBlock } from '../../../../components/wizard/CodeBlock.tsx';
+import { CHECKOUT } from './add-flow.ts';
 import {
-  DEFAULT_CHECKOUT,
   GUIDE_TITLE,
+  LINK_TAIL,
+  REHASH_BASH,
+  REHASH_ZSH,
+  SKIP_ANSWER,
   STEP_TITLES,
   TOO_OLD_ANSWER,
   boardLine,
@@ -17,35 +21,35 @@ import './update-cli.css';
 /**
  * *Update your Laika CLI* (LAI-1086): the guide itself, and the one-line
  * disclosure that folds it away wherever a screen only needs to point at it.
- * Exported for Project setup's check step too — LAI-1084 owns that step's
- * hint right now, so it is not placed there by this task.
+ * Placed in Project setup's check step too (LAI-1093).
  *
- * The board's build, protocol and oldest accepted helper are read from
+ * The board's build, protocol and oldest accepted helper, and where its
+ * helper comes from (`cli.source`, for the fresh install), are read from
  * `GET /developer/compatibility` once per page and only when a guide is
  * first opened, so a screen that folds it away makes no request for it.
  */
 
-let asked: Promise<BoardBuild | undefined> | undefined;
+let asked: Promise<BoardFacts> | undefined;
 
-/** The board's build, read once for the page's life; `undefined` when it could not say. */
-function boardBuild(): Promise<BoardBuild | undefined> {
-  asked ??= loadBoardBuild();
+/** The board's build and helper source, read once for the page's life. */
+function boardFacts(): Promise<BoardFacts> {
+  asked ??= loadBoardFacts();
   return asked;
 }
 
 /** `'loading'` until the answer is in. */
-function useBoardBuild(): BoardBuild | undefined | 'loading' {
-  const [build, setBuild] = useState<BoardBuild | undefined | 'loading'>('loading');
+function useBoardFacts(): BoardFacts | 'loading' {
+  const [facts, setFacts] = useState<BoardFacts | 'loading'>('loading');
   useEffect(() => {
     let live = true;
-    void boardBuild().then((answer) => {
-      if (live) setBuild(answer);
+    void boardFacts().then((answer) => {
+      if (live) setFacts(answer);
     });
     return () => {
       live = false;
     };
   }, []);
-  return build;
+  return facts;
 }
 
 function currentOrigin(): string {
@@ -83,19 +87,20 @@ export interface UpdateCliGuideProps {
 }
 
 /**
- * The four steps, in order: check, update with `laika update`, update an
- * older CLI's checkout, and what to do after. `--allow-http` appears only
- * when this board is plain http off loopback, exactly as Tool details' own
- * update command does (`updateCommand`).
+ * The four steps, in order: check, update with `laika update`, a fresh
+ * install beside a CLI too old for it, and what to do after. `--allow-http`
+ * appears only when this board is plain http off loopback, exactly as Tool
+ * details' own update command does (`updateCommand`).
  */
 export function UpdateCliGuide({ origin, onCopiedUpdate }: UpdateCliGuideProps) {
   const ids = useId();
-  const build = useBoardBuild();
-  const commands = guideCommands(origin ?? currentOrigin());
+  const facts = useBoardFacts();
+  const loading = facts === 'loading';
+  const commands = guideCommands(origin ?? currentOrigin(), loading ? undefined : facts.source);
   return (
     <div className="dv3-cli-guide" data-update-cli-guide="">
-      <p className="dv3-cli-board" data-board-build={build === 'loading' ? 'loading' : ''}>
-        {build === 'loading' ? 'Reading which build this board runs…' : boardLine(build)}
+      <p className="dv3-cli-board" data-board-build={loading ? 'loading' : ''}>
+        {loading ? 'Reading which build this board runs…' : boardLine(facts.build)}
       </p>
       <ol className="dv3-cli-steps">
         <Step step="check" n={1}>
@@ -106,7 +111,8 @@ export function UpdateCliGuide({ origin, onCopiedUpdate }: UpdateCliGuideProps) 
             what="the command"
           />
           <p className="dv3-cli-note">
-            It prints the commit and helper protocol your CLI runs, without asking the board.
+            It prints the commit and helper protocol your CLI runs, without asking the board. If it
+            prints a commit, use step 2.
           </p>
           <p className="dv3-cli-note" data-too-old="">
             If it answers <code>{TOO_OLD_ANSWER}</code>, your CLI is older than this board: use step
@@ -123,7 +129,8 @@ export function UpdateCliGuide({ origin, onCopiedUpdate }: UpdateCliGuideProps) 
           />
           <p className="dv3-cli-note">
             <code>--check</code> only asks. <code>laika update</code> then moves your Laika checkout
-            to the commit this board was built from; nothing else on the machine changes.
+            to the commit this board was built from; nothing else on the machine changes. If{' '}
+            <code>laika update</code> is an unknown command, use step 3.
           </p>
           {commands.update.allowHttp && (
             <p className="dv3-cli-note" data-allow-http="">
@@ -132,25 +139,84 @@ export function UpdateCliGuide({ origin, onCopiedUpdate }: UpdateCliGuideProps) 
           )}
         </Step>
         <Step step="older" n={3}>
-          <p className="dv3-cli-note">
-            If <code>laika update</code> is an unknown command too, update the Laika checkout your
-            CLI runs from. It only moves forward: if git refuses, nothing has changed, and it says
-            why.
-          </p>
+          <p className="dv3-cli-note">See where this terminal’s laika comes from:</p>
           <CodeBlock
             label="Terminal"
-            labelId={`${ids}-older`}
-            text={commands.older}
+            labelId={`${ids}-find`}
+            text={commands.find}
             what="the command"
           />
-          <p className="dv3-cli-note" data-replace-path="">
-            Replace <code>{DEFAULT_CHECKOUT}</code> with where you cloned Laika. Not sure where?{' '}
-            <code>{commands.find}</code> prints the file your terminal runs; the folder before{' '}
-            <code>/cli/bin/laika</code> is your checkout.
+          <p className="dv3-cli-note" data-find-note="">
+            The arrow points at a file ending in <code>{LINK_TAIL}</code>: the folder that holds{' '}
+            <code>cli</code> is the old checkout. If it says no such file, there is no laika on this
+            terminal’s PATH — the install below is all you need.
           </p>
+          {loading ? (
+            <p className="dv3-cli-note">Reading where this board’s helper comes from…</p>
+          ) : commands.fresh === undefined ? (
+            <p className="dv3-cli-note" data-no-source="">
+              This board does not say where its helper comes from, so the install cannot be filled
+              in here. Ask whoever runs this board for its Laika repository and the commit it was
+              built from.
+            </p>
+          ) : (
+            <>
+              <p className="dv3-cli-note" data-fresh-why="">
+                <strong>Recommended:</strong> install a current checkout at <code>{CHECKOUT}</code>,
+                at the commit this board was built from. It works wherever the old checkout is and
+                whatever state it is in, and leaves a checkout anywhere else untouched: delete that
+                folder once <code>laika version</code> answers.
+              </p>
+              <CodeBlock
+                label={`Terminal, with no ${CHECKOUT} yet`}
+                labelId={`${ids}-fresh`}
+                text={commands.fresh.text}
+                what="the install commands"
+              />
+              <p className="dv3-cli-note" data-fresh-exists="">
+                If <code>{CHECKOUT}</code> already exists, this instead: it fetches rather than
+                clones, and git refuses rather than overwrite a change you made there.
+              </p>
+              <CodeBlock
+                label={`Terminal, when ${CHECKOUT} exists`}
+                labelId={`${ids}-existing`}
+                text={commands.fresh.existing}
+                what="the install commands"
+              />
+              {commands.fresh.commit === null && (
+                <p className="dv3-cli-note" data-fresh-default="">
+                  This board does not say which commit it was built from, so this takes the newest
+                  on its repository’s default branch.
+                </p>
+              )}
+            </>
+          )}
           <p className="dv3-cli-note">
-            Then <code>laika version</code> answers, and <code>laika update --check</code> says
-            whether it matches this board.
+            Then make this terminal look for laika again — <code>{REHASH_ZSH}</code> in zsh,{' '}
+            <code>{REHASH_BASH}</code> in bash — and check:
+          </p>
+          <CodeBlock
+            label="Terminal (zsh)"
+            labelId={`${ids}-recheck`}
+            text={commands.recheck}
+            what="the commands"
+          />
+          <p className="dv3-cli-note" data-relink-note="">
+            Still an unknown command? <code>install.sh</code> does not replace a laika on your PATH
+            that is not a link — it says <q>{SKIP_ANSWER}</q>. And if <code>{commands.find}</code>{' '}
+            still points into the old folder, that link sits in a folder earlier on your PATH. When
+            that line starts with <code>l</code> (a link), point it at the new checkout, then run{' '}
+            <code>{REHASH_ZSH}</code> again:
+          </p>
+          <CodeBlock
+            label="Terminal, only for a link"
+            labelId={`${ids}-relink`}
+            text={commands.relink}
+            what="the command"
+          />
+          <p className="dv3-cli-note">
+            A file that is not a link is not Laika’s to replace: rename it yourself, then run the
+            install again.
           </p>
         </Step>
         <Step step="after" n={4}>

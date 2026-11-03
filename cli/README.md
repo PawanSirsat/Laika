@@ -30,6 +30,61 @@ asks for your personal token and writes `~/.laika/env`, keeping any existing
 file as `env.bak-<seconds>` first. `laika connect` keeps the old file the same
 way (`env.bak-<ms>`) when it would change it.
 
+## Getting a current CLI, whatever is installed now (LAI-1093)
+
+Start with `laika version`. **If it prints a commit**, `laika update` (below)
+moves the checkout to the board's commit — add `--board <url>`, and
+`--allow-http` for a plain-http board off loopback, as the browser's
+*How to update your Laika CLI* shows them.
+
+**If it says `unknown command "version"`** (or `laika update` does), the CLI
+predates both, and **nothing should assume where its checkout is**: it may not
+be at `~/laika`, and a checkout `laika update` once left detached refuses a
+plain `git pull --ff-only` (`You are not currently on a branch`). See where this
+`laika` comes from — it changes nothing:
+
+```
+ls -l "$(command -v laika)"
+```
+
+The arrow points at a file ending in `/cli/bin/laika`; the folder that holds
+`cli` is the old checkout. No such file means no `laika` on this PATH.
+
+Then install a current checkout beside it — the fresh install above, which
+works whatever the old checkout is and **leaves it untouched** (delete it once
+the new one answers). If `~/laika` already exists, run
+`git -C ~/laika fetch origin` instead of the `git clone` line:
+
+```
+git clone <cli.source.url> ~/laika
+git -C ~/laika checkout --detach <cli.source.commit>
+~/laika/plugin/scripts/install.sh --no-credential
+rehash
+laika version
+```
+
+`rehash` is zsh's; in bash it is `hash -r`. (No `#` comments in these blocks:
+an interactive zsh does not treat `#` as a comment unless `interactivecomments`
+is set, so a pasted comment runs as words.) The browser fills in `<cli.source.url>` and `<cli.source.commit>` from the
+board's compatibility answer; typed by hand, replace the whole `<…>` — a shell
+reads a bare `<` as a redirect.
+
+**Still the old one?** `install.sh` does not replace a `laika` on PATH that is
+not a symlink (it prints *something else called laika is already on your PATH
+— skipping*). And if `ls -l "$(command -v laika)"` still points into the old
+folder, that link sits in a directory earlier on PATH than the one `install.sh`
+linked into. Only when that path is a symlink (the `ls -l` line starts with
+`l`), point it at the new checkout and look again:
+
+```
+ln -sf ~/laika/cli/bin/laika "$(command -v laika)"
+rehash
+```
+
+A file that is not a symlink is not Laika's to replace: rename it yourself,
+then run `install.sh` again. Nothing here asks for or prints a token. A pairing
+code lasts ten minutes, so make a fresh one in the browser after updating.
+
 ## `laika device pair` — this machine, proven by a key (LAI-1060)
 
 ```

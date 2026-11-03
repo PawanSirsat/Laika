@@ -31,6 +31,7 @@ import {
   verificationWords,
   withOneGrant,
 } from '../../../../../src/routes/screens/developer/v3/project-setup.ts';
+import { hazardsIn } from './shell-words.ts';
 
 const agent = (over: Partial<RegisteredAgent> & { id: string }): RegisteredAgent => ({
   owner_user_id: 'u1',
@@ -319,19 +320,22 @@ void describe('the hint for a CLI older than the board (LAI-1084)', () => {
     assert.equal(cliMatchHint(undefined).commit, null);
   });
 
-  void test('the way forward works on a CLI with no laika update: the checkout itself', () => {
+  void test('a CLI that prints a commit updates itself; an older one is the guide’s (LAI-1093)', () => {
     const hint = cliMatchHint(undefined);
     assert.equal(hint.version, 'laika version');
-    // Where the machine prompt clones it (PLUGIN_HOME).
-    assert.equal(hint.pull, 'git -C ~/laika pull --ff-only');
-    assert.equal(hint.home, '~/laika');
     assert.equal(hint.update, 'laika update');
+    // No checkout path is guessed here: `git -C ~/laika pull --ff-only` failed on a
+    // laptop whose checkout was elsewhere, and on one laika update left detached.
+    assert.deepEqual(Object.keys(hint).sort(), ['commit', 'update', 'version']);
+    assert.doesNotMatch(JSON.stringify(hint), /pull|~\/laika/);
   });
 
-  void test('every command in it pastes as it stands: no <placeholder> a shell reads as a redirect', () => {
-    const hint = cliMatchHint(undefined);
-    for (const command of [hint.version, hint.pull, hint.update]) {
-      assert.doesNotMatch(command, /[<>|;&$`]/, command);
+  void test('every command in it pastes as it stands: nothing a shell acts on unquoted', () => {
+    const hint = cliMatchHint({ url: 'https://github.com/PawanSirsat/Laika.git', commit: null });
+    assert.deepEqual(hazardsIn([hint.version, hint.update]), []);
+    // The check command above it, too, for every harness.
+    for (const client of Object.keys(CLI_HARNESS) as (keyof typeof CLI_HARNESS)[]) {
+      assert.deepEqual(hazardsIn([projectCheckCommand('laika', client)]), [], client);
     }
   });
 });

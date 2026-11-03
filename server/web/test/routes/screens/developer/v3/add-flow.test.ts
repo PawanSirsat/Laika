@@ -63,6 +63,9 @@ void describe('the bootstrap a device runs', () => {
     assert.match(text, /^git clone https:\/\/github\.com\/PawanSirsat\/Laika\.git ~\/laika$/m);
     assert.doesNotMatch(text, /checkout --detach/);
     assert.match(versionNote ?? '', /^Version unknown/);
+    // LAI-1093: no `git -C ~/laika pull`, which a detached or missing checkout refuses.
+    assert.doesNotMatch(versionNote ?? '', /\bpull\b|git -C/);
+    assert.match(versionNote ?? '', /How to update your Laika CLI/);
   });
 
   void test('no source: the pair line alone, and why', () => {

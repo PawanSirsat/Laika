@@ -401,7 +401,7 @@ void describe('a tool whose MCP client names no tool (LAI-1088)', () => {
     assert.equal(caps.state, 'fail');
     assert.equal(
       caps.detail,
-      'Not yet reported: tool_setup_exchange, client_report. The helper sends this as `laika tool add` sets Omnigent up: Pair Belka first, then Reconnect Omnigent from here and run the command on Belka. A helper older than this board needs `laika update` first.',
+      'Not yet reported: tool_setup_exchange, client_report. The helper sends this as `laika tool add` sets Omnigent up: Pair Belka first, then Reconnect Omnigent from here and run the command on Belka. A helper older than this board needs updating first: `laika update`, or for one too old to have it, How to update your Laika CLI.',
     );
   });
 
