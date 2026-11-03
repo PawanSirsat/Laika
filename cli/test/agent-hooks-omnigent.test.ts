@@ -22,9 +22,11 @@ import { runBridge } from '../src/agent-mcp-bridge.ts';
 import { agentHookCommand, type AgentHookEvent } from '../src/agent-hooks.ts';
 import { environReader, omnigentMarker, type EnvironReader } from '../src/agent-omnigent-marker.ts';
 import {
+  type Deps,
   type ProcInfo,
   type ProcReader,
   type SessionState,
+  startSession,
   UNKNOWN,
 } from '../src/agent-session.ts';
 import {
@@ -831,6 +833,53 @@ const stateOf = (home: string, id: string): SessionState =>
   JSON.parse(
     readFileSync(join(home, '.laika', 'agent-sessions', `claude-code-${id}.json`), 'utf8'),
   ) as SessionState;
+
+void describe('a session records its identity from its first state (review round 2, N1)', () => {
+  void test('N1: the state on disk already holds the identity when the board is first asked — no window for a watcher to write it away', async () => {
+    const home = join(root(), 'home');
+    let onDisk: unknown = 'not read';
+    const id = '01M6000000000000000000ABCD';
+    const deps: Deps = {
+      home,
+      env: {},
+      fetch: (_input, _init) => {
+        onDisk = (
+          JSON.parse(
+            readFileSync(
+              join(home, '.laika', 'agent-sessions', 'claude-code-first-1.json'),
+              'utf8',
+            ),
+          ) as SessionState
+        ).identity;
+        return Promise.resolve(
+          new Response(JSON.stringify({ id, agent_id: id }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      },
+      proc: () => undefined,
+      now: () => Date.now(),
+      sleep: () => Promise.resolve(),
+    };
+    const outcome = await startSession(deps, {
+      harness: 'claude-code',
+      harnessSessionId: 'first-1',
+      harnessProc: {
+        pid: process.pid,
+        ppid: 1,
+        started: 'Mon Nov  3 10:00:00 2026',
+        comm: 'claude',
+        state: 'S',
+      },
+      credential: { url: 'http://b', token: OMNI_TOKEN },
+      identity: 'omnigent',
+    });
+    assert.equal(outcome.kind, 'started');
+    assert.equal(onDisk, 'omnigent', 'the starting state was written without the identity');
+    assert.equal(stateOf(home, 'first-1').identity, 'omnigent');
+  });
+});
 
 void describe('an Omnigent run through the real hook', () => {
   void test('opens as the Omnigent agent, ends at Stop, and the next prompt opens a new session', async () => {
