@@ -242,7 +242,7 @@ export const CLAUDE_DENIED: readonly string[] = [
 
 /** The one line `enable` prints about the limit that is real. */
 export const BRANCH_PROTECTION_NOTE =
-  'Deny rules are best effort, not a boundary: turn on GitHub branch protection for the default branch (require a pull request) so no run can reach it.';
+  'Deny rules are best effort, not a boundary: on GitHub, protect the default branch — require a pull request AND turn on "Do not allow bypassing the above settings" (a run uses your credentials, and an admin bypasses otherwise).';
 export const CLAUDE_MIN_VERSION: readonly [number, number, number] = [2, 1, 259];
 
 export function claudeArgv(program: string): string[] {

@@ -44,6 +44,7 @@ import {
 } from '../src/agent-launcher-service.ts';
 import { argvProblem, configPath, loadConfig } from '../src/agent-launcher.ts';
 import { writeCredential } from '../src/agent-session.ts';
+import { CLAUDE_HEADERS_HELPER } from '../src/mcp-headers.ts';
 
 const OWNER = '01M2ZHT4HVYDPS7GE8S24CF4HH';
 const PROJECT = '01M50CDWK51GKGJ3JQEDM0S507';
@@ -216,10 +217,8 @@ void describe('the harness argv', () => {
     const d = device(['$REPO', 'yes'], {});
     assert.equal(await enable(d.io, ['--dry-run']), 0, d.out.join('\n'));
     assert.ok(d.out.includes(BRANCH_PROTECTION_NOTE), d.out.join('\n'));
-    assert.match(
-      BRANCH_PROTECTION_NOTE,
-      /branch protection for the default branch \(require a pull request\)/,
-    );
+    assert.ok(BRANCH_PROTECTION_NOTE.includes('require a pull request AND turn on'));
+    assert.ok(BRANCH_PROTECTION_NOTE.includes('"Do not allow bypassing the above settings"'));
   });
 
   void test('Codex: full access only as written, MCP through the headers helper, no token', () => {
@@ -281,7 +280,8 @@ function device(
         laika: {
           type: 'http',
           url: 'http://board.invalid/mcp',
-          headersHelper: `node -e "x" ${join(home, '.laika/agents/claude-code.json')}`,
+          // As `laika tool add claude-code` writes it now (slice D's switching helper).
+          headersHelper: CLAUDE_HEADERS_HELPER,
         },
       },
     }),

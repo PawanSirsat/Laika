@@ -1701,8 +1701,10 @@ claude -p --output-format json --permission-mode dontAsk --permission-prompts no
 are best effort, not a boundary.** Claude Code's own permissions doc calls
 Bash patterns that constrain arguments "fragile": a push written another way —
 `git -C . push`, an alias, a script — is not matched. **The real limit on
-"never reaches master" is GitHub branch protection on the default branch
-(require a pull request), which you turn on**; `enable` prints that line. The mode is written out because before Claude Code 2.1.302 a `-p` run
+"never reaches master" is GitHub branch protection on the default branch:
+require a pull request _and_ turn on "Do not allow bypassing the above
+settings"** — a run uses your credentials, and an admin bypasses the rule
+otherwise. You turn both on; `enable` prints that line. The mode is written out because before Claude Code 2.1.302 a `-p` run
 with no mode could start in auto mode (F6). The audit keeps only the result's
 `subtype`, `is_error`, `num_turns` and `total_cost_usd`.
 
