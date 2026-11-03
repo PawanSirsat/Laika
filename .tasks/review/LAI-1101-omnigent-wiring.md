@@ -102,3 +102,17 @@ tests and mutations for each are in `logs/shell-2026-11-03-LAI-1101.md`.
 - **B1:** the hooks switch to `omnigent.json` only where that harness's MCP
   entry is the switching helper (b). `tool add omnigent` switches the entries
   an earlier `tool add` wrote, and names any other (a).
+
+## Review round 2 (2026-11-03), fixed as new commits after `883ef747`
+
+- **B2:** on an Omnigent device, polly's own turns (`OMNIGENT=1`,
+  `CLAUDE_CODE_ENTRYPOINT=sdk-py`) use `omnigent.json` whatever any entry
+  says, because their MCP is the bridge. Workers keep the B1 rule.
+- **N1:** the identity is decided once and recorded in the session state.
+- **N3:** `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are honoured.
+- **N4:** the switching helper is matched by shape, and its text pinned.
+- **N5:** a restart line for Codex, other keys kept, and `isToolEntry`
+  limited to the exact revisions.
+- **N2:** documented as a known limitation.
+
+Details and tests are in `logs/shell-2026-11-03-LAI-1101.md`.

@@ -130,16 +130,40 @@ and the runner's children inherit it (`runner/identity.py`).
 - A tool started by hand in a terminal that Omnigent opened inherits
   `OMNIGENT=1` too, and counts as an Omnigent run.
 
-**Hooks and MCP always speak as one agent.** The board refuses a claim
-whose session belongs to another agent. So on a device that holds
+**Which agent, and why the hooks and MCP must agree.** The board refuses a
+claim whose session belongs to another agent. So on a device that holds
 `~/.laika/agents/omnigent.json`:
 
-- **If the tool's Laika MCP entry is the switching helper** `laika tool
-  add` writes, an Omnigent run's hooks open the session with the Omnigent
-  agent's token, and the helper sends that same token.
-- **If the entry is anything else** — your own, an older helper, a nearer
-  local-scope or project `laika` server, or none — the tool keeps acting as
-  its own agent in an Omnigent run, hooks included.
+- **polly's own turns are always the Omnigent agent.** These are Claude
+  Code started by Omnigent's `claude-sdk` harness: `OMNIGENT=1` and
+  `CLAUDE_CODE_ENTRYPOINT=sdk-py`. Their Laika MCP is Omnigent's own, the
+  bridge, which always speaks as the Omnigent agent, whatever
+  `~/.claude.json` or a `.mcp.json` says.
+  - **The cost:** a `claude-sdk` Omnigent agent whose Laika MCP is *not*
+    the bridge would split, with its hooks as the Omnigent agent and its MCP
+    as whatever its own config says. `laika-polly` is the only Omnigent
+    agent Laika targets, and its MCP is the bridge.
+- **A worker is the Omnigent agent only where its tool's effective Laika
+  MCP entry is the switching helper** `laika tool add` writes. Then the
+  hooks open the session with the Omnigent agent's token, and the helper
+  sends that same token.
+  - "Effective" means the entry the tool reads in that run:
+    `$CLAUDE_CONFIG_DIR/.claude.json` when set, else `~/.claude.json`; and
+    `$CODEX_HOME/config.toml` when set, else `~/.codex/config.toml`.
+  - Omnigent gives each Codex worker a private `CODEX_HOME` holding a copy
+    of that file. A conversation that was already running keeps its old copy
+    until it is restarted.
+- **A worker whose entry is anything else** keeps acting as its own agent in
+  an Omnigent run, hooks included. "Anything else" means your own entry, an
+  older helper, a nearer local-scope or project `laika` server, or none.
+  - Known limitation: a project `laika` server that Claude Code never loaded
+    (a `.mcp.json` nobody approved) still counts as nearer.
+
+**Decided once per session.** The agent is chosen by the hook that opens the
+session, and recorded in the session's state file. The watcher, a
+checkpoint, the end at Stop and a reopen all use the recorded choice, even
+after the working directory moves into a folder with a project `laika`
+server, such as this repository's `plugin/.mcp.json`.
 
 **Fail closed.** When a run cannot be told apart for Codex (no harness
 found, `ps` failed, or the environment unreadable), the hook opens no
