@@ -6847,6 +6847,8 @@ when work is handed to it; recorded by CHIEF.
    are best effort. Protecting `master` (require a pull request, do not allow bypassing) is
    what keeps an unattended run from releasing; `enable` says so.
 
-**Consequences.** Configs written before this load exactly as before: no notifications, no
-Terminal window, the allowlist. Nothing on the board changes; visibility is local to the
-device that runs the work.
+**Consequences.** Configs written before this load as before (no notifications, no Terminal
+window, the allowlist), except a hand-written Claude Code argv that already skipped permission
+checks: it is refused until it carries `"permissions": "skip"` and the shape `enable` writes, and
+the launcher then starts nothing (`config_invalid`). Nothing on the board changes; visibility is
+local to the device that runs the work.
