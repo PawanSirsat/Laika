@@ -104,8 +104,15 @@ export const ADAPTERS: Readonly<Record<Harness, HarnessAdapter>> = {
     agentHarness: 'antigravity',
     hooks: false,
   },
-  // Credential only (LAI-1060): Omnigent's workers open their own sessions
-  // through their own harness's hooks, so the identity here is the token.
+  // Credential only (LAI-1060): Laika opens no session for an `omnigent`
+  // process. Omnigent's sessions go through the hooks of the harness that
+  // runs them (LAI-1101, measured on 0.19.1): polly's own turns run on Claude
+  // Code through `claude-sdk`, which loads `~/.claude/settings.json`, and its
+  // workers on Claude Code or Codex. Every one carries `OMNIGENT=1`. On a
+  // device holding this agent's credential those hooks end the session at
+  // each turn's Stop; polly's own turns open it with this agent's
+  // credential, and a worker does where its harness's MCP entry follows
+  // Omnigent runs too (`decideIdentity` in `agent.ts`, reviews B1 and B2).
   omnigent: {
     harness: 'omnigent',
     name: 'Omnigent',
@@ -127,6 +134,17 @@ export const HOOK_HARNESSES: readonly Harness[] = HARNESSES.filter((h) => ADAPTE
  */
 export function explicitCommands(harness: Harness): string[] {
   const h = harness;
+  if (h === 'omnigent') {
+    return [
+      'Omnigent has no hooks of its own, so nothing was installed for it.',
+      'Its sessions open through the hooks of the harness that runs them — polly runs on',
+      'Claude Code (claude-sdk) — so install those: laika agent hooks on --harness claude-code',
+      '(and codex, if its workers run Codex). Inside Omnigent they act as this agent, with',
+      `~/.laika/agents/${h}.json: polly’s own turns always (its MCP is the bridge`,
+      '`laika tool add omnigent` installs), a worker where its Laika MCP entry is the',
+      'switching helper `laika tool add` writes, and as its own agent otherwise.',
+    ];
+  }
   if (ADAPTERS[h].credentialOnly === true) {
     return [
       `${ADAPTERS[h].name} is credential only here: no hooks and no sessions, so nothing was installed.`,

@@ -137,20 +137,37 @@ differently.
 | MCP resource subscriptions (`subscriptions/listen` → `notifications/resources/updated`, MCP 2026-07-28) | Unverified: not in its hooks docs | Unverified | Unverified: `cursor.com/docs/mcp.md` does not mention subscriptions | Unverified: not in the Copilot CLI or cloud MCP docs | Unverified | Unverified | Unverified: not in `mcp-server.md` | Unverified: not in `docs/mcp.md` |
 | Mid-turn delivery | Unsupported (no harness interrupts a running turn) | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported |
 
-## Credential only: Omnigent (LAI-1060)
+## Credential only: Omnigent (LAI-1060, LAI-1101)
 
-`laika tool add omnigent` keeps Omnigent's own token in
-`~/.laika/agents/omnigent.json` and does nothing else. Omnigent's workers are
-Claude Code, Codex and the like, and they open their sessions through their own
-harness's hooks, so the identity here is the credential. `laika agent session`
-refuses `--harness omnigent`; `laika agent hooks on --harness omnigent` says so
-and writes nothing.
+Laika opens no session for an `omnigent` process: `laika agent session`
+refuses `--harness omnigent`, and `laika agent hooks on --harness omnigent`
+says so and writes nothing. Omnigent's sessions go through the hooks of the
+harness that runs them instead. polly's own turns run on Claude Code through
+`claude-sdk`, and its workers on Claude Code or Codex. Every one of them
+carries `OMNIGENT=1` (Omnigent's `runner/identity.py`).
+
+On a device holding `~/.laika/agents/omnigent.json`, an Omnigent run's
+session ends at its turn's Stop. **polly's own turns** (`claude-sdk`:
+`OMNIGENT=1`, `CLAUDE_CODE_ENTRYPOINT=sdk-py`) are always the Omnigent agent
+(D-118), because their Laika MCP is the bridge.
+
+**A worker** is the Omnigent agent only where its tool's effective Laika MCP
+entry is the switching helper `laika tool add` writes, so that its hooks and
+its MCP speak as one agent; anywhere else it is the harness's own agent. The
+choice is recorded once per session.
+
+`laika tool add omnigent` installs a copy of polly whose MCP is
+`laika agent mcp-bridge`. It also switches any Claude Code or Codex Laika
+entry an earlier `tool add` wrote. Details are in
+[`../docs/omnigent.md`](../docs/omnigent.md).
 
 | Capability | Omnigent |
 | --- | --- |
 | Agent credential for the helper | Documented-not-tested: `laika tool add omnigent` or `laika agent login omnigent`, own file; the shared code is tested, no Omnigent run |
-| Board MCP credential in the harness's own config | Documented-not-tested: `<agent-dir>/tools/mcp/laika.yaml` (`laika connect omnigent --dir`), written by hand; a `${VAR}` the Omnigent server cannot see stops every turn |
-| Sessions, hooks, automatic checkpoints | **Unsupported** by Laika: refused, never installed |
+| Board MCP credential in the harness's own config | Documented-not-tested: `~/.laika/omnigent/laika-polly/tools/mcp/laika.yaml`, `transport: stdio` running `laika agent mcp-bridge` by absolute path, no `${VAR}` (`laika tool add omnigent`, or `laika connect omnigent --dir`). The bridge is tested against a fake board; it was not run inside a running Omnigent |
+| Sessions, hooks, automatic checkpoints | Through Claude Code's or Codex's hooks. polly's own turns are the Omnigent agent; a worker is the Omnigent agent where its tool's MCP entry is the switching helper, and the harness's own agent otherwise. Tested with a stand-in harness and a stub board. Measured on 0.19.1, 2026-11-03, with a throwaway server under a temp HOME: a polly turn ran `~/.claude/settings.json`'s `SessionStart`, `UserPromptSubmit` and `SessionEnd`, with `OMNIGENT=1` and `CLAUDE_CODE_ENTRYPOINT=sdk-py`. `Stop` was not observed, because no turn completed without a Claude login. The Laika session itself was not opened there |
+| A notice to a running session | Documented-not-tested: a user `message` to `/v1/sessions/{id}/events` on the loopback server (`agent-omnigent.ts`), to a `laika-polly` session only, gated to 0.19.x and tested against a fake server |
+| Stopping a headless run | Measured on 0.19.1: `stop_session` stops the server-side turn within 3 s. SIGTERM or SIGINT to `omni … -p` does not |
 
 ## The words each cell relies on
 

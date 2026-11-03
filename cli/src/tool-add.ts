@@ -1,13 +1,19 @@
+import { execFileSync } from 'node:child_process';
 import {
-  appendFileSync,
   copyFileSync,
+  cpSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
+  renameSync,
+  writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { type AgentHookReport, installAgentHooks } from './agent-hooks.ts';
 import { ADAPTERS, type Harness } from './agent-adapters.ts';
@@ -19,7 +25,27 @@ import {
   writeCredential,
   writePrivate,
 } from './agent-session.ts';
+import { bridgeCommand } from './agent-mcp-bridge.ts';
+import {
+  LAIKA_POLLY,
+  laikaPollyDir,
+  omniOnPath,
+  omniVersion,
+  pollySource,
+  SUPPORTED_OMNIGENT,
+} from './agent-omnigent.ts';
 import { AGENT_HOOK_SCRIPT } from './agent-setup.ts';
+import { codexLaikaLines, type JsonObject, omnigentSidecar } from './agents.ts';
+import {
+  claudeConfigFile,
+  CLAUDE_HEADERS_HELPER,
+  codexConfigFile,
+  CODEX_HEADERS_HELPER,
+  CODEX_HELPER_LINE,
+  headersHelper,
+  isSwitchingCodexTable,
+  isSwitchingHelper,
+} from './mcp-headers.ts';
 import { reportOutcome, sendClientReport } from './client-report.ts';
 import { apply, prepare, rcFileFor } from './connect.ts';
 import {
@@ -34,6 +60,7 @@ import {
   signWith,
   toolRedeemMessage,
 } from './device.ts';
+import { confirm } from './prompt.ts';
 import { PROTOCOL } from './protocol.ts';
 import { versionInfo } from './version.ts';
 
@@ -80,6 +107,10 @@ import { versionInfo } from './version.ts';
 
 export interface ToolAddIo extends DeviceIo {
   readonly shell: string | undefined;
+  /** Where `omni` and Node are looked for; `process.env` when absent. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /** A yes/no for a step that changes another program's state; absent is no. */
+  readonly confirm?: (question: string) => Promise<boolean>;
 }
 
 const CONSOLE: ToolAddIo = {
@@ -93,6 +124,8 @@ const CONSOLE: ToolAddIo = {
     }),
   now: () => Date.now(),
   shell: process.env.SHELL,
+  env: process.env,
+  ...(process.stdin.isTTY === true ? { confirm: (question: string) => confirm(question) } : {}),
 };
 
 /** How `tool add` sets up a tool, by the board's harness slug (§4.63). */
@@ -102,7 +135,13 @@ export type ToolPlan =
   | { readonly kind: 'mcp-manual'; readonly harness: Harness }
   | { readonly kind: 'refused'; readonly why: readonly string[] };
 
-/** The variable Codex's MCP entry reads its token from. Its own, never `LAIKA_TOKEN`. */
+/**
+ * The variable an older `tool add codex` pointed Codex's MCP entry at, and
+ * exported from the shell rc (LAI-1060). Replaced by
+ * {@link CODEX_HEADERS_HELPER} (LAI-1101): an exported token reaches every
+ * child of every shell, and a launcher-started Codex has no shell rc at all
+ * (D-117a item 6). Kept only to recognise, and retire, what it wrote.
+ */
 export const CODEX_TOKEN_VAR = 'LAIKA_AGENT_TOKEN_CODEX';
 
 /** The variable a hand-set MCP entry reads a tool's own token from: `LAIKA_AGENT_TOKEN_CURSOR`. */
@@ -119,17 +158,12 @@ export function tokenExportLine(harness: Harness, variable: string): string {
 }
 
 /**
- * Claude Code's `headersHelper` for the Laika entry: prints the
- * `Authorization` header from the tool's own credential file each time Claude
- * Code connects. User scope runs it from `~/.claude`, with the person's
- * environment, without a trust prompt (code.claude.com/docs/en/mcp, *Use
- * dynamic headers*). The token is never in `~/.claude.json`. With no token
- * there (the file gone, or no `token` line) it prints nothing and exits 1, so
- * Claude Code reports a failed helper rather than sending `Bearer ` (LAI-1074).
+ * The headers helpers live in `mcp-headers.ts`, so the hook path can tell
+ * whether a harness's MCP follows Omnigent runs without loading this module
+ * (LAI-1101 review B1). Re-exported for the callers and tests that knew them
+ * here.
  */
-export const CLAUDE_HEADERS_HELPER =
-  `t="$(sed -n 's/^ *"token": *"\\([^"]*\\)".*/\\1/p' "$HOME/.laika/agents/claude-code.json")" && ` +
-  `[ -n "$t" ] && printf '{"Authorization":"Bearer %s"}' "$t"`;
+export { CLAUDE_HEADERS_HELPER, CODEX_HEADERS_HELPER, headersHelper };
 
 /** The `mcpServers.laika` entry `tool add` writes into `~/.claude.json`. */
 export function claudeToolEntry(url: string): Record<string, string> {
@@ -204,6 +238,8 @@ const USAGE = [
   '',
   '  --no-hooks  do not install session hooks (Claude Code, Codex)',
   '  --dry-run   say what would happen; redeem nothing, write nothing',
+  '  --from DIR  Omnigent: the polly agent folder to copy (default: the installed one)',
+  '  --yes       Omnigent: run `omni agent add` without asking',
 ].join('\n');
 
 function option(argv: readonly string[], name: string): string | undefined {
@@ -237,8 +273,19 @@ function describe(plan: Exclude<ToolPlan, { kind: 'refused' }>, hooks: boolean):
   if (plan.kind === 'mcp-manual')
     lines.push('  mcp         set up by hand — the exact step is printed');
   if (h === 'codex') {
-    lines.push(`  mcp         ~/.codex/config.toml [mcp_servers.laika] → ${CODEX_TOKEN_VAR}`);
-    lines.push(`  shell       an export of ${CODEX_TOKEN_VAR} from the credential file`);
+    lines.push(
+      '  mcp         ~/.codex/config.toml [mcp_servers.laika] → http_headers_helper reads ~/.laika/agents/codex.json',
+    );
+    lines.push(`  shell       an older ${CODEX_TOKEN_VAR} export this command added is removed`);
+  }
+  if (h === 'omnigent') {
+    lines.push(
+      `  agent       a copy of Omnigent’s polly in ~/.laika/omnigent/${LAIKA_POLLY} (named ${LAIKA_POLLY}); a copy already there is kept as .bak-<time>`,
+      '  mcp         its tools/mcp/laika.yaml runs `laika agent mcp-bridge` by absolute path — no ${VAR}',
+      `  omnigent    omni agent add ~/.laika/omnigent/${LAIKA_POLLY}, once you say yes`,
+      '  switch      a laika MCP entry tool add wrote in ~/.claude.json or ~/.codex/config.toml',
+      '              now follows Omnigent runs (backed up); any other is left alone and named',
+    );
   }
   if (plan.kind === 'full' && hooks)
     lines.push(`  hooks       laika agent hooks on --harness ${h}`);
@@ -340,6 +387,9 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
   saveCredential(io, target, redeemed, deviceId);
   await bringAlong(io, siblings, origin, redeemed);
 
+  const omnigent = target === 'omnigent' ? await omnigentAgent(io, argv) : 'none';
+  if (target === 'omnigent') followOmnigent(io);
+
   const installed: AgentHookReport[] = [];
   let mcp: ClaudeMcp = target === 'codex' ? 'tool' : 'none';
   if (target === 'codex') codexMcp(io, redeemed.boardOrigin);
@@ -370,7 +420,7 @@ async function add(argv: readonly string[], io: ToolAddIo): Promise<number> {
     for (const line of manualMcp(target, redeemed.boardOrigin)) io.out(line);
     io.out('');
   }
-  for (const line of nextSteps(target, hooksOn, mcp)) io.out(line);
+  for (const line of nextSteps(target, hooksOn, mcp, omnigent)) io.out(line);
   return 0;
 }
 
@@ -584,29 +634,46 @@ function redeemAnswer(
 /* -------------------------------------------------------------------------- */
 
 export function codexBlock(url: string): string {
-  return `[mcp_servers.laika]\nurl = ${JSON.stringify(`${url}/mcp`)}\nbearer_token_env_var = "${CODEX_TOKEN_VAR}"\n`;
+  return `[mcp_servers.laika]\nurl = ${JSON.stringify(`${url}/mcp`)}\n${CODEX_HELPER_LINE}\n`;
 }
 
 /**
- * The rc line: reads the token out of Codex's own credential file when a shell
- * starts, so the secret is in no file but that 0600 one. Every child of the
- * shell can see an exported variable — isolation per tool is per file, not
- * per process (plan §L).
+ * The table an older `tool add codex` wrote (LAI-1060), exactly: it is this
+ * command's to bring up to date. Any other `[mcp_servers.laika]` is the
+ * person's, and is kept.
+ */
+const OLDER_CODEX_BLOCK = new RegExp(
+  `^\\[mcp_servers\\.laika\\]\\nurl = "[^"\\n]*/mcp"\\nbearer_token_env_var = "${CODEX_TOKEN_VAR}"\\n`,
+  'm',
+);
+
+/**
+ * The rc line an older `tool add codex` appended, under its marker: it read
+ * the token out of Codex's credential file and exported it to every shell.
  */
 export const CODEX_RC_LINE = tokenExportLine('codex', CODEX_TOKEN_VAR);
 
 function codexMcp(io: ToolAddIo, url: string): void {
-  const prepared = prepare({
-    kind: 'toml',
-    path: join(io.home, '.codex', 'config.toml'),
-    block: codexBlock(url),
-  });
+  const path = join(io.home, '.codex', 'config.toml');
+  const raw = existsSync(path) ? readFileSync(path, 'utf8') : undefined;
+  const older = raw === undefined ? null : OLDER_CODEX_BLOCK.exec(raw);
+  const prepared =
+    raw !== undefined && older !== null
+      ? ({
+          ok: true,
+          path,
+          status: 'replaced',
+          content: raw.replace(OLDER_CODEX_BLOCK, codexBlock(url)),
+          existed: true,
+          secret: false,
+        } as const)
+      : prepare({ kind: 'toml', path, block: codexBlock(url) });
   if (!prepared.ok) {
     io.out(`  ! mcp: ${prepared.message}`);
   } else if (prepared.status === 'kept') {
     io.out(`  · mcp: ${prepared.path} already has [mcp_servers.laika] — kept as it is.`);
-    io.out(`      To use this tool's own credential, set in that table:`);
-    io.out(`        bearer_token_env_var = "${CODEX_TOKEN_VAR}"`);
+    io.out(`      To use this tool's own credential, put this in that table instead:`);
+    io.out(`        http_headers_helper = ${JSON.stringify(CODEX_HEADERS_HELPER)}`);
   } else if (prepared.status === 'unsure') {
     io.out(
       `  ! mcp: ${prepared.path} may already define laika in a form not read here — left alone.`,
@@ -616,25 +683,34 @@ function codexMcp(io: ToolAddIo, url: string): void {
   } else {
     const backup = apply(prepared);
     io.out(
-      `  ✓ mcp: [mcp_servers.laika] ${prepared.status} in ${prepared.path}` +
+      `  ✓ mcp: [mcp_servers.laika] ${older === null ? prepared.status : 'brought up to date'} in ${prepared.path}, ` +
+        `reading this tool's credential through http_headers_helper` +
         `${backup === undefined ? '' : ` (backup: ${backup})`}`,
     );
   }
+  retireRcExport(io);
+}
 
+/**
+ * Removes the export an older `tool add codex` appended — its marker line and
+ * the line under it, exactly, and nothing else. Codex reads its token through
+ * `http_headers_helper` now, so the token need be in no shell's environment
+ * (D-117a item 6). The file is backed up first, once, as before.
+ */
+function retireRcExport(io: ToolAddIo): void {
   const rc = rcFileFor(io.shell, io.home);
   const existing = existsSync(rc) ? readFileSync(rc, 'utf8') : undefined;
-  if (existing?.includes(CODEX_RC_MARKER) === true) {
-    io.out(`  · shell: ${CODEX_TOKEN_VAR} is already exported by ${rc}`);
-    return;
-  }
+  const block = `${CODEX_RC_MARKER}\n${CODEX_RC_LINE}\n`;
+  if (!existing?.includes(block)) return;
   const backup = `${rc}.laika-backup`;
-  const madeBackup = existing !== undefined && !existsSync(backup);
+  const madeBackup = !existsSync(backup);
   if (madeBackup) copyFileSync(rc, backup);
-  const lead =
-    existing === undefined || existing === '' ? '' : existing.endsWith('\n') ? '\n' : '\n\n';
-  appendFileSync(rc, `${lead}${CODEX_RC_MARKER}\n${CODEX_RC_LINE}\n`);
+  // The blank line the append put before the marker goes with it.
+  const at = existing.indexOf(block);
+  const from = at >= 2 && existing.slice(at - 2, at) === '\n\n' ? at - 1 : at;
+  writeFileSync(rc, existing.slice(0, from) + existing.slice(at + block.length));
   io.out(
-    `  ✓ shell: ${rc} exports ${CODEX_TOKEN_VAR} from the credential file` +
+    `  ✓ shell: removed the ${CODEX_TOKEN_VAR} export from ${rc} — Codex no longer needs it` +
       `${madeBackup ? ` (backup: ${backup})` : ''}`,
   );
 }
@@ -776,7 +852,12 @@ export function manualMcp(harness: Harness, url: string): string[] {
 export const connectedCheck = (harness: Harness): string =>
   `${harness === 'copilot-vscode' ? 'VS Code' : ADAPTERS[harness].name} connected`;
 
-function nextSteps(harness: Harness, hooksOn: boolean, mcp: ClaudeMcp): string[] {
+function nextSteps(
+  harness: Harness,
+  hooksOn: boolean,
+  mcp: ClaudeMcp,
+  omnigent: OmnigentAgent,
+): string[] {
   switch (harness) {
     case 'claude-code':
       return [
@@ -801,7 +882,7 @@ function nextSteps(harness: Harness, hooksOn: boolean, mcp: ClaudeMcp): string[]
       ];
     case 'codex':
       return [
-        `Next: open a new terminal (so ${CODEX_TOKEN_VAR} is set), start codex, and`,
+        'Next: start codex (a new terminal is not needed: it reads its credential file), and',
         ...(hooksOn
           ? ['trust the Laika hooks in /hooks — Codex runs a new hook only once you do.']
           : ['note hooks are off: no sessions, claims or automatic checkpoints.']),
@@ -809,10 +890,28 @@ function nextSteps(harness: Harness, hooksOn: boolean, mcp: ClaudeMcp): string[]
       ];
     case 'omnigent':
       return [
-        'Omnigent is credential only: no hooks, no sessions, no automatic checkpoints.',
-        'Point its MCP config at the board by hand (laika connect omnigent --dir <agent>',
-        'prints the sidecar). A ${VAR} in that file which Omnigent’s server cannot see',
-        'stops every turn, so set the variable where Omnigent runs before you add it.',
+        ...(omnigent === 'installed'
+          ? [
+              'Next: quit Omnigent fully (Omnigent menu → Quit, not just the window) and open it',
+              `again, then start ${LAIKA_POLLY} and ask it to call laika_whoami — the browser ticks`,
+              `"${connectedCheck(harness)}".`,
+            ]
+          : omnigent === 'copied'
+            ? [
+                `Next: install it — omni agent add ~/.laika/omnigent/${LAIKA_POLLY} — then quit`,
+                'Omnigent fully (Omnigent menu → Quit, not just the window) and open it again.',
+                `Start ${LAIKA_POLLY} and ask it to call laika_whoami — the browser ticks`,
+                `"${connectedCheck(harness)}".`,
+              ]
+            : [
+                'No polly was set up, so Omnigent cannot reach the board yet. No new exchange is',
+                'needed: write the sidecar into an agent folder of your own (a copy of polly with',
+                'no symlinks), then install it —',
+                '  laika connect omnigent --dir <agent-folder>',
+                '  omni agent add <agent-folder>',
+              ]),
+        'Its sessions open through Claude Code’s hooks (polly runs on claude-sdk): run',
+        '`laika agent hooks on --harness claude-code` if you have not.',
       ];
     default:
       return [
@@ -822,6 +921,287 @@ function nextSteps(harness: Harness, hooksOn: boolean, mcp: ClaudeMcp): string[]
         `Then ask it to call laika_whoami — the browser ticks "${connectedCheck(harness)}".`,
       ];
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Omnigent                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What came of Omnigent's agent: `installed` — copied, and `omni agent add`
+ * succeeded; `copied` — the folder is ready and the person installs it;
+ * `none` — nothing could be set up.
+ */
+export type OmnigentAgent = 'installed' | 'copied' | 'none';
+
+/** The environment `omni agent add` runs with: what it needs, and no token of any name. */
+const OMNI_ENV = ['HOME', 'PATH', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'TMPDIR', 'SHELL'];
+
+/** The first symlink under `dir`, or `undefined`; `dir` itself is already resolved. */
+function firstSymlink(dir: string): string | undefined {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) return path;
+    if (stat.isDirectory()) {
+      const inner = firstSymlink(path);
+      if (inner !== undefined) return inner;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Claude Code's and Codex's Laika MCP entries, brought to the helpers that
+ * follow an Omnigent run to `~/.laika/agents/omnigent.json` (LAI-1101 review
+ * B1, CHIEF's decision (a)). The board refuses a claim whose session is
+ * another agent's, so an Omnigent **worker's** hooks and its MCP must speak
+ * as the same agent: a worker's hooks switch only when its effective MCP
+ * entry is the switching helper (`decideIdentity`, decision (b)), and here
+ * every entry `tool add` itself wrote becomes that helper, so the switch
+ * happens where it can. (polly's own turns use the Omnigent agent whatever
+ * these files say: their MCP is the bridge — review round 2, B2.)
+ *
+ * - An `mcpServers.laika` in Claude Code's `.claude.json` (under
+ *   `CLAUDE_CONFIG_DIR` when set) that `tool add` wrote — a revision it
+ *   actually wrote (`isToolEntry`) — gets the current helper, every other key
+ *   of the entry kept, the file backed up once as `.bak`, read back after
+ *   writing.
+ * - A `[mcp_servers.laika]` in Codex's `config.toml` (under `CODEX_HOME` when
+ *   set) exactly as an older
+ *   `tool add codex` wrote it (`bearer_token_env_var =
+ *   "LAIKA_AGENT_TOKEN_CODEX"`) gets the helper line instead, the file backed
+ *   up once, and that command's shell-rc export removed.
+ * - **Any other `laika` entry is left alone and named**: it is the person's,
+ *   and that harness keeps acting as itself inside Omnigent, hooks included.
+ *
+ * Needs no token and no exchange: it reads and rewrites the two files only.
+ */
+export function followOmnigent(io: ToolAddIo): void {
+  const env = io.env ?? process.env;
+  // The files Claude Code and Codex read in this environment (N3).
+  const path = claudeConfigFile(io.home, env);
+  const laika = existingLaika(path);
+  if (laika === undefined) {
+    // No Laika entry: Claude Code has no Laika MCP to switch.
+  } else if (
+    isSwitchingHelper(isRecord(laika) ? laika.headersHelper : undefined, 'claude-code') &&
+    isToolEntry(laika)
+  ) {
+    io.out(`  · claude code: mcpServers.laika in ${path} already follows Omnigent runs`);
+  } else if (isToolEntry(laika) && isRecord(laika)) {
+    // Every other key of the entry is kept (N5): only the helper changes.
+    const entry = { ...laika, headersHelper: CLAUDE_HEADERS_HELPER } as JsonObject;
+    const prepared = prepare({ kind: 'json', path, container: 'mcpServers', entry, secret: true });
+    if (!prepared.ok) {
+      io.out(`  ! claude code: ${prepared.message.split('\n').join(' ')}`);
+    } else {
+      const backup = apply(prepared);
+      if (isDeepStrictEqual(existingLaika(path), entry)) {
+        io.out(
+          `  ✓ claude code: mcpServers.laika in ${path} now follows Omnigent runs` +
+            `${backup === undefined ? '' : ` (backup: ${backup})`}; restart Claude Code`,
+        );
+      } else {
+        io.out(`  ! claude code: ${path} does not hold the new entry after writing it — a running`);
+        io.out(
+          '      Claude Code most likely wrote its own copy back. Quit it and run this again.',
+        );
+      }
+    }
+  } else {
+    io.out(
+      `  ! claude code: ${path} has an mcpServers.laika that laika tool add did not write — left alone.`,
+    );
+    io.out('      Inside Omnigent, Claude Code workers keep acting as their own agent, hooks and');
+    io.out('      MCP alike. To have them act as the Omnigent agent there, switch that entry to');
+    io.out('      Laika’s: `laika tool add claude-code` prints how.');
+  }
+
+  const toml = codexConfigFile(io.home, env);
+  const raw = existsSync(toml) ? readFileSync(toml, 'utf8') : undefined;
+  if (raw === undefined || codexLaikaLines(raw).length === 0) return;
+  if (isSwitchingCodexTable(codexLaikaLines(raw))) {
+    io.out(`  · codex: [mcp_servers.laika] in ${toml} already follows Omnigent runs`);
+    return;
+  }
+  const older = OLDER_CODEX_BLOCK.exec(raw);
+  if (older === null) {
+    io.out(
+      `  ! codex: ${toml} has a [mcp_servers.laika] that laika tool add did not write — left alone.`,
+    );
+    io.out('      Inside Omnigent, Codex workers keep acting as their own agent, hooks and MCP');
+    io.out('      alike. To have them act as the Omnigent agent there: `laika tool add codex`');
+    io.out('      prints the line.');
+    return;
+  }
+  const content = raw.replace(
+    OLDER_CODEX_BLOCK,
+    older[0].replace(`bearer_token_env_var = "${CODEX_TOKEN_VAR}"`, CODEX_HELPER_LINE),
+  );
+  const backup = apply({
+    ok: true,
+    path: toml,
+    status: 'replaced',
+    content,
+    existed: true,
+    secret: false,
+  });
+  io.out(
+    `  ✓ codex: [mcp_servers.laika] in ${toml} now follows Omnigent runs` +
+      `${backup === undefined ? '' : ` (backup: ${backup})`}; restart Codex`,
+  );
+  io.out('      A Codex conversation Omnigent is running keeps its own copy of this file (its');
+  io.out('      private CODEX_HOME) until that conversation is restarted.');
+  retireRcExport(io);
+}
+
+/**
+ * `laika tool add omnigent` (LAI-1101, plan auto-pickup §8 D, F8): Omnigent
+ * reaching the board **as its own agent**, on a fresh laptop, with nothing
+ * set by hand.
+ *
+ * 1. Omnigent's polly is **copied** to `~/.laika/omnigent/laika-polly/` —
+ *    never edited inside the installed package, which an upgrade replaces
+ *    (and where an earlier hand-written `${VAR}` sidecar stopped every polly
+ *    turn on 15 Oct). A copy already there is renamed `<dir>.bak-<time>`
+ *    first. The copy is named `laika-polly`, so the built-in polly is never
+ *    shadowed.
+ * 2. Its `tools/mcp/laika.yaml` is the stdio sidecar (`omnigentSidecar`):
+ *    Laika's MCP bridge, by absolute path, reading
+ *    `~/.laika/agents/omnigent.json`. Any `${` refuses the write.
+ * 3. `omni agent add <dir>` uploads it to the local Omnigent — only after a
+ *    yes (or `--yes`), with an environment that carries no token.
+ *
+ * A failure here never undoes the credential: it is printed with the step
+ * that remains.
+ */
+export async function omnigentAgent(
+  io: ToolAddIo,
+  argv: readonly string[],
+): Promise<OmnigentAgent> {
+  const env = io.env ?? process.env;
+  const from = option(argv, '--from');
+  const found = from ?? pollySource(env, io.home);
+  const source = found === undefined || !existsSync(found) ? found : realpathSync(found);
+  if (source === undefined || !existsSync(join(source, 'config.yaml'))) {
+    io.out(
+      from === undefined
+        ? "  ! agent: Omnigent's polly agent was not found (is `omni` installed and on PATH?)"
+        : `  ! agent: ${from} has no config.yaml — not an Omnigent agent folder`,
+    );
+    return 'none';
+  }
+  const sidecar = omnigentSidecar(bridgeCommand(env));
+  if ('refused' in sidecar) {
+    io.out(`  ! agent: ${sidecar.refused}`);
+    return 'none';
+  }
+  // A symlink in the copy would be written through: the config and the
+  // sidecar written below would land in whatever folder it points at — the
+  // installed package, or the --from source (LAI-1101 review #3).
+  const link = firstSymlink(source);
+  if (link !== undefined) {
+    io.out(`  ! agent: ${link} is a symlink — nothing copied. Copying it would write through it`);
+    io.out('      into the folder it points at. Pass --from a copy of the agent without symlinks.');
+    return 'none';
+  }
+  const config = readFileSync(join(source, 'config.yaml'), 'utf8');
+  if (!/^name:[ \t]*\S+[ \t]*$/m.test(config)) {
+    io.out(`  ! agent: ${join(source, 'config.yaml')} has no top-level name: line to rename`);
+    return 'none';
+  }
+
+  const dest = laikaPollyDir(io.home);
+  let backup: string | undefined;
+  try {
+    mkdirSync(join(io.home, '.laika', 'omnigent'), { recursive: true, mode: 0o700 });
+    if (existsSync(dest)) {
+      backup = `${dest}.bak-${new Date(io.now()).toISOString().replace(/[:.]/g, '-')}`;
+      renameSync(dest, backup);
+    }
+    cpSync(source, dest, {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+      filter: (path) => !['__pycache__', '.DS_Store'].includes(basename(path)),
+    });
+    writeFileSync(
+      join(dest, 'config.yaml'),
+      config.replace(/^name:[ \t]*\S+[ \t]*$/m, `name: ${LAIKA_POLLY}`),
+    );
+    mkdirSync(join(dest, 'tools', 'mcp'), { recursive: true });
+    writeFileSync(join(dest, 'tools', 'mcp', 'laika.yaml'), sidecar.yaml);
+  } catch (cause) {
+    io.out(
+      `  ! agent: could not copy polly to ~/.laika/omnigent/${LAIKA_POLLY}: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    return 'none';
+  }
+  // Read back what Omnigent will read: no MCP file in the copy may hold a ${VAR}.
+  const mcpDir = join(dest, 'tools', 'mcp');
+  for (const name of readdirSync(mcpDir)) {
+    if (readFileSync(join(mcpDir, name), 'utf8').includes('${')) {
+      io.out(
+        `  ! agent: ${join(mcpDir, name)} holds a \${VAR}, which a Dock-launched Omnigent cannot resolve —`,
+      );
+      io.out('      every turn of the agent would be refused. Remove that line, then install it.');
+      return 'none';
+    }
+  }
+  io.out(
+    `  ✓ agent: polly copied to ~/.laika/omnigent/${LAIKA_POLLY}, its Laika MCP is the bridge` +
+      `${backup === undefined ? '' : ` (the copy that was there: ${backup})`}`,
+  );
+
+  const omni = omniOnPath(env);
+  const installCommand = `omni agent add ${shellWord(dest)}`;
+  if (omni === undefined) {
+    io.out(`  · omnigent: \`omni\` is not on PATH; install Omnigent, then run: ${installCommand}`);
+    return 'copied';
+  }
+  const version = omniVersion(omni, io.home);
+  if (version === undefined || !SUPPORTED_OMNIGENT.test(version)) {
+    io.out(
+      `  ! omnigent: this is Omnigent ${version ?? '(version unknown)'}; ${LAIKA_POLLY} was checked on 0.19.x`,
+    );
+  }
+  const yes =
+    argv.includes('--yes') ||
+    (io.confirm !== undefined &&
+      (await io.confirm(`Install ${LAIKA_POLLY} into Omnigent now (${installCommand})?`)));
+  if (!yes) {
+    io.out(`  · omnigent: not installed — run it when you are ready: ${installCommand}`);
+    return 'copied';
+  }
+  const childEnv: Record<string, string> = {};
+  for (const name of OMNI_ENV) {
+    const value = env[name];
+    if (value !== undefined) childEnv[name] = value;
+  }
+  try {
+    execFileSync(omni, ['agent', 'add', dest], {
+      env: childEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 120_000,
+      encoding: 'utf8',
+    });
+  } catch (cause) {
+    const e = cause as { status?: number | null; stderr?: string };
+    const last = (e.stderr ?? '').trim().split('\n').slice(-1)[0] ?? '';
+    io.out(
+      `  ! omnigent: omni agent add failed (exit ${String(e.status ?? '?')})${last === '' ? '' : `: ${last}`}`,
+    );
+    io.out(`      Run it yourself once Omnigent is running: ${installCommand}`);
+    return 'copied';
+  }
+  io.out(`  ✓ omnigent: ${LAIKA_POLLY} installed (omni agent add)`);
+  return 'installed';
+}
+
+/** A path as one shell word, quoted only when it needs to be. */
+function shellWord(path: string): string {
+  return /^[A-Za-z0-9_./~-]+$/.test(path) ? path : `'${path.replace(/'/g, `'\\''`)}'`;
 }
 
 /**
