@@ -166,9 +166,11 @@ missing or old block exits `1` whatever else is true; `--harness X` with no
 credential for X exits `2`, unless `--offline` (`0`) or the block needs action
 (`1`). `LAIKA_AGENT_TOKEN` with `LAIKA_AGENT_URL` in the environment is a
 credential for whichever tool is asked for, and it wins over the
-several-tools rule: the check records with it. Whether a record can be made
-is decided before whether a project is named, so the order of the checks
-never turns a `2` into a `0`.
+several-tools rule. Every other rule above applies to it as written: no
+project named only prints, or is `2` with `--harness`; a board that does not
+answer, refuses, or is too old to take it is `2`. Whether a record can be
+made is decided before whether a project is named, so the order of the
+checks never turns a `2` into a `0`.
 
 ## `laika version` — which CLI this is (LAI-1043)
 
