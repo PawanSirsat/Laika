@@ -2,11 +2,12 @@
 id: LAI-1102
 title: 'Auto-pickup slice C (web): agent.capacity_requested mirrors, Auto-pickup chips, Ping'
 area: shell
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-1038]
 discovered-from: LAI-1038
-status: backlog
+status: in-progress
+started: 2026-11-03T15:26:56+05:30
 ---
 
 ## Goal
@@ -102,3 +103,13 @@ it. `LauncherReportView` stays: only the CLI reads it.
       (mutation: Ping shown for an ineligible agent goes red).
 - [ ] Playwright evidence in light and dark.
 - [ ] Repo-root gate exits 0 on the merge of LAI-1038 and this.
+
+## Claim note (2026-11-03, shell, dispatched by CHIEF)
+
+**Deviation from §2 step 1, recorded rather than read loosely:** `depends-on`
+names LAI-1038, which is in `.tasks/review/`, not `.tasks/done/`. This is the
+§4.4 case: LAI-1038 is submitted red on the five web mirrors by design, and
+CHIEF dispatched this slice to land on top of it. The branch
+`LAI-1102-capacity-web` is cut from `origin/LAI-1038-capacity-ping-presence`
+at b913cb28 (PR #253), and its PR into `master` is stacked on #253 — merge
+after it.
