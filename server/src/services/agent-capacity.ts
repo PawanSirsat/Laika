@@ -285,6 +285,13 @@ function spendPingTokens(requesterKey: string, agentId: string, now: number): vo
 const waiters = new Map<string, Set<() => void>>();
 
 /**
+ * The pings a request is already being held for, by ping and requester: one
+ * held request each (LAI-1038 review). A repeat inside the 15 s window spends
+ * no bucket, so without this it could hold a connection open per repeat.
+ */
+const held = new Set<string>();
+
+/**
  * Resolve when the ping is answered or `waitMs` passes, whichever is first.
  * One process holds the database (§11.1), so a wake-up here is every answer.
  */
@@ -459,8 +466,17 @@ export async function pingAndWait(
   const clock = input.clock ?? Date.now;
   const first = pingAgent(sqlite, db, actor, agentId, { ...input, now: input.now ?? clock() });
   if (first.ping.state !== 'pending' || input.waitMs <= 0) return first;
-  const left = Math.min(input.waitMs, first.ping.expires_at - clock());
-  await waitForAnswer(first.ping.id, left);
+  // A repeat while this requester's request for the ping is held answers now,
+  // with the ping as it stands: one held request per requester per ping.
+  const key = `${first.ping.id}:${registeredAgent(actor)?.id ?? `user:${actor.userId}`}`;
+  if (held.has(key)) return first;
+  held.add(key);
+  try {
+    const left = Math.min(input.waitMs, first.ping.expires_at - clock());
+    await waitForAnswer(first.ping.id, left);
+  } finally {
+    held.delete(key);
+  }
   return { ping: getPing(db, actor, first.ping.id, clock()), created: first.created };
 }
 

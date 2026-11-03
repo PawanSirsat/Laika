@@ -3438,7 +3438,9 @@ and writes nothing. **The limits** are token buckets a minute wide: **4 per
 requester per agent** and **30 per agent** from everyone; past either, `429`,
 `reason: capacity_ping_rate`, with `Retry-After`. A ping writes this row and
 its activity row in one transaction, and the event reaches the pinged agent
-only.
+only. **One request is held per requester per ping**: a repeat while the
+first is still held for its answer answers at once, with the ping as it
+stands.
 
 **The answer** — `POST /agents/me/capacity-pings/:id/reply`, **the pinged
 agent's own token**, `heartbeat.send_own` — is accepted **once, before
@@ -4049,7 +4051,7 @@ POST   /api/v1/agents/:id/reconnect          a rotate exchange on the agent's pa
 GET    /api/v1/agents/:id/verification       → { agent_id, harness, status, now, last_seen_at, checks: { device_paired, credential_installed, credential_used, tool_request, session_hooks, required_capabilities }, client_report } (§4.81, agent.read_own; the owner or the agent's own token)
 POST   /api/v1/agents/me/client-report       an agent's token only; body { cli_version, cli_commit?, protocol, capabilities[], harness_version?, harness? } → the report (§4.81, heartbeat.send_own)
 PUT    /api/v1/agents/me/launcher            an agent's token only; body { enabled, auto_pickup: { work_requests, handoffs }, running 0–4, max_concurrent 1–4, cli_version, started_at? } → { agent_id, enabled, state, reported_at, started_at, running, max_concurrent, auto_pickup, cli_version } (§4.83, heartbeat.send_own); a report, never a command
-POST   /api/v1/agents/:id/capacity-pings     body { project, task_id?, wait_ms? ≤ 10000 } → 201 { ping, created: true }, or 200 { ping, created: false } for the one still open from a repeat within 15 s; held up to wait_ms for the answer; anyone who may not ping it the agent 404; 429 capacity_ping_rate with Retry-After (§4.84, agent.ping)
+POST   /api/v1/agents/:id/capacity-pings     body { project, task_id?, wait_ms? ≤ 10000 } → 201 { ping, created: true }, or 200 { ping, created: false } for the one still open from a repeat within 15 s; held up to wait_ms for the answer, one held request per requester per ping (a repeat while one is held answers at once); anyone who may not ping it the agent 404; 429 capacity_ping_rate with Retry-After (§4.84, agent.ping)
 GET    /api/v1/capacity-pings/:id            → { ping } — to whoever pinged and the agent's owner; anyone else the 404 of no ping (§4.84, project.read)
 POST   /api/v1/agents/me/capacity-pings/:id/reply   the pinged agent's own token; body the answer (§4.84) → { ping }; 409 already_answered or ping_expired; a ping addressed to another agent the 404 of none (heartbeat.send_own)
 GET    /api/v1/agents/:id/capacity           ?project= → { agent_id, launcher, latest_answer, now } — the agents the caller may ping (else the agent 404); latest_answer is the newest answered ping it may read: any, to the owner; its own in this project, to anyone else (§4.84, agent.ping)

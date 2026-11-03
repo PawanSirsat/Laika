@@ -654,6 +654,27 @@ describe('review fixes (LAI-1038)', () => {
     await client.close();
   });
 
+  it('a repeat while the first request is held answers at once, with the ping as it stands', async () => {
+    const first = pingAs({ Cookie: cookie }, mine.id, { project: 'laika', wait_ms: 5_000 });
+    let row: { id: string } | undefined;
+    for (let i = 0; i < 200 && row === undefined; i += 1) {
+      row = h.db.select().from(capacityPings).get();
+      if (row === undefined) await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(row, 'the ping row never appeared').toBeDefined();
+
+    const started = Date.now();
+    const again = await ok(
+      await pingAs({ Cookie: cookie }, mine.id, { project: 'laika', wait_ms: 5_000 }),
+      200,
+    );
+    expect(Date.now() - started).toBeLessThan(1_500);
+    expect(again).toMatchObject({ created: false, ping: { id: row!.id, state: 'pending' } });
+
+    await ok(await reply(mine.secret, row!.id), 200);
+    expect(((await ok(await first, 201)).ping as Ping).state).toBe('answered');
+  });
+
 });
 
 // ------------------------------------------------------------------ presence
