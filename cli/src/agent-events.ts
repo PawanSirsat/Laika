@@ -54,9 +54,12 @@ import {
  * ## What a notice may contain
  *
  * Only fields that pass a fixed format: ids are ULIDs, a task key matches
- * {@link TASK_KEY}, a harness and a device label match short character
- * classes with no spaces, revisions are integers, the event type is one of a
- * closed list. **The sender's reason and note are never read** — not even
+ * {@link TASK_KEY}, a harness matches a short character class with no spaces,
+ * a device label is display text ({@link DEVICE_LABEL}: words, spaces and
+ * apostrophes, never a control character, quote, backtick or angle bracket),
+ * revisions are integers, the event type is one of a closed list. **A label
+ * never decides anything** — the launcher addresses by agent id (D-117a item
+ * 2) — so a label this does not show is shown as the harness alone. **The sender's reason and note are never read** — not even
  * their hash — so no text another agent wrote can reach the model through
  * this path. Every notice line is built from those fields and fixed words,
  * capped at {@link NOTICE_MAX} characters for the whole block, and wrapped in
@@ -104,9 +107,19 @@ export const EVENT_TYPES = [
   'task.handoff_expired',
   'task.recovered',
   'project.context_updated',
+  'agent.capacity_requested',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 const TYPE_SET: ReadonlySet<string> = new Set(EVENT_TYPES);
+
+/**
+ * Verbs that are never a notice (D-126 item 2): a capacity ping is answered by
+ * the launcher or the session watcher, with fixed fields, and the model is
+ * never told about it. Stored like any record so it is acknowledged and
+ * de-duplicated, and recorded `presented` locally once answered or refused,
+ * so it is never shown and never counted as dropped.
+ */
+export const SILENT_TYPES: ReadonlySet<string> = new Set(['agent.capacity_requested']);
 
 const OFFER_KINDS: ReadonlySet<string> = new Set(['work_request', 'handoff', 'recovery']);
 
@@ -114,8 +127,17 @@ const OFFER_KINDS: ReadonlySet<string> = new Set(['work_request', 'handoff', 're
 export const TASK_KEY = /^[A-Z][A-Z0-9]{0,9}-[0-9]{1,7}$/;
 /** A harness name as a notice may show it: no spaces, nothing to read as a sentence. */
 const HARNESS = /^[a-z0-9][a-z0-9-]{0,31}$/;
-/** A device label as a notice may show it (`Strelka`, `belka-2`). */
-const DEVICE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,23}$/;
+/**
+ * A device label as display text (LAI-1039, F1): what the owner typed —
+ * `Strelka`, `Pawan’s MacBook 16 GB`, `KvellD's MacBook 36 GB` — up to the
+ * board's own 80 characters. Letters and digits of any script, spaces, both
+ * apostrophes and a little punctuation; never a control or format character,
+ * a quote, a backtick, `$`, `<` or `>`, so a label cannot forge the block's
+ * markers or read as markup. **It is shown, never compared**: the launcher
+ * addresses work by agent id only.
+ */
+export const DEVICE_LABEL = /^[\p{L}\p{N}][\p{L}\p{M}\p{N} \u2019'._(),&+#/-]{0,79}$/u;
+const DEVICE = DEVICE_LABEL;
 
 const HARNESS_NAMES: Readonly<Record<string, string>> = {
   'claude-code': 'Claude Code',
@@ -143,6 +165,8 @@ export interface EventRecord {
   readonly from: Party | null;
   readonly to: Party | null;
   readonly context_revision: number | null;
+  /** A capacity ping's id (`agent.capacity_requested`, D-126), when the envelope names one. */
+  readonly ping_id?: string;
   /** The revision this helper last knew for the project, when it knew one. */
   context_before?: number;
   state: LocalState;
@@ -316,6 +340,8 @@ export function asRecord(value: unknown, now: number): EventRecord | undefined {
     typeof offer.kind === 'string' &&
     OFFER_KINDS.has(offer.kind);
   const revision = posInt(value.context_revision) ? value.context_revision : null;
+  // Plan §4: the ping travels as its own envelope; its id is the one field it adds.
+  const ping = isRecord(value.ping) ? value.ping.id : value.ping_id;
   const delivery = isRecord(value.delivery) ? value.delivery : null;
   const boardState =
     typeof delivery?.state === 'string' &&
@@ -333,6 +359,7 @@ export function asRecord(value: unknown, now: number): EventRecord | undefined {
     from: asParty(value.from),
     to: asParty(value.to),
     context_revision: revision,
+    ...(type === 'agent.capacity_requested' && isLaikaId(ping) ? { ping_id: ping } : {}),
     state: 'available',
     ...(boardState === undefined ? {} : { board_state: boardState }),
     at: now,
@@ -472,6 +499,8 @@ export function noticeLine(record: EventRecord, myAgentId?: string): string {
       }
       return `${task}: agent selection changed; run laika agent inbox`;
     }
+    case 'agent.capacity_requested':
+      return '';
     case 'project.context_updated': {
       const to = posInt(record.context_revision) ? `r${String(record.context_revision)}` : '';
       const from = posInt(record.context_before) ? `r${String(record.context_before)} → ` : '';
@@ -492,7 +521,9 @@ export function renderNotices(
   droppedUnshown = 0,
 ): { text: string; ids: string[]; dropped: number } {
   const none = { text: '', ids: [], dropped: 0 };
-  const waiting = records.filter((r) => r.state === 'received' && TYPE_SET.has(r.type));
+  const waiting = records.filter(
+    (r) => r.state === 'received' && TYPE_SET.has(r.type) && !SILENT_TYPES.has(r.type),
+  );
   // Notices dropped past MAX_PENDING are told, not hidden: one line, first,
   // since it is the oldest news. A number only, re-checked here.
   const dropped = posInt(droppedUnshown) ? droppedUnshown : 0;
@@ -536,6 +567,60 @@ export interface EventDeps {
   readonly fetch: Fetch;
   readonly now: () => number;
   readonly sleep: (ms: number) => Promise<void>;
+  /**
+   * Answers a capacity ping (D-126 item 3). `true` when it is settled here —
+   * answered, refused or not this board's to answer — and `false` to leave it
+   * for another answerer (a session leaves it to a running launcher). Absent:
+   * the session's own answer, `sessionAnswer` in `agent-capacity.ts`.
+   */
+  readonly answerPing?: PingAnswerer;
+}
+
+export type PingAnswerer = (
+  deps: EventDeps,
+  record: EventRecord,
+  key: StoreKey,
+  credential: AgentCredential,
+) => Promise<boolean>;
+
+/** A ping is open this long on the board (D-126 item 3); past twice that it is settled unanswered. */
+export const PING_OPEN_MS = 60_000;
+
+/**
+ * Answer the capacity pings that arrived, at most a few per call, and record
+ * each one settled as `presented` **locally only**: nothing was shown to the
+ * model, so the board is never told it was presented, and the record leaves
+ * the pending set without ever becoming a notice or a dropped-notice count.
+ */
+export async function settlePings(
+  deps: EventDeps,
+  key: StoreKey,
+  credential: AgentCredential,
+): Promise<number> {
+  const due = readStore(deps.home, key).records.filter(
+    (r) => r.type === 'agent.capacity_requested' && r.state === 'received',
+  );
+  if (due.length === 0) return 0;
+  const settled: string[] = [];
+  for (const record of due.slice(0, 5)) {
+    let done: boolean;
+    if (deps.now() - record.at > 2 * PING_OPEN_MS) done = true;
+    else {
+      try {
+        const answer = deps.answerPing ?? (await import('./agent-capacity.ts')).sessionAnswer;
+        done = await answer(deps, record, key, credential);
+      } catch {
+        done = false;
+      }
+    }
+    if (done) settled.push(record.event_id);
+  }
+  if (settled.length > 0) {
+    mutate(deps.home, key, (s) => {
+      for (const r of s.records) if (settled.includes(r.event_id)) r.state = 'presented';
+    });
+  }
+  return settled.length;
 }
 
 export type SyncOutcome = 'ok' | 'refused' | 'network' | 'error';
@@ -660,6 +745,9 @@ export async function receive(
     timeoutMs,
   );
   markReceived(deps, key, recorded);
+  if (outcome === 'ok' && records.some((r) => SILENT_TYPES.has(r.type))) {
+    await settlePings(deps, key, credential);
+  }
   return outcome;
 }
 
