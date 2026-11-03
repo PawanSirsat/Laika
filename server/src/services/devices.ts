@@ -15,6 +15,7 @@ import {
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { deviceLauncher, type LauncherView } from './agent-capacity.ts';
 import {
   agentView,
   assertCloudExpiry,
@@ -55,6 +56,11 @@ export interface DeviceView {
   revoked_count: number;
   /** Its agents, newest first, active and revoked. */
   agents: AgentView[];
+  /**
+   * The device's launcher (§4.83, D-126 item 4): on if any of its active
+   * tools' is, else unknown if any is, else off — `off` when none reported.
+   */
+  launcher: LauncherView;
   created_at: number;
   revoked_at: number | null;
 }
@@ -266,6 +272,7 @@ function deviceView(db: Db, row: DeviceRow, recognised: Set<string>): DeviceView
     .where(and(eq(agents.deviceId, row.id), eq(agents.ownerUserId, row.ownerUserId)))
     .orderBy(desc(agents.createdAt), desc(agents.id))
     .all();
+  const views = linked.map((agent) => agentView(db, agent));
   let lastSeenAt = row.lastSeenAt;
   for (const agent of linked) {
     if (agent.lastSeenAt !== null) {
@@ -286,7 +293,8 @@ function deviceView(db: Db, row: DeviceRow, recognised: Set<string>): DeviceView
     last_seen_at: lastSeenAt,
     active_count: linked.filter((agent) => agent.status === 'active').length,
     revoked_count: linked.filter((agent) => agent.status === 'revoked').length,
-    agents: linked.map((agent) => agentView(db, agent)),
+    agents: views,
+    launcher: deviceLauncher(views),
     created_at: row.createdAt,
     revoked_at: row.revokedAt,
   };

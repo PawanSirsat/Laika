@@ -176,6 +176,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'task.handoff.decline': 'YYN',
   'task.handoff.cancel': 'YCN',
   'project.handoff_policy.edit': 'YNN',
+  'agent.ping': 'YYN',
   'task.assign_other': 'YYN',
   'comment.create': 'YYN',
   'comment.edit': 'YCN',

@@ -24,6 +24,19 @@ import {
   type ProjectAccessView,
 } from '../../services/agent-project-access.ts';
 import { listOwnWorkRequests } from '../../services/work-requests.ts';
+import {
+  ANSWERED_BY,
+  CAPACITY_PING_LIMITS,
+  MEMORY_STATES,
+  getAgentCapacity,
+  pingAndWait,
+  replyToPing,
+  reportLauncher,
+  type AgentCapacityView,
+  type CapacityPingView,
+  type LauncherReportView,
+  type PingAgentResult,
+} from '../../services/agent-capacity.ts';
 import { listInbox } from '../../services/handoffs.ts';
 import {
   AGENT_EVENTS_DEFAULT_LIMIT,
@@ -53,6 +66,7 @@ import {
 } from '../../services/tool-setup.ts';
 import { type AppEnv } from '../context.ts';
 import { markOneTimeSecret } from '../idempotency.ts';
+import { withRetryAfter } from './capacity-pings.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
 
@@ -130,6 +144,59 @@ const ClientReportBody = strictObject({
   harness_version: VersionString.optional(),
   /** What the CLI says it runs as (D-125); self-reported, a known slug only. */
   harness: z.enum(AGENT_CLIENTS).optional(),
+});
+
+/** A launcher's two switches (§4.83, D-117a item 2). */
+const AutoPickup = strictObject({ work_requests: z.boolean(), handoffs: z.boolean() });
+const Running = z.number().int().min(0).max(4);
+const MaxConcurrent = z.number().int().min(1).max(4);
+
+/** `PUT /agents/me/launcher` (§4.83, D-126 item 4): self-reported, closed, capped. */
+const LauncherBody = strictObject({
+  enabled: z.boolean(),
+  auto_pickup: AutoPickup,
+  running: Running,
+  max_concurrent: MaxConcurrent,
+  cli_version: VersionString,
+  started_at: z.number().int().positive().nullish(),
+});
+
+/** `POST /agents/:id/capacity-pings` (§4.84, D-126 items 1–2). No free text. */
+const PingBody = strictObject({
+  project: z.string().trim().min(1).max(200),
+  task_id: z.string().trim().min(1).max(64).optional(),
+  wait_ms: z.number().int().min(0).max(CAPACITY_PING_LIMITS.maxWaitMs).optional(),
+});
+
+/**
+ * `POST /agents/me/capacity-pings/:id/reply` (§4.84, D-126 item 3): **a
+ * closed, capped object** — every level strict, every string a closed word
+ * but the CLI's version, and a reading the device could not take a word,
+ * never a number. No path, host name, repository or task text fits in it.
+ */
+const AnswerBody = strictObject({
+  launcher: z.union([
+    strictObject({
+      state: z.literal('on'),
+      auto_pickup: AutoPickup,
+      running: Running,
+      max_concurrent: MaxConcurrent,
+    }),
+    strictObject({ state: z.literal('off') }),
+  ]),
+  harness_ready: strictObject({ credential: z.boolean(), argv: z.boolean(), hooks: z.boolean() }),
+  session_live: z.boolean(),
+  battery: z.union([
+    strictObject({
+      state: z.enum(['ok', 'low']),
+      percent: z.number().int().min(0).max(100),
+      plugged: z.boolean().optional(),
+    }),
+    strictObject({ state: z.enum(['unsupported', 'unavailable']) }),
+  ]),
+  memory: strictObject({ state: z.enum(MEMORY_STATES) }),
+  cli_version: VersionString,
+  answered_by: z.enum(ANSWERED_BY),
 });
 
 /** `GET /agents/:id/project-access` (§6.4, LAI-1052): one project, by slug. */
@@ -254,6 +321,35 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
     );
   });
 
+  // The calling agent's launcher says what it is (§4.83, D-126 item 4): a
+  // report, never a command — nothing here reaches back to the device.
+  app.put('/me/launcher', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(LauncherBody, await c.req.json().catch(() => null));
+    return c.json<LauncherReportView>(
+      reportLauncher(db, actor, {
+        enabled: body.enabled,
+        autoPickup: {
+          workRequests: body.auto_pickup.work_requests,
+          handoffs: body.auto_pickup.handoffs,
+        },
+        running: body.running,
+        maxConcurrent: body.max_concurrent,
+        cliVersion: body.cli_version,
+        startedAt: body.started_at ?? null,
+      }),
+    );
+  });
+
+  // The pinged agent's own token answers its ping (§4.84, D-126 item 3).
+  app.post('/me/capacity-pings/:pingId/reply', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(AnswerBody, await c.req.json().catch(() => null));
+    return c.json<{ ping: CapacityPingView }>({
+      ping: replyToPing(sqlite, db, actor, c.req.param('pingId'), body),
+    });
+  });
+
   // Static device routes precede /:id so 'devices' is never an agent id.
   app.get('/devices', (c) => {
     return c.json({ data: listOwnAgentDevices(db, requireActor(c)) });
@@ -325,6 +421,31 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
       201,
     ),
   );
+
+  // Ask the agent's device for its capacity (§4.84, D-126): `201` for a new
+  // ping, `200` for the one still open from a repeat; held up to `wait_ms`
+  // for the answer. Anyone who may not ping it gets the agent `404`.
+  app.post('/:id/capacity-pings', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(PingBody, await c.req.json().catch(() => null));
+    const result = await withRetryAfter(c, () =>
+      pingAndWait(sqlite, db, actor, c.req.param('id'), {
+        projectSlug: body.project,
+        taskId: body.task_id ?? null,
+        waitMs: body.wait_ms ?? 0,
+      }),
+    );
+    return c.json<PingAgentResult>(result, result.created ? 201 : 200);
+  });
+
+  // Its launcher presence and the newest answer this reader may see (§6.4).
+  app.get('/:id/capacity', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(ProjectAccessQuery, c.req.query());
+    return c.json<AgentCapacityView>(
+      getAgentCapacity(db, actor, c.req.param('id'), query.project),
+    );
+  });
 
   // What the board saw of this agent's tool, from its own credential only.
   app.get('/:id/verification', (c) =>

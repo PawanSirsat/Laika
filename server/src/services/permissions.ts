@@ -128,6 +128,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'task.handoff.decline': 'Decline a hand-off or recovery offer',
   'task.handoff.cancel': 'Cancel a hand-off offer',
   'project.handoff_policy.edit': "Edit the project's hand-off policy",
+  'agent.ping': 'Ping an agent for its capacity',
   'task.assign_other': 'Assign a task to someone else',
   'comment.create': 'Add comment',
   'comment.edit': 'Edit / delete comment',

@@ -269,6 +269,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   ['task.handoff.decline', true, true, false],
   // | Edit the project's hand-off policy | ✓ | — | — |
   ['project.handoff_policy.edit', true, false, false],
+  // | Ping an agent for its capacity | ✓ | ✓ | — |
+  // D-126 item 1; which agent is the service's (agent-capacity.test.ts).
+  ['agent.ping', true, true, false],
   // | Assign a task to someone else | ✓ | ✓ | — |
   ['task.assign_other', true, true, false],
   // | Add comment | ✓ | ✓ | — |

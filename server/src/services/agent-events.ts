@@ -19,6 +19,7 @@ import {
   agentSessions,
   handoffOffers,
   projects,
+  tasks,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
@@ -66,6 +67,13 @@ export interface AgentEventEnvelope extends AgentEventDetail {
   occurred_at: number;
   project_id: string | null;
   task_id: string | null;
+  /**
+   * The task's key and the project's slug, read now (LAI-1038): what a
+   * launcher puts in a fixed prompt and a branch name without a second read.
+   * Both are readable wherever the event is, so neither discloses anything.
+   */
+  task_key: string | null;
+  project_slug: string | null;
   actor: {
     kind: ActorKind;
     user_id: string | null;
@@ -154,6 +162,39 @@ function acceptedAt(db: Db, offerIds: string[], agentId: string): Map<string, nu
   return out;
 }
 
+/** Each task's key and each project's slug, for a batch of rows: two reads whatever the size. */
+function keysOf(
+  db: Db,
+  rows: Joined[],
+): { taskKeys: Map<string, string>; slugs: Map<string, string> } {
+  const taskIds = [...new Set(rows.flatMap((r) => (r.row.taskId === null ? [] : [r.row.taskId])))];
+  const projectIds = [
+    ...new Set(rows.flatMap((r) => (r.row.projectId === null ? [] : [r.row.projectId]))),
+  ];
+  const taskKeys = new Map(
+    taskIds.length === 0
+      ? []
+      : db
+          .select({ id: tasks.id, prefix: projects.prefix, number: tasks.number })
+          .from(tasks)
+          .innerJoin(projects, eq(projects.id, tasks.projectId))
+          .where(inArray(tasks.id, taskIds))
+          .all()
+          .map((t) => [t.id, `${t.prefix}-${String(t.number)}`] as const),
+  );
+  const slugs = new Map(
+    projectIds.length === 0
+      ? []
+      : db
+          .select({ id: projects.id, slug: projects.slug })
+          .from(projects)
+          .where(inArray(projects.id, projectIds))
+          .all()
+          .map((p) => [p.id, p.slug] as const),
+  );
+  return { taskKeys, slugs };
+}
+
 /**
  * The envelopes of `rows` as `reader` may see them (D-121 item 7, LAI-1011):
  * through the one agent lens every activity surface uses, so the envelope's
@@ -183,6 +224,7 @@ function envelopes(
     [...new Set(rows.map((r) => r.event.offerId).filter((id): id is string => id !== null))],
     agentId,
   );
+  const { taskKeys, slugs } = keysOf(db, rows);
   return rows.map(({ row, event, delivery }, i) => {
     const detail = details[i]!;
     let redacted = false;
@@ -213,6 +255,8 @@ function envelopes(
       occurred_at: row.createdAt,
       project_id: row.projectId,
       task_id: row.taskId,
+      task_key: row.taskId === null ? null : (taskKeys.get(row.taskId) ?? null),
+      project_slug: row.projectId === null ? null : (slugs.get(row.projectId) ?? null),
       actor: {
         kind: row.actorKind,
         user_id: row.actorId,
@@ -220,7 +264,9 @@ function envelopes(
         agent_id: writerShown ? row.agentId : null,
         session_id: writerShown ? row.agentSessionId : null,
       },
+      // An envelope written at schema version 1 has no `ping` (LAI-1038).
       ...detail,
+      ping: detail.ping ?? null,
       from,
       to,
       agent_redacted: redacted,

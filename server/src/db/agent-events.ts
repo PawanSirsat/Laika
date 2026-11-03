@@ -17,8 +17,9 @@ import {
 
 /**
  * The agent half of the activity log (SPEC §4.76, §4.77, proposal §4.6,
- * LAI-553): one versioned envelope per hand-off, work-request, recovery or
- * context event, and one delivery row per agent it is addressed to.
+ * LAI-553): one versioned envelope per hand-off, work-request, recovery,
+ * context or capacity-ping event, and one delivery row per agent it is
+ * addressed to.
  *
  * Called by `appendActivity` and by nothing else, inside the transaction that
  * writes the activity row — so an envelope and its deliveries exist exactly
@@ -27,8 +28,12 @@ import {
  * was written, as the activity row beside it does.
  */
 
-/** The envelope's shape version. A change to {@link AgentEventDetail} bumps it. */
-export const AGENT_EVENT_SCHEMA_VERSION = 1;
+/**
+ * The envelope's shape version. A change to {@link AgentEventDetail} bumps it.
+ * `2` added `ping` (LAI-1038); an envelope written at `1` is read with `ping:
+ * null`, which is what it would have said.
+ */
+export const AGENT_EVENT_SCHEMA_VERSION = 2;
 
 /** The §4.8 verbs that are agent events (§4.76). */
 export const AGENT_EVENT_TYPES = [
@@ -41,6 +46,8 @@ export const AGENT_EVENT_TYPES = [
   'task.handoff_expired',
   'task.recovered',
   'project.context_updated',
+  // D-126 item 2 (LAI-1038): a capacity ping, to the pinged agent only.
+  'agent.capacity_requested',
 ] as const satisfies readonly ActivityType[];
 
 export type AgentEventType = (typeof AGENT_EVENT_TYPES)[number];
@@ -78,6 +85,12 @@ export interface AgentEventDetail {
   } | null;
   state: { before: string | null; after: string | null };
   claim_generation: { from: number | null; to: number | null };
+  /**
+   * A capacity ping (§4.84, D-126): the id the device answers with
+   * `POST /agents/me/capacity-pings/:id/reply`, and when it stops taking an
+   * answer. Null on every other verb. No free text either way.
+   */
+  ping: { id: string; expires_at: number } | null;
 }
 
 interface Payload {
@@ -89,6 +102,10 @@ interface Payload {
   named?: boolean;
   generation?: number;
   revision?: number;
+  /** `agent.capacity_requested`: the ping, the agent pinged and the ping's expiry. */
+  ping_id?: string;
+  agent_id?: string;
+  expires_at?: number;
 }
 
 type OfferRow = typeof handoffOffers.$inferSelect;
@@ -241,6 +258,27 @@ function detailOf(
             .where(eq(projects.id, row.projectId))
             .get()?.revision ?? null);
 
+  if (type === 'agent.capacity_requested') {
+    return {
+      offer: null,
+      from: null,
+      // The agent pinged, so its device can check the ping is addressed to it.
+      to: identity(db, payload.agent_id),
+      reason: null,
+      closed_reason: null,
+      checkpoint: null,
+      note_hash: null,
+      context_revision: contextRevision,
+      approval: null,
+      state: { before: null, after: null },
+      claim_generation: { from: null, to: null },
+      ping:
+        typeof payload.ping_id === 'string' && typeof payload.expires_at === 'number'
+          ? { id: payload.ping_id, expires_at: payload.expires_at }
+          : null,
+    };
+  }
+
   if (offer === null) {
     return {
       offer: null,
@@ -254,6 +292,7 @@ function detailOf(
       approval: null,
       state: { before: null, after: null },
       claim_generation: { from: null, to: null },
+      ping: null,
     };
   }
 
@@ -299,6 +338,7 @@ function detailOf(
       from: offer.fromClaimGeneration,
       to: typeof payload.generation === 'number' ? payload.generation : null,
     },
+    ping: null,
   };
 }
 
@@ -314,7 +354,8 @@ function detailOf(
  *   receive (§4.73);
  * - an offer answered, approved or closed: everyone an earlier event of the
  *   same offer reached, and the agents it moves between;
- * - a context change: every active agent granted the project.
+ * - a context change: every active agent granted the project;
+ * - a capacity ping: the agent pinged, and nobody else (D-126 item 2).
  *
  * Revoked agents get nothing. What may actually reach an agent is asked
  * again when it is read or streamed.
@@ -345,6 +386,8 @@ function recipientsOf(
   } else if (type === 'task.agent_selected') {
     add(payload.from);
     add(payload.to);
+  } else if (type === 'agent.capacity_requested') {
+    add(payload.agent_id);
   } else if (offer !== null) {
     add(detail.from?.agent_id);
     add(offer.toAgentId);
