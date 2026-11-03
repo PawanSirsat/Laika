@@ -39,13 +39,11 @@ import { InlineEdit } from '../task/InlineEdit.tsx';
 import { DocumentField } from '../task/DocumentField.tsx';
 import type { CardCandidate, MentionCandidate } from '../task/LazyRichEditor.tsx';
 import { taskHref } from '../my-day/task-link.ts';
-import { DependenciesSection } from '../task/DependenciesSection.tsx';
-import { SubtasksSection } from '../task/SubtasksSection.tsx';
+import { LinksCard } from '../task/LinksCard.tsx';
+import { EstimateCard } from '../task/EstimateCard.tsx';
 import { CommentBody } from '../task/CommentBody.tsx';
 import { CommentComposer } from '../task/CommentComposer.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
-import { ForecastSection } from '../task/ForecastSection.tsx';
-import { TokensSection } from '../task/TokensSection.tsx';
 import { StateHero } from '../task/StateHero.tsx';
 import { DeliversPanel } from '../task/DeliversPanel.tsx';
 import { heroKind, mayDecideReview } from '../task/hero-derive.ts';
@@ -1351,21 +1349,6 @@ export function TaskDetailPanel({
           )}
 
           {/*
-            The size and its forecast (D-085, LAI-771), directly under
-            Acceptance — the size is mostly derived from it. Keyed on
-            `updated_at` like the proof, so an edit that resizes it redraws it.
-          */}
-          <ForecastSection
-            slug={slug}
-            task={task}
-            mayEdit={mayEdit === true}
-            refreshKey={task.updated_at}
-            nameOf={(id) => personName(id, members)}
-            onOpen={onOpen}
-            onChanged={onTaskEdited}
-          />
-
-          {/*
             The proof (D-082, LAI-758): the send-back first, then the latest
             round's evidence, earlier rounds folded. Next to Acceptance — what
             counts as done, then what was claimed against it. Keyed on
@@ -1382,48 +1365,8 @@ export function TaskDetailPanel({
             read={roundsRead}
           />
 
-          {/*
-            What the agents spent on it (D-084, LAI-770), under the proof it
-            was spent on: per round, and per person for whoever may see people.
-            Keyed on `updated_at` like the proof, so a new round redraws it.
-          */}
-          <TokensSection
-            taskId={task.id}
-            taskKey={task.key}
-            projectSlug={slug}
-            started={task.started_at !== null}
-            refreshKey={task.updated_at}
-          />
-
-          {/*
-            Subtasks sit above the linked tasks, for a task that is not itself
-            a subtask (one level, D-066).
-          */}
-          {task.parent_task_id === null && (
-            <SubtasksSection
-              slug={slug}
-              task={task}
-              byId={byId}
-              members={members}
-              theme={theme}
-              mayAssign={mayAssign === true}
-              meId={meId}
-              statuses={statuses}
-              mayEdit={mayEdit === true}
-              mayCreate={mayCreate}
-              onOpen={onOpen}
-              onChanged={onTaskEdited}
-            />
-          )}
-
-          <DependenciesSection
-            task={task}
-            byId={byId}
-            members={members}
-            theme={theme}
-            mayEdit={mayEdit === true}
-            onChanged={onTaskEdited}
-          />
+          {/* Effort, Tokens, Subtasks and Linked tasks are the rail's Estimate
+              and Links & dates cards since LAI-1122. */}
 
           <section className="panel-section panel-activity-section">
             <h3 className="panel-section-title">Activity</h3>
@@ -1591,9 +1534,10 @@ export function TaskDetailPanel({
         </div>
 
         {/*
-          **The rail** (LAI-285, reshaped by D-066): the status control, the
-          Details card, Development when there is any, and the two dates at
-          the foot — so they stay in view while somebody reads the thread.
+          **The rail** (LAI-285, reshaped by D-066 and the 2026-11-04 design,
+          LAI-1122): the status pill, Details, Links & dates, Development when
+          there is any, Estimate, and the foot — so they stay in view while
+          somebody reads the thread.
         */}
         <div className="panel-side">
           <TaskMeta
@@ -1615,9 +1559,9 @@ export function TaskDetailPanel({
             mayEdit={mayEdit === true}
             moving={moving}
             watchers={watchers}
-            parent={parent}
             openSubtasks={openSubtasks}
             changesCount={changes.length}
+            latestRound={rounds?.rounds[0]}
             onMove={onMove}
             onAssigned={onAssigned}
             onTaskEdited={onTaskEdited}
@@ -1632,6 +1576,34 @@ export function TaskDetailPanel({
               reviewSince: detail.status === 'ready' ? reviewSince(detail.activity) : null,
               now,
             })}
+            links={
+              <LinksCard
+                slug={slug}
+                task={task}
+                byId={byId}
+                parent={parent}
+                members={members}
+                theme={theme}
+                statuses={statuses}
+                meId={meId}
+                mayEdit={mayEdit === true}
+                mayAssign={mayAssign === true}
+                mayCreate={mayCreate}
+                onOpen={onOpen}
+                onChanged={onTaskEdited}
+              />
+            }
+            estimate={
+              <EstimateCard
+                slug={slug}
+                task={task}
+                mayEdit={mayEdit === true}
+                refreshKey={task.updated_at}
+                nameOf={(id) => personName(id, members)}
+                onOpen={onOpen}
+                onChanged={onTaskEdited}
+              />
+            }
           />
 
           {/*

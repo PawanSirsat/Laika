@@ -48,9 +48,11 @@ export interface SubtasksSectionProps {
 }
 
 /**
- * A parent's subtasks (D-066, LAI-495): the heading says `n/m done`, a bar
- * draws it, each row opens its child, `×` detaches it, and *Add subtask*
- * files one with the title alone and stays open for the next — Jira's shape.
+ * A parent's subtasks (D-066, LAI-495), as a row of the rail's Links & dates
+ * card since LAI-1122: the row says *n of m done*, a bar draws it, each child
+ * opens from its line, its status and assignee change in place, `×` detaches
+ * it, and *+ Add subtask* files one with the title alone and stays open for
+ * the next — Jira's shape.
  *
  * **Children come from the page first and the server second.** `byId` is
  * what the board loaded under its filters, and a filter can hide a child
@@ -140,19 +142,20 @@ export function SubtasksSection({
   const progress = subtaskProgress(children);
 
   return (
-    <section className="panel-section sub-section">
-      <h3 className="panel-section-title dep-title">
-        Subtasks
-        {progress !== undefined && (
-          <span className="panel-count sub-count">
-            {progress.done}/{progress.total} done
+    <div className="meta-row meta-row-wide meta-row-subtasks sub-section">
+      <p className="meta-label">Subtasks</p>
+      <div className="meta-value meta-line">
+        {progress === undefined ? (
+          <span className="sub-count meta-quiet">None</span>
+        ) : (
+          <span className="sub-count">
+            {progress.done} of {progress.total} done
           </span>
         )}
-        <span className="dep-rule" aria-hidden="true" />
         {mayCreate && !adding && (
           <button
             type="button"
-            className="sub-link"
+            className="sub-link meta-add-link"
             onClick={() => {
               setAdding(true);
             }}
@@ -160,7 +163,7 @@ export function SubtasksSection({
             + Add subtask
           </button>
         )}
-      </h3>
+      </div>
 
       {progress !== undefined && (
         <div
@@ -178,9 +181,7 @@ export function SubtasksSection({
         </div>
       )}
 
-      {children.length === 0 ? (
-        <p className="panel-muted">None yet. Break this task down when it needs it.</p>
-      ) : (
+      {children.length > 0 && (
         <ul className="dep-list sub-list">
           {children.map((child) => {
             const who = child.assignee_id === null ? undefined : members.get(child.assignee_id);
@@ -373,6 +374,6 @@ export function SubtasksSection({
           {error}
         </p>
       )}
-    </section>
+    </div>
   );
 }

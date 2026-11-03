@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { AssignControl } from '../board/AssignControl.tsx';
 import { TagPicker } from '../board/TagPicker.tsx';
 import { AgentRow } from './AgentRow.tsx';
@@ -6,7 +6,7 @@ import type { MyAgents } from '../../../api/use-my-agents.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import { statusOptions } from '../board/status-options.ts';
-import { dateInputToMs, dateLabel, isOverdue, msToDateInput } from '../../../api/date-only.ts';
+import type { Round } from '../../../api/review.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import {
@@ -22,12 +22,13 @@ import type { Theme } from '../../../theme/theme.ts';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
+import { createdViaLine, priorityWords, pullRequestLine } from './rail-derive.ts';
 import './task-panel.css';
 
 export interface TaskMetaProps {
   readonly slug: string;
   readonly task: TaskSummary;
-  /** Everything loaded, for naming the parent and offering one. */
+  /** Everything loaded, for naming where it was discovered. */
   readonly byId: ReadonlyMap<string, TaskSummary>;
   /** The project's statuses — the board's columns — for the status control (LAI-739). */
   readonly statuses: readonly ProjectStatus[];
@@ -49,18 +50,21 @@ export interface TaskMetaProps {
   readonly moving: boolean;
   /** Real: who is watching. */
   readonly watchers: readonly string[] | undefined;
-  /** The parent, resolved by the panel (it may be outside `byId`). */
-  readonly parent: TaskSummary | undefined;
   /** How many of this task's subtasks are still open — for the warning under a `done` status. */
   readonly openSubtasks: number;
   /** Commits recorded against the task — the Changes tab's count, for the Development card. */
   readonly changesCount: number;
+  /**
+   * The newest round (LAI-1122), for the Development card: its branch and
+   * pull request when the task itself records neither.
+   */
+  readonly latestRound?: Round | undefined;
   /** Into a project status, by id (LAI-739). */
   readonly onMove: (taskId: string, toStatusId: string) => void;
   readonly onAssigned: () => void;
   readonly onTaskEdited: () => void;
   readonly onTagsChanged: (tags: readonly string[]) => void;
-  /** Open another task in this drawer — the parent, or where this was discovered. */
+  /** Open another task in this drawer — where this was discovered. */
   readonly onOpen: (taskId: string) => void;
   /**
    * The status control. `HTMLElement`, not the `<select>` it was: since
@@ -82,6 +86,10 @@ export interface TaskMetaProps {
    * the older *claimed …* line.
    */
   readonly statusSub?: string | null | undefined;
+  /** The **Links & dates** card (LAI-1122), under Details. */
+  readonly links?: ReactNode;
+  /** The **Estimate** card (LAI-1122), under Development. */
+  readonly estimate?: ReactNode;
 }
 
 /** `4m`, `6d` — the design's short form beside a field. */
@@ -114,19 +122,25 @@ function writeOpen(key: string, open: boolean): void {
 }
 
 /**
- * The drawer's right-hand rail, laid out as Jira lays out an issue (D-066).
+ * The drawer's right-hand rail (D-066; the 2026-11-04 design, LAI-1122).
  *
- * **The status is a button at the top, not a row** — it is the one thing a
- * reader changes most, and Jira's coloured control is what the owner pointed
- * at. Under it, a **Details** card of fields, in the owner's order: assignee,
- * priority, parent, due date, labels, sprint, start date, reporter, then what
- * we have that Jira does not draw. A **Development** card when the task has a
- * branch, a PR or commits. The foot says when it was created and updated, in
- * full, the way the screenshot does.
+ * **The status is a pill at the top, not a row** — a coloured dot, the
+ * status's name and a caret, the app's `Dropdown` behind it, with the line
+ * that says where the task stands beside it and *Move to <review>* after.
+ * Under it, the cards in the design's order:
  *
- * Everything LAI-285 put here is still here; what moved is the tag picker
- * (from the title's byline) and the *discovered from* callout (from the main
- * column), both of which are fields rather than parts of the document.
+ * - **Details** — assignee (with Claim), agent (the picker, its help line and
+ *   Ping), priority as *P1 · High*, labels, sprint, then what we have that the
+ *   design does not draw: reporter, created via, outside id, watchers, and
+ *   where it was discovered.
+ * - **Links & dates** — the panel's own card (`LinksCard`), passed in.
+ * - **Development**, only when there is any: branch, pull request — the
+ *   task's, or its newest round's — outside id and the commit count.
+ * - **Estimate** — the panel's own card (`EstimateCard`), passed in.
+ *
+ * The foot says how it was created and when, when it was updated, who is
+ * watching, and what a Viewer may do. Every control the rail had before is
+ * still here; the parent and the dates moved to Links & dates.
  */
 export function TaskMeta({
   slug,
@@ -145,9 +159,9 @@ export function TaskMeta({
   mayEdit,
   moving,
   watchers,
-  parent,
   openSubtasks,
   changesCount,
+  latestRound,
   onMove,
   onAssigned,
   onTaskEdited,
@@ -158,6 +172,8 @@ export function TaskMeta({
   myAgents,
   readOrder = 0,
   statusSub,
+  links,
+  estimate,
 }: TaskMetaProps) {
   const now = Date.now();
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
@@ -166,7 +182,7 @@ export function TaskMeta({
   const reporterInk = avatarColor(task.created_by, theme);
 
   const [detailsOpen, setDetailsOpen] = useState(() => readOpen('details', true));
-  const [devOpen, setDevOpen] = useState(() => readOpen('development', false));
+  const [devOpen, setDevOpen] = useState(() => readOpen('development', true));
   const [error, setError] = useState<string | undefined>(undefined);
   // The words that name each rail control (LAI-726), pointed at explicitly with
   // `aria-labelledby`, so the name never rests on how a browser reads a label
@@ -195,16 +211,6 @@ export function TaskMeta({
     }
   };
 
-  /*
-   * One level (D-066): a task that has subtasks cannot be given a parent, so
-   * the row is absent rather than offering a picker the server refuses.
-   */
-  const hasChildren = [...byId.values()].some((t) => t.parent_task_id === task.id);
-  const parentCandidates = [...byId.values()]
-    .filter((t) => t.id !== task.id && t.parent_task_id === null)
-    .filter((t) => t.status !== 'done' && t.status !== 'cancelled')
-    .sort((a, b) => a.number - b.number);
-
   const discovered = task.discovered_from === null ? undefined : byId.get(task.discovered_from);
   const byStatusId = new Map(statuses.map((s) => [s.id, s]));
   const reviewColumn = [...statuses]
@@ -218,17 +224,27 @@ export function TaskMeta({
   const outsideId =
     task.external_ref !== null && isOutsideId(task.external_ref) ? task.external_ref : null;
   const pullRef = outsideId === null ? task.external_ref : null;
-  const hasDevelopment = task.branch !== null || pullRef !== null || changesCount > 0;
-  const externalIsUrl = pullRef !== null && /^https?:\/\//.test(pullRef);
+  // The task's own first; else what its newest round's proof carries.
+  const branch = task.branch ?? latestRound?.branch?.name ?? null;
+  const roundPull = latestRound?.pull_request ?? null;
+  const pullUrl = pullRef ?? roundPull?.url ?? null;
+  const pullText =
+    pullUrl === null
+      ? null
+      : pullRequestLine(pullUrl, pullRef === null ? (roundPull?.merged ?? null) : null);
+  const pullIsUrl = pullUrl !== null && /^https?:\/\//.test(pullUrl);
+  const hasDevelopment = branch !== null || pullUrl !== null || changesCount > 0;
+  const prio = priorityWords(task.priority);
 
   return (
     <aside className="panel-meta" aria-label="Task details">
-      {/* The status, as Jira's coloured control: the field a reader changes most. */}
+      {/* The status, as the design's pill: the field a reader changes most. */}
       <div className="meta-status-row">
         <label className={`meta-status meta-status-${task.status}`}>
           <span className="visually-hidden" id={statusId}>
             Status
           </span>
+          <span className="meta-status-dot" aria-hidden="true" />
           {/*
             **Every status of the project** (LAI-739), hidden ones marked —
             a cancelled one included, which starts hidden on the board and so
@@ -252,8 +268,20 @@ export function TaskMeta({
               if (to !== task.status_id) onMove(task.id, to);
             }}
           />
-          <span className="meta-status-caret" aria-hidden="true" />
+          <span className="meta-status-caret" aria-hidden="true">
+            ▾
+          </span>
         </label>
+        {/* The design's line beside the pill: where the task stands, in words (LAI-1117). */}
+        {statusSub !== undefined
+          ? statusSub !== null && (
+              <span className="meta-status-sub" data-status-sub>
+                {statusSub}
+              </span>
+            )
+          : since(task.started_at, now) !== undefined && (
+              <span className="meta-status-sub">claimed {since(task.started_at, now)}</span>
+            )}
         {/* The project's first review column, by name — *Move to QA* on a
             board that calls it that (LAI-739). */}
         {mayEdit &&
@@ -272,16 +300,6 @@ export function TaskMeta({
             </button>
           )}
       </div>
-      {/* The design's second line: where the task stands, in words (LAI-1117). */}
-      {statusSub !== undefined
-        ? statusSub !== null && (
-            <p className="meta-sub meta-status-sub" data-status-sub>
-              {statusSub}
-            </p>
-          )
-        : since(task.started_at, now) !== undefined && (
-            <p className="meta-sub meta-status-sub">claimed {since(task.started_at, now)}</p>
-          )}
       {/*
         **No coupling, but a sentence** (D-066). A parent may be closed with
         open subtasks — Jira's default — and the rail says so rather than
@@ -370,21 +388,27 @@ export function TaskMeta({
                 data-editable={mayEdit ? 'priority' : undefined}
               >
                 {/* Jira's icon before the control (LAI-705), outside the
-                    `<label>` so its name does not join the select's. */}
+                    `<label>` so its name does not join the select's: the
+                    design's ▲ ■ ▼. */}
                 <PriorityIcon priority={task.priority} />
                 <label className={`meta-select meta-prio meta-prio-${task.priority}`}>
                   <span className="visually-hidden" id={priorityId}>
                     Priority
                   </span>
-                  {/* The icon is already before the control, so the trigger
-                      shows the level's words alone; the list draws each. */}
+                  {/* *P1 · High*, as the design writes it; the list draws
+                      each level with its icon. */}
                   <Dropdown
                     variant="bare"
                     aria-labelledby={priorityId}
                     noun="priorities"
                     value={task.priority}
                     disabled={!mayEdit}
-                    display={<span className="dd-value">{task.priority.toUpperCase()}</span>}
+                    display={
+                      <span className="dd-value">
+                        {prio.code}
+                        <span className="meta-prio-word"> · {prio.word}</span>
+                      </span>
+                    }
                     options={PRIORITIES.map((p) => ({
                       value: p,
                       label: p.toUpperCase(),
@@ -397,26 +421,6 @@ export function TaskMeta({
                 </label>
               </div>
             </div>
-
-            {!hasChildren && (
-              <ParentRow
-                task={task}
-                parent={parent}
-                candidates={parentCandidates}
-                mayEdit={mayEdit}
-                onOpen={onOpen}
-                onChange={(parentId) => edit({ parent_task_id: parentId })}
-              />
-            )}
-
-            <DateRow
-              id="due"
-              label="Due date"
-              value={task.due_on}
-              overdue={isOverdue(task, now)}
-              mayEdit={mayEdit}
-              onChange={(ms) => edit({ due_on: ms })}
-            />
 
             <div className="meta-row">
               <p className="meta-label">Labels</p>
@@ -475,15 +479,6 @@ export function TaskMeta({
                 </p>
               )}
             </div>
-
-            <DateRow
-              id="start"
-              label="Start date"
-              value={task.planned_start}
-              overdue={false}
-              mayEdit={mayEdit}
-              onChange={(ms) => edit({ planned_start: ms })}
-            />
 
             <div className="meta-row">
               <p className="meta-label">Reporter</p>
@@ -571,13 +566,16 @@ export function TaskMeta({
         )}
       </section>
 
+      {links}
+
       {/*
         **Development, only when there is any** (LAI-286 folded in). The branch
-        the plugin reported, the PR when one is recorded, and the commits the
-        webhook wrote — the three facts Jira's card carries that we hold too.
+        the plugin reported, the PR when one is recorded — the task's, or its
+        newest round's proof — the outside id, and the commits the webhook
+        wrote: the facts Jira's card carries that we hold too.
       */}
       {hasDevelopment && (
-        <section className="meta-card">
+        <section className="meta-card meta-dev">
           <button
             type="button"
             className="meta-card-head"
@@ -597,25 +595,38 @@ export function TaskMeta({
           </button>
           {devOpen && (
             <div className="meta-rows">
-              {task.branch !== null && (
+              {branch !== null && (
                 <div className="meta-row">
                   <p className="meta-label">Branch</p>
-                  <p className="meta-value meta-plain meta-mono">{task.branch}</p>
+                  <p className="meta-value meta-plain meta-mono">{branch}</p>
                 </div>
               )}
-              {pullRef !== null && (
-                <div className="meta-row">
-                  {/* "PR", not the longer word: `endpoint-coverage` reads that word followed by `<` as a client call site. */}
-                  <p className="meta-label">PR</p>
-                  <p className="meta-value meta-plain">
-                    {externalIsUrl ? (
-                      <a href={pullRef} target="_blank" rel="noreferrer">
-                        {pullRef}
+              {pullUrl !== null && (
+                <div className="meta-row meta-row-pr">
+                  {/* Not split from the next tag: `endpoint-coverage` reads that word followed by `<` as a client call site. */}
+                  <p className="meta-label">{'Pull request'}</p>
+                  <p
+                    className="meta-value meta-plain"
+                    data-merged={
+                      pullRef === null && roundPull?.merged != null
+                        ? String(roundPull.merged)
+                        : undefined
+                    }
+                  >
+                    {pullIsUrl ? (
+                      <a href={pullUrl} target="_blank" rel="noreferrer" title={pullUrl}>
+                        {pullText}
                       </a>
                     ) : (
-                      pullRef
+                      pullText
                     )}
                   </p>
+                </div>
+              )}
+              {outsideId !== null && (
+                <div className="meta-row">
+                  <p className="meta-label">Outside id</p>
+                  <p className="meta-value meta-plain meta-mono">{outsideId}</p>
                 </div>
               )}
             </div>
@@ -623,10 +634,12 @@ export function TaskMeta({
         </section>
       )}
 
+      {estimate}
+
       <div className="panel-side-foot">
         {/* In full, as the screenshot has it; the relative form lives on the List. */}
         <p className="panel-foot-times">
-          Created{' '}
+          Created via {createdViaLine(task)} ·{' '}
           <time dateTime={timeLabel(task.created_at, now).iso}>
             {timeLabel(task.created_at, now).full}
           </time>
@@ -636,258 +649,12 @@ export function TaskMeta({
             {timeLabel(task.updated_at, now).full}
           </time>
         </p>
+        {named.length > 0 && <p className="panel-foot-watching">Watching: {named.join(', ')}</p>}
         <p className="panel-permission">
           Members can move and comment. Viewers see this panel read-only.
         </p>
       </div>
     </aside>
-  );
-}
-
-interface ParentRowProps {
-  readonly task: TaskSummary;
-  readonly parent: TaskSummary | undefined;
-  readonly candidates: readonly TaskSummary[];
-  readonly mayEdit: boolean;
-  readonly onOpen: (taskId: string) => void;
-  readonly onChange: (parentId: string | null) => Promise<void>;
-}
-
-/**
- * The parent field (D-066): the task this is a subtask of, as `KEY · title`
- * that opens it, with `×` to detach; or *Add parent*, which offers the
- * top-level open tasks on this page. One level only, so the picker never
- * lists a task that is itself a subtask.
- */
-function ParentRow({ task, parent, candidates, mayEdit, onOpen, onChange }: ParentRowProps) {
-  const [picking, setPicking] = useState(false);
-  const [picked, setPicked] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const run = async (parentId: string | null): Promise<void> => {
-    setBusy(true);
-    try {
-      await onChange(parentId);
-      setPicking(false);
-      setPicked('');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="meta-row meta-row-parent">
-      <p className="meta-label">Parent</p>
-      {task.parent_task_id !== null ? (
-        <div className="meta-value meta-parent">
-          {parent === undefined ? (
-            <span className="meta-quiet">A task outside this page.</span>
-          ) : (
-            <button
-              type="button"
-              className="meta-task-link"
-              title={parent.title}
-              onClick={() => {
-                onOpen(parent.id);
-              }}
-            >
-              <span className="meta-task-key">{parent.key}</span> {parent.title}
-            </button>
-          )}
-          {mayEdit && (
-            <button
-              type="button"
-              className="dep-remove"
-              disabled={busy}
-              aria-label="Detach from parent"
-              onClick={() => {
-                void run(null);
-              }}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          )}
-        </div>
-      ) : !mayEdit ? (
-        <p className="meta-value meta-plain meta-quiet">None</p>
-      ) : picking ? (
-        <div className="meta-value dep-add meta-add">
-          <label className="visually-hidden" htmlFor="parent-pick">
-            Parent task
-          </label>
-          <Dropdown
-            id="parent-pick"
-            variant="bare"
-            noun="tasks"
-            value={picked}
-            disabled={busy}
-            options={[
-              { value: '', label: 'Choose a task…', pinned: true },
-              ...candidates.map((t) => ({ value: t.id, label: `${t.key} — ${t.title}` })),
-            ]}
-            onChange={setPicked}
-          />
-          <button
-            type="button"
-            className="dep-confirm"
-            disabled={busy || picked === ''}
-            onClick={() => {
-              void run(picked);
-            }}
-          >
-            Set
-          </button>
-          <button
-            type="button"
-            className="dep-cancel"
-            disabled={busy}
-            onClick={() => {
-              setPicking(false);
-              setPicked('');
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <p className="meta-value meta-plain">
-          <button
-            type="button"
-            className="meta-add-link"
-            onClick={() => {
-              setPicking(true);
-            }}
-          >
-            Add parent
-          </button>
-        </p>
-      )}
-    </div>
-  );
-}
-
-interface DateRowProps {
-  readonly id: string;
-  readonly label: string;
-  /** unix-ms at a UTC midnight, or null. */
-  readonly value: number | null;
-  readonly overdue: boolean;
-  readonly mayEdit: boolean;
-  readonly onChange: (ms: number | null) => Promise<void>;
-}
-
-/**
- * A date field: the short form (`12 Jul 2026`) as a chip — red with a warning
- * mark when it is past and the task is still open — or *Add date*; click to
- * get a date input, with `×` to clear. Sends unix-ms at a UTC midnight, the
- * shape `due_on` and `planned_start` take (§4.5).
- */
-function DateRow({ id, label, value, overdue, mayEdit, onChange }: DateRowProps) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value === null ? '' : msToDateInput(value));
-  const [busy, setBusy] = useState(false);
-
-  const run = async (ms: number | null): Promise<void> => {
-    setBusy(true);
-    try {
-      await onChange(ms);
-      setEditing(false);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className={`meta-row meta-row-${id}`}>
-      <p className="meta-label">{label}</p>
-      {editing ? (
-        <div className="meta-value dep-add meta-add" data-editable={id}>
-          <label className="visually-hidden" htmlFor={`${id}-date`}>
-            {label}
-          </label>
-          <input
-            id={`${id}-date`}
-            type="date"
-            className="meta-date-input"
-            value={draft}
-            disabled={busy}
-            onChange={(event) => {
-              setDraft(event.target.value);
-            }}
-          />
-          <button
-            type="button"
-            className="dep-confirm"
-            disabled={busy || dateInputToMs(draft) === null}
-            onClick={() => {
-              void run(dateInputToMs(draft));
-            }}
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            className="dep-cancel"
-            disabled={busy}
-            onClick={() => {
-              setEditing(false);
-              setDraft(value === null ? '' : msToDateInput(value));
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-      ) : value === null ? (
-        <p className="meta-value meta-plain" data-editable={mayEdit ? id : undefined}>
-          {mayEdit ? (
-            <button
-              type="button"
-              className="meta-add-link"
-              onClick={() => {
-                setEditing(true);
-              }}
-            >
-              Add date
-            </button>
-          ) : (
-            <span className="meta-quiet">None</span>
-          )}
-        </p>
-      ) : (
-        <div className="meta-value meta-date" data-editable={mayEdit ? id : undefined}>
-          <button
-            type="button"
-            className={overdue ? 'meta-date-chip meta-date-overdue' : 'meta-date-chip'}
-            disabled={!mayEdit}
-            title={overdue ? 'Past due and still open' : undefined}
-            onClick={() => {
-              setDraft(msToDateInput(value));
-              setEditing(true);
-            }}
-          >
-            {overdue && (
-              <span className="meta-date-warn" aria-label="Overdue">
-                ⚠
-              </span>
-            )}
-            <time dateTime={new Date(value).toISOString()}>{dateLabel(value)}</time>
-          </button>
-          {mayEdit && (
-            <button
-              type="button"
-              className="dep-remove"
-              disabled={busy}
-              aria-label={`Clear ${label.toLowerCase()}`}
-              onClick={() => {
-                void run(null);
-              }}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 
