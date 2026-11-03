@@ -24,6 +24,7 @@ import { afterEach, describe, test } from 'node:test';
 import { LOCAL_ROOT_ENV } from '../src/agent-handoff.ts';
 import { AGENT_MARKER, hookFile } from '../src/agent-hooks.ts';
 import {
+  BRANCH_PROTECTION_NOTE,
   CLAUDE_ALLOWED,
   CLAUDE_DENIED,
   claudeArgv,
@@ -39,7 +40,7 @@ import {
   type ServiceIo,
   systemdUnit,
 } from '../src/agent-launcher-service.ts';
-import { configPath, loadConfig } from '../src/agent-launcher.ts';
+import { argvProblem, configPath, loadConfig } from '../src/agent-launcher.ts';
 import { writeCredential } from '../src/agent-session.ts';
 
 const OWNER = '01M2ZHT4HVYDPS7GE8S24CF4HH';
@@ -144,8 +145,55 @@ void describe('the harness argv', () => {
     ]) {
       assert.ok(CLAUDE_DENIED.includes(deny), deny);
     }
-    assert.ok(argv.length <= 32, 'within the launcher’s argv limit');
+    assert.ok(argv.length <= 64, 'within the launcher’s argv limit');
     assert.ok(!argv.some((a) => /TOKEN|Bearer/.test(a)));
+  });
+
+  void test('B2: gh may only create and read pull requests; merge, api, repo and the push bypasses are denied', () => {
+    const argv = claudeArgv('/usr/local/bin/claude');
+    const allowed = argv.slice(
+      argv.indexOf('--allowedTools') + 1,
+      argv.indexOf('--disallowedTools'),
+    );
+    const denied = argv.slice(argv.indexOf('--disallowedTools') + 1, argv.indexOf('--max-turns'));
+    const gh = allowed.filter((a) => a.startsWith('Bash(gh'));
+    assert.deepEqual(gh, [
+      'Bash(gh pr create *)',
+      'Bash(gh pr view *)',
+      'Bash(gh pr checks *)',
+      'Bash(gh pr list *)',
+    ]);
+    assert.ok(
+      !allowed.includes('Bash(gh pr *)'),
+      'no broad gh pr allow: it covers `gh pr merge --admin`',
+    );
+    for (const deny of [
+      'Bash(gh pr merge *)',
+      'Bash(gh api *)',
+      'Bash(gh repo *)',
+      'Bash(git push * main*)',
+      'Bash(git push * master*)',
+      'Bash(git push * --force*)',
+      'Bash(git push * -f*)',
+      'Bash(git -c *)',
+      'Bash(git -C * push*)',
+      'Bash(pnpm exec *)',
+      'Bash(pnpm dlx *)',
+      'Bash(npx *)',
+    ]) {
+      assert.ok(denied.includes(deny), deny);
+    }
+    assert.equal(argvProblem(argv.map((a, i) => (i === 0 ? process.execPath : a))), undefined);
+  });
+
+  void test('B2: enable prints that deny rules are not a boundary and branch protection is', async () => {
+    const d = device(['$REPO', 'yes'], {});
+    assert.equal(await enable(d.io, ['--dry-run']), 0, d.out.join('\n'));
+    assert.ok(d.out.includes(BRANCH_PROTECTION_NOTE), d.out.join('\n'));
+    assert.match(
+      BRANCH_PROTECTION_NOTE,
+      /branch protection for the default branch \(require a pull request\)/,
+    );
   });
 
   void test('Codex: full access only as written, MCP through the headers helper, no token', () => {

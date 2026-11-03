@@ -484,7 +484,7 @@ void describe('config', () => {
   void test('argvProblem accepts an absolute executable and nothing looser', () => {
     const program = ownProgram(scratch());
     assert.equal(argvProblem([program, '-p']), undefined);
-    assert.match(argvProblem([]) ?? '', /1 to 32/);
+    assert.match(argvProblem([]) ?? '', /1 to 64/);
     assert.match(argvProblem([program, '']) ?? '', /non-empty/);
   });
 });

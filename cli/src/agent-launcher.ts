@@ -471,7 +471,7 @@ export function argvProblem(
   uid: number | undefined = process.getuid?.(),
 ): string | undefined {
   if (!Array.isArray(argv)) return 'the command must be an argv array, never a string';
-  if (argv.length === 0 || argv.length > 32) return 'the argv must have 1 to 32 items';
+  if (argv.length === 0 || argv.length > 64) return 'the argv must have 1 to 64 items';
   for (const word of argv) {
     if (typeof word !== 'string' || word === '' || word.length > 1000 || word.includes('\0')) {
       return 'every argv item must be a non-empty string';
