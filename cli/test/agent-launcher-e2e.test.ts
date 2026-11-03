@@ -21,9 +21,10 @@
  * primary checkout is untouched; no `TOKEN` is in the child's environment and
  * no title in its prompt; the audit has `start` and `exit`; a restarted
  * launcher starts nothing again; a selection withdrawn before the start is
- * `request_closed`; a project not on the allowlist is refused. A ping is
- * answered `answered_by: launcher` only where the board has slice A's routes;
- * on this board it is skipped and says so.
+ * `request_closed`; a project not on the allowlist is refused. Against slice
+ * A's real routes: a ping is answered `answered_by: launcher` within its wait,
+ * in the closed shape, and acknowledged; presence reads `on` while the
+ * launcher runs and `off` after it stops.
  */
 
 import assert from 'node:assert/strict';
@@ -366,31 +367,113 @@ void describe('the launcher against a real board (LAI-1039)', () => {
     assert.equal(has(d, 'start'), false, story(d));
   });
 
-  void test('a ping is answered by the launcher within wait_ms — where the board has slice A', async (t) => {
-    const probe = await fetch(`${board.url}/api/v1/agents/${agent.id}/capacity-pings`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', origin: board.url, cookie },
-      body: JSON.stringify({ project: 'laika', wait_ms: 10 }),
-    });
-    const text = await probe.text();
-    if (probe.status === 404 || !text.trim().startsWith('{') || text.includes('"not_found"')) {
-      t.skip('this board has no capacity-ping route yet (slice A): not supported by this board');
-      return;
-    }
+  void test('a ping is answered by the launcher within wait_ms, with its token, in the closed shape', async () => {
     const d = device();
-    let answered: Record<string, unknown> = {};
+    // Earlier tests ran launchers for the same agent: only what this one sends counts.
+    const seenRequests = board.requests.length;
+    let held: Record<string, unknown> = {};
+    let heldMs = 0;
     await withLauncher(d, async () => {
       await until(() => has(d, 'daemon_start'), d);
-      answered = await must(
+      // The launcher opens its stream and then reports presence, in that order; a
+      // stream is logged only when it closes, so the report is the signal, and a
+      // moment more covers the stream's own connect.
+      await until(
+        () =>
+          board.requests
+            .slice(seenRequests)
+            .some(
+              (q) =>
+                q.method === 'PUT' && q.path === '/api/v1/agents/me/launcher' && q.status === 200,
+            ),
+        d,
+      );
+      await new Promise((r) => setTimeout(r, 1500));
+      const started = Date.now();
+      // One held request (§4.84): a repeat while it is held would answer at once, pending.
+      held = await must(
         await api('POST', `/api/v1/agents/${agent.id}/capacity-pings`, {
           project: 'laika',
           wait_ms: 10_000,
         }),
+        201,
+      );
+      heldMs = Date.now() - started;
+    });
+    const ping = held.ping as {
+      id: string;
+      state: string;
+      answer: Record<string, unknown> | null;
+    };
+    assert.equal(ping.state, 'answered', `${JSON.stringify(held)}\n${story(d)}`);
+    assert.ok(heldMs < 10_000, `answered within wait_ms (${String(heldMs)} ms)`);
+    const answer = ping.answer!;
+    assert.equal(answer.answered_by, 'launcher');
+    assert.deepEqual(answer.launcher, {
+      state: 'on',
+      auto_pickup: { work_requests: true, handoffs: true },
+      running: 0,
+      max_concurrent: 1,
+    });
+    assert.deepEqual(answer.harness_ready, { credential: true, argv: true, hooks: false });
+    assert.match(String(answer.cli_version), /^(?:\d+\.\d+\.\d+(?:\+[0-9a-f]{7,12})?|unknown)$/);
+    // Nothing of this device beyond the closed words and numbers reached the board.
+    const text = JSON.stringify(answer);
+    for (const leak of [d.home, d.repo, REPO, 'laika-1039', agent.token]) {
+      assert.ok(!text.includes(leak), `${leak} is not in the answer`);
+    }
+    // The pinger reads it back; the answer was sent with the agent's own token.
+    const read = (await must(await api('GET', `/api/v1/capacity-pings/${ping.id}`), 200))
+      .ping as Record<string, unknown>;
+    assert.equal(read.state, 'answered');
+    assert.deepEqual(read.answer, answer);
+    assert.ok(
+      board.requests.some(
+        (q) =>
+          q.method === 'POST' &&
+          q.path === `/api/v1/agents/me/capacity-pings/${ping.id}/reply` &&
+          q.status === 200,
+      ),
+    );
+    // The delivery is acknowledged after the answer: it no longer sits undelivered.
+    const left = await must(
+      await fetch(`${board.url}/api/v1/agents/me/events?state=undelivered`, {
+        headers: { authorization: `Bearer ${agent.token}` },
+      }),
+      200,
+    );
+    assert.equal(
+      (left.data as { type: string }[]).some((e) => e.type === 'agent.capacity_requested'),
+      false,
+    );
+  });
+
+  void test('presence reaches the board with the agent’s own token: on while running, off after stop', async () => {
+    const d = device();
+    // Earlier tests ran launchers for the same agent: only what this one sends counts.
+    const seenRequests = board.requests.length;
+    let during: Record<string, unknown> = {};
+    await withLauncher(d, async () => {
+      await until(
+        () =>
+          board.requests
+            .slice(seenRequests)
+            .some(
+              (q) =>
+                q.method === 'PUT' && q.path === '/api/v1/agents/me/launcher' && q.status === 200,
+            ),
+        d,
+      );
+      during = await must(
+        await api('GET', `/api/v1/agents/${agent.id}/capacity?project=laika`),
         200,
       );
     });
-    const ping = answered.ping as { state: string; reply?: { answered_by?: string } };
-    assert.equal(ping.state, 'answered');
-    assert.equal(ping.reply?.answered_by, 'launcher');
+    assert.equal((during.launcher as { state: string }).state, 'on', JSON.stringify(during));
+    const after = await must(
+      await api('GET', `/api/v1/agents/${agent.id}/capacity?project=laika`),
+      200,
+    );
+    assert.equal((after.launcher as { state: string }).state, 'off', JSON.stringify(after));
   });
 });
