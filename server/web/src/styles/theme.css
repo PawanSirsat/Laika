@@ -320,8 +320,24 @@
    * face earlier the same day; the final brief defers to the prototype, and
    * the package stays installed but unreferenced.
    */
-  --font-ui: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-ui: var(--font-face-plus-jakarta-sans);
   --font-mono: 'JetBrains Mono Variable', ui-monospace, Menlo, monospace;
+
+  /*
+   * The interface faces a reader may choose (LAI-1125), one stack each.
+   * `--font-ui` points at one of them: the default here, the others through
+   * `:root[data-font]` below, which `theme/font.ts` sets. Declaring a face
+   * downloads nothing — a browser fetches a font file only once text on the
+   * page is set in it — so the faces nobody picked cost no request.
+   */
+  --font-face-plus-jakarta-sans:
+    'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-poppins: 'Poppins', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-commissioner:
+    'Commissioner Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-average-sans: 'Average Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-carter-one: 'Carter One', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-face-short-stack: 'Short Stack', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   /*
    * The type scale — sizes and their line-heights — lives in `styles/type.css`,
@@ -360,4 +376,38 @@
   /* Colour only — the transition every control shares. Cards gliding between
      lanes is the one movement, and lives in board-motion.css (D-071). */
   --transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+/* ===================================================================
+ * The interface font a reader chose (LAI-1125) — `theme/font.ts` sets
+ * `data-font`; the default, Plus Jakarta Sans, carries none, as dark does.
+ * Each block re-points `--font-ui` and nothing else, so every component
+ * follows without knowing a family name. `--font-mono` never changes.
+ *
+ * **Average Sans, Carter One and Short Stack ship one weight.** Where the
+ * UI asks for 600–800, a browser would otherwise smear the 400 into a fake
+ * bold; `font-synthesis-weight: none` keeps the real letterforms, and those
+ * faces carry emphasis by size and colour instead. The picker says so.
+ * =================================================================== */
+:root[data-font='poppins'] {
+  --font-ui: var(--font-face-poppins);
+}
+
+:root[data-font='commissioner'] {
+  --font-ui: var(--font-face-commissioner);
+}
+
+:root[data-font='average-sans'] {
+  --font-ui: var(--font-face-average-sans);
+  font-synthesis-weight: none;
+}
+
+:root[data-font='carter-one'] {
+  --font-ui: var(--font-face-carter-one);
+  font-synthesis-weight: none;
+}
+
+:root[data-font='short-stack'] {
+  --font-ui: var(--font-face-short-stack);
+  font-synthesis-weight: none;
 }
