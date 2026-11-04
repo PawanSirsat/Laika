@@ -595,7 +595,9 @@ void describe('every placement (LAI-1093): no pull of a checkout, and every comm
     assert.deepEqual(hazardsIn(commands), [], where);
   };
 
-  void test('Tool details, Device details, the Overview, Add device and Add tool', async () => {
+  // The Overview has no placement of its own since LAI-1096: its describe above
+  // asserts there is none, and that its chip leads to Tool details.
+  void test('Tool details, Device details, Add device and Add tool', async () => {
     const t = await openTools();
     try {
       for (const id of ['a2', 'a3']) {
@@ -615,15 +617,6 @@ void describe('every placement (LAI-1093): no pull of a checkout, and every comm
       await check(panel, 'device');
     } finally {
       await d.close();
-    }
-
-    const o = await open('/developer?tab=overview', stub());
-    try {
-      await o.page.locator('[data-cli-notice]').waitFor({ timeout: 20_000 });
-      await openGuide(o.page.locator('[data-cli-notice]'));
-      await check(o.page.locator('[data-cli-notice]'), 'overview');
-    } finally {
-      await o.close();
     }
 
     for (const installed of [false, true]) {
