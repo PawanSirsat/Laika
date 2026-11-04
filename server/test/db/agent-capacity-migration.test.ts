@@ -39,10 +39,29 @@ function folderBefore0074(): string {
   const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: { tag: string }[] };
   const at = journal.entries.findIndex((e) => e.tag === TAG);
   expect(at, 'the LAI-1038 migration is in the journal').toBeGreaterThan(0);
-  // The guard on this guard: 0074 is the newest migration, so the cut drops
-  // exactly it. A later migration lands here and says so.
-  expect(journal.entries.slice(at).map((e) => e.tag)).toEqual([TAG]);
+  // The guard on this guard: the first entry cut is 0074, so the cut keeps
+  // exactly a 0073 database. Later migrations (0075 task_deliverables,
+  // LAI-1115) are cut with it, which is what the upgrade under test needs.
+  expect(journal.entries[at]?.tag).toBe(TAG);
   journal.entries.splice(at);
+  writeFileSync(journalPath, JSON.stringify(journal));
+  return dir;
+}
+
+/** A copy of the migrations cut back to **through** `0074`: what the upgrade under test applies, and nothing after it (0075, LAI-1115). */
+function folderThrough0074(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+  cpSync(MIGRATIONS_FOLDER, dir, {
+    recursive: true,
+    filter: (source) => !source.endsWith('_snapshot.json'),
+  });
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const journalPath = join(dir, 'meta', '_journal.json');
+  const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: { tag: string }[] };
+  const at = journal.entries.findIndex((e) => e.tag === TAG);
+  expect(at, 'the LAI-1038 migration is in the journal').toBeGreaterThan(0);
+  journal.entries.splice(at + 1);
+  expect(journal.entries.at(-1)?.tag).toBe(TAG);
   writeFileSync(journalPath, JSON.stringify(journal));
   return dir;
 }
@@ -127,7 +146,10 @@ describe('0074 agent_capacity', () => {
     expect((before.rows.agent_events ?? []).length).toBe(3);
     expect((before.rows.agent_event_deliveries ?? []).length).toBe(3);
 
-    runMigrations(db);
+    // 0074 and only 0074: a later migration (0075 adds columns to `tasks`,
+    // LAI-1115) would change the rows this compares for reasons of its own.
+    const through = folderThrough0074();
+    runMigrations(db, { migrationsFolder: through });
     expect(everythingElse(db)).toEqual(before);
     for (const table of NEW_TABLES) {
       expect(db.all(sql.raw(`SELECT * FROM "${table}"`)), table).toEqual([]);
@@ -158,7 +180,7 @@ describe('0074 agent_capacity', () => {
 
     const upgraded = everythingElse(db);
     const migrations = db.all(sql`SELECT * FROM __drizzle_migrations`);
-    runMigrations(db);
+    runMigrations(db, { migrationsFolder: through });
     expect(everythingElse(db)).toEqual(upgraded);
     expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toEqual(migrations);
   });

@@ -4,6 +4,7 @@ import { loadActor, resolveTokenActor, type ResolvedActor } from '../../src/auth
 import {
   activity,
   agentSessions,
+  comments,
   handoffOffers,
   sprints,
   taskClaims,
@@ -1207,3 +1208,70 @@ describe('selecting the claim holder (LAI-1032)', () => {
     ]);
   });
 });
+
+// ------------------------------------------- a finish ticks what it delivered
+
+describe('finish ticks the Ships items the checklist names (§4.5, LAI-1115)', () => {
+  it('marks by id or exact title, in the finish’s own transaction, and keeps the rest as notes', () => {
+    const a = agent();
+    const id = createTask(t.sqlite, t.db, owner, 'laika', {
+      title: 'Delivers',
+      deliverables: [{ title: 'Terminal viewer' }, { title: 'Watch view' }, { title: 'Docs' }],
+      now: T0,
+    }).id;
+    const items = getTask(t.db, owner, id).deliverables;
+    startWorking(t.sqlite, t.db, a.actor, id, { now: T0 });
+
+    const finished = finishTask(t.sqlite, t.db, at(a.actor, 1), id, {
+      summary: 'Done',
+      checklist: [items[0]!.id, 'Watch view', 'watch view', 'tests green'],
+      now: T0 + MIN,
+    });
+
+    expect(finished.status).toBe('review');
+    expect(finished.deliverables.map((d) => [d.title, d.state])).toEqual([
+      ['Terminal viewer', 'done'],
+      ['Watch view', 'done'],
+      ['Docs', 'pending'],
+    ]);
+
+    const comment = addCommentBodies(id).find((b) => b.startsWith('Done'));
+    expect(comment).toBe('Done\n\n- [x] watch view\n- [x] tests green');
+
+    const marks = t.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.taskId, id), eq(activity.type, 'task.updated')))
+      .all()
+      .map((r) => JSON.parse(r.payloadJson ?? '{}') as { field?: string; marked?: unknown[] })
+      .filter((p) => p.field === 'deliverables');
+    expect(marks).toHaveLength(1);
+    expect(marks[0]?.marked).toEqual([
+      { id: items[0]!.id, title: 'Terminal viewer', from: 'pending', to: 'done' },
+      { id: items[1]!.id, title: 'Watch view', from: 'pending', to: 'done' },
+    ]);
+  });
+
+  it('marks nothing when the finish itself is refused', () => {
+    const a = agent();
+    const id = createTask(t.sqlite, t.db, owner, 'laika', {
+      title: 'Not started',
+      deliverables: [{ title: 'A thing' }],
+      now: T0,
+    }).id;
+    // Never started: §5 refuses backlog → review, and the mark rides nowhere.
+    expect(() =>
+      finishTask(t.sqlite, t.db, a.actor, id, { summary: 'Done', checklist: ['A thing'], now: T0 }),
+    ).toThrow(ApiError);
+    expect(getTask(t.db, owner, id).deliverables[0]?.state).toBe('pending');
+  });
+});
+
+function addCommentBodies(taskId: string): string[] {
+  return t.db
+    .select()
+    .from(comments)
+    .where(eq(comments.taskId, taskId))
+    .all()
+    .map((r) => r.bodyMd);
+}

@@ -1,6 +1,7 @@
 import { useId, useState, type ReactNode } from 'react';
 import type { AgentClient } from '../../api/agent-clients.ts';
 import { dateTime } from '../../api/time-label.ts';
+import { harnessName } from '../../api/selected-agent.ts';
 import { AgentChip, type AgentChipProps } from './AgentChip.tsx';
 import { ExecutionStateLine, NoRecentSaveLine } from './ExecutionStateLine.tsx';
 import {
@@ -153,8 +154,23 @@ export function ExecutionPanel({
   noRecentSaveMs,
   children,
 }: ExecutionPanelProps) {
+  // The live session's line without the chip's words before it: the chip
+  // already names the agent, so the line says only what ran (LAI-1123).
+  const sessionTail =
+    session === null ||
+    session === undefined ||
+    typeof session === 'string' ||
+    sessionLine === undefined
+      ? sessionLine
+      : afterLabel(sessionLine, session);
+  // The latest claim *is* the live session's: its chip and its line would say
+  // what the Working session row just said, so they are not said twice.
+  // `liveSessionId` is a string when present, so a claim with no session
+  // (null) never matches it.
+  const claimIsLive = liveSessionId !== undefined && claim?.sessionId === liveSessionId;
   return (
     <section className="exec-panel" aria-label="Agent execution" data-exec-panel>
+      <h4 className="exec-title">Agent</h4>
       {state !== null && <ExecutionStateLine state={state} variant="panel" />}
       {noRecentSaveMs !== undefined && (
         <NoRecentSaveLine windowMs={noRecentSaveMs} variant="panel" />
@@ -163,7 +179,15 @@ export function ExecutionPanel({
       <dl className="exec-facts">
         <div>
           <dt>Intended agent</dt>
-          <dd>{intended === null ? 'None' : <AgentChip {...intended} />}</dd>
+          <dd>
+            {intended !== null ? (
+              <AgentChip {...intended} />
+            ) : session !== undefined && session !== null ? (
+              <span className="exec-quiet">None — the agent took the task itself</span>
+            ) : (
+              'None'
+            )}
+          </dd>
         </div>
         {session !== undefined && (
           <div>
@@ -176,9 +200,9 @@ export function ExecutionPanel({
               ) : (
                 <AgentChip {...session} />
               )}
-              {session !== null && sessionLine !== undefined && (
+              {session !== null && sessionTail !== undefined && sessionTail !== '' && (
                 <span className="exec-line exec-session-line" data-session-line>
-                  {sessionLine}
+                  {sessionTail}
                 </span>
               )}
             </dd>
@@ -207,7 +231,7 @@ export function ExecutionPanel({
           <div>
             <dt>Last claim</dt>
             <dd className="exec-claim" data-exec-claim>
-              {typeof claim.agent === 'string' ? (
+              {claimIsLive ? null : typeof claim.agent === 'string' ? (
                 <span>{claim.agent}</span>
               ) : (
                 <AgentChip {...claim.agent} />
@@ -218,7 +242,7 @@ export function ExecutionPanel({
             </dd>
           </div>
         )}
-        {claim?.line !== undefined && (
+        {claim?.line !== undefined && !claimIsLive && (
           <div>
             <dt>Ran as</dt>
             <dd className="exec-line" data-agent-line>
@@ -477,4 +501,14 @@ function ExecutionDetails({
       )}
     </div>
   );
+}
+
+/**
+ * `line` without the chip's own words in front: *Claude Code · Belka · Codex ·
+ * gpt-5.5* under a *Claude Code · Belka* chip is *Codex · gpt-5.5*. A line that
+ * does not start with them is returned whole.
+ */
+function afterLabel(line: string, chip: AgentChipProps): string {
+  const label = `${harnessName(chip.client)} · ${chip.device}`;
+  return line.startsWith(`${label} · `) ? line.slice(label.length + 3) : line === label ? '' : line;
 }

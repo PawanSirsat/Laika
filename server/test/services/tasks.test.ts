@@ -25,6 +25,7 @@ import {
   reorderTask,
   subtaskProgress,
   updateTask,
+  taskVersion,
 } from '../../src/services/tasks.ts';
 import { addComment, deleteComment } from '../../src/services/comments.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
@@ -750,6 +751,109 @@ describe('comment count on a task view (SPEC §4.7)', () => {
  * LAI-092. "What does done mean here" as a field an agent can read, rather than
  * prose buried in a description where it stops being checkable.
  */
+describe('what this delivers: deliverables, solves, unlocks (SPEC §4.5, LAI-1115)', () => {
+  it('is an empty list when nobody stated any — never null', () => {
+    const task = newTask('Bare');
+    expect(task.deliverables).toEqual([]);
+    expect(task.solves).toEqual([]);
+    expect(task.unlocks).toEqual([]);
+  });
+
+  it('is stored and returned when given at creation, each Ships item minted an id and pending', () => {
+    const task = newTask('Delivers', {
+      deliverables: [{ title: ' Terminal viewer ', detail: 'opt-in' }, { title: 'Watch view' }],
+      solves: ['nobody sees a run'],
+      unlocks: ['D-128'],
+    });
+    expect(task.deliverables.map((d) => [d.title, d.detail, d.state])).toEqual([
+      ['Terminal viewer', 'opt-in', 'pending'],
+      ['Watch view', null, 'pending'],
+    ]);
+    expect(task.deliverables.map((d) => d.id).every((id) => id.length === 26)).toBe(true);
+    expect(task.solves).toEqual(['nobody sees a run']);
+    expect(task.unlocks).toEqual(['D-128']);
+    expect(getTask(t.db, actor(adminId), task.id).deliverables).toEqual(task.deliverables);
+  });
+
+  it('replaces the whole list on update; a sent id keeps its id and its state', () => {
+    const task = newTask('Later', { deliverables: [{ title: 'A' }, { title: 'B' }] });
+    const [a, b] = task.deliverables;
+    const after = updateTask(t.db, actor(adminId), task.id, {
+      deliverables: [{ id: b!.id, title: 'B, renamed' }, { title: 'C' }],
+      solves: ['x'],
+    });
+    expect(after.deliverables.map((d) => [d.id === b!.id, d.title, d.state])).toEqual([
+      [true, 'B, renamed', 'pending'],
+      [false, 'C', 'pending'],
+    ]);
+    expect(after.deliverables.some((d) => d.id === a!.id)).toBe(false);
+    expect(after.solves).toEqual(['x']);
+    // `[]` clears; absent leaves alone.
+    expect(updateTask(t.db, actor(adminId), task.id, { title: 'Renamed' }).deliverables).toEqual(
+      after.deliverables,
+    );
+    expect(updateTask(t.db, actor(adminId), task.id, { deliverables: [] }).deliverables).toEqual(
+      [],
+    );
+  });
+
+  it('refuses an id the task does not have, naming the field and the reason', () => {
+    const task = newTask('Strict');
+    let refused: unknown;
+    try {
+      updateTask(t.db, actor(adminId), task.id, { deliverables: [{ id: 'nope', title: 'X' }] });
+    } catch (err) {
+      refused = err;
+    }
+    expect(refused).toBeInstanceOf(ApiError);
+    const api = refused as ApiError;
+    expect(api.code).toBe('unprocessable');
+    expect(api.details).toMatchObject({
+      field: 'deliverables',
+      reason: 'unknown_deliverable',
+      id: 'nope',
+    });
+    expect(getTask(t.db, actor(adminId), task.id).deliverables).toEqual([]);
+  });
+
+  it('records the change as task.updated naming the field, and adds no verb', () => {
+    const task = newTask('Audited');
+    updateTask(t.db, actor(adminId), task.id, { deliverables: [{ title: 'A' }], unlocks: ['u'] });
+
+    const rows = t.db
+      .select()
+      .from(activity)
+      .where(eq(activity.taskId, task.id))
+      .all()
+      .filter((row) => row.type === 'task.updated');
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]?.payloadJson ?? '{}')).toMatchObject({
+      changed: ['deliverables', 'unlocks'],
+    });
+    const types = new Set(
+      t.db
+        .select()
+        .from(activity)
+        .where(eq(activity.taskId, task.id))
+        .all()
+        .map((r) => r.type),
+    );
+    expect([...types].some((type) => type.startsWith('deliverable'))).toBe(false);
+  });
+
+  it('moves the version a read sends: an ETag from before a change is stale after it', () => {
+    const task = newTask('Versioned', { deliverables: [{ title: 'A' }] });
+    const before = taskVersion(getTask(t.db, actor(adminId), task.id));
+    updateTask(t.db, actor(adminId), task.id, {
+      deliverables: [{ id: task.deliverables[0]!.id, title: 'A', state: 'done' }],
+    });
+    const afterState = taskVersion(getTask(t.db, actor(adminId), task.id));
+    expect(afterState).not.toBe(before);
+    updateTask(t.db, actor(adminId), task.id, { solves: ['s'] });
+    expect(taskVersion(getTask(t.db, actor(adminId), task.id))).not.toBe(afterState);
+  });
+});
+
 describe('acceptance criteria (SPEC §4.5)', () => {
   it('is null when nobody specified any, not an empty string', () => {
     // The two are different claims: `null` says nobody said, `''` says somebody
@@ -1071,6 +1175,8 @@ describe('started_at and completed_at', () => {
         'created_via',
         'blocked_by',
         'branch',
+        // LAI-1115: "What this delivers", in §4.5's shape (rows by LAI-1116).
+        'deliverables',
         'description_md',
         'discovered_from',
         'due_on',
@@ -1093,6 +1199,7 @@ describe('started_at and completed_at', () => {
         'send_back',
         // LAI-771, D-085: the size and forecast in force, in §6.4's shape.
         'size',
+        'solves',
         'sprint_id',
         'stale_flagged_at',
         'started_at',
@@ -1101,6 +1208,7 @@ describe('started_at and completed_at', () => {
         'status_name',
         'tags',
         'title',
+        'unlocks',
         'updated_at',
       ].sort(),
     );

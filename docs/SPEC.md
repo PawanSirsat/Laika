@@ -678,6 +678,9 @@ project role `viewer`.
 | `assignee_id` | nullable FK `users` |
 | `sprint_id` | nullable FK `sprints` (§4.15) — unassigned means backlog, not "no sprint yet" |
 | `acceptance_md` | nullable — what *done* means for this task, in prose (LAI-092) |
+| `deliverables` | **not null**, default `[]` — **what this delivers** (LAI-1115, D-129): a JSON array, in order, of Ships items `{ id, title, detail, state }` — `id` a ULID the service mints, `detail` nullable, `state` one of `pending` \| `in_progress` \| `done`. An agent fills it when it files the task (`create_task`, `update_task`), `checkpoint_task`'s `working_on` moves an item to `in_progress`, `finish_task`'s `checklist` to `done`; people edit the list in place. A JSON column, not a table: every write replaces the list or flips one state, nothing queries inside it, and the `task.updated` row each change writes (§4.8) is its audit trail. Bounded by the service (at most 20 items, a title of 200 and a detail of 2000 characters); served on `TaskView`, left out of the slim list (§6.4) |
+| `solves` | **not null**, default `[]` — JSON array of short strings: the problems finishing this removes, in order (at most 20 lines of 300 characters) |
+| `unlocks` | **not null**, default `[]` — JSON array of short strings: what finishing this makes possible, in order — may name a decision, `D-128` (same bounds) |
 
 **`blocked_by` is what a task waits on, and `blocks` is the reverse.** Both are
 on `TaskView`; they are never merged, because a task blocking three others and
@@ -889,6 +892,12 @@ a reader filtering on `type` should not open a payload to learn it.
 A work request's opening and withdrawal stay `task.agent_selected` (LAI-535),
 and its acceptance by the selected agent's claim writes no hand-off verb: no
 claim moved between sessions.
+
+A change to a task's `deliverables`, `solves` or `unlocks` (§4.5, LAI-1115) is
+`task.updated` — `changed` naming the field for a replaced list, and
+`{ field: 'deliverables', marked: [{ id, title, from, to }] }` for the Ships
+items a finish or a checkpoint moved — not a verb of its own, as tags and size
+are not (D-027).
 
 **`agent.capacity_requested`** (D-126 item 2, LAI-1038) is somebody who may
 delegate to an agent asking its device for its capacity (§4.84). Actor:
@@ -2698,6 +2707,13 @@ fetches a URL and never calls GitHub** (D-083).
 | `summary_commit_sha` | nullable — the commit the note describes; null exactly when `summary` is |
 | `context_revision` | nullable — the project brief's revision the session had seen (proposal §4.6); written by nothing until Phase 4 |
 | `created_at` | |
+
+`working_on` on the register body (§6.4, `checkpoint_task`) is **a request to
+the task, not a column of the checkpoint** (LAI-1115): the Ships items it names,
+by id or exact title, move to `in_progress` on `tasks.deliverables` (§4.5) in
+the save's transaction, after the `task.checkpoint_saved` row. A name the task
+does not list refuses the save whole, `422` `unknown_deliverable`, and nothing
+is registered; a retried key compares the body without it.
 | `verified_at` | nullable — when `verification` last became `verified`; null otherwise |
 | `verification` | `pending` \| `verified` \| `ref_deleted` \| `uncertain` (CHECK) — **the state of the checkpoint's newest ref** (§4.71), copied here in the transaction that changes it, so a reader asks one table |
 | `idempotency_key` | unique — the helper's key; registering the same key again answers the row already written (D-116 item 1: push, then register, and retry a failed registration with the same key) |
@@ -3945,7 +3961,7 @@ GET    /api/v1/projects/:slug/context/deliveries   ?revision=&limit=&cursor= →
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
                                              status is a category (§4.5), status_id one project status (§4.20);
-                                             fields=slim leaves out description_md and acceptance_md (LAI-795)
+                                             fields=slim leaves out description_md, acceptance_md, deliverables, solves and unlocks (LAI-795, LAI-1115)
                                              each task carries `handoff`, its saves and hand-off in brief (LAI-1005), read once
                                              for the page returned, whatever its size and however many `ready=` batches were
                                              walked to fill it — see the task shape below
@@ -3976,7 +3992,7 @@ POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
                                              new session, and answers X-Laika-Claim-Generation and X-Laika-Agent-Session
 POST   /api/v1/tasks/:id/claim/reclaim       body { session_id? } → { claim, session, from_generation } — the explicit reclaim
                                              (§9.1, LAI-541); a registered agent's token only
-POST   /api/v1/tasks/:id/checkpoints         body { id, idempotency_key, repo, branch, commit_sha, manifest, summary?, summary_commit_sha? }
+POST   /api/v1/tasks/:id/checkpoints         body { id, idempotency_key, repo, branch, commit_sha, manifest, summary?, summary_commit_sha?, working_on? }
                                              → 201 checkpoint; the same key again → 200 that checkpoint (§4.70, LAI-545).
                                              The live claim's holder only, with X-Laika-Claim-Generation
 GET    /api/v1/tasks/:id/checkpoints         newest first, each with its refs, `verification`, `pending_since`, `superseded`
@@ -4009,10 +4025,13 @@ POST   /api/v1/handoff-offers/:id/cancel     → offer; the sender's claim resum
 GET    /api/v1/projects/:slug/handoff-policy PUT .../handoff-policy  body { allow_other_owners?, cross_owner_requires_approval?,
                                              max_handoffs?, offer_ttl_minutes? }   (§4.74; set: lead)
 POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests? }
-                                             → review, with a round and its proof (finish_task's twin, D-082)
+                                             → review, with a round and its proof (finish_task's twin, D-082); a checklist
+                                             line that is a deliverable's id or exact title marks it done (LAI-1115)
 GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back }
 GET    /api/v1/tasks/:id/estimate            size, why, forecast frozen at start, actual, history (D-085)
 GET    /api/v1/tasks/:id/usage               ?tz= — its tokens: per person and agent, per round, attributed share (D-084, LAI-770); cost, budget, runaway (LAI-773)
+GET    /api/v1/tasks/:id/similar             { similar: [{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }] } — get_task_context's similar finished tasks; nobody's name (LAI-1122)
+GET    /api/v1/tasks/:id/time                { total_minutes, people, entries } — its confirmed time, totals only; drafts never count (D-088, LAI-1122)
 PUT    /api/v1/tasks/:id/budget              body { tokens | null } — null goes back to the frozen forecast's p80   (lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/estimates/accuracy  per project, and per agent client with ≥ 3 people; never per person
 POST   /api/v1/tasks/:id/accept              → the first visible done status   (session only; the done rule, §5)
@@ -4117,11 +4136,18 @@ reads as *"this board cannot say"*. `/health` gained `build_commit` beside its
 three original fields, unchanged.
 
 `PATCH /tasks/:id` accepts a partial
-`{ title, description_md, acceptance_md, tags, priority, assignee_id,
-parent_task_id, due_on, planned_start, external_ref, selected_agent_id }`.
+`{ title, description_md, acceptance_md, deliverables, solves, unlocks, tags,
+priority, assignee_id, parent_task_id, due_on, planned_start, external_ref,
+selected_agent_id }`.
 **`null` clears a field; absent leaves it alone** — they are different requests,
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
-distinction. `tags` replaces the whole set. `POST /projects/:slug/tasks` takes
+distinction. `tags` replaces the whole set, and so do `deliverables`, `solves`
+and `unlocks` (§4.5, LAI-1115): `[]` clears; a deliverable sent with its `id`
+keeps that id and, unless `state` is sent, its state; an unknown or repeated
+id, an empty title or a list over its bound is `422` naming the field and a
+`reason` (`unknown_deliverable`, `duplicate_deliverable`, `empty_title`,
+`too_many`, `title_too_long`, `detail_too_long`, `line_too_long`). `POST
+/projects/:slug/tasks` takes the same three. `POST /projects/:slug/tasks` takes
 the same three optional fields (`parent_task_id`, `due_on`, `planned_start`)
 beside `discovered_from`, and `selected_agent_id` (LAI-1027) — checked as
 `PATCH` checks it, opening the work request and writing the
@@ -4434,7 +4460,8 @@ reads as the defaults (§4.74); `PUT` writes the whole row from the defaults
 plus what it was sent.
 
 **A slim list: `?fields=slim`** (LAI-795). The task list answers every field
-of the task view below **except `description_md` and `acceptance_md`**, the
+of the task view below **except `description_md`, `acceptance_md`,
+`deliverables`, `solves` and `unlocks`** (the detail fields, LAI-1115), the
 rest in the same order, on the same pages and with the same `next_cursor`, and
 with every filter. **Without it the answer is unchanged** — agents, the CLI and
 other clients read the list whole. `slim` is the only value: any other is `400
@@ -5237,7 +5264,8 @@ only), answering the same shape.
 included, which `TaskView` omitted until LAI-493 (LAI-286) — and `TaskView`
 adds the fields below, which are not stored there — **derived at read time, so a reader who looks for them in §4 will
 not find them and should not**. A slim list's task, `TaskSummaryView`, is the
-same shape without `description_md` and `acceptance_md` (LAI-795):
+same shape without `description_md`, `acceptance_md`, `deliverables`, `solves`
+and `unlocks` (LAI-795, LAI-1115):
 
 | field | where it comes from |
 | --- | --- |
@@ -5256,20 +5284,26 @@ same shape without `description_md` and `acceptance_md` (LAI-795):
 **The review gate (D-082, LAI-758).** `POST /tasks/:id/finish` is
 `finish_task`'s REST twin: the move to review, the summary comment and a new
 round (§4.25) with its proof (§4.26), in one transaction. Every proof field is
-optional, so a body with only `summary` and `checklist` behaves as before.
+optional, so a body with only `summary` and `checklist` behaves as before —
+except that a `checklist` line equal to a deliverable's id or exact trimmed
+title marks that Ships item `done` in the same transaction (§4.5, LAI-1115),
+and only the lines that named nothing are appended `- [x]` under the summary.
 `commits` is `[{ sha, message? }]` — only the message's first line is kept —
 `pull_request` an `http(s)` URL, and `tests` `[{ command, exit_code }]`; the
 limits are §4.26's and a breach is `422` naming the field, with nothing moved.
 `GET /tasks/:id/rounds` answers `{ rounds, send_back }`: each round as
 `{ id, task_id, number, finished_by, client_name, agent, by_registered_agent,
-summary_md, commits, branch, pull_request, tests, ci, created_at }`, each item
+summary_md, commits, branch, pull_request, tests, ci, decision, created_at }`, each item
 with `id`, `state`,
 `state_source` and `state_at` beside its own fields (`sha` and `message`,
 `name`, `url` and `merged`, `command` and `exit_code`), newest round first;
 `project.read`. `pull_request.merged` is `true` or `false` once a GitHub
 delivery named it, `null` before (D-083). `ci` is `{ head_sha, total, passed,
 failed, pending, failed_names }` from §4.31, or `null` when no CI result was
-reported for the round's head commit.
+reported for the round's head commit. `decision` is the round's latest
+§4.27 review as `{ kind, decided_by, reason_md, created_at }` — `kind`
+`accepted` or `sent_back`, `reason_md` the send-back's reason and `null` for an
+acceptance — or `null` while the round is undecided (LAI-1122).
 
 **Which agent finished a round (D-120, LAI-1001).** `agent` is `{ id,
 harness, device_label }` for the registered agent whose token finished the
@@ -5312,6 +5346,18 @@ another (D-084 item 6) — or `null` when they see nobody's. `totals`,
 `first_day`, `last_day` and `by_round` hold every row tied to the task, those
 marked `automated` included; `by_person` and `attributed` hold the people's own
 rows only (D-091, §4.33), so `by_person` may sum to less than `totals`.
+
+**A task's similar finished tasks and confirmed time (LAI-1122).** `GET
+/tasks/:id/similar` answers `{ similar }` under `project.read`: the list
+`get_task_context` serves as `similar` (§7.1), up to five finished tasks of
+the same project, closest first, each `{ task_id, key, title, status,
+similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back,
+each reason cut at 400 characters, and nobody's name. `GET /tasks/:id/time`
+answers `{ total_minutes, people, entries }` under `project.read`: the sum of
+the task's live `time_entries` (§4.48) — confirmed time only, so a draft is
+never counted, and a deleted entry neither — with how many entries and how
+many distinct people they are from. A count of people, never who: per-person
+hours stay where D-088 puts them.
 
 **Sizes and forecasts (D-085, LAI-771).** `POST /projects/:slug/tasks` and
 `PATCH /tasks/:id` take an optional `size` — `XS` to `XL`, or `null` on `PATCH`
@@ -5524,24 +5570,24 @@ matched.
 | `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope`, `agent` (the registered agent this token is the credential of — `id`, `display_name`, `harness`, `device_label`, `status` — or `null` for a legacy token; D-114) — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age. On a registered agent's token, also `work_requests`: its open work requests, ready or not, newest first, under the same `project` and `limit`, as `GET /agents/me/work-requests?project=&limit=` answers (LAI-535) — a request, not a claim |
-| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name |
+| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, what it delivers (`### Delivers (n of m built)` — each Ships item with its state and its id, which `checkpoint_task` and `finish_task` take back — `### Solves`, `### Unlocks`; LAI-1115), `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name |
 | `get_project_context` | `{ project, since_revision?, session_id? }` | `context_md` with its `revision` — or, with `since_revision`, **no document**: `context_diff` from that revision to the current one (§6.4's diff, truncated past 2,000 changed lines with the same `hint`) — its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770). `session_id` is a registered agent's own open session: the revision answered is recorded as **delivered** to it (§4.69) — but not by a truncated diff, which sent none of it |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
-| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref?, agent? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `agent` is a registered agent's id and is `POST /projects/:slug/tasks`'s `selected_agent_id` (§6.4): a work request opened in the create, never an assignment (LAI-1027). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
-| `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, claim_generation? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date, `size`, `external_ref` or `agent` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085). `agent` is a registered agent's id and is `PATCH`'s `selected_agent_id` (§6.4): a work request, never an assignment (LAI-535) |
+| `create_task` | `{ project, title, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref?, agent? }` | created task, `created_via: 'mcp'`. `deliverables` (Ships items, each `{ title, detail?, state? }`), `solves` and `unlocks` are the task's "what this delivers" (§4.5, LAI-1115), filled by the agent that files it. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `agent` is a registered agent's id and is `POST /projects/:slug/tasks`'s `selected_agent_id` (§6.4): a work request opened in the create, never an assignment (LAI-1027). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
+| `update_task` | `{ task, title?, description?, acceptance?, deliverables?, solves?, unlocks?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, claim_generation? }` | task. Every field optional; an omitted one is left alone; `deliverables`, `solves` and `unlocks` each replace the whole list, as `PATCH` does (§6.4, LAI-1115) — keep an item's `id` to keep its state; `null` on `parent`, a date, `size`, `external_ref` or `agent` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085). `agent` is a registered agent's id and is `PATCH`'s `selected_agent_id` (§6.4): a work request, never an assignment (LAI-535) |
 | `start_working` | `{ task, branch?, estimate?, session_id?, reclaim? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409`. **On a registered agent's token** it also takes the task's exclusive claim (§5, §4.66) and answers `claim` — `{ session_id, generation, lease_expires_at, … }` — beside the task, and **never writes the assignee** (§5); `session_id?` names the session to claim under (absent opens one), and the holder's session calling again renews the lease. A second session — the same agent's, or another agent of the same person — is `409`, `reason: claim_held`. **A task with a selected agent** (§4.5) is claimed only by that agent's sessions — another agent is `409`, `reason: selected_for_another_agent`, with or without `reclaim` (D-119, §6.3). **`reclaim: true`** is the explicit reclaim, `POST /tasks/:id/claim/reclaim`'s twin (§9.1, LAI-541): only it gives an agent whose claim expired a claim again, at `generation + 1` |
 | `update_status` | `{ task, status, note?, claim_generation? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint, claim_generation? }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body }` | comment |
-| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests?, claim_generation? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083). Releases the session's claim (§5) |
+| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests?, claim_generation? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083). A `checklist` line that is a deliverable's id or exact title marks it `done` (§4.5, LAI-1115); the other lines are appended `- [x]` under the summary. Releases the session's claim (§5) |
 | `create_sprint` | `{ project, name, goal?, start_date, end_date, status? }` | created sprint, with the id the other sprint tools take |
 | `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
 | `update_project_context` | `{ project, context_md, mode, base_revision? }` | the document's new revision and length. `mode` is `replace` or `append`. `replace` must name the `base_revision` it replaces (absent is `422`, after the permission check); a stale one is `conflict`, `reason: stale_context_revision`, and nothing changes. `append` is computed from the current document inside the write, so two appends both land (LAI-555) |
 | `log_unlisted_work` | `{ repo, note }` | records work or an idea outside any project, for triage |
 | `propose_time_entry` | `{ minutes, task?, day?, note? }` | a draft in the person's own drafts (`source: 'agent'`, §4.47) — **never an entry**: only the person confirms it, signed in to the web app (D-088 item 13). Refused `forbidden` with `details.reason: "time_drafts_off"` unless the organisation's *Time* is `drafts` and the person turned on *Draft my time*. `day` is their local day, by default today in their drafts' zone. It answers `{ id, minutes, day }` and nothing of the person's drafts. Its REST twin is `POST /me/time-drafts` (LAI-787) |
 | `agent_sync` | `{ project?, after? }` | a registered agent's inbox: its **live** work requests and the hand-off and recovery offers it may accept, newest first — `GET /agents/me/inbox`'s twin (§6.4, LAI-546), each item with its `delivery` (§4.77); and `{ after? }` returns `events` — `GET /agents/me/events` with `state=undelivered` and the same `project` — with `cursor`, `has_more` and `gap` (LAI-553). Any other token is `forbidden`, `reason: not_an_agent`. It reads, and records nothing: acknowledging is `POST /agents/me/events/ack` |
-| `checkpoint_task` | `{ task, id, idempotency_key, repo, branch, commit_sha, manifest, summary?, summary_commit_sha?, claim_generation }` | the checkpoint, `verification: 'pending'` until a signed push delivery verifies it — `POST /tasks/:id/checkpoints`'s twin (§4.70, LAI-545). Register **after** the push; the server never fetches anything (D-083) |
+| `checkpoint_task` | `{ task, id, idempotency_key, repo, branch, commit_sha, manifest, summary?, summary_commit_sha?, working_on?, claim_generation }` | the checkpoint, `verification: 'pending'` until a signed push delivery verifies it — `POST /tasks/:id/checkpoints`'s twin (§4.70, LAI-545). Register **after** the push; the server never fetches anything (D-083). `working_on` names the Ships items this save advances, by id or exact title: they move to `in_progress`; a name the task does not list refuses the save (LAI-1115) |
 | `offer_handoff` | `{ task, to_agent, checkpoint, reason, idempotency_key, claim_generation }` | the offer, `open` or `pending_approval`; the caller's claim is `paused` — `POST /tasks/:id/handoff-offers`'s twin (§4.73, LAI-546). `to_agent` is an agent id |
 | `ping_agent` | `{ project, agent, task?, wait_seconds? }` | the ping — `POST /agents/:id/capacity-pings`'s twin (§4.84, D-126, LAI-1038): asks the agent's device whether it can take work, and holds up to `wait_seconds` (0–10) for the answer; `state` is `answered`, `pending` or `expired`. `agent` is an agent id the caller could delegate to (§3.2) — any other is `not_found`, as an id that names nothing; `task` is a task ref. A repeat within 15 s returns the ping still open; past the limits, `rate_limited` |
 | `get_agent_capacity` | `{ project, agent }` | `{ agent_id, launcher, latest_answer, now }` — `GET /agents/:id/capacity`'s twin (§4.83, §4.84, LAI-1038): the agent's launcher presence and the newest answer the caller may read. The same agents as `ping_agent`. Reads, and records nothing |
@@ -6283,7 +6329,7 @@ the decision currently governing it rather than the table naming one for all.
 | the sidebar | **My day** and **Inbox** (its count is Review's waiting plus Unlisted work's open, for whoever may see each) at the top; **SPACES** — the recent spaces, each with a coloured letter, *+* to create, *More spaces*; **ORGANISATION** — *Insights* (with the reader's open token alerts), *Organisation*, *Developer access*. At the foot, the person: a menu with *My profile* (owners and admins, who alone may open a profile), *Switch to dark / light*, *Developer access* and *Sign out*. No other entries | D-059.1, amended by **D-061**; **LAI-796** (the owner, 2026-10-20) |
 | the icon rail | a toggle in the sidebar's head collapses it to icons — each entry's icon, its count on the icon's corner, its name in a tooltip on hover and keyboard focus — remembered per browser; automatic between the phone's off-canvas width and a laptop's; never on a phone, where the sidebar is off-canvas | **LAI-796** |
 | a space's tabs | two groups with a hairline between — *Board, List, Timeline, Calendar* \| *Sprints, Dashboard, Activity, Meeting review* — and *Agents* and *Create* on the right | **LAI-796** |
-| Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer | D-059.2, amended by **D-063** |
+| Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer; `min(1280px, 94vw)` wide since the redesign (D-129) | D-059.2, amended by **D-063**, width by **D-129** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
 | Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is, in `classic`, four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*; in `v3`, the default since LAI-1076, *Overview*, *Project setup*, *Devices* and *Advanced* in the owner's design (LAI-1078), *Share local activity* being Advanced's second card. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
 | old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`) | **LAI-796**; **LAI-507** |
@@ -6308,7 +6354,7 @@ call MCP; agents do.
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
 | **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
-| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
+| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read | `propose_time_entry` | ✅ D-088, LAI-796 |
@@ -6353,19 +6399,62 @@ anything missing sends the task back.
   markers**, subtasks and a due date that is today or past; drag between columns issuing a real status call with snap-back
   on rejection; filters by assignee/priority/ready; live update over SSE;
   agent-authored badge; empty column states.
-- **Task detail** — laid out as a Jira issue view (D-066): a header with the
-  breadcrumb `↳ PARENT-KEY / KEY` (the parent key opens the parent) and plain
-  icon actions — watch with the watcher count, share, `⋯`, close; the left
-  column holding the title, a collapsible description, acceptance when set,
+- **Task detail** — laid out as a Jira issue view (D-066), restyled to the
+  owner's 2026-11-04 design (D-129, LAI-1117) with nothing below removed: a
+  header with the breadcrumb `↳ PARENT-KEY / KEY` (the parent key opens the
+  parent), the outside id as a chip beside the key when set, and plain icon
+  actions — watch with the watcher count, share (copies the link and says
+  *Copied*), `⋯`, close; the left column holding the title, **What this
+  delivers** (below), the **state panel** (below), a collapsible description,
+  acceptance when set — drawn as a checklist with *n of m* when every line is
+  `- [ ]` or `- [x]`, as prose otherwise, edited as prose either way —
   **Subtasks** (progress `n/m done`, one row per child that opens it, detach,
   inline add), **Linked tasks** with **BLOCKED BY** / **BLOCKS** relations and
   their statuses, and **Activity** with All / Comments / History / Changes
-  tabs and the composer at the top; the right rail holding the status control,
-  a **Details** card — assignee, priority, parent, due date, labels, sprint,
-  start date, reporter (`created_by`), `created_via` provenance, watchers,
-  `discovered-from` — a **Development** card (branch, external ref, commits)
-  when any of them is set, and `Created` / `Updated` at the foot. Comments
-  distinguish human from agent.
+  tabs and the composer at the top; the right rail holding the status control
+  with a sub-line (*In review for 24m · round 1*, *Claimed 18m ago*, *Sent
+  back 6m ago · round 2*, *Not started*), a **Details** card — assignee,
+  agent, priority, labels, sprint, effort, parent, subtasks, blocked by,
+  blocks, due date, planned start, reporter (`created_by`), `created_via`
+  provenance, outside id, watchers, `discovered-from`, every one edited in
+  place as before — a **Development** card (branch, pull request, outside id,
+  commits) when any of them is set, an **Estimate** card (the Effort and
+  Tokens sections below, in the rail), and `Created` / `Updated` at the foot.
+  Comments distinguish human from agent.
+  **What this delivers** (§4.5, LAI-1115): the Ships list with a mark per
+  state and a progress line — *2 of 4 built · Terminal viewer in progress*,
+  *4 of 4 built · waiting for approval* in review — then Solves, then Unlocks
+  with the tasks this one blocks or *Blocks no other tasks*. Inline-editable
+  by anyone who may edit the task, one list per `PATCH`; drawn only when the
+  server sends the field (D-032: no demo data), and nothing when all three
+  are empty.
+  **The state panel**, one per status: in **review**, a *Ready for review*
+  pill, *Round n · finished by <person> [agent] <time>*, **Approve** and
+  **Send back** for a reader the server lets decide — the assignee or a lead,
+  through the Review screen's dialog and `POST /tasks/:id/accept` /
+  `/send-back` (D-082) — a fact grid (pull request and merged state, CI,
+  tests passed and failed, commits and branch), the commits, the test runs
+  with *Show all N runs*, and one sentence that counts the proof's states and
+  says **from GitHub's signed deliveries** — never "against the repository",
+  because Laika never reads one (D-116); **in progress** with a live claim,
+  *Working now · for <duration>* with the pulse, Ping, the agent as
+  `<harness> · <device>`, and Session / Model / Connection (*Live* or
+  *Connection lost* on the page's own clock) / Progress against the estimate
+  frozen at start; **sent back**, the pill, the reason, *Round n · working
+  now* when a claim is live, and the previous round's evidence folded;
+  **waiting for an agent**, *Waiting for <harness · device> to accept*, *Work
+  request sent <time> ago*, Ping and Change agent; **done**, who accepted and
+  when with the rounds folded. The execution and hand-off panel (saves,
+  recovery, offers) stays under the rail's foot as before.
+  **Activity is grouped**: consecutive items by one actor in one session form
+  a run with one actor row — avatar, name, the agent as a chip (`<harness> ·
+  <device>`; its registered name only to its owner, D-120; *an agent* and no
+  device or model on an `agent_redacted` row, §4.8) and the time — and the
+  chip opens **Who did this** on click, focus or hover: Person, Agent · owned
+  by, Device, Tool with its version, Model, and the note that harness, version
+  and model are self-reported. A round's finish comment is a folded *Finish
+  summary · round n*; a send-back's reason is a reason card; an edited comment
+  says *Edited*.
   **A Proof section beside Acceptance** once the task has been finished
   (D-082): the send-back it carries first, then the latest round — round
   number, the agent that finished it, commits (short sha and first line),

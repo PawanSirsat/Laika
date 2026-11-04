@@ -398,6 +398,14 @@ export const CHECKPOINT_VERIFICATIONS = [
 ] as const;
 export type CheckpointVerification = (typeof CHECKPOINT_VERIFICATIONS)[number];
 
+/**
+ * Where a Ships item stands (§4.5, "What this delivers", LAI-1115). `pending`
+ * when stated, `in_progress` once a checkpoint names it, `done` once a finish
+ * ticks it — and a finish is the only way back out of `in_progress`.
+ */
+export const DELIVERABLE_STATES = ['pending', 'in_progress', 'done'] as const;
+export type DeliverableState = (typeof DELIVERABLE_STATES)[number];
+
 /** The states that hold a task (§4.66): the partial unique index's predicate. */
 export const LIVE_CLAIM_STATES = ['active', 'paused'] as const satisfies readonly TaskClaimState[];
 

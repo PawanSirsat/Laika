@@ -47,7 +47,11 @@ export function drawerReturnTarget(
  * own `×`, because the design draws that button inside the header beside the
  * task key. Both do the same thing: strip `?task=`.
  */
+/** A swipe down the phone sheet's handle longer than this closes it (LAI-1122). */
+const SWIPE_CLOSE_PX = 60;
+
 export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
+  const dragFrom = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   // The task shown at close, not at open: a related-task link swaps it in place.
   const shown = useRef(taskId);
@@ -93,6 +97,27 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
     <>
       <div className="drawer-scrim" onClick={onClose} aria-hidden="true" />
       <div className="drawer" tabIndex={-1} ref={panelRef}>
+        {/*
+          The phone sheet's handle (LAI-1122): drawn only below 600px. A tap
+          closes the sheet, and so does a downward swipe of more than 60px.
+          Escape, the scrim and Back close it as everywhere else.
+        */}
+        <button
+          type="button"
+          className="drawer-handle"
+          aria-label="Close the task"
+          onPointerDown={(event) => {
+            dragFrom.current = event.clientY;
+          }}
+          onPointerUp={(event) => {
+            const from = dragFrom.current;
+            dragFrom.current = null;
+            if (from !== null && event.clientY - from > SWIPE_CLOSE_PX) onClose();
+          }}
+          onClick={onClose}
+        >
+          <span className="drawer-handle-bar" aria-hidden="true" />
+        </button>
         {/* Where the view puts the task. The chrome knows the geometry; the
             screen knows the task — see `TaskDrawerContent`. */}
         <div id={DRAWER_SLOT_ID} className="drawer-slot" />

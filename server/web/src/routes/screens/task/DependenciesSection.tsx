@@ -24,7 +24,8 @@ export interface DependenciesSectionProps {
 }
 
 /**
- * Blocked by · Blocks (LAI-284, closing LAI-233).
+ * Blocked by · Blocks (LAI-284, closing LAI-233) — two rows of the rail's
+ * Links & dates card since LAI-1122.
  *
  * **The endpoints existed all along.** `POST /tasks/:id/dependencies` and its
  * `DELETE` twin have been served since the task router was written, and no
@@ -80,30 +81,27 @@ export function DependenciesSection({
     .sort((a, b) => a.number - b.number);
 
   return (
-    <section className="panel-section">
-      {/* "Linked tasks", as Jira names the section (D-066); the relations are
-          still BLOCKED BY and BLOCKS, which are the two Jira link types we have. */}
-      <h3 className="panel-section-title dep-title">
-        Linked tasks
-        <span className="panel-count">{task.blocked_by.length + task.blocks.length}</span>
-        <span className="dep-rule" aria-hidden="true" />
-        {mayEdit && !adding && (
-          <button
-            type="button"
-            className="dep-link"
-            onClick={() => {
-              setAdding(true);
-            }}
-          >
-            + Add linked task
-          </button>
-        )}
-      </h3>
+    <>
+      {/* The two Jira link types we have, as two rows of the rail's Links &
+          dates card (LAI-1122) — the Linked tasks section's, moved. */}
+      <div className="meta-row meta-row-wide meta-row-blocked-by dep-section">
+        <p className="meta-label">Blocked by</p>
+        <div className="meta-value meta-line">
+          {task.blocked_by.length === 0 && <span className="meta-quiet">Nothing</span>}
+          {mayEdit && !adding && (
+            <button
+              type="button"
+              className="dep-link meta-add-link"
+              onClick={() => {
+                setAdding(true);
+              }}
+            >
+              + Link task
+            </button>
+          )}
+        </div>
 
-      <div className="dep-group">
-        {task.blocked_by.length === 0 ? (
-          <p className="panel-muted">Nothing. This task can start whenever someone picks it up.</p>
-        ) : (
+        {task.blocked_by.length > 0 && (
           <ul className="dep-list">
             {task.blocked_by.map((id) => (
               <DependencyChip
@@ -168,10 +166,20 @@ export function DependenciesSection({
             </button>
           </div>
         )}
+
+        {error !== undefined && (
+          <p className="panel-alert" role="alert">
+            {error}
+          </p>
+        )}
       </div>
 
-      {task.blocks.length > 0 && (
-        <div className="dep-group">
+      <div className="meta-row meta-row-wide meta-row-blocks">
+        <p className="meta-label">Blocks</p>
+        <div className="meta-value meta-line">
+          {task.blocks.length === 0 && <span className="meta-quiet">Nothing</span>}
+        </div>
+        {task.blocks.length > 0 && (
           <ul className="dep-list">
             {task.blocks.map((id) => (
               <DependencyChip
@@ -184,15 +192,9 @@ export function DependenciesSection({
               />
             ))}
           </ul>
-        </div>
-      )}
-
-      {error !== undefined && (
-        <p className="panel-alert" role="alert">
-          {error}
-        </p>
-      )}
-    </section>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -223,7 +225,7 @@ function DependencyChip({ task, relation, members, theme, busy, onRemove }: Depe
   if (task === undefined) {
     return (
       <li className="dep-chip dep-chip-unknown">
-        <span className="dep-relation">{relation}</span>
+        <span className="dep-relation visually-hidden">{relation}</span>
         <span className="dep-chip-title">A task outside this page</span>
         {onRemove !== undefined && (
           <button type="button" className="dep-remove" disabled={busy} onClick={onRemove}>
@@ -240,7 +242,11 @@ function DependencyChip({ task, relation, members, theme, busy, onRemove }: Depe
 
   return (
     <li className="dep-chip">
-      <span className={`dep-relation dep-relation-${relation.split(' ')[0]?.toLowerCase() ?? ''}`}>
+      {/* The row's label says which way the edge points; a screen reader
+          still hears it on the chip. */}
+      <span
+        className={`dep-relation dep-relation-${relation.split(' ')[0]?.toLowerCase() ?? ''} visually-hidden`}
+      >
         {relation}
       </span>
       <span className="dep-chip-key">{task.key}</span>

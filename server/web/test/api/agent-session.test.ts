@@ -26,6 +26,18 @@ void describe('the agent line', () => {
     );
   });
 
+  void test('the agent’s own harness is said once: only the model follows (LAI-1123)', () => {
+    const own = { ...SESSION, harness: 'claude-code', model: 'claude-opus-5-5' };
+    assert.equal(agentLine('Claude Code · Belka', own), 'Claude Code · Belka · claude-opus-5-5');
+    // With no model, nothing is left to add.
+    assert.equal(agentLine('Claude Code · Belka', { ...own, model: null }), 'Claude Code · Belka');
+    // A different harness is still the fact worth saying.
+    assert.equal(
+      agentLine('Claude Code · Belka', SESSION),
+      'Claude Code · Belka · Codex · gpt-5.5',
+    );
+  });
+
   void test('a row with no snapshot is the agent alone — null and absent alike', () => {
     assert.equal(agentLine('Claude Code · Belka', null), 'Claude Code · Belka');
     assert.equal(agentLine('Claude Code · Belka', undefined), 'Claude Code · Belka');

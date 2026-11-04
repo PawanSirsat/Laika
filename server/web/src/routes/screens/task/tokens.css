@@ -164,3 +164,64 @@
   font-size: var(--text-body);
   color: var(--text-primary);
 }
+
+/*
+ * The rail's *Tokens* row (LAI-1122): the line against the estimate and the
+ * headline beside the label; the runaway banner, the budget, its alert and
+ * Details run the card's width under them. The rail is too narrow for the
+ * three-column rows, so they take the phone's two lines.
+ */
+.tk-compact > .tk-runaway,
+.tk-compact > .tk-block,
+.tk-compact > .tk-budget-alert,
+.tk-compact > .tk-details {
+  grid-column: 1 / -1;
+}
+
+.tk-compact > .tk-runaway {
+  order: -1;
+}
+
+.tk-compact .tk-headline {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.tk-compact .tk-headline .tk-total,
+.tk-compact .tk-headline .tk-cost {
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.tk-compact > .tk-block {
+  margin: var(--space-1) 0 0;
+}
+
+.tk-compact > .tk-budget-alert,
+.tk-compact > .tk-runaway {
+  margin: var(--space-1) 0 0;
+}
+
+.tk-of {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-of[data-state='warn'] {
+  color: var(--chip-orange);
+}
+
+.tk-of[data-state='over'] {
+  color: var(--overdue);
+}
+
+.tk-compact .usage-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name value'
+    'track track';
+}

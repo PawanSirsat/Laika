@@ -83,6 +83,7 @@ import {
   TIME_ENTRY_SOURCES,
   TIME_MODES,
   TIME_REVISION_CHANGES,
+  type DeliverableState,
 } from './enums.ts';
 
 /** `CHECK (col IN ('a','b'))` — the database half of a closed vocabulary. */
@@ -493,6 +494,19 @@ export const projectStatuses = sqliteTable(
 
 // ---------------------------------------------------------------- §4.5 tasks
 
+/**
+ * One Ships item (§4.5): a thing the task delivers, with where it stands.
+ * **Key order is fixed** — `taskVersion` hashes the view it is served in, so
+ * two writers must store the same bytes for the same item. `id` is a ULID the
+ * service mints; it is what `checkpoint_task` and `finish_task` name.
+ */
+export interface TaskDeliverable {
+  id: string;
+  title: string;
+  detail: string | null;
+  state: DeliverableState;
+}
+
 export const tasks = sqliteTable(
   'tasks',
   {
@@ -517,6 +531,35 @@ export const tasks = sqliteTable(
      * says someone specified that there is none.
      */
     acceptanceMd: text('acceptance_md'),
+    /**
+     * What this task delivers (§4.5, "What this delivers", LAI-1115): the
+     * **Ships** list, in order, each item with where it stands. An agent fills
+     * it when it files the task, `checkpoint_task` moves an item to
+     * `in_progress`, `finish_task` to `done`; people edit the list in place.
+     *
+     * A JSON column and not a table of its own, as `former_prefixes` is: every
+     * write replaces the whole list or flips one item's state, nothing queries
+     * inside it, and the `activity` row each change writes is the audit trail
+     * a table would only duplicate. No SQL CHECK on the shape — the service
+     * (`deliverables.ts`) is the one place that enforces it, and a table-level
+     * CHECK would make drizzle-kit rebuild `tasks` for nothing.
+     *
+     * `NOT NULL DEFAULT '[]'`: an empty list already says "none stated".
+     */
+    deliverables: text('deliverables', { mode: 'json' })
+      .$type<TaskDeliverable[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    /** The problems finishing this removes, one short line each (§4.5). */
+    solves: text('solves', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    /** What finishing this makes possible, one line each — may name a decision (§4.5). */
+    unlocks: text('unlocks', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
     /**
      * The **category** of the task's status (LAI-738, D-077) — what §5's
      * lifecycle, policy, readiness and metrics read. Kept in step with

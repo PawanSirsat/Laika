@@ -27,6 +27,12 @@ import {
   withProject,
 } from '../auth/resolve-actor.ts';
 import {
+  normaliseDeliverables,
+  normalisePoints,
+  markDeliverables,
+  type DeliverableInput,
+} from './deliverables.ts';
+import {
   apiFieldNames,
   appendActivity,
   boardDayOf,
@@ -46,7 +52,14 @@ import { immediateTransaction, nextTaskNumber } from '../db/numbering.ts';
 import { backfillTaskPositions, lastPosition } from '../db/backfill.ts';
 import { keyAfter, keyBetween } from '../db/order-key.ts';
 import { CATEGORY_LABELS, statusForCategory, type StatusRef } from '../db/project-statuses.ts';
-import { projects, projectStatuses, taskDependencies, tasks, users } from '../db/schema.ts';
+import {
+  projects,
+  projectStatuses,
+  taskDependencies,
+  tasks,
+  users,
+  type TaskDeliverable,
+} from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, effectiveProjectRole } from '../policy/can.ts';
 import {
@@ -127,9 +140,12 @@ import {
  * checks against the original. LAI-119 converges the two route files that
  * still do.
  */
+export type { TaskDeliverable } from '../db/schema.ts';
+export type { DeliverableInput } from './deliverables.ts';
 export {
   CLAIM_CONFIDENCES,
   CREATED_VIA,
+  DELIVERABLE_STATES,
   SIZE_LEVELS,
   TASK_PRIORITIES,
   TASK_STATUSES,
@@ -299,6 +315,12 @@ export interface TaskView extends TaskSummaryView {
   description_md: string | null;
   /** What "done" means here — prose, nullable (§4.5, LAI-092). */
   acceptance_md: string | null;
+  /** What this delivers, in order — Ships items with their state (§4.5, LAI-1115). `[]` when none stated. */
+  deliverables: TaskDeliverable[];
+  /** The problems finishing this removes, in order (§4.5). */
+  solves: string[];
+  /** What finishing this makes possible, in order — may name a decision (§4.5). */
+  unlocks: string[];
 }
 
 /** The values `?fields=` takes on a task list (§6.4, LAI-795). */
@@ -306,11 +328,19 @@ export const TASK_LIST_FIELDS = ['slim'] as const;
 export type TaskListFields = (typeof TASK_LIST_FIELDS)[number];
 
 /**
- * A view without its two texts, the other fields in the same order — so a slim
- * page is the full page with exactly those removed (LAI-795).
+ * A view without its detail fields — the texts and the "What this delivers"
+ * lists — the other fields in the same order, so a slim page is the full page
+ * with exactly those removed (LAI-795, LAI-1115).
  */
 export function summaryOf(view: TaskView): TaskSummaryView {
-  const { description_md: _description, acceptance_md: _acceptance, ...summary } = view;
+  const {
+    description_md: _description,
+    acceptance_md: _acceptance,
+    deliverables: _deliverables,
+    solves: _solves,
+    unlocks: _unlocks,
+    ...summary
+  } = view;
   return summary;
 }
 
@@ -459,6 +489,9 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     title: row.title,
     description_md: row.descriptionMd,
     acceptance_md: row.acceptanceMd,
+    deliverables: row.deliverables,
+    solves: row.solves,
+    unlocks: row.unlocks,
     status: row.status,
     status_id: row.statusId,
     // `tasks_status_fk` guarantees the row exists, so the fallback is not
@@ -874,6 +907,10 @@ export interface CreateTaskInput {
   title: string;
   description_md?: string | undefined;
   acceptance_md?: string | undefined;
+  /** What this delivers (§4.5, LAI-1115); each item starts `pending` unless it says otherwise. */
+  deliverables?: readonly DeliverableInput[] | undefined;
+  solves?: readonly string[] | undefined;
+  unlocks?: readonly string[] | undefined;
   tags?: readonly string[] | undefined;
   priority?: TaskPriority | undefined;
   /** A category: the project's first visible status of it (LAI-738). */
@@ -928,6 +965,11 @@ export function createTask(
   const now = input.now ?? Date.now();
   const externalRef =
     input.external_ref === undefined ? null : normaliseOutsideId(input.external_ref);
+  // Shaped before the write lock, as the proof is in `finishTask`: a bad item
+  // refuses the create before a number is allocated.
+  const deliverables = normaliseDeliverables(input.deliverables ?? [], []);
+  const solves = normalisePoints('solves', input.solves ?? []);
+  const unlocks = normalisePoints('unlocks', input.unlocks ?? []);
 
   return immediateTransaction(sqlite, () => {
     // Inside the write lock, as the number is: two creates must not both find
@@ -973,6 +1015,9 @@ export function createTask(
         title: input.title,
         descriptionMd: input.description_md ?? null,
         acceptanceMd: input.acceptance_md ?? null,
+        deliverables,
+        solves,
+        unlocks,
         status: initial.category,
         statusId: initial.id,
         priority: input.priority ?? 'p2',
@@ -1448,6 +1493,14 @@ export interface UpdateTaskInput {
    * which is a claim nobody meant to make.
    */
   acceptance_md?: string | null | undefined;
+  /**
+   * What this delivers (§4.5, LAI-1115). Each replaces the whole list, as
+   * `tags` does; `[]` clears. An item sent with its `id` keeps its id and,
+   * unless `state` is sent, its state.
+   */
+  deliverables?: readonly DeliverableInput[] | undefined;
+  solves?: readonly string[] | undefined;
+  unlocks?: readonly string[] | undefined;
   /** Replaces the whole set — `PATCH { tags }` reads as "these are its tags". */
   tags?: readonly string[] | undefined;
   priority?: TaskPriority | undefined;
@@ -1586,6 +1639,11 @@ export function updateTask(
   if (input.title !== undefined) changes.title = input.title;
   if (input.description_md !== undefined) changes.descriptionMd = input.description_md;
   if (input.acceptance_md !== undefined) changes.acceptanceMd = input.acceptance_md;
+  if (input.deliverables !== undefined) {
+    changes.deliverables = normaliseDeliverables(input.deliverables, task.deliverables);
+  }
+  if (input.solves !== undefined) changes.solves = normalisePoints('solves', input.solves);
+  if (input.unlocks !== undefined) changes.unlocks = normalisePoints('unlocks', input.unlocks);
   if (input.priority !== undefined) changes.priority = input.priority;
   if (input.due_on !== undefined && input.due_on !== task.dueOn) changes.dueOn = input.due_on;
   if (input.planned_start !== undefined && input.planned_start !== task.plannedStart) {
@@ -2339,7 +2397,11 @@ function statusPayload(from: StatusRef, to: StatusRef) {
 export interface FinishTaskInput extends EvidenceInput {
   /** What was done. Posted as a comment by the same actor, in the same write. */
   summary: string;
-  /** Optional acceptance walk-through, appended under the summary. */
+  /**
+   * What was delivered: each line that is a Ships item's id or exact title
+   * marks it `done` (LAI-1115); any other line is appended `- [x]` under the
+   * summary, as before.
+   */
   checklist?: readonly string[] | undefined;
   now?: number;
 }
@@ -2386,7 +2448,29 @@ export function finishTask(
     // makes the sentence above false. Pinning keeps it true whoever calls.
     const task = changeStatus(db, actor, taskId, 'review', now, 'agent');
 
-    const summary = finishSummary(input);
+    // The Ships items this finish delivered (§4.5, LAI-1115): after the move
+    // and inside its transaction, so a finish that cannot move marks nothing.
+    // `changeStatus` already fenced the claim; its answer is the post-move view.
+    const marks = markDeliverables(task.deliverables, input.checklist ?? [], 'done');
+    if (marks.marked.length > 0) {
+      const { project } = requireTask(db, task.id);
+      db.update(tasks)
+        .set({ deliverables: marks.deliverables, updatedAt: now })
+        .where(eq(tasks.id, task.id))
+        .run();
+      appendActivity(db, {
+        orgId: project.orgId,
+        projectId: project.id,
+        taskId: task.id,
+        ...activityActor(actor),
+        // `task.updated` with the field named, as tags and size are (D-027).
+        type: 'task.updated',
+        payload: { field: 'deliverables', marked: marks.marked },
+        now,
+      });
+    }
+
+    const summary = finishSummary(input, marks.unmatched);
     addComment(db, actor, task.id, summary, now);
 
     // The round, with its proof (§4.25, D-082). After the move, inside the same
@@ -2400,12 +2484,15 @@ export function finishTask(
   });
 }
 
-/** The summary, with the checklist under it when there is one. */
-function finishSummary(input: FinishTaskInput): string {
-  const checklist = input.checklist ?? [];
-  if (checklist.length === 0) return input.summary;
+/**
+ * The summary, with the checklist lines that named no Ships item under it. A
+ * line that marked a deliverable is state now, not prose, and is not written
+ * twice.
+ */
+function finishSummary(input: FinishTaskInput, unmatched: readonly string[]): string {
+  if (unmatched.length === 0) return input.summary;
 
-  return [input.summary, '', ...checklist.map((line) => `- [x] ${line}`)].join('\n');
+  return [input.summary, '', ...unmatched.map((line) => `- [x] ${line}`)].join('\n');
 }
 
 export function addTaskDependency(

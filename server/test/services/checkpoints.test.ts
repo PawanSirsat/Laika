@@ -557,3 +557,144 @@ describe('consent to automatic saves (§4.75, D-115 item 2)', () => {
     );
   });
 });
+
+// ------------------------------------------------- working_on (LAI-1115)
+
+describe('working_on names the Ships items a save advances (§4.5, LAI-1115)', () => {
+  /** Claims `task` with the agent; the generation header a save needs. */
+  async function claim(task: string): Promise<Record<string, string>> {
+    const claimed = await h.app.request(`/api/v1/tasks/${task}/claim`, {
+      method: 'POST',
+      headers: jsonHeaders({ Authorization: `Bearer ${agentSecret}` }),
+    });
+    expect(claimed.status, await claimed.clone().text()).toBe(200);
+    return {
+      Authorization: `Bearer ${agentSecret}`,
+      'X-Laika-Claim-Generation': claimed.headers.get('X-Laika-Claim-Generation') ?? '',
+    };
+  }
+
+  async function withDeliverables(
+    task: string,
+  ): Promise<{ id: string; title: string; state: string }[]> {
+    const res = await h.app.request(`/api/v1/tasks/${task}`, {
+      method: 'PATCH',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify({
+        deliverables: [{ title: 'Terminal viewer' }, { title: 'Watch view' }, { title: 'Docs' }],
+      }),
+    });
+    return (await ok(res, 200)).deliverables as { id: string; title: string; state: string }[];
+  }
+
+  function save(task: string, headers: Record<string, string>, body: Record<string, unknown>) {
+    return h.app.request(`/api/v1/tasks/${task}/checkpoints`, {
+      method: 'POST',
+      headers: jsonHeaders(headers),
+      body: JSON.stringify({
+        id: newId(),
+        idempotency_key: newId(),
+        repo: REPO,
+        branch: 'LAI-1-work',
+        commit_sha: C,
+        manifest: [],
+        ...body,
+      }),
+    });
+  }
+
+  async function states(task: string): Promise<[string, string][]> {
+    const view = (await (
+      await h.app.request(`/api/v1/tasks/${task}`, { headers: jsonHeaders({ Cookie: cookie }) })
+    ).json()) as { deliverables: { title: string; state: string }[] };
+    return view.deliverables.map((d) => [d.title, d.state]);
+  }
+
+  it('moves the named items to in_progress, by id or exact title, and writes task.updated naming them', async () => {
+    const items = await withDeliverables(taskId);
+    const headers = await claim(taskId);
+    await ok(await save(taskId, headers, { working_on: [items[0]!.id, 'Watch view'] }), 201);
+
+    expect(await states(taskId)).toEqual([
+      ['Terminal viewer', 'in_progress'],
+      ['Watch view', 'in_progress'],
+      ['Docs', 'pending'],
+    ]);
+    const rows = h.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.taskId, taskId), eq(activity.type, 'task.updated')))
+      .all()
+      .map((r) => JSON.parse(r.payloadJson ?? '{}') as { field?: string; marked?: unknown[] })
+      .filter((p) => p.field === 'deliverables');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.marked).toEqual([
+      expect.objectContaining({ id: items[0]!.id, from: 'pending', to: 'in_progress' }),
+      expect.objectContaining({ id: items[1]!.id, from: 'pending', to: 'in_progress' }),
+    ]);
+    // It follows the save in the feed: the save first, then what it advanced.
+    const types = h.db
+      .select()
+      .from(activity)
+      .where(eq(activity.taskId, taskId))
+      .all()
+      .map((r) => r.type);
+    expect(types.indexOf('task.checkpoint_saved')).toBeLessThan(types.lastIndexOf('task.updated'));
+  });
+
+  it('refuses a ref naming nothing with 422 unknown_deliverable, and registers no checkpoint', async () => {
+    await withDeliverables(taskId);
+    const headers = await claim(taskId);
+    const res = await save(taskId, headers, { working_on: ['Terminal Viewer'] });
+    expect(res.status).toBe(422);
+    const error = ((await res.json()) as { error: { details: Record<string, unknown> } }).error;
+    expect(error.details).toMatchObject({
+      field: 'working_on',
+      reason: 'unknown_deliverable',
+      refs: ['Terminal Viewer'],
+    });
+    expect(h.db.select().from(taskCheckpoints).all()).toEqual([]);
+    expect(await states(taskId)).toEqual([
+      ['Terminal viewer', 'pending'],
+      ['Watch view', 'pending'],
+      ['Docs', 'pending'],
+    ]);
+  });
+
+  it('never moves a done item back, and a replayed key changes nothing', async () => {
+    const items = await withDeliverables(taskId);
+    const done = await h.app.request(`/api/v1/tasks/${taskId}`, {
+      method: 'PATCH',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify({
+        deliverables: items.map((d, i) => ({
+          id: d.id,
+          title: d.title,
+          state: i === 2 ? 'done' : 'pending',
+        })),
+      }),
+    });
+    await ok(done, 200);
+    const headers = await claim(taskId);
+    const key = newId();
+    const id = newId();
+    const body = { id, idempotency_key: key, working_on: ['Docs', 'Watch view'] };
+    await ok(await save(taskId, headers, body), 201);
+    expect(await states(taskId)).toEqual([
+      ['Terminal viewer', 'pending'],
+      ['Watch view', 'in_progress'],
+      ['Docs', 'done'],
+    ]);
+
+    // The same key again, now naming more: the save is answered as it was and
+    // the task does not move — `working_on` is not part of what a retry compares.
+    const again = await save(taskId, headers, { ...body, working_on: ['Terminal viewer'] });
+    expect(again.status).toBe(200);
+    expect(await states(taskId)).toEqual([
+      ['Terminal viewer', 'pending'],
+      ['Watch view', 'in_progress'],
+      ['Docs', 'done'],
+    ]);
+    expect(h.db.select().from(taskCheckpoints).all()).toHaveLength(1);
+  });
+});

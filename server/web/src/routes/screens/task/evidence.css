@@ -276,3 +276,71 @@
   font-size: var(--text-small);
   color: var(--text-muted);
 }
+
+/* How a person decided the round (§4.27, LAI-1122). */
+.ev-decision {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.ev-decision-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.ev-decision-mark {
+  font-weight: var(--weight-bold);
+}
+
+.ev-decision-accepted .ev-decision-mark {
+  color: var(--chip-green);
+}
+
+.ev-decision-sent_back .ev-decision-mark {
+  color: var(--chip-orange);
+}
+
+.ev-decision-reason {
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--chip-orange-border);
+  background: var(--bg-input);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+}
+
+.ev-decision-reason p {
+  margin: 0;
+}
+
+/* Folded under the state panel while in review (LAI-1122): one line that opens. */
+.ev-fold > .ev-fold-summary {
+  cursor: pointer;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  padding: var(--space-1) 0;
+}
+
+.ev-fold[open] > .ev-fold-summary {
+  margin-bottom: var(--space-2);
+}
+
+.ev-fold-body {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.ev-fold-about {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}

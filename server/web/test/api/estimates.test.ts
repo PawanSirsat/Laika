@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { fieldsOf } from '../helpers/interfaces.ts';
 import {
   accuracySentence,
   buildLabel,
@@ -813,5 +814,23 @@ void describe('notes beside the estimate (LAI-772), in words', () => {
       'At claim: estimated Medium, confident it would land as asked.',
     );
     assert.equal(claimSentence(null), null);
+  });
+});
+
+void describe('SimilarTask against the server’s SimilarPastTask (LAI-1122)', () => {
+  // Nested in `TaskSimilarView`, so the drift check's census cannot pair it.
+  void test('declares the same fields — and none names a person', async () => {
+    const server = await readFile(
+      fileURLToPath(new URL('../../../src/services/estimates.ts', import.meta.url)),
+      'utf8',
+    );
+    const client = await readFile(
+      fileURLToPath(new URL('../../src/api/estimates.ts', import.meta.url)),
+      'utf8',
+    );
+    const served = fieldsOf(server, 'SimilarPastTask');
+    assert.ok(served !== undefined && served.length > 0, 'SimilarPastTask not found');
+    assert.deepEqual([...(fieldsOf(client, 'SimilarTask') ?? [])].sort(), [...served].sort());
+    assert.ok(!served.some((f) => /user|name|by$/.test(f)), served.join(', '));
   });
 });

@@ -235,26 +235,33 @@ void describe('the task panel', () => {
         t.trim().toLowerCase(),
       );
       /*
-       * The Details card's rows, in the owner's order (D-066): the Jira ones
-       * first, then what we have that Jira does not draw. Status is the
-       * control above the card, not a row, so it is not in this list.
+       * The rail's rows, in the 2026-11-04 design's order (LAI-1122): the
+       * Details card — the design's fields first, then what we have that it
+       * does not draw — and then the Links & dates card, which took the parent
+       * and the dates from Details and the Subtasks and Linked tasks sections
+       * from the main column. Status is the pill above the cards, not a row,
+       * so it is not in this list.
        */
       assert.deepEqual(labels, [
         'assignee',
         // The agent meant to do the work, under the person accountable (LAI-538).
         'agent',
         'priority',
-        'parent',
-        'due date',
         'labels',
         'sprint',
-        'start date',
         'reporter',
         'created via',
         // The card's id elsewhere (LAI-780): one of the fields Jira does not draw.
         'outside id',
         'watchers',
         'discovered from',
+        // Links & dates.
+        'parent',
+        'subtasks',
+        'blocked by',
+        'blocks',
+        'due date',
+        'planned start',
       ]);
       // The status control is the app's dropdown since LAI-726.
       assert.equal(
@@ -721,9 +728,11 @@ void describe('the Jira-shaped task view (D-066)', () => {
       assert.match(await reporter.innerText(), /Ada Lovelace/);
 
       const foot = (await h.page.locator('.panel-foot-times').innerText()).replace(/\s+/g, ' ');
+      // How it came in, then the moment (the 2026-11-04 design, LAI-1122).
       assert.match(
         foot,
-        /^Created \w{3} \d{1,2} \w{3} \d{4}, \d{1,2}:\d{2}:\d{2} [AP]M Updated \w{3} /,
+        // Short dates since LAI-1123; the full one is on hover.
+        /^Created via .+ · \d{1,2} \w{3}(?: \d{4})?, \d{1,2}:\d{2} [AP]M Updated \d{1,2} \w{3}/,
       );
       assert.doesNotMatch(foot, /ago/);
 
@@ -743,8 +752,12 @@ void describe('the Jira-shaped task view (D-066)', () => {
       await openById(branched);
       const dev = branched.page.locator('.meta-card-head', { hasText: 'Development' });
       assert.equal(await dev.count(), 1, 'a task with a branch has no Development card');
-      await dev.click();
+      // Open to begin with, as the design draws it (LAI-1122); the head still folds it.
+      assert.equal(await dev.getAttribute('aria-expanded'), 'true');
       assert.match(await branched.page.locator('.panel-meta').innerText(), /lc-5-overdue/);
+      await dev.click();
+      await until(async () => (await dev.getAttribute('aria-expanded')) === 'false');
+      assert.doesNotMatch(await branched.page.locator('.panel-meta').innerText(), /lc-5-overdue/);
     } finally {
       await branched.close();
     }
@@ -778,9 +791,17 @@ void describe('the Jira-shaped task view (D-066)', () => {
       assert.match(on, /All/);
       const rows = await h.page
         .locator('#panel-all > ul > li')
-        .evaluateAll((els: Element[]) => els.map((el) => el.className));
+        .evaluateAll((els: Element[]) =>
+          els.map((el) => [el.getAttribute('data-feed-item'), el.className]),
+        );
       // Oldest first: the 2h-old comment, the 1h-old event, the 2-minute comment.
-      assert.deepEqual(rows, ['cmt', 'panel-event', 'cmt']);
+      // Since D-129 the feed runs by actor: Ada's event continues Ada's comment,
+      // and the agent's comment (`created_via: mcp`) starts a run of its own.
+      assert.deepEqual(rows, [
+        ['comment', 'cmt'],
+        ['event', 'panel-event panel-event-cont'],
+        ['comment', 'cmt'],
+      ]);
     } finally {
       await h.close();
     }

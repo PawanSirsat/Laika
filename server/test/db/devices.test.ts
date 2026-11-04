@@ -68,12 +68,16 @@ function folderBefore0070(): { dir: string; restore: () => void } {
     '0072_tool_setup_exchanges',
     '0073_project_repo_setups',
     '0074_agent_capacity',
+    '0075_task_deliverables',
   ]);
   writeFileSync(journalPath, JSON.stringify(journal));
   return {
     dir,
     restore: () => {
-      journal.entries.push(...dropped);
+      // Back through 0074 only: 0075 (LAI-1115) adds columns to `tasks`, and
+      // "changes nothing else" below reads every table's rows. What a 0069
+      // database upgrades *through* is still every migration here.
+      journal.entries.push(...dropped.filter((e) => e.tag !== '0075_task_deliverables'));
       writeFileSync(journalPath, JSON.stringify(journal));
     },
   };

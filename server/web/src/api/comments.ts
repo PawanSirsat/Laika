@@ -17,7 +17,8 @@ import type { Page } from './tasks.ts';
 export interface Comment {
   readonly id: string;
   readonly task_id: string;
-  readonly author_id: string;
+  /** Null on a comment mirrored from GitHub, which has no local author (§6.4). */
+  readonly author_id: string | null;
   readonly body_md: string;
   /** `'web' | 'mcp' | 'api' | …` — how it arrived. `mcp` means an agent. */
   readonly created_via: string;
@@ -74,4 +75,38 @@ export function addComment(taskId: string, bodyMd: string): Promise<Comment> {
     method: 'POST',
     body: { body_md: bodyMd },
   });
+}
+
+/**
+ * Edit a comment's text (§6.4, LAI-1122): its author, or a lead and an org
+ * Admin or Owner for any. A comment mirrored from GitHub has no local author
+ * and is refused `409 no_local_author` — the refusal is shown as the server
+ * words it.
+ */
+export function editComment(commentId: string, bodyMd: string): Promise<Comment> {
+  return request<Comment>(`/comments/${encodeURIComponent(commentId)}`, {
+    method: 'PATCH',
+    body: { body_md: bodyMd },
+  });
+}
+
+/** Delete a comment (§6.4, LAI-1122): soft, so the history keeps a line saying so. */
+export function deleteComment(commentId: string): Promise<void> {
+  return request<void>(`/comments/${encodeURIComponent(commentId)}`, { method: 'DELETE' });
+}
+
+/**
+ * Whether the thread offers Edit and Delete on a comment (§3.2): the
+ * reader's own, or any for a reader who leads the space. A comment with no
+ * local author — mirrored from GitHub — is offered to nobody, since the
+ * server refuses every change to one. The server decides; this only keeps a
+ * control from being offered to someone it would refuse.
+ */
+export function mayChangeComment(
+  comment: { readonly author_id: string | null },
+  meId: string | undefined,
+  leads: boolean,
+): boolean {
+  if (comment.author_id === null) return false;
+  return leads || (meId !== undefined && comment.author_id === meId);
 }

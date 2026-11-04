@@ -49,7 +49,10 @@ export function SendBackDialog({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) onClose();
+      if (event.key !== 'Escape') return;
+      // Spent here, so the task drawer underneath does not close too (LAI-1117).
+      event.preventDefault();
+      if (!busy) onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => {

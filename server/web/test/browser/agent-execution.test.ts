@@ -497,15 +497,16 @@ void describe('the drawer', () => {
         /Last claim\s*Claude Code · laptop-1\s*its claim expired/,
       );
 
-      // The history row is worded too — the client mirror of the verb.
+      // The history row is worded too — the client mirror of the verb, which
+      // the feed starts with a capital since LAI-1122.
       const history = h.page.locator('.drawer').getByRole('tab', { name: /History/ });
       await history.click();
       await until(async () =>
-        (await h.page.locator('.drawer').innerText()).includes('expired an agent’s claim'),
+        (await h.page.locator('.drawer').innerText()).includes('Expired an agent’s claim'),
       );
       assert.match(
         await h.page.locator('.drawer').innerText(),
-        /expired an agent’s claim — the agent must reclaim explicitly; nothing was restored automatically/,
+        /Expired an agent’s claim — the agent must reclaim explicitly; nothing was restored automatically/,
       );
     } finally {
       await h.close();
@@ -789,11 +790,13 @@ void describe('the live claim (LAI-597)', () => {
       const found = await panel(h);
       const line = found.locator('[data-session-line]');
       await line.waitFor({ timeout: 10_000 });
-      assert.equal((await line.innerText()).trim(), 'Claude Code · Belka · Codex · gpt-5.5');
+      // What ran, without the chip's words again (LAI-1123): the chip says
+      // *Claude Code · Belka*, the line under it what that session ran.
+      assert.equal((await line.innerText()).trim(), 'Codex · gpt-5.5');
       // The chip still names the agent; the line is beneath it, not instead.
       assert.match(
         await found.locator('[data-working-session]').innerText(),
-        /^Claude Code · Belka\s+Claude Code · Belka · Codex · gpt-5\.5$/,
+        /^Claude Code · Belka\s+Codex · gpt-5\.5$/,
       );
       // The card stays the agent alone (D-118): no session words on it.
       assert.doesNotMatch(await card(h.page, 't4').innerText(), /gpt-5\.5|Codex/);

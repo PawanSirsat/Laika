@@ -122,6 +122,28 @@ describe('the size on every task', () => {
   });
 });
 
+describe('GET /api/v1/tasks/:id/similar (LAI-1122)', () => {
+  it('answers the similar finished tasks as a list, empty in a project with none', async () => {
+    const task = await newTask();
+    const view = await json<{ similar: unknown[] }>(
+      await must(asSession(`/api/v1/tasks/${task.id}/similar`)),
+    );
+    expect(view).toEqual({ similar: [] });
+    // A read: a read-only token reads it too.
+    expect(
+      await json<{ similar: unknown[] }>(
+        await must(asToken(readOnly, `/api/v1/tasks/${task.id}/similar`)),
+      ),
+    ).toEqual({ similar: [] });
+  });
+
+  it('is 404 not_found for a task that does not exist', async () => {
+    const res = await asSession('/api/v1/tasks/no-such-task/similar');
+    expect(res.status).toBe(404);
+    expect((await json<{ error: { code: string } }>(res)).error.code).toBe('not_found');
+  });
+});
+
 describe('GET /api/v1/tasks/:id/estimate', () => {
   it('answers the size, the why, the frozen copy and the actual', async () => {
     const task = await newTask();

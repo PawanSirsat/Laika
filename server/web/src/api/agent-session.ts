@@ -39,6 +39,23 @@ export function sessionWords(session: ActivitySession | null | undefined): strin
  * session said ran. With no snapshot, the agent's name alone.
  */
 export function agentLine(agentName: string, session: ActivitySession | null | undefined): string {
-  const words = sessionWords(session);
+  const words = sessionWordsAfter(agentName, session);
   return words === undefined ? agentName : `${agentName} · ${words}`;
+}
+
+/**
+ * What the session adds after the agent's own name (LAI-1123): its harness
+ * only when it is not the agent's own — *Codex · gpt-5.5* under a Claude Code
+ * agent, but *claude-opus-5-5* alone under one that ran Claude Code — so no
+ * line says *Claude Code* twice. `undefined` when nothing is left to add.
+ */
+export function sessionWordsAfter(
+  agentName: string,
+  session: ActivitySession | null | undefined,
+): string | undefined {
+  if (session === null || session === undefined) return undefined;
+  const product = agentName.split(' · ')[0];
+  const own = present(session.harness) && sessionHarnessName(session.harness) === product;
+  if (!own) return sessionWords(session);
+  return present(session.model) ? session.model : undefined;
 }

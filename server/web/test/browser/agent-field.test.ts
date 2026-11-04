@@ -497,10 +497,13 @@ void describe('the drawer’s Agent row', () => {
       await h.page.locator('#tab-history').click();
       const history = h.page.locator('#panel-history');
       await history.waitFor({ timeout: 10_000 });
-      await until(async () => (await history.innerText()).includes('selected Claude Code'));
+      // In the feed's words since LAI-1122: the run's header names Ada and her agent.
+      await until(async () =>
+        (await history.innerText()).includes('Sent the work request to Claude Code'),
+      );
       assert.match(
         await history.innerText(),
-        /Ada Lovelace\s*selected Claude Code · laptop-1 for this task/,
+        /Ada Lovelace[\s\S]*Sent the work request to Claude Code · laptop-1/,
       );
     } finally {
       await h.close();

@@ -6852,3 +6852,45 @@ window, the allowlist), except a hand-written Claude Code argv that already skip
 checks: it is refused until it carries `"permissions": "skip"` and the shape `enable` writes, and
 the launcher then starts nothing (`config_invalid`). Nothing on the board changes; visibility is
 local to the device that runs the work.
+
+## D-129 — The task detail is restyled to the owner's design with nothing removed; "what this delivers" is three JSON columns on the task, changed through `task.updated`; the modal stays and widens to 1280px (LAI-1115, LAI-1116, LAI-1117)
+
+**Date:** 2026-11-04 · **Decided by:** Pawan (owner), in chat, over the design exported as
+`Laika Task Detail Redesign.html`; recorded by Strelka's session.
+
+**Context.** The design draws one task card in five states. Almost everything it shows is
+served already (rounds with GitHub-confirmed items, CI, similar tasks, tokens with cost, the
+live claim, watchers, the outside id). One thing is new — a **What this delivers** panel of
+Ships / Solves / Unlocks with a state per Ships item — and several things the product has are
+not drawn: the hand-off and recovery panel, token budgets, the effort override, inline editing,
+subtask and dependency editing, the Changes tab, reporter and discovered-from, the error and
+read-only states.
+
+**Decision.**
+
+1. **The design is style and layout, not scope.** Every §11.4.2.1 must-have stays; what the
+   design has no slot for is folded, never removed. No must-have is amended away.
+2. **"What this delivers" is data on the task** (§4.5): `deliverables` (Ships items
+   `{ id, title, detail, state }`), `solves`, `unlocks` — three JSON columns, `NOT NULL
+   DEFAULT '[]'`, not a `task_deliverables` table. Every write replaces a list or flips one
+   state, nothing queries inside them, and `former_prefixes` is the precedent. The agent fills
+   them when it files the task; `checkpoint_task`'s `working_on` moves a Ships item to
+   `in_progress`, `finish_task`'s `checklist` to `done`; people edit any of it in place.
+3. **No new activity verb.** A replaced list is `task.updated` with `changed`; a mark is
+   `task.updated { field: 'deliverables', marked }` — as tags and size are (D-027). A verb
+   would rebuild `activity` and be three owners (CLAUDE.md §4.4) for a question the payload
+   already answers.
+4. **The modal stays** (D-063) and widens a little: `min(1280px, 94vw)`, the rail about 380px,
+   fact grids four columns and two under 1000px. Not a page.
+5. **Approve and Send back are on the task detail too**, for the reader the server already
+   lets decide, through the same dialog and endpoints as the Review screen, which stays the
+   queue.
+6. **Wording follows the server.** Proof is confirmed *from GitHub's signed deliveries*, never
+   "against the repository" (D-116). An agent is named `<harness> · <device>` (D-120), its
+   registered name to its owner only. Share copies the link; mentions name people.
+7. **The phone bottom sheet is its own task** (LAI-1118), after the desktop.
+
+**Consequences.** Acceptance stays prose; a checklist in it is drawn as one, nothing ticks it
+server-side. The board card does not show the progress line until the slim list carries a
+count (LAI-1120). Whether deliverables feed the size model is LAI-1119's question, not this
+decision's.

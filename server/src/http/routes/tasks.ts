@@ -27,11 +27,18 @@ import {
   type ListedTaskSummaryView,
   type ListedTaskView,
   type TaskView,
+  DELIVERABLE_STATES,
 } from '../../services/tasks.ts';
 import { reclaimTask, type ReclaimView } from '../../services/claims.ts';
 import { EVIDENCE_LIMITS, listTaskRounds } from '../../services/rounds.ts';
 import { acceptTask, sendBackTask } from '../../services/review.ts';
-import { getTaskEstimate, type TaskEstimateView } from '../../services/estimates.ts';
+import {
+  getTaskEstimate,
+  getTaskSimilar,
+  type TaskEstimateView,
+  type TaskSimilarView,
+} from '../../services/estimates.ts';
+import { getTaskTime, type TaskTimeView } from '../../services/task-time.ts';
 import { getTaskUsage, type TaskUsageView } from '../../services/token-usage.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
@@ -60,10 +67,24 @@ const ACCEPTANCE_MAX = 10_000;
 /** A date with date-only semantics: unix-ms at a UTC midnight, as §4.15 (D-066). */
 const DateOnly = z.number().int().finite();
 
+// "What this delivers" (§4.5, LAI-1115). Sanity bounds only: the counts, the
+// lengths and the id rules are the service's (`deliverables.ts`), so its
+// refusal — with `field` and `reason` — is the one read.
+const DeliverableBody = strictObject({
+  id: z.string().min(1).max(64).optional(),
+  title: z.string().trim().min(1).max(500),
+  detail: z.string().max(5_000).nullable().optional(),
+  state: z.enum(DELIVERABLE_STATES).optional(),
+});
+const Points = z.array(z.string().trim().min(1).max(1_000)).max(50);
+
 const CreateBody = strictObject({
   title: z.string().trim().min(1).max(300),
   description_md: z.string().max(100_000).optional(),
   acceptance_md: z.string().max(ACCEPTANCE_MAX).optional(),
+  deliverables: z.array(DeliverableBody).max(50).optional(),
+  solves: Points.optional(),
+  unlocks: Points.optional(),
   tags: z.array(z.string().trim().min(1).max(64)).optional(),
   priority: z.enum(TASK_PRIORITIES).optional(),
   // A category, or one exact status of the project — or both, if they agree
@@ -94,6 +115,11 @@ const UpdateBody = strictObject({
   // `null` clears it, absent leaves it alone — the same distinction the
   // assignee below draws, and the one a sprint's `goal` already draws.
   acceptance_md: z.string().max(ACCEPTANCE_MAX).nullable().optional(),
+  // Each replaces the whole list, as `tags` does; `[]` clears. An item sent
+  // with its `id` keeps its id and its state (LAI-1115).
+  deliverables: z.array(DeliverableBody).max(50).optional(),
+  solves: Points.optional(),
+  unlocks: Points.optional(),
   // Replaces the whole set. Validation of each name is the service's — the
   // regex, the lowercasing and the duplicate rule live with the CHECK they
   // mirror, not in two places.
@@ -453,6 +479,23 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
    */
   app.get('/:id/estimate', (c) =>
     c.json<TaskEstimateView>(getTaskEstimate(db, requireActor(c), c.req.param('id'))),
+  );
+
+  /**
+   * The similar finished tasks and why each was sent back, as
+   * `get_task_context` has them (§6.4, LAI-1122) — the Estimate card's
+   * *Similar*. A read, under `project.read`; nobody's name.
+   */
+  app.get('/:id/similar', (c) =>
+    c.json<TaskSimilarView>(getTaskSimilar(db, requireActor(c), c.req.param('id'))),
+  );
+
+  /**
+   * The confirmed time on it, totals only (§6.4, LAI-1122): minutes, entries
+   * and how many people. A read, under `project.read`; drafts never count.
+   */
+  app.get('/:id/time', (c) =>
+    c.json<TaskTimeView>(getTaskTime(db, requireActor(c), c.req.param('id'))),
   );
 
   /**

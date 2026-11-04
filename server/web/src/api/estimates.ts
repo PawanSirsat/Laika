@@ -230,6 +230,32 @@ export function getTaskEstimate(taskId: string, signal?: AbortSignal): Promise<T
   });
 }
 
+/**
+ * One similar finished task, as `get_task_context` has it — the server's
+ * `SimilarPastTask` (LAI-772): how many rounds it took and why it was sent
+ * back each time, oldest first, and nobody's name.
+ */
+export interface SimilarTask {
+  readonly task_id: string;
+  readonly key: string;
+  readonly title: string;
+  readonly status: string;
+  readonly similarity: number;
+  readonly rounds: number;
+  readonly send_backs: readonly { readonly round: number | null; readonly reason: string }[];
+}
+
+/** `GET /tasks/:id/similar` — the server's `TaskSimilarView` (LAI-1122). */
+export interface TaskSimilar {
+  readonly similar: readonly SimilarTask[];
+}
+
+export function getTaskSimilar(taskId: string, signal?: AbortSignal): Promise<TaskSimilar> {
+  return request<TaskSimilar>(`/tasks/${encodeURIComponent(taskId)}/similar`, {
+    ...(signal === undefined ? {} : { signal }),
+  });
+}
+
 export function getEstimateAccuracy(slug: string, signal?: AbortSignal): Promise<EstimateAccuracy> {
   return request<EstimateAccuracy>(`/projects/${encodeURIComponent(slug)}/estimates/accuracy`, {
     ...(signal === undefined ? {} : { signal }),

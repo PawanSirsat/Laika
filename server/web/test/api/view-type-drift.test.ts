@@ -582,6 +582,8 @@ const PAIRS: readonly Pair[] = [
       ['TestEvidence', 'services/rounds.ts'],
       // GitHub's CI line on a round (D-083, LAI-766).
       ['RoundCi', 'services/github-proof.ts'],
+      // How a person decided a round (§4.27, LAI-1122).
+      ['RoundDecision', 'services/rounds.ts'],
     ] as const
   ).map(([name, serverFile]) => ({
     server: name,
@@ -611,6 +613,20 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/token-usage.ts',
     client: 'TaskUsage',
     clientFile: 'usage.ts',
+  },
+  // The task panel's Estimate card (LAI-1122): similar finished tasks with
+  // why each was sent back, and the confirmed time on the task.
+  {
+    server: 'TaskSimilarView',
+    serverFile: 'services/estimates.ts',
+    client: 'TaskSimilar',
+    clientFile: 'estimates.ts',
+  },
+  {
+    server: 'TaskTimeView',
+    serverFile: 'services/task-time.ts',
+    client: 'TaskTime',
+    clientFile: 'task-time.ts',
   },
   /*
    * Token usage, phase 3 (LAI-773), paired the moment each client existed:

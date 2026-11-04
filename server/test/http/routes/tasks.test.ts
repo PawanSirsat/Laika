@@ -592,6 +592,23 @@ describe('patch', () => {
 
     const SCENARIOS: Record<string, Scenario> = {
       'PATCH: tags only': (t) => ({ watch: t.id, write: () => patch(t.id, { tags: ['x'] }) }),
+      'PATCH: deliverables only (LAI-1115)': (t) => ({
+        watch: t.id,
+        write: () => patch(t.id, { deliverables: [{ title: 'A thing' }] }),
+      }),
+      'PATCH: solves only (LAI-1115)': (t) => ({
+        watch: t.id,
+        write: () => patch(t.id, { solves: ['a problem'] }),
+      }),
+      'finish ticks a deliverable (LAI-1115)': async (t) => {
+        await patch(t.id, { deliverables: [{ title: 'A thing' }] });
+        await ok(post(`/api/v1/tasks/${t.id}/status`, { status: 'in_progress' }));
+        return {
+          watch: t.id,
+          write: () =>
+            ok(post(`/api/v1/tasks/${t.id}/finish`, { summary: 'Done', checklist: ['A thing'] })),
+        };
+      },
       'PATCH: size only': (t) => ({ watch: t.id, write: () => patch(t.id, { size: 'XL' }) }),
       'PATCH: a field': (t) => ({
         watch: t.id,
@@ -1485,8 +1502,94 @@ describe('an outside id on the wire (LAI-780)', () => {
  *
  * Counted in fields and bytes, never in time (LAI-779).
  */
+describe('what this delivers on the wire (SPEC §4.5, LAI-1115)', () => {
+  it('round-trips the three lists through create, PATCH and GET, minting ids', async () => {
+    const createdRes = await post('/api/v1/projects/laika/tasks', {
+      title: 'Delivers',
+      deliverables: [{ title: 'Terminal viewer', detail: 'opt-in' }, { title: 'Watch view' }],
+      solves: ['nobody sees a run'],
+      unlocks: ['D-128'],
+    });
+    expect(createdRes.status, await createdRes.clone().text()).toBe(201);
+    const created = (await createdRes.json()) as {
+      id: string;
+      deliverables: { id: string; title: string; detail: string | null; state: string }[];
+      solves: string[];
+      unlocks: string[];
+    };
+    expect(created.deliverables.map((d) => [d.title, d.detail, d.state])).toEqual([
+      ['Terminal viewer', 'opt-in', 'pending'],
+      ['Watch view', null, 'pending'],
+    ]);
+    expect(created.solves).toEqual(['nobody sees a run']);
+    expect(created.unlocks).toEqual(['D-128']);
+
+    const [viewer] = created.deliverables;
+    const patchedRes = await req(`/api/v1/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        deliverables: [{ id: viewer!.id, title: 'Terminal viewer', state: 'in_progress' }],
+        unlocks: [],
+      }),
+    });
+    expect(patchedRes.status, await patchedRes.clone().text()).toBe(200);
+    const patched = (await patchedRes.json()) as typeof created;
+    expect(patched.deliverables).toEqual([
+      { id: viewer!.id, title: 'Terminal viewer', detail: null, state: 'in_progress' },
+    ]);
+    expect(patched.solves).toEqual(['nobody sees a run']);
+    expect(patched.unlocks).toEqual([]);
+
+    const read = (await (await req(`/api/v1/tasks/${created.id}`)).json()) as typeof created;
+    expect(read.deliverables).toEqual(patched.deliverables);
+  });
+
+  it('refuses a bad list with 422, the field and a reason, and writes nothing', async () => {
+    const task = await newTask('Strict');
+    // Each passes the route's sanity bounds and is the service's to refuse —
+    // so the answer carries its `reason`. (A blank title never gets this far:
+    // zod's `trim().min(1)` is the sanity bound, and it answers 422 without one.)
+    const refusals: [unknown, string][] = [
+      [{ deliverables: [{ id: 'nope', title: 'X' }] }, 'unknown_deliverable'],
+      [
+        { deliverables: Array.from({ length: 21 }, (_, i) => ({ title: `d${String(i)}` })) },
+        'too_many',
+      ],
+      [{ deliverables: [{ title: 'ok', detail: 'd'.repeat(2001) }] }, 'detail_too_long'],
+      [{ solves: ['s'.repeat(301)] }, 'line_too_long'],
+    ];
+    for (const [body, reason] of refusals) {
+      const res = await req(`/api/v1/tasks/${task.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      expect(res.status, reason).toBe(422);
+      const error = ((await res.json()) as { error: { details: { reason: string } } }).error;
+      expect(error.details.reason).toBe(reason);
+    }
+    // A key the body does not take, beside a good list, is refused whole.
+    const strict = await req(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ deliverables: [{ title: 'ok', ticked: true }] }),
+    });
+    expect(strict.status).toBe(422);
+    const after = (await (await req(`/api/v1/tasks/${task.id}`)).json()) as {
+      deliverables: unknown[];
+    };
+    expect(after.deliverables).toEqual([]);
+  });
+});
+
 describe('a slim list: ?fields=slim (LAI-795)', () => {
-  const TEXTS = ['description_md', 'acceptance_md'] as const;
+  // The two texts, and since LAI-1115 the three "What this delivers" lists —
+  // task-panel content, none of it drawn by a list.
+  const DETAIL_FIELDS = [
+    'description_md',
+    'acceptance_md',
+    'deliverables',
+    'solves',
+    'unlocks',
+  ] as const;
 
   interface ListPage {
     data: Record<string, unknown>[];
@@ -1518,6 +1621,9 @@ describe('a slim list: ?fields=slim (LAI-795)', () => {
     const blocked = await newTask('Blocked', {
       description_md: description,
       acceptance_md: acceptance,
+      deliverables: [{ title: 'A thing it ships', detail: 'with a detail' }],
+      solves: ['a problem'],
+      unlocks: ['a door'],
       tags: ['perf'],
       external_ref: 'LAI-795',
     });
@@ -1548,21 +1654,28 @@ describe('a slim list: ?fields=slim (LAI-795)', () => {
       const one = (await read.json()) as Record<string, unknown>;
       // A row is the task's GET body plus that GET's ETag, as `etag` (LAI-571).
       expect(item).toEqual({ ...one, etag: read.headers.get('etag') });
-      for (const field of TEXTS) expect(Object.keys(item)).toContain(field);
+      for (const field of DETAIL_FIELDS) expect(Object.keys(item)).toContain(field);
     }
   });
 
-  it('drops exactly the two texts and nothing else, in the same order and on the same pages', async () => {
+  it('drops exactly the detail fields and nothing else, in the same order and on the same pages', async () => {
     await seed();
     const full = await walk('');
     const slim = await walk('&fields=slim');
 
     expect(slim.items.map((t) => t.id)).toEqual(full.items.map((t) => t.id));
     slim.items.forEach((item, i) => {
-      const { description_md: _d, acceptance_md: _a, ...rest } = full.items[i]!;
+      const {
+        description_md: _d,
+        acceptance_md: _a,
+        deliverables: _dl,
+        solves: _s,
+        unlocks: _u,
+        ...rest
+      } = full.items[i]!;
       expect(item).toEqual(rest);
       expect(Object.keys(item)).toEqual(Object.keys(rest));
-      for (const field of TEXTS) expect(Object.keys(item)).not.toContain(field);
+      for (const field of DETAIL_FIELDS) expect(Object.keys(item)).not.toContain(field);
     });
   });
 
@@ -1581,7 +1694,7 @@ describe('a slim list: ?fields=slim (LAI-795)', () => {
       const { items } = await walk(query);
       expect(items.length, query).toBeGreaterThan(0);
       for (const item of items) {
-        for (const field of TEXTS) expect(Object.keys(item), query).not.toContain(field);
+        for (const field of DETAIL_FIELDS) expect(Object.keys(item), query).not.toContain(field);
       }
     }
     const parent = (await (
@@ -1592,7 +1705,7 @@ describe('a slim list: ?fields=slim (LAI-795)', () => {
       await req(`/api/v1/projects/laika/tasks?fields=slim&parent=${String(blocker?.id)}`)
     ).json()) as ListPage;
     expect(children.data.map((t) => t.title)).toEqual(['Child']);
-    for (const field of TEXTS) expect(Object.keys(children.data[0]!)).not.toContain(field);
+    for (const field of DETAIL_FIELDS) expect(Object.keys(children.data[0]!)).not.toContain(field);
   });
 
   it('refuses a value it does not know, 400 naming it, rather than answering the full shape', async () => {

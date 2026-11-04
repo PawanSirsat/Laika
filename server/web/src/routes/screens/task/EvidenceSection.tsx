@@ -11,9 +11,10 @@ import {
   type Round,
   type TaskRounds,
 } from '../../../api/review.ts';
-import { type TaskSendBack } from '../../../api/tasks.ts';
+import { type TaskSendBack, type TaskStatus } from '../../../api/tasks.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
+import { decisionVerb, proofFolded, proofFoldLabel } from './evidence-derive.ts';
 import type { MentionCandidate } from './LazyRichEditor.tsx';
 import { TaskMarkdown } from './TaskMarkdown.tsx';
 import '../profile/profile.css';
@@ -36,6 +37,17 @@ export interface EvidenceSectionProps {
   /** Whose `@` mention in a send-back is a pill, and who is reading (LAI-868). */
   readonly people?: readonly MentionCandidate[] | undefined;
   readonly meId?: string | undefined;
+  /**
+   * The rounds already read by the panel (LAI-1117), so the state panel, the
+   * feed and this section share one request. Absent: this section reads them.
+   */
+  readonly read?: { readonly rounds: TaskRounds | undefined; readonly failed: boolean } | undefined;
+  /**
+   * The task's status, which decides whether the section starts folded under
+   * the state panel (LAI-1122). Absent: an undecided latest round with no
+   * send-back is read as *in review*.
+   */
+  readonly taskStatus?: TaskStatus | undefined;
 }
 
 /**
@@ -109,10 +121,17 @@ export function RoundProof({
   round,
   nameOf,
   now,
+  hideReason,
+  people,
+  meId,
 }: {
   readonly round: Round;
   readonly nameOf: (userId: string) => string;
   readonly now: number;
+  /** The send-back note above already reads this round's reason. */
+  readonly hideReason?: boolean | undefined;
+  readonly people?: readonly MentionCandidate[] | undefined;
+  readonly meId?: string | undefined;
 }) {
   const summary = evidenceSummary(round);
   // D-120: the agent as `<harness> · <device>`, never the client's own word.
@@ -132,6 +151,15 @@ export function RoundProof({
           {when.text}
         </time>
       </p>
+
+      <RoundDecisionLine
+        round={round}
+        nameOf={nameOf}
+        now={now}
+        hideReason={hideReason}
+        people={people}
+        meId={meId}
+      />
 
       {summary.empty ? (
         <p className="panel-muted ev-none">No proof attached to this finish.</p>
@@ -222,6 +250,53 @@ export function RoundProof({
   );
 }
 
+/**
+ * How a person decided the round (§4.27, LAI-1122): *Accepted by Ada 2 h
+ * ago*, or *Sent back by Ada* with the reason. Nothing while it waits.
+ */
+export function RoundDecisionLine({
+  round,
+  nameOf,
+  now,
+  hideReason,
+  people,
+  meId,
+}: {
+  readonly round: Round;
+  readonly nameOf: (userId: string) => string;
+  readonly now: number;
+  readonly hideReason?: boolean | undefined;
+  readonly people?: readonly MentionCandidate[] | undefined;
+  readonly meId?: string | undefined;
+}) {
+  // `??`: a round served before LAI-1122 carries no `decision` at all.
+  const decision = round.decision ?? null;
+  if (decision === null) return null;
+  const when = timeLabel(decision.created_at, now);
+  const reason = decision.reason_md ?? '';
+  return (
+    <div className={`ev-decision ev-decision-${decision.kind}`} data-decision={decision.kind}>
+      <p className="ev-decision-head">
+        <span className="ev-decision-mark" aria-hidden="true">
+          {decision.kind === 'accepted' ? '✓' : '↩'}
+        </span>
+        <span>
+          {decisionVerb(decision.kind)}{' '}
+          <strong className="ev-agent">{nameOf(decision.decided_by)}</strong>
+        </span>
+        <time className="ev-when" dateTime={when.iso} title={when.full}>
+          {when.text}
+        </time>
+      </p>
+      {hideReason !== true && reason.trim() !== '' && (
+        <div className="ev-decision-reason">
+          <TaskMarkdown source={reason} people={people} meId={meId} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** GitHub's CI for the round's head commit, as one line (D-083). */
 export function CiLine({ round }: { readonly round: Round }) {
   if (round.ci === null) return null;
@@ -282,12 +357,18 @@ export function EvidenceSection({
   hideWhenEmpty,
   people,
   meId,
+  read,
+  taskStatus,
 }: EvidenceSectionProps) {
-  const [rounds, setRounds] = useState<TaskRounds | undefined>(undefined);
-  const [failed, setFailed] = useState(false);
+  const [ownRounds, setRounds] = useState<TaskRounds | undefined>(undefined);
+  const [ownFailed, setFailed] = useState(false);
+  const rounds = read === undefined ? ownRounds : read.rounds;
+  const failed = read === undefined ? ownFailed : read.failed;
   const now = Date.now();
+  const reads = read === undefined;
 
   useEffect(() => {
+    if (!reads) return;
     const controller = new AbortController();
     setFailed(false);
     getTaskRounds(taskId, controller.signal)
@@ -300,7 +381,7 @@ export function EvidenceSection({
     return () => {
       controller.abort();
     };
-  }, [taskId, refreshKey]);
+  }, [taskId, refreshKey, reads]);
 
   const latest = rounds?.rounds[0];
   const earlier = rounds?.rounds.slice(1) ?? [];
@@ -309,14 +390,8 @@ export function EvidenceSection({
     return null;
   }
 
-  return (
-    <section className="panel-section ev" aria-label="Proof" data-section="proof">
-      <h3 className="panel-section-title ev-title">
-        Proof
-        {latest !== undefined && <span className="panel-count">round {latest.number}</span>}
-        <ProofInfo />
-      </h3>
-
+  const body = (
+    <>
       {sendBack !== null && (
         <SendBackNote sendBack={sendBack} nameOf={nameOf} now={now} people={people} meId={meId} />
       )}
@@ -335,19 +410,65 @@ export function EvidenceSection({
         </p>
       ) : (
         <>
-          <RoundProof round={latest} nameOf={nameOf} now={now} />
+          <RoundProof
+            round={latest}
+            nameOf={nameOf}
+            now={now}
+            hideReason={sendBack !== null}
+            people={people}
+            meId={meId}
+          />
           {earlier.length > 0 && (
             <details className="ev-earlier">
               <summary>
                 Earlier {earlier.length === 1 ? 'round' : 'rounds'} ({earlier.length})
               </summary>
               {earlier.map((round) => (
-                <RoundProof key={round.id} round={round} nameOf={nameOf} now={now} />
+                <RoundProof
+                  key={round.id}
+                  round={round}
+                  nameOf={nameOf}
+                  now={now}
+                  people={people}
+                  meId={meId}
+                />
               ))}
             </details>
           )}
         </>
       )}
+    </>
+  );
+
+  // In review the state panel above lists this round's commits and runs, so
+  // the section folds to one line; `<details>` keeps it all in the page.
+  if (
+    latest !== undefined &&
+    proofFolded({ shared: read !== undefined, status: taskStatus, sendBack, latest })
+  ) {
+    return (
+      <section className="panel-section ev" aria-label="Proof" data-section="proof" data-folded="">
+        <details className="ev-fold">
+          <summary className="ev-fold-summary">{proofFoldLabel(latest)}</summary>
+          <div className="ev-fold-body">
+            <p className="ev-fold-about">
+              Every item with its state <ProofInfo />
+            </p>
+            {body}
+          </div>
+        </details>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel-section ev" aria-label="Proof" data-section="proof">
+      <h3 className="panel-section-title ev-title">
+        Proof
+        {latest !== undefined && <span className="panel-count">round {latest.number}</span>}
+        <ProofInfo />
+      </h3>
+      {body}
     </section>
   );
 }

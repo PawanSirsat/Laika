@@ -59,6 +59,16 @@ void describe('withText: what the panel draws', () => {
     assert.equal(shown?.acceptance_md, '- [ ] done');
   });
 
+  void test('carries what the task delivers from the read, which the slim store never has (LAI-1117)', () => {
+    const deliverables = [{ id: 'd1', title: 'Viewer', detail: null, state: 'done' as const }];
+    const shown = withText(summary(), full({ deliverables, solves: ['s'], unlocks: ['u'] }));
+    assert.deepEqual(shown?.deliverables, deliverables);
+    assert.deepEqual(shown?.solves, ['s']);
+    assert.deepEqual(shown?.unlocks, ['u']);
+    // A read from before LAI-1115 has none, and none is invented.
+    assert.equal('deliverables' in (withText(summary(), full()) ?? {}), false);
+  });
+
   void test('keeps the held texts while a newer version is being read, rather than blanking them', () => {
     const shown = withText(summary({ updated_at: 11 }), full({ updated_at: 10 }));
     assert.equal(shown?.description_md, 'The description');

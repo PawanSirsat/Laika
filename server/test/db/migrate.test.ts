@@ -2795,6 +2795,7 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_tool_setup_exchanges$/),
         expect.stringMatching(/_project_repo_setups$/),
         expect.stringMatching(/_agent_capacity$/),
+        expect.stringMatching(/_task_deliverables$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2882,6 +2883,10 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
             ...row,
             handoff_count: 0,
             position: expect.any(String) as unknown,
+            // 0075 (LAI-1115): three lists, each empty on a row that predates them.
+            deliverables: '[]',
+            solves: '[]',
+            unlocks: '[]',
           })),
         );
         expect(db.all(sql`SELECT * FROM task_checkpoints`)).toEqual([]);
@@ -2901,6 +2906,89 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
       } finally {
         sqlite.close();
         rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+/**
+ * 0075 on a database at 0074 — production's upgrade for LAI-1115.
+ *
+ * **Additive is the property, so it is asserted directly**, as 0029's test
+ * does: three `ALTER TABLE … ADD`, each `NOT NULL DEFAULT '[]'`, so `tasks`
+ * keeps its root page, every row survives and reads an empty list, and nothing
+ * hanging off a task is copied.
+ */
+describe('0075 adds the deliverable columns to a populated 0074 database (LAI-1115)', () => {
+  function folderAt0074(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag === '0075_task_deliverables');
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: the first entry cut is 0075 and the last kept
+    // is 0074 — a later migration lands here and says so.
+    expect(dropped.map((e) => e.tag)).toEqual(['0075_task_deliverables']);
+    expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it(
+    'keeps every row, adds the three columns as empty lists, and rebuilds nothing',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: folderAt0074() });
+        const columns = () =>
+          db
+            .all<{ name: string }>(sql`SELECT name FROM pragma_table_info('tasks')`)
+            .map((r) => r.name);
+        expect(columns()).not.toContain('deliverables');
+
+        const s = seed(db);
+        const now = Date.now();
+        const taskId = newId();
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+          VALUES (${taskId}, ${s.projectId}, 1, 'Old', 'todo', ${statusForCategory(db, s.projectId, 'todo').id}, 'p2', ${s.userId}, 'api', ${now}, ${now})
+        `);
+        const rootpage = () =>
+          db.get<{ rootpage: number }>(
+            sql`SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = 'tasks'`,
+          ).rootpage;
+        const page = rootpage();
+        const rowsBefore = db.all<Record<string, unknown>>(sql`SELECT * FROM tasks ORDER BY rowid`);
+        const migrations = db.all(sql`SELECT * FROM __drizzle_migrations`);
+
+        runMigrations(db);
+
+        expect(columns()).toEqual(expect.arrayContaining(['deliverables', 'solves', 'unlocks']));
+        // Same root page: `ALTER TABLE … ADD`, never create-copy-drop-rename.
+        expect(rootpage()).toBe(page);
+        expect(db.all(sql`SELECT * FROM tasks ORDER BY rowid`)).toEqual(
+          rowsBefore.map((row) => ({
+            ...row,
+            // Boot's own backfill (LAI-472) orders a row inserted without one.
+            position: expect.any(String) as unknown,
+            deliverables: '[]',
+            solves: '[]',
+            unlocks: '[]',
+          })),
+        );
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 1);
+        // And again is a no-op.
+        runMigrations(db);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 1);
+      } finally {
+        sqlite.close();
         rmSync(dir, { recursive: true, force: true });
       }
     },

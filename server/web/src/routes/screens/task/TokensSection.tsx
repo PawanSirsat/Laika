@@ -21,6 +21,7 @@ import {
   type TaskUsage,
 } from '../../../api/usage.ts';
 import { BarRows } from '../usage/BarRows.tsx';
+import { tokensOfLine } from './rail-derive.ts';
 import { BudgetEditor, BudgetMeter } from '../usage/BudgetMeter.tsx';
 import '../usage/usage.css';
 import './tokens.css';
@@ -34,6 +35,13 @@ export interface TokensSectionProps {
   readonly started: boolean;
   /** Re-read when this changes — the task's `updated_at`, kept current by the stream. */
   readonly refreshKey: number;
+  /**
+   * The rail's Estimate card (LAI-1122): one *Tokens* row — *597K of 716K
+   * (83%)* against the token estimate's high end, then the headline with its
+   * cost — and the budget, the alerts and *Details* under it. Every control
+   * and hook stays.
+   */
+  readonly compact?: boolean;
 }
 
 /**
@@ -63,6 +71,7 @@ export function TokensSection({
   projectSlug,
   started,
   refreshKey,
+  compact = false,
 }: TokensSectionProps) {
   // What was read, and for which task: the panel stays mounted when it moves
   // to another task, and one task's figures must never sit under the next
@@ -143,13 +152,25 @@ export function TokensSection({
   if (empty && !started) return null;
 
   return (
-    <section className="panel-section tk" aria-label="Tokens" data-section="tokens">
-      <h3 className="panel-section-title">Tokens</h3>
+    <section
+      className={compact ? 'panel-section tk tk-compact est-row' : 'panel-section tk'}
+      aria-label="Tokens"
+      data-section="tokens"
+    >
+      <h3 className={compact ? 'panel-section-title est-label' : 'panel-section-title'}>Tokens</h3>
       {failed ? (
         <p className="panel-alert" role="alert">
           Could not load this task’s tokens.
         </p>
-      ) : view === undefined ? null : empty ? (
+      ) : view === undefined ? null : empty && compact ? (
+        /* The rail's short form (LAI-1123): what it is, then how it comes. */
+        <p className="panel-muted tk-empty tk-empty-compact">
+          <span className="tk-empty-head">None yet</span>
+          <span className="tk-empty-hint">
+            An agent working on a branch named <code>{taskKey}-…</code> adds them.
+          </span>
+        </p>
+      ) : empty ? (
         <p className="panel-muted tk-empty">
           No tokens tied to this task yet (an agent ties them by working on a branch named{' '}
           <code>{taskKey}-…</code>).
@@ -158,6 +179,7 @@ export function TokensSection({
         <TokensBody
           view={view}
           forecast={forecast}
+          compact={compact}
           mayBudget={mayBudget}
           onBudget={(tokens) =>
             setTaskBudget(view.task_id, tokens).then(() => {
@@ -173,11 +195,14 @@ export function TokensSection({
 function TokensBody({
   view,
   forecast,
+  compact,
   mayBudget,
   onBudget,
 }: {
   readonly view: TaskUsage;
   readonly forecast: TaskEstimate | undefined;
+  /** The rail's row: the *of the estimate* line first. */
+  readonly compact: boolean;
   /** A lead on a web session, by the server's `can_set`. */
   readonly mayBudget: boolean;
   readonly onBudget: (tokens: number | null) => Promise<void>;
@@ -200,8 +225,22 @@ function TokensBody({
   // Only a budget somebody set is a bar; the default one is a line from 80%.
   const setBudget = budget !== null && budget.source === 'set' ? budget : null;
   const alert = budget === null ? null : estimateAlertLine(budget);
+  // The high end the rail's line reads against: frozen at start, else in force.
+  const p80 = forecast === undefined ? null : (frozen?.tokens_p80 ?? forecast.tokens.p80);
+  const share = p80 === null || p80 <= 0 ? null : totals.tokens / p80;
   return (
     <>
+      {/* *597K of 716K (83%)* (LAI-1122), only against an estimate: the
+          headline below already says the total alone. */}
+      {compact && share !== null && p80 !== null && (
+        <p
+          className="tk-of"
+          data-state={share >= 1 ? 'over' : share >= 0.8 ? 'warn' : 'under'}
+          title="Against the token estimate’s high end"
+        >
+          {tokensOfLine(totals.tokens, p80)}
+        </p>
+      )}
       {/* LAI-773: the runaway alert, sent only to the person it is for — the
           server decides, this draws what arrives. About their quota, never a
           report on them. */}

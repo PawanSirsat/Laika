@@ -54,12 +54,12 @@
   max-height: 86vh;
   border-radius: var(--radius-card);
   /*
-   * **1120px, not 840** (LAI-285). The design's drawer is two columns — the
-   * task as a document beside a 288px rail of fields — and at 840 the two
-   * together left the description about 500px wide, narrower than the board
-   * card the reader came from.
+   * **1280px** (D-129, LAI-1117): a little wider than LAI-285's 1120 — "not
+   * too much", the owner said — so the delivers panel's three columns and the
+   * state panel's four facts fit beside a 380px rail. Still a centred modal
+   * (D-063), never the design's 1700px canvas.
    */
-  width: min(1120px, 92vw);
+  width: min(1280px, 94vw);
   /* 840px is the whole drawer, border included — without this the 1px
      border-left makes it 841 and the design's number stops being the one on
      screen. The same trap as the tab strip's 34px. */
@@ -109,5 +109,61 @@
 @media (prefers-reduced-motion: reduce) {
   .drawer {
     animation: none;
+  }
+}
+
+/* The handle is the phone sheet's only (LAI-1122). */
+.drawer-handle {
+  display: none;
+}
+
+/*
+ * **A bottom sheet on a phone** (D-129, LAI-1122): full width, rising from the
+ * bottom edge with rounded top corners and a handle, as the design draws it at
+ * 390px. Still a modal over a dimmed board, closed by Escape, the scrim, Back
+ * and the handle.
+ */
+@media (max-width: 600px) {
+  .drawer {
+    inset: auto 0 0 0;
+    margin: 0;
+    width: 100%;
+    height: 94dvh;
+    max-height: 94dvh;
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    border-bottom: none;
+    animation: drawer-sheet 0.22s ease;
+  }
+
+  .drawer-handle {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex: none;
+    height: 20px;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .drawer-handle-bar {
+    width: 36px;
+    height: 4px;
+    border-radius: var(--radius-pill);
+    background: var(--border-default);
+  }
+}
+
+@keyframes drawer-sheet {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
   }
 }
