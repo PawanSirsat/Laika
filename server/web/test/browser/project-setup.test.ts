@@ -1034,6 +1034,48 @@ void describe('Project setup, v3', () => {
     }
   });
 
+  void test('390 px: each way’s words take the line, and its chip or button goes under them (LAI-1099 #9)', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [], setups: [] };
+    const h = await open('/developer?tab=projects&step=3', stub('v3', world));
+    try {
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      const review = h.page.locator('[data-step="record"]');
+      await review.locator('[data-status="not-recorded"]').waitFor({ timeout: 20_000 });
+      const ways = await review.locator('[data-way]').evaluateAll((els) =>
+        els.map((el) => {
+          const way = el.getBoundingClientRect();
+          const mark = el.querySelector('.dx-ps-way-mark')!.getBoundingClientRect();
+          const text = el.querySelector('.dx-ps-way-text')!.getBoundingClientRect();
+          const end = el
+            .querySelector('.dx-ps-way-head')!
+            .lastElementChild!.getBoundingClientRect();
+          return {
+            way: el.getAttribute('data-way'),
+            // The words reach the row's edge: everything after the mark is theirs.
+            full: Math.round(text.right) >= Math.round(way.right) - 1 && text.left > mark.right,
+            under: end.top >= text.bottom - 1,
+          };
+        }),
+      );
+      assert.deepEqual(ways, [
+        { way: 'check', full: true, under: true },
+        { way: 'self', full: true, under: true },
+      ]);
+      // The status reads as words, not a column of single letters: its reason
+      // has most of the way's line.
+      const widths = await review.locator('[data-way="check"]').evaluate((el) => ({
+        reason: el.querySelector('.status-chip-reason')!.getBoundingClientRect().width,
+        text: el.querySelector('.dx-ps-way-text')!.getBoundingClientRect().width,
+      }));
+      assert.ok(
+        widths.reason > widths.text * 0.75,
+        `the status's reason is ${String(Math.round(widths.reason))}px of ${String(Math.round(widths.text))}px`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the prompt window keeps the prompt’s own lines, and scrolls inside itself (LAI-1099 #10)', async () => {
     const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [] };
     const h = await open('/developer?tab=projects&step=2', stub('v3', world));

@@ -243,6 +243,7 @@
   display: grid;
   place-items: center;
   flex: none;
+  box-sizing: border-box;
   width: 1.75rem;
   height: 1.75rem;
   border: 1px solid var(--border-card);
@@ -275,6 +276,14 @@
 
 .dx-ps-way-state {
   margin: 0;
+}
+
+/* A way's status under its name: the reason goes under its word when the two
+   do not fit on one line, rather than into a sliver beside it. */
+.dx-ps-way-text .status-chip {
+  flex-wrap: wrap;
+  row-gap: 0;
+  border-radius: var(--radius-control);
 }
 
 .dx-ps-way-head > .dx-chip,
@@ -433,9 +442,14 @@
     flex-wrap: wrap;
   }
 
-  /* The way's chip or button goes under its words, past the mark. */
+  /* The way's words take the rest of the line, so its chip or button goes
+     under them, past the mark, rather than squeezing its status to a sliver. */
   .dx-ps-way-head {
     flex-wrap: wrap;
+  }
+
+  .dx-ps-way-text {
+    flex-basis: calc(100% - 1.75rem - var(--space-3));
   }
 
   .dx-ps-way-head > .dx-chip,
