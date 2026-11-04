@@ -1,3 +1,4 @@
+import { BrandLockup } from '../../components/brand/BrandLockup.tsx';
 import { useState } from 'react';
 import { Button } from '../../components/forms/Button.tsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.tsx';
@@ -59,6 +60,7 @@ export function ResetPasswordScreen({
     return (
       <div className="auth">
         <div className="auth-card" data-reset-state={refused ?? 'missing'}>
+          <BrandLockup size="md" className="auth-brand" />
           <p className="auth-kicker auth-kicker-warn">RESET PASSWORD</p>
           <header className="auth-head">
             <h1 className="auth-title">{copy.title}</h1>
@@ -75,6 +77,7 @@ export function ResetPasswordScreen({
     return (
       <div className="auth">
         <div className="auth-card" data-reset-state="done">
+          <BrandLockup size="md" className="auth-brand" />
           <p className="auth-kicker">RESET PASSWORD</p>
           <header className="auth-head">
             <h1 className="auth-title">Your password is set</h1>
@@ -110,6 +113,7 @@ export function ResetPasswordScreen({
           onSubmit?.(password);
         }}
       >
+        <BrandLockup size="md" className="auth-brand" />
         <p className="auth-kicker">RESET PASSWORD</p>
         <header className="auth-head">
           <h1 className="auth-title">Choose a new password</h1>
