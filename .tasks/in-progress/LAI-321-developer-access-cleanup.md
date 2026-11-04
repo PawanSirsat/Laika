@@ -61,8 +61,10 @@ on Strelka).
       - `?view=setups` still works.
       - Depends on LAI-1099 being released to Strelka.
 - [ ] **D. Tools by tool.** One row per tool, with each device as a line under
-      it, each keeping its own status and opening its own details. A
-      custom-named agent shows its name. Depends on #250 (LAI-1097) on master.
+      it, each keeping its own status and opening its own details. No line
+      shows a name its owner typed: a tool is `<harness> · <device>`
+      (D-120). This corrects the plan's "Omnigent — Polly". Depends on #250
+      (LAI-1097), which is merged into this branch.
 - [ ] **E. Advanced, folded.** This adds to LAI-1100's criteria, which still
       apply.
       - The credentials list and *+ New* stay on top. *Scope reference* and the
