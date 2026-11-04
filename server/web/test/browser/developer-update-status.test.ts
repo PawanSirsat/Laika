@@ -37,6 +37,7 @@ import {
   type OpenOptions,
 } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
+import { unfold } from './developer-v3-fixtures.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
 
@@ -283,7 +284,10 @@ async function settled(page: Page, ids: readonly string[] = ALL.map((a) => a.id)
   }
 }
 
-/** Open one tool's details from its row, closing any other first. */
+/**
+ * Open one tool's details from its row, closing any other first, and its
+ * Helper section — folded to one row since LAI-1100 — where the status is.
+ */
 async function details(page: Page, id: string) {
   const open = page.locator('.side-panel[data-panel="tool"]');
   if ((await panelOf(page, id).count()) > 0) return panelOf(page, id);
@@ -293,6 +297,7 @@ async function details(page: Page, id: string) {
   }
   await tool(page, id).locator(`[data-details="tools:${id}"]`).click();
   await panelOf(page, id).waitFor({ timeout: 10_000 });
+  await unfold(panelOf(page, id), 'helper');
   return panelOf(page, id);
 }
 
@@ -356,7 +361,9 @@ void describe('V3 Tools: each tool’s helper update status', () => {
   void test('the device’s details summarise its tools, worst first', async () => {
     const h = await open('/developer?tab=devices&device=d1', stub());
     try {
-      const line = h.page.locator('.side-panel[data-panel="device"] [data-device-update]');
+      // Folded to one row since LAI-1100: *Helper updates*, its worst status.
+      const fold = await unfold(h.page.locator('.side-panel[data-panel="device"]'), 'helpers');
+      const line = fold.locator('[data-device-update]');
       const all =
         'Helper updates: 1 update required, 1 could not check, 1 version unknown, 2 up to date';
       // Every tool's answer is in once the line names all five.
@@ -368,6 +375,10 @@ void describe('V3 Tools: each tool’s helper update status', () => {
       assert.equal(
         await line.innerText(),
         'Helper updates: 1 update required, 1 could not check, 1 version unknown, 2 up to date',
+      );
+      assert.equal(
+        await fold.locator(':scope > summary .dv3-fold-line').innerText(),
+        'Helper updates · Update required',
       );
     } finally {
       await h.close();
@@ -456,9 +467,15 @@ void describe('V3 Tools: each tool’s helper update status', () => {
     try {
       await h.page.locator('[data-details="devices:d1"]').click();
       const panel = h.page.locator('.side-panel[data-panel="device"]');
+      // Its Helper updates row says so; the line is under it (LAI-1100).
+      const fold = await unfold(panel, 'helpers');
       await until(
         async () => (await panel.innerText()).includes('Helpers up to date on every tool'),
         20_000,
+      );
+      assert.equal(
+        await fold.locator(':scope > summary .dv3-fold-line').innerText(),
+        'Helper updates · Up to date',
       );
       // Read and up to date: nothing to do, so the row shows no helper chip.
       assert.equal(

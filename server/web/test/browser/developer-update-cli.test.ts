@@ -38,6 +38,7 @@ import {
   compat,
   report,
   stub,
+  unfold,
   verification,
   type StubOver,
 } from './developer-v3-fixtures.ts';
@@ -74,7 +75,10 @@ async function openTools(over: StubOver = {}, options: OpenOptions = {}): Promis
   return h;
 }
 
-/** Open one tool's details, closing any other first. */
+/**
+ * Open one tool's details, closing any other first, and its Helper section —
+ * one folded row since LAI-1100 — where the guide is offered.
+ */
 async function details(page: Page, id: string): Promise<Locator> {
   const panel = page.locator('.side-panel[data-panel="tool"]');
   if ((await toolPanel(page, id).count()) > 0) return toolPanel(page, id);
@@ -84,6 +88,7 @@ async function details(page: Page, id: string): Promise<Locator> {
   }
   await tool(page, id).locator(`[data-details="tools:${id}"]`).click();
   await toolPanel(page, id).waitFor({ timeout: 10_000 });
+  await unfold(toolPanel(page, id), 'helper');
   return toolPanel(page, id);
 }
 
@@ -323,7 +328,8 @@ void describe('Overview', () => {
       assert.deepEqual(await items.evaluateAll((els) => els.map((el) => el.dataset.agent)), ['a2']);
       await items.getByRole('link', { name: /^Open details →\s*: Codex · Belka$/ }).click();
       // Tool details, where the guide is offered (as the first describe asserts)
-      // once the panel has read the tool's report again.
+      // once the panel has read the tool's report again — in its Helper section.
+      await unfold(toolPanel(h.page, 'a2'), 'helper');
       await toolPanel(h.page, 'a2')
         .locator('[data-update-cli="tool"]')
         .waitFor({ timeout: 20_000 });
@@ -612,6 +618,7 @@ void describe('every placement (LAI-1093): no pull of a checkout, and every comm
     const d = await open('/developer?tab=devices&device=d1', stub());
     try {
       const panel = devicePanel(d.page);
+      await unfold(panel, 'helpers');
       await panel.locator('[data-update-cli="device"]').waitFor({ timeout: 20_000 });
       await openGuide(panel);
       await check(panel, 'device');
@@ -769,6 +776,7 @@ void describe(
           const d = await open('/developer?tab=devices&device=d1', stub(), sized);
           try {
             await setTheme(d.page, theme);
+            await unfold(devicePanel(d.page), 'helpers');
             await devicePanel(d.page)
               .locator('[data-update-cli="device"]')
               .waitFor({ timeout: 20_000 });

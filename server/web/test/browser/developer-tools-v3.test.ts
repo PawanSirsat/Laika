@@ -11,6 +11,10 @@
  *   device's.
  * - A bottom sheet on a phone, with no sideways scroll; the card colour of
  *   whichever theme is on.
+ * - Folded (LAI-1100): the status and one next action on top, every other
+ *   section one summary row that opens, *Disconnect tool…* at the foot; the
+ *   consent switch only for a tool that saves checkpoints, its row naming
+ *   what the switch read.
  *
  * Set `LAIKA_EVIDENCE_DIR` to also save the Devices and Tools tabs and both
  * panels, light and dark, at 1440 and 390 px.
@@ -21,8 +25,17 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, navigateInApp, open, setTheme, until, type ApiStub } from './harness.ts';
+import {
+  closeBrowser,
+  navigateInApp,
+  open,
+  setTheme,
+  until,
+  type ApiStub,
+  type StubCall,
+} from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
+import { unfold } from './developer-v3-fixtures.ts';
 
 const NOW = Date.now();
 
@@ -368,6 +381,8 @@ void describe('the details panel: open, held, closed', () => {
       const device = h.page.getByRole('dialog', { name: 'Belka' });
       await device.waitFor({ timeout: 10_000 });
       assert.equal(here(h.page), '/developer?tab=devices&device=d1');
+      // Its tools are one folded row until opened (LAI-1100).
+      await unfold(device, 'tools');
       await device.getByRole('button', { name: /^Codex · Belka: Needs setup/ }).click();
       await h.page.getByRole('dialog', { name: 'Codex · Belka' }).waitFor({ timeout: 10_000 });
       assert.equal(here(h.page), '/developer?tab=tools&agent=a2');
@@ -422,6 +437,7 @@ void describe('the details panel: a form inside it, and Escape (review round 1)'
     try {
       await openFromRow(h.page);
       const body = panel(h.page).locator('.dv3-tool-details[data-agent="a1"]');
+      await unfold(body, 'projects');
       await body.getByRole('button', { name: 'Project access…' }).click();
       const form = body.locator('.agents-panel');
       await form.waitFor({ timeout: 10_000 });
@@ -448,6 +464,13 @@ void describe('the details panel: a form inside it, and Escape (review round 1)'
     try {
       await openFromRow(h.page, 'a4');
       const body = panel(h.page).locator('.dv3-tool-details[data-agent="a4"]');
+      // A duplicate needs its owner: its Name section is open from the start (LAI-1100).
+      assert.equal(
+        await body
+          .locator('details[data-fold="name"]')
+          .evaluate((el) => (el as HTMLDetailsElement).open),
+        true,
+      );
       await body.getByRole('button', { name: 'Rename…' }).click();
       const input = body.getByLabel('New name');
       await input.waitFor({ timeout: 10_000 });
@@ -636,10 +659,16 @@ void describe('the details panel: what it says', () => {
           'session_hooks:pass',
         ],
       );
+      // Ready, in a project: nothing to lead with but the status (LAI-1100).
+      assert.equal(await body.locator('[data-next]').count(), 0);
+      await unfold(body, 'device');
       assert.match(await body.innerText(), /Device\s*Belka/);
+      await unfold(body, 'projects');
       assert.equal(await body.locator('[data-projects]').innerText(), 'OnRoute (full)');
+      await unfold(body, 'credential');
       assert.equal(await body.locator('[data-credential]').innerText(), 'lai_a1xx…');
       // Owner, signed in: the checkpoint consent is here, off until given.
+      await unfold(body, 'checkpoints');
       assert.match(await body.innerText(), /Save checkpoints automatically/);
       // No duplicate, so no rename.
       assert.equal(await body.locator('[data-rename]').count(), 0);
@@ -665,6 +694,213 @@ void describe('the details panel: what it says', () => {
         'fail',
       );
       assert.doesNotMatch(await panel(h.page).innerText(), /\bReady\b(?! means)/);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/** Each folded row of a panel, in order: its name and its one line. */
+const rows = (page: Page) =>
+  panel(page)
+    .locator('details[data-fold]')
+    .evaluateAll((els) =>
+      els.map(
+        (el) =>
+          `${el.getAttribute('data-fold') ?? ''}${(el as HTMLDetailsElement).open ? ' (open)' : ''}: ${el.querySelector<HTMLElement>(':scope > summary .dv3-fold-line')?.innerText ?? ''}`,
+      ),
+    );
+
+const GIVEN = { given: true, given_by_user_id: 'u1', given_at: NOW - 60_000, withdrawn_at: null };
+
+void describe('the details panel: folded (LAI-1100)', () => {
+  void test('the top is the status and one next action; every other section is one row; Disconnect at the foot', async () => {
+    const h = await open('/developer?tab=tools&agent=a2', stub());
+    try {
+      const body = panel(h.page).locator('.dv3-tool-details[data-agent="a2"]');
+      await body.waitFor({ timeout: 20_000 });
+      await until(
+        async () => (await panel(h.page).locator('[data-evidence="true"]').count()) === 1,
+      );
+      // The status, under the title.
+      assert.equal(
+        await panel(h.page)
+          .locator('.side-panel-sub [data-readiness]')
+          .getAttribute('data-readiness'),
+        'needs-setup',
+      );
+      // The one next action: the first check still missing, and Finish setup.
+      const next = body.locator('[data-next]');
+      assert.equal(await next.count(), 1);
+      assert.equal(await next.getAttribute('data-next'), 'finish');
+      assert.equal(
+        (await next.innerText()).replace(/\s+/g, ' ').trim(),
+        'Finish setup Codex connected: Codex has not called the board yet. Open Codex, trust the hooks in /hooks, then ask it to call laika_whoami. Finish setup →',
+      );
+      // Every other section is a row, folded, saying its state.
+      await until(async () =>
+        (await rows(h.page)).includes('checkpoints: Automatic checkpoints · Off'),
+      );
+      assert.deepEqual(await rows(h.page), [
+        'checks: Checks · 2 of 4 done',
+        'helper: Helper · Version unknown',
+        'projects: Projects · None — it reaches no project',
+        'credential: Credential · lai_a2xx…',
+        'checkpoints: Automatic checkpoints · Off',
+        'launcher: Launcher · Auto-pickup: off',
+        'device: Device · Belka · never seen',
+      ]);
+      // Folded is folded: what a section holds is not on screen until it opens.
+      assert.equal(await body.locator('[data-check="tool_request"]').isVisible(), false);
+      const reconnect = body.getByRole('button', { name: 'Reconnect (new credential)…' });
+      assert.equal(await reconnect.count(), 0);
+      // A row opens by keyboard, as a disclosure does, and closes again.
+      const credential = body.locator('details[data-fold="credential"]');
+      await credential.locator(':scope > summary').focus();
+      await h.page.keyboard.press('Enter');
+      await reconnect.waitFor({ timeout: 5_000 });
+      assert.equal(await credential.evaluate((el) => (el as HTMLDetailsElement).open), true);
+      await h.page.keyboard.press('Enter');
+      await reconnect.waitFor({ state: 'hidden', timeout: 5_000 });
+      // The danger action stays at the foot, outside every section.
+      const foot = panel(h.page).locator('.side-panel-foot');
+      assert.equal(await foot.getByRole('button', { name: 'Disconnect tool…' }).count(), 1);
+      assert.equal(await body.getByRole('button', { name: /Disconnect/ }).count(), 0);
+      assert.equal(h.calls.filter((c) => c.method !== 'GET').length, 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Finish setup opens the wizard’s reconnect, as the row’s does', async () => {
+    const h = await open('/developer?tab=tools&agent=a2', stub());
+    try {
+      const next = panel(h.page).locator('[data-next="finish"]');
+      await next.waitFor({ timeout: 20_000 });
+      await next.getByRole('button', { name: 'Finish setting up Codex · Belka' }).click();
+      await h.page.waitForURL(/reconnect=a2/, { timeout: 10_000 });
+      const url = new URL(h.page.url());
+      assert.equal(url.searchParams.get('add'), 'tool');
+      assert.equal(url.searchParams.get('tab'), 'tools');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a helper the board refuses leads; Show how to update opens Helper and takes focus there', async () => {
+    const h = await open('/developer?tab=tools&agent=a3', stub());
+    try {
+      const next = panel(h.page).locator('[data-next="update"]');
+      await next.waitFor({ timeout: 20_000 });
+      assert.match(await next.innerText(), /^Update required for pairing devices/);
+      const helper = panel(h.page).locator('details[data-fold="helper"]');
+      assert.equal(await helper.evaluate((el) => (el as HTMLDetailsElement).open), false);
+      await next.getByRole('button', { name: 'Show how to update' }).click();
+      await until(() => helper.evaluate((el) => (el as HTMLDetailsElement).open));
+      assert.equal(await helper.evaluate((el) => (el as HTMLDetailsElement).open), true);
+      assert.equal(
+        await h.page.evaluate(
+          () => document.activeElement?.closest('details')?.getAttribute('data-fold') ?? null,
+        ),
+        'helper',
+      );
+      assert.equal(await h.page.evaluate(() => document.activeElement?.tagName ?? null), 'SUMMARY');
+      await helper.locator('.dv3-update[data-update="required"] [data-update-how]').waitFor();
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('every check done and no project: Set up a project leads, to Project setup', async () => {
+    const h = await open(
+      '/developer?tab=tools&agent=a1',
+      stub([agentRow('a1', 'claude-code', NOW - 30_000), CODEX]),
+    );
+    try {
+      const next = panel(h.page).locator('[data-next="project"]');
+      await next.waitFor({ timeout: 20_000 });
+      const link = next.getByRole('link', { name: 'Set up a project for Claude Code · Belka' });
+      assert.equal(await link.getAttribute('href'), '/developer?tab=projects&tool=a1');
+      await link.click();
+      await h.page.waitForURL(/tab=projects/, { timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=projects&tool=a1');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Automatic checkpoints: its row names the state, and follows the switch', async () => {
+    let held: object = NO_CONSENT;
+    const h = await open('/developer?tab=tools&agent=a1', {
+      ...stub(),
+      '/api/v1/agents/a1/checkpoint-consent': (call: StubCall) => {
+        if (call.method === 'PUT') held = GIVEN;
+        return held;
+      },
+    });
+    try {
+      const fold = panel(h.page).locator('details[data-fold="checkpoints"]');
+      const line = fold.locator(':scope > summary .dv3-fold-line');
+      await until(
+        async () =>
+          (await line.count()) === 1 && (await line.innerText()) === 'Automatic checkpoints · Off',
+      );
+      assert.equal(await line.innerText(), 'Automatic checkpoints · Off');
+      // The switch is in the section, which opens to it.
+      assert.equal(await panel(h.page).getByRole('switch').count(), 0);
+      await unfold(panel(h.page), 'checkpoints');
+      const control = fold.getByRole('switch', { name: 'Save checkpoints automatically' });
+      assert.equal(await control.getAttribute('aria-checked'), 'false');
+      await control.click();
+      await until(async () => (await control.getAttribute('aria-checked')) === 'true');
+      assert.equal(await control.getAttribute('aria-checked'), 'true');
+      assert.equal(await line.innerText(), 'Automatic checkpoints · On');
+      assert.deepEqual(
+        h.calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.path}`),
+        ['PUT /api/v1/agents/a1/checkpoint-consent'],
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Automatic checkpoints: already on says On before it is opened', async () => {
+    const h = await open('/developer?tab=tools&agent=a1', {
+      ...stub(),
+      '/api/v1/agents/a1/checkpoint-consent': GIVEN,
+    });
+    try {
+      const fold = panel(h.page).locator('details[data-fold="checkpoints"]');
+      const line = fold.locator(':scope > summary .dv3-fold-line');
+      await until(
+        async () =>
+          (await line.count()) === 1 && (await line.innerText()) === 'Automatic checkpoints · On',
+      );
+      assert.equal(await line.innerText(), 'Automatic checkpoints · On');
+      assert.equal(await fold.evaluate((el) => (el as HTMLDetailsElement).open), false);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a tool that saves no checkpoints has no switch, and its consent is never asked for', async () => {
+    const h = await open('/developer?tab=tools&agent=a3', stub());
+    try {
+      const body = panel(h.page).locator('.dv3-tool-details[data-agent="a3"]');
+      await body.locator('details[data-fold="launcher"]').waitFor({ timeout: 20_000 });
+      // Settled: Omnigent's own row is there, so the panel has drawn every row it will.
+      await h.page.waitForLoadState('networkidle');
+      assert.equal(await body.locator('details[data-fold="checkpoints"]').count(), 0);
+      assert.equal(await body.locator('[data-consent]').count(), 0);
+      assert.equal(
+        h.calls.filter((c) => c.path === '/api/v1/agents/a3/checkpoint-consent').length,
+        0,
+      );
+      // Codex, beside it, saves checkpoints: its details carry the switch.
+      await h.page.keyboard.press('Escape');
+      await panel(h.page).waitFor({ state: 'detached', timeout: 10_000 });
+      await openFromRow(h.page, 'a2');
+      await panel(h.page).locator('details[data-fold="checkpoints"]').waitFor();
     } finally {
       await h.close();
     }
@@ -892,7 +1128,8 @@ void describe(
           name: 'device-details',
           path: '/developer?tab=devices&device=d1',
           api: stub(),
-          ready: (page) => page.locator('[data-device-update]').waitFor({ timeout: 20_000 }),
+          ready: (page) =>
+            page.locator('.side-panel [data-fold="helpers"]').waitFor({ timeout: 20_000 }),
         },
         {
           name: 'tool-details-ready',
@@ -906,7 +1143,7 @@ void describe(
           path: '/developer?tab=tools&agent=a2',
           api: stub(),
           ready: (page) =>
-            page.locator('.side-panel [data-check="tool_request"]').waitFor({ timeout: 20_000 }),
+            page.locator('.side-panel [data-next="finish"]').waitFor({ timeout: 20_000 }),
         },
         {
           name: 'tool-details-update-required',
@@ -921,6 +1158,7 @@ void describe(
           path: '/developer?tab=tools&agent=a3',
           api: stub(),
           ready: async (page) => {
+            await unfold(page.locator('.side-panel'), 'helper');
             const helper = page.locator('.side-panel .dv3-update[data-update="required"]');
             await helper.waitFor({ timeout: 20_000 });
             for (const summary of await helper.locator('summary').all()) await summary.click();

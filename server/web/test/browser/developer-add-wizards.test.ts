@@ -30,6 +30,7 @@ import {
 } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
 import { offered } from './dropdown.ts';
+import { unfold } from './developer-v3-fixtures.ts';
 import { featuredTools, moreTools } from '../../src/routes/screens/developer/v3/tool-catalog.ts';
 
 type Mode = 'classic' | 'preview' | 'v3';
@@ -700,6 +701,7 @@ void describe('Add tool: the command, and checks from evidence', () => {
         '.side-panel[data-panel="tool"] .dv3-tool-details[data-agent="a1"]',
       );
       await details.waitFor({ timeout: 20_000 });
+      await unfold(details, 'credential');
       await details.getByRole('button', { name: 'Reconnect (new credential)…' }).click();
       await until(async () => (await step(page, 'tool')) === '2', 15_000);
       assert.match(page.url(), /reconnect=a1/);
@@ -1097,7 +1099,18 @@ void describe('the owner’s design: the steps as he draws them (LAI-1097)', () 
       assert.equal(url.searchParams.get('agent'), 'a1');
       assert.equal(url.searchParams.get('add'), null);
       assert.equal(await w.count(), 0);
-      // There, the switch itself.
+      // There, its row says what the board holds, and the switch is under it (LAI-1100).
+      const fold = page.locator('.side-panel details[data-fold="checkpoints"]');
+      await until(
+        async () =>
+          (await fold.locator(':scope > summary .dv3-fold-line').innerText()) ===
+          'Automatic checkpoints · On',
+      );
+      assert.equal(
+        await fold.locator(':scope > summary .dv3-fold-line').innerText(),
+        'Automatic checkpoints · On',
+      );
+      await unfold(page.locator('.side-panel'), 'checkpoints');
       assert.equal(await page.locator('.side-panel').getByRole('switch').count(), 1);
     } finally {
       await h.close();
