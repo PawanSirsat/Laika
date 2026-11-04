@@ -411,12 +411,23 @@ void describe('V3 Tools: one line a tool, across every device', () => {
         await tool(h.page, 'a5').locator('[data-line]').innerText(),
         'No project yet · never seen',
       );
-      // The two of a pair are told apart, and marked.
+      // The two of a pair are one tool, Codex, with a line each (LAI-321) —
+      // told apart, and marked.
+      const codex = h.page.locator('.dv3-tool-group[data-tool-group="codex"]');
+      assert.equal(await codex.locator('.dv3-tool-group-title').innerText(), 'Codex');
+      assert.equal(await codex.locator('[data-group-line]').innerText(), '1 device');
+      assert.deepEqual(
+        await codex
+          .locator('.dv3-tool-line .dx-record-title')
+          .evaluateAll((titles) => titles.map((t) => t.textContent)),
+        ['Belka (old laptop)', 'Belka (new laptop)'],
+      );
       assert.equal(
-        await tool(h.page, 'a2').locator('.dx-record-title').innerText(),
-        'Codex · Belka (old laptop)',
+        await tool(h.page, 'a2').locator('[data-details]').getAttribute('aria-label'),
+        'Details for Codex · Belka (old laptop)',
       );
       assert.match(await tool(h.page, 'a2').innerText(), /Duplicate/);
+      assert.match(await tool(h.page, 'a3').innerText(), /Duplicate/);
       assert.doesNotMatch(await tool(h.page, 'a1').innerText(), /Duplicate/);
       // A revoked tool is in no row and no count.
       assert.equal(await tool(h.page, 'a4').count(), 0);

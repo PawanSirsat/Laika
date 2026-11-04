@@ -1,5 +1,5 @@
 import { harnessRows } from '../../../../api/agent-devices.ts';
-import { agentClientName } from '../../../../api/agent-clients.ts';
+import { agentClientName, type AgentClient } from '../../../../api/agent-clients.ts';
 import {
   agentHarness,
   liveToken,
@@ -7,7 +7,12 @@ import {
   type RegisteredAgent,
 } from '../../../../api/agents.ts';
 import type { Device } from '../../../../api/devices.ts';
-import { agentLabel, twinNames } from '../../../../api/selected-agent.ts';
+import {
+  agentDevice,
+  agentLabel,
+  agentProductName,
+  twinNames,
+} from '../../../../api/selected-agent.ts';
 import { timeLabel } from '../../../../api/time-label.ts';
 import type { AgentVerification } from '../../../../api/tool-setup.ts';
 import type { StatusTone } from '../../../../components/wizard/StatusChip.tsx';
@@ -378,6 +383,153 @@ export function findTool(devices: readonly Device[], agentId: string): ListedToo
     c.agents.some((a) => a.id === agentId),
   );
   return { agent, device, label: toolLabel(device, agent), inConflict };
+}
+
+// ------------------------------------------------------------------ one row a tool (LAI-321)
+
+/**
+ * Which of a tool's statuses is the worst, for its group's header: **what
+ * needs a person first** — *Needs setup* (nothing works yet), *Offline* (it
+ * stopped), *Connected* (in use, but something Ready needs is missing) — then
+ * *Idle*, which is nothing wrong, then *Ready*. **Revoked is last**: a
+ * disconnected line is history, so it speaks for the group only when every
+ * line is revoked. A `Record`, so a status added to either source has to be
+ * ranked here before this compiles.
+ */
+const WORST_RANK: Readonly<Record<ListedStatus['key'], number>> = {
+  'needs-setup': 0,
+  offline: 1,
+  connected: 2,
+  idle: 3,
+  ready: 4,
+  revoked: 5,
+};
+
+/** Every status a tool can carry, worst first: {@link WORST_RANK} in order. */
+export const WORST_FIRST: readonly ListedStatus['key'][] = (
+  Object.keys(WORST_RANK) as ListedStatus['key'][]
+).sort((a, b) => WORST_RANK[a] - WORST_RANK[b]);
+
+/** The worst of these statuses by {@link WORST_RANK}; of equals, the first given. */
+export function worstStatus<S extends Pick<ListedStatus, 'key'>>(
+  statuses: readonly S[],
+): S | undefined {
+  let worst: S | undefined;
+  for (const status of statuses) {
+    if (worst === undefined || WORST_RANK[status.key] < WORST_RANK[worst.key]) worst = status;
+  }
+  return worst;
+}
+
+/** One device line under its tool: the Tools list's row, with its own status. */
+export interface ToolLine {
+  readonly listed: ListedTool;
+  readonly status: ListedStatus;
+}
+
+/**
+ * One row of the Tools list (LAI-321, the owner: *"the same grouping approach
+ * is acceptable for the tools section"*): **one tool — one product — with
+ * each device it is on as a line under it.** An agent is one tool on one
+ * device (D-120), so the owner's Claude Code on two laptops was two rows
+ * reading *Claude Code* twice; here it is one, with two lines.
+ */
+export interface ToolGroup {
+  /** The harness as a known client, or `other`: the group's key and its mark. */
+  readonly client: AgentClient;
+  /** *Claude Code* — the product, never a name its owner typed (D-120). */
+  readonly product: string;
+  /** In the Tools list's order: device by device, each device's conflicts after, revoked last. */
+  readonly lines: readonly ToolLine[];
+  /** The devices its active lines are on, each once: **counts exclude revoked** (§H). */
+  readonly devices: number;
+  /** Its revoked lines, there only behind *Show revoked*. */
+  readonly revoked: number;
+  /** The worst of its lines' statuses ({@link WORST_RANK}): the header's chip. */
+  readonly status: ListedStatus;
+}
+
+/**
+ * The Tools list by tool: {@link listedTools}'s rows grouped by product, each
+ * group where its first row was and each row where it was within it — so the
+ * order is still device by device. Two agents of one product on one device (a
+ * legacy pair, `inConflict`) are two lines, each with its mark. A row's
+ * status is `statusOf`'s: `listedStatus` with the tool's own verification,
+ * which only a component holds.
+ */
+export function toolGroups(
+  listed: readonly ListedTool[],
+  statusOf: (listed: ListedTool) => ListedStatus,
+): ToolGroup[] {
+  const byClient = new Map<AgentClient, ToolLine[]>();
+  for (const row of listed) {
+    const client = agentHarness(row.agent);
+    byClient.set(client, [...(byClient.get(client) ?? []), { listed: row, status: statusOf(row) }]);
+  }
+  const groups: ToolGroup[] = [];
+  for (const [client, lines] of byClient) {
+    const [first] = lines;
+    const worst = worstStatus(lines.map((line) => line.status));
+    if (first === undefined || worst === undefined) continue;
+    const active = lines.filter((line) => line.listed.agent.status === 'active');
+    groups.push({
+      client,
+      product: agentProductName(first.listed.agent),
+      lines,
+      devices: new Set(active.map((line) => line.listed.device.id)).size,
+      revoked: lines.length - active.length,
+      status: worst,
+    });
+  }
+  return groups;
+}
+
+/**
+ * Whether a group is drawn as one row: it has one line — a tool on one
+ * device, no legacy twin beside it, nothing revoked shown with it — so its
+ * header and that line are the same row, named `<tool> · <device>` as every
+ * row was before LAI-321. Any more lines, a twin's or a revoked one's
+ * included, and it is a header with a line each.
+ */
+export function singleRow(group: Pick<ToolGroup, 'lines'>): boolean {
+  return group.lines.length === 1;
+}
+
+/** A group's line under its name: *2 devices*, *1 device · 1 revoked*, *2 revoked*. */
+export function groupLine(group: Pick<ToolGroup, 'devices' | 'revoked'>): string {
+  const parts: string[] = [];
+  if (group.devices > 0) parts.push(count(group.devices, 'device', 'devices'));
+  if (group.revoked > 0) parts.push(`${String(group.revoked)} revoked`);
+  return parts.join(' · ');
+}
+
+/**
+ * A line's device under its tool's header: *Belka*, with its twin mark where
+ * a legacy pair shares the label — the row's label less the tool the header
+ * already names, so `<product> · <lineDevice>` is always that label.
+ */
+export function lineDevice(listed: Pick<ListedTool, 'agent' | 'device'>): string {
+  const twin = twinNames(listed.device.agents).get(listed.agent.id);
+  const where = agentDevice(listed.agent);
+  return twin === undefined ? where : `${where} (${twin})`;
+}
+
+/**
+ * The header chip's description: which devices it is the status of, and that
+ * each line has its own — the header is a summary, and only a line opens.
+ */
+export function groupStatusDescription(group: ToolGroup): string {
+  const word = TOOL_STATUS[group.status.key].word;
+  const where = group.lines
+    .filter((line) => line.status.key === group.status.key)
+    .map((line) => lineDevice(line.listed));
+  return `${word}: ${group.product} on ${listWords(where)}. The worst of its lines: each device below says its own status and opens its details.`;
+}
+
+/** *Belka*, *Belka and Strelka*, *Belka, Runner and Strelka*. */
+function listWords(items: readonly string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1] ?? ''}`;
 }
 
 /** Listed devices with legacy duplicate pairs, and how many pairs in all. */

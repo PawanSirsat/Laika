@@ -11,6 +11,9 @@
  *   device's.
  * - A bottom sheet on a phone, with no sideways scroll; the card colour of
  *   whichever theme is on.
+ * - One row a tool (LAI-321): a tool on two devices is a header — the tool,
+ *   how many devices, the worst of their statuses — over a line a device,
+ *   each opening its own agent's details; no name an owner typed anywhere.
  *
  * Set `LAIKA_EVIDENCE_DIR` to also save the Devices and Tools tabs and both
  * panels, light and dark, at 1440 and 390 px.
@@ -20,7 +23,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 import { closeBrowser, navigateInApp, open, setTheme, until, type ApiStub } from './harness.ts';
 import { NEVER_REPORTED } from '../helpers/launcher.ts';
 
@@ -840,6 +843,271 @@ void describe('a row opens its details (LAI-1097, the owner’s design: one chip
   });
 });
 
+/**
+ * The owner's Claude Code on two laptops (LAI-321): Ready on Belka, never
+ * used on paired Strelka — and Codex on Belka alone. Every agent carries a
+ * name its owner typed, which no label shows (D-120).
+ */
+const TYPED = 'Ada typed this';
+const G_CLAUDE = { ...CLAUDE, display_name: `${TYPED} for Belka` };
+const G_CODEX = { ...CODEX, display_name: `${TYPED} for Codex` };
+const G_STRELKA = {
+  ...agentRow('a6', 'claude-code', null),
+  device_label: 'Strelka',
+  display_name: `${TYPED} for Strelka`,
+};
+const strelkaRow = (agents: Agent[]) => ({
+  ...deviceRow(agents),
+  id: 'd2',
+  display_name: 'Strelka',
+  device_label: 'strelka',
+  key_fingerprint: '0c4e2a9f61b7d358',
+});
+const grouped = () =>
+  stub([G_CLAUDE, G_CODEX, G_STRELKA], [deviceRow([G_CLAUDE, G_CODEX]), strelkaRow([G_STRELKA])]);
+
+const claudeGroup = (page: Page) => page.locator('.dv3-tool-group[data-tool-group="claude-code"]');
+
+/** Both lines' statuses are in: Ready from Belka's own verification, Needs setup on Strelka. */
+async function groupedReady(page: Page): Promise<void> {
+  await claudeGroup(page).waitFor({ timeout: 20_000 });
+  for (const [id, key] of [
+    ['a1', 'ready'],
+    ['a6', 'needs-setup'],
+  ] as const) {
+    await until(
+      async () =>
+        (await page.locator(`.dv3-tool[data-agent="${id}"]`).getAttribute('data-status')) === key,
+      15_000,
+    );
+  }
+}
+
+/** A chip's description, through its `aria-describedby`. */
+async function describedBy(page: Page, anchor: Locator): Promise<string> {
+  const id = await anchor.getAttribute('aria-describedby');
+  assert.ok(id !== null, 'the chip has no aria-describedby');
+  return ((await page.locator(`[id="${id}"]`).textContent()) ?? '').trim();
+}
+
+void describe('Tools by tool (LAI-321): one row a tool, a line a device under it', () => {
+  void test('two Claude Code agents on two devices: one group, a line each, device by device', async () => {
+    const h = await open('/developer?tab=tools', grouped());
+    try {
+      await groupedReady(h.page);
+      // The list's own rows: Claude Code's group, then Codex, one device, one row.
+      assert.deepEqual(
+        await h.page
+          .locator('.dv3-roster .dx-records > li')
+          .evaluateAll((rows) =>
+            rows.map(
+              (row) => row.getAttribute('data-tool-group') ?? row.getAttribute('data-agent'),
+            ),
+          ),
+        ['claude-code', 'a2'],
+      );
+      const group = claudeGroup(h.page);
+      assert.equal(await group.locator('.dv3-tool-group-title').innerText(), 'Claude Code');
+      assert.equal(await group.locator('[data-group-line]').innerText(), '2 devices');
+      assert.equal(await group.getAttribute('data-devices'), '2');
+      const lines = group.locator('.dv3-tool-lines > .dv3-tool-line');
+      assert.deepEqual(
+        await lines.evaluateAll((els) => els.map((el) => el.getAttribute('data-agent'))),
+        ['a1', 'a6'],
+      );
+      assert.deepEqual(
+        await lines
+          .locator('.dx-record-title')
+          .evaluateAll((els) => els.map((el) => el.textContent)),
+        ['Belka', 'Strelka'],
+      );
+      // Each line is named for the whole label, so a screen reader hears what it opens.
+      assert.deepEqual(
+        await lines
+          .locator('[data-details]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label'))),
+        ['Details for Claude Code · Belka', 'Details for Claude Code · Strelka'],
+      );
+      // The list of lines is labelled by its tool.
+      assert.equal(
+        await group
+          .locator('.dv3-tool-lines')
+          .evaluate(
+            (ul) => document.getElementById(ul.getAttribute('aria-labelledby') ?? '')?.textContent,
+          ),
+        'Claude Code',
+      );
+      // A tool on one device is one row, named as before, with no header.
+      const codex = h.page.locator('.dv3-tool[data-agent="a2"]');
+      assert.equal(await codex.locator('.dx-record-title').innerText(), 'Codex · Belka');
+      assert.equal(await codex.evaluate((el) => el.classList.contains('dv3-tool-line')), false);
+      assert.equal(await h.page.locator('[data-tool-group="codex"]').count(), 0);
+      // Each line keeps its own chips and next step.
+      const belka = h.page.locator('.dv3-tool[data-agent="a1"]');
+      assert.equal(await belka.locator('[data-readiness] .dx-chip').innerText(), 'Ready');
+      assert.equal(await belka.locator('[data-auto-pickup]').count(), 1);
+      assert.equal(
+        await belka
+          .getByRole('link', { name: 'Set up a project for Claude Code · Belka' })
+          .getAttribute('href'),
+        '/developer?tab=projects&tool=a1',
+      );
+      const strelka = h.page.locator('.dv3-tool[data-agent="a6"]');
+      assert.equal(await strelka.locator('[data-readiness] .dx-chip').innerText(), 'Needs setup');
+      assert.equal(
+        await strelka
+          .getByRole('button', { name: 'Finish setting up Claude Code · Strelka' })
+          .count(),
+        1,
+      );
+      // The add-tool entry point is still the tab's.
+      assert.equal(await h.page.getByRole('button', { name: '+ Add tool' }).count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the header carries the worst of its lines: Needs setup on Strelka beside Ready on Belka', async () => {
+    const h = await open('/developer?tab=tools', grouped());
+    try {
+      await groupedReady(h.page);
+      const group = claudeGroup(h.page);
+      assert.equal(await group.getAttribute('data-status'), 'needs-setup');
+      const head = group.locator('.dv3-tool-group-head [data-group-status]');
+      assert.equal(await head.getAttribute('data-group-status'), 'needs-setup');
+      assert.equal(await head.locator('.dx-chip').innerText(), 'Needs setup');
+      assert.equal(await head.locator('.dx-chip').getAttribute('data-tone'), 'warn');
+      assert.match(
+        await describedBy(h.page, head.locator('.dv3-hint-anchor')),
+        /^Needs setup: Claude Code on Strelka\. The worst of its lines/,
+      );
+      // One status chip in the header, and it is not either line's.
+      assert.equal(await group.locator('.dv3-tool-group-head .dx-chip').count(), 1);
+      assert.equal(await group.locator('.dv3-tool-group-head [data-readiness]').count(), 0);
+    } finally {
+      await h.close();
+    }
+
+    // Once Strelka's Claude Code is in use, the worst is what is left.
+    const seen = { ...G_STRELKA, last_seen_at: NOW - 60_000 };
+    const r = await open(
+      '/developer?tab=tools',
+      stub([G_CLAUDE, G_CODEX, seen], [deviceRow([G_CLAUDE, G_CODEX]), strelkaRow([seen])]),
+    );
+    try {
+      await claudeGroup(r.page).waitFor({ timeout: 20_000 });
+      await until(
+        async () =>
+          (await r.page.locator('.dv3-tool[data-agent="a6"]').getAttribute('data-status')) ===
+          'connected',
+        15_000,
+      );
+      assert.equal(
+        await claudeGroup(r.page).locator('[data-group-status]').getAttribute('data-group-status'),
+        'connected',
+      );
+    } finally {
+      await r.close();
+    }
+  });
+
+  void test('a device line opens its own agent’s details; the header opens nothing', async () => {
+    const h = await open('/developer?tab=tools', grouped());
+    try {
+      await groupedReady(h.page);
+      // The header is a summary: no button opens it, and a click on it does nothing.
+      const head = claudeGroup(h.page).locator('.dv3-tool-group-head');
+      assert.equal(await head.locator('[data-details]').count(), 0);
+      await head.locator('.dv3-tool-group-title').click();
+      await h.page.waitForTimeout(300);
+      assert.equal(await panel(h.page).count(), 0);
+      assert.equal(here(h.page), '/developer?tab=tools');
+
+      await clickLine(h.page, '.dv3-tool[data-agent="a6"]');
+      await h.page
+        .getByRole('dialog', { name: 'Claude Code · Strelka' })
+        .waitFor({ timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=tools&agent=a6');
+      await panel(h.page).locator('.dv3-tool-details[data-agent="a6"]').waitFor();
+      await h.page.keyboard.press('Escape');
+      await closedTo(h.page, 'a6');
+
+      // The other line is its own agent.
+      await clickLine(h.page, '.dv3-tool[data-agent="a1"]');
+      await h.page
+        .getByRole('dialog', { name: 'Claude Code · Belka' })
+        .waitFor({ timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=tools&agent=a1');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('no name its owner typed is shown — on the list, in a description or in a line’s details (D-120)', async () => {
+    const h = await open('/developer?tab=tools', grouped());
+    try {
+      await groupedReady(h.page);
+      const roster = h.page.locator('.dv3-roster');
+      // textContent: the tooltips' descriptions too, not only what is on screen.
+      assert.doesNotMatch((await roster.textContent()) ?? '', new RegExp(TYPED));
+      const named = await roster
+        .locator('[aria-label], [title]')
+        .evaluateAll((els) =>
+          els.map(
+            (el) => `${el.getAttribute('aria-label') ?? ''} ${el.getAttribute('title') ?? ''}`,
+          ),
+        );
+      assert.ok(named.length > 0);
+      assert.equal(named.filter((n) => n.includes(TYPED)).length, 0, named.join(' | '));
+      // The products and devices are what it says instead.
+      assert.match((await roster.textContent()) ?? '', /Claude Code[\s\S]*Belka[\s\S]*Strelka/);
+
+      await clickLine(h.page, '.dv3-tool[data-agent="a6"]');
+      const details = panel(h.page).locator('.dv3-tool-details[data-agent="a6"]');
+      await details.waitFor({ timeout: 10_000 });
+      assert.doesNotMatch((await panel(h.page).textContent()) ?? '', new RegExp(TYPED));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('390 px, both themes: the lines under their tool, with no sideways scroll', async () => {
+    const rails: string[] = [];
+    for (const theme of ['light', 'dark'] as const) {
+      const h = await open('/developer?tab=tools', grouped(), {
+        before: async (page) => {
+          await page.setViewportSize({ width: 390, height: 844 });
+        },
+      });
+      try {
+        await setTheme(h.page, theme);
+        await groupedReady(h.page);
+        const wide = await h.page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        assert.ok(wide <= 0, `${theme}: the page scrolls sideways by ${String(wide)}px`);
+        const head = await claudeGroup(h.page).locator('.dv3-tool-group-title').boundingBox();
+        for (const id of ['a1', 'a6']) {
+          const line = await h.page.locator(`.dv3-tool[data-agent="${id}"]`).boundingBox();
+          assert.ok(line !== null && head !== null);
+          assert.ok(line.x + line.width <= 390, `${theme}: ${id} runs off screen`);
+          // Under its tool, set in from the header's edge.
+          assert.ok(line.y > head.y, `${theme}: ${id} is not under its header`);
+        }
+        rails.push(
+          await claudeGroup(h.page)
+            .locator('.dv3-tool-lines')
+            .evaluate((el) => getComputedStyle(el).borderLeftColor),
+        );
+      } finally {
+        await h.close();
+      }
+    }
+    // The rule the lines hang from is the theme's own colour.
+    assert.notEqual(rails[0], rails[1], 'light and dark drew the same rule');
+  });
+});
+
 const EVIDENCE = process.env.LAIKA_EVIDENCE_DIR;
 
 void describe(
@@ -875,6 +1143,13 @@ void describe(
             await page.locator('.dv3-tool[data-status="ready"]').waitFor({ timeout: 20_000 });
             await page.locator('[data-update-chip]').waitFor({ timeout: 20_000 });
           },
+        },
+        {
+          // LAI-321: Claude Code on two devices, one row with a line a device.
+          name: 'tools-grouped',
+          path: '/developer?tab=tools',
+          api: grouped(),
+          ready: groupedReady,
         },
         {
           name: 'tools-fresh',
