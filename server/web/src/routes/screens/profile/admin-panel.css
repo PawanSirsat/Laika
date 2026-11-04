@@ -243,3 +243,115 @@
     flex-basis: 100%;
   }
 }
+
+/* ------------------------------------------------------------------ their tokens (LAI-321) */
+
+/* A long list spans the panel rather than sprawling down one 17rem column. */
+.prof-admin-block[data-admin='tokens'] {
+  grid-column: 1 / -1;
+}
+
+.prof-admin-token-summary {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.prof-admin-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.prof-admin-kind-head {
+  font-size: var(--text-small);
+}
+
+/*
+ * One token: its name and facts on the left, Revoke pinned right on the same
+ * line at every width; the question and the impact take the full line below.
+ */
+.prof-admin-token {
+  flex-wrap: wrap;
+}
+
+.prof-admin-token .prof-admin-item-main {
+  flex: 1 1 0;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-3);
+}
+
+.prof-admin-token > .prof-admin-btn {
+  flex: none;
+}
+
+.prof-admin-token > [data-impact],
+.prof-admin-token > .prof-admin-confirm {
+  flex-basis: 100%;
+}
+
+.prof-admin-use[data-use='never'],
+.prof-admin-use[data-use='idle'] {
+  margin-left: var(--space-2);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+}
+
+.prof-admin-group {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.prof-admin-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.prof-admin-group-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+
+.prof-admin-group-toggle .prof-admin-item-main {
+  flex: 1 1 auto;
+}
+
+.prof-admin-count {
+  font-size: var(--text-small);
+  font-weight: var(--weight-normal);
+  color: var(--text-secondary);
+}
+
+.prof-admin-group-chevron {
+  flex: none;
+  align-self: flex-start;
+  width: 1rem;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.prof-admin-sublist {
+  margin: 0.25rem 0 0 0.4375rem;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-default);
+}
+
+/* Lined up with the rows' text, not indented by the button's own padding. */
+.prof-admin-more {
+  align-self: flex-start;
+  padding-inline: 0;
+}

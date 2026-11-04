@@ -40,6 +40,15 @@ import {
 } from '../../../api/users.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
+import {
+  TOKENS_SHOWN,
+  groupTokens,
+  shownRows,
+  tokenSummary,
+  tokenUse,
+  unusedCount,
+  type TokenGroup,
+} from './token-groups.ts';
 import './admin-panel.css';
 
 /** The person the panel manages, as the profile carries them. */
@@ -151,8 +160,9 @@ export function AdminPanel({ user, me, gates, onChanged }: AdminPanelProps) {
         {(controls.role || controls.deactivate || controls.signOut || controls.resetLink) && (
           <AccessBlock user={user} controls={controls} onChanged={onChanged} />
         )}
-        {controls.tokens && <TokensBlock user={user} mayRevoke={controls.revokeTokens} />}
         {controls.spaces && <SpacesBlock user={user} gates={gates} />}
+        {/* Last: a long list spans the panel instead of one narrow column (LAI-321). */}
+        {controls.tokens && <TokensBlock user={user} mayRevoke={controls.revokeTokens} />}
       </div>
     </section>
   );
@@ -552,9 +562,140 @@ function TokensBlock({
     };
   }, [user.id, attempt]);
 
+  // LAI-321: a long list folds — same-named tokens into one row, the first
+  // few rows per kind, the rest one click away. Revoking is per token still.
+  const [showAll, setShowAll] = useState<Readonly<Record<string, boolean>>>({});
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+
   const now = Date.now();
   const live =
     load.kind === 'ready' ? load.tokens.filter((t) => tokenState(t, now) === 'active') : [];
+  const complete = load.kind === 'ready' && !load.truncated;
+
+  /** One token, with its revoke, its question and — for a tool — what revoking stops. */
+  const tokenRow = (token: TokenView, inGroup = false) => {
+    // Once per row (review N5): the name, the question and the button.
+    const label = tokenAgentLabel(token);
+    const use = tokenUse(token.last_used_at, now);
+    return (
+      <li key={token.id} className="prof-admin-item prof-admin-token" data-token={token.id}>
+        <span className="prof-admin-item-main">
+          {/* In a group the name is its heading; each token is told apart by its prefix. */}
+          {inGroup ? (
+            <code className="prof-admin-item-name">{token.prefix}…</code>
+          ) : (
+            <span className="prof-admin-item-name">{label ?? token.name}</span>
+          )}
+          <span className="prof-admin-item-meta">
+            {!inGroup && (
+              <>
+                <code>{token.prefix}…</code> ·{' '}
+              </>
+            )}
+            {token.scope === 'read_only' ? 'Read only' : 'Full'}
+            {use !== 'never' && ` · ${lastUsedLabel(token.last_used_at, now)}`}
+            {use !== 'recent' && (
+              <span className="prof-admin-chip prof-admin-use" data-use={use}>
+                {use === 'never' ? 'Never used' : 'Idle'}
+              </span>
+            )}
+          </span>
+        </span>
+        {asking === token.id && token.kind === 'agent' && (
+          <p className="prof-admin-muted" data-impact>
+            {agentRevokeImpact(token, user.name, live, now, complete)}
+          </p>
+        )}
+        {mayRevoke &&
+          (asking === token.id ? (
+            <Confirm
+              question={label === null ? `Revoke ${token.name}?` : `Revoke ${label}’s credential?`}
+              yes="Revoke"
+              danger
+              busy={busy}
+              onYes={() => {
+                setBusy(true);
+                setError(undefined);
+                revokeUserToken(user.id, token.id)
+                  .then(() => {
+                    setAttempt((n) => n + 1);
+                  })
+                  .catch((cause: unknown) => {
+                    setError(said(cause));
+                  })
+                  .finally(() => {
+                    setBusy(false);
+                    setAsking(undefined);
+                  });
+              }}
+              onNo={() => {
+                setAsking(undefined);
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="prof-admin-btn prof-admin-btn-quiet"
+              data-action="revoke-token"
+              aria-label={`Revoke ${label ?? token.name}`}
+              disabled={busy}
+              onClick={() => {
+                setAsking(token.id);
+              }}
+            >
+              Revoke
+            </button>
+          ))}
+      </li>
+    );
+  };
+
+  /** Same-named tokens as one row that opens to each of them. */
+  const groupRow = (kind: string, group: TokenGroup) => {
+    const key = `${kind}:${group.label}`;
+    const isOpen = open.has(key);
+    const unused = unusedCount(group, now);
+    const listId = `prof-token-group-${kind}-${group.tokens[0]?.id ?? ''}`;
+    return (
+      <li key={key} className="prof-admin-item prof-admin-group" data-token-group={group.label}>
+        <button
+          type="button"
+          className="prof-admin-group-toggle"
+          aria-expanded={isOpen}
+          aria-controls={listId}
+          onClick={() => {
+            setOpen((was) => {
+              const next = new Set(was);
+              if (next.has(key)) next.delete(key);
+              else next.add(key);
+              return next;
+            });
+          }}
+        >
+          <span className="prof-admin-group-chevron" aria-hidden="true">
+            {isOpen ? '▾' : '▸'}
+          </span>
+          <span className="prof-admin-item-main">
+            <span className="prof-admin-item-name">
+              {group.label}
+              <span className="prof-admin-count">× {group.tokens.length}</span>
+            </span>
+            <span className="prof-admin-item-meta">
+              {group.lastUsedAt === null
+                ? 'None used yet'
+                : `Latest ${lastUsedLabel(group.lastUsedAt, now).toLowerCase()}`}
+              {unused > 0 && group.lastUsedAt !== null && ` · ${String(unused)} unused or idle`}
+            </span>
+          </span>
+        </button>
+        {isOpen && (
+          <ul className="prof-admin-list prof-admin-sublist" id={listId}>
+            {group.tokens.map((token) => tokenRow(token, true))}
+          </ul>
+        )}
+      </li>
+    );
+  };
 
   return (
     <Block name="tokens" title="Their tokens">
@@ -564,94 +705,53 @@ function TokensBlock({
         </p>
       )}
       {load.kind === 'error' && <Problem text={load.error} />}
-      {load.kind === 'ready' &&
-        (live.length === 0 ? (
-          <p className="prof-admin-muted">No working tokens.</p>
-        ) : (
-          // Grouped by kind, as Organisation → Security is (LAI-1046).
-          (
+      {load.kind === 'ready' && live.length === 0 && (
+        <p className="prof-admin-muted">No working tokens.</p>
+      )}
+      {load.kind === 'ready' && live.length > 0 && (
+        <>
+          <p className="prof-admin-token-summary" data-token-summary>
+            {tokenSummary(live)}
+          </p>
+          {/* Grouped by kind, as Organisation → Security is (LAI-1046). */}
+          {(
             [
               ['personal', 'Personal tokens'],
               ['agent', 'Tool credentials (Tool · Device)'],
             ] as const
           ).map(([kind, heading]) => {
-            const group = tokensByKind(live)[kind];
-            if (group.length === 0) return null;
+            const tokens = tokensByKind(live)[kind];
+            if (tokens.length === 0) return null;
+            const groups = groupTokens(tokens);
+            const { shown, hidden } = shownRows(groups, showAll[kind] === true);
             return (
-              <div key={kind} data-kind={kind}>
-                <p className="prof-admin-muted">{heading}</p>
+              <div key={kind} className="prof-admin-kind" data-kind={kind}>
+                <p className="prof-admin-muted prof-admin-kind-head">
+                  {heading} · {tokens.length}
+                </p>
                 <ul className="prof-admin-list">
-                  {group.map((token) => {
-                    // Once per row (review N5): the name, the question and the button.
-                    const label = tokenAgentLabel(token);
-                    return (
-                      <li key={token.id} className="prof-admin-item" data-token={token.id}>
-                        <span className="prof-admin-item-main">
-                          <span className="prof-admin-item-name">{label ?? token.name}</span>
-                          <span className="prof-admin-item-meta">
-                            {token.kind === 'agent' && 'Tool credential · '}
-                            <code>{token.prefix}…</code> ·{' '}
-                            {token.scope === 'read_only' ? 'Read only' : 'Full'} ·{' '}
-                            {lastUsedLabel(token.last_used_at, now)}
-                          </span>
-                        </span>
-                        {asking === token.id && token.kind === 'agent' && (
-                          <p className="prof-admin-muted" data-impact>
-                            {agentRevokeImpact(token, user.name, live, now, !load.truncated)}
-                          </p>
-                        )}
-                        {mayRevoke &&
-                          (asking === token.id ? (
-                            <Confirm
-                              question={
-                                label === null
-                                  ? `Revoke ${token.name}?`
-                                  : `Revoke ${label}’s credential?`
-                              }
-                              yes="Revoke"
-                              danger
-                              busy={busy}
-                              onYes={() => {
-                                setBusy(true);
-                                setError(undefined);
-                                revokeUserToken(user.id, token.id)
-                                  .then(() => {
-                                    setAttempt((n) => n + 1);
-                                  })
-                                  .catch((cause: unknown) => {
-                                    setError(said(cause));
-                                  })
-                                  .finally(() => {
-                                    setBusy(false);
-                                    setAsking(undefined);
-                                  });
-                              }}
-                              onNo={() => {
-                                setAsking(undefined);
-                              }}
-                            />
-                          ) : (
-                            <button
-                              type="button"
-                              className="prof-admin-btn prof-admin-btn-quiet"
-                              data-action="revoke-token"
-                              aria-label={`Revoke ${label ?? token.name}`}
-                              disabled={busy}
-                              onClick={() => {
-                                setAsking(token.id);
-                              }}
-                            >
-                              Revoke
-                            </button>
-                          ))}
-                      </li>
-                    );
-                  })}
+                  {shown.map((group) =>
+                    group.tokens.length === 1 ? tokenRow(group.tokens[0]!) : groupRow(kind, group),
+                  )}
                 </ul>
+                {(hidden > 0 || showAll[kind] === true) && groups.length > TOKENS_SHOWN && (
+                  <button
+                    type="button"
+                    className="prof-admin-btn prof-admin-btn-quiet prof-admin-more"
+                    data-action="show-all-tokens"
+                    aria-expanded={showAll[kind] === true}
+                    onClick={() => {
+                      setShowAll((was) => ({ ...was, [kind]: was[kind] !== true }));
+                    }}
+                  >
+                    {showAll[kind] === true ? 'Show fewer' : `Show all ${String(groups.length)}`}
+                  </button>
+                )}
               </div>
             );
-          })
-        ))}
+          })}
+        </>
+      )}
       {load.kind === 'ready' && load.truncated && (
         <p className="prof-admin-muted">Only the first pages are shown.</p>
       )}
