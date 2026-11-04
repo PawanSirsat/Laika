@@ -255,6 +255,19 @@ export function useVerification(agentId: string): AgentVerification | undefined 
   return answer === 'failed' ? undefined : answer;
 }
 
+/**
+ * {@link useVerification} for any tool at once — the Tools tab's group header
+ * reads every line's to say the worst (LAI-321). The same answers, the same
+ * `undefined`s.
+ */
+export function useVerificationOf(): (agentId: string) => AgentVerification | undefined {
+  const updates = useUpdates();
+  return (agentId) => {
+    const answer = updates?.verification(agentId);
+    return answer === 'failed' ? undefined : answer;
+  };
+}
+
 /** A tool's helper update status, outside a provider `undefined`. */
 export function useUpdateStatus(agentId: string): UpdateStatus | undefined {
   return useUpdates()?.status(agentId);

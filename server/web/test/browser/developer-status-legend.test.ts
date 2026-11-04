@@ -371,6 +371,20 @@ void describe('390 px, both themes', () => {
             () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
           );
         const chip = tool(h.page, 'a2').locator('[data-readiness]');
+        // On screen first: Claude Code's two devices are one group above it
+        // (LAI-321), and the scroll a focus makes would hide the tooltip again.
+        await anchorIn(chip).scrollIntoViewIfNeeded();
+        // A scroll event fires on the frame after the scroll: let it pass first.
+        await h.page.evaluate(
+          () =>
+            new Promise<void>((done) => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  done();
+                });
+              });
+            }),
+        );
         await anchorIn(chip).focus();
         const tip = chip.locator('[role="tooltip"]');
         await until(() => tip.isVisible());
