@@ -6,7 +6,8 @@ assignee: shell
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-11-04T10:27:14Z
 started: 2026-11-04T10:02:01Z
 ---
 
@@ -21,28 +22,28 @@ ones are, so the CSP (`font-src 'self'`) and SPEC §13.4 hold.
 
 ## Acceptance criteria
 
-- [ ] The five packages below are dependencies of `@laika/web` and in
+- [x] The five packages below are dependencies of `@laika/web` and in
       `pnpm-lock.yaml`; `index.css` imports only their latin subset and only
       the weights the UI uses. `assetsInlineLimit` stays `0`.
-- [ ] The choice is a `data-font` attribute on `:root` re-pointing `--font-ui`
+- [x] The choice is a `data-font` attribute on `:root` re-pointing `--font-ui`
       in `styles/theme.css`, with a fallback stack per face; `--font-mono` is
       unchanged. The default carries no attribute, as the dark theme carries
       none.
-- [ ] `theme/font.ts` reads and writes `laika.font` in `localStorage` inside
+- [x] `theme/font.ts` reads and writes `laika.font` in `localStorage` inside
       `try/catch`; garbage or unavailable storage falls back to the default.
       `initFont()` runs before render in `main.tsx` beside `initTheme()`.
       `use-font.ts` is one shared store (`useSyncExternalStore`), live across
       tabs.
-- [ ] Single-weight faces (Carter One, Short Stack, Average Sans) never get a
+- [x] Single-weight faces (Carter One, Short Stack, Average Sans) never get a
       synthesised bold: `font-synthesis` is off for them.
-- [ ] The person menu has *Appearance…*, opening a `SidePanel` with Theme
+- [x] The person menu has *Appearance…*, opening a `SidePanel` with Theme
       (the existing store) and Interface font: a `radiogroup` (not a native
       `<select>`), each option set in its own face, arrow keys move and
       select, focus visible, both themes. The two display faces carry an
       honest hint.
-- [ ] Unit tests for the font store: parse, persist, fallback on garbage and
+- [x] Unit tests for the font store: parse, persist, fallback on garbage and
       on throwing storage.
-- [ ] Browser tests: open Appearance, pick each font and see `body`'s computed
+- [x] Browser tests: open Appearance, pick each font and see `body`'s computed
       `font-family` change; the choice survives a reload; keyboard selection
       works; the stored choice applies on the sign-in screen; an unselected
       face's files are not requested on first load.
@@ -61,3 +62,15 @@ SIL Open Font License 1.1:
 
 Per-device preference only: no server or API change (that would be CORE's).
 The PR targets `integration-ui-transformation`, not `master`.
+
+## Review notes (builder)
+
+- The gate criterion is left unticked in this file on purpose: the task moves
+  to review *before* the final gate run, so that the run covers this state of
+  `.tasks/`. Its three exit codes are in the PR body and on the card
+  (LAIKA-987), measured on this branch's head.
+- Deviation, recorded: the PR targets `integration-ui-transformation`, not
+  `master`, as the dispatch asked.
+- Commissioner's latin face is a hand-written `@font-face` in `index.css`
+  pointing at the package's own woff2, because the variable package ships no
+  latin-only stylesheet.
