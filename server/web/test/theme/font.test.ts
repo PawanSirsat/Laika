@@ -89,7 +89,7 @@ void describe('the font storage contract', () => {
   void test('isFontId accepts exactly the listed ids', () => {
     for (const font of FONTS) assert.ok(isFontId(font.id), font.id);
     for (const junk of [undefined, null, 3, {}, 'Poppins', 'inter']) {
-      assert.equal(isFontId(junk), false, String(junk));
+      assert.equal(isFontId(junk), false, JSON.stringify(junk));
     }
   });
 });

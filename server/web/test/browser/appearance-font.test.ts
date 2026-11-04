@@ -361,8 +361,8 @@ void describe('the keyboard', () => {
       assert.equal(await focused(), 'plus-jakarta-sans');
 
       // The focus ring is visible on the option the keyboard is on.
-      const outline = await h.page.evaluate(
-        () => getComputedStyle(document.activeElement as Element).outlineStyle,
+      const outline = await h.page.evaluate(() =>
+        document.activeElement ? getComputedStyle(document.activeElement).outlineStyle : 'none',
       );
       assert.equal(outline, 'solid');
 
