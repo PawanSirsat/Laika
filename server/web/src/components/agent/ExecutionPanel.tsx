@@ -165,11 +165,9 @@ export function ExecutionPanel({
       : afterLabel(sessionLine, session);
   // The latest claim *is* the live session's: its chip and its line would say
   // what the Working session row just said, so they are not said twice.
-  const claimIsLive =
-    claim !== undefined &&
-    claim.sessionId !== null &&
-    liveSessionId !== undefined &&
-    claim.sessionId === liveSessionId;
+  // `liveSessionId` is a string when present, so a claim with no session
+  // (null) never matches it.
+  const claimIsLive = liveSessionId !== undefined && claim?.sessionId === liveSessionId;
   return (
     <section className="exec-panel" aria-label="Agent execution" data-exec-panel>
       <h4 className="exec-title">Agent</h4>
