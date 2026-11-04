@@ -722,6 +722,124 @@ void describe('the details panel: phone and themes', () => {
   });
 });
 
+/** A click where a row's line is: what a person aims at when they click the row, not its name. */
+async function clickLine(page: Page, row: string): Promise<void> {
+  const box = await page.locator(`${row} [data-line]`).boundingBox();
+  assert.ok(box !== null);
+  await page.mouse.click(box.x + Math.min(24, box.width / 2), box.y + box.height / 2);
+}
+
+void describe('a row opens its details (LAI-1097, the owner’s design: one chip, one action)', () => {
+  void test('Tools: anywhere on the row opens it, focus comes back to the row, and there is no Details button', async () => {
+    const h = await open('/developer?tab=tools', stub());
+    try {
+      await h.page.locator('.dv3-tool[data-agent="a2"]').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.getByRole('button', { name: 'Details', exact: true }).count(), 0);
+      assert.equal(await h.page.getByText('Details', { exact: true }).count(), 0);
+      await clickLine(h.page, '.dv3-tool[data-agent="a2"]');
+      await panel(h.page).locator('[data-agent="a2"]').waitFor({ timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=tools&agent=a2');
+      await h.page.keyboard.press('Escape');
+      await closedTo(h.page, 'a2');
+      // The chip and the action keep their own clicks: a tooltip, the wizard.
+      const row = h.page.locator('.dv3-tool[data-agent="a2"]');
+      await row.locator('[data-readiness] .dv3-hint-anchor').click();
+      await until(() => row.locator('[data-readiness] [role="tooltip"]').isVisible());
+      assert.equal(await panel(h.page).count(), 0);
+      await row.getByRole('button', { name: 'Finish setting up Codex · Belka' }).click();
+      await until(() => h.page.url().includes('reconnect=a2'));
+      assert.doesNotMatch(h.page.url(), /agent=/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('by keyboard: the row is one button named for it; Enter opens, Escape comes back to it', async () => {
+    const h = await open('/developer?tab=tools', stub());
+    try {
+      await h.page.locator('.dv3-tool[data-agent="a1"]').waitFor({ timeout: 20_000 });
+      const open_ = h.page.getByRole('button', { name: 'Details for Claude Code · Belka' });
+      assert.equal(await open_.count(), 1);
+      assert.equal(await open_.getAttribute('data-details'), 'tools:a1');
+      // Its name is the row's own words, so a screen reader hears what it opens.
+      assert.equal((await open_.innerText()).trim(), 'Claude Code · Belka');
+      await open_.focus();
+      await h.page.keyboard.press('Enter');
+      await panel(h.page).locator('[data-agent="a1"]').waitFor({ timeout: 10_000 });
+      await h.page.keyboard.press('Escape');
+      await closedTo(h.page, 'a1');
+      // The chevron says it opens, and says nothing to a screen reader.
+      const chevron = h.page.locator('.dv3-tool[data-agent="a1"] .dv3-row-chevron');
+      assert.equal(await chevron.getAttribute('aria-hidden'), 'true');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Devices: anywhere on the row opens the device, and focus comes back to it', async () => {
+    const h = await open('/developer?tab=devices', stub());
+    try {
+      await h.page.locator('.dv3-device[data-device="d1"]').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.getByRole('button', { name: 'Details', exact: true }).count(), 0);
+      await clickLine(h.page, '.dv3-device[data-device="d1"]');
+      await h.page.getByRole('dialog', { name: 'Belka' }).waitFor({ timeout: 10_000 });
+      assert.equal(here(h.page), '/developer?tab=devices&device=d1');
+      await h.page.keyboard.press('Escape');
+      await panel(h.page).waitFor({ state: 'detached', timeout: 10_000 });
+      await h.page.waitForFunction(
+        () => document.activeElement?.getAttribute('data-details') === 'devices:d1',
+        undefined,
+        { timeout: 5_000 },
+      );
+      // Add tool → keeps its own click.
+      await h.page.getByRole('button', { name: 'Add a tool to Belka' }).click();
+      await until(() => h.page.url().includes('add=tool'));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Needs setup is the warn tone: never drawn like Connected or Ready', async () => {
+    const h = await open('/developer?tab=tools', stub());
+    try {
+      const chip = (id: string) =>
+        h.page.locator(`.dv3-tool[data-agent="${id}"] [data-readiness] .dx-chip`);
+      await until(
+        async () =>
+          (await h.page.locator('.dv3-tool[data-agent="a1"]').getAttribute('data-status')) ===
+          'ready',
+        15_000,
+      );
+      await until(
+        async () =>
+          (await h.page.locator('.dv3-tool[data-agent="a2"]').getAttribute('data-status')) ===
+          'needs-setup',
+        15_000,
+      );
+      assert.equal(await chip('a2').innerText(), 'Needs setup');
+      assert.equal(await chip('a2').getAttribute('data-tone'), 'warn');
+      assert.equal(await chip('a3').innerText(), 'Connected');
+      assert.equal(await chip('a3').getAttribute('data-tone'), 'accent');
+      assert.equal(await chip('a1').getAttribute('data-tone'), 'ok');
+      // Drawn from the warn tokens, so it looks unlike both.
+      const colour = (id: string) => chip(id).evaluate((el) => getComputedStyle(el).color);
+      const warn = await h.page.evaluate(() => {
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--chip-orange)';
+        document.body.append(probe);
+        const c = getComputedStyle(probe).color;
+        probe.remove();
+        return c;
+      });
+      assert.equal(await colour('a2'), warn);
+      assert.notEqual(await colour('a2'), await colour('a3'));
+      assert.notEqual(await colour('a2'), await colour('a1'));
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 const EVIDENCE = process.env.LAIKA_EVIDENCE_DIR;
 
 void describe(

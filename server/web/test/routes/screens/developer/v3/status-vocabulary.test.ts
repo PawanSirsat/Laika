@@ -37,6 +37,7 @@ import {
   DUPLICATE,
   NOTHING_MISSING,
   READY_NEEDS,
+  ROW_UPDATE_KEYS,
   TOOL_ORDER,
   TOOL_STATUS,
   UPDATE_ORDER,
@@ -45,6 +46,7 @@ import {
   deviceChipKey,
   deviceVersionDescription,
   duplicateDescription,
+  rowShowsUpdate,
   toolChipDescription,
   updateChipDescription,
   type StatusCopy,
@@ -606,5 +608,39 @@ void describe('each chip’s description is its row’s own evidence', () => {
       assert.equal(r.key, key);
       assert.equal(chipTone(r.tone), TOOL_STATUS[r.key].tone, key);
     }
+  });
+});
+
+void describe('the owner’s design: a chip apiece, and one that says something (LAI-1097)', () => {
+  void test('Needs setup is the warn tone — never the same as Connected or Ready', () => {
+    assert.equal(TOOL_STATUS['needs-setup'].tone, 'warn');
+    assert.notEqual(TOOL_STATUS['needs-setup'].tone, TOOL_STATUS.connected.tone);
+    assert.notEqual(TOOL_STATUS['needs-setup'].tone, TOOL_STATUS.ready.tone);
+    // Both places a row's chip comes from draw it so: readiness() once its
+    // checks are in, toolStatus() before.
+    const fromChecks = readiness(
+      verification({ harness: 'claude-code', installed: false }),
+      tool('claude-code'),
+    );
+    assert.equal(fromChecks.key, 'needs-setup');
+    assert.equal(chipTone(fromChecks.tone), 'warn');
+    const fromStamps = toolStatus(agent({ last_seen_at: null }), NOW);
+    assert.equal(fromStamps.key, 'needs-setup');
+    assert.equal(chipTone(fromStamps.tone), 'warn');
+  });
+
+  void test('a row shows its helper chip only when there is something to do', () => {
+    assert.deepEqual(
+      UPDATE_ORDER.filter((key) => rowShowsUpdate(key)),
+      ['available', 'required', 'unchecked'],
+    );
+    assert.deepEqual([...ROW_UPDATE_KEYS].sort(), ['available', 'required', 'unchecked']);
+    assert.equal(rowShowsUpdate('up-to-date'), false);
+    assert.equal(rowShowsUpdate('unknown'), false);
+    assert.equal(rowShowsUpdate('checking'), false);
+    assert.equal(rowShowsUpdate(undefined), false);
+    // What updateStatus() actually returns, end to end: no report is Version
+    // unknown, which is a details matter, never a row's.
+    assert.equal(rowShowsUpdate(updateStatus(manifest, null).key), false);
   });
 });

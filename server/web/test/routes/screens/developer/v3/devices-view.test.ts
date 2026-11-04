@@ -127,6 +127,8 @@ void describe('toolStatus', () => {
     const s = toolStatus(agent({ id: 'a1' }), NOW);
     assert.equal(s.word, 'Needs setup');
     assert.equal(s.reason, 'Credential created, never used');
+    // The warn tone (LAI-1097), as readiness() gives it.
+    assert.equal(s.tone, 'warn');
   });
 
   void test('no live credential is Needs setup, whatever the agent did before', () => {
@@ -136,6 +138,7 @@ void describe('toolStatus', () => {
       tokens: [token({ revoked_at: NOW - 1 })],
     });
     assert.equal(toolStatus(revokedToken, NOW).word, 'Needs setup');
+    assert.equal(toolStatus(revokedToken, NOW).tone, 'warn');
     assert.equal(toolStatus(revokedToken, NOW).reason, 'No live credential on this device');
     const expired = agent({ id: 'a1', tokens: [token({ expires_at: NOW - 1 })] });
     assert.equal(toolStatus(expired, NOW).reason, 'Its credential has expired');

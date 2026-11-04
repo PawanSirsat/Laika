@@ -478,9 +478,14 @@ void describe('the wizards: before the laika command', () => {
     try {
       const wizard = h.page.locator('[data-wizard="device"]');
       await wizard.waitFor({ timeout: 20_000 });
-      // The option's own label, as a person clicks it: its styling covers the input.
-      await wizard.locator('label.dx-option', { hasText: 'has a laika command' }).click();
+      // The choice's own label, as a person clicks it: its styling covers the input
+      // (one compact line since LAI-1097, its sub-text the help line under it).
+      await wizard.locator('[data-installed-choice] label', { hasText: 'Yes' }).click();
       assert.equal(await h.page.getByRole('radio', { name: /^Yes/ }).isChecked(), true);
+      assert.equal(
+        (await wizard.locator('[data-installed-choice] .conn-note').innerText()).trim(),
+        'It has a laika command, or a ~/laika folder already',
+      );
       const step = await toPairCommand(h.page);
       // Review round 1, N3: no `git -C ~/laika fetch && laika update` an old helper cannot run.
       assert.equal(
@@ -627,7 +632,7 @@ void describe('every placement (LAI-1093): no pull of a checkout, and every comm
         const wizard = w.page.locator('[data-wizard="device"]');
         await wizard.waitFor({ timeout: 20_000 });
         if (installed) {
-          await wizard.locator('label.dx-option', { hasText: 'has a laika command' }).click();
+          await wizard.locator('[data-installed-choice] label', { hasText: 'Yes' }).click();
         }
         const step = await toPairCommand(w.page);
         await openGuide(step);
@@ -870,7 +875,7 @@ void describe(
             await setTheme(w.page, theme);
             const wizard = w.page.locator('[data-wizard="device"]');
             await wizard.waitFor({ timeout: 20_000 });
-            await wizard.locator('label.dx-option', { hasText: 'has a laika command' }).click();
+            await wizard.locator('[data-installed-choice] label', { hasText: 'Yes' }).click();
             await wizard.screenshot({ path: join(dir, `add-device-installed-option-${tag}.png`) });
             const step = await toPairCommand(w.page);
             await openGuide(step);

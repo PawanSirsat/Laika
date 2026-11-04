@@ -389,15 +389,12 @@ void describe('V3 Tools: each tool’s helper update status', () => {
     }
   });
 
-  void test('every row says its version; its line, what the helper reported (LAI-1083)', async () => {
+  void test('a row’s helper chip only when there is something to do; its line, what the helper reported (LAI-1083, LAI-1097)', async () => {
     const h = await openTab();
     try {
       await settled(h.page);
       const rows: [string, string, string][] = [
-        ['a1', 'up-to-date', 'Helper up to date'],
-        ['a2', 'up-to-date', 'Helper up to date'],
         ['a3', 'required', 'Update required'],
-        ['a4', 'unknown', 'Version unknown'],
         ['a5', 'unchecked', 'Could not check'],
       ];
       for (const [id, key, word] of rows) {
@@ -405,6 +402,16 @@ void describe('V3 Tools: each tool’s helper update status', () => {
         await chip.waitFor({ timeout: 10_000 });
         assert.equal(await chip.getAttribute('data-update-chip'), key, id);
         assert.equal(await chip.innerText(), word, id);
+      }
+      // Up to date and Version unknown are nothing to do: the row carries the status,
+      // and the chip is its details' (the owner's design, LAI-1097).
+      for (const [id, key] of [
+        ['a1', 'up-to-date'],
+        ['a2', 'up-to-date'],
+        ['a4', 'unknown'],
+      ] as const) {
+        assert.equal(await tool(h.page, id).getAttribute('data-update'), key, id);
+        assert.equal(await tool(h.page, id).locator('[data-update-chip]').count(), 0, id);
       }
       // A reported version is on the line; no report, or no answer, says none.
       for (const id of ['a1', 'a2', 'a3']) {
@@ -438,7 +445,7 @@ void describe('V3 Tools: each tool’s helper update status', () => {
     }
   });
 
-  void test('a device whose tools are all up to date says so once, for all of them (LAI-1083)', async () => {
+  void test('a device whose tools are all up to date says so once, in its details, and not on its row (LAI-1083, LAI-1097)', async () => {
     const h = await open(
       '/developer?tab=devices',
       stub({
@@ -447,10 +454,17 @@ void describe('V3 Tools: each tool’s helper update status', () => {
       }),
     );
     try {
-      const chip = h.page.locator('.dv3-device[data-device="d1"] [data-device-version]');
-      await chip.waitFor({ timeout: 20_000 });
-      assert.equal(await chip.getAttribute('data-device-version'), 'up-to-date');
-      assert.equal(await chip.innerText(), 'Helpers up to date');
+      await h.page.locator('[data-details="devices:d1"]').click();
+      const panel = h.page.locator('.side-panel[data-panel="device"]');
+      await until(
+        async () => (await panel.innerText()).includes('Helpers up to date on every tool'),
+        20_000,
+      );
+      // Read and up to date: nothing to do, so the row shows no helper chip.
+      assert.equal(
+        await h.page.locator('.dv3-device[data-device="d1"] [data-device-version]').count(),
+        0,
+      );
     } finally {
       await h.close();
     }

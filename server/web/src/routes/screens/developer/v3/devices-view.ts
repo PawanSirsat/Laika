@@ -67,7 +67,7 @@ export function toolStatus(agent: RegisteredAgent, now: number): ToolStatus {
     return {
       key: 'needs-setup',
       word: TOOL_STATUS['needs-setup'].word,
-      tone: 'waiting',
+      tone: 'warn',
       reason: agent.tokens.some((t) => t.revoked_at === null)
         ? 'Its credential has expired'
         : 'No live credential on this device',
@@ -78,7 +78,7 @@ export function toolStatus(agent: RegisteredAgent, now: number): ToolStatus {
     return {
       key: 'needs-setup',
       word: TOOL_STATUS['needs-setup'].word,
-      tone: 'waiting',
+      tone: 'warn',
       reason: 'Credential created, never used',
     };
   }

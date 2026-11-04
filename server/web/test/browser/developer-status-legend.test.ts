@@ -269,10 +269,10 @@ void describe('each chip explains its own row', () => {
         await description(update),
         /^Update required for .+: Codex · Belka\. .*this one speaks 1\. What it does now keeps working\. Update the Laika CLI on that device/,
       );
-      assert.match(
-        await description(anchorIn(tool(h.page, 'a3').locator('[data-update-chip]'))),
-        /^Version unknown: Omnigent · Belka\. Its helper has not reported a version to this board/,
-      );
+      // Version unknown is nothing to do: the row shows no helper chip for it (LAI-1097).
+      // Its words are in the tool's details, and in the legend.
+      assert.equal(await tool(h.page, 'a3').getAttribute('data-update'), 'unknown');
+      assert.equal(await tool(h.page, 'a3').locator('[data-update-chip]').count(), 0);
     } finally {
       await h.close();
     }
@@ -342,6 +342,16 @@ void describe('each chip explains its own row', () => {
       assert.equal(
         await description(helpers),
         `Belka: Helper updates: 1 update required, 1 version unknown, 1 up to date. ${UPDATE_STATUS.required.todo}`,
+      );
+      // Strelka's one tool is up to date: nothing to do, so no helper chip on its row
+      // (LAI-1097) — its details still say it.
+      assert.equal(
+        await h.page.locator('.dv3-device[data-device="d2"]').getAttribute('data-status'),
+        'active',
+      );
+      assert.equal(
+        await h.page.locator('.dv3-device[data-device="d2"] [data-device-version]').count(),
+        0,
       );
     } finally {
       await h.close();
