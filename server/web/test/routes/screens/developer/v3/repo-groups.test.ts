@@ -35,7 +35,9 @@ const agent = (id: string, harness: string, device: string): RegisteredAgent => 
   launcher: NEVER_REPORTED,
 });
 
-const check = (over: Partial<ProjectSetup> & { id: string; agent_id: string }): ProjectSetup => ({
+const check = (
+  over: Partial<ProjectSetup> & { id: string; agent_id: string | null },
+): ProjectSetup => ({
   device_label: null,
   project_id: 'p-laika',
   project_slug: 'laika',
