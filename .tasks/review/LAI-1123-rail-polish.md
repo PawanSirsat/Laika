@@ -6,7 +6,8 @@ assignee: strelka
 priority: p1
 depends-on: [LAI-1122]
 discovered-from: LAI-1122
-status: in-progress
+status: review
+finished: 2026-11-04T05:57:06Z
 started: 2026-11-03T23:28:58Z
 ---
 
@@ -20,20 +21,20 @@ agent panel, enhancing what reads poorly.
 
 ## Acceptance criteria
 
-- [ ] Status row: the status pill and *Move to <review>* on one line; the
+- [x] Status row: the status pill and *Move to <review>* on one line; the
       sub-line under them.
-- [ ] Every rail row aligns its label with the first line of its value.
-- [ ] Assignee on one line with *you* and *Profile* as one quiet sub-line.
-- [ ] Labels: the tags as chips with *+ Add*; the picker opens only when asked.
-- [ ] Development hides a commit count of zero.
-- [ ] Estimate: each similar task as key, title and how long it took, its
+- [x] Every rail row aligns its label with the first line of its value.
+- [x] Assignee on one line with *you* and *Profile* as one quiet sub-line.
+- [x] Labels: the tags as chips with *+ Add*; the picker opens only when asked.
+- [x] Development hides a commit count of zero.
+- [x] Estimate: each similar task as key, title and how long it took, its
       send-back reason folded; an empty Tokens row says so in a few words.
-- [ ] Footer: short dates, one line each.
-- [ ] Agent panel: one card — the state and what it means, the agent named
+- [x] Footer: short dates, one line each.
+- [x] Agent panel: one card — the state and what it means, the agent named
       once, then Tool, Model, Last seen, Claimed, Requested agent and Saves
       as label/value rows like the rest of the rail; no line repeats
       another; hand-off and recovery unchanged in behaviour.
-- [ ] Every existing test that reads these strings or hooks still passes,
+- [x] Every existing test that reads these strings or hooks still passes,
       updated by name where wording changed; both themes; no sideways scroll
       at 390px.
 - [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0.
@@ -42,3 +43,9 @@ agent panel, enhancing what reads poorly.
 
 Branch `LAI-1123-rail-polish`, stacked on LAI-1122 (#265). One task, a
 subtask of the LAI-1122 card (owner: one high-level task with subtasks).
+
+## Review notes (builder)
+
+- The gate criterion is left unticked here: on this laptop `pnpm lint` and
+  `pnpm format` exit 0, and `pnpm test` exits 1 only on timing tests that pass
+  alone (see the log). The PR's CI run into `master` is the gate this lands on.
