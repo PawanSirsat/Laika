@@ -1,5 +1,6 @@
 import { useState, type MouseEvent } from 'react';
 import { ApiError } from '../../../api/errors.ts';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import {
   alertHref,
   alertLine,
@@ -15,6 +16,10 @@ import {
  *
  * In-app only: nothing here is emailed or sent anywhere. Soft: an alert
  * refuses nothing, and putting one away changes only this person's view.
+ *
+ * Putting one away says so in the app's toast once the server has taken it
+ * (LAI-1129) — with no Undo, because there is no endpoint that brings a
+ * dismissed alert back, and no confirm either: it takes nothing that matters.
  */
 export function AlertsBanner({
   alerts,
@@ -28,6 +33,7 @@ export function AlertsBanner({
   const [busy, setBusy] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
+  const toast = useToast();
 
   const shown = (alerts ?? []).filter((a) => !gone.has(a.id));
   if (shown.length === 0) return null;
@@ -38,6 +44,7 @@ export function AlertsBanner({
     dismissTokenAlert(id)
       .then(() => {
         setGone((current) => new Set([...current, id]));
+        toast.show({ text: 'Alert put away.', tone: 'success', mark: 'alert-dismissed' });
         onChanged();
       })
       .catch((cause: unknown) => {

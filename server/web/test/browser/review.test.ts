@@ -15,6 +15,7 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
+import { answerConfirm } from './confirm.ts';
 
 const NOW = Date.now();
 const HOUR = 3_600_000;
@@ -163,7 +164,7 @@ function server(
     seen.push(call);
     const row = rows.find((r) => r.task.id === id);
     rows = rows.filter((r) => r.task.id !== id);
-    return { ...(row?.task ?? {}), status: 'done' };
+    return { ...(row?.task ?? {}), status: 'done', status_name: 'Done' };
   };
   const stub: ApiStub = {
     '/api/v1/me': ME,
@@ -307,6 +308,8 @@ void describe('the Review page', () => {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
       await h.page.locator('.rev-line', { hasText: 'LC-2' }).click();
       await h.page.getByRole('button', { name: 'Accept', exact: true }).click();
+      // Accept asks first: the server has no reversal to offer as Undo (LAI-1129).
+      await answerConfirm(h.page, true);
       await h.page
         .locator('.rev-key', { hasText: 'LC-2' })
         .waitFor({ state: 'detached', timeout: 10_000 });
