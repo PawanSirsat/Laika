@@ -4,6 +4,8 @@
  * only from the agent's own recent request — the conflicts section, the
  * revoked toggles' counts, and what a disconnect names. And the one place a
  * row may say *Ready*: `listedStatus`, from the tool's own verification.
+ * And the Tools list by tool (LAI-321): a group a product, a line a device,
+ * the header's worst status — and no name an owner typed in any of it.
  */
 
 import assert from 'node:assert/strict';
@@ -31,22 +33,32 @@ import {
   disconnectImpact,
   everyDeviceRevoked,
   findTool,
+  groupLine,
+  groupStatusDescription,
   kindName,
   kindWord,
+  lineDevice,
   listedStatus,
   listedTools,
   needsConfirm,
   revokedDevice,
   runningSessions,
   sessionLine,
+  singleRow,
   toolAction,
+  toolGroups,
   toolLine,
   toolStatus,
   withAgent,
   withConfirmed,
   withDevice,
   withRevokedAgents,
+  worstStatus,
+  WORST_FIRST,
+  type ListedStatus,
+  type ListedTool,
 } from '../../../../../src/routes/screens/developer/v3/devices-view.ts';
+import { TOOL_ORDER } from '../../../../../src/routes/screens/developer/v3/status-vocabulary.ts';
 import { NEVER_REPORTED } from '../../../../helpers/launcher.ts';
 
 const NOW = 1_800_000_000_000;
@@ -127,6 +139,8 @@ void describe('toolStatus', () => {
     const s = toolStatus(agent({ id: 'a1' }), NOW);
     assert.equal(s.word, 'Needs setup');
     assert.equal(s.reason, 'Credential created, never used');
+    // The warn tone (LAI-1097), as readiness() gives it.
+    assert.equal(s.tone, 'warn');
   });
 
   void test('no live credential is Needs setup, whatever the agent did before', () => {
@@ -136,6 +150,7 @@ void describe('toolStatus', () => {
       tokens: [token({ revoked_at: NOW - 1 })],
     });
     assert.equal(toolStatus(revokedToken, NOW).word, 'Needs setup');
+    assert.equal(toolStatus(revokedToken, NOW).tone, 'warn');
     assert.equal(toolStatus(revokedToken, NOW).reason, 'No live credential on this device');
     const expired = agent({ id: 'a1', tokens: [token({ expires_at: NOW - 1 })] });
     assert.equal(toolStatus(expired, NOW).reason, 'Its credential has expired');
@@ -656,5 +671,218 @@ void describe('the Tools list agrees with Devices', () => {
     const gone = findTool([belka], 'a4');
     assert.ok(gone !== undefined);
     assert.equal(toolAction(gone, { key: 'revoked' }), 'none');
+  });
+});
+
+void describe('the Tools list by tool (LAI-321): one row a tool, a line a device', () => {
+  const at = (key: ListedStatus['key']): ListedStatus => ({
+    key,
+    word: key,
+    tone: 'neutral',
+    reason: '',
+    evidence: false,
+  });
+  /** Each agent's status by id, as the tab works it out from its verification. */
+  const by =
+    (statuses: Readonly<Record<string, ListedStatus['key']>>) =>
+    (row: ListedTool): ListedStatus =>
+      at(statuses[row.agent.id] ?? 'ready');
+
+  // The owner's production list: Claude Code twice, Omnigent twice, Codex once.
+  // Every agent carries a name its owner typed, which no label may show (D-120).
+  const belka = device({
+    id: 'd1',
+    agents: [
+      agent({ id: 'a1', display_name: 'typed: my main claude' }),
+      agent({ id: 'a2', harness: 'codex', display_name: 'typed: codex box' }),
+      agent({ id: 'a3', harness: 'omnigent', display_name: 'typed: omni one' }),
+    ],
+  });
+  const strelka = device({
+    id: 'd2',
+    display_name: 'Strelka',
+    device_label: 'strelka',
+    agents: [
+      agent({ id: 'a4', device_label: 'Strelka', display_name: 'typed: laptop claude' }),
+      agent({
+        id: 'a5',
+        harness: 'omnigent',
+        device_label: 'Strelka',
+        display_name: 'typed: omni two',
+      }),
+    ],
+  });
+
+  void test('two Claude Code agents on two devices are one group with two lines, device by device', () => {
+    const groups = toolGroups(listedTools([belka, strelka], false), by({}));
+    assert.deepEqual(
+      groups.map((g) => [g.product, g.lines.map((l) => l.listed.agent.id), g.devices]),
+      [
+        ['Claude Code', ['a1', 'a4'], 2],
+        ['Codex', ['a2'], 1],
+        ['Omnigent', ['a3', 'a5'], 2],
+      ],
+    );
+    assert.deepEqual(
+      groups.map((g) => g.client),
+      ['claude-code', 'codex', 'omnigent'],
+    );
+    // One device: one row, named as every row was. More: a header and its lines.
+    assert.deepEqual(groups.map(singleRow), [false, true, false]);
+    assert.deepEqual(groups.map(groupLine), ['2 devices', '1 device', '2 devices']);
+    const claude = groups[0];
+    assert.ok(claude !== undefined);
+    assert.deepEqual(
+      claude.lines.map((l) => lineDevice(l.listed)),
+      ['Belka', 'Strelka'],
+    );
+    // A line is its row's label less the product the header names.
+    for (const group of groups) {
+      for (const line of group.lines) {
+        assert.equal(`${group.product} · ${lineDevice(line.listed)}`, line.listed.label);
+      }
+    }
+  });
+
+  void test('no name its owner typed is in a group, a line or a description (D-120)', () => {
+    const groups = toolGroups(listedTools([belka, strelka], false), by({ a4: 'needs-setup' }));
+    const said = groups
+      .flatMap((g) => [
+        g.product,
+        groupLine(g),
+        groupStatusDescription(g),
+        ...g.lines.map((l) => lineDevice(l.listed)),
+      ])
+      .join('\n');
+    assert.doesNotMatch(said, /typed/);
+    assert.match(said, /Claude Code/);
+  });
+
+  void test('worst first: what needs a person, then Idle, then Ready; Revoked only when it is all there is', () => {
+    assert.deepEqual(WORST_FIRST, [
+      'needs-setup',
+      'offline',
+      'connected',
+      'idle',
+      'ready',
+      'revoked',
+    ]);
+    // Every status a chip can carry is ranked, and nothing else.
+    assert.deepEqual([...WORST_FIRST].sort(), [...TOOL_ORDER].sort());
+    const worst = (...keys: ListedStatus['key'][]) => worstStatus(keys.map(at))?.key;
+    assert.equal(worst('ready', 'needs-setup'), 'needs-setup');
+    assert.equal(worst('needs-setup', 'ready'), 'needs-setup');
+    assert.equal(worst('connected', 'offline'), 'offline');
+    assert.equal(worst('idle', 'connected'), 'connected');
+    assert.equal(worst('ready', 'idle'), 'idle');
+    assert.equal(worst('revoked', 'ready'), 'ready');
+    assert.equal(worst('revoked', 'revoked'), 'revoked');
+    assert.equal(worst(), undefined);
+    // Of equals, the first line's — its tone and its reason with it.
+    const first = { ...at('connected'), tone: 'waiting' as const };
+    assert.equal(worstStatus([at('ready'), first, at('connected')]), first);
+  });
+
+  void test('the header carries its lines’ worst status, and says where', () => {
+    const [claude, codex, omnigent] = toolGroups(
+      listedTools([belka, strelka], false),
+      by({ a1: 'ready', a4: 'needs-setup', a2: 'connected', a3: 'idle', a5: 'connected' }),
+    );
+    assert.equal(claude?.status.key, 'needs-setup');
+    assert.equal(codex?.status.key, 'connected');
+    assert.equal(omnigent?.status.key, 'connected');
+    assert.ok(claude !== undefined);
+    assert.equal(
+      groupStatusDescription(claude),
+      'Needs setup: Claude Code on Strelka. The worst of its lines: each device below says its own status and opens its details.',
+    );
+    // Two lines at the worst: both named.
+    const both = toolGroups(
+      listedTools([belka, strelka], false),
+      by({ a1: 'offline', a4: 'offline' }),
+    );
+    assert.ok(both[0] !== undefined);
+    assert.match(groupStatusDescription(both[0]), /^Offline: Claude Code on Belka and Strelka\. /);
+  });
+
+  void test('a legacy pair on one device: one group, a line each, both marked and named apart', () => {
+    const pair = device({
+      id: 'd3',
+      agents: [
+        agent({ id: 'b1', harness: 'codex', display_name: 'old laptop' }),
+        agent({ id: 'b2', harness: 'codex', display_name: 'new laptop' }),
+      ],
+    });
+    const [codex] = toolGroups(listedTools([pair], false), by({}));
+    assert.ok(codex !== undefined);
+    assert.equal(singleRow(codex), false);
+    assert.equal(codex.devices, 1);
+    assert.equal(groupLine(codex), '1 device');
+    assert.deepEqual(
+      codex.lines.map((l) => [l.listed.inConflict, lineDevice(l.listed)]),
+      [
+        [true, 'Belka (old laptop)'],
+        [true, 'Belka (new laptop)'],
+      ],
+    );
+  });
+
+  void test('Show revoked: a revoked line joins its tool, last, and no count includes it', () => {
+    const old = device({
+      id: 'd4',
+      display_name: 'Old',
+      device_label: 'old',
+      agents: [
+        agent({ id: 'r1', device_label: 'Old', status: 'revoked' }),
+        agent({ id: 'r2', harness: 'cursor', device_label: 'Old', status: 'revoked' }),
+      ],
+    });
+    const statusOf = (row: ListedTool): ListedStatus =>
+      at(row.agent.status === 'revoked' ? 'revoked' : 'ready');
+    const hidden = toolGroups(listedTools([belka, old], false), statusOf);
+    assert.deepEqual(
+      hidden.map((g) => g.product),
+      ['Claude Code', 'Codex', 'Omnigent'],
+    );
+    const shown = toolGroups(listedTools([belka, old], true), statusOf);
+    const [claude] = shown;
+    assert.ok(claude !== undefined);
+    assert.deepEqual(
+      claude.lines.map((l) => l.listed.agent.id),
+      ['a1', 'r1'],
+    );
+    assert.equal(claude.devices, 1);
+    assert.equal(claude.revoked, 1);
+    assert.equal(groupLine(claude), '1 device · 1 revoked');
+    // A revoked line never speaks for a group with a live one.
+    assert.equal(claude.status.key, 'ready');
+    const cursor = shown.find((g) => g.client === 'cursor');
+    assert.ok(cursor !== undefined);
+    assert.equal(cursor.status.key, 'revoked');
+    assert.equal(groupLine(cursor), '1 revoked');
+    assert.equal(groupLine({ devices: 0, revoked: 2 }), '2 revoked');
+    // Groups stay where their first line was: every revoked-only tool after the live ones.
+    assert.deepEqual(
+      shown.map((g) => g.product),
+      ['Claude Code', 'Codex', 'Omnigent', 'Cursor'],
+    );
+  });
+
+  void test('a tool Laika does not know is grouped by the label’s product, never by its slug', () => {
+    const odd = device({
+      id: 'd5',
+      agents: [
+        agent({ id: 'o1', harness: 'some-new-tool', display_name: 'typed: new' }),
+        agent({ id: 'o2', harness: 'codex' }),
+      ],
+    });
+    const groups = toolGroups(listedTools([odd], false), by({}));
+    assert.deepEqual(
+      groups.map((g) => [g.client, g.product]),
+      [
+        ['other', 'Other harness'],
+        ['codex', 'Codex'],
+      ],
+    );
   });
 });

@@ -621,6 +621,106 @@ void describe('access', () => {
     }
   });
 
+  void test('their tokens: a long list says how many, folds alike names and shows three (LAI-321)', async () => {
+    // The owner's own shape on 2026-11-04: ten personal (six alike, three
+    // never used) and five tool credentials.
+    const personal = [
+      token('p1', 'claude-code on macOS', { last_used_at: NOW - 60_000 }),
+      token('p2', 'claude-code on macOS', { last_used_at: null }),
+      token('p3', 'claude-code on macOS', { last_used_at: NOW - 20 * DAY }),
+      token('p4', 'claude-code on macOS', { last_used_at: NOW - 12 * 3_600_000 }),
+      token('p5', 'claude-code on macOS', { last_used_at: null }),
+      token('p6', 'claude-code on macOS', { last_used_at: NOW - 19 * DAY }),
+      token('p7', 'omnigent on macOS', { last_used_at: NOW - DAY }),
+      token('p8', 'laika-cli on a laptop', { last_used_at: NOW - 14 * DAY - 3_600_000 }),
+      token('p9', 'claude-token', { last_used_at: NOW - 2 * DAY }),
+      token('p10', 'omnigent on macOS', { last_used_at: null }),
+    ].map((t) => ({ ...t, kind: 'personal', agent_id: null, agent_label: null }));
+    const tools = [
+      'claude-code · A',
+      'omnigent · A',
+      'omnigent · B',
+      'claude-code · B',
+      'codex · B',
+    ].map((label, i) =>
+      token(`t${String(i + 1)}`, `registered ${String(i)}`, {
+        kind: 'agent',
+        agent_id: `a${String(i + 1)}`,
+        agent_label: label,
+        last_used_at: NOW - (i + 1) * 3_600_000,
+      }),
+    );
+    const h = await open(
+      '/people?user=u2',
+      stub(OWNER, {
+        '/api/v1/users/u2/tokens': { data: [...personal, ...tools], next_cursor: null },
+      }),
+    );
+    try {
+      const admin = await panel(h);
+      const block = admin.locator('[data-admin="tokens"]');
+      await block.locator('[data-token-summary]').waitFor();
+      assert.equal(
+        await block.locator('[data-token-summary]').innerText(),
+        '15 working · 10 personal · 5 tool credentials',
+      );
+
+      // Six alike are one row, its latest use first; three rows per kind until asked.
+      const mine = block.locator('[data-kind="personal"]');
+      assert.match(await mine.innerText(), /Personal tokens · 10/);
+      const group = mine.locator('[data-token-group="claude-code on macOS"]');
+      assert.match(await group.innerText(), /claude-code on macOS\s*× 6/);
+      assert.match(await group.innerText(), /Latest used/);
+      assert.equal(await mine.locator(':scope > ul > li').count(), 3);
+      assert.equal(await mine.locator('[data-token="p8"]').count(), 0, 'a fourth row is shown');
+      await mine.locator('[data-action="show-all-tokens"]').click();
+      await mine.locator('[data-token="p8"]').waitFor();
+      // Four rows for ten tokens: claude-code × 6, omnigent × 2, and two alone.
+      assert.equal(await mine.locator(':scope > ul > li').count(), 4);
+      assert.equal(await mine.locator('[data-action="show-all-tokens"]').innerText(), 'Show fewer');
+
+      // Idle and never used say so; a folded token opens to its own revoke.
+      assert.equal(await mine.locator('[data-token="p8"] [data-use="idle"]').innerText(), 'Idle');
+      const toggle = group.locator('.prof-admin-group-toggle');
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      assert.equal(await group.locator('[data-token]').count(), 0);
+      await toggle.click();
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+      assert.deepEqual(
+        await group
+          .locator('[data-token]')
+          .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-token'))),
+        ['p1', 'p4', 'p6', 'p3', 'p2', 'p5'],
+      );
+      assert.equal(
+        await group.locator('[data-token="p2"] [data-use="never"]').innerText(),
+        'Never used',
+      );
+      assert.equal(await group.locator('[data-token="p1"] [data-use]').count(), 0);
+      assert.equal(
+        await group.locator('[data-token="p5"] [data-action="revoke-token"]').count(),
+        1,
+      );
+
+      // Tool credentials: named by tool, three shown of five.
+      const credentials = block.locator('[data-kind="agent"]');
+      assert.match(await credentials.innerText(), /Tool credentials \(Tool · Device\) · 5/);
+      assert.equal(await credentials.locator(':scope > ul > li').count(), 3);
+      assert.doesNotMatch(await credentials.innerText(), /registered \d/);
+
+      // The list spans the panel instead of one narrow column.
+      const grid = await admin.locator('.prof-admin-grid').boundingBox();
+      const box = await block.boundingBox();
+      assert.ok(grid !== null && box !== null);
+      assert.ok(
+        Math.abs(box.width - grid.width) < 2,
+        `${String(box.width)} of ${String(grid.width)}`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('their tokens: grouped by kind; a tool credential says what revoking stops', async () => {
     const h = await open(
       '/people?user=u2',

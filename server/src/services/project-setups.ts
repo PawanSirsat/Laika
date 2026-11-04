@@ -51,6 +51,12 @@ export interface ProjectSetupView {
   project_id: string;
   project_slug: string;
   repo_label: string | null;
+  /**
+   * The repository's key: the CLI's SHA-256 of its normalised remote, `''` on
+   * a browser record. Served to its owner so one repository's records group
+   * across devices and tools (LAI-321) — two repositories can share a label.
+   */
+  repo_key: string;
   instructions_path: string | null;
   block_found: boolean;
   /** The instructions template's revision — never the brief's `context_revision`. */
@@ -328,6 +334,7 @@ function toView(db: Db, row: Row, projectSlug: string, presence: boolean): Proje
     project_id: row.projectId,
     project_slug: projectSlug,
     repo_label: row.repoLabel,
+    repo_key: row.repoKey,
     instructions_path: row.instructionsPath,
     block_found: row.blockFound,
     template_revision: row.templateRevision,

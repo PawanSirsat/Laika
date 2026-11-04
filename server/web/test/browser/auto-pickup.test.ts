@@ -25,7 +25,16 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import type { Launcher } from '../../src/api/capacity.ts';
 import { NEVER_REPORTED, reported } from '../helpers/launcher.ts';
-import { CLAUDE, CODEX, me, OMNIGENT, REVOKED, stub, type Agent } from './developer-v3-fixtures.ts';
+import {
+  CLAUDE,
+  CODEX,
+  me,
+  OMNIGENT,
+  REVOKED,
+  stub,
+  unfold,
+  type Agent,
+} from './developer-v3-fixtures.ts';
 import {
   closeBrowser,
   open,
@@ -140,9 +149,10 @@ async function openTools(routes: ApiStub = {}, options: OpenOptions = {}): Promi
   return h;
 }
 
+/** Tool details for a1, its Launcher section — one folded row since LAI-1100 — open. */
 async function openPanel(routes: ApiStub = {}, options: OpenOptions = {}): Promise<Harness> {
   const h = await open('/developer?tab=tools&agent=a1', board(routes), options);
-  await panel(h.page).locator('[data-launcher]').waitFor({ timeout: 20_000 });
+  await unfold(panel(h.page), 'launcher');
   await pingButton(h.page).waitFor({ timeout: 10_000 });
   return h;
 }
@@ -216,6 +226,8 @@ void describe('the Auto-pickup chip says the board’s word', () => {
       await at.waitFor({ timeout: 20_000 });
       assert.equal(await at.getAttribute('data-auto-pickup'), 'on');
       assert.match((await at.innerText()).trim(), /^Auto-pickup: on · \d+ s$/);
+      // In the device's Device section, one folded row since LAI-1100.
+      await unfold(h.page.locator('.side-panel[data-panel="device"]'), 'device');
       const tile = h.page.locator('.side-panel [data-detail="auto-pickup"]');
       await tile.waitFor({ timeout: 10_000 });
       assert.match(await tile.innerText(), /Auto-pickup: on · \d+ s/);
@@ -249,8 +261,8 @@ void describe('Ping is offered only where the reader may ping', () => {
   void test('a tool with no space it could be selected in: no Ping, and why', async () => {
     const h = await open('/developer?tab=tools&agent=a2', board());
     try {
-      const section = panel(h.page).locator('[data-launcher]');
-      await section.waitFor({ timeout: 20_000 });
+      const section = await unfold(panel(h.page), 'launcher');
+      assert.equal(await section.getAttribute('data-launcher'), '');
       await section.locator('[data-ping-none]').waitFor({ timeout: 10_000 });
       assert.equal(await section.getByRole('button', { name: /^Ping/ }).count(), 0);
       assert.equal(
@@ -275,8 +287,7 @@ void describe('Ping is not offered to a viewer, and the note says so (review rou
       board({ '/api/v1/me': { ...me, org_role: 'viewer' } }),
     );
     try {
-      const section = panel(h.page).locator('[data-launcher]');
-      await section.waitFor({ timeout: 20_000 });
+      const section = await unfold(panel(h.page), 'launcher');
       const none = section.locator('[data-ping-none]');
       await none.waitFor({ timeout: 10_000 });
       assert.equal(await none.getAttribute('data-ping-none'), 'viewer');
@@ -827,6 +838,7 @@ void describe('evidence: Auto-pickup and Ping', { skip: EVIDENCE === undefined }
         }
         const devices = await open('/developer?tab=devices&device=d1', board(), options);
         try {
+          await unfold(devices.page.locator('.side-panel[data-panel="device"]'), 'device');
           await devices.page
             .locator('.side-panel [data-detail="auto-pickup"]')
             .waitFor({ timeout: 20_000 });

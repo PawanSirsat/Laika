@@ -189,6 +189,9 @@ after(async () => {
 const tabs = async (page: Page) =>
   (await page.locator('.page-tab').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
 
+/** V3's *Advanced*, drawn after the four tabs as a quieter link (LAI-1096). */
+const advancedLink = (page: Page) => page.locator('.dx-tabrow > a.dx-tab-secondary');
+
 const active = async (page: Page) =>
   (await page.locator('.page-tab-active').getAttribute('data-tab')) ?? '';
 
@@ -316,13 +319,8 @@ void describe('every old address lands, in each mode (plan §C)', () => {
       const h = await open('/developer', s);
       try {
         await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
-        assert.deepEqual(await tabs(h.page), [
-          'Overview',
-          'Project setup',
-          'Devices',
-          'Tools',
-          'Advanced',
-        ]);
+        assert.deepEqual(await tabs(h.page), ['Overview', 'Project setup', 'Devices', 'Tools']);
+        assert.equal(await advancedLink(h.page).getAttribute('data-tab'), 'advanced');
         assert.equal(await h.page.locator('.conn-wizard-card').count(), 0);
       } finally {
         await h.close();
@@ -336,6 +334,11 @@ void describe('the tab bars (plan §I)', () => {
     const h = await open('/developer', stub('preview'));
     try {
       await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
+      // Classic's header on a classic tab: the page's name is its title.
+      assert.equal(await h.page.locator('.screen-page-title').innerText(), 'Developer access');
+      assert.equal(await h.page.locator('.screen-page-eyebrow').count(), 0);
+      // Preview's bar is not the design's: Advanced is a tab like the rest.
+      assert.equal(await h.page.locator('.dx-tabrow, .dx-tab-secondary').count(), 0);
       assert.deepEqual(await tabs(h.page), [
         'Connect',
         'Agents',
@@ -369,13 +372,34 @@ void describe('the tab bars (plan §I)', () => {
     const h = await open('/developer', stub('v3'));
     try {
       await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
-      assert.deepEqual(await tabs(h.page), [
-        'Overview',
-        'Project setup',
-        'Devices',
-        'Tools',
-        'Advanced',
+      // The design's four tabs (LAI-1096); Advanced is the quieter link after them.
+      assert.deepEqual(await tabs(h.page), ['Overview', 'Project setup', 'Devices', 'Tools']);
+      const link = advancedLink(h.page);
+      assert.equal(await link.getAttribute('href'), '/developer?tab=advanced');
+      assert.equal(await link.getAttribute('aria-current'), null);
+      assert.equal((await link.innerText()).replace(/\s+/g, ' ').trim(), 'Advanced ›');
+      // After the tabs, in the same row, and quieter than a tab.
+      const [strip, after] = await Promise.all([
+        h.page.locator('.dx-tabrow .page-tabs').boundingBox(),
+        link.boundingBox(),
       ]);
+      assert.ok(strip !== null && after !== null);
+      assert.ok(after.x >= strip.x + strip.width - 1, 'Advanced is not after the tabs');
+      assert.ok(Math.abs(after.y - strip.y) < 2, 'Advanced is not in the tab row');
+      const [linkColour, tabColour] = await Promise.all([
+        link.evaluate((el) => getComputedStyle(el).color),
+        h.page
+          .locator('.page-tab[data-tab="projects"]')
+          .evaluate((el) => getComputedStyle(el).color),
+      ]);
+      assert.notEqual(linkColour, tabColour, 'Advanced is drawn as loud as a tab');
+      // The header (LAI-1096): the page's name is the eyebrow, over the design's title.
+      assert.equal(await h.page.locator('.screen-page-eyebrow').innerText(), 'DEVELOPER ACCESS');
+      assert.equal(await h.page.locator('.screen-page-eyebrow').textContent(), 'Developer access');
+      assert.equal(
+        await h.page.getByRole('heading', { level: 1 }).innerText(),
+        'Connect your work to Laika',
+      );
       assert.equal(await h.page.getByRole('complementary', { name: 'Preview' }).count(), 0);
       // The owner's design's sentence (LAI-1078).
       assert.equal(
@@ -405,8 +429,29 @@ void describe('the tab bars (plan §I)', () => {
       assert.equal(await wizard.count(), 1);
       // No Activity tab in v3 (LAI-1078): its card is Advanced's second.
       assert.equal(await h.page.locator('.page-tab[data-tab="activity"]').count(), 0);
-      await h.page.locator('.page-tab[data-tab="advanced"]').click();
+      await advancedLink(h.page).click();
       await h.page.locator('.dev-advanced .dev-adv').waitFor({ timeout: 20_000 });
+      assert.equal(here(h.page), '/developer?tab=advanced');
+      // On its own page the link is marked as a tab is, and no tab is: the
+      // accent and its underline, as the active tab draws them.
+      assert.equal(await advancedLink(h.page).getAttribute('aria-current'), 'page');
+      const marked = await advancedLink(h.page).evaluate((el) => {
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--accent)';
+        document.body.append(probe);
+        const accent = getComputedStyle(probe).color;
+        probe.remove();
+        const got = getComputedStyle(el);
+        return { color: got.color, underline: got.borderBottomColor, accent };
+      });
+      assert.deepEqual(marked, {
+        color: marked.accent,
+        underline: marked.accent,
+        accent: marked.accent,
+      });
+      assert.equal(await h.page.locator('.page-tab-active').count(), 1);
+      assert.equal(await active(h.page), 'advanced');
+      assert.equal(await h.page.locator('.page-tab[aria-current]').count(), 0);
       await h.page.locator('.dev-advanced-page .dev-sharing').waitFor({ timeout: 20_000 });
       // *New personal credential* sits in Advanced itself, not in the page
       // header (LAI-1058; developer-advanced.test.ts has the rest).
@@ -496,6 +541,7 @@ const setupRecord = (over: Record<string, unknown> & { id: string }) => ({
   project_id: 'p1',
   project_slug: 'onroute',
   repo_label: null,
+  repo_key: '',
   instructions_path: 'CLAUDE.md',
   block_found: true,
   template_revision: 2,
@@ -510,6 +556,7 @@ const localCheck = (over: Record<string, unknown> & { id: string }) =>
   setupRecord({
     source: 'local_check',
     repo_label: 'onroute-app',
+    repo_key: 'a'.repeat(64),
     project_match: true,
     prefix_match: true,
     ...over,
@@ -659,11 +706,67 @@ const readSetups = (page: Page) =>
       ),
     );
 
+/** Each repository's devices, line by line: the device, its tools and what its chip says. */
+const readDevices = (page: Page) =>
+  page.locator('[data-setups] .dx-repo').evaluateAll((rows) =>
+    rows.map((row) => ({
+      repo: row.querySelector('.dx-record-title')?.textContent ?? '',
+      devices: [...row.querySelectorAll('.dx-repo-device')].map((li) =>
+        [
+          li.querySelector('.dx-repo-device-name')?.textContent ?? '',
+          li.querySelector('.dx-repo-device-line')?.textContent ?? '',
+          li.querySelector('.dx-chip')?.textContent ?? '',
+        ].join(' | '),
+      ),
+    })),
+  );
+
 /** Where *Manage tools* goes. */
 const TOOLS_HREF = OVERVIEW_ADDRESSES.tools;
 
-const NEW_SETUP_ROW =
-  'new | Set up a new repository | Choose a Laika project and one of your tools, then copy the prompt into it. | Set up repository → /developer?tab=projects';
+/**
+ * Project setup's wizard (LAI-321): the tab opens on the reader's
+ * repositories once they have one, so *set up a repository* names the wizard.
+ */
+const WIZARD_HREF = '/developer?tab=projects&view=wizard';
+
+const NEW_SETUP_ROW = `new | Set up a new repository | Choose an existing Laika project, your connected tool, then copy a safe prompt into your agent. | Set up repository → ${WIZARD_HREF}`;
+
+/** The design's lines for the steps still to do (LAI-1096). */
+const LINE = {
+  device: 'Pair laptop or cloud runner only',
+  tool: 'Give the tool its own credential and verify it',
+  project: 'Project-specific prompt · no new token · no re-install',
+} as const;
+
+/** The tools chip's list (LAI-1096): opened from the chip, each tool, why and its link. */
+async function openAttention(page: Page) {
+  const chip = page.locator('[data-status] [data-attention] > button');
+  await chip.waitFor({ timeout: 20_000 });
+  assert.equal(await chip.getAttribute('aria-expanded'), 'false');
+  await chip.click();
+  assert.equal(await chip.getAttribute('aria-expanded'), 'true');
+  const list = page.getByRole('group', { name: 'Needs your attention' });
+  await list.waitFor({ timeout: 10_000 });
+  assert.equal(await chip.getAttribute('aria-controls'), await list.getAttribute('id'));
+  const items = await list
+    .locator('li')
+    .evaluateAll((els) =>
+      els.map((el) => [
+        el.getAttribute('data-agent') ?? '',
+        el.querySelector('.dx-attention-name')?.textContent ?? '',
+        el.querySelector('.dx-attention-why')?.textContent ?? '',
+        el.querySelector('a')?.childNodes[0]?.textContent ?? '',
+        el.querySelector('a')?.getAttribute('href') ?? '',
+      ]),
+    );
+  return { chip, list, items };
+}
+
+/** Nothing sits between the hero and the journey, as in the design (LAI-1096). */
+async function heroThenJourney(page: Page): Promise<boolean> {
+  return hero(page).evaluate((el) => el.nextElementSibling?.hasAttribute('data-journey') === true);
+}
 
 void describe('the Overview (LAI-1048, LAI-1079)', () => {
   void test('fresh: start here, add a device — by keyboard — and nothing else is offered yet', async () => {
@@ -681,7 +784,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
           {
             step: 'device',
             state: 'active',
-            line: 'Pair your laptop or a cloud runner, once',
+            line: LINE.device,
             action: 'Start',
             href: OVERVIEW_ADDRESSES.addDevice,
             disabled: false,
@@ -690,7 +793,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
           {
             step: 'tool',
             state: 'pending',
-            line: 'Give the tool its own credential, then check it connects',
+            line: LINE.tool,
             action: 'Start',
             href: null,
             disabled: true,
@@ -699,7 +802,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
           {
             step: 'project',
             state: 'pending',
-            line: 'A prompt for the repository’s instructions file · no token in it',
+            line: LINE.project,
             action: 'Start',
             href: null,
             disabled: true,
@@ -722,7 +825,8 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         'setups | 0 repositories set up | Project prompts and instructions files | Next step',
       ]);
       assert.deepEqual(await readSetups(h.page), [NEW_SETUP_ROW]);
-      assert.equal(await h.page.locator('[data-note="attention"]').count(), 0);
+      assert.equal(await h.page.locator('[data-attention]').count(), 0);
+      assert.equal(await heroThenJourney(h.page), true);
       // "How this works" is gone; the distinction card says the same, honestly.
       const distinction = h.page.locator('[data-distinction]');
       assert.match(
@@ -781,22 +885,8 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         journey.rows.map((r) => [r.step, r.state, r.line, r.action, r.href, r.disabled]),
         [
           ['device', 'done', '1 device · Belka', 'Manage', OVERVIEW_ADDRESSES.devices, false],
-          [
-            'tool',
-            'active',
-            'Give the tool its own credential, then check it connects',
-            'Start',
-            OVERVIEW_ADDRESSES.addTool,
-            false,
-          ],
-          [
-            'project',
-            'pending',
-            'A prompt for the repository’s instructions file · no token in it',
-            'Start',
-            null,
-            true,
-          ],
+          ['tool', 'active', LINE.tool, 'Start', OVERVIEW_ADDRESSES.addTool, false],
+          ['project', 'pending', LINE.project, 'Start', null, true],
         ],
       );
       assert.deepEqual((await readStatus(h.page)).slice(0, 2), [
@@ -835,12 +925,20 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         why: null,
       });
       assert.equal(journey.rows[2]?.why, 'Connect a tool first');
-      assert.deepEqual(
-        (await readStatus(h.page))[1],
-        'tools | 1 tool | Codex · Belka | 1 needs setup',
-      );
-      // The hero is already about it: no second mention under it.
-      assert.equal(await h.page.locator('[data-note="attention"]').count(), 0);
+      // The tool by name alone; its chip is the button that lists it (LAI-1096).
+      assert.deepEqual((await readStatus(h.page))[1], 'tools | 1 tool | Codex | 1 needs setup▾');
+      // Nothing under the hero: the hero is about it, and the chip lists it.
+      assert.equal(await heroThenJourney(h.page), true);
+      const { items } = await openAttention(h.page);
+      assert.deepEqual(items, [
+        [
+          'a1',
+          'Codex · Belka',
+          'credential created, never used',
+          'Finish setup →',
+          toolAddress('a1'),
+        ],
+      ]);
 
       await hero(h.page).getByRole('link', { name: 'Continue setup →' }).click();
       await h.page.waitForURL((url) => `${url.pathname}${url.search}` === toolAddress('a1'), {
@@ -859,32 +957,65 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         eyebrow: 'YOUR NEXT STEP',
         title: 'Set up your project repository',
         links: [
-          ['Set up a project →', '/developer?tab=projects'],
+          ['Set up a project →', WIZARD_HREF],
           ['Manage tools', TOOLS_HREF],
         ],
       });
-      // Tools not connected yet are named under the hero, each linking to its row.
-      const note = h.page.locator('[data-note="attention"]');
-      assert.equal(await note.getAttribute('data-tone'), 'warn');
-      assert.deepEqual(
-        await note
-          .locator('li')
-          .evaluateAll((els) =>
-            els.map((el) => [
-              el.textContent ?? '',
-              el.querySelector('a')?.getAttribute('href') ?? '',
-            ]),
-          ),
+      // Tools not connected yet are no note under the hero any more (LAI-1096):
+      // the journey follows it, and they are behind the tools chip.
+      assert.equal(await h.page.locator('[data-note]').count(), 0);
+      assert.equal(await heroThenJourney(h.page), true);
+      const { chip, list, items } = await openAttention(h.page);
+      assert.equal(await chip.getAttribute('data-tone'), 'warn');
+      assert.deepEqual(items, [
         [
-          ['Claude Code · Strelka: credential created, never used', toolAddress('a3')],
-          ['Codex · Strelka: credential created, never used', toolAddress('a2')],
+          'a3',
+          'Claude Code · Strelka',
+          'credential created, never used',
+          'Finish setup →',
+          toolAddress('a3'),
         ],
-      );
-      // The note sits directly under the hero, in the hero's column.
+        [
+          'a2',
+          'Codex · Strelka',
+          'credential created, never used',
+          'Finish setup →',
+          toolAddress('a2'),
+        ],
+      ]);
+      // Each link names its tool for a screen reader.
+      await list.getByRole('link', { name: /^Finish setup →\s*: Codex · Strelka$/ }).waitFor();
+      // Escape closes it and puts focus back on the chip.
+      await list.getByRole('link', { name: /^Finish setup →\s*: Codex · Strelka$/ }).focus();
+      await h.page.keyboard.press('Escape');
+      await list.waitFor({ state: 'detached' });
+      assert.equal(await chip.getAttribute('aria-expanded'), 'false');
       assert.equal(
-        await note.evaluate((el) => el.previousElementSibling?.classList.contains('dx-hero')),
+        await h.page.evaluate(() => document.activeElement?.closest('[data-attention]') !== null),
         true,
       );
+      // By keyboard: Enter opens it, and Tab walks into it from the chip.
+      await h.page.keyboard.press('Enter');
+      await list.waitFor();
+      await h.page.keyboard.press('Tab');
+      assert.equal(
+        await h.page.evaluate(() => document.activeElement?.getAttribute('href')),
+        toolAddress('a3'),
+      );
+      // A click outside closes it.
+      await h.page.locator('[data-journey] .dx-card-title').click();
+      await list.waitFor({ state: 'detached' });
+      // A link in it goes to that tool's row, its Details open.
+      await (
+        await openAttention(h.page)
+      ).list
+        .getByRole('link', { name: /^Finish setup →\s*: Codex · Strelka$/ })
+        .click();
+      await h.page.waitForURL((url) => `${url.pathname}${url.search}` === toolAddress('a2'), {
+        timeout: 20_000,
+      });
+      await h.page.goBack();
+      await hero(h.page).waitFor({ timeout: 20_000 });
       const journey = await readJourney(h.page);
       assert.equal(journey.chip, '2 of 3 complete');
       assert.deepEqual(
@@ -892,17 +1023,12 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         [
           ['done', '2 devices · Belka, Strelka', 'Manage', OVERVIEW_ADDRESSES.devices],
           ['done', '3 tools registered, 1 connected', 'Manage', TOOLS_HREF],
-          [
-            'active',
-            'A prompt for the repository’s instructions file · no token in it',
-            'Start',
-            '/developer?tab=projects',
-          ],
+          ['active', LINE.project, 'Start', WIZARD_HREF],
         ],
       );
       assert.deepEqual(await readStatus(h.page), [
         'devices | 2 devices | Belka, Strelka | 1 imported',
-        'tools | 3 tools | Claude Code · Strelka, Codex · Strelka, Omnigent · Belka | 2 need setup',
+        'tools | 3 tools | Claude Code, Codex, Omnigent | 2 need setup▾',
         'setups | 0 repositories set up | Project prompts and instructions files | Next step',
       ]);
       // Never Ready, never a claim beyond the evidence.
@@ -914,8 +1040,8 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       await hero(h.page).getByRole('link', { name: 'Set up a project →' }).click();
       await h.page.waitForURL(/tab=projects/, { timeout: 20_000 });
       // It lands on Project setup's wizard (LAI-1082), not just its address.
-      await h.page.locator('.dev-setup').waitFor({ timeout: 20_000 });
-      assert.equal(here(h.page), '/developer?tab=projects');
+      await h.page.locator('.dev-setup[data-view="wizard"]').waitFor({ timeout: 20_000 });
+      assert.equal(here(h.page), WIZARD_HREF);
       assert.equal(await active(h.page), 'projects');
     } finally {
       await h.close();
@@ -930,7 +1056,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         eyebrow: 'YOUR NEXT STEP',
         title: 'Set up another repository',
         links: [
-          ['Set up a repository →', '/developer?tab=projects'],
+          ['Set up a repository →', WIZARD_HREF],
           ['Manage tools', TOOLS_HREF],
         ],
       });
@@ -939,7 +1065,9 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       assert.deepEqual(journey.rows[2], {
         step: 'project',
         state: 'done',
-        line: '3 repository setups · 1 checked',
+        // Two repositories: OnRoute's, set up by two tools on Belka, and Atlas's.
+        line: '2 repository setups',
+        // Open is the reader's repositories; the tab opens on them for this reader.
         action: 'Open',
         href: '/developer?tab=projects',
         disabled: false,
@@ -947,21 +1075,39 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       });
       assert.deepEqual(
         (await readStatus(h.page))[2],
-        'setups | 3 repositories set up | 1 checked, 1 not verified, 1 to update | 1 needs an update',
+        'setups | 2 repositories set up | 1 not verified, 1 to update | 1 needs an update',
       );
-      // The project's name where the list has it, its slug where it does not;
-      // Checked only from laika project check; the reader's word is not verified.
-      await h.page.getByText('OnRoute · onroute-app').waitFor({ timeout: 20_000 });
+      // One row per repository (LAI-321): its name, then the project — its
+      // name where the list has it, its slug where it does not — and file.
+      // A repository reads as its least certain device: Codex's word on Belka
+      // is not verified, though Claude Code's check there was.
+      await h.page.locator('[data-setups] [data-repo]').first().waitFor({ timeout: 20_000 });
       assert.deepEqual(await readSetups(h.page), [
         NEW_SETUP_ROW,
-        'checked | OnRoute · onroute-app | Claude Code · Belka · CLAUDE.md | Checked',
-        'recorded | OnRoute | Codex · Belka · AGENTS.md · not verified | Recorded by you',
-        'update-available | atlas · atlas-web | Claude Code · Belka · CLAUDE.md | Update available',
+        'recorded | onroute-app | OnRoute · CLAUDE.md | Recorded by you',
+        'update-available | atlas-web | atlas · CLAUDE.md | Update available',
       ]);
+      assert.deepEqual(await readDevices(h.page), [
+        {
+          repo: 'onroute-app',
+          devices: ['Belka | Claude Code, Codex · not verified | Recorded by you'],
+        },
+        { repo: 'atlas-web', devices: ['Belka | Claude Code | Update available'] },
+      ]);
+      // The design's title; the region keeps the name of what it lists (LAI-1096).
       assert.equal(
         await h.page.locator('[data-setups] .dx-section-heading').innerText(),
-        'Your repository setups',
+        'Project setup is the main outcome',
       );
+      assert.equal(await h.page.locator('[data-setups] .dx-section-sub').count(), 0);
+      assert.equal(
+        await h.page
+          .getByRole('region', { name: 'Your repository setups' })
+          .getAttribute('data-setups'),
+        '',
+      );
+      // Every tool connected and none to update: a word, not a button.
+      assert.equal(await h.page.locator('[data-attention]').count(), 0);
       // The setups list is the full width under both columns.
       const [list, columns] = await Promise.all([
         h.page.locator('[data-setups]').boundingBox(),
@@ -975,7 +1121,89 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
     }
   });
 
-  void test('a helper the board needs updated is named under the hero, from its own report', async () => {
+  void test('a repository set up on two laptops is one row, each laptop a line under it (LAI-321)', async () => {
+    // The owner's own records on 2026-11-04: Laika by three tools on two
+    // laptops read "Laika · Laika" three times, and OnRoute's "I've added it"
+    // was a bare row of its own.
+    const laika = {
+      project_id: 'p2',
+      project_slug: 'laika',
+      repo_label: 'Laika',
+      repo_key: 'c'.repeat(64),
+    };
+    const h = await open(
+      '/developer',
+      overview(
+        [
+          deviceRow('d1', 'KvellD 36 GB', [
+            tool({ id: 'a1', device_label: 'KvellD 36 GB' }),
+            tool({ id: 'a2', harness: 'omnigent', device_label: 'KvellD 36 GB', created_at: 2 }),
+          ]),
+          deviceRow('d2', 'Pawan 16 GB', [
+            tool({ id: 'a3', harness: 'omnigent', device_label: 'Pawan 16 GB', created_at: 3 }),
+            tool({ id: 'a4', device_label: 'Pawan 16 GB', created_at: 4 }),
+          ]),
+        ],
+        [
+          localCheck({ id: 's1', agent_id: 'a1', ...laika }),
+          localCheck({ id: 's2', agent_id: 'a3', ...laika }),
+          localCheck({ id: 's3', agent_id: 'a2', instructions_path: 'AGENTS.md', ...laika }),
+          localCheck({
+            id: 's4',
+            agent_id: 'a4',
+            repo_label: 'On-Route',
+            repo_key: 'd'.repeat(64),
+          }),
+          setupRecord({ id: 's5', agent_id: 'a4' }),
+        ],
+      ),
+    );
+    try {
+      await h.page.locator('[data-setups] [data-repo]').first().waitFor({ timeout: 20_000 });
+      // Laika once, named once; OnRoute once, its own word under its check.
+      assert.deepEqual(await readSetups(h.page), [
+        NEW_SETUP_ROW,
+        'checked | Laika | CLAUDE.md | Checked',
+        'checked | On-Route | CLAUDE.md | Checked',
+      ]);
+      assert.deepEqual(await readDevices(h.page), [
+        {
+          repo: 'Laika',
+          devices: [
+            'KvellD 36 GB | Claude Code, Omnigent | Checked',
+            'Pawan 16 GB | Omnigent | Checked',
+          ],
+        },
+        {
+          repo: 'On-Route',
+          devices: ['Pawan 16 GB | Claude Code · also recorded by you | Checked'],
+        },
+      ]);
+      // Nested as a list of its own, named for its repository.
+      assert.equal(
+        await h.page
+          .getByRole('list', { name: 'Devices that set up Laika' })
+          .getByRole('listitem')
+          .count(),
+        2,
+      );
+      // Counted as the two repositories they are.
+      assert.equal(
+        (await readStatus(h.page))[2],
+        'setups | 2 repositories set up | 2 checked | Checked',
+      );
+
+      // A reader with setups still reaches the wizard from here, not their list.
+      await h.page.getByRole('link', { name: 'Set up repository →' }).click();
+      await h.page.locator('.dev-setup[data-view="wizard"]').waitFor({ timeout: 20_000 });
+      assert.equal(here(h.page), WIZARD_HREF);
+      assert.equal(await h.page.locator('.dx-ps-setups').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a helper the board needs updated is behind the tools chip, from its own report', async () => {
     const h = await open(
       '/developer',
       overview(
@@ -1000,20 +1228,18 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       ),
     );
     try {
-      const note = h.page.locator('[data-note="attention"]');
-      await note.waitFor({ timeout: 20_000 });
-      assert.deepEqual(
-        await note
-          .locator('li')
-          .evaluateAll((els) =>
-            els.map((el) => [
-              el.textContent ?? '',
-              el.querySelector('a')?.getAttribute('href') ?? '',
-            ]),
-          ),
-        [['Claude Code · Belka: update required', toolAddress('a1')]],
+      const { items } = await openAttention(h.page);
+      assert.deepEqual(items, [
+        ['a1', 'Claude Code · Belka', 'update required', 'Open details →', toolAddress('a1')],
+      ]);
+      assert.equal(
+        await h.page.locator('[data-status] [data-attention] > button').textContent(),
+        '1 needs an update▾',
       );
       assert.ok(h.calls.some((c) => c.path === '/api/v1/developer/compatibility'));
+      // No notice of its own (LAI-1096): how to update is in the tool's Details.
+      assert.equal(await h.page.locator('[data-note], [data-cli-notice]').count(), 0);
+      assert.equal(await heroThenJourney(h.page), true);
     } finally {
       await h.close();
     }
@@ -1089,7 +1315,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
     );
     try {
       await hero(h.page).getByRole('link', { name: 'Add a device →' }).waitFor({ timeout: 20_000 });
-      await h.page.locator('.page-tab[data-tab="advanced"]').focus();
+      await advancedLink(h.page).focus();
       await h.page.evaluate(() => {
         document.dispatchEvent(new Event('visibilitychange'));
       });
@@ -1296,6 +1522,161 @@ void describe('look and fit', () => {
       }
     });
   }
+
+  /** Each tab's and the Advanced link's right edge, and the row's own width. */
+  const rowFit = (page: Page) =>
+    page.evaluate(() => {
+      const ul = document.querySelector('.dx-tabrow .page-tabs ul');
+      const link = document.querySelector('.dx-tabrow > .dx-tab-secondary');
+      const view = document.documentElement.clientWidth;
+      return {
+        view,
+        tabs: [...document.querySelectorAll('.dx-tabrow .page-tab')].map(
+          (el) => el.getBoundingClientRect().right,
+        ),
+        link: link?.getBoundingClientRect().right ?? Infinity,
+        scrolls: ul === null ? false : ul.scrollWidth > ul.clientWidth,
+        cue:
+          ul === null
+            ? { layers: 0, attachment: '' }
+            : {
+                layers: getComputedStyle(ul).backgroundImage.split('linear-gradient').length - 1,
+                attachment: getComputedStyle(ul).backgroundAttachment,
+              },
+      };
+    });
+
+  for (const theme of ['light', 'dark']) {
+    void test(`390px, ${theme}: the four tabs and Advanced fit the row, nothing off-screen (LAI-1096)`, async () => {
+      const h = await open('/developer', stub('v3'));
+      try {
+        await h.page.setViewportSize({ width: 390, height: 844 });
+        await setTheme(h.page, theme);
+        await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
+        const fit = await rowFit(h.page);
+        assert.equal(fit.tabs.length, 4);
+        for (const right of [...fit.tabs, fit.link]) {
+          assert.ok(right <= fit.view, `${String(right)}px is past the ${String(fit.view)}px view`);
+        }
+        assert.equal(fit.scrolls, false, 'the tabs scroll at 390px');
+        // At this width Advanced is *⋯*, still named Advanced: the word is there
+        // for a screen reader, clipped to nothing for the eye.
+        const link = advancedLink(h.page);
+        assert.equal(await link.locator('.dx-tab-secondary-more').isVisible(), true);
+        assert.equal(await link.locator('.dx-tab-secondary-mark').isVisible(), false);
+        const word = await link
+          .locator('.dx-tab-secondary-word')
+          .evaluate((el) => getComputedStyle(el).clipPath);
+        assert.equal(word, 'inset(50%)');
+        await h.page.getByRole('link', { name: 'Advanced', exact: true }).first().waitFor();
+        assert.equal(
+          await h.page.locator('.dx-tabrow').getByRole('link', { name: 'Advanced' }).count(),
+          1,
+        );
+        await link.click();
+        await h.page.locator('.dev-advanced').waitFor({ timeout: 20_000 });
+        assert.equal(await link.getAttribute('aria-current'), 'page');
+        // *⋯* is marked as the active tab is, so a phone shows where it is.
+        const [colour, accent] = await link.evaluate((el) => {
+          const probe = document.createElement('span');
+          probe.style.color = 'var(--accent)';
+          document.body.append(probe);
+          const want = getComputedStyle(probe).color;
+          probe.remove();
+          return [getComputedStyle(el).borderBottomColor, want];
+        });
+        assert.equal(colour, accent);
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('narrower still, tabs that do not fit scroll with a shade at the edge (LAI-1096)', async () => {
+    const h = await open('/developer', stub('v3'));
+    try {
+      await h.page.setViewportSize({ width: 300, height: 700 });
+      await h.page.locator('[data-testid="dev-overview"]').waitFor({ timeout: 20_000 });
+      const fit = await rowFit(h.page);
+      assert.equal(fit.scrolls, true, 'the control: at 300px the four tabs do not fit');
+      // The cue: two covers that ride with the tabs, over a shade fixed at each edge.
+      assert.deepEqual(fit.cue, { layers: 4, attachment: 'local, local, scroll, scroll' });
+      assert.ok(fit.link <= fit.view, 'Advanced went off-screen with the tabs');
+      const sideways = await h.page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      assert.ok(sideways <= 0, `the page scrolls sideways by ${String(sideways)}px`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  for (const theme of ['light', 'dark']) {
+    void test(`${theme}: a wizard's step on show is the accent's soft fill with no border; Connect's keeps its own (LAI-1096)`, async () => {
+      /** The step on show: its fill, border and shadow, and the tokens to compare. */
+      const current = (page: Page, scope: string) =>
+        page.locator(`${scope} .conn-step[data-state="current"] .conn-rail-step`).evaluate((el) => {
+          const probe = document.createElement('span');
+          probe.style.backgroundColor = 'var(--accent-bg)';
+          probe.style.borderTopColor = 'var(--accent-border)';
+          probe.style.borderTopStyle = 'solid';
+          document.body.append(probe);
+          const want = getComputedStyle(probe);
+          const tokens = { fill: want.backgroundColor, ring: want.borderTopColor };
+          probe.remove();
+          const got = getComputedStyle(el);
+          return {
+            fill: got.backgroundColor,
+            border: got.borderTopColor,
+            shadow: got.boxShadow,
+            tokens,
+          };
+        });
+
+      const v3 = await open(
+        '/developer?tab=projects',
+        stub('v3', [
+          agentRow({
+            id: 'a1',
+            last_seen_at: Date.now(),
+            grants: [{ project_id: 'p1', scope: 'full' }],
+          }),
+        ]),
+      );
+      try {
+        await setTheme(v3.page, theme);
+        await v3.page
+          .locator('.dx-rail-card .conn-step[data-state="current"]')
+          .waitFor({ timeout: 20_000 });
+        await v3.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+        const step = await current(v3.page, '.dx-rail-card');
+        assert.equal(step.fill, step.tokens.fill, 'the step on show is not --accent-bg');
+        assert.equal(step.border, 'rgba(0, 0, 0, 0)', 'the step on show has a border');
+        assert.equal(step.shadow, 'none', 'the step on show is raised');
+      } finally {
+        await v3.close();
+      }
+
+      const classic = await open('/developer?tab=connect', stub('classic'));
+      try {
+        await setTheme(classic.page, theme);
+        await classic.page
+          .locator(
+            '.conn-wizard-card .conn-step[data-state="current"], .conn-rail .conn-step[data-state="current"]',
+          )
+          .first()
+          .waitFor({ timeout: 20_000 });
+        await classic.page.evaluate(() =>
+          Promise.all(document.getAnimations().map((a) => a.finished)),
+        );
+        const step = await current(classic.page, '.conn-rail');
+        assert.equal(step.border, step.tokens.ring, 'Connect’s step on show lost its ring');
+        assert.notEqual(step.shadow, 'none');
+      } finally {
+        await classic.close();
+      }
+    });
+  }
 });
 
 const EVIDENCE = process.env.LAIKA_EVIDENCE_DIR;
@@ -1316,7 +1697,10 @@ void describe(
               await setTheme(h.page, theme);
               await hero(h.page).waitFor({ timeout: 20_000 });
               if (name === 'all-done') {
-                await h.page.getByText('OnRoute · onroute-app').waitFor({ timeout: 20_000 });
+                await h.page
+                  .locator('[data-setups] [data-repo]')
+                  .first()
+                  .waitFor({ timeout: 20_000 });
               }
               // The theme's colours ease in; the picture is of where they land.
               await h.page.evaluate(() =>
