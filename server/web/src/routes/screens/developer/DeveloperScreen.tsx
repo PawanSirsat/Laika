@@ -95,6 +95,11 @@ export interface DeveloperScreenProps {
  * the reader's personal credentials only (LAI-1058, `v3/AdvancedTab.tsx`);
  * in `v3` Activity says *Once per device* and points at Project setup, its
  * rules, scope and history unchanged.
+ *
+ * Advanced is **two flat sections, one after the other and never one inside
+ * the other** (LAI-1100 #11): the credentials card, which `AdvancedTab` draws
+ * itself, and the activity card, compact — what explains either is a closed
+ * fold inside it.
  */
 export function DeveloperScreen({
   mode,
@@ -216,12 +221,11 @@ export function DeveloperScreen({
       )}
       {current === 'advanced' && (
         <div className="dx dev-advanced-page">
-          <div className="dev-card dev-tokens dev-advanced">
-            <AdvancedTab me={me} onNavigate={onNavigate} />
-          </div>
+          <AdvancedTab me={me} onNavigate={onNavigate} />
           {mode === 'v3' && (
             <ActivityCard
               v3
+              compact
               canSetInsights={gates.org('org.developer_insights.set')}
               origin={origin}
               focus={params.get('section') === ADVANCED_ACTIVITY_SECTION}
@@ -320,15 +324,18 @@ function SecondaryTab({
  * *Share local activity* (D-079, D-102 amended): its own tab in classic and
  * preview, and Advanced's second card in `v3` (LAI-1078), where an address
  * naming it (`?section=activity`, which the old `?tab=activity` becomes)
- * scrolls it into view and puts focus on its title.
+ * scrolls it into view and puts focus on its title. On Advanced it is
+ * `compact` (LAI-1100 #11); the classic tab is not.
  */
 function ActivityCard({
   v3,
+  compact = false,
   canSetInsights,
   origin,
   focus,
 }: {
   readonly v3: boolean;
+  readonly compact?: boolean;
   readonly canSetInsights: boolean;
   readonly origin: string;
   readonly focus: boolean;
@@ -362,6 +369,7 @@ function ActivityCard({
         canSetInsights={canSetInsights}
         origin={origin}
         {...(v3 ? { setupTabName: 'Project setup' } : {})}
+        compact={compact}
       />
     </section>
   );
