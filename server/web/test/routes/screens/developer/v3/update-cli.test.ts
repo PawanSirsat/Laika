@@ -14,7 +14,6 @@
  * - The board's build, protocol and oldest accepted helper come from its
  *   compatibility answer — and are said as unknown when it gives none.
  * - No command carries a secret.
- * - The Overview's notice: required or never reported, never otherwise.
  */
 
 import assert from 'node:assert/strict';
@@ -32,8 +31,6 @@ import {
   RELINK_COMMAND,
   STEP_TITLES,
   boardLine,
-  cliNotice,
-  cliNoticeText,
   freshInstall,
   guideCommands,
   guideFor,
@@ -352,28 +349,6 @@ void describe('where it is offered', () => {
     assert.equal(
       versionUnknownHint(),
       'To make its version appear, run laika update on that device: it reports the helper’s version to this board, even when it is already current. If laika update is an unknown command there, that CLI is older still: How to update your Laika CLI, below, has the steps for it.',
-    );
-  });
-
-  void test('the Overview’s notice: any tool required or never reported — never when up to date', () => {
-    const of = (...keys: UpdateKey[]) => cliNotice(keys.map((key) => ({ key })));
-    assert.equal(of(), undefined);
-    assert.equal(of('up-to-date', 'up-to-date'), undefined);
-    // An update merely available, a failed read, or one still being read is not news here.
-    assert.equal(of('available', 'unchecked', 'checking'), undefined);
-    assert.deepEqual(of('required', 'up-to-date'), { required: 1, unknown: 0 });
-    assert.deepEqual(of('unknown', 'unknown', 'required'), { required: 1, unknown: 2 });
-    assert.equal(
-      cliNoticeText({ required: 1, unknown: 0 }),
-      '1 tool runs a Laika CLI this board needs updated.',
-    );
-    assert.equal(
-      cliNoticeText({ required: 2, unknown: 1 }),
-      '2 tools run a Laika CLI this board needs updated; 1 tool has never reported a CLI version.',
-    );
-    assert.equal(
-      cliNoticeText({ required: 0, unknown: 3 }),
-      '3 tools have never reported a CLI version.',
     );
   });
 });

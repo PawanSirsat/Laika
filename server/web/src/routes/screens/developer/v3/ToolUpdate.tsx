@@ -36,6 +36,7 @@ import {
   worstUpdate,
   type ClientReport,
   type Read,
+  type UpdateKey,
   type UpdateManifest,
   type UpdateStatus,
   type Watch,
@@ -484,6 +485,21 @@ function ReportFacts({ report, now }: { readonly report: ClientReport; readonly 
 }
 
 // ------------------------------------------------------------------ one device
+
+/**
+ * A device's tools' helper statuses, for its details' folded *Helper updates*
+ * row (LAI-1100): the worst, and the line {@link DeviceUpdate} shows under it.
+ * `undefined` outside a provider, or while nothing is read yet.
+ */
+export function useDeviceUpdate(
+  agentIds: readonly string[],
+): { readonly worst: UpdateKey | undefined; readonly line: string } | undefined {
+  const updates = useUpdates();
+  if (updates === undefined) return undefined;
+  const statuses = agentIds.map((id) => updates.status(id));
+  const line = deviceUpdateSummary(statuses);
+  return line === undefined ? undefined : { worst: worstUpdate(statuses), line };
+}
 
 /** A device's line, in its details: its tools' update statuses, worst first. */
 export function DeviceUpdate({ agentIds }: { readonly agentIds: readonly string[] }) {
