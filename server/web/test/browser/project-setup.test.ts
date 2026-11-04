@@ -578,6 +578,12 @@ void describe('Project setup, v3', () => {
       assert.equal(param(h.page, 'step'), null);
       assert.equal(param(h.page, 'project'), null);
       assert.equal((await grantChip(h.page).innerText()).trim(), 'Full access');
+      // The reader has a setup now, so the address names the wizard (LAI-321):
+      // reloaded, it is still the wizard rather than their list.
+      assert.equal(param(h.page, 'view'), 'wizard');
+      await h.page.reload();
+      await card(h.page, 1).waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.dx-ps-setups').count(), 0);
     } finally {
       await h.close();
     }
@@ -1066,24 +1072,32 @@ void describe('Project setup, v3', () => {
     }
   });
 
-  void test('the setups list: every project’s records, newest first, each opening its step 3', async () => {
+  void test('the setups list: one row per repository, each device under it, each tool opening its step 3 (LAI-321)', async () => {
     const world: World = {
       agents: [
         agentRow({ id: 'a1', grants: FULL }),
+        agentRow({ id: 'a3', harness: 'omnigent', grants: FULL }),
+        agentRow({ id: 'a4', harness: 'codex', device_label: 'Strelka', grants: FULL }),
         agentRow({ id: 'a2', harness: 'codex', device_label: 'Strelka', status: 'revoked' }),
       ],
       puts: [],
       setups: [
+        // One repository, three tools on two devices.
         checked({ id: 'r1', agent_id: 'a1' }),
+        checked({ id: 'r4', agent_id: 'a3', instructions_path: 'AGENTS.md' }),
+        checked({ id: 'r5', agent_id: 'a4', device_label: 'Strelka', template_revision: 1 }),
+        // The reader's own word in another project: no repository named.
         checked({
           id: 'r2',
           agent_id: 'a1',
           project_id: 'p2',
           project_slug: 'atlas',
           repo_label: null,
+          repo_key: '',
           source: 'self_reported_browser',
         }),
-        checked({ id: 'r3', agent_id: 'a2', repo_label: 'old', template_revision: 1 }),
+        // A disconnected tool's record goes with it.
+        checked({ id: 'r3', agent_id: 'a2', repo_label: 'old', repo_key: 'e'.repeat(64) }),
       ],
     };
     const urls: string[] = [];
@@ -1096,39 +1110,68 @@ void describe('Project setup, v3', () => {
       },
     });
     try {
-      await card(h.page, 1).waitFor({ timeout: 20_000 });
-      await h.page.getByRole('button', { name: 'View existing setups' }).click();
-      await h.page.locator('[data-setup="r1"]').waitFor({ timeout: 20_000 });
-      assert.equal(param(h.page, 'view'), 'setups');
-      // The list's read names no project: it is every project's.
-      assert.ok(
-        urls.some((u) => new URL(u).search === ''),
-        `no read across projects in ${urls.join(', ')}`,
+      // A reader with setups opens on them (LAI-321).
+      await h.page.locator('.dx-ps-setups [data-repo]').first().waitFor({ timeout: 20_000 });
+      assert.equal(await card(h.page, 1).count(), 0);
+      assert.equal(param(h.page, 'view'), null);
+      assert.equal(
+        await h.page.locator('.dev-setup .dx-section-heading').innerText(),
+        'Your repository setups',
       );
+      // The list's read names no project, and the tab reads it once: the
+      // view it opens on and the list are the same answer.
+      const across = () => urls.filter((u) => new URL(u).search === '').length;
+      assert.equal(across(), 1, `reads across projects: ${urls.join(', ')}`);
 
-      const rows = h.page.locator('.dx-ps-setups > li');
-      assert.deepEqual(
-        await rows.evaluateAll((items) =>
-          items.map((li) => (li as HTMLElement).dataset.setup ?? (li as HTMLElement).dataset.row),
-        ),
-        ['new', 'r1', 'r2', 'r3'],
+      const rows = await h.page.locator('.dx-ps-setups > li').evaluateAll((items) =>
+        items.map((li) => {
+          const el = li as HTMLElement;
+          return [
+            el.dataset.row ?? el.dataset.setup ?? '',
+            el.querySelector('.dx-record-title')?.textContent ?? '',
+            el.querySelector('.dx-record-sub')?.textContent ?? '',
+            // The device, its tools, its chip, and each tool's button as it reads.
+            [...el.querySelectorAll('.dx-repo-device')].map((d) =>
+              [
+                d.querySelector('.dx-repo-device-name')?.textContent ?? '',
+                d.querySelector('.dx-repo-device-line')?.textContent ?? '',
+                d.querySelector('.dx-chip')?.textContent ?? '',
+                ...[...d.querySelectorAll('button')].map((b) => b.childNodes[0]?.textContent ?? ''),
+              ].join(' | '),
+            ),
+          ];
+        }),
       );
-      const text = async (id: string) =>
-        (await h.page.locator(`[data-setup="${id}"]`).innerText()).replace(/\s+/g, ' ').trim();
-      assert.match(
-        await text('r1'),
-        /^OnRoute · onroute-app Claude Code · Belka · CLAUDE\.md · checked on Belka Checked Open/,
-      );
-      assert.match(
-        await text('r2'),
-        /^Atlas Claude Code · Belka · CLAUDE\.md · your word, not verified Recorded by you Open/,
-      );
-      assert.doesNotMatch(await text('r2'), /Checked/);
-      assert.match(await text('r3'), /Codex · Strelka · disconnected .*Update available$/);
-      // A disconnected tool cannot be set up again.
-      assert.equal(await h.page.locator('[data-setup="r3"]').getByRole('button').count(), 0);
+      assert.deepEqual(rows, [
+        [
+          'new',
+          'A new repository',
+          'Choose a project and one of your connected tools, then copy its prompt.',
+          [],
+        ],
+        [
+          'update-available',
+          'onroute-app',
+          'OnRoute · CLAUDE.md',
+          [
+            'Belka | Claude Code, Omnigent | Checked | Open Claude Code | Open Omnigent',
+            'Strelka | Codex | Update available | Open',
+          ],
+        ],
+        [
+          'recorded',
+          'Atlas',
+          'CLAUDE.md',
+          ['Belka | Claude Code · not verified | Recorded by you | Open'],
+        ],
+      ]);
+      assert.doesNotMatch(await h.page.locator('.dx-ps-setups').innerText(), /\bold\b/);
 
-      await h.page.getByRole('button', { name: 'Open Atlas' }).click();
+      // Each tool on a line reopens its own setup, at step 3.
+      await h.page
+        .getByRole('button', { name: 'Open Omnigent for onroute-app on Belka' })
+        .waitFor({ timeout: 5_000 });
+      await h.page.getByRole('button', { name: 'Open Atlas with Claude Code on Belka' }).click();
       await card(h.page, 3).waitFor({ timeout: 20_000 });
       assert.equal(param(h.page, 'view'), null);
       assert.equal(param(h.page, 'project'), 'atlas');
@@ -1140,8 +1183,120 @@ void describe('Project setup, v3', () => {
       await h.page.locator('[data-row="new"]').waitFor({ timeout: 20_000 });
       await h.page.getByRole('button', { name: 'Set up a new repository' }).click();
       await card(h.page, 1).waitFor({ timeout: 20_000 });
-      assert.equal(param(h.page, 'view'), null);
+      assert.equal(param(h.page, 'view'), 'wizard');
       assert.equal(param(h.page, 'step'), null);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('which view it opens on: the list for a reader with a setup, else the wizard; the address can say (LAI-321)', async () => {
+    const list = (): World => ({
+      agents: [agentRow({ id: 'a1', grants: FULL })],
+      puts: [],
+      setups: [checked()],
+    });
+    // With setups: the list, unless the address names the wizard or a place in it.
+    for (const [query, view] of [
+      ['', 'setups'],
+      ['&view=wizard', 'wizard'],
+      ['&tool=a1', 'wizard'],
+      ['&view=setups', 'setups'],
+    ] as const) {
+      const h = await open(`/developer?tab=projects${query}`, stub('v3', list()));
+      try {
+        await h.page
+          .locator(
+            view === 'setups' ? '.dx-ps-setups [data-repo]' : '.conn-wizard-card[data-step="1"]',
+          )
+          .waitFor({ timeout: 20_000 });
+        assert.equal(await h.page.locator('.dev-setup').getAttribute('data-view'), view, query);
+        assert.equal(
+          await h.page.locator('.dx-ps-setups').count(),
+          view === 'setups' ? 1 : 0,
+          query,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+    // A setup only for a disconnected tool is no setup: the wizard.
+    const revoked = await open(
+      '/developer?tab=projects',
+      stub('v3', {
+        agents: [
+          agentRow({ id: 'a1', grants: FULL }),
+          agentRow({ id: 'a2', harness: 'codex', status: 'revoked' }),
+        ],
+        puts: [],
+        setups: [checked({ agent_id: 'a2' })],
+      }),
+    );
+    try {
+      await card(revoked.page, 1).waitFor({ timeout: 20_000 });
+      assert.equal(await revoked.page.locator('.dev-setup').getAttribute('data-view'), 'wizard');
+    } finally {
+      await revoked.close();
+    }
+    // A new reader can still ask for the list, and is told it is empty.
+    const none = await open(
+      '/developer?tab=projects&view=setups',
+      stub('v3', { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [], setups: [] }),
+    );
+    try {
+      await none.page.locator('[data-row="none"]').waitFor({ timeout: 20_000 });
+      assert.match(
+        await none.page.locator('[data-row="none"]').innerText(),
+        /Nothing is recorded yet/,
+      );
+    } finally {
+      await none.close();
+    }
+  });
+
+  void test('the records failing to load is said, with a retry, before either view (LAI-321)', async () => {
+    const world: World = {
+      agents: [agentRow({ id: 'a1', grants: FULL })],
+      puts: [],
+      setups: [checked()],
+    };
+    let calls = 0;
+    const h = await open(
+      '/developer?tab=projects',
+      stub('v3', world, {
+        '/api/v1/project-setups': () => {
+          calls += 1;
+          return calls === 1
+            ? refuse(503, 'unavailable', 'Try again shortly.')
+            : { data: world.setups };
+        },
+      }),
+    );
+    try {
+      await h.page.getByText('Could not load your repository setups').waitFor({ timeout: 20_000 });
+      assert.equal(await card(h.page, 1).count(), 0);
+      assert.equal(await h.page.locator('.dx-ps-setups').count(), 0);
+      await h.page.getByRole('button', { name: 'Try again' }).click();
+      await h.page.locator('.dx-ps-setups [data-repo]').waitFor({ timeout: 20_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('back to the list from the wizard reads again, so what the wizard recorded is there (LAI-321)', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [], setups: [] };
+    const h = await open('/developer?tab=projects&step=3', stub('v3', world));
+    try {
+      await h.page.locator('[data-status="not-recorded"]').waitFor({ timeout: 20_000 });
+      await h.page.getByRole('button', { name: 'I’ve added it' }).click();
+      await h.page.locator('[data-status="current"]').waitFor({ timeout: 20_000 });
+      await h.page.getByRole('button', { name: 'View existing setups' }).click();
+      await h.page.locator('.dx-ps-setups [data-repo]').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('.dx-ps-setups [data-repo] .dx-record-title').innerText(),
+        'OnRoute',
+      );
+      assert.equal(await h.page.locator('[data-row="none"]').count(), 0);
     } finally {
       await h.close();
     }
@@ -1464,7 +1619,7 @@ void describe('Project setup, both themes', () => {
                 step === 'done'
                   ? '.dx-ps-done [data-detail="verification"]'
                   : step === 'setups'
-                    ? '[data-setup="c1"]'
+                    ? '.dx-ps-setups [data-repo]'
                     : `.conn-wizard-card[data-step="${step}"] .dx-ps-auth, .conn-wizard-card[data-step="${step}"] .conn-block, .conn-wizard-card[data-step="${step}"] [data-status]`,
               )
               .first()
@@ -1568,14 +1723,21 @@ void describe(
                 agent_id: 'a2',
                 project_id: 'p2',
                 project_slug: 'atlas',
-                repo_label: 'atlas-web',
+                repo_label: null,
+                repo_key: '',
                 instructions_path: 'AGENTS.md',
                 source: 'self_reported_browser',
               }),
-              checked({ id: 'c3', repo_label: 'onroute-api', template_revision: 1 }),
+              checked({ id: 'c3', agent_id: 'a2', device_label: 'Strelka' }),
+              checked({
+                id: 'c4',
+                repo_label: 'onroute-api',
+                repo_key: 'b'.repeat(64),
+                template_revision: 1,
+              }),
             ];
             await h.page.goto(`${h.origin}/developer?tab=projects&view=setups`);
-            await settle(h.page, '[data-setup="c3"]');
+            await settle(h.page, '.dx-ps-setups [data-repo]');
             await shot(h.page, 'list', theme, width);
           } finally {
             await h.close();
