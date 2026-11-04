@@ -5,6 +5,8 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type FocusEvent,
+  type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
   type RefObject,
@@ -73,6 +75,7 @@ import {
   targetFor,
   verificationWords,
   withOneGrant,
+  type CliMatchHint,
   type GrantChoice,
   type SetupEvidence,
   type SetupStep,
@@ -1299,6 +1302,10 @@ function ReviewStep({
         ? undefined
         : 'warn';
 
+  // What each row's mark says: a tick once that way has recorded something.
+  const checkedHere = evidence !== null && evidence.checks.length > 0;
+  const selfHere = evidence?.self ?? null;
+
   return (
     <div className="dx-ps-review" data-step="record">
       <div className="dx-status-head">
@@ -1317,97 +1324,93 @@ function ReviewStep({
         check run on your device, or your own word.
       </p>
 
+      {/*
+        LAI-1099 #9: the two ways as the design's check rows — a mark, the way
+        and its status, then its action — not two boxed cards.
+      */}
       <section className="dx-ps-way" aria-labelledby={`${ids}-check`} data-way="check">
         <div className="dx-ps-way-head">
-          <h4 className="dx-ps-way-title" id={`${ids}-check`}>
-            Check it from your device
-          </h4>
-          {checkCommand !== null && <DesignChip tone="accent">Recommended</DesignChip>}
-        </div>
-        {checkCommand === null ? (
-          // LAI-1091: `laika tool add` refuses this tool, so the check would
-          // exit 2 and record nothing. Say so rather than offer it.
-          <NoteBlock tone="warn" title={manual.title} note="no-device-check">
-            <p className="conn-body">{manual.body}</p>
-            {manual.note !== null && (
-              <p className="conn-note" data-note="manual">
-                <InlineCode text={manual.note} />
+          <span className="dx-ps-way-mark" data-done={checkedHere || undefined} aria-hidden="true">
+            <DxIcon name={checkedHere ? 'check' : 'tool'} size={16} />
+          </span>
+          <div className="dx-ps-way-text">
+            <h4 className="dx-ps-way-title" id={`${ids}-check`}>
+              Check it from your device
+            </h4>
+            {records.kind === 'loading' ? (
+              <LoadingState shape="row" count={1} label="Loading what is recorded" />
+            ) : records.kind === 'error' ? (
+              <ApiErrorState
+                error={records.error}
+                resource="what is recorded for this repository"
+                scope="project"
+                onRetry={onRetry}
+              />
+            ) : evidence === null ? null : (
+              <p className="dx-ps-status" data-status={evidence.overall} aria-live="polite">
+                <EvidenceChip evidence={evidence} canCheck={checkCommand !== null} />
               </p>
             )}
-          </NoteBlock>
-        ) : (
-          <>
-            <p className="conn-body" data-note="project-check">
-              Run this in the repository. It reads the instructions file, changes nothing, and
-              records what it found with {tool.toolName}’s own credential.
-            </p>
-            <CodeBlock label="Terminal, in the repository" text={checkCommand} what="the command" />
-            <p className="conn-note" data-note="cli-match">
-              This needs a Laika CLI that matches this board
-              {hint.commit !== null && (
-                <>
-                  {' '}
-                  (commit <code>{hint.commit}</code>)
-                </>
+          </div>
+          {checkCommand !== null && <DesignChip tone="accent">Recommended</DesignChip>}
+        </div>
+        <div className="dx-ps-way-body">
+          {checkCommand === null ? (
+            // LAI-1091: `laika tool add` refuses this tool, so the check would
+            // exit 2 and record nothing. Say so rather than offer it.
+            <NoteBlock tone="warn" title={manual.title} note="no-device-check">
+              <p className="conn-body">{manual.body}</p>
+              {manual.note !== null && (
+                <p className="conn-note" data-note="manual">
+                  <InlineCode text={manual.note} />
+                </p>
               )}
-              . Check with <code>{hint.version}</code>: if it prints a commit,{' '}
-              <code>{hint.update}</code> brings it to this board’s. If either says unknown command,
-              your CLI predates this board: {GUIDE_TITLE}, below, shows where it comes from and what
-              to do about it, wherever the old one is.
-            </p>
-            <UpdateCliHelp place="project-setup" />
-          </>
-        )}
-        {records.kind === 'loading' ? (
-          <LoadingState shape="row" count={1} label="Loading what is recorded" />
-        ) : records.kind === 'error' ? (
-          <ApiErrorState
-            error={records.error}
-            resource="what is recorded for this repository"
-            scope="project"
-            onRetry={onRetry}
-          />
-        ) : evidence === null ? null : (
-          <>
-            <p className="dx-ps-status" data-status={evidence.overall} aria-live="polite">
-              <EvidenceChip evidence={evidence} canCheck={checkCommand !== null} />
-            </p>
-            {hasRecord(evidence) && (
-              <ul
-                className="dev-setup-records dx-ps-records"
-                aria-label="Records for this repository"
-              >
-                {evidence.checks.map((r) => (
-                  <li key={r.id} data-source="local_check" data-state={recordState(r)}>
-                    <span className="dev-setup-record-source">{recordSource(r, now)}</span>
-                    <span className="conn-note">{recordFinding(r)}</span>
-                  </li>
-                ))}
-                {evidence.self !== null && (
-                  <li data-source="self_reported_browser" data-state={recordState(evidence.self)}>
-                    <span className="dev-setup-record-source">
-                      {recordSource(evidence.self, now)}
-                    </span>
-                    <span className="conn-note">{recordFinding(evidence.self)}</span>
-                  </li>
-                )}
-              </ul>
-            )}
-          </>
-        )}
+            </NoteBlock>
+          ) : (
+            <>
+              <p className="conn-body" data-note="project-check">
+                Run this in the repository. It reads the instructions file, changes nothing, and
+                records what it found with {tool.toolName}’s own credential.
+              </p>
+              <CodeBlock
+                label="Terminal, in the repository"
+                text={checkCommand}
+                what="the command"
+              />
+              <CliLine hint={hint} />
+              <UpdateCliHelp place="project-setup" />
+            </>
+          )}
+          {evidence !== null && evidence.checks.length > 0 && (
+            <ul className="dev-setup-records dx-ps-records" aria-label="What the checks found">
+              {evidence.checks.map((r) => (
+                <li key={r.id} data-source="local_check" data-state={recordState(r)}>
+                  <span className="dev-setup-record-source">{recordSource(r, now)}</span>
+                  <span className="conn-note">{recordFinding(r)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       <section className="dx-ps-way" aria-labelledby={`${ids}-self`} data-way="self">
-        <h4 className="dx-ps-way-title" id={`${ids}-self`}>
-          Or record it yourself
-        </h4>
-        <p className="conn-note">
-          If you ran the prompt and reviewed its diff, or added the block by hand, say so here.
-        </p>
-        {recordError !== null && (
-          <ApiErrorState error={recordError} resource="your record" scope="project" verb="save" />
-        )}
-        <div className="dx-actions">
+        <div className="dx-ps-way-head">
+          <span
+            className="dx-ps-way-mark"
+            data-done={selfHere !== null || undefined}
+            aria-hidden="true"
+          >
+            <DxIcon name={selfHere === null ? 'repo' : 'check'} size={16} />
+          </span>
+          <div className="dx-ps-way-text">
+            <h4 className="dx-ps-way-title" id={`${ids}-self`}>
+              Or record it yourself
+            </h4>
+            <p className="conn-note dx-ps-way-state">
+              Self-reported. Laika does not check the file.
+            </p>
+          </div>
           <button
             type="button"
             className="dx-btn dx-btn-sm"
@@ -1422,19 +1425,113 @@ function ReviewStep({
             {recording && <Spinner size="sm" />}
             I’ve added it
           </button>
-          <span className="conn-note">Self-reported. Laika does not check the file.</span>
         </div>
-        {!granted && (
-          <p
-            className="conn-note"
-            id={`${ids}-record-needs-access`}
-            data-note="record-needs-access"
-          >
-            Give {tool.label} access to {project.name} first: a record names a tool that can work
-            here.
-          </p>
+        {(selfHere !== null || recordError !== null || !granted) && (
+          <div className="dx-ps-way-body">
+            {selfHere !== null && (
+              <ul className="dev-setup-records dx-ps-records" aria-label="What you recorded">
+                <li data-source="self_reported_browser" data-state={recordState(selfHere)}>
+                  <span className="dev-setup-record-source">{recordSource(selfHere, now)}</span>
+                  <span className="conn-note">{recordFinding(selfHere)}</span>
+                </li>
+              </ul>
+            )}
+            {recordError !== null && (
+              <ApiErrorState
+                error={recordError}
+                resource="your record"
+                scope="project"
+                verb="save"
+              />
+            )}
+            {!granted && (
+              <p
+                className="conn-note"
+                id={`${ids}-record-needs-access`}
+                data-note="record-needs-access"
+              >
+                Give {tool.label} access to {project.name} first: a record names a tool that can
+                work here.
+              </p>
+            )}
+          </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Step 3's CLI line (LAI-1099 #9): one short sentence, and the LAI-1093 hint
+ * behind *Help*, word for word. A disclosure, as the Overview's tools chip is:
+ * focus stays on *Help* as it opens and `Tab` walks into it; `Escape` closes
+ * it and puts focus back; a click outside, or focus leaving, closes it in
+ * place. *How to update your Laika CLI* stays where it was, right under this.
+ */
+function CliLine({ hint }: { readonly hint: CliMatchHint }) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement | null>(null);
+  const wrap = useRef<HTMLDivElement | null>(null);
+  const popId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: Event): void => {
+      if (wrap.current !== null && !wrap.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [open]);
+
+  const onKey = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Escape' || !open) return;
+    event.preventDefault();
+    setOpen(false);
+    button.current?.focus();
+  };
+
+  const onBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    const to = event.relatedTarget as Node | null;
+    if (!open || to === null || wrap.current?.contains(to) === true) return;
+    setOpen(false);
+  };
+
+  return (
+    <div className="dx-ps-cli" ref={wrap} onKeyDown={onKey} onBlur={onBlur} data-cli-line="">
+      <p className="conn-note dx-ps-cli-line">
+        Needs a Laika CLI that matches this board.{' '}
+        <button
+          type="button"
+          className="dx-ps-link"
+          aria-expanded={open}
+          {...(open ? { 'aria-controls': popId } : {})}
+          ref={button}
+          onClick={() => {
+            setOpen(!open);
+          }}
+        >
+          Help
+        </button>
+      </p>
+      {open && (
+        <div className="dx-ps-help-pop" id={popId} role="group" aria-label="Which Laika CLI">
+          <p className="conn-note" data-note="cli-match">
+            This needs a Laika CLI that matches this board
+            {hint.commit !== null && (
+              <>
+                {' '}
+                (commit <code>{hint.commit}</code>)
+              </>
+            )}
+            . Check with <code>{hint.version}</code>: if it prints a commit,{' '}
+            <code>{hint.update}</code> brings it to this board’s. If either says unknown command,
+            your CLI predates this board: {GUIDE_TITLE}, below, shows where it comes from and what
+            to do about it, wherever the old one is.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

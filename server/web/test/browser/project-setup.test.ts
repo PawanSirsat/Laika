@@ -768,16 +768,33 @@ void describe('Project setup, v3', () => {
       }),
     );
     try {
+      // LAI-1099 #9: one short line under the command, the hint behind Help.
+      const line = h.page.locator('[data-way="check"] [data-cli-line]');
+      await line.waitFor({ timeout: 20_000 });
+      assert.equal(
+        (await line.innerText()).replace(/\s+/g, ' ').trim(),
+        'Needs a Laika CLI that matches this board. Help',
+      );
       const hint = h.page.locator('[data-way="check"] [data-note="cli-match"]');
-      await hint.waitFor({ timeout: 20_000 });
+      assert.equal(await hint.count(), 0, 'the hint is behind Help until asked for');
+      const helpButton = line.getByRole('button', { name: 'Help' });
+      assert.equal(await helpButton.getAttribute('aria-expanded'), 'false');
+      await helpButton.click();
+      assert.equal(await helpButton.getAttribute('aria-expanded'), 'true');
+      await hint.waitFor({ timeout: 5_000 });
+      assert.equal(
+        await helpButton.getAttribute('aria-controls'),
+        await h.page.locator('.dx-ps-help-pop').getAttribute('id'),
+      );
       await until(async () => (await hint.innerText()).includes('0123456'));
+      // The LAI-1093 hint, word for word.
       assert.equal(
         (await hint.innerText()).replace(/\s+/g, ' ').trim(),
         'This needs a Laika CLI that matches this board (commit 0123456). Check with laika version: if it prints a commit, laika update brings it to this board’s. If either says unknown command, your CLI predates this board: How to update your Laika CLI, below, shows where it comes from and what to do about it, wherever the old one is.',
       );
-      // Directly under the command it is about.
+      // The line sits directly under the command it is about.
       assert.equal(
-        await hint.evaluate((el) => el.previousElementSibling?.textContent?.includes('--harness')),
+        await line.evaluate((el) => el.previousElementSibling?.textContent?.includes('--harness')),
         true,
       );
       assert.deepEqual(await hint.locator('code').allInnerTexts(), [
@@ -785,11 +802,16 @@ void describe('Project setup, v3', () => {
         'laika version',
         'laika update',
       ]);
-      // LAI-1093: the guide itself, right under the hint — and, open, the fresh
+      // Escape closes it, and focus goes back to Help.
+      await h.page.keyboard.press('Escape');
+      await hint.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.equal(await helpButton.getAttribute('aria-expanded'), 'false');
+      assert.equal(await h.page.evaluate(() => document.activeElement?.textContent ?? ''), 'Help');
+      // LAI-1093: the guide itself, right under the line — and, open, the fresh
       // install from this board's own source rather than a pull of ~/laika.
       const help = h.page.locator('[data-way="check"] [data-update-cli="project-setup"]');
       assert.equal(
-        await hint.evaluate((el) => el.nextElementSibling?.getAttribute('data-update-cli')),
+        await line.evaluate((el) => el.nextElementSibling?.getAttribute('data-update-cli')),
         'project-setup',
       );
       assert.equal(await help.locator('summary').innerText(), 'How to update your Laika CLI');
@@ -816,6 +838,10 @@ void describe('Project setup, v3', () => {
     const h = await open('/developer?tab=projects&step=3', stub('v3', world));
     try {
       const hint = h.page.locator('[data-way="check"] [data-note="cli-match"]');
+      await h.page
+        .locator('[data-way="check"] [data-cli-line]')
+        .getByRole('button', { name: 'Help' })
+        .click({ timeout: 20_000 });
       await hint.waitFor({ timeout: 20_000 });
       // The page read the answer twice: once for the mode, once for this hint.
       const asked = () =>
@@ -860,6 +886,7 @@ void describe('Project setup, v3', () => {
           /Record it yourself with I’ve added it/,
         );
         assert.equal(await way.locator('[data-note="cli-match"]').count(), 0);
+        assert.equal(await way.locator('[data-cli-line]').count(), 0);
         // LAI-1093: no CLI to update for a check that cannot run, so no guide either.
         assert.equal(await way.locator('[data-update-cli]').count(), 0);
         assert.doesNotMatch(await way.innerText(), /How to update your Laika CLI/);
@@ -924,6 +951,78 @@ void describe('Project setup, v3', () => {
         (await h.page.locator('[data-detail="target"] dt').innerText()).trim(),
         'Where it goes',
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('step 3’s two ways are check rows: a mark, the way and its status, its action — no checkbox (LAI-1099 #9)', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [], setups: [] };
+    const h = await open('/developer?tab=projects&step=3', stub('v3', world));
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      const review = h.page.locator('[data-step="record"]');
+      await review.locator('[data-status="not-recorded"]').waitFor({ timeout: 20_000 });
+      assert.equal(await review.locator('input[type="checkbox"]').count(), 0);
+      assert.equal(await review.getByRole('checkbox').count(), 0);
+      const ways = await review.locator('[data-way]').evaluateAll((els) =>
+        els.map((el) => {
+          const head = el.querySelector('.dx-ps-way-head');
+          const style = getComputedStyle(el);
+          return {
+            way: el.getAttribute('data-way'),
+            mark: head?.querySelector('.dx-ps-way-mark') !== null,
+            title: head?.querySelector('.dx-ps-way-title')?.textContent ?? '',
+            status: (
+              head?.querySelector('.dx-ps-status, .dx-ps-way-state') as HTMLElement | null
+            )?.innerText
+              .replace(/\s+/g, ' ')
+              .trim(),
+            end: (head?.lastElementChild as HTMLElement | null)?.innerText.trim(),
+            // A rule between the rows, not a box around each.
+            box: [style.borderLeftWidth, style.borderRightWidth, style.borderBottomWidth],
+            rule: style.borderTopWidth,
+          };
+        }),
+      );
+      assert.deepEqual(ways, [
+        {
+          way: 'check',
+          mark: true,
+          title: 'Check it from your device',
+          status:
+            'Not recorded · Laika cannot see your repository. Run laika project check in it to find out.',
+          end: 'Recommended',
+          box: ['0px', '0px', '0px'],
+          rule: '1px',
+        },
+        {
+          way: 'self',
+          mark: true,
+          title: 'Or record it yourself',
+          status: 'Self-reported. Laika does not check the file.',
+          end: 'I’ve added it',
+          box: ['0px', '0px', '0px'],
+          rule: '1px',
+        },
+      ]);
+      // The action sits on its way's row, beside its words.
+      const [title, button] = await Promise.all([
+        review.locator('[data-way="self"] .dx-ps-way-title').boundingBox(),
+        review.getByRole('button', { name: 'I’ve added it' }).boundingBox(),
+      ]);
+      assert.ok(title !== null && button !== null);
+      assert.ok(button.y < title.y + title.height, 'the button is not on its row');
+      // Once recorded, the mark says so, and the record is under its own way.
+      await review.getByRole('button', { name: 'I’ve added it' }).click();
+      await review.locator('[data-way="self"] [data-source="self_reported_browser"]').waitFor({
+        timeout: 20_000,
+      });
+      assert.equal(
+        await review.locator('[data-way="self"] .dx-ps-way-mark').getAttribute('data-done'),
+        'true',
+      );
+      assert.equal(await review.locator('[data-way="check"] [data-source]').count(), 0);
     } finally {
       await h.close();
     }
