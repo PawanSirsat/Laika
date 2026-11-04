@@ -12,6 +12,9 @@
 /* Every colour, type step and radius. Light on :root, dark on .dk. */
 @import './styles/theme.css';
 @import './styles/type.css';
+/* The brand — here, not only in its components, because the pre-JS splash in
+   index.html needs these rules in the stylesheet the document links (LAI-1126). */
+@import './components/brand/brand.css';
 
 :root {
   font-family: var(--font-ui);
