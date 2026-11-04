@@ -2,11 +2,12 @@
 id: LAI-1126
 title: 'Brand identity: logo mark, wordmark, startup splash, icon loader, and the cool palette in the theme'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+started: 2026-11-04T10:25:55Z
+status: in-progress
 ---
 
 ## Goal
