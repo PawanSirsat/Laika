@@ -146,6 +146,7 @@ const setup = (over: Partial<ProjectSetup> & { id: string }): ProjectSetup => ({
   project_id: 'p1',
   project_slug: 'onroute',
   repo_label: 'onroute-app',
+  repo_key: 'a'.repeat(64),
   instructions_path: 'CLAUDE.md',
   block_found: true,
   template_revision: 2,

@@ -496,6 +496,7 @@ const setupRecord = (over: Record<string, unknown> & { id: string }) => ({
   project_id: 'p1',
   project_slug: 'onroute',
   repo_label: null,
+  repo_key: '',
   instructions_path: 'CLAUDE.md',
   block_found: true,
   template_revision: 2,
@@ -510,6 +511,7 @@ const localCheck = (over: Record<string, unknown> & { id: string }) =>
   setupRecord({
     source: 'local_check',
     repo_label: 'onroute-app',
+    repo_key: 'a'.repeat(64),
     project_match: true,
     prefix_match: true,
     ...over,

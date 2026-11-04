@@ -3386,7 +3386,8 @@ records only inside its grants (`403`, `agent_not_granted`, as every agent read
 outside them). A personal token is refused `403`, `not_an_agent`, **whatever body it sends**
 — before the body is read, so a local-check body is not answered `422`. **`GET
 /project-setups`** answers the caller's own rows for one project; an agent's
-token reads only its own. Another owner's agent and an id that names nothing
+token reads only its own. Each row carries its `repo_key`, so a client groups
+one repository's records across devices and tools (LAI-321). Another owner's agent and an id that names nothing
 are the same `404`. No activity row is written.
 
 ### 4.83 `agent_launcher_reports`
@@ -4080,7 +4081,7 @@ GET    /api/v1/capacity-pings/:id            → { ping } — to whoever pinged 
 POST   /api/v1/agents/me/capacity-pings/:id/reply   the pinged agent's own token; body the answer (§4.84) → { ping }; 409 already_answered or ping_expired; a ping addressed to another agent the 404 of none (heartbeat.send_own)
 GET    /api/v1/agents/:id/capacity           ?project= → { agent_id, launcher, latest_answer, now } — the agents the caller may ping (else the agent 404); latest_answer is the newest answered ping in this project: anyone's, to the owner; its own, to anyone else (§4.84, agent.ping)
 POST   /api/v1/project-setups            the owner signed in: body { agent_id: string | null, project_slug, template_revision, instructions_path? } → 201 a self_reported_browser record (agent.manage_own, session only); an agent's own token: body { project_slug, repo_key, repo_label, instructions_path, block_found, template_revision, block_project, block_prefix } → 201 a local_check record for that agent (heartbeat.send_own); a personal token 403 not_an_agent (§4.82)
-GET    /api/v1/project-setups            ?project= optional, agent_id= optional → { data: [{ id, agent_id, device_label, project_id, project_slug, repo_label, instructions_path, block_found, template_revision, project_match, prefix_match, source, checked_at }] } — own rows, for the one project; with no project, across every project the caller can read, newest first — each project asked the same project.read, and one the caller cannot read contributes nothing and is named nowhere (LAI-1077); an agent's token its own (§4.82, agent.read_own; not paginated)
+GET    /api/v1/project-setups            ?project= optional, agent_id= optional → { data: [{ id, agent_id, device_label, project_id, project_slug, repo_label, repo_key, instructions_path, block_found, template_revision, project_match, prefix_match, source, checked_at }] } — own rows, for the one project; with no project, across every project the caller can read, newest first — each project asked the same project.read, and one the caller cannot read contributes nothing and is named nowhere (LAI-1077); an agent's token its own (§4.82, agent.read_own; not paginated)
 GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
