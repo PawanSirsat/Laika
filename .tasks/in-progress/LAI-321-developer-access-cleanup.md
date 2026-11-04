@@ -2,10 +2,11 @@
 id: LAI-321
 title: 'Developer access and profile cleanup: one row per repository, tools by tool, a short Advanced, a tidy token list'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p1
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-11-04T18:35:29Z
 ---
 
 ## Goal
