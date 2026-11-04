@@ -1190,6 +1190,39 @@ void describe('Project setup, v3', () => {
     }
   });
 
+  void test('390 px: a device line’s chip and each Open wrap under its words, inside the card (LAI-321)', async () => {
+    const world: World = {
+      agents: [
+        agentRow({ id: 'a1', grants: FULL }),
+        agentRow({ id: 'a3', harness: 'omnigent', grants: FULL }),
+      ],
+      puts: [],
+      setups: [checked({ id: 'r1', agent_id: 'a1' }), checked({ id: 'r2', agent_id: 'a3' })],
+    };
+    const h = await open('/developer?tab=projects', stub('v3', world));
+    try {
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      await h.page.locator('.dx-ps-setups [data-repo]').waitFor({ timeout: 20_000 });
+      // The card clips what overflows it, so the page never scrolls: measure the controls.
+      const out = await h.page.locator('.dx-ps-setups').evaluate((list) => {
+        const edge = list.getBoundingClientRect().right;
+        const controls = [
+          ...list.querySelectorAll('.dx-repo-device .dx-chip, .dx-repo-device button'),
+        ];
+        return {
+          count: controls.length,
+          past: controls
+            .filter((el) => el.getBoundingClientRect().right > edge + 0.5)
+            .map((el) => el.childNodes[0]?.textContent ?? ''),
+        };
+      });
+      assert.equal(out.count, 3, 'the chip and two Open buttons');
+      assert.deepEqual(out.past, []);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('which view it opens on: the list for a reader with a setup, else the wizard; the address can say (LAI-321)', async () => {
     const list = (): World => ({
       agents: [agentRow({ id: 'a1', grants: FULL })],

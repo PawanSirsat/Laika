@@ -85,7 +85,15 @@
     gap: var(--space-2);
   }
 
+  .dx-repo-device-text {
+    flex-basis: 100%;
+  }
+
+  /* It may shrink to the line, so its own wrap puts a second Open under the first. */
   .dx-repo-device-end {
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 100%;
     justify-content: flex-start;
   }
 }
