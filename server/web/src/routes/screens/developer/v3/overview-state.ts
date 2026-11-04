@@ -4,7 +4,7 @@ import type { ProjectSetup } from '../../../../api/project-setups.ts';
 import { agentLabel, agentProductName } from '../../../../api/selected-agent.ts';
 import type { ChipTone } from './DesignChip.tsx';
 import { deviceCounts, deviceLive, toolStatus, type DeviceCounts } from './devices-view.ts';
-import { recordState, setupEvidence } from './project-setup.ts';
+import { repoGroups, type RepoGroup } from './repo-groups.ts';
 import type { UpdateStatus } from './update-status.ts';
 
 /**
@@ -23,7 +23,8 @@ import type { UpdateStatus } from './update-status.ts';
  *   credential has reached the board — the Devices tab's every status but
  *   *Needs setup* (`toolStatus`). Never *Ready*: that needs the tool's own
  *   verification (`tool-readiness.ts`), which this page does not read.
- * - A **repository setup** is a tool's records for one project. *Checked*
+ * - A **repository setup** is one repository of one project, with each
+ *   device that set it up under it (`repo-groups.ts`, LAI-321). *Checked*
  *   only from `laika project check`'s record of a current block; the reader's
  *   own *I've added it* is *Recorded by you* and said to be not verified.
  *
@@ -60,6 +61,17 @@ export function toolAddress(agentId: string): string {
 /** Where scripts and the API get their credential: the reader's own, under Advanced. */
 export const ADVANCED_ADDRESS = '/developer?tab=advanced';
 
+/**
+ * Project setup's wizard, at `projectsHref` (LAI-321). The tab opens on the
+ * reader's repositories once they have one, so a link that means *set up a
+ * repository* says `view=wizard` rather than landing on the list.
+ */
+export function wizardAddress(projectsHref: string): string {
+  const url = new URL(projectsHref, 'https://laika.invalid');
+  url.searchParams.set('view', 'wizard');
+  return `${url.pathname}${url.search}`;
+}
+
 // ------------------------------------------------------------------ the state
 
 /** The one next step the hero names. */
@@ -67,27 +79,6 @@ export type HeroKind = 'no-device' | 'no-tool' | 'finish-tool' | 'no-setup' | 'a
 
 /** What a repository setup's chip says, from its records alone. */
 export type SetupChipKey = 'checked' | 'recorded' | 'update-available' | 'missing';
-
-/** One tool's records for one project: a row of *Your repository setups*. */
-export interface SetupRow {
-  /** `<project id>:<agent id>` — one row per tool and project. */
-  readonly key: string;
-  readonly projectId: string;
-  /** The slug the record carries: the name to show when the project list has not got it. */
-  readonly projectSlug: string;
-  /** The tool the records are about; `null` for a browser record naming none. */
-  readonly agentId: string | null;
-  /** *Claude Code · Belka*, or {@link NO_TOOL}. */
-  readonly toolLabel: string;
-  /** The repositories `laika project check` named, in the order the read sent them. */
-  readonly repos: readonly string[];
-  /** The instructions file the newest record names, or `null` when none did. */
-  readonly instructionsPath: string | null;
-  readonly chip: SetupChipKey;
-}
-
-/** A browser record may name no tool (SPEC §4.82). */
-export const NO_TOOL = 'No tool named';
 
 export interface OverviewState {
   readonly hero: HeroKind;
@@ -101,66 +92,12 @@ export interface OverviewState {
   readonly needSetup: readonly RegisteredAgent[];
   /** The tool *Finish connecting* is about: the newest that needs setup, when none is connected. */
   readonly pending: RegisteredAgent | undefined;
-  readonly setups: readonly SetupRow[];
-  /** Rows whose records show a block: every row but *missing*. */
+  /** *Your repository setups*: one per repository, each device under it (LAI-321). */
+  readonly setups: readonly RepoGroup[];
+  /** Repositories whose records show a block: every one but *missing*. */
   readonly setUp: number;
-  /** Rows a local check found current. */
+  /** Repositories a local check found current on every device. */
   readonly checked: number;
-}
-
-/**
- * The reader's records grouped one row per tool and project, newest first
- * (the read's own order), each with the one word its records support —
- * `setupEvidence`'s verdict, the Project setup tab's.
- */
-export function setupRows(
-  records: readonly ProjectSetup[],
-  tools: readonly RegisteredAgent[],
-): SetupRow[] {
-  const byId = new Map(tools.map((agent) => [agent.id, agent]));
-  const groups = new Map<string, ProjectSetup[]>();
-  for (const record of records) {
-    // A disconnected tool's records go with it: it reaches nothing now.
-    if (record.agent_id !== null && !byId.has(record.agent_id)) continue;
-    const key = `${record.project_id}:${record.agent_id ?? ''}`;
-    groups.set(key, [...(groups.get(key) ?? []), record]);
-  }
-  return [...groups].map(([key, group]) => {
-    const first = group[0]!;
-    const agent = first.agent_id === null ? undefined : byId.get(first.agent_id);
-    // `setupEvidence` reads one tool's records by its id; a record naming no
-    // tool is grouped under the empty one, which no agent has.
-    const evidence = setupEvidence(
-      group.map((record) => ({ ...record, agent_id: record.agent_id ?? '' })),
-      first.agent_id ?? '',
-    );
-    const chip: SetupChipKey =
-      evidence.overall === 'update-available'
-        ? 'update-available'
-        : evidence.overall === 'missing'
-          ? 'missing'
-          : evidence.checks.some((record) => recordState(record) === 'current')
-            ? 'checked'
-            : 'recorded';
-    const repos = [
-      ...new Set(
-        evidence.checks
-          .map((record) => record.repo_label)
-          .filter((label): label is string => label !== null && label.trim() !== ''),
-      ),
-    ];
-    return {
-      key,
-      projectId: first.project_id,
-      projectSlug: first.project_slug,
-      agentId: first.agent_id,
-      toolLabel: agent === undefined ? NO_TOOL : agentLabel(agent),
-      repos,
-      instructionsPath:
-        group.find((record) => record.instructions_path !== null)?.instructions_path ?? null,
-      chip,
-    };
-  });
 }
 
 /** The Overview's whole state, from the two reads and the clock. */
@@ -173,9 +110,9 @@ export function overviewState(
   const tools = activeTools(listed);
   const needSetup = tools.filter((agent) => toolStatus(agent, now).key === 'needs-setup');
   const connected = tools.length - needSetup.length;
-  const setups = setupRows(records, tools);
-  const setUp = setups.filter((row) => row.chip !== 'missing').length;
-  const checked = setups.filter((row) => row.chip === 'checked').length;
+  const setups = repoGroups(records, tools);
+  const setUp = setups.filter((group) => group.chip !== 'missing').length;
+  const checked = setups.filter((group) => group.chip === 'checked').length;
 
   const hero: HeroKind =
     listed.length === 0
@@ -246,9 +183,10 @@ export function heroTitle(state: Pick<OverviewState, 'hero' | 'pending'>): strin
 }
 
 /**
- * The one next step, from the state alone. `projectsHref` is where *Set up a
- * project* goes — `preview` sends it to the new flow (LAI-1052); `toolsHref`
- * is where *Manage tools* goes.
+ * The one next step, from the state alone. `projectsHref` is Project setup —
+ * `preview` sends it to the new flow (LAI-1052) — and *Set up a project* goes
+ * to its wizard there (`wizardAddress`); `toolsHref` is where *Manage tools*
+ * goes.
  */
 export function heroOf(
   state: OverviewState,
@@ -296,7 +234,7 @@ export function heroOf(
         eyebrow: 'Your next step',
         title,
         sub: 'Your tool is connected. Pick a Laika project, give the tool access to it, and copy a prompt that adds the board’s block to the repository’s instructions file.',
-        primary: { label: 'Set up a project →', href: projectsHref },
+        primary: { label: 'Set up a project →', href: wizardAddress(projectsHref) },
         secondary: manage,
       };
     case 'all-done':
@@ -305,7 +243,7 @@ export function heroOf(
         eyebrow: 'Your next step',
         title,
         sub: `${plural(state.setUp, 'repository setup', 'repository setups')} so far. Each repository needs its own block; your devices and tools are already done.`,
-        primary: { label: 'Set up a repository →', href: projectsHref },
+        primary: { label: 'Set up a repository →', href: wizardAddress(projectsHref) },
         secondary: manage,
       };
   }
@@ -411,7 +349,10 @@ export const STEP_NAMES: Readonly<Record<JourneyStep, string>> = {
   project: 'Set up a project repository',
 };
 
-/** The three steps, each done, the one to do now, or still to come. */
+/**
+ * The three steps, each done, the one to do now, or still to come. The
+ * project step's *Open* is the reader's repositories; its *Start* the wizard.
+ */
 export function journeyRows(
   state: OverviewState,
   projectsHref: string,
@@ -478,7 +419,7 @@ export function journeyRows(
         name: STEP_NAMES.project,
         state: toolDone ? 'active' : 'pending',
         line: 'Project-specific prompt · no new token · no re-install',
-        action: { label: 'Start', href: projectsHref },
+        action: { label: 'Start', href: wizardAddress(projectsHref) },
         ...(toolDone ? {} : { locked: 'Connect a tool first' }),
       };
 
@@ -611,22 +552,6 @@ export const SETUP_CHIPS: Readonly<Record<SetupChipKey, SetupChip>> = {
   'update-available': { word: 'Update available', tone: 'warn' },
   missing: { word: 'No block found', tone: 'warn' },
 };
-
-/**
- * A setup row's second line: the tool, the file, and — for the reader's own
- * word — that it is not verified; for a check that found nothing, so.
- */
-export function setupLine(row: SetupRow): string {
-  const parts = [row.toolLabel, row.instructionsPath ?? 'instructions file not named'];
-  if (row.chip === 'recorded') parts.push('not verified');
-  if (row.chip === 'missing') parts.push('laika project check found no Laika block');
-  return parts.join(' · ');
-}
-
-/** The row's title: the project, then any repository a check named. */
-export function setupTitle(row: SetupRow, projectName: string): string {
-  return row.repos.length === 0 ? projectName : `${projectName} · ${row.repos.join(', ')}`;
-}
 
 // ------------------------------------------------------------------ the live region
 

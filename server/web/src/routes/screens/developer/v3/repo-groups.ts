@@ -47,6 +47,23 @@ export interface RepoGroup {
   readonly devices: readonly RepoDevice[];
 }
 
+/** A device line whose records name no tool: a browser record may name none (SPEC §4.82). */
+export const NO_TOOL = 'No tool named';
+
+/**
+ * A device line's words after its name: its tools, then what its chip does
+ * not already say — *not verified* for the reader's word alone, *also
+ * recorded by you* when they said so beside a check.
+ */
+export function deviceLine(device: Pick<RepoDevice, 'tools' | 'chip' | 'recordedByYou'>): string {
+  const parts = [
+    device.tools.length === 0 ? NO_TOOL : device.tools.map((tool) => tool.name).join(', '),
+  ];
+  if (device.chip === 'recorded') parts.push('not verified');
+  else if (device.recordedByYou) parts.push('also recorded by you');
+  return parts.join(' · ');
+}
+
 /** Worst first: what needs a person's attention outranks what is merely unverified. */
 const CHIP_ORDER: readonly SetupChipKey[] = ['missing', 'update-available', 'recorded', 'checked'];
 
