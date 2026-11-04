@@ -251,6 +251,25 @@
   border-top: 1px solid var(--border-subtle);
 }
 
+/* ---- step 2: the prompt window ---- */
+
+/*
+ * LAI-1099 #10: the prompt is hard-wrapped already, so the window keeps its
+ * lines as they are and scrolls sideways inside itself, rather than breaking
+ * each long one a second time. The page itself still never scrolls sideways.
+ */
+.dx-ps .conn-project-prompt {
+  overflow-x: auto;
+  overflow-wrap: normal;
+  white-space: pre;
+}
+
+.dx-ps .conn-project-prompt .conn-line {
+  display: inline;
+  padding-inline-start: 0;
+  text-indent: 0;
+}
+
 /* ---- the aside's first list: a rule under the label, then one per item ---- */
 
 .dx-ps-separate {

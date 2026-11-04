@@ -929,6 +929,44 @@ void describe('Project setup, v3', () => {
     }
   });
 
+  void test('the prompt window keeps the prompt’s own lines, and scrolls inside itself (LAI-1099 #10)', async () => {
+    const world: World = { agents: [agentRow({ id: 'a1', grants: FULL })], puts: [] };
+    const h = await open('/developer?tab=projects&step=2', stub('v3', world));
+    try {
+      for (const width of [1440, 390]) {
+        await h.page.setViewportSize({ width, height: 900 });
+        const prompt = h.page.locator('.conn-project-prompt');
+        await prompt.waitFor({ timeout: 20_000 });
+        // Each of the prompt's lines draws as one row: none is broken again.
+        const rows = await prompt.locator('.conn-line').evaluateAll((els) =>
+          els.map((el) => {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const tops = new Set([...range.getClientRects()].map((r) => Math.round(r.top)));
+            return { text: el.textContent ?? '', rows: tops.size };
+          }),
+        );
+        assert.ok(rows.length > 10, `${String(width)}px: ${String(rows.length)} lines`);
+        const broken = rows.filter((r) => r.rows !== 1);
+        assert.deepEqual(broken, [], `${String(width)}px: lines broken a second time`);
+        // What does not fit scrolls inside the window, never the page.
+        const box = await prompt.evaluate((el) => ({
+          scrolls: el.scrollWidth > el.clientWidth,
+          overflowX: getComputedStyle(el).overflowX,
+          page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        }));
+        assert.equal(box.overflowX, 'auto');
+        assert.ok(
+          box.page <= 0,
+          `${String(width)}px: the page scrolls sideways by ${String(box.page)}px`,
+        );
+        if (width === 390) assert.equal(box.scrolls, true, 'nothing to scroll at 390px');
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the setups list: every project’s records, newest first, each opening its step 3', async () => {
     const world: World = {
       agents: [
