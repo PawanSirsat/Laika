@@ -844,7 +844,7 @@ void describe('the prototype geometry (LAI-249)', () => {
     }
   });
 
-  void test('the user menu: profile, theme, Developer access, sign out — and its keys', async () => {
+  void test('the user menu: profile, theme, Appearance (LAI-1125), Developer access, sign out — and its keys', async () => {
     const h = await open('/board?project=laika-core', {
       ...STUB,
       '/api/v1/auth/sign-out': {},
@@ -865,11 +865,13 @@ void describe('the prototype geometry (LAI-249)', () => {
       const firstLines = async () =>
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|');
       await until(
-        async () => (await firstLines()) === 'My profile|Switch to dark|Developer access|Sign out',
+        async () =>
+          (await firstLines()) ===
+          'My profile|Switch to dark|Appearance…|Developer access|Sign out',
       );
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
-        ['My profile', 'Switch to dark', 'Developer access', 'Sign out'],
+        ['My profile', 'Switch to dark', 'Appearance…', 'Developer access', 'Sign out'],
       );
       assert.equal(
         await menu.locator('a', { hasText: 'My profile' }).getAttribute('href'),
@@ -953,11 +955,11 @@ void describe('the prototype geometry (LAI-249)', () => {
       await until(
         async () =>
           (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|') ===
-          'Switch to dark|Developer access|Sign out',
+          'Switch to dark|Appearance…|Developer access|Sign out',
       );
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
-        ['Switch to dark', 'Developer access', 'Sign out'],
+        ['Switch to dark', 'Appearance…', 'Developer access', 'Sign out'],
       );
     } finally {
       await h.close();
