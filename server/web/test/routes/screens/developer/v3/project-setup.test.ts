@@ -11,6 +11,7 @@ import type { RegisteredAgent } from '../../../../../src/api/agents.ts';
 import type { ProjectAccess } from '../../../../../src/api/project-access.ts';
 import type { ProjectSetup } from '../../../../../src/api/project-setups.ts';
 import {
+  askedView,
   CLI_HARNESS,
   cliMatchHint,
   connectedTools,
@@ -21,14 +22,13 @@ import {
   hasRecord,
   levelChip,
   noDeviceCheck,
+  openingView,
   parseStep,
   projectCheckCommand,
-  recordChip,
   recordFinding,
   recordSource,
   recordState,
   setupEvidence,
-  setupRow,
   stepNumber,
   verificationWords,
   withOneGrant,
@@ -527,44 +527,33 @@ void describe('done and the setups list say no more than the records (LAI-1082)'
       'An update is available',
     );
   });
+});
 
-  void test('a list row: Checked for a current local check, the reader’s word never', () => {
-    assert.deepEqual(recordChip(setup({ id: 's1' })), { word: 'Checked', tone: 'ok' });
-    assert.deepEqual(recordChip(self), { word: 'Recorded by you', tone: 'neutral' });
-    assert.deepEqual(recordChip(setup({ id: 's1', template_revision: 1 })), {
-      word: 'Update available',
-      tone: 'warn',
-    });
-    assert.deepEqual(recordChip(setup({ id: 's1', block_found: false, template_revision: null })), {
-      word: 'No block found',
-      tone: 'warn',
-    });
-    assert.deepEqual(recordChip({ ...self, block_found: false }), {
-      word: 'No block found',
-      tone: 'warn',
-    });
+void describe('which view Project setup opens on (LAI-321)', () => {
+  const params = (query: string) => new URLSearchParams(query);
+
+  void test('the address decides when it names a view, or a place in the wizard', () => {
+    assert.equal(askedView(params('tab=projects&view=setups')), 'setups');
+    assert.equal(askedView(params('tab=projects&view=wizard')), 'wizard');
+    // Tools' Set up project, the list's Open, a bookmarked step.
+    assert.equal(askedView(params('tab=projects&tool=a1')), 'wizard');
+    assert.equal(askedView(params('tab=projects&project=onroute')), 'wizard');
+    assert.equal(askedView(params('tab=projects&step=2')), 'wizard');
+    // The list wins over a wizard place it was opened from.
+    assert.equal(askedView(params('tab=projects&view=setups&tool=a1&step=3')), 'setups');
+    // Otherwise the records decide; preview's own key is not a place in the wizard.
+    assert.equal(askedView(params('tab=projects')), undefined);
+    assert.equal(askedView(params('tab=projects&setup=v3')), undefined);
+    assert.equal(askedView(params('tab=projects&view=nonsense')), undefined);
   });
 
-  void test('a list row names the project, repository, tool and who said it', () => {
-    const agents = [
-      agent({ id: 'a1' }),
-      agent({ id: 'a2', harness: 'codex', device_label: 'Strelka', status: 'revoked' }),
-    ];
-    assert.deepEqual(setupRow(setup({ id: 's1' }), agents, 'OnRoute'), {
-      title: 'OnRoute · onroute-app',
-      sub: 'Claude Code · Belka · CLAUDE.md · checked on Belka',
-      chip: { word: 'Checked', tone: 'ok' },
-      toolId: 'a1',
-    });
-    const mine = setupRow(self, agents, undefined);
-    assert.equal(mine.title, 'onroute');
-    assert.equal(mine.sub, 'Claude Code · Belka · CLAUDE.md · your word, not verified');
-    // A disconnected tool, or one gone altogether, cannot be reopened.
-    const revoked = setupRow(setup({ id: 's3', agent_id: 'a2' }), agents, 'OnRoute');
-    assert.match(revoked.sub, /^Codex · Strelka · disconnected · /);
-    assert.equal(revoked.toolId, null);
-    const gone = setupRow(setup({ id: 's4', agent_id: null }), agents, 'OnRoute');
-    assert.match(gone.sub, /^A tool no longer connected · /);
-    assert.equal(gone.toolId, null);
+  void test('a reader with a setup for a connected tool sees their repositories; one without, the wizard', () => {
+    const agents = [agent({ id: 'a1' }), agent({ id: 'a2', status: 'revoked' })];
+    assert.equal(openingView([{ agent_id: 'a1' }], agents), 'setups');
+    assert.equal(openingView([], agents), 'wizard');
+    // A record about a disconnected tool reaches nothing, and is not listed.
+    assert.equal(openingView([{ agent_id: 'a2' }], agents), 'wizard');
+    assert.equal(openingView([{ agent_id: 'gone' }], agents), 'wizard');
+    assert.equal(openingView([{ agent_id: null }], agents), 'wizard');
   });
 });

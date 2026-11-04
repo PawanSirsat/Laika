@@ -706,11 +706,31 @@ const readSetups = (page: Page) =>
       ),
     );
 
+/** Each repository's devices, line by line: the device, its tools and what its chip says. */
+const readDevices = (page: Page) =>
+  page.locator('[data-setups] .dx-repo').evaluateAll((rows) =>
+    rows.map((row) => ({
+      repo: row.querySelector('.dx-record-title')?.textContent ?? '',
+      devices: [...row.querySelectorAll('.dx-repo-device')].map((li) =>
+        [
+          li.querySelector('.dx-repo-device-name')?.textContent ?? '',
+          li.querySelector('.dx-repo-device-line')?.textContent ?? '',
+          li.querySelector('.dx-chip')?.textContent ?? '',
+        ].join(' | '),
+      ),
+    })),
+  );
+
 /** Where *Manage tools* goes. */
 const TOOLS_HREF = OVERVIEW_ADDRESSES.tools;
 
-const NEW_SETUP_ROW =
-  'new | Set up a new repository | Choose an existing Laika project, your connected tool, then copy a safe prompt into your agent. | Set up repository → /developer?tab=projects';
+/**
+ * Project setup's wizard (LAI-321): the tab opens on the reader's
+ * repositories once they have one, so *set up a repository* names the wizard.
+ */
+const WIZARD_HREF = '/developer?tab=projects&view=wizard';
+
+const NEW_SETUP_ROW = `new | Set up a new repository | Choose an existing Laika project, your connected tool, then copy a safe prompt into your agent. | Set up repository → ${WIZARD_HREF}`;
 
 /** The design's lines for the steps still to do (LAI-1096). */
 const LINE = {
@@ -937,7 +957,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         eyebrow: 'YOUR NEXT STEP',
         title: 'Set up your project repository',
         links: [
-          ['Set up a project →', '/developer?tab=projects'],
+          ['Set up a project →', WIZARD_HREF],
           ['Manage tools', TOOLS_HREF],
         ],
       });
@@ -1003,7 +1023,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         [
           ['done', '2 devices · Belka, Strelka', 'Manage', OVERVIEW_ADDRESSES.devices],
           ['done', '3 tools registered, 1 connected', 'Manage', TOOLS_HREF],
-          ['active', LINE.project, 'Start', '/developer?tab=projects'],
+          ['active', LINE.project, 'Start', WIZARD_HREF],
         ],
       );
       assert.deepEqual(await readStatus(h.page), [
@@ -1020,8 +1040,8 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       await hero(h.page).getByRole('link', { name: 'Set up a project →' }).click();
       await h.page.waitForURL(/tab=projects/, { timeout: 20_000 });
       // It lands on Project setup's wizard (LAI-1082), not just its address.
-      await h.page.locator('.dev-setup').waitFor({ timeout: 20_000 });
-      assert.equal(here(h.page), '/developer?tab=projects');
+      await h.page.locator('.dev-setup[data-view="wizard"]').waitFor({ timeout: 20_000 });
+      assert.equal(here(h.page), WIZARD_HREF);
       assert.equal(await active(h.page), 'projects');
     } finally {
       await h.close();
@@ -1036,7 +1056,7 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
         eyebrow: 'YOUR NEXT STEP',
         title: 'Set up another repository',
         links: [
-          ['Set up a repository →', '/developer?tab=projects'],
+          ['Set up a repository →', WIZARD_HREF],
           ['Manage tools', TOOLS_HREF],
         ],
       });
@@ -1045,7 +1065,9 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       assert.deepEqual(journey.rows[2], {
         step: 'project',
         state: 'done',
-        line: '3 repository setups · 1 checked',
+        // Two repositories: OnRoute's, set up by two tools on Belka, and Atlas's.
+        line: '2 repository setups',
+        // Open is the reader's repositories; the tab opens on them for this reader.
         action: 'Open',
         href: '/developer?tab=projects',
         disabled: false,
@@ -1053,16 +1075,24 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       });
       assert.deepEqual(
         (await readStatus(h.page))[2],
-        'setups | 3 repositories set up | 1 checked, 1 not verified, 1 to update | 1 needs an update',
+        'setups | 2 repositories set up | 1 not verified, 1 to update | 1 needs an update',
       );
-      // The project's name where the list has it, its slug where it does not;
-      // Checked only from laika project check; the reader's word is not verified.
-      await h.page.getByText('OnRoute · onroute-app').waitFor({ timeout: 20_000 });
+      // One row per repository (LAI-321): its name, then the project — its
+      // name where the list has it, its slug where it does not — and file.
+      // A repository reads as its least certain device: Codex's word on Belka
+      // is not verified, though Claude Code's check there was.
+      await h.page.locator('[data-setups] [data-repo]').first().waitFor({ timeout: 20_000 });
       assert.deepEqual(await readSetups(h.page), [
         NEW_SETUP_ROW,
-        'checked | OnRoute · onroute-app | Claude Code · Belka · CLAUDE.md | Checked',
-        'recorded | OnRoute | Codex · Belka · AGENTS.md · not verified | Recorded by you',
-        'update-available | atlas · atlas-web | Claude Code · Belka · CLAUDE.md | Update available',
+        'recorded | onroute-app | OnRoute · CLAUDE.md | Recorded by you',
+        'update-available | atlas-web | atlas · CLAUDE.md | Update available',
+      ]);
+      assert.deepEqual(await readDevices(h.page), [
+        {
+          repo: 'onroute-app',
+          devices: ['Belka | Claude Code, Codex · not verified | Recorded by you'],
+        },
+        { repo: 'atlas-web', devices: ['Belka | Claude Code | Update available'] },
       ]);
       // The design's title; the region keeps the name of what it lists (LAI-1096).
       assert.equal(
@@ -1086,6 +1116,88 @@ void describe('the Overview (LAI-1048, LAI-1079)', () => {
       assert.ok(list !== null && columns !== null);
       assert.ok(list.y >= columns.y + columns.height, 'the setups list is not under the columns');
       assert.equal(Math.round(list.width), Math.round(columns.width));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a repository set up on two laptops is one row, each laptop a line under it (LAI-321)', async () => {
+    // The owner's own records on 2026-11-04: Laika by three tools on two
+    // laptops read "Laika · Laika" three times, and OnRoute's "I've added it"
+    // was a bare row of its own.
+    const laika = {
+      project_id: 'p2',
+      project_slug: 'laika',
+      repo_label: 'Laika',
+      repo_key: 'c'.repeat(64),
+    };
+    const h = await open(
+      '/developer',
+      overview(
+        [
+          deviceRow('d1', 'KvellD 36 GB', [
+            tool({ id: 'a1', device_label: 'KvellD 36 GB' }),
+            tool({ id: 'a2', harness: 'omnigent', device_label: 'KvellD 36 GB', created_at: 2 }),
+          ]),
+          deviceRow('d2', 'Pawan 16 GB', [
+            tool({ id: 'a3', harness: 'omnigent', device_label: 'Pawan 16 GB', created_at: 3 }),
+            tool({ id: 'a4', device_label: 'Pawan 16 GB', created_at: 4 }),
+          ]),
+        ],
+        [
+          localCheck({ id: 's1', agent_id: 'a1', ...laika }),
+          localCheck({ id: 's2', agent_id: 'a3', ...laika }),
+          localCheck({ id: 's3', agent_id: 'a2', instructions_path: 'AGENTS.md', ...laika }),
+          localCheck({
+            id: 's4',
+            agent_id: 'a4',
+            repo_label: 'On-Route',
+            repo_key: 'd'.repeat(64),
+          }),
+          setupRecord({ id: 's5', agent_id: 'a4' }),
+        ],
+      ),
+    );
+    try {
+      await h.page.locator('[data-setups] [data-repo]').first().waitFor({ timeout: 20_000 });
+      // Laika once, named once; OnRoute once, its own word under its check.
+      assert.deepEqual(await readSetups(h.page), [
+        NEW_SETUP_ROW,
+        'checked | Laika | CLAUDE.md | Checked',
+        'checked | On-Route | CLAUDE.md | Checked',
+      ]);
+      assert.deepEqual(await readDevices(h.page), [
+        {
+          repo: 'Laika',
+          devices: [
+            'KvellD 36 GB | Claude Code, Omnigent | Checked',
+            'Pawan 16 GB | Omnigent | Checked',
+          ],
+        },
+        {
+          repo: 'On-Route',
+          devices: ['Pawan 16 GB | Claude Code · also recorded by you | Checked'],
+        },
+      ]);
+      // Nested as a list of its own, named for its repository.
+      assert.equal(
+        await h.page
+          .getByRole('list', { name: 'Devices that set up Laika' })
+          .getByRole('listitem')
+          .count(),
+        2,
+      );
+      // Counted as the two repositories they are.
+      assert.equal(
+        (await readStatus(h.page))[2],
+        'setups | 2 repositories set up | 2 checked | Checked',
+      );
+
+      // A reader with setups still reaches the wizard from here, not their list.
+      await h.page.getByRole('link', { name: 'Set up repository →' }).click();
+      await h.page.locator('.dev-setup[data-view="wizard"]').waitFor({ timeout: 20_000 });
+      assert.equal(here(h.page), WIZARD_HREF);
+      assert.equal(await h.page.locator('.dx-ps-setups').count(), 0);
     } finally {
       await h.close();
     }
@@ -1585,7 +1697,10 @@ void describe(
               await setTheme(h.page, theme);
               await hero(h.page).waitFor({ timeout: 20_000 });
               if (name === 'all-done') {
-                await h.page.getByText('OnRoute · onroute-app').waitFor({ timeout: 20_000 });
+                await h.page
+                  .locator('[data-setups] [data-repo]')
+                  .first()
+                  .waitFor({ timeout: 20_000 });
               }
               // The theme's colours ease in; the picture is of where they land.
               await h.page.evaluate(() =>

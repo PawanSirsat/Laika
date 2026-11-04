@@ -20,25 +20,23 @@ import { LoadingState } from '../../../../components/LoadingState.tsx';
 import { LiveRegion } from '../../../../components/wizard/LiveRegion.tsx';
 import { useLiveRegion } from '../../../../components/wizard/live-region.ts';
 import { DesignChip } from './DesignChip.tsx';
-import { DxIcon, type DxIconName } from './DxIcon.tsx';
+import { DxIcon } from './DxIcon.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
 import {
   ADVANCED_ADDRESS,
   OVERVIEW_ADDRESSES,
-  SETUP_CHIPS,
   attentionItems,
   heroOf,
   journeyComplete,
   journeyRows,
   overviewState,
   overviewSummary,
-  setupLine,
-  setupTitle,
   statusLines,
+  wizardAddress,
   type AttentionItem,
   type HeroKind,
-  type SetupChipKey,
 } from './overview-state.ts';
+import { RepoRows } from './RepoRows.tsx';
 import { updateManifestOf, updateStatus, type UpdateStatus } from './update-status.ts';
 import './overview.css';
 
@@ -58,13 +56,6 @@ interface Failure {
   readonly resource: string;
   readonly cause: unknown;
 }
-
-const SETUP_ICON: Readonly<Record<SetupChipKey, DxIconName>> = {
-  checked: 'check',
-  recorded: 'repo',
-  'update-available': 'alert',
-  missing: 'alert',
-};
 
 /** An in-app link: a real `href`, and a plain click stays in the page. */
 function AppLink({
@@ -535,8 +526,9 @@ export function OverviewTab({
                   </span>
                 </div>
                 <div className="dx-record-end">
+                  {/* The wizard, not the tab: it opens on these rows once there are any. */}
                   <AppLink
-                    href={projectsHref}
+                    href={wizardAddress(projectsHref)}
                     className="dx-btn dx-btn-primary"
                     onNavigate={onNavigate}
                   >
@@ -544,29 +536,10 @@ export function OverviewTab({
                   </AppLink>
                 </div>
               </li>
-              {state.setups.map((row) => {
-                const chip = SETUP_CHIPS[row.chip];
-                const title = setupTitle(row, names.get(row.projectId) ?? row.projectSlug);
-                const line = setupLine(row);
-                return (
-                  <li key={row.key} className="dx-record" data-setup={row.chip}>
-                    <span className="dx-icon">
-                      <DxIcon name={SETUP_ICON[row.chip]} />
-                    </span>
-                    <div className="dx-record-main">
-                      <strong className="dx-record-title" title={title}>
-                        {title}
-                      </strong>
-                      <span className="dx-record-sub" title={line}>
-                        {line}
-                      </span>
-                    </div>
-                    <div className="dx-record-end">
-                      <DesignChip tone={chip.tone}>{chip.word}</DesignChip>
-                    </div>
-                  </li>
-                );
-              })}
+              <RepoRows
+                groups={state.setups}
+                projectName={(group) => names.get(group.projectId) ?? group.projectSlug}
+              />
             </ul>
           </div>
         </section>

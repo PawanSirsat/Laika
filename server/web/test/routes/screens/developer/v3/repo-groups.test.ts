@@ -9,6 +9,8 @@ import { describe, test } from 'node:test';
 import type { RegisteredAgent } from '../../../../../src/api/agents.ts';
 import type { ProjectSetup } from '../../../../../src/api/project-setups.ts';
 import {
+  deviceLine,
+  NO_TOOL,
   repoGroups,
   repoMeta,
   repoTitle,
@@ -171,6 +173,21 @@ void describe('one row per repository (LAI-321)', () => {
     assert.deepEqual(
       groups[0]!.devices.map((d) => d.device),
       ['KvellD’s MacBook 36 GB'],
+    );
+  });
+
+  void test('a device line names its tools, then what its chip does not say', () => {
+    const [laika, onroute] = repoGroups(OWNERS_RECORDS, TOOLS);
+    assert.deepEqual(laika!.devices.map(deviceLine), ['Claude Code, Omnigent', 'Omnigent']);
+    // A check found the block, and the reader also said so.
+    assert.equal(deviceLine(onroute!.devices[0]!), 'Claude Code · also recorded by you');
+    // The reader's word alone: the chip says Recorded by you, the line says not verified.
+    const [alone] = repoGroups([said({ id: 's1', agent_id: 'polly' })], TOOLS);
+    assert.equal(alone!.devices[0]!.chip, 'recorded');
+    assert.equal(deviceLine(alone!.devices[0]!), 'Omnigent · not verified');
+    assert.equal(
+      deviceLine({ tools: [], chip: 'recorded', recordedByYou: true }),
+      `${NO_TOOL} · not verified`,
     );
   });
 
