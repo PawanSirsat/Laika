@@ -2,7 +2,7 @@
 id: LAI-1100
 title: 'Developer access V3 fidelity, slice D: Tool and Device details, Advanced'
 area: shell
-assignee: shell/belka
+assignee: strelka
 priority: p2
 depends-on: []
 status: in-progress
@@ -63,3 +63,16 @@ and C (LAI-1097) run in parallel and own other files.
 - `design.css` is slice A's; `components/wizard/*` and `SidePanel.tsx` are
   frozen; `developer-v3-fixtures.ts` takes additions only.
 - Belka: one test file at a time, `--maxWorkers=1`; CI runs the gate.
+
+## Taken over (Strelka, 2026-11-05)
+
+The owner directed Strelka to take this over and land it with LAI-321:
+*"no one is available. Only this device is available right now, so do
+everything by yourself."* Belka's claim had expired on 2026-11-03 with only
+the claim commit on the branch. The branch was merged into
+`LAI-321-developer-access-cleanup` and the work continues there.
+
+`laika-developer-access-v3.html` and `.polly/plans/v3-fidelity-gaps.md` are on
+neither this machine nor any git ref. So the gaps are built from this file's
+criteria and notes, and the side-by-side evidence is ours alone (light and
+dark, 1440 and 390), with no prototype pane.

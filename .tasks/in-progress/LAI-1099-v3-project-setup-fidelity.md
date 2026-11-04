@@ -2,7 +2,7 @@
 id: LAI-1099
 title: 'Project setup matches the V3 prototype: the CLI-version text behind a Help popover, the prompt window reads like a terminal'
 area: shell
-assignee: shell/belka
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-1093
@@ -53,3 +53,16 @@ the update guide files are slice D's.
       done state, light and dark, 1440 and 390, in `.polly/evidence/LAI-1099/`
       with an `index.html`.
 - [ ] No new token and no raw hex; any token gap names the nearest token used.
+
+## Taken over (Strelka, 2026-11-05)
+
+The owner directed Strelka to take this over and land it with LAI-321:
+*"no one is available. Only this device is available right now, so do
+everything by yourself."* Belka's claim had expired on 2026-11-03 with only
+the claim commit on the branch. The branch was merged into
+`LAI-321-developer-access-cleanup` and the work continues there.
+
+`laika-developer-access-v3.html` and `.polly/plans/v3-fidelity-gaps.md` are on
+neither this machine nor any git ref. So the gaps are built from this file's
+criteria and notes, and the side-by-side evidence is ours alone (light and
+dark, 1440 and 390), with no prototype pane.
