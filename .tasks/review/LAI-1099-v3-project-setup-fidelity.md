@@ -6,7 +6,8 @@ assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-1093
-status: in-progress
+status: review
+finished: 2026-11-04T20:11:57Z
 started: 2026-11-03T13:04:15+05:30
 ---
 
@@ -37,22 +38,22 @@ the update guide files are slice D's.
 
 ## Acceptance criteria
 
-- [ ] #9: step 3's CLI-version paragraph is one short line plus a `Help`
+- [x] #9: step 3's CLI-version paragraph is one short line plus a `Help`
       popover; the LAI-1093 hint text is unchanged inside it, and its guide
       placement is kept.
-- [ ] #9: step 3's two option cards read as the prototype's `.check` rows,
+- [x] #9: step 3's two option cards read as the prototype's `.check` rows,
       each a status plus its action, with no checkboxes.
-- [ ] #10: the step-2 prompt window does not re-wrap the prompt's lines; the
+- [x] #10: the step-2 prompt window does not re-wrap the prompt's lines; the
       prompt text itself is unchanged (its tests pin it).
-- [ ] Every LAI-1084/1090/1091/1093 behaviour is kept: the refused-tool
+- [x] Every LAI-1084/1090/1091/1093 behaviour is kept: the refused-tool
       *record it yourself* branch, `--harness` on the check command,
       *Checked by laika project check* against *Recorded by you, not
       verified*.
-- [ ] Each changed behaviour has a test that fails when the change is undone.
+- [x] Each changed behaviour has a test that fails when the change is undone.
 - [ ] Side-by-side pairs (prototype left, ours right) for each step and the
       done state, light and dark, 1440 and 390, in `.polly/evidence/LAI-1099/`
       with an `index.html`.
-- [ ] No new token and no raw hex; any token gap names the nearest token used.
+- [x] No new token and no raw hex; any token gap names the nearest token used.
 
 ## Taken over (Strelka, 2026-11-05)
 
@@ -66,3 +67,9 @@ the claim commit on the branch. The branch was merged into
 neither this machine nor any git ref. So the gaps are built from this file's
 criteria and notes, and the side-by-side evidence is ours alone (light and
 dark, 1440 and 390), with no prototype pane.
+
+## Review notes (builder)
+
+- The side-by-side criterion stays unticked. The V3 prototype is on neither
+  Strelka nor any git ref, so only our side exists: light and dark, 1440 and
+  390, in `.polly/evidence/LAI-1099/index.html`.

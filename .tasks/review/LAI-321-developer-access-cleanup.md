@@ -5,7 +5,8 @@ area: web
 assignee: strelka
 priority: p1
 depends-on: []
-status: in-progress
+status: review
+finished: 2026-11-04T20:11:57Z
 started: 2026-11-04T18:35:29Z
 ---
 
@@ -41,11 +42,11 @@ on Strelka).
 
 ## Acceptance criteria
 
-- [ ] **A. `repo_key` on a setup record.** `GET /project-setups` serves each
+- [x] **A. `repo_key` on a setup record.** `GET /project-setups` serves each
       record's `repo_key`, which is `''` when the record has no repository.
       The client type declares it, and SPEC's project-setups section has the
       row.
-- [ ] **B. One row per repository.**
+- [x] **B. One row per repository.**
       - The Overview's *Your repository setups* and Project setup's list show
         one row per project and repository. Each device that set it up is a
         line under the row, naming its tools and its own status.
@@ -54,18 +55,18 @@ on Strelka).
       - The project and the instructions file form the meta line.
       - An *I've added it* record joins the repository it belongs to, as
         *also recorded by you*.
-- [ ] **C. Project setup.** A user with a setup sees their repositories first,
+- [x] **C. Project setup.** A user with a setup sees their repositories first,
       with *Set up a new repository* at the top. A user with none sees the
       wizard.
       - `?tool=` and *Set up repository →* open the wizard directly.
       - `?view=setups` still works.
       - Depends on LAI-1099 being released to Strelka.
-- [ ] **D. Tools by tool.** One row per tool, with each device as a line under
+- [x] **D. Tools by tool.** One row per tool, with each device as a line under
       it, each keeping its own status and opening its own details. No line
       shows a name its owner typed: a tool is `<harness> · <device>`
       (D-120). This corrects the plan's "Omnigent — Polly". Depends on #250
       (LAI-1097), which is merged into this branch.
-- [ ] **E. Advanced, folded.** This adds to LAI-1100's criteria, which still
+- [x] **E. Advanced, folded.** This adds to LAI-1100's criteria, which still
       apply.
       - The credentials list and *+ New* stay on top. *Scope reference* and the
         API example go into one closed fold.
@@ -74,15 +75,15 @@ on Strelka).
         are closed folds.
       - The classic screen is unchanged.
       - Depends on LAI-1100 being released to Strelka.
-- [ ] **F. A profile's tokens.**
+- [x] **F. A profile's tokens.**
       - A summary line by kind, and tokens with the same name grouped
         (*claude-code on macOS × 6*).
       - The 3 most recently used per kind, then *Show all*.
       - *Never used* and *Idle* marked; full-width compact rows.
       - Revoke stays per token, with its confirmation and impact line.
-- [ ] Each changed behaviour has a test that fails when the change is undone.
-- [ ] Both themes, desktop and 390px. No new design token and no raw hex.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0. GitHub's gate
+- [x] Each changed behaviour has a test that fails when the change is undone.
+- [x] Both themes, desktop and 390px. No new design token and no raw hex.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0. GitHub's gate
       on the PR is the clean run.
 
 ## Notes
