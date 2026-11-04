@@ -33,6 +33,13 @@ export interface PageTab {
    * text, so a screen reader hears it too.
    */
   readonly badge?: string;
+  /**
+   * Drawn by its page after the tabs, as a quieter link, rather than as a tab
+   * of its own — V3's *Advanced* (LAI-1096), which the owner's design leaves
+   * out of its four tabs. **It is still a tab to `currentTab`**, so its
+   * address opens it and every link to it keeps working.
+   */
+  readonly secondary?: true;
 }
 
 /**
@@ -90,13 +97,17 @@ export const DEVELOPER_TABS: readonly PageTab[] = [
  * link to it means the same place in every mode. **Activity is not a tab of
  * its own here**: *Share local activity* is the second card on Advanced, and
  * `?tab=activity` lands on it (`developerAlias`).
+ *
+ * **The design has four tabs** (LAI-1096): Advanced is `secondary`, a quieter
+ * link at the end of the row, so the four fit a phone's width — and an
+ * address naming it still opens it.
  */
 export const DEVELOPER_V3_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'projects', label: 'Project setup' },
   { id: 'devices', label: 'Devices' },
   { id: 'tools', label: 'Tools' },
-  { id: 'advanced', label: 'Advanced' },
+  { id: 'advanced', label: 'Advanced', secondary: true },
 ];
 
 /**
@@ -116,18 +127,34 @@ export function isV3OnlyTab(id: string): boolean {
 /**
  * The Developer access tabs a mode offers. **Preview keeps every classic tab
  * and its order**, Connect still first and so still the default, and adds the
- * V3-only tabs after them, each marked *Preview*.
+ * V3-only tabs after them, each marked *Preview* — Advanced as a tab like the
+ * others, since preview's bar is not the design's.
  */
 export function developerTabs(mode: DeveloperAccessMode): readonly PageTab[] {
   if (mode === 'v3') return DEVELOPER_V3_TABS;
   if (mode === 'classic') return DEVELOPER_TABS;
   return [
     ...DEVELOPER_TABS,
-    ...DEVELOPER_V3_TABS.filter((tab) => V3_ONLY.has(tab.id)).map((tab) => ({
-      ...tab,
+    ...DEVELOPER_V3_TABS.filter((tab) => V3_ONLY.has(tab.id)).map(({ id, label }) => ({
+      id,
+      label,
       badge: 'Preview',
     })),
   ];
+}
+
+/**
+ * A page's tab row split in two (LAI-1096): the tabs it draws as tabs, then
+ * the `secondary` ones it draws after them as quieter links.
+ */
+export function splitTabs(tabs: readonly PageTab[]): {
+  readonly drawn: readonly PageTab[];
+  readonly secondary: readonly PageTab[];
+} {
+  return {
+    drawn: tabs.filter((tab) => tab.secondary !== true),
+    secondary: tabs.filter((tab) => tab.secondary === true),
+  };
 }
 
 /**

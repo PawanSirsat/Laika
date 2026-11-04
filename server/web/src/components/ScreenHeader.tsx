@@ -17,6 +17,13 @@ export interface ScreenHeaderProps {
   readonly variant?: 'band' | 'page';
   /** Page only: a sentence under the title. */
   readonly description?: ReactNode;
+  /**
+   * Page only: a short line over the title, in the accent. For a page whose
+   * title says what it is *for* — Developer access V3's *Connect your work to
+   * Laika* (LAI-1096) — the eyebrow carries the page's name, so the name the
+   * sidebar gave is still the first thing read. The band ignores it.
+   */
+  readonly eyebrow?: string;
   /** Page only: before the title — an organisation's mark. */
   readonly lead?: ReactNode;
   /** Page only: the row under the title — the page's tabs, or My day's week. */
@@ -76,6 +83,7 @@ export function ScreenHeader({
   children,
   variant = 'band',
   description,
+  eyebrow,
   lead,
   below,
   onActionsSlot,
@@ -104,6 +112,7 @@ export function ScreenHeader({
         <div className="screen-page-row">
           {lead}
           <div className="screen-page-titles">
+            {eyebrow !== undefined && <p className="screen-page-eyebrow">{eyebrow}</p>}
             <div className="screen-page-titleline">
               <h1 className="screen-page-title">{title}</h1>
               {context !== undefined && <span className="screen-page-context">{context}</span>}

@@ -18,6 +18,7 @@ import {
   currentTab,
   inboxCount,
   refusedTab,
+  splitTabs,
   tabHref,
   visibleTabs,
 } from '../../src/routes/page-tabs.ts';
@@ -233,6 +234,37 @@ void describe('Developer access tabs by mode (LAI-1048, plan §C, §I)', () => {
       false,
       'Share local activity is Advanced’s second card in v3 (LAI-1078)',
     );
+  });
+
+  void test('v3 draws the design’s four tabs; Advanced is the quieter link after them (LAI-1096)', () => {
+    const { drawn, secondary } = splitTabs(developerTabs('v3'));
+    assert.deepEqual(
+      drawn.map((t) => t.label),
+      ['Overview', 'Project setup', 'Devices', 'Tools'],
+    );
+    assert.deepEqual(
+      secondary.map((t) => t.id),
+      ['advanced'],
+    );
+    // Still a tab to the address: ?tab=advanced opens it, not the Overview.
+    assert.equal(currentTab(developerTabs('v3'), new URLSearchParams('tab=advanced')), 'advanced');
+    assert.equal(
+      currentTab(developerTabs('v3'), new URLSearchParams('tab=advanced&section=activity')),
+      'advanced',
+    );
+  });
+
+  void test('only v3 has a secondary tab: classic, preview and every other page draw all theirs', () => {
+    for (const tabs of [
+      developerTabs('classic'),
+      developerTabs('preview'),
+      INBOX_TABS,
+      INSIGHTS_TABS,
+      ORGANISATION_TABS,
+    ]) {
+      assert.deepEqual(splitTabs(tabs).secondary, []);
+      assert.equal(splitTabs(tabs).drawn.length, tabs.length);
+    }
   });
 
   void test('the default tab is Connect in classic and preview, Overview in v3', () => {

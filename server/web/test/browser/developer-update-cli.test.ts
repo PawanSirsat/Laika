@@ -9,8 +9,9 @@
  *   no secret anywhere.
  * - Device details: when one of its tools needs it, and not when all are up
  *   to date.
- * - Overview: a quiet notice when a tool is Update required or never
- *   reported; none when every tool is up to date.
+ * - Overview: no notice of its own since LAI-1096. A tool whose helper is
+ *   Update required is behind the Connection status card's tools chip, and
+ *   its link opens that tool's Details, where the guide is.
  * - Add device and Add tool: *Already have Laika installed?* before the
  *   `laika` command.
  * - An older CLI (LAI-1093): where `laika` comes from, then a fresh install
@@ -297,30 +298,42 @@ void describe('Device details', () => {
 
 void describe('Overview', () => {
   const overview = (page: Page) => page.locator('[data-testid="dev-overview"]');
-  const notice = (page: Page) => page.locator('[data-cli-notice]');
+  const chip = (page: Page) => page.locator('[data-status] [data-attention] > button');
+  /** Every report read, and the board's own answer: nothing left to arrive. */
+  const settled = async (h: Harness, reports: number) => {
+    await until(
+      () =>
+        h.calls.filter((c) => c.path.endsWith('/verification')).length >= reports &&
+        h.calls.some((c) => c.path === '/api/v1/developer/compatibility'),
+      15_000,
+    );
+    await h.page.waitForLoadState('networkidle');
+  };
 
-  void test('a quiet notice when a tool is Update required or never reported, opening the guide', async () => {
+  void test('no notice: the tool to update is behind the tools chip, its Details one click on (LAI-1096)', async () => {
     const h = await open('/developer?tab=overview', stub());
     try {
       await overview(h.page).waitFor({ timeout: 20_000 });
-      await notice(h.page).waitFor({ timeout: 15_000 });
-      assert.equal(
-        await notice(h.page).locator('p').first().innerText(),
-        '1 tool runs a Laika CLI this board needs updated; 1 tool has never reported a CLI version.',
-      );
-      // Quiet: the neutral note, not the warning one.
-      assert.equal(
-        await h.page.locator('[data-note="cli-update"]').getAttribute('data-tone'),
-        'neutral',
-      );
-      const guide = await openGuide(notice(h.page));
-      assert.equal(await guide.locator('[data-guide-step]').count(), 4);
+      await settled(h, 3);
+      // Update required (a2) needs the reader; Version unknown (a3) does not.
+      assert.equal(await chip(h.page).textContent(), '1 needs an update▾');
+      assert.equal(await h.page.locator('[data-cli-notice], [data-update-cli]').count(), 0);
+      await chip(h.page).click();
+      const items = h.page.locator('[data-attention] li');
+      assert.deepEqual(await items.evaluateAll((els) => els.map((el) => el.dataset.agent)), ['a2']);
+      await items.getByRole('link', { name: /^Open details →\s*: Codex · Belka$/ }).click();
+      // Tool details, where the guide is offered (as the first describe asserts)
+      // once the panel has read the tool's report again.
+      await toolPanel(h.page, 'a2')
+        .locator('[data-update-cli="tool"]')
+        .waitFor({ timeout: 20_000 });
+      assert.equal(await toolPanel(h.page, 'a2').locator('[data-update-cli="tool"]').count(), 1);
     } finally {
       await h.close();
     }
   });
 
-  void test('no notice when every tool is up to date', async () => {
+  void test('no notice and no chip to open when every tool is up to date', async () => {
     const h = await open(
       '/developer?tab=overview',
       stub({
@@ -334,15 +347,13 @@ void describe('Overview', () => {
     try {
       await overview(h.page).waitFor({ timeout: 20_000 });
       // Both reports read, and nothing to say.
-      await until(
-        () =>
-          h.calls.filter((c) => c.path.endsWith('/verification')).length >= 2 &&
-          h.calls.some((c) => c.path === '/api/v1/developer/compatibility'),
-        15_000,
+      await settled(h, 2);
+      assert.equal(await h.page.locator('[data-cli-notice], [data-update-cli]').count(), 0);
+      assert.equal(await h.page.locator('[data-attention]').count(), 0);
+      assert.equal(
+        await h.page.locator('[data-status] [data-stat="tools"] .dx-chip').textContent(),
+        'Connected',
       );
-      await h.page.waitForLoadState('networkidle');
-      assert.equal(await notice(h.page).count(), 0);
-      assert.equal(await h.page.locator('[data-update-cli]').count(), 0);
     } finally {
       await h.close();
     }
@@ -790,24 +801,20 @@ void describe(
             await a.close();
           }
 
-          const o = await open('/developer?tab=overview', stub(), sized);
+          // The guide itself, opened in Tool details (the Overview has no notice
+          // since LAI-1096). The app scrolls an inner container, so the window is
+          // made tall enough for all of it; the width is the one under test.
+          const g = await openTools({}, sized);
           try {
-            await setTheme(o.page, theme);
-            await o.page.locator('[data-cli-notice]').waitFor({ timeout: 20_000 });
-            await o.page.screenshot({
-              path: join(dir, `overview-notice-${tag}.png`),
-              fullPage: true,
-            });
-            // The guide itself, opened from the notice. The app scrolls an inner
-            // container, so the window is made tall enough for all of it; the width
-            // is the one under test.
-            await openGuide(o.page.locator('[data-cli-notice]'));
-            await o.page.setViewportSize({ width, height: 2800 });
-            await o.page.locator('[data-note="cli-update"]').screenshot({
+            await setTheme(g.page, theme);
+            const required = await details(g.page, 'a2');
+            await openGuide(required);
+            await g.page.setViewportSize({ width, height: 2800 });
+            await required.locator('[data-update-cli="tool"]').screenshot({
               path: join(dir, `guide-${tag}.png`),
             });
           } finally {
-            await o.close();
+            await g.close();
           }
         }
       }

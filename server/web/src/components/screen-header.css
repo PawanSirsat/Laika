@@ -132,6 +132,18 @@
   gap: 0.375rem;
 }
 
+/* A page's name over a title that says what the page is for (LAI-1096): the
+   design's eyebrow, as the Developer access kit draws one (`.dx-eyebrow`). */
+.screen-page-eyebrow {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 .screen-page-titleline {
   display: flex;
   align-items: center;
