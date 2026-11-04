@@ -16,6 +16,11 @@ export interface TextInputProps {
   readonly readOnly?: boolean;
   /** Invalid, with the explanation shown by the form. See `Field`. */
   readonly invalid?: boolean;
+  /**
+   * Focused when it mounts: the first field of a page that is nothing but its
+   * form — sign in, first boot, an invite, a reset (LAI-1130).
+   */
+  readonly autoFocus?: boolean;
 }
 
 export function TextInput({
@@ -31,6 +36,7 @@ export function TextInput({
   autoComplete,
   readOnly = false,
   invalid = false,
+  autoFocus = false,
 }: TextInputProps) {
   return (
     <Field label={label} help={help} error={error} invalid={invalid} required={required}>
@@ -50,6 +56,7 @@ export function TextInput({
           readOnly={readOnly}
           placeholder={placeholder}
           autoComplete={autoComplete}
+          autoFocus={autoFocus}
         />
       )}
     </Field>

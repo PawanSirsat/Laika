@@ -178,6 +178,7 @@ export function FirstBootScreen({
               value={ownerName}
               onChange={setOwnerName}
               autoComplete="name"
+              autoFocus
               required
               disabled={submitting}
               error={touched && !nameCheck.ok ? nameCheck.message : fieldErrors.owner_name}
