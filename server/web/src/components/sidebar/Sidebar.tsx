@@ -1,3 +1,5 @@
+import { BrandMark } from '../brand/BrandMark.tsx';
+import { Wordmark } from '../brand/Wordmark.tsx';
 import {
   GROUP_TITLES,
   NAV_GROUPS,
@@ -172,19 +174,19 @@ export function Sidebar({
   return (
     <nav id="sidebar" className={railClass} aria-label="Primary">
       <div className="sidebar-head">
-        {/* The mark: a 28px radius-9 square on `--text-primary`, the glyph
-            stroked in `--bg-card` (prototype line 49). */}
-        <span className="sidebar-logo" aria-hidden="true">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" strokeWidth="2">
-            <circle cx="12" cy="12" r="4.5" />
-            <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
-          </svg>
+        {/* The brand mark (LAI-1126): with the wordmark beside it, the lockup;
+            alone in the collapsed rail, the mark. Decorative either way — the
+            wordmark carries the name, and the rail's nav says where you are. */}
+        <span className="sidebar-logo">
+          <BrandMark size={28} />
         </span>
         {!collapsed && (
           <div className="sidebar-identity">
             {/* Always the product, never the open project (owner,
                 2026-09-21): the space bar names the project. */}
-            <span className="sidebar-wordmark">Laika</span>
+            <span className="sidebar-wordmark">
+              <Wordmark height={15} />
+            </span>
             {/* The org's real name, from `GET /org`. `undefined` renders
                 nothing rather than a placeholder that looks like data. */}
             {orgName !== undefined && <span className="sidebar-orgline">{orgName}</span>}

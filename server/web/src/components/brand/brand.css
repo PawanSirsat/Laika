@@ -1,0 +1,297 @@
+/*
+ * The Laika brand (LAI-1126): mark, wordmark, lockup, the icon loader and the
+ * startup splash.
+ *
+ * **Imported by `index.css` as well as by the components**, and that is
+ * load-bearing: the splash in `index.html` is plain markup that shows before
+ * any JavaScript runs, so its styles must be in the stylesheet Vite links from
+ * the document head — not in a chunk a component pulls in after mount. The CSP
+ * forbids an inline <style> (`test/csp-compatibility.test.ts`).
+ *
+ * Colours are tokens only (LAI-606); durations are `--motion-*`.
+ */
+
+/* ------------------------------------------------------------------ mark */
+
+.brand-mark {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+
+.brand-stop-1 {
+  stop-color: var(--brand-mark-1);
+}
+
+.brand-stop-2 {
+  stop-color: var(--brand-mark-2);
+}
+
+.brand-stop-3 {
+  stop-color: var(--brand-mark-3);
+}
+
+/* Translucent panels, composited per slab so a slab's fill and its rounding
+   stroke do not double up where they overlap. */
+.brand-mark-slab {
+  opacity: 0.94;
+}
+
+.brand-mark-fold {
+  fill: var(--brand-mark-3);
+  stroke: var(--brand-mark-3);
+  opacity: 0.35;
+}
+
+.brand-mark-rim {
+  stroke: var(--brand-mark-rim);
+}
+
+/* The soft outer glow. A filter on the drawn shape rather than an SVG
+   <filter>, so it cannot be clipped by the viewBox at small sizes. */
+.brand-mark-full {
+  filter: drop-shadow(0 1px 5px var(--brand-glow));
+}
+
+/* -------------------------------------------------------------- wordmark */
+
+.brand-wordmark {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.brand-wordmark svg {
+  display: block;
+}
+
+.brand-wordmark-dot {
+  fill: var(--brand-dot);
+}
+
+/* ---------------------------------------------------------------- lockup */
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
+}
+
+.brand-lockup-sm {
+  gap: 0.4375rem;
+}
+
+.brand-lockup-md {
+  gap: 0.5625rem;
+}
+
+.brand-lockup-lg {
+  gap: 0.75rem;
+}
+
+.brand-lockup-xl {
+  gap: 1rem;
+}
+
+/* The 404's mark, centred over its empty state. */
+.brand-not-found {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-6);
+}
+
+/* ---------------------------------------------------------- icon loader */
+
+.brand-spinner {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+
+.brand-spinner-sm {
+  width: 24px;
+  height: 24px;
+}
+
+.brand-spinner-md {
+  width: 40px;
+  height: 40px;
+}
+
+.brand-spinner-lg {
+  width: 64px;
+  height: 64px;
+}
+
+.brand-spinner-ring {
+  position: absolute;
+  inset: 0;
+  animation: brand-spin var(--motion-spin) linear infinite;
+}
+
+.brand-spinner-track {
+  stroke: var(--brand-track);
+}
+
+.brand-spinner-arc {
+  stroke: var(--brand-active);
+}
+
+.brand-spinner-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+/* A whole panel waiting: the loader centred where the panel will be. */
+.brand-panel-wait {
+  display: grid;
+  place-items: center;
+  min-height: 16rem;
+}
+
+@keyframes brand-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* -------------------------------------------------------- startup splash */
+
+/*
+ * Ink to a lighter navy on the diagonal, with two faint arcs of light in the
+ * corners — the sheet's background. Fixed and full-screen: it is the whole
+ * page until the app is there.
+ */
+.brand-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  box-sizing: border-box;
+  color: var(--text-primary);
+  background:
+    radial-gradient(
+      circle at 0% 0%,
+      transparent 34%,
+      var(--brand-splash-arc) 35%,
+      transparent 37%,
+      transparent 52%,
+      var(--brand-splash-arc) 53%,
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 100% 100%,
+      transparent 30%,
+      var(--brand-splash-arc) 31%,
+      transparent 33%
+    ),
+    linear-gradient(135deg, var(--brand-splash-from), var(--brand-splash-to));
+}
+
+.brand-splash-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  width: min(100%, 26rem);
+  box-sizing: border-box;
+  padding: 2.5rem var(--space-6) 2.25rem;
+  border-radius: 1.25rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--brand-panel);
+  box-shadow: var(--shadow-modal);
+  backdrop-filter: blur(14px);
+}
+
+.brand-splash-tagline {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.22em;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.brand-splash-steps {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: var(--space-2);
+}
+
+.brand-splash-step {
+  width: 1.5rem;
+  height: 0.3125rem;
+  border-radius: var(--radius-pill);
+  background: var(--brand-track);
+  animation: brand-step var(--motion-step) infinite;
+}
+
+.brand-splash-step:nth-child(2) {
+  animation-delay: calc(var(--motion-step) / 4);
+}
+
+.brand-splash-step:nth-child(3) {
+  animation-delay: calc(var(--motion-step) / 2);
+}
+
+.brand-splash-step:nth-child(4) {
+  animation-delay: calc(var(--motion-step) * 3 / 4);
+}
+
+/* Each pill is lit for its quarter of the cycle, then hands on. */
+@keyframes brand-step {
+  0%,
+  24.9% {
+    background: var(--brand-active);
+    box-shadow: 0 0 10px var(--brand-glow);
+  }
+
+  25%,
+  100% {
+    background: var(--brand-track);
+    box-shadow: none;
+  }
+}
+
+/* Phone: the panel keeps its 16px gutter and the lockup scales down. */
+@media (max-width: 480px) {
+  .brand-splash-panel {
+    padding: 2rem var(--space-4) 1.75rem;
+  }
+
+  .brand-splash-lockup .brand-mark {
+    width: 44px;
+    height: 44px;
+  }
+
+  .brand-splash-lockup .brand-wordmark svg {
+    width: 64px;
+    height: 24px;
+  }
+
+  .brand-splash-tagline {
+    letter-spacing: 0.14em;
+  }
+}
+
+/*
+ * Reduced motion: nothing turns and nothing steps. The ring keeps its arc and
+ * the first pill stays lit, so each still reads as a loader — removing them
+ * would take away the feedback, not just the motion.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .brand-spinner-ring,
+  .brand-splash-step {
+    animation: none;
+  }
+
+  .brand-splash-step:first-child {
+    background: var(--brand-active);
+  }
+}

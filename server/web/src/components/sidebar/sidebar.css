@@ -43,21 +43,15 @@
   box-sizing: border-box;
 }
 
-/* The mark: 28px, radius 9, ground --text-primary, glyph --bg-card. */
+/* The brand mark (LAI-1126), 28px: the glass L on the sidebar's own ground —
+   it replaced the prototype's inverted tile with a glyph in it. */
 .sidebar-logo {
   width: 1.75rem;
   height: 1.75rem;
   flex: none;
-  border-radius: 0.5625rem;
-  background: var(--text-primary);
-  color: var(--bg-card);
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.sidebar-logo svg {
-  stroke: currentColor;
 }
 
 .sidebar-identity {

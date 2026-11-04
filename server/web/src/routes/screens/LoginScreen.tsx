@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Brand } from '../../components/Brand.tsx';
+import { BrandLockup } from '../../components/brand/BrandLockup.tsx';
 import { Button } from '../../components/forms/Button.tsx';
 import { Checkbox } from '../../components/forms/Checkbox.tsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.tsx';
@@ -87,7 +87,7 @@ export function LoginScreen({
           if (valid) onSubmit?.({ email, password, keepSignedIn });
         }}
       >
-        <Brand variant="tile" />
+        <BrandLockup size="lg" className="auth-brand" />
 
         <header className="auth-head">
           <h1 className="auth-title">Sign in to your instance</h1>
