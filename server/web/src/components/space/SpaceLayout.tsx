@@ -1,11 +1,12 @@
 import { everyPage } from '../../api/every-page.ts';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useShell } from '../shell/shell-context.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { listMembers, type Member } from '../../api/tasks.ts';
 import { listMeetingReviews } from '../../api/meeting-reviews.ts';
 import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
-import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
+import { TaskDrawerHost } from '../drawer/TaskDrawerHost.tsx';
+import { TaskSourceProvider, type TaskSource } from '../drawer/TaskSourceProvider.tsx';
 import { SpaceLive } from './SpaceLive.tsx';
 import { SpaceTopBar } from './SpaceTopBar.tsx';
 import { SpaceFilterClaim } from './SpaceSlot.tsx';
@@ -105,6 +106,8 @@ function SpaceFrame({
    */
   const [pendingReviews, setPendingReviews] = useState<number | undefined>(undefined);
   const [tags, setTags] = useState<readonly ProjectTag[]>([]);
+  /** The view's live task set, when it offers one — Board and List (LAI-1190). */
+  const [taskSource, setTaskSource] = useState<TaskSource | undefined>(undefined);
 
   useEffect(() => {
     if (slug === undefined) {
@@ -163,112 +166,155 @@ function SpaceFrame({
   }, [slug]);
 
   /** One writer for the URL, so every control agrees about what clearing means. */
-  const setParam = (key: string, value: string | undefined): void => {
+  const setParam = (
+    key: string,
+    value: string | undefined,
+    options?: { readonly push?: boolean },
+  ): void => {
     const next = new URLSearchParams(params);
     if (value === undefined || value === '') next.delete(key);
     else next.set(key, value);
-    setParams(next);
+    setParams(next, options);
   };
+
+  const taskRef = params.get('task') ?? undefined;
+  /*
+   * A key rewritten as its id, in place: the link was the history entry, so
+   * this must not be a second one Back would have to step over. Read through
+   * `location` rather than `params`, so the callback is stable and the host's
+   * effect does not re-run on every render.
+   */
+  const resolveTask = useCallback(
+    (taskId: string) => {
+      const next = new URLSearchParams(window.location.search);
+      next.set('task', taskId);
+      setParams(next);
+    },
+    [setParams],
+  );
 
   return (
     <SpaceFilterClaim>
-      <div className="space">
-        <div className="space-bar">
-          {/*
+      <TaskSourceProvider onSource={setTaskSource}>
+        <div className="space">
+          <div className="space-bar">
+            {/*
             **Identity and tabs on one line** (LAI-292). The owner asked for the
             project name to move up so the row it had can be used for something
             else — and with the board's own controls moving below the bar,
             what is left of the bar is narrow enough to sit beside the tabs.
           */}
-          <div className="space-bar-top">
-            <SpaceTopBar
-              members={members}
-              query={params.get('q') ?? ''}
-              priority={validPriority(params.get('priority'))}
-              agentOnly={params.get('agent') === 'true'}
-              tags={tags}
-              tag={validTag(params.get('tag'))}
-              assignee={params.get('assignee') ?? undefined}
-              ready={params.get('ready') === 'true'}
-              onQuery={(value) => {
-                setParam('q', value);
-              }}
-              onPriority={(value) => {
-                setParam('priority', value);
-              }}
-              onAgentOnly={(value) => {
-                setParam('agent', value ? 'true' : undefined);
-              }}
-              onTag={(value) => {
-                setParam('tag', value);
-              }}
-              onAssignee={(value) => {
-                setParam('assignee', value);
-              }}
-              onReady={(value) => {
-                setParam('ready', value ? 'true' : undefined);
-              }}
-              {...(spaceId !== undefined && gates.project(spaceId, 'task.create')
-                ? {
-                    onCreate: () => {
-                      // The board owns task creation; Create from any view goes
-                      // there with the form open rather than duplicating it.
-                      navigate(
-                        slug === undefined
-                          ? '/board?new=task'
-                          : `/board?project=${encodeURIComponent(slug)}&new=task`,
-                      );
-                    },
-                  }
-                : {})}
-            />
+            <div className="space-bar-top">
+              <SpaceTopBar
+                members={members}
+                query={params.get('q') ?? ''}
+                priority={validPriority(params.get('priority'))}
+                agentOnly={params.get('agent') === 'true'}
+                tags={tags}
+                tag={validTag(params.get('tag'))}
+                assignee={params.get('assignee') ?? undefined}
+                ready={params.get('ready') === 'true'}
+                onQuery={(value) => {
+                  setParam('q', value);
+                }}
+                onPriority={(value) => {
+                  setParam('priority', value);
+                }}
+                onAgentOnly={(value) => {
+                  setParam('agent', value ? 'true' : undefined);
+                }}
+                onTag={(value) => {
+                  setParam('tag', value);
+                }}
+                onAssignee={(value) => {
+                  setParam('assignee', value);
+                }}
+                onReady={(value) => {
+                  setParam('ready', value ? 'true' : undefined);
+                }}
+                {...(spaceId !== undefined && gates.project(spaceId, 'task.create')
+                  ? {
+                      onCreate: () => {
+                        /*
+                         * **In place, on whatever view this is** (LAI-1190,
+                         * B19). Create used to go to the board with
+                         * `?new=task`, which the board never read — so the
+                         * reader lost the Timeline or the Calendar they were
+                         * on, and got no form either. A history entry, so Back
+                         * closes the form as it closes a task.
+                         */
+                        const next = new URLSearchParams(params);
+                        next.delete('task');
+                        next.set('new', 'task');
+                        setParams(next, { push: true });
+                      },
+                    }
+                  : {})}
+              />
 
-            <ViewTabs
-              currentPath={path}
-              projectSlug={slug}
-              params={params}
-              onNavigate={navigate}
-              holds={permissionHolder(permissions?.me.actions)}
-              counts={{ '/meeting-review': pendingReviews }}
-            />
+              <ViewTabs
+                currentPath={path}
+                projectSlug={slug}
+                params={params}
+                onNavigate={navigate}
+                holds={permissionHolder(permissions?.me.actions)}
+                counts={{ '/meeting-review': pendingReviews }}
+              />
+            </div>
+
+            {/* Where each view puts its own context line and controls. */}
+            <div id={SLOT_ID} className="space-slot" />
           </div>
 
-          {/* Where each view puts its own context line and controls. */}
-          <div id={SLOT_ID} className="space-slot" />
-        </div>
-
-        {/*
+          {/*
         A full-width band under the bar, for a view that has one — the
         Timeline's sprint chips (LAI-272). The board's sprint strip used it
         until LAI-727 removed the strip.
       */}
-        <div id={BAND_SLOT_ID} />
+          <div id={BAND_SLOT_ID} />
 
-        {/*
+          {/*
         **No WORKING NOW row** (LAI-727). It sat here on the board only, from
         the design's `boardLive` band (prototype line 2273); the owner asked for
         it to go. The header's `Agents` count still reads presence through
         `SpaceLive`, which is why that read stays; Activity reads its own.
       */}
 
-        {children}
+          {children}
 
-        {/*
+          {/*
         The task drawer, over the view and inside it (LAI-252). Mounted here so
         the screen underneath keeps its scroll and its data — a drawer that
         replaced the view would have to rebuild the board on every close.
       */}
-        {params.get('task') !== null && (
-          <TaskDrawer
-            taskId={params.get('task') ?? ''}
+          {/*
+          **The host renders the content too** (LAI-1190, B1): every view of
+          the space gets the full panel, not only the board.
+        */}
+          <TaskDrawerHost
+            slug={slug}
+            taskRef={taskRef}
+            creating={params.get('new') === 'task'}
+            // The board and the list offer their store; until it arrives the
+            // host waits rather than reading the same set a second time.
+            source={taskSource}
+            awaitSource={path === '/board' || path === '/list'}
+            members={members}
+            onOpen={(taskId) => {
+              setParam('task', taskId, { push: true });
+            }}
+            onResolved={resolveTask}
             onClose={() => {
               // `push`ed open, so Back closes it; closing is a replace, or Back
               // from here would step through the open state again.
               setParam('task', undefined);
             }}
+            onCloseCreate={() => {
+              setParam('new', undefined);
+            }}
           />
-        )}
-      </div>
+        </div>
+      </TaskSourceProvider>
     </SpaceFilterClaim>
   );
 }

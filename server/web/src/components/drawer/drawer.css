@@ -88,6 +88,39 @@
   overscroll-behavior: contain;
 }
 
+/*
+ * What the host draws before the panel can (LAI-1190): the task's loading
+ * state, a task that is not there, and the new-task form opened in place.
+ */
+.drawer-state {
+  padding: var(--space-5);
+}
+
+.drawer-state-missing {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.drawer-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+.drawer-create-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.drawer-create-title {
+  margin: 0;
+  font-size: var(--text-heading-md);
+  color: var(--text-primary);
+}
+
 @keyframes drawer-slidein {
   /*
    * The 12px rise as a transform again (round 2), but one that **ends at
