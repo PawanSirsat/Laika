@@ -8,7 +8,12 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { formatDuration, formatDurationMs, shownMinutes } from '../../src/api/duration.ts';
+import {
+  formatDuration,
+  formatDurationMs,
+  formatHours,
+  shownMinutes,
+} from '../../src/api/duration.ts';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -113,6 +118,30 @@ void describe('shownMinutes — the minutes the words say', () => {
   void test('formatDuration of the shown minutes is the same words, at every scale', () => {
     for (const m of [1, 18.4, 59.6, 92.4, 1439.6, 1469, 1470, 4300, 10_000.7]) {
       assert.equal(formatDuration(shownMinutes(m)), formatDuration(m), String(m));
+    }
+  });
+});
+
+void describe('formatHours — a person’s tracked time, hours however long (LAI-1147)', () => {
+  void test('a day and more is hours and minutes, to the minute — never days', () => {
+    assert.equal(formatHours(28 * 60), '28 h');
+    assert.equal(formatHours(53 * 60 + 12), '53 h 12 min');
+    assert.equal(formatHours(24 * 60), '24 h');
+    assert.equal(formatHours(16 * 60 + 15), '16 h 15 min');
+    assert.equal(formatHours(45), '45 min');
+  });
+
+  void test('the same edges as formatDuration', () => {
+    assert.equal(formatHours(0), '0 min');
+    assert.equal(formatHours(-5), '0 min');
+    assert.equal(formatHours(0.4), '< 1 min');
+    assert.equal(formatHours(Number.NaN), '—');
+  });
+
+  void test('never days, never h:mm', () => {
+    for (const minutes of [1, 59, 60, 1439, 1440, 1441, 3192, 10_000]) {
+      assert.doesNotMatch(formatHours(minutes), / d\b/, `${String(minutes)} printed in days`);
+      assert.doesNotMatch(formatHours(minutes), /\d:\d/, `${String(minutes)} printed as h:mm`);
     }
   });
 });

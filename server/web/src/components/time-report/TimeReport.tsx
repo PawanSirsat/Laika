@@ -37,7 +37,7 @@ import {
   firstFocus,
   firstGroupings,
   groupRows,
-  hoursClock,
+  hoursCompact,
   hoursWords,
   presetRange,
   RANGE_LABELS,
@@ -1403,15 +1403,15 @@ function Breakdown({
                     {split && (
                       <>
                         <span role="cell" className="trep-num trep-num-quiet">
-                          {hoursClock(g.confirmed)}
+                          {hoursCompact(g.confirmed)}
                         </span>
                         <span role="cell" className="trep-num trep-num-quiet">
-                          {hoursClock(g.drafted)}
+                          {hoursCompact(g.drafted)}
                         </span>
                       </>
                     )}
                     <span role="cell" className="trep-num trep-num-strong">
-                      {hoursClock(g.total)}
+                      {hoursCompact(g.total)}
                     </span>
                   </div>
                   {isOpen &&
@@ -1432,15 +1432,15 @@ function Breakdown({
                         {split && (
                           <>
                             <span role="cell" className="trep-num trep-num-muted">
-                              {hoursClock(k.confirmed)}
+                              {hoursCompact(k.confirmed)}
                             </span>
                             <span role="cell" className="trep-num trep-num-muted">
-                              {hoursClock(k.drafted)}
+                              {hoursCompact(k.drafted)}
                             </span>
                           </>
                         )}
                         <span role="cell" className="trep-num trep-num-quiet">
-                          {hoursClock(k.total)}
+                          {hoursCompact(k.total)}
                         </span>
                       </div>
                     ))}
@@ -1454,15 +1454,15 @@ function Breakdown({
               {split && (
                 <>
                   <span role="cell" className="trep-num">
-                    {hoursClock(sum.c)}
+                    {hoursCompact(sum.c)}
                   </span>
                   <span role="cell" className="trep-num">
-                    {hoursClock(sum.d)}
+                    {hoursCompact(sum.d)}
                   </span>
                 </>
               )}
               <span role="cell" className="trep-num trep-num-strong">
-                {hoursClock(sum.t)}
+                {hoursCompact(sum.t)}
               </span>
             </div>
           </div>
@@ -1481,7 +1481,7 @@ function Breakdown({
             style={{ background: donutBackground(slices, active) }}
           >
             <div className="trep-donut-hole" aria-hidden="true">
-              <span className="trep-donut-value">{hoursClock(sum.t)}</span>
+              <span className="trep-donut-value">{hoursCompact(sum.t)}</span>
               <span className="trep-donut-caption">{drafts ? 'tracked' : 'confirmed'}</span>
             </div>
           </div>
@@ -1513,7 +1513,7 @@ function Breakdown({
               >
                 <span className="trep-swatch" style={{ background: s.color }} aria-hidden="true" />
                 <span className="trep-slice-label">{s.label}</span>
-                <span className="trep-mono trep-strong">{hoursClock(s.minutes)}</span>
+                <span className="trep-mono trep-strong">{hoursCompact(s.minutes)}</span>
                 <span className="trep-mono trep-slice-pct">{s.pct}</span>
               </li>
             ))}

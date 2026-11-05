@@ -1,4 +1,4 @@
-import { formatDuration } from '../../../api/duration.ts';
+import { formatDuration, formatHours } from '../../../api/duration.ts';
 import { clockRange, clockTime, hourLabel } from '../../../api/time-label.ts';
 
 /**
@@ -9,9 +9,12 @@ import { clockRange, clockTime, hourLabel } from '../../../api/time-label.ts';
  * time for display.
  */
 
-/** The person's own time: `19 min`, `1 h 35 min`. */
+/**
+ * The person's own time: `19 min`, `1 h 35 min`, and hours past a day —
+ * `28 h`, never `1 d 4 h` (LAI-1147).
+ */
 export function duration(minutes: number): string {
-  return formatDuration(minutes);
+  return formatHours(minutes);
 }
 
 /** An agent's time, minutes however long (D-088 item 8): `142 min`. */

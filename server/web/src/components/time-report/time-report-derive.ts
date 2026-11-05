@@ -256,19 +256,22 @@ export function hoursWords(minutes: number): string {
   return r === 0 ? `${String(h)} h` : `${String(h)} h ${String(r)} min`;
 }
 
-/** `45m`, `2h 05m` — the short figure a phone's strip prints. */
+/** `45m`, `2h 5m` — the short figure a phone's strip prints. */
 export function hoursShort(minutes: number): string {
+  return hoursCompact(minutes);
+}
+
+/**
+ * `7h 5m`, `20h`, `37m` — a table cell or the donut's figure, hours and
+ * minutes. Never `7:05`: a clock reads as a time of day, not hours worked
+ * (LAI-1147). The same short form My day's timeline prints.
+ */
+export function hoursCompact(minutes: number): string {
   const m = Math.round(minutes);
   const h = Math.floor(m / 60);
   const r = m % 60;
   if (h === 0) return `${String(r)}m`;
-  return `${String(h)}h ${String(r).padStart(2, '0')}m`;
-}
-
-/** `7:05` — a table cell, hours and minutes. */
-export function hoursClock(minutes: number): string {
-  const m = Math.round(minutes);
-  return `${String(Math.floor(m / 60))}:${String(m % 60).padStart(2, '0')}`;
+  return r === 0 ? `${String(h)}h` : `${String(h)}h ${String(r)}m`;
 }
 
 /** A whole percent of `of`, `<1%` for a sliver, or 0 when there is nothing. */
