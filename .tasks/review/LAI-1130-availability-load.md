@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-11-05T15:05:00+02:00
+finished: 2026-11-05T15:20:00+02:00
 ---
 
 ## Goal
@@ -22,26 +23,26 @@ variants. **No computed free hours anywhere** (D-131 item 4, D-088 item 1).
 
 ## Acceptance criteria
 
-- [ ] Migration adds `user_availability` and `user_away_periods` with the
+- [x] Migration adds `user_availability` and `user_away_periods` with the
       CHECKs of §2.2; `server/test/db` migrate tests stay green.
-- [ ] `PUT /me/availability` validates every limit with field-named `422`s.
-- [ ] Only `/me` writes availability; actions `availability.set_own` and
+- [x] `PUT /me/availability` validates every limit with field-named `422`s.
+- [x] Only `/me` writes availability; actions `availability.set_own` and
       `availability.read`, both session only, with §3.1 rows.
-- [ ] `away` is derived from the period covering today in the person's
+- [x] `away` is derived from the period covering today in the person's
       `place` zone (UTC when unset); `POST /me/availability/away` refuses a
       period that ended (`422 away_in_past`).
-- [ ] `GET /people/availability` is A–Z by name, has no sort parameter, and
+- [x] `GET /people/availability` is A–Z by name, has no sort parameter, and
       gives the three reader variants: owners/admins every active non-viewer
       user with `last_2_weeks_minutes` (logged `time`); space admins the members
       of their spaces with card counts and **no hours field**; anyone else
       co-space people with `availability` and `spaces` only.
-- [ ] Deactivated people are excluded.
-- [ ] `GET /people/:id/load` refuses yourself and a member, logs `time`, and
+- [x] Deactivated people are excluded.
+- [x] `GET /people/:id/load` refuses yourself and a member, logs `time`, and
       gives 14-day per-space minutes equal to `summaryOf` by_project.
-- [ ] `due_7d` uses `due_on` in the reader's UTC day.
-- [ ] A fresh database answers `null` / `[]`.
-- [ ] No free-hours field in any response.
-- [ ] SPEC §3.1, §4.85, §4.86, §6.4 and §11.6 carry the change (named
+- [x] `due_7d` uses `due_on` in the reader's UTC day.
+- [x] A fresh database answers `null` / `[]`.
+- [x] No free-hours field in any response.
+- [x] SPEC §3.1, §4.85, §4.86, §6.4 and §11.6 carry the change (named
       cross-area edit).
 
 ## Notes / context
@@ -52,5 +53,9 @@ variants. **No computed free hours anywhere** (D-131 item 4, D-088 item 1).
 - LAI-1129 (T1) adds `GET /time/report`, `time.report.read` and the who-looked
   dedupe in parallel. This task does not: the hours column rides
   `people.analytics.read`, and logging uses `readLogged` as it is today.
+- Deviations, recorded in `logs/core-2026-11-05-LAI-1130.md`: `status` is
+  nullable; the space-admin variant is decided by `project.members.manage`;
+  org viewers are left out of every variant; two extra away limits (20
+  periods, 366 days).
 - Server only. The client types for the drift pairs (`web/src/api/availability.ts`)
   are SHELL's (T7).
