@@ -266,7 +266,7 @@ export function ProfileScreen({
     return (
       <div className="prof">
         {header}
-        {/* The grant, not a role (LAI-1130): an owner may give it to any role. */}
+        {/* The grant, not a role (LAI-1141): an owner may give it to any role. */}
         <PermissionDenied
           resource="member profiles"
           grant="See everyone’s analytics"

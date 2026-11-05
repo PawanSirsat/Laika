@@ -14,7 +14,7 @@ export interface PermissionDeniedProps {
   readonly requiredRole?: Role | undefined;
   /**
    * The grant that would allow it, in the Roles & permissions grid's words
-   * (LAI-1130). Named instead of a role where the owner can give it to any
+   * (LAI-1141). Named instead of a role where the owner can give it to any
    * role: *needs admin* would be untrue of an organisation that granted it.
    */
   readonly grant?: string | undefined;

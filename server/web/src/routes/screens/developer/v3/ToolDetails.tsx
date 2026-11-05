@@ -578,7 +578,7 @@ function ToolPanel({
               )}
             </div>
           )}
-          {/* Never a button that does nothing without saying why (LAI-1130, the audit's B10). */}
+          {/* Never a button that does nothing without saying why (LAI-1141, the audit's B10). */}
           {canManage && active && !paired && replaceable === undefined && (
             <p className="dv3-note" id={RECONNECT_WHY} data-reconnect-why>
               No live credential to replace — it expired or was revoked. Set this tool up again from

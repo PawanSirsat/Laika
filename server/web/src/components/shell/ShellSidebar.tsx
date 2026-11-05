@@ -75,7 +75,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
         '/inbox': inboxCount(reviewWaiting, unlistedOpen, handoffsWaiting(handoffCounts)),
         '/insights': tokenAlerts?.length,
       }}
-      // The Insights badge is token alerts, and they are on Usage (LAI-1130,
+      // The Insights badge is token alerts, and they are on Usage (LAI-1141,
       // the audit's B8): the badge leads there and says what it counts.
       countTargets={{
         '/insights': { tab: 'usage', one: 'token alert', many: 'token alerts' },

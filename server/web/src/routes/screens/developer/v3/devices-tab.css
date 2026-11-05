@@ -355,7 +355,7 @@
   }
 }
 
-/* Why *Disconnect device* is unavailable (LAI-1130): its own line under it. */
+/* Why *Disconnect device* is unavailable (LAI-1141): its own line under it. */
 .side-panel-foot [data-disconnect-why] {
   flex-basis: 100%;
   margin: 0;

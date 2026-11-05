@@ -226,7 +226,7 @@ export function ProjectsScreen({
         )}
       </section>
     );
-  // `?new=1` opens the form (LAI-1130): *Create a space* in the sidebar and on
+  // `?new=1` opens the form (LAI-1141): *Create a space* in the sidebar and on
   // an empty board lead here. Only a reader who may create sees it.
   const [creating, setCreating] = useState(() => params.get('new') === '1');
   const [name, setName] = useState('');

@@ -8,7 +8,7 @@ export interface InsightsScreenProps {
   readonly current: string;
   readonly onNavigate: (to: string) => void;
   /**
-   * The reader's open token alerts (LAI-1130): the count the sidebar's badge
+   * The reader's open token alerts (LAI-1141): the count the sidebar's badge
    * shows, drawn on the Usage tab where they are. Absent or zero, no count.
    */
   readonly alerts?: number | undefined;

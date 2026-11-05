@@ -140,7 +140,7 @@ type Load =
       readonly kind: 'ready';
       readonly view: MyDay;
       /**
-       * A re-read of this same day failed (LAI-1130, the audit's B7): the day
+       * A re-read of this same day failed (LAI-1141, the audit's B7): the day
        * last read stays on the page under a stale notice with Retry.
        */
       readonly stale?: unknown;
@@ -297,7 +297,7 @@ export function MyDayScreen({
   const confirm = useConfirm();
   const { org, settled } = useGates(me !== undefined);
   const holds = org(PEOPLE_ANALYTICS);
-  /** May turn time tracking on — the server's answer, never the role (LAI-1130). */
+  /** May turn time tracking on — the server's answer, never the role (LAI-1141). */
   const mayTurnOn = org('org.time.set');
   /** Whose day: somebody else's only by `?user=` naming another person. */
   const subjectId = user !== undefined && user !== '' && user !== me?.id ? user : undefined;
@@ -391,7 +391,7 @@ export function MyDayScreen({
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         // A failed re-read of the day already on the page keeps it, stale
-        // (LAI-1130): only a day never read, or another day, is the error card.
+        // (LAI-1141): only a day never read, or another day, is the error card.
         setLoad((prev) =>
           prev.kind === 'ready' && prev.view.day === selectedDay
             ? { kind: 'ready', view: prev.view, stale: error }
@@ -1593,7 +1593,7 @@ export function MyDayScreen({
                     <Padlock />
                     {`Read only · ${subjectName} sees that you looked`}
                   </span>
-                ) : orgOff ? null : ( // Nothing is collected, so there is nobody's reading to explain (LAI-1130).
+                ) : orgOff ? null : ( // Nothing is collected, so there is nobody's reading to explain (LAI-1141).
                   // Who reads what, truthfully (D-102, LAI-968): the design's
                   // popover (LAI-513), its words in the tooltip too, and the
                   // way to every look.
@@ -1853,7 +1853,7 @@ export function MyDayScreen({
                 />
               </svg>
             </button>
-            {/* The shortcuts are the Timeline's; with tracking off there is none (LAI-1130). */}
+            {/* The shortcuts are the Timeline's; with tracking off there is none (LAI-1141). */}
             {!orgOff && (
               <button
                 type="button"
