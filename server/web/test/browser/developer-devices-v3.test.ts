@@ -1386,7 +1386,8 @@ void describe('an unavailable action says why (LAI-1141, the audit’s B10)', ()
       const why = body.locator('[data-reconnect-why]');
       assert.match(await why.innerText(), /No live credential to replace/);
       assert.equal(await button.getAttribute('aria-describedby'), await why.getAttribute('id'));
-      await button.click();
+      // Chosen anyway (Playwright will not click an aria-disabled button): nothing opens.
+      await button.dispatchEvent('click');
       await h.page.waitForTimeout(500);
       assert.equal(await h.page.getByRole('alertdialog').count(), 0);
       assert.deepEqual(writes(h.calls), [], 'nothing was rotated');
@@ -1409,7 +1410,8 @@ void describe('an unavailable action says why (LAI-1141, the audit’s B10)', ()
       const why = panel(h.page, 'device').locator('[data-disconnect-why]');
       assert.match(await why.innerText(), /nothing to disconnect/);
       assert.equal(await button.getAttribute('aria-describedby'), await why.getAttribute('id'));
-      await button.click();
+      // Chosen anyway (Playwright will not click an aria-disabled button): nothing opens.
+      await button.dispatchEvent('click');
       await h.page.waitForTimeout(500);
       assert.equal(await h.page.getByRole('alertdialog').count(), 0);
       assert.deepEqual(writes(h.calls), [], 'nothing was revoked');
