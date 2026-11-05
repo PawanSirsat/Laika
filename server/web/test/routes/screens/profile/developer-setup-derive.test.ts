@@ -112,7 +112,7 @@ void describe('the health line, by Developer access’s own rules', () => {
         label: 'Codex on rowan-box: credential installed; nothing has used it yet',
         target: anchorFor.tool('a2'),
       },
-      { label: 'fixture-org/fixture-app: update available', target: anchorFor.repo(row!.key) },
+      { label: 'fixture-org/fixture-app: update available', target: anchorFor.repo(row.key) },
     ]);
     assert.equal(attentionWord(2), '2 things need attention');
   });
@@ -157,7 +157,7 @@ void describe('the health line, by Developer access’s own rules', () => {
     const ok = setup({ repositories: [{ ...base, prefix_match: true, template_revision: 999 }] });
     const [row] = repoRows(ok.repositories, ok.tools, ok.devices);
     assert.equal(row?.chip, 'checked');
-    assert.ok(!attentionItems(ok, undefined).some((i) => i.target === anchorFor.repo(row!.key)));
+    assert.ok(!attentionItems(ok, undefined).some((i) => i.target === anchorFor.repo(row.key)));
   });
 
   void test('nothing to fix reads All set up', () => {
