@@ -5,7 +5,7 @@ area: shell
 assignee: shell/belka
 priority: p2
 depends-on: []
-status: review
+status: done
 started: 2026-11-06T01:15:26+05:30
 finished: 2026-11-06T01:15:40+05:30
 ---
