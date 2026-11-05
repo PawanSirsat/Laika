@@ -122,6 +122,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Sync own time with Solidtime', ['time_sync.own']],
   ['Map Solidtime projects and people', ['time_sync.map']],
   ["Import everyone's Solidtime time", ['time_sync.import_all']],
+  // D-134 (LAI-1136): a member's own notices.
+  ['Read and dismiss own notices', ['notices.own']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([

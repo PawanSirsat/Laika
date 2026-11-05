@@ -82,6 +82,9 @@ export const ORG_ACTIONS = [
   'time_sync.own',
   'time_sync.map',
   'time_sync.import_all',
+  // D-134 (LAI-1136): a person's own notices — being added to a space, and
+  // their tool, device or token revoked by somebody else.
+  'notices.own',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -162,6 +165,8 @@ export const SYSTEM_ACTIONS = [
   'system.handoff.expire',
   'system.checkpoint.verify',
   'system.checkpoint.prune',
+  // §11.6: member notices older than 90 days (D-134, LAI-1136).
+  'system.notices.prune',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
@@ -342,6 +347,10 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // **Approving a transfer is a person's, signed in** (§3.2, §4.73, LAI-546):
   // an agent that could approve could hand its own work across owners.
   'task.handoff.approve',
+  // **A person's notices are their own, signed in** (D-134, LAI-1136): the
+  // message an adder wrote to them is addressed to the person, not to an
+  // agent acting for them, and marking one read is the person having seen it.
+  'notices.own',
 ]);
 
 /**

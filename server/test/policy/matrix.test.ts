@@ -152,6 +152,9 @@ const ORG_MATRIX: OrgRow[] = [
   ['time_sync.map', true, true, false, false],
   // | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
   ['time_sync.import_all', true, true, false, false],
+  // | Read and dismiss own notices | ✓ (session only) | … | ✓ (session only) |
+  // D-134 (LAI-1136): the person's own, every role.
+  ['notices.own', true, true, true, true],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -388,6 +391,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.handoff.recover', {}],
     ['system.handoff.expire', {}],
     ['system.checkpoint.prune', {}],
+    ['system.notices.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],

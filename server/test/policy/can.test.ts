@@ -510,6 +510,8 @@ describe('the cases LAI-004 calls out by name', () => {
       // D-114 (LAI-534): registering and managing their own agents, signed
       // in. An agent of theirs can never write more than they can.
       const ownAgents = action === 'agent.manage_own';
+      // D-134 (LAI-1136): reading and marking read their own notices.
+      const ownNotices = action === 'notices.own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -522,7 +524,8 @@ describe('the cases LAI-004 calls out by name', () => {
           ownTokenData ||
           ownTime ||
           ownMembership ||
-          ownAgents,
+          ownAgents ||
+          ownNotices,
       );
     }
   });
