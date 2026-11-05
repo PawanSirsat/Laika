@@ -5,8 +5,9 @@ area: docs
 assignee: chief
 priority: p2
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-06T02:04:45+05:30
+finished: 2026-11-06T02:05:33+05:30
 ---
 
 ## Goal
@@ -19,12 +20,12 @@ with the task that makes the code true (LAI-1150), so `master` never goes red.
 
 ## Acceptance criteria
 
-- [ ] `docs/DECISIONS.md` has D-139 with the eight items as the owner settled them.
-- [ ] SPEC §11.4.2.1 *Member profile* describes the design: chrome, head card
+- [x] `docs/DECISIONS.md` has D-139 with the eight items as the owner settled them.
+- [x] SPEC §11.4.2.1 *Member profile* describes the design: chrome, head card
       with availability pill and Who looked, tabs on your own profile, the
       Overview rows, Day, Time report, Developer access, and what is removed.
-- [ ] §11.4.2's sidebar row no longer says only owners and admins may open a profile.
-- [ ] Task files LAI-1148 to LAI-1156 filed, each with its board card.
+- [x] §11.4.2's sidebar row no longer says only owners and admins may open a profile.
+- [x] Task files LAI-1148 to LAI-1156 filed, each with its board card.
 
 ## Notes / context
 
