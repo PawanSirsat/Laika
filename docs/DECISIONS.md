@@ -6894,3 +6894,93 @@ read-only states.
 server-side. The board card does not show the progress line until the slim list carries a
 count (LAI-1120). Whether deliverables feed the size model is LAI-1119's question, not this
 decision's.
+
+## D-130 — The Time report is one component in three scopes, read from one endpoint
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), who asked polly to decide the open
+questions over the design exported as `Laika Time Report.html`; recorded by Belka.
+
+**Context.** The owner asked for a report of where time went, for himself, for one person and
+for the whole organisation, and the design draws one component in all three places: My day →
+Overview (Week, Range), a *Time report* tab on a member's profile replacing *Hours*, and a new
+*Time* tab in Insights. Nothing today returns time across several people or groups it by
+space and member.
+
+**Decision.**
+
+1. **One endpoint, `GET /time/report`, serves all three scopes** as JSON or CSV. The server
+   decides what the caller may see; the browser does the grouping.
+2. **Per-person rows** are for the caller's own time, and for owners and holders of *See
+   everyone's analytics* (D-102). Every person shown per person is logged as a look at their
+   time.
+3. **Space admins see their spaces' totals only**, confirmed time, with no per-person split and
+   under D-088 item 7's three-person floor. D-088 item 7 is not amended.
+4. **The design's *Project* is a Laika space.** Laika gains no sub-project level; the groupings
+   are Space, Member, Task and Kind.
+5. **No billable field and no money.** Billing stays in Solidtime (D-088 item 10). Agent time
+   is shown beside human time and never added to it (D-088 item 8).
+
+**Consequences.** The 92-day summary cap applies to the report. One person's totals must equal
+`GET /me/time/summary` for the same range — a test holds both.
+
+## D-131 — Availability is the person's own declaration
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka.
+
+**Context.** A manager wants to know who has room to be onboarded onto another project. D-088
+item 1 forbids a per-person score, ranking or utilisation figure.
+
+**Decision.**
+
+1. **Status** (*open to more work*, *at capacity*), optional hours per week, a note, tags,
+   working week and away periods are set **only by the person**, on a web session.
+2. Status is seen by everyone who shares a space with them. **Load facts** — hours by space and
+   card counts — are read-only, logged, and shown to owners and admins; space admins see card
+   counts only.
+3. **Never ranked**: lists sort alphabetically with no sort by load.
+4. **D-088 item 1 stands: no computed free hours.** The design's "≈ free hours" variant is
+   dropped. *Current load* shows tracked hours and the person's set working hours as two plain
+   numbers on an empty track — not a filled bar, which would be the same ratio drawn.
+
+## D-132 — Owners and admins may read a member's whole developer setup
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka.
+
+**Decision.**
+
+1. Owners and admins may read another member's devices, tools, repository setups, check
+   results, pending pairing requests and full token history, **read-only**, each view logged
+   in the D-102 record the member can see.
+2. **The one-time code of a pairing request is never shown to them** (D-124).
+3. It is one permission with token management: *Manage anyone's tokens* becomes **See and
+   manage anyone's developer setup**, held by admins by default.
+4. `/devices` and `/agents` stay own-only — another owner's id still answers `404` there
+   (§4.78). The admin read is its own route under `/people/:id/`.
+5. A repository in a space the reader cannot open is counted, never named.
+
+## D-133 — Owners and admins may revoke a member's tool or unpair their device
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka.
+
+**Decision.** Under the permission in D-132, an owner or admin may revoke another member's tool
+(agent) or unpair their device. The effect is D-114 item 2's revoke, unchanged. A confirm says
+exactly what stops working; the member gets an in-Laika notice (D-134). **An admin may not do
+this to the owner's setup.** No email: Laika sends none.
+
+## D-134 — Members get notices
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka.
+
+**Decision.** A small store of notices owned by each member covers being added to a space (with
+an optional message and first card) and a tool, device or token of theirs being revoked by
+someone else. They show on My day, are not activity, and are kept 90 days. **No new activity
+verb**: the add is already `member.added` and a revoke is already `token.revoked`.
+
+## D-135 — Repeated looks within ten minutes are logged once
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka.
+
+**Decision.** A viewer looking at the same person's data of the same kind again within ten
+minutes writes no second row. This amends §4.59's *one row per read*. D-102 rule 3 still holds,
+because every viewer and subject pair is recorded — a report filter click across forty people
+writes forty rows once, not forty per click.
