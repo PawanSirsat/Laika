@@ -5,8 +5,9 @@ area: web
 assignee: shell/belka
 priority: p2
 depends-on: [LAI-1130, LAI-1136, LAI-1134, LAI-1138]
-status: in-progress
+status: review
 started: 2026-11-05T17:10:00+05:30
+finished: 2026-11-05T18:40:00+05:30
 ---
 
 ## Why
@@ -29,20 +30,28 @@ only once #281 lands, or against its branch shape.
 
 ## Acceptance criteria
 
-- [ ] Frames 2a–2l and 2n–2o in both themes and at 390px; frame 2m (free
+- [x] Frames 2a–2l and 2n–2o in both themes and at 390px; frame 2m (free
       hours) is absent.
-- [ ] The popover saves through `PUT /me/availability`, shows `422`s inline
+- [x] The popover saves through `PUT /me/availability`, shows `422`s inline
       and *updated N ago*.
-- [ ] The pill is glyph plus text (not colour alone).
-- [ ] The Availability table is A–Z, the filters work, and the hours column
+- [x] The pill is glyph plus text (not colour alone).
+- [x] The Availability table is A–Z, the filters work, and the hours column
       appears only when the server sent it.
-- [ ] A lead sees only their spaces in Add to project.
-- [ ] The Add dialog posts once with message and card, then shows *✓ Added…*.
-- [ ] `409` and `422` (including `user_deactivated`) are handled.
-- [ ] The For you card lists notices with read and read-all, the message is
+- [x] A lead sees only their spaces in Add to project.
+- [x] The Add dialog posts once with message and card, then shows *✓ Added…*.
+- [x] `409` and `422` (including `user_deactivated`) are handled.
+- [x] The For you card lists notices with read and read-all, the message is
       plain text, and My day's nav item carries the unread count.
-- [ ] Current load shows the two working-week numbers as text on a neutral
+- [x] Current load shows the two working-week numbers as text on a neutral
       track with no fill proportion; no computed free hours anywhere.
-- [ ] Empty states are worded as in the design.
-- [ ] A member never sees load figures (asserted against a member session).
-- [ ] Deactivated people are not listed in Availability.
+- [x] Empty states are worded as in the design.
+- [x] A member never sees load figures (asserted against a member session).
+- [x] Deactivated people are not listed in Availability.
+
+## Delivered
+
+PR #284. Insights → Time → Availability is built on LAI-1138's Time tab
+(#281, merged mid-task and merged in here). Frame 2m is absent; Current
+load is a full-width card above the profile summary rather than a grid
+cell. Follow-up: LAI-1145 (pair the client types; two owners). Log:
+`logs/shell-2026-11-05-LAI-1139.md`.
