@@ -581,7 +581,9 @@ void describe('the new chrome fits', () => {
         await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
         const state = await h.page.evaluate(() => ({
           attr: document.documentElement.getAttribute('data-theme'),
-          canvas: getComputedStyle(document.body).backgroundColor,
+          // `html`, not `body`: the body is transparent since LAI-1132 so
+          // the ambient layer shows, and the canvas colour moved up a level.
+          canvas: getComputedStyle(document.documentElement).backgroundColor,
         }));
         assert.equal(
           state.attr,

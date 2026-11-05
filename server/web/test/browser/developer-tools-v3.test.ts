@@ -700,7 +700,7 @@ void describe('the details panel: phone and themes', () => {
     }
   });
 
-  void test('both themes: the panel is the theme’s card, and the two differ', async () => {
+  void test('both themes: the panel is the theme’s level-3 glass, and the two differ', async () => {
     const colours: string[] = [];
     for (const theme of ['light', 'dark'] as const) {
       const h = await open('/developer?tab=tools', stub());
@@ -708,11 +708,17 @@ void describe('the details panel: phone and themes', () => {
         await setTheme(h.page, theme);
         await openFromRow(h.page);
         const panelBg = await panel(h.page).evaluate((el) => getComputedStyle(el).backgroundColor);
-        const cardBg = await h.page
-          .locator('.dv3-roster .dx-card')
-          .first()
-          .evaluate((el) => getComputedStyle(el).backgroundColor);
-        assert.equal(panelBg, cardBg, `${theme}: the panel is not the card colour`);
+        // LAI-1132: the panel is level-3 glass over a frosted scrim, no longer
+        // the card colour — read the token rather than a card it once matched.
+        const glassBg = await h.page.evaluate(() => {
+          const d = document.createElement('div');
+          d.style.backgroundColor = 'var(--glass-3)';
+          document.body.append(d);
+          const c = getComputedStyle(d).backgroundColor;
+          d.remove();
+          return c;
+        });
+        assert.equal(panelBg, glassBg, `${theme}: the panel is not on --glass-3`);
         colours.push(panelBg);
       } finally {
         await h.close();
