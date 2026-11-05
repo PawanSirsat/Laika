@@ -136,7 +136,15 @@ export interface MyDayScreenProps {
 
 type Load =
   | { readonly kind: 'loading' }
-  | { readonly kind: 'ready'; readonly view: MyDay }
+  | {
+      readonly kind: 'ready';
+      readonly view: MyDay;
+      /**
+       * A re-read of this same day failed (LAI-1191, the audit's B7): the day
+       * last read stays on the page under a stale notice with Retry.
+       */
+      readonly stale?: unknown;
+    }
   | { readonly kind: 'error'; readonly error: unknown };
 
 const RUNNING: Readonly<Record<BulkKind, string>> = {
@@ -289,6 +297,8 @@ export function MyDayScreen({
   const confirm = useConfirm();
   const { org, settled } = useGates(me !== undefined);
   const holds = org(PEOPLE_ANALYTICS);
+  /** May turn time tracking on — the server's answer, never the role (LAI-1191). */
+  const mayTurnOn = org('org.time.set');
   /** Whose day: somebody else's only by `?user=` naming another person. */
   const subjectId = user !== undefined && user !== '' && user !== me?.id ? user : undefined;
   const readOnly = subjectId !== undefined;
@@ -379,7 +389,14 @@ export function MyDayScreen({
         if (!controller.signal.aborted) setLoad({ kind: 'ready', view });
       })
       .catch((error: unknown) => {
-        if (!controller.signal.aborted) setLoad({ kind: 'error', error });
+        if (controller.signal.aborted) return;
+        // A failed re-read of the day already on the page keeps it, stale
+        // (LAI-1191): only a day never read, or another day, is the error card.
+        setLoad((prev) =>
+          prev.kind === 'ready' && prev.view.day === selectedDay
+            ? { kind: 'ready', view: prev.view, stale: error }
+            : { kind: 'error', error },
+        );
       });
     return () => {
       controller.abort();
@@ -1410,7 +1427,7 @@ export function MyDayScreen({
       <MyDayPhoneBar>
         {/* Not in the design's bar, which has no other way to Agent time and On your plate. */}
         {phoneBeside}
-        {!readOnly && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
+        {!readOnly && !orgOff && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
         {switcher}
         {avatar}
       </MyDayPhoneBar>
@@ -1423,6 +1440,7 @@ export function MyDayScreen({
         subjectName={subjectName}
         locked={batching}
         onDay={onDay}
+        off={orgOff}
         {...(own
           ? {
               tools: (
@@ -1567,13 +1585,15 @@ export function MyDayScreen({
                   {dayLong(view.day)}
                   {view.day === view.today && ' · today'}
                 </span>
-                <span className="myday-subtitle-dot" aria-hidden="true" />
+                {!(orgOff && !readOnly) && (
+                  <span className="myday-subtitle-dot" aria-hidden="true" />
+                )}
                 {readOnly ? (
                   <span className="myday-lock">
                     <Padlock />
                     {`Read only · ${subjectName} sees that you looked`}
                   </span>
-                ) : (
+                ) : orgOff ? null : ( // Nothing is collected, so there is nobody's reading to explain (LAI-1191).
                   // Who reads what, truthfully (D-102, LAI-968): the design's
                   // popover (LAI-513), its words in the tooltip too, and the
                   // way to every look.
@@ -1792,7 +1812,7 @@ export function MyDayScreen({
                 }
               />
             )}
-            {!readOnly && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
+            {!readOnly && !orgOff && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
             <button
               type="button"
               className="myday-chip myday-head-icon"
@@ -1833,18 +1853,21 @@ export function MyDayScreen({
                 />
               </svg>
             </button>
-            <button
-              type="button"
-              className="myday-chip myday-head-icon"
-              aria-label="Keyboard shortcuts"
-              title="Keyboard shortcuts (?)"
-              data-shortcuts-button
-              onClick={() => {
-                setSheet(true);
-              }}
-            >
-              ?
-            </button>
+            {/* The shortcuts are the Timeline's; with tracking off there is none (LAI-1191). */}
+            {!orgOff && (
+              <button
+                type="button"
+                className="myday-chip myday-head-icon"
+                aria-label="Keyboard shortcuts"
+                title="Keyboard shortcuts (?)"
+                data-shortcuts-button
+                onClick={() => {
+                  setSheet(true);
+                }}
+              >
+                ?
+              </button>
+            )}
           </ScreenHeader>
         ) : embedded === undefined ? null : (
           <div className="myday-embed-head">
@@ -1854,10 +1877,24 @@ export function MyDayScreen({
                 {view.day === view.today && ' · today'}
               </span>
             </p>
-            <WeekStrip week={view.week} selected={view.day} today={view.today} onPick={onDay} />
+            {!orgOff && (
+              <WeekStrip week={view.week} selected={view.day} today={view.today} onPick={onDay} />
+            )}
           </div>
         )}
         {banner}
+        {load.kind === 'ready' && load.stale !== undefined && (
+          <p className="myday-viewing-banner myday-stale" role="status" data-day-stale>
+            <strong>Couldn’t refresh {dayLong(view.day)}.</strong> This is the day as last read
+            {load.stale instanceof Error && load.stale.message !== ''
+              ? ` — ${load.stale.message}`
+              : ''}
+            .{' '}
+            <button type="button" className="myday-linkish" onClick={reload}>
+              Retry
+            </button>
+          </p>
+        )}
         {readOnly && view.day_note !== null && (
           <p className="myday-viewing-banner myday-day-note" data-day-note>
             <strong>
@@ -1885,9 +1922,11 @@ export function MyDayScreen({
           {/* The Timeline spans the page (LAI-889, the v3 design); the tray, the tabs and the lists sit under it, and the editor beside the page (LAI-511). */}
           {orgOff ? (
             <DayOff
-              onOpenSettings={() => {
-                onNavigate('/organisation');
-              }}
+              me={readOnly ? undefined : me}
+              spaces={spaces}
+              canTurnOn={mayTurnOn}
+              now={now}
+              onNavigate={onNavigate}
             />
           ) : emptyKind !== undefined ? (
             <DayEmpty day={view.day} kind={emptyKind} actions={emptyActions} />

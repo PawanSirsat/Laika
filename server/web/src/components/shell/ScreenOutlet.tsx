@@ -355,12 +355,18 @@ function InsightsRoute() {
   const {
     route: { params, navigate },
     me,
+    tokenAlerts,
   } = useShell();
   const { permissions } = usePermissions(me !== undefined);
   const holds = permissionHolder(permissions?.me.actions);
   const tab = currentTab(INSIGHTS_TABS, params, holds);
   return (
-    <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current={tab} onNavigate={navigate}>
+    <InsightsScreen
+      tabs={visibleTabs(INSIGHTS_TABS, holds)}
+      current={tab}
+      onNavigate={navigate}
+      alerts={tokenAlerts?.length}
+    >
       {tab === 'usage' ? <UsageRoute /> : <CapacityRoute />}
     </InsightsScreen>
   );

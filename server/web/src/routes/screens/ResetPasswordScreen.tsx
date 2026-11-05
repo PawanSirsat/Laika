@@ -130,6 +130,7 @@ export function ResetPasswordScreen({
           value={password}
           onChange={setPassword}
           autoComplete="new-password"
+          autoFocus
           showStrength
           required
           disabled={submitting}

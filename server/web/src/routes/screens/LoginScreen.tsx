@@ -143,6 +143,7 @@ export function LoginScreen({
           value={email}
           onChange={setEmail}
           autoComplete="username"
+          autoFocus
           required
           disabled={submitting}
           error={touched && !emailCheck.ok ? emailCheck.message : undefined}

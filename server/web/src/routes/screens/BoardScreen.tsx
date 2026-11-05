@@ -85,7 +85,7 @@ import '../../components/markers.css';
 import './board/board.css';
 import './board/board-motion.css';
 import { pickProject } from '../../api/pick-project.ts';
-import { withProjectParam } from '../nav-url.ts';
+import { CREATE_SPACE_HREF, withProjectParam } from '../nav-url.ts';
 import { clockTime } from '../../api/time-label.ts';
 import { useGates } from '../../api/permissions.ts';
 
@@ -960,7 +960,21 @@ export function BoardScreen({
       <div className="board">
         <EmptyState
           headline="No projects yet"
-          body="Create the first one and point it at a repo."
+          body={
+            gates.org('project.create')
+              ? 'Create the first one and point it at a repo.'
+              : 'Nobody has added you to a space yet. Ask an owner or admin for one.'
+          }
+          {...(gates.org('project.create') && onNavigate !== undefined
+            ? {
+                action: {
+                  label: 'Create a space',
+                  onClick: () => {
+                    onNavigate(CREATE_SPACE_HREF);
+                  },
+                },
+              }
+            : {})}
         />
       </div>
     );

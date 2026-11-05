@@ -232,6 +232,7 @@ export function InviteScreen({
           value={name}
           onChange={setName}
           autoComplete="name"
+          autoFocus
           required
           disabled={submitting}
           error={touched && !nameCheck.ok ? nameCheck.message : undefined}

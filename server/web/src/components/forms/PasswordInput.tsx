@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Field } from './Field.tsx';
 import { PasswordStrength } from './PasswordStrength.tsx';
+import { useFirstFocus } from './use-first-focus.ts';
 import './forms.css';
 
 export interface PasswordInputProps {
@@ -16,6 +17,11 @@ export interface PasswordInputProps {
   readonly autoComplete?: 'current-password' | 'new-password';
   /** Show the strength meter. Only useful where a password is being chosen. */
   readonly showStrength?: boolean;
+  /**
+   * Focused when it mounts: the first field of a page that is nothing but its
+   * form — sign in, first boot, an invite, a reset (LAI-1191).
+   */
+  readonly autoFocus?: boolean;
 }
 
 /**
@@ -36,8 +42,11 @@ export function PasswordInput({
   autoComplete = 'current-password',
   showStrength = false,
   invalid = false,
+  autoFocus = false,
 }: PasswordInputProps) {
   const [revealed, setRevealed] = useState(false);
+  const input = useRef<HTMLInputElement | null>(null);
+  useFirstFocus(input, autoFocus, disabled);
 
   return (
     <Field label={label} help={help} error={error} invalid={invalid} required={required}>
@@ -57,6 +66,7 @@ export function PasswordInput({
               aria-required={required || undefined}
               disabled={disabled}
               autoComplete={autoComplete}
+              ref={input}
             />
             <button
               type="button"
