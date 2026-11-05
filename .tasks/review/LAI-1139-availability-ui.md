@@ -83,3 +83,14 @@ five); a reader with profiles but no analytics sees no Current load and
 reads none; *Away until…*, a date move (add, then delete) and a refused move
 (no delete); a failed mark keeps the count; `task_not_assignable`; the lead's
 Space filter; neither popover nor For you on somebody else's day.
+
+## Review notes — round 2 (B1 passes; R1 BLOCK → fixed)
+
+**R1 / N2:** the shared availability record and the unread count were module
+state that outlived a sign-out, so the next person on the tab could see (and
+Save over) the last one's. `setStoreUser` now resets both alongside the other
+per-user stores, and a generation counter drops any read or save begun for
+the previous person. **N1:** moving to another profile closes Current load;
+A → Show → B → A is collapsed with no second `/load`. **N3:** no change; the
+20-period trade-off is in the log. Merged `origin/master` after LAI-1140
+(#285): Current load gates on `offered.includes('time')`, never `tabbed`.

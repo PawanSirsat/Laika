@@ -171,7 +171,7 @@ export function hoursMinutes(minutes: number): string {
   return m === 0 ? `${String(h)}h` : `${String(h)}h ${String(m)}m`;
 }
 
-/** The first word of a name: the dialog's *Add Hemant to a project*. */
+/** The first word of a name: the dialog's *Add <first name> to a project*. */
 export function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] ?? name;
 }
