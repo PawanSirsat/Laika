@@ -610,6 +610,7 @@ export function BoardToolbar({
                   ref={membersButton}
                   type="button"
                   className="bt-member-more"
+                  aria-label={`+${String(overflow)} more — show all ${String(members.length)} members`}
                   aria-expanded={open === 'members'}
                   aria-haspopup="dialog"
                   aria-controls={open === 'members' ? membersPopId : undefined}
@@ -619,7 +620,6 @@ export function BoardToolbar({
                   }}
                 >
                   +{overflow}
-                  <span className="visually-hidden"> more — show all members</span>
                 </button>
                 {open === 'members' && (
                   <MembersPopover
