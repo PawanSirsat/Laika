@@ -1367,3 +1367,71 @@ void describe('V3 Devices: renaming a device (LAI-1095)', () => {
     });
   }
 });
+
+void describe('an unavailable action says why (LAI-1141, the audit’s B10)', () => {
+  void test('Reconnect with no live credential to replace: the reason, described by it, and a click that opens nothing', async () => {
+    const spent = deviceRow({
+      id: 'd1',
+      name: 'Belka',
+      agents: [
+        agentRow({ id: 'a1', tokens: [token('t-a1', 'a1', 'lai_a1xx', { revoked_at: 2 })] }),
+      ],
+    });
+    const h = await open('/developer?tab=tools&agent=a1', stub('v3', [spent]));
+    try {
+      const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a1"]');
+      await body.waitFor({ timeout: 20_000 });
+      const button = body.getByRole('button', { name: 'Reconnect (new credential)…' });
+      assert.equal(await button.getAttribute('aria-disabled'), 'true');
+      const why = body.locator('[data-reconnect-why]');
+      assert.match(await why.innerText(), /No live credential to replace/);
+      assert.equal(await button.getAttribute('aria-describedby'), await why.getAttribute('id'));
+      await button.click();
+      await h.page.waitForTimeout(500);
+      assert.equal(await h.page.getByRole('alertdialog').count(), 0);
+      assert.deepEqual(writes(h.calls), [], 'nothing was rotated');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Disconnect device with no active tool: the reason, described by it, and a click that opens nothing', async () => {
+    const idle = deviceRow({
+      id: 'd1',
+      name: 'Belka',
+      agents: [agentRow({ id: 'a1', status: 'revoked' })],
+    });
+    const h = await open('/developer?tab=devices&device=d1', stub('v3', [idle]));
+    try {
+      const button = panel(h.page, 'device').getByRole('button', { name: 'Disconnect device…' });
+      await button.waitFor({ timeout: 20_000 });
+      assert.equal(await button.getAttribute('aria-disabled'), 'true');
+      const why = panel(h.page, 'device').locator('[data-disconnect-why]');
+      assert.match(await why.innerText(), /nothing to disconnect/);
+      assert.equal(await button.getAttribute('aria-describedby'), await why.getAttribute('id'));
+      await button.click();
+      await h.page.waitForTimeout(500);
+      assert.equal(await h.page.getByRole('alertdialog').count(), 0);
+      assert.deepEqual(writes(h.calls), [], 'nothing was revoked');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('neither reason is drawn when the action is available', async () => {
+    const h = await open('/developer?tab=tools&agent=a1', stub('v3', [BELKA]));
+    try {
+      const body = panel(h.page, 'tool').locator('.dv3-tool-details[data-agent="a1"]');
+      await body.waitFor({ timeout: 20_000 });
+      assert.equal(await body.locator('[data-reconnect-why]').count(), 0);
+      assert.equal(
+        await body
+          .getByRole('button', { name: 'Reconnect (new credential)…' })
+          .getAttribute('aria-describedby'),
+        null,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});

@@ -59,7 +59,9 @@ void describe('the page states as designed (LAI-513)', () => {
     }
   });
 
-  void test('time tracking off for the organisation: the card, the way to the setting, no controls and no week', async () => {
+  void test('time tracking off for the organisation: the note, the way to the setting, no controls and no week', async () => {
+    // Since LAI-1141 the page is the reader's open work under a one-line note
+    // (my-day-time-off.test.ts has the work); this keeps the note's own words.
     const h = await openDay(
       TODAY,
       withDay(TODAY, (view) => ({
@@ -68,17 +70,12 @@ void describe('the page states as designed (LAI-513)', () => {
       })),
     );
     try {
-      const card = h.page.locator('[data-day-off]');
-      await card.waitFor({ timeout: 20_000 });
-      assert.match(await card.innerText(), /Time tracking is off for/);
-      assert.match(
-        await card.innerText(),
-        /Owners and admins can turn it on in Organisation settings/,
-      );
-      assert.equal(
-        await card.getByRole('button', { name: 'Open Organisation settings' }).count(),
-        1,
-      );
+      const note = h.page.locator('[data-day-off]');
+      await note.waitFor({ timeout: 20_000 });
+      assert.match(await note.innerText(), /Time tracking is off for/);
+      assert.match(await note.innerText(), /Nothing is collected or drafted/);
+      const settings = note.locator('[data-day-off-settings]');
+      assert.equal(await settings.count(), 1);
       for (const sel of [
         '[data-add-time]',
         '[data-timer-start]',
@@ -90,7 +87,7 @@ void describe('the page states as designed (LAI-513)', () => {
       ]) {
         assert.equal(await h.page.locator(sel).count(), 0, `${sel} is drawn with tracking off`);
       }
-      await card.getByRole('button', { name: 'Open Organisation settings' }).click();
+      await settings.click();
       await h.page.waitForURL((url) => url.pathname === '/organisation', { timeout: 10_000 });
     } finally {
       await h.close();
