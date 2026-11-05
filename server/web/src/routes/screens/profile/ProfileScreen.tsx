@@ -269,6 +269,7 @@ export function ProfileScreen({
         {/* The grant, not a role (LAI-1141): an owner may give it to any role. */}
         <PermissionDenied
           resource="member profiles"
+          requiredRole="admin"
           grant="See everyone’s analytics"
           scope="organisation"
         />

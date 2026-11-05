@@ -11,11 +11,12 @@ export interface PermissionDeniedProps {
    * The lowest role that would be allowed. Naming it turns a dead end into an
    * action: the reader knows who to ask and for what.
    */
-  readonly requiredRole?: Role | undefined;
+  readonly requiredRole: Role;
   /**
    * The grant that would allow it, in the Roles & permissions grid's words
-   * (LAI-1141). Named instead of a role where the owner can give it to any
+   * (LAI-1141). Named instead of the role where the owner can give it to any
    * role: *needs admin* would be untrue of an organisation that granted it.
+   * The role stays the default grant's, for the screens that ask it.
    */
   readonly grant?: string | undefined;
   /** Set when the resource is project-scoped, so the copy can say so. */
@@ -53,7 +54,7 @@ export function PermissionDenied({
         <p className="state-body">
           This needs at least the{' '}
           <span className="state-role">
-            {requiredRole === 'lead' ? 'Space admin' : (requiredRole ?? 'right')}
+            {requiredRole === 'lead' ? 'Space admin' : requiredRole}
           </span>{' '}
           role
           {where}. Ask an Owner or Admin if you should have it.
