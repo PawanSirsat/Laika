@@ -82,6 +82,9 @@ export const ORG_ACTIONS = [
   'time_sync.own',
   'time_sync.map',
   'time_sync.import_all',
+  // D-130 (LAI-1135): the organisation's Time report, everyone's time per
+  // person over a stretch — *See everyone's analytics*.
+  'time.report.read',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -122,6 +125,9 @@ export const PROJECT_ACTIONS = [
   'budget.set',
   // D-103 item 5 (LAI-976): any member may leave a space.
   'project.leave',
+  // D-130 item 3 (LAI-1135): a space admin reads the space's time totals —
+  // confirmed, no per-person split, under D-088 item 7's three-person floor.
+  'time.report.read_project',
 ] as const;
 
 /**
@@ -324,6 +330,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'time_sync.own',
   'time_sync.map',
   'time_sync.import_all',
+  // **The Time report is hours per person, or a space's hours** (D-130,
+  // LAI-1135): the rule above, so no token reads it, its own person's
+  // included.
+  'time.report.read',
+  'time.report.read_project',
   // **Who may do what is the owner's, signed in** (D-102, LAI-958): an
   // agent's token that could grant its own role a capability would hand its
   // person whatever it was refused.

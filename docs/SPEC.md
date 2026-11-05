@@ -125,7 +125,7 @@ organisation's grants for exactly these actions and no others.
 
 | Capability | Carries |
 | --- | --- |
-| *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`) |
+| *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`, and D-130's `time.report.read`) |
 | *See the organisation's activity history* | `audit_log.export` |
 | *Open every project* | the implicit project role above: `lead` on every project, `viewer` for an org viewer, who stays capped |
 | *Invite people* | `user.invite` (as member or viewer only) |
@@ -251,6 +251,7 @@ be obvious because someone will be asking for it.
 | Sync own time with Solidtime | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Map Solidtime projects and people | ✓ (session only) | ✓ (session only) | — | — |
 | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
+| View the organisation's Time report | ✓ (session only) | ✓ (session only) | — | — |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -409,6 +410,15 @@ follows only the organisation's Developer insights (D-102, amended).
   activity* (`local_activity.read_own`): what is held about them and who has
   seen it are the same Developer access screen's, every role's, session only.
 
+**"View the organisation's Time report" is `time.report.read`** (D-130,
+LAI-1135), behind §6.4's `GET /time/report` when it names people other than
+the caller, or no one. It is *See everyone's analytics*, beside
+`people.analytics.read`: per person, drafts on request, every person shown
+logged as a look at their time (§4.59). A report of the caller's own time is
+*Read and write own time entries*' and logs nothing; a space admin's totals
+are §3.2's *View the space's time totals*. A caller who holds neither and
+leads no space is `403`.
+
 ### 3.2 Project-level permission matrix
 
 Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
@@ -444,6 +454,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Read a project's token totals | ✓ | ✓ | ✓ |
 | Set token budgets | ✓ (session only) | — | — |
 | Leave a project | ✓ | ✓ | ✓ |
+| View the space's time totals | ✓ (session only) | — | — |
 
 **Per-space rules (D-103, LAI-976).** *Create tasks* follows the space's
 `task_create_min_role` (§4.3): `member`, the default, is the cell as written;
@@ -458,6 +469,16 @@ session are unaffected. A refusal by either rule is `403 forbidden` with
 `details.reason` `task_create_min_role` or `agents_off`. *Leave a project*
 refuses the last lead `409 conflict` with `details.reason: last_lead` — hand
 over first.
+
+**The space's time totals** (D-130 item 3, LAI-1135) are
+`time.report.read_project`, behind §6.4's `GET /time/report` for a caller
+with no per-person grant who leads a space (an org Owner or Admin is an
+implicit lead, and reads per person first). **Confirmed time only, with no
+per-person split, under D-088 item 7's three-person floor**: a task with
+fewer than three people's time in the stretch is summed into its space's
+no-task rows, and a space with fewer than three into one row naming no space.
+D-088 item 7 is not amended. A lead asking for `members` is `422
+members_not_allowed`; for drafts, `422 drafts_not_allowed`.
 
 **Checkpoints and hand-offs** (§4.70 – §4.74, D-114 – D-116, LAI-544). The
 eight rows are `task.checkpoint.create`, `task.checkpoint.retag`,
@@ -2360,7 +2381,12 @@ Who looked at a person's analytics, and when (D-102 rule 3, D-088 item 7,
 LAI-957; §3.1's *"View a member's day, time and shared activity"*). One row
 per read of somebody else's My day, local activity, heatmap or per-person
 tokens, written in the same transaction as the read; a person reading their
-own writes none. Read by the person alone, `GET /me/analytics-views`. No
+own writes none. **One row per look, not per request** (D-135, amending *one
+row per read*): the same viewer reading the same subject's same `kind` and
+`day` again within ten minutes writes no second row, so every viewer and
+subject pair is still recorded (D-102 rule 3). A read that shows several
+people per person — the Time report (§6.4, LAI-1135) — writes one row per
+person shown, each deduped on its own. Read by the person alone, `GET /me/analytics-views`. No
 `activity` row: §4.8 gains no verb. Kept **400 days** (§11.6's local-activity
 retention, by `viewed_at`).
 
@@ -3929,6 +3955,7 @@ GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's he
 GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts, timer and day note included; logged   (owner, admin by default; session only; not yourself; LAI-957)
 GET    /api/v1/people/:id/time/summary       ?from=&to= — that person's GET /me/time/summary answer; logged as a look at their time, no day   (owner, admin by default; session only; not yourself; LAI-526)
 GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
+GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&drafts=exclude|include&format=json|csv — the Time report, own, people or space totals, ≤ 92 days; people logged per person   (session only; scope by §3.1 / §3.2; 30/min; D-130, LAI-1135)
 GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at the caller → { data: [{ id, viewer: { id, name }, kind, day, viewed_at }], next_cursor }, newest first   (session only)
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
@@ -5094,6 +5121,46 @@ parameter names anybody else.
   meeting kind; `manual_minutes` confirmed time typed or run on a timer. Under
   `GET /me/time`'s actions; `GET /people/:id/time/summary` is the same answer
   for a reader holding `people.analytics.read`, logged as a look with no day.
+- **The Time report (D-130, LAI-1135).** `GET /time/report?from=&to=` over at
+  most 92 days (`422 range_too_long`, `range_backwards`, as the summary),
+  narrowed by `spaces` (comma slugs; one the caller cannot open is `404`),
+  `members` (comma user ids, at most 200, `422 too_many_members`; an unknown
+  id is `404`), `kinds` (comma `TIME_ENTRY_KINDS`; drafts have none, so a
+  kinds filter holds none) and `drafts` (`exclude`, the default, or
+  `include`). **The server decides `scope`**: `members` naming exactly the
+  caller is `own`, under *Read and write own time entries* (and own drafts
+  with `drafts=include`), logged nowhere; otherwise `people`, under
+  `time.report.read` for everyone or `people.analytics.read` for each person
+  named (§3.1); otherwise, for a caller who leads a space, `space_totals`
+  under §3.2's `time.report.read_project` over each space asked for or every
+  space they lead — confirmed only, `user: null` on every row, the
+  three-person floor applied; otherwise `403`. Every action is session only,
+  so a token is `403 session_required`. Answers `{ from, to, days, scope,
+  include_drafts, totals: { confirmed_minutes, drafted_minutes,
+  meeting_minutes, manual_minutes, active_days, people }, agent_minutes,
+  by_day, rows, folded }`: `by_day` is every day `{ day, confirmed_minutes,
+  drafted_minutes }`; `rows` the finest grain, `{ project, user: { id, name,
+  deactivated } | null, task, untied, kind, confirmed_minutes,
+  drafted_minutes }`, largest first, for the client to group by any two of
+  space, member, task and kind; `agent_minutes` the agent's working minutes
+  for those people, shown beside human time and never added to it (D-088
+  item 8) — `null` in `space_totals` and when `spaces` or `kinds` narrow the
+  report; `folded` `{ tasks, spaces, minutes }` in `space_totals`, else
+  `null`. A space or task the caller cannot open is never named: its minutes
+  are `project: null` / `task: null`. **One person's totals and `by_day`
+  equal `GET /me/time/summary` for the same stretch** with
+  `drafts=include`, a test holding both. In `people`, each person a row
+  names, the caller aside, is one §4.59 look at their time (`kind: time`,
+  no day) in the read's transaction, deduped over ten minutes (D-135). More
+  than 5 000 rows is `422 report_too_large` (`max_rows`), and nothing is
+  logged. `format=csv` answers the same report as a file, streamed, no row
+  cap, logged the same: `text/csv; charset=utf-8`, attachment
+  `laika-time-<from>-<to>.csv`, columns `day, space, task_key, task_title,
+  person, kind, confirmed_minutes, drafted_minutes` (no `person` in
+  `space_totals`), one line per day and row, `space` the space's name, text
+  prefixed `'` where a spreadsheet would run it as a formula (as LAI-984's
+  history export). The route has a bucket of its own, 30 a minute per
+  person, so filter clicks never spend the session's budget.
 - **The timer (§4.61, LAI-500).** `POST /me/time/timer` `{ tz, task?, kind?,
   title? }` starts the person's one timer, `201`; a second start is `409
   timer_running`. `POST …/pause` banks the running segment (`409 timer_paused`

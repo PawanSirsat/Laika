@@ -122,6 +122,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Sync own time with Solidtime', ['time_sync.own']],
   ['Map Solidtime projects and people', ['time_sync.map']],
   ["Import everyone's Solidtime time", ['time_sync.import_all']],
+  // D-130 (LAI-1135).
+  ["View the organisation's Time report", ['time.report.read']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
@@ -154,6 +156,8 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ["Read a project's token totals", ['usage.read_project']],
   ['Set token budgets', ['budget.set']],
   ['Leave a project', ['project.leave']],
+  // D-130 item 3 (LAI-1135).
+  ["View the space's time totals", ['time.report.read_project']],
 ]);
 
 /**

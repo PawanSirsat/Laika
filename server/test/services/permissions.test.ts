@@ -160,6 +160,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'time_sync.own': 'YYYY',
   'time_sync.map': 'YYNN',
   'time_sync.import_all': 'YYNN',
+  'time.report.read': 'YYNN',
 
   'project.members.manage': 'YNN',
   'project.settings.edit': 'YNN',
@@ -189,6 +190,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'usage.read_project': 'YYY',
   'budget.set': 'YNN',
   'project.leave': 'YYY',
+  'time.report.read_project': 'YNN',
 };
 
 const LETTER = { yes: 'Y', no: 'N', conditional: 'C' } as const;
@@ -366,7 +368,12 @@ describe('the catalogue follows the organisation’s grants', () => {
     const before = permissionsCatalogue(actor());
     const after = permissionsCatalogue(actor({ orgGrants: MEMBER_ANALYTICS }));
 
-    for (const action of ['profile.read', 'profile.activity.read', 'usage.read_people']) {
+    for (const action of [
+      'profile.read',
+      'profile.activity.read',
+      'usage.read_people',
+      'time.report.read',
+    ]) {
       expect(cells(before, action), action).toBe('YYNN');
       expect(cells(after, action), action).toBe('YYYN');
     }
@@ -381,6 +388,7 @@ describe('the catalogue follows the organisation’s grants', () => {
       'people.analytics.read',
       'profile.activity.read',
       'profile.read',
+      'time.report.read',
       'usage.read_people',
     ]);
   });

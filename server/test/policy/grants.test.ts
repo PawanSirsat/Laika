@@ -58,6 +58,7 @@ describe('the mapping', () => {
         'profile.activity.read',
         'usage.read_people',
         'people.analytics.read',
+        'time.report.read',
       ],
       see_org_activity: ['audit_log.export'],
       open_all_projects: [],
