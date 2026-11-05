@@ -5,8 +5,9 @@ area: shell
 assignee: shell/belka
 priority: p2
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-06T01:15:26+05:30
+finished: 2026-11-06T01:15:40+05:30
 ---
 
 ## Why
@@ -24,17 +25,17 @@ The ask: show tracked time in hours, the same way on every time page.
 
 ## Acceptance criteria
 
-- [ ] My day never prints a day unit for tracked time: 28 h of work reads
+- [x] My day never prints a day unit for tracked time: 28 h of work reads
       `28 h`, 53 h 12 min reads `53 h 12 min`, to the minute; under 24 h
       unchanged (`16 h 15 min`, `45 min`). One shared helper,
       `formatHours` in `api/duration.ts`, behind `my-day/format.ts duration()`.
-- [ ] The Time report's group-by table (rows, children, footer), the donut's
+- [x] The Time report's group-by table (rows, children, footer), the donut's
       figure and its legend read `20h 24m`, `37m`, `20h` — never `20:24` —
       the short form My day's timeline already prints; the phone strip's
       `hoursShort` drops its zero-padding to match (`2h 5m`).
-- [ ] Ages, cycle times, review waits, estimates and the running timer's
+- [x] Ages, cycle times, review waits, estimates and the running timer's
       clock are unchanged: they are not hours worked, and days read naturally
       there.
-- [ ] Unit tests pin both formats with a no-days, no-`h:mm` sweep; a
+- [x] Unit tests pin both formats with a no-days, no-`h:mm` sweep; a
       mutation (My day back on `formatDuration`) turns the new test red; the
       time-report browser test asserts the new cells.
