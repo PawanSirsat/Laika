@@ -141,7 +141,9 @@ export interface Resource {
   visibility?: 'public' | 'private' | undefined;
   /**
    * For `user.invite`: the role the invite grants. Anyone but an owner may
-   * invite only as `member` or `viewer` (D-102 rule 5, LAI-958).
+   * invite only as `member` or `viewer` (D-102 rule 5, LAI-958). For
+   * `user.reset_password`, `agent.revoke_any` and `device.revoke_any`: the
+   * target's own role, so an admin is refused the owner's (D-133, LAI-1137).
    */
   targetOrgRole?: OrgRole | undefined;
   /**
@@ -443,6 +445,35 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'token.list_any':
     case 'token.revoke_any':
       return granted(actor, action);
+
+    // | View a member's developer setup | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
+    //
+    // D-132 (LAI-1137): *See and manage anyone's developer setup*. **Not
+    // themselves**, as for `people.analytics.read`: a person reads their own
+    // on Developer access, where nothing is logged. An absent target is a
+    // denial.
+    case 'developer_setup.read_any':
+      return (
+        granted(actor, action) &&
+        resource.targetUserId !== undefined &&
+        resource.targetUserId !== actor.userId
+      );
+
+    // | Revoke a member's tool or unpair their device | ✓ (session only) | ✓ (session only, not the owner's) | — | — |
+    //
+    // D-133 (LAI-1137): the same grant. **An admin may not act on the
+    // owner's setup** — the `user.reset_password` shape on the target's role,
+    // but strict: an absent `targetOrgRole` is a denial, so a caller that
+    // forgot to load the target cannot be read as "not the owner". Not
+    // themselves either: a person revokes their own on Developer access.
+    case 'agent.revoke_any':
+    case 'device.revoke_any':
+      if (!granted(actor, action)) return false;
+      if (resource.targetUserId === undefined || resource.targetUserId === actor.userId) {
+        return false;
+      }
+      if (resource.targetOrgRole === undefined) return false;
+      return orgRole === 'owner' || resource.targetOrgRole !== 'owner';
 
     // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
     //

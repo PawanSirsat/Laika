@@ -124,6 +124,11 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'token.revoke_own': 'CCCC',
   'token.list_any': 'YYNN',
   'token.revoke_any': 'YYNN',
+  // D-132, D-133 (LAI-1137): a member's setup, read by anybody else holding
+  // the grant; revoked by an admin for anybody but the owner.
+  'developer_setup.read_any': 'CCNN',
+  'agent.revoke_any': 'YCNN',
+  'device.revoke_any': 'YCNN',
   // D-114 (LAI-534): every role reads and manages its own agents; the
   // service reaches only the caller's own rows.
   'agent.read_own': 'YYYY',

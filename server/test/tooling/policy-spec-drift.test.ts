@@ -81,6 +81,9 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
     ['token.create_own', 'token.read_own', 'token.revoke_own'],
   ],
   ["List / revoke anyone's token", ['token.list_any', 'token.revoke_any']],
+  // D-132, D-133 (LAI-1137): a member's whole setup, and revoking part of it.
+  ["View a member's developer setup", ['developer_setup.read_any']],
+  ["Revoke a member's tool or unpair their device", ['agent.revoke_any', 'device.revoke_any']],
   // D-114 (LAI-534): a person's registered agents.
   ['Read own agents', ['agent.read_own']],
   ['Register and manage own agents', ['agent.manage_own']],
@@ -479,6 +482,28 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
     },
   ],
   [
+    'session only, not for the owner, not themselves',
+    {
+      why: 'As "session only, not for the owner", and never yourself: an Admin may revoke a member\'s tool or unpair their device, not the Owner\'s; a person revokes their own on Developer access (D-133, LAI-1137).',
+      verify: (action: Action, role: string) => {
+        verifySessionOnly(action, role);
+
+        const actor = orgActor(role.toLowerCase() as OrgRole);
+        const other = { targetUserId: 'someone-else' };
+        expect(can(actor, action, { ...other, targetOrgRole: 'member' }), 'a member').toBe(true);
+        expect(can(actor, action, { ...other, targetOrgRole: 'owner' }), 'the owner').toBe(false);
+        expect(
+          can(actor, action, { targetUserId: actor.userId, targetOrgRole: 'member' }),
+          'themselves',
+        ).toBe(false);
+        expect(
+          can(orgActor('owner'), action, { ...other, targetOrgRole: 'owner' }),
+          'owner, for another owner-role target',
+        ).toBe(true);
+      },
+    },
+  ],
+  [
     'session only, not themselves',
     {
       why: 'As "session only", and the person may not be the one being rated: an Owner or Admin cannot rate themselves (D-078, LAI-743).',
@@ -502,7 +527,9 @@ function verifySessionOnly(action: Action, role: string): void {
   const lower = role.toLowerCase();
   const actor =
     lower === 'lead' || lower === 'member' ? projectActor(lower) : orgActor(lower as OrgRole);
-  const about = { targetUserId: 'someone-else', projectId: 'p' };
+  // A target who is somebody else and not the owner, so a row that also says
+  // *not for the owner* or *not themselves* is asked about the case it allows.
+  const about = { targetUserId: 'someone-else', targetOrgRole: 'member' as const, projectId: 'p' };
 
   expect(can(actor, action, about), `${action} / ${role} on a session`).toBe(true);
 
