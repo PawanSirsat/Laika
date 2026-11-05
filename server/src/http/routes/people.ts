@@ -6,6 +6,8 @@ import { listAnalyticsViews } from '../../services/analytics-views.ts';
 import {
   type DeveloperSetupView,
   getDeveloperSetup,
+  getOwnSetupActivity,
+  type OwnSetupActivityView,
   revokeMemberAgent,
   revokeMemberDevice,
   type SetupToolView,
@@ -148,6 +150,22 @@ export function meAnalyticsViewRoutes(options: { db: Db }): Hono<AppEnv> {
     const rows = listAnalyticsViews(db, actor, { limit, cursor });
     return c.json(buildPage(rows, limit, (row) => ({ sortKey: row.viewed_at, id: row.id })));
   });
+
+  return app;
+}
+
+/**
+ * `GET /api/v1/me/developer-setup/activity` (D-139, LAI-1151): the caller's
+ * own last 30 days of setup activity, the items the admin read lists in
+ * `activity[]`. Session only; no look. Mounted at `/api/v1/me`.
+ */
+export function meDeveloperSetupRoutes(options: { db: Db }): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const { db } = options;
+
+  app.get('/developer-setup/activity', (c) =>
+    c.json<OwnSetupActivityView>(getOwnSetupActivity(db, requireActor(c))),
+  );
 
   return app;
 }

@@ -230,6 +230,9 @@ const UNPAIRED = new Map<string, string>([
   // LAI-1136 (D-134): served ahead of the web half, LAI-1139, which builds My
   // day's For you and mirrors it.
   ['NoticeView', 'no client type exists'],
+  // LAI-1151 (D-139): your own setup's activity, served ahead of the own
+  // Developer access tab, LAI-1156, which mirrors it.
+  ['OwnSetupActivityView', 'no client type exists'],
   // LAI-1043: served ahead of the Developer access V3 screens that read it;
   // `laika doctor` is its only reader until then.
   ['CompatibilityBody', 'no client type exists'],
