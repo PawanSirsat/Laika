@@ -2,10 +2,10 @@ import type { MouseEvent, Ref } from 'react';
 import { agentHarness } from '../../../../api/agents.ts';
 import type { Device } from '../../../../api/devices.ts';
 import { ApiErrorState } from '../../../../components/ApiErrorState.tsx';
+import { EmptyState } from '../../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../../components/LoadingState.tsx';
 import { AgentMark } from '../../../../components/agent-mark/AgentMark.tsx';
 import { AutoPickupChip } from './AutoPickupChip.tsx';
-import { DxIcon } from './DxIcon.tsx';
 import { NoteBlock } from './NoteBlock.tsx';
 import { SectionTitle } from './SectionTitle.tsx';
 import {
@@ -96,23 +96,15 @@ export function ToolsTab({
     return (
       <section className="dv3-list" aria-labelledby={TOOLS_TITLE}>
         <div className="dx-card">
-          <div className="dx-empty">
-            <div className="dx-empty-icon">
-              <DxIcon name="device" size={22} />
-            </div>
-            <h2 className="dx-empty-title" id={TOOLS_TITLE} tabIndex={-1}>
-              Add a device first
-            </h2>
-            <p className="dx-empty-body">
-              Pair your computer before adding coding tools. You will not need to pair it again for
-              each tool.
-            </p>
-            {canManage && !wizard && (
-              <button type="button" className="dx-btn dx-btn-primary" onClick={onAddDevice}>
-                Add device →
-              </button>
-            )}
-          </div>
+          <EmptyState
+            headline="Add a device first"
+            headingLevel={2}
+            headingId={TOOLS_TITLE}
+            body="Pair your computer before adding coding tools. You will not need to pair it again for each tool."
+            {...(canManage && !wizard
+              ? { action: { label: 'Add device →', onClick: onAddDevice } }
+              : {})}
+          />
         </div>
       </section>
     );
@@ -158,20 +150,14 @@ export function ToolsTab({
         <>
           {listed.length === 0 ? (
             <div className="dx-card">
-              <div className="dx-empty">
-                <div className="dx-empty-icon">
-                  <DxIcon name="tool" size={22} />
-                </div>
-                <h3 className="dx-empty-title">No tools connected</h3>
-                <p className="dx-empty-body">
-                  Add Claude Code, Codex or another coding tool to a device you have already paired.
-                </p>
-                {canManage && !wizard && (
-                  <button type="button" className="dx-btn dx-btn-primary" onClick={onAddTool}>
-                    Add first tool
-                  </button>
-                )}
-              </div>
+              <EmptyState
+                headline="No tools connected"
+                headingLevel={3}
+                body="Add Claude Code, Codex or another coding tool to a device you have already paired."
+                {...(canManage && !wizard
+                  ? { action: { label: 'Add first tool', onClick: onAddTool } }
+                  : {})}
+              />
             </div>
           ) : (
             <div className="dx-card">
