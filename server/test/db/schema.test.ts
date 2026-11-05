@@ -195,6 +195,9 @@ describe('migrations', () => {
     // LAI-1056: a tool set up on a paired device; no secret column.
     'tool_setup_exchanges',
     'unlisted_work',
+    // LAI-1130, D-131: a person's own availability and away periods.
+    'user_availability',
+    'user_away_periods',
     // LAI-787, D-088: a person's own Draft my time.
     'user_time_settings',
     'users',

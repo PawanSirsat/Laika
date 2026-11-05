@@ -112,6 +112,8 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'time_sync.own': 'Sync own time with Solidtime',
   'time_sync.map': 'Map Solidtime projects and people',
   'time_sync.import_all': "Import everyone's Solidtime time",
+  'availability.set_own': 'Set own availability',
+  'availability.read': 'See availability of people in your spaces',
 
   'project.members.manage': 'Manage project members',
   'project.settings.edit': 'Edit project settings and context_md',

@@ -4,6 +4,12 @@ import { ApiError } from '../../errors.ts';
 import { listAnalyticsViews } from '../../services/analytics-views.ts';
 import { ACTIVITY_RANGES, getPeopleActivity } from '../../services/people-activity.ts';
 import {
+  type AvailabilityListView,
+  getPersonLoad,
+  listPeopleAvailability,
+  type PersonLoadView,
+} from '../../services/people-load.ts';
+import {
   getPersonDay,
   getPersonLocalActivity,
   getPersonSummary,
@@ -35,6 +41,20 @@ const ActivityQuery = strictObject({
   range: z.enum(ACTIVITY_RANGES).default('12w'),
 });
 
+/**
+ * `GET /people/availability` (D-131, LAI-1130). **Strict, and no sort**: the
+ * list is A–Z by name and nothing else (D-088 item 1), so `?sort=load` is a
+ * `422` naming the key rather than an order quietly ignored.
+ */
+const AvailabilityQuery = strictObject({
+  space: z.string().min(1).max(64).optional(),
+  tag: z.string().min(1).max(64).optional(),
+  open_only: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+});
+
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
   const actor = c.get('actor');
   if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
@@ -44,6 +64,17 @@ function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) 
 export function peopleRoutes(options: { db: Db }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db } = options;
+
+  app.get('/availability', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(AvailabilityQuery, c.req.query());
+    return c.json<AvailabilityListView>(listPeopleAvailability(db, actor, query));
+  });
+
+  app.get('/:id/load', (c) => {
+    const actor = requireActor(c);
+    return c.json<PersonLoadView>(getPersonLoad(db, actor, c.req.param('id')));
+  });
 
   app.get('/:id/activity', (c) => {
     const actor = requireActor(c);

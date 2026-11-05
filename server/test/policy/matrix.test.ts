@@ -152,6 +152,11 @@ const ORG_MATRIX: OrgRow[] = [
   ['time_sync.map', true, true, false, false],
   // | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
   ['time_sync.import_all', true, true, false, false],
+  // | Set own availability | ✓ (session only) | … | ✓ (session only) |
+  // D-131 (LAI-1130): the person's own declaration, every role.
+  ['availability.set_own', true, true, true, true],
+  // | See availability of people in your spaces | ✓ (session only) | … | ✓ (session only) |
+  ['availability.read', true, true, true, true],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
