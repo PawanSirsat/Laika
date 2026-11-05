@@ -98,7 +98,7 @@ beforeEach(() => {
   bea = makeUser('Bea', 'member');
   ari = makeUser('Ari', 'admin');
   vic = makeUser('Vic', 'viewer');
-  zed = makeUser('Zed', 'member', 0);
+  zed = makeUser('Zed', 'member');
   t.db
     .insert(orgs)
     .values({ id: newId(), name: 'Laika', ownerUserId: ada, createdAt: NOW, updatedAt: NOW })
@@ -111,6 +111,8 @@ beforeEach(() => {
   addMember(t.db, actor(ada), 'orbit', dee, 'member');
   addMember(t.db, actor(ada), 'laika', vic, 'viewer');
   addMember(t.db, actor(ada), 'laika', zed, 'member');
+  // Deactivated after joining: an add refuses a deactivated person (LAI-1136).
+  t.db.update(users).set({ isActive: 0 }).where(eq(users.id, zed)).run();
   addMember(t.db, actor(ada), 'laika', ari, 'member');
   setOrgTimeMode(t.db, actor(ada), 'manual');
 });
