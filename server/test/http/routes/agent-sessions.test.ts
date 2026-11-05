@@ -706,6 +706,11 @@ const NOT_FENCED: Record<string, string> = {
     'session only (agent.manage_own); records the owner’s statement about a label, touches no task',
   'POST /api/v1/agents/devices/revoke':
     'session only (agent.manage_own); revokes each agent as /agents/:id/revoke does, its claims lapse',
+  // LAI-1137 (D-133): an owner's or admin's revoke of a member's tool or device.
+  'POST /api/v1/people/:id/agents/:agentId/revoke':
+    'session only (agent.revoke_any); the revoke /agents/:id/revoke does, its claims lapse',
+  'POST /api/v1/people/:id/devices/:deviceId/revoke':
+    'session only (device.revoke_any); revokes each agent on it as /agents/:id/revoke does, its claims lapse',
   // LAI-1050: pairing a device (§4.79) touches no task and mints nothing.
   'POST /api/v1/devices/pairing-requests':
     'session only (agent.manage_own); asks for a pairing code, touches no task',
