@@ -25,6 +25,32 @@ import {
 
 export type ProfileAvailabilityMode = 'self' | 'load' | 'shared';
 
+export interface ModeInput {
+  /** `?user=`; undefined before the address names anyone. */
+  readonly userId: string | undefined;
+  /** The signed-in person; undefined until `/me` answers. */
+  readonly meId: string | undefined;
+  /** `profile.read`: without it the page is a permission notice and asks nothing. */
+  readonly allowed: boolean;
+  /** Whether the server has answered what the reader may do. */
+  readonly settled: boolean;
+  /** *See everyone's analytics* (`people.analytics.read`). */
+  readonly readsAnalytics: boolean;
+}
+
+/**
+ * Which read this reader makes, or `undefined` for none yet. **Nothing before
+ * the server has said what the reader may do**: guessing `load` would log a
+ * look the reader may not be entitled to, and guessing `shared` would ask a
+ * list an owner's read would log for everyone on it.
+ */
+export function profileAvailabilityMode(input: ModeInput): ProfileAvailabilityMode | undefined {
+  if (input.userId === undefined || input.meId === undefined || !input.allowed) return undefined;
+  if (input.meId === input.userId) return 'self';
+  if (!input.settled) return undefined;
+  return input.readsAnalytics ? 'load' : 'shared';
+}
+
 export type LoadState =
   | { readonly status: 'idle' }
   | { readonly status: 'loading' }

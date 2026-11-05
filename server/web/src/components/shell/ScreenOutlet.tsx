@@ -25,7 +25,12 @@ import { DeveloperScreen } from '../../routes/screens/developer/DeveloperScreen.
 import { InboxScreen } from '../../routes/screens/inbox/InboxScreen.tsx';
 import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx';
 import { TimeTab } from '../../routes/screens/insights/TimeTab.tsx';
-import { insightsHolder, ledProjectIds, timeView } from '../../routes/screens/insights/time-tab.ts';
+import {
+  insightsHolder,
+  ledProjectIds,
+  timeSubview,
+  timeView,
+} from '../../routes/screens/insights/time-tab.ts';
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
@@ -388,6 +393,8 @@ function InsightsRoute() {
           }
           leads={leads}
           orgName={orgName}
+          subview={timeSubview(params.get('view'))}
+          onNavigate={navigate}
         />
       ) : tab === 'usage' ? (
         <UsageRoute />

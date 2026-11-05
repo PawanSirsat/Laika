@@ -37,7 +37,7 @@ import {
 import { PEOPLE_ANALYTICS } from '../../../api/people-analytics.ts';
 import { useGates } from '../../../api/permissions.ts';
 import { CurrentLoadCard, ProfileAvailabilityLine } from './CurrentLoadCard.tsx';
-import { useProfileAvailability } from './profile-availability.ts';
+import { profileAvailabilityMode, useProfileAvailability } from './profile-availability.ts';
 import { dateTime, timeLabel } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -210,15 +210,13 @@ export function ProfileScreen({
   // the look, or a co-worker's narrowed row — and nothing before the gates say which.
   const availability = useProfileAvailability(
     userId ?? '',
-    userId === undefined || me === undefined || !allowed
-      ? undefined
-      : me.id === userId
-        ? 'self'
-        : !settled
-          ? undefined
-          : readsDays
-            ? 'load'
-            : 'shared',
+    profileAvailabilityMode({
+      userId,
+      meId: me?.id,
+      allowed,
+      settled,
+      readsAnalytics: readsDays,
+    }),
   );
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);

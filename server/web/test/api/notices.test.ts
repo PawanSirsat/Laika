@@ -56,7 +56,10 @@ void describe('For you draws the message as text', () => {
     );
     // The adder's own words (≤ 500 characters) reach the page as a React text
     // node: nothing that parses them may be in the file that draws them.
-    assert.doesNotMatch(source, /dangerouslySetInnerHTML|innerHTML|<Markdown|from '[^']*mark(ed|down)[^']*'/i);
+    assert.doesNotMatch(
+      source,
+      /dangerouslySetInnerHTML|innerHTML|<Markdown|from '[^']*mark(ed|down)[^']*'/i,
+    );
     assert.match(source, /\{notice\.message\}/);
   });
 });
