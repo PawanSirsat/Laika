@@ -28,6 +28,8 @@
     "@tiptap/pm": "3.32.0",
     "@tiptap/react": "3.32.0",
     "@tiptap/starter-kit": "3.32.0",
+    "highlight.js": "11.11.2",
+    "lowlight": "3.3.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
@@ -37,6 +39,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.0",
+    "mermaid": "12.2.0",
     "playwright": "1.62.1",
     "typescript": "~6.0.3",
     "vite": "^8.2.2"
