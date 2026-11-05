@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor } from '../../../src/auth/resolve-actor.ts';
 import { newId } from '../../../src/db/ids.ts';
 import {
+  agentTimeDays,
   analyticsViews,
   orgs,
   projectMemberships,
@@ -26,8 +27,8 @@ import {
 /**
  * `GET /time/report` (D-130, D-135, LAI-1135): the Time report in its three
  * scopes, JSON and CSV — one person's equal to their `GET /me/time/summary`,
- * people logged once each per ten minutes, a space admin's totals confirmed
- * only and under the three-person floor, and every refusal by its code.
+ * people logged once each per ten minutes, a space admin's one figure a
+ * week (D-136), and every refusal by its code.
  */
 
 const PASSWORD = 'correct-horse-battery-staple';
@@ -177,11 +178,10 @@ interface Report {
   days: number;
   scope: string;
   include_drafts: boolean;
-  totals: Record<string, number | null>;
+  totals: Record<string, number>;
   agent_minutes: number | null;
-  by_day: { day: string; confirmed_minutes: number | null; drafted_minutes: number }[];
+  by_day: { day: string; confirmed_minutes: number; drafted_minutes: number }[];
   rows: Row[];
-  folded: { tasks: number; spaces: number; days: number; minutes: number | null } | null;
 }
 
 beforeEach(async () => {
@@ -373,10 +373,36 @@ describe('people — per person, every one shown logged', () => {
     expect(looks()).toEqual([[ownerId, bea.id, 'time', null]]);
   });
 
-  it('logs nothing for a person the stretch shows no time of', async () => {
-    const r = (await ok(await report(`from=${TUE}&to=${SUN}`))) as Report;
-    expect(r.rows.some((row) => row.user?.id === bea.id)).toBe(false);
+  it('logs a person named even when the stretch shows no time of theirs', async () => {
+    // Asked for everyone, Bea is not shown in Tuesday to Sunday: nobody looked at her.
+    const all = (await ok(await report(`from=${TUE}&to=${SUN}`))) as Report;
+    expect(all.rows.some((row) => row.user?.id === bea.id)).toBe(false);
     expect(looks()).toEqual([]);
+    // Named, she is looked at — an empty answer about her is still about her.
+    const named = (await ok(await report(`from=${TUE}&to=${SUN}&members=${bea.id}`))) as Report;
+    expect(named.rows).toEqual([]);
+    expect(looks()).toEqual([[ownerId, bea.id, 'time', null]]);
+  });
+
+  it('logs a person named whose only time is their agent’s', async () => {
+    const cleo = person('Cleo');
+    h.db
+      .insert(agentTimeDays)
+      .values({
+        userId: cleo,
+        day: TUE,
+        sessionKey: 's',
+        kind: 'cli',
+        seconds: 1200,
+        updatedAt: Date.now(),
+      })
+      .run();
+    const r = (await ok(await report(`from=${MON}&to=${SUN}&members=${cleo}`))) as Report;
+    expect([r.rows, r.agent_minutes]).toEqual([[], 20]);
+    expect(looks()).toEqual([[ownerId, cleo, 'time', null]]);
+    // A refused read is not a look: a member asking for Cleo.
+    expect((await report(`from=${MON}&to=${SUN}&members=${cleo}`, bea.cookie)).status).toBe(403);
+    expect(looks()).toEqual([[ownerId, cleo, 'time', null]]);
   });
 
   it('refuses a member asking for anybody else — 403, by the action', async () => {
@@ -456,98 +482,95 @@ describe('people — per person, every one shown logged', () => {
   });
 });
 
-describe('space_totals — a space admin’s', () => {
+describe('space_totals — a space admin’s weeks (D-136)', () => {
+  const PREV_MON = '2026-10-12';
+  const PREV_TUE = '2026-10-13';
+  const PREV_SUN = '2026-10-18';
   let cleo: string;
   let dan: string;
   let eve: string;
-  let lai2: { id: string; key: string };
 
-  beforeEach(async () => {
+  interface Weeks {
+    from: string;
+    to: string;
+    scope: string;
+    project: { slug: string };
+    weeks: { from: string; to: string; confirmed_minutes: number | null; people: number }[];
+  }
+
+  beforeEach(() => {
     cleo = person('Cleo');
     dan = person('Dan');
     eve = person('Eve');
-    lai2 = await task('laika', 'Two hands only');
-    // LAI-1: Bea's 30 on Monday, alone that day, and 3 × 20 on Tuesday.
+    // This week: Bea's 30 on Monday and 3 × 20 on Tuesday — four people.
     for (const id of [cleo, dan, eve]) entry(id, TUE, 20, { taskId: lai1.id, projectId: laika.id });
-    // Wednesday: LAI-2 is Cleo's alone, below the floor, so it joins Laika's
-    // no-task time — Dan's and Eve's 5 each — which then covers three people.
-    entry(cleo, WED, 15, { taskId: lai2.id, projectId: laika.id });
-    for (const id of [dan, eve]) entry(id, WED, 5, { projectId: laika.id });
+    // Last week: Cleo's 15 alone.
+    entry(cleo, PREV_TUE, 15, { taskId: lai1.id, projectId: laika.id });
     lead(bea.id, laika.id);
   });
 
-  it('serves confirmed totals with nobody in them, folding a task under three people', async () => {
-    const r = (await ok(await report(`from=${MON}&to=${SUN}`, bea.cookie))) as Report;
-    expect(r.scope).toBe('space_totals');
-    expect(r.include_drafts).toBe(false);
-    expect(r.agent_minutes).toBeNull();
-    expect(r.rows.every((row) => row.user === null)).toBe(true);
-    expect(r.rows.map((row) => [row.task?.key ?? null, row.confirmed_minutes])).toEqual([
-      [lai1.key, 90],
-      [null, 25],
+  it('answers one figure a week and nothing else; a week under three people is null', async () => {
+    const res = await report(`from=${PREV_MON}&to=${SUN}`, bea.cookie);
+    const r = (await ok(res)) as Weeks;
+    expect(Object.keys(r).sort()).toEqual(['from', 'project', 'scope', 'to', 'weeks']);
+    expect([r.scope, r.project.slug]).toEqual(['space_totals', 'laika']);
+    expect(r.weeks).toEqual([
+      { from: PREV_MON, to: PREV_SUN, confirmed_minutes: null, people: 1 },
+      { from: MON, to: SUN, confirmed_minutes: 90, people: 4 },
     ]);
-    // Ada's draft on LAI-1 is not confirmed, so it is not here.
-    expect(r.totals).toMatchObject({ confirmed_minutes: 115, drafted_minutes: 0, people: 4 });
-    expect(JSON.stringify(r)).not.toContain('Two hands only');
+    // Ada's drafts, her meeting on no space and her Skynet time are not here;
+    // nobody is named, so nobody is looked at.
     expect(looks()).toEqual([]);
   });
 
-  it('never shows a day fewer than three people worked: one person alone is withheld', async () => {
-    const r = (await ok(await report(`from=${MON}&to=${SUN}`, bea.cookie))) as Report;
-    const day = (d: string) => r.by_day.find((x) => x.day === d)?.confirmed_minutes;
-    // Monday is Bea's 30 alone: withheld. Withheld alone, it would be the
-    // total less the days shown — so the smallest shown day, Wednesday's
-    // three people, is withheld with it, and the two together cover four.
-    expect(day(MON)).toBeNull();
-    expect(day(WED)).toBeNull();
-    expect(day(TUE)).toBe(60);
-    expect(r.by_day.filter((x) => x.confirmed_minutes === null)).toHaveLength(2);
-    expect(r.folded).toEqual({ tasks: 1, spaces: 0, days: 2, minutes: 0 });
-    expect(r.by_day.some((x) => x.confirmed_minutes === 30)).toBe(false);
-  });
-
-  it('folds a space with fewer than three people into one row that names no space', async () => {
-    lead(bea.id, skynet.id);
-    const r = (await ok(await report(`from=${MON}&to=${SUN}`, bea.cookie))) as Report;
-    // Skynet holds Ada's 90 alone. With it in the pool alone the pool would be
-    // hers, so the smallest named row joins it: Laika's no-task 25.
-    expect(
-      r.rows.map((row) => [
-        row.project?.slug ?? null,
-        row.task?.key ?? null,
-        row.confirmed_minutes,
-      ]),
-    ).toEqual([
-      [null, null, 115],
-      ['laika', lai1.key, 90],
+  it('refuses anything but one space over whole weeks — each by its code', async () => {
+    const refused = async (q: string) => refusal(await report(q, bea.cookie));
+    expect(await refused(`from=${MON}&to=${SUN}&members=${cleo}`)).toEqual([
+      422,
+      'unprocessable',
+      'members_not_allowed',
     ]);
-    expect(JSON.stringify(r)).not.toContain(sky1.key);
-    expect(r.folded).toMatchObject({ tasks: 1, spaces: 1, minutes: 115 });
-  });
-
-  it('withholds every figure when the whole report is under three people', async () => {
-    // Bea leads Skynet alone: Ada's 90 is all it holds.
-    h.db.delete(projectMemberships).where(eq(projectMemberships.userId, bea.id)).run();
+    expect(await refused(`from=${MON}&to=${SUN}&drafts=include`)).toEqual([
+      422,
+      'unprocessable',
+      'drafts_not_allowed',
+    ]);
+    expect(await refused(`from=${MON}&to=${SUN}&kinds=work`)).toEqual([
+      422,
+      'unprocessable',
+      'kinds_not_allowed',
+    ]);
+    // Not Monday to Sunday: a part of a week, or a week starting midweek.
+    for (const q of [`from=${MON}&to=${WED}`, `from=${TUE}&to=2026-10-26`]) {
+      expect(await refused(q)).toEqual([422, 'unprocessable', 'range_not_whole_weeks']);
+    }
+    // Fourteen weeks is past the quarter.
+    expect(await refused('from=2026-07-20&to=2026-10-25')).toEqual([
+      422,
+      'unprocessable',
+      'range_too_long',
+    ]);
+    await ok(await report('from=2026-07-27&to=2026-10-25', bea.cookie)); // thirteen weeks
+    // Two spaces, asked for or led, are not one.
     lead(bea.id, skynet.id);
-    const r = (await ok(await report(`from=${MON}&to=${SUN}`, bea.cookie))) as Report;
-    expect(r.rows).toEqual([]);
-    expect(r.totals).toMatchObject({ confirmed_minutes: null, active_days: null, people: 1 });
-    expect(r.by_day.every((d) => d.confirmed_minutes === null || d.confirmed_minutes === 0)).toBe(
-      true,
-    );
-    expect(r.folded).toEqual({ tasks: 0, spaces: 1, days: 1, minutes: null });
-    // No figure anywhere is her 90.
-    expect(JSON.stringify([r.rows, r.totals, r.by_day, r.folded])).not.toMatch(/\b90\b/);
+    expect(await refused(`from=${MON}&to=${SUN}&spaces=laika,skynet`)).toEqual([
+      422,
+      'unprocessable',
+      'one_space_only',
+    ]);
+    expect(await refused(`from=${MON}&to=${SUN}`)).toEqual([
+      422,
+      'unprocessable',
+      'one_space_only',
+    ]);
+    // Skynet holds Ada's 90 alone: a week of one person is withheld.
+    const sky = (await ok(
+      await report(`from=${MON}&to=${SUN}&spaces=skynet`, bea.cookie),
+    )) as Weeks;
+    expect(sky.weeks).toEqual([{ from: MON, to: SUN, confirmed_minutes: null, people: 1 }]);
   });
 
-  it('refuses members, drafts, and a space they do not lead — each by its code', async () => {
-    expect(
-      await refusal(await report(`from=${MON}&to=${SUN}&members=${cleo}`, bea.cookie)),
-    ).toEqual([422, 'unprocessable', 'members_not_allowed']);
-    expect(await refusal(await report(`from=${MON}&to=${SUN}&drafts=include`, bea.cookie))).toEqual(
-      [422, 'unprocessable', 'drafts_not_allowed'],
-    );
-    // Bea is a plain member of Skynet: she reads it, and leads only Laika.
+  it('refuses a space they do not lead, and one they cannot open', async () => {
     h.db
       .insert(projectMemberships)
       .values({
@@ -568,16 +591,17 @@ describe('space_totals — a space admin’s', () => {
     );
   });
 
-  it('writes the file with no person column, and no day fewer than three people worked', async () => {
-    const res = await report(`from=${MON}&to=${SUN}&format=csv`, bea.cookie);
+  it('writes the same weeks as a file, and nothing else', async () => {
+    const res = await report(`from=${PREV_MON}&to=${SUN}&format=csv`, bea.cookie);
     expect(res.status).toBe(200);
-    const lines = (await res.text()).split('\r\n').filter((l) => l !== '');
-    expect(lines[0]).toBe('day,space,task_key,task_title,kind,confirmed_minutes,drafted_minutes');
-    // LAI-1's Monday is Bea's alone, so its days go out together, with no day;
-    // the no-task row's one day, Wednesday, covers three people and is shown.
-    expect(lines.slice(1)).toEqual([
-      `${WED},Laika,,,work,25,0`,
-      `,Laika,${lai1.key},Search matches keys,work,90,0`,
+    expect(res.headers.get('content-disposition')).toBe(
+      `attachment; filename="laika-time-${PREV_MON}-${SUN}.csv"`,
+    );
+    expect((await res.text()).split('\r\n')).toEqual([
+      'week_start,week_end,space,people,confirmed_minutes',
+      `${PREV_MON},${PREV_SUN},Laika,1,`,
+      `${MON},${SUN},Laika,4,90`,
+      '',
     ]);
   });
 });
@@ -626,7 +650,8 @@ describe('bounds', () => {
     expect((thrown as ApiError).details).toMatchObject({ reason: 'report_too_large', max_rows: 1 });
     expect(looks()).toEqual([]);
     // The same read under the cap answers, and is a look at Bea.
-    expect(getTimeReport(h.db, actor, { from: MON, to: SUN }).rows.length).toBeGreaterThan(1);
+    const read = getTimeReport(h.db, actor, { from: MON, to: SUN });
+    expect('rows' in read && read.rows.length).toBeGreaterThan(1);
     expect(looks()).toEqual([[ownerId, bea.id, 'time', null]]);
   });
 

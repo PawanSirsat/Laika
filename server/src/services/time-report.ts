@@ -8,7 +8,7 @@ import { assertCan, can } from '../policy/can.ts';
 import { readLoggedMany } from './analytics-views.ts';
 import { csvLine } from './activity-csv.ts';
 import { type ProjectRef, type TaskRef } from './time-entries.ts';
-import { stretch } from './time-summary.ts';
+import { stretch, type SummaryDayView } from './time-summary.ts';
 
 /**
  * `GET /api/v1/time/report` (D-130, LAI-1135): where time went over a stretch
@@ -22,8 +22,8 @@ import { stretch } from './time-summary.ts';
  * needs `time.report.read` for the whole organisation or
  * `people.analytics.read` for each person named — both *See everyone's
  * analytics*. A caller with neither who leads a space gets `space_totals`
- * under §3.2's `time.report.read_project`: confirmed time, no person in it,
- * under D-088 item 7's three-person floor. Anyone else is `403`.
+ * under §3.2's `time.report.read_project`: one space, whole weeks, one
+ * figure a week (D-136; see {@link spaceWeeks}). Anyone else is `403`.
  *
  * ## The same figures as `GET /me/time/summary`
  *
@@ -39,9 +39,11 @@ import { stretch } from './time-summary.ts';
  *
  * ## Every person shown is a look
  *
- * In `people`, each person a row names — the reader aside — is logged as a
- * look at their time (`kind: 'time'`, no day) in the read's transaction,
- * through `readLoggedMany` and its ten-minute dedupe (D-135). `own` and
+ * In `people`, each person `members` names, and each person a row names —
+ * the reader aside — is logged as a look at their time (`kind: 'time'`, no
+ * day) in the read's transaction, through `readLoggedMany` and its
+ * ten-minute dedupe (D-135): a person named and shown nothing was still
+ * looked at, and their agent minutes are in the answer. `own` and
  * `space_totals` name nobody else and log nothing.
  */
 
@@ -49,7 +51,7 @@ import { stretch } from './time-summary.ts';
 export const REPORT_MAX_ROWS = 5000;
 /** People one `members` list may name. */
 export const REPORT_MAX_MEMBERS = 200;
-/** D-088 item 7: a total shown to a space admin covers at least three people. */
+/** D-088 item 7: a week shown to a space admin covers at least three people. */
 export const REPORT_FLOOR_PEOPLE = 3;
 
 export const REPORT_DRAFTS = ['exclude', 'include'] as const;
@@ -69,7 +71,7 @@ export interface TimeReportQuery {
   drafts?: ReportDrafts | undefined;
 }
 
-/** A person on a report row; `null` on every row of `space_totals`. */
+/** The person on a report row. */
 export interface TimeReportPerson {
   id: string;
   name: string;
@@ -79,7 +81,7 @@ export interface TimeReportPerson {
 /** The finest grain: the client groups any two of space, member, task and kind. */
 export interface TimeReportRowView {
   project: ProjectRef | null;
-  user: TimeReportPerson | null;
+  user: TimeReportPerson;
   task: TaskRef | null;
   /** Drafted time nobody has put on anything yet, as `summaryOf` says it. */
   untied: boolean;
@@ -92,50 +94,54 @@ export interface TimeReportView {
   from: string;
   to: string;
   days: number;
-  scope: TimeReportScope;
+  scope: 'own' | 'people';
   include_drafts: boolean;
-  /**
-   * `null` is a figure **withheld** (D-088 item 7, `space_totals` only): it
-   * would cover fewer than three people. Outside `space_totals` none is.
-   */
   totals: {
-    confirmed_minutes: number | null;
+    confirmed_minutes: number;
     drafted_minutes: number;
     /** Confirmed time of the meeting kind. */
-    meeting_minutes: number | null;
+    meeting_minutes: number;
     /** Confirmed time typed by hand or run on a timer. */
-    manual_minutes: number | null;
-    active_days: number | null;
-    /** People with any time in the report — a count, always served. */
+    manual_minutes: number;
+    active_days: number;
+    /** People with any time in the report. */
     people: number;
   };
   /**
    * The agent working (`cli`) for the people in the report, beside human time
-   * and never added to it (D-088 item 8) — `null` in `space_totals`, and when
-   * `spaces` or `kinds` narrow the report, which agent time cannot be split by.
+   * and never added to it (D-088 item 8) — `null` when `spaces` or `kinds`
+   * narrow the report, which agent time cannot be split by.
    */
   agent_minutes: number | null;
   /** Every day of the stretch. */
-  by_day: TimeReportDayView[];
+  by_day: SummaryDayView[];
   rows: TimeReportRowView[];
-  /**
-   * `space_totals` only. `tasks` under the floor were summed into their
-   * space's `task: null` rows; `spaces` under it, and any row still under it,
-   * into one row naming nothing — `minutes` is that row's, `null` when even
-   * it would cover fewer than three people and is withheld too; `days` is how
-   * many `by_day` figures are withheld.
-   */
-  folded: { tasks: number; spaces: number; days: number; minutes: number | null } | null;
 }
 
-/** One day of the stretch; `confirmed_minutes` `null` when withheld (`space_totals`). */
-export interface TimeReportDayView {
-  day: string;
+/** One ISO week of one space: its confirmed minutes, `null` when under the floor. */
+export interface SpaceWeekView {
+  /** The Monday. */
+  from: string;
+  /** The Sunday. */
+  to: string;
   confirmed_minutes: number | null;
-  drafted_minutes: number;
+  /** People with confirmed time in the space that week — a count, always served. */
+  people: number;
 }
 
-/** One CSV line's figures: a row on one day — `''` for its withheld days together. */
+/** A space admin's report (D-136): one space, one figure a week, nothing else. */
+export interface SpaceWeeksReportView {
+  from: string;
+  to: string;
+  scope: 'space_totals';
+  project: ProjectRef;
+  weeks: SpaceWeekView[];
+}
+
+/** What `GET /time/report` answers, by the scope the server chose. */
+export type TimeReportAnswer = TimeReportView | SpaceWeeksReportView;
+
+/** One CSV line's figures: a row on one day. */
 interface DayRow extends TimeReportRowView {
   day: string;
 }
@@ -145,7 +151,7 @@ export interface TimeReportCsv {
   lines: Generator<string, void, undefined>;
 }
 
-/** The columns, in order; `person` is absent in `space_totals`. SPEC §6.4. */
+/** The columns of `own` and `people`, in order. SPEC §6.4. */
 export const REPORT_CSV_COLUMNS = [
   'day',
   'space',
@@ -155,6 +161,15 @@ export const REPORT_CSV_COLUMNS = [
   'kind',
   'confirmed_minutes',
   'drafted_minutes',
+] as const;
+
+/** A space admin's file: the weeks, and nothing else (D-136). SPEC §6.4. */
+export const SPACE_WEEKS_CSV_COLUMNS = [
+  'week_start',
+  'week_end',
+  'space',
+  'people',
+  'confirmed_minutes',
 ] as const;
 
 // ---------------------------------------------------------------- the query
@@ -274,7 +289,8 @@ function plan(db: Db, actor: ResolvedActor, query: TimeReportQuery): Plan {
     };
   }
 
-  // A space admin's totals: each space asked for, or every space they lead.
+  // A space admin's weeks (D-136): exactly one space — the one asked for, or
+  // the only one they lead — and no person, kind or draft to narrow it by.
   const projectIds =
     slugs === null
       ? db
@@ -287,19 +303,22 @@ function plan(db: Db, actor: ResolvedActor, query: TimeReportQuery): Plan {
   for (const id of projectIds) {
     assertCan(withProject(actor, id), 'time.report.read_project', { projectId: id });
   }
-  if (members !== null) {
-    throw new ApiError('unprocessable', 'A space admin reads totals, with no person in them', {
-      field: 'members',
-      reason: 'members_not_allowed',
+  if (projectIds.length !== 1) {
+    throw new ApiError('unprocessable', 'A space admin reads one space at a time; name it', {
+      field: 'spaces',
+      reason: 'one_space_only',
     });
   }
-  if (includeDrafts) {
-    throw new ApiError('unprocessable', 'A space admin reads confirmed time only', {
-      field: 'drafts',
-      reason: 'drafts_not_allowed',
-    });
-  }
-  return { scope: 'space_totals', userIds: null, projectIds, kinds, includeDrafts: false };
+  const refuse = (field: string, reason: string, message: string): never => {
+    throw new ApiError('unprocessable', message, { field, reason });
+  };
+  if (members !== null)
+    refuse('members', 'members_not_allowed', 'A space admin reads totals, with no person in them');
+  if (kinds !== null)
+    refuse('kinds', 'kinds_not_allowed', 'A space admin reads all of a week, not a kind');
+  if (includeDrafts)
+    refuse('drafts', 'drafts_not_allowed', 'A space admin reads confirmed time only');
+  return { scope: 'space_totals', userIds: null, projectIds, kinds: null, includeDrafts: false };
 }
 
 // ---------------------------------------------------------------- the reads
@@ -450,7 +469,7 @@ const total = (r: { confirmed_minutes: number; drafted_minutes: number }): numbe
 function rowKey(r: TimeReportRowView, day = ''): string {
   return [
     day,
-    r.user?.id ?? '',
+    r.user.id,
     r.project?.id ?? '',
     r.task?.id ?? '',
     r.untied ? 'u' : '',
@@ -475,7 +494,7 @@ function ordered<T extends TimeReportRowView>(rows: Iterable<T>): T[] {
   return [...rows].sort(
     (a, b) =>
       total(b) - total(a) ||
-      (a.user?.name ?? '').localeCompare(b.user?.name ?? '') ||
+      a.user.name.localeCompare(b.user.name) ||
       (a.project?.slug ?? '').localeCompare(b.project?.slug ?? '') ||
       (a.task?.key ?? '').localeCompare(b.task?.key ?? '') ||
       (a.kind ?? '').localeCompare(b.kind ?? ''),
@@ -498,11 +517,9 @@ function build(db: Db, actor: ResolvedActor, p: Plan, days: string[]): Built {
     .all();
   const projectRef = new Map<string, ProjectRef>(projectRows.map((r) => [r.id, r]));
   const visible = new Set(
-    p.scope === 'space_totals'
-      ? (p.projectIds ?? [])
-      : projectRows
-          .map((r) => r.id)
-          .filter((id) => can(withProject(actor, id), 'project.read', { projectId: id })),
+    projectRows
+      .map((r) => r.id)
+      .filter((id) => can(withProject(actor, id), 'project.read', { projectId: id })),
   );
   const taskOf = tasksById(db, [
     ...new Set(raw.map((r) => r.taskId).filter((id): id is string => id !== null)),
@@ -526,71 +543,38 @@ function build(db: Db, actor: ResolvedActor, p: Plan, days: string[]): Built {
     return { ...r, project, task };
   });
 
-  const byDay = new Map<string, TimeReportDayView & { confirmed_minutes: number }>(
+  const byDay = new Map<string, SummaryDayView>(
     days.map((day) => [day, { day, confirmed_minutes: 0, drafted_minutes: 0 }]),
   );
   let meeting = 0;
   let manual = 0;
   const contributors = new Set<string>();
-  const meetingPeople = new Set<string>();
-  const manualPeople = new Set<string>();
-  const dayPeople = new Map<string, Set<string>>();
   for (const r of shaped) {
     const d = byDay.get(r.day);
     if (d !== undefined) {
       if (r.confirmed) d.confirmed_minutes += r.minutes;
       else d.drafted_minutes += r.minutes;
     }
-    if (r.minutes <= 0) continue;
-    if (r.confirmed && r.kind === 'meeting') {
-      meeting += r.minutes;
-      meetingPeople.add(r.userId);
-    }
-    if (r.confirmed && r.manual) {
-      manual += r.minutes;
-      manualPeople.add(r.userId);
-    }
-    contributors.add(r.userId);
-    peopleIn(dayPeople, r.day).add(r.userId);
+    if (r.confirmed && r.kind === 'meeting') meeting += r.minutes;
+    if (r.confirmed && r.manual) manual += r.minutes;
+    if (r.minutes > 0) contributors.add(r.userId);
   }
-  const dayList: TimeReportDayView[] = [...byDay.values()];
-  const totals: TimeReportView['totals'] = {
-    confirmed_minutes: dayList.reduce((n, d) => n + (d.confirmed_minutes ?? 0), 0),
-    drafted_minutes: dayList.reduce((n, d) => n + d.drafted_minutes, 0),
-    meeting_minutes: meeting,
-    manual_minutes: manual,
-    active_days: dayList.filter((d) => (d.confirmed_minutes ?? 0) + d.drafted_minutes > 0).length,
-    people: contributors.size,
-  };
+  const dayList = [...byDay.values()];
 
   const rows = new Map<string, TimeReportRowView>();
   const perDay = new Map<string, DayRow>();
-  let folded: TimeReportView['folded'] = null;
-
-  if (p.scope === 'space_totals') {
-    folded = floor(shaped, rows, perDay, dayList, dayPeople);
-    // A total of fewer than three people is withheld as any figure is.
-    const thin = (who: Set<string>) => who.size > 0 && who.size < REPORT_FLOOR_PEOPLE;
-    if (thin(contributors)) {
-      totals.confirmed_minutes = null;
-      totals.active_days = null;
-    }
-    if (thin(meetingPeople)) totals.meeting_minutes = null;
-    if (thin(manualPeople)) totals.manual_minutes = null;
-  } else {
-    for (const r of shaped) {
-      const shape: TimeReportRowView = {
-        project: r.project,
-        user: people.get(r.userId) ?? { id: r.userId, name: '', deactivated: true },
-        task: r.task,
-        untied: r.untied,
-        kind: r.kind,
-        confirmed_minutes: 0,
-        drafted_minutes: 0,
-      };
-      addTo(rows, rowKey(shape), { ...shape }, r.minutes, r.confirmed);
-      addTo(perDay, rowKey(shape, r.day), { ...shape, day: r.day }, r.minutes, r.confirmed);
-    }
+  for (const r of shaped) {
+    const shape: TimeReportRowView = {
+      project: r.project,
+      user: people.get(r.userId) ?? { id: r.userId, name: '', deactivated: true },
+      task: r.task,
+      untied: r.untied,
+      kind: r.kind,
+      confirmed_minutes: 0,
+      drafted_minutes: 0,
+    };
+    addTo(rows, rowKey(shape), { ...shape }, r.minutes, r.confirmed);
+    addTo(perDay, rowKey(shape, r.day), { ...shape, day: r.day }, r.minutes, r.confirmed);
   }
 
   const narrowed = p.projectIds !== null || p.kinds !== null;
@@ -598,200 +582,91 @@ function build(db: Db, actor: ResolvedActor, p: Plan, days: string[]): Built {
     from,
     to,
     days: days.length,
-    scope: p.scope,
+    scope: p.scope === 'own' ? 'own' : 'people',
     include_drafts: p.includeDrafts,
-    totals,
-    agent_minutes:
-      p.scope === 'space_totals' || narrowed ? null : agentMinutes(db, p.userIds, from, to),
+    totals: {
+      confirmed_minutes: dayList.reduce((n, d) => n + d.confirmed_minutes, 0),
+      drafted_minutes: dayList.reduce((n, d) => n + d.drafted_minutes, 0),
+      meeting_minutes: meeting,
+      manual_minutes: manual,
+      active_days: dayList.filter((d) => total(d) > 0).length,
+      people: contributors.size,
+    },
+    agent_minutes: narrowed ? null : agentMinutes(db, p.userIds, from, to),
     by_day: dayList,
     rows: ordered(rows.values()),
-    folded,
   };
   const dayRows = [...perDay.values()].sort(
-    (a, b) =>
-      (a.day === '' ? 1 : 0) - (b.day === '' ? 1 : 0) ||
-      a.day.localeCompare(b.day) ||
-      total(b) - total(a),
+    (a, b) => a.day.localeCompare(b.day) || total(b) - total(a),
   );
   return { view, dayRows };
 }
 
-// ------------------------------------------------- the floor (D-088 item 7)
+// ------------------------------------------------ a space admin's weeks (D-136)
 
-function peopleIn<K>(map: Map<K, Set<string>>, key: K): Set<string> {
-  const held = map.get(key) ?? new Set<string>();
-  map.set(key, held);
-  return held;
-}
-
-interface Cell {
-  minutes: number;
-  people: Set<string>;
+/** Whether `days` is whole ISO weeks: it starts on a Monday and is 7 × n long. */
+function wholeWeeks(days: readonly string[]): boolean {
+  const first = days[0];
+  if (first === undefined) return false;
+  return new Date(`${first}T00:00:00Z`).getUTCDay() === 1 && days.length % 7 === 0;
 }
 
 /**
- * Which of `cells` to withhold so that **every figure left, and the withheld
- * figures summed, cover at least three people** (D-088 item 7, per figure).
+ * A space admin's report (D-136, amending D-130 item 3): one space, whole ISO
+ * weeks, and **one figure a week** — the space's confirmed minutes, `null`
+ * when fewer than three people put time on it that week — with the week's
+ * head count. No range total, no task, kind or day, no agent time.
  *
- * Withholding only the thin cells is not enough: the total less the figures
- * shown would give them back. So while the withheld pool covers fewer than
- * three people, the smallest figure still shown joins it. `pooled` is who the
- * pool covers; under three means it could not be made safe — every cell is in
- * it, and the caller withholds the pool as well.
+ * Why no subtraction gets under the floor. Every figure this can publish is
+ * one `(space, ISO week)` cell, and a cell's value and its withholding are
+ * decided by that cell's own entries alone — never by the range, the request
+ * or any other cell. So the same cell reads the same in every answer that
+ * holds it, and two cells never share an entry: they are disjoint. A
+ * difference only isolates something when one published figure contains
+ * another, and no published figure contains another, nor a sum of others,
+ * because there is no total. A withheld cell is withheld in every answer, and
+ * nothing it is part of is published, so it cannot be recovered either. The
+ * weeks are the person's own calendar days, Monday to Sunday — the days each
+ * entry is filed on — so they do not move with anybody's zone.
  */
-function withhold<K>(cells: ReadonlyMap<K, Cell>): { keys: Set<K>; pooled: Set<string> } {
-  const keys = new Set<K>();
-  const pooled = new Set<string>();
-  const take = (key: K, cell: Cell): void => {
-    keys.add(key);
-    for (const who of cell.people) pooled.add(who);
-  };
-  for (const [key, cell] of cells) {
-    if (cell.minutes > 0 && cell.people.size < REPORT_FLOOR_PEOPLE) take(key, cell);
+function spaceWeeks(db: Db, p: Plan, days: string[]): SpaceWeeksReportView {
+  if (!wholeWeeks(days)) {
+    throw new ApiError('unprocessable', 'A space admin reads whole weeks, Monday to Sunday', {
+      field: 'from',
+      reason: 'range_not_whole_weeks',
+    });
   }
-  if (keys.size === 0) return { keys, pooled };
-  const shown = [...cells]
-    .filter(([key, cell]) => !keys.has(key) && cell.minutes > 0)
-    .sort((a, b) => a[1].minutes - b[1].minutes);
-  for (const [key, cell] of shown) {
-    if (pooled.size >= REPORT_FLOOR_PEOPLE) break;
-    take(key, cell);
+  const projectId = p.projectIds?.[0] ?? '';
+  const project = db
+    .select({ id: projects.id, slug: projects.slug, name: projects.name })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .get();
+  if (project === undefined) throw ApiError.notFound(`No project with id "${projectId}"`);
+
+  const weekOf = new Map<string, number>(days.map((day, i) => [day, Math.floor(i / 7)]));
+  const cells = Array.from({ length: days.length / 7 }, () => ({
+    minutes: 0,
+    people: new Set<string>(),
+  }));
+  for (const r of readRaw(db, p, days[0] ?? '', days.at(-1) ?? '')) {
+    const cell = cells[weekOf.get(r.day) ?? -1];
+    if (cell === undefined || !r.confirmed || r.minutes <= 0) continue;
+    cell.minutes += r.minutes;
+    cell.people.add(r.userId);
   }
-  return { keys, pooled };
-}
-
-const POOL = 'pool';
-
-/**
- * A space admin's rows, `by_day` and CSV lines, each figure covering three
- * people or withheld: a task under the floor joins its space's no-task rows;
- * a space under it, and any row still under it, the one row naming nothing;
- * a day under it is `null`; and each row's days go to the file the same way,
- * its withheld days as one line with no day.
- */
-function floor(
-  shaped: readonly (Raw & { project: ProjectRef | null; task: TaskRef | null })[],
-  rows: Map<string, TimeReportRowView>,
-  perDay: Map<string, DayRow>,
-  dayList: TimeReportDayView[],
-  dayPeople: Map<string, Set<string>>,
-): NonNullable<TimeReportView['folded']> {
-  const spacePeople = new Map<string, Set<string>>();
-  const taskPeople = new Map<string, Set<string>>();
-  for (const r of shaped) {
-    if (r.project !== null) peopleIn(spacePeople, r.project.id).add(r.userId);
-    if (r.task !== null) peopleIn(taskPeople, r.task.id).add(r.userId);
-  }
-  const thinSpaces = new Set(
-    [...spacePeople].filter(([, who]) => who.size < REPORT_FLOOR_PEOPLE).map(([id]) => id),
-  );
-  const thinTasks = new Set<string>();
-
-  // First the named rows, a thin task in its space's no-task row and a thin
-  // space straight into the pool — each with who it covers, and on which day.
-  const named = new Map<string, { shape: TimeReportRowView; cell: Cell }>();
-  const byRowDay = new Map<string, Map<string, Cell>>();
-  for (const r of shaped) {
-    let shape: TimeReportRowView = {
-      project: r.project,
-      user: null,
-      task: r.task,
-      untied: false,
-      kind: r.kind,
-      confirmed_minutes: 0,
-      drafted_minutes: 0,
-    };
-    let key: string;
-    if (r.project !== null && thinSpaces.has(r.project.id)) {
-      key = POOL;
-    } else {
-      if (r.task !== null && (taskPeople.get(r.task.id)?.size ?? 0) < REPORT_FLOOR_PEOPLE) {
-        thinTasks.add(r.task.id);
-        shape = { ...shape, task: null };
-      }
-      key = rowKey(shape);
-    }
-    const held = named.get(key) ?? { shape, cell: { minutes: 0, people: new Set<string>() } };
-    held.cell.minutes += r.minutes;
-    held.cell.people.add(r.userId);
-    named.set(key, held);
-    const days = byRowDay.get(key) ?? new Map<string, Cell>();
-    const day = days.get(r.day) ?? { minutes: 0, people: new Set<string>() };
-    day.minutes += r.minutes;
-    day.people.add(r.userId);
-    days.set(r.day, day);
-    byRowDay.set(key, days);
-  }
-
-  // Then every row under the floor into the pool, and the pool made safe.
-  const out = withhold(new Map([...named].map(([key, held]) => [key, held.cell])));
-  const poolDays = new Map<string, Cell>();
-  let poolMinutes = 0;
-  for (const [key, held] of named) {
-    const days = byRowDay.get(key) ?? new Map<string, Cell>();
-    if (out.keys.has(key)) {
-      poolMinutes += held.cell.minutes;
-      for (const [day, cell] of days) {
-        const into = poolDays.get(day) ?? { minutes: 0, people: new Set<string>() };
-        into.minutes += cell.minutes;
-        for (const who of cell.people) into.people.add(who);
-        poolDays.set(day, into);
-      }
-      continue;
-    }
-    emit(rows, perDay, rowKey(held.shape), held.shape, held.cell.minutes, days);
-  }
-  const poolShown = out.keys.size > 0 && out.pooled.size >= REPORT_FLOOR_PEOPLE;
-  if (poolShown) {
-    const shape: TimeReportRowView = {
-      project: null,
-      user: null,
-      task: null,
-      untied: false,
-      kind: null,
-      confirmed_minutes: 0,
-      drafted_minutes: 0,
-    };
-    emit(rows, perDay, POOL, shape, poolMinutes, poolDays);
-  }
-
-  // And each day of `by_day` the same way.
-  const dayOut = withhold(
-    new Map(
-      dayList.map((d) => [
-        d.day,
-        { minutes: d.confirmed_minutes ?? 0, people: dayPeople.get(d.day) ?? new Set<string>() },
-      ]),
-    ),
-  );
-  for (const d of dayList) if (dayOut.keys.has(d.day)) d.confirmed_minutes = null;
-
   return {
-    tasks: thinTasks.size,
-    spaces: thinSpaces.size,
-    days: dayOut.keys.size,
-    minutes: out.keys.size === 0 ? 0 : poolShown ? poolMinutes : null,
+    from: days[0] ?? '',
+    to: days.at(-1) ?? '',
+    scope: 'space_totals',
+    project,
+    weeks: cells.map((cell, i) => ({
+      from: days[i * 7] ?? '',
+      to: days[i * 7 + 6] ?? '',
+      confirmed_minutes: cell.people.size < REPORT_FLOOR_PEOPLE ? null : cell.minutes,
+      people: cell.people.size,
+    })),
   };
-}
-
-/** One row, and its days for the file: those under the floor as one line with no day. */
-function emit(
-  rows: Map<string, TimeReportRowView>,
-  perDay: Map<string, DayRow>,
-  key: string,
-  shape: TimeReportRowView,
-  minutes: number,
-  days: ReadonlyMap<string, Cell>,
-): void {
-  rows.set(key, { ...shape, confirmed_minutes: minutes });
-  const out = withhold(days);
-  let rest = 0;
-  for (const [day, cell] of days) {
-    if (out.keys.has(day)) rest += cell.minutes;
-    else perDay.set(`${day}|${key}`, { ...shape, day, confirmed_minutes: cell.minutes });
-  }
-  // A row covers three people, so all of its days together always do.
-  if (rest > 0) perDay.set(`|${key}`, { ...shape, day: '', confirmed_minutes: rest });
 }
 
 /**
@@ -804,9 +679,10 @@ function report(
   query: TimeReportQuery,
   now: number,
   maxRows: number | null,
-): Built {
+): Built | SpaceWeeksReportView {
   const days = stretch(query.from, query.to);
   const p = plan(db, actor, query);
+  if (p.scope === 'space_totals') return spaceWeeks(db, p, days);
   const read = (): Built => {
     const built = build(db, actor, p, days);
     if (maxRows !== null && built.view.rows.length > maxRows) {
@@ -819,12 +695,14 @@ function report(
     return built;
   };
   if (p.scope !== 'people') return read();
+  // Everybody named is looked at, shown time or not; and everybody shown.
+  const named = p.userIds ?? [];
   return readLoggedMany(
     db,
     actor,
     'time',
     read,
-    (built) => built.view.rows.flatMap((r) => (r.user === null ? [] : [r.user.id])),
+    (built) => [...named, ...built.view.rows.map((r) => r.user.id)],
     () => null,
     now,
   );
@@ -837,8 +715,9 @@ export function getTimeReport(
   query: TimeReportQuery,
   now: number = Date.now(),
   maxRows: number = REPORT_MAX_ROWS,
-): TimeReportView {
-  return report(db, actor, query, now, maxRows).view;
+): TimeReportAnswer {
+  const answer = report(db, actor, query, now, maxRows);
+  return 'weeks' in answer ? answer : answer.view;
 }
 
 /**
@@ -852,23 +731,31 @@ export function timeReportCsv(
   query: TimeReportQuery,
   now: number = Date.now(),
 ): TimeReportCsv {
-  const { view, dayRows } = report(db, actor, query, now, null);
-  const withPerson = view.scope !== 'space_totals';
-  const columns = REPORT_CSV_COLUMNS.filter((c) => withPerson || c !== 'person');
+  const answer = report(db, actor, query, now, null);
+  if ('weeks' in answer) {
+    const weeks = answer;
+    function* weekLines(): Generator<string, void, undefined> {
+      yield csvLine(SPACE_WEEKS_CSV_COLUMNS);
+      for (const w of weeks.weeks) {
+        yield csvLine([w.from, w.to, weeks.project.name, w.people, w.confirmed_minutes]);
+      }
+    }
+    return { filename: `laika-time-${weeks.from}-${weeks.to}.csv`, lines: weekLines() };
+  }
+  const { view, dayRows } = answer;
   function* lines(): Generator<string, void, undefined> {
-    yield csvLine(columns);
+    yield csvLine(REPORT_CSV_COLUMNS);
     for (const r of dayRows) {
-      const cells = [
+      yield csvLine([
         r.day,
         r.project?.name ?? null,
         r.task?.key ?? null,
         r.task?.title ?? null,
-        ...(withPerson ? [r.user?.name ?? null] : []),
+        r.user.name,
         r.kind,
         r.confirmed_minutes,
         r.drafted_minutes,
-      ];
-      yield csvLine(cells);
+      ]);
     }
   }
   return { filename: `laika-time-${view.from}-${view.to}.csv`, lines: lines() };

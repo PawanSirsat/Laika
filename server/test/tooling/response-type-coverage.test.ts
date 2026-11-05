@@ -242,7 +242,9 @@ const UNPAIRED = new Map<string, string>([
   // the time-report programme, which mirrors both on the client.
   ['TimeReportView', 'no client type exists'],
   ['TimeReportRowView', 'no client type exists'],
-  ['TimeReportDayView', 'no client type exists'],
+  ['TimeReportAnswer', 'no client type exists'],
+  ['SpaceWeeksReportView', 'no client type exists'],
+  ['SpaceWeekView', 'no client type exists'],
   // The Solidtime bridge (LAI-788) is the CLI's, not the web app's: `laika
   // time push` and `pull` read these, and no screen does. They leave this
   // group the way the rest do, when a screen shows them.

@@ -6,7 +6,7 @@ import {
   REPORT_DRAFTS,
   type TimeReportCsv,
   timeReportCsv,
-  type TimeReportView,
+  type TimeReportAnswer,
 } from '../../services/time-report.ts';
 import { type AppEnv } from '../context.ts';
 import { parseQuery, strictObject, z } from '../validation.ts';
@@ -16,6 +16,7 @@ import { parseQuery, strictObject, z } from '../validation.ts';
  *
  * Transport only. Which scope the caller gets, and every refusal — `403`,
  * `session_required`, `members_not_allowed`, `drafts_not_allowed`,
+ * `kinds_not_allowed`, `one_space_only`, `range_not_whole_weeks`,
  * `range_too_long`, `report_too_large` — is the service's, asked of `can()`.
  */
 
@@ -69,7 +70,7 @@ export function timeReportRoutes(options: { db: Db }): Hono<AppEnv> {
     const actor = requireActor(c);
     const { format, ...query } = parseQuery(TimeReportQuery, c.req.query());
     if (format === 'csv') return csvResponse(timeReportCsv(db, actor, query));
-    return c.json<TimeReportView>(getTimeReport(db, actor, query));
+    return c.json<TimeReportAnswer>(getTimeReport(db, actor, query));
   });
 
   return app;

@@ -470,21 +470,23 @@ session are unaffected. A refusal by either rule is `403 forbidden` with
 refuses the last lead `409 conflict` with `details.reason: last_lead` — hand
 over first.
 
-**The space's time totals** (D-130 item 3, LAI-1135) are
+**The space's time totals** (D-130 item 3 as amended by D-136, LAI-1135) are
 `time.report.read_project`, behind §6.4's `GET /time/report` for a caller
 with no per-person grant who leads a space (an org Owner or Admin is an
-implicit lead, and reads per person first). **Confirmed time only, with no
-per-person split, under D-088 item 7's three-person floor, applied to every
-figure** — a row, a day, a total, a line of the file: none covers fewer than
-three people. A task with fewer than three people's time in the stretch is
-summed into its space's no-task rows; a space with fewer than three, and any
-row still under the floor, into one row naming no space; a day with fewer
-than three is withheld (`null`). Because the total less the figures shown
-would give a withheld figure back, the withheld ones together must cover
-three people too: while they do not, the smallest figure still shown is
-withheld with them. A report of fewer than three people withholds its totals
-as well. D-088 item 7 is not amended. A lead asking for `members` is `422
-members_not_allowed`; for drafts, `422 drafts_not_allowed`.
+implicit lead, and reads per person first). **Deliberately coarse, so that
+no subtraction gets under D-088 item 7's three-person floor**: exactly one
+space a request, whole ISO weeks (Monday to Sunday, the days entries are
+filed on) up to the 92-day cap, and one figure a week — the space's confirmed
+minutes, `null` when fewer than three people put time on it that week — with
+the week's head count. Nothing else: no range total, no task, kind or day,
+no meeting or manual split, no agent minutes, no drafts. Every published
+figure is one (space, week) cell, decided by that cell's entries alone, so it
+reads the same in every answer and no figure contains another: a difference
+of two answers isolates nobody. D-088 item 7 is not amended. Refusals, each
+`422`: `members` is `members_not_allowed`, `kinds` is `kinds_not_allowed`,
+drafts are `drafts_not_allowed`, two spaces — asked for, or led with none
+named — are `one_space_only`, and a range that is not whole weeks is
+`range_not_whole_weeks`.
 
 **Checkpoints and hand-offs** (§4.70 – §4.74, D-114 – D-116, LAI-544). The
 eight rows are `task.checkpoint.create`, `task.checkpoint.retag`,
@@ -3961,7 +3963,7 @@ GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's he
 GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts, timer and day note included; logged   (owner, admin by default; session only; not yourself; LAI-957)
 GET    /api/v1/people/:id/time/summary       ?from=&to= — that person's GET /me/time/summary answer; logged as a look at their time, no day   (owner, admin by default; session only; not yourself; LAI-526)
 GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
-GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&drafts=exclude|include&format=json|csv — the Time report, own, people or space totals, ≤ 92 days; people logged per person   (session only; scope by §3.1 / §3.2; 30/min; D-130, LAI-1135)
+GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, LAI-1135)
 GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at the caller → { data: [{ id, viewer: { id, name }, kind, day, viewed_at }], next_cursor }, newest first   (session only)
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
@@ -5138,42 +5140,42 @@ parameter names anybody else.
   with `drafts=include`), logged nowhere; otherwise `people`, under
   `time.report.read` for everyone or `people.analytics.read` for each person
   named (§3.1); otherwise, for a caller who leads a space, `space_totals`
-  under §3.2's `time.report.read_project` over each space asked for or every
-  space they lead — confirmed only, `user: null` on every row, the
-  three-person floor applied; otherwise `403`. Every action is session only,
-  so a token is `403 session_required`. Answers `{ from, to, days, scope,
-  include_drafts, totals: { confirmed_minutes, drafted_minutes,
-  meeting_minutes, manual_minutes, active_days, people }, agent_minutes,
-  by_day, rows, folded }`: `by_day` is every day `{ day, confirmed_minutes,
-  drafted_minutes }`; `rows` the finest grain, `{ project, user: { id, name,
-  deactivated } | null, task, untied, kind, confirmed_minutes,
-  drafted_minutes }`, largest first, for the client to group by any two of
-  space, member, task and kind; `agent_minutes` the agent's working minutes
-  for those people, shown beside human time and never added to it (D-088
-  item 8) — `null` in `space_totals` and when `spaces` or `kinds` narrow the
-  report; `folded` `{ tasks, spaces, days, minutes }` in `space_totals`, else
-  `null`. **In `space_totals` every figure covers at least three people**
-  (§3.2): `null` is a withheld figure — a day's `confirmed_minutes` in
-  `by_day`, `totals.confirmed_minutes` and `active_days` for a report of
-  fewer than three people, `meeting_minutes` or `manual_minutes` when fewer
-  than three people make them up — and `folded` says how many tasks, spaces
-  and days were folded and the minutes in the one row naming nothing
-  (`null` when that row is itself withheld). A space or task the caller cannot open is never named: its minutes
+  under §3.2's `time.report.read_project` (below); otherwise `403`. Every
+  action is session only, so a token is `403 session_required`. `own` and
+  `people` answer `{ from, to, days, scope, include_drafts, totals: {
+  confirmed_minutes, drafted_minutes, meeting_minutes, manual_minutes,
+  active_days, people }, agent_minutes, by_day, rows }`: `by_day` is every
+  day `{ day, confirmed_minutes, drafted_minutes }`; `rows` the finest grain,
+  `{ project, user: { id, name, deactivated }, task, untied, kind,
+  confirmed_minutes, drafted_minutes }`, largest first, for the client to
+  group by any two of space, member, task and kind; `agent_minutes` the
+  agent's working minutes for those people, shown beside human time and never
+  added to it (D-088 item 8) — `null` when `spaces` or `kinds` narrow the
+  report. A space or task the caller cannot open is never named: its minutes
   are `project: null` / `task: null`. **One person's totals and `by_day`
-  equal `GET /me/time/summary` for the same stretch** with
-  `drafts=include`, a test holding both. In `people`, each person a row
-  names, the caller aside, is one §4.59 look at their time (`kind: time`,
-  no day) in the read's transaction, deduped over ten minutes (D-135). More
-  than 5 000 rows is `422 report_too_large` (`max_rows`), and nothing is
-  logged. `format=csv` answers the same report as a file, streamed, no row
-  cap, logged the same: `text/csv; charset=utf-8`, attachment
-  `laika-time-<from>-<to>.csv`, columns `day, space, task_key, task_title,
-  person, kind, confirmed_minutes, drafted_minutes` (no `person` in
-  `space_totals`), one line per day and row — in `space_totals` a row's days
-  under the floor are one line with an empty `day`, by the same rule —
-  `space` the space's name, text
+  equal `GET /me/time/summary` for the same stretch** with `drafts=include`,
+  a test holding both. In `people`, **each person `members` names and each
+  person a row names**, the caller aside, is one §4.59 look at their time
+  (`kind: time`, no day) in the read's transaction, deduped over ten minutes
+  (D-135) — a person named is looked at even when the answer shows no time
+  of theirs, or only their agent's. More than 5 000 rows is `422
+  report_too_large` (`max_rows`), and nothing is logged; nor is a refused
+  read. **`space_totals` (D-136, §3.2) answers `{ from, to, scope, project,
+  weeks }` and nothing else**: one `spaces` slug (or the one space the
+  caller leads), `from` a Monday and `to` a Sunday (`422
+  range_not_whole_weeks`), and `weeks` every ISO week `{ from, to,
+  confirmed_minutes, people }` — the space's confirmed minutes that week,
+  `null` when `people`, the week's head count, is under three; `members`,
+  `kinds` and `drafts=include` are refused, and nothing is logged.
+  `format=csv` answers the same report as a file, streamed, no row cap,
+  logged the same: `text/csv; charset=utf-8`, attachment
+  `laika-time-<from>-<to>.csv`. For `own` and `people` the columns are `day,
+  space, task_key, task_title, person, kind, confirmed_minutes,
+  drafted_minutes`, one line per day and row, `space` the space's name, text
   prefixed `'` where a spreadsheet would run it as a formula (as LAI-984's
-  history export). The route has a bucket of its own, 30 a minute per
+  history export); for `space_totals` they are `week_start, week_end, space,
+  people, confirmed_minutes`, one line per week and nothing else, a withheld
+  week's minutes empty. The route has a bucket of its own,  history export). The route has a bucket of its own, 30 a minute per
   person, so filter clicks never spend the session's budget.
 - **The timer (§4.61, LAI-500).** `POST /me/time/timer` `{ tz, task?, kind?,
   title? }` starts the person's one timer, `201`; a second start is `409

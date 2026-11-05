@@ -9,14 +9,19 @@ import {
   timeEntries,
   users,
 } from '../../src/db/schema.ts';
-import { getTimeReport, REPORT_FLOOR_PEOPLE } from '../../src/services/time-report.ts';
+import {
+  getTimeReport,
+  type SpaceWeeksReportView,
+  type TimeReportAnswer,
+  type TimeReportView,
+} from '../../src/services/time-report.ts';
 import { summaryOf } from '../../src/services/time-summary.ts';
 import { freshDb, queryPlansOf, seed, type TestDb } from '../helpers/db.ts';
 
 /**
  * The Time report's assembly (D-130, LAI-1135), below the route: one person's
- * figures equal `summaryOf`'s, drafts and untied included; the floor at its
- * edge; what a kinds filter leaves out; and the read on an index.
+ * figures equal `summaryOf`'s, drafts and untied included; a space admin's
+ * weeks, and why they cannot be subtracted under the floor; what a kinds filter leaves out; and the read on an index.
  */
 
 const NOW = Date.UTC(2026, 9, 26, 12);
@@ -42,6 +47,16 @@ function person(name: string): string {
     })
     .run();
   return id;
+}
+
+function asPeople(answer: TimeReportAnswer): TimeReportView {
+  if ('weeks' in answer) throw new Error(`expected own or people, got ${answer.scope}`);
+  return answer;
+}
+
+function asWeeks(answer: TimeReportAnswer): SpaceWeeksReportView {
+  if (!('weeks' in answer)) throw new Error(`expected space_totals, got ${answer.scope}`);
+  return answer;
 }
 
 function actor(userId: string): ResolvedActor {
@@ -141,11 +156,13 @@ describe('one person’s report is their summary', () => {
     entry(owner, '2026-10-20', 77, laika);
 
     const s = summaryOf(t.db, bea, { from: MON, to: SUN });
-    const r = getTimeReport(
-      t.db,
-      actor(owner),
-      { from: MON, to: SUN, members: bea, drafts: 'include' },
-      NOW,
+    const r = asPeople(
+      getTimeReport(
+        t.db,
+        actor(owner),
+        { from: MON, to: SUN, members: bea, drafts: 'include' },
+        NOW,
+      ),
     );
     expect(r.scope).toBe('people');
     expect(r.totals).toEqual({
@@ -166,39 +183,75 @@ describe('one person’s report is their summary', () => {
   });
 });
 
-describe('the floor (D-088 item 7)', () => {
-  function asLead(): ResolvedActor {
-    const lead = person('Lead');
+describe('a space admin’s weeks (D-136)', () => {
+  // Three whole ISO weeks of Laika, Monday to Sunday.
+  const W = [
+    { from: '2026-10-05', to: '2026-10-11' },
+    { from: '2026-10-12', to: '2026-10-18' },
+    { from: '2026-10-19', to: '2026-10-25' },
+  ] as const;
+  let lead: ResolvedActor;
+
+  beforeEach(() => {
+    const [a, b, c, d] = ['A', 'B', 'C', 'D'].map(person);
+    // Week 1: three people, 10 each. Week 2: A alone, 40. Week 3: four people, 5 each.
+    for (const id of [a, b, c]) entry(id ?? '', '2026-10-06', 10, laika);
+    entry(a ?? '', '2026-10-13', 40, laika);
+    for (const id of [a, b, c, d]) entry(id ?? '', '2026-10-21', 5, laika);
+    // Skynet, which this lead does not read, and a minute outside every week.
+    for (const id of [a, b, c]) entry(id ?? '', '2026-10-13', 7, other);
+    entry(a ?? '', '2026-10-26', 99, laika);
+    const id = person('Lead');
     t.db
       .insert(projectMemberships)
-      .values({ id: newId(), projectId: laika, userId: lead, role: 'lead', createdAt: NOW })
+      .values({ id: newId(), projectId: laika, userId: id, role: 'lead', createdAt: NOW })
       .run();
-    return actor(lead);
-  }
+    lead = actor(id);
+  });
 
-  it(`keeps a space with exactly ${String(REPORT_FLOOR_PEOPLE)} people, and folds one with fewer`, () => {
-    const a = person('A');
-    const b = person('B');
-    for (const id of [a, b]) entry(id, '2026-10-20', 10, laika);
-    const lead = asLead();
+  const weeks = (from: string, to: string) =>
+    asWeeks(getTimeReport(t.db, lead, { from, to, spaces: 'laika' }, NOW));
 
-    const two = getTimeReport(t.db, lead, { from: MON, to: SUN }, NOW);
-    // Two people's 20 is withheld everywhere: no row, no day, no total.
-    expect(two.rows).toEqual([]);
-    expect(two.totals.confirmed_minutes).toBeNull();
-    expect(two.by_day.find((d) => d.day === '2026-10-20')?.confirmed_minutes).toBeNull();
-    expect(two.folded).toEqual({ tasks: 0, spaces: 1, days: 1, minutes: null });
-
-    entry(person('C'), '2026-10-21', 10, laika);
-    const three = getTimeReport(t.db, lead, { from: MON, to: SUN }, NOW);
-    expect(three.rows.map((x) => [x.project?.slug ?? null, x.confirmed_minutes])).toEqual([
-      ['laika', 30],
+  /*
+   * **Why no subtraction gets under the floor** — the claim `spaceWeeks`
+   * makes, held here.
+   *
+   * Every figure a space admin can be shown is one (space, ISO week) cell.
+   * Subtraction isolates data only when one published figure covers a
+   * superset of another's entries. Cells never share an entry, so that can
+   * happen only if (a) a figure other than a cell is published — a total, a
+   * day, a kind — or (b) one cell reads differently in two answers, as it
+   * would if its value or its withholding depended on the range asked for.
+   * So the test asks every range of whole weeks there is and holds:
+   *
+   *  1. an answer is its weeks and nothing else — no figure but the cells;
+   *  2. a week reads the same in every answer that holds it — value, head
+   *     count, and whether it is withheld;
+   *  3. the week of one person is `null` in every one of them.
+   *
+   * Break either half — publish a total, or decide the floor over the range
+   * — and this goes red.
+   */
+  it('publishes each week of one space the same way in every answer, and nothing more', () => {
+    const seen = new Map<string, string>();
+    for (let i = 0; i < W.length; i++) {
+      for (let j = i; j < W.length; j++) {
+        const r = weeks(W[i]?.from ?? '', W[j]?.to ?? '');
+        expect(Object.keys(r).sort()).toEqual(['from', 'project', 'scope', 'to', 'weeks']);
+        expect(r.weeks).toHaveLength(j - i + 1);
+        for (const w of r.weeks) {
+          expect(Object.keys(w).sort()).toEqual(['confirmed_minutes', 'from', 'people', 'to']);
+          const said = JSON.stringify(w);
+          expect(seen.get(w.from) ?? said, w.from).toBe(said);
+          seen.set(w.from, said);
+        }
+      }
+    }
+    expect([...seen.values()].map((w) => JSON.parse(w) as unknown)).toEqual([
+      { from: W[0].from, to: W[0].to, confirmed_minutes: 30, people: 3 },
+      { from: W[1].from, to: W[1].to, confirmed_minutes: null, people: 1 },
+      { from: W[2].from, to: W[2].to, confirmed_minutes: 20, people: 4 },
     ]);
-    expect(three.totals.confirmed_minutes).toBe(30);
-    // Each day has fewer than three people, but the two together have three.
-    expect(three.by_day.filter((d) => d.confirmed_minutes === null)).toHaveLength(2);
-    expect(three.folded).toEqual({ tasks: 0, spaces: 0, days: 2, minutes: 0 });
-    expect(three.totals.people).toBe(3);
   });
 });
 
@@ -218,15 +271,19 @@ describe('narrowing', () => {
         updatedAt: NOW,
       })
       .run();
-    const all = getTimeReport(t.db, actor(owner), { from: MON, to: SUN, drafts: 'include' }, NOW);
+    const all = asPeople(
+      getTimeReport(t.db, actor(owner), { from: MON, to: SUN, drafts: 'include' }, NOW),
+    );
     expect([all.totals.confirmed_minutes, all.totals.drafted_minutes, all.agent_minutes]).toEqual([
       75, 20, 10,
     ]);
-    const meetings = getTimeReport(
-      t.db,
-      actor(owner),
-      { from: MON, to: SUN, drafts: 'include', kinds: 'meeting' },
-      NOW,
+    const meetings = asPeople(
+      getTimeReport(
+        t.db,
+        actor(owner),
+        { from: MON, to: SUN, drafts: 'include', kinds: 'meeting' },
+        NOW,
+      ),
     );
     expect([
       meetings.totals.confirmed_minutes,
