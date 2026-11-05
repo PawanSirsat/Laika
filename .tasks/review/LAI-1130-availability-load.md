@@ -59,3 +59,28 @@ variants. **No computed free hours anywhere** (D-131 item 4, D-088 item 1).
   periods, 366 days).
 - Server only. The client types for the drift pairs (`web/src/api/availability.ts`)
   are SHELL's (T7).
+
+## Red on submit — CLAUDE.md §4.4, the other owner's half
+
+CI's **Gate · web 4/4** fails on exactly one assertion, and it is this change's
+web half, not a defect in it:
+
+```
+server/web/test/api/endpoint-coverage.test.ts:316
+not ok 1 - no endpoint is served, uncalled and unexplained
+  served with no caller and no entry in NO_BROWSER_CALLER — build it, or say why not
+  + [
+  +   'api/v1/me/availability',
+  +   'api/v1/me/availability/away',
+  +   'api/v1/me/availability/away/*',
+  +   'api/v1/people/*/load',
+  +   'api/v1/people/availability'
+  + ]
+```
+
+`NO_BROWSER_CALLER` is in `server/web/` (SHELL's), so there is no exemption
+this task can take that is not a crossing (§4.4 step 2, the `clientOmits`
+case) — the same split as LAI-1038 served / LAI-1102 named. It turns green when
+the web half lands: T7 of the programme plan (the Availability UI) calls them,
+or a SHELL change names the five as served ahead of T7. Every server shard,
+cli, lint and format are green on `8f9cc2be`.
