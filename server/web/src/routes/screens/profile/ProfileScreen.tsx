@@ -12,7 +12,7 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
-import { Spinner } from '../../../components/Spinner.tsx';
+import { OverflowMenu } from '../../../components/wizard/OverflowMenu.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { agentClientName, type AgentClient } from '../../../api/agent-clients.ts';
 import { ApiError } from '../../../api/errors.ts';
@@ -21,7 +21,6 @@ import type { MeProfile } from '../../../api/me.ts';
 import {
   attemptKey,
   getProfile,
-  PROFILE_KINDS,
   rateMember,
   setProfileKind,
   type MemberProfile,
@@ -44,8 +43,10 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { SCREEN_COPY } from '../screen-copy.ts';
 import { ActivityCard } from './ActivityCard.tsx';
-import { AdminPanel } from './AdminPanel.tsx';
+import { KINDS } from './AdminPanel.tsx';
 import { InfoTip } from './InfoTip.tsx';
+import { ManageMemberPanel } from './ManageMemberPanel.tsx';
+import { adminControls, anyAdminControl } from './manage-controls.ts';
 import { MyDayScreen } from '../my-day/MyDayScreen.tsx';
 import { PersonHours } from './PersonHours.tsx';
 import { PersonLocalActivity } from './PersonLocalActivity.tsx';
@@ -54,6 +55,7 @@ import {
   barHeights,
   columnCount,
   columnPlan,
+  type CardGroup,
   type ColumnCount,
   type ProfileCardId,
   countLabel,
@@ -76,7 +78,10 @@ export interface ProfileScreenProps {
   /** `?user=` — whose profile. */
   readonly userId: string | undefined;
   readonly me: MeProfile | undefined;
-  /** `?tab=` — `day` or `hours` (LAI-959); anything else is the overview. */
+  /**
+   * `?tab=` — `day` or `time` (LAI-959, LAI-1134); `hours`, the Time report's
+   * name before LAI-1134, still opens it. Anything else is the overview.
+   */
   readonly tab?: string | undefined;
   readonly onTab?: (tab: ProfileTab) => void;
   /** `?day=` — the day the Day and Hours tabs read; today when absent. */
@@ -85,30 +90,31 @@ export interface ProfileScreenProps {
   readonly onNavigate?: (to: string) => void;
 }
 
-/** The profile's sections (LAI-959): the record, and the person's day and hours. */
-export type ProfileTab = 'overview' | 'day' | 'hours';
+/**
+ * The profile's sections (LAI-959, LAI-1134): the record, the person's day,
+ * and their time. *Developer setup* is the design's fourth (frame 1n); it is
+ * not drawn until its endpoint exists (programme task T8), so nothing reaches
+ * a reader empty.
+ */
+export type ProfileTab = 'overview' | 'day' | 'time';
 
 const TABS: readonly (readonly [ProfileTab, string])[] = [
   ['overview', 'Overview'],
   ['day', 'Day'],
-  ['hours', 'Hours'],
+  ['time', 'Time report'],
 ];
+
+/** `?tab=` as a tab: `hours` is the Time report's old name, kept so its links still land. */
+export function profileTab(tab: string | undefined): ProfileTab {
+  if (tab === 'day') return 'day';
+  if (tab === 'time' || tab === 'hours') return 'time';
+  return 'overview';
+}
 
 type Load =
   | { readonly kind: 'loading' }
   | { readonly kind: 'error'; readonly error: unknown }
   | { readonly kind: 'ready'; readonly profile: MemberProfile };
-
-const KINDS: Readonly<Record<ProfileKind, { label: string; hint: string }>> = {
-  builder: {
-    label: 'Builder',
-    hint: 'does the work: delivery, current work and the agents they use.',
-  },
-  manager: {
-    label: 'Manager',
-    hint: 'reviews and leads: the review queue, review load and decisions.',
-  },
-};
 
 /**
  * What each figure counts — said once, in the (i) beside it and in the tile's
@@ -205,6 +211,9 @@ export function ProfileScreen({
     busy: false,
   });
   const rateButton = useRef<HTMLButtonElement>(null);
+  /** The Manage member panel (LAI-1134), and the ⋯ that opened it. */
+  const [managing, setManaging] = useState(false);
+  const manageButton = useRef<HTMLDivElement>(null);
   /**
    * The rating being tried for each member, and its `Idempotency-Key`
    * (LAI-746). Kept across a failed try and a closed dialog — a response lost
@@ -228,6 +237,7 @@ export function ProfileScreen({
     // A dialog belongs to the person it was opened on; moving away closes it.
     setRating({ open: false, busy: false });
     setKindError(undefined);
+    setManaging(false);
   }, [userId]);
 
   useEffect(() => {
@@ -433,9 +443,11 @@ export function ProfileScreen({
     decisions: <DecisionsCard review={profile.review} weeks={weeks} now={now} />,
   };
 
-  // A person's own day is My day's; their Day and Hours are for somebody else.
+  // A person's own day is My day's; their Day and Time report are for somebody else.
   const tabbed = readsDays && me.id !== user.id;
-  const shownTab: ProfileTab = tabbed && (tab === 'day' || tab === 'hours') ? tab : 'overview';
+  const shownTab: ProfileTab = tabbed ? profileTab(tab) : 'overview';
+  // ⋯ is offered only when the panel would hold something (LAI-1134).
+  const manages = anyAdminControl(adminControls(gates, me, user));
   const tabHref = (id: ProfileTab): string => {
     const q = new URLSearchParams({ user: user.id });
     if (id !== 'overview') q.set('tab', id);
@@ -446,7 +458,17 @@ export function ProfileScreen({
     <div className="prof" data-kind={user.profile_kind}>
       {header}
 
-      <ProfileHead profile={profile} busy={kindBusy} error={kindError} onKind={changeKind} />
+      <ProfileHead
+        profile={profile}
+        manageRef={manageButton}
+        onManage={
+          manages
+            ? () => {
+                setManaging(true);
+              }
+            : undefined
+        }
+      />
 
       {tabbed && (
         <nav className="prof-tabs" aria-label={`${user.name}’s profile`}>
@@ -484,20 +506,20 @@ export function ProfileScreen({
         </>
       )}
 
-      {shownTab === 'hours' && (
+      {shownTab === 'time' && (
         <PersonHours key={user.id} userId={user.id} name={user.name} day={day} onDay={onDay} />
       )}
 
       {shownTab === 'overview' && (
         <>
-          {/* Managing this person (D-104, LAI-988): drawn only for what the server grants. */}
-          <AdminPanel
-            key={`admin-${user.id}`}
-            user={user}
-            me={me}
-            gates={gates}
-            onChanged={refreshProfile}
-          />
+          {/*
+           * The design's summary first (frames 1n–1p), in columns (LAI-751,
+           * owner, 2026-10-16): each column stacks its cards one gap apart, so
+           * a short card is never followed by a hole the height of its
+           * neighbour. Which card goes where is `columnPlan`'s — chosen, not
+           * computed — and one column is the reading order.
+           */}
+          <Columns plan={columnPlan(user.profile_kind, columns)} cards={cards} group="main" />
 
           <ActivityCard
             userId={user.id}
@@ -507,26 +529,47 @@ export function ProfileScreen({
             sharing={profile.activity_sharing}
           />
 
+          {/*
+           * The record (LAI-1134): what SPEC §11.4.2.1 requires and the design
+           * does not draw — tool usage, delivery, the rating and decisions —
+           * folded in under the summary, never removed.
+           */}
+          <h3 className="prof-group-title" data-group-title="record">
+            Record
+            <span className="prof-card-caption">
+              {manager ? 'tool usage, decisions and rating' : 'tool usage, delivery and rating'}
+            </span>
+          </h3>
+
           {/* Their agents' tokens (D-084, LAI-769): full width, like Activity. */}
           <UsageCard key={user.id} userId={user.id} name={user.name} self={me.id === user.id} />
 
-          {/*
-           * The rest flows in columns (LAI-751, owner, 2026-10-16): each column
-           * stacks its cards one gap apart, so a short card is never followed by a
-           * hole the height of its neighbour. Which card goes where is
-           * `columnPlan`'s — chosen, not computed — and one column is the reading
-           * order.
-           */}
-          <div className="prof-columns" data-columns={columns}>
-            {columnPlan(user.profile_kind, columns).map((ids) => (
-              <div key={ids.join('-')} className="prof-column">
-                {ids.map((id) => (
-                  <Fragment key={id}>{cards[id]}</Fragment>
-                ))}
-              </div>
-            ))}
-          </div>
+          <Columns
+            plan={columnPlan(user.profile_kind, columns, 'record')}
+            cards={cards}
+            group="record"
+          />
         </>
+      )}
+
+      {managing && (
+        <ManageMemberPanel
+          key={user.id}
+          user={user}
+          me={me}
+          gates={gates}
+          kind={{
+            value: user.profile_kind,
+            busy: kindBusy,
+            error: kindError,
+            onKind: changeKind,
+          }}
+          onChanged={refreshProfile}
+          onClose={() => {
+            setManaging(false);
+          }}
+          restore={() => manageButton.current?.querySelector('button')}
+        />
       )}
 
       {rating.open && (
@@ -550,26 +593,21 @@ export function ProfileScreen({
 
 // -------------------------------------------------------------------- head
 
-/** A padlock in the ordinary sense — *only some people can see this*. */
-function Padlock() {
-  return (
-    <svg className="prof-pill-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="5" y="11" width="14" height="9" rx="2" />
-      <path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3" />
-    </svg>
-  );
-}
-
+/**
+ * The profile's header (LAI-1134, frames 1n–1p): who they are, their kind as a
+ * chip, one line of facts — and **⋯**, a menu whose *Manage member…* opens the
+ * panel that holds every admin control. The Builder/Manager control itself
+ * moved into that panel; the header only says which it is.
+ */
 function ProfileHead({
   profile,
-  busy,
-  error,
-  onKind,
+  manageRef,
+  onManage,
 }: {
   readonly profile: MemberProfile;
-  readonly busy: boolean;
-  readonly error: string | undefined;
-  readonly onKind: (kind: ProfileKind) => void;
+  readonly manageRef: RefObject<HTMLDivElement | null>;
+  /** Absent when the reader has nothing to manage here: then there is no ⋯. */
+  readonly onManage: (() => void) | undefined;
 }) {
   const { theme } = useTheme();
   const { user } = profile;
@@ -583,84 +621,56 @@ function ProfileHead({
 
   return (
     <section className="prof-head" aria-labelledby="prof-name">
-      <div className="prof-id">
-        <span className="prof-avatar" style={avatar} aria-hidden="true">
-          {initials(user.name)}
-        </span>
-        <div className="prof-who">
-          <h2 className="prof-name" id="prof-name">
-            {user.name}
-            {!user.is_active && <span className="prof-chip prof-chip-off">DEACTIVATED</span>}
-          </h2>
-          <p className="prof-meta">
-            <span>{orgRoleLabel(user.org_role as OrgRole)}</span>
-            <span>{countLabel(profile.projects.length, 'project', 'projects')}</span>
-            <span className="prof-meta-email">{user.email}</span>
-            <span>Member since {monthYear(user.created_at)}</span>
-          </p>
-          <p className="prof-tags">
-            <span className="prof-pill">
-              <Padlock />
-              Owners and admins only
-            </span>
-          </p>
-        </div>
+      <span className="prof-avatar" style={avatar} aria-hidden="true">
+        {initials(user.name)}
+      </span>
+      <div className="prof-who">
+        <h2 className="prof-name" id="prof-name">
+          <span>{user.name}</span>
+          <span className="prof-kind-chip" data-kind-chip={user.profile_kind}>
+            {KINDS[user.profile_kind].label}
+          </span>
+          {!user.is_active && <span className="prof-chip prof-chip-off">DEACTIVATED</span>}
+        </h2>
+        <p className="prof-meta">
+          <span>{orgRoleLabel(user.org_role as OrgRole)}</span>
+          <span>{countLabel(profile.projects.length, 'project', 'projects')}</span>
+          <span className="prof-meta-email">{user.email}</span>
+          <span>Member since {monthYear(user.created_at)}</span>
+        </p>
       </div>
+      {onManage !== undefined && (
+        <div className="prof-manage" ref={manageRef} data-profile-manage>
+          <OverflowMenu
+            label={`Manage ${user.name}`}
+            items={[{ id: 'manage', label: 'Manage member…', onSelect: onManage }]}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
 
-      <div className="prof-kind">
-        <span className="prof-kind-text">
-          <span className="prof-kind-label" id="prof-kind-label">
-            Profile kind
-          </span>
-          <span className="prof-kind-note" id="prof-kind-note">
-            admin only · a label, never a permission
-          </span>
-          <InfoTip label="What the profile kinds mean">
-            <dl className="prof-defs">
-              {PROFILE_KINDS.map((kind) => (
-                <div key={kind}>
-                  <dt>{KINDS[kind].label}</dt>
-                  <dd>{KINDS[kind].hint}</dd>
-                </div>
-              ))}
-            </dl>
-            <p className="prof-defs-foot">
-              It decides what this page shows — never what they may do. Only owners and admins see
-              or set it.
-            </p>
-          </InfoTip>
-          {busy && <Spinner size="sm" />}
-        </span>
-        <div
-          className="prof-seg"
-          role="radiogroup"
-          aria-labelledby="prof-kind-label"
-          aria-describedby="prof-kind-note"
-          aria-busy={busy}
-        >
-          {PROFILE_KINDS.map((kind) => (
-            <label key={kind} className="prof-seg-option">
-              <input
-                type="radio"
-                name="profile-kind"
-                value={kind}
-                checked={user.profile_kind === kind}
-                disabled={busy}
-                onChange={() => {
-                  onKind(kind);
-                }}
-              />
-              <span className="prof-seg-face">{KINDS[kind].label}</span>
-            </label>
+/** One group of the Overview's columns (LAI-751, LAI-1134). */
+function Columns({
+  plan,
+  cards,
+  group,
+}: {
+  readonly plan: readonly (readonly ProfileCardId[])[];
+  readonly cards: Readonly<Record<ProfileCardId, ReactNode>>;
+  readonly group: CardGroup;
+}) {
+  return (
+    <div className="prof-columns" data-columns={plan.length} data-group={group}>
+      {plan.map((ids) => (
+        <div key={ids.join('-')} className="prof-column">
+          {ids.map((id) => (
+            <Fragment key={id}>{cards[id]}</Fragment>
           ))}
         </div>
-        {error !== undefined && (
-          <p className="prof-error" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
-    </section>
+      ))}
+    </div>
   );
 }
 

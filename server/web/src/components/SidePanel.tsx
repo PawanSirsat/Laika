@@ -16,6 +16,8 @@ export interface SidePanelProps {
   readonly footer?: ReactNode;
   /** A `data-panel` hook naming what the panel is about. */
   readonly panel?: string;
+  /** The × button's name; *Close details* unless the panel is not details. */
+  readonly closeLabel?: string;
   readonly children: ReactNode;
 }
 
@@ -37,6 +39,7 @@ export function SidePanel({
   restore,
   footer,
   panel,
+  closeLabel = 'Close details',
   children,
 }: SidePanelProps) {
   const ref = useRef<HTMLElement | null>(null);
@@ -49,6 +52,10 @@ export function SidePanel({
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     // A control inside that uses Escape itself (an open menu) has had it first.
     if (event.key !== 'Escape' || event.defaultPrevented) return;
+    // A modal opened from inside the panel (an offboarding question, LAI-1134)
+    // is portaled out of it, but React still bubbles its keys here: its
+    // Escape closes that modal, never the panel under it.
+    if (!(event.target instanceof Node) || ref.current?.contains(event.target) !== true) return;
     event.preventDefault();
     onClose();
   };
@@ -75,7 +82,7 @@ export function SidePanel({
           <button
             type="button"
             className="side-panel-close"
-            aria-label="Close details"
+            aria-label={closeLabel}
             ref={closeRef}
             onClick={onClose}
           >

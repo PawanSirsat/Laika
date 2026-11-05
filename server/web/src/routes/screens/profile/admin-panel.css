@@ -1,9 +1,71 @@
-/* The Admin panel on a member profile (D-104, LAI-988). */
+/*
+ * The Manage member panel's sections (D-104, LAI-988; a panel since LAI-1134,
+ * frames 1q–1s): small-capital headings, a rule between sections, and the
+ * Danger zone boxed in the overdue colour. Tokens only.
+ */
 
-.prof-admin-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
-  gap: 1rem 1.5rem;
+.prof-admin {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.prof-admin-block + .prof-admin-block:not(.prof-admin-danger) {
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.prof-admin-danger {
+  margin-top: 0.5rem;
+  padding: 0.875rem 1rem 1rem;
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--blocked-bg) 60%, var(--bg-card));
+}
+
+.prof-admin-danger .prof-admin-title {
+  color: var(--overdue);
+}
+
+.prof-admin-danger-text {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.prof-admin-danger > .prof-admin-btn {
+  align-self: flex-start;
+}
+
+/* Who the panel is about, under its title. */
+.prof-manage-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.prof-manage-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-heavy);
+}
+
+.prof-manage-name {
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.prof-manage-email {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
 }
 
 .prof-admin-block {
@@ -19,7 +81,7 @@
   font-weight: var(--weight-heavy);
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
 .prof-admin-row {

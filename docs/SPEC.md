@@ -6792,9 +6792,25 @@ anything missing sends the task back.
   menu opens the reader's own, for an owner or an admin) — owners and admins only:
   anyone else sees a permission notice and the profile is never requested.
   Laid out as cards on a grid that folds to one column on a phone (LAI-750).
-  A head card with name, org role, project count, email, member since, an
-  *owners and admins only* pill and the **Builder / Manager** control, which
-  says it is a label and not a permission; **projects** as horizontal bars —
+  A head card with name, the **Builder / Manager** kind as a chip, org role,
+  project count, email, member since, and **⋯** — a menu button named
+  *Manage <name>* whose *Manage member…* opens the **Manage member panel**
+  (LAI-1134): a right-hand panel on a desktop, a bottom sheet on a phone, a
+  modal that takes focus, holds it, and hands it back to ⋯ on Escape or close.
+  It holds every control an owner or admin has over the person, each section
+  drawn only when the server grants something in it, and ⋯ is absent when
+  none is: **Role** (organisation role, with a confirm, and the Builder /
+  Manager control, which says it is a label and not a permission),
+  **Spaces** (remove through the offboarding question, add with a role),
+  **Tokens** (their tokens, revocable), **Security** (a reset link shown once,
+  sign out everywhere) and a **Danger zone** (deactivate through the
+  offboarding question, or reactivate). For somebody else, tabs **Overview ·
+  Day · Time report** — *Developer setup* joins them when its endpoint does;
+  your own profile has no tabs. Overview leads with the summary — **current
+  work**, **agents used**, **review work**, **projects** — then the Activity
+  card, then the **record**, which keeps everything the summary does not
+  draw: the Tokens card, **delivered**, the **rating** and **recent
+  decisions**. **Projects** as horizontal bars —
   a builder's open tasks, a manager's review decisions — with role and
   figures; for a builder, **delivered** — accepted per week as twelve bars,
   sent back, reopened, cycle p50/p75 with the unmeasured count — **current
@@ -6811,7 +6827,7 @@ anything missing sends the task back.
   the rest inside the card in a bounded scroll; no card stretches its row
   (LAI-751). **Agents used** is one row per agent, the token names behind an
   expand (LAI-751).
-  An **Activity** card (D-079, LAI-751) heads the page: a daily heatmap from
+  An **Activity** card (D-079, LAI-751) sits under the summary: a daily heatmap from
   `GET /people/:id/activity`, **12 weeks or 1 year** (a phone opens on 12
   weeks; the year scrolls sideways inside the card with the weekday column
   pinned), in two designs each viewer chooses between and the browser
@@ -6824,7 +6840,7 @@ anything missing sends the task back.
   weekday, pushed vs local — computed on the client. It says plainly when the
   organisation's switch is off (with a link to Organisation) and when nothing
   has arrived yet. Context only:
-  nothing on it feeds the rating. A **Tokens** card follows it, full width
+  nothing on it feeds the rating. A **Tokens** card heads the record, full width
   (D-084, LAI-769): tokens over 12 weeks, **at least**, with cache reads and
   the share tied to a task beside it; a bar per week; their top agents and
   models; agents with *no token data* named; and plainly when the
