@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react';
+import { isInDropdownPanel } from './dropdown-model.ts';
 
 /**
  * Where Tab should go inside a modal, or `undefined` to let the browser move
@@ -46,7 +47,13 @@ export function useDialogFocus(dialog: RefObject<HTMLElement | null>, focus: Dia
   useEffect(() => {
     const box = dialog.current;
     if (box === null) return;
-    const controls = (): HTMLElement[] => [...box.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    // Only what is drawn: a control hidden by CSS cannot take focus, and
+    // wrapping onto one strands Tab — the phone sheet's handle above 600px
+    // (LAI-1127).
+    const controls = (): HTMLElement[] =>
+      [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (el) => el.getClientRects().length > 0,
+      );
     (latest.current.initial?.() ?? controls()[0])?.focus();
 
     const onKey = (event: KeyboardEvent): void => {
@@ -62,6 +69,9 @@ export function useDialogFocus(dialog: RefObject<HTMLElement | null>, focus: Dia
       ) {
         return;
       }
+      // A dropdown's search box is portalled to `<body>`: its own Tab hands
+      // focus back to its trigger inside this dialog (LAI-1127).
+      if (isInDropdownPanel(active)) return;
       const target = trapTarget(controls(), active as HTMLElement, event.shiftKey);
       if (target === undefined) return;
       event.preventDefault();

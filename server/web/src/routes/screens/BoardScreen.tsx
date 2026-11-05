@@ -38,9 +38,11 @@ import { useSprintStats } from './board/use-sprint-stats.ts';
 import { useEvents } from '../../api/use-events.ts';
 import { listSprints, type Sprint } from '../../api/sprints.ts';
 import { everyPage } from '../../api/every-page.ts';
-import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { executionSignal } from '../../components/agent/execution-derive.ts';
-import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
+import {
+  useOfferTaskSource,
+  type TaskSource,
+} from '../../components/drawer/TaskSourceProvider.tsx';
 import { useBoard, type BoardPresenter } from '../../api/use-board.ts';
 import { isPriority, isTagName } from '../../api/task-filter.ts';
 import { agentsOnTasks, matchesAgentFilter } from '../../api/selected-agent.ts';
@@ -152,14 +154,6 @@ export function BoardScreen({
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
   /** Whose members those are, so a chip can tell "loading" from "unknown" (LAI-717). */
   const [membersFor, setMembersFor] = useState<string | undefined>(undefined);
-  /**
-   * Which task's panel is open — **from the URL, not from state** (LAI-424).
-   *
-   * Held in `useState` the panel could not be linked to, a refresh lost it, and
-   * Back did not close it. That is the same shape as LAI-423: something the
-   * reader can plainly see that the address bar does not carry.
-   */
-  const openTaskId = params.get('task') ?? undefined;
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
   /*
@@ -502,7 +496,8 @@ export function BoardScreen({
     };
   }, []);
   const boardView = view === 'kanban';
-  const drawerOpen = openTaskId !== undefined;
+  // The drawer is the space's now (LAI-1127); the URL still says it is open.
+  const drawerOpen = params.get('task') !== null || params.get('new') === 'task';
   useLayoutEffect(() => {
     presenter.current = (change, apply) => {
       if (change.origin === 'refresh' && change.changed !== undefined) {
@@ -862,9 +857,54 @@ export function BoardScreen({
 
   const shownCount = shownTasks.length;
 
-  // Read from the board's own list so the panel re-renders after a move —
-  // holding a copy would show a stale status the moment the drag succeeded.
-  const openTask = openTaskId === undefined ? undefined : board.byId.get(openTaskId);
+  /*
+   * **The drawer reads the board's own list** (LAI-1127), offered to the
+   * space's drawer host rather than rendered here, so the panel re-renders
+   * after a move — holding a copy would show a stale status the moment the
+   * drag succeeded. Which task is open stays in the URL (LAI-424), where the
+   * host reads it; this screen no longer draws the panel at all.
+   */
+  const recent = stream.recent;
+  const taskSource = useMemo<TaskSource | undefined>(
+    () =>
+      slug === undefined
+        ? undefined
+        : {
+            slug,
+            byId: board.byId,
+            loading: board.state.status === 'loading',
+            members,
+            statuses: statuses.all,
+            sprints,
+            agentsAllowed: project?.agents_allowed,
+            listReadAt: board.state.asOf,
+            listReadOrder: board.state.readOrder,
+            movingId: board.movingId,
+            moveError: board.moveError,
+            onMove: (id, to) => {
+              void board.move(id, to);
+            },
+            refresh,
+            executionSignal: (taskId) => executionSignal(recent, taskId),
+          },
+    [
+      slug,
+      board.byId,
+      board.state.status,
+      members,
+      statuses.all,
+      sprints,
+      project?.agents_allowed,
+      board.state.asOf,
+      board.state.readOrder,
+      board.movingId,
+      board.moveError,
+      board.move,
+      refresh,
+      recent,
+    ],
+  );
+  useOfferTaskSource(taskSource);
 
   const openTaskInUrl = (taskId: string): void => {
     // **A history entry, unlike every other filter** (LAI-252): opening a task
@@ -1737,76 +1777,6 @@ export function BoardScreen({
             sentence in and the columns get the whole width back.
           */}
         </div>
-      )}
-
-      {/*
-        Reuses `board.move` — the same call the drag uses, so a rejected
-        transition behaves identically in both places (LAI-056).
-
-        `mayEdit` is `mayWrite`: editing a task is member+ (§3.2) and that
-        permission is already resolved. A Viewer sees tags and gets no way to
-        change them, rather than a control that answers 403.
-      */}
-      {/*
-        **A drawer opened before the board has loaded** (LAI-293). `openTask` is
-        found in the board's own task list, so a deep link to
-        `/board?task=LC-12` — or a reload with the drawer open — rendered the
-        chrome with nothing inside it until the fetch landed.
-
-        Gated on `loading` rather than on `openTask === undefined` alone: once
-        the board *has* loaded and the id is still not there, the task does not
-        exist, and a skeleton that never resolves is a worse answer than an
-        empty drawer.
-      */}
-      {openTaskId !== undefined && openTask === undefined && board.state.status === 'loading' && (
-        <TaskDrawerContent>
-          <LoadingState shape="drawer" count={4} label="Loading this task" />
-        </TaskDrawerContent>
-      )}
-
-      {openTask !== undefined && (
-        <TaskDrawerContent>
-          <TaskDetailPanel
-            slug={slug}
-            executionSignal={executionSignal(stream.recent, openTask.id)}
-            sprints={sprints}
-            agentsAllowed={project?.agents_allowed}
-            /*
-             * Assigning to a sprint is member+ (§3.2) — the same rule the
-             * Sprints screen uses, asked through the same helper rather than
-             * re-derived here.
-             */
-            maySetSprint={
-              boardProjectId !== undefined && gates.project(boardProjectId, 'task.assign_sprint')
-            }
-            statuses={statuses.all}
-            meId={me?.id}
-            meEmail={me?.email}
-            mayAssign={mayWrite}
-            mayEdit={mayWrite}
-            mayCreate={mayCreate}
-            onTagsChanged={() => {
-              refresh();
-            }}
-            onAssigned={refresh}
-            onTaskEdited={refresh}
-            onHandoffsChanged={refresh}
-            onOpen={openTaskInUrl}
-            task={openTask}
-            listReadAt={board.state.asOf}
-            listReadOrder={board.state.readOrder}
-            byId={board.byId}
-            members={members}
-            moving={board.movingId === openTask.id}
-            moveError={board.moveError}
-            onMove={(id, to) => {
-              void board.move(id, to);
-            }}
-            onClose={() => {
-              setParam('task', undefined);
-            }}
-          />
-        </TaskDrawerContent>
       )}
     </div>
   );
