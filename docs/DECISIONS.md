@@ -6984,3 +6984,35 @@ verb**: the add is already `member.added` and a revoke is already `token.revoked
 minutes writes no second row. This amends §4.59's *one row per read*. D-102 rule 3 still holds,
 because every viewer and subject pair is recorded — a report filter click across forty people
 writes forty rows once, not forty per click.
+
+## D-136 — A space admin's Time report is one space, whole weeks, one figure a week
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka. Amends
+D-130 item 3.
+
+**Context.** LAI-1135 first gave a space admin their spaces' totals with D-088 item 7's
+three-person floor applied to each figure. An independent review showed the floor cannot
+hold that way: one total minus another (all time minus meeting time), the JSON days against
+the CSV lines, or two requests with different spaces, kinds or dates each gave back one
+person's time by subtraction. A floor on each figure does not protect differences between
+figures.
+
+**Decision.**
+
+1. A space admin asks for **one space per request**, over **whole ISO weeks** (Monday to
+   Sunday in the organisation's time zone), within the 92-day cap.
+2. The answer is **one figure per week**: that space's confirmed minutes and how many people
+   made them up. A week with fewer than three people is withheld — `null`, never `0`.
+3. There is no range total, no breakdown by task, kind, day, meeting or manual time, no agent
+   time, no member filter and no drafts. The CSV carries the same weekly lines and nothing
+   else.
+4. Owners and holders of *See everyone's analytics* keep the full report, per person and
+   logged (D-130 item 2, unchanged).
+5. When a report names people, every named person other than the reader is logged as a look,
+   including people with no time in range.
+
+**Consequences.** Weeks do not overlap and each request is one space, so every published
+figure is a whole week of one space made up of at least three people, and no difference of
+two answers isolates fewer than three people. A small space shows mostly withheld weeks; that
+is the floor working. The weekly figure tells a space admin how much the team logged, which is
+what they need; who logged what stays with owners and admins.
