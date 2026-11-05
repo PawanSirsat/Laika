@@ -794,14 +794,18 @@ describe('the admin token revoke tells the member', () => {
         .map((n) => [n.kind, n.actorUserId, n.subject]),
     ).toEqual([['token_revoked', admin.id, 'laptop cli']]);
 
-    // Twice is one notice.
-    await req(
-      `/api/v1/users/${bob.id}/tokens/${minted.token.id}`,
-      { method: 'DELETE' },
-      {
-        cookie: admin.cookie,
-      },
-    );
+    // Twice is one notice — and still `204`: §6.4's DELETE is idempotent.
+    expect(
+      (
+        await req(
+          `/api/v1/users/${bob.id}/tokens/${minted.token.id}`,
+          { method: 'DELETE' },
+          {
+            cookie: admin.cookie,
+          },
+        )
+      ).status,
+    ).toBe(204);
     expect(
       h.db.select().from(memberNotices).where(eq(memberNotices.userId, bob.id)).all(),
     ).toHaveLength(1);
@@ -814,13 +818,18 @@ describe('the admin token revoke tells the member', () => {
       ),
       201,
     )) as { token: { id: string } };
-    await req(
-      `/api/v1/users/${admin.id}/tokens/${own.token.id}`,
-      { method: 'DELETE' },
-      {
-        cookie: admin.cookie,
-      },
-    );
+    // Their own, through the admin path: it happens, and writes no notice.
+    expect(
+      (
+        await req(
+          `/api/v1/users/${admin.id}/tokens/${own.token.id}`,
+          { method: 'DELETE' },
+          {
+            cookie: admin.cookie,
+          },
+        )
+      ).status,
+    ).toBe(204);
     expect(
       h.db.select().from(memberNotices).where(eq(memberNotices.userId, admin.id)).all(),
     ).toEqual([]);

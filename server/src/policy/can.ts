@@ -439,12 +439,25 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'agent.manage_own':
       return true;
 
-    // | List / revoke **anyone's** token | ✓ | ✓ | — | — |
+    // | List **anyone's** tokens | ✓ | ✓ | — | — |
     //
     // *Manage anyone's tokens* (D-104 item 6, LAI-985).
     case 'token.list_any':
-    case 'token.revoke_any':
       return granted(actor, action);
+
+    // | Revoke **anyone's** token | ✓ | ✓ (not for the owner) | — | — |
+    //
+    // The same grant. D-133, applied by LAI-1143: **an admin may not act on
+    // the owner's setup**, and a token is part of it — a personal token and a
+    // tool's credential alike, since revoking either switches the owner's work
+    // off. Strict as `agent.revoke_any` is: below the owner, an absent
+    // `targetOrgRole` is a denial, so a caller that forgot to load the target
+    // cannot be read as "not the owner". Unlike that row, yourself is allowed:
+    // an admin's own token through this path is still their own token.
+    case 'token.revoke_any':
+      if (!granted(actor, action)) return false;
+      if (orgRole === 'owner') return true;
+      return resource.targetOrgRole !== undefined && resource.targetOrgRole !== 'owner';
 
     // | View a member's developer setup | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
     //
