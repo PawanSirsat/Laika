@@ -54,7 +54,7 @@ From `server/web/`, each exit code captured on its own:
 - `node --test --test-concurrency=1 test/theme/type-floor.test.ts`: exit 0, 7/7.
 - `node --test --test-concurrency=1 test/api/endpoint-coverage.test.ts`: exit 0, 3/3.
 - `node --test --test-concurrency=1 test/api/one-page-reads.test.ts`: exit 0, 6/6.
-- `node --test --test-concurrency=1 --test-name-pattern="popover|More spaces|click outside" test/browser/spaces-sidebar.test.ts`: exit 0, 13/13.
+- `node --test --test-concurrency=1 --test-name-pattern="popover|More spaces|click outside" test/browser/spaces-sidebar.test.ts`: exit 0, 3/3.
 - `node --test --test-concurrency=1 --test-name-pattern="sidebar open|row crowded|1024|920" test/browser/board-sprint-stats.test.ts`: exit 0, 13/13. This includes the `+2` assertion at line 701.
 
 From `server/`: `pnpm exec vitest run --maxWorkers=1 test/tooling/structure.test.ts` exits 0 (20/20).
