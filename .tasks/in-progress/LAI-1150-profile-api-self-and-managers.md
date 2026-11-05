@@ -2,10 +2,11 @@
 id: LAI-1150
 title: 'Profile API: your own profile for everyone, one layout for both kinds, profile opens logged'
 area: server
-assignee: unclaimed
+assignee: core (belka)
 priority: p2
 depends-on: [LAI-1149]
-status: backlog
+status: in-progress
+started: 2026-11-06T02:15:32+05:30
 ---
 
 ## Goal
