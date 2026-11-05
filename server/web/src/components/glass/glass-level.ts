@@ -13,7 +13,7 @@ export type GlassLevel = 1 | 2 | 3;
 export function glassClass(
   level: GlassLevel,
   nested: boolean,
-  opts: { readonly interactive?: boolean; readonly selected?: boolean } = {},
+  opts: { readonly interactive?: boolean | undefined; readonly selected?: boolean | undefined } = {},
 ): string {
   return [
     nested ? 'glass-solid' : `glass-${String(level)}`,
