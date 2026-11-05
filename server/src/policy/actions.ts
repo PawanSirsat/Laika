@@ -85,6 +85,11 @@ export const ORG_ACTIONS = [
   // D-130 (LAI-1135): the organisation's Time report, everyone's time per
   // person over a stretch — *See everyone's analytics*.
   'time.report.read',
+  // D-131 (LAI-1130): a person's own availability — status, hours, note,
+  // tags, working week and away periods — and reading it for people who
+  // share a space with the reader.
+  'availability.set_own',
+  'availability.read',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -335,6 +340,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // included.
   'time.report.read',
   'time.report.read_project',
+  // **Availability is the person's own declaration** (D-131, LAI-1130): set
+  // signed in, as their time settings are — an agent must not say its person
+  // is open to more work — and read on the web app's screens, never by a token.
+  'availability.set_own',
+  'availability.read',
   // **Who may do what is the owner's, signed in** (D-102, LAI-958): an
   // agent's token that could grant its own role a capability would hand its
   // person whatever it was refused.

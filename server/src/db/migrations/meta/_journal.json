@@ -526,6 +526,13 @@
       "when": 1793734842970,
       "tag": "0075_task_deliverables",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1793870750931,
+      "tag": "0076_user_availability",
+      "breakpoints": true
     }
   ]
 }

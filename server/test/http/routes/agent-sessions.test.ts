@@ -781,6 +781,10 @@ const NOT_FENCED: Record<string, string> = {
   'DELETE /api/v1/me/plan-limit': 'the caller’s own settings',
   'POST /api/v1/me/token-alerts/:id/dismiss': 'the caller’s own alerts',
   'PUT /api/v1/me/time-settings': 'the caller’s own time',
+  // LAI-1130 (D-131): the caller's own availability, session only.
+  'PUT /api/v1/me/availability': 'the caller’s own availability',
+  'POST /api/v1/me/availability/away': 'the caller’s own availability',
+  'DELETE /api/v1/me/availability/away/:id': 'the caller’s own availability',
   'PUT /api/v1/me/time-drafts': 'the caller’s own time',
   'POST /api/v1/me/time-drafts': 'the caller’s own time',
   'DELETE /api/v1/me/time-drafts': 'the caller’s own time',

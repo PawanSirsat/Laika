@@ -124,6 +124,9 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ["Import everyone's Solidtime time", ['time_sync.import_all']],
   // D-130 (LAI-1135).
   ["View the organisation's Time report", ['time.report.read']],
+  // D-131 (LAI-1130): availability, the person's own declaration.
+  ['Set own availability', ['availability.set_own']],
+  ['See availability of people in your spaces', ['availability.read']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([

@@ -113,6 +113,8 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'time_sync.map': 'Map Solidtime projects and people',
   'time_sync.import_all': "Import everyone's Solidtime time",
   'time.report.read': "View the organisation's Time report",
+  'availability.set_own': 'Set own availability',
+  'availability.read': 'See availability of people in your spaces',
 
   'project.members.manage': 'Manage project members',
   'project.settings.edit': 'Edit project settings and context_md',

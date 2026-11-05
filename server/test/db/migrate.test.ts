@@ -2796,6 +2796,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_project_repo_setups$/),
         expect.stringMatching(/_agent_capacity$/),
         expect.stringMatching(/_task_deliverables$/),
+        // LAI-1130's availability tables.
+        expect.stringMatching(/_user_availability$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2931,8 +2933,9 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
     const at = journal.entries.findIndex((e) => e.tag === '0075_task_deliverables');
     const dropped = journal.entries.splice(at);
     // The guard on this guard: the first entry cut is 0075 and the last kept
-    // is 0074 — a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0075_task_deliverables']);
+    // is 0074 — a later migration lands here and says so. LAI-1130's two new
+    // tables ride along and touch no `tasks` row.
+    expect(dropped.map((e) => e.tag)).toEqual(['0075_task_deliverables', '0076_user_availability']);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -2983,10 +2986,10 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
           })),
         );
         expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
-        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 1);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 2);
         // And again is a no-op.
         runMigrations(db);
-        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 1);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 2);
       } finally {
         sqlite.close();
         rmSync(dir, { recursive: true, force: true });

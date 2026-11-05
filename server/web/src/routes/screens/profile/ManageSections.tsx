@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import {
@@ -17,6 +17,7 @@ import {
 } from '../../../api/members.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import type { Gates } from '../../../api/permissions.ts';
+import { PROFILE_KINDS, type ProfileKind } from '../../../api/profiles.ts';
 import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import { dateTime } from '../../../api/time-label.ts';
 import {
@@ -40,6 +41,8 @@ import {
 } from '../../../api/users.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
+import { InfoTip } from './InfoTip.tsx';
+import { adminControls, manageSections, type AdminSubject } from './manage-controls.ts';
 import {
   TOKENS_SHOWN,
   groupTokens,
@@ -51,21 +54,47 @@ import {
 } from './token-groups.ts';
 import './admin-panel.css';
 
-/** The person the panel manages, as the profile carries them. */
-export interface AdminSubject {
-  readonly id: string;
-  readonly name: string;
-  readonly org_role: string;
-  readonly is_active: boolean;
+/** The profile kinds' words (D-078): the header's chip and the panel's control. */
+export const KINDS: Readonly<Record<ProfileKind, { label: string; hint: string }>> = {
+  builder: {
+    label: 'Builder',
+    hint: 'does the work: delivery, current work and the agents they use.',
+  },
+  manager: {
+    label: 'Manager',
+    hint: 'reviews and leads: the review queue, review load and decisions.',
+  },
+};
+
+/** The Builder/Manager control's state, which the profile owns (it redraws the page). */
+export interface KindControl {
+  readonly value: ProfileKind;
+  readonly busy: boolean;
+  readonly error: string | undefined;
+  readonly onKind: (kind: ProfileKind) => void;
 }
 
-export interface AdminPanelProps {
+export interface ManageSectionsProps {
   readonly user: AdminSubject;
   readonly me: MeProfile;
   readonly gates: Gates;
+  readonly kind: KindControl;
   /** Their role or active state changed: read the profile again. */
   readonly onChanged: () => void;
+  /**
+   * A reset link is on screen (`true`) or put away: the panel must not be
+   * dismissed by a stray click while it is, since it is shown only once.
+   */
+  readonly onSecret?: ((shown: boolean) => void) | undefined;
 }
+
+/**
+ * Where focus goes when a question asked from a section closes (LAI-1134
+ * review N2): the control named by `selector` inside the sections, or —
+ * when there is none, or none any more — the dialog's close button, never
+ * `body`.
+ */
+type FocusBack = (selector?: string) => () => HTMLElement | null;
 
 /**
  * The roles the owner may give (D-104 item 2): never Owner — ownership is
@@ -79,109 +108,104 @@ function said(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Nothing changed.';
 }
 
-/** What each gate is, per person — computed once so the panel and its tests agree. */
-export interface AdminControls {
-  readonly role: boolean;
-  readonly deactivate: boolean;
-  readonly signOut: boolean;
-  readonly resetLink: boolean;
-  readonly tokens: boolean;
-  readonly revokeTokens: boolean;
-  readonly spaces: boolean;
-}
-
 /**
- * Which controls this reader gets on this person's profile. **Every one is the
- * server's answer** (`GET /permissions`, LAI-970), never a role — except the
- * two D-104 rules that are about the owner as a person: nobody changes the
- * owner's role or deactivates them here (transfer is how ownership moves), and
- * only the owner issues the owner a reset link (`user.reset_password`'s
- * condition, which `/permissions` cannot answer per target).
- *
- * *Sign out everywhere* for somebody else is carried by *Deactivate people and
- * reset access* with `user.deactivate` (LAI-985). `user.sign_out` alone is held
- * by everyone, about themselves, so it cannot be the gate for another person.
- */
-export function adminControls(
-  gates: Pick<Gates, 'org'>,
-  me: Pick<MeProfile, 'id' | 'org_role'>,
-  user: AdminSubject,
-): AdminControls {
-  const other = me.id !== user.id;
-  const theOwner = user.org_role === 'owner';
-  return {
-    role: other && !theOwner && gates.org('user.set_role'),
-    deactivate: other && !theOwner && gates.org('user.deactivate'),
-    signOut: other && user.is_active && gates.org('user.deactivate') && gates.org('user.sign_out'),
-    resetLink:
-      other &&
-      user.is_active &&
-      gates.org('user.reset_password') &&
-      (!theOwner || me.org_role === 'owner'),
-    tokens: other && gates.org('token.list_any'),
-    revokeTokens: other && gates.org('token.list_any') && gates.org('token.revoke_any'),
-    spaces: other && gates.org('member_list.read'),
-  };
-}
-
-export function anyAdminControl(controls: AdminControls): boolean {
-  return Object.values(controls).some(Boolean);
-}
-
-/**
- * The Admin panel on a member profile (D-104, LAI-988): everything an owner or
- * admin does to one person, on that person's page — their role, their access,
- * their tokens and their spaces. Each control is drawn only when the server
- * says the reader may use it; a reader with none sees no panel at all.
+ * Everything an owner or admin does to one person (D-104, LAI-988), as the
+ * Manage member panel's sections (LAI-1134, frames 1q–1s): Role, Spaces,
+ * Tokens, Security and the Danger zone. Each is drawn only when the server
+ * says the reader may use something in it (`manageSections`); the panel is
+ * not offered at all to a reader with none.
  *
  * Every destructive change asks first. Deactivating and removing from a space
  * go through the offboarding dialog, which asks about their open tasks.
  */
-export function AdminPanel({ user, me, gates, onChanged }: AdminPanelProps) {
+export function ManageSections({
+  user,
+  me,
+  gates,
+  kind,
+  onChanged,
+  onSecret,
+}: ManageSectionsProps) {
   const controls = adminControls(gates, me, user);
-  if (!anyAdminControl(controls)) return null;
+  const sections = manageSections(controls);
+  const root = useRef<HTMLDivElement>(null);
+  const focusBack: FocusBack = useCallback(
+    (selector) => () =>
+      (selector === undefined ? null : root.current?.querySelector<HTMLElement>(selector)) ??
+      root.current
+        ?.closest('[role="dialog"]')
+        ?.querySelector<HTMLElement>(':scope > header button') ??
+      null,
+    [],
+  );
 
   return (
-    <section
-      className="prof-card prof-admin"
-      data-section="admin"
-      aria-labelledby="prof-admin-title"
-    >
-      <header className="prof-card-head">
-        <h3 className="prof-card-title" id="prof-admin-title">
-          Admin
-        </h3>
-        <span className="prof-card-caption">
-          Only people allowed to manage {user.name} see this
-        </span>
-      </header>
-
-      <div className="prof-admin-grid">
-        {(controls.role || controls.deactivate || controls.signOut || controls.resetLink) && (
-          <AccessBlock user={user} controls={controls} onChanged={onChanged} />
-        )}
-        {controls.spaces && <SpacesBlock user={user} gates={gates} />}
-        {/* Last: a long list spans the panel instead of one narrow column (LAI-321). */}
-        {controls.tokens && <TokensBlock user={user} mayRevoke={controls.revokeTokens} />}
-      </div>
-    </section>
+    <div className="prof-admin" data-section="admin" ref={root}>
+      {sections.map((section) => {
+        switch (section) {
+          case 'role':
+            return (
+              <RoleSection
+                key={section}
+                user={user}
+                role={controls.role}
+                kind={controls.kind ? kind : undefined}
+                onChanged={onChanged}
+              />
+            );
+          case 'spaces':
+            return <SpacesBlock key={section} user={user} gates={gates} focusBack={focusBack} />;
+          case 'tokens':
+            // The full list stays here until Developer setup (LAI-1140) gives it a home.
+            return <TokensBlock key={section} user={user} mayRevoke={controls.revokeTokens} />;
+          case 'security':
+            return (
+              <SecuritySection
+                key={section}
+                user={user}
+                resetLink={controls.resetLink}
+                signOut={controls.signOut}
+                onSecret={onSecret}
+              />
+            );
+          case 'danger':
+            return (
+              <DangerSection
+                key={section}
+                user={user}
+                onChanged={onChanged}
+                focusBack={focusBack}
+              />
+            );
+        }
+      })}
+    </div>
   );
 }
 
 function Block({
   name,
   title,
+  danger = false,
   children,
 }: {
   readonly name: string;
   readonly title: string;
+  readonly danger?: boolean;
   readonly children: ReactNode;
 }) {
+  const id = `prof-admin-${name}-title`;
   return (
-    <div className="prof-admin-block" data-admin={name}>
-      <h4 className="prof-admin-title">{title}</h4>
+    <section
+      className={danger ? 'prof-admin-block prof-admin-danger' : 'prof-admin-block'}
+      data-admin={name}
+      aria-labelledby={id}
+    >
+      <h3 className="prof-admin-title" id={id}>
+        {title}
+      </h3>
       {children}
-    </div>
+    </section>
   );
 }
 
@@ -231,35 +255,24 @@ function Problem({ text }: { readonly text: string | undefined }) {
   );
 }
 
-// ------------------------------------------------------------------ access
+function Notice({ text }: { readonly text: string | undefined }) {
+  if (text === undefined) return null;
+  return (
+    <p className="prof-admin-notice" role="status">
+      {text}
+    </p>
+  );
+}
 
-type Asking = 'role' | 'reactivate' | 'sign-out' | 'reset' | undefined;
-
-function AccessBlock({
-  user,
-  controls,
-  onChanged,
-}: {
-  readonly user: AdminSubject;
-  readonly controls: AdminControls;
-  readonly onChanged: () => void;
-}) {
-  const [asking, setAsking] = useState<Asking>(undefined);
+/**
+ * One section's request in flight: busy while it runs, its refusal or what it
+ * did said once, and whatever question was open put away when it answers.
+ */
+function useAct<Asking>() {
+  const [asking, setAsking] = useState<Asking | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<string | undefined>(undefined);
-  const [role, setRole] = useState<string>(user.org_role);
-  const [offboarding, setOffboarding] = useState(false);
-  /**
-   * The reset link, **shown once**: held here while it is on screen and nowhere
-   * else, and gone when the panel goes (another person, another page).
-   */
-  const [link, setLink] = useState<ResetLinkView | undefined>(undefined);
-
-  useEffect(() => {
-    setRole(user.org_role);
-  }, [user.org_role]);
-
   const act = (call: () => Promise<void>): void => {
     setBusy(true);
     setError(undefined);
@@ -273,16 +286,32 @@ function AccessBlock({
         setAsking(undefined);
       });
   };
+  return { asking, setAsking, busy, error, notice, setNotice, act };
+}
 
-  const loadCandidates = useCallback(
-    async (): Promise<readonly ReassignCandidate[]> =>
-      (await listAllUsers()).users.map((p) => ({ id: p.id, name: p.name })),
-    [],
-  );
+// -------------------------------------------------------------------- role
+
+function RoleSection({
+  user,
+  role: mayRole,
+  kind,
+  onChanged,
+}: {
+  readonly user: AdminSubject;
+  readonly role: boolean;
+  readonly kind: KindControl | undefined;
+  readonly onChanged: () => void;
+}) {
+  const { asking, setAsking, busy, error, notice, setNotice, act } = useAct<'role'>();
+  const [role, setRole] = useState<string>(user.org_role);
+
+  useEffect(() => {
+    setRole(user.org_role);
+  }, [user.org_role]);
 
   return (
-    <Block name="access" title="Role and access">
-      {controls.role && (
+    <Block name="role" title="Role">
+      {mayRole && (
         <div className="prof-admin-row" data-admin-row="role">
           <span className="prof-admin-label" id="prof-admin-role">
             Organisation role
@@ -319,96 +348,113 @@ function AccessBlock({
         </div>
       )}
 
-      {controls.deactivate && (
-        <div className="prof-admin-row" data-admin-row="active">
-          <span className="prof-admin-label">{user.is_active ? 'Active' : 'Deactivated'}</span>
-          {user.is_active ? (
-            <button
-              type="button"
-              className="prof-admin-btn prof-admin-btn-danger-quiet"
-              data-action="deactivate"
-              disabled={busy}
-              onClick={() => {
-                setNotice(undefined);
-                setOffboarding(true);
-              }}
-            >
-              Deactivate…
-            </button>
-          ) : asking === 'reactivate' ? (
-            <Confirm
-              question={`Reactivate ${user.name}?`}
-              yes="Reactivate"
-              busy={busy}
-              onYes={() => {
-                act(async () => {
-                  await updateUser(user.id, { is_active: true });
-                  setNotice(
-                    `${user.name} can sign in again. Their old sessions and tokens stay ended.`,
-                  );
-                  onChanged();
-                });
-              }}
-              onNo={() => {
-                setAsking(undefined);
+      {kind !== undefined && <KindRow kind={kind} />}
+
+      <Problem text={error} />
+      <Notice text={notice} />
+    </Block>
+  );
+}
+
+/**
+ * Builder or Manager (D-078) — a label, never a permission: it decides what
+ * the profile shows. Moved from the header into the panel (LAI-1134); still a
+ * labelled radio group the arrow keys move, and still the server's answer —
+ * the radio moves when the `PATCH` comes back, not on the click.
+ */
+function KindRow({ kind }: { readonly kind: KindControl }) {
+  return (
+    <div className="prof-admin-row" data-admin-row="kind">
+      <span className="prof-kind-text">
+        <span className="prof-admin-label" id="prof-kind-label">
+          Profile kind
+        </span>
+        <InfoTip label="What the profile kinds mean">
+          <dl className="prof-defs">
+            {PROFILE_KINDS.map((k) => (
+              <div key={k}>
+                <dt>{KINDS[k].label}</dt>
+                <dd>{KINDS[k].hint}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="prof-defs-foot">
+            It decides what this page shows — never what they may do. Only owners and admins see or
+            set it.
+          </p>
+        </InfoTip>
+        {kind.busy && <Spinner size="sm" />}
+      </span>
+      <div
+        className="prof-seg"
+        role="radiogroup"
+        aria-labelledby="prof-kind-label"
+        aria-describedby="prof-kind-note"
+        aria-busy={kind.busy}
+      >
+        {PROFILE_KINDS.map((k) => (
+          <label key={k} className="prof-seg-option">
+            <input
+              type="radio"
+              name="profile-kind"
+              value={k}
+              checked={kind.value === k}
+              disabled={kind.busy}
+              onChange={() => {
+                kind.onKind(k);
               }}
             />
-          ) : (
-            <button
-              type="button"
-              className="prof-admin-btn"
-              data-action="reactivate"
-              disabled={busy}
-              onClick={() => {
-                setAsking('reactivate');
-              }}
-            >
-              Reactivate
-            </button>
-          )}
-        </div>
+            <span className="prof-seg-face">{KINDS[k].label}</span>
+          </label>
+        ))}
+      </div>
+      <p className="prof-admin-muted prof-kind-note" id="prof-kind-note">
+        Admin only · a label, never a permission. It decides what this profile shows, not what they
+        may do.
+      </p>
+      {kind.error !== undefined && (
+        <p className="prof-admin-error" role="alert">
+          {kind.error}
+        </p>
       )}
+    </div>
+  );
+}
 
-      {controls.signOut && (
-        <div className="prof-admin-row" data-admin-row="sign-out">
-          <span className="prof-admin-label">Sessions</span>
-          {asking === 'sign-out' ? (
-            <Confirm
-              question={`Sign ${user.name} out everywhere?`}
-              yes="Sign out"
-              busy={busy}
-              danger
-              onYes={() => {
-                act(async () => {
-                  const done = await signOutEverywhere(user.id);
-                  setNotice(
-                    done.sessions_ended === 0
-                      ? `${user.name} was not signed in anywhere.`
-                      : `Ended ${String(done.sessions_ended)} session${done.sessions_ended === 1 ? '' : 's'}. Their tokens still work.`,
-                  );
-                });
-              }}
-              onNo={() => {
-                setAsking(undefined);
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              className="prof-admin-btn"
-              data-action="sign-out"
-              disabled={busy}
-              onClick={() => {
-                setAsking('sign-out');
-              }}
-            >
-              Sign out everywhere
-            </button>
-          )}
-        </div>
-      )}
+// ---------------------------------------------------------------- security
 
-      {controls.resetLink && (
+function SecuritySection({
+  user,
+  resetLink,
+  signOut,
+  onSecret,
+}: {
+  readonly user: AdminSubject;
+  readonly resetLink: boolean;
+  readonly signOut: boolean;
+  readonly onSecret: ((shown: boolean) => void) | undefined;
+}) {
+  const { asking, setAsking, busy, error, notice, setNotice, act } = useAct<'sign-out' | 'reset'>();
+  /**
+   * The reset link, **shown once**: held here while it is on screen and nowhere
+   * else, and gone when the panel goes (closed, another person, another page).
+   */
+  const [link, setLink] = useState<ResetLinkView | undefined>(undefined);
+  const shown = link !== undefined;
+  useEffect(() => {
+    onSecret?.(shown);
+  }, [onSecret, shown]);
+  // Gone with the section (another person, the grant withdrawn): nothing held.
+  useEffect(
+    () => () => {
+      onSecret?.(false);
+    },
+    [onSecret],
+  );
+
+  return (
+    <Block name="security" title="Security">
+      {resetLink && (
         <div className="prof-admin-row" data-admin-row="reset">
           <span className="prof-admin-label">Password</span>
           {asking === 'reset' ? (
@@ -452,18 +498,134 @@ function AccessBlock({
         />
       )}
 
-      <Problem text={error} />
-      {notice !== undefined && (
-        <p className="prof-admin-notice" role="status">
-          {notice}
-        </p>
+      {signOut && (
+        <div className="prof-admin-row" data-admin-row="sign-out">
+          <span className="prof-admin-label">Sessions</span>
+          {asking === 'sign-out' ? (
+            <Confirm
+              question={`Sign ${user.name} out everywhere?`}
+              yes="Sign out"
+              busy={busy}
+              danger
+              onYes={() => {
+                act(async () => {
+                  const done = await signOutEverywhere(user.id);
+                  setNotice(
+                    done.sessions_ended === 0
+                      ? `${user.name} was not signed in anywhere.`
+                      : `Ended ${String(done.sessions_ended)} session${done.sessions_ended === 1 ? '' : 's'}. Their tokens still work.`,
+                  );
+                });
+              }}
+              onNo={() => {
+                setAsking(undefined);
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="prof-admin-btn"
+              data-action="sign-out"
+              disabled={busy}
+              onClick={() => {
+                setAsking('sign-out');
+              }}
+            >
+              Sign out everywhere
+            </button>
+          )}
+        </div>
       )}
+
+      <Problem text={error} />
+      <Notice text={notice} />
+    </Block>
+  );
+}
+
+// ------------------------------------------------------------------ danger
+
+function DangerSection({
+  user,
+  onChanged,
+  focusBack,
+}: {
+  readonly user: AdminSubject;
+  readonly onChanged: () => void;
+  readonly focusBack: FocusBack;
+}) {
+  const { asking, setAsking, busy, error, notice, setNotice, act } = useAct<'reactivate'>();
+  const [offboarding, setOffboarding] = useState(false);
+
+  const loadCandidates = useCallback(
+    async (): Promise<readonly ReassignCandidate[]> =>
+      (await listAllUsers()).users.map((p) => ({ id: p.id, name: p.name })),
+    [],
+  );
+
+  return (
+    <Block name="danger" title="Danger zone" danger>
+      <p className="prof-admin-danger-text" data-admin-row="active">
+        {user.is_active
+          ? 'Deactivating ends every session and token of theirs now and removes them from every space. They can no longer sign in. Their history stays.'
+          : `${user.name} is deactivated. Reactivating lets them sign in again; old sessions and tokens stay ended.`}
+      </p>
+      {/* One button element either way — Deactivate… becomes Reactivate in
+          place, so focus handed back to it survives the redraw. */}
+      {user.is_active ? (
+        <button
+          type="button"
+          className="prof-admin-btn prof-admin-btn-danger-quiet"
+          data-action="deactivate"
+          disabled={busy}
+          onClick={() => {
+            setNotice(undefined);
+            setOffboarding(true);
+          }}
+        >
+          Deactivate…
+        </button>
+      ) : asking === 'reactivate' ? (
+        <Confirm
+          question={`Reactivate ${user.name}?`}
+          yes="Reactivate"
+          busy={busy}
+          onYes={() => {
+            act(async () => {
+              await updateUser(user.id, { is_active: true });
+              setNotice(
+                `${user.name} can sign in again. Their old sessions and tokens stay ended.`,
+              );
+              onChanged();
+            });
+          }}
+          onNo={() => {
+            setAsking(undefined);
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className="prof-admin-btn"
+          data-action="reactivate"
+          disabled={busy}
+          onClick={() => {
+            setAsking('reactivate');
+          }}
+        >
+          Reactivate
+        </button>
+      )}
+
+      <Problem text={error} />
+      <Notice text={notice} />
 
       {offboarding && (
         <OffboardingDialog
           title={`Deactivate ${user.name}?`}
           verb="Deactivate"
           leavingId={user.id}
+          restoreFocus={focusBack('[data-admin="danger"] button[data-action]')}
           consequences={
             <>
               <p>{user.name} will not be able to sign in. Their history stays.</p>
@@ -698,7 +860,7 @@ function TokensBlock({
   };
 
   return (
-    <Block name="tokens" title="Their tokens">
+    <Block name="tokens" title="Tokens">
       {load.kind === 'loading' && (
         <p className="prof-admin-muted" role="status">
           <Spinner size="sm" /> Reading their tokens…
@@ -767,12 +929,22 @@ type SpacesLoad =
   | { readonly kind: 'error'; readonly error: string }
   | { readonly kind: 'ready'; readonly memberships: readonly PersonMembership[] };
 
-function SpacesBlock({ user, gates }: { readonly user: AdminSubject; readonly gates: Gates }) {
+function SpacesBlock({
+  user,
+  gates,
+  focusBack,
+}: {
+  readonly user: AdminSubject;
+  readonly gates: Gates;
+  readonly focusBack: FocusBack;
+}) {
   const [load, setLoad] = useState<SpacesLoad>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [spaces, setSpaces] = useState<readonly Project[] | undefined>(undefined);
   const [removing, setRemoving] = useState<PersonMembership | undefined>(undefined);
   const [notice, setNotice] = useState<string | undefined>(undefined);
+  /** Whether the open removal went through: then its row, and its button, are going. */
+  const removed = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -854,6 +1026,7 @@ function SpacesBlock({ user, gates }: { readonly user: AdminSubject; readonly ga
                     aria-label={`Remove ${user.name} from ${m.name}`}
                     onClick={() => {
                       setNotice(undefined);
+                      removed.current = false;
                       setRemoving(m);
                     }}
                   >
@@ -887,6 +1060,13 @@ function SpacesBlock({ user, gates }: { readonly user: AdminSubject; readonly ga
           title={`Remove ${user.name} from ${removing.name}?`}
           verb="Remove"
           leavingId={user.id}
+          restoreFocus={() =>
+            removed.current
+              ? focusBack()()
+              : focusBack(
+                  `[data-membership="${removing.slug}"] [data-action="remove-from-space"]`,
+                )()
+          }
           consequences={
             <p>
               They lose access to {removing.name} unless their organisation role opens every space.
@@ -903,6 +1083,7 @@ function SpacesBlock({ user, gates }: { readonly user: AdminSubject; readonly ga
             await removeMember(removing.slug, user.id, openTasks);
           }}
           onDone={() => {
+            removed.current = true;
             setNotice(`Removed ${user.name} from ${removing.name}.`);
             setRemoving(undefined);
             reload();

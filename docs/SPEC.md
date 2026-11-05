@@ -252,6 +252,8 @@ be obvious because someone will be asking for it.
 | Map Solidtime projects and people | ✓ (session only) | ✓ (session only) | — | — |
 | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
 | View the organisation's Time report | ✓ (session only) | ✓ (session only) | — | — |
+| Set own availability | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| See availability of people in your spaces | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -418,6 +420,29 @@ logged as a look at their time (§4.59). A report of the caller's own time is
 *Read and write own time entries*' and logs nothing; a space admin's totals
 are §3.2's *View the space's time totals*. A caller who holds neither and
 leads no space is `403`.
+
+**The availability rows are D-131's** (LAI-1130): `availability.set_own`
+behind §6.4's `GET/PUT /me/availability`, `POST /me/availability/away` and
+`DELETE /me/availability/away/:id`, and `availability.read` behind `GET
+/people/availability`. Both are every role's and **session only** — an agent
+must not say its person is open to more work, nor read who else is.
+
+- **Only the person writes it.** The services touch the caller's own rows;
+  no row lets anybody set another's status, hours, note, tags, working week
+  or away periods.
+- **Reading narrows to the reader** (D-137). Everyone sees the people who
+  share a space with them: status, note, tags and when a current away period
+  ends. A space's lead sees the people in the spaces they lead with, in
+  addition, the hours a week each offered, their away dates and card counts
+  over those spaces — **no tracked hours and no working week**. A holder of
+  *See everyone's analytics* sees every active person who is not an org
+  viewer, the whole record with tracked hours — and every person so listed is
+  logged as a look at their time (§4.59).
+- **Load is not this row.** `GET /people/:id/load` is *View a member's day,
+  time and shared activity* (`people.analytics.read`), not themselves, logged.
+- **Never ranked and nothing computed** (D-088 item 1, D-131): the list is
+  A–Z by name with no sort parameter, and no response carries free hours or
+  a utilisation figure.
 
 ### 3.2 Project-level permission matrix
 
@@ -3527,6 +3552,49 @@ explicit request, not presence collected in the background. `GET
 read: its owner, the newest answer to anyone's ping there; anyone else, to its
 own there.
 
+### 4.85 `user_availability`
+
+A person's own availability (D-131, LAI-1130). **Set only by the person, on a
+web session.** No row is *not set*: no pill, and *No working hours set*.
+**Who reads which fields is D-137's**, by allow-list (§6.4): a member reads
+`status`, `note`, `tags` and when a current away period ends; a space's lead
+adds `hours_per_week` and the away dates; `work_days`, `work_start` and
+`work_end` are read only by the person and by *See everyone's analytics*.
+
+| field | notes |
+| --- | --- |
+| `user_id` | PK, FK `users`, cascade |
+| `status` | nullable, `open` \| `capacity` (CHECK) — null until the person says either. *Away* is not a status: it is derived from §4.86 |
+| `hours_per_week` | nullable, 1–80 (CHECK) |
+| `note` | nullable, 1–140 characters (CHECK); a blank note is stored as null |
+| `tags` | JSON array, `NOT NULL DEFAULT '[]'` — at most 8 tags of 1–32 characters, de-duplicated case-insensitively, the first spelling kept (service validated, as `former_prefixes`) |
+| `work_days` | JSON array of ISO weekdays 1–7, ascending, `NOT NULL DEFAULT '[]'` |
+| `work_start` | nullable `HH:MM`, wall clock with no zone |
+| `work_end` | nullable `HH:MM` — both or neither, and after `work_start` (CHECK) |
+| `updated_at` | moves only when a write changed something |
+
+**Nothing here is computed against tracked time** (D-088 item 1, D-131 item 4):
+the working week's minutes on the API are the days times the length of the
+day, the person's own declaration.
+
+### 4.86 `user_away_periods`
+
+A stretch of days a person is away (D-131, LAI-1130), inclusive at both ends,
+in the person's own dates. Set only by the person.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade |
+| `from_day` | `YYYY-MM-DD` |
+| `to_day` | `YYYY-MM-DD`, on or after `from_day` (CHECK) |
+| `created_at` | |
+
+Indexes `(user_id, to_day)` and `(to_day)`. **A person is away** when a period
+covers today in their own zone — their `place` (§4.46), UTC when they set none.
+At most 20 current and upcoming periods each, at most 366 days long. Periods
+that ended more than 30 days ago are deleted by §11.6's time retention.
+
 ## 5. Task lifecycle
 
 ```
@@ -3965,6 +4033,11 @@ GET    /api/v1/people/:id/time/summary       ?from=&to= — that person's GET /m
 GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
 GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, LAI-1135)
 GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at the caller → { data: [{ id, viewer: { id, name }, kind, day, viewed_at }], next_cursor }, newest first   (session only)
+GET    /api/v1/me/availability               PUT .../availability  body { status?, hours_per_week?, note?, tags?, work_week?: { days, start, end } | null } — a merge → AvailabilityView   (every role; session only; D-131, LAI-1130)
+POST   /api/v1/me/availability/away          body { from, to } → 201 AvailabilityView; 422 away_in_past when to is before the person's today   (every role; session only)
+DELETE /api/v1/me/availability/away/:id      → 204; another person's period is the 404 of one that does not exist   (every role; session only)
+GET    /api/v1/people/availability           ?space=&tag=&open_only= → { data: [{ user, availability, spaces, in_progress?, last_2_weeks_minutes? }] }, A–Z by name, no sort parameter; availability narrowed per reader, D-137   (every role, narrowed to the reader; session only; hours logged)
+GET    /api/v1/people/:id/load               → { availability, projects, cards, week, away } — 14 days by space, card counts, this week beside the set working minutes; logged   (owner, admin by default; session only; not yourself)
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
@@ -5175,8 +5248,60 @@ parameter names anybody else.
   prefixed `'` where a spreadsheet would run it as a formula (as LAI-984's
   history export); for `space_totals` they are `week_start, week_end, space,
   people, confirmed_minutes`, one line per week and nothing else, a withheld
-  week's minutes empty. The route has a bucket of its own,  history export). The route has a bucket of its own, 30 a minute per
+  week's minutes empty. The route has a bucket of its own, 30 a minute per
   person, so filter clicks never spend the session's budget.
+- **Availability (§4.85, §4.86, D-131, LAI-1130).** `GET /me/availability`
+  answers `AvailabilityView`: `{ status, away: { until } | null,
+  hours_per_week, note, tags, work_week: { days, start, end, minutes } |
+  null, away_periods: [{ id, from, to }], updated_at }`. `status` is `null`
+  until the person sets one; `away` is the period covering today in their
+  zone; `away_periods` are the current and upcoming ones, earliest first;
+  `minutes` is days × the length of the day, null until both times are set.
+  A person who set nothing reads every field empty — `null`, `[]` — never a
+  `404`. `PUT` is a merge: a field left out keeps its value, `null` clears it.
+  Every limit is a `422` with `details.field` and `details.reason` —
+  `out_of_range` (hours 1–80), `too_long` (note over 140), `tag_length`,
+  `too_many` (tags over 8), `not_a_weekday`, `not_a_time`, `start_and_end`,
+  `end_before_start`; on `POST …/away`, `not_a_date`, `range_backwards`,
+  `range_too_long` (366 days), `away_in_past`, and `too_many_away_periods`
+  past 20.
+- **Who has room (D-131, LAI-1130).** `GET /people/availability` is A–Z by
+  name with **no sort parameter**; its query is strict, so `?sort=` is a
+  `422`. `space` narrows to one space the reader can open (`404` otherwise),
+  `tag` to a tag case-insensitively, `open_only=true` to people `open` and not
+  away. Deactivated people are never listed, nor are org viewers. Each row is
+  `{ user: { id, name }, availability, spaces: [{ id, slug, name }] }` — the
+  spaces the reader can open — with `availability` `null` for a person who
+  set nothing, and otherwise **narrowed to the reader by allow-list** (D-137),
+  the same for every row, the reader's own included:
+  - a holder of *See everyone's analytics* gets every active person, the
+    whole `AvailabilityView`, `in_progress` over the spaces they open and
+    `last_2_weeks_minutes`, the person's confirmed minutes over their own last
+    14 days; every person listed is logged as a look at their time (§4.59,
+    kind `time`). Whether the reader holds it is asked of their own role's
+    grant, never of some other person;
+  - a space's lead gets the people in the spaces they lead, with
+    `in_progress` counted in those spaces and `availability` `{ status, note,
+    tags, away: { until } | null, hours_per_week, away_periods: [{ from, to
+    }] }` — no working week, no period ids, and **no tracked-hours field at
+    all**;
+  - anyone else gets the people who share a space with them, with
+    `availability` `{ status, note, tags, away: { until } | null }` only — no
+    hours, no working week, no upcoming periods — and no card count.
+
+  More than 500 rows is a `422`, `too_many_people`.
+  `GET /people/:id/load` answers `{ availability, projects: [{ project,
+  hidden, role, confirmed_minutes, drafted_minutes }], cards: { in_progress,
+  in_review, due_7d }, week: { from, to, confirmed_minutes, drafted_minutes,
+  set_minutes }, away: [{ from, to }] }`. `projects` covers the person's last
+  14 days and every space they are in, from `GET /me/time/summary`'s own
+  assembly, so its minutes equal that answer's `by_project`; a `null` project
+  is time on no space, and spaces the reader cannot open fold into one row
+  with `hidden: true`. `cards` counts their cards in spaces the reader opens;
+  `due_7d` is open cards due from the reader's UTC today through the next six
+  days. `week` is the person's Monday to Sunday with the working minutes they
+  set beside it — **two numbers, never one taken from the other**. Under
+  `people.analytics.read`, not yourself, logged `time`.
 - **The timer (§4.61, LAI-500).** `POST /me/time/timer` `{ tz, task?, kind?,
   title? }` starts the person's one timer, `201`; a second start is `409
   timer_running`. `POST …/pause` banks the running segment (`409 timer_paused`
@@ -6875,9 +7000,25 @@ anything missing sends the task back.
   menu opens the reader's own, for an owner or an admin) — owners and admins only:
   anyone else sees a permission notice and the profile is never requested.
   Laid out as cards on a grid that folds to one column on a phone (LAI-750).
-  A head card with name, org role, project count, email, member since, an
-  *owners and admins only* pill and the **Builder / Manager** control, which
-  says it is a label and not a permission; **projects** as horizontal bars —
+  A head card with name, the **Builder / Manager** kind as a chip, org role,
+  project count, email, member since, and **⋯** — a menu button named
+  *Manage <name>* whose *Manage member…* opens the **Manage member panel**
+  (LAI-1134): a right-hand panel on a desktop, a bottom sheet on a phone, a
+  modal that takes focus, holds it, and hands it back to ⋯ on Escape or close.
+  It holds every control an owner or admin has over the person, each section
+  drawn only when the server grants something in it, and ⋯ is absent when
+  none is: **Role** (organisation role, with a confirm, and the Builder /
+  Manager control, which says it is a label and not a permission),
+  **Spaces** (remove through the offboarding question, add with a role),
+  **Tokens** (their tokens, revocable), **Security** (a reset link shown once,
+  sign out everywhere) and a **Danger zone** (deactivate through the
+  offboarding question, or reactivate). For somebody else, tabs **Overview ·
+  Day · Time report** — *Developer setup* joins them when its endpoint does;
+  your own profile has no tabs. Overview leads with the summary — **current
+  work**, **agents used**, **review work**, **projects** — then the Activity
+  card, then the **record**, which keeps everything the summary does not
+  draw: the Tokens card, **delivered**, the **rating** and **recent
+  decisions**. **Projects** as horizontal bars —
   a builder's open tasks, a manager's review decisions — with role and
   figures; for a builder, **delivered** — accepted per week as twelve bars,
   sent back, reopened, cycle p50/p75 with the unmeasured count — **current
@@ -6894,7 +7035,7 @@ anything missing sends the task back.
   the rest inside the card in a bounded scroll; no card stretches its row
   (LAI-751). **Agents used** is one row per agent, the token names behind an
   expand (LAI-751).
-  An **Activity** card (D-079, LAI-751) heads the page: a daily heatmap from
+  An **Activity** card (D-079, LAI-751) sits under the summary: a daily heatmap from
   `GET /people/:id/activity`, **12 weeks or 1 year** (a phone opens on 12
   weeks; the year scrolls sideways inside the card with the weekday column
   pinned), in two designs each viewer chooses between and the browser
@@ -6907,7 +7048,7 @@ anything missing sends the task back.
   weekday, pushed vs local — computed on the client. It says plainly when the
   organisation's switch is off (with a link to Organisation) and when nothing
   has arrived yet. Context only:
-  nothing on it feeds the rating. A **Tokens** card follows it, full width
+  nothing on it feeds the rating. A **Tokens** card heads the record, full width
   (D-084, LAI-769): tokens over 12 weeks, **at least**, with cache reads and
   the share tied to a task beside it; a bar per week; their top agents and
   models; agents with *no token data* named; and plainly when the
@@ -7105,8 +7246,9 @@ One interval-driven scheduler in the same process:
   person's with their entry, *people not on Laika* by the same three years
   (LAI-788). With them, by the same job (LAI-831): `time_breaks` dated before
   30 days ago, as drafts are (§4.55), and `time_undo` rows older than
-  `UNDO_WINDOW_MS`, two minutes, whoever's they are (§4.56). No `activity`
-  row, for the reason local activity's has none
+  `UNDO_WINDOW_MS`, two minutes, whoever's they are (§4.56). Away periods
+  that ended more than 30 days ago go with them (§4.86, LAI-1130). No
+  `activity` row, for the reason local activity's has none
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`. **It is the one stale rule, on every screen**
   (D-092 item 4, LAI-832): every screen asks `isStale` (`board-derive.ts`) —

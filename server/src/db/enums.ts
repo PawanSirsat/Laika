@@ -44,6 +44,13 @@ export type Capability = (typeof CAPABILITIES)[number];
 export const ANALYTICS_VIEW_KINDS = ['time', 'local_activity', 'activity', 'usage'] as const;
 export type AnalyticsViewKind = (typeof ANALYTICS_VIEW_KINDS)[number];
 
+/**
+ * What a person says about taking on more work (§4.85, D-131, LAI-1130).
+ * *Away* is not one: it is derived from an away period covering today.
+ */
+export const AVAILABILITY_STATUSES = ['open', 'capacity'] as const;
+export type AvailabilityStatus = (typeof AVAILABILITY_STATUSES)[number];
+
 export const PROJECT_ROLES = ['lead', 'member', 'viewer'] as const;
 export type ProjectRole = (typeof PROJECT_ROLES)[number];
 
