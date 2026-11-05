@@ -78,6 +78,7 @@ import {
   PROJECT_SETUP_SOURCES,
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
+  AVAILABILITY_STATUSES,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
   TIME_ENTRY_KINDS,
@@ -1325,6 +1326,88 @@ export const capacityPings = sqliteTable(
     index('capacity_pings_agent_created_idx').on(t.agentId, t.createdAt),
     index('capacity_pings_created_at_idx').on(t.createdAt),
     check('capacity_pings_answer_check', sql`(answered_at IS NULL) = (reply_json IS NULL)`),
+  ],
+);
+
+// --------------------------------------------------- §4.85 user_availability
+
+/**
+ * What a person says about their own availability (§4.85, D-131, LAI-1130):
+ * whether they are open to more work, optional hours a week, a note, tags and
+ * their working week. **Set only by the person, on a web session** — nobody
+ * else writes it, as `user_time_settings` (§4.46). No row is *not set*.
+ *
+ * Nothing here is a computed figure: no free hours, no utilisation (D-088
+ * item 1, D-131 item 4). The working week's minutes are the person's own
+ * declaration, multiplied out.
+ */
+export const userAvailability = sqliteTable(
+  'user_availability',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** `open` or `capacity`; null until the person says either. */
+    status: text('status', { enum: AVAILABILITY_STATUSES }),
+    hoursPerWeek: integer('hours_per_week'),
+    note: text('note'),
+    /** Up to eight tags, de-duplicated case-insensitively by the service. */
+    tags: text('tags', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    /** ISO weekdays, 1 Monday to 7 Sunday, ascending. */
+    workDays: text('work_days', { mode: 'json' })
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    /** Wall-clock `HH:MM` with no zone; both or neither. */
+    workStart: text('work_start'),
+    workEnd: text('work_end'),
+    updatedAt,
+  },
+  () => [
+    check('user_availability_status_check', oneOfOrNull('status', AVAILABILITY_STATUSES)),
+    check(
+      'user_availability_hours_check',
+      sql.raw('hours_per_week IS NULL OR hours_per_week BETWEEN 1 AND 80'),
+    ),
+    check(
+      'user_availability_note_check',
+      sql.raw('note IS NULL OR length(note) BETWEEN 1 AND 140'),
+    ),
+    check(
+      'user_availability_work_hours_check',
+      sql.raw(
+        "(work_start IS NULL AND work_end IS NULL) OR (work_start GLOB '[0-2][0-9]:[0-5][0-9]' AND work_end GLOB '[0-2][0-9]:[0-5][0-9]' AND work_end > work_start)",
+      ),
+    ),
+  ],
+);
+
+// -------------------------------------------------- §4.86 user_away_periods
+
+/**
+ * A stretch of days a person is away (§4.86, D-131, LAI-1130), inclusive at
+ * both ends, in their own local dates. Set only by the person. Periods that
+ * ended more than 30 days ago are deleted by §11.6's time retention.
+ */
+export const userAwayPeriods = sqliteTable(
+  'user_away_periods',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    fromDay: text('from_day').notNull(),
+    toDay: text('to_day').notNull(),
+    createdAt,
+  },
+  (t) => [
+    index('user_away_periods_user_to_idx').on(t.userId, t.toDay),
+    // §11.6's retention deletes by day alone.
+    index('user_away_periods_to_day_idx').on(t.toDay),
+    check('user_away_periods_range_check', sql.raw('to_day >= from_day')),
   ],
 );
 
@@ -4053,4 +4136,6 @@ export type OrgRoleGrant = typeof orgRoleGrants.$inferSelect;
 export type PasswordReset = typeof passwordResets.$inferSelect;
 export type AgentLauncherReport = typeof agentLauncherReports.$inferSelect;
 export type CapacityPing = typeof capacityPings.$inferSelect;
+export type UserAvailability = typeof userAvailability.$inferSelect;
+export type UserAwayPeriod = typeof userAwayPeriods.$inferSelect;
 export type MemberNotice = typeof memberNotices.$inferSelect;

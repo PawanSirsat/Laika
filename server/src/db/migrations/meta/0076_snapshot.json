@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d1114be3-2f86-45fa-9f55-dd9d238a2cf8",
+  "id": "57042d21-5108-4b71-9ae9-7d87626d40da",
   "prevId": "4a11fdec-bc79-4f97-a252-8bfd191e4794",
   "tables": {
     "accounts": {
@@ -3532,147 +3532,6 @@
         "meeting_reviews_status_check": {
           "name": "meeting_reviews_status_check",
           "value": "status IN ('pending', 'applied', 'discarded', 'expired', 'failed')"
-        }
-      }
-    },
-    "member_notices": {
-      "name": "member_notices",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "actor_user_id": {
-          "name": "actor_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "task_id": {
-          "name": "task_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "message": {
-          "name": "message",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "read_at": {
-          "name": "read_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "member_notices_user_idx": {
-          "name": "member_notices_user_idx",
-          "columns": ["user_id", "read_at", "created_at"],
-          "isUnique": false
-        },
-        "member_notices_created_at_idx": {
-          "name": "member_notices_created_at_idx",
-          "columns": ["created_at"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "member_notices_user_id_users_id_fk": {
-          "name": "member_notices_user_id_users_id_fk",
-          "tableFrom": "member_notices",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "member_notices_actor_user_id_users_id_fk": {
-          "name": "member_notices_actor_user_id_users_id_fk",
-          "tableFrom": "member_notices",
-          "tableTo": "users",
-          "columnsFrom": ["actor_user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "member_notices_project_id_projects_id_fk": {
-          "name": "member_notices_project_id_projects_id_fk",
-          "tableFrom": "member_notices",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "member_notices_task_id_tasks_id_fk": {
-          "name": "member_notices_task_id_tasks_id_fk",
-          "tableFrom": "member_notices",
-          "tableTo": "tasks",
-          "columnsFrom": ["task_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "member_notices_kind_check": {
-          "name": "member_notices_kind_check",
-          "value": "kind IN ('added_to_space', 'tool_revoked', 'device_unpaired', 'token_revoked')"
-        },
-        "member_notices_subject_check": {
-          "name": "member_notices_subject_check",
-          "value": "subject IS NULL OR length(subject) <= 120"
-        },
-        "member_notices_message_check": {
-          "name": "member_notices_message_check",
-          "value": "message IS NULL OR length(message) <= 500"
         }
       }
     },
@@ -9984,6 +9843,179 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
+    },
+    "user_availability": {
+      "name": "user_availability",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "hours_per_week": {
+          "name": "hours_per_week",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tags": {
+          "name": "tags",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "work_days": {
+          "name": "work_days",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "work_start": {
+          "name": "work_start",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "work_end": {
+          "name": "work_end",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "user_availability_user_id_users_id_fk": {
+          "name": "user_availability_user_id_users_id_fk",
+          "tableFrom": "user_availability",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "user_availability_status_check": {
+          "name": "user_availability_status_check",
+          "value": "status IS NULL OR status IN ('open', 'capacity')"
+        },
+        "user_availability_hours_check": {
+          "name": "user_availability_hours_check",
+          "value": "hours_per_week IS NULL OR hours_per_week BETWEEN 1 AND 80"
+        },
+        "user_availability_note_check": {
+          "name": "user_availability_note_check",
+          "value": "note IS NULL OR length(note) BETWEEN 1 AND 140"
+        },
+        "user_availability_work_hours_check": {
+          "name": "user_availability_work_hours_check",
+          "value": "(work_start IS NULL AND work_end IS NULL) OR (work_start GLOB '[0-2][0-9]:[0-5][0-9]' AND work_end GLOB '[0-2][0-9]:[0-5][0-9]' AND work_end > work_start)"
+        }
+      }
+    },
+    "user_away_periods": {
+      "name": "user_away_periods",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from_day": {
+          "name": "from_day",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "to_day": {
+          "name": "to_day",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "user_away_periods_user_to_idx": {
+          "name": "user_away_periods_user_to_idx",
+          "columns": ["user_id", "to_day"],
+          "isUnique": false
+        },
+        "user_away_periods_to_day_idx": {
+          "name": "user_away_periods_to_day_idx",
+          "columns": ["to_day"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "user_away_periods_user_id_users_id_fk": {
+          "name": "user_away_periods_user_id_users_id_fk",
+          "tableFrom": "user_away_periods",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "user_away_periods_range_check": {
+          "name": "user_away_periods_range_check",
+          "value": "to_day >= from_day"
+        }
+      }
     },
     "user_time_settings": {
       "name": "user_time_settings",

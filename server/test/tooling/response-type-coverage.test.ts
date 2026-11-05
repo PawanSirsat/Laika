@@ -213,6 +213,20 @@ const UNPAIRED = new Map<string, string>([
   ['LauncherView', 'no client type exists'],
   ['PingAgentResult', 'no client type exists'],
   ['LauncherReportView', 'no client type exists'],
+  // LAI-1130 (D-131): availability and load, served ahead of the web half,
+  // T7 of the Time report programme, which mirrors them — each leaves this
+  // group when its client type exists.
+  ['AvailabilityView', 'no client type exists'],
+  ['WorkWeekView', 'no client type exists'],
+  ['AwayPeriodView', 'no client type exists'],
+  ['AvailabilityListView', 'no client type exists'],
+  ['AvailabilityRowView', 'no client type exists'],
+  ['MemberAvailabilityView', 'no client type exists'],
+  ['LeadAvailabilityView', 'no client type exists'],
+  ['PersonLoadView', 'no client type exists'],
+  ['LoadProjectView', 'no client type exists'],
+  ['LoadCardsView', 'no client type exists'],
+  ['LoadWeekView', 'no client type exists'],
   // LAI-1136 (D-134): served ahead of the web half, LAI-1139, which builds My
   // day's For you and mirrors it.
   ['NoticeView', 'no client type exists'],

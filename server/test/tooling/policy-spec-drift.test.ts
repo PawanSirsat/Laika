@@ -122,6 +122,9 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Sync own time with Solidtime', ['time_sync.own']],
   ['Map Solidtime projects and people', ['time_sync.map']],
   ["Import everyone's Solidtime time", ['time_sync.import_all']],
+  // D-131 (LAI-1130): availability, the person's own declaration.
+  ['Set own availability', ['availability.set_own']],
+  ['See availability of people in your spaces', ['availability.read']],
   // D-134 (LAI-1136): a member's own notices.
   ['Read and dismiss own notices', ['notices.own']],
 ]);

@@ -160,6 +160,8 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'time_sync.own': 'YYYY',
   'time_sync.map': 'YYNN',
   'time_sync.import_all': 'YYNN',
+  'availability.set_own': 'YYYY',
+  'availability.read': 'YYYY',
   'notices.own': 'YYYY',
 
   'project.members.manage': 'YNN',

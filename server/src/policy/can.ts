@@ -645,6 +645,20 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'time_sync.import_all':
       return isAdminUp;
 
+    // | Set own availability | ✓ (session only) | … | ✓ (session only) |
+    // | See availability of people in your spaces | ✓ (session only) | … | ✓ (session only) |
+    //
+    // D-131 (LAI-1130). Every role: availability is **the person's own
+    // declaration**, and the service writes the caller's own rows only — no
+    // row lets anybody set another's. Reading is every role's too, and the
+    // service narrows the answer: people who share a space with the reader,
+    // everyone for an owner or admin. The load columns are not this row's —
+    // they ride `people.analytics.read` (hours) and a space's lead (card
+    // counts), which the service asks for separately.
+    case 'availability.set_own':
+    case 'availability.read':
+      return true;
+
     default:
       return assertNever(action);
   }
