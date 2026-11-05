@@ -16,11 +16,13 @@ import {
   type ReviewQueueItem,
 } from '../../../api/review.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { useToast } from '../../../components/toast/ToastProvider.tsx';
 import { buildLabel } from '../../../api/estimates.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
@@ -70,6 +72,8 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
   const [now, setNow] = useState(() => Date.now());
   const loaded = useRef(false);
   const opener = useRef<HTMLButtonElement | null>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const load = useCallback((signal?: AbortSignal) => {
     getReviewQueue(signal)
@@ -150,17 +154,46 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
     onChanged?.();
   };
 
+  /**
+   * Accept asks first (B9, LAI-1129). The interaction contract wants an Undo
+   * toast here, but **the server has no reversal of an accept**: moving the
+   * task back with `/status` would leave its `accepted` decision on the
+   * record, and a client-side delay would claim a decision the server had not
+   * taken. So a yes first, then the server's answer — never an Undo that
+   * would not really undo.
+   */
   const accept = (item: ReviewQueueItem): void => {
-    setBusy(item.task.id);
-    setFailure(null);
-    acceptReview(item.task.id)
-      .then(decided)
-      .catch((cause: unknown) => {
-        setFailure({ taskId: item.task.id, message: errorText(cause) });
-      })
-      .finally(() => {
-        setBusy(null);
-      });
+    void confirm({
+      title: `Accept ${item.task.key}?`,
+      body: (
+        <p>
+          {item.task.title} moves to done, and the decision is recorded as yours. It cannot be
+          undone here: reopening it later is a new move on the board.
+        </p>
+      ),
+      confirmLabel: 'Accept',
+      cancelLabel: 'Not yet',
+      icon: 'none',
+    }).then((yes) => {
+      if (!yes) return;
+      setBusy(item.task.id);
+      setFailure(null);
+      acceptReview(item.task.id)
+        .then((task) => {
+          toast.show({
+            text: `Accepted ${item.task.key} — it is in ${task.status_name} now.`,
+            tone: 'success',
+            mark: 'review-accepted',
+          });
+          decided();
+        })
+        .catch((cause: unknown) => {
+          setFailure({ taskId: item.task.id, message: errorText(cause) });
+        })
+        .finally(() => {
+          setBusy(null);
+        });
+    });
   };
 
   const sendBack = (reason: string): void => {
@@ -510,6 +543,12 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
                         className="rev-open"
                         href={boardHref(item)}
                         onClick={(event) => {
+                          // Modified clicks stay the browser's — new tab,
+                          // new window — as the Sidebar's do (LAI-1129).
+                          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                            return;
+                          }
+                          if (event.button !== 0) return;
                           event.preventDefault();
                           onNavigate(boardHref(item));
                         }}

@@ -2268,23 +2268,6 @@
 
 /* ------------------------------- LAI-987's features in LAI-893's tab (LAI-999) */
 
-.org-undo {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin: 0 var(--space-5) var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-card);
-  background: var(--accent-bg);
-  font-size: var(--text-body);
-  color: var(--text-primary);
-}
-
-.org-undo-btn {
-  margin-left: auto;
-}
-
 .org-people-space {
   flex: none;
 }
@@ -2363,11 +2346,6 @@
 }
 
 @media (max-width: 40rem) {
-  .org-undo {
-    margin-left: var(--space-4);
-    margin-right: var(--space-4);
-  }
-
   .org-invites li {
     flex-wrap: wrap;
   }
