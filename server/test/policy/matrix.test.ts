@@ -168,6 +168,9 @@ const ORG_MATRIX: OrgRow[] = [
   // | Read and dismiss own notices | ✓ (session only) | … | ✓ (session only) |
   // D-134 (LAI-1136): the person's own, every role.
   ['notices.own', true, true, true, true],
+  // | View own developer setup | ✓ (session only) | … | ✓ (session only) |
+  // D-139 (LAI-1151): the person's own, every role.
+  ['developer_setup.read_own', true, true, true, true],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {

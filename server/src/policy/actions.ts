@@ -100,6 +100,9 @@ export const ORG_ACTIONS = [
   // D-134 (LAI-1136): a person's own notices — being added to a space, and
   // their tool, device or token revoked by somebody else.
   'notices.own',
+  // D-139 (LAI-1151): a person's own developer setup — their pending pairing
+  // requests and their recent setup activity, as Developer access draws them.
+  'developer_setup.read_own',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -390,6 +393,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // message an adder wrote to them is addressed to the person, not to an
   // agent acting for them, and marking one read is the person having seen it.
   'notices.own',
+  // **Your own developer setup is read signed in** (D-139, LAI-1151): the
+  // pairing requests an agent's token could approve for itself are the
+  // person's to see, and `developer_setup.read_any`'s reason holds for one's
+  // own — an agent reads no picture of every device and tool its person has.
+  'developer_setup.read_own',
 ]);
 
 /**

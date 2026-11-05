@@ -263,6 +263,7 @@ be obvious because someone will be asking for it.
 | Set own availability | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | See availability of people in your spaces | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Read and dismiss own notices | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| View own developer setup | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -432,6 +433,14 @@ named**: its repository setups, tool grants and token pins are left out of
 the lists and only their number is served. The own-only reads stay own-only —
 `/devices`, `/agents` and the rest answer another owner's id `404` (§4.63,
 §4.78) — and this is the one route that reads another person's setup.
+
+**"View own developer setup" is `developer_setup.read_own`** (D-139,
+LAI-1151), behind §6.4's `GET /devices/pairing-requests` and `GET
+/me/developer-setup/activity`: your own pending pairing requests, with the
+fingerprint the approve call echoes and never the code (D-124), and your own
+last 30 days of setup activity, the items the admin read lists. Every role
+holds it, **session only**, and the services read the caller's own rows only;
+reading your own writes no look (D-102 rule 3).
 
 **"Revoke a member's tool or unpair their device" is `agent.revoke_any` and
 `device.revoke_any`** (D-133, LAI-1137), behind `POST
@@ -4140,6 +4149,7 @@ GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's he
 GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts, timer and day note included; logged   (owner, admin by default; session only; not yourself; LAI-957)
 GET    /api/v1/people/:id/time/summary       ?from=&to= — that person's GET /me/time/summary answer; logged as a look at their time, no day   (owner, admin by default; session only; not yourself; LAI-526)
 GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
+GET    /api/v1/me/developer-setup/activity   → { now, data: [{ at, kind: 'paired'|'tool_added'|'tool_revoked'|'device_unpaired'|'token_revoked'|'project_check_failed', subject, by: { id, name } | null }] } — your own last 30 days, newest first, the items /people/:id/developer-setup lists in activity; no look written (developer_setup.read_own, session only; D-139, LAI-1151; not paginated)
 GET    /api/v1/people/:id/developer-setup    → { now, user, can_revoke, summary, devices, tools, pending_pairing, repositories, tokens: { personal, tool_credentials }, activity } — the member's whole setup; no pairing code or token secret; a space the reader cannot open counted, never named; logged as kind developer_setup; yourself is 422 use_developer_access   (owner, admin by default; session only; D-132, LAI-1137)
 POST   /api/v1/people/:id/agents/:agentId/revoke    → the tool as the setup serves it; D-114 item 2's revoke plus revoked_by and one tool_revoked notice; idempotent; another owner's agent is 404   (owner, admin by default, not on the owner's setup — 403 not_for_owner; session only; D-133)
 POST   /api/v1/people/:id/devices/:deviceId/revoke  → { device, revoked_agent_ids } — the device revoked, every active tool on it revoked, its live pairing requests cancelled, one device_unpaired notice; idempotent   (as above)
@@ -4283,6 +4293,7 @@ GET    /api/v1/devices                       own devices (§4.78), active first 
 GET    /api/v1/devices/:id                   one own device, the same shape; another owner's or an unknown id is the same 404 (agent.read_own)
 PATCH  /api/v1/devices/:id                   body { display_name } → the device, renamed with its agents' device_label (§4.78, LAI-1095); 422 invalid_device_name, 409 device_name_taken / device_revoked (agent.manage_own, session only)
 POST   /api/v1/devices/pairing-requests      body { kind: 'local'|'cloud', display_name, device_id? } → 201 { pairing, user_code, command }; the code is shown once (§4.79, agent.manage_own, session only)
+GET    /api/v1/devices/pairing-requests      own requests still waiting (open, claimed or approved, not expired), newest first → { data: [the request, as below] }; never the code; nobody else's (developer_setup.read_own, session only; D-139, LAI-1151; not paginated)
 GET    /api/v1/devices/pairing-requests/:id  one own request → { id, state, kind, display_name, device_id, claimed: { key_fingerprint, os, cli_version, claimed_at } | null, created_at, expires_at, decided_at, completed_at }; never the code (agent.read_own)
 POST   /api/v1/devices/pairing-requests/:id/approve   body { key_fingerprint } → the request; from claimed only (agent.manage_own, session only)
 POST   /api/v1/devices/pairing-requests/:id/deny      body { key_fingerprint } → the request, denied (agent.manage_own, session only)

@@ -373,6 +373,22 @@ export function pendingPairingsOf(
 }
 
 /**
+ * `GET /devices/pairing-requests`: the caller's own requests still waiting,
+ * as {@link pendingPairingsOf} reads them for an admin — the fingerprint the
+ * approve call echoes, never the code (D-124, D-132 item 2). Session only
+ * (`developer_setup.read_own`, D-139, LAI-1151); only the caller's rows are
+ * read, so nobody else's request can appear.
+ */
+export function listOwnPendingPairings(
+  db: Db,
+  actor: ResolvedActor,
+  now = Date.now(),
+): DevicePairingView[] {
+  assertCan(actor, 'developer_setup.read_own');
+  return pendingPairingsOf(db, actor.userId, now);
+}
+
+/**
  * Cancel every live request that pairs `deviceId`, inside the caller's write
  * transaction — the device was unpaired (D-133, LAI-1137), so a request to
  * give it a key must not complete afterwards. Returns how many.

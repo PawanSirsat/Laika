@@ -34,7 +34,11 @@ import {
   sprintBudgetRoutes,
   taskBudgetRoutes,
 } from './http/routes/token-budgets.ts';
-import { meAnalyticsViewRoutes, peopleRoutes } from './http/routes/people.ts';
+import {
+  meAnalyticsViewRoutes,
+  meDeveloperSetupRoutes,
+  peopleRoutes,
+} from './http/routes/people.ts';
 import { meAvailabilityRoutes } from './http/routes/availability.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
@@ -391,6 +395,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/me`, meAnalyticsViewRoutes({ db }));
     // Your own profile and heatmap, every role (D-139 item 1, LAI-1150).
     app.route(`${API_BASE}/me`, meProfileRoutes({ db }));
+    // Your own developer setup's activity (D-139, LAI-1151); no look.
+    app.route(`${API_BASE}/me`, meDeveloperSetupRoutes({ db }));
     // A person's own availability (D-131, LAI-1130); the people reads are above.
     app.route(`${API_BASE}/me`, meAvailabilityRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db, publicUrl: options.publicUrl }));

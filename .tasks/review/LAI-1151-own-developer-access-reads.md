@@ -2,10 +2,12 @@
 id: LAI-1151
 title: 'Your own developer access: pending pairing requests and recent setup activity'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-1149]
-status: backlog
+status: review
+finished: 2026-11-06T13:10:00+05:30
+started: 2026-11-06T12:00:00+05:30
 ---
 
 ## Goal
@@ -17,12 +19,12 @@ has a `/me` read today.
 
 ## Acceptance criteria
 
-- [ ] A session read of your own pending pairing requests (device label,
+- [x] A session read of your own pending pairing requests (device label,
       platform, requested at, key fingerprint for the approve call) — never the
       pairing code (D-124, D-132 item 2).
-- [ ] A session read of your own recent setup activity, 30 days, the same items
+- [x] A session read of your own recent setup activity, 30 days, the same items
       `/people/:id/developer-setup` lists for an admin; no look written.
-- [ ] Policy rows in §3.1 and the routes in §6.4 (named edits); tests for both
+- [x] Policy rows in §3.1 and the routes in §6.4 (named edits); tests for both
       reads and that another person's requests never appear.
 
 ## Notes / context

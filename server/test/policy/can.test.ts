@@ -519,6 +519,8 @@ describe('the cases LAI-004 calls out by name', () => {
       // D-139 item 1 (LAI-1150): reading their own profile and heatmap,
       // session only — `profile.read`'s reason for not being a read action.
       const ownProfile = action === 'profile.read_own';
+      // D-139 (LAI-1151): reading their own pairing requests and setup activity.
+      const ownDeveloperSetup = action === 'developer_setup.read_own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -534,7 +536,8 @@ describe('the cases LAI-004 calls out by name', () => {
           ownAgents ||
           ownAvailability ||
           ownNotices ||
-          ownProfile,
+          ownProfile ||
+          ownDeveloperSetup,
       );
     }
   });

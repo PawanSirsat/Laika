@@ -652,6 +652,14 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'notices.own':
       return true;
 
+    // | View own developer setup | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+    //
+    // D-139 (LAI-1151): every role, and nobody else's — the services read the
+    // caller's own pairing requests and setup only, so no path names anybody
+    // else. `developer_setup.read_any` is the other person's, logged.
+    case 'developer_setup.read_own':
+      return true;
+
     // | Set the organisation's Time setting | ✓ (session only) | ✓ (session only) | — | — |
     //
     // D-088 item 5's organisation switch (LAI-787): its own row, not
