@@ -637,6 +637,13 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'time_sync.import_all':
       return isAdminUp;
 
+    // | View the organisation's Time report | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // D-130 item 2 (LAI-1135): everyone's time per person, so *See everyone's
+    // analytics* (LAI-958) with the per-person reads it sits beside. A space
+    // admin's totals are §3.2's `time.report.read_project`.
+    case 'time.report.read':
+      return granted(actor, action);
     // | Set own availability | ✓ (session only) | … | ✓ (session only) |
     // | See availability of people in your spaces | ✓ (session only) | … | ✓ (session only) |
     //
@@ -833,6 +840,14 @@ function canProjectAction(
     // pure function is not given.
     case 'project.leave':
       return true;
+
+    // | View the space's time totals | ✓ (session only) | — | — |
+    //
+    // D-130 item 3 as D-136 amends it (LAI-1135): one space, one figure a
+    // week, no per-person split. The service decides which weeks are shown —
+    // three people besides the reader — since that is a fact about rows.
+    case 'time.report.read_project':
+      return isLead;
 
     default:
       return assertNever(action);

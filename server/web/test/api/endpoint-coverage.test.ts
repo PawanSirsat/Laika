@@ -121,6 +121,8 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   // Built, served, and waiting on a screen. Each names the task, not a reason.
   'api/v1/projects/*/tags/*': 'LAI-235 — a tag cannot be removed from a project',
   'api/v1/activity': 'LAI-237 — the org-wide feed; only the per-project one is read',
+  // LAI-1135 serves the Time report; LAI-1138's component is its caller. Named by LAI-1135 (D-033).
+  'api/v1/time/report': 'LAI-1138 — the Time report component (My day, profile, Insights → Time)',
   // LAI-1050 serves pairing; the V3 Add device wizard (LAI-1061) is the
   // owner's caller, and `laika device pair` (slice C3) the device's — the two
   // the browser never makes. Named by LAI-1050 (D-033).

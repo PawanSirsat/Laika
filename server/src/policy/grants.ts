@@ -38,6 +38,8 @@ export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[
     'profile.activity.read',
     'usage.read_people',
     'people.analytics.read',
+    // D-130 (LAI-1135): the organisation's Time report, per person.
+    'time.report.read',
   ],
   see_org_activity: ['audit_log.export'],
   open_all_projects: [],

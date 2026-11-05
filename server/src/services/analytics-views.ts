@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, lt, or, type SQL } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type AnalyticsViewKind } from '../db/enums.ts';
@@ -10,7 +10,8 @@ import { assertCan } from '../policy/can.ts';
  * Who looked at a person's analytics (SPEC §4.59, D-102 rule 3, D-088 item 7,
  * LAI-957): the one write every mirrored read makes, and the person's list.
  *
- * One `analytics_views` row per read of somebody else, written in the same
+ * One `analytics_views` row per read of somebody else — one per look, since
+ * D-135: a repeat inside ten minutes is the same look — written in the same
  * SQLite transaction as the read: a read that fails writes nothing, and a
  * log that cannot be written fails the read. Its own module, importing no
  * other service, so every reader may log through it — `people-analytics.ts`,
@@ -33,6 +34,50 @@ export interface ListAnalyticsViewsOptions {
 }
 
 /**
+ * How long one look covers (D-135): the same viewer reading the same person's
+ * data of the same kind — and the same day, for My day — again inside this
+ * writes no second row. A report filter clicked across forty people writes
+ * forty rows once, not forty a click; every viewer and subject pair is still
+ * recorded, which is what D-102 rule 3 asks.
+ */
+export const LOOK_DEDUPE_MS = 10 * 60_000;
+
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/**
+ * One look, written unless the same one was written inside
+ * {@link LOOK_DEDUPE_MS} — on `analytics_views_subject_idx`, which leads with
+ * the subject and the time.
+ */
+function logLook(
+  tx: Db | Tx,
+  viewerId: string,
+  subjectId: string,
+  kind: AnalyticsViewKind,
+  day: string | null,
+  now: number,
+): void {
+  const recent = tx
+    .select({ id: analyticsViews.id })
+    .from(analyticsViews)
+    .where(
+      and(
+        eq(analyticsViews.subjectId, subjectId),
+        gt(analyticsViews.viewedAt, now - LOOK_DEDUPE_MS),
+        eq(analyticsViews.viewerId, viewerId),
+        eq(analyticsViews.kind, kind),
+        day === null ? isNull(analyticsViews.day) : eq(analyticsViews.day, day),
+      ),
+    )
+    .limit(1)
+    .get();
+  if (recent !== undefined) return;
+  tx.insert(analyticsViews)
+    .values({ id: newId(), viewerId, subjectId, kind, day, viewedAt: now })
+    .run();
+}
+
+/**
  * Run `read` and log it as `viewer` reading `subjectId`'s `kind`, in one
  * transaction. A person reading their own writes no row: nobody looked.
  *
@@ -48,19 +93,31 @@ export function readLogged<T>(
   dayOfRead: (view: T) => string | null = () => null,
   now: number = Date.now(),
 ): T {
-  if (subjectId === viewer.userId) return read();
+  return readLoggedMany(db, viewer, kind, read, () => [subjectId], dayOfRead, now);
+}
+
+/**
+ * `readLogged` for a read that shows several people at once (D-130, LAI-1135):
+ * the Time report logs **each person it shows per person** — `subjectsOf`
+ * names them from the answer, since who appears is what the read found. The
+ * viewer is never one of them, and each is deduped on its own.
+ */
+export function readLoggedMany<T>(
+  db: Db,
+  viewer: ResolvedActor,
+  kind: AnalyticsViewKind,
+  read: () => T,
+  subjectsOf: (view: T) => readonly string[],
+  dayOfRead: (view: T) => string | null = () => null,
+  now: number = Date.now(),
+): T {
   return db.transaction((tx) => {
     const view = read();
-    tx.insert(analyticsViews)
-      .values({
-        id: newId(),
-        viewerId: viewer.userId,
-        subjectId,
-        kind,
-        day: dayOfRead(view),
-        viewedAt: now,
-      })
-      .run();
+    const day = dayOfRead(view);
+    for (const subjectId of new Set(subjectsOf(view))) {
+      if (subjectId === viewer.userId) continue;
+      logLook(tx, viewer.userId, subjectId, kind, day, now);
+    }
     return view;
   });
 }

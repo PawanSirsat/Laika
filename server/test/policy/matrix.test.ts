@@ -120,6 +120,9 @@ const ORG_MATRIX: OrgRow[] = [
   ['usage.read_org', true, true, false, false],
   // | View anyone's token usage, per person | ✓ (session only) | ✓ (session only) | — | — |
   ['usage.read_people', true, true, false, false],
+  // | View the organisation's Time report | ✓ (session only) | ✓ (session only) | — | — |
+  // D-130 (LAI-1135): *See everyone's analytics*.
+  ['time.report.read', true, true, false, false],
   // | View own token usage | ✓ (session only) | … | ✓ (session only) |
   ['usage.read_own', true, true, true, true],
   // | Set API-equivalent prices | ✓ (session only) | ✓ (session only) | — | — |
@@ -296,6 +299,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // | Leave a project | ✓ | ✓ | ✓ |
   // D-103 item 5; the last lead is the service's 409, not a cell.
   ['project.leave', true, true, true],
+  // | View the space's time totals | ✓ (session only) | — | — |
+  // D-130 item 3 (LAI-1135); the three-person floor is the service's.
+  ['time.report.read_project', true, false, false],
 ];
 
 /** An org `member` so the org role never grants implicit lead. */

@@ -82,6 +82,9 @@ export const ORG_ACTIONS = [
   'time_sync.own',
   'time_sync.map',
   'time_sync.import_all',
+  // D-130 (LAI-1135): the organisation's Time report, everyone's time per
+  // person over a stretch — *See everyone's analytics*.
+  'time.report.read',
   // D-131 (LAI-1130): a person's own availability — status, hours, note,
   // tags, working week and away periods — and reading it for people who
   // share a space with the reader.
@@ -127,6 +130,10 @@ export const PROJECT_ACTIONS = [
   'budget.set',
   // D-103 item 5 (LAI-976): any member may leave a space.
   'project.leave',
+  // D-130 item 3 as D-136 amends it (LAI-1135): a space admin reads one
+  // space's confirmed minutes a week, a week of fewer than three people
+  // other than the reader withheld — no per-person split, nothing else.
+  'time.report.read_project',
 ] as const;
 
 /**
@@ -329,6 +336,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'time_sync.own',
   'time_sync.map',
   'time_sync.import_all',
+  // **The Time report is hours per person, or a space's hours** (D-130,
+  // LAI-1135): the rule above, so no token reads it, its own person's
+  // included.
+  'time.report.read',
+  'time.report.read_project',
   // **Availability is the person's own declaration** (D-131, LAI-1130): set
   // signed in, as their time settings are — an agent must not say its person
   // is open to more work — and read on the web app's screens, never by a token.
