@@ -114,6 +114,37 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
     ],
   },
   {
+    title: 'Glass',
+    note: 'The frosted surfaces (LAI-1132): three translucent levels — chrome, panels and cards, floating — each with the opaque step it falls back to, the solid surface a glass element inside glass uses, the hover wash, the hairline borders, the blue→lavender sheen and the darker scrim a modal floats over.',
+    tokens: [
+      '--glass-1',
+      '--glass-2',
+      '--glass-3',
+      '--glass-1-solid',
+      '--glass-2-solid',
+      '--glass-3-solid',
+      '--glass-solid',
+      '--glass-hover',
+      '--glass-border',
+      '--glass-border-strong',
+      '--glass-sheen',
+      '--glass-scrim',
+    ],
+  },
+  {
+    title: 'Ambient',
+    note: 'The fixed layer behind the shell (LAI-1132): the diagonal base, three soft hazes, the corner discs and the line of light on their rims, and the brightest (dark) or darkest (light) colour it reaches — the backdrop the glass AA pairs are measured against.',
+    tokens: [
+      '--ambient-base',
+      '--ambient-orb-1',
+      '--ambient-orb-2',
+      '--ambient-orb-3',
+      '--ambient-arc',
+      '--ambient-rim',
+      '--ambient-peak',
+    ],
+  },
+  {
     title: 'Priority',
     note: 'The three dot colours.',
     tokens: ['--priority-high', '--priority-medium', '--priority-low'],
@@ -198,7 +229,17 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
 export const ALL_COLOR_TOKENS: readonly string[] = COLOR_TOKENS.flatMap((g) => g.tokens);
 
 /** Themed but not a colour, so it is listed separately. */
-export const ELEVATION_TOKENS = ['--shadow-card'] as const;
+export const ELEVATION_TOKENS = [
+  '--shadow-card',
+  // LAI-1132: one shadow per elevation, the glass edge light and glow, and
+  // the two-ring focus that holds on any glass level.
+  '--shadow-panel',
+  '--shadow-popover',
+  '--shadow-toast',
+  '--glass-highlight',
+  '--glass-glow',
+  '--focus-ring',
+] as const;
 
 /**
  * Theme-independent: the type scale's sizes and line-heights, one pair per step.
@@ -251,6 +292,64 @@ export const SHARED_MISC_TOKENS = [
   '--motion-step',
 ] as const;
 
+/** Glass, colour-free (LAI-1132): blur per level, capped at 32px, and saturation. */
+export const GLASS_SHARED_TOKENS = [
+  '--glass-blur-1',
+  '--glass-blur-2',
+  '--glass-blur-3',
+  '--glass-blur-scrim',
+  '--glass-saturate',
+] as const;
+
+/** Motion (LAI-1132): durations and easings every transition shares. */
+export const MOTION_TOKENS = [
+  '--duration-fast',
+  '--duration-base',
+  '--duration-slow',
+  '--ease-standard',
+  '--ease-emphasised',
+] as const;
+
+/**
+ * The layer ladder (LAI-1132), low to high. Order is the contract — a
+ * popover or menu opened from a panel must outrank it (B16) — and
+ * `tokens.test.ts` asserts it strictly ascending in exactly this order.
+ */
+export const LAYER_TOKENS = [
+  '--layer-sticky',
+  '--layer-header',
+  '--layer-sidebar',
+  '--layer-drawer',
+  '--layer-overlay',
+  '--layer-panel',
+  '--layer-popover',
+  '--layer-menu',
+  '--layer-tooltip',
+  '--layer-dialog',
+  '--layer-toast',
+] as const;
+
+/**
+ * Text on glass, composited over the worst-case backdrop (LAI-1132).
+ *
+ * A glass level is translucent, so its effective colour depends on what is
+ * behind it. The worst case is `--ambient-peak` — the brightest point of the
+ * dark ambient layer, the darkest of the light — and every level carrying
+ * text must clear AA over it. Blur is ignored: it lowers local contrast and
+ * can never be relied on to raise it.
+ */
+export const GLASS_CONTRAST_PAIRS: readonly {
+  readonly text: string;
+  readonly glass: string;
+  readonly backdrop: string;
+}[] = [
+  ...(['--glass-1', '--glass-2', '--glass-3'] as const).flatMap((glass) =>
+    (['--text-primary', '--text-secondary'] as const).flatMap((text) =>
+      (['--ambient-peak', '--bg-canvas'] as const).map((backdrop) => ({ text, glass, backdrop })),
+    ),
+  ),
+];
+
 /**
  * Text-on-background pairs that must meet WCAG AA, in both themes.
  *
@@ -276,4 +375,9 @@ export const CONTRAST_PAIRS: readonly { readonly text: string; readonly backgrou
   { text: '--brand-legacy-purple', background: '--bg-card' },
   { text: '--on-accent', background: '--brand-periwinkle' },
   { text: '--on-accent', background: '--brand-legacy-purple' },
+  // LAI-1132: the opaque steps glass falls back to, and solid-on-glass.
+  ...(['--glass-1-solid', '--glass-2-solid', '--glass-3-solid', '--glass-solid'] as const).flatMap(
+    (background) =>
+      (['--text-primary', '--text-secondary'] as const).map((text) => ({ text, background })),
+  ),
 ];

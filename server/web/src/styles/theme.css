@@ -226,8 +226,59 @@
   --brand-splash-arc: rgba(143, 167, 198, 0.07);
   --brand-panel: rgba(28, 35, 50, 0.55);
 
+  /* ---- glass (LAI-1132): the owner's "greater impact" frosted surfaces ----
+     Three levels — 1 chrome (rails, bars), 2 panels and cards, 3 floating
+     (menus, popovers, dialogs, toasts) — each a translucent Slate over the
+     ambient layer, with the opaque step it falls back to. `--glass-solid` is
+     the surface a glass element inside another glass element uses instead
+     (never nest a blur). Alphas are set by the worst-case AA rule in
+     tokens.test.ts: text on each level clears 4.5:1 composited over the
+     brightest point of the ambient layer behind it. */
+  --glass-1: rgba(22, 29, 44, 0.62);
+  --glass-2: rgba(28, 35, 50, 0.7);
+  --glass-3: rgba(30, 38, 55, 0.8);
+  --glass-1-solid: #121826;
+  --glass-2-solid: #1c2332;
+  --glass-3-solid: #222a3b;
+  --glass-solid: #1c2332;
+  --glass-hover: rgba(185, 194, 214, 0.07);
+  --glass-border: rgba(185, 194, 214, 0.16);
+  --glass-border-strong: rgba(185, 194, 214, 0.3);
+  /* A hairline of light along the top edge, and a blue→lavender sheen. */
+  --glass-highlight: inset 0 1px 0 rgba(244, 247, 251, 0.1);
+  --glass-sheen: linear-gradient(
+    135deg,
+    rgba(143, 167, 230, 0.1),
+    rgba(167, 164, 230, 0.05) 45%,
+    transparent 70%
+  );
+  --glass-glow: 0 0 0 1px rgba(141, 164, 242, 0.55), 0 0 18px rgba(111, 143, 232, 0.35);
+  /* The scrim a modal surface floats over: darker than `--scrim`, and blurred. */
+  --glass-scrim: rgba(5, 8, 15, 0.55);
+  /* The focus ring that holds on any glass: a canvas inner ring, a bright outer. */
+  --focus-ring: 0 0 0 2px #0b0f1a, 0 0 0 4px #b8c8ff;
+
+  /* ---- the ambient layer behind the shell (LAI-1132) ----
+     Matched to docs/design/laika-brand-board.png: an Ink canvas lifting to
+     navy on the diagonal, a Mist Blue haze top-left, and two great discs in
+     the corners whose rims catch a soft line of light. No lavender — the
+     board keeps that for the mark. */
+  --ambient-base: linear-gradient(155deg, #111b30 0%, #0b0f1a 42%, #0c1220 70%, #131d33 100%);
+  --ambient-orb-1: rgba(75, 98, 130, 0.34);
+  --ambient-orb-2: rgba(63, 86, 130, 0.22);
+  --ambient-orb-3: rgba(90, 112, 170, 0.16);
+  --ambient-arc: rgba(143, 167, 198, 0.1);
+  --ambient-rim: rgba(185, 200, 230, 0.28);
+  /* The brightest colour the ambient layer reaches — every orb, the disc and
+     its rim stacked at full strength on the lightest stop: the AA worst case. */
+  --ambient-peak: #627394;
+
   /* ---- elevation ---- */
   --shadow-card: 0 1px 2px rgba(5, 8, 15, 0.35);
+  /* LAI-1132: one shadow per elevation, so a level never invents its own. */
+  --shadow-panel: 0 18px 48px rgba(3, 6, 12, 0.5);
+  --shadow-popover: 0 12px 32px rgba(3, 6, 12, 0.5);
+  --shadow-toast: 0 10px 28px rgba(3, 6, 12, 0.55);
 }
 
 /* ===================================================================
@@ -376,7 +427,44 @@
   --brand-splash-arc: rgba(75, 98, 130, 0.08);
   --brand-panel: rgba(255, 255, 255, 0.6);
 
+  /* ---- glass (LAI-1132) ---- */
+  --glass-1: rgba(255, 255, 255, 0.58);
+  --glass-2: rgba(255, 255, 255, 0.68);
+  --glass-3: rgba(255, 255, 255, 0.8);
+  --glass-1-solid: #ffffff;
+  --glass-2-solid: #ffffff;
+  --glass-3-solid: #ffffff;
+  --glass-solid: #ffffff;
+  --glass-hover: rgba(11, 15, 26, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.75);
+  --glass-border-strong: rgba(75, 98, 130, 0.3);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --glass-sheen: linear-gradient(
+    135deg,
+    rgba(143, 178, 230, 0.16),
+    rgba(167, 164, 230, 0.08) 45%,
+    transparent 70%
+  );
+  --glass-glow: 0 0 0 1px rgba(63, 91, 209, 0.5), 0 0 18px rgba(63, 91, 209, 0.22);
+  --glass-scrim: rgba(11, 15, 26, 0.32);
+  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #2f48b8;
+
+  /* ---- the ambient layer (LAI-1132): matched to laika-logo-light.png and
+     laika-loaders.png — Paper with a lavender cast, Fog shading, the same
+     corner discs drawn in Glacier ---- */
+  --ambient-base: linear-gradient(155deg, #f6f7fc 0%, #eef0f8 50%, #e9ecf5 100%);
+  --ambient-orb-1: rgba(143, 167, 198, 0.28);
+  --ambient-orb-2: rgba(167, 164, 230, 0.18);
+  --ambient-orb-3: rgba(185, 194, 214, 0.35);
+  --ambient-arc: rgba(143, 167, 198, 0.1);
+  --ambient-rim: rgba(120, 140, 190, 0.35);
+  /* The darkest colour the light ambient reaches — its AA worst case. */
+  --ambient-peak: #a2afd0;
+
   --shadow-card: 0 1px 2px rgba(11, 15, 26, 0.07);
+  --shadow-panel: 0 18px 48px rgba(30, 41, 66, 0.18);
+  --shadow-popover: 0 12px 32px rgba(30, 41, 66, 0.16);
+  --shadow-toast: 0 10px 28px rgba(30, 41, 66, 0.2);
 }
 
 /* ===================================================================
@@ -445,4 +533,53 @@
   /* Brand motion (LAI-1126): the icon loader's turn and the splash's step. */
   --motion-spin: 1.1s;
   --motion-step: 1.6s;
+
+  /* ---- glass, colour-free (LAI-1132) ----
+     Blur per level, capped: the guard in glass-guard.test.ts refuses any
+     blur over 32px and any blur literal outside glass.css. */
+  --glass-blur-1: 14px;
+  --glass-blur-2: 20px;
+  --glass-blur-3: 26px;
+  --glass-blur-scrim: 6px;
+  --glass-saturate: 1.6;
+
+  /* ---- motion (LAI-1132) ---- */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasised: cubic-bezier(0.3, 0, 0, 1.2);
+
+  /*
+   * ---- layers (LAI-1132): one ladder, low to high ----
+   * Fixes B16 — a Dropdown (60) opened from a SidePanel (61) painted under
+   * it. Anything that opens *from* a surface sits above it: popovers and
+   * menus outrank panels, dialogs outrank menus, toasts outrank everything.
+   * Screens with their own local stacking (the board's 30/31 popovers, the
+   * timeline) keep their numbers; these are the shared surfaces'.
+   */
+  --layer-sticky: 5;
+  --layer-header: 10;
+  --layer-sidebar: 15;
+  --layer-drawer: 20;
+  --layer-overlay: 40;
+  --layer-panel: 60;
+  --layer-popover: 65;
+  --layer-menu: 70;
+  --layer-tooltip: 75;
+  --layer-dialog: 80;
+  --layer-toast: 90;
+}
+
+/* One rule for reduced motion (LAI-1132): every transition and animation is
+   cut to near-instant, so no component has to remember its own. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
