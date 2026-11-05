@@ -5,8 +5,9 @@ area: web
 assignee: shell
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-05T11:24:46Z
+finished: 2026-11-05T11:33:35Z
 ---
 
 Board: LAIKA-1004, a subtask of LAIKA-997. Filed from CHIEF's block by polly
@@ -29,11 +30,11 @@ untruncated grep.
 
 ## Acceptance criteria
 
-- [ ] The test waits only for animations that end, and a cancelled one counts
+- [x] The test waits only for animations that end, and a cancelled one counts
       as ended.
-- [ ] Every other site of the same wait under `server/web/test/` is fixed too,
+- [x] Every other site of the same wait under `server/web/test/` is fixed too,
       and the census is listed in the log.
-- [ ] The style assertions are unchanged; a mutation of the expected fill and
+- [x] The style assertions are unchanged; a mutation of the expected fill and
       of the expected border each turns the test red.
-- [ ] The file runs green 20 times in a row locally.
-- [ ] `pnpm lint` and `pnpm format` exit 0.
+- [x] The file runs green 20 times in a row locally.
+- [x] `pnpm lint` and `pnpm format` exit 0.
