@@ -100,7 +100,7 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/use-setup-status.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   [
     'components/forms/use-first-focus.ts',
-    'a React hook — no renderer in this package (CONVENTIONS §4); dead-ends.test.ts drives it on Sign in in a browser (LAI-1141)',
+    'a React hook — no renderer in this package (CONVENTIONS §4); dead-ends.test.ts drives it on Sign in in a browser (LAI-1191)',
   ],
   ['api/use-board.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-statuses.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],

@@ -154,7 +154,7 @@
   box-shadow: 0 1px 0 var(--border-card);
 }
 
-/* Tracking off (LAI-1141): the page's name and nothing to walk. */
+/* Tracking off (LAI-1191): the page's name and nothing to walk. */
 .myday-page[data-phone] .myday-phone-off-title {
   margin: 0;
   padding: 0.75rem 1rem;

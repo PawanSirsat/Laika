@@ -172,7 +172,7 @@ export function DeviceDetails({
             >
               Disconnect device…
             </button>
-            {/* Never a button that does nothing without saying why (LAI-1141, the audit's B10). */}
+            {/* Never a button that does nothing without saying why (LAI-1191, the audit's B10). */}
             {device.active_count === 0 && (
               <p className="dv3-note" id={DISCONNECT_WHY} data-disconnect-why>
                 No tool on this device is active, so there is nothing to disconnect.

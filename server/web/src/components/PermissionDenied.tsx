@@ -14,7 +14,7 @@ export interface PermissionDeniedProps {
   readonly requiredRole: Role;
   /**
    * The grant that would allow it, in the Roles & permissions grid's words
-   * (LAI-1141). Named instead of the role where the owner can give it to any
+   * (LAI-1191). Named instead of the role where the owner can give it to any
    * role: *needs admin* would be untrue of an organisation that granted it.
    * The role stays the default grant's, for the screens that ask it.
    */

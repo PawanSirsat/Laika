@@ -1,5 +1,5 @@
 /**
- * *On your plate* while time tracking is off (LAI-1141): the reader's open
+ * *On your plate* while time tracking is off (LAI-1191): the reader's open
  * work, overdue first, then due soon, then in progress, then the rest — the
  * order made here because `GET /tasks` takes no due-date filter.
  */

@@ -17,7 +17,7 @@ export interface MyDayPhoneHeadProps {
   /** Confirm, or the day note — on the person's own day only. */
   readonly action?: ReactNode;
   /**
-   * Time tracking is off for the organisation (LAI-1141): there is no day to
+   * Time tracking is off for the organisation (LAI-1191): there is no day to
    * walk, so no day row, week or total — only the page's name.
    */
   readonly off?: boolean;

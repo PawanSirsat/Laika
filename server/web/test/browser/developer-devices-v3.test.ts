@@ -1368,7 +1368,7 @@ void describe('V3 Devices: renaming a device (LAI-1095)', () => {
   }
 });
 
-void describe('an unavailable action says why (LAI-1141, the audit’s B10)', () => {
+void describe('an unavailable action says why (LAI-1191, the audit’s B10)', () => {
   void test('Reconnect with no live credential to replace: the reason, described by it, and a click that opens nothing', async () => {
     const spent = deviceRow({
       id: 'd1',

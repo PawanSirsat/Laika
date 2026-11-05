@@ -60,7 +60,7 @@ void describe('the page states as designed (LAI-513)', () => {
   });
 
   void test('time tracking off for the organisation: the note, the way to the setting, no controls and no week', async () => {
-    // Since LAI-1141 the page is the reader's open work under a one-line note
+    // Since LAI-1191 the page is the reader's open work under a one-line note
     // (my-day-time-off.test.ts has the work); this keeps the note's own words.
     const h = await openDay(
       TODAY,

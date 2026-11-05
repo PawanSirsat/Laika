@@ -2,7 +2,7 @@ import { DAY_MS, isOverdue, startOfUtcDay } from '../../../api/date-only.ts';
 import type { TaskStatus, TaskSummary } from '../../../api/tasks.ts';
 
 /**
- * *On your plate* while time tracking is off (LAI-1141, the audit's V2): My
+ * *On your plate* while time tracking is off (LAI-1191, the audit's V2): My
  * day has no day to show, so it shows the reader's open work instead — what
  * is overdue, then what is due soon, then what is in progress, then the rest
  * — rather than a card that only leads to a setting most readers cannot

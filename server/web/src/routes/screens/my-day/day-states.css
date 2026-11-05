@@ -26,7 +26,7 @@
   padding: 2rem 1.5rem;
 }
 
-/* Tracking off (LAI-1141): a one-line note over the reader's open work. */
+/* Tracking off (LAI-1191): a one-line note over the reader's open work. */
 .dstate-off-note {
   margin: 0;
   display: flex;

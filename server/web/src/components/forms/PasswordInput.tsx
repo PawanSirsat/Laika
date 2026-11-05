@@ -19,7 +19,7 @@ export interface PasswordInputProps {
   readonly showStrength?: boolean;
   /**
    * Focused when it mounts: the first field of a page that is nothing but its
-   * form — sign in, first boot, an invite, a reset (LAI-1141).
+   * form — sign in, first boot, an invite, a reset (LAI-1191).
    */
   readonly autoFocus?: boolean;
 }

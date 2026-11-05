@@ -93,7 +93,7 @@ function rowNote(row: OffPlateRow): {
 /**
  * Time tracking is off for the organisation (`settings.org_mode === 'off'`):
  * nothing is collected or drafted, so there is no day to draw. Rather than a
- * card that only leads to a setting (the audit's V2, LAI-1141), My day shows
+ * card that only leads to a setting (the audit's V2, LAI-1191), My day shows
  * the reader's own open work — overdue, due soon, in progress, the rest —
  * each opening in its own space, under a one-line note that tracking is off.
  * The note links to the setting only for a reader who may change it.

@@ -1,5 +1,5 @@
 ---
-id: LAI-1141
+id: LAI-1191
 title: 'My day with time tracking off shows your work; small dead ends and correctness fixes'
 area: web
 assignee: shell
@@ -61,3 +61,13 @@ was unpushed. Under CLAUDE.md §3 the id is renumbered and earlier commits are
 not rewritten. The five commits `cbc50dba`, `0cb4513c`, `377eec2b`,
 `874e4908` and `d4a6f285` carry `[LAI-1130]` in error: they are this task's
 (LAI-1141), not LAI-1130's. Every later commit carries `[LAI-1141]`.
+
+**Renumbered again, LAI-1141 to LAI-1191 (2026-11-05).** `origin/master` took
+LAI-1141 for `LAI-1141-wizard-flake.md` (PR #279) while this one was in
+review. Under CLAUDE.md §3 the id is renumbered and earlier commits are not
+rewritten. Commits carrying `[LAI-1130]` (`cbc50dba`, `0cb4513c`, `377eec2b`,
+`874e4908`, `d4a6f285`) and `[LAI-1141]` (`218642d3` through `9f7fcb84`, and
+the renumber commit `17666e8e` before them) are this task's — LAI-1191 — in error,
+and stand as they are. The branch keeps its name,
+`LAI-1141-myday-and-dead-ends`, so PR #287 stays intact; the name is
+historical.

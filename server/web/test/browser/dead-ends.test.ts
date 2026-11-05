@@ -1,5 +1,5 @@
 /**
- * Small dead ends the UX audit found (LAI-1141): the Insights badge counted
+ * Small dead ends the UX audit found (LAI-1191): the Insights badge counted
  * token alerts and opened Capacity (B8); an organisation with no space hid
  * SPACES and gave the empty board no way forward (B21); a profile refused
  * with *needs admin* where the gate is a grant; the auth pages left focus on
@@ -48,7 +48,7 @@ after(async () => {
   await closeBrowser();
 });
 
-void describe('the Insights badge is token alerts (LAI-1141, B8)', () => {
+void describe('the Insights badge is token alerts (LAI-1191, B8)', () => {
   void test('it leads to Usage, says alerts to a screen reader, and Usage shows the count', async () => {
     const h = await open(
       '/projects',
@@ -100,7 +100,7 @@ void describe('the Insights badge is token alerts (LAI-1141, B8)', () => {
   });
 });
 
-void describe('the first space (LAI-1141, B21)', () => {
+void describe('the first space (LAI-1191, B21)', () => {
   void test('a reader who may create one sees SPACES with Create a space, and so does the empty board', async () => {
     const h = await open('/board', emptyOrg('owner'));
     try {
@@ -159,7 +159,7 @@ void describe('the first space (LAI-1141, B21)', () => {
   });
 });
 
-void describe('profile and the auth pages (LAI-1141)', () => {
+void describe('profile and the auth pages (LAI-1191)', () => {
   void test('a refused profile names the grant, not a role', async () => {
     const h = await open('/people?user=u2', emptyOrg('member'));
     try {

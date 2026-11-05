@@ -118,7 +118,7 @@ export function SpacesSection({
       )}
 
       {(open || collapsed) && spaces.length === 0 && (
-        // No space yet (LAI-1141, the audit's B21): the way to the first one,
+        // No space yet (LAI-1191, the audit's B21): the way to the first one,
         // drawn only for a reader who may create it — the caller asks.
         <ul className="sidebar-list" aria-label="Spaces">
           <li>

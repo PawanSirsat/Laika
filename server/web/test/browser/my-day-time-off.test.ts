@@ -5,7 +5,7 @@ import { open, TODAY } from './my-day-clock.ts';
 import { SETTINGS, viewOf, weekData, weekStub } from './my-day-week.ts';
 
 /**
- * My day with time tracking off (LAI-1141, the UX audit's V2), and a re-read
+ * My day with time tracking off (LAI-1191, the UX audit's V2), and a re-read
  * that fails (B7). Off, the page is the reader's open work — overdue, due
  * soon, in progress, the rest — each opening in its own space, under a note
  * whose way to the setting is only for a reader holding `org.time.set`.
@@ -129,7 +129,7 @@ after(async () => {
   await closeBrowser();
 });
 
-void describe('My day with time tracking off (LAI-1141)', () => {
+void describe('My day with time tracking off (LAI-1191)', () => {
   void test('lists your open work, overdue first, then due soon, then in progress, then the rest', async () => {
     const h = await openOff();
     try {
@@ -244,7 +244,7 @@ void describe('My day with time tracking off (LAI-1141)', () => {
   }
 });
 
-void describe('a re-read that fails keeps the day (LAI-1141, B7)', () => {
+void describe('a re-read that fails keeps the day (LAI-1191, B7)', () => {
   void test('the day stays, under a stale notice whose Retry reads it again', async () => {
     const data = weekData();
     const routes: Record<string, unknown> = { ...weekStub(data) };

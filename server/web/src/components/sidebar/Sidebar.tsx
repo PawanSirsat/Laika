@@ -45,7 +45,7 @@ export interface SidebarProps {
   /** Counts by route path. No entry, no badge — that is how it stays honest. */
   readonly counts?: Readonly<Record<string, number | undefined>> | undefined;
   /**
-   * What a path's count counts, and the tab it lives on (LAI-1141, the audit's
+   * What a path's count counts, and the tab it lives on (LAI-1191, the audit's
    * B8): while the badge shows, the link opens that tab, and a screen reader
    * hears the noun. No entry: the page's own first tab, and *waiting*.
    */
@@ -150,7 +150,7 @@ export function Sidebar({
             // The project travels with the link, not beside it — a bare
             // path drops `?project=` and the destination then falls back
             // to a different project entirely (LAI-423). While a badge
-            // shows, the link opens the tab its count lives on (LAI-1141).
+            // shows, the link opens the tab its count lives on (LAI-1191).
             const href = withTab(
               navHref(route.path, projectSlug),
               counted ? target?.tab : undefined,
@@ -238,7 +238,7 @@ export function Sidebar({
       <div className="sidebar-nav">
         {shown.filter((group) => group === 'HOME').map(renderGroup)}
 
-        {/* With no spaces yet, the section stays for whoever may create the first (LAI-1141). */}
+        {/* With no spaces yet, the section stays for whoever may create the first (LAI-1191). */}
         {spaces !== undefined &&
           (spaces.length > 0 || holds('project.create')) &&
           onOpenSpace !== undefined && (

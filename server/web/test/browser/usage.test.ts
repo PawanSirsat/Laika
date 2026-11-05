@@ -997,7 +997,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       );
       assert.match(await banner.innerText(), /never reported on you/);
       // Usage is Insights' tab since LAI-796; the badge rides on Insights, and
-      // while it shows the link opens Usage, where the alerts are (LAI-1141).
+      // while it shows the link opens Usage, where the alerts are (LAI-1191).
       const badge = h.page.locator('a[href="/insights?tab=usage"] .sidebar-count');
       // The figure, then the visually hidden name the rail adds for a reader.
       const count = async (): Promise<string> => (await badge.innerText()).split('\n')[0] ?? '';
