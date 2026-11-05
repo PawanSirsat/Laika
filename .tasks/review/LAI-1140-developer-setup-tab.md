@@ -78,3 +78,6 @@ not_for_owner` gracefully; test each; share one helper with this tab. Done as
 - Merging master (LAI-1138): its *Time this week* card is gated on
   `offered.includes('time')`, because the tab row can now be Developer setup
   alone.
+- First CI round red on `structure.test.ts` (no mirror for the two new api
+  modules) and `type-floor.test.ts` (CSS off the type scale); fixed in
+  5225fa50, run 42034112856 green.
