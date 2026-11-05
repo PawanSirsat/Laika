@@ -735,6 +735,41 @@ void describe('the profile: pill and Current load (frames 2d–2f)', () => {
     }
   });
 
+  void test('a reader with profiles but not analytics sees no Current load and asks for none', async () => {
+    // An admin whose *See everyone's analytics* was withdrawn, still holding
+    // profiles and the developer-setup grant (LAI-1140's tab): the page may
+    // have tabs for them, and still no Current load.
+    const stub = profileStub({ id: 'u1', name: 'Ada Admin', role: 'admin' });
+    const h = await open('/people?user=u2', {
+      ...stub,
+      '/api/v1/permissions': {
+        org_roles: ['owner', 'admin', 'member', 'viewer'],
+        project_roles: ['lead', 'member', 'viewer'],
+        permissions: [],
+        me: {
+          org_role: 'admin',
+          credential: 'session',
+          project_scope: 'all',
+          implicit_project_role: 'lead',
+          actions: ['project.read', 'profile.read', 'developer_setup.read_any'],
+          projects: [],
+        },
+      },
+    });
+    try {
+      await h.page.locator('.prof-head').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(1_000);
+      assert.equal(await h.page.locator('[data-section="load"]').count(), 0);
+      assert.equal(
+        h.calls.some((c) => c.path.endsWith('/load')),
+        false,
+        'a reader without analytics asked for the load',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a member never sees load figures and never asks for them', async () => {
     const h = await open(
       '/people?user=u2',

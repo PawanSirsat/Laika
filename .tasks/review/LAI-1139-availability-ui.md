@@ -55,3 +55,31 @@ PR #284. Insights → Time → Availability is built on LAI-1138's Time tab
 load is a full-width card above the profile summary rather than a grid
 cell. Follow-up: LAI-1145 (pair the client types; two owners). Log:
 `logs/shell-2026-11-05-LAI-1139.md`.
+
+## Review notes — round 1 (cross-review of PR #284 at 6af93a74: BLOCK)
+
+**B1, fixed on polly's decision.** `GET /people/:id/load` fired on every
+profile tab, logging a `time` look on Day and Time report, which never draw
+it. Current load is now **collapsed** on Overview as *Show current load ·
+<name> can see you looked*; the load is read only on that click, never on
+opening the profile or any tab; someone else's header pill comes from that
+read and is absent until then. **This deviates from frame 2f** (which draws
+the card open) on polly's decision, for privacy consistency with D-102 and
+LAI-1138's *Time this week*. SPEC §11.4.2 / §11.4.2.1 reworded to match.
+Gated on `readsDays && me.id !== user.id`, not on `tabbed`, so LAI-1140's
+`tabbed = offered.length > 1` (PR #285) cannot show it to a reader without
+analytics.
+
+**Also fixed:** (1) moving the away date adds the new period before deleting
+the old; (3) every My availability shares one record; (4) SPEC: *updated N
+ago* only where the server sends it; (6) a space admin's Space filter lists
+only the spaces they lead; (7) the Time tab's inset moved to
+`insights/time-tab.css`. **Left as is, per review:** item 5 (the header copy
+for space admins), raised with the owner by polly.
+
+**Tests added:** zero `/people/u2/load` reads on `?tab=overview`, `day` and
+`time`, exactly one on *Show current load* (an eager-read mutant fails all
+five); a reader with profiles but no analytics sees no Current load and
+reads none; *Away until…*, a date move (add, then delete) and a refused move
+(no delete); a failed mark keeps the count; `task_not_assignable`; the lead's
+Space filter; neither popover nor For you on somebody else's day.

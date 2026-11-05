@@ -462,6 +462,10 @@ export function ProfileScreen({
 
   // A person's own day is My day's; their Day and Time report are for somebody else.
   const tabbed = readsDays && me.id !== user.id;
+  // Current load is *See everyone's analytics*' read of somebody else — its
+  // own condition, never "the page has tabs", which another grant (LAI-1140's
+  // Developer setup) can also give a reader without analytics.
+  const showsLoad = readsDays && me.id !== user.id;
   const shownTab: ProfileTab = tabbed ? profileTab(tab) : 'overview';
   // ⋯ is offered only when the panel would hold something (LAI-1134).
   const manages = anyAdminControl(adminControls(gates, me, user));
@@ -549,7 +553,7 @@ export function ProfileScreen({
            * *Show current load*, so opening Overview — or any tab — is not a
            * look at their time (D-102, LAI-1138's rule for *Time this week*).
            */}
-          {tabbed && (
+          {showsLoad && (
             <CurrentLoadCard
               name={user.name}
               state={availability.load}
