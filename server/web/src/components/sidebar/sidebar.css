@@ -411,7 +411,9 @@
    * 390px screen. The height is the window's below the top, so a long list
    * scrolls inside the panel instead of running off the bottom.
    */
-  left: max(8px, min(var(--spaces-pop-left, 220px), calc(100vw - 292px)));
+  /* The expanded rail's edge; `SpacesPopover` sets it inline, past the rail. */
+  --spaces-pop-left: 220px;
+  left: max(8px, min(var(--spaces-pop-left), calc(100vw - 292px)));
   width: min(284px, calc(100vw - 16px));
   box-sizing: border-box;
   max-height: calc(100vh - 132px - 12px);
