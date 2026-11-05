@@ -7,6 +7,7 @@ import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
 import { dayIn } from '../my-day/my-day-derive.ts';
 import { AvailabilityView } from './AvailabilityView.tsx';
 import { TimeViews } from './TimeViews.tsx';
+import './time-tab.css';
 import type { TimeSubview } from './time-tab.ts';
 
 export interface TimeTabProps {

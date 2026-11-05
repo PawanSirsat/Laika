@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import { request } from './client.ts';
 import type { ProjectRole } from './members.ts';
 
@@ -172,4 +173,42 @@ export function listPeopleAvailability(
   signal?: AbortSignal,
 ): Promise<AvailabilityList> {
   return request<AvailabilityList>(`/people/availability${availabilityQuery(query)}`, opts(signal));
+}
+
+// ------------------------------------------------- your own, shared
+
+/**
+ * The signed-in person's own record, shared by every *My availability* on the
+ * page (LAI-1139 review item 3): My day draws the popover in its desktop
+ * header and in its phone bar, one per breakpoint, and a save in one must be
+ * the pill in the other. One small store rather than a context — the two sit
+ * in different branches of the header.
+ */
+let mine: Availability | undefined;
+const mineListeners = new Set<() => void>();
+
+export function setSharedAvailability(next: Availability | undefined): void {
+  if (mine === next) return;
+  mine = next;
+  for (const listener of mineListeners) listener();
+}
+
+function subscribeMine(listener: () => void): () => void {
+  mineListeners.add(listener);
+  return () => {
+    mineListeners.delete(listener);
+  };
+}
+
+/** The shared record and its setter; `undefined` until a read answers. */
+export function useSharedAvailability(): readonly [
+  Availability | undefined,
+  (next: Availability | undefined) => void,
+] {
+  const value = useSyncExternalStore(
+    subscribeMine,
+    () => mine,
+    () => mine,
+  );
+  return [value, setSharedAvailability];
 }

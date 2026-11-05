@@ -17,6 +17,7 @@ import {
 } from '../../../components/availability/availability-derive.ts';
 import '../../../components/availability/availability.css';
 import { AddToProjectDialog, type AddableSpace } from './AddToProjectDialog.tsx';
+import { TIME_REPORT_READ, TIME_REPORT_READ_PROJECT } from './time-tab.ts';
 
 type ListState =
   | { readonly status: 'loading' }
@@ -87,6 +88,13 @@ export function AvailabilityView({ now = Date.now() }: { readonly now?: number }
         .sort((a, b) => a.name.localeCompare(b.name)),
     [visible, gates],
   );
+  // The Space filter (review item 6): everyone's spaces for an owner or an
+  // analytics reader; for a space admin, only the spaces they lead — the only
+  // people the server lists for them (D-137 item 2).
+  const readsAll = gates.org(TIME_REPORT_READ);
+  const filterable = [...visible]
+    .filter((p) => readsAll || gates.project(p.id, TIME_REPORT_READ_PROJECT))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const spaceName = visible.find((p) => p.slug === space)?.name;
 
   if (list.status === 'loading') {
@@ -133,9 +141,7 @@ export function AvailabilityView({ now = Date.now() }: { readonly now?: number }
             className="avail-filter-pick"
             options={[
               { value: '', label: 'All spaces' },
-              ...[...visible]
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((p) => ({ value: p.slug, label: p.name })),
+              ...filterable.map((p) => ({ value: p.slug, label: p.name })),
             ]}
             onChange={(v) => {
               setSpace(v === '' ? undefined : v);

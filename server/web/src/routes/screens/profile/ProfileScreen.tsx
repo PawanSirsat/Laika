@@ -206,8 +206,9 @@ export function ProfileScreen({
   const { settled } = gates;
   const allowed = gates.org('profile.read');
   const readsDays = gates.org(PEOPLE_ANALYTICS);
-  // Availability (D-137, LAI-1139): your own record, the load read that logs
-  // the look, or a co-worker's narrowed row — and nothing before the gates say which.
+  // Availability (D-137, LAI-1139): your own record, a co-worker's narrowed
+  // row, or — for an analytics reader — nothing until *Show current load* is
+  // pressed, because that read is a logged look. Nothing before the gates say which.
   const availability = useProfileAvailability(
     userId ?? '',
     profileAvailabilityMode({
@@ -542,11 +543,17 @@ export function ProfileScreen({
            * neighbour. Which card goes where is `columnPlan`'s — chosen, not
            * computed — and one column is the reading order.
            */}
-          {/* Facts about what they carry (D-131, LAI-1139): never on your own profile. */}
+          {/*
+           * Facts about what they carry (D-131, LAI-1139), never on your own
+           * profile. Collapsed: the load is read only when the reader presses
+           * *Show current load*, so opening Overview — or any tab — is not a
+           * look at their time (D-102, LAI-1138's rule for *Time this week*).
+           */}
           {tabbed && (
             <CurrentLoadCard
               name={user.name}
               state={availability.load}
+              onShow={availability.reveal}
               onRetry={availability.reload}
             />
           )}

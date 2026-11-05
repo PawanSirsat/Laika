@@ -4,6 +4,7 @@ import {
   deleteAwayPeriod,
   getMyAvailability,
   setMyAvailability,
+  useSharedAvailability,
   type Availability,
   type AvailabilityPatch,
   type AvailabilityStatus,
@@ -87,7 +88,8 @@ function problemOf(cause: unknown): Problem {
  * Only on your own day: nobody sets anyone else's.
  */
 export function AvailabilityPopover({ now = Date.now() }: { readonly now?: number }) {
-  const [saved, setSaved] = useState<Availability | undefined>(undefined);
+  // Shared with every other My availability on the page (one per breakpoint).
+  const [saved, setSaved] = useSharedAvailability();
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | undefined>(undefined);
@@ -170,10 +172,15 @@ export function AvailabilityPopover({ now = Date.now() }: { readonly now?: numbe
       };
       let next = await setMyAvailability(patch);
       // Away is a period, not a status: *away until* writes one from today,
-      // moving the current one's end, and leaving away ends it.
+      // moving the current one's end, and leaving away ends it. A move adds
+      // the new period **before** removing the old one, so a refused add
+      // leaves the person away rather than not away at all.
       if (draft.choice === 'away' && current?.to !== draft.until) {
-        if (current !== undefined) await deleteAwayPeriod(current.id);
         next = await addAwayPeriod(current?.from ?? today, draft.until);
+        if (current !== undefined) {
+          await deleteAwayPeriod(current.id);
+          next = await getMyAvailability();
+        }
       } else if (draft.choice !== 'away' && current !== undefined) {
         await deleteAwayPeriod(current.id);
         next = await getMyAvailability();

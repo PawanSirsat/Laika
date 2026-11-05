@@ -6703,7 +6703,7 @@ call MCP; agents do.
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
-| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage`; the *Time report* tab (LAI-1138): `GET /time/report?members=<them>`, JSON and `format=csv`, a look they are told about; *Current load* and the head card's availability (LAI-1139): `GET /people/:id/load` for an owner or a holder of *See everyone's analytics* (never yourself; a look they are told about), `GET /me/availability` on your own profile, and the person's row of `GET /people/availability` for any other reader | — | ✅ D-078, D-079, D-084, D-130, D-131, D-137 |
+| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage`; the *Time report* tab (LAI-1138): `GET /time/report?members=<them>`, JSON and `format=csv`, a look they are told about; *Current load* and the head card's availability (LAI-1139): `GET /people/:id/load` for an owner or a holder of *See everyone's analytics*, read only when they press *Show current load* (never on opening the profile or any tab, never yourself; a look they are told about), `GET /me/availability` on your own profile, and the person's row of `GET /people/availability` for any other reader | — | ✅ D-078, D-079, D-084, D-130, D-131, D-137 |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
 | **Time** *(Insights' third tab, `/insights?tab=time`; owners, holders of *See everyone's analytics* and space admins)* | 6 | `GET /time/report` (JSON and `format=csv`; an owner's or analytics reader's report of everyone, or a space admin's one space in whole weeks), `GET /permissions` (which spaces the reader leads), `GET /projects`; its *Availability* view (`&view=availability`, LAI-1139): `GET /people/availability?space=&tag=&open_only=` (A–Z, no sort), and *Add to project…*: `GET /projects/:slug/tasks?status=&assignee=none` (the first card on offer), `POST /projects/:slug/members` with `message` and `assign_task_id` | — | ✅ D-130, D-131, D-136, D-137, D-138, LAI-1138, LAI-1139 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |
@@ -7131,9 +7131,11 @@ anything missing sends the task back.
   **Availability** (`&view=availability`, frames 2g–2l, 2n–2o) — *who has
   room for another project*, people A–Z and never by how busy anyone is, with
   no sort control; filters *Space*, *Skills / areas* and *Open to more work
-  only*, sent as the server's three parameters; each person's note, tags,
-  pill (a glyph and words, never colour alone) and *updated N ago*, muted
-  past 30 days; *Can take*, *In progress* and *Last 2 weeks* only where the
+  only*, sent as the server's three parameters (a space admin's *Space* lists
+  only the spaces they lead); each person's note, tags and pill (a glyph and
+  words, never colour alone), and *updated N ago*, muted past 30 days, where
+  the server sends when it changed — a space admin is not sent it (D-137);
+  *Can take*, *In progress* and *Last 2 weeks* only where the
   server sent them for this reader (D-137), and **no free-hours column**
   (D-088 item 1). Empty: *Nobody has marked themselves open to more work in
   this space* with *Show everyone in …*, or *Nobody matches these filters*
@@ -7189,7 +7191,8 @@ anything missing sends the task back.
   A head card with name, the **Builder / Manager** kind as a chip, org role,
   project count, email, member since, their **availability** — the pill,
   note and tags, *set by … · updated N ago* (LAI-1139, frames 2d–2f), when
-  they have said any — and **⋯** — a menu button named
+  they have said any; for a reader whose only way to it is the load read,
+  only once *Show current load* has been pressed — and **⋯** — a menu button named
   *Manage <name>* whose *Manage member…* opens the **Manage member panel**
   (LAI-1134): a right-hand panel on a desktop, a bottom sheet on a phone, a
   modal that takes focus, holds it, and hands it back to ⋯ on Escape or close.
@@ -7207,7 +7210,11 @@ anything missing sends the task back.
   a link to it rather than figures, so opening Overview is not a look at
   their time (D-102, LAI-1138). Above it, for somebody else and only for an
   owner or a holder of *See everyone's analytics*, **Current load**
-  (LAI-1139) — *facts, not a score*, a look they are told about: hours by
+  (LAI-1139) — **collapsed** as *Show current load · <name> can see you
+  looked*, and read only on that click, never on opening the profile or any
+  of its tabs (the same rule as *Time this week*; this departs from frame 2f,
+  which draws it open). Once shown — *facts, not a score*, a look they are
+  told about: hours by
   space over their last two weeks, their cards in progress, waiting for
   review and due in seven days, their working week as **two numbers on a
   neutral track with no fill** (*21h 5m tracked of 40h set*, never a

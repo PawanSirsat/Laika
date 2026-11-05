@@ -16,6 +16,8 @@ import type { LoadState } from './profile-availability.ts';
 export interface CurrentLoadCardProps {
   readonly name: string;
   readonly state: LoadState;
+  /** Read it — the one look this card makes, and only on the reader's click. */
+  readonly onShow: () => void;
   readonly onRetry: () => void;
 }
 
@@ -29,12 +31,18 @@ function projectName(row: LoadProject): string {
  * is carrying, read-only, for an owner or *See everyone's analytics* — never
  * on your own profile, and every read is a logged look.
  *
+ * **Collapsed until asked** (polly's decision on review, departing from frame
+ * 2f): the card opens as *Show current load · <name> can see you looked*, and
+ * `GET /people/:id/load` is read only on that click — never on opening the
+ * profile or any tab — so opening a profile is not a look at anyone's time.
+ * The same rule LAI-1138 kept for *Time this week* (D-102, D-135).
+ *
  * **Facts, not a score.** Hours by space over their last two weeks, their card
  * counts, and their working week as **two numbers printed side by side on a
  * neutral track with no fill** (plan Q2): a bar filled in proportion would be
  * a utilisation figure, which D-088 and D-131 rule out. No free hours anywhere.
  */
-export function CurrentLoadCard({ name, state, onRetry }: CurrentLoadCardProps) {
+export function CurrentLoadCard({ name, state, onShow, onRetry }: CurrentLoadCardProps) {
   const first = firstName(name);
   return (
     <section className="prof-card" data-section="load" aria-labelledby="prof-load-title">
@@ -46,7 +54,11 @@ export function CurrentLoadCard({ name, state, onRetry }: CurrentLoadCardProps) 
           facts, not a score · read-only · {first} can see you looked
         </span>
       </header>
-      {state.status === 'idle' || state.status === 'loading' ? (
+      {state.status === 'idle' ? (
+        <button type="button" className="avail-add load-show" data-load-show onClick={onShow}>
+          Show current load · {name} can see you looked
+        </button>
+      ) : state.status === 'loading' ? (
         <LoadingState shape="card" count={1} label={`Reading ${first}’s load`} />
       ) : state.status === 'error' ? (
         <ApiErrorState error={state.error} resource={`${first}’s load`} onRetry={onRetry} />

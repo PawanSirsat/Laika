@@ -406,6 +406,65 @@ void describe('Add to project… (frames 2j–2l)', () => {
   });
 });
 
+void describe('a card that can no longer be handed over', () => {
+  void test('422 task_not_assignable says so and reads the cards again', async () => {
+    const calls: StubCall[] = [];
+    const h = await view({
+      role: 'member',
+      leads: ['p2'],
+      calls,
+      add: () =>
+        reply(422, {
+          error: {
+            code: 'unprocessable',
+            message: 'That card cannot be assigned',
+            details: { reason: 'task_not_assignable' },
+          },
+        }),
+    });
+    try {
+      await h.page.getByRole('button', { name: 'Add Amara Okafor to a project' }).click();
+      const dialog = h.page.getByRole('dialog', { name: 'Add Amara to a project' });
+      await dialog.getByRole('radio', { name: /SYNQ-97/ }).check();
+      const before = h.calls.filter((c) => c.path === '/api/v1/projects/synq/tasks').length;
+      await dialog.getByRole('button', { name: 'Add to SynQ' }).click();
+      const alert = dialog.getByRole('alert');
+      await alert.waitFor({ timeout: 10_000 });
+      assert.equal(
+        await alert.innerText(),
+        'That card can no longer be handed over. Pick another, or no card.',
+      );
+      await until(
+        () => h.calls.filter((c) => c.path === '/api/v1/projects/synq/tasks').length > before,
+      );
+      assert.ok(
+        h.calls.filter((c) => c.path === '/api/v1/projects/synq/tasks').length > before,
+        'the cards were not read again',
+      );
+      // Still open, nothing marked added.
+      assert.equal(await h.page.locator('tr[data-person="u2"] .avail-done').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a space admin’s filter', () => {
+  void test('Space offers only the spaces they lead', async () => {
+    const h = await view({ role: 'member', leads: ['p2'] });
+    try {
+      await h.page.locator('[data-availability-view] .avail-filter-pick').first().click();
+      const options = await h.page.getByRole('option').allInnerTexts();
+      assert.deepEqual(
+        options.map((o) => o.trim()),
+        ['All spaces', 'SynQ'],
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('on a phone (frame 2i)', () => {
   void test('at 390 the people are cards, inside the screen', async () => {
     const h = await view({ role: 'owner' }, 390);

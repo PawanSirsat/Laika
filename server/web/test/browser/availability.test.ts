@@ -26,7 +26,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { open, NOW, TODAY } from './my-day-clock.ts';
-import { addDays, weekStub } from './my-day-week.ts';
+import { addDays, viewOf, weekData, weekStub } from './my-day-week.ts';
 
 const DAY = 86_400_000;
 
@@ -200,6 +200,129 @@ void describe('My availability on My day (frames 2a–2c)', () => {
     }
   });
 
+  /** My record, kept as the server would, recording every write in order. */
+  function awayStub(
+    writes: StubCall[],
+    start: Record<string, unknown>,
+    refuseAdd = false,
+  ): ApiStub {
+    let record: Record<string, unknown> = start;
+    let periods = (start.away_periods as { id: string; from: string; to: string }[]).slice();
+    const current = (): Record<string, unknown> => {
+      const now = periods.find((p) => p.from <= TODAY && p.to >= TODAY);
+      return {
+        ...record,
+        away_periods: periods,
+        away: now === undefined ? null : { until: now.to },
+      };
+    };
+    return {
+      '/api/v1/me/availability': (call: StubCall) => {
+        if (call.method === 'PUT') {
+          writes.push(call);
+          record = { ...record, ...(call.body as object) };
+        }
+        return current();
+      },
+      '/api/v1/me/availability/away': (call: StubCall) => {
+        writes.push(call);
+        if (refuseAdd) {
+          return reply(422, {
+            error: {
+              code: 'unprocessable',
+              message: 'At most 20 current and upcoming away periods',
+              details: { reason: 'too_many_away_periods' },
+            },
+          });
+        }
+        const body = call.body as { from: string; to: string };
+        periods = [...periods, { id: `a${String(periods.length + 1)}`, ...body }];
+        return reply(201, current());
+      },
+      '/api/v1/me/availability/away/a0': (call: StubCall) => {
+        writes.push(call);
+        periods = periods.filter((p) => p.id !== 'a0');
+        return reply(204, null);
+      },
+    };
+  }
+
+  const AWAY_NOW = {
+    ...RECORD,
+    away: { until: addDays(TODAY, 3) },
+    away_periods: [{ id: 'a0', from: TODAY, to: addDays(TODAY, 3) }],
+  };
+  const sent = (writes: readonly StubCall[]): string[] =>
+    writes.map((w) =>
+      `${w.method} ${w.path} ${w.method === 'PUT' ? '' : JSON.stringify(w.body ?? null)}`.trim(),
+    );
+
+  void test('choosing Away until… writes a period from today', async () => {
+    const writes: StubCall[] = [];
+    const h = await myDay(awayStub(writes, { ...RECORD, away_periods: [] }));
+    try {
+      const panel = await openPopover(h.page);
+      await panel.getByRole('radio', { name: /Away until…/ }).check();
+      await panel.locator('input[type="date"]').first().fill(addDays(TODAY, 5));
+      await panel.getByRole('button', { name: 'Save' }).click();
+      await until(() => writes.length === 2);
+      assert.deepEqual(sent(writes), [
+        'PUT /api/v1/me/availability',
+        `POST /api/v1/me/availability/away ${JSON.stringify({ from: TODAY, to: addDays(TODAY, 5) })}`,
+      ]);
+      const pill = h.page.locator('[data-my-availability] [data-avail-pill]');
+      await until(async () => (await pill.getAttribute('data-avail-pill')) === 'away');
+      assert.equal(await pill.getAttribute('data-avail-pill'), 'away');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('changing the away date adds the new period before removing the old', async () => {
+    const writes: StubCall[] = [];
+    const h = await myDay(awayStub(writes, AWAY_NOW));
+    try {
+      const panel = await openPopover(h.page);
+      await panel.locator('input[type="date"]').first().fill(addDays(TODAY, 9));
+      await panel.getByRole('button', { name: 'Save' }).click();
+      await until(() => writes.length === 3);
+      assert.deepEqual(sent(writes), [
+        'PUT /api/v1/me/availability',
+        `POST /api/v1/me/availability/away ${JSON.stringify({ from: TODAY, to: addDays(TODAY, 9) })}`,
+        'DELETE /api/v1/me/availability/away/a0 null',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused move leaves the person away: the old period is never removed', async () => {
+    const writes: StubCall[] = [];
+    const h = await myDay(awayStub(writes, AWAY_NOW, true));
+    try {
+      const panel = await openPopover(h.page);
+      await panel.locator('input[type="date"]').first().fill(addDays(TODAY, 9));
+      await panel.getByRole('button', { name: 'Save' }).click();
+      const alert = panel.getByRole('alert');
+      await alert.waitFor({ timeout: 10_000 });
+      assert.equal(await alert.innerText(), 'At most 20 current and upcoming away periods');
+      await h.page.waitForTimeout(500);
+      assert.equal(
+        writes.some((w) => w.method === 'DELETE'),
+        false,
+        'the old period was removed',
+      );
+      assert.equal(
+        await h.page
+          .locator('[data-my-availability] [data-avail-pill]')
+          .getAttribute('data-avail-pill'),
+        'away',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('nobody has set anything: Set availability, never a guessed pill', async () => {
     const h = await myDay({});
     try {
@@ -288,6 +411,30 @@ void describe('For you (D-134)', () => {
       await h.page.locator('[data-day-tab="overview"]').waitFor({ timeout: 10_000 });
       await until(() => h.calls.some((c) => c.path === '/api/v1/me/notices'));
       assert.equal(await h.page.locator('[data-for-you]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a mark that fails leaves the count where it was, and says so', async () => {
+    const h = await myDay({
+      '/api/v1/me/notices': NOTICES,
+      '/api/v1/me/notices/n2/read': refuse(500, 'internal', 'boom'),
+    });
+    try {
+      const card = h.page.locator('[data-for-you="ready"]');
+      await card.waitFor({ timeout: 10_000 });
+      const nav = h.page.locator('a.sidebar-link[href^="/my-day"] .sidebar-count');
+      await until(async () => (await nav.count()) === 1);
+      await card
+        .getByRole('button', { name: 'Mark read: Pawan Sirsat added you to Atlas' })
+        .click();
+      const alert = card.getByRole('alert');
+      await alert.waitFor({ timeout: 10_000 });
+      assert.equal(await alert.innerText(), 'That could not be marked read. Try again.');
+      assert.match(await nav.innerText(), /^2/);
+      assert.equal(await card.locator('[data-unread="true"]').count(), 2);
+      assert.match(await card.locator('.foryou-count').innerText(), /^2$/);
     } finally {
       await h.close();
     }
@@ -426,7 +573,23 @@ const quietUsage = (userId: string) => ({
   sharing: { org_enabled: true, enabled: true },
 });
 
+/** Hemant's days, as `/people/u2/time` serves them (LAI-957), for the Day tab. */
+function hemantsDays(): Record<string, unknown> {
+  const data = weekData();
+  const routes: Record<string, unknown> = {};
+  for (let i = -21; i <= 21; i += 1) {
+    const day = addDays(TODAY, i);
+    routes[`/api/v1/people/u2/time?day=${day}`] = () => viewOf(day, data);
+  }
+  return routes;
+}
+
 const profileStub = (reader: { id: string; name: string; role: string }): ApiStub => ({
+  ...hemantsDays(),
+  // The reader's own notices and record: there to be read, so their absence
+  // from somebody else's day is the page's choice, not an empty answer.
+  '/api/v1/me/notices': NOTICES,
+  '/api/v1/me/availability': RECORD,
   '/api/v1/me': {
     ...person(reader.id, reader.name, reader.role),
     memberships: [{ project_id: 'p1', role: 'member' }],
@@ -460,15 +623,40 @@ const profileStub = (reader: { id: string; name: string; role: string }): ApiStu
 });
 
 void describe('the profile: pill and Current load (frames 2d–2f)', () => {
+  /** Calls for Hemant's load so far. */
+  const loads = (h: Harness): number =>
+    h.calls.filter((c) => c.path === '/api/v1/people/u2/load').length;
+  /** No read happens in a window: a fixed wait, because nothing can end it early. */
+  const quiet = (page: Page): Promise<void> => page.waitForTimeout(1_000);
+
   for (const theme of ['Dark', 'Light'] as const) {
-    void test(`an owner reads facts, not a score — the week is two numbers on an unfilled track (${theme})`, async () => {
+    void test(`Current load is read only when asked, then facts, not a score (${theme})`, async () => {
       const h = await open(
-        '/people?user=u2',
+        '/people?user=u2&tab=overview',
         profileStub({ id: 'u1', name: 'Ada Owner', role: 'owner' }),
       );
       try {
         const card = h.page.locator('[data-section="load"]');
+        const show = card.locator('[data-load-show]');
+        await show.waitFor({ timeout: 20_000 });
+        // Collapsed (review B1, polly's decision; departs from frame 2f).
+        assert.equal(
+          await show.innerText(),
+          'Show current load · Hemant Purohit can see you looked',
+        );
+        await quiet(h.page);
+        assert.equal(loads(h), 0, 'opening Overview read the load');
+        // The pill comes from that same read: none before it.
+        assert.equal(await h.page.locator('[data-profile-availability]').count(), 0);
+        assert.equal(
+          h.calls.some((c) => c.path === '/api/v1/people/availability'),
+          false,
+          'an owner’s list read would log a look at everyone on it',
+        );
+
+        await show.click();
         await card.locator('[data-load="week"]').waitFor({ timeout: 20_000 });
+        assert.equal(loads(h), 1);
         await h.page.setViewportSize({ width: 1366, height: 900 });
         await setTheme(h.page, theme);
         await card.scrollIntoViewIfNeeded();
@@ -495,20 +683,57 @@ void describe('the profile: pill and Current load (frames 2d–2f)', () => {
         assert.doesNotMatch(await card.innerText(), /free|%/i);
 
         const head = h.page.locator('[data-profile-availability]');
+        await head.waitFor({ timeout: 10_000 });
         assert.match(await head.innerText(), /Open to more work/);
         assert.match(await head.innerText(), /“Payments and API work”/);
         assert.match(await head.innerText(), /set by Hemant · updated 3 days ago/);
-        // One logged read serves the header and the card: no list read for an owner.
-        assert.equal(h.calls.filter((c) => c.path === '/api/v1/people/u2/load').length, 1);
-        assert.equal(
-          h.calls.some((c) => c.path === '/api/v1/people/availability'),
-          false,
-        );
+        // Moving between tabs is not another look.
+        await h.page.locator('[data-profile-tab="day"]').click();
+        await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+        await quiet(h.page);
+        assert.equal(loads(h), 1);
       } finally {
         await h.close();
       }
     });
   }
+
+  for (const tab of ['overview', 'day', 'time'] as const) {
+    void test(`opening ?tab=${tab} reads no load`, async () => {
+      const h = await open(
+        `/people?user=u2&tab=${tab}`,
+        profileStub({ id: 'u1', name: 'Ada Owner', role: 'owner' }),
+      );
+      try {
+        await h.page
+          .locator(`[data-profile-tab="${tab}"][aria-current="page"]`)
+          .waitFor({ timeout: 20_000 });
+        if (tab === 'day') await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+        await quiet(h.page);
+        assert.equal(loads(h), 0, `?tab=${tab} read the load`);
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('My availability and For you are never on somebody else’s day', async () => {
+    const h = await open(
+      '/people?user=u2&tab=day',
+      profileStub({ id: 'u1', name: 'Ada Owner', role: 'owner' }),
+    );
+    try {
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-day-tab="overview"]').click();
+      await quiet(h.page);
+      assert.equal(await h.page.locator('[data-my-availability]').count(), 0);
+      assert.equal(await h.page.locator('[data-for-you]').count(), 0);
+      // The day itself was read, so the absence is the page's choice.
+      assert.ok(h.calls.some((c) => c.path === '/api/v1/people/u2/time'));
+    } finally {
+      await h.close();
+    }
+  });
 
   void test('a member never sees load figures and never asks for them', async () => {
     const h = await open(

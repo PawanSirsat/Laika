@@ -14,7 +14,10 @@ import {
  * - **yourself** — `GET /me/availability`, your whole record;
  * - **an owner, or *See everyone's analytics*** — `GET /people/:id/load`,
  *   which carries the whole record beside the load facts and **logs the
- *   look**, once, for the header and the Current load card together;
+ *   look**. So it is read **only when the reader asks** — *Show current
+ *   load* — never on opening the profile or any of its tabs, the way
+ *   LAI-1138 kept *Time this week* a link (D-102, D-135). Until then there is
+ *   no pill in the header either: the pill comes from the same read;
  * - **anyone else** — their row of `GET /people/availability`, narrowed by the
  *   server to what a co-worker or a space admin may see. Asked only of a reader
  *   that list never logs, so opening one profile never records a look at
@@ -60,8 +63,10 @@ export type LoadState =
 export interface ProfileAvailability {
   /** What to draw in the header; `undefined` until asked or when there is nothing. */
   readonly seen: AvailabilitySeen | null | undefined;
-  /** The Current load read, for `load` mode only. */
+  /** The Current load read, for `load` mode only; `idle` until {@link reveal}. */
   readonly load: LoadState;
+  /** Read the load now — the look the reader chose to make. */
+  readonly reveal: () => void;
   readonly reload: () => void;
 }
 
@@ -72,11 +77,14 @@ export function useProfileAvailability(
   const [seen, setSeen] = useState<AvailabilitySeen | null | undefined>(undefined);
   const [load, setLoad] = useState<LoadState>({ status: 'idle' });
   const [asked, setAsked] = useState(0);
+  // Whose load the reader asked to see: moving to another person closes it.
+  const [revealedFor, setRevealedFor] = useState<string | undefined>(undefined);
+  const revealed = revealedFor === userId;
 
   useEffect(() => {
     setSeen(undefined);
-    setLoad({ status: mode === 'load' ? 'loading' : 'idle' });
-    if (mode === undefined) return;
+    setLoad({ status: mode === 'load' && revealed ? 'loading' : 'idle' });
+    if (mode === undefined || (mode === 'load' && !revealed)) return;
     const controller = new AbortController();
     const live = (): boolean => !controller.signal.aborted;
     if (mode === 'self') {
@@ -105,11 +113,14 @@ export function useProfileAvailability(
     return () => {
       controller.abort();
     };
-  }, [userId, mode, asked]);
+  }, [userId, mode, asked, revealed]);
 
   return {
     seen,
     load,
+    reveal: () => {
+      setRevealedFor(userId);
+    },
     reload: () => {
       setAsked((n) => n + 1);
     },
