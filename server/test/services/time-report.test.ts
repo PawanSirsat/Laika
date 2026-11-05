@@ -229,8 +229,14 @@ describe('a space admin’s weeks (D-136)', () => {
    *     count, and whether it is withheld;
    *  3. the week of one person is `null` in every one of them.
    *
+   * The one figure a reader can always subtract is their own time, so the
+   * floor is counted **without the reader** (B5): a lead who worked a week
+   * with two others sees that week withheld — taking their own minutes out of
+   * it would give away the other two. The next test holds that.
+   *
    * Break either half — publish a total, or decide the floor over the range
-   * — and this goes red.
+   * — and this goes red; count the reader towards the floor, and the next
+   * one does.
    */
   it('publishes each week of one space the same way in every answer, and nothing more', () => {
     const seen = new Map<string, string>();
@@ -252,6 +258,30 @@ describe('a space admin’s weeks (D-136)', () => {
       { from: W[1].from, to: W[1].to, confirmed_minutes: null, people: 1 },
       { from: W[2].from, to: W[2].to, confirmed_minutes: 20, people: 4 },
     ]);
+  });
+
+  it('counts the floor without the reader: a lead who is the third person sees the week withheld', () => {
+    // The week of 26 October: A already has 99 there; B and the lead, 10 each.
+    const week = { from: '2026-10-26', to: '2026-11-01' };
+    const b = person('B2');
+    entry(b, '2026-10-27', 10, laika);
+    entry(lead.userId, '2026-10-27', 10, laika);
+    const read = (reader: ResolvedActor) =>
+      asWeeks(getTimeReport(t.db, reader, { ...week, spaces: 'laika' }, NOW)).weeks[0];
+
+    // Three people, the lead one of them: their 10 out of 119 would leave A's
+    // and B's. Withheld — the head count still says three.
+    expect(read(lead)).toEqual({ ...week, confirmed_minutes: null, people: 3 });
+    // Another lead, who put no time in, sees three people besides themselves.
+    const other = person('Other lead');
+    t.db
+      .insert(projectMemberships)
+      .values({ id: newId(), projectId: laika, userId: other, role: 'lead', createdAt: NOW })
+      .run();
+    expect(read(actor(other))).toEqual({ ...week, confirmed_minutes: 119, people: 3 });
+    // A fourth person makes three besides the lead, and the week is shown.
+    entry(person('C2'), '2026-10-28', 10, laika);
+    expect(read(lead)).toEqual({ ...week, confirmed_minutes: 129, people: 4 });
   });
 });
 

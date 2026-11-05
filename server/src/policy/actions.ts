@@ -130,8 +130,9 @@ export const PROJECT_ACTIONS = [
   'budget.set',
   // D-103 item 5 (LAI-976): any member may leave a space.
   'project.leave',
-  // D-130 item 3 (LAI-1135): a space admin reads the space's time totals —
-  // confirmed, no per-person split, under D-088 item 7's three-person floor.
+  // D-130 item 3 as D-136 amends it (LAI-1135): a space admin reads one
+  // space's confirmed minutes a week, a week of fewer than three people
+  // other than the reader withheld — no per-person split, nothing else.
   'time.report.read_project',
 ] as const;
 

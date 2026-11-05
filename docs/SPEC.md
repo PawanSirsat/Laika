@@ -500,14 +500,18 @@ over first.
 with no per-person grant who leads a space (an org Owner or Admin is an
 implicit lead, and reads per person first). **Deliberately coarse, so that
 no subtraction gets under D-088 item 7's three-person floor**: exactly one
-space a request, whole ISO weeks (Monday to Sunday, the days entries are
-filed on) up to the 92-day cap, and one figure a week — the space's confirmed
-minutes, `null` when fewer than three people put time on it that week — with
-the week's head count. Nothing else: no range total, no task, kind or day,
+space a request, whole ISO weeks up to the 92-day cap — Monday to Sunday by
+**each entry's filed day**, the person's own calendar day, so no zone is
+consulted — and one figure a week: the space's confirmed minutes, `null`
+unless at least three people **other than the reader** put time on it that
+week, with the week's full head count. The reader is left out of the floor
+because their own minutes are the one figure they can always subtract: a lead
+who worked a week with two others would otherwise read those two's total. Nothing else: no range total, no task, kind or day,
 no meeting or manual split, no agent minutes, no drafts. Every published
-figure is one (space, week) cell, decided by that cell's entries alone, so it
-reads the same in every answer and no figure contains another: a difference
-of two answers isolates nobody. D-088 item 7 is not amended. Refusals, each
+figure is one (space, week) cell, decided by that cell's entries and who is
+reading — never by the range or the request — so it reads the same in every
+answer that reader gets and no figure contains another: a difference of two
+answers isolates nobody. D-088 item 7 is not amended. Refusals, each
 `422`: `members` is `members_not_allowed`, `kinds` is `kinds_not_allowed`,
 drafts are `drafts_not_allowed`, two spaces — asked for, or led with none
 named — are `one_space_only`, and a range that is not whole weeks is
@@ -2419,7 +2423,9 @@ row per read*): the same viewer reading the same subject's same `kind` and
 `day` again within ten minutes writes no second row, so every viewer and
 subject pair is still recorded (D-102 rule 3). A read that shows several
 people per person — the Time report (§6.4, LAI-1135) — writes one row per
-person shown, each deduped on its own. Read by the person alone, `GET /me/analytics-views`. No
+person **named or shown**: everybody its `members` names, everybody a row
+shows, and everybody whose agent time is in its `agent_minutes`, the reader
+aside, each deduped on its own. Read by the person alone, `GET /me/analytics-views`. No
 `activity` row: §4.8 gains no verb. Kept **400 days** (§11.6's local-activity
 retention, by `viewed_at`).
 
@@ -5231,14 +5237,16 @@ parameter names anybody else.
   person a row names**, the caller aside, is one §4.59 look at their time
   (`kind: time`, no day) in the read's transaction, deduped over ten minutes
   (D-135) — a person named is looked at even when the answer shows no time
-  of theirs, or only their agent's. More than 5 000 rows is `422
+  of theirs, or only their agent's — and so is each person whose agent time
+  is in `agent_minutes`, named or not. More than 5 000 rows is `422
   report_too_large` (`max_rows`), and nothing is logged; nor is a refused
   read. **`space_totals` (D-136, §3.2) answers `{ from, to, scope, project,
   weeks }` and nothing else**: one `spaces` slug (or the one space the
   caller leads), `from` a Monday and `to` a Sunday (`422
   range_not_whole_weeks`), and `weeks` every ISO week `{ from, to,
-  confirmed_minutes, people }` — the space's confirmed minutes that week,
-  `null` when `people`, the week's head count, is under three; `members`,
+  confirmed_minutes, people }` by each entry's filed day — the space's
+  confirmed minutes that week, `null` unless three of `people`, the week's
+  full head count, are people other than the caller; `members`,
   `kinds` and `drafts=include` are refused, and nothing is logged.
   `format=csv` answers the same report as a file, streamed, no row cap,
   logged the same: `text/csv; charset=utf-8`, attachment

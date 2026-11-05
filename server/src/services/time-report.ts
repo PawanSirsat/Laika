@@ -43,7 +43,7 @@ import { stretch, type SummaryDayView } from './time-summary.ts';
  * the reader aside — is logged as a look at their time (`kind: 'time'`, no
  * day) in the read's transaction, through `readLoggedMany` and its
  * ten-minute dedupe (D-135): a person named and shown nothing was still
- * looked at, and their agent minutes are in the answer. `own` and
+ * looked at, and so is everybody whose agent time `agent_minutes` holds. `own` and
  * `space_totals` name nobody else and log nothing.
  */
 
@@ -447,18 +447,31 @@ function tasksById(
 
 /**
  * The agent's working minutes for these people over the stretch, as My day
- * shows them: each person's day rounded, then summed.
+ * shows them: each person's day rounded, then summed — and whose they are, so
+ * every person in the figure is logged as a look (LAI-1135 review round 2).
  */
-function agentMinutes(db: Db, userIds: string[] | null, from: string, to: string): number {
+function agentMinutes(
+  db: Db,
+  userIds: string[] | null,
+  from: string,
+  to: string,
+): { minutes: number; people: string[] } {
   const where: SQL[] = [eq(agentTimeDays.kind, 'cli'), between(agentTimeDays.day, from, to)];
   if (userIds !== null) where.push(inArray(agentTimeDays.userId, userIds));
-  return db
-    .select({ seconds: sql<number>`sum(${agentTimeDays.seconds})` })
+  const people = new Set<string>();
+  let minutes = 0;
+  for (const r of db
+    .select({ userId: agentTimeDays.userId, seconds: sql<number>`sum(${agentTimeDays.seconds})` })
     .from(agentTimeDays)
     .where(and(...where))
     .groupBy(agentTimeDays.userId, agentTimeDays.day)
-    .all()
-    .reduce((n, r) => n + Math.round(Number(r.seconds) / 60), 0);
+    .all()) {
+    const day = Math.round(Number(r.seconds) / 60);
+    if (day <= 0) continue;
+    minutes += day;
+    people.add(r.userId);
+  }
+  return { minutes, people: [...people] };
 }
 
 // ------------------------------------------------------------ the assembly
@@ -504,6 +517,8 @@ function ordered<T extends TimeReportRowView>(rows: Iterable<T>): T[] {
 interface Built {
   view: TimeReportView;
   dayRows: DayRow[];
+  /** Whose agent time `agent_minutes` holds — looks, as the rows' people are. */
+  agentPeople: string[];
 }
 
 function build(db: Db, actor: ResolvedActor, p: Plan, days: string[]): Built {
@@ -578,6 +593,7 @@ function build(db: Db, actor: ResolvedActor, p: Plan, days: string[]): Built {
   }
 
   const narrowed = p.projectIds !== null || p.kinds !== null;
+  const agent = narrowed ? null : agentMinutes(db, p.userIds, from, to);
   const view: TimeReportView = {
     from,
     to,
@@ -592,14 +608,14 @@ function build(db: Db, actor: ResolvedActor, p: Plan, days: string[]): Built {
       active_days: dayList.filter((d) => total(d) > 0).length,
       people: contributors.size,
     },
-    agent_minutes: narrowed ? null : agentMinutes(db, p.userIds, from, to),
+    agent_minutes: agent?.minutes ?? null,
     by_day: dayList,
     rows: ordered(rows.values()),
   };
   const dayRows = [...perDay.values()].sort(
     (a, b) => a.day.localeCompare(b.day) || total(b) - total(a),
   );
-  return { view, dayRows };
+  return { view, dayRows, agentPeople: agent?.people ?? [] };
 }
 
 // ------------------------------------------------ a space admin's weeks (D-136)
@@ -614,22 +630,28 @@ function wholeWeeks(days: readonly string[]): boolean {
 /**
  * A space admin's report (D-136, amending D-130 item 3): one space, whole ISO
  * weeks, and **one figure a week** — the space's confirmed minutes, `null`
- * when fewer than three people put time on it that week — with the week's
- * head count. No range total, no task, kind or day, no agent time.
+ * unless at least three people **other than the reader** put time on it that
+ * week — with the week's full head count. No range total, no task, kind or
+ * day, no agent time.
  *
  * Why no subtraction gets under the floor. Every figure this can publish is
  * one `(space, ISO week)` cell, and a cell's value and its withholding are
- * decided by that cell's own entries alone — never by the range, the request
- * or any other cell. So the same cell reads the same in every answer that
- * holds it, and two cells never share an entry: they are disjoint. A
- * difference only isolates something when one published figure contains
- * another, and no published figure contains another, nor a sum of others,
- * because there is no total. A withheld cell is withheld in every answer, and
- * nothing it is part of is published, so it cannot be recovered either. The
- * weeks are the person's own calendar days, Monday to Sunday — the days each
- * entry is filed on — so they do not move with anybody's zone.
+ * decided by that cell's own entries and who is reading — never by the range,
+ * the request or any other cell. So the same cell reads the same in every
+ * answer that reader gets, and two cells never share an entry: they are
+ * disjoint. A difference only isolates something when one published figure
+ * contains another, and no published figure contains another, nor a sum of
+ * others, because there is no total. A withheld cell is withheld in every
+ * answer, and nothing it is part of is published, so it cannot be recovered
+ * either. **The one thing a reader can always subtract is their own time**
+ * (B5): a lead who logs in the space knows their own minutes, so a week they
+ * worked in with two others would give those two away. Counting the floor
+ * without the reader closes that — what is left after taking their own time
+ * out still covers three people. The weeks are each entry's filed day,
+ * Monday to Sunday — the person's own calendar day — so they do not move
+ * with anybody's zone.
  */
-function spaceWeeks(db: Db, p: Plan, days: string[]): SpaceWeeksReportView {
+function spaceWeeks(db: Db, p: Plan, days: string[], readerId: string): SpaceWeeksReportView {
   if (!wholeWeeks(days)) {
     throw new ApiError('unprocessable', 'A space admin reads whole weeks, Monday to Sunday', {
       field: 'from',
@@ -663,7 +685,10 @@ function spaceWeeks(db: Db, p: Plan, days: string[]): SpaceWeeksReportView {
     weeks: cells.map((cell, i) => ({
       from: days[i * 7] ?? '',
       to: days[i * 7 + 6] ?? '',
-      confirmed_minutes: cell.people.size < REPORT_FLOOR_PEOPLE ? null : cell.minutes,
+      confirmed_minutes:
+        [...cell.people].filter((id) => id !== readerId).length < REPORT_FLOOR_PEOPLE
+          ? null
+          : cell.minutes,
       people: cell.people.size,
     })),
   };
@@ -682,7 +707,7 @@ function report(
 ): Built | SpaceWeeksReportView {
   const days = stretch(query.from, query.to);
   const p = plan(db, actor, query);
-  if (p.scope === 'space_totals') return spaceWeeks(db, p, days);
+  if (p.scope === 'space_totals') return spaceWeeks(db, p, days, actor.userId);
   const read = (): Built => {
     const built = build(db, actor, p, days);
     if (maxRows !== null && built.view.rows.length > maxRows) {
@@ -695,14 +720,15 @@ function report(
     return built;
   };
   if (p.scope !== 'people') return read();
-  // Everybody named is looked at, shown time or not; and everybody shown.
+  // Everybody named is looked at, shown time or not; everybody shown; and
+  // everybody whose agent time is in `agent_minutes`.
   const named = p.userIds ?? [];
   return readLoggedMany(
     db,
     actor,
     'time',
     read,
-    (built) => [...named, ...built.view.rows.map((r) => r.user.id)],
+    (built) => [...named, ...built.view.rows.map((r) => r.user.id), ...built.agentPeople],
     () => null,
     now,
   );

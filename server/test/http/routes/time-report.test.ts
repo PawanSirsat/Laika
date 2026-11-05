@@ -384,6 +384,27 @@ describe('people — per person, every one shown logged', () => {
     expect(looks()).toEqual([[ownerId, bea.id, 'time', null]]);
   });
 
+  it('logs everybody whose agent time is in agent_minutes, named or not', async () => {
+    const cleo = person('Cleo');
+    h.db
+      .insert(agentTimeDays)
+      .values({
+        userId: cleo,
+        day: TUE,
+        sessionKey: 's',
+        kind: 'cli',
+        seconds: 1200,
+        updatedAt: Date.now(),
+      })
+      .run();
+    // Everyone, Tuesday to Sunday: Bea is not shown; Cleo has no rows, only
+    // her agent's 20 minutes — which the answer serves, so she is a look.
+    const r = (await ok(await report(`from=${TUE}&to=${SUN}`))) as Report;
+    expect(r.rows.some((row) => row.user?.id === cleo)).toBe(false);
+    expect(r.agent_minutes).toBe(20);
+    expect(looks()).toEqual([[ownerId, cleo, 'time', null]]);
+  });
+
   it('logs a person named whose only time is their agent’s', async () => {
     const cleo = person('Cleo');
     h.db

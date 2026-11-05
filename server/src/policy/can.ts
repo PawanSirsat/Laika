@@ -843,8 +843,9 @@ function canProjectAction(
 
     // | View the space's time totals | ✓ (session only) | — | — |
     //
-    // D-130 item 3 (LAI-1135): confirmed time, no per-person split, under
-    // D-088 item 7's three-person floor — the service applies the floor.
+    // D-130 item 3 as D-136 amends it (LAI-1135): one space, one figure a
+    // week, no per-person split. The service decides which weeks are shown —
+    // three people besides the reader — since that is a fact about rows.
     case 'time.report.read_project':
       return isLead;
 
