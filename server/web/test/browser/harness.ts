@@ -110,6 +110,25 @@ const REVIEW_PATH = '/api/v1/review';
  */
 const TOKEN_ALERTS_PATH = '/api/v1/me/token-alerts';
 /**
+ * A person's notices and their own availability (LAI-1139): the rail reads the
+ * unread count for My day's badge on every page, and My day reads both. A
+ * person who was told nothing and set nothing has an empty page and an empty
+ * record — the server's answer for them; a test about either names its own.
+ */
+const NOTICES_PATH = '/api/v1/me/notices';
+const MY_AVAILABILITY_PATH = '/api/v1/me/availability';
+const NO_NOTICES = { data: [], next_cursor: null, unread_count: 0 } as const;
+const NO_AVAILABILITY = {
+  status: null,
+  away: null,
+  hours_per_week: null,
+  note: null,
+  tags: [],
+  work_week: null,
+  away_periods: [],
+  updated_at: null,
+} as const;
+/**
  * A person's hand-offs (LAI-1009, LAI-550): the shell reads their counts for
  * the Inbox badge on every page. Somebody with none has nothing waiting; a
  * test about hand-offs names its own.
@@ -676,6 +695,16 @@ function serve(
         ) {
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify(defaultPermissions(lastMe)));
+          return;
+        }
+
+        if (
+          chosen === undefined &&
+          req.method === 'GET' &&
+          (path === NOTICES_PATH || path === MY_AVAILABILITY_PATH)
+        ) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(path === NOTICES_PATH ? NO_NOTICES : NO_AVAILABILITY));
           return;
         }
 

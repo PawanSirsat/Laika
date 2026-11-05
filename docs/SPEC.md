@@ -6697,16 +6697,16 @@ call MCP; agents do.
 | **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
-| **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv` | `propose_time_entry` | ✅ D-088, LAI-796, D-130 |
+| **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv`; *My availability* (LAI-1139): `GET/PUT /me/availability`, `POST /me/availability/away`, `DELETE /me/availability/away/:id`; *For you* (LAI-1139): `GET /me/notices`, `POST /me/notices/:id/read`, `POST /me/notices/read-all` — the rail's count on *My day* reads the same list | `propose_time_entry` | ✅ D-088, LAI-796, D-130, D-131, D-134 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** *(four tabs, LAI-796)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
-| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage`; the *Time report* tab (LAI-1138): `GET /time/report?members=<them>`, JSON and `format=csv`, a look they are told about; the *Developer setup* tab (LAI-1140): `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ D-078, D-079, D-084, D-130, D-132, D-133 |
+| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage`; the *Time report* tab (LAI-1138): `GET /time/report?members=<them>`, JSON and `format=csv`, a look they are told about; the *Developer setup* tab (LAI-1140): `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId`; *Current load* and the head card's availability (LAI-1139): `GET /people/:id/load` for an owner or a holder of *See everyone's analytics*, read only when they press *Show current load* (never on opening the profile or any tab, never yourself; a look they are told about), `GET /me/availability` on your own profile, and the person's row of `GET /people/availability` for any other reader | — | ✅ D-078, D-079, D-084, D-130, D-131, D-132, D-133, D-137 |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
-| **Time** *(Insights' third tab, `/insights?tab=time`; owners, holders of *See everyone's analytics* and space admins)* | 6 | `GET /time/report` (JSON and `format=csv`; an owner's or analytics reader's report of everyone, or a space admin's one space in whole weeks), `GET /permissions` (which spaces the reader leads), `GET /projects` | — | ✅ D-130, D-136, D-138, LAI-1138 |
+| **Time** *(Insights' third tab, `/insights?tab=time`; owners, holders of *See everyone's analytics* and space admins)* | 6 | `GET /time/report` (JSON and `format=csv`; an owner's or analytics reader's report of everyone, or a space admin's one space in whole weeks), `GET /permissions` (which spaces the reader leads), `GET /projects`; its *Availability* view (`&view=availability`, LAI-1139): `GET /people/availability?space=&tag=&open_only=` (A–Z, no sort), and *Add to project…*: `GET /projects/:slug/tasks?status=&assignee=none` (the first card on offer), `POST /projects/:slug/members` with `message` and `assign_task_id` | — | ✅ D-130, D-131, D-136, D-137, D-138, LAI-1138, LAI-1139 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
@@ -7127,7 +7127,24 @@ anything missing sends the task back.
 - **Time** (Insights' third tab, `/insights?tab=time`, LAI-1138) — the Time
   report of everyone for an owner or a holder of *See everyone's analytics*,
   a space admin's weeks for a space admin; the tab is absent for anybody
-  else, and an address naming it shows the not-allowed state.
+  else, and an address naming it shows the not-allowed state. Two views
+  under it, each with its own address (LAI-1139): **Time report** and
+  **Availability** (`&view=availability`, frames 2g–2l, 2n–2o) — *who has
+  room for another project*, people A–Z and never by how busy anyone is, with
+  no sort control; filters *Space*, *Skills / areas* and *Open to more work
+  only*, sent as the server's three parameters (a space admin's *Space* lists
+  only the spaces they lead); each person's note, tags and pill (a glyph and
+  words, never colour alone), and *updated N ago*, muted past 30 days, where
+  the server sends when it changed — a space admin is not sent it (D-137);
+  *Can take*, *In progress* and *Last 2 weeks* only where the
+  server sent them for this reader (D-137), and **no free-hours column**
+  (D-088 item 1). Empty: *Nobody has marked themselves open to more work in
+  this space* with *Show everyone in …*, or *Nobody matches these filters*
+  with *Clear filters*. *Add to project…* is a dialog (a bottom sheet on a
+  phone) offering only the spaces the reader may manage — a space admin's
+  own — a role, an optional first card and an optional message, posted once;
+  the row then reads *✓ Added to … as … · … was notified*, a `409` takes the
+  space off the list and a `422 user_deactivated` says so. Cards on a phone.
 - **My day** (`/my-day`, the reader's own, D-088; laid out by LAI-796, made
   for a busy day by LAI-810) — the week in the header between *previous* and
   *next*, with *Today* away from it, and while anything is drafted a confirm
@@ -7157,12 +7174,26 @@ anything missing sends the task back.
   project the name matched, it reads as a space block does, the name beside
   it; *Drafted from* shows the name, and the branch when sent, and its line
   then says the name went with the counts; a confirmed entry shows the name.
+  In the header (LAI-1139, frames 2a–2c), the reader's own **availability
+  pill** — *Open to more work · ~6 h/wk*, *At capacity* or *Away until …*, a
+  glyph and words — opening **My availability**: status, *away until*, hours
+  a week they could take, a note, skills and areas, their working week and
+  away periods, *updated N ago · everyone in your spaces sees this* and
+  *Save*; a refusal is the server's sentence beside the field it names. Never
+  on somebody else's day. At the top of *Overview*, **For you** (D-134): what
+  somebody else did that concerns them — added to a space, with the adder's
+  message drawn as plain text and the first card, a space they can no longer
+  open named as gone — with *Mark read* and *Mark all read*, and the unread
+  count on *My day* in the rail; nothing at all when there is nothing.
 - **Member profile** (`/people?user=<id>`, D-078; *My profile* in the user
   menu opens the reader's own, for an owner or an admin) — owners and admins only:
   anyone else sees a permission notice and the profile is never requested.
   Laid out as cards on a grid that folds to one column on a phone (LAI-750).
   A head card with name, the **Builder / Manager** kind as a chip, org role,
-  project count, email, member since, and **⋯** — a menu button named
+  project count, email, member since, their **availability** — the pill,
+  note and tags, *set by … · updated N ago* (LAI-1139, frames 2d–2f), when
+  they have said any; for a reader whose only way to it is the load read,
+  only once *Show current load* has been pressed — and **⋯** — a menu button named
   *Manage <name>* whose *Manage member…* opens the **Manage member panel**
   (LAI-1134): a right-hand panel on a desktop, a bottom sheet on a phone, a
   modal that takes focus, holds it, and hands it back to ⋯ on Escape or close.
@@ -7204,6 +7235,17 @@ anything missing sends the task back.
   admin is offered none of them and told why, and a `403 not_for_owner` is
   said in those terms. A deactivated person's setup is read-only history with
   only the revokes left; loading, empty and error-with-retry states.
+  On Overview, for somebody else and only for an
+  owner or a holder of *See everyone's analytics*, **Current load**
+  (LAI-1139) — **collapsed** as *Show current load · <name> can see you
+  looked*, and read only on that click, never on opening the profile or any
+  of its tabs (the same rule as *Time this week*; this departs from frame 2f,
+  which draws it open). Once shown — *facts, not a score*, a look they are
+  told about: hours by
+  space over their last two weeks, their cards in progress, waiting for
+  review and due in seven days, their working week as **two numbers on a
+  neutral track with no fill** (*21h 5m tracked of 40h set*, never a
+  proportion), who set it, and their away dates; no free hours.
   Overview leads with the summary — **current
   work**, **agents used**, **review work**, **projects** — then the Activity
   card, then the **record**, which keeps everything the summary does not

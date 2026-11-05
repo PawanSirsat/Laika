@@ -3,6 +3,7 @@ import { useShell } from './shell-context.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
 import { inboxCount } from '../../routes/page-tabs.ts';
 import { handoffsWaiting } from '../agent/person-handoffs.ts';
+import { useUnreadNotices } from '../../api/notices.ts';
 
 export interface ShellSidebarProps {
   readonly open: boolean;
@@ -51,6 +52,8 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
     open: openSpace,
     togglePin: togglePinnedSpace,
   } = useSpaces(session.status === 'authenticated', projectSlug);
+  // For you's unread notices (D-134, LAI-1139), on My day where they are read.
+  const unreadNotices = useUnreadNotices(session.status === 'authenticated');
   return (
     <Sidebar
       currentPath={path}
@@ -74,6 +77,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       counts={{
         '/inbox': inboxCount(reviewWaiting, unlistedOpen, handoffsWaiting(handoffCounts)),
         '/insights': tokenAlerts?.length,
+        '/my-day': unreadNotices,
       }}
       user={me}
       onSignOut={signOut}

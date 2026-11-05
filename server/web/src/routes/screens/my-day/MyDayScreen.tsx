@@ -45,6 +45,7 @@ import { CHIP_CAP, cardChips, cardChipsWhy } from './card-chips.ts';
 import { DayTabs, type DayTab } from './DayTabs.tsx';
 import { DraftList, type Batch } from './DraftList.tsx';
 import { ConfirmDaySummary } from './ConfirmDaySummary.tsx';
+import { AvailabilityPopover } from './AvailabilityPopover.tsx';
 import { DaySettings } from './DaySettings.tsx';
 import { TimerControl, timerSeconds } from './TimerControl.tsx';
 import { useConfirm } from '../../../components/ConfirmProvider.tsx';
@@ -67,6 +68,7 @@ import { DayEmpty, type EmptyAction, type EmptyKind } from './DayEmpty.tsx';
 import { DayError } from './DayError.tsx';
 import { DayOff } from './DayOff.tsx';
 import { DaySkeleton, DaySkeletonActions } from './DaySkeleton.tsx';
+import { ForYouCard } from './ForYouCard.tsx';
 import { HeaderPopover } from './HeaderPopover.tsx';
 import { MyDayPhoneBar } from './MyDayPhoneBar.tsx';
 import { MyDayPhoneHead } from './MyDayPhoneHead.tsx';
@@ -1410,6 +1412,7 @@ export function MyDayScreen({
       <MyDayPhoneBar>
         {/* Not in the design's bar, which has no other way to Agent time and On your plate. */}
         {phoneBeside}
+        {!readOnly && <AvailabilityPopover />}
         {!readOnly && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
         {switcher}
         {avatar}
@@ -1541,24 +1544,32 @@ export function MyDayScreen({
             variant="page"
             title={title}
             context={
-              orgOff ? undefined : (
-                <span className="myday-figure" data-day-total>
-                  <span className="myday-figure-total">
-                    {/* A past day nothing reached is no signal, never 0 min (LAI-831). */}
-                    {emptyKind === 'past' ? '—' : duration(totals.confirmed + totals.drafted)}
+              orgOff ? (
+                readOnly ? undefined : (
+                  <AvailabilityPopover />
+                )
+              ) : (
+                <>
+                  <span className="myday-figure" data-day-total>
+                    <span className="myday-figure-total">
+                      {/* A past day nothing reached is no signal, never 0 min (LAI-831). */}
+                      {emptyKind === 'past' ? '—' : duration(totals.confirmed + totals.drafted)}
+                    </span>
+                    <span className="myday-figure-sub">
+                      {view.state === 'future'
+                        ? 'not started'
+                        : emptyKind === 'past'
+                          ? 'no signal'
+                          : totals.drafted > 0
+                            ? `${duration(totals.drafted)} to review`
+                            : totals.confirmed > 0
+                              ? `${duration(totals.confirmed)} confirmed`
+                              : 'nothing yet'}
+                    </span>
                   </span>
-                  <span className="myday-figure-sub">
-                    {view.state === 'future'
-                      ? 'not started'
-                      : emptyKind === 'past'
-                        ? 'no signal'
-                        : totals.drafted > 0
-                          ? `${duration(totals.drafted)} to review`
-                          : totals.confirmed > 0
-                            ? `${duration(totals.confirmed)} confirmed`
-                            : 'nothing yet'}
-                  </span>
-                </span>
+                  {/* My availability (D-131, LAI-1139): yours to set, so never on someone else's day. */}
+                  {!readOnly && <AvailabilityPopover />}
+                </>
               )
             }
             description={
@@ -1950,6 +1961,8 @@ export function MyDayScreen({
                 onPick={pickTab}
               />
             )}
+            {/* What somebody else did that concerns you (D-134, LAI-1139): your own day only. */}
+            {showLists && inTab('overview') && !readOnly && <ForYouCard onNavigate={onNavigate} />}
             {showLists && inTab('overview') && (
               <OverviewTab
                 view={view}

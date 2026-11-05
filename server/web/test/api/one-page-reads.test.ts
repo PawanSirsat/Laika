@@ -67,6 +67,13 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
       },
     ],
     [
+      'routes/screens/insights/AddToProjectDialog.tsx',
+      {
+        names: ['listTasks'],
+        why: 'a deliberate window: the first eight unassigned todo and backlog cards offered as a first card (LAI-1139), never counted',
+      },
+    ],
+    [
       'routes/screens/sprints/use-sprints.ts',
       { names: ['listSprints'], why: 'its own cursor loop, reporting `truncated`' },
     ],

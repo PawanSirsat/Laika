@@ -2060,6 +2060,8 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
 
       // *Time this week* (LAI-1138) leads: a link to the Time report, no figures.
       await assertOneColumn(h.page, [
+        // Current load (LAI-1139), across the page above the summary.
+        'load',
         'time',
         'current',
         'agents',
@@ -2124,6 +2126,8 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
 
       // *Time this week* (LAI-1138) leads: a link to the Time report, no figures.
       await assertOneColumn(h.page, [
+        // Current load (LAI-1139), across the page above the summary.
+        'load',
         'time',
         'current',
         'agents',
@@ -2153,6 +2157,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       assert.deepEqual(cards.map((card) => card.name).sort(), [
         'activity',
         'decisions',
+        'load',
         'projects',
         'rating',
         'review',
@@ -2160,6 +2165,8 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
         'tokens',
       ]);
       await assertOneColumn(h.page, [
+        // Current load (LAI-1139), across the page above the summary.
+        'load',
         'time',
         'review',
         'projects',
