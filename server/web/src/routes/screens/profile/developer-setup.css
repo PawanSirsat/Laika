@@ -181,7 +181,7 @@
 }
 
 .ds-tiny {
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
 }
 
 .ds-small {
@@ -257,7 +257,7 @@
 
 .ds-tile-value {
   font-family: var(--font-mono);
-  font-size: 1.25rem;
+  font-size: var(--text-heading-md);
   font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
@@ -310,7 +310,7 @@
   height: 1.125rem;
   border: 1.5px solid currentColor;
   border-radius: 50%;
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
 }
 
@@ -593,7 +593,7 @@
 }
 
 .ds-facts dt {
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
