@@ -1,0 +1,783 @@
+/*
+ * The profile's Developer setup tab (LAI-1140, frames 2p–2ab). Every colour is
+ * a theme token, so light and dark come from `theme.css` alone; below 46rem
+ * each table row folds into two columns with its labels written out (2r).
+ */
+
+.ds {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.ds-body,
+.ds-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.ds[data-deactivated] .ds-body {
+  filter: grayscale(1);
+}
+
+.ds-notice {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  background: var(--chip-neutral-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+}
+
+.ds-lock {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+}
+
+.ds-deactivated,
+.ds-owner-note,
+.ds-done,
+.ds-error {
+  margin: 0;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius-control);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.ds-deactivated {
+  border: 1px solid var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+}
+
+.ds-owner-note {
+  border: 1px solid var(--chip-blue-border);
+  background: var(--chip-blue-bg);
+}
+
+.ds-done {
+  border: 1px solid var(--chip-green-border);
+  background: var(--chip-green-bg);
+}
+
+.ds-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  border: 1px solid var(--overdue-border);
+  background: var(--blocked-bg);
+}
+
+.ds-error > span {
+  flex: 1 1 18rem;
+}
+
+.ds-error b {
+  color: var(--overdue);
+}
+
+.ds-retry,
+.ds-fold,
+.ds-expand {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.ds-retry {
+  padding: 0.3125rem 0.875rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.ds-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 1rem 1.125rem 1.125rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-card);
+}
+
+.ds-head,
+.ds-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.625rem;
+  min-width: 0;
+}
+
+.ds-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.ds-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  background: var(--chip-neutral-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 0 0.4375rem;
+}
+
+.ds-caption,
+.ds-subhead {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.ds-subhead {
+  margin: 0;
+  font-weight: var(--weight-bold);
+}
+
+.ds-muted {
+  color: var(--text-secondary);
+}
+
+.ds-list {
+  margin: 0;
+  padding-left: 1.125rem;
+}
+
+.ds-card > p {
+  margin: 0;
+}
+
+.ds-mono {
+  font-family: var(--font-mono);
+}
+
+.ds-strong {
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.ds-tiny {
+  font-size: var(--text-small);
+}
+
+.ds-small {
+  font-size: var(--text-small);
+}
+
+.ds-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.ds-push {
+  margin-left: auto;
+}
+
+.ds-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- skeleton */
+
+.ds-skel {
+  display: block;
+  height: 2.25rem;
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+}
+
+.ds-skel-title {
+  width: 40%;
+  height: 1rem;
+}
+
+/* ---------------------------------------------------------------- summary */
+
+.ds-tiles {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 0.5rem;
+}
+
+.ds-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  padding: 0.5625rem 0.6875rem 0.625rem;
+  background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.ds-tile dt,
+.ds-tile-sub {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.ds-tile dt {
+  font-weight: var(--weight-bold);
+}
+
+.ds-tile dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ds-tile-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.ds-health {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-control);
+  font-size: var(--text-body);
+}
+
+.ds-health b {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.ds-health-ok {
+  border: 1px solid var(--chip-green-border);
+  background: var(--chip-green-bg);
+}
+
+.ds-health-ok b {
+  color: var(--chip-green);
+}
+
+.ds-health-warn {
+  border: 1px solid var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+}
+
+.ds-health-warn b {
+  color: var(--chip-orange);
+}
+
+.ds-health a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-default);
+  text-underline-offset: 3px;
+}
+
+.ds-health-glyph {
+  display: inline-grid;
+  place-items: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+}
+
+/* ---------------------------------------------------------------- chips */
+
+.ds-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--chip-neutral-bg);
+}
+
+.ds-chip-ok {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+
+.ds-chip-warn {
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+}
+
+.ds-chip-danger {
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border-color: var(--overdue-border);
+}
+
+.ds-chip-waiting,
+.ds-chip-blue {
+  color: var(--chip-blue);
+  background: var(--chip-blue-bg);
+  border-color: var(--chip-blue-border);
+}
+
+.ds-check-ok {
+  color: var(--chip-green);
+}
+
+.ds-check-no {
+  color: var(--overdue);
+  font-weight: var(--weight-bold);
+}
+
+/* ---------------------------------------------------------------- tables */
+
+.ds-table {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ds-row {
+  display: grid;
+  column-gap: 0.75rem;
+  row-gap: 0.375rem;
+  align-items: center;
+  padding: 0.5rem 0.375rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.ds-row > * {
+  min-width: 0;
+}
+
+.ds-row-head {
+  border-top: 1px solid var(--border-subtle);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+}
+
+.ds-row-bad {
+  background: color-mix(in srgb, var(--blocked-bg) 60%, transparent);
+}
+
+.ds-row:focus,
+.ds-tool:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ds-dev-table .ds-row {
+  grid-template-columns:
+    minmax(0, 1.25fr) 6.5rem minmax(0, 1.1fr) minmax(0, 1fr) 9rem 6rem 3.5rem
+    2.25rem;
+}
+
+.ds-repo-table .ds-row {
+  grid-template-columns:
+    minmax(0, 1.1fr) minmax(0, 0.7fr) minmax(0, 1.3fr) 6.5rem 6.5rem 6.5rem 8rem
+    6.5rem;
+}
+
+.ds-tok-table .ds-row {
+  grid-template-columns:
+    minmax(0, 1.4fr) 5.5rem minmax(0, 1fr) 6.75rem minmax(0, 0.9fr) minmax(0, 1fr)
+    7rem 2.25rem;
+}
+
+.ds-tok-table + .ds-tok-table {
+  margin-top: 0.75rem;
+}
+
+.ds-cell-menu {
+  justify-self: end;
+}
+
+.ds-fp {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.ds-lbl {
+  display: none;
+  color: var(--text-muted);
+}
+
+.ds-expand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.ds-chev {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  color: var(--text-muted);
+  transition: transform var(--transition);
+}
+
+.ds-chev-open {
+  transform: rotate(90deg);
+}
+
+.ds-row-open {
+  padding: 0.5rem 0.375rem 0.75rem 2.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-column) 45%, transparent);
+  font-size: var(--text-body);
+}
+
+.ds-hidden-row {
+  padding: 0.625rem 0.375rem;
+  font-size: var(--text-body);
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.ds-fold {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.ds-revoked,
+.ds-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.ds-pending {
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border-default);
+}
+
+.ds-pending-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.625rem;
+  font-size: var(--text-body);
+}
+
+.ds-revoked-list {
+  margin: 0;
+  padding: 0 0 0 1.25rem;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.ds-struck {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  text-decoration: line-through;
+}
+
+/* ---------------------------------------------------------------- tools */
+
+.ds-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ds-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 0.75rem;
+}
+
+.ds-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  font-size: var(--text-body);
+}
+
+.ds-tool-warn {
+  border-color: var(--chip-orange-border);
+}
+
+.ds-checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.875rem;
+  font-size: var(--text-small);
+}
+
+.ds-space {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: var(--weight-semibold);
+  background: var(--chip-neutral-bg);
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-chip);
+  padding: 0.0625rem 0.375rem;
+  white-space: nowrap;
+}
+
+.ds-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.375rem 0.75rem;
+}
+
+.ds-facts dt {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.ds-facts dd {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- tokens */
+
+.ds-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+}
+
+.ds-seg button {
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ds-seg .ds-seg-on {
+  color: var(--text-primary);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.ds-search {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  height: 2rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+}
+
+.ds-search input {
+  width: 9rem;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  outline: none;
+}
+
+/* ---------------------------------------------------------------- activity */
+
+.ds-activity {
+  margin: 0;
+  padding: 0 0 0 0.375rem;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-default);
+}
+
+.ds-activity li {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.125rem 0.75rem;
+  padding: 0.375rem 0 0.375rem 1rem;
+  font-size: var(--text-body);
+}
+
+.ds-activity time {
+  flex: 0 0 7.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.ds-dot {
+  position: absolute;
+  left: -0.3125rem;
+  top: 0.75rem;
+  width: 0.5625rem;
+  height: 0.5625rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--bg-card);
+}
+
+.ds-dot-tool_revoked,
+.ds-dot-device_unpaired,
+.ds-dot-token_revoked {
+  background: var(--text-muted);
+}
+
+.ds-dot-project_check_failed {
+  background: var(--overdue);
+}
+
+/* ---------------------------------------------------------------- confirm */
+
+.ds-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ds-confirm-head {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ds-confirm-stops {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-left: 1.125rem;
+  color: var(--text-primary);
+}
+
+.ds-confirm-stops > span {
+  display: list-item;
+  list-style: disc;
+}
+
+.ds-confirm-notify {
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-control);
+  background: var(--chip-blue-bg);
+  border: 1px solid var(--chip-blue-border);
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------- phone (2r) */
+
+@media (max-width: 46rem) {
+  .ds-dev-table .ds-row,
+  .ds-repo-table .ds-row,
+  .ds-tok-table .ds-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .ds-row-head {
+    display: none;
+  }
+
+  .ds-cell-main {
+    grid-column: 1 / 2;
+  }
+
+  .ds-repo-table .ds-cell-main {
+    grid-column: 1 / -1;
+  }
+
+  .ds-cell-menu {
+    grid-column: 2 / 3;
+    grid-row: 1;
+  }
+
+  .ds-lbl {
+    display: inline;
+  }
+
+  .ds-search {
+    margin-left: 0;
+  }
+
+  .ds-row-open {
+    padding-left: 1rem;
+  }
+}
