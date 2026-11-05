@@ -1,13 +1,11 @@
 import type { MouseEvent } from 'react';
 import {
-  COST_LABEL,
   costText,
   OUTSIDE_ANY_SPACE,
   outsideAnySpace,
   percent,
   type Usage,
 } from '../../../api/usage.ts';
-import { InfoTip } from '../profile/InfoTip.tsx';
 import { BarRows, type BarRow } from './BarRows.tsx';
 import { spaceRow, spaceUsageHref } from './usage-derive.ts';
 
@@ -17,9 +15,10 @@ import { spaceRow, spaceUsageHref } from './usage-derive.ts';
  * space holds, last, so the rows add up to the Tokens tile. A space's name is
  * the way to its own view — only for a space the selector offers: an archived
  * one is counted, and named plainly, because its view would open All spaces.
- * Per space, never per person.
+ * Per space, never per person. The Breakdown card's *Space* tab (LAI-1127),
+ * offered only when the server sent `by_project`.
  */
-export function BySpaceCard({
+export function BySpaceRows({
   usage,
   link,
   offered,
@@ -67,25 +66,7 @@ export function BySpaceCard({
   }
 
   return (
-    <section
-      className="prof-card usage-card"
-      data-section="spaces"
-      aria-labelledby="usage-spaces-title"
-    >
-      <header className="prof-card-head">
-        <h3 className="prof-card-title" id="usage-spaces-title">
-          By space
-        </h3>
-        <span className="prof-card-caption">most first · cost is {COST_LABEL}</span>
-        <InfoTip label="About by space">
-          <p className="usage-info">
-            Each space’s tokens over the range — every one tied to its tasks — with its share of the
-            organisation’s and what they would cost on the API. Tokens no task holds cannot be
-            placed in a space and are counted once, last, so the rows add up to the total. Open a
-            space for its own figures.
-          </p>
-        </InfoTip>
-      </header>
+    <>
       {spaces.length === 0 && (
         <p className="prof-empty">
           No tokens are tied to a space’s tasks in this range: until agents mark the task they work
@@ -93,6 +74,6 @@ export function BySpaceCard({
         </p>
       )}
       {rows.length > 0 && <BarRows label="Tokens by space" rows={rows} />}
-    </section>
+    </>
   );
 }
