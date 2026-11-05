@@ -3594,7 +3594,9 @@ Indexes `(user_id, read_at, created_at)` and `(created_at)`. **It is not
 `activity`**, so §4.8 gains no verb: the adder's `member.added` and
 `task.assigned` rows are the history, and this is the person being told. **A
 self-action writes none.** Read and marked only by the person it names
-(`notices.own`, §3.1), and kept 90 days, read or not (§11.6).
+(`notices.own`, §3.1), and kept 90 days, read or not (§11.6). The space and
+card it links to are shown only while that person can still read the space
+(§6.4); `subject` is kept as it was.
 
 ## 5. Task lifecycle
 
@@ -5090,7 +5092,13 @@ force. `POST /me/token-alerts/:id/dismiss` puts one away for the caller only
 id, key, title } | null, subject, message, created_at, read_at }],
 next_cursor, unread_count }` — the caller's own (§4.87), newest first, paged
 as §6.3; `?unread=true` lists unread ones only, and `unread_count` is the
-whole count, not a page's. `POST /me/notices/:id/read` and `POST
+whole count, not a page's. **`project` and `task` are read live, so they are
+shown only while the caller can still read that space** (`project.read`,
+through membership or implicit access). Removed from a private space, the
+caller keeps the notice and its `message`, but reads `project: null` and
+`task: null`, as for a deleted row, and never the space's or card's current
+name. `subject` is a snapshot and stays. `message` is the adder's own text, and
+a client renders it as plain text. `POST /me/notices/:id/read` and `POST
 /me/notices/read-all` are `204` and **idempotent**: a notice already read keeps
 its first `read_at`, and somebody else's or a missing id is the same `404`.
 All three are `notices.own`, **session only** — a token is `403`,

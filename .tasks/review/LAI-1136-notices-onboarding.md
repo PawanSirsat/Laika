@@ -49,3 +49,19 @@ of LAIKA-997 (LAI-1133).
   system action and §3.4 lists them all. Not in the plan's named sections.
 - The plan's `web/src/api/notices.ts` client types are left to LAI-1139
   (dispatch: server only); `NoticeView` is in `UNPAIRED` until then.
+
+## Review fixes (PR #277, 2026-11-05)
+
+- **B1:** `GET /me/notices` read the space and card live. It now shows them
+  only while the recipient can still read the space (`project.read` through
+  `can()`, as `canSeeProject` asks it); otherwise `project` and `task` are
+  `null`, as for a deleted row. `subject` stays a snapshot. Test: add Ada with
+  a first card, remove her, rename the card. Her notice has `project: null`
+  and `task: null` and never contains the new title. With the check broken,
+  the test goes red.
+- **N3:** re-adding a member who has since been deactivated is
+  `422 user_deactivated`, not `409`, and has a test.
+- **For LAI-1139:** `message` is the adder's free text, and the web must
+  render it as **plain text**, never as HTML or Markdown. LAI-1139 has no task
+  file on any branch, so this note is here and on its card (LAIKA-1002); SPEC
+  §6.4 says it too.

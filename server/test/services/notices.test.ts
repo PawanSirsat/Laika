@@ -19,7 +19,12 @@ import {
   markNoticeRead,
   unreadNoticeCount,
 } from '../../src/services/notices.ts';
-import { addMember, createProject, projectIdByKeyPrefix } from '../../src/services/projects.ts';
+import {
+  addMember,
+  createProject,
+  projectIdByKeyPrefix,
+  removeMember,
+} from '../../src/services/projects.ts';
 import { changeStatus, createTask, updateTask } from '../../src/services/tasks.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
@@ -174,6 +179,16 @@ describe('adding a member writes one notice (D-134)', () => {
     expect(activityOf('member.added')).toHaveLength(1);
   });
 
+  it('refuses re-adding a member since deactivated 422 user_deactivated, not 409', () => {
+    const ada = makeUser('ada@example.test');
+    addMember(t.db, actor(adminId), 'laika', ada, 'member', NOW);
+    t.db.update(users).set({ isActive: 0 }).where(eq(users.id, ada)).run();
+    const err = refusal(() => addMember(t.db, actor(adminId), 'laika', ada, 'member', NOW + 1));
+    expect(err.code).toBe('unprocessable');
+    expect(reasonOf(err)).toBe('user_deactivated');
+    expect(t.db.select().from(memberNotices).all()).toHaveLength(1);
+  });
+
   it('refuses a deactivated person 422 user_deactivated and writes nothing', () => {
     const gone = makeUser('gone@example.test', 'member', 0);
     const err = refusal(() => addMember(t.db, actor(adminId), 'laika', gone, 'member', NOW));
@@ -288,6 +303,35 @@ describe('reading and marking notices', () => {
     expect(page(ada).map((n) => n.read_at)).toEqual([NOW + 10, NOW + 10]);
     expect(unreadNoticeCount(t.db, actor(ada))).toBe(0);
     expect(unreadNoticeCount(t.db, actor(bea))).toBe(1);
+  });
+});
+
+describe('a removed member keeps the notice, not the live space (LAI-1136 review, B1)', () => {
+  it('hides the space and the card once the recipient can no longer read the space', () => {
+    const ada = makeUser('ada@example.test');
+    const bea = makeUser('bea@example.test');
+    const taskId = newTask('laika', 'Start here');
+    addMember(t.db, actor(adminId), 'laika', ada, 'member', NOW, {
+      message: 'Welcome',
+      assignTaskId: taskId,
+    });
+    addMember(t.db, actor(adminId), 'laika', bea, 'member', NOW + 1);
+    // Positive control: while Ada is a member, both are shown, live.
+    expect(page(ada)[0]).toMatchObject({
+      project: { slug: 'laika' },
+      task: { id: taskId, title: 'Start here' },
+    });
+
+    removeMember(t.db, actor(adminId), 'laika', ada, NOW + 2, 'unassign');
+    updateTask(t.db, actor(adminId), taskId, { title: 'Secret new title' });
+
+    const [notice] = page(ada);
+    expect(notice).toMatchObject({ kind: 'added_to_space', message: 'Welcome' });
+    expect(notice!.project).toBeNull();
+    expect(notice!.task).toBeNull();
+    expect(JSON.stringify(page(ada))).not.toContain('Secret new title');
+    // Somebody still in the space reads it live.
+    expect(page(bea)[0]!.project).toMatchObject({ slug: 'laika' });
   });
 });
 

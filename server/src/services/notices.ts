@@ -1,11 +1,11 @@
 import { and, count, desc, eq, isNull, lt, or, type SQL } from 'drizzle-orm';
-import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type MemberNoticeKind } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { memberNotices, projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { assertCan, can } from '../policy/can.ts';
 
 /**
  * A member's notices (SPEC §4.87, D-134, LAI-1136): being added to a space,
@@ -122,6 +122,7 @@ export function listNotices(
       projectName: projects.name,
       projectPrefix: projects.prefix,
       taskId: tasks.id,
+      taskProjectId: tasks.projectId,
       taskNumber: tasks.number,
       taskTitle: tasks.title,
       subject: memberNotices.subject,
@@ -142,11 +143,11 @@ export function listNotices(
       kind: r.kind,
       actor: { id: r.actorId, name: r.actorName },
       project:
-        r.projectId === null
+        r.projectId === null || !readable(actor, r.projectId)
           ? null
           : { id: r.projectId, slug: r.projectSlug!, name: r.projectName! },
       task:
-        r.taskId === null
+        r.taskId === null || r.taskProjectId === null || !readable(actor, r.taskProjectId)
           ? null
           : {
               id: r.taskId,
@@ -158,6 +159,20 @@ export function listNotices(
       created_at: r.createdAt,
       read_at: r.readAt,
     }));
+}
+
+/**
+ * **The space and the card are live, so they are shown only while the
+ * recipient can still read the space** (LAI-1136 review, B1): `project.read`,
+ * membership or implicit access, as `canSeeProject` asks it. A person removed
+ * from a private space keeps the notice, but not that space's current name or
+ * its card's current title. A space they cannot read now looks like a deleted
+ * one: `null`. `subject` is a snapshot from when it happened (§4.87), so it
+ * stays. This uses `can()` directly rather than importing `projects.ts`, so
+ * that this module still imports no service.
+ */
+function readable(actor: ResolvedActor, projectId: string): boolean {
+  return can(withProject(actor, projectId), 'project.read', { projectId });
 }
 
 /** How many of the caller's notices are unread — the whole count, not a page's. */
