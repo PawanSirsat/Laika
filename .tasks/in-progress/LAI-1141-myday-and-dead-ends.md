@@ -1,5 +1,5 @@
 ---
-id: LAI-1130
+id: LAI-1141
 title: 'My day with time tracking off shows your work; small dead ends and correctness fixes'
 area: web
 assignee: shell
@@ -53,3 +53,10 @@ ScreenOutlet task links (LAI-1127), error states in Calendar / Activity /
 Capacity / Unlisted / Advanced (LAI-1128), shared toast and ReviewScreen and
 settings tabs (LAI-1129), `/design` (LAI-1131). In `BoardScreen.tsx` only
 the empty-state JSX changes. PR base is `integration-ui-transformation`.
+
+**Renumbered from LAI-1130 (2026-11-05).** `origin/master` took LAI-1130 for
+a different task (`LAI-1130-availability-load.md`, PR #274) while this one
+was unpushed. Under CLAUDE.md §3 the id is renumbered and earlier commits are
+not rewritten. The five commits `cbc50dba`, `0cb4513c`, `377eec2b`,
+`874e4908` and `d4a6f285` carry `[LAI-1130]` in error: they are this task's
+(LAI-1141), not LAI-1130's. Every later commit carries `[LAI-1141]`.
