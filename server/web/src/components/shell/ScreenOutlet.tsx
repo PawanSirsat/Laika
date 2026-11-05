@@ -361,6 +361,7 @@ function InsightsRoute() {
   const {
     route: { params, navigate },
     me,
+    orgName,
   } = useShell();
   const { permissions, settled } = usePermissions(me !== undefined);
   const leads = ledProjectIds(permissions);
@@ -377,6 +378,7 @@ function InsightsRoute() {
               : 'none'
           }
           leads={leads}
+          orgName={orgName}
         />
       ) : tab === 'usage' ? (
         <UsageRoute />

@@ -10,6 +10,7 @@ export interface TimeTabProps {
   readonly view: 'org' | 'space' | 'none';
   /** The spaces the reader leads, by id (§3.2 `time.report.read_project`). */
   readonly leads: readonly string[];
+  readonly orgName?: string | undefined;
 }
 
 /**
@@ -17,13 +18,13 @@ export interface TimeTabProps {
  * report with a Member filter, people A–Z — or, for a space admin, one
  * figure a week for a space they lead (D-136, D-138). Nobody else reaches it.
  */
-export function TimeTab({ view, leads }: TimeTabProps) {
+export function TimeTab({ view, leads, orgName }: TimeTabProps) {
   const today = dayIn(readerZone(), Date.now());
   const projects = useProjects();
   if (view === 'none') {
     return <PermissionDenied resource="the Time report" requiredRole="lead" scope="project" />;
   }
-  if (view === 'org') return <TimeReport scope="org" today={today} />;
+  if (view === 'org') return <TimeReport scope="org" today={today} orgName={orgName} />;
   if (projects.status === 'loading') {
     return <LoadingState shape="card" count={1} label="Loading the spaces you lead" />;
   }

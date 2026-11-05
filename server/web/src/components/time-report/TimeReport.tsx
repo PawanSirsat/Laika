@@ -91,6 +91,8 @@ export interface TimeReportProps {
    * then one of them at a time, whole weeks, one figure a week.
    */
   readonly ledSpaces?: readonly ReportSpace[] | undefined;
+  /** The organisation's name, for *Everyone in …* (frame 1g). */
+  readonly orgName?: string | undefined;
 }
 
 type Load =
@@ -154,6 +156,7 @@ export function TimeReport({
   initialRange,
   onDay,
   ledSpaces,
+  orgName,
 }: TimeReportProps) {
   const ids = useId();
   const weekly = ledSpaces !== undefined;
@@ -174,7 +177,10 @@ export function TimeReport({
   const [seenPeople, setSeenPeople] = useState<ReadonlyMap<string, string>>(new Map());
 
   const shownRange: DayRange = stretchOf(range, anchor, picked);
-  const stretch = weekly ? wholeWeeks(shownRange) : shownRange;
+  // A space admin's weeks stop at this one: a week still to come has no figure to show.
+  const stretch = weekly
+    ? wholeWeeks({ from: shownRange.from, to: shownRange.to > today ? today : shownRange.to })
+    : shownRange;
   const problem = range === 'range' ? rangeProblem(shownRange) : undefined;
 
   // A personal report with nobody named would be everyone's: never sent.
@@ -234,7 +240,7 @@ export function TimeReport({
     weekly && spaceName !== undefined
       ? `${spaceName} · ${label}`
       : scope === 'org'
-        ? `Everyone · ${label}`
+        ? `${orgName === undefined || orgName === '' ? 'Everyone' : `Everyone in ${orgName}`} · ${label}`
         : scope === 'person' && subject !== undefined
           ? `${subject.name} · ${label}`
           : label;
@@ -279,21 +285,21 @@ export function TimeReport({
 
   return (
     <section
-      className="tr"
+      className="trep"
       aria-labelledby={`${ids}-title`}
       aria-busy={load.kind === 'loading'}
       data-time-report={weekly ? 'space' : scope}
     >
-      <header className="tr-head">
-        <div className="tr-titles">
-          <h2 className="tr-title" id={`${ids}-title`}>
+      <header className="trep-head">
+        <div className="trep-titles">
+          <h2 className="trep-title" id={`${ids}-title`}>
             {title}
           </h2>
-          <span className="tr-caption" data-tr-caption>
+          <span className="trep-caption" data-tr-caption>
             {caption}
           </span>
           {scope === 'person' && (
-            <span className="tr-lock" data-tr-lock>
+            <span className="trep-lock" data-tr-lock>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="5" y="11" width="14" height="9" rx="2" />
                 <path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3" />
@@ -302,14 +308,14 @@ export function TimeReport({
             </span>
           )}
         </div>
-        <div className="tr-segments" role="radiogroup" aria-label="Range">
+        <div className="trep-segments" role="radiogroup" aria-label="Range">
           {ranges.map((r) => (
             <button
               key={r}
               type="button"
               role="radio"
               aria-checked={range === r}
-              className={range === r ? 'tr-segment tr-segment-on' : 'tr-segment'}
+              className={range === r ? 'trep-segment trep-segment-on' : 'trep-segment'}
               data-tr-range={r}
               onClick={() => {
                 if (r === 'day' && onDay !== undefined) {
@@ -326,11 +332,11 @@ export function TimeReport({
         </div>
       </header>
 
-      <div className="tr-bar" role="toolbar" aria-label="Report controls">
-        <div className="tr-stepper">
+      <div className="trep-bar" role="toolbar" aria-label="Report controls">
+        <div className="trep-stepper">
           <button
             type="button"
-            className="tr-step"
+            className="trep-step"
             aria-label={`Previous ${unit}`}
             data-tr-prev
             onClick={() => {
@@ -343,12 +349,12 @@ export function TimeReport({
               <path d="m15 6-6 6 6 6" />
             </svg>
           </button>
-          <span className="tr-range-label" aria-live="polite" data-tr-label>
+          <span className="trep-range-label" aria-live="polite" data-tr-label>
             {label}
           </span>
           <button
             type="button"
-            className="tr-step"
+            className="trep-step"
             aria-label={`Next ${unit}`}
             disabled={nextDisabled}
             data-tr-next
@@ -363,7 +369,7 @@ export function TimeReport({
             </svg>
           </button>
         </div>
-        <span className="tr-divider" aria-hidden="true" />
+        <span className="trep-divider" aria-hidden="true" />
         {weekly ? (
           <Chip
             id="space"
@@ -375,7 +381,7 @@ export function TimeReport({
           >
             <div role="radiogroup" aria-label="Space">
               {chipOptions.space.map((o) => (
-                <label key={o.value} className="tr-option">
+                <label key={o.value} className="trep-option">
                   <input
                     type="radio"
                     name={`${ids}-space`}
@@ -386,7 +392,7 @@ export function TimeReport({
                     }}
                   />
                   <SpaceBadge slug={o.space.slug} name={o.space.name} />
-                  <span className="tr-option-label">{o.label}</span>
+                  <span className="trep-option-label">{o.label}</span>
                 </label>
               ))}
             </div>
@@ -431,7 +437,7 @@ export function TimeReport({
               options={chipOptions.kind.map((o) => ({
                 value: o.value,
                 label: o.label,
-                mark: <span className={`tr-dot tr-kind-${o.kind}`} aria-hidden="true" />,
+                mark: <span className={`trep-dot trep-kind-${o.kind}`} aria-hidden="true" />,
               }))}
               selected={filters.kinds}
               open={pop === 'kind'}
@@ -442,16 +448,16 @@ export function TimeReport({
             />
           </>
         )}
-        <div className="tr-bar-end">
+        <div className="trep-bar-end">
           {!weekly && (
-            <div className="tr-segments" role="radiogroup" aria-label="Which time to count">
+            <div className="trep-segments" role="radiogroup" aria-label="Which time to count">
               {([false, true] as const).map((v) => (
                 <button
                   key={String(v)}
                   type="button"
                   role="radio"
                   aria-checked={drafts === v}
-                  className={drafts === v ? 'tr-segment tr-segment-on' : 'tr-segment'}
+                  className={drafts === v ? 'trep-segment trep-segment-on' : 'trep-segment'}
                   data-tr-drafts={v ? 'include' : 'exclude'}
                   onClick={() => {
                     setDrafts(v);
@@ -464,7 +470,7 @@ export function TimeReport({
           )}
           <button
             type="button"
-            className="tr-export"
+            className="trep-export"
             disabled={!ready || nothing || csv.busy}
             aria-busy={csv.busy}
             data-tr-export
@@ -482,14 +488,14 @@ export function TimeReport({
         </div>
       </div>
       {csv.error !== undefined && (
-        <p className="tr-note tr-note-error" role="alert" data-tr-csv-error>
+        <p className="trep-note trep-note-error" role="alert" data-tr-csv-error>
           <b>The file could not be made.</b> {csv.error}
         </p>
       )}
 
       {range === 'range' && (
-        <div className="tr-picker" data-tr-picker>
-          <div className="tr-presets" role="group" aria-label="Quick picks">
+        <div className="trep-picker" data-tr-picker>
+          <div className="trep-presets" role="group" aria-label="Quick picks">
             {RANGE_PRESETS.map(([preset, words]) => {
               const days = presetRange(preset, today);
               const on = days.from === picked.from && days.to === picked.to;
@@ -498,7 +504,7 @@ export function TimeReport({
                   key={preset}
                   type="button"
                   aria-pressed={on}
-                  className={on ? 'tr-preset tr-preset-on' : 'tr-preset'}
+                  className={on ? 'trep-preset trep-preset-on' : 'trep-preset'}
                   data-tr-preset={preset}
                   onClick={() => {
                     setPicked(days);
@@ -509,12 +515,12 @@ export function TimeReport({
               );
             })}
           </div>
-          <div className="tr-dates">
-            <label className="tr-date">
-              <span className="tr-date-label">From</span>
+          <div className="trep-dates">
+            <label className="trep-date">
+              <span className="trep-date-label">From</span>
               <input
                 type="date"
-                className="input tr-date-input"
+                className="input trep-date-input"
                 value={picked.from}
                 max={today}
                 data-tr-from
@@ -523,14 +529,14 @@ export function TimeReport({
                 }}
               />
             </label>
-            <span className="tr-quiet" aria-hidden="true">
+            <span className="trep-quiet" aria-hidden="true">
               –
             </span>
-            <label className="tr-date">
-              <span className="tr-date-label">To</span>
+            <label className="trep-date">
+              <span className="trep-date-label">To</span>
               <input
                 type="date"
-                className="input tr-date-input"
+                className="input trep-date-input"
                 value={picked.to}
                 min={picked.from}
                 max={today}
@@ -545,22 +551,22 @@ export function TimeReport({
       )}
 
       {problem !== undefined ? (
-        <p className="tr-note tr-note-error" role="alert" data-tr-problem>
+        <p className="trep-note trep-note-error" role="alert" data-tr-problem>
           {problem}
         </p>
       ) : weekly && space === undefined ? (
-        <p className="tr-note" data-tr-no-space>
+        <p className="trep-note" data-tr-no-space>
           You lead no space, so there is no week to show.
         </p>
       ) : load.kind === 'error' && load.key === key ? (
-        <div className="tr-error" role="alert" data-tr-error>
+        <div className="trep-error" role="alert" data-tr-error>
           <span>
             <b>This range could not be read.</b> {errorSentence(load.error)} Nothing on the board
             changed.
           </span>
           <button
             type="button"
-            className="tr-pill-button"
+            className="trep-pill-button"
             data-tr-retry
             onClick={() => {
               setAttempt((n) => n + 1);
@@ -634,7 +640,7 @@ function Chip({ id, name, value, on, open, onToggle, children, footer }: ChipPro
   return (
     <div
       ref={wrap}
-      className="tr-chip-wrap"
+      className="trep-chip-wrap"
       onKeyDown={(event) => {
         if (event.key === 'Escape' && open) {
           event.stopPropagation();
@@ -646,7 +652,7 @@ function Chip({ id, name, value, on, open, onToggle, children, footer }: ChipPro
       <button
         ref={button}
         type="button"
-        className={on ? 'tr-chip tr-chip-on' : 'tr-chip'}
+        className={on ? 'trep-chip trep-chip-on' : 'trep-chip'}
         aria-haspopup="true"
         aria-expanded={open}
         data-tr-chip={id}
@@ -655,13 +661,13 @@ function Chip({ id, name, value, on, open, onToggle, children, footer }: ChipPro
         }}
       >
         <span>{name}</span>
-        <span className="tr-chip-value">{value}</span>
+        <span className="trep-chip-value">{value}</span>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
       {open && (
-        <div className="tr-pop" role="group" aria-label={`Filter by ${name.toLowerCase()}`}>
+        <div className="trep-pop" role="group" aria-label={`Filter by ${name.toLowerCase()}`}>
           {children}
           {footer}
         </div>
@@ -696,10 +702,10 @@ function FilterChip({ id, name, options, selected, open, onToggle, onChange }: F
       open={open}
       onToggle={onToggle}
       footer={
-        <div className="tr-pop-foot">
+        <div className="trep-pop-foot">
           <button
             type="button"
-            className="tr-link-button"
+            className="trep-link-button"
             onClick={() => {
               onChange([]);
             }}
@@ -708,7 +714,7 @@ function FilterChip({ id, name, options, selected, open, onToggle, onChange }: F
           </button>
           <button
             type="button"
-            className="tr-link-button tr-link-accent"
+            className="trep-link-button trep-link-accent"
             onClick={() => {
               onToggle(undefined);
             }}
@@ -719,10 +725,10 @@ function FilterChip({ id, name, options, selected, open, onToggle, onChange }: F
       }
     >
       {options.length === 0 ? (
-        <p className="tr-quiet tr-pop-empty">Nothing in this range yet.</p>
+        <p className="trep-quiet trep-pop-empty">Nothing in this range yet.</p>
       ) : (
         options.map((o) => (
-          <label key={o.value} className="tr-option" data-tr-option={o.value}>
+          <label key={o.value} className="trep-option" data-tr-option={o.value}>
             <input
               type="checkbox"
               checked={selected.includes(o.value)}
@@ -735,7 +741,7 @@ function FilterChip({ id, name, options, selected, open, onToggle, onChange }: F
               }}
             />
             {o.mark}
-            <span className="tr-option-label">{o.label}</span>
+            <span className="trep-option-label">{o.label}</span>
           </label>
         ))
       )}
@@ -748,7 +754,7 @@ function Avatar({ id, name }: { readonly id: string; readonly name: string }) {
   const colour = avatarColorSolid(id, theme);
   return (
     <span
-      className="tr-avatar"
+      className="trep-avatar"
       style={{ background: colour.background, color: colour.foreground }}
       aria-hidden="true"
     >
@@ -761,9 +767,9 @@ function Mark({ face }: { readonly face: Face }) {
   if (face.space !== undefined) return <SpaceBadge slug={face.space.slug} name={face.space.name} />;
   if (face.person !== undefined) return <Avatar id={face.person.id} name={face.person.name} />;
   if (face.kind !== undefined) {
-    return <span className={`tr-dot tr-kind-${face.kind}`} aria-hidden="true" />;
+    return <span className={`trep-dot trep-kind-${face.kind}`} aria-hidden="true" />;
   }
-  if (face.none === true) return <span className="tr-dashed" aria-hidden="true" />;
+  if (face.none === true) return <span className="trep-dashed" aria-hidden="true" />;
   return null;
 }
 
@@ -772,19 +778,19 @@ function Mark({ face }: { readonly face: Face }) {
 /** The figures being read, in bones (frame 1j), and said once to a screen reader. */
 function Reading() {
   return (
-    <div className="tr-reading" data-tr-loading>
-      <div className="tr-stats" aria-hidden="true">
+    <div className="trep-reading" data-tr-loading>
+      <div className="trep-stats" aria-hidden="true">
         {[0, 1, 2, 3, 4, 5].map((i) => (
-          <span key={i} className="tr-stat">
-            <span className="tr-bone tr-bone-a" />
-            <span className="tr-bone tr-bone-b" />
-            <span className="tr-bone tr-bone-c" />
+          <span key={i} className="trep-stat">
+            <span className="trep-bone trep-bone-a" />
+            <span className="trep-bone trep-bone-b" />
+            <span className="trep-bone trep-bone-c" />
           </span>
         ))}
       </div>
-      <div className="tr-bone-bars" aria-hidden="true">
+      <div className="trep-bone-bars" aria-hidden="true">
         {[62, 40, 74, 55, 30, 8, 8].map((h, i) => (
-          <span key={i} className="tr-bone tr-bone-bar" style={{ height: `${String(h)}%` }} />
+          <span key={i} className="trep-bone trep-bone-bar" style={{ height: `${String(h)}%` }} />
         ))}
       </div>
       <p className="visually-hidden" role="status">
@@ -861,7 +867,7 @@ function Figures({
   return (
     <>
       {shown.kind === 'figures' && shown.draftsOnly && (
-        <p className="tr-note tr-note-info" role="note" data-tr-partial>
+        <p className="trep-note trep-note-info" role="note" data-tr-partial>
           <b>Drafts only.</b> Nothing in this range is confirmed yet, so every figure below is
           drafted time, drawn hatched. {partialTail}
         </p>
@@ -877,10 +883,10 @@ function Figures({
         id={`${ids}-chart`}
         empty={
           empty === undefined ? undefined : (
-            <div className="tr-empty" data-tr-empty={empty.state}>
-              <p className="tr-empty-title">{empty.title}</p>
-              <p className="tr-empty-sub">{empty.sub}</p>
-              <button type="button" className="tr-pill-button" onClick={empty.act}>
+            <div className="trep-empty" data-tr-empty={empty.state}>
+              <p className="trep-empty-title">{empty.title}</p>
+              <p className="trep-empty-sub">{empty.sub}</p>
+              <button type="button" className="trep-pill-button" onClick={empty.act}>
                 {empty.action}
               </button>
             </div>
@@ -908,21 +914,26 @@ function Strip({
   readonly firstName: string;
 }) {
   const stats = statsOf(report, drafts, scope, today, firstName);
+  // A phone prints the short figure (frame 1c); the words stay for everyone else.
+  const short = statsOf(report, drafts, scope, today, firstName, true);
   const agent = report.agent_minutes;
   return (
     <>
-      <ul className="tr-stats" aria-label="Figures">
-        {stats.map((s) => (
-          <li key={s.key} className="tr-stat" data-tr-stat={s.key}>
-            <span className="tr-stat-label">{s.label}</span>
-            <span className="tr-stat-value">{s.value}</span>
-            <span className="tr-stat-sub">{s.sub}</span>
+      <ul className="trep-stats" aria-label="Figures">
+        {stats.map((s, i) => (
+          <li key={s.key} className="trep-stat" data-tr-stat={s.key}>
+            <span className="trep-stat-label">{s.label}</span>
+            <span className="trep-stat-value">
+              <span className="trep-long">{s.value}</span>
+              <span className="trep-short">{short[i]?.value ?? s.value}</span>
+            </span>
+            <span className="trep-stat-sub">{s.sub}</span>
           </li>
         ))}
       </ul>
       {agent !== null && agent > 0 && (
-        <p className="tr-agent" data-tr-agent>
-          <span className="tr-agent-mark" aria-hidden="true">
+        <p className="trep-agent" data-tr-agent>
+          <span className="trep-agent-mark" aria-hidden="true">
             ›_
           </span>
           <span>
@@ -959,7 +970,7 @@ function Chart({
   const at = focusAt !== undefined && focusAt < bars.length ? focusAt : firstFocus(bars);
   const n = bars.length;
   const tip = hover === undefined ? undefined : bars[hover];
-  const gap = n <= 7 ? 'tr-bars-wide' : n <= 31 ? 'tr-bars-mid' : 'tr-bars-dense';
+  const gap = n <= 7 ? 'trep-bars-wide' : n <= 31 ? 'trep-bars-mid' : 'trep-bars-dense';
 
   const onKey = (event: KeyboardEvent<HTMLDivElement>): void => {
     const to = barKey(event.key, at, n);
@@ -970,44 +981,44 @@ function Chart({
   };
 
   return (
-    <section className="tr-chart" aria-labelledby={id} data-tr-chart>
-      <div className="tr-chart-head">
-        <h3 className="tr-h3" id={id}>
+    <section className="trep-chart" aria-labelledby={id} data-tr-chart>
+      <div className="trep-chart-head">
+        <h3 className="trep-h3" id={id}>
           Hours per day
         </h3>
-        <div className="tr-legend" aria-hidden="true">
-          <span className="tr-legend-item">
-            <span className="tr-swatch tr-swatch-confirmed" />
+        <div className="trep-legend" aria-hidden="true">
+          <span className="trep-legend-item">
+            <span className="trep-swatch trep-swatch-confirmed" />
             Confirmed
           </span>
           {drafts && (
-            <span className="tr-legend-item">
-              <span className="tr-swatch tr-swatch-drafted" />
+            <span className="trep-legend-item">
+              <span className="trep-swatch trep-swatch-drafted" />
               Drafted
             </span>
           )}
         </div>
       </div>
-      <div className="tr-plot">
-        <div className="tr-axis" aria-hidden="true">
+      <div className="trep-plot">
+        <div className="trep-axis" aria-hidden="true">
           {axis.lines.map((g) => (
-            <span key={g.label} className="tr-axis-label" style={{ bottom: `${String(g.pct)}%` }}>
+            <span key={g.label} className="trep-axis-label" style={{ bottom: `${String(g.pct)}%` }}>
               {g.label}
             </span>
           ))}
         </div>
-        <div className="tr-area">
+        <div className="trep-area">
           {axis.lines.map((g) => (
             <span
               key={g.label}
-              className="tr-gridline"
+              className="trep-gridline"
               aria-hidden="true"
               style={{ bottom: `${String(g.pct)}%` }}
             />
           ))}
           <div
             ref={group}
-            className={`tr-bars ${gap}`}
+            className={`trep-bars ${gap}`}
             role="group"
             aria-label={`Hours per day, ${label}. Use the arrow keys to move between days.`}
             onKeyDown={onKey}
@@ -1018,8 +1029,8 @@ function Chart({
                 type="button"
                 className={
                   hover === i || (focusAt === i && hover === undefined)
-                    ? 'tr-col tr-col-on'
-                    : 'tr-col'
+                    ? 'trep-col trep-col-on'
+                    : 'trep-col'
                 }
                 tabIndex={i === at ? 0 : -1}
                 aria-label={b.aria}
@@ -1036,15 +1047,15 @@ function Chart({
                 }}
               >
                 <span
-                  className={b.future ? 'tr-stack tr-stack-future' : 'tr-stack'}
+                  className={b.future ? 'trep-stack trep-stack-future' : 'trep-stack'}
                   style={{ height: `${String(b.height)}%` }}
                 >
                   <span
-                    className="tr-fill-confirmed"
+                    className="trep-fill-confirmed"
                     style={{ flexBasis: `${String(b.confirmedPct)}%` }}
                   />
                   <span
-                    className="tr-fill-drafted"
+                    className="trep-fill-drafted"
                     style={{ flexBasis: `${String(b.draftedPct)}%` }}
                   />
                 </span>
@@ -1053,16 +1064,16 @@ function Chart({
           </div>
           {tip !== undefined && hover !== undefined && (
             <div
-              className="tr-tip"
+              className="trep-tip"
               aria-hidden="true"
               style={{
                 left: `${String(Math.min(90, Math.max(10, ((hover + 0.5) / n) * 100)))}%`,
                 bottom: `calc(${String(Math.min(80, tip.height))}% + 0.5rem)`,
               }}
             >
-              <span className="tr-tip-date">{dayLong(tip.day)}</span>
-              <span className="tr-tip-total">{tip.future ? '—' : hoursWords(tip.total)}</span>
-              <span className="tr-tip-sub">
+              <span className="trep-tip-date">{dayLong(tip.day)}</span>
+              <span className="trep-tip-total">{tip.future ? '—' : hoursWords(tip.total)}</span>
+              <span className="trep-tip-sub">
                 {tip.future
                   ? 'Not yet'
                   : tip.total === 0
@@ -1076,20 +1087,20 @@ function Chart({
           {empty}
         </div>
         <span />
-        <div className={`tr-day-names ${gap}`} aria-hidden="true">
+        <div className={`trep-day-names ${gap}`} aria-hidden="true">
           {bars.map((b) => (
             <span
               key={b.day}
               className={
                 b.today
-                  ? 'tr-day-name tr-day-today'
+                  ? 'trep-day-name trep-day-today'
                   : b.future || b.weekend
-                    ? 'tr-day-name tr-day-quiet'
-                    : 'tr-day-name'
+                    ? 'trep-day-name trep-day-quiet'
+                    : 'trep-day-name'
               }
             >
               <span>{b.top}</span>
-              <span className="tr-mono">{b.bottom}</span>
+              <span className="trep-mono">{b.bottom}</span>
             </span>
           ))}
         </div>
@@ -1157,7 +1168,7 @@ function GroupMenu({
   return (
     <div
       ref={wrap}
-      className="tr-chip-wrap"
+      className="trep-chip-wrap"
       onKeyDown={(event) => {
         if (!open) return;
         if (event.key === 'Escape') {
@@ -1178,7 +1189,7 @@ function GroupMenu({
       <button
         ref={button}
         type="button"
-        className="tr-chip tr-chip-strong"
+        className="trep-chip trep-chip-strong"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`${aria}: ${DIMENSION_LABELS[current]}`}
@@ -1193,14 +1204,14 @@ function GroupMenu({
         </svg>
       </button>
       {open && (
-        <div ref={menu} className="tr-pop tr-menu" role="menu" aria-label={aria}>
+        <div ref={menu} className="trep-pop trep-menu" role="menu" aria-label={aria}>
           {options.map((g) => (
             <button
               key={g}
               type="button"
               role="menuitemradio"
               aria-checked={g === current}
-              className={g === current ? 'tr-menu-item tr-menu-item-on' : 'tr-menu-item'}
+              className={g === current ? 'trep-menu-item trep-menu-item-on' : 'trep-menu-item'}
               data-tr-group-option={g}
               onClick={() => {
                 onPick(g);
@@ -1253,10 +1264,10 @@ function Breakdown({
   }, ${label}`;
 
   return (
-    <div className="tr-breakdown">
-      <section className="tr-table-wrap" aria-labelledby={`${ids}-group`} data-tr-table>
-        <div className="tr-group-bar">
-          <h3 className="tr-group-title" id={`${ids}-group`}>
+    <div className="trep-breakdown">
+      <section className="trep-table-wrap" aria-labelledby={`${ids}-group`} data-tr-table>
+        <div className="trep-group-bar">
+          <h3 className="trep-group-title" id={`${ids}-group`}>
             Group by
           </h3>
           <GroupMenu
@@ -1287,7 +1298,7 @@ function Breakdown({
           />
           <button
             type="button"
-            className="tr-swap"
+            className="trep-swap"
             aria-label="Swap the two groupings"
             disabled={!canSwap(scope, second)}
             data-tr-swap
@@ -1303,29 +1314,29 @@ function Breakdown({
             Swap
           </button>
           {(first === 'member' || second === 'member') && (
-            <span className="tr-quiet tr-small">People are listed A–Z</span>
+            <span className="trep-quiet trep-small">People are listed A–Z</span>
           )}
         </div>
 
         <div
-          className={split ? 'tr-table tr-table-split' : 'tr-table'}
+          className={split ? 'trep-table trep-table-split' : 'trep-table'}
           role="table"
           aria-label={tableLabel}
         >
           <div role="rowgroup">
-            <div role="row" className="tr-row tr-row-head">
+            <div role="row" className="trep-row trep-row-head">
               <span role="columnheader">{DIMENSION_LABELS[first]}</span>
               {split && (
                 <>
-                  <span role="columnheader" className="tr-num">
+                  <span role="columnheader" className="trep-num">
                     Confirmed
                   </span>
-                  <span role="columnheader" className="tr-num">
+                  <span role="columnheader" className="trep-num">
                     Drafted
                   </span>
                 </>
               )}
-              <span role="columnheader" className="tr-num">
+              <span role="columnheader" className="trep-num">
                 Total
               </span>
             </div>
@@ -1336,12 +1347,12 @@ function Breakdown({
               const isOpen = !leaf && (open.get(g.face.key) ?? i === 0);
               const meta = childCount(second, g.children.length);
               return (
-                <div key={g.face.key} className="tr-group" data-tr-row={g.face.key}>
-                  <div role="row" className="tr-row">
-                    <span role="rowheader" className="tr-cell-name">
+                <div key={g.face.key} className="trep-group" data-tr-row={g.face.key}>
+                  <div role="row" className="trep-row">
+                    <span role="rowheader" className="trep-cell-name">
                       <button
                         type="button"
-                        className="tr-row-toggle"
+                        className="trep-row-toggle"
                         aria-expanded={leaf ? undefined : isOpen}
                         disabled={leaf}
                         onClick={() => {
@@ -1353,38 +1364,38 @@ function Breakdown({
                           aria-hidden="true"
                           className={
                             isOpen
-                              ? 'tr-chev tr-chev-open'
+                              ? 'trep-chev trep-chev-open'
                               : leaf
-                                ? 'tr-chev tr-chev-none'
-                                : 'tr-chev'
+                                ? 'trep-chev trep-chev-none'
+                                : 'trep-chev'
                           }
                         >
                           <path d="m9 6 6 6-6 6" />
                         </svg>
                         <span
-                          className="tr-swatch"
+                          className="trep-swatch"
                           style={{ background: g.color }}
                           aria-hidden="true"
                         />
                         <Mark face={g.face} />
                         {g.face.code !== undefined && (
-                          <span className="tr-code">{g.face.code}</span>
+                          <span className="trep-code">{g.face.code}</span>
                         )}
-                        <span className="tr-row-label">{g.face.label}</span>
-                        {meta !== '' && <span className="tr-row-meta">{meta}</span>}
+                        <span className="trep-row-label">{g.face.label}</span>
+                        {meta !== '' && <span className="trep-row-meta">{meta}</span>}
                       </button>
                     </span>
                     {split && (
                       <>
-                        <span role="cell" className="tr-num tr-num-quiet">
+                        <span role="cell" className="trep-num trep-num-quiet">
                           {hoursClock(g.confirmed)}
                         </span>
-                        <span role="cell" className="tr-num tr-num-quiet">
+                        <span role="cell" className="trep-num trep-num-quiet">
                           {hoursClock(g.drafted)}
                         </span>
                       </>
                     )}
-                    <span role="cell" className="tr-num tr-num-strong">
+                    <span role="cell" className="trep-num trep-num-strong">
                       {hoursClock(g.total)}
                     </span>
                   </div>
@@ -1393,27 +1404,27 @@ function Breakdown({
                       <div
                         role="row"
                         key={k.face.key}
-                        className="tr-row tr-row-child"
+                        className="trep-row trep-row-child"
                         data-tr-child={k.face.key}
                       >
-                        <span role="rowheader" className="tr-cell-name tr-cell-child">
+                        <span role="rowheader" className="trep-cell-name trep-cell-child">
                           <Mark face={k.face} />
                           {k.face.code !== undefined && (
-                            <span className="tr-code">{k.face.code}</span>
+                            <span className="trep-code">{k.face.code}</span>
                           )}
-                          <span className="tr-row-label tr-quiet-text">{k.face.label}</span>
+                          <span className="trep-row-label trep-quiet-text">{k.face.label}</span>
                         </span>
                         {split && (
                           <>
-                            <span role="cell" className="tr-num tr-num-muted">
+                            <span role="cell" className="trep-num trep-num-muted">
                               {hoursClock(k.confirmed)}
                             </span>
-                            <span role="cell" className="tr-num tr-num-muted">
+                            <span role="cell" className="trep-num trep-num-muted">
                               {hoursClock(k.drafted)}
                             </span>
                           </>
                         )}
-                        <span role="cell" className="tr-num tr-num-quiet">
+                        <span role="cell" className="trep-num trep-num-quiet">
                           {hoursClock(k.total)}
                         </span>
                       </div>
@@ -1423,19 +1434,19 @@ function Breakdown({
             })}
           </div>
           <div role="rowgroup">
-            <div role="row" className="tr-row tr-row-total" data-tr-total>
+            <div role="row" className="trep-row trep-row-total" data-tr-total>
               <span role="rowheader">Total</span>
               {split && (
                 <>
-                  <span role="cell" className="tr-num">
+                  <span role="cell" className="trep-num">
                     {hoursClock(sum.c)}
                   </span>
-                  <span role="cell" className="tr-num">
+                  <span role="cell" className="trep-num">
                     {hoursClock(sum.d)}
                   </span>
                 </>
               )}
-              <span role="cell" className="tr-num tr-num-strong">
+              <span role="cell" className="trep-num trep-num-strong">
                 {hoursClock(sum.t)}
               </span>
             </div>
@@ -1443,32 +1454,32 @@ function Breakdown({
         </div>
       </section>
 
-      <section className="tr-donut-wrap" aria-labelledby={`${ids}-donut`} data-tr-donut>
-        <h3 className="tr-h3" id={`${ids}-donut`}>
+      <section className="trep-donut-wrap" aria-labelledby={`${ids}-donut`} data-tr-donut>
+        <h3 className="trep-h3" id={`${ids}-donut`}>
           {donutTitle}
         </h3>
-        <div className="tr-donut-row">
+        <div className="trep-donut-row">
           <div
-            className="tr-donut"
+            className="trep-donut"
             role="img"
             aria-label={spoken}
             style={{ background: donutBackground(slices, active) }}
           >
-            <div className="tr-donut-hole" aria-hidden="true">
-              <span className="tr-donut-value">{hoursClock(sum.t)}</span>
-              <span className="tr-donut-caption">{drafts ? 'tracked' : 'confirmed'}</span>
+            <div className="trep-donut-hole" aria-hidden="true">
+              <span className="trep-donut-value">{hoursClock(sum.t)}</span>
+              <span className="trep-donut-caption">{drafts ? 'tracked' : 'confirmed'}</span>
             </div>
           </div>
-          <ul className="tr-slices" aria-label={donutTitle}>
+          <ul className="trep-slices" aria-label={donutTitle}>
             {slices.map((s) => (
               <li
                 key={s.key}
                 className={
                   active === undefined
-                    ? 'tr-slice'
+                    ? 'trep-slice'
                     : active === s.key
-                      ? 'tr-slice tr-slice-on'
-                      : 'tr-slice tr-slice-dim'
+                      ? 'trep-slice trep-slice-on'
+                      : 'trep-slice trep-slice-dim'
                 }
                 tabIndex={0}
                 data-tr-slice={s.key}
@@ -1485,10 +1496,10 @@ function Breakdown({
                   setActive(undefined);
                 }}
               >
-                <span className="tr-swatch" style={{ background: s.color }} aria-hidden="true" />
-                <span className="tr-slice-label">{s.label}</span>
-                <span className="tr-mono tr-strong">{hoursClock(s.minutes)}</span>
-                <span className="tr-mono tr-slice-pct">{s.pct}</span>
+                <span className="trep-swatch" style={{ background: s.color }} aria-hidden="true" />
+                <span className="trep-slice-label">{s.label}</span>
+                <span className="trep-mono trep-strong">{hoursClock(s.minutes)}</span>
+                <span className="trep-mono trep-slice-pct">{s.pct}</span>
               </li>
             ))}
           </ul>
@@ -1510,31 +1521,31 @@ function Weeks({ report }: { readonly report: SpaceWeeksReport }) {
   const lines = weekLines(report.weeks);
   return (
     <section
-      className="tr-weeks"
+      className="trep-weeks"
       aria-label={`Confirmed time a week in ${report.project.name}`}
       data-tr-weeks
     >
-      <p className="tr-note tr-note-info" role="note" data-tr-space-banner>
+      <p className="trep-note trep-note-info" role="note" data-tr-space-banner>
         <b>Totals for {report.project.name}.</b> One figure a week, confirmed time only, with no
         per-person split. A week fewer than three people besides you worked in is withheld.
       </p>
-      <ol className="tr-week-list">
+      <ol className="trep-week-list">
         {lines.map((w) => (
-          <li key={w.from} className="tr-week" data-tr-week={w.from}>
-            <span className="tr-week-label">{w.label}</span>
-            <span className="tr-week-track" aria-hidden="true">
+          <li key={w.from} className="trep-week" data-tr-week={w.from}>
+            <span className="trep-week-label">{w.label}</span>
+            <span className="trep-week-track" aria-hidden="true">
               {w.minutes !== null && (
-                <span className="tr-week-fill" style={{ width: `${String(w.width)}%` }} />
+                <span className="trep-week-fill" style={{ width: `${String(w.width)}%` }} />
               )}
             </span>
             {w.minutes === null ? (
-              <span className="tr-week-withheld" data-tr-withheld>
+              <span className="trep-week-withheld" data-tr-withheld>
                 {WITHHELD}
               </span>
             ) : (
-              <span className="tr-week-figure">
-                <span className="tr-mono tr-strong">{hoursWords(w.minutes)}</span>
-                <span className="tr-quiet">
+              <span className="trep-week-figure">
+                <span className="trep-mono trep-strong">{hoursWords(w.minutes)}</span>
+                <span className="trep-quiet">
                   {String(w.people)} {w.people === 1 ? 'person' : 'people'}
                 </span>
               </span>
