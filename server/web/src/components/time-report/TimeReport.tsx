@@ -847,7 +847,10 @@ function Figures({
     shown.kind === 'empty'
       ? {
           title: 'No time in this range',
-          sub: `Nothing was tracked or drafted, ${label}.`,
+          // Drafts not asked for are not looked at, so this can say only what was confirmed.
+          sub: report.include_drafts
+            ? `Nothing was tracked or drafted, ${label}.`
+            : `Nothing was confirmed, ${label}.`,
           action: 'Show the last 30 days',
           act: onLast30,
           state: 'empty',

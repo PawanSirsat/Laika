@@ -753,6 +753,9 @@ void describe('the states (frames 1j–1m)', () => {
       // Not asked for: nothing confirmed reads as no time, and no drafted figure is named.
       await tr.locator('[data-tr-empty="empty"]').waitFor({ timeout: 20_000 });
       assert.doesNotMatch(await tr.innerText(), /drafts are waiting/);
+      // It says what it looked at: confirmed time, not drafts it never read.
+      assert.match(await tr.locator('[data-tr-empty]').innerText(), /Nothing was confirmed, /);
+      assert.doesNotMatch(await tr.locator('[data-tr-empty]').innerText(), /tracked or drafted/);
       await tr.locator('[data-tr-drafts="include"]').click();
       await tr.locator('[data-tr-partial]').waitFor({ timeout: 10_000 });
       assert.match(await tr.locator('[data-tr-partial]').innerText(), /Drafts only\./);
