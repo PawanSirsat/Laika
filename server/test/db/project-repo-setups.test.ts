@@ -41,6 +41,7 @@ function folderBefore0073(): string {
     TAG,
     '0074_agent_capacity',
     '0075_task_deliverables',
+    '0076_member_notices',
   ]);
   journal.entries.splice(at);
   writeFileSync(journalPath, JSON.stringify(journal));

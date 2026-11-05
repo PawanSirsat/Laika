@@ -118,6 +118,8 @@ describe('migrations', () => {
     'invites',
     'local_activity_days',
     'meeting_reviews',
+    // LAI-1136, D-134: a member's own notices, kept 90 days.
+    'member_notices',
     'member_ratings',
     // LAI-773: an organisation's own API-equivalent prices.
     'org_model_prices',
