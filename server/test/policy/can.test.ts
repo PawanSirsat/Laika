@@ -516,6 +516,9 @@ describe('the cases LAI-004 calls out by name', () => {
       const ownAvailability = action === 'availability.set_own' || action === 'availability.read';
       // D-134 (LAI-1136): reading and marking read their own notices.
       const ownNotices = action === 'notices.own';
+      // D-139 item 1 (LAI-1150): reading their own profile and heatmap,
+      // session only — `profile.read`'s reason for not being a read action.
+      const ownProfile = action === 'profile.read_own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -530,7 +533,8 @@ describe('the cases LAI-004 calls out by name', () => {
           ownMembership ||
           ownAgents ||
           ownAvailability ||
-          ownNotices,
+          ownNotices ||
+          ownProfile,
       );
     }
   });

@@ -102,6 +102,10 @@ const ORG_MATRIX: OrgRow[] = [
   // | View a member's activity heatmap | ✓ (session only) | ✓ (session only) | — | — |
   // Its own row, the profile's rule (D-079, LAI-751).
   ['profile.activity.read', true, true, false, false],
+  // | View own profile and activity heatmap | ✓ (session only) | … | ✓ (session only) |
+  // D-139 item 1 (LAI-1150): every role reads its own; a token is refused in
+  // `can.test.ts`.
+  ['profile.read_own', true, true, true, true],
   // | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
   // The organisation's half of D-079's consent; a token is refused it in
   // `can.test.ts` (LAI-751 review).

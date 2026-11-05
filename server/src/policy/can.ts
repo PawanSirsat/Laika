@@ -559,6 +559,15 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'profile.activity.read':
       return granted(actor, action);
 
+    // | View own profile and activity heatmap | ✓ (session only) | … | ✓ (session only) |
+    //
+    // D-139 item 1 (LAI-1150): a person reads their own profile and heatmap
+    // whatever their role — their own record of their own work, the
+    // heartbeat's argument. The service reads only the caller's own rows and
+    // leaves `ratings` out unless `profile.read` is held too.
+    case 'profile.read_own':
+      return true;
+
     // | View a member's day, time and shared activity | ✓ (session only, not themselves) | … | — | — |
     //
     // D-102 rule 1 (LAI-957): My day and the local activity a person reads
