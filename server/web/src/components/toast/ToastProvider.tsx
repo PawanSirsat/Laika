@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { Spinner } from '../Spinner.tsx';
 import {
   EMPTY_QUEUE,
   dismiss as drop,
@@ -222,7 +223,9 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
                     runUndo(toast.id);
                   }}
                 >
-                  {toast.undoing ? 'Undoing…' : 'Undo'}
+                  {/* The word stays; the countdown gives way to the one spinner. */}
+                  Undo
+                  {toast.undoing && <Spinner size="sm" />}
                   {!toast.undoing && left !== null && (
                     <span className="toast-count" aria-hidden="true" data-toast-count>
                       {left}s
