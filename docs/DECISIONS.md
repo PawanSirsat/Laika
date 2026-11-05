@@ -7036,3 +7036,26 @@ period with its dates. A co-worker's future holidays and stated hours are more t
 3. **Owners and holders of *See everyone's analytics*:** the full record and hours tracked,
    each look logged (D-131, unchanged).
 4. **The person** sees and edits all of their own.
+
+## D-138 — The space admin's weekly floor does not count the reader
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka. Amends
+D-136.
+
+**Context.** LAI-1135's second review found that a space admin who logs time in their own
+space can subtract their own report from a week's figure: A, B and the lead each log ten
+minutes, the week shows thirty for three people, the lead's own report shows ten, and the
+difference is two people's time. D-136 counted the reader among the three.
+
+**Decision.**
+
+1. A space admin's week is shown only when **at least three people other than the reader**
+   logged time in it; otherwise it is withheld (`null`). The people count may still include
+   the reader.
+2. A week is the **Monday-to-Sunday span of the day each entry is filed on** — the day the
+   person's own record carries — not a conversion into the organisation's time zone. This
+   corrects D-136 item 1's wording to match SPEC and the code: no conversion can move an
+   entry from one week to another between two answers.
+3. For owners and holders of *See everyone's analytics*, every person whose time contributes
+   to any figure served — including agent minutes — is logged as a look, not only the people
+   on a row.
