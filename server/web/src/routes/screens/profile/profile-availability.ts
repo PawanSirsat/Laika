@@ -80,6 +80,11 @@ export function useProfileAvailability(
   // Whose load the reader asked to see: moving to another person closes it.
   const [revealedFor, setRevealedFor] = useState<string | undefined>(undefined);
   const revealed = revealedFor === userId;
+  // Another person closes it, and coming back finds it closed (review N1):
+  // A → Show → B → A is a collapsed card and no second look at A.
+  useEffect(() => {
+    setRevealedFor((was) => (was === userId ? was : undefined));
+  }, [userId]);
 
   useEffect(() => {
     setSeen(undefined);

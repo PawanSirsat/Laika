@@ -185,11 +185,33 @@ export function listPeopleAvailability(
  * in different branches of the header.
  */
 let mine: Availability | undefined;
+/**
+ * Bumped whenever the signed-in person changes (review R1): a read begun for
+ * the last person carries the old generation and is dropped when it answers,
+ * so person B can never be shown — or save over — person A's record.
+ */
+let mineGeneration = 0;
 const mineListeners = new Set<() => void>();
 
-export function setSharedAvailability(next: Availability | undefined): void {
-  if (mine === next) return;
+/** The generation a read begins under; pass it back to {@link setSharedAvailability}. */
+export function availabilityGeneration(): number {
+  return mineGeneration;
+}
+
+export function setSharedAvailability(
+  next: Availability | undefined,
+  generation: number = mineGeneration,
+): void {
+  if (generation !== mineGeneration || mine === next) return;
   mine = next;
+  for (const listener of mineListeners) listener();
+}
+
+/** A different person, or none: forget the last one's record (`setStoreUser`). */
+export function resetSharedAvailability(): void {
+  mineGeneration += 1;
+  if (mine === undefined) return;
+  mine = undefined;
   for (const listener of mineListeners) listener();
 }
 

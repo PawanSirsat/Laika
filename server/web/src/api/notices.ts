@@ -93,11 +93,21 @@ export function noticeLine(notice: Notice): string {
  * apart and both only need the one number.
  */
 let unread: number | undefined;
+/** Bumped when the signed-in person changes (review N2), as availability's is. */
+let generation = 0;
 const listeners = new Set<() => void>();
 
-export function setUnreadNotices(count: number | undefined): void {
-  if (unread === count) return;
+export function setUnreadNotices(count: number | undefined, at: number = generation): void {
+  if (at !== generation || unread === count) return;
   unread = count;
+  for (const listener of listeners) listener();
+}
+
+/** A different person, or none: forget the last one's count (`setStoreUser`). */
+export function resetUnreadNotices(): void {
+  generation += 1;
+  if (unread === undefined) return;
+  unread = undefined;
   for (const listener of listeners) listener();
 }
 
@@ -123,9 +133,10 @@ export function useUnreadNotices(enabled: boolean): number | undefined {
     }
     const controller = new AbortController();
     const read = (): void => {
+      const at = generation;
       getNotices({ limit: 1, unread: true }, controller.signal)
         .then((page) => {
-          if (!controller.signal.aborted) setUnreadNotices(page.unread_count);
+          if (!controller.signal.aborted) setUnreadNotices(page.unread_count, at);
         })
         .catch(() => undefined);
     };
@@ -174,10 +185,11 @@ export function useNotices(enabled: boolean): Notices {
     if (!enabled) return;
     const controller = new AbortController();
     setState((s) => (s.status === 'ready' ? s : { status: 'loading' }));
+    const at = generation;
     getNotices({ limit: FOR_YOU_LIMIT }, controller.signal)
       .then((page) => {
-        if (controller.signal.aborted) return;
-        setUnreadNotices(page.unread_count);
+        if (controller.signal.aborted || at !== generation) return;
+        setUnreadNotices(page.unread_count, at);
         setState({
           status: 'ready',
           notices: page.data,

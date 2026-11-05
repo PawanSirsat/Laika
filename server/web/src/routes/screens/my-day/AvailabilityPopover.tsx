@@ -4,6 +4,8 @@ import {
   deleteAwayPeriod,
   getMyAvailability,
   setMyAvailability,
+  availabilityGeneration,
+  setSharedAvailability,
   useSharedAvailability,
   type Availability,
   type AvailabilityPatch,
@@ -89,7 +91,10 @@ function problemOf(cause: unknown): Problem {
  */
 export function AvailabilityPopover({ now = Date.now() }: { readonly now?: number }) {
   // Shared with every other My availability on the page (one per breakpoint).
-  const [saved, setSaved] = useSharedAvailability();
+  const [saved] = useSharedAvailability();
+  const setSaved = (next: Availability, at: number): void => {
+    setSharedAvailability(next, at);
+  };
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | undefined>(undefined);
@@ -105,9 +110,10 @@ export function AvailabilityPopover({ now = Date.now() }: { readonly now?: numbe
   useEffect(() => {
     const controller = new AbortController();
     setFailed(false);
+    const at = availabilityGeneration();
     getMyAvailability(controller.signal)
       .then((a) => {
-        if (!controller.signal.aborted) setSaved(a);
+        if (!controller.signal.aborted) setSharedAvailability(a, at);
       })
       .catch(() => {
         if (!controller.signal.aborted) setFailed(true);
@@ -130,6 +136,10 @@ export function AvailabilityPopover({ now = Date.now() }: { readonly now?: numbe
   useEffect(() => {
     if (open && draft === undefined && saved !== undefined) setDraft(draftOf(saved));
   }, [open, draft, saved]);
+  // The record was forgotten — a different person signed in: so is the edit.
+  useEffect(() => {
+    if (saved === undefined) setDraft(undefined);
+  }, [saved]);
 
   const today = dayIn(readerZone(), now);
   const pill = pillOf(saved);
@@ -147,6 +157,8 @@ export function AvailabilityPopover({ now = Date.now() }: { readonly now?: numbe
   const upcoming = (saved?.away_periods ?? []).filter((p) => p !== current);
 
   const save = async (): Promise<void> => {
+    // Whose record this is for: a sign-in meanwhile drops the answer.
+    const at = availabilityGeneration();
     if (saved === undefined || draft === undefined || busy) return;
     if (draft.choice === 'away' && draft.until === '') {
       setProblem({ field: 'to', message: 'Pick the day you are back.' });
@@ -185,13 +197,15 @@ export function AvailabilityPopover({ now = Date.now() }: { readonly now?: numbe
         await deleteAwayPeriod(current.id);
         next = await getMyAvailability();
       }
-      setSaved(next);
+      setSaved(next, at);
       setOpen(false);
     } catch (cause) {
       setProblem(problemOf(cause));
       // A half-made change — the status saved, the period refused — is shown as it is.
       getMyAvailability()
-        .then(setSaved)
+        .then((a) => {
+          setSaved(a, at);
+        })
         .catch(() => undefined);
     } finally {
       setBusy(false);
@@ -199,11 +213,13 @@ export function AvailabilityPopover({ now = Date.now() }: { readonly now?: numbe
   };
 
   const addPeriod = async (): Promise<void> => {
+    // Whose record this is for: a sign-in meanwhile drops the answer.
+    const at = availabilityGeneration();
     if (awayFrom === '' || awayTo === '' || busy) return;
     setBusy(true);
     setProblem(undefined);
     try {
-      setSaved(await addAwayPeriod(awayFrom, awayTo));
+      setSaved(await addAwayPeriod(awayFrom, awayTo), at);
       setAwayFrom('');
       setAwayTo('');
     } catch (cause) {
@@ -214,12 +230,14 @@ export function AvailabilityPopover({ now = Date.now() }: { readonly now?: numbe
   };
 
   const removePeriod = async (periodId: string): Promise<void> => {
+    // Whose record this is for: a sign-in meanwhile drops the answer.
+    const at = availabilityGeneration();
     if (busy) return;
     setBusy(true);
     setProblem(undefined);
     try {
       await deleteAwayPeriod(periodId);
-      setSaved(await getMyAvailability());
+      setSaved(await getMyAvailability(), at);
     } catch (cause) {
       setProblem(problemOf(cause));
     } finally {

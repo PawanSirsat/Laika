@@ -17,6 +17,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import {
   closeBrowser,
+  navigateInApp,
   refuse,
   reply,
   setTheme,
@@ -319,6 +320,77 @@ void describe('My availability on My day (frames 2a–2c)', () => {
         'away',
       );
     } finally {
+      await h.close();
+    }
+  });
+
+  void test('signing out and in as somebody else forgets the first person’s pill, form and count', async () => {
+    // Review R1/N2: the shared record and the unread count are module state.
+    // A different person on the same tab must never see — or Save over — them.
+    let who: 'ada' | 'none' | 'bea' = 'ada';
+    const person = (id: string, name: string) => ({
+      id,
+      email: `${name.toLowerCase()}@example.com`,
+      name,
+      org_role: 'owner',
+      is_active: true,
+      memberships: [{ project_id: 'p1', role: 'lead' }],
+    });
+    const h = await myDay({
+      '/api/v1/me': () =>
+        who === 'ada'
+          ? person('u1', 'Ada')
+          : who === 'bea'
+            ? person('u7', 'Bea')
+            : refuse(401, 'unauthorized', 'Not signed in'),
+      '/api/v1/me/availability': RECORD,
+      '/api/v1/me/notices': NOTICES,
+      '/api/v1/auth/sign-out': {},
+      '/api/v1/auth/sign-in/email': () => {
+        who = 'bea';
+        return {};
+      },
+    });
+    try {
+      const pill = h.page.locator('[data-my-availability] [data-avail-pill]');
+      await pill.waitFor({ timeout: 10_000 });
+      const nav = h.page.locator('a.sidebar-link[href^="/my-day"] .sidebar-count');
+      await until(async () => (await nav.count()) === 1);
+      assert.match(await nav.innerText(), /^2/);
+
+      // Bea's reads are held: anything on screen now is left over from Ada.
+      await h.page.route('**/api/v1/me/availability', () => undefined);
+      await h.page.route('**/api/v1/me/notices**', () => undefined);
+
+      await h.page.locator('.user-menu-trigger').click();
+      who = 'none';
+      await h.page.locator('.user-menu-signout').click();
+      await h.page.waitForURL((url) => url.pathname === '/login', { timeout: 10_000 });
+      await h.page.locator('input[autocomplete="username"]').fill('bea@example.com');
+      await h.page.locator('input[autocomplete="current-password"]').fill('correct horse battery');
+      await h.page.getByRole('button', { name: 'Sign in' }).click();
+      await until(() => who === 'bea');
+      await h.page.waitForURL((url) => url.pathname !== '/login', { timeout: 10_000 });
+      await navigateInApp(h.page, `/my-day?day=${TODAY}`);
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('.user-menu-trigger', { hasText: 'Bea' }).waitFor({ timeout: 10_000 });
+
+      const trigger = h.page.locator('[data-my-availability] > button');
+      await trigger.waitFor({ timeout: 10_000 });
+      assert.equal(
+        await trigger.locator('[data-avail-pill]').count(),
+        0,
+        'Ada’s pill on Bea’s day',
+      );
+      assert.equal(await nav.count(), 0, 'Ada’s unread count on Bea’s rail');
+      await trigger.click();
+      const panel = h.page.getByRole('region', { name: /My availability/ });
+      await panel.waitFor({ timeout: 10_000 });
+      assert.doesNotMatch(await panel.innerText(), /Happy to review|Front-end|Reviews/);
+      assert.equal(await panel.getByRole('button', { name: 'Save' }).count(), 0);
+      assert.equal(await h.page.locator('[data-for-you]').count(), 0);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
   });
@@ -697,6 +769,41 @@ void describe('the profile: pill and Current load (frames 2d–2f)', () => {
       }
     });
   }
+
+  void test('Show, another person, then back: collapsed again and no second look', async () => {
+    const h = await open('/people?user=u2', {
+      ...profileStub({ id: 'u1', name: 'Ada Owner', role: 'owner' }),
+      '/api/v1/users/u3/profile': profileOf('u3', 'Lindiwe Dube'),
+      '/api/v1/users/u3/usage': quietUsage('u3'),
+      '/api/v1/people/u3/activity': quietYear(),
+      '/api/v1/people/u3/load': LOAD,
+    });
+    try {
+      const show = h.page.locator('[data-section="load"] [data-load-show]');
+      await show.waitFor({ timeout: 20_000 });
+      await show.click();
+      await h.page.locator('[data-load="week"]').waitFor({ timeout: 20_000 });
+      assert.equal(loads(h), 1);
+
+      await navigateInApp(h.page, '/people?user=u3');
+      await h.page.locator('.prof-name', { hasText: 'Lindiwe Dube' }).waitFor({ timeout: 20_000 });
+      await show.waitFor({ timeout: 10_000 });
+      await navigateInApp(h.page, '/people?user=u2');
+      await h.page
+        .locator('.prof-name', { hasText: 'Hemant Purohit' })
+        .waitFor({ timeout: 20_000 });
+      await show.waitFor({ timeout: 10_000 });
+      await quiet(h.page);
+      assert.equal(loads(h), 1, 'coming back to Hemant read his load again');
+      assert.equal(
+        h.calls.filter((c) => c.path === '/api/v1/people/u3/load').length,
+        0,
+        'opening Lindiwe read her load',
+      );
+    } finally {
+      await h.close();
+    }
+  });
 
   for (const tab of ['overview', 'day', 'time'] as const) {
     void test(`opening ?tab=${tab} reads no load`, async () => {
