@@ -639,6 +639,55 @@ void describe('access', () => {
     }
   });
 
+  void test('the owner’s tokens: an admin sees them with no Revoke, and why (D-133, LAI-1143)', async () => {
+    const h = await open(
+      '/people?user=u1',
+      stub(ADMIN, {
+        '/api/v1/users/u1/tokens': { data: [token('o1', 'Owner laptop')], next_cursor: null },
+      }),
+    );
+    try {
+      const admin = await panel(h);
+      await admin.locator('[data-token="o1"]').waitFor();
+      assert.equal(await admin.locator('[data-action="revoke-token"]').count(), 0);
+      assert.match(
+        await admin.locator('[data-owner-tokens]').innerText(),
+        /Only the owner can revoke its tools, devices or tokens/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('their tokens: a 403 not_for_owner is said in the reader’s terms', async () => {
+    const h = await open(
+      '/people?user=u2',
+      stub(ADMIN, {
+        '/api/v1/users/u2/tokens/k1': reply(403, {
+          error: {
+            code: 'forbidden',
+            message: "An admin cannot change the owner's setup",
+            details: { reason: 'not_for_owner' },
+          },
+        }),
+      }),
+    );
+    try {
+      const admin = await panel(h);
+      await admin.locator('[data-token="k1"] [data-action="revoke-token"]').click();
+      await admin.locator('[data-token="k1"] [data-action="admin-confirm"]').click();
+      await until(async () =>
+        (await admin.locator('[data-admin="tokens"]').innerText()).includes('Only the owner'),
+      );
+      assert.match(
+        await admin.locator('[data-admin="tokens"]').innerText(),
+        /Only the owner can change the owner’s setup\. Nothing was changed\./,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('their tokens: a long list says how many, folds alike names and shows three (LAI-321)', async () => {
     // The owner's own shape on 2026-11-04: ten personal (six alike, three
     // never used) and five tool credentials.

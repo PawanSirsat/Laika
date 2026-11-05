@@ -6703,7 +6703,7 @@ call MCP; agents do.
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
-| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
+| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage`, `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ D-078, D-079, D-084, D-132, D-133 |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
@@ -7140,11 +7140,35 @@ anything missing sends the task back.
   none is: **Role** (organisation role, with a confirm, and the Builder /
   Manager control, which says it is a label and not a permission),
   **Spaces** (remove through the offboarding question, add with a role),
-  **Tokens** (their tokens, revocable), **Security** (a reset link shown once,
+  **Tokens** (their tokens, revocable — never the owner's by an admin, which
+  says why, D-133), **Security** (a reset link shown once,
   sign out everywhere) and a **Danger zone** (deactivate through the
   offboarding question, or reactivate). For somebody else, tabs **Overview ·
-  Day · Time report** — *Developer setup* joins them when its endpoint does;
-  your own profile has no tabs. Overview leads with the summary — **current
+  Day · Time report · Developer setup**, each only for a reader granted it —
+  Day and Time report by *See everyone's analytics*, Developer setup by *See
+  and manage anyone's developer setup* (D-132); your own profile has no tabs.
+  **Developer setup** (LAI-1140, frames 2p–2ab) reads
+  `GET /people/:id/developer-setup` only when opened, and says *"Owners and
+  admins only · read-only · <first> can see that you looked"*. It has a
+  summary (devices active / revoked, tools, repositories, spaces reachable,
+  active tokens, last activity) and a **health line** naming what needs
+  attention — an MCP not connected, a credential never used, a failed or
+  out-of-date repository check, a helper update — each a link that moves focus
+  to the item, worked out on the client from the checks and reports served.
+  Then **Devices** (last seen, key fingerprint with copy, helper version,
+  launcher, auto-pickup, tools; revoked ones folded), **pending pairing
+  requests** with no code (D-124), **Tools** by device (five checks, what each
+  can reach, checkpoint consent, launcher, credential prefix, last used and
+  last MCP call, client version), **Repositories & projects**, **Tokens**
+  (personal and tool credentials, filtered Active / Expired / Revoked / All
+  with counts, a search past eight) and **recent setup activity**, 30 days.
+  **A space the reader cannot open is a count, never a name.** Each ⋯ is a
+  menu; *Unpair device…*, *Revoke tool…* and *Revoke token…* each open a
+  confirm listing what stops working and saying the member is notified in
+  Laika — never by email — then a success notice. On the owner's setup an
+  admin is offered none of them and told why, and a `403 not_for_owner` is
+  said in those terms. A deactivated person's setup is read-only history with
+  only the revokes left; loading, empty and error-with-retry states. Overview leads with the summary — **current
   work**, **agents used**, **review work**, **projects** — then the Activity
   card, then the **record**, which keeps everything the summary does not
   draw: the Tokens card, **delivered**, the **rating** and **recent

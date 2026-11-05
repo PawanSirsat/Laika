@@ -49,6 +49,9 @@ void describe('adminControls (LAI-1134: the Manage member panel)', () => {
     assert.equal(c.deactivate, false);
     assert.equal(c.resetLink, false);
     assert.equal(c.signOut, true);
+    // D-133, LAI-1143: the owner's tokens are listed, never revocable by an admin.
+    assert.equal(c.tokens, true);
+    assert.equal(c.revokeTokens, false);
     // Role stays for the profile kind; Danger zone is not drawn at all (frame 1r).
     assert.deepEqual(manageSections(c), ['role', 'spaces', 'tokens', 'security']);
   });
@@ -90,5 +93,28 @@ void describe('adminControls (LAI-1134: the Manage member panel)', () => {
     const c = adminControls(holding('token.revoke_any'), OWNER, bea);
     assert.equal(c.tokens, false);
     assert.equal(c.revokeTokens, false);
+  });
+});
+
+void describe('the owner rule, shared (LAI-1140, D-133)', () => {
+  void test('an admin may revoke a member’s or another admin’s, never the owner’s; the owner may', async () => {
+    const { mayActOnSetupOf, revokeRefusal, NOT_FOR_OWNER_LINE } =
+      await import('../../../../src/api/owner-setup.ts');
+    assert.equal(mayActOnSetupOf('admin', 'member'), true);
+    assert.equal(mayActOnSetupOf('admin', 'admin'), true);
+    assert.equal(mayActOnSetupOf('admin', 'owner'), false);
+    assert.equal(mayActOnSetupOf('owner', 'owner'), true);
+    const { ApiError } = await import('../../../../src/api/errors.ts');
+    const refused = new ApiError('forbidden', 'An admin cannot change the owner’s setup', 403, {
+      reason: 'not_for_owner',
+    });
+    assert.equal(revokeRefusal(refused, 'x'), NOT_FOR_OWNER_LINE);
+    assert.equal(revokeRefusal(new ApiError('internal', 'Boom', 500), 'x'), 'Boom');
+    assert.equal(revokeRefusal('nope', 'fallback'), 'fallback');
+  });
+
+  void test('an owner keeps Revoke on an admin’s tokens', () => {
+    const c = adminControls(holding(...ALL), OWNER, { ...bea, org_role: 'admin' });
+    assert.equal(c.revokeTokens, true);
   });
 });

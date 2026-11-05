@@ -542,7 +542,8 @@ void describe('a member’s profile: Day and Time report (LAI-959, LAI-1134)', (
         .locator('[data-profile-tab="time"][aria-current="page"]')
         .waitFor({ timeout: 20_000 });
       await h.page.locator('[data-hours]').waitFor({ timeout: 20_000 });
-      // Developer setup is not drawn until its endpoint exists (LAI-1140).
+      // No Developer setup tab: these default grants do not carry *See and manage
+      // anyone's developer setup* — `developer-setup.test.ts` covers the tab (LAI-1140).
       assert.deepEqual(
         await h.page
           .locator('[data-profile-tab]')
