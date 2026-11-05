@@ -7,7 +7,7 @@ priority: p2
 depends-on: []
 status: review
 started: 2026-11-05T14:45:00+05:30
-finished: 2026-11-05T15:58:03+05:30
+finished: 2026-11-05T16:27:13+05:30
 ---
 
 ## Why
@@ -42,15 +42,18 @@ under `server/web/`, and not `docs/DECISIONS.md`.
 - [x] space_totals is D-136's (polly, review round 2, amending D-130 item
       3): exactly one space (`422 one_space_only`), whole ISO weeks
       (`422 range_not_whole_weeks`) up to 92 days, no `members`, `kinds` or
-      drafts (`422`s); one figure a week — confirmed minutes, `null` under 3
-      people — with the week's head count, and nothing else: no total, no
+      drafts (`422`s); one figure a week by each entry's filed day —
+      confirmed minutes, `null` unless 3 people **other than the reader**
+      contributed (B5, round 3) — with the week's full head count, and
+      nothing else: no total, no
       task, kind, day, meeting, manual or agent figure. The argument that no
       subtraction gets under the floor is written above the test that holds
       it, and breaking either half of it turns that test red.
 - [x] One `analytics_views` row per person named in `members` and per person
-      shown, per 10 minutes — a person named is looked at even when shown no
-      time, or only agent time — and none for yourself, for space_totals, or
-      for a refused read.
+      shown, and per person whose agent time is in `agent_minutes`, per 10
+      minutes — a person named is looked at even when shown no time, or only
+      agent time — and none for yourself, for space_totals, or for a refused
+      read.
 - [x] CSV has the columns, the formula prefix, the attachment name and the
       logging.
 - [x] A token caller gets `403 session_required`.
@@ -90,3 +93,14 @@ recorded by Belka): the space admin's scope is one space, whole weeks, one
 figure a week, and nothing else. The pooling (`floor`, `withhold`, `emit`,
 `folded`, `TimeReportDayView`, nullable totals) is gone; `own` and `people`
 are as they were. B3: everybody `members` names is logged, shown time or not.
+
+## Round 3 (polly; review round 2 closed B1–B4, found B5)
+
+B5: a lead who logs time in their own space could subtract their own minutes
+from the week figure and read the other two people's total. The floor now
+counts people other than the reader; the head count stays the full count.
+The proof comment says so, and a test has the lead as the third person
+(withheld), another lead reading the same week (shown) and a fourth person
+(shown). Also: every person in `agent_minutes` is a look; SPEC §4.59 says
+named or shown; §3.2 / §6.4 say weeks are by each entry's filed day; the
+stale floor comments in `policy/actions.ts` and `policy/can.ts` are updated.
