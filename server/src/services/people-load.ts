@@ -154,7 +154,15 @@ export function getPersonLoad(
   assertCan(actor, 'people.analytics.read', { targetUserId: userId });
   const person = db.select({ id: users.id }).from(users).where(eq(users.id, userId)).get();
   if (person === undefined) throw ApiError.notFound(`No user with id "${userId}"`);
-  return readLogged(db, actor, userId, 'time', () => loadOf(db, actor, userId, now), () => null, now);
+  return readLogged(
+    db,
+    actor,
+    userId,
+    'time',
+    () => loadOf(db, actor, userId, now),
+    () => null,
+    now,
+  );
 }
 
 function loadOf(db: Db, actor: ResolvedActor, userId: string, now: number): PersonLoadView {
@@ -163,7 +171,10 @@ function loadOf(db: Db, actor: ResolvedActor, userId: string, now: number): Pers
 
   // Hours by space: `summaryOf`'s by_project — the person's own My day
   // assembly — so the two cannot disagree.
-  const window = summaryOf(db, userId, { from: addDays(today, -(LOAD_WINDOW_DAYS - 1)), to: today });
+  const window = summaryOf(db, userId, {
+    from: addDays(today, -(LOAD_WINDOW_DAYS - 1)),
+    to: today,
+  });
   const roles = new Map(
     db
       .select({ projectId: projectMemberships.projectId, role: projectMemberships.role })
@@ -398,13 +409,26 @@ export function listPeopleAvailability(
   // read's transaction — a list that cannot be logged is not answered.
   return db.transaction(() => {
     const view = build(confirmedLastTwoWeeks(db, ids, now));
-    for (const id of ids) readLogged(db, actor, id, 'time', () => null, () => null, now);
+    for (const id of ids)
+      readLogged(
+        db,
+        actor,
+        id,
+        'time',
+        () => null,
+        () => null,
+        now,
+      );
     return view;
   });
 }
 
 /** Confirmed minutes over each person's last 14 of their own days. */
-function confirmedLastTwoWeeks(db: Db, userIds: readonly string[], now: number): Map<string, number> {
+function confirmedLastTwoWeeks(
+  db: Db,
+  userIds: readonly string[],
+  now: number,
+): Map<string, number> {
   const out = new Map<string, number>();
   if (userIds.length === 0) return out;
   const today = todaysFor(db, userIds, now);

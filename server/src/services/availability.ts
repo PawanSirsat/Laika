@@ -44,6 +44,9 @@ export const AWAY_PERIOD_MAX_DAYS = 366;
 
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/** The statuses a person may set, for the route's schema (§4.85). */
+export { AVAILABILITY_STATUSES };
+
 /** The person's working week; `minutes` is days × the length of their day. */
 export interface WorkWeekView {
   /** ISO weekdays, 1 Monday to 7 Sunday, ascending. */
@@ -334,8 +337,7 @@ export function setMyAvailability(
     .where(eq(userAvailability.userId, actor.userId))
     .get();
 
-  const status =
-    input.status === undefined ? (before?.status ?? null) : checkStatus(input.status);
+  const status = input.status === undefined ? (before?.status ?? null) : checkStatus(input.status);
   const hoursPerWeek =
     input.hours_per_week === undefined
       ? (before?.hoursPerWeek ?? null)
@@ -360,15 +362,20 @@ export function setMyAvailability(
     workStart: week.start,
     workEnd: week.end,
   };
-  const same =
-    before !== undefined &&
-    before.status === next.status &&
-    before.hoursPerWeek === next.hoursPerWeek &&
-    before.note === next.note &&
-    JSON.stringify(before.tags) === JSON.stringify(next.tags) &&
-    JSON.stringify(before.workDays) === JSON.stringify(next.workDays) &&
-    before.workStart === next.workStart &&
-    before.workEnd === next.workEnd;
+  // The same keys in the same order, so equal rows serialise alike.
+  const was =
+    before === undefined
+      ? null
+      : {
+          status: before.status,
+          hoursPerWeek: before.hoursPerWeek,
+          note: before.note,
+          tags: before.tags,
+          workDays: before.workDays,
+          workStart: before.workStart,
+          workEnd: before.workEnd,
+        };
+  const same = JSON.stringify(was) === JSON.stringify(next);
 
   if (!same) {
     db.insert(userAvailability)

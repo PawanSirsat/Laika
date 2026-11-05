@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
-import { AVAILABILITY_STATUSES } from '../../db/enums.ts';
 import { ApiError } from '../../errors.ts';
 import {
   addAwayPeriod,
+  AVAILABILITY_STATUSES,
   type AvailabilityView,
   deleteAwayPeriod,
   getMyAvailability,
