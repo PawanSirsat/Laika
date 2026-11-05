@@ -36,6 +36,8 @@ import {
 } from '../../../api/profiles.ts';
 import { PEOPLE_ANALYTICS } from '../../../api/people-analytics.ts';
 import { useGates } from '../../../api/permissions.ts';
+import { CurrentLoadCard, ProfileAvailabilityLine } from './CurrentLoadCard.tsx';
+import { useProfileAvailability } from './profile-availability.ts';
 import { dateTime, timeLabel } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -202,6 +204,20 @@ export function ProfileScreen({
   const { settled } = gates;
   const allowed = gates.org('profile.read');
   const readsDays = gates.org(PEOPLE_ANALYTICS);
+  // Availability (D-137, LAI-1139): your own record, the load read that logs
+  // the look, or a co-worker's narrowed row — and nothing before the gates say which.
+  const availability = useProfileAvailability(
+    userId ?? '',
+    userId === undefined || me === undefined || !allowed
+      ? undefined
+      : me.id === userId
+        ? 'self'
+        : !settled
+          ? undefined
+          : readsDays
+            ? 'load'
+            : 'shared',
+  );
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [kindBusy, setKindBusy] = useState(false);
@@ -460,6 +476,7 @@ export function ProfileScreen({
 
       <ProfileHead
         profile={profile}
+        availability={<ProfileAvailabilityLine name={user.name} seen={availability.seen} />}
         manageRef={manageButton}
         onManage={
           manages
@@ -519,6 +536,15 @@ export function ProfileScreen({
            * neighbour. Which card goes where is `columnPlan`'s — chosen, not
            * computed — and one column is the reading order.
            */}
+          {/* Facts about what they carry (D-131, LAI-1139): never on your own profile. */}
+          {tabbed && (
+            <CurrentLoadCard
+              name={user.name}
+              state={availability.load}
+              onRetry={availability.reload}
+            />
+          )}
+
           <Columns plan={columnPlan(user.profile_kind, columns)} cards={cards} group="main" />
 
           <ActivityCard
@@ -601,10 +627,13 @@ export function ProfileScreen({
  */
 function ProfileHead({
   profile,
+  availability,
   manageRef,
   onManage,
 }: {
   readonly profile: MemberProfile;
+  /** Their availability pill, note and tags (LAI-1139), or nothing. */
+  readonly availability: ReactNode;
   readonly manageRef: RefObject<HTMLDivElement | null>;
   /** Absent when the reader has nothing to manage here: then there is no ⋯. */
   readonly onManage: (() => void) | undefined;
@@ -638,6 +667,7 @@ function ProfileHead({
           <span className="prof-meta-email">{user.email}</span>
           <span>Member since {monthYear(user.created_at)}</span>
         </p>
+        {availability}
       </div>
       {onManage !== undefined && (
         <div className="prof-manage" ref={manageRef} data-profile-manage>
