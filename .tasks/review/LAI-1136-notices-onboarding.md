@@ -5,8 +5,9 @@ area: server
 assignee: core/belka
 priority: p2
 depends-on: []
-status: in-progress
+status: review
 started: 2026-11-05T15:55:00+05:30
+finished: 2026-11-05T16:05:00+05:30
 ---
 
 ## Why
@@ -26,18 +27,25 @@ of LAIKA-997 (LAI-1133).
 
 ## Acceptance criteria
 
-- [ ] Adding a member writes the membership, `member.added`, an optional
+- [x] Adding a member writes the membership, `member.added`, an optional
       `task.assigned` and one notice in one transaction; a failure in any of
       them writes none.
-- [ ] `assign_task_id` is refused `422` with `reason: task_not_assignable`
+- [x] `assign_task_id` is refused `422` with `reason: task_not_assignable`
       when it is not in the space, not `backlog`/`todo`, already assigned,
       or unreadable.
-- [ ] A deactivated target gets `422` with `reason: user_deactivated`.
-- [ ] A self-add writes no notice; a re-add stays `409` and writes no
+- [x] A deactivated target gets `422` with `reason: user_deactivated`.
+- [x] A self-add writes no notice; a re-add stays `409` and writes no
       second notice.
-- [ ] `GET /me/notices` returns the caller's only, with `unread_count`.
-- [ ] Read and read-all are idempotent `204`s.
-- [ ] A token caller gets `403` with `reason: session_required`.
-- [ ] Existing `POST …/members` callers with no new fields behave as before.
-- [ ] Notices older than 90 days are pruned by the cleanup job.
-- [ ] No new activity verb; no email.
+- [x] `GET /me/notices` returns the caller's only, with `unread_count`.
+- [x] Read and read-all are idempotent `204`s.
+- [x] A token caller gets `403` with `reason: session_required`.
+- [x] Existing `POST …/members` callers with no new fields behave as before.
+- [x] Notices older than 90 days are pruned by the cleanup job.
+- [x] No new activity verb; no email.
+
+## Deviations
+
+- §3.4 gained one row, `system.notices.prune`: the §11.6 prune needs a
+  system action and §3.4 lists them all. Not in the plan's named sections.
+- The plan's `web/src/api/notices.ts` client types are left to LAI-1139
+  (dispatch: server only); `NoticeView` is in `UNPAIRED` until then.
