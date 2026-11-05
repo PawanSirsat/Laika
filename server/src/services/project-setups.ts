@@ -308,6 +308,36 @@ function listAcrossProjects(
   return rows.map(({ row, slug }) => toView(db, row, slug, presence));
 }
 
+/**
+ * `ownerUserId`'s records in the projects `readable` names, newest first, and
+ * how many more they hold in projects outside it — counted, never named
+ * (D-132 item 5, LAI-1137). **No `can()` here**: the caller,
+ * `developer-setup.ts`, has asked `developer_setup.read_any` and computed
+ * `readable` from the reader's own `project.read`.
+ */
+export function projectSetupsOf(
+  db: Db,
+  ownerUserId: string,
+  readable: readonly string[],
+): { visible: ProjectSetupView[]; hidden: number } {
+  const allowed = new Set(readable);
+  const rows = db
+    .select({ row: projectRepoSetups, slug: projects.slug })
+    .from(projectRepoSetups)
+    .innerJoin(projects, eq(projects.id, projectRepoSetups.projectId))
+    .where(eq(projectRepoSetups.ownerUserId, ownerUserId))
+    .orderBy(desc(projectRepoSetups.id))
+    .all();
+  const presence = presenceEnabled(db);
+  const visible: ProjectSetupView[] = [];
+  let hidden = 0;
+  for (const { row, slug } of rows) {
+    if (allowed.has(row.projectId)) visible.push(toView(db, row, slug, presence));
+    else hidden += 1;
+  }
+  return { visible, hidden };
+}
+
 /** The one agent a read is narrowed to, if any — the token's own, or the owner's named one. */
 function onlyAgent(db: Db, actor: ResolvedActor, agentId: string | undefined): string | undefined {
   const self = registeredAgent(actor);

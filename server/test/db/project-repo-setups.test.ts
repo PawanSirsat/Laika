@@ -43,6 +43,7 @@ function folderBefore0073(): string {
     '0075_task_deliverables',
     '0076_user_availability',
     '0077_member_notices',
+    '0078_developer_setup_reads',
   ]);
   journal.entries.splice(at);
   writeFileSync(journalPath, JSON.stringify(journal));

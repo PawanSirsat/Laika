@@ -241,6 +241,44 @@ describe('SPEC §3.1 — rows that depend on the resource', () => {
       expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u2' }), role).toBe(false);
     }
   });
+
+  // | View a member's developer setup | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
+  it("Owner and Admin read anyone's developer setup but their own (D-132, LAI-1137)", () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role), 'developer_setup.read_any', { targetUserId: 'u2' }), role).toBe(true);
+      expect(can(actor(role), 'developer_setup.read_any', { targetUserId: 'u1' }), role).toBe(
+        false,
+      );
+      expect(can(actor(role), 'developer_setup.read_any', {}), role).toBe(false);
+    }
+    for (const role of ['member', 'viewer'] as const) {
+      expect(can(actor(role), 'developer_setup.read_any', { targetUserId: 'u2' }), role).toBe(
+        false,
+      );
+    }
+  });
+
+  // | Revoke a member's tool or unpair their device | ✓ (session only, not themselves) | ✓ (session only, not for the owner, not themselves) | — | — |
+  it("Owner revokes anyone's but their own; Admin anyone's but the owner's and their own (D-133)", () => {
+    for (const action of ['agent.revoke_any', 'device.revoke_any'] as const) {
+      const member = { targetUserId: 'u2', targetOrgRole: 'member' as const };
+      const admin = { targetUserId: 'u2', targetOrgRole: 'admin' as const };
+      const owner = { targetUserId: 'u2', targetOrgRole: 'owner' as const };
+      for (const role of ['owner', 'admin'] as const) {
+        expect(can(actor(role), action, member), `${role} ${action} member`).toBe(true);
+        expect(can(actor(role), action, admin), `${role} ${action} admin`).toBe(true);
+        // Yourself, or a target whose role was never loaded, is refused.
+        expect(can(actor(role), action, { targetUserId: 'u1', targetOrgRole: role })).toBe(false);
+        expect(can(actor(role), action, { targetUserId: 'u2' }), `${role} no role`).toBe(false);
+        expect(can(actor(role), action, {}), `${role} no target`).toBe(false);
+      }
+      expect(can(actor('owner'), action, owner), `owner ${action} owner-role`).toBe(true);
+      expect(can(actor('admin'), action, owner), `admin ${action} the owner`).toBe(false);
+      for (const role of ['member', 'viewer'] as const) {
+        expect(can(actor(role), action, member), `${role} ${action}`).toBe(false);
+      }
+    }
+  });
 });
 
 // ---------------------------------------------------------------- SPEC §3.2
@@ -478,6 +516,9 @@ describe('completeness', () => {
       'task.handoff.cancel',
       'profile.rate',
       'people.analytics.read',
+      'developer_setup.read_any',
+      'agent.revoke_any',
+      'device.revoke_any',
       // §3.4's own, asserted in full by the describe above.
       ...SYSTEM_ACTIONS,
     ]);

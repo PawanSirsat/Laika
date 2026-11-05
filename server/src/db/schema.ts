@@ -996,6 +996,10 @@ export const devices = sqliteTable(
     pairedAt: integer('paired_at'),
     status: text('status', { enum: DEVICE_STATUSES }).notNull(),
     revokedAt: integer('revoked_at'),
+    /** Who unpaired it, when an owner or admin did (D-133, LAI-1137); else null. */
+    revokedByUserId: text('revoked_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     lastSeenAt: integer('last_seen_at'),
     createdAt,
   },
@@ -1100,6 +1104,14 @@ export const agents = sqliteTable(
     status: text('status', { enum: AGENT_STATUSES }).notNull().default('active'),
     createdAt,
     revokedAt: integer('revoked_at'),
+    /**
+     * Who revoked it when that was not its owner (D-133, LAI-1137): an owner
+     * or admin acting on the member's setup. Null for the owner's own revoke
+     * and for one made before this column existed.
+     */
+    revokedByUserId: text('revoked_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     /** Stamped on authenticated requests, at most once a minute (§4.63). */
     lastSeenAt: integer('last_seen_at'),
   },

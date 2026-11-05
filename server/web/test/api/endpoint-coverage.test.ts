@@ -160,6 +160,11 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/me/notices': 'LAI-1139 — For you notices and Add to project',
   'api/v1/me/notices/*/read': 'LAI-1139 — For you notices and Add to project',
   'api/v1/me/notices/read-all': 'LAI-1139 — For you notices and Add to project',
+  // LAI-1137 serves a member's developer setup and the admin revokes;
+  // LAI-1140 builds the tab. Named by LAI-1137 (D-033).
+  'api/v1/people/*/developer-setup': 'LAI-1140 — Developer setup tab',
+  'api/v1/people/*/agents/*/revoke': 'LAI-1140 — Developer setup tab',
+  'api/v1/people/*/devices/*/revoke': 'LAI-1140 — Developer setup tab',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */
