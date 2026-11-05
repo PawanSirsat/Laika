@@ -1,7 +1,16 @@
+import type Database from 'better-sqlite3';
 import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { listAnalyticsViews } from '../../services/analytics-views.ts';
+import {
+  type DeveloperSetupView,
+  getDeveloperSetup,
+  revokeMemberAgent,
+  revokeMemberDevice,
+  type SetupToolView,
+  type UnpairedDeviceView,
+} from '../../services/developer-setup.ts';
 import { ACTIVITY_RANGES, getPeopleActivity } from '../../services/people-activity.ts';
 import {
   type AvailabilityListView,
@@ -61,9 +70,9 @@ function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) 
   return actor;
 }
 
-export function peopleRoutes(options: { db: Db }): Hono<AppEnv> {
+export function peopleRoutes(options: { db: Db; sqlite: Database.Database }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  const { db } = options;
+  const { db, sqlite } = options;
 
   app.get('/availability', (c) => {
     const actor = requireActor(c);
@@ -98,6 +107,28 @@ export function peopleRoutes(options: { db: Db }): Hono<AppEnv> {
     const actor = requireActor(c);
     const query = parseQuery(PreviewQuery, c.req.query());
     return c.json(getPersonLocalActivity(db, actor, c.req.param('id'), query.days));
+  });
+
+  // D-132, D-133 (LAI-1137): a member's whole developer setup, read by an
+  // owner or admin and logged; and their revoke of one tool or one device.
+  // No body: the confirm is the screen's, and what is revoked is the path.
+  app.get('/:id/developer-setup', (c) => {
+    const actor = requireActor(c);
+    return c.json<DeveloperSetupView>(getDeveloperSetup(db, actor, c.req.param('id')));
+  });
+
+  app.post('/:id/agents/:agentId/revoke', (c) => {
+    const actor = requireActor(c);
+    return c.json<SetupToolView>(
+      revokeMemberAgent(sqlite, db, actor, c.req.param('id'), c.req.param('agentId')),
+    );
+  });
+
+  app.post('/:id/devices/:deviceId/revoke', (c) => {
+    const actor = requireActor(c);
+    return c.json<UnpairedDeviceView>(
+      revokeMemberDevice(sqlite, db, actor, c.req.param('id'), c.req.param('deviceId')),
+    );
   });
 
   return app;

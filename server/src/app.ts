@@ -387,7 +387,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/tasks`, taskBudgetRoutes({ db }));
     // The profile's heatmap (D-079, LAI-751), by day; a person's day and local
     // activity read for them, and who looked (D-102, LAI-957).
-    app.route(`${API_BASE}/people`, peopleRoutes({ db }));
+    app.route(`${API_BASE}/people`, peopleRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/me`, meAnalyticsViewRoutes({ db }));
     // A person's own availability (D-131, LAI-1130); the people reads are above.
     app.route(`${API_BASE}/me`, meAvailabilityRoutes({ db }));
