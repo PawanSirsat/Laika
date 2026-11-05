@@ -34,6 +34,7 @@ import {
   taskBudgetRoutes,
 } from './http/routes/token-budgets.ts';
 import { meAnalyticsViewRoutes, peopleRoutes } from './http/routes/people.ts';
+import { meAvailabilityRoutes } from './http/routes/availability.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
 import { projectStatusRoutes } from './http/routes/project-statuses.ts';
@@ -383,6 +384,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // activity read for them, and who looked (D-102, LAI-957).
     app.route(`${API_BASE}/people`, peopleRoutes({ db }));
     app.route(`${API_BASE}/me`, meAnalyticsViewRoutes({ db }));
+    // A person's own availability (D-131, LAI-1130); the people reads are above.
+    app.route(`${API_BASE}/me`, meAvailabilityRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db, publicUrl: options.publicUrl }));
     app.route(
       `${API_BASE}/org`,
