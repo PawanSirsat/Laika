@@ -52,6 +52,7 @@ import { dayIn, isDay } from '../my-day/my-day-derive.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
 import { PersonLocalActivity } from './PersonLocalActivity.tsx';
+import { DeveloperSetupTab } from './DeveloperSetupTab.tsx';
 import {
   agentRows,
   barHeights,
@@ -81,8 +82,9 @@ export interface ProfileScreenProps {
   readonly userId: string | undefined;
   readonly me: MeProfile | undefined;
   /**
-   * `?tab=` — `day` or `time` (LAI-959, LAI-1134); `hours`, the Time report's
-   * name before LAI-1134, still opens it. Anything else is the overview.
+   * `?tab=` — `day`, `time` or `dev` (LAI-959, LAI-1134, LAI-1140); `hours`,
+   * the Time report's name before LAI-1134, still opens it. Anything else is
+   * the overview.
    */
   readonly tab?: string | undefined;
   readonly onTab?: (tab: ProfileTab) => void;
@@ -93,24 +95,40 @@ export interface ProfileScreenProps {
 }
 
 /**
- * The profile's sections (LAI-959, LAI-1134): the record, the person's day,
- * and their time. *Developer setup* is the design's fourth (frame 1n); it is
- * not drawn until its endpoint exists (LAI-1140), so nothing reaches
- * a reader empty.
+ * The profile's sections (LAI-959, LAI-1134, LAI-1140): the record, the
+ * person's day, their time, and their developer setup (frame 1n). Day and
+ * Time report are *See everyone's analytics*; Developer setup is *See and
+ * manage anyone's developer setup* — so a reader may hold either set alone.
  */
-export type ProfileTab = 'overview' | 'day' | 'time';
+export type ProfileTab = 'overview' | 'day' | 'time' | 'dev';
 
 const TABS: readonly (readonly [ProfileTab, string])[] = [
   ['overview', 'Overview'],
   ['day', 'Day'],
   ['time', 'Time report'],
+  ['dev', 'Developer setup'],
 ];
 
 /** `?tab=` as a tab: `hours` is the Time report's old name, kept so its links still land. */
 export function profileTab(tab: string | undefined): ProfileTab {
   if (tab === 'day') return 'day';
   if (tab === 'time' || tab === 'hours') return 'time';
+  if (tab === 'dev') return 'dev';
   return 'overview';
+}
+
+/** The tabs this reader may open on this profile: never Day, Time or Developer setup on your own. */
+export function profileTabs(
+  other: boolean,
+  readsDays: boolean,
+  readsSetup: boolean,
+): readonly ProfileTab[] {
+  return TABS.map(([id]) => id).filter(
+    (id) =>
+      id === 'overview' ||
+      (other && readsDays && (id === 'day' || id === 'time')) ||
+      (other && readsSetup && id === 'dev'),
+  );
 }
 
 type Load =
@@ -445,9 +463,15 @@ export function ProfileScreen({
     decisions: <DecisionsCard review={profile.review} weeks={weeks} now={now} />,
   };
 
-  // A person's own day is My day's; their Day and Time report are for somebody else.
-  const tabbed = readsDays && me.id !== user.id;
-  const shownTab: ProfileTab = tabbed ? profileTab(tab) : 'overview';
+  // A person's own day is My day's, and their own setup Developer access's;
+  // these tabs are for somebody else.
+  const offered = profileTabs(me.id !== user.id, readsDays, gates.org('developer_setup.read_any'));
+  // **`tabbed` is not "reads analytics"**: the row can be Overview · Developer
+  // setup alone. A card that reads (or links to) the person's time — Time this
+  // week, Current load — gates on `offered.includes('time')`, never `tabbed`.
+  const tabbed = offered.length > 1;
+  const asked = profileTab(tab);
+  const shownTab: ProfileTab = offered.includes(asked) ? asked : 'overview';
   // ⋯ is offered only when the panel would hold something (LAI-1134).
   const manages = anyAdminControl(adminControls(gates, me, user));
   const tabHref = (id: ProfileTab): string => {
@@ -474,7 +498,7 @@ export function ProfileScreen({
 
       {tabbed && (
         <nav className="prof-tabs" aria-label={`${user.name}’s profile`}>
-          {TABS.map(([id, label]) => (
+          {TABS.filter(([id]) => offered.includes(id)).map(([id, label]) => (
             <a
               key={id}
               href={tabHref(id)}
@@ -527,7 +551,7 @@ export function ProfileScreen({
            * neighbour. Which card goes where is `columnPlan`'s — chosen, not
            * computed — and one column is the reading order.
            */}
-          {tabbed && (
+          {offered.includes('time') && (
             // *Time this week* (frame 1n) is a link, not figures: reading them
             // here would log a look at the person on every Overview open
             // (D-102, D-135). The Time report tab is the look, and says so.
@@ -580,6 +604,15 @@ export function ProfileScreen({
             group="record"
           />
         </>
+      )}
+
+      {shownTab === 'dev' && (
+        <DeveloperSetupTab
+          key={user.id}
+          userId={user.id}
+          name={user.name}
+          canRevokeTokens={gates.org('token.revoke_any')}
+        />
       )}
 
       {managing && (

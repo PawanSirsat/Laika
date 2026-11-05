@@ -1,5 +1,6 @@
 import type { MeProfile } from '../../../api/me.ts';
 import type { Gates } from '../../../api/permissions.ts';
+import { mayActOnSetupOf } from '../../../api/owner-setup.ts';
 
 /** The person the Manage member panel manages, as the profile carries them. */
 export interface AdminSubject {
@@ -55,7 +56,13 @@ export function adminControls(
       gates.org('user.reset_password') &&
       (!theOwner || me.org_role === 'owner'),
     tokens: other && gates.org('token.list_any'),
-    revokeTokens: other && gates.org('token.list_any') && gates.org('token.revoke_any'),
+    // Not the owner's tokens unless the reader is the owner (D-133, LAI-1143):
+    // the server refuses it `403 not_for_owner`, so it is not offered.
+    revokeTokens:
+      other &&
+      gates.org('token.list_any') &&
+      gates.org('token.revoke_any') &&
+      mayActOnSetupOf(me.org_role, user.org_role),
     spaces: other && gates.org('member_list.read'),
   };
 }

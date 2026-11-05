@@ -49,6 +49,9 @@ void describe('adminControls (LAI-1134: the Manage member panel)', () => {
     assert.equal(c.deactivate, false);
     assert.equal(c.resetLink, false);
     assert.equal(c.signOut, true);
+    // D-133, LAI-1143: the owner's tokens are listed, never revocable by an admin.
+    assert.equal(c.tokens, true);
+    assert.equal(c.revokeTokens, false);
     // Role stays for the profile kind; Danger zone is not drawn at all (frame 1r).
     assert.deepEqual(manageSections(c), ['role', 'spaces', 'tokens', 'security']);
   });
@@ -90,5 +93,12 @@ void describe('adminControls (LAI-1134: the Manage member panel)', () => {
     const c = adminControls(holding('token.revoke_any'), OWNER, bea);
     assert.equal(c.tokens, false);
     assert.equal(c.revokeTokens, false);
+  });
+});
+
+void describe('the owner rule in the panel (LAI-1140, D-133)', () => {
+  void test('an owner keeps Revoke on an admin’s tokens', () => {
+    const c = adminControls(holding(...ALL), OWNER, { ...bea, org_role: 'admin' });
+    assert.equal(c.revokeTokens, true);
   });
 });

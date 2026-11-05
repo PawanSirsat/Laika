@@ -905,6 +905,46 @@ const PAIRS: readonly Pair[] = [
     client: 'ProjectSetup',
     clientFile: 'project-setups.ts',
   },
+  // LAI-1140: a member's developer setup on their profile (D-132, D-133). The
+  // tool and device extend `Omit<…>` of a type in another module, which
+  // `fieldsOf` does not follow — so each compares its own fields, and the
+  // bases stay held by the `AgentView` and `DeviceView` pairs above.
+  {
+    server: 'DeveloperSetupView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'DeveloperSetup',
+    clientFile: 'developer-setup.ts',
+  },
+  {
+    server: 'SetupToolView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'SetupTool',
+    clientFile: 'developer-setup.ts',
+  },
+  {
+    server: 'SetupDeviceView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'SetupDevice',
+    clientFile: 'developer-setup.ts',
+  },
+  {
+    server: 'SetupTokenView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'SetupToken',
+    clientFile: 'developer-setup.ts',
+  },
+  {
+    server: 'SetupActivityView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'SetupActivity',
+    clientFile: 'developer-setup.ts',
+  },
+  {
+    server: 'UnpairedDeviceView',
+    serverFile: 'services/developer-setup.ts',
+    client: 'UnpairedDevice',
+    clientFile: 'developer-setup.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [
