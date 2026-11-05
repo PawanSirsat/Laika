@@ -7016,3 +7016,23 @@ figure is a whole week of one space made up of at least three people, and no dif
 two answers isolates fewer than three people. A small space shows mostly withheld weeks; that
 is the floor working. The weekly figure tells a space admin how much the team logged, which is
 what they need; who logged what stays with owners and admins.
+
+## D-137 — What a co-worker sees of someone's availability
+
+**Date:** 2026-11-05 · **Decided by:** Pawan (owner), through polly; recorded by Belka. Narrows
+D-131 item 2.
+
+**Context.** LAI-1130's review found that "status is seen by everyone who shares a space"
+was being served as the whole record — weekly hours, working week, and every future away
+period with its dates. A co-worker's future holidays and stated hours are more than status.
+
+**Decision.** What a reader sees of someone else's availability is an allow-list per reader:
+
+1. **A member who shares a space:** status, note, tags, and the end date of a current away
+   period ("away until …"). No hours, no working week, no upcoming away periods.
+2. **A space admin, for people in a space they lead:** the above, plus hours per week, upcoming
+   away periods (dates only), and the count of cards in progress. No hours tracked and no
+   working week.
+3. **Owners and holders of *See everyone's analytics*:** the full record and hours tracked,
+   each look logged (D-131, unchanged).
+4. **The person** sees and edits all of their own.
