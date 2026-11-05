@@ -1,10 +1,11 @@
 import { and, eq, gte, inArray, isNull, ne } from 'drizzle-orm';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
-import { type ProjectRole } from '../db/enums.ts';
+import { type AvailabilityStatus, type ProjectRole } from '../db/enums.ts';
 import { projectMemberships, projects, tasks, timeEntries, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
+import { capabilityOf, holdsCapability } from '../policy/grants.ts';
 import { visibleProjectIds } from './activity.ts';
 import { readLogged } from './analytics-views.ts';
 import { availabilityFor, type AvailabilityView, todaysFor } from './availability.ts';
@@ -79,10 +80,39 @@ export interface PersonLoadView {
   away: { from: string; to: string }[];
 }
 
+/**
+ * What a member sees of someone who shares a space with them (D-137): what
+ * they said, and when they are back — never their hours, their working week
+ * or their plans further out.
+ */
+export interface MemberAvailabilityView {
+  status: AvailabilityStatus | null;
+  note: string | null;
+  tags: string[];
+  /** The end of the period covering the person's today, or null. */
+  away: { until: string } | null;
+}
+
+/**
+ * What a space admin sees of someone in a space they lead (D-137): the
+ * member's view, the hours a week the person offered, and their current and
+ * upcoming away dates — no working week, no period ids.
+ */
+export interface LeadAvailabilityView extends MemberAvailabilityView {
+  hours_per_week: number | null;
+  away_periods: { from: string; to: string }[];
+}
+
 /** One person on `GET /people/availability`. */
 export interface AvailabilityRowView {
   user: { id: string; name: string };
-  availability: AvailabilityView | null;
+  /**
+   * Narrowed to the reader (D-137): the whole record for *See everyone's
+   * analytics*, `LeadAvailabilityView` for a space admin, and
+   * `MemberAvailabilityView` for anyone else — for every row, the reader's own
+   * included, whose whole record is `GET /me/availability`.
+   */
+  availability: AvailabilityView | LeadAvailabilityView | MemberAvailabilityView | null;
   /** The spaces they are in that the reader can open, A–Z. */
   spaces: ProjectRef[];
   /** Their `in_progress` cards — absent for a reader who leads no space. */
@@ -272,6 +302,44 @@ function loadOf(db: Db, actor: ResolvedActor, userId: string, now: number): Pers
 type Reader = 'people' | 'lead' | 'member';
 
 /**
+ * Each reader's view of somebody else's availability (D-137), **built from an
+ * allow-list**: a field added to `AvailabilityView` reaches nobody here until
+ * it is named below.
+ */
+function memberView(a: AvailabilityView): MemberAvailabilityView {
+  return { status: a.status, note: a.note, tags: a.tags, away: a.away };
+}
+
+function leadView(a: AvailabilityView): LeadAvailabilityView {
+  return {
+    ...memberView(a),
+    hours_per_week: a.hours_per_week,
+    away_periods: a.away_periods.map((p) => ({ from: p.from, to: p.to })),
+  };
+}
+
+const PROJECTIONS: Readonly<
+  Record<Reader, (a: AvailabilityView) => AvailabilityRowView['availability']>
+> = {
+  people: (a) => a,
+  lead: leadView,
+  member: memberView,
+};
+
+/**
+ * Whether the reader holds *See everyone's analytics* — the grant
+ * `people.analytics.read` is carried by — **asked of the reader's own role**,
+ * not of some other person. `can()` answers that action only about a named
+ * target, and naming an arbitrary one made an owner whose organisation held
+ * nobody else listable read as a member (LAI-1130 review note 3). The list is
+ * `availability.read`, session only, so a token never reaches this.
+ */
+function seesEveryonesAnalytics(actor: ResolvedActor): boolean {
+  const capability = capabilityOf('people.analytics.read');
+  return capability !== null && holdsCapability(actor.orgRole, actor.orgGrants, capability);
+}
+
+/**
  * `GET /people/availability?space=&tag=&open_only=` under `availability.read`
  * — every role, session only — in one of three shapes, decided by the reader:
  *
@@ -280,9 +348,10 @@ type Reader = 'people' | 'lead' | 'member';
  *    `last_2_weeks_minutes`. Every person listed is logged as a look at their
  *    time, in the read's transaction.
  *  - **`lead`**, a space admin: the people in the spaces they lead, with
- *    `in_progress` counted in those spaces only. **No hours** (D-130 item 3).
+ *    `in_progress` counted in those spaces only, and `LeadAvailabilityView`.
+ *    **No tracked hours** (D-130 item 3) and no working week (D-137).
  *  - **`member`**, anyone else: the people who share a space with them, with
- *    `availability` and `spaces` only.
+ *    `MemberAvailabilityView` and `spaces` only (D-137).
  *
  * Deactivated people are never listed. A–Z by name, and no other order.
  */
@@ -309,18 +378,16 @@ export function listPeopleAvailability(
   const allProjects = db.select({ id: projects.id }).from(projects).all();
   const visible = new Set(visibleProjectIds(db, actor));
 
-  const other = people.find((p) => p.id !== actor.userId);
   const led = new Set(
     allProjects
       .map((p) => p.id)
       .filter((id) => can(withProject(actor, id), 'project.members.manage', { projectId: id })),
   );
-  const reader: Reader =
-    other !== undefined && can(actor, 'people.analytics.read', { targetUserId: other.id })
-      ? 'people'
-      : led.size > 0
-        ? 'lead'
-        : 'member';
+  const reader: Reader = seesEveryonesAnalytics(actor)
+    ? 'people'
+    : led.size > 0
+      ? 'lead'
+      : 'member';
 
   // Which spaces decide who is listed, and where cards are counted.
   const own = new Set(actor.memberships.map((m) => m.projectId));
@@ -387,11 +454,14 @@ export function listPeopleAvailability(
     }
   }
 
+  const narrow = PROJECTIONS[reader];
+  const project = (a: AvailabilityView | null): AvailabilityRowView['availability'] =>
+    a === null ? null : narrow(a);
   const build = (minutes: Map<string, number> | null): AvailabilityListView => ({
     data: rows.map((r) => {
       const row: AvailabilityRowView = {
         user: { id: r.id, name: r.name },
-        availability: availability.get(r.id) ?? null,
+        availability: project(availability.get(r.id) ?? null),
         spaces: [...(spacesOf.get(r.id) ?? [])]
           .map((id) => refs.get(id))
           .filter((p): p is ProjectRef => p !== undefined)

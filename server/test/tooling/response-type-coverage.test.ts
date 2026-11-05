@@ -221,6 +221,8 @@ const UNPAIRED = new Map<string, string>([
   ['AwayPeriodView', 'no client type exists'],
   ['AvailabilityListView', 'no client type exists'],
   ['AvailabilityRowView', 'no client type exists'],
+  ['MemberAvailabilityView', 'no client type exists'],
+  ['LeadAvailabilityView', 'no client type exists'],
   ['PersonLoadView', 'no client type exists'],
   ['LoadProjectView', 'no client type exists'],
   ['LoadCardsView', 'no client type exists'],

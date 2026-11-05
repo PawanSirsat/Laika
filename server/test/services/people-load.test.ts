@@ -296,6 +296,105 @@ describe('GET /people/availability', () => {
     expect(views()).toEqual([]);
   });
 
+  describe('narrowed per reader, by allow-list (D-137)', () => {
+    /** Cal says everything there is to say: the whole record. */
+    beforeEach(() => {
+      setMyAvailability(
+        t.db,
+        actor(cal),
+        {
+          status: 'open',
+          hours_per_week: 8,
+          note: 'Can pair on Laika',
+          tags: ['react'],
+          work_week: { days: [1, 2, 3], start: '09:00', end: '13:00' },
+        },
+        NOW,
+      );
+      addAwayPeriod(t.db, actor(cal), { from: '2026-10-21', to: '2026-10-22' }, NOW);
+      addAwayPeriod(t.db, actor(cal), { from: '2026-11-09', to: '2026-11-13' }, NOW);
+    });
+    const calIn = (reader: string) =>
+      listPeopleAvailability(t.db, actor(reader), {}, NOW).data.find((r) => r.user.id === cal);
+
+    it('a member gets status, note, tags and the current away end — nothing else', () => {
+      // Ari, an admin, with every grant off: a plain member of Laika, which Cal
+      // shares — neither analytics nor a space to lead.
+      const row = listPeopleAvailability(
+        t.db,
+        actor(ari, { orgGrants: { admin: [], member: [], viewer: [] } }),
+        {},
+        NOW,
+      ).data.find((r) => r.user.id === cal);
+      expect(Object.keys(row ?? {}).sort()).toEqual(['availability', 'spaces', 'user']);
+      expect(Object.keys(row?.availability ?? {}).sort()).toEqual([
+        'away',
+        'note',
+        'status',
+        'tags',
+      ]);
+      expect(row?.availability).toEqual({
+        status: 'open',
+        note: 'Can pair on Laika',
+        tags: ['react'],
+        away: { until: '2026-10-22' },
+      });
+    });
+
+    it('a space admin gets hours a week and away dates — no working week, no ids', () => {
+      const row = calIn(bea);
+      expect(Object.keys(row ?? {}).sort()).toEqual([
+        'availability',
+        'in_progress',
+        'spaces',
+        'user',
+      ]);
+      expect(Object.keys(row?.availability ?? {}).sort()).toEqual([
+        'away',
+        'away_periods',
+        'hours_per_week',
+        'note',
+        'status',
+        'tags',
+      ]);
+      expect(row?.availability).toEqual({
+        status: 'open',
+        note: 'Can pair on Laika',
+        tags: ['react'],
+        away: { until: '2026-10-22' },
+        hours_per_week: 8,
+        away_periods: [
+          { from: '2026-10-21', to: '2026-10-22' },
+          { from: '2026-11-09', to: '2026-11-13' },
+        ],
+      });
+    });
+
+    it('an owner gets the whole record, working week and ids included, with hours', () => {
+      const row = calIn(ada);
+      expect(row).toMatchObject({ last_2_weeks_minutes: 0, in_progress: 0 });
+      expect(row?.availability).toMatchObject({
+        hours_per_week: 8,
+        work_week: { days: [1, 2, 3], start: '09:00', end: '13:00', minutes: 720 },
+        away_periods: [
+          { id: expect.any(String) as unknown, from: '2026-10-21', to: '2026-10-22' },
+          { id: expect.any(String) as unknown, from: '2026-11-09', to: '2026-11-13' },
+        ],
+      });
+    });
+  });
+
+  it('gives an owner hours even when nobody else in the org can be listed (review note 3)', () => {
+    // Everyone but Ada is an org viewer or deactivated: no other person to ask about.
+    for (const id of [ari, bea, cal, dee]) {
+      t.db.update(users).set({ orgRole: 'viewer' }).where(eq(users.id, id)).run();
+    }
+    const { data } = listPeopleAvailability(t.db, actor(ada), {}, NOW);
+    expect(data.map((r) => r.user.name)).toEqual(['Ada']);
+    expect(data[0]).toHaveProperty('last_2_weeks_minutes', 0);
+    expect(data[0]?.in_progress).toBe(0);
+  });
+
   it('never lists a deactivated person or an org viewer', () => {
     const ids = listPeopleAvailability(t.db, actor(ada), {}, NOW).data.map((r) => r.user.id);
     expect(ids).not.toContain(zed);

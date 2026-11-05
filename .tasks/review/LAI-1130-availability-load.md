@@ -94,3 +94,26 @@ Precedent: LAI-1050 and LAI-1056. polly authorised exactly one edit in
 Availability, Current load)"*. Nothing else in `server/web/` was touched. The
 red above is retired by that edit, and each entry expires when LAI-1139 calls
 its path (the list's own staleness check).
+
+## After review — D-137, what each reader sees (polly, 2026-11-05)
+
+The independent review passed. polly decided what a reader gets of someone
+**else's** availability (D-137, docs PR #276), and this round implements it:
+
+- `GET /people/availability` narrows each row's `availability` by an
+  **allow-list per reader** (`memberView`, `leadView` in
+  `server/src/services/people-load.ts`), the same for every row, the reader's
+  own included:
+  - member: `status`, `note`, `tags`, `away: { until } | null`;
+  - space admin: those plus `hours_per_week` and `away_periods: [{ from, to }]`
+    (no ids, no working week), and `in_progress`; no `last_2_weeks_minutes`;
+  - *See everyone's analytics*: unchanged — the whole record, hours, logged.
+  - `/me/availability` is unchanged.
+- **Review note 3:** the reader type asks the reader's own role for the grant
+  that carries `people.analytics.read` (`seesEveryonesAnalytics`), no longer
+  `can()` about an arbitrary other person — an owner whose org lists nobody
+  else now still gets hours.
+- Tests assert the exact key sets (`Object.keys(...).sort()` deep-equal) for
+  member and space-admin rows, in `test/services/people-load.test.ts` and
+  `test/http/routes/availability.test.ts`, plus the owner-among-viewers case.
+- SPEC §3.1 (the availability paragraph), §4.85 and §6.4 say the same.

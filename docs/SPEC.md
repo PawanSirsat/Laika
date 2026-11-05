@@ -420,12 +420,14 @@ must not say its person is open to more work, nor read who else is.
 - **Only the person writes it.** The services touch the caller's own rows;
   no row lets anybody set another's status, hours, note, tags, working week
   or away periods.
-- **Reading narrows to the reader.** Everyone sees the people who share a
-  space with them, with their availability and spaces only. A space's lead
-  sees the people in the spaces they lead, with card counts over those
-  spaces and **no hours**. A holder of *See everyone's analytics* sees every
-  active person who is not an org viewer, with hours — and every person so
-  listed is logged as a look at their time (§4.59).
+- **Reading narrows to the reader** (D-137). Everyone sees the people who
+  share a space with them: status, note, tags and when a current away period
+  ends. A space's lead sees the people in the spaces they lead with, in
+  addition, the hours a week each offered, their away dates and card counts
+  over those spaces — **no tracked hours and no working week**. A holder of
+  *See everyone's analytics* sees every active person who is not an org
+  viewer, the whole record with tracked hours — and every person so listed is
+  logged as a look at their time (§4.59).
 - **Load is not this row.** `GET /people/:id/load` is *View a member's day,
   time and shared activity* (`people.analytics.read`), not themselves, logged.
 - **Never ranked and nothing computed** (D-088 item 1, D-131): the list is
@@ -3520,6 +3522,10 @@ own there.
 
 A person's own availability (D-131, LAI-1130). **Set only by the person, on a
 web session.** No row is *not set*: no pill, and *No working hours set*.
+**Who reads which fields is D-137's**, by allow-list (§6.4): a member reads
+`status`, `note`, `tags` and when a current away period ends; a space's lead
+adds `hours_per_week` and the away dates; `work_days`, `work_start` and
+`work_end` are read only by the person and by *See everyone's analytics*.
 
 | field | notes |
 | --- | --- |
@@ -3995,7 +4001,7 @@ GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at t
 GET    /api/v1/me/availability               PUT .../availability  body { status?, hours_per_week?, note?, tags?, work_week?: { days, start, end } | null } — a merge → AvailabilityView   (every role; session only; D-131, LAI-1130)
 POST   /api/v1/me/availability/away          body { from, to } → 201 AvailabilityView; 422 away_in_past when to is before the person's today   (every role; session only)
 DELETE /api/v1/me/availability/away/:id      → 204; another person's period is the 404 of one that does not exist   (every role; session only)
-GET    /api/v1/people/availability           ?space=&tag=&open_only= → { data: [{ user, availability, spaces, in_progress?, last_2_weeks_minutes? }] }, A–Z by name, no sort parameter   (every role, narrowed to the reader; session only; hours logged)
+GET    /api/v1/people/availability           ?space=&tag=&open_only= → { data: [{ user, availability, spaces, in_progress?, last_2_weeks_minutes? }] }, A–Z by name, no sort parameter; availability narrowed per reader, D-137   (every role, narrowed to the reader; session only; hours logged)
 GET    /api/v1/people/:id/load               → { availability, projects, cards, week, away } — 14 days by space, card counts, this week beside the set working minutes; logged   (owner, admin by default; session only; not yourself)
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
@@ -5181,15 +5187,24 @@ parameter names anybody else.
   `422`. `space` narrows to one space the reader can open (`404` otherwise),
   `tag` to a tag case-insensitively, `open_only=true` to people `open` and not
   away. Deactivated people are never listed, nor are org viewers. Each row is
-  `{ user: { id, name }, availability: AvailabilityView | null, spaces:
-  [{ id, slug, name }] }` — the spaces the reader can open — and:
-  - a holder of *See everyone's analytics* gets every active person, with
-    `in_progress` over the spaces they open and `last_2_weeks_minutes`, the
-    person's confirmed minutes over their own last 14 days; every person
-    listed is logged as a look at their time (§4.59, kind `time`);
+  `{ user: { id, name }, availability, spaces: [{ id, slug, name }] }` — the
+  spaces the reader can open — with `availability` `null` for a person who
+  set nothing, and otherwise **narrowed to the reader by allow-list** (D-137),
+  the same for every row, the reader's own included:
+  - a holder of *See everyone's analytics* gets every active person, the
+    whole `AvailabilityView`, `in_progress` over the spaces they open and
+    `last_2_weeks_minutes`, the person's confirmed minutes over their own last
+    14 days; every person listed is logged as a look at their time (§4.59,
+    kind `time`). Whether the reader holds it is asked of their own role's
+    grant, never of some other person;
   - a space's lead gets the people in the spaces they lead, with
-    `in_progress` counted in those spaces and **no hours field at all**;
-  - anyone else gets the people who share a space with them, with neither.
+    `in_progress` counted in those spaces and `availability` `{ status, note,
+    tags, away: { until } | null, hours_per_week, away_periods: [{ from, to
+    }] }` — no working week, no period ids, and **no tracked-hours field at
+    all**;
+  - anyone else gets the people who share a space with them, with
+    `availability` `{ status, note, tags, away: { until } | null }` only — no
+    hours, no working week, no upcoming periods — and no card count.
 
   More than 500 rows is a `422`, `too_many_people`.
   `GET /people/:id/load` answers `{ availability, projects: [{ project,

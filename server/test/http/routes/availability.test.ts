@@ -317,6 +317,74 @@ describe('GET /people/availability', () => {
     ]);
   });
 
+  it('narrows Ada’s whole record to each reader’s allow-list (D-137)', async () => {
+    await ok(
+      await req(
+        '/api/v1/me/availability',
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            status: 'open',
+            hours_per_week: 5,
+            note: 'Ask me about billing',
+            tags: ['billing'],
+            work_week: { days: [1, 2], start: '08:00', end: '12:00' },
+          }),
+        },
+        ownerCookie,
+      ),
+    );
+    await ok(
+      await req(
+        '/api/v1/me/availability/away',
+        { method: 'POST', body: JSON.stringify({ from: '2099-02-01', to: '2099-02-03' }) },
+        ownerCookie,
+      ),
+      201,
+    );
+    interface Row {
+      user: { id: string };
+      availability: Record<string, unknown> | null;
+    }
+    const adaFor = async (cookie: string): Promise<Row | undefined> =>
+      (
+        (await ok(await req('/api/v1/people/availability', {}, cookie))) as { data: Row[] }
+      ).data.find((r) => r.user.id === ownerId);
+
+    // Cal, a member: status, note, tags, and the current away's end only.
+    const member = await adaFor(cal.cookie);
+    expect(Object.keys(member?.availability ?? {}).sort()).toEqual([
+      'away',
+      'note',
+      'status',
+      'tags',
+    ]);
+    expect(member?.availability).toEqual({
+      status: 'open',
+      note: 'Ask me about billing',
+      tags: ['billing'],
+      away: null,
+    });
+
+    // Bea, a space admin: plus hours a week and away dates, never a working week or an id.
+    const lead = await adaFor(bea.cookie);
+    expect(Object.keys(lead ?? {}).sort()).toEqual([
+      'availability',
+      'in_progress',
+      'spaces',
+      'user',
+    ]);
+    expect(Object.keys(lead?.availability ?? {}).sort()).toEqual([
+      'away',
+      'away_periods',
+      'hours_per_week',
+      'note',
+      'status',
+      'tags',
+    ]);
+    expect(lead?.availability?.away_periods).toEqual([{ from: '2099-02-01', to: '2099-02-03' }]);
+  });
+
   it('takes open_only only as true or false', async () => {
     await ok(await req('/api/v1/people/availability?open_only=true', {}, cal.cookie));
     expect(
