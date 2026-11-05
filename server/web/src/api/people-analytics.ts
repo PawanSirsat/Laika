@@ -24,7 +24,13 @@ import type { MyDay, TimeSummary } from './time.ts';
 export const PEOPLE_ANALYTICS = 'people.analytics.read';
 
 /** What was looked at. Mirrors `ANALYTICS_VIEW_KINDS` in `server/src/db/enums.ts`. */
-export const ANALYTICS_VIEW_KINDS = ['time', 'local_activity', 'activity', 'usage'] as const;
+export const ANALYTICS_VIEW_KINDS = [
+  'time',
+  'local_activity',
+  'activity',
+  'usage',
+  'developer_setup',
+] as const;
 export type AnalyticsViewKind = (typeof ANALYTICS_VIEW_KINDS)[number];
 
 /** One row of `GET /me/analytics-views`: who looked at the caller, and when. */
@@ -94,6 +100,7 @@ export const VIEW_KIND_LABELS: Readonly<Record<AnalyticsViewKind, string>> = {
   local_activity: 'your shared local activity',
   activity: 'your activity heatmap',
   usage: 'your token usage',
+  developer_setup: 'your developer setup',
 };
 
 export function viewKindLabel(kind: WhoLooked['kind']): string {
