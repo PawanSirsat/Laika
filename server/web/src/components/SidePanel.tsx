@@ -18,6 +18,11 @@ export interface SidePanelProps {
   readonly panel?: string;
   /** The × button's name; *Close details* unless the panel is not details. */
   readonly closeLabel?: string;
+  /**
+   * `false` while the panel holds something a stray click must not throw away
+   * — a reset link shown once (LAI-1134). Escape and × still close it.
+   */
+  readonly scrimCloses?: boolean;
   readonly children: ReactNode;
 }
 
@@ -40,6 +45,7 @@ export function SidePanel({
   footer,
   panel,
   closeLabel = 'Close details',
+  scrimCloses = true,
   children,
 }: SidePanelProps) {
   const ref = useRef<HTMLElement | null>(null);
@@ -62,7 +68,13 @@ export function SidePanel({
 
   return createPortal(
     <>
-      <div className="side-panel-scrim" aria-hidden="true" onClick={onClose} />
+      <div
+        className="side-panel-scrim"
+        aria-hidden="true"
+        onClick={() => {
+          if (scrimCloses) onClose();
+        }}
+      />
       <aside
         ref={ref}
         className="side-panel"

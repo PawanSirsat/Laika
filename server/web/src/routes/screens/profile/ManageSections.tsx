@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import {
@@ -81,7 +81,20 @@ export interface ManageSectionsProps {
   readonly kind: KindControl;
   /** Their role or active state changed: read the profile again. */
   readonly onChanged: () => void;
+  /**
+   * A reset link is on screen (`true`) or put away: the panel must not be
+   * dismissed by a stray click while it is, since it is shown only once.
+   */
+  readonly onSecret?: ((shown: boolean) => void) | undefined;
 }
+
+/**
+ * Where focus goes when a question asked from a section closes (LAI-1134
+ * review N2): the control named by `selector` inside the sections, or —
+ * when there is none, or none any more — the dialog's close button, never
+ * `body`.
+ */
+type FocusBack = (selector?: string) => () => HTMLElement | null;
 
 /**
  * The roles the owner may give (D-104 item 2): never Owner — ownership is
@@ -105,12 +118,29 @@ function said(cause: unknown): string {
  * Every destructive change asks first. Deactivating and removing from a space
  * go through the offboarding dialog, which asks about their open tasks.
  */
-export function ManageSections({ user, me, gates, kind, onChanged }: ManageSectionsProps) {
+export function ManageSections({
+  user,
+  me,
+  gates,
+  kind,
+  onChanged,
+  onSecret,
+}: ManageSectionsProps) {
   const controls = adminControls(gates, me, user);
   const sections = manageSections(controls);
+  const root = useRef<HTMLDivElement>(null);
+  const focusBack: FocusBack = useCallback(
+    (selector) => () =>
+      (selector === undefined ? null : root.current?.querySelector<HTMLElement>(selector)) ??
+      root.current
+        ?.closest('[role="dialog"]')
+        ?.querySelector<HTMLElement>(':scope > header button') ??
+      null,
+    [],
+  );
 
   return (
-    <div className="prof-admin" data-section="admin">
+    <div className="prof-admin" data-section="admin" ref={root}>
       {sections.map((section) => {
         switch (section) {
           case 'role':
@@ -124,7 +154,7 @@ export function ManageSections({ user, me, gates, kind, onChanged }: ManageSecti
               />
             );
           case 'spaces':
-            return <SpacesBlock key={section} user={user} gates={gates} />;
+            return <SpacesBlock key={section} user={user} gates={gates} focusBack={focusBack} />;
           case 'tokens':
             // The full list stays here until Developer setup (LAI-1140) gives it a home.
             return <TokensBlock key={section} user={user} mayRevoke={controls.revokeTokens} />;
@@ -135,10 +165,18 @@ export function ManageSections({ user, me, gates, kind, onChanged }: ManageSecti
                 user={user}
                 resetLink={controls.resetLink}
                 signOut={controls.signOut}
+                onSecret={onSecret}
               />
             );
           case 'danger':
-            return <DangerSection key={section} user={user} onChanged={onChanged} />;
+            return (
+              <DangerSection
+                key={section}
+                user={user}
+                onChanged={onChanged}
+                focusBack={focusBack}
+              />
+            );
         }
       })}
     </div>
@@ -389,10 +427,12 @@ function SecuritySection({
   user,
   resetLink,
   signOut,
+  onSecret,
 }: {
   readonly user: AdminSubject;
   readonly resetLink: boolean;
   readonly signOut: boolean;
+  readonly onSecret: ((shown: boolean) => void) | undefined;
 }) {
   const { asking, setAsking, busy, error, notice, setNotice, act } = useAct<'sign-out' | 'reset'>();
   /**
@@ -400,6 +440,17 @@ function SecuritySection({
    * else, and gone when the panel goes (closed, another person, another page).
    */
   const [link, setLink] = useState<ResetLinkView | undefined>(undefined);
+  const shown = link !== undefined;
+  useEffect(() => {
+    onSecret?.(shown);
+  }, [onSecret, shown]);
+  // Gone with the section (another person, the grant withdrawn): nothing held.
+  useEffect(
+    () => () => {
+      onSecret?.(false);
+    },
+    [onSecret],
+  );
 
   return (
     <Block name="security" title="Security">
@@ -497,9 +548,11 @@ function SecuritySection({
 function DangerSection({
   user,
   onChanged,
+  focusBack,
 }: {
   readonly user: AdminSubject;
   readonly onChanged: () => void;
+  readonly focusBack: FocusBack;
 }) {
   const { asking, setAsking, busy, error, notice, setNotice, act } = useAct<'reactivate'>();
   const [offboarding, setOffboarding] = useState(false);
@@ -517,6 +570,8 @@ function DangerSection({
           ? 'Deactivating ends every session and token of theirs now and removes them from every space. They can no longer sign in. Their history stays.'
           : `${user.name} is deactivated. Reactivating lets them sign in again; old sessions and tokens stay ended.`}
       </p>
+      {/* One button element either way — Deactivate… becomes Reactivate in
+          place, so focus handed back to it survives the redraw. */}
       {user.is_active ? (
         <button
           type="button"
@@ -570,6 +625,7 @@ function DangerSection({
           title={`Deactivate ${user.name}?`}
           verb="Deactivate"
           leavingId={user.id}
+          restoreFocus={focusBack('[data-admin="danger"] button[data-action]')}
           consequences={
             <>
               <p>{user.name} will not be able to sign in. Their history stays.</p>
@@ -873,12 +929,22 @@ type SpacesLoad =
   | { readonly kind: 'error'; readonly error: string }
   | { readonly kind: 'ready'; readonly memberships: readonly PersonMembership[] };
 
-function SpacesBlock({ user, gates }: { readonly user: AdminSubject; readonly gates: Gates }) {
+function SpacesBlock({
+  user,
+  gates,
+  focusBack,
+}: {
+  readonly user: AdminSubject;
+  readonly gates: Gates;
+  readonly focusBack: FocusBack;
+}) {
   const [load, setLoad] = useState<SpacesLoad>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [spaces, setSpaces] = useState<readonly Project[] | undefined>(undefined);
   const [removing, setRemoving] = useState<PersonMembership | undefined>(undefined);
   const [notice, setNotice] = useState<string | undefined>(undefined);
+  /** Whether the open removal went through: then its row, and its button, are going. */
+  const removed = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -960,6 +1026,7 @@ function SpacesBlock({ user, gates }: { readonly user: AdminSubject; readonly ga
                     aria-label={`Remove ${user.name} from ${m.name}`}
                     onClick={() => {
                       setNotice(undefined);
+                      removed.current = false;
                       setRemoving(m);
                     }}
                   >
@@ -993,6 +1060,13 @@ function SpacesBlock({ user, gates }: { readonly user: AdminSubject; readonly ga
           title={`Remove ${user.name} from ${removing.name}?`}
           verb="Remove"
           leavingId={user.id}
+          restoreFocus={() =>
+            removed.current
+              ? focusBack()()
+              : focusBack(
+                  `[data-membership="${removing.slug}"] [data-action="remove-from-space"]`,
+                )()
+          }
           consequences={
             <p>
               They lose access to {removing.name} unless their organisation role opens every space.
@@ -1009,6 +1083,7 @@ function SpacesBlock({ user, gates }: { readonly user: AdminSubject; readonly ga
             await removeMember(removing.slug, user.id, openTasks);
           }}
           onDone={() => {
+            removed.current = true;
             setNotice(`Removed ${user.name} from ${removing.name}.`);
             setRemoving(undefined);
             reload();

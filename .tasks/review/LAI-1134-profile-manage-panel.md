@@ -72,3 +72,28 @@ LAI-1140 ships its endpoint. Board card: LAIKA-995, a subtask of LAIKA-997.
   else.
 - ⋯ opens a `menu` with one item, *Manage member…*, then the panel — the
   design's ⋯ opens the panel directly; the plan asked for a menu button.
+
+## Review round 1 (PASS, should-fixes applied 2026-11-05)
+
+- **N1** — Escape on the profile kind's (i) inside the panel closed the whole
+  panel. `InfoTip` now handles Escape on its own element and marks it
+  handled (`preventDefault`), and its document listener skips a handled key;
+  `SidePanel` already ignores a handled Escape. Test: *Escape on the profile
+  kind's (i) closes the tip, not the panel*.
+- **N2** — after the offboarding question closed, focus fell to `body`. The
+  deactivate and remove questions now hand focus back to the button that
+  asked (Deactivate… keeps one element as it becomes Reactivate), or to the
+  panel's × when that button is gone (a removed space's row). Tests: the
+  Escape test asserts focus is on Deactivate… and a second Escape closes the
+  panel; a new Cancel test.
+- **Reset link** — while a freshly created link is on screen, a click on the
+  scrim no longer closes the panel (`SidePanel` `scrimCloses`); Escape and ×
+  still do, being deliberate. Test: *while a reset link is shown, a click
+  beside the panel keeps it*.
+- Each fix mutation-checked: removing it turns its test red.
+- **Decision recorded:** ⋯ stays on your own profile, holding only Profile
+  kind (`profile.set_kind` is allowed on yourself, as the header control
+  was). Unchanged behaviour.
+- `member-profile.test.ts` *an archived project with a long key…* measured
+  the name mid-remount after a resize (the card moves column) and failed
+  once locally; it now waits for layout before the same assertion.

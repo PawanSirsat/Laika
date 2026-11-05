@@ -335,6 +335,94 @@ void describe('the Manage member panel', () => {
       await h.page.keyboard.press('Escape');
       await dialog.waitFor({ state: 'detached' });
       assert.equal(await panel.isVisible(), true, 'Escape closed the panel under the question');
+      // Focus is handed back to the button that asked, inside the panel —
+      // not dropped on body (review N2) …
+      await h.page.waitForFunction(
+        () =>
+          document.activeElement?.matches(
+            '[data-panel="manage-member"] [data-action="deactivate"]',
+          ) === true,
+      );
+      // … so the next Escape is the panel's, and closes it.
+      await h.page.keyboard.press('Escape');
+      await panel.waitFor({ state: 'detached' });
+      await h.page.waitForFunction(
+        (sel) => document.querySelector(sel) === document.activeElement,
+        MORE,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Cancel on the deactivate question gives focus back to Deactivate…', async () => {
+    const h = await at('/people?user=u2', 1440);
+    try {
+      const panel = await openByKeyboard(h.page);
+      await panel.locator('[data-action="deactivate"]').click();
+      const dialog = h.page.locator('.offb-dialog');
+      await dialog.waitFor();
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
+      await dialog.waitFor({ state: 'detached' });
+      await h.page.waitForFunction(
+        () =>
+          document.activeElement?.matches(
+            '[data-panel="manage-member"] [data-action="deactivate"]',
+          ) === true,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Escape on the profile kind’s (i) closes the tip, not the panel (review N1)', async () => {
+    const h = await at('/people?user=u2', 1440);
+    try {
+      const panel = await openByKeyboard(h.page);
+      const tip = panel.getByRole('button', { name: 'What the profile kinds mean' });
+      await tip.focus();
+      await h.page.keyboard.press('Enter');
+      const pop = panel.locator('.prof-info-pop');
+      await pop.waitFor();
+      assert.equal(await tip.getAttribute('aria-expanded'), 'true');
+
+      await h.page.keyboard.press('Escape');
+      await pop.waitFor({ state: 'detached' });
+      assert.equal(await panel.isVisible(), true, 'Escape on the tip closed the panel');
+      assert.equal(await tip.evaluate((el) => el === document.activeElement), true);
+
+      await h.page.keyboard.press('Escape');
+      await panel.waitFor({ state: 'detached' });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('while a reset link is shown, a click beside the panel keeps it; × still closes', async () => {
+    const h = await at('/people?user=u2', 1440, {
+      '/api/v1/users/u2/reset-link': () =>
+        reply(201, {
+          url: 'http://laika.test/reset-password?token=SHOWN-ONCE',
+          expires_at: NOW + 3_600_000,
+        }),
+    });
+    try {
+      const panel = await openByKeyboard(h.page);
+      const scrim = h.page.locator('.side-panel-scrim');
+      await panel.locator('[data-action="reset-link"]').click();
+      await panel.locator('[data-action="admin-confirm"]').click();
+      await panel.locator('[data-reset-url]').waitFor();
+
+      await scrim.click({ position: { x: 20, y: 400 } });
+      await h.page.waitForTimeout(300);
+      assert.equal(await panel.isVisible(), true, 'a stray click threw the reset link away');
+      assert.equal(await panel.locator('[data-reset-url]').count(), 1);
+
+      // Put away, the panel is an ordinary panel again.
+      await panel.locator('[data-action="reset-done"]').click();
+      await panel.locator('[data-reset-link]').waitFor({ state: 'detached' });
+      await scrim.click({ position: { x: 20, y: 400 } });
+      await panel.waitFor({ state: 'detached' });
     } finally {
       await h.close();
     }

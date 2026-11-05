@@ -2267,6 +2267,11 @@ void describe('the profile’s smaller fixes (LAI-751)', () => {
       for (const width of [1366, 1024, 390]) {
         await h.page.setViewportSize({ width, height: 900 });
         const title = projects.locator('.prof-project-title').first();
+        // A resize can move the card to another column (`columnPlan`), which
+        // remounts it: measure once it has landed, not while it moves.
+        await until(async () => ((await title.boundingBox())?.width ?? 0) >= 60).catch(
+          () => undefined,
+        );
         const box = await title.boundingBox();
         assert.ok(
           (box?.width ?? 0) >= 60,

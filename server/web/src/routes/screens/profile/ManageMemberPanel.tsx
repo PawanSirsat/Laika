@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { SidePanel } from '../../../components/SidePanel.tsx';
 import type { OrgRole } from '../../../api/invites.ts';
 import type { MeProfile } from '../../../api/me.ts';
@@ -41,12 +42,15 @@ export function ManageMemberPanel({
 }: ManageMemberPanelProps) {
   const { theme } = useTheme();
   const ink = avatarColor(user.id, theme);
+  /** A reset link is on screen: shown once, so a click beside the panel keeps it. */
+  const [secret, setSecret] = useState(false);
   return (
     <SidePanel
       title="Manage member"
       titleId="prof-manage-title"
       panel="manage-member"
       closeLabel="Close"
+      scrimCloses={!secret}
       onClose={onClose}
       restore={restore}
       subtitle={
@@ -65,7 +69,14 @@ export function ManageMemberPanel({
         </span>
       }
     >
-      <ManageSections user={user} me={me} gates={gates} kind={kind} onChanged={onChanged} />
+      <ManageSections
+        user={user}
+        me={me}
+        gates={gates}
+        kind={kind}
+        onChanged={onChanged}
+        onSecret={setSecret}
+      />
     </SidePanel>
   );
 }
