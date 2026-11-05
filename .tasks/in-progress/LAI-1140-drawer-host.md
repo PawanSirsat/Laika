@@ -1,5 +1,5 @@
 ---
-id: LAI-1127
+id: LAI-1140
 title: The task drawer works on every space view, as a real modal dialog
 area: web
 assignee: shell
@@ -45,6 +45,12 @@ S0 of `docs/ux/specifications/task-workroom.md` §10.
       error.
 
 ## Notes / context
+
+**Renumbered from LAI-1127 to LAI-1140** (2026-11-05). `origin/master` gained
+a different LAI-1127 (`LAI-1127-insights-usage-cost-redesign.md`, PR #271)
+while this was in flight. The claim commit `47ecb7b4` carries `[LAI-1127]` in
+error; it was not rewritten (CLAUDE.md §3: a renumber does not reach commits
+already made). Every later commit carries `[LAI-1140]`.
 
 UI only (`server/web/`). No new dependencies. Spec:
 `docs/ux/specifications/task-workroom.md` §2–§3 and §10 S0 (branch
