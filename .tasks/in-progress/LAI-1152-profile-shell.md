@@ -2,10 +2,11 @@
 id: LAI-1152
 title: 'Profile shell: breadcrumb, head card with availability pill, ⋯ menu, Who looked, tabs on your own profile'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-1150]
-status: backlog
+status: in-progress
+started: 2026-11-06T02:40:46+05:30
 ---
 
 ## Goal
@@ -37,3 +38,12 @@ popover), for someone else and for your own, with D-139 item 8's removals.
 ## Notes / context
 
 Design: the owner's *Laika Profile* (2026-11-06), frames A–G (pa–pt). Decisions: D-139. Screen spec: SPEC §11.4.2.1 *Member profile* (rewritten by LAI-1149). Durations are hours, never `h:mm` (LAI-1147). Phone (390px) and both themes are part of every UI criterion. SHELL's area (`server/web/`).
+
+**Claimed ahead of its dependency (owner's direction, 2026-11-06).** `depends-on`
+names LAI-1150, which is not in `.tasks/done/` on `master` when this is claimed.
+The owner authorised the LAI-1148 programme end to end and told the team lead to
+start this task before LAI-1150 merges; that is the deviation from §2 step 1,
+recorded here rather than read loosely. Anything that needs LAI-1150's
+`/me/profile` or `viewer.org_role` is written to switch on when it answers and to
+tolerate its absence.
+
