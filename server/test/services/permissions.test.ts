@@ -170,6 +170,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'availability.set_own': 'YYYY',
   'availability.read': 'YYYY',
   'notices.own': 'YYYY',
+  'developer_setup.read_own': 'YYYY',
 
   'project.members.manage': 'YNN',
   'project.settings.edit': 'YNN',
