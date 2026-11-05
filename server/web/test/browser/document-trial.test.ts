@@ -367,7 +367,7 @@ void describe('deliverable trial on /design/documents (LAI-1131)', () => {
       await shoot(h.page, 'annotations-dark-1440');
 
       // The same words exist in v1, so the comment re-anchors there.
-      await h.page.locator('.doc-select select').selectOption('v1');
+      await h.page.locator('[data-version="v1"]').click();
       await h.page.locator('.doc-body h1').waitFor();
       await until(async () => (await highlighted()) === 1);
       assert.equal(await note.getAttribute('data-outdated'), 'false');
@@ -400,7 +400,7 @@ void describe('deliverable trial on /design/documents (LAI-1131)', () => {
       await h.page.getByRole('button', { name: 'Comment on selection' }).click();
       await h.page.locator('#doc-note-text').fill('Why the smallest first?');
       await h.page.getByRole('button', { name: 'Save', exact: true }).click();
-      await h.page.locator('.doc-select select').selectOption('v1');
+      await h.page.locator('[data-version="v1"]').click();
       const note = h.page.locator('.doc-notes .doc-note');
       await until(async () => (await note.getAttribute('data-outdated')) === 'true');
       assert.equal(await note.getAttribute('data-outdated'), 'true');

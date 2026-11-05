@@ -70,22 +70,23 @@ export function DocumentsTrial() {
           </div>
           {comparable ? (
             <>
-              <label className="doc-select">
-                <span>Version</span>
-                <select
-                  value={version.id}
-                  disabled={showing === 'compare'}
-                  onChange={(e) => {
-                    setVersionId(e.target.value);
-                  }}
-                >
-                  {doc.versions.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="doc-segmented" role="group" aria-label="Version">
+                {doc.versions.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    className="doc-segment"
+                    aria-pressed={showing === 'read' && v.id === version.id}
+                    disabled={showing === 'compare'}
+                    data-version={v.id}
+                    onClick={() => {
+                      setVersionId(v.id);
+                    }}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
               <div className="doc-segmented" role="group" aria-label="View">
                 <button
                   type="button"
