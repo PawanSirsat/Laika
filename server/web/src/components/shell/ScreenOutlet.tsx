@@ -24,6 +24,8 @@ import { TimelineScreen } from '../../routes/screens/timeline/TimelineScreen.tsx
 import { DeveloperScreen } from '../../routes/screens/developer/DeveloperScreen.tsx';
 import { InboxScreen } from '../../routes/screens/inbox/InboxScreen.tsx';
 import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx';
+import { TimeTab } from '../../routes/screens/insights/TimeTab.tsx';
+import { insightsHolder, ledProjectIds, timeView } from '../../routes/screens/insights/time-tab.ts';
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
@@ -350,18 +352,37 @@ function InboxRoute() {
   );
 }
 
-/** Insights (LAI-796): Capacity and Usage & cost as tabs. */
+/**
+ * Insights (LAI-796): Capacity, Usage & cost and — for owners, analytics
+ * readers and space admins — Time (LAI-1138). A link to Time for anybody
+ * else is refused once the server has answered, never guessed before.
+ */
 function InsightsRoute() {
   const {
     route: { params, navigate },
     me,
   } = useShell();
-  const { permissions } = usePermissions(me !== undefined);
-  const holds = permissionHolder(permissions?.me.actions);
-  const tab = currentTab(INSIGHTS_TABS, params, holds);
+  const { permissions, settled } = usePermissions(me !== undefined);
+  const leads = ledProjectIds(permissions);
+  const holds = insightsHolder(permissionHolder(permissions?.me.actions), leads);
+  const refused = settled ? refusedTab(INSIGHTS_TABS, params, holds) : undefined;
+  const tab = refused?.id ?? currentTab(INSIGHTS_TABS, params, holds);
   return (
     <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current={tab} onNavigate={navigate}>
-      {tab === 'usage' ? <UsageRoute /> : <CapacityRoute />}
+      {tab === 'time' ? (
+        <TimeTab
+          view={
+            refused === undefined
+              ? timeView(permissionHolder(permissions?.me.actions), leads)
+              : 'none'
+          }
+          leads={leads}
+        />
+      ) : tab === 'usage' ? (
+        <UsageRoute />
+      ) : (
+        <CapacityRoute />
+      )}
     </InsightsScreen>
   );
 }

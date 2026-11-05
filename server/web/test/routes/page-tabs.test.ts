@@ -46,10 +46,10 @@ void describe('the tabs are the owner’s grouping', () => {
     );
   });
 
-  void test('Insights is Capacity then Usage & cost', () => {
+  void test('Insights is Capacity, Usage & cost, then Time (LAI-1138)', () => {
     assert.deepEqual(
       INSIGHTS_TABS.map((t) => t.label),
-      ['Capacity', 'Usage & cost'],
+      ['Capacity', 'Usage & cost', 'Time'],
     );
   });
 
@@ -117,8 +117,17 @@ void describe('a gated tab is absent, not disabled', () => {
     );
   });
 
-  void test('Insights is the same for everyone — the screens decide what each is sent', () => {
-    assert.deepEqual(visibleTabs(INSIGHTS_TABS, member), visibleTabs(INSIGHTS_TABS, admin));
+  void test('Insights is the same for everyone but Time, which the time report gate holds', () => {
+    const open = (tabs: readonly { id: string }[]) =>
+      tabs.map((t) => t.id).filter((id) => id !== 'time');
+    assert.deepEqual(
+      open(visibleTabs(INSIGHTS_TABS, member)),
+      open(visibleTabs(INSIGHTS_TABS, admin)),
+    );
+    assert.deepEqual(
+      INSIGHTS_TABS.filter((t) => t.requires !== undefined).map((t) => [t.id, t.requires]),
+      [['time', 'time.report.read']],
+    );
   });
 });
 

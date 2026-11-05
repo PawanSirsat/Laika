@@ -1,0 +1,35 @@
+import { readerZone } from '../../../api/usage.ts';
+import { useProjects } from '../../../api/use-projects.ts';
+import { LoadingState } from '../../../components/LoadingState.tsx';
+import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
+import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
+import { dayIn } from '../my-day/my-day-derive.ts';
+
+export interface TimeTabProps {
+  /** `org` for the organisation's report, `space` for a space admin's weeks. */
+  readonly view: 'org' | 'space' | 'none';
+  /** The spaces the reader leads, by id (§3.2 `time.report.read_project`). */
+  readonly leads: readonly string[];
+}
+
+/**
+ * Insights → Time (D-130, LAI-1138; frames 1g–1i): the organisation's Time
+ * report with a Member filter, people A–Z — or, for a space admin, one
+ * figure a week for a space they lead (D-136, D-138). Nobody else reaches it.
+ */
+export function TimeTab({ view, leads }: TimeTabProps) {
+  const today = dayIn(readerZone(), Date.now());
+  const projects = useProjects();
+  if (view === 'none') {
+    return <PermissionDenied resource="the Time report" requiredRole="lead" scope="project" />;
+  }
+  if (view === 'org') return <TimeReport scope="org" today={today} />;
+  if (projects.status === 'loading') {
+    return <LoadingState shape="card" count={1} label="Loading the spaces you lead" />;
+  }
+  const led = projects.projects
+    .filter((p) => leads.includes(p.id))
+    .map((p) => ({ slug: p.slug, name: p.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return <TimeReport scope="org" today={today} ledSpaces={led} />;
+}

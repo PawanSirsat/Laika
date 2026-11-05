@@ -1,4 +1,5 @@
-import { request } from './client.ts';
+import { API_BASE, request } from './client.ts';
+import { NetworkError, toApiError } from './errors.ts';
 
 /**
  * A person's own time (D-088, LAI-787, SPEC §6.4): their switch, their day as
@@ -449,6 +450,166 @@ export function getTimeSummary(
 ): Promise<TimeSummary> {
   const query = new URLSearchParams({ from, to }).toString();
   return request<TimeSummary>(`/me/time/summary?${query}`, opts(signal));
+}
+
+/**
+ * The person on a Time report row (D-130). Mirrors `services/time-report.ts`'
+ * `TimeReportPerson`, which the drift check reaches through
+ * {@link TimeReportRow}'s field names only — so it is spelled out here.
+ */
+export interface TimeReportPerson {
+  readonly id: string;
+  readonly name: string;
+  readonly deactivated: boolean;
+}
+
+/**
+ * The finest grain of `GET /time/report` (LAI-1135): one person's time on one
+ * space, task and kind — the browser groups any two of them. `untied` is
+ * drafted time nobody has put on anything yet; `kind` is null for a draft.
+ * Mirrors `TimeReportRowView`.
+ */
+export interface TimeReportRow {
+  readonly project: ProjectRef | null;
+  readonly user: TimeReportPerson;
+  readonly task: TaskRef | null;
+  readonly untied: boolean;
+  readonly kind: EntryKind | null;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+}
+
+/**
+ * The report for the caller's own time (`own`) or for people (`people`, logged
+ * for each person shown, D-130 item 2). Mirrors `TimeReportView`.
+ */
+export interface TimeReport {
+  readonly from: string;
+  readonly to: string;
+  readonly days: number;
+  readonly scope: 'own' | 'people';
+  readonly include_drafts: boolean;
+  readonly totals: {
+    readonly confirmed_minutes: number;
+    readonly drafted_minutes: number;
+    readonly meeting_minutes: number;
+    readonly manual_minutes: number;
+    readonly active_days: number;
+    readonly people: number;
+  };
+  /**
+   * The agents' working minutes for the people in the report, beside human
+   * time and never added to it (D-088 item 8); null when a space or kind
+   * filter narrows the report, which agent time cannot be split by.
+   */
+  readonly agent_minutes: number | null;
+  readonly by_day: readonly SummaryDay[];
+  readonly rows: readonly TimeReportRow[];
+}
+
+/**
+ * One ISO week of one space for a space admin (D-136, D-138): its confirmed
+ * minutes, **null when fewer than three people other than the reader** made
+ * them up — withheld, never zero. Mirrors `SpaceWeekView`.
+ */
+export interface SpaceWeek {
+  readonly from: string;
+  readonly to: string;
+  readonly confirmed_minutes: number | null;
+  readonly people: number;
+}
+
+/** A space admin's report: one space, one figure a week. Mirrors `SpaceWeeksReportView`. */
+export interface SpaceWeeksReport {
+  readonly from: string;
+  readonly to: string;
+  readonly scope: 'space_totals';
+  readonly project: ProjectRef;
+  readonly weeks: readonly SpaceWeek[];
+}
+
+/** What `GET /time/report` answers, by the scope the server chose. Mirrors `TimeReportAnswer`. */
+export type TimeReportAnswer = TimeReport | SpaceWeeksReport;
+
+/** The filters `GET /time/report` takes; the server decides the scope. */
+export interface TimeReportQuery {
+  readonly from: string;
+  readonly to: string;
+  /** Space slugs. */
+  readonly spaces?: readonly string[] | undefined;
+  /** User ids. */
+  readonly members?: readonly string[] | undefined;
+  readonly kinds?: readonly EntryKind[] | undefined;
+  readonly drafts?: boolean | undefined;
+}
+
+/** The query string for a report, in a fixed order so one report is one address. */
+export function timeReportParams(query: TimeReportQuery): URLSearchParams {
+  const params = new URLSearchParams({ from: query.from, to: query.to });
+  const list = (key: string, values: readonly string[] | undefined): void => {
+    if (values !== undefined && values.length > 0) params.set(key, [...values].join(','));
+  };
+  list('spaces', query.spaces);
+  list('members', query.members);
+  list('kinds', query.kinds);
+  if (query.drafts === true) params.set('drafts', 'include');
+  return params;
+}
+
+/** `GET /time/report` (D-130): JSON, own, people or a space admin's weeks. */
+export function getTimeReport(
+  query: TimeReportQuery,
+  signal?: AbortSignal,
+): Promise<TimeReportAnswer> {
+  return request<TimeReportAnswer>(
+    `/time/report?${timeReportParams(query).toString()}`,
+    opts(signal),
+  );
+}
+
+/** The file the server names, or ours when it names none. */
+function csvFilename(disposition: string | null, query: TimeReportQuery): string {
+  const named = /filename="?([^";]+)"?/i.exec(disposition ?? '')?.[1];
+  return named ?? `laika-time-${query.from}-${query.to}.csv`;
+}
+
+/**
+ * `GET /time/report?format=csv` — **the server's file**, the same report as
+ * the screen, logged as the JSON is. Read with the session cookie and handed
+ * to the browser as a download, so a refusal arrives as the server's sentence
+ * rather than as a JSON file saved under a `.csv` name.
+ */
+export async function downloadTimeReportCsv(query: TimeReportQuery): Promise<void> {
+  const params = timeReportParams(query);
+  params.set('format', 'csv');
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/time/report?${params.toString()}`, {
+      credentials: 'include',
+    });
+  } catch (cause) {
+    throw new NetworkError(cause);
+  }
+  if (!response.ok) {
+    let body: unknown = {};
+    try {
+      body = await response.json();
+    } catch {
+      // A body that is not the envelope still has a status to report.
+    }
+    throw toApiError(response.status, body, response.headers.get('X-Request-Id') ?? undefined);
+  }
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = csvFilename(response.headers.get('content-disposition'), query);
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => {
+    URL.revokeObjectURL(href);
+  }, 1000);
 }
 
 export function getMyDay(day: string, tz: string, signal?: AbortSignal): Promise<MyDay> {
