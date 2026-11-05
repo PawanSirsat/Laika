@@ -96,6 +96,7 @@ describe('the jobs §11.6 names', () => {
       'invite.expiry',
       'local_activity.retention',
       'meeting_review.expiry',
+      'notices.retention',
       'offer.expiry',
       'task.stale',
       'time.retention',

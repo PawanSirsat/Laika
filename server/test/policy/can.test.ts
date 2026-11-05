@@ -514,6 +514,8 @@ describe('the cases LAI-004 calls out by name', () => {
       // people who share a space with them. Reading is session only, so it is
       // not in `READ_ACTIONS` — `profile.read`'s reason — and lands here.
       const ownAvailability = action === 'availability.set_own' || action === 'availability.read';
+      // D-134 (LAI-1136): reading and marking read their own notices.
+      const ownNotices = action === 'notices.own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -527,7 +529,8 @@ describe('the cases LAI-004 calls out by name', () => {
           ownTime ||
           ownMembership ||
           ownAgents ||
-          ownAvailability,
+          ownAvailability ||
+          ownNotices,
       );
     }
   });

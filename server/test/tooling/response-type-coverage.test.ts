@@ -227,6 +227,9 @@ const UNPAIRED = new Map<string, string>([
   ['LoadProjectView', 'no client type exists'],
   ['LoadCardsView', 'no client type exists'],
   ['LoadWeekView', 'no client type exists'],
+  // LAI-1136 (D-134): served ahead of the web half, LAI-1139, which builds My
+  // day's For you and mirrors it.
+  ['NoticeView', 'no client type exists'],
   // LAI-1043: served ahead of the Developer access V3 screens that read it;
   // `laika doctor` is its only reader until then.
   ['CompatibilityBody', 'no client type exists'],

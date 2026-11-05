@@ -115,6 +115,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'time.report.read': "View the organisation's Time report",
   'availability.set_own': 'Set own availability',
   'availability.read': 'See availability of people in your spaces',
+  'notices.own': 'Read and dismiss own notices',
 
   'project.members.manage': 'Manage project members',
   'project.settings.edit': 'Edit project settings and context_md',

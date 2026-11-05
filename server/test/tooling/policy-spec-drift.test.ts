@@ -127,6 +127,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   // D-131 (LAI-1130): availability, the person's own declaration.
   ['Set own availability', ['availability.set_own']],
   ['See availability of people in your spaces', ['availability.read']],
+  // D-134 (LAI-1136): a member's own notices.
+  ['Read and dismiss own notices', ['notices.own']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([

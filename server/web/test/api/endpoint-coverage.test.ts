@@ -159,6 +159,9 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     'LAI-1139 — Availability screens (My availability, Insights → Time → Availability, Current load)',
   'api/v1/people/availability':
     'LAI-1139 — Availability screens (My availability, Insights → Time → Availability, Current load)',
+  'api/v1/me/notices': 'LAI-1139 — For you notices and Add to project',
+  'api/v1/me/notices/*/read': 'LAI-1139 — For you notices and Add to project',
+  'api/v1/me/notices/read-all': 'LAI-1139 — For you notices and Add to project',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */

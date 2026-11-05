@@ -160,6 +160,9 @@ const ORG_MATRIX: OrgRow[] = [
   ['availability.set_own', true, true, true, true],
   // | See availability of people in your spaces | ✓ (session only) | … | ✓ (session only) |
   ['availability.read', true, true, true, true],
+  // | Read and dismiss own notices | ✓ (session only) | … | ✓ (session only) |
+  // D-134 (LAI-1136): the person's own, every role.
+  ['notices.own', true, true, true, true],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -399,6 +402,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.handoff.recover', {}],
     ['system.handoff.expire', {}],
     ['system.checkpoint.prune', {}],
+    ['system.notices.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
     ['system.checkpoint.verify', { projectId: PROJECT }],

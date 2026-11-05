@@ -253,6 +253,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.handoff.recover',
   'system.handoff.expire',
   'system.checkpoint.prune',
+  'system.notices.prune',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
@@ -589,6 +590,13 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // another's.
     case 'token_alerts.own':
     case 'plan_limit.own':
+      return true;
+
+    // | Read and dismiss own notices | ✓ (session only) | … | ✓ (session only) |
+    //
+    // D-134 (LAI-1136): every role, and nobody else's — the service reads and
+    // marks the caller's own rows only.
+    case 'notices.own':
       return true;
 
     // | Set the organisation's Time setting | ✓ (session only) | ✓ (session only) | — | — |
