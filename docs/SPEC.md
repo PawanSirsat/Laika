@@ -251,6 +251,7 @@ be obvious because someone will be asking for it.
 | Sync own time with Solidtime | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Map Solidtime projects and people | ✓ (session only) | ✓ (session only) | — | — |
 | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
+| Read and dismiss own notices | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -387,6 +388,14 @@ only**.
 - **Saying which Solidtime member is which person, and pulling everyone, are
   an owner's or admin's** (D-088 item 7): the CLI suggests a match by email
   on its own machine, and only the confirmation reaches the board.
+
+**"Read and dismiss own notices" is `notices.own`** (D-134, LAI-1136), behind
+§6.4's `GET /me/notices`, `POST /me/notices/:id/read` and `POST
+/me/notices/read-all`. Every role holds it, **session only**: a notice is
+addressed to the person — an adder's message among them — not to an agent
+acting for them, and marking one read is the person having seen it. The
+service reads and marks the caller's own rows only; no path names anybody
+else's.
 
 **"View a member's day, time and shared activity" is `people.analytics.read`**
 (D-102 rules 1–4, LAI-957), behind §6.4's `GET /people/:id/time`, `GET
@@ -554,6 +563,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.handoff.expire` | §11.6: a live offer past `expires_at` becomes `expired` and a paused claim resumes (§4.73, LAI-546) |
 | `system.checkpoint.verify` | §10.1: a signed push delivery for a `laika-ckpt/` tag records its transition and re-derives the ref's state (§4.71, §4.72, D-116, LAI-545) |
 | `system.checkpoint.prune` | §11.6: checkpoint retention, 90 days after the task reaches `done` or `cancelled` (§4.70, D-115 item 9, LAI-545) |
+| `system.notices.prune` | §11.6: member notices older than 90 days, read or not (§4.87, D-134, LAI-1136) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -3493,6 +3503,31 @@ explicit request, not presence collected in the background. `GET
 read: its owner, the newest answer to anyone's ping there; anyone else, to its
 own there.
 
+### 4.87 `member_notices`
+
+A notice for one member (D-134, LAI-1136): being added to a space, with the
+adder's message and first card if they gave them, and a tool, device or token
+of theirs revoked by somebody else.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade — who is told |
+| `actor_user_id` | FK `users`, cascade — who did it |
+| `kind` | `added_to_space` \| `tool_revoked` \| `device_unpaired` \| `token_revoked` (CHECK) |
+| `project_id` | nullable, FK `projects`, set null — the space |
+| `task_id` | nullable, FK `tasks`, set null — the first card |
+| `subject` | nullable, ≤ 120 (CHECK) — the tool, device or token name **as it was** |
+| `message` | nullable, ≤ 500 (CHECK) — the adder's own words |
+| `created_at` | |
+| `read_at` | nullable — set once, by the person |
+
+Indexes `(user_id, read_at, created_at)` and `(created_at)`. **It is not
+`activity`**, so §4.8 gains no verb: the adder's `member.added` and
+`task.assigned` rows are the history, and this is the person being told. **A
+self-action writes none.** Read and marked only by the person it names
+(`notices.own`, §3.1), and kept 90 days, read or not (§11.6).
+
 ## 5. Task lifecycle
 
 ```
@@ -3878,6 +3913,7 @@ GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { sc
 PUT    /api/v1/me/local-activity             a collector's report, look-back or usage report → { accepted_days }   (organisation's Developer insights on; 30/hour)
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
 GET    /api/v1/me/token-alerts               the caller's own budget and runaway alerts   POST .../:id/dismiss → 204   (session only; LAI-773)
+GET    /api/v1/me/notices                    ?unread=&limit=&cursor= → { data, next_cursor, unread_count }, newest first   POST .../:id/read  POST .../read-all → 204   (session only; D-134)
 GET    /api/v1/me/plan-limit                 PUT .../plan-limit   DELETE → 204 — the developer's own forecast, an estimate   (session only; D-087)
 POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (organisation's Developer insights on; LAI-773)
 GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft_my_time } — the org's Time and the person's own switch   (PUT session only; LAI-787)
@@ -3947,6 +3983,7 @@ GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
 POST   /api/v1/projects/:slug/leave          any member → { slug, implicit_access, notice }; the last lead 409 `last_lead` (D-103)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
+                                             POST takes { user_id, role, message?, assign_task_id? } — one transaction, one notice (D-134)
                                              DELETE takes an optional body { open_tasks } as deactivation does (LAI-986)
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
        └ GET answers the document with its `revision`; PATCH takes { context_md, base_revision } — base_revision required, the revision the write replaces; another is 409 `stale_context_revision` with { base_revision, current_revision } and nothing is written (§4.68, LAI-555)
@@ -4974,6 +5011,33 @@ this month's project budget alerts — each only under the budget still in
 force. `POST /me/token-alerts/:id/dismiss` puts one away for the caller only
 (`204`; `404` for one they are not shown). Both **session only**
 (`token_alerts.own`).
+
+**A person's notices (D-134, LAI-1136).** `GET /me/notices` answers `{ data:
+[{ id, kind, actor: { id, name }, project: { id, slug, name } | null, task: {
+id, key, title } | null, subject, message, created_at, read_at }],
+next_cursor, unread_count }` — the caller's own (§4.87), newest first, paged
+as §6.3; `?unread=true` lists unread ones only, and `unread_count` is the
+whole count, not a page's. `POST /me/notices/:id/read` and `POST
+/me/notices/read-all` are `204` and **idempotent**: a notice already read keeps
+its first `read_at`, and somebody else's or a missing id is the same `404`.
+All three are `notices.own`, **session only** — a token is `403`,
+`reason: session_required`.
+
+**Adding a member** — `POST /projects/:slug/members` — takes two optional
+fields beside `user_id` and `role`: `message` (≤ 500; blank is none) and
+`assign_task_id`, their first card, which must be a task of that space in
+`backlog` or `todo` with no assignee; otherwise `422`, `reason:
+task_not_assignable`, one answer for every way it is not, a missing id and
+another space's task included. **In one transaction** it writes the
+membership, `member.added` (payload unchanged), the assignment through the
+same path as `PATCH /tasks/:id`'s `assignee_id` — so `task.assigned` is
+written as today — and one `added_to_space` notice carrying the message and
+the card; a failure anywhere writes none of it. **Every add writes the
+notice**, from any screen; adding yourself writes none. It is still
+`project.members.manage`, so a space admin onboards into their own spaces. A
+deactivated person is `422`, `reason: user_deactivated`; an existing member
+stays `409`; an org viewer asking for a role above `viewer` stays `422`. The
+answer is unchanged, `201 { members }`.
 
 **The plan-limit forecast (D-087).** `GET /me/plan-limit` answers `{ plan,
 window, limit_tokens, week_reset, tz, used, rate_per_hour, window_start,
@@ -7060,6 +7124,9 @@ One interval-driven scheduler in the same process:
   and lose the link (§4.73) — and transitions for a ref name **never
   registered**, 90 days after they arrived; under `system.checkpoint.prune`. It writes no `activity` row: the
   `task.checkpoint_saved` rows naming them stay, and they are the history
+- **notice retention** (§4.87, D-134, LAI-1136) — daily: `member_notices`
+  older than 90 days, read or not, under `system.notices.prune`. No
+  `activity` row: a notice is not activity
 - **estimate refit** (D-085) — every live project's size model fitted again
   from its history and every open task recomputed against it, daily **and once
   at boot**, so a deploy starts with every task estimated. It writes no
