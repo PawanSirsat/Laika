@@ -2,10 +2,11 @@
 id: LAI-1151
 title: 'Your own developer access: pending pairing requests and recent setup activity'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-1149]
-status: backlog
+status: in-progress
+started: 2026-11-06T12:00:00+05:30
 ---
 
 ## Goal
