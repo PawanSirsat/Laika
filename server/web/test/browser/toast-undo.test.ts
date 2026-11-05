@@ -511,7 +511,7 @@ void describe('the toast', () => {
       assert.match((await toast.locator('[data-toast-count]').innerText()).trim(), /^\d+s$/);
       await toast.getByRole('button', { name: 'Undo' }).click();
       await until(() => calls.includes('POST'));
-      await until(async () => /is back/.test(await toast.innerText()));
+      await until(async () => (await toast.innerText()).includes('is back'));
       assert.match(await toast.locator('[role="status"]').innerText(), /Tomas Nel is back/);
       assert.equal(await toast.getByRole('button', { name: 'Undo' }).count(), 0);
       assert.deepEqual(calls, ['DELETE', 'POST']);

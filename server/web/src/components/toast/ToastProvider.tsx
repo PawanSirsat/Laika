@@ -188,7 +188,7 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
           holdOrRun();
         }}
         onBlur={(event) => {
-          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+          if (event.currentTarget.contains(event.relatedTarget)) return;
           focused.current = false;
           holdOrRun();
         }}
