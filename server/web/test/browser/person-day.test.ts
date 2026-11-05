@@ -10,7 +10,8 @@
  *  - a `?user=` the reader may not read is the not-allowed state, asked of
  *    nobody;
  *  - the person's own My day lists **who looked at my time**;
- *  - a member's profile has **Day** and **Hours** tabs from the same read.
+ *  - a member's profile has **Day** and **Time report** tabs (LAI-1138: the
+ *    shared report, from `GET /time/report?members=<them>`).
  *
  * Screenshots of the owner's view of a member's day, and of the member's own
  * list, light and dark at 1440 and 390, land in `LAIKA_SHOTS` when it is set.
@@ -23,7 +24,20 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { NOW, open } from './my-day-clock.ts';
-import { at, summaryRoutes, TODAY, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
+import {
+  at,
+  reportFor,
+  reportRoutes,
+  summaryRoutes,
+  TODAY,
+  viewOf,
+  weekData,
+  weekStub,
+  YESTERDAY,
+} from './my-day-week.ts';
+import { hoursWords, weekOf } from '../../src/components/time-report/time-report-derive.ts';
+
+const GRACE_ROW = { id: 'u2', name: 'Grace Hopper', deactivated: false } as const;
 
 const ADA = {
   id: 'u1',
@@ -136,6 +150,8 @@ function stub(me: typeof ADA, actions: readonly string[]): ApiStub {
   }
   // Her Overview's week and quick picks (LAI-526), on the people route.
   Object.assign(routes, summaryRoutes(data, [], '/api/v1/people/u2/time/summary'));
+  // Her Time report (LAI-1138), from the same days, named for her.
+  Object.assign(routes, reportRoutes(data, [], GRACE_ROW));
   routes['/api/v1/people/u2/local-activity'] = {
     start: YESTERDAY,
     end: TODAY,
@@ -283,19 +299,23 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
     }
   });
 
-  void test('her Overview’s week is read from her summary, on the people route, never the reader’s own', async () => {
+  void test('her Overview’s week is her Time report, asked by her id, never the reader’s own', async () => {
     const h = await openAt(`/my-day?user=u2&day=${TODAY}`, stub(ADA, HOLDS));
     try {
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
       await h.page.locator('[data-viewing-banner]').waitFor({ timeout: 10_000 });
       const ov = h.page.locator('[data-overview]');
       await ov.waitFor({ timeout: 10_000 });
+      const asked = h.page.waitForRequest((r) => r.url().includes('/api/v1/time/report?'));
       await ov.locator('[data-ov-scope="week"]').click();
-      await ov.locator('[data-ov-stat="per-day"]').waitFor({ timeout: 10_000 });
-      const paths = h.calls.map((c) => c.path);
-      assert.ok(paths.includes('/api/v1/people/u2/time/summary'), 'her summary was not read');
-      assert.ok(!paths.includes('/api/v1/me/time/summary'), 'the reader’s own summary was read');
-      assert.equal(await ov.locator('[data-ov-day]').count(), 7);
+      const url = new URL((await asked).url());
+      assert.equal(url.searchParams.get('members'), 'u2', 'not asked for her');
+      assert.equal(url.searchParams.get('drafts'), null, 'her drafts were read unasked');
+      const tr = h.page.locator('[data-time-report="person"]');
+      await tr.locator('[data-tr-stat="per-day"]').waitFor({ timeout: 10_000 });
+      assert.equal(await tr.locator('[data-tr-day]').count(), 7);
+      assert.match(await tr.locator('[data-tr-caption]').innerText(), /^Grace Hopper · /);
+      assert.ok(!h.calls.some((c) => c.path === '/api/v1/me/time/summary'));
     } finally {
       await h.close();
     }
@@ -504,32 +524,41 @@ void describe('a member’s profile: Day and Time report (LAI-959, LAI-1134)', (
     }
   });
 
-  void test('Time report is her week, day by day, with the week’s totals', async () => {
-    // `time` since LAI-1134; the Hours content until the Time report (LAI-1138) replaces it.
+  void test('Time report is her week from GET /time/report, read only, and says she can see the look', async () => {
     const h = await openAt(`/people?user=u2&tab=time&day=${TODAY}`, profileStub());
     try {
-      await h.page.locator('[data-hours]').waitFor({ timeout: 20_000 });
+      const asked = h.page.waitForRequest((r) => r.url().includes('/api/v1/time/report?'));
+      const tr = h.page.locator('[data-time-report="person"]');
+      await tr.locator('[data-tr-stat="confirmed"]').waitFor({ timeout: 20_000 });
+      const first = new URL((await asked).url());
+      assert.equal(first.searchParams.get('members'), 'u2');
+      // Her drafts are hers until the reader asks (D-088 items 2–3).
+      assert.equal(first.searchParams.get('drafts'), null, 'her drafts were read unasked');
       assert.equal(
         (await h.page.locator('[data-profile-tab="time"][aria-current="page"]').innerText()).trim(),
         'Time report',
       );
-      assert.equal(await h.page.locator('[data-hours-day]').count(), 7);
-      assert.match(await h.page.locator('[data-hours-note]').innerText(), /Two meetings ran long/);
-      const week = viewOf(TODAY) as {
-        week: { confirmed_minutes: number; drafted_minutes: number }[];
-      };
-      const confirmed = week.week.reduce((n, d) => n + d.confirmed_minutes, 0);
+      assert.match(
+        await tr.locator('[data-tr-lock]').innerText(),
+        /Visible to owners and admins · they can see you looked/,
+      );
+      assert.equal(await tr.locator('[data-tr-day]').count(), 7);
+      const confirmed = reportFor(weekOf(TODAY), weekData(), GRACE_ROW).totals.confirmed_minutes;
       assert.ok(confirmed > 0, 'the fixture week has no confirmed time');
-      const text = (await h.page.locator('[data-hours-confirmed]').innerText()).trim();
-      const h_ = Math.floor(confirmed / 60);
-      const m = confirmed % 60;
-      const want =
-        h_ === 0
-          ? `${String(m)} min`
-          : m === 0
-            ? `${String(h_)} h`
-            : `${String(h_)} h ${String(m)} min`;
-      assert.equal(text, want);
+      assert.match(
+        await tr.locator('[data-tr-stat="confirmed"]').innerText(),
+        new RegExp(`\\n${hoursWords(confirmed)}\\n`),
+      );
+      const withDrafts = h.page.waitForRequest(
+        (r) => new URL(r.url()).searchParams.get('drafts') === 'include',
+      );
+      await tr.locator('[data-tr-drafts="include"]').click();
+      assert.equal(new URL((await withDrafts).url()).searchParams.get('members'), 'u2');
+      // One person: no Member filter, and the table groups Space → Task.
+      assert.equal(await tr.locator('[data-tr-chip="member"]').count(), 0);
+      assert.match(await tr.locator('[data-tr-group="first"]').innerText(), /Space/);
+      assert.match(await tr.locator('[data-tr-group="second"]').innerText(), /Task/);
+      assert.deepEqual(writes(h), []);
     } finally {
       await h.close();
     }
@@ -541,7 +570,7 @@ void describe('a member’s profile: Day and Time report (LAI-959, LAI-1134)', (
       await h.page
         .locator('[data-profile-tab="time"][aria-current="page"]')
         .waitFor({ timeout: 20_000 });
-      await h.page.locator('[data-hours]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-time-report="person"]').waitFor({ timeout: 20_000 });
       // No Developer setup tab: these default grants do not carry *See and manage
       // anyone's developer setup* — `developer-setup.test.ts` covers the tab (LAI-1140).
       assert.deepEqual(
@@ -550,6 +579,23 @@ void describe('a member’s profile: Day and Time report (LAI-959, LAI-1134)', (
           .evaluateAll((els) => els.map((el) => el.getAttribute('data-profile-tab'))),
         ['overview', 'day', 'time'],
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('her Overview links to the Time report and reads no time for it (D-102)', async () => {
+    const h = await openAt(`/people?user=u2`, profileStub());
+    try {
+      const link = h.page.locator('[data-profile-time-link]');
+      await link.waitFor({ timeout: 20_000 });
+      assert.ok(
+        !h.calls.some((c) => c.path === '/api/v1/time/report'),
+        'the Overview read her time, a look on every open',
+      );
+      await link.click();
+      await h.page.waitForURL(/tab=time/);
+      await h.page.locator('[data-time-report="person"]').waitFor({ timeout: 20_000 });
     } finally {
       await h.close();
     }

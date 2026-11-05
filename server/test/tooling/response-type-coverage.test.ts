@@ -255,13 +255,10 @@ const UNPAIRED = new Map<string, string>([
   ['MetricsView', 'no client type exists'],
   // LAI-885's catalogue; the web Roles & Permissions screen brings the mirror.
   ['PermissionsView', 'no client type exists'],
-  // LAI-1135 (D-130): the Time report is served ahead of its screens, T5 of
-  // the time-report programme, which mirrors both on the client.
-  ['TimeReportView', 'no client type exists'],
-  ['TimeReportRowView', 'no client type exists'],
-  ['TimeReportAnswer', 'no client type exists'],
-  ['SpaceWeeksReportView', 'no client type exists'],
-  ['SpaceWeekView', 'no client type exists'],
+  // LAI-1135 (D-130): the Time report's answer is a union of two views, both
+  // paired since LAI-1138; a union has no fields of its own to compare, so
+  // it is named here with the client's identical union.
+  ['TimeReportAnswer', 'TimeReportAnswer'],
   // The Solidtime bridge (LAI-788) is the CLI's, not the web app's: `laika
   // time push` and `pull` read these, and no screen does. They leave this
   // group the way the rest do, when a screen shows them.

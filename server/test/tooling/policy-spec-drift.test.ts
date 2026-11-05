@@ -80,7 +80,9 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
     'Generate, read and revoke own tokens',
     ['token.create_own', 'token.read_own', 'token.revoke_own'],
   ],
-  ["List / revoke anyone's token", ['token.list_any', 'token.revoke_any']],
+  // D-133 (LAI-1143) split the row: an admin revokes anybody's but the owner's.
+  ["List anyone's tokens", ['token.list_any']],
+  ["Revoke anyone's token", ['token.revoke_any']],
   // D-132, D-133 (LAI-1137): a member's whole setup, and revoking part of it.
   ["View a member's developer setup", ['developer_setup.read_any']],
   ["Revoke a member's tool or unpair their device", ['agent.revoke_any', 'device.revoke_any']],
@@ -462,6 +464,23 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
     {
       why: 'The role may, and only on a signed-in web session: any personal access token is refused, whatever its scope or project list (D-078, LAI-743). A profile carries private ratings and a token is how an agent acts.',
       verify: (action: Action, role: string) => verifySessionOnly(action, role),
+    },
+  ],
+  [
+    'not for the owner',
+    {
+      why: "An Admin may revoke anybody's token but the Owner's — a personal token and a tool's credential alike, since either switches the owner's work off (D-133, LAI-1143). Below the owner, a target whose role was never loaded is refused.",
+      verify: (action: Action, role: string) => {
+        const actor = orgActor(role.toLowerCase() as OrgRole);
+        expect(can(actor, action, { targetOrgRole: 'member' }), 'for a member').toBe(true);
+        expect(can(actor, action, { targetOrgRole: 'admin' }), 'for an admin').toBe(true);
+        expect(can(actor, action, { targetOrgRole: 'owner' }), 'for the owner').toBe(false);
+        expect(can(actor, action, {}), 'no role loaded').toBe(false);
+        expect(
+          can(orgActor('owner'), action, { targetOrgRole: 'owner' }),
+          'owner, for the owner',
+        ).toBe(true);
+      },
     },
   ],
   [

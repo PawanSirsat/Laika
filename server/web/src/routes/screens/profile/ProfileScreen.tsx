@@ -48,7 +48,9 @@ import { InfoTip } from './InfoTip.tsx';
 import { ManageMemberPanel } from './ManageMemberPanel.tsx';
 import { adminControls, anyAdminControl } from './manage-controls.ts';
 import { MyDayScreen } from '../my-day/MyDayScreen.tsx';
-import { PersonHours } from './PersonHours.tsx';
+import { dayIn, isDay } from '../my-day/my-day-derive.ts';
+import { readerZone } from '../../../api/usage.ts';
+import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
 import { PersonLocalActivity } from './PersonLocalActivity.tsx';
 import { DeveloperSetupTab } from './DeveloperSetupTab.tsx';
 import {
@@ -528,7 +530,13 @@ export function ProfileScreen({
       )}
 
       {shownTab === 'time' && (
-        <PersonHours key={user.id} userId={user.id} name={user.name} day={day} onDay={onDay} />
+        <TimeReport
+          key={user.id}
+          scope="person"
+          subject={{ id: user.id, name: user.name }}
+          today={dayIn(readerZone(), Date.now())}
+          anchor={isDay(day) ? day : undefined}
+        />
       )}
 
       {shownTab === 'overview' && (
@@ -540,6 +548,28 @@ export function ProfileScreen({
            * neighbour. Which card goes where is `columnPlan`'s — chosen, not
            * computed — and one column is the reading order.
            */}
+          {offered.includes('time') && (
+            // *Time this week* (frame 1n) is a link, not figures: reading them
+            // here would log a look at the person on every Overview open
+            // (D-102, D-135). The Time report tab is the look, and says so.
+            <Card name="time" title="Time this week">
+              <p className="prof-time-link">
+                Where {user.name}’s time went, by space, task and kind.{' '}
+                <a
+                  href={tabHref('time')}
+                  data-profile-time-link
+                  onClick={(event) => {
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    onTab('time');
+                  }}
+                >
+                  Open time report
+                </a>
+                <span className="prof-time-note"> · opening it is a look {user.name} can see</span>
+              </p>
+            </Card>
+          )}
           <Columns plan={columnPlan(user.profile_kind, columns)} cards={cards} group="main" />
 
           <ActivityCard

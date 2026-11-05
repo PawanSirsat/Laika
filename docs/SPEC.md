@@ -169,7 +169,8 @@ are not part of this.
 | View member list | ✓ | ✓ | ✓ | ✓ |
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
-| List / revoke **anyone's** token | ✓ | ✓ | — | — |
+| List **anyone's** tokens | ✓ | ✓ | — | — |
+| Revoke **anyone's** token | ✓ | ✓ (not for the owner) | — | — |
 | View a member's developer setup | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | Revoke a member's tool or unpair their device | ✓ (session only, not themselves) | ✓ (session only, not for the owner, not themselves) | — | — |
 | Read own agents | ✓ | ✓ | ✓ | ✓ |
@@ -4256,7 +4257,7 @@ GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, 
 GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until= — every row, newest first   (owner, admin)
                                              ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984); an owner or admin is withheld another person's agent too (§4.8 `agent_id`, LAI-1011)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id    ?kind=personal|agent optional (§4.9, LAI-1046)
-GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)    ?kind= as above; a revoke of somebody else's writes them a token_revoked notice (§4.87, D-134, LAI-1137)
+GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)    ?kind= as above; a revoke of somebody else's writes them a token_revoked notice (§4.87, D-134, LAI-1137); an admin revoking any token of the owner's, personal or a tool's credential, is 403 forbidden with details.reason not_for_owner (D-133, LAI-1143)
 GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only)
 GET    /api/v1/agents/devices                own agents grouped by device → { data: [{ device_label, display_name, recognised, last_seen_at, active_count, revoked_count, agents }] } (§4.63, agent.read_own)
 POST   /api/v1/agents/devices/confirm        body { device_label: string | null } → { device_label, recognised: true } (agent.manage_own, session only)
@@ -6696,15 +6697,16 @@ call MCP; agents do.
 | **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /tasks/:id/similar`, `GET /tasks/:id/time` (LAI-1122), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
-| **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read | `propose_time_entry` | ✅ D-088, LAI-796 |
+| **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read ; *Overview*'s Week, Month and Range (LAI-1138): `GET /time/report?members=<the reader>`, JSON and `format=csv` | `propose_time_entry` | ✅ D-088, LAI-796, D-130 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** *(four tabs, LAI-796)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
-| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage`, `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ D-078, D-079, D-084, D-132, D-133 |
+| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage`; the *Time report* tab (LAI-1138): `GET /time/report?members=<them>`, JSON and `format=csv`, a look they are told about; the *Developer setup* tab (LAI-1140): `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ D-078, D-079, D-084, D-130, D-132, D-133 |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
+| **Time** *(Insights' third tab, `/insights?tab=time`; owners, holders of *See everyone's analytics* and space admins)* | 6 | `GET /time/report` (JSON and `format=csv`; an owner's or analytics reader's report of everyone, or a space admin's one space in whole weeks), `GET /permissions` (which spaces the reader leads), `GET /projects` | — | ✅ D-130, D-136, D-138, LAI-1138 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
@@ -7097,6 +7099,35 @@ anything missing sends the task back.
   publishes a token figure. **The sidebar's Usage item carries a count** of the
   reader's open alerts, none at zero. Light and
   dark; one column on a phone with nothing scrolling sideways.
+- **Time report** (D-130, LAI-1138) — one component in three places: My
+  day's *Overview* (Week, Month, Range), a person's *Time report* tab, and
+  Insights → *Time*. **Day · Week · Month · Range**, ‹ › stepping a day, a
+  week, a month or the range's own length, the Range quick picks and two
+  dates (92 days at most, a backward or longer range said, not read).
+  **Space** and **Kind** filter chips, and **Member** where everyone is
+  shown; **Confirmed only / Include drafts**; **Export CSV**, the server's
+  file. Six figures — *Tracked*, *Confirmed*, *Drafts waiting*, *Meetings*,
+  *Active days* (of the days so far), *Per active day* — and the agents'
+  minutes on their own line, never added to hours. **Hours per day**: a bar
+  a day, confirmed solid and drafted hatched **and named**, arrow keys, Home
+  and End moving between days, each bar's figures in words, and the same as
+  a table for a screen reader. **Group by** two levels with *Swap* (Space →
+  Member for everyone, Space → Task for one person), a *Total* row, and a
+  donut with its legend. **People are listed A–Z and never by hours**; no
+  ranking, no utilisation figure, no money. States: reading, *No time in
+  this range* (*Show the last 30 days*), *No time matches these filters*
+  (*Clear filters*), *Nothing confirmed* (*Include drafts*), *Drafts only*,
+  and the server's sentence with *Retry*. A **space admin** (D-136, D-138)
+  reads one space they lead, whole weeks, one bar a week with its people
+  count, a week fewer than three people besides them worked in reading
+  *withheld — fewer than 3 others*; no table, donut, drafts switch or Member
+  and Kind filters. On a person's tab it says *Visible to owners and admins ·
+  they can see you looked*. Light and dark; one column on a phone with
+  nothing scrolling sideways.
+- **Time** (Insights' third tab, `/insights?tab=time`, LAI-1138) — the Time
+  report of everyone for an owner or a holder of *See everyone's analytics*,
+  a space admin's weeks for a space admin; the tab is absent for anybody
+  else, and an address naming it shows the not-allowed state.
 - **My day** (`/my-day`, the reader's own, D-088; laid out by LAI-796, made
   for a busy day by LAI-810) — the week in the header between *previous* and
   *next*, with *Today* away from it, and while anything is drafted a confirm
@@ -7147,6 +7178,9 @@ anything missing sends the task back.
   Day · Time report · Developer setup**, each only for a reader granted it —
   Day and Time report by *See everyone's analytics*, Developer setup by *See
   and manage anyone's developer setup* (D-132); your own profile has no tabs.
+  *Time report* is the shared Time report for that person (`?tab=hours` still
+  opens it); Overview's *Time this week* is a link to it rather than figures,
+  so opening Overview is not a look at their time (D-102, LAI-1138).
   **Developer setup** (LAI-1140, frames 2p–2ab) reads
   `GET /people/:id/developer-setup` only when opened, and says *"Owners and
   admins only · read-only · <first> can see that you looked"*. It has a
@@ -7168,7 +7202,8 @@ anything missing sends the task back.
   Laika — never by email — then a success notice. On the owner's setup an
   admin is offered none of them and told why, and a `403 not_for_owner` is
   said in those terms. A deactivated person's setup is read-only history with
-  only the revokes left; loading, empty and error-with-retry states. Overview leads with the summary — **current
+  only the revokes left; loading, empty and error-with-retry states.
+  Overview leads with the summary — **current
   work**, **agents used**, **review work**, **projects** — then the Activity
   card, then the **record**, which keeps everything the summary does not
   draw: the Tokens card, **delivered**, the **rating** and **recent

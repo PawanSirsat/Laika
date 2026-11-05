@@ -72,13 +72,14 @@ const ORG_MATRIX: OrgRow[] = [
   ['member_list.read', true, true, true, true],
   // | Generate own tokens | ✓ | ✓ | ✓ | ✓ (read_only forced) |
   ['token.create_own', true, true, true, true],
-  // | List / revoke anyone's token | ✓ | ✓ | — | — |
+  // | List anyone's tokens | ✓ | ✓ | — | — |
   ['token.list_any', true, true, false, false],
   // D-114 (LAI-534): a person's own agents, every role — the service reaches
   // only the caller's rows, and managing is session only.
   ['agent.read_own', true, true, true, true],
   ['agent.manage_own', true, true, true, true],
-  ['token.revoke_any', true, true, false, false],
+  // | Revoke anyone's token | ✓ | ✓ (not for the owner) | — | — |
+  // Depends on the target's role (D-133, LAI-1143): asserted below.
   // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
   // Every role: it is your own record about your own work, creating nothing in
   // any project. The Viewer ✓ is the role's answer — their credential is what
@@ -255,6 +256,25 @@ describe('SPEC §3.1 — rows that depend on the resource', () => {
       expect(can(actor(role), 'developer_setup.read_any', { targetUserId: 'u2' }), role).toBe(
         false,
       );
+    }
+  });
+
+  // | Revoke anyone's token | ✓ | ✓ (not for the owner) | — | — |
+  it("Owner revokes anyone's token; Admin anyone's but the owner's, their own included (D-133, LAI-1143)", () => {
+    const action = 'token.revoke_any';
+    for (const role of ['owner', 'admin'] as const) {
+      for (const target of ['member', 'viewer', 'admin'] as const) {
+        expect(can(actor(role), action, { targetOrgRole: target }), `${role} → ${target}`).toBe(
+          true,
+        );
+      }
+    }
+    expect(can(actor('owner'), action, { targetOrgRole: 'owner' }), 'owner → owner').toBe(true);
+    expect(can(actor('admin'), action, { targetOrgRole: 'owner' }), 'admin → owner').toBe(false);
+    // Below the owner, a target whose role was never loaded is refused.
+    expect(can(actor('admin'), action, {}), 'admin, no role').toBe(false);
+    for (const role of ['member', 'viewer'] as const) {
+      expect(can(actor(role), action, { targetOrgRole: 'member' }), role).toBe(false);
     }
   });
 
@@ -517,6 +537,7 @@ describe('completeness', () => {
       'profile.rate',
       'people.analytics.read',
       'developer_setup.read_any',
+      'token.revoke_any',
       'agent.revoke_any',
       'device.revoke_any',
       // §3.4's own, asserted in full by the describe above.

@@ -76,8 +76,8 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'token.create_own': 'Generate, read and revoke own tokens',
   'token.read_own': 'Generate, read and revoke own tokens',
   'token.revoke_own': 'Generate, read and revoke own tokens',
-  'token.list_any': "List / revoke anyone's token",
-  'token.revoke_any': "List / revoke anyone's token",
+  'token.list_any': "List anyone's tokens",
+  'token.revoke_any': "Revoke anyone's token",
   'developer_setup.read_any': "View a member's developer setup",
   'agent.revoke_any': "Revoke a member's tool or unpair their device",
   'device.revoke_any': "Revoke a member's tool or unpair their device",
@@ -180,6 +180,8 @@ const SOMEONE_ELSE = 'someone-else';
  *    (LAI-957).
  *  - `developer_setup.read_any` — anybody but themselves: their own is
  *    Developer access (D-132, LAI-1137).
+ *  - `token.revoke_any` — an Admin anybody's but the Owner's, personal token
+ *    or tool credential alike (D-133, LAI-1143).
  *  - `agent.revoke_any`, `device.revoke_any` — an Admin anybody but the
  *    Owner (D-133, LAI-1137); never themselves, whoever asks.
  *  - `comment.edit`, `comment.delete` — a Lead any comment, a Member their own.
@@ -232,6 +234,11 @@ export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionC
     text: 'Anyone but themselves',
     holds: () => ({ targetUserId: SOMEONE_ELSE }),
     fails: (userId) => ({ targetUserId: userId }),
+  },
+  'token.revoke_any': {
+    text: 'Not for the Owner',
+    holds: () => ({ targetOrgRole: 'member' }),
+    fails: () => ({ targetOrgRole: 'owner' }),
   },
   'agent.revoke_any': {
     text: 'Not for the Owner, nor themselves',

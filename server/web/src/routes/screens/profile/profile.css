@@ -1479,3 +1479,15 @@
   line-height: var(--leading-body);
   color: var(--text-primary);
 }
+
+/* *Time this week* (LAI-1138): a link to the Time report tab, no figures. */
+.prof-time-link {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: 1.25rem;
+  color: var(--text-secondary);
+}
+
+.prof-time-note {
+  color: var(--text-muted);
+}
