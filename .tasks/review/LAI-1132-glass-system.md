@@ -7,8 +7,8 @@ priority: p2
 depends-on: [LAI-1126]
 discovered-from:
 started: 2026-11-04T14:04:55Z
-status: in-progress
-finished:
+status: review
+finished: 2026-11-05T10:48:03Z
 ---
 
 ## Goal
@@ -24,34 +24,34 @@ solid surfaces. Stacked on the brand PR; retargeted to
 
 ## Acceptance criteria
 
-- [ ] Ambient layer: one fixed, `pointer-events: none`, `contain: strict`
+- [x] Ambient layer: one fixed, `pointer-events: none`, `contain: strict`
       pseudo-element behind the shell, pure CSS gradients from brand tokens
       with curved light arcs, dark and light variants, no animation.
-- [ ] Tokens in `styles/theme.css` only: `--glass-1/2/3` (+ solid fallbacks
+- [x] Tokens in `styles/theme.css` only: `--glass-1/2/3` (+ solid fallbacks
       and a solid-on-glass surface), border, highlight, glow, blur levels
       capped at 32px, saturate; `--shadow-popover/panel/toast`; layer tokens
       `--layer-sticky … --layer-toast` with popovers and menus above panels
       (B16); duration/easing tokens and one global reduced-motion rule;
       `token-list.ts` and `tokens.test.ts` extended.
-- [ ] `components/glass/`: `GlassSurface` (`level`, `as`) and `glass.css`
+- [x] `components/glass/`: `GlassSurface` (`level`, `as`) and `glass.css`
       with `.glass-1/2/3`, hover / selected / focus-visible states; a source
       guard that no stylesheet but `glass.css` declares `backdrop-filter`, no
       blur literal over the cap, and no nested glass; a runtime nesting check
       in a browser test.
-- [ ] Applied: sidebar, shell header and space bar (level 1), board lanes
+- [x] Applied: sidebar, shell header and space bar (level 1), board lanes
       (level-1 tint, cards solid), SidePanel, ConfirmDialog, Offboarding
       dialog and the task drawer frame (level 3 over a blurred scrim),
       Dropdown, OverflowMenu and popovers (level 3), auth cards (level 2
       hero), dashboard, organisation and capacity cards (level-2 tint).
-- [ ] AA for text on every glass level against the worst-case backdrop in
+- [x] AA for text on every glass level against the worst-case backdrop in
       both themes, in the token tests; reduced-transparency, forced-colors,
       `@supports not (backdrop-filter)` and reduced-motion fallbacks.
-- [ ] Browser tests: blur present on chrome and floating surfaces and absent
+- [x] Browser tests: blur present on chrome and floating surfaces and absent
       on cards, rows and the drawer's document; reduced transparency and
       forced colours; a Dropdown in a SidePanel paints above it; focus ring
       visible on glass; login glass over ambient in both themes. Perf
       measured on a 40-card board at 1440, before and after.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` exit 0.
 
 ## Notes / context
 
