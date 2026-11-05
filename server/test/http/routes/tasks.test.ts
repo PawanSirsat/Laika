@@ -899,6 +899,9 @@ describe('patch', () => {
       'heartbeats.matched_task_id': { not_shown: 'presence, not the task' },
       'unlisted_work.promoted_task_id': { not_shown: 'read from the unlisted entry, not the task' },
       'handoff_offers.task_id': { not_shown: 'read by the hand-off inbox' },
+      'member_notices.task_id': {
+        not_shown: 'a notice names the first card it gave; read by GET /me/notices (LAI-1136)',
+      },
       'capacity_pings.task_id': {
         not_shown:
           'a capacity ping names the task it is about; read by GET /capacity-pings/:id (LAI-1038)',

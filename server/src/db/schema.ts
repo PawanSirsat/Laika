@@ -48,6 +48,7 @@ import {
   GRANTABLE_ROLES,
   LOCAL_ACTIVITY_SCOPES,
   MEETING_REVIEW_STATUSES,
+  MEMBER_NOTICE_KINDS,
   ORG_ROLES,
   PLAN_KINDS,
   PLAN_WINDOWS,
@@ -1407,6 +1408,46 @@ export const userAwayPeriods = sqliteTable(
     // §11.6's retention deletes by day alone.
     index('user_away_periods_to_day_idx').on(t.toDay),
     check('user_away_periods_range_check', sql.raw('to_day >= from_day')),
+  ],
+);
+
+// ----------------------------------------------------- §4.87 member_notices
+
+/**
+ * A notice for one member (§4.87, D-134, LAI-1136): being added to a space,
+ * with the adder's message and first card if they gave them, and later a
+ * tool, device or token of theirs revoked by somebody else. **Not activity**
+ * (§4.8 gains no verb) and **never written for a self-action**. Read only by
+ * the person it names; kept 90 days (§11.6).
+ */
+export const memberNotices = sqliteTable(
+  'member_notices',
+  {
+    id: text('id').primaryKey(),
+    /** Who is told. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Who did it. Never the same person: a self-action writes no notice. */
+    actorUserId: text('actor_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: MEMBER_NOTICE_KINDS }).notNull(),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    /** The tool, device or token name as it was when it happened. */
+    subject: text('subject'),
+    /** The adder's own words, as they wrote them. */
+    message: text('message'),
+    createdAt,
+    readAt: integer('read_at'),
+  },
+  (t) => [
+    index('member_notices_user_idx').on(t.userId, t.readAt, t.createdAt),
+    index('member_notices_created_at_idx').on(t.createdAt),
+    check('member_notices_kind_check', oneOf('kind', MEMBER_NOTICE_KINDS)),
+    check('member_notices_subject_check', sql.raw('subject IS NULL OR length(subject) <= 120')),
+    check('member_notices_message_check', sql.raw('message IS NULL OR length(message) <= 500')),
   ],
 );
 
@@ -4097,3 +4138,4 @@ export type AgentLauncherReport = typeof agentLauncherReports.$inferSelect;
 export type CapacityPing = typeof capacityPings.$inferSelect;
 export type UserAvailability = typeof userAvailability.$inferSelect;
 export type UserAwayPeriod = typeof userAwayPeriods.$inferSelect;
+export type MemberNotice = typeof memberNotices.$inferSelect;

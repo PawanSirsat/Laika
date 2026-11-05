@@ -70,6 +70,7 @@ function folderBefore0070(): { dir: string; restore: () => void } {
     '0074_agent_capacity',
     '0075_task_deliverables',
     '0076_user_availability',
+    '0077_member_notices',
   ]);
   writeFileSync(journalPath, JSON.stringify(journal));
   return {
@@ -78,12 +79,14 @@ function folderBefore0070(): { dir: string; restore: () => void } {
       // Back through 0074 only: 0075 (LAI-1115) adds columns to `tasks`, and
       // "changes nothing else" below reads every table's rows. What a 0069
       // database upgrades *through* is still every migration here.
-      // LAI-1130's 0076 adds two tables, which the same check would count.
-      journal.entries.push(
-        ...dropped.filter(
-          (e) => e.tag !== '0075_task_deliverables' && e.tag !== '0076_user_availability',
-        ),
-      );
+      // LAI-1130's 0076 adds two tables and LAI-1136's 0077 one, which the
+      // same check would count.
+      const later = new Set([
+        '0075_task_deliverables',
+        '0076_user_availability',
+        '0077_member_notices',
+      ]);
+      journal.entries.push(...dropped.filter((e) => !later.has(e.tag)));
       writeFileSync(journalPath, JSON.stringify(journal));
     },
   };

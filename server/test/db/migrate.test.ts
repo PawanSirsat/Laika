@@ -2798,6 +2798,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_task_deliverables$/),
         // LAI-1130's availability tables.
         expect.stringMatching(/_user_availability$/),
+        // LAI-1136's member notices.
+        expect.stringMatching(/_member_notices$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2934,8 +2936,13 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
     const dropped = journal.entries.splice(at);
     // The guard on this guard: the first entry cut is 0075 and the last kept
     // is 0074 — a later migration lands here and says so. LAI-1130's two new
-    // tables ride along and touch no `tasks` row.
-    expect(dropped.map((e) => e.tag)).toEqual(['0075_task_deliverables', '0076_user_availability']);
+    // tables and LAI-1136's one ride along and touch no `tasks` row, so a
+    // boot applies three.
+    expect(dropped.map((e) => e.tag)).toEqual([
+      '0075_task_deliverables',
+      '0076_user_availability',
+      '0077_member_notices',
+    ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -2986,10 +2993,76 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
           })),
         );
         expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
-        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 2);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 3);
         // And again is a no-op.
         runMigrations(db);
-        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 2);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 3);
+      } finally {
+        sqlite.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+/**
+ * LAI-1136 (D-134): 0077 adds `member_notices` and nothing else — a populated
+ * 0076 database keeps every task row and table, and the new table's CHECKs
+ * refuse a kind outside §4.87's four and a message past 500 characters.
+ */
+describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () => {
+  function folderAt0076(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag === '0077_member_notices');
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: a later migration lands here and says so.
+    expect(dropped.map((e) => e.tag)).toEqual(['0077_member_notices']);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it(
+    'creates the table, keeps every row, and its CHECKs hold',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: folderAt0076() });
+        const tables = () =>
+          db
+            .all<{ name: string }>(
+              sql`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`,
+            )
+            .map((r) => r.name);
+        expect(tables()).not.toContain('member_notices');
+
+        const s = seed(db);
+        const now = Date.now();
+        const rowsBefore = db.all(sql`SELECT * FROM project_memberships ORDER BY rowid`);
+        const before = tables();
+
+        runMigrations(db);
+
+        expect(tables()).toEqual([...before, 'member_notices'].sort());
+        expect(db.all(sql`SELECT * FROM project_memberships ORDER BY rowid`)).toEqual(rowsBefore);
+
+        const insert = (kind: string, message: string | null) =>
+          db.run(sql`
+          INSERT INTO member_notices (id, user_id, actor_user_id, kind, project_id, message, created_at)
+          VALUES (${newId()}, ${s.userId}, ${s.userId}, ${kind}, ${s.projectId}, ${message}, ${now})
+        `);
+        insert('added_to_space', 'Welcome');
+        expectSqliteError(() => insert('member.added', null), /member_notices_kind_check/);
+        expectSqliteError(
+          () => insert('added_to_space', 'x'.repeat(501)),
+          /member_notices_message_check/,
+        );
       } finally {
         sqlite.close();
         rmSync(dir, { recursive: true, force: true });

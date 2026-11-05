@@ -557,6 +557,19 @@ export const TOKEN_ALERT_KINDS = ['budget', 'runaway'] as const;
 export type TokenAlertKind = (typeof TOKEN_ALERT_KINDS)[number];
 
 /**
+ * §4.87's `kind` (D-134, LAI-1136): what a member is told about. Being added
+ * to a space, and a tool, device or token of theirs revoked by somebody else.
+ * A notice is not activity, so none of these is a §4.8 verb.
+ */
+export const MEMBER_NOTICE_KINDS = [
+  'added_to_space',
+  'tool_revoked',
+  'device_unpaired',
+  'token_revoked',
+] as const;
+export type MemberNoticeKind = (typeof MEMBER_NOTICE_KINDS)[number];
+
+/**
  * §4.38's `source` (LAI-773): per-session token totals from the session
  * files a collector read, or from the OpenTelemetry metrics Claude Code sent
  * — the two are matched by session to fill the gap without counting twice.

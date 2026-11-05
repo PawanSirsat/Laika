@@ -785,6 +785,9 @@ const NOT_FENCED: Record<string, string> = {
   'PUT /api/v1/me/availability': 'the caller’s own availability',
   'POST /api/v1/me/availability/away': 'the caller’s own availability',
   'DELETE /api/v1/me/availability/away/:id': 'the caller’s own availability',
+  // LAI-1136 (D-134): the caller's own notices, session only.
+  'POST /api/v1/me/notices/:id/read': 'the caller’s own notices',
+  'POST /api/v1/me/notices/read-all': 'the caller’s own notices',
   'PUT /api/v1/me/time-drafts': 'the caller’s own time',
   'POST /api/v1/me/time-drafts': 'the caller’s own time',
   'DELETE /api/v1/me/time-drafts': 'the caller’s own time',

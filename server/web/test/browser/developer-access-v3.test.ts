@@ -189,6 +189,21 @@ after(async () => {
 const tabs = async (page: Page) =>
   (await page.locator('.page-tab').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
 
+/**
+ * Until every animation on the page has ended. A cancelled one counts as ended:
+ * a theme switch cancels the transition it interrupts, and its `finished`
+ * rejects with `AbortError` (LAI-1141). It may start another in its place, so
+ * the page is asked again until nothing is left running.
+ */
+const settle = (page: Page) =>
+  page.evaluate(async () => {
+    for (let round = 0; round < 10; round += 1) {
+      const running = document.getAnimations().filter((a) => a.playState === 'running');
+      if (running.length === 0) return;
+      await Promise.allSettled(running.map((a) => a.finished));
+    }
+  });
+
 /** V3's *Advanced*, drawn after the four tabs as a quieter link (LAI-1096). */
 const advancedLink = (page: Page) => page.locator('.dx-tabrow > a.dx-tab-secondary');
 
@@ -1648,7 +1663,7 @@ void describe('look and fit', () => {
         await v3.page
           .locator('.dx-rail-card .conn-step[data-state="current"]')
           .waitFor({ timeout: 20_000 });
-        await v3.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+        await settle(v3.page);
         const step = await current(v3.page, '.dx-rail-card');
         assert.equal(step.fill, step.tokens.fill, 'the step on show is not --accent-bg');
         assert.equal(step.border, 'rgba(0, 0, 0, 0)', 'the step on show has a border');
@@ -1666,9 +1681,7 @@ void describe('look and fit', () => {
           )
           .first()
           .waitFor({ timeout: 20_000 });
-        await classic.page.evaluate(() =>
-          Promise.all(document.getAnimations().map((a) => a.finished)),
-        );
+        await settle(classic.page);
         const step = await current(classic.page, '.conn-rail');
         assert.equal(step.border, step.tokens.ring, 'Connect’s step on show lost its ring');
         assert.notEqual(step.shadow, 'none');
@@ -1703,9 +1716,7 @@ void describe(
                   .waitFor({ timeout: 20_000 });
               }
               // The theme's colours ease in; the picture is of where they land.
-              await h.page.evaluate(() =>
-                Promise.all(document.getAnimations().map((a) => a.finished)),
-              );
+              await settle(h.page);
               // The app scrolls inside its shell, so a full-page shot stops at the
               // first screen: the viewport grows by what is scrolled out of it.
               const hidden = await h.page.evaluate(() => {
