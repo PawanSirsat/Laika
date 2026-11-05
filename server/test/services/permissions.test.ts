@@ -123,7 +123,8 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'token.read_own': 'CCCC',
   'token.revoke_own': 'CCCC',
   'token.list_any': 'YYNN',
-  'token.revoke_any': 'YYNN',
+  // D-133 (LAI-1143): an admin revokes anybody's token but the owner's.
+  'token.revoke_any': 'YCNN',
   // D-132, D-133 (LAI-1137): a member's setup, read by anybody else holding
   // the grant; revoked by an admin for anybody but the owner.
   'developer_setup.read_any': 'CCNN',

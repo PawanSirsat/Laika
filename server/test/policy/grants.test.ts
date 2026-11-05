@@ -205,16 +205,24 @@ describe('a flipped grant changes that role’s answer, and only for that capabi
       'token.list_any',
       'token.revoke_any',
     ] as const) {
-      expect(can(actor('admin', DEFAULT_GRANTS), action), `admin default ${action}`).toBe(true);
-      expect(can(actor('admin', bare), action), `admin withdrawn ${action}`).toBe(false);
-      expect(can(actor('member', DEFAULT_GRANTS), action), `member default ${action}`).toBe(false);
+      // `token.revoke_any` asks about a target's role (D-133, LAI-1143); a member's.
+      const about = { targetOrgRole: 'member' as const };
+      expect(can(actor('admin', DEFAULT_GRANTS), action, about), `admin default ${action}`).toBe(
+        true,
+      );
+      expect(can(actor('admin', bare), action, about), `admin withdrawn ${action}`).toBe(false);
+      expect(can(actor('member', DEFAULT_GRANTS), action, about), `member default ${action}`).toBe(
+        false,
+      );
     }
     expect(can(actor('member', only('member', 'create_archive_projects')), 'project.create')).toBe(
       true,
     );
-    expect(can(actor('member', only('member', 'manage_any_tokens')), 'token.revoke_any')).toBe(
-      true,
-    );
+    expect(
+      can(actor('member', only('member', 'manage_any_tokens')), 'token.revoke_any', {
+        targetOrgRole: 'member',
+      }),
+    ).toBe(true);
   });
 });
 

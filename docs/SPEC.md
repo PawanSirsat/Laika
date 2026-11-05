@@ -169,7 +169,8 @@ are not part of this.
 | View member list | ✓ | ✓ | ✓ | ✓ |
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
-| List / revoke **anyone's** token | ✓ | ✓ | — | — |
+| List **anyone's** tokens | ✓ | ✓ | — | — |
+| Revoke **anyone's** token | ✓ | ✓ (not for the owner) | — | — |
 | View a member's developer setup | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | Revoke a member's tool or unpair their device | ✓ (session only, not themselves) | ✓ (session only, not for the owner, not themselves) | — | — |
 | Read own agents | ✓ | ✓ | ✓ | ✓ |
@@ -4256,7 +4257,7 @@ GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, 
 GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until= — every row, newest first   (owner, admin)
                                              ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984); an owner or admin is withheld another person's agent too (§4.8 `agent_id`, LAI-1011)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id    ?kind=personal|agent optional (§4.9, LAI-1046)
-GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)    ?kind= as above; a revoke of somebody else's writes them a token_revoked notice (§4.87, D-134, LAI-1137)
+GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)    ?kind= as above; a revoke of somebody else's writes them a token_revoked notice (§4.87, D-134, LAI-1137); an admin revoking any token of the owner's, personal or a tool's credential, is 403 forbidden with details.reason not_for_owner (D-133, LAI-1143)
 GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only)
 GET    /api/v1/agents/devices                own agents grouped by device → { data: [{ device_label, display_name, recognised, last_seen_at, active_count, revoked_count, agents }] } (§4.63, agent.read_own)
 POST   /api/v1/agents/devices/confirm        body { device_label: string | null } → { device_label, recognised: true } (agent.manage_own, session only)
