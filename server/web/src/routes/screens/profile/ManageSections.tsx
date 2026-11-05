@@ -40,6 +40,7 @@ import {
   type ResetLinkView,
 } from '../../../api/users.ts';
 import type { OrgRole } from '../../../api/invites.ts';
+import { mayActOnSetupOf, OWNER_SETUP_NOTE, revokeRefusal } from '../../../api/owner-setup.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { InfoTip } from './InfoTip.tsx';
 import { adminControls, manageSections, type AdminSubject } from './manage-controls.ts';
@@ -156,8 +157,17 @@ export function ManageSections({
           case 'spaces':
             return <SpacesBlock key={section} user={user} gates={gates} focusBack={focusBack} />;
           case 'tokens':
-            // The full list stays here until Developer setup (LAI-1140) gives it a home.
-            return <TokensBlock key={section} user={user} mayRevoke={controls.revokeTokens} />;
+            // The list stays here beside the profile's Developer setup tab (LAI-1140).
+            return (
+              <TokensBlock
+                key={section}
+                user={user}
+                mayRevoke={controls.revokeTokens}
+                ownerHeld={
+                  gates.org('token.revoke_any') && !mayActOnSetupOf(me.org_role, user.org_role)
+                }
+              />
+            );
           case 'security':
             return (
               <SecuritySection
@@ -696,9 +706,12 @@ type TokensLoad =
 function TokensBlock({
   user,
   mayRevoke,
+  ownerHeld,
 }: {
   readonly user: AdminSubject;
   readonly mayRevoke: boolean;
+  /** Revoke is withheld because these are the owner's and the reader is not (D-133). */
+  readonly ownerHeld: boolean;
 }) {
   const [load, setLoad] = useState<TokensLoad>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -783,7 +796,7 @@ function TokensBlock({
                     setAttempt((n) => n + 1);
                   })
                   .catch((cause: unknown) => {
-                    setError(said(cause));
+                    setError(revokeRefusal(cause, 'Nothing changed.'));
                   })
                   .finally(() => {
                     setBusy(false);
@@ -861,6 +874,11 @@ function TokensBlock({
 
   return (
     <Block name="tokens" title="Tokens">
+      {ownerHeld && (
+        <p className="prof-admin-muted" data-owner-tokens>
+          {OWNER_SETUP_NOTE}
+        </p>
+      )}
       {load.kind === 'loading' && (
         <p className="prof-admin-muted" role="status">
           <Spinner size="sm" /> Reading their tokens…

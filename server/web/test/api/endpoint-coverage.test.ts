@@ -145,11 +145,6 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     'agent-token only — a session is refused `403`; the device’s launcher reports with it (plan auto-pickup slice B)',
   'api/v1/agents/me/capacity-pings/*/reply':
     'agent-token only — the pinged agent’s own; its launcher or session watcher answers a ping with it (plan auto-pickup slice B)',
-  // LAI-1137 serves a member's developer setup and the admin revokes;
-  // LAI-1140 builds the tab. Named by LAI-1137 (D-033).
-  'api/v1/people/*/developer-setup': 'LAI-1140 — Developer setup tab',
-  'api/v1/people/*/agents/*/revoke': 'LAI-1140 — Developer setup tab',
-  'api/v1/people/*/devices/*/revoke': 'LAI-1140 — Developer setup tab',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */

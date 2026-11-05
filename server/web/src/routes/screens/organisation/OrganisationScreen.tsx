@@ -5,6 +5,7 @@ import { PageTabs } from '../../../components/PageTabs.tsx';
 import { useProjects } from '../../../api/use-projects.ts';
 import { DEVELOPER_ACTIVITY_HREF, ownTokensHref, type PageTab } from '../../page-tabs.ts';
 import { useDeveloperAccessMode } from '../../../api/developer-compat.ts';
+import { mayActOnSetupOf, OWNER_SETUP_NOTE, revokeRefusal } from '../../../api/owner-setup.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { invitableRoles } from '../invite-roles.ts';
@@ -233,7 +234,7 @@ export function OrganisationScreen({
         reloadTokens();
       })
       .catch((cause: unknown) => {
-        setTokenError(cause instanceof Error ? cause.message : 'Could not revoke that token.');
+        setTokenError(revokeRefusal(cause, 'Could not revoke that token.'));
       });
   };
 
@@ -738,6 +739,13 @@ export function OrganisationScreen({
                         </span>
                       </p>
 
+                      {canRevokeTokens && !mayActOnSetupOf(me.org_role, person.org_role) && (
+                        // D-133, LAI-1143: the server refuses an admin the owner's tokens.
+                        <p className="org-tokens-note" data-owner-tokens>
+                          {OWNER_SETUP_NOTE}
+                        </p>
+                      )}
+
                       {tokens?.status === 'loading' && (
                         <LoadingState
                           shape="row"
@@ -781,7 +789,8 @@ export function OrganisationScreen({
                                       token={token}
                                       now={now}
                                       onRevoke={
-                                        canRevokeTokens
+                                        canRevokeTokens &&
+                                        mayActOnSetupOf(me.org_role, person.org_role)
                                           ? (revoked) => {
                                               revoke(person, revoked);
                                             }

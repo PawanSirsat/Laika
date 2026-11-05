@@ -6704,7 +6704,7 @@ call MCP; agents do.
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
-| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage`; the *Time report* tab (LAI-1138): `GET /time/report?members=<them>`, JSON and `format=csv`, a look they are told about; *Current load* and the head card's availability (LAI-1139): `GET /people/:id/load` for an owner or a holder of *See everyone's analytics*, read only when they press *Show current load* (never on opening the profile or any tab, never yourself; a look they are told about), `GET /me/availability` on your own profile, and the person's row of `GET /people/availability` for any other reader | — | ✅ D-078, D-079, D-084, D-130, D-131, D-137 |
+| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage`; the *Time report* tab (LAI-1138): `GET /time/report?members=<them>`, JSON and `format=csv`, a look they are told about; the *Developer setup* tab (LAI-1140): `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId`; *Current load* and the head card's availability (LAI-1139): `GET /people/:id/load` for an owner or a holder of *See everyone's analytics*, read only when they press *Show current load* (never on opening the profile or any tab, never yourself; a look they are told about), `GET /me/availability` on your own profile, and the person's row of `GET /people/availability` for any other reader | — | ✅ D-078, D-079, D-084, D-130, D-131, D-132, D-133, D-137 |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
 | **Time** *(Insights' third tab, `/insights?tab=time`; owners, holders of *See everyone's analytics* and space admins)* | 6 | `GET /time/report` (JSON and `format=csv`; an owner's or analytics reader's report of everyone, or a space admin's one space in whole weeks), `GET /permissions` (which spaces the reader leads), `GET /projects`; its *Availability* view (`&view=availability`, LAI-1139): `GET /people/availability?space=&tag=&open_only=` (A–Z, no sort), and *Add to project…*: `GET /projects/:slug/tasks?status=&assignee=none` (the first card on offer), `POST /projects/:slug/members` with `message` and `assign_task_id` | — | ✅ D-130, D-131, D-136, D-137, D-138, LAI-1138, LAI-1139 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |
@@ -7202,14 +7202,40 @@ anything missing sends the task back.
   none is: **Role** (organisation role, with a confirm, and the Builder /
   Manager control, which says it is a label and not a permission),
   **Spaces** (remove through the offboarding question, add with a role),
-  **Tokens** (their tokens, revocable), **Security** (a reset link shown once,
+  **Tokens** (their tokens, revocable — never the owner's by an admin, which
+  says why, D-133), **Security** (a reset link shown once,
   sign out everywhere) and a **Danger zone** (deactivate through the
   offboarding question, or reactivate). For somebody else, tabs **Overview ·
-  Day · Time report** — *Developer setup* joins them when its endpoint does;
-  your own profile has no tabs. *Time report* is the shared Time report for
-  that person (`?tab=hours` still opens it); Overview's *Time this week* is
-  a link to it rather than figures, so opening Overview is not a look at
-  their time (D-102, LAI-1138). Above it, for somebody else and only for an
+  Day · Time report · Developer setup**, each only for a reader granted it —
+  Day and Time report by *See everyone's analytics*, Developer setup by *See
+  and manage anyone's developer setup* (D-132); your own profile has no tabs.
+  *Time report* is the shared Time report for that person (`?tab=hours` still
+  opens it); Overview's *Time this week* is a link to it rather than figures,
+  so opening Overview is not a look at their time (D-102, LAI-1138).
+  **Developer setup** (LAI-1140, frames 2p–2ab) reads
+  `GET /people/:id/developer-setup` only when opened, and says *"Owners and
+  admins only · read-only · <first> can see that you looked"*. It has a
+  summary (devices active / revoked, tools, repositories, spaces reachable,
+  active tokens, last activity) and a **health line** naming what needs
+  attention — a tool its status calls *Needs setup*, a helper *Update
+  required*, a repository setup with *No block found* or *Update available* —
+  each a link that moves focus to the item, worked out on the client by
+  Developer access's own rules from the checks and reports served.
+  Then **Devices** (last seen, key fingerprint with copy, helper version,
+  launcher, auto-pickup, tools; revoked ones folded), **pending pairing
+  requests** with no code (D-124), **Tools** by device (five checks, what each
+  can reach, checkpoint consent, launcher, credential prefix, last used and
+  last MCP call, client version), **Repositories & projects**, **Tokens**
+  (personal and tool credentials, filtered Active / Expired / Revoked / All
+  with counts, a search past eight) and **recent setup activity**, 30 days.
+  **A space the reader cannot open is a count, never a name.** Each ⋯ is a
+  menu; *Unpair device…*, *Revoke tool…* and *Revoke token…* each open a
+  confirm listing what stops working and saying the member is notified in
+  Laika — never by email — then a success notice. On the owner's setup an
+  admin is offered none of them and told why, and a `403 not_for_owner` is
+  said in those terms. A deactivated person's setup is read-only history with
+  only the revokes left; loading, empty and error-with-retry states.
+  On Overview, for somebody else and only for an
   owner or a holder of *See everyone's analytics*, **Current load**
   (LAI-1139) — **collapsed** as *Show current load · <name> can see you
   looked*, and read only on that click, never on opening the profile or any
@@ -7219,8 +7245,8 @@ anything missing sends the task back.
   space over their last two weeks, their cards in progress, waiting for
   review and due in seven days, their working week as **two numbers on a
   neutral track with no fill** (*21h 5m tracked of 40h set*, never a
-  proportion), who set it, and their away dates; no free hours. Overview
-  leads with the summary — **current
+  proportion), who set it, and their away dates; no free hours.
+  Overview leads with the summary — **current
   work**, **agents used**, **review work**, **projects** — then the Activity
   card, then the **record**, which keeps everything the summary does not
   draw: the Tokens card, **delivered**, the **rating** and **recent
