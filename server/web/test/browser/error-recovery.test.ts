@@ -192,7 +192,7 @@ void describe('B5: Calendar and Activity say a failed read failed', () => {
       state.down = false;
       await errorRetry(h.page).click();
       await until(async () =>
-        /0 stale tasks/.test((await h.page.locator('.space-context').textContent()) ?? ''),
+        ((await h.page.locator('.space-context').textContent()) ?? '').includes('0 stale tasks'),
       );
       assert.match((await h.page.locator('.space-context').textContent()) ?? '', /0 stale tasks/);
       assert.equal(await h.page.locator('.state-error').count(), 0);
@@ -497,7 +497,7 @@ void describe('B15: Unlisted promote picks a space', () => {
     try {
       await openForm(h.page);
       const hint = h.page.locator('.unl-hint');
-      await until(async () => /any space/.test((await hint.textContent()) ?? ''));
+      await until(async () => ((await hint.textContent()) ?? '').includes('any space'));
       assert.equal(
         await hint.textContent(),
         'You cannot create tasks in any space. A space lead can give you access.',
