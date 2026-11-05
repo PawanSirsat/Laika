@@ -177,11 +177,11 @@ interface Report {
   days: number;
   scope: string;
   include_drafts: boolean;
-  totals: Record<string, number>;
+  totals: Record<string, number | null>;
   agent_minutes: number | null;
-  by_day: { day: string; confirmed_minutes: number; drafted_minutes: number }[];
+  by_day: { day: string; confirmed_minutes: number | null; drafted_minutes: number }[];
   rows: Row[];
-  folded: { tasks: number; spaces: number; minutes: number } | null;
+  folded: { tasks: number; spaces: number; days: number; minutes: number | null } | null;
 }
 
 beforeEach(async () => {
@@ -467,10 +467,12 @@ describe('space_totals — a space admin’s', () => {
     dan = person('Dan');
     eve = person('Eve');
     lai2 = await task('laika', 'Two hands only');
-    // LAI-1 has four people's confirmed time: Bea's 30 and these 3 × 20.
+    // LAI-1: Bea's 30 on Monday, alone that day, and 3 × 20 on Tuesday.
     for (const id of [cleo, dan, eve]) entry(id, TUE, 20, { taskId: lai1.id, projectId: laika.id });
-    // LAI-2 has one person's: below the floor.
+    // Wednesday: LAI-2 is Cleo's alone, below the floor, so it joins Laika's
+    // no-task time — Dan's and Eve's 5 each — which then covers three people.
     entry(cleo, WED, 15, { taskId: lai2.id, projectId: laika.id });
+    for (const id of [dan, eve]) entry(id, WED, 5, { projectId: laika.id });
     lead(bea.id, laika.id);
   });
 
@@ -482,26 +484,60 @@ describe('space_totals — a space admin’s', () => {
     expect(r.rows.every((row) => row.user === null)).toBe(true);
     expect(r.rows.map((row) => [row.task?.key ?? null, row.confirmed_minutes])).toEqual([
       [lai1.key, 90],
-      [null, 15],
+      [null, 25],
     ]);
     // Ada's draft on LAI-1 is not confirmed, so it is not here.
-    expect(r.totals).toMatchObject({ confirmed_minutes: 105, drafted_minutes: 0, people: 4 });
-    expect(r.folded).toEqual({ tasks: 1, spaces: 0, minutes: 15 });
+    expect(r.totals).toMatchObject({ confirmed_minutes: 115, drafted_minutes: 0, people: 4 });
     expect(JSON.stringify(r)).not.toContain('Two hands only');
     expect(looks()).toEqual([]);
+  });
+
+  it('never shows a day fewer than three people worked: one person alone is withheld', async () => {
+    const r = (await ok(await report(`from=${MON}&to=${SUN}`, bea.cookie))) as Report;
+    const day = (d: string) => r.by_day.find((x) => x.day === d)?.confirmed_minutes;
+    // Monday is Bea's 30 alone: withheld. Withheld alone, it would be the
+    // total less the days shown — so the smallest shown day, Wednesday's
+    // three people, is withheld with it, and the two together cover four.
+    expect(day(MON)).toBeNull();
+    expect(day(WED)).toBeNull();
+    expect(day(TUE)).toBe(60);
+    expect(r.by_day.filter((x) => x.confirmed_minutes === null)).toHaveLength(2);
+    expect(r.folded).toEqual({ tasks: 1, spaces: 0, days: 2, minutes: 0 });
+    expect(r.by_day.some((x) => x.confirmed_minutes === 30)).toBe(false);
   });
 
   it('folds a space with fewer than three people into one row that names no space', async () => {
     lead(bea.id, skynet.id);
     const r = (await ok(await report(`from=${MON}&to=${SUN}`, bea.cookie))) as Report;
-    // Skynet holds Ada's 90 alone.
-    expect(r.rows.find((row) => row.project === null)).toMatchObject({
-      task: null,
-      kind: null,
-      confirmed_minutes: 90,
-    });
+    // Skynet holds Ada's 90 alone. With it in the pool alone the pool would be
+    // hers, so the smallest named row joins it: Laika's no-task 25.
+    expect(
+      r.rows.map((row) => [
+        row.project?.slug ?? null,
+        row.task?.key ?? null,
+        row.confirmed_minutes,
+      ]),
+    ).toEqual([
+      [null, null, 115],
+      ['laika', lai1.key, 90],
+    ]);
     expect(JSON.stringify(r)).not.toContain(sky1.key);
-    expect(r.folded).toEqual({ tasks: 1, spaces: 1, minutes: 105 });
+    expect(r.folded).toMatchObject({ tasks: 1, spaces: 1, minutes: 115 });
+  });
+
+  it('withholds every figure when the whole report is under three people', async () => {
+    // Bea leads Skynet alone: Ada's 90 is all it holds.
+    h.db.delete(projectMemberships).where(eq(projectMemberships.userId, bea.id)).run();
+    lead(bea.id, skynet.id);
+    const r = (await ok(await report(`from=${MON}&to=${SUN}`, bea.cookie))) as Report;
+    expect(r.rows).toEqual([]);
+    expect(r.totals).toMatchObject({ confirmed_minutes: null, active_days: null, people: 1 });
+    expect(r.by_day.every((d) => d.confirmed_minutes === null || d.confirmed_minutes === 0)).toBe(
+      true,
+    );
+    expect(r.folded).toEqual({ tasks: 0, spaces: 1, days: 1, minutes: null });
+    // No figure anywhere is her 90.
+    expect(JSON.stringify([r.rows, r.totals, r.by_day, r.folded])).not.toMatch(/\b90\b/);
   });
 
   it('refuses members, drafts, and a space they do not lead — each by its code', async () => {
@@ -532,12 +568,17 @@ describe('space_totals — a space admin’s', () => {
     );
   });
 
-  it('writes the file with no person column', async () => {
+  it('writes the file with no person column, and no day fewer than three people worked', async () => {
     const res = await report(`from=${MON}&to=${SUN}&format=csv`, bea.cookie);
     expect(res.status).toBe(200);
-    const lines = (await res.text()).split('\r\n');
+    const lines = (await res.text()).split('\r\n').filter((l) => l !== '');
     expect(lines[0]).toBe('day,space,task_key,task_title,kind,confirmed_minutes,drafted_minutes');
-    expect(lines).toContain(`${TUE},Laika,${lai1.key},Search matches keys,work,60,0`);
+    // LAI-1's Monday is Bea's alone, so its days go out together, with no day;
+    // the no-task row's one day, Wednesday, covers three people and is shown.
+    expect(lines.slice(1)).toEqual([
+      `${WED},Laika,,,work,25,0`,
+      `,Laika,${lai1.key},Search matches keys,work,90,0`,
+    ]);
   });
 });
 

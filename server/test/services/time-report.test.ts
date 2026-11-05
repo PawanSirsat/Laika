@@ -183,17 +183,21 @@ describe('the floor (D-088 item 7)', () => {
     const lead = asLead();
 
     const two = getTimeReport(t.db, lead, { from: MON, to: SUN }, NOW);
-    expect(two.rows.map((x) => [x.project?.slug ?? null, x.confirmed_minutes])).toEqual([
-      [null, 20],
-    ]);
-    expect(two.folded).toEqual({ tasks: 0, spaces: 1, minutes: 20 });
+    // Two people's 20 is withheld everywhere: no row, no day, no total.
+    expect(two.rows).toEqual([]);
+    expect(two.totals.confirmed_minutes).toBeNull();
+    expect(two.by_day.find((d) => d.day === '2026-10-20')?.confirmed_minutes).toBeNull();
+    expect(two.folded).toEqual({ tasks: 0, spaces: 1, days: 1, minutes: null });
 
     entry(person('C'), '2026-10-21', 10, laika);
     const three = getTimeReport(t.db, lead, { from: MON, to: SUN }, NOW);
     expect(three.rows.map((x) => [x.project?.slug ?? null, x.confirmed_minutes])).toEqual([
       ['laika', 30],
     ]);
-    expect(three.folded).toEqual({ tasks: 0, spaces: 0, minutes: 0 });
+    expect(three.totals.confirmed_minutes).toBe(30);
+    // Each day has fewer than three people, but the two together have three.
+    expect(three.by_day.filter((d) => d.confirmed_minutes === null)).toHaveLength(2);
+    expect(three.folded).toEqual({ tasks: 0, spaces: 0, days: 2, minutes: 0 });
     expect(three.totals.people).toBe(3);
   });
 });

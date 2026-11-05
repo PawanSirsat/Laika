@@ -474,10 +474,16 @@ over first.
 `time.report.read_project`, behind §6.4's `GET /time/report` for a caller
 with no per-person grant who leads a space (an org Owner or Admin is an
 implicit lead, and reads per person first). **Confirmed time only, with no
-per-person split, under D-088 item 7's three-person floor**: a task with
-fewer than three people's time in the stretch is summed into its space's
-no-task rows, and a space with fewer than three into one row naming no space.
-D-088 item 7 is not amended. A lead asking for `members` is `422
+per-person split, under D-088 item 7's three-person floor, applied to every
+figure** — a row, a day, a total, a line of the file: none covers fewer than
+three people. A task with fewer than three people's time in the stretch is
+summed into its space's no-task rows; a space with fewer than three, and any
+row still under the floor, into one row naming no space; a day with fewer
+than three is withheld (`null`). Because the total less the figures shown
+would give a withheld figure back, the withheld ones together must cover
+three people too: while they do not, the smallest figure still shown is
+withheld with them. A report of fewer than three people withholds its totals
+as well. D-088 item 7 is not amended. A lead asking for `members` is `422
 members_not_allowed`; for drafts, `422 drafts_not_allowed`.
 
 **Checkpoints and hand-offs** (§4.70 – §4.74, D-114 – D-116, LAI-544). The
@@ -5145,8 +5151,14 @@ parameter names anybody else.
   space, member, task and kind; `agent_minutes` the agent's working minutes
   for those people, shown beside human time and never added to it (D-088
   item 8) — `null` in `space_totals` and when `spaces` or `kinds` narrow the
-  report; `folded` `{ tasks, spaces, minutes }` in `space_totals`, else
-  `null`. A space or task the caller cannot open is never named: its minutes
+  report; `folded` `{ tasks, spaces, days, minutes }` in `space_totals`, else
+  `null`. **In `space_totals` every figure covers at least three people**
+  (§3.2): `null` is a withheld figure — a day's `confirmed_minutes` in
+  `by_day`, `totals.confirmed_minutes` and `active_days` for a report of
+  fewer than three people, `meeting_minutes` or `manual_minutes` when fewer
+  than three people make them up — and `folded` says how many tasks, spaces
+  and days were folded and the minutes in the one row naming nothing
+  (`null` when that row is itself withheld). A space or task the caller cannot open is never named: its minutes
   are `project: null` / `task: null`. **One person's totals and `by_day`
   equal `GET /me/time/summary` for the same stretch** with
   `drafts=include`, a test holding both. In `people`, each person a row
@@ -5157,7 +5169,9 @@ parameter names anybody else.
   cap, logged the same: `text/csv; charset=utf-8`, attachment
   `laika-time-<from>-<to>.csv`, columns `day, space, task_key, task_title,
   person, kind, confirmed_minutes, drafted_minutes` (no `person` in
-  `space_totals`), one line per day and row, `space` the space's name, text
+  `space_totals`), one line per day and row — in `space_totals` a row's days
+  under the floor are one line with an empty `day`, by the same rule —
+  `space` the space's name, text
   prefixed `'` where a spreadsheet would run it as a formula (as LAI-984's
   history export). The route has a bucket of its own, 30 a minute per
   person, so filter clicks never spend the session's budget.
