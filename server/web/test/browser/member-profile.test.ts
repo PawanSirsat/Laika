@@ -2059,6 +2059,8 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       assert.equal(columnsOf((await cardBoxes(h.page)).cards).length, 2, 'two columns at 1024');
 
       await assertOneColumn(h.page, [
+        // Current load (LAI-1139), across the page above the summary.
+        'load',
         'current',
         'agents',
         'review',
@@ -2121,6 +2123,8 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       assert.equal(await h.page.locator('.prof-columns .prof-stats').count(), 0);
 
       await assertOneColumn(h.page, [
+        // Current load (LAI-1139), across the page above the summary.
+        'load',
         'current',
         'agents',
         'review',
@@ -2149,12 +2153,15 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       assert.deepEqual(cards.map((card) => card.name).sort(), [
         'activity',
         'decisions',
+        'load',
         'projects',
         'rating',
         'review',
         'tokens',
       ]);
       await assertOneColumn(h.page, [
+        // Current load (LAI-1139), across the page above the summary.
+        'load',
         'review',
         'projects',
         'activity',

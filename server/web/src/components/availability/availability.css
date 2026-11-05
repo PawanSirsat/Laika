@@ -72,6 +72,7 @@
 
 .avail-pop {
   align-self: center;
+  margin-left: 0.5rem;
 }
 
 /* ----------------------------------------------------- shared small parts */
@@ -322,19 +323,25 @@
   color: var(--chip-blue);
 }
 
+/* Save stays in reach however long the form scrolls. */
 .avail-foot {
+  position: sticky;
+  bottom: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding-top: 0.5rem;
+  padding: 0.5rem 0 0.125rem;
   border-top: 1px solid var(--border-subtle);
+  background: var(--bg-card);
 }
 
 /* On a phone the popover is a sheet along the foot of the screen (frame 2c). */
 @media (max-width: 600px) {
-  .avail-pop .myday-pop-panel {
+  .avail-pop .myday-pop-panel,
+  .shell-head[data-myday-bar] .avail-pop .myday-pop-panel,
+  .myday-page[data-phone] .avail-pop .myday-pop-panel {
     position: fixed;
     top: auto;
     right: 0.5rem;
