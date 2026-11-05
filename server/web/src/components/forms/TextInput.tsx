@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import { Field } from './Field.tsx';
+import { useFirstFocus } from './use-first-focus.ts';
 import './forms.css';
 
 export interface TextInputProps {
@@ -38,6 +40,8 @@ export function TextInput({
   invalid = false,
   autoFocus = false,
 }: TextInputProps) {
+  const input = useRef<HTMLInputElement | null>(null);
+  useFirstFocus(input, autoFocus, disabled || readOnly);
   return (
     <Field label={label} help={help} error={error} invalid={invalid} required={required}>
       {({ inputId, describedBy, invalid }) => (
@@ -56,7 +60,7 @@ export function TextInput({
           readOnly={readOnly}
           placeholder={placeholder}
           autoComplete={autoComplete}
-          autoFocus={autoFocus}
+          ref={input}
         />
       )}
     </Field>

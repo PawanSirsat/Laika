@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Field } from './Field.tsx';
 import { PasswordStrength } from './PasswordStrength.tsx';
+import { useFirstFocus } from './use-first-focus.ts';
 import './forms.css';
 
 export interface PasswordInputProps {
@@ -44,6 +45,8 @@ export function PasswordInput({
   autoFocus = false,
 }: PasswordInputProps) {
   const [revealed, setRevealed] = useState(false);
+  const input = useRef<HTMLInputElement | null>(null);
+  useFirstFocus(input, autoFocus, disabled);
 
   return (
     <Field label={label} help={help} error={error} invalid={invalid} required={required}>
@@ -63,7 +66,7 @@ export function PasswordInput({
               aria-required={required || undefined}
               disabled={disabled}
               autoComplete={autoComplete}
-              autoFocus={autoFocus}
+              ref={input}
             />
             <button
               type="button"
