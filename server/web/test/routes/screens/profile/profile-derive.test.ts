@@ -283,25 +283,44 @@ void describe('the column layout (LAI-751, owner, 2026-10-16)', () => {
     );
   });
 
-  void test('every card of a kind appears exactly once, at every width', () => {
+  void test('every card of a kind appears exactly once across both groups, at every width', () => {
     const cards = {
       builder: ['agents', 'current', 'delivery', 'projects', 'rating', 'review'],
       manager: ['decisions', 'projects', 'rating', 'review'],
     } as const;
     for (const kind of ['builder', 'manager'] as const) {
       for (const n of [1, 2, 3] as const) {
-        const plan = columnPlan(kind, n);
-        assert.equal(plan.length, n, `${kind} at ${String(n)}`);
-        assert.deepEqual([...plan.flat()].sort(), [...cards[kind]], `${kind} at ${String(n)}`);
+        const main = columnPlan(kind, n);
+        const record = columnPlan(kind, n, 'record');
+        // A group never has more columns than the width allows, nor an empty one.
+        for (const plan of [main, record]) {
+          assert.ok(plan.length <= n, `${kind} at ${String(n)}: ${String(plan.length)} columns`);
+          assert.ok(
+            plan.every((column) => column.length > 0),
+            `${kind} at ${String(n)}`,
+          );
+        }
+        assert.deepEqual(
+          [...main.flat(), ...record.flat()].sort(),
+          [...cards[kind]],
+          `${kind} at ${String(n)}`,
+        );
       }
     }
   });
 
-  void test('one column is the reading order', () => {
-    assert.deepEqual(columnPlan('builder', 1), [
-      ['delivery', 'current', 'agents', 'review', 'projects', 'rating'],
-    ]);
-    assert.deepEqual(columnPlan('manager', 1), [['review', 'decisions', 'projects', 'rating']]);
+  void test('one column is the reading order: the design’s summary, then the record (LAI-1134)', () => {
+    assert.deepEqual(columnPlan('builder', 1), [['current', 'agents', 'review', 'projects']]);
+    assert.deepEqual(columnPlan('builder', 1, 'record'), [['delivery', 'rating']]);
+    assert.deepEqual(columnPlan('manager', 1), [['review', 'projects']]);
+    assert.deepEqual(columnPlan('manager', 1, 'record'), [['decisions', 'rating']]);
+  });
+
+  void test('the SPEC must-haves the design leaves out are in the record, never dropped', () => {
+    for (const n of [1, 2, 3] as const) {
+      assert.deepEqual(columnPlan('builder', n, 'record').flat().sort(), ['delivery', 'rating']);
+      assert.deepEqual(columnPlan('manager', n, 'record').flat().sort(), ['decisions', 'rating']);
+    }
   });
 
   void test('a builder’s two tall cards never share a column', () => {

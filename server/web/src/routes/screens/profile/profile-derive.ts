@@ -205,9 +205,17 @@ export function nextAttempt(
   return { key: makeKey(), userId, score, note: trimmed };
 }
 
-/** The profile's cards below the Activity card (LAI-751, owner, 2026-10-16). */
+/** The profile's cards that flow in columns (LAI-751, owner, 2026-10-16). */
 export type ProfileCardId =
   'delivery' | 'current' | 'agents' | 'review' | 'projects' | 'rating' | 'decisions';
+
+/**
+ * Where a card sits on Overview (LAI-1134, frames 1n–1p): the design's
+ * summary above the Activity card, or the record folded in under it — the
+ * SPEC §11.4.2.1 must-haves the design does not draw, kept rather than
+ * removed.
+ */
+export type CardGroup = 'main' | 'record';
 
 /** How many columns the cards flow in: 3 from 1200 px wide, 2 from 768, else 1. */
 export type ColumnCount = 1 | 2 | 3;
@@ -223,35 +231,34 @@ export function columnCount(viewportWidth: number): ColumnCount {
  * Columns, not rows: each column stacks its cards with one gap between them,
  * so a short card is never followed by a hole the height of its neighbour.
  * The split is chosen, not computed, so a person finds a card in the same
- * place on every profile — and balanced for the shapes profiles have: a
- * builder's tall cards (Current work, Agents used) are in different columns,
- * each with a shorter one; a manager's main card (Review work) has a column
- * to itself at three. One column is the reading order: what they delivered
- * and are doing, then how, then review, then the record.
+ * place on every profile.
+ *
+ * Two groups since LAI-1134. **Main** is the design's (frames 1n–1p): what
+ * they are doing, the tools they use, review and projects — a builder's two
+ * tall cards (Current work, Agents used) in different columns. **Record** is
+ * what the design leaves out and §11.4.2.1 keeps: Delivered, the admin's
+ * rating and, for a manager, Recent decisions. A group never has more
+ * columns than cards, so a short group is never followed by an empty column.
+ * One column is the reading order.
  */
 export function columnPlan(
   kind: 'builder' | 'manager',
   columns: ColumnCount,
+  group: CardGroup = 'main',
 ): readonly (readonly ProfileCardId[])[] {
-  if (kind === 'manager') {
-    if (columns === 3) return [['review'], ['decisions'], ['projects', 'rating']];
-    if (columns === 2)
-      return [
-        ['review', 'rating'],
-        ['decisions', 'projects'],
-      ];
-    return [['review', 'decisions', 'projects', 'rating']];
+  if (group === 'record') {
+    const cards: readonly ProfileCardId[] =
+      kind === 'manager' ? ['decisions', 'rating'] : ['delivery', 'rating'];
+    return columns === 1 ? [cards] : cards.map((id) => [id]);
   }
-  if (columns === 3)
-    return [
-      ['delivery', 'current'],
-      ['agents', 'review'],
-      ['projects', 'rating'],
-    ];
+  if (kind === 'manager') {
+    return columns === 1 ? [['review', 'projects']] : [['review'], ['projects']];
+  }
+  if (columns === 3) return [['current'], ['agents'], ['review', 'projects']];
   if (columns === 2)
     return [
-      ['delivery', 'current', 'review'],
-      ['agents', 'projects', 'rating'],
+      ['current', 'review'],
+      ['agents', 'projects'],
     ];
-  return [['delivery', 'current', 'agents', 'review', 'projects', 'rating']];
+  return [['current', 'agents', 'review', 'projects']];
 }

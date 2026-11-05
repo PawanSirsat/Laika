@@ -24,21 +24,15 @@
 
 .prof-head {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) 1.125rem;
   background-color: var(--bg-card);
   background-image: linear-gradient(to bottom, var(--accent-bg), transparent 5.5rem);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-column);
   box-shadow: var(--shadow-card);
   padding: 1.25rem 1.25rem 1rem;
-}
-
-.prof-id {
-  display: flex;
-  align-items: center;
-  gap: 1.125rem;
-  min-width: 0;
 }
 
 /* The coloured ring is inline: it is the avatar's own colour (avatar-color.ts). */
@@ -58,7 +52,7 @@
 }
 
 .prof-who {
-  flex: 1 1 auto;
+  flex: 1 1 11rem;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -99,32 +93,38 @@
   overflow-wrap: anywhere;
 }
 
-.prof-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0.1875rem 0 0;
-}
-
-.prof-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
+/* Builder or Manager, as a chip (LAI-1134): set in the Manage member panel. */
+.prof-kind-chip {
   font-size: var(--text-small);
+  line-height: var(--leading-small);
   font-weight: var(--weight-bold);
-  color: var(--text-secondary);
-  background: var(--chip-neutral-bg);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  padding: 0.1875rem 0.625rem 0.1875rem 0.5rem;
+  letter-spacing: 0;
   white-space: nowrap;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  padding: 0.125rem 0.5625rem;
 }
 
-.prof-pill-icon {
-  width: 0.8125rem;
-  height: 0.8125rem;
-  stroke: currentColor;
-  stroke-width: 2.2;
+/* ⋯: the header's one menu, at the card's top right (frame 1n). */
+.prof-manage {
+  flex: none;
+  align-self: flex-start;
+}
+
+.prof-manage .overflow-menu-button {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-color: var(--border-default);
+  background: var(--bg-card);
+}
+
+.prof-manage .overflow-menu-button:hover,
+.prof-manage .overflow-menu-button[aria-expanded='true'] {
+  color: var(--text-primary);
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
 }
 
 .prof-chip {
@@ -145,36 +145,21 @@
   border-color: var(--chip-orange-border);
 }
 
-/* The kind: a label set by an admin, in a dashed box with a segmented control. */
-.prof-kind {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-3);
-  border: 1px dashed var(--accent-border);
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--accent-bg) 45%, var(--bg-card));
-  padding: 0.5rem 0.5rem 0.5rem 0.875rem;
-}
-
+/* The kind (D-078): a row of the Manage member panel's Role section (LAI-1134). */
 .prof-kind-text {
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 0 9rem;
   align-items: center;
   gap: 0.25rem 0.5rem;
   min-width: 0;
 }
 
-.prof-kind-label {
-  font-size: var(--text-body);
-  font-weight: var(--weight-heavy);
-  color: var(--text-primary);
+.prof-kind-text .prof-admin-label {
+  flex: none;
 }
 
 .prof-kind-note {
-  font-size: var(--text-small);
-  color: var(--text-muted);
+  flex-basis: 100%;
 }
 
 .prof-seg {
@@ -317,10 +302,6 @@
 
   .prof-name {
     font-size: var(--text-heading-md);
-  }
-
-  .prof-kind {
-    padding-left: 0.75rem;
   }
 }
 
@@ -1329,7 +1310,34 @@
   overflow-wrap: anywhere;
 }
 
-/* ------------------------------------------- Day and Hours (LAI-959) */
+/* ------------------------------------------------------------ the record */
+
+/*
+ * The heading over what the design leaves out and SPEC §11.4.2.1 keeps
+ * (LAI-1134): the same small capitals as a panel section, so it reads as a
+ * divider rather than another card.
+ */
+.prof-group-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  margin-top: var(--space-2);
+  margin-bottom: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.prof-group-title .prof-card-caption {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ---------------------------------- Day and Time report (LAI-959, LAI-1134) */
 
 .prof-tabs {
   display: flex;
