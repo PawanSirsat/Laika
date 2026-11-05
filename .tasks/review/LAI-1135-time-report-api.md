@@ -7,7 +7,7 @@ priority: p2
 depends-on: []
 status: review
 started: 2026-11-05T14:45:00+05:30
-finished: 2026-11-05T15:34:05+05:30
+finished: 2026-11-05T15:58:03+05:30
 ---
 
 ## Why
@@ -39,14 +39,18 @@ under `server/web/`, and not `docs/DECISIONS.md`.
       `422 members_not_allowed`, for drafts `422 drafts_not_allowed`.
 - [x] A hidden space or task is never named (`project: null` /
       `task: null`); a hidden slug asked for is `404`.
-- [x] The floor folds tasks and spaces under 3 people (space_totals only,
-      confirmed only, no person on any row).
-- [x] D-088 item 7 per figure (polly, review round 1): in space_totals no
-      figure — row, `by_day` day, total, CSV line — covers fewer than 3
-      people; withheld figures are `null` and pooled, and the pool is made to
-      cover 3 by withholding the smallest shown figure with it.
-- [x] One `analytics_views` row per shown person per 10 minutes, and none
-      for yourself or for space_totals.
+- [x] space_totals is D-136's (polly, review round 2, amending D-130 item
+      3): exactly one space (`422 one_space_only`), whole ISO weeks
+      (`422 range_not_whole_weeks`) up to 92 days, no `members`, `kinds` or
+      drafts (`422`s); one figure a week — confirmed minutes, `null` under 3
+      people — with the week's head count, and nothing else: no total, no
+      task, kind, day, meeting, manual or agent figure. The argument that no
+      subtraction gets under the floor is written above the test that holds
+      it, and breaking either half of it turns that test red.
+- [x] One `analytics_views` row per person named in `members` and per person
+      shown, per 10 minutes — a person named is looked at even when shown no
+      time, or only agent time — and none for yourself, for space_totals, or
+      for a refused read.
 - [x] CSV has the columns, the formula prefix, the attachment name and the
       logging.
 - [x] A token caller gets `403 session_required`.
@@ -58,7 +62,8 @@ under `server/web/`, and not `docs/DECISIONS.md`.
 
 ## Notes
 
-- Client mirror: `TimeReportView` and `TimeReportRowView` are listed in
+- Client mirror: `TimeReportView`, `TimeReportRowView`, `TimeReportAnswer`,
+  `SpaceWeeksReportView` and `SpaceWeekView` are listed in
   `response-type-coverage.test.ts`'s `UNPAIRED` ("no client type exists"),
   the precedent for a server half served ahead of its screen. T5 (LAI-1138)
   adds the client types and the `PAIRS` entries, and the entries leave.
@@ -74,3 +79,14 @@ The first CI run was red on `server/web/test/api/endpoint-coverage.test.ts`
 above as a named crossing; it is the only `server/web/` line this task
 changes. polly also ruled that D-088 item 7 applies per figure: a day one
 person worked alone must never be readable to a space admin. Both are in.
+
+## Round 2 (polly; independent review failed B1–B4)
+
+B1, B2 and B4 were all subtraction: totals less sub-totals or rows, JSON
+`by_day` against the CSV's per-row days, and two requests over different
+ranges, spaces or kinds. Round 1's per-figure pooling could not close them,
+because each answer pooled on its own. polly replaced it (D-136, to be
+recorded by Belka): the space admin's scope is one space, whole weeks, one
+figure a week, and nothing else. The pooling (`floor`, `withhold`, `emit`,
+`folded`, `TimeReportDayView`, nullable totals) is gone; `own` and `people`
+are as they were. B3: everybody `members` names is logged, shown time or not.
