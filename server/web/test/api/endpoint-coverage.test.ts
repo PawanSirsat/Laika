@@ -145,6 +145,9 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     'agent-token only — a session is refused `403`; the device’s launcher reports with it (plan auto-pickup slice B)',
   'api/v1/agents/me/capacity-pings/*/reply':
     'agent-token only — the pinged agent’s own; its launcher or session watcher answers a ping with it (plan auto-pickup slice B)',
+  'api/v1/me/notices': 'LAI-1139 — For you notices and Add to project',
+  'api/v1/me/notices/*/read': 'LAI-1139 — For you notices and Add to project',
+  'api/v1/me/notices/read-all': 'LAI-1139 — For you notices and Add to project',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */

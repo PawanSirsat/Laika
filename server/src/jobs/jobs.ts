@@ -13,6 +13,7 @@ import {
   invites,
   localActivityDays,
   meetingReviews,
+  memberNotices,
   orgs,
   pushedCommitKeys,
   tokenArrivals,
@@ -29,6 +30,7 @@ import {
   timeEntries,
   timeUndo,
 } from '../db/schema.ts';
+import { NOTICE_RETENTION_DAYS } from '../services/notices.ts';
 import { ARRIVALS_KEPT_MS } from '../services/plan-limit.ts';
 import { UNDO_WINDOW_MS } from '../services/time-undo-log.ts';
 
@@ -279,6 +281,20 @@ export function pruneTime(db: Db, now: number): JobResult {
       elsewhere.changes
     );
   });
+  return { changed };
+}
+
+/**
+ * Delete member notices older than 90 days, read or not (§4.87, §11.6, D-134,
+ * LAI-1136). No `activity` row: a notice is not activity, and §4.8 has no
+ * verb for its going.
+ */
+export function pruneNotices(db: Db, now: number): JobResult {
+  assertCan(SYSTEM, 'system.notices.prune');
+  const changed = db
+    .delete(memberNotices)
+    .where(lt(memberNotices.createdAt, now - NOTICE_RETENTION_DAYS * DAY_MS))
+    .run().changes;
   return { changed };
 }
 
