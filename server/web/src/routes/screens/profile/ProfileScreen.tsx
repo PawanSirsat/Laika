@@ -43,7 +43,7 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { SCREEN_COPY } from '../screen-copy.ts';
 import { ActivityCard } from './ActivityCard.tsx';
-import { KINDS } from './AdminPanel.tsx';
+import { KINDS } from './ManageSections.tsx';
 import { InfoTip } from './InfoTip.tsx';
 import { ManageMemberPanel } from './ManageMemberPanel.tsx';
 import { adminControls, anyAdminControl } from './manage-controls.ts';
@@ -93,7 +93,7 @@ export interface ProfileScreenProps {
 /**
  * The profile's sections (LAI-959, LAI-1134): the record, the person's day,
  * and their time. *Developer setup* is the design's fourth (frame 1n); it is
- * not drawn until its endpoint exists (programme task T8), so nothing reaches
+ * not drawn until its endpoint exists (LAI-1140), so nothing reaches
  * a reader empty.
  */
 export type ProfileTab = 'overview' | 'day' | 'time';

@@ -49,6 +49,17 @@ const open: typeof openPage = (path, stub, options = {}) =>
       await options.before?.(page);
     },
   });
+/** Open the Manage member panel (LAI-1134): ⋯ in the header, then *Manage member…*. */
+async function managePanel(page: Page) {
+  const more = page.locator('[data-profile-manage] button[aria-haspopup="menu"]');
+  await more.waitFor({ timeout: 20_000 });
+  await more.click();
+  await page.getByRole('menuitem', { name: 'Manage member…' }).click();
+  const panel = page.locator('[data-panel="manage-member"]');
+  await panel.waitFor({ timeout: 10_000 });
+  return panel;
+}
+
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 86_400_000;
@@ -425,13 +436,25 @@ void describe('a builder’s profile', () => {
       assert.match(headText, /Bea Builder/);
       assert.match(headText, /bea@example\.com/);
       assert.match(headText, /Member/);
-      // The sub-line counts the response's projects; the pill says who sees this.
+      // The sub-line counts the response's projects; the screen's header says
+      // who sees this (the pill it repeated went with LAI-1134).
       assert.match(headText, /2 projects/);
-      assert.match(await head.locator('.prof-pill').innerText(), /owners and admins only/i);
+      assert.match(
+        await h.page.locator('.prof .screen-bar').innerText(),
+        /Visible to owners and admins only/i,
+      );
+      // The kind is a chip in the header; the control is in the panel.
       assert.equal(
-        await h.page.locator('input[name="profile-kind"][value="builder"]').isChecked(),
+        (await head.locator('[data-kind-chip="builder"]').innerText()).trim(),
+        'Builder',
+      );
+      const panel = await managePanel(h.page);
+      assert.equal(
+        await panel.locator('input[name="profile-kind"][value="builder"]').isChecked(),
         true,
       );
+      await panel.getByRole('button', { name: 'Close' }).click();
+      await panel.waitFor({ state: 'detached' });
 
       const projects = await section(h.page, 'projects');
       assert.match(await projects.locator('.prof-card-count').innerText(), /^2$/);
@@ -838,7 +861,8 @@ void describe('definitions and the kind control', () => {
       },
     });
     try {
-      const group = h.page.locator('.prof-head [role="radiogroup"]');
+      // In the Manage member panel since LAI-1134.
+      const group = (await managePanel(h.page)).locator('[role="radiogroup"]');
       await group.waitFor({ timeout: 20_000 });
       const labelledBy = (await group.getAttribute('aria-labelledby')) ?? '';
       assert.equal(
@@ -934,7 +958,15 @@ void describe('a manager’s profile', () => {
         );
       }
       assert.equal(
-        await h.page.locator('input[name="profile-kind"][value="manager"]').isChecked(),
+        (await h.page.locator('.prof-head [data-kind-chip="manager"]').innerText()).trim(),
+        'Manager',
+      );
+      assert.equal(
+        await (
+          await managePanel(h.page)
+        )
+          .locator('input[name="profile-kind"][value="manager"]')
+          .isChecked(),
         true,
       );
     } finally {
@@ -961,7 +993,11 @@ void describe('a manager’s profile', () => {
       await section(h.page, 'agents');
       // `click`, not `check`: the control shows the server's answer, so the
       // radio moves when the PATCH comes back rather than on the click.
-      await h.page.locator('input[name="profile-kind"][value="manager"]').click();
+      await (
+        await managePanel(h.page)
+      )
+        .locator('input[name="profile-kind"][value="manager"]')
+        .click();
 
       await until(
         async () => (await h.page.locator('.prof-card[data-section="agents"]').count()) === 0,
@@ -1778,6 +1814,8 @@ function ownerShape() {
 
 interface CardBox {
   readonly name: string;
+  /** `main` or `record` for a card in columns (LAI-1134); `full` for one across the page. */
+  readonly group: string;
   readonly left: number;
   readonly top: number;
   readonly bottom: number;
@@ -1846,6 +1884,7 @@ async function cardBoxes(page: Page): Promise<{ gap: number; cards: CardBox[] }>
       blank = Math.max(blank, bottom - reached);
       return {
         name: card.getAttribute('data-section') ?? '',
+        group: card.closest('.prof-columns')?.getAttribute('data-group') ?? 'full',
         left: Math.round(box.left),
         top: box.top,
         bottom: box.bottom,
@@ -1857,17 +1896,16 @@ async function cardBoxes(page: Page): Promise<{ gap: number; cards: CardBox[] }>
 }
 
 /**
- * The full-width cards that head the page, in order: Activity (LAI-751), then
- * Tokens (LAI-769). The columns start under the last of them.
+ * Overview since LAI-1134 (frames 1n–1p): the design's summary in columns
+ * (`main`), the Activity card across the page, then the record — the Tokens
+ * card across the page and the rest in columns (`record`).
  */
-// The Admin panel (LAI-988) sits above them, full width, for a reader who manages the person.
-const FULL_WIDTH = ['admin', 'activity', 'tokens'];
 
-/** The cards below the full-width ones, grouped by the column they sit in, top first. */
-function columnsOf(cards: readonly CardBox[]): CardBox[][] {
+/** One group's cards, grouped by the column they sit in, top first. */
+function columnsOf(cards: readonly CardBox[], group = 'main'): CardBox[][] {
   const columns = new Map<number, CardBox[]>();
   for (const card of cards) {
-    if (FULL_WIDTH.includes(card.name)) continue;
+    if (card.group !== group) continue;
     columns.set(card.left, [...(columns.get(card.left) ?? []), card]);
   }
   return [...columns]
@@ -1876,9 +1914,10 @@ function columnsOf(cards: readonly CardBox[]): CardBox[][] {
 }
 
 /**
- * At 1366: three columns under the Activity card, the space between any two
- * cards in a column the page's own gap — never a row stretched to its
- * tallest neighbour — and no card with more than 48 px of nothing inside it.
+ * At 1366: the summary in `want` columns, the space between any two cards in
+ * a column the page's own gap — never a row stretched to its tallest
+ * neighbour — Activity one gap under the summary, the record's columns one gap
+ * under its Tokens card, and no card with more than 48 px of nothing inside it.
  */
 async function assertColumns(page: Page, want: number): Promise<CardBox[]> {
   await page.setViewportSize({ width: 1366, height: 900 });
@@ -1895,27 +1934,42 @@ async function assertColumns(page: Page, want: number): Promise<CardBox[]> {
   assert.ok(activity !== undefined, 'the Activity card is on the page');
   const tokens = cards.find((card) => card.name === 'tokens');
   assert.ok(tokens !== undefined, 'the Tokens card is on the page');
-  assert.ok(
-    Math.abs(Math.round(tokens.top - activity.bottom) - gap) <= 1,
-    'Tokens sits one gap under Activity',
-  );
+  assert.ok(activity.top < tokens.top, 'the record is under Activity');
+
   const columns = columnsOf(cards);
   assert.equal(
     columns.length,
     want,
-    `at 1366 the cards sit in ${String(columns.length)} columns, not ${String(want)}`,
+    `at 1366 the summary sits in ${String(columns.length)} columns, not ${String(want)}`,
   );
-  for (const column of columns) {
-    let above = tokens.bottom;
-    for (const card of column) {
-      const space = Math.round(card.top - above);
-      assert.ok(
-        Math.abs(space - gap) <= 1,
-        `${card.name}: ${String(space)}px above it in its column, not the ${String(gap)}px gap`,
-      );
-      above = card.bottom;
+  const check = (group: CardBox[][], start: number): number => {
+    let lowest = start;
+    for (const column of group) {
+      let above = start;
+      for (const [i, card] of column.entries()) {
+        const space = Math.round(card.top - above);
+        // The first card of a column starts where its group starts.
+        if (i > 0 || Number.isFinite(start)) {
+          assert.ok(
+            Math.abs(space - gap) <= 1,
+            `${card.name}: ${String(space)}px above it in its column, not the ${String(gap)}px gap`,
+          );
+        }
+        above = card.bottom;
+      }
+      lowest = Math.max(lowest, above);
     }
-  }
+    return lowest;
+  };
+  // The summary's columns all start together, at its top.
+  const tops = new Set(columns.map((column) => Math.round(column[0]?.top ?? 0)));
+  assert.equal(tops.size, 1, 'the summary’s columns start at one line');
+  const summaryBottom = check(columns, Number.NEGATIVE_INFINITY);
+  assert.ok(
+    Math.abs(Math.round(activity.top - summaryBottom) - gap) <= 1,
+    'Activity sits one gap under the summary',
+  );
+  check(columnsOf(cards, 'record'), tokens.bottom);
   for (const card of cards) {
     assert.ok(card.blank <= 48, `${card.name}: ${String(card.blank)}px of empty card at 1366`);
   }
@@ -2005,14 +2059,13 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       assert.equal(columnsOf((await cardBoxes(h.page)).cards).length, 2, 'two columns at 1024');
 
       await assertOneColumn(h.page, [
-        'admin',
-        'activity',
-        'tokens',
-        'delivery',
         'current',
         'agents',
         'review',
         'projects',
+        'activity',
+        'tokens',
+        'delivery',
         'rating',
       ]);
     } finally {
@@ -2068,14 +2121,13 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       assert.equal(await h.page.locator('.prof-columns .prof-stats').count(), 0);
 
       await assertOneColumn(h.page, [
-        'admin',
-        'activity',
-        'tokens',
-        'delivery',
         'current',
         'agents',
         'review',
         'projects',
+        'activity',
+        'tokens',
+        'delivery',
         'rating',
       ]);
     } finally {
@@ -2092,10 +2144,10 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
     try {
       await section(h.page, 'decisions');
       await h.page.locator('.prof-card[data-section="activity"][aria-busy="false"]').waitFor();
-      const cards = await assertColumns(h.page, 3);
+      // A manager's summary has two cards, so two columns (LAI-1134).
+      const cards = await assertColumns(h.page, 2);
       assert.deepEqual(cards.map((card) => card.name).sort(), [
         'activity',
-        'admin',
         'decisions',
         'projects',
         'rating',
@@ -2103,12 +2155,11 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
         'tokens',
       ]);
       await assertOneColumn(h.page, [
-        'admin',
+        'review',
+        'projects',
         'activity',
         'tokens',
-        'review',
         'decisions',
-        'projects',
         'rating',
       ]);
     } finally {

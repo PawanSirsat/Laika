@@ -6,7 +6,7 @@ import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
-import { ManageSections, type KindControl } from './AdminPanel.tsx';
+import { ManageSections, type KindControl } from './ManageSections.tsx';
 import type { AdminSubject } from './manage-controls.ts';
 
 export interface ManageMemberPanelProps {

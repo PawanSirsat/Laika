@@ -126,7 +126,7 @@ export function ManageSections({ user, me, gates, kind, onChanged }: ManageSecti
           case 'spaces':
             return <SpacesBlock key={section} user={user} gates={gates} />;
           case 'tokens':
-            // The full list stays here until Developer setup (T8) gives it a home.
+            // The full list stays here until Developer setup (LAI-1140) gives it a home.
             return <TokensBlock key={section} user={user} mayRevoke={controls.revokeTokens} />;
           case 'security':
             return (
@@ -326,7 +326,7 @@ function RoleSection({
  */
 function KindRow({ kind }: { readonly kind: KindControl }) {
   return (
-    <div className="prof-admin-row prof-kind" data-admin-row="kind">
+    <div className="prof-admin-row" data-admin-row="kind">
       <span className="prof-kind-text">
         <span className="prof-admin-label" id="prof-kind-label">
           Profile kind
@@ -371,8 +371,8 @@ function KindRow({ kind }: { readonly kind: KindControl }) {
         ))}
       </div>
       <p className="prof-admin-muted prof-kind-note" id="prof-kind-note">
-        Admin only · a label, never a permission. It decides what this profile shows, not what
-        they may do.
+        Admin only · a label, never a permission. It decides what this profile shows, not what they
+        may do.
       </p>
       {kind.error !== undefined && (
         <p className="prof-admin-error" role="alert">
@@ -394,9 +394,7 @@ function SecuritySection({
   readonly resetLink: boolean;
   readonly signOut: boolean;
 }) {
-  const { asking, setAsking, busy, error, notice, setNotice, act } = useAct<
-    'sign-out' | 'reset'
-  >();
+  const { asking, setAsking, busy, error, notice, setNotice, act } = useAct<'sign-out' | 'reset'>();
   /**
    * The reset link, **shown once**: held here while it is on screen and nowhere
    * else, and gone when the panel goes (closed, another person, another page).
@@ -540,7 +538,9 @@ function DangerSection({
           onYes={() => {
             act(async () => {
               await updateUser(user.id, { is_active: true });
-              setNotice(`${user.name} can sign in again. Their old sessions and tokens stay ended.`);
+              setNotice(
+                `${user.name} can sign in again. Their old sessions and tokens stay ended.`,
+              );
               onChanged();
             });
           }}
@@ -600,7 +600,6 @@ function DangerSection({
     </Block>
   );
 }
-
 
 /** The link, once: the text to copy, when it expires, and a way to put it away. */
 function ResetLinkBox({

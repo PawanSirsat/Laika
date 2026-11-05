@@ -447,7 +447,7 @@ void describe('who reads drafts is said on the person’s own day (D-102, LAI-96
   }
 });
 
-void describe('a member’s profile: Day and Hours (LAI-959)', () => {
+void describe('a member’s profile: Day and Time report (LAI-959, LAI-1134)', () => {
   const PROFILE = {
     user: {
       id: 'u2',
@@ -504,10 +504,15 @@ void describe('a member’s profile: Day and Hours (LAI-959)', () => {
     }
   });
 
-  void test('Hours is her week, day by day, with the week’s totals', async () => {
-    const h = await openAt(`/people?user=u2&tab=hours&day=${TODAY}`, profileStub());
+  void test('Time report is her week, day by day, with the week’s totals', async () => {
+    // `time` since LAI-1134; the Hours content until the Time report (LAI-1138) replaces it.
+    const h = await openAt(`/people?user=u2&tab=time&day=${TODAY}`, profileStub());
     try {
       await h.page.locator('[data-hours]').waitFor({ timeout: 20_000 });
+      assert.equal(
+        (await h.page.locator('[data-profile-tab="time"][aria-current="page"]').innerText()).trim(),
+        'Time report',
+      );
       assert.equal(await h.page.locator('[data-hours-day]').count(), 7);
       assert.match(await h.page.locator('[data-hours-note]').innerText(), /Two meetings ran long/);
       const week = viewOf(TODAY) as {
@@ -525,6 +530,25 @@ void describe('a member’s profile: Day and Hours (LAI-959)', () => {
             ? `${String(h_)} h`
             : `${String(h_)} h ${String(m)} min`;
       assert.equal(text, want);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a link to ?tab=hours still opens the Time report', async () => {
+    const h = await openAt(`/people?user=u2&tab=hours&day=${TODAY}`, profileStub());
+    try {
+      await h.page
+        .locator('[data-profile-tab="time"][aria-current="page"]')
+        .waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-hours]').waitFor({ timeout: 20_000 });
+      // Developer setup is not drawn until its endpoint exists (LAI-1140).
+      assert.deepEqual(
+        await h.page
+          .locator('[data-profile-tab]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('data-profile-tab'))),
+        ['overview', 'day', 'time'],
+      );
     } finally {
       await h.close();
     }
