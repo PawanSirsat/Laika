@@ -323,7 +323,7 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
             .locator('[data-tr-row="p1"] [data-tr-child]')
             .evaluateAll((els) => els.map((el) => el.getAttribute('data-tr-child')));
           assert.deepEqual(kids, ['u1', 'u3'], 'people are not listed A–Z');
-          assert.match(await tr.locator('[data-tr-total]').innerText(), /21:00/);
+          assert.match(await tr.locator('[data-tr-total]').innerText(), /\b21h(?! \d)/);
           assert.match(await tr.locator('[data-tr-stat="drafts"]').innerText(), /—/);
           assert.match(
             await tr.locator('[data-tr-agent]').innerText(),
@@ -380,7 +380,7 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
       await tr.locator('[data-tr-group-option="kind"]').click();
       await tr.locator('[data-tr-row="no-kind"]').waitFor({ timeout: 5_000 });
       assert.match(await tr.locator('[data-tr-row="no-kind"]').innerText(), /No kind yet/);
-      assert.match(await tr.locator('[data-tr-row="work"]').innerText(), /15:00/);
+      assert.match(await tr.locator('[data-tr-row="work"]').innerText(), /\b15h(?! \d)/);
       await tr.locator('[data-tr-drafts="exclude"]').click();
 
       // Member: Ben only — asked by id, and the agent line goes (it cannot be split).

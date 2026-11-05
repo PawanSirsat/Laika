@@ -13,7 +13,8 @@ import {
   firstFocus,
   firstGroupings,
   groupRows,
-  hoursClock,
+  hoursCompact,
+  hoursShort,
   hoursWords,
   monthOf,
   NO_KIND,
@@ -159,14 +160,25 @@ void describe('the stretch a control picks', () => {
 });
 
 void describe('the figures', () => {
-  void test('durations are words, short and clock — never a utilisation figure', () => {
+  void test('durations are words and short — never a utilisation figure', () => {
     assert.equal(hoursWords(0), '0 min');
     assert.equal(hoursWords(45), '45 min');
     assert.equal(hoursWords(120), '2 h');
     assert.equal(hoursWords(425), '7 h 5 min');
-    assert.equal(hoursClock(425), '7:05');
+    assert.equal(hoursCompact(425), '7h 5m');
+    assert.equal(hoursCompact(37), '37m');
+    assert.equal(hoursCompact(1200), '20h');
+    assert.equal(hoursCompact(1949), '32h 29m');
+    assert.equal(hoursShort(125), '2h 5m');
     assert.equal(shareLabel(1, 400), '<1%');
     assert.equal(shareLabel(0, 0), '0%');
+  });
+
+  void test('a table cell or the donut never prints a clock — 20:24 reads as a time of day (LAI-1147)', () => {
+    for (const m of [0, 5, 37, 60, 425, 1224, 1949, 3200]) {
+      assert.doesNotMatch(hoursCompact(m), /\d:\d/, `${String(m)} printed as h:mm`);
+      assert.doesNotMatch(hoursCompact(m), /\bd\b/, `${String(m)} printed in days`);
+    }
   });
 
   void test('the strip: six figures, drafts in or out, days so far only', () => {
