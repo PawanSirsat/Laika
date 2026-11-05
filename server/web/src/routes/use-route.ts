@@ -67,6 +67,21 @@ function currentSearch(): string {
   return window.location.search;
 }
 
+/**
+ * Told to every `useRoute()` when one of them writes the address (LAI-1127).
+ *
+ * The History API says nothing when `pushState` is called — `popstate` is for
+ * Back and Forward only — and the Timeline, Sprints and Dashboard each hold a
+ * `useRoute()` of their own beside the shell's. So the Timeline wrote
+ * `?task=` and the shell, which mounts the drawer, never heard: the address
+ * said a task was open and nothing opened (B1).
+ */
+const LOCATION_EVENT = 'laika:location';
+
+function announce(): void {
+  dispatchEvent(new Event(LOCATION_EVENT));
+}
+
 export function useRoute(): UseRoute {
   const [path, setPath] = useState<string>(() => {
     followRedirect();
@@ -80,6 +95,7 @@ export function useRoute(): UseRoute {
     window.history.pushState({}, '', to);
     setPath(currentPath());
     setSearch(currentSearch());
+    announce();
   }, []);
 
   /**
@@ -97,6 +113,7 @@ export function useRoute(): UseRoute {
       if (options?.push === true) window.history.pushState({}, '', url);
       else window.history.replaceState({}, '', url);
       setSearch(query === '' ? '' : `?${query}`);
+      announce();
     },
     [],
   );
@@ -110,9 +127,16 @@ export function useRoute(): UseRoute {
       setPath(currentPath());
       setSearch(currentSearch());
     };
+    // Another `useRoute()` wrote the address; read it as it now is.
+    const onWrite = (): void => {
+      setPath(currentPath());
+      setSearch(currentSearch());
+    };
     addEventListener('popstate', onPop);
+    addEventListener(LOCATION_EVENT, onWrite);
     return () => {
       removeEventListener('popstate', onPop);
+      removeEventListener(LOCATION_EVENT, onWrite);
     };
   }, []);
 
