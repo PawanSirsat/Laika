@@ -104,3 +104,15 @@ which is what this branch is cut from.
   fewer than 3 others*, a banner saying what it is; no table or donut.
 - Filter options are the spaces and people seen in this reader's reports,
   not a separate directory read.
+
+## Review round 1 — PR #281 cross-review (BLOCK), fixed on the branch
+
+- **B1 (blocking), drafts for other people:** fixed. Person and org scopes
+  open on *Confirmed only*, send no `drafts` param, and name no drafted
+  figure until *Include drafts* is turned on; `me` still reads its own.
+- 3 null kind → *No kind yet*; 4 CSV name and range asserted; 5 space-admin
+  CSV params asserted; 7 no Capacity while permissions settle; 8 spaces read
+  error state; 9 the open day's signature re-reads the Overview report.
+- 6: the no-prototype-data needles now include the design's headline
+  figures (frames 1a and 1g). Recorded here, not as a criterion change.
+- 2 (deferred): filed as LAI-1142.

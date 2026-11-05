@@ -2,9 +2,9 @@
  * The Time report in a real browser (D-130, LAI-1138), on the pinned clock:
  *
  *  - Insights → Time for an owner: the organisation's report, people A–Z,
- *    the Member filter narrowing the read on the server, drafts counted in
- *    and out on the client, the bars walked with the arrow keys, and the
- *    CSV fetched from the server;
+ *    the Member filter narrowing the read on the server, drafts asked for
+ *    only when the reader turns them on (D-088 items 2–3), the bars walked
+ *    with the arrow keys, and the CSV fetched from the server;
  *  - a space admin's weeks (D-136, D-138): one space, whole weeks, a withheld
  *    week said in words, and no table, donut or drafts switch;
  *  - a member: no Time tab, and a link to it refused;
@@ -26,7 +26,7 @@ import { after, describe, test } from 'node:test';
 import type { Page, Route } from 'playwright';
 import type { SpaceWeeksReport, TimeReport, TimeReportRow } from '../../src/api/time.ts';
 import { TIME_REPORT_SAMPLES } from '../helpers/prototype-samples.ts';
-import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, refuse, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { NOW, open, TODAY } from './my-day-clock.ts';
 import { LAIKA, ONROUTE } from './capacity-org.ts';
 import { addDays, reportRoutes, weekData, weekStub } from './my-day-week.ts';
@@ -158,12 +158,17 @@ function orgReport(url: URL, shape: Shape = 'full'): TimeReport {
       (kinds === undefined || (r.kind !== null && kinds.includes(r.kind))),
   );
   if (shape === 'empty') rows = [];
+  // As the server: drafts only on request (SPEC §6.4, `drafts=exclude` by default).
+  const withDrafts = url.searchParams.get('drafts') === 'include';
   if (shape === 'drafts-only')
     rows = rows.map((r) => ({
       ...r,
       confirmed_minutes: 0,
       drafted_minutes: r.drafted_minutes + 30,
     }));
+  if (!withDrafts) {
+    rows = rows.map((r) => ({ ...r, drafted_minutes: 0 })).filter((r) => r.confirmed_minutes > 0);
+  }
   const c = rows.reduce((n, r) => n + r.confirmed_minutes, 0);
   const d = rows.reduce((n, r) => n + r.drafted_minutes, 0);
   const span = days(from, to).filter((x) => x <= TODAY);
@@ -183,7 +188,7 @@ function orgReport(url: URL, shape: Shape = 'full'): TimeReport {
     to,
     days: by_day.length,
     scope: 'people',
-    include_drafts: true,
+    include_drafts: withDrafts,
     totals: {
       confirmed_minutes: c,
       drafted_minutes: d,
@@ -299,7 +304,7 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
               .innerText(),
             'Time',
           );
-          // The last 30 days, everyone, drafts read.
+          // The last 30 days, everyone, and nobody's drafts (D-088 items 2–3).
           const first = asked[0];
           assert.ok(first !== undefined);
           assert.equal(
@@ -307,7 +312,7 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
             null,
             'the organisation is not asked by name',
           );
-          assert.equal(first.searchParams.get('drafts'), 'include');
+          assert.equal(first.searchParams.get('drafts'), null, 'drafts were asked for unasked');
           assert.equal(await tr.locator('[data-tr-day]').count(), 30);
           assert.match(
             await tr.locator('[data-tr-caption]').innerText(),
@@ -318,7 +323,8 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
             .locator('[data-tr-row="p1"] [data-tr-child]')
             .evaluateAll((els) => els.map((el) => el.getAttribute('data-tr-child')));
           assert.deepEqual(kids, ['u1', 'u3'], 'people are not listed A–Z');
-          assert.match(await tr.locator('[data-tr-total]').innerText(), /23:15/);
+          assert.match(await tr.locator('[data-tr-total]').innerText(), /21:00/);
+          assert.match(await tr.locator('[data-tr-stat="drafts"]').innerText(), /—/);
           assert.match(
             await tr.locator('[data-tr-agent]').innerText(),
             /135 min on cards — beside people’s hours, never added to them/,
@@ -336,26 +342,46 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
     }
   }
 
-  void test('drafts are counted out on the client; the Member filter narrows the read on the server', async () => {
+  void test('drafts: none asked for until Include drafts, then asked; the Member filter narrows on the server', async () => {
     const asked: URL[] = [];
     const h = await openWith('/insights?tab=time', OWNER_STUB(), asked, (u) => ok(orgReport(u)));
     try {
       const tr = h.page.locator('[data-time-report="org"]');
       await tr.locator('[data-tr-stat="tracked"]').waitFor({ timeout: 20_000 });
-      assert.match(await tr.locator('[data-tr-stat="tracked"]').innerText(), /23 h 15 min/);
-      const reads = asked.length;
-      await tr.locator('[data-tr-drafts="exclude"]').click();
-      await until(async () =>
-        (await tr.locator('[data-tr-stat="tracked"]').innerText()).includes('21 h'),
+      // Confirmed only to start: no drafts param, no drafted figure or column.
+      assert.equal(
+        await tr.locator('[data-tr-drafts="exclude"]').getAttribute('aria-checked'),
+        'true',
+      );
+      assert.ok(asked.length > 0);
+      assert.ok(
+        asked.every((u) => !u.searchParams.has('drafts')),
+        'a read asked for drafts before the reader did',
       );
       assert.match(await tr.locator('[data-tr-stat="tracked"]').innerText(), /\n21 h\n/);
-      assert.equal(asked.length, reads, 'switching drafts read again');
+      assert.match(await tr.locator('[data-tr-stat="drafts"]').innerText(), /\n—\n/);
       assert.equal(
         await tr.locator('.trep-row-head [role="columnheader"]').count(),
         2,
-        'Drafted is still a column',
+        'a Drafted column with nothing asked',
       );
+      // Include drafts: now, and only now, the read asks for them.
       await tr.locator('[data-tr-drafts="include"]').click();
+      await until(() => asked.some((u) => u.searchParams.get('drafts') === 'include'));
+      assert.ok(asked.some((u) => u.searchParams.get('drafts') === 'include'));
+      await until(async () =>
+        (await tr.locator('[data-tr-stat="tracked"]').innerText()).includes('23 h 15 min'),
+      );
+      assert.match(await tr.locator('[data-tr-stat="tracked"]').innerText(), /23 h 15 min/);
+      assert.match(await tr.locator('[data-tr-stat="drafts"]').innerText(), /2 h 15 min/);
+      assert.equal(await tr.locator('.trep-row-head [role="columnheader"]').count(), 4);
+      // A draft with no kind is its own row under Kind, never Work's.
+      await tr.locator('[data-tr-group="first"]').click();
+      await tr.locator('[data-tr-group-option="kind"]').click();
+      await tr.locator('[data-tr-row="no-kind"]').waitFor({ timeout: 5_000 });
+      assert.match(await tr.locator('[data-tr-row="no-kind"]').innerText(), /No kind yet/);
+      assert.match(await tr.locator('[data-tr-row="work"]').innerText(), /15:00/);
+      await tr.locator('[data-tr-drafts="exclude"]').click();
 
       // Member: Ben only — asked by id, and the agent line goes (it cannot be split).
       await tr.locator('[data-tr-chip="member"]').click();
@@ -391,9 +417,10 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
       const focused = () =>
         h.page.evaluate(() => document.activeElement?.getAttribute('data-tr-day'));
       assert.equal(await focused(), addDays(TODAY, -1));
+      // Confirmed only: a bar says nothing of drafts.
       assert.match(
         (await bars.nth(28).getAttribute('aria-label')) ?? '',
-        /tracked, .* confirmed, .* drafted$/,
+        /tracked, [^,]* confirmed$/,
       );
       await h.page.keyboard.press('Home');
       assert.equal(await focused(), addDays(TODAY, -29));
@@ -401,7 +428,16 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
       assert.equal(await focused(), TODAY);
       // A table says the same for a screen reader.
       assert.equal(await tr.locator('[data-tr-day-table] tbody tr').count(), 30);
-      // Drafted is hatched and named in the legend.
+      assert.doesNotMatch(await tr.locator('.trep-legend').innerText(), /Drafted/);
+      // Drafts asked for: each bar names them, and the legend says how they are drawn.
+      await tr.locator('[data-tr-drafts="include"]').click();
+      await until(async () =>
+        ((await bars.nth(28).getAttribute('aria-label')) ?? '').endsWith('drafted'),
+      );
+      assert.match(
+        (await bars.nth(28).getAttribute('aria-label')) ?? '',
+        /tracked, .* confirmed, .* drafted$/,
+      );
       assert.match(await tr.locator('.trep-legend').innerText(), /Drafted/);
     } finally {
       await done(h);
@@ -440,9 +476,7 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
         ? {
             status: 200,
             body: 'day,space,task_key,task_title,person,kind,confirmed_minutes,drafted_minutes\n',
-            headers: {
-              'content-disposition': `attachment; filename="laika-time-${u.searchParams.get('from') ?? ''}-${u.searchParams.get('to') ?? ''}.csv"`,
-            },
+            headers: { 'content-disposition': 'attachment; filename="server-named.csv"' },
           }
         : ok(orgReport(u)),
     );
@@ -452,13 +486,16 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
       const download = h.page.waitForEvent('download');
       await tr.locator('[data-tr-export]').click();
       const file = await download;
-      assert.match(
-        file.suggestedFilename(),
-        /^laika-time-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}\.csv$/,
-      );
+      // The server's name, exactly — not one the browser made up.
+      assert.equal(file.suggestedFilename(), 'server-named.csv');
       const csv = asked.find((u) => u.searchParams.get('format') === 'csv');
+      const json = asked.find((u) => !u.searchParams.has('format'));
       assert.ok(csv !== undefined, 'the server’s CSV was not asked for');
-      assert.equal(csv.searchParams.get('drafts'), 'include');
+      assert.ok(json !== undefined);
+      // The same report: the same stretch, and drafts only as the screen counts them.
+      assert.equal(csv.searchParams.get('from'), json.searchParams.get('from'));
+      assert.equal(csv.searchParams.get('to'), json.searchParams.get('to'));
+      assert.equal(csv.searchParams.get('drafts'), null);
     } finally {
       await done(h);
     }
@@ -514,6 +551,98 @@ void describe('a space admin’s weeks (D-136, D-138)', () => {
       }
     });
   }
+});
+
+void describe('a space admin’s file (D-136)', () => {
+  void test('Export CSV asks for one space, whole weeks, and nothing to narrow it by', async () => {
+    const asked: URL[] = [];
+    const h = await openWith('/insights?tab=time', LEAD_STUB(), asked, (u) =>
+      u.searchParams.get('format') === 'csv'
+        ? {
+            status: 200,
+            body: 'week_start,week_end,space,people,confirmed_minutes\n',
+            headers: { 'content-disposition': 'attachment; filename="weeks.csv"' },
+          }
+        : ok(weeksReport(u)),
+    );
+    try {
+      const tr = h.page.locator('[data-time-report="space"]');
+      await tr.locator('[data-tr-week]').first().waitFor({ timeout: 20_000 });
+      const download = h.page.waitForEvent('download');
+      await tr.locator('[data-tr-export]').click();
+      assert.equal((await download).suggestedFilename(), 'weeks.csv');
+      const csv = asked.find((u) => u.searchParams.get('format') === 'csv');
+      assert.ok(csv !== undefined, 'the CSV was not asked for');
+      assert.equal(csv.searchParams.get('spaces'), 'laika');
+      for (const none of ['drafts', 'members', 'kinds']) {
+        assert.equal(csv.searchParams.get(none), null, `${none} sent for a space admin`);
+      }
+      assert.equal(new Date(`${csv.searchParams.get('from') ?? ''}T00:00:00Z`).getUTCDay(), 1);
+      assert.equal(new Date(`${csv.searchParams.get('to') ?? ''}T00:00:00Z`).getUTCDay(), 0);
+    } finally {
+      await done(h);
+    }
+  });
+});
+
+void describe('before the answer, and when a read fails', () => {
+  void test('Time asked for before permissions settle waits — Capacity is not opened in its place', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    const asked: URL[] = [];
+    const h = await open('/insights?tab=time', OWNER_STUB(), {
+      before: async (page) => {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await routeReport(page, asked, (u) => ok(orgReport(u)));
+        await page.route('**/api/v1/permissions', async (route) => {
+          await held;
+          await route.fallback();
+        });
+      },
+    });
+    try {
+      await h.page
+        .locator('.skeleton-list', { hasText: 'Loading the Time report' })
+        .waitFor({ state: 'attached', timeout: 20_000 });
+      assert.equal(
+        h.calls.filter((c) => c.path === '/api/v1/capacity' || c.path === '/api/v1/presence')
+          .length,
+        0,
+        'Capacity was read while Time waited',
+      );
+      assert.equal(await h.page.locator('[data-time-report]').count(), 0);
+      release();
+      await h.page
+        .locator('[data-time-report="org"] [data-tr-stat="tracked"]')
+        .waitFor({ timeout: 20_000 });
+      assert.equal(h.calls.filter((c) => c.path === '/api/v1/capacity').length, 0);
+    } finally {
+      release();
+      await done(h);
+    }
+  });
+
+  void test('a space admin whose spaces cannot be read is told so, not that they lead none', async () => {
+    const asked: URL[] = [];
+    const h = await openWith(
+      '/insights?tab=time',
+      {
+        ...LEAD_STUB(),
+        '/api/v1/projects': refuse(500, 'internal', 'The spaces could not be read.'),
+      },
+      asked,
+      (u) => ok(weeksReport(u)),
+    );
+    try {
+      await h.page.getByText('The spaces could not be read.').first().waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('[data-tr-no-space]').count(), 0);
+      assert.deepEqual(asked, []);
+    } finally {
+      await done(h);
+    }
+  });
 });
 
 void describe('a member', () => {
@@ -609,7 +738,7 @@ void describe('the states (frames 1j–1m)', () => {
     }
   });
 
-  void test('drafts only: the note, and Confirmed only offers Include drafts back', async () => {
+  void test('drafts only: nothing said until Include drafts, then the note; Confirmed only names no drafts', async () => {
     const asked: URL[] = [];
     const h = await openWith(
       '/insights?tab=time',
@@ -621,13 +750,16 @@ void describe('the states (frames 1j–1m)', () => {
     try {
       await setTheme(h.page, 'light');
       const tr = h.page.locator('[data-time-report="org"]');
-      await tr.locator('[data-tr-partial]').waitFor({ timeout: 20_000 });
+      // Not asked for: nothing confirmed reads as no time, and no drafted figure is named.
+      await tr.locator('[data-tr-empty="empty"]').waitFor({ timeout: 20_000 });
+      assert.doesNotMatch(await tr.innerText(), /drafts are waiting/);
+      await tr.locator('[data-tr-drafts="include"]').click();
+      await tr.locator('[data-tr-partial]').waitFor({ timeout: 10_000 });
       assert.match(await tr.locator('[data-tr-partial]').innerText(), /Drafts only\./);
       await shoot(h.page, 'state-partial-light-390');
       await tr.locator('[data-tr-drafts="exclude"]').click();
-      await tr.locator('[data-tr-empty="unconfirmed"]').waitFor({ timeout: 5_000 });
-      await tr.locator('[data-tr-empty="unconfirmed"] button').click();
-      await tr.locator('[data-tr-partial]').waitFor({ timeout: 5_000 });
+      await tr.locator('[data-tr-empty="empty"]').waitFor({ timeout: 10_000 });
+      assert.doesNotMatch(await tr.innerText(), /drafts are waiting/);
       await noSideways(h.page, 390);
     } finally {
       await done(h);

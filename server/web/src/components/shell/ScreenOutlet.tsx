@@ -368,6 +368,15 @@ function InsightsRoute() {
   const holds = insightsHolder(permissionHolder(permissions?.me.actions), leads);
   const refused = settled ? refusedTab(INSIGHTS_TABS, params, holds) : undefined;
   const tab = refused?.id ?? currentTab(INSIGHTS_TABS, params, holds);
+  // Asked for Time before the server has said who may read it: wait, rather
+  // than open Capacity (and read it) in its place.
+  if (!settled && params.get('tab') === 'time') {
+    return (
+      <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current="time" onNavigate={navigate}>
+        <LoadingState shape="card" count={1} label="Loading the Time report" />
+      </InsightsScreen>
+    );
+  }
   return (
     <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current={tab} onNavigate={navigate}>
       {tab === 'time' ? (

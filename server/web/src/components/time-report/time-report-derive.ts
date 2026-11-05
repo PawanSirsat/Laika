@@ -340,14 +340,20 @@ export function statsOf(
     {
       key: 'drafts',
       label: 'Drafts waiting',
-      minutes: t.drafted_minutes,
-      value: words(t.drafted_minutes),
-      sub:
-        t.drafted_minutes === 0
-          ? 'nothing waiting'
-          : scope === 'me'
-            ? 'to review and confirm'
-            : 'not confirmed yet',
+      // Somebody else's drafts are read only on request (D-088 items 2–3):
+      // not asked for, nothing is said about them — not even a zero.
+      ...(report.include_drafts
+        ? {
+            minutes: t.drafted_minutes,
+            value: words(t.drafted_minutes),
+            sub:
+              t.drafted_minutes === 0
+                ? 'nothing waiting'
+                : scope === 'me'
+                  ? 'to review and confirm'
+                  : 'not confirmed yet',
+          }
+        : { value: '—', sub: 'not read — Include drafts shows them' }),
     },
     {
       key: 'meetings',
@@ -544,8 +550,8 @@ export function canSwap(scope: ReportScope, second: Grouping): boolean {
   return second !== 'none' && firstGroupings(scope).includes(second);
 }
 
-/** A kind, where a draft has none yet: drafted time is Work's until it is named. */
-export const kindOf = (row: Pick<TimeReportRow, 'kind'>): EntryKind => row.kind ?? 'work';
+/** A draft has no kind until somebody names it: its own face, never Work's. */
+export const NO_KIND = 'no-kind';
 
 /** How a row is drawn under one dimension: its words and its mark. */
 export interface Face {
@@ -601,8 +607,10 @@ export function faceOf(
             sort: row.project.name,
           };
     case 'kind': {
-      const kind = kindOf(row);
-      return { key: kind, label: kindName(kind), kind, sort: kind };
+      if (row.kind === null) {
+        return { key: NO_KIND, label: 'No kind yet', none: true, sort: '\uffff' };
+      }
+      return { key: row.kind, label: kindName(row.kind), kind: row.kind, sort: row.kind };
     }
   }
 }
@@ -805,7 +813,10 @@ export type Shown =
 export function shownFor(report: TimeReport, drafts: boolean, filtered: boolean): Shown {
   const { confirmed_minutes: c, drafted_minutes: d } = report.totals;
   if (c + d === 0) return filtered ? { kind: 'filtered-empty' } : { kind: 'empty' };
-  if (!drafts && c === 0) return { kind: 'unconfirmed', drafted: d };
+  // Drafted time is named only when it was asked for (D-088 items 2–3).
+  if (!drafts && c === 0) {
+    return report.include_drafts ? { kind: 'unconfirmed', drafted: d } : { kind: 'empty' };
+  }
   return { kind: 'figures', draftsOnly: drafts && c === 0 };
 }
 

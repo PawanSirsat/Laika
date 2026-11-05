@@ -61,6 +61,10 @@ function Stats({ stats }: { readonly stats: readonly Stat[] }) {
  * which is a look they are told about. Picking Day in the report comes back
  * here.
  */
+/** A signature of the open day, so a write on it reads the report again (LAI-526's rule). */
+const signatureOf = (view: MyDay): string =>
+  [...view.entries, ...view.drafts].map((x) => `${x.id}:${String(x.minutes)}`).join(',');
+
 export function OverviewTab({ view, meId, subjectId, subjectName }: OverviewTabProps) {
   const [scope, setScope] = useState<OverviewScope>('day');
 
@@ -76,6 +80,7 @@ export function OverviewTab({ view, meId, subjectId, subjectName }: OverviewTabP
         today={view.today}
         anchor={view.day}
         initialRange={scope}
+        version={`${view.day}:${signatureOf(view)}`}
         onDay={() => {
           setScope('day');
         }}

@@ -93,6 +93,11 @@ export interface TimeReportProps {
   readonly ledSpaces?: readonly ReportSpace[] | undefined;
   /** The organisation's name, for *Everyone in …* (frame 1g). */
   readonly orgName?: string | undefined;
+  /**
+   * Changes when what the report covers may have changed elsewhere on the
+   * page — My day's open day being edited — so the same stretch is read again.
+   */
+  readonly version?: string | undefined;
 }
 
 type Load =
@@ -143,10 +148,13 @@ function errorSentence(error: unknown): string {
  * weeks) — all from `GET /time/report`.
  *
  * The server decides what the reader may see; this groups and draws it.
- * Drafts are always read and the *Confirmed only / Include drafts* switch
- * counts them in or out here, so switching costs no request and *Nothing
- * confirmed — Include drafts* can be offered. Space, Member and Kind narrow
- * the read on the server, so the bars and the agent line follow them.
+ * **Drafts are the person's own until asked for** (D-088 items 2–3, SPEC
+ * §6.4: `drafts=exclude` by default). The reader's own report (`me`) always
+ * reads them and the *Confirmed only / Include drafts* switch counts them in
+ * or out here. Anybody else's opens on *Confirmed only* and asks for drafts
+ * only when the reader turns *Include drafts* on; until then nothing drafted
+ * is named. Space, Member and Kind narrow the read on the server, so the
+ * bars and the agent line follow them.
  */
 export function TimeReport({
   scope,
@@ -157,6 +165,7 @@ export function TimeReport({
   onDay,
   ledSpaces,
   orgName,
+  version,
 }: TimeReportProps) {
   const ids = useId();
   const weekly = ledSpaces !== undefined;
@@ -165,7 +174,9 @@ export function TimeReport({
   );
   const [anchor, setAnchor] = useState(openOn ?? today);
   const [picked, setPicked] = useState<DayRange>(() => presetRange('last30', today));
-  const [drafts, setDrafts] = useState(!weekly);
+  // Only the reader's own drafts are read unasked (D-088 items 2–3).
+  const own = scope === 'me';
+  const [drafts, setDrafts] = useState(own && !weekly);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [space, setSpace] = useState<string | undefined>(ledSpaces?.[0]?.slug);
   const [pop, setPop] = useState<string | undefined>();
@@ -196,9 +207,9 @@ export function TimeReport({
             spaces: filters.spaces,
             members: scope === 'org' || subject === undefined ? filters.members : [subject.id],
             kinds: filters.kinds,
-            drafts: true,
+            drafts: own || drafts,
           };
-  const key = query === undefined ? '' : JSON.stringify(query);
+  const key = query === undefined ? '' : `${JSON.stringify(query)}|${version ?? ''}`;
 
   useEffect(() => {
     if (query === undefined) return;
@@ -261,6 +272,7 @@ export function TimeReport({
   const exportCsv = (): void => {
     if (query === undefined) return;
     setCsv({ busy: true });
+    // The file says what the screen counts: drafts only when they are counted.
     downloadTimeReportCsv(weekly ? query : { ...query, drafts }).then(
       () => {
         setCsv({ busy: false });

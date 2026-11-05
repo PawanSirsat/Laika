@@ -16,6 +16,7 @@ import {
   hoursClock,
   hoursWords,
   monthOf,
+  NO_KIND,
   NONE_COLOR,
   OTHER_COLOR,
   presetRange,
@@ -189,6 +190,20 @@ void describe('the figures', () => {
     assert.equal(confirmedOnly[2]?.sub, 'not confirmed yet');
   });
 
+  void test('somebody else’s drafts not asked for: no drafted figure, not even a zero (D-088)', () => {
+    const unread = report({
+      scope: 'people',
+      include_drafts: false,
+      totals: { ...report().totals, drafted_minutes: 0 },
+    });
+    const drafts = statsOf(unread, false, 'org', '2026-11-05', '').find((x) => x.key === 'drafts');
+    assert.equal(drafts?.value, '—');
+    assert.equal(drafts?.minutes, undefined);
+    assert.match(drafts?.sub ?? '', /Include drafts/);
+    const read = statsOf(report({ scope: 'people' }), true, 'org', '2026-11-05', '');
+    assert.equal(read.find((x) => x.key === 'drafts')?.value, '1 h');
+  });
+
   void test('bars: drafted is its own share, hatched and named; a future day is not yet', () => {
     const { bars, axis } = dayBars(report().by_day, true, '2026-11-05');
     assert.equal(bars.length, 7);
@@ -281,7 +296,12 @@ void describe('grouping on the client', () => {
     assert.equal(faceOf(row({ task: null, untied: true }), 'task', kindName).label, 'No task yet');
     assert.equal(faceOf(row({ task: null }), 'task', kindName).label, 'Atlas · general');
     assert.equal(faceOf(row({ task: null, project: null }), 'task', kindName).label, 'No task');
-    assert.equal(faceOf(row({ kind: null }), 'kind', kindName).key, 'work');
+    assert.deepEqual(faceOf(row({ kind: null }), 'kind', kindName), {
+      key: NO_KIND,
+      label: 'No kind yet',
+      none: true,
+      sort: '\uffff',
+    });
     assert.equal(
       faceOf(row({ user: { id: 'x', name: 'Gone', deactivated: true } }), 'member', kindName).label,
       'Gone (deactivated)',
@@ -329,6 +349,9 @@ void describe('the states a read report shows', () => {
     assert.deepEqual(shownFor(draftsOnly, false, false), { kind: 'unconfirmed', drafted: 40 });
     assert.deepEqual(shownFor(draftsOnly, true, false), { kind: 'figures', draftsOnly: true });
     assert.deepEqual(shownFor(report(), true, false), { kind: 'figures', draftsOnly: false });
+    // Unasked-for drafts are never offered as *N of drafts are waiting*.
+    const unread = report({ include_drafts: false, totals: { ...zero, drafted_minutes: 40 } });
+    assert.deepEqual(shownFor(unread, false, false), { kind: 'empty' });
   });
 
   void test('a space admin’s withheld week is said, never drawn as zero (D-136, D-138)', () => {

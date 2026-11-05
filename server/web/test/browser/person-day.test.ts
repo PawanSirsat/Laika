@@ -310,6 +310,7 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
       await ov.locator('[data-ov-scope="week"]').click();
       const url = new URL((await asked).url());
       assert.equal(url.searchParams.get('members'), 'u2', 'not asked for her');
+      assert.equal(url.searchParams.get('drafts'), null, 'her drafts were read unasked');
       const tr = h.page.locator('[data-time-report="person"]');
       await tr.locator('[data-tr-stat="per-day"]').waitFor({ timeout: 10_000 });
       assert.equal(await tr.locator('[data-tr-day]').count(), 7);
@@ -529,7 +530,10 @@ void describe('a member’s profile: Day and Time report (LAI-959, LAI-1134)', (
       const asked = h.page.waitForRequest((r) => r.url().includes('/api/v1/time/report?'));
       const tr = h.page.locator('[data-time-report="person"]');
       await tr.locator('[data-tr-stat="confirmed"]').waitFor({ timeout: 20_000 });
-      assert.equal(new URL((await asked).url()).searchParams.get('members'), 'u2');
+      const first = new URL((await asked).url());
+      assert.equal(first.searchParams.get('members'), 'u2');
+      // Her drafts are hers until the reader asks (D-088 items 2–3).
+      assert.equal(first.searchParams.get('drafts'), null, 'her drafts were read unasked');
       assert.equal(
         (await h.page.locator('[data-profile-tab="time"][aria-current="page"]').innerText()).trim(),
         'Time report',
@@ -545,6 +549,11 @@ void describe('a member’s profile: Day and Time report (LAI-959, LAI-1134)', (
         await tr.locator('[data-tr-stat="confirmed"]').innerText(),
         new RegExp(`\\n${hoursWords(confirmed)}\\n`),
       );
+      const withDrafts = h.page.waitForRequest(
+        (r) => new URL(r.url()).searchParams.get('drafts') === 'include',
+      );
+      await tr.locator('[data-tr-drafts="include"]').click();
+      assert.equal(new URL((await withDrafts).url()).searchParams.get('members'), 'u2');
       // One person: no Member filter, and the table groups Space → Task.
       assert.equal(await tr.locator('[data-tr-chip="member"]').count(), 0);
       assert.match(await tr.locator('[data-tr-group="first"]').innerText(), /Space/);

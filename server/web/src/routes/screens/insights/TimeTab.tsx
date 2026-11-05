@@ -1,5 +1,6 @@
 import { readerZone } from '../../../api/usage.ts';
 import { useProjects } from '../../../api/use-projects.ts';
+import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
@@ -27,6 +28,16 @@ export function TimeTab({ view, leads, orgName }: TimeTabProps) {
   if (view === 'org') return <TimeReport scope="org" today={today} orgName={orgName} />;
   if (projects.status === 'loading') {
     return <LoadingState shape="card" count={1} label="Loading the spaces you lead" />;
+  }
+  // The spaces could not be read: say so, never "you lead no space".
+  if (projects.status === 'error') {
+    return (
+      <ApiErrorState
+        error={projects.error}
+        resource="the spaces you lead"
+        onRetry={projects.reload}
+      />
+    );
   }
   const led = projects.projects
     .filter((p) => leads.includes(p.id))
