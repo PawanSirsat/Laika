@@ -7186,9 +7186,10 @@ anything missing sends the task back.
   admins only · read-only · <first> can see that you looked"*. It has a
   summary (devices active / revoked, tools, repositories, spaces reachable,
   active tokens, last activity) and a **health line** naming what needs
-  attention — an MCP not connected, a credential never used, a failed or
-  out-of-date repository check, a helper update — each a link that moves focus
-  to the item, worked out on the client from the checks and reports served.
+  attention — a tool its status calls *Needs setup*, a helper *Update
+  required*, a repository setup with *No block found* or *Update available* —
+  each a link that moves focus to the item, worked out on the client by
+  Developer access's own rules from the checks and reports served.
   Then **Devices** (last seen, key fingerprint with copy, helper version,
   launcher, auto-pickup, tools; revoked ones folded), **pending pairing
   requests** with no code (D-124), **Tools** by device (five checks, what each

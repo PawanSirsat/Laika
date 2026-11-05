@@ -18,6 +18,7 @@ import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import { OverflowMenu } from '../../../components/wizard/OverflowMenu.tsx';
+import { SETUP_CHIPS } from '../developer/v3/overview-state.ts';
 import { updateManifestOf, type UpdateManifest } from '../developer/v3/update-status.ts';
 import {
   accessWord,
@@ -39,8 +40,12 @@ import {
   pickupWord,
   reachableSpaces,
   refusalLine,
+  hiddenGrants,
+  hiddenSetupsLine,
+  repoNeedsAttention,
   repoRows,
   SEARCH_OVER,
+  SETUP_WORDS,
   shownTokens,
   TOKEN_FILTERS,
   TOKEN_STATE_WORDS,
@@ -229,9 +234,17 @@ export function DeveloperSetupTab({ userId, name, canRevokeTokens }: DeveloperSe
           {canAct ? 'Only revoke actions are left.' : 'Nothing here can be changed.'}
         </p>
       )}
+      {/*
+       * Actions follow the server's `can_revoke`, not `mayActOnSetupOf`: the
+       * read already asked `can()` about this reader and this person, so the
+       * tab draws what the server will allow rather than a second guess at it.
+       * The owner note is said only when the owner is why.
+       */}
       {!canAct && (
         <p role="note" className="ds-owner-note" data-ds-owner-note>
-          {OWNER_SETUP_NOTE} Those actions are not offered here.
+          {view.user.org_role === 'owner'
+            ? `${OWNER_SETUP_NOTE} Those actions are not offered here.`
+            : 'Revoke actions are not offered to you here.'}
         </p>
       )}
       {notice !== undefined && (
@@ -363,6 +376,8 @@ function Summary({
 }) {
   const s = view.summary;
   const reach = reachableSpaces(view.tools);
+  const reachHidden = hiddenGrants(view.tools);
+  const setups = repoRows(view.repositories, view.tools, view.devices).length;
   const items = attentionItems(view, manifest);
   const seenOn = view.devices.find((d) => d.last_seen_at === s.last_seen_at)?.display_name;
   const tiles: readonly (readonly [string, string, string])[] = [
@@ -370,12 +385,14 @@ function Summary({
     ['Tools set up', String(s.tools_active), `${String(s.tools_revoked)} revoked`],
     [
       'Repositories set up',
-      String(s.repositories + s.repositories_hidden),
-      s.repositories_hidden === 0
-        ? 'all visible to you'
-        : `${String(s.repositories_hidden)} you can’t see`,
+      String(setups),
+      s.repositories_hidden === 0 ? 'all visible to you' : hiddenSetupsLine(s.repositories_hidden),
     ],
-    ['Projects reachable', String(reach.size), 'by their live tools'],
+    [
+      'Spaces reachable',
+      String(reach.size),
+      reachHidden === 0 ? 'by their live tools' : `+${String(reachHidden)} you can’t see`,
+    ],
     ['Active tokens', String(s.tokens_active), `${String(s.tokens_inactive)} expired or revoked`],
     [
       'Last activity',
@@ -398,8 +415,8 @@ function Summary({
           </div>
         ))}
       </dl>
+      {/* Only the headline is a live region: the links are for moving, not for announcing. */}
       <div
-        role="status"
         className={items.length === 0 ? 'ds-health ds-health-ok' : 'ds-health ds-health-warn'}
         data-ds-health={items.length}
       >
@@ -407,7 +424,9 @@ function Summary({
           <span aria-hidden="true" className="ds-health-glyph">
             {items.length === 0 ? '✓' : '!'}
           </span>
-          {attentionWord(items.length)}
+          <span role="status" data-ds-health-word>
+            {attentionWord(items.length)}
+          </span>
         </b>
         {items.map((item) => (
           <a
@@ -858,7 +877,7 @@ function Repositories({ view }: { readonly view: DeveloperSetup }) {
   const rows = repoRows(view.repositories, view.tools, view.devices);
   const hidden = view.summary.repositories_hidden;
   return (
-    <Section id="repos" title="Repositories & projects" count={rows.length + hidden}>
+    <Section id="repos" title="Repositories & projects" count={rows.length}>
       {rows.length === 0 && hidden === 0 ? (
         <p className="ds-muted">No repository has been set up for Laika.</p>
       ) : (
@@ -878,11 +897,13 @@ function Repositories({ view }: { readonly view: DeveloperSetup }) {
               role="row"
               key={r.key}
               id={anchorFor.repo(r.key)}
-              className={r.failed ? 'ds-row ds-row-bad' : 'ds-row'}
+              className={repoNeedsAttention(r) ? 'ds-row ds-row-bad' : 'ds-row'}
               data-ds-repo={r.repo}
+              data-ds-repo-chip={r.chip}
             >
-              <span role="rowheader" className="ds-mono ds-strong ds-cell-main">
-                {r.repo}
+              <span role="rowheader" className="ds-stack ds-cell-main">
+                <span className="ds-mono ds-strong">{r.repo}</span>
+                <StatusChip tone={SETUP_CHIPS[r.chip].tone} word={SETUP_WORDS[r.chip]} />
               </span>
               <span role="cell">
                 <code className="ds-mono">{r.projectSlug}</code>
@@ -898,7 +919,6 @@ function Repositories({ view }: { readonly view: DeveloperSetup }) {
                 <code className="ds-mono">
                   {r.revision === null ? '—' : `rev ${String(r.revision)}`}
                 </code>
-                {r.outOfDate && <span className="ds-chip ds-chip-warn">Out of date</span>}
               </span>
               <span role="cell" className="ds-muted">
                 <span className="ds-lbl">Last checked </span>
@@ -908,9 +928,7 @@ function Repositories({ view }: { readonly view: DeveloperSetup }) {
           ))}
           {hidden > 0 && (
             <div role="row" className="ds-hidden-row" data-ds-repos-hidden>
-              <span role="cell">
-                {hidden} {hidden === 1 ? 'repository' : 'repositories'} in a space you can’t see
-              </span>
+              <span role="cell">{hiddenSetupsLine(hidden)}</span>
             </div>
           )}
         </div>

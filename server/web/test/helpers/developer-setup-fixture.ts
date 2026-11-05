@@ -127,9 +127,10 @@ export const device = (id: string, name: string, over: Partial<SetupDevice> = {}
   ...over,
 });
 
-/** A full setup: one device with two tools (one not connected), a repo, tokens, activity. */
+/** A full setup: one device with two tools (one needing setup), a repo whose prefix no longer matches, tokens, activity. */
 export function setup(over: Partial<DeveloperSetup> = {}): DeveloperSetup {
-  const tools = [tool('a1', 'claude-code'), tool('a2', 'codex', { mcp: false })];
+  // a2 has a credential nothing has used: Developer access's *Needs setup*.
+  const tools = [tool('a1', 'claude-code'), tool('a2', 'codex', { mcp: false, used: false })];
   const credentials = tools.flatMap((t) => t.tokens);
   const personal = [
     token('p1', { name: 'deploy-key' }),

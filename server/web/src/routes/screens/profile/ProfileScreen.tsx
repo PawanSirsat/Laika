@@ -466,6 +466,9 @@ export function ProfileScreen({
   // A person's own day is My day's, and their own setup Developer access's;
   // these tabs are for somebody else.
   const offered = profileTabs(me.id !== user.id, readsDays, gates.org('developer_setup.read_any'));
+  // **`tabbed` is not "reads analytics"**: the row can be Overview · Developer
+  // setup alone. A card that reads (or links to) the person's time — Time this
+  // week, Current load — gates on `offered.includes('time')`, never `tabbed`.
   const tabbed = offered.length > 1;
   const asked = profileTab(tab);
   const shownTab: ProfileTab = offered.includes(asked) ? asked : 'overview';

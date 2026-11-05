@@ -81,3 +81,13 @@ not_for_owner` gracefully; test each; share one helper with this tab. Done as
 - First CI round red on `structure.test.ts` (no mirror for the two new api
   modules) and `type-floor.test.ts` (CSS off the type scale); fixed in
   5225fa50, run 42034112856 green.
+- Review round 1 (cross-review BLOCK, fixed on this branch): the health line
+  and repository rows now call Developer access's own rules (`listedStatus`,
+  `repoGroups`/`recordState`, `updateStatus` *required* only) instead of
+  restating them; see the log's review-round entry.
+- The tab's revoke actions follow the server's `can_revoke`, not
+  `mayActOnSetupOf`: the read already asked `can()` about this reader and this
+  person, so the client draws what the server allows rather than a second
+  guess. `mayActOnSetupOf` serves the two token screens, which have no such
+  answer from the server. The owner note shows only when the subject is the
+  owner.

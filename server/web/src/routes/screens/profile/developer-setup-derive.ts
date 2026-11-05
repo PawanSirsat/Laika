@@ -9,12 +9,12 @@ import type { ProjectSetup } from '../../../api/project-setups.ts';
 import { revokeRefusal } from '../../../api/owner-setup.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import type { AgentVerification } from '../../../api/tool-setup.ts';
-import { PROJECT_BLOCK_REVISION } from '../connect/connect-copy.ts';
 import { IDLE_AFTER_MS } from './token-groups.ts';
 import { listedStatus, type ListedStatus } from '../developer/v3/devices-view.ts';
+import { SETUP_CHIPS, type SetupChipKey } from '../developer/v3/overview-state.ts';
+import { repoGroups } from '../developer/v3/repo-groups.ts';
 import { catalogTool } from '../developer/v3/tool-catalog.ts';
 import {
-  offersUpdate,
   updateStatus,
   type UpdateManifest,
   type UpdateStatus,
@@ -27,10 +27,11 @@ import {
  * reaches every rule.
  *
  * **The server computes no attention list and no "update available"**
- * (LAI-1137): both are derived here, from the checks, repository records and
- * client reports the read serves, with the same rules the member's own
- * Developer access uses (`listedStatus`, `recordState`'s revision, and
- * `updateStatus`).
+ * (LAI-1137), so both are derived here from the checks, repository records
+ * and client reports the read serves — by **calling** Developer access's own
+ * rules, not restating them: a tool's status is `listedStatus`, a repository
+ * setup's is `repoGroups` (`recordState`), a helper's is `updateStatus`. What
+ * the tab adds is only which of those it lists, set out on `attentionItems`.
  */
 
 /** The token search appears only past this many tokens (frame 2p). */
@@ -223,60 +224,85 @@ export function pickupWord(launcher: SetupDevice['launcher']): string {
 
 // ------------------------------------------------------------------ repositories
 
+/** A repository setup's chip, in an admin's words: *Recorded by you* is the member's word here. */
+export const SETUP_WORDS: Readonly<Record<SetupChipKey, string>> = {
+  checked: SETUP_CHIPS.checked.word,
+  recorded: 'Recorded by them',
+  'update-available': SETUP_CHIPS['update-available'].word,
+  missing: SETUP_CHIPS.missing.word,
+};
+
 export interface RepoRow {
+  /** An element id: `repoGroups`' key, made safe. */
   readonly key: string;
   readonly repo: string;
   readonly projectSlug: string;
   readonly usedBy: readonly string[];
-  readonly instructions: boolean;
-  /** `null` when the record could not check it, which is never a mismatch. */
+  /** `repoGroups`' chip — `recordState`'s rule, the one Developer access uses. */
+  readonly chip: SetupChipKey;
+  /** The newest local check's columns; `null` where nothing checked it. */
+  readonly instructions: boolean | null;
   readonly project: boolean | null;
   readonly prefix: boolean | null;
   readonly revision: number | null;
-  readonly outOfDate: boolean;
   readonly checkedAt: number | null;
-  readonly failed: boolean;
 }
 
 /**
- * One row per repository and space, from its newest record; the tools that
- * recorded it are *Used by*. A browser record (`repo_key: ''`) is its own row.
+ * One row per repository setup, grouped **by `repoGroups`** with the member's
+ * live tools — exactly as their own Developer access groups them, so a
+ * record of a revoked tool goes with it there and here alike. The chip is
+ * `repoGroups`' (`recordState` underneath): a project or prefix mismatch, or an
+ * older template, is *Update available*; no block found is *No block found*.
+ * The columns are the newest local check in the group, shown as the facts.
  */
 export function repoRows(
   records: readonly ProjectSetup[],
   tools: readonly SetupTool[],
   devices: readonly SetupDevice[],
 ): RepoRow[] {
-  const groups = new Map<string, ProjectSetup[]>();
-  for (const r of records) {
-    const key = `${r.project_id}:${r.repo_key === '' ? r.id : r.repo_key}`;
-    groups.set(key, [...(groups.get(key) ?? []), r]);
-  }
-  const used = (r: ProjectSetup): string | null => {
-    const tool = tools.find((t) => t.id === r.agent_id);
-    if (tool === undefined) return null;
-    const device = devices.find((d) => d.agent_ids.includes(tool.id));
-    return device === undefined ? toolName(tool) : `${toolName(tool)} · ${device.display_name}`;
-  };
-  return [...groups.entries()].map(([key, list]) => {
-    const newest = [...list].sort((a, b) => (b.checked_at ?? 0) - (a.checked_at ?? 0))[0]!;
-    const outOfDate =
-      newest.template_revision !== null && newest.template_revision < PROJECT_BLOCK_REVISION;
+  const live = tools.filter((t) => t.status === 'active');
+  return repoGroups(records, live).map((group) => {
+    // `repoGroups`' key is `<project id>:<repo key>` or `<project id>:self:<agent id>`.
+    const projectId = group.projectId;
+    const rest = group.key.slice(projectId.length + 1);
+    const mine = records.filter(
+      (r) =>
+        r.project_id === projectId &&
+        (rest.startsWith('self:')
+          ? r.repo_key === '' && (r.agent_id ?? '') === rest.slice(5)
+          : r.repo_key === rest),
+    );
+    const newest = mine
+      .filter((r) => r.source === 'local_check')
+      .sort((x, y) => (y.checked_at ?? 0) - (x.checked_at ?? 0))[0];
+    const usedBy = group.devices.flatMap((line) => {
+      const names = line.tools.map((t) => {
+        const tool = live.find((x) => x.id === t.id);
+        const device = devices.find((d) => d.agent_ids.includes(t.id));
+        const name = tool === undefined ? t.name : toolName(tool);
+        return device === undefined ? name : `${name} · ${device.display_name}`;
+      });
+      return names;
+    });
     return {
-      key: key.replace(/[^A-Za-z0-9_-]/g, '-'),
-      repo: newest.repo_label ?? newest.project_slug,
-      projectSlug: newest.project_slug,
-      usedBy: [...new Set(list.map(used).filter((u): u is string => u !== null))],
-      instructions: newest.block_found,
-      project: newest.project_match,
-      prefix: newest.prefix_match,
-      revision: newest.template_revision,
-      outOfDate,
-      checkedAt: newest.checked_at,
-      failed:
-        !newest.block_found || newest.project_match === false || newest.prefix_match === false,
+      key: group.key.replace(/[^A-Za-z0-9_-]/g, '-'),
+      repo: group.repoLabel ?? group.projectSlug,
+      projectSlug: group.projectSlug,
+      usedBy: [...new Set(usedBy)],
+      chip: group.chip,
+      instructions: newest === undefined ? null : newest.block_found,
+      project: newest?.project_match ?? null,
+      prefix: newest?.prefix_match ?? null,
+      revision: newest?.template_revision ?? null,
+      checkedAt: newest?.checked_at ?? null,
     };
   });
+}
+
+/** A row the health line names: what Developer access would not call set up. */
+export function repoNeedsAttention(row: Pick<RepoRow, 'chip'>): boolean {
+  return row.chip === 'missing' || row.chip === 'update-available';
 }
 
 // ------------------------------------------------------------------ attention
@@ -287,8 +313,24 @@ export interface AttentionItem {
   readonly target: string;
 }
 
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 /**
- * The health line's items, worst first: what a working setup would not show.
+ * The health line's items. **Every rule is one Developer access already
+ * uses**, so the tab and the member's own page agree about the same setup:
+ *
+ * - **a tool** is listed when its own chip says *Needs setup* — the same
+ *   `toolState` call (`listedStatus`), with that status's reason. The chip
+ *   and the line cannot disagree, because they are one call;
+ * - **a tool's helper** is listed only when its update is *Update required*,
+ *   as Developer access's own `attentionItems` lists it. *Update available*
+ *   stays a chip on the device row (`ROW_UPDATE_KEYS`) and is not attention —
+ *   frame 2p's health line names no helper update, so nothing here widens it;
+ * - **a repository setup** is listed when `repoGroups`' chip is *No block
+ *   found* or *Update available* (`recordState`).
+ *
  * Only live tools and devices count — a revoked one needs nothing.
  */
 export function attentionItems(
@@ -302,30 +344,21 @@ export function attentionItems(
   };
   for (const tool of view.tools) {
     if (tool.status !== 'active') continue;
-    const c = tool.checks;
-    if (c.credential_installed.state === 'pass' && c.credential_used.state === 'fail') {
-      items.push({
-        label: `${where(tool)}: credential never used`,
-        target: anchorFor.tool(tool.id),
-      });
-    } else if (c.tool_request.state === 'fail') {
-      items.push({ label: `${where(tool)}: MCP not connected`, target: anchorFor.tool(tool.id) });
+    const status = toolState(tool, view.now);
+    const required = toolUpdate(tool, manifest)?.key === 'required';
+    const why = [
+      status.key === 'needs-setup' ? lowerFirst(status.reason) : null,
+      required ? 'helper update required' : null,
+    ].filter((part): part is string => part !== null);
+    if (why.length > 0) {
+      items.push({ label: `${where(tool)}: ${why.join('; ')}`, target: anchorFor.tool(tool.id) });
     }
   }
   for (const row of repoRows(view.repositories, view.tools, view.devices)) {
-    if (row.failed) {
-      items.push({ label: `${row.repo}: project check failed`, target: anchorFor.repo(row.key) });
-    } else if (row.outOfDate) {
-      items.push({ label: `${row.repo}: template out of date`, target: anchorFor.repo(row.key) });
-    }
-  }
-  for (const device of view.devices) {
-    if (device.status !== 'active') continue;
-    const tools = toolsOn(device, view.tools);
-    if (tools.some((t) => offersUpdate(toolUpdate(t, manifest)?.key ?? 'unknown'))) {
+    if (repoNeedsAttention(row)) {
       items.push({
-        label: `${device.display_name}: helper update available`,
-        target: anchorFor.device(device.id),
+        label: `${row.repo}: ${lowerFirst(SETUP_WORDS[row.chip])}`,
+        target: anchorFor.repo(row.key),
       });
     }
   }
@@ -362,6 +395,16 @@ export function reachableSpaces(tools: readonly SetupTool[]): Map<string, string
     }
   }
   return out;
+}
+
+/** Grants of live tools to spaces the reader cannot open, counted (D-132 item 5). */
+export function hiddenGrants(tools: readonly SetupTool[]): number {
+  return tools.filter((t) => t.status === 'active').reduce((n, t) => n + t.grants_hidden, 0);
+}
+
+/** The line for repository setups in spaces the reader cannot open — a count, never a name. */
+export function hiddenSetupsLine(count: number): string {
+  return `${String(count)} ${count === 1 ? 'setup' : 'setups'} in spaces you can’t see`;
 }
 
 export function accessWord(scope: string): string {

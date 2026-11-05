@@ -280,11 +280,11 @@ void describe('what the tab draws (frame 2p)', () => {
       );
       assert.match(
         await h.page.locator('[data-ds-tile="Repositories set up"]').innerText(),
-        /3\s+2 you can’t see/,
+        /^Repositories set up\s+1\s+2 setups in spaces you can’t see$/,
       );
       assert.match(
         await h.page.locator('[data-ds-repos-hidden]').innerText(),
-        /2 repositories in a space you can’t see/,
+        /2 setups in spaces you can’t see/,
       );
       const pending = await h.page.locator('[data-ds-pairing="pr1"]').innerText();
       assert.match(pending, /rowan-spare/);
@@ -294,6 +294,22 @@ void describe('what the tab draws (frame 2p)', () => {
       assert.match(
         await h.page.locator('[data-ds-tool="a1"]').innerText(),
         /Fixture Space ·\s*Full/,
+      );
+      assert.match(
+        await h.page.locator('[data-ds-tile="Spaces reachable"]').innerText(),
+        /^Spaces reachable\s+1\s+by their live tools$/,
+      );
+      assert.equal(
+        await h.page
+          .locator('[data-ds-repo="fixture-org/fixture-app"]')
+          .getAttribute('data-ds-repo-chip'),
+        'update-available',
+      );
+      // Only the headline is announced; the links are not inside the live region.
+      assert.equal(await h.page.locator('[data-ds-health]').getAttribute('role'), null);
+      assert.equal(
+        await h.page.locator('[data-ds-health] [role="status"]').innerText(),
+        '2 things need attention',
       );
       assert.ok(!(await tab.innerText()).includes('email'), 'nothing says email (D-133)');
     } finally {
@@ -522,12 +538,28 @@ void describe('the revokes (frames 2v–2x)', () => {
   });
 
   void test('on the owner’s setup an admin is offered no action, and is told why', async () => {
-    const h = await at(TAB, { '/api/v1/people/u2/developer-setup': view({ can_revoke: false }) });
+    // An admin reading the owner: the server answers `can_revoke: false`.
+    const ADMIN = person('u3', 'Ada Admin', 'admin');
+    const owner = { ...ROWAN, org_role: 'owner' };
+    const grants = defaultPermissions({ ...ADMIN, memberships: [] }) as {
+      me: { actions: string[] };
+    };
+    const v = view({ can_revoke: false });
+    const h = await at(TAB, {
+      '/api/v1/me': { ...ADMIN, memberships: [] },
+      '/api/v1/permissions': {
+        ...grants,
+        me: { ...grants.me, actions: [...grants.me.actions, ...SETUP_GRANT] },
+      },
+      '/api/v1/users': { data: [owner, ADMIN], next_cursor: null },
+      '/api/v1/users/u2/profile': profile(owner),
+      '/api/v1/people/u2/developer-setup': { ...v, user: { ...v.user, org_role: 'owner' } },
+    });
     try {
       await h.page.locator('[data-ds-owner-note]').waitFor({ timeout: 20_000 });
       assert.match(
         await h.page.locator('[data-ds-owner-note]').innerText(),
-        /Only the owner can revoke/,
+        /This is the owner’s setup\. Only the owner can revoke/,
       );
       assert.equal(await h.page.locator('[data-ds-ready] [aria-haspopup="menu"]').count(), 0);
     } finally {

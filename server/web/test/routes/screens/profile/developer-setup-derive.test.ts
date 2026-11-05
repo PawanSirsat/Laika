@@ -9,6 +9,8 @@ import {
   confirmCopy,
   doneLine,
   firstName,
+  hiddenGrants,
+  hiddenSetupsLine,
   isEmptySetup,
   noTokensLine,
   notifyLine,
@@ -60,17 +62,16 @@ void describe('tokens: state, filter and search (frames 2p, 2s)', () => {
 });
 
 void describe('tools: status and checks', () => {
-  void test('a tool whose MCP never connected is not Ready, and its check says so', () => {
+  void test('a tool whose credential nothing has used is not Ready, and its checks say so', () => {
     const view = setup();
-    const [ready, notConnected] = view.tools;
-    assert.notEqual(toolState(notConnected!, NOW).key, 'ready');
-    const marks = checkMarks(notConnected!);
+    const [ready, unused] = view.tools;
+    assert.equal(toolState(unused!, NOW).key, 'needs-setup');
     assert.deepEqual(
-      marks.map((m) => [m.label, m.ok]),
+      checkMarks(unused!).map((m) => [m.label, m.ok]),
       [
         ['Device paired', true],
         ['Credential installed', true],
-        ['Credential used', true],
+        ['Credential used', false],
         ['MCP connected', false],
         ['Required capabilities', true],
       ],
@@ -85,32 +86,78 @@ void describe('tools: status and checks', () => {
   });
 });
 
-void describe('the health line, derived on the client', () => {
-  void test('names each thing that needs attention and where it is', () => {
-    const view = setup();
-    const items = attentionItems(view, undefined);
-    assert.deepEqual(items, [
-      { label: 'Codex on rowan-box: MCP not connected', target: anchorFor.tool('a2') },
-      {
-        label: 'fixture-org/fixture-app: project check failed',
-        target: anchorFor.repo(repoRows(view.repositories, view.tools, view.devices)[0]!.key),
+/** A tool whose only credential has expired: the server's checks count only a live token. */
+const expired = (harness: string) => {
+  const base = tool('x1', harness);
+  return tool('x1', harness, {
+    tokens: base.tokens.map((t) => ({ ...t, expires_at: NOW - DAY })),
+    checks: {
+      ...base.checks,
+      credential_installed: {
+        state: 'fail',
+        at: null,
+        detail: { token_id: null, via_exchange: false },
       },
+    },
+  });
+};
+
+void describe('the health line, by Developer access’s own rules', () => {
+  void test('names a tool its chip calls Needs setup, and a setup recordState calls Update available', () => {
+    const view = setup();
+    const [row] = repoRows(view.repositories, view.tools, view.devices);
+    assert.equal(row?.chip, 'update-available', 'a prefix mismatch is Update available');
+    assert.deepEqual(attentionItems(view, undefined), [
+      {
+        label: 'Codex on rowan-box: credential installed; nothing has used it yet',
+        target: anchorFor.tool('a2'),
+      },
+      { label: 'fixture-org/fixture-app: update available', target: anchorFor.repo(row!.key) },
     ]);
-    assert.equal(attentionWord(items.length), '2 things need attention');
+    assert.equal(attentionWord(2), '2 things need attention');
   });
 
-  void test('a credential never used outranks MCP for that tool, and a revoked tool needs nothing', () => {
-    const view = setup({
-      tools: [
-        tool('a1', 'claude-code', { used: false, mcp: false }),
-        tool('a2', 'codex', { mcp: false, status: 'revoked' }),
-      ],
-      repositories: [],
-    });
-    assert.deepEqual(
-      attentionItems(view, undefined).map((i) => i.label),
-      ['Claude Code on rowan-box: credential never used'],
+  void test('a tool whose only credential has expired is flagged', () => {
+    for (const harness of ['codex', 'not-in-the-catalog']) {
+      const view = setup({ tools: [expired(harness)], repositories: [] });
+      const [item] = attentionItems(view, undefined);
+      assert.equal(toolState(view.tools[0]!, NOW).key, 'needs-setup', harness);
+      assert.equal(item?.target, anchorFor.tool('x1'), harness);
+      assert.match(
+        item?.label ?? '',
+        /no credential on this device yet|its credential has expired/,
+      );
+    }
+  });
+
+  void test('the chip and the health line agree for every tool', () => {
+    const tools = [
+      tool('t1', 'claude-code'),
+      tool('t2', 'codex', { mcp: false }),
+      tool('t3', 'codex', { mcp: false, used: false }),
+      expired('codex'),
+      tool('t5', 'codex', { status: 'revoked', revoked_at: NOW - DAY }),
+    ];
+    const view = setup({ tools, repositories: [] });
+    const flagged = new Set(attentionItems(view, undefined).map((i) => i.target));
+    for (const t of tools) {
+      const needs = t.status === 'active' && toolState(t, NOW).key === 'needs-setup';
+      assert.equal(flagged.has(anchorFor.tool(t.id)), needs, `${t.id}: ${toolState(t, NOW).word}`);
+    }
+    assert.ok(flagged.size >= 2, 'the case would pass vacantly with nothing flagged');
+  });
+
+  void test('a missing block is No block found; a checked one is not listed', () => {
+    const base = setup().repositories[0]!;
+    const missing = setup({ repositories: [{ ...base, block_found: false }] });
+    assert.equal(
+      repoRows(missing.repositories, missing.tools, missing.devices)[0]?.chip,
+      'missing',
     );
+    const ok = setup({ repositories: [{ ...base, prefix_match: true, template_revision: 999 }] });
+    const [row] = repoRows(ok.repositories, ok.tools, ok.devices);
+    assert.equal(row?.chip, 'checked');
+    assert.ok(!attentionItems(ok, undefined).some((i) => i.target === anchorFor.repo(row!.key)));
   });
 
   void test('nothing to fix reads All set up', () => {
@@ -120,14 +167,27 @@ void describe('the health line, derived on the client', () => {
 });
 
 void describe('repositories', () => {
-  void test('one row per repository, from its newest record, with its tools', () => {
+  void test('grouped by repoGroups, with its tools and the newest check as the facts', () => {
     const view = setup();
-    const [row] = repoRows(view.repositories, view.tools, view.devices);
+    const rows = repoRows(view.repositories, view.tools, view.devices);
+    assert.equal(rows.length, 1);
+    const [row] = rows;
     assert.equal(row?.repo, 'fixture-org/fixture-app');
     assert.deepEqual(row?.usedBy, ['Claude Code · rowan-box']);
     assert.equal(row?.prefix, false);
-    assert.equal(row?.failed, true);
     assert.match(row?.key ?? '', /^[A-Za-z0-9_-]+$/, 'the key is a usable element id');
+    assert.equal(hiddenSetupsLine(2), '2 setups in spaces you can’t see');
+    assert.equal(hiddenSetupsLine(1), '1 setup in spaces you can’t see');
+  });
+
+  void test('hidden grants of live tools are counted for Spaces reachable', () => {
+    assert.equal(
+      hiddenGrants([
+        tool('a', 'codex', { grants_hidden: 2 }),
+        tool('b', 'codex', { grants_hidden: 1, status: 'revoked' }),
+      ]),
+      2,
+    );
   });
 });
 
