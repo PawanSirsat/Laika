@@ -121,7 +121,7 @@ const SPRINT = {
 /** What every task's panel reads, for each task the fixture holds. */
 const perTask = (ids: readonly string[]): ApiStub =>
   Object.fromEntries(
-    ids.flatMap((id) => [
+    ids.flatMap((id): [string, unknown][] => [
       [`/api/v1/tasks/${id}/comments`, { data: [], next_cursor: null }],
       [`/api/v1/tasks/${id}/watchers`, { watchers: [] }],
       [`/api/v1/tasks/${id}/checkpoints`, { data: [], next_cursor: null }],
