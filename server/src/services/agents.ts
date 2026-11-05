@@ -167,7 +167,7 @@ export interface RegisterAgentInput {
   now?: number;
 }
 
-type AgentRow = typeof agents.$inferSelect;
+export type AgentRow = typeof agents.$inferSelect;
 
 /** Register an agent and mint its first token, in one transaction. */
 export function registerAgent(
@@ -197,6 +197,7 @@ export function registerAgent(
     status: 'active',
     createdAt: now,
     revokedAt: null,
+    revokedByUserId: null,
     lastSeenAt: null,
   };
 
@@ -260,6 +261,7 @@ export function insertDeviceAgent(
     status: 'active',
     createdAt: input.now,
     revokedAt: null,
+    revokedByUserId: null,
     lastSeenAt: null,
   };
   db.insert(agents).values(row).run();
@@ -492,21 +494,41 @@ export function revokeAgent(
   if (row.status === 'revoked') return agentView(db, row);
 
   immediateTransaction(sqlite, () => {
-    db.update(agents).set({ status: 'revoked', revokedAt: now }).where(eq(agents.id, row.id)).run();
-
-    const live = db
-      .select()
-      .from(tokens)
-      .where(and(eq(tokens.agentId, row.id), isNull(tokens.revokedAt)))
-      .all();
-    for (const token of live) revokeTokenRow(db, actor, token, now);
-    // D-114 item 2: its sessions end with it (LAI-541); its claims lapse.
-    endSessionsOfRevokedAgent(db, row.id, now);
-    // §4.73: its live offers — to it and from it — close `agent_revoked`.
-    closeOffersOfRevokedAgent(db, row.id, now);
+    revokeAgentRow(db, actor, row, now);
   });
 
   return agentView(db, { ...row, status: 'revoked', revokedAt: now });
+}
+
+/**
+ * D-114 item 2's revoke of one active agent, **inside the caller's write
+ * transaction**: the agent, every live token of it (each with its
+ * `token.revoked`, written as `actor`), its sessions and its offers. The one
+ * body both the owner's own revoke and an owner's or admin's revoke of a
+ * member's tool (D-133, LAI-1137) run, so the two cannot differ in effect.
+ * `revokedByUserId` is set only when the actor is not the agent's owner.
+ * The caller has authorised the actor and read `row` as active.
+ */
+export function revokeAgentRow(db: Db, actor: ResolvedActor, row: AgentRow, now: number): void {
+  db.update(agents)
+    .set({
+      status: 'revoked',
+      revokedAt: now,
+      revokedByUserId: actor.userId === row.ownerUserId ? null : actor.userId,
+    })
+    .where(eq(agents.id, row.id))
+    .run();
+
+  const live = db
+    .select()
+    .from(tokens)
+    .where(and(eq(tokens.agentId, row.id), isNull(tokens.revokedAt)))
+    .all();
+  for (const token of live) revokeTokenRow(db, actor, token, now);
+  // D-114 item 2: its sessions end with it (LAI-541); its claims lapse.
+  endSessionsOfRevokedAgent(db, row.id, now);
+  // §4.73: its live offers — to it and from it — close `agent_revoked`.
+  closeOffersOfRevokedAgent(db, row.id, now);
 }
 
 /** A derived device, scoped to exactly one owner (LAI-590, §4.63). */

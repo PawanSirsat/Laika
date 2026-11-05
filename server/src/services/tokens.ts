@@ -12,6 +12,7 @@ import { immediateTransaction } from '../db/numbering.ts';
 import { agents, projects, tokens, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, forcedTokenScope } from '../policy/can.ts';
+import { NOTICE_SUBJECT_MAX, writeNotice } from './notices.ts';
 import { canSeeProject } from './projects.ts';
 
 /**
@@ -344,7 +345,39 @@ export function revokeTokenFor(
     throw ApiError.notFound(`No token with id "${tokenId}" for that user`);
   }
 
-  revoke(sqlite, db, actor, row, now);
+  // Revoking twice is no second event and no second notice.
+  if (row.revokedAt !== null) return;
+  immediateTransaction(sqlite, () => {
+    revokeTokenRow(db, actor, row, now);
+    // D-134 (LAI-1137): the person is told, in Laika, that somebody else
+    // revoked it. Their own revoke through this path writes none.
+    writeNotice(db, {
+      userId: row.userId,
+      actorUserId: actor.userId,
+      kind: 'token_revoked',
+      subject: row.name.slice(0, NOTICE_SUBJECT_MAX),
+      now,
+    });
+  });
+}
+
+/**
+ * Every token of `userId`, revoked and expired ones included, newest first —
+ * a member's whole history for `GET /people/:id/developer-setup`. **No
+ * `can()` here**: the caller has asked `developer_setup.read_any` (D-132,
+ * LAI-1137). Never a secret: rows go through `tokenView`.
+ */
+export function tokensOf(db: Db, userId: string): TokenView[] {
+  return db
+    .select({ token: tokens, harness: agents.harness, deviceLabel: agents.deviceLabel })
+    .from(tokens)
+    .leftJoin(agents, eq(agents.id, tokens.agentId))
+    .where(eq(tokens.userId, userId))
+    .orderBy(desc(tokens.createdAt), desc(tokens.id))
+    .all()
+    .map(({ token, harness, deviceLabel }) =>
+      tokenView(token, harness === null ? null : { harness, deviceLabel }),
+    );
 }
 
 // ------------------------------------------------------------------ helpers

@@ -21,7 +21,7 @@ export interface PageTab {
    * not disabled** (LAI-082), as a sidebar entry is. Read through
    * `permissionHolder`, so the client mirrors `policy/can.ts` in one place.
    */
-  readonly requires?: 'audit_log.export' | 'token.list_any';
+  readonly requires?: 'audit_log.export' | 'token.list_any' | 'time.report.read';
   /**
    * An address naming this tab, for a reader not offered it, shows the
    * not-allowed state rather than the first tab (LAI-951) — see `refusedTab`.
@@ -52,10 +52,17 @@ export const INBOX_TABS: readonly PageTab[] = [
   { id: 'unlisted', label: 'Unlisted work', requires: 'audit_log.export' },
 ];
 
-/** Who is working on what, then what the agents spent. Open to everyone. */
+/**
+ * Who is working on what, then what the agents spent — open to everyone —
+ * then where people's time went (D-130, LAI-1138): **Time** is for owners and
+ * holders of *See everyone's analytics* (`time.report.read`) and for space
+ * admins, whose leading a space the Insights route folds into the same gate;
+ * a link to it for anybody else says so rather than opening Capacity.
+ */
 export const INSIGHTS_TABS: readonly PageTab[] = [
   { id: 'capacity', label: 'Capacity' },
   { id: 'usage', label: 'Usage & cost' },
+  { id: 'time', label: 'Time', requires: 'time.report.read', refusedByAddress: true },
 ];
 
 /**

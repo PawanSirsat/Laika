@@ -1963,7 +1963,14 @@ export function MyDayScreen({
             )}
             {/* What somebody else did that concerns you (D-134, LAI-1139): your own day only. */}
             {showLists && inTab('overview') && !readOnly && <ForYouCard onNavigate={onNavigate} />}
-            {showLists && inTab('overview') && <OverviewTab view={view} subjectId={subjectId} />}
+            {showLists && inTab('overview') && (
+              <OverviewTab
+                view={view}
+                meId={me?.id}
+                subjectId={subjectId}
+                subjectName={subjectName}
+              />
+            )}
             {showLists && inTab('review') && (
               <DraftList
                 // A new day starts with nothing ticked.

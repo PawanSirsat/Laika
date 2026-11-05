@@ -78,6 +78,9 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'token.revoke_own': 'Generate, read and revoke own tokens',
   'token.list_any': "List / revoke anyone's token",
   'token.revoke_any': "List / revoke anyone's token",
+  'developer_setup.read_any': "View a member's developer setup",
+  'agent.revoke_any': "Revoke a member's tool or unpair their device",
+  'device.revoke_any': "Revoke a member's tool or unpair their device",
   'agent.read_own': 'Read own agents',
   'agent.manage_own': 'Register and manage own agents',
   'unlisted.log_own': 'Log own unlisted work',
@@ -175,6 +178,10 @@ const SOMEONE_ELSE = 'someone-else';
  *  - `profile.rate` — Owner and Admin, anybody but themselves.
  *  - `people.analytics.read` — anybody but themselves: their own is `/me`
  *    (LAI-957).
+ *  - `developer_setup.read_any` — anybody but themselves: their own is
+ *    Developer access (D-132, LAI-1137).
+ *  - `agent.revoke_any`, `device.revoke_any` — an Admin anybody but the
+ *    Owner (D-133, LAI-1137); never themselves, whoever asks.
  *  - `comment.edit`, `comment.delete` — a Lead any comment, a Member their own.
  *  - `task.delete` — a Lead any task, a Member one they created.
  *  - `task.handoff.approve` — a Lead any, a Member a task assigned to them.
@@ -220,6 +227,21 @@ export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionC
     text: 'Anyone but themselves',
     holds: () => ({ targetUserId: SOMEONE_ELSE }),
     fails: (userId) => ({ targetUserId: userId }),
+  },
+  'developer_setup.read_any': {
+    text: 'Anyone but themselves',
+    holds: () => ({ targetUserId: SOMEONE_ELSE }),
+    fails: (userId) => ({ targetUserId: userId }),
+  },
+  'agent.revoke_any': {
+    text: 'Not for the Owner, nor themselves',
+    holds: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'member' }),
+    fails: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'owner' }),
+  },
+  'device.revoke_any': {
+    text: 'Not for the Owner, nor themselves',
+    holds: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'member' }),
+    fails: () => ({ targetUserId: SOMEONE_ELSE, targetOrgRole: 'owner' }),
   },
   'comment.edit': {
     text: 'Their own comments only',

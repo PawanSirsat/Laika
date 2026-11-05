@@ -2058,9 +2058,11 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       await until(async () => columnsOf((await cardBoxes(h.page)).cards).length === 2);
       assert.equal(columnsOf((await cardBoxes(h.page)).cards).length, 2, 'two columns at 1024');
 
+      // *Time this week* (LAI-1138) leads: a link to the Time report, no figures.
       await assertOneColumn(h.page, [
         // Current load (LAI-1139), across the page above the summary.
         'load',
+        'time',
         'current',
         'agents',
         'review',
@@ -2122,9 +2124,11 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       );
       assert.equal(await h.page.locator('.prof-columns .prof-stats').count(), 0);
 
+      // *Time this week* (LAI-1138) leads: a link to the Time report, no figures.
       await assertOneColumn(h.page, [
         // Current load (LAI-1139), across the page above the summary.
         'load',
+        'time',
         'current',
         'agents',
         'review',
@@ -2157,11 +2161,13 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
         'projects',
         'rating',
         'review',
+        'time',
         'tokens',
       ]);
       await assertOneColumn(h.page, [
         // Current load (LAI-1139), across the page above the summary.
         'load',
+        'time',
         'review',
         'projects',
         'activity',

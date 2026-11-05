@@ -38,13 +38,17 @@ function only(role: (typeof GRANTABLE_ROLES)[number], capability: Capability): O
 /**
  * Every org action's answer, per org role, under `grants` — about somebody
  * else, so a *"not themselves"* row (LAI-957's `people.analytics.read`) is
- * answered by its grant rather than refused for want of a target.
+ * answered by its grant rather than refused for want of a target; and about
+ * a member, so a *"not for the owner"* row (D-133's revokes, LAI-1137) is too.
  */
 function answers(grants: OrgGrants | undefined): Record<string, boolean> {
   const out: Record<string, boolean> = {};
   for (const role of ORG_ROLES) {
     for (const action of ORG_ACTIONS) {
-      out[`${role} ${action}`] = can(actor(role, grants), action, { targetUserId: 'u2' });
+      out[`${role} ${action}`] = can(actor(role, grants), action, {
+        targetUserId: 'u2',
+        targetOrgRole: 'member',
+      });
     }
   }
   return out;
@@ -65,7 +69,13 @@ describe('the mapping', () => {
       invite_people: ['user.invite'],
       deactivate_people: ['user.deactivate', 'user.sign_out', 'user.reset_password'],
       create_archive_projects: ['project.create', 'project.archive'],
-      manage_any_tokens: ['token.list_any', 'token.revoke_any'],
+      manage_any_tokens: [
+        'token.list_any',
+        'token.revoke_any',
+        'developer_setup.read_any',
+        'agent.revoke_any',
+        'device.revoke_any',
+      ],
       change_org_settings: ['org.settings.edit', 'org.time.set', 'org.developer_insights.set'],
     });
     expect(CAPABILITIES).not.toContain('manage_people');
@@ -75,7 +85,8 @@ describe('the mapping', () => {
     expect(CAPABILITY_LABELS.invite_people).toBe('Invite people');
     expect(CAPABILITY_LABELS.deactivate_people).toBe('Deactivate people and reset access');
     expect(CAPABILITY_LABELS.create_archive_projects).toBe('Create and archive spaces');
-    expect(CAPABILITY_LABELS.manage_any_tokens).toBe("Manage anyone's tokens");
+    // D-132 (LAI-1137): renamed for what it now carries; the key is kept.
+    expect(CAPABILITY_LABELS.manage_any_tokens).toBe("See and manage anyone's developer setup");
   });
 
   it('gives every capability a one-line description of its own', () => {

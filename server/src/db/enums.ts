@@ -39,9 +39,16 @@ export type Capability = (typeof CAPABILITIES)[number];
 /**
  * Which of a person's analytics an owner or admin looked at (§4.59, D-102
  * rule 3, LAI-957): My day, their shared local activity, the profile's
- * heatmap, their tokens. One per read, never a count.
+ * heatmap, their tokens — and their whole developer setup (D-132, LAI-1137).
+ * One per look, never a count.
  */
-export const ANALYTICS_VIEW_KINDS = ['time', 'local_activity', 'activity', 'usage'] as const;
+export const ANALYTICS_VIEW_KINDS = [
+  'time',
+  'local_activity',
+  'activity',
+  'usage',
+  'developer_setup',
+] as const;
 export type AnalyticsViewKind = (typeof ANALYTICS_VIEW_KINDS)[number];
 
 /**

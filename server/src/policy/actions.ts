@@ -36,6 +36,11 @@ export const ORG_ACTIONS = [
   'token.revoke_own',
   'token.list_any',
   'token.revoke_any',
+  // D-132, D-133 (LAI-1137): another member's whole developer setup, read;
+  // and revoking one of their tools or unpairing one of their devices.
+  'developer_setup.read_any',
+  'agent.revoke_any',
+  'device.revoke_any',
   // D-114 (LAI-534): a person's registered agents — reading them, and
   // registering, renaming, granting, rotating and revoking them.
   'agent.read_own',
@@ -369,6 +374,13 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // **Approving a transfer is a person's, signed in** (§3.2, §4.73, LAI-546):
   // an agent that could approve could hand its own work across owners.
   'task.handoff.approve',
+  // **Somebody else's developer setup is read and revoked signed in**
+  // (D-132, D-133, LAI-1137): the read carries every device, tool and token
+  // the member has, and a revoke ends another person's credentials. An
+  // agent's token must do neither — not even one of an admin's own agents.
+  'developer_setup.read_any',
+  'agent.revoke_any',
+  'device.revoke_any',
   // **A person's notices are their own, signed in** (D-134, LAI-1136): the
   // message an adder wrote to them is addressed to the person, not to an
   // agent acting for them, and marking one read is the person having seen it.
