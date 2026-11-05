@@ -5,7 +5,7 @@ area: docs
 assignee: chief
 priority: p2
 depends-on: []
-status: review
+status: done
 started: 2026-11-06T02:04:45+05:30
 finished: 2026-11-06T02:05:33+05:30
 ---
