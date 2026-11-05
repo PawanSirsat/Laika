@@ -84,3 +84,13 @@ case) — the same split as LAI-1038 served / LAI-1102 named. It turns green whe
 the web half lands: T7 of the programme plan (the Availability UI) calls them,
 or a SHELL change names the five as served ahead of T7. Every server shard,
 cli, lint and format are green on `8f9cc2be`.
+
+## Named crossing — authorised by polly, 2026-11-05 (D-033, D-034)
+
+Precedent: LAI-1050 and LAI-1056. polly authorised exactly one edit in
+`server/web/`: adding the five paths above to `NO_BROWSER_CALLER` in
+`server/web/test/api/endpoint-coverage.test.ts`, each with the reason
+*"LAI-1139 — Availability screens (My availability, Insights → Time →
+Availability, Current load)"*. Nothing else in `server/web/` was touched. The
+red above is retired by that edit, and each entry expires when LAI-1139 calls
+its path (the list's own staleness check).
