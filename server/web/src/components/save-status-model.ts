@@ -21,6 +21,9 @@ export type SaveState =
   | { readonly kind: 'saved' }
   | { readonly kind: 'failed'; readonly message: string; readonly retryable: boolean };
 
+/** The one state with something to say about why. */
+export type SaveFailure = Extract<SaveState, { readonly kind: 'failed' }>;
+
 export const IDLE: SaveState = { kind: 'idle' };
 
 /** The sentence for a state; empty while idle, so the live region says nothing. */
@@ -38,7 +41,7 @@ export function saveLine(state: SaveState): string {
 }
 
 /** A failure's state, and whether the same request again could succeed. */
-export function failedWith(cause: unknown): SaveState {
+export function failedWith(cause: unknown): SaveFailure {
   const message =
     cause instanceof Error && cause.message !== '' ? cause.message : 'The change was not saved';
   // Anything that is not the server's answer — the network, an abort — may

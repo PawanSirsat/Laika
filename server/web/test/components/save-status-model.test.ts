@@ -45,8 +45,8 @@ void describe('Retry only where the same request again could succeed', () => {
   void test("the server's message is kept; a cause with none gets a sentence", () => {
     const failed = failedWith(apiError('internal', 500));
     assert.equal(failed.kind, 'failed');
-    assert.equal(failed.kind === 'failed' ? failed.message : '', 'refused 500');
+    assert.equal(failed.message, 'refused 500');
     const bare = failedWith('nope');
-    assert.equal(bare.kind === 'failed' ? bare.message : '', 'The change was not saved');
+    assert.equal(bare.message, 'The change was not saved');
   });
 });
