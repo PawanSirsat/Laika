@@ -10,7 +10,7 @@ export interface TaskDrawerProps {
   readonly taskId: string;
   readonly onClose: () => void;
   /**
-   * The ids of what names the dialog — the task's key and title (LAI-1127,
+   * The ids of what names the dialog — the task's key and title (LAI-1190,
    * B3). The content draws them; the frame only points at them.
    */
   readonly labelledBy: string;
@@ -55,7 +55,7 @@ export function drawerReturnTarget(
  * own `×`, because the design draws that button inside the header beside the
  * task key. Both do the same thing: strip `?task=`.
  *
- * **A modal dialog, and the frame is the dialog** (LAI-1127, B3/B22): `role`,
+ * **A modal dialog, and the frame is the dialog** (LAI-1190, B3/B22): `role`,
  * `aria-modal` and the label are here, and Tab is held inside by the app's one
  * trap (`useDialogFocus`). The panel inside used to declare itself the dialog
  * with no trap, so Tab walked out of a "modal" into the board behind it.

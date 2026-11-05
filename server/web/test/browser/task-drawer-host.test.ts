@@ -1,5 +1,5 @@
 /**
- * The task drawer on every view of a space, as a modal dialog (LAI-1127).
+ * The task drawer on every view of a space, as a modal dialog (LAI-1190).
  *
  * B1: `SpaceLayout` mounted the drawer's frame on any `?task=`, but only the
  * board filled it — the Calendar and the Timeline opened an empty box. B3/B22:

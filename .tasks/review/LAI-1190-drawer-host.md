@@ -1,5 +1,5 @@
 ---
-id: LAI-1140
+id: LAI-1190
 title: The task drawer works on every space view, as a real modal dialog
 area: web
 assignee: shell
@@ -46,6 +46,14 @@ S0 of `docs/ux/specifications/task-workroom.md` §10.
       error.
 
 ## Notes / context
+
+**Renumbered again, to LAI-1190** (2026-11-05). LAI-1140 was taken too:
+`LAI-1140-developer-setup-tab` (PR #285, board card LAIKA-1003) holds
+`.tasks/review/LAI-1140-developer-setup-tab.md`. The sweep run before the first
+renumber missed it. Commits on this branch carry `[LAI-1127]` (the claim,
+`47ecb7b4`) and `[LAI-1140]` (`6e238f07` to `ad7369bc`) in error and stand as
+written (CLAUDE.md §3); every later commit carries `[LAI-1190]`. The branch name
+`LAI-1140-drawer-host` is historical and kept so PR #289 stays intact.
 
 **Renumbered from LAI-1127 to LAI-1140** (2026-11-05). `origin/master` gained
 a different LAI-1127 (`LAI-1127-insights-usage-cost-redesign.md`, PR #271)

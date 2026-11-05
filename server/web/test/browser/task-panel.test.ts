@@ -631,7 +631,7 @@ void describe('the Jira-shaped task view (D-066)', () => {
       await openById(h);
       await h.page.locator('.panel-head-action[aria-label="More actions"]').click();
       await h.page.locator('.panel-overflow button', { hasText: 'Detach from parent' }).click();
-      // It asks first since LAI-1140 (B4); the yes is what sends it.
+      // It asks first since LAI-1190 (B4); the yes is what sends it.
       await h.page
         .getByRole('alertdialog', { name: 'Detach from parent?' })
         .getByRole('button', { name: 'Detach' })

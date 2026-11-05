@@ -1,5 +1,5 @@
 /**
- * `task-href.ts` — where a task link opens (LAI-1127, B2 and B18).
+ * `task-href.ts` — where a task link opens (LAI-1190, B2 and B18).
  *
  * The bug was a link with no space: `/board?q=KEY` let the board fall back to
  * the space it last showed, so Meeting review and Unlisted could open the

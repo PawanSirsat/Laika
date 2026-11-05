@@ -106,7 +106,7 @@ function SpaceFrame({
    */
   const [pendingReviews, setPendingReviews] = useState<number | undefined>(undefined);
   const [tags, setTags] = useState<readonly ProjectTag[]>([]);
-  /** The view's live task set, when it offers one — Board and List (LAI-1127). */
+  /** The view's live task set, when it offers one — Board and List (LAI-1190). */
   const [taskSource, setTaskSource] = useState<TaskSource | undefined>(undefined);
 
   useEffect(() => {
@@ -236,7 +236,7 @@ function SpaceFrame({
                   ? {
                       onCreate: () => {
                         /*
-                         * **In place, on whatever view this is** (LAI-1127,
+                         * **In place, on whatever view this is** (LAI-1190,
                          * B19). Create used to go to the board with
                          * `?new=task`, which the board never read — so the
                          * reader lost the Timeline or the Calendar they were
@@ -288,7 +288,7 @@ function SpaceFrame({
         replaced the view would have to rebuild the board on every close.
       */}
           {/*
-          **The host renders the content too** (LAI-1127, B1): every view of
+          **The host renders the content too** (LAI-1190, B1): every view of
           the space gets the full panel, not only the board.
         */}
           <TaskDrawerHost

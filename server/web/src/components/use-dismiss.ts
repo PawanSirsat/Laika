@@ -6,7 +6,7 @@ export type DismissReason = 'escape' | 'outside';
 
 /**
  * A popover that closes on Escape and on a press outside it (LAI-290, moved
- * here from `BoardToolbar` for the task panel's overflow menu, LAI-1127).
+ * here from `BoardToolbar` for the task panel's overflow menu, LAI-1190).
  *
  * Returns the ref for the box that counts as *inside*: the popover **and** the
  * button that opened it, so a click on the button toggles rather than closing

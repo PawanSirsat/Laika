@@ -4,7 +4,7 @@ import type { ProjectStatus } from '../../api/statuses.ts';
 import type { Sprint } from '../../api/sprints.ts';
 
 /**
- * What the task drawer reads about the space it is open over (LAI-1127) — the
+ * What the task drawer reads about the space it is open over (LAI-1190) — the
  * seam the Workroom spec calls `TaskEnvironment` (task-workroom.md §3).
  */
 export interface TaskEnvironment {
@@ -58,7 +58,7 @@ export interface TaskSourceProviderProps {
 }
 
 /**
- * Where a view offers its task set to the drawer host (LAI-1127).
+ * Where a view offers its task set to the drawer host (LAI-1190).
  *
  * **The setter is the only thing in context**, and it must be stable: a view
  * that read the offered source back through context would re-render on every

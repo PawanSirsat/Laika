@@ -89,7 +89,7 @@
 }
 
 /*
- * What the host draws before the panel can (LAI-1127): the task's loading
+ * What the host draws before the panel can (LAI-1190): the task's loading
  * state, a task that is not there, and the new-task form opened in place.
  */
 .drawer-state {

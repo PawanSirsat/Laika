@@ -74,7 +74,7 @@ import './task-detail.css';
 export interface TaskDetailPanelProps {
   readonly slug: string;
   /**
-   * The id the drawer is labelled by (LAI-1127, B3): the title carries it,
+   * The id the drawer is labelled by (LAI-1190, B3): the title carries it,
    * and the key carries it with `-key`. Absent, the panel names nothing.
    */
   readonly headingId?: string | undefined;
@@ -374,7 +374,7 @@ export function TaskDetailPanel({
   const [overflowOpen, setOverflowOpen] = useState(false);
   const overflowButton = useRef<HTMLButtonElement>(null);
   /*
-   * **The overflow menu is a layer of its own** (LAI-1127, B22). Escape and a
+   * **The overflow menu is a layer of its own** (LAI-1190, B22). Escape and a
    * press outside close the menu and nothing else — the hook marks the Escape
    * spent, so the drawer behind does not close with it. Escape hands focus
    * back to ⋯, where the reader was.

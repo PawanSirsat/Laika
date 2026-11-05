@@ -496,7 +496,7 @@ export function BoardScreen({
     };
   }, []);
   const boardView = view === 'kanban';
-  // The drawer is the space's now (LAI-1127); the URL still says it is open.
+  // The drawer is the space's now (LAI-1190); the URL still says it is open.
   const drawerOpen = params.get('task') !== null || params.get('new') === 'task';
   useLayoutEffect(() => {
     presenter.current = (change, apply) => {
@@ -858,7 +858,7 @@ export function BoardScreen({
   const shownCount = shownTasks.length;
 
   /*
-   * **The drawer reads the board's own list** (LAI-1127), offered to the
+   * **The drawer reads the board's own list** (LAI-1190), offered to the
    * space's drawer host rather than rendered here, so the panel re-renders
    * after a move — holding a copy would show a stale status the moment the
    * drag succeeded. Which task is open stays in the URL (LAI-424), where the

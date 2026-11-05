@@ -118,7 +118,7 @@ function ProjectsRoute() {
 }
 
 /**
- * Open a task **in its own space's drawer** (LAI-1127, B2 and B18) — by id
+ * Open a task **in its own space's drawer** (LAI-1190, B2 and B18) — by id
  * when the link has one, else by key, which the drawer host resolves. Through
  * `taskHref`, the one place that decides what a task link is: `/board?q=KEY`
  * only when no space can be named.

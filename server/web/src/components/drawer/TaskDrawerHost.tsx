@@ -41,7 +41,7 @@ export interface TaskDrawerHostProps {
 }
 
 /**
- * The task drawer for **every** view of a space (LAI-1127, B1).
+ * The task drawer for **every** view of a space (LAI-1190, B1).
  *
  * `SpaceLayout` mounted the frame on any `?task=`, but only the board filled
  * it, so the Timeline and the Calendar opened an empty box and sent no

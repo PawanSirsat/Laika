@@ -41,7 +41,7 @@ void describe('where a card opens', () => {
       ),
     );
     /*
-     * Since LAI-1140 the shell builds its links through `routes/task-href.ts`
+     * Since LAI-1190 the shell builds its links through `routes/task-href.ts`
      * rather than writing them inline: it must still call that helper, and the
      * helper must still answer the same two addresses as this one.
      */

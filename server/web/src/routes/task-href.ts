@@ -1,5 +1,5 @@
 /**
- * Where a task opens (LAI-1127, B2 and B18): **in its own space's drawer**.
+ * Where a task opens (LAI-1190, B2 and B18): **in its own space's drawer**.
  *
  * `?project=` names the space, so the view never falls back to the last space
  * it showed, and `?task=` opens the drawer. The ref is the task's id when the

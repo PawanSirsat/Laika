@@ -243,7 +243,7 @@
 }
 
 /*
- * The ⋯ button and its menu, as one box for outside-click (LAI-1127). Draws
+ * The ⋯ button and its menu, as one box for outside-click (LAI-1190). Draws
  * nothing itself, so the menu still hangs from the header's action row.
  */
 .panel-overflow-anchor {

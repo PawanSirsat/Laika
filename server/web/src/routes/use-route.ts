@@ -68,7 +68,7 @@ function currentSearch(): string {
 }
 
 /**
- * Told to every `useRoute()` when one of them writes the address (LAI-1127).
+ * Told to every `useRoute()` when one of them writes the address (LAI-1190).
  *
  * The History API says nothing when `pushState` is called — `popstate` is for
  * Back and Forward only — and the Timeline, Sprints and Dashboard each hold a

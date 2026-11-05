@@ -49,7 +49,7 @@ export function useDialogFocus(dialog: RefObject<HTMLElement | null>, focus: Dia
     if (box === null) return;
     // Only what is drawn: a control hidden by CSS cannot take focus, and
     // wrapping onto one strands Tab — the phone sheet's handle above 600px
-    // (LAI-1127).
+    // (LAI-1190).
     const controls = (): HTMLElement[] =>
       [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
         (el) => el.getClientRects().length > 0,
@@ -70,7 +70,7 @@ export function useDialogFocus(dialog: RefObject<HTMLElement | null>, focus: Dia
         return;
       }
       // A dropdown's search box is portalled to `<body>`: its own Tab hands
-      // focus back to its trigger inside this dialog (LAI-1127).
+      // focus back to its trigger inside this dialog (LAI-1190).
       if (isInDropdownPanel(active)) return;
       const target = trapTarget(controls(), active as HTMLElement, event.shiftKey);
       if (target === undefined) return;
