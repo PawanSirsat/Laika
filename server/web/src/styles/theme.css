@@ -234,44 +234,50 @@
      (never nest a blur). Alphas are set by the worst-case AA rule in
      tokens.test.ts: text on each level clears 4.5:1 composited over the
      brightest point of the ambient layer behind it. */
-  --glass-1: rgba(22, 29, 44, 0.62);
-  --glass-2: rgba(28, 35, 50, 0.7);
-  --glass-3: rgba(30, 38, 55, 0.8);
+  --glass-1: rgba(12, 18, 34, 0.56);
+  --glass-2: rgba(16, 22, 38, 0.64);
+  --glass-3: rgba(20, 27, 44, 0.74);
   --glass-1-solid: #121826;
   --glass-2-solid: #1c2332;
   --glass-3-solid: #222a3b;
   --glass-solid: #1c2332;
   --glass-hover: rgba(185, 194, 214, 0.07);
-  --glass-border: rgba(185, 194, 214, 0.16);
-  --glass-border-strong: rgba(185, 194, 214, 0.3);
-  /* A hairline of light along the top edge, and a blue→lavender sheen. */
-  --glass-highlight: inset 0 1px 0 rgba(244, 247, 251, 0.1);
+  --glass-border: rgba(190, 205, 240, 0.22);
+  --glass-border-strong: rgba(190, 205, 240, 0.38);
+  /* A crisp line of light along the top edge with a faint inner rim, and a
+     blue→lavender sheen in the top-left corner. The AA pairs in
+     tokens.test.ts measure the level's tint only, not the sheen over it. */
+  --glass-highlight:
+    inset 0 1px 0 rgba(244, 247, 251, 0.24), inset 0 0 0 1px rgba(160, 182, 235, 0.07);
   --glass-sheen: linear-gradient(
     135deg,
-    rgba(143, 167, 230, 0.1),
-    rgba(167, 164, 230, 0.05) 45%,
-    transparent 70%
+    rgba(160, 182, 245, 0.14),
+    rgba(167, 164, 230, 0.06) 40%,
+    transparent 65%
   );
-  --glass-glow: 0 0 0 1px rgba(141, 164, 242, 0.55), 0 0 18px rgba(111, 143, 232, 0.35);
+  --glass-glow: 0 0 0 1px rgba(141, 164, 242, 0.7), 0 0 22px 2px rgba(111, 143, 232, 0.45);
   /* The scrim a modal surface floats over: darker than `--scrim`, and blurred. */
   --glass-scrim: rgba(5, 8, 15, 0.55);
-  /* The focus ring that holds on any glass: a canvas inner ring, a bright outer. */
-  --focus-ring: 0 0 0 2px #0b0f1a, 0 0 0 4px #b8c8ff;
+  /* The focus ring that holds on any glass: a canvas inner ring, a bright
+     outer, and a soft brand glow beyond it. */
+  --focus-ring: 0 0 0 2px #0b0f1a, 0 0 0 4px #b8c8ff, 0 0 18px 2px rgba(141, 164, 242, 0.45);
 
   /* ---- the ambient layer behind the shell (LAI-1132) ----
      Matched to docs/design/laika-brand-board.png: an Ink canvas lifting to
      navy on the diagonal, a Mist Blue haze top-left, and two great discs in
-     the corners whose rims catch a soft line of light. No lavender — the
-     board keeps that for the mark. */
-  --ambient-base: linear-gradient(155deg, #111b30 0%, #0b0f1a 42%, #0c1220 70%, #131d33 100%);
-  --ambient-orb-1: rgba(75, 98, 130, 0.34);
-  --ambient-orb-2: rgba(63, 86, 130, 0.22);
-  --ambient-orb-3: rgba(90, 112, 170, 0.16);
-  --ambient-arc: rgba(143, 167, 198, 0.1);
-  --ambient-rim: rgba(185, 200, 230, 0.28);
+     the corners whose rims catch a soft line of light. v2: deeper navy
+     lifting to periwinkle at the corners, a periwinkle haze, and brighter
+     rims, so the glass has something to refract. No lavender — the board
+     keeps that for the mark. */
+  --ambient-base: linear-gradient(155deg, #172446 0%, #0b0f1a 40%, #0d1430 68%, #1f2d60 100%);
+  --ambient-orb-1: rgba(84, 110, 168, 0.42);
+  --ambient-orb-2: rgba(111, 143, 232, 0.24);
+  --ambient-orb-3: rgba(141, 164, 242, 0.14);
+  --ambient-arc: rgba(160, 182, 235, 0.14);
+  --ambient-rim: rgba(200, 214, 248, 0.4);
   /* The brightest colour the ambient layer reaches — every orb, the disc and
      its rim stacked at full strength on the lightest stop: the AA worst case. */
-  --ambient-peak: #627394;
+  --ambient-peak: #879ace;
 
   /* ---- elevation ---- */
   --shadow-card: 0 1px 2px rgba(5, 8, 15, 0.35);
@@ -428,38 +434,38 @@
   --brand-panel: rgba(255, 255, 255, 0.6);
 
   /* ---- glass (LAI-1132) ---- */
-  --glass-1: rgba(255, 255, 255, 0.58);
-  --glass-2: rgba(255, 255, 255, 0.68);
-  --glass-3: rgba(255, 255, 255, 0.8);
+  --glass-1: rgba(255, 255, 255, 0.56);
+  --glass-2: rgba(255, 255, 255, 0.62);
+  --glass-3: rgba(255, 255, 255, 0.74);
   --glass-1-solid: #ffffff;
   --glass-2-solid: #ffffff;
   --glass-3-solid: #ffffff;
   --glass-solid: #ffffff;
   --glass-hover: rgba(11, 15, 26, 0.04);
-  --glass-border: rgba(255, 255, 255, 0.75);
-  --glass-border-strong: rgba(75, 98, 130, 0.3);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --glass-border: rgba(255, 255, 255, 0.9);
+  --glass-border-strong: rgba(75, 98, 130, 0.36);
+  --glass-highlight: inset 0 1px 0 #ffffff, inset 0 0 0 1px rgba(255, 255, 255, 0.4);
   --glass-sheen: linear-gradient(
     135deg,
-    rgba(143, 178, 230, 0.16),
-    rgba(167, 164, 230, 0.08) 45%,
-    transparent 70%
+    rgba(143, 178, 230, 0.2),
+    rgba(167, 164, 230, 0.1) 40%,
+    transparent 65%
   );
-  --glass-glow: 0 0 0 1px rgba(63, 91, 209, 0.5), 0 0 18px rgba(63, 91, 209, 0.22);
+  --glass-glow: 0 0 0 1px rgba(63, 91, 209, 0.6), 0 0 22px 2px rgba(63, 91, 209, 0.28);
   --glass-scrim: rgba(11, 15, 26, 0.32);
-  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #2f48b8;
+  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #2f48b8, 0 0 16px 2px rgba(63, 91, 209, 0.3);
 
   /* ---- the ambient layer (LAI-1132): matched to laika-logo-light.png and
      laika-loaders.png — Paper with a lavender cast, Fog shading, the same
      corner discs drawn in Glacier ---- */
-  --ambient-base: linear-gradient(155deg, #f6f7fc 0%, #eef0f8 50%, #e9ecf5 100%);
-  --ambient-orb-1: rgba(143, 167, 198, 0.28);
-  --ambient-orb-2: rgba(167, 164, 230, 0.18);
-  --ambient-orb-3: rgba(185, 194, 214, 0.35);
-  --ambient-arc: rgba(143, 167, 198, 0.1);
-  --ambient-rim: rgba(120, 140, 190, 0.35);
+  --ambient-base: linear-gradient(155deg, #f3f4fc 0%, #e7eaf7 50%, #e0e5f4 100%);
+  --ambient-orb-1: rgba(143, 167, 214, 0.38);
+  --ambient-orb-2: rgba(141, 164, 242, 0.24);
+  --ambient-orb-3: rgba(167, 164, 230, 0.26);
+  --ambient-arc: rgba(120, 145, 210, 0.14);
+  --ambient-rim: rgba(90, 115, 200, 0.4);
   /* The darkest colour the light ambient reaches — its AA worst case. */
-  --ambient-peak: #a2afd0;
+  --ambient-peak: #8798d6;
 
   --shadow-card: 0 1px 2px rgba(11, 15, 26, 0.07);
   --shadow-panel: 0 18px 48px rgba(30, 41, 66, 0.18);
@@ -537,11 +543,11 @@
   /* ---- glass, colour-free (LAI-1132) ----
      Blur per level, capped: the guard in glass-guard.test.ts refuses any
      blur over 32px and any blur literal outside glass.css. */
-  --glass-blur-1: 14px;
-  --glass-blur-2: 20px;
-  --glass-blur-3: 26px;
-  --glass-blur-scrim: 6px;
-  --glass-saturate: 1.6;
+  --glass-blur-1: 18px;
+  --glass-blur-2: 24px;
+  --glass-blur-3: 30px;
+  --glass-blur-scrim: 8px;
+  --glass-saturate: 1.8;
 
   /* ---- motion (LAI-1132) ---- */
   --duration-fast: 120ms;
