@@ -516,6 +516,8 @@ describe('the cases LAI-004 calls out by name', () => {
       const ownAvailability = action === 'availability.set_own' || action === 'availability.read';
       // D-134 (LAI-1136): reading and marking read their own notices.
       const ownNotices = action === 'notices.own';
+      // D-139 (LAI-1151): reading their own pairing requests and setup activity.
+      const ownDeveloperSetup = action === 'developer_setup.read_own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -530,7 +532,8 @@ describe('the cases LAI-004 calls out by name', () => {
           ownMembership ||
           ownAgents ||
           ownAvailability ||
-          ownNotices,
+          ownNotices ||
+          ownDeveloperSetup,
       );
     }
   });

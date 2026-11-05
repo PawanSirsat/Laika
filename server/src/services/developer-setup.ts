@@ -146,6 +146,16 @@ interface Subject {
   isActive: boolean;
 }
 
+function loadSubject(db: Db, userId: string): Subject {
+  const row = db
+    .select({ id: users.id, name: users.name, orgRole: users.orgRole, isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+  if (row === undefined) throw ApiError.notFound(`No user with id "${userId}"`);
+  return { id: row.id, name: row.name, orgRole: row.orgRole, isActive: row.isActive === 1 };
+}
+
 /**
  * The person a request names, after the reader is asked about them, in the
  * order that discloses nothing:
@@ -167,18 +177,7 @@ function requireSubject(db: Db, actor: ResolvedActor, action: OrgAction, userId:
   const probe = { targetUserId: userId, targetOrgRole: 'member' as const };
   if (!can(actor, action, probe)) assertCan(actor, action, probe);
 
-  const row = db
-    .select({ id: users.id, name: users.name, orgRole: users.orgRole, isActive: users.isActive })
-    .from(users)
-    .where(eq(users.id, userId))
-    .get();
-  if (row === undefined) throw ApiError.notFound(`No user with id "${userId}"`);
-  const subject = {
-    id: row.id,
-    name: row.name,
-    orgRole: row.orgRole,
-    isActive: row.isActive === 1,
-  };
+  const subject = loadSubject(db, userId);
 
   const resource = { targetUserId: subject.id, targetOrgRole: subject.orgRole };
   if (!can(actor, action, resource)) {
@@ -212,6 +211,28 @@ export function getDeveloperSetup(
     () => null,
     now,
   );
+}
+
+export interface OwnSetupActivityView {
+  now: number;
+  data: SetupActivityView[];
+}
+
+/**
+ * `GET /me/developer-setup/activity`: the caller's own last
+ * {@link SETUP_ACTIVITY_DAYS} days of setup activity, the same items
+ * `activity[]` lists for an admin, built by the same reader (D-139,
+ * LAI-1151). `developer_setup.read_own`, session only. **No look is
+ * written**: it is your own (D-102 rule 3).
+ */
+export function getOwnSetupActivity(
+  db: Db,
+  actor: ResolvedActor,
+  now: number = Date.now(),
+): OwnSetupActivityView {
+  assertCan(actor, 'developer_setup.read_own');
+  const subject = loadSubject(db, actor.userId);
+  return { now, data: buildView(db, actor, subject, now).activity };
 }
 
 function buildView(
