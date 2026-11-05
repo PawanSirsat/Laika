@@ -6666,7 +6666,7 @@ the decision currently governing it rather than the table naming one for all.
 
 | | | decision |
 | --- | --- | --- |
-| the sidebar | **My day** and **Inbox** (its count is Review's waiting plus Unlisted work's open, for whoever may see each) at the top; **SPACES** — the recent spaces, each with a coloured letter, *+* to create, *More spaces*; **ORGANISATION** — *Insights* (with the reader's open token alerts), *Organisation*, *Developer access*. At the foot, the person: a menu with *My profile* (owners and admins, who alone may open a profile), *Switch to dark / light*, *Developer access* and *Sign out*. No other entries | D-059.1, amended by **D-061**; **LAI-796** (the owner, 2026-10-20) |
+| the sidebar | **My day** and **Inbox** (its count is Review's waiting plus Unlisted work's open, for whoever may see each) at the top; **SPACES** — the recent spaces, each with a coloured letter, *+* to create, *More spaces*; **ORGANISATION** — *Insights* (with the reader's open token alerts), *Organisation*, *Developer access*. At the foot, the person: a menu with *My profile* (everyone, their own — D-139; only owners and admins open someone else's), *Switch to dark / light*, *Developer access* and *Sign out*. No other entries | D-059.1, amended by **D-061**; **LAI-796** (the owner, 2026-10-20) |
 | the icon rail | a toggle in the sidebar's head collapses it to icons — each entry's icon, its count on the icon's corner, its name in a tooltip on hover and keyboard focus — remembered per browser; automatic between the phone's off-canvas width and a laptop's; never on a phone, where the sidebar is off-canvas | **LAI-796** |
 | a space's tabs | two groups with a hairline between — *Board, List, Timeline, Calendar* \| *Sprints, Dashboard, Activity, Meeting review* — and *Agents* and *Create* on the right | **LAI-796** |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer; `min(1280px, 94vw)` wide since the redesign (D-129) | D-059.2, amended by **D-063**, width by **D-129** |
@@ -7186,107 +7186,108 @@ anything missing sends the task back.
   open named as gone — with *Mark read* and *Mark all read*, and the unread
   count on *My day* in the rail; nothing at all when there is nothing.
 - **Member profile** (`/people?user=<id>`, D-078; *My profile* in the user
-  menu opens the reader's own, for an owner or an admin) — owners and admins only:
-  anyone else sees a permission notice and the profile is never requested.
-  Laid out as cards on a grid that folds to one column on a phone (LAI-750).
-  A head card with name, the **Builder / Manager** kind as a chip, org role,
-  project count, email, member since, their **availability** — the pill,
-  note and tags, *set by … · updated N ago* (LAI-1139, frames 2d–2f), when
-  they have said any; for a reader whose only way to it is the load read,
-  only once *Show current load* has been pressed — and **⋯** — a menu button named
-  *Manage <name>* whose *Manage member…* opens the **Manage member panel**
-  (LAI-1134): a right-hand panel on a desktop, a bottom sheet on a phone, a
-  modal that takes focus, holds it, and hands it back to ⋯ on Escape or close.
-  It holds every control an owner or admin has over the person, each section
-  drawn only when the server grants something in it, and ⋯ is absent when
-  none is: **Role** (organisation role, with a confirm, and the Builder /
-  Manager control, which says it is a label and not a permission),
-  **Spaces** (remove through the offboarding question, add with a role),
-  **Tokens** (their tokens, revocable — never the owner's by an admin, which
-  says why, D-133), **Security** (a reset link shown once,
-  sign out everywhere) and a **Danger zone** (deactivate through the
-  offboarding question, or reactivate). For somebody else, tabs **Overview ·
-  Day · Time report · Developer setup**, each only for a reader granted it —
-  Day and Time report by *See everyone's analytics*, Developer setup by *See
-  and manage anyone's developer setup* (D-132); your own profile has no tabs.
-  *Time report* is the shared Time report for that person (`?tab=hours` still
-  opens it); Overview's *Time this week* is a link to it rather than figures,
-  so opening Overview is not a look at their time (D-102, LAI-1138).
-  **Developer setup** (LAI-1140, frames 2p–2ab) reads
-  `GET /people/:id/developer-setup` only when opened, and says *"Owners and
-  admins only · read-only · <first> can see that you looked"*. It has a
-  summary (devices active / revoked, tools, repositories, spaces reachable,
-  active tokens, last activity) and a **health line** naming what needs
-  attention — a tool its status calls *Needs setup*, a helper *Update
-  required*, a repository setup with *No block found* or *Update available* —
-  each a link that moves focus to the item, worked out on the client by
-  Developer access's own rules from the checks and reports served.
-  Then **Devices** (last seen, key fingerprint with copy, helper version,
-  launcher, auto-pickup, tools; revoked ones folded), **pending pairing
-  requests** with no code (D-124), **Tools** by device (five checks, what each
-  can reach, checkpoint consent, launcher, credential prefix, last used and
-  last MCP call, client version), **Repositories & projects**, **Tokens**
-  (personal and tool credentials, filtered Active / Expired / Revoked / All
-  with counts, a search past eight) and **recent setup activity**, 30 days.
-  **A space the reader cannot open is a count, never a name.** Each ⋯ is a
-  menu; *Unpair device…*, *Revoke tool…* and *Revoke token…* each open a
-  confirm listing what stops working and saying the member is notified in
-  Laika — never by email — then a success notice. On the owner's setup an
-  admin is offered none of them and told why, and a `403 not_for_owner` is
-  said in those terms. A deactivated person's setup is read-only history with
-  only the revokes left; loading, empty and error-with-retry states.
-  On Overview, for somebody else and only for an
-  owner or a holder of *See everyone's analytics*, **Current load**
-  (LAI-1139) — **collapsed** as *Show current load · <name> can see you
-  looked*, and read only on that click, never on opening the profile or any
-  of its tabs (the same rule as *Time this week*; this departs from frame 2f,
-  which draws it open). Once shown — *facts, not a score*, a look they are
-  told about: hours by
-  space over their last two weeks, their cards in progress, waiting for
-  review and due in seven days, their working week as **two numbers on a
-  neutral track with no fill** (*21h 5m tracked of 40h set*, never a
-  proportion), who set it, and their away dates; no free hours.
-  Overview leads with the summary — **current
-  work**, **agents used**, **review work**, **projects** — then the Activity
-  card, then the **record**, which keeps everything the summary does not
-  draw: the Tokens card, **delivered**, the **rating** and **recent
-  decisions**. **Projects** as horizontal bars —
-  a builder's open tasks, a manager's review decisions — with role and
-  figures; for a builder, **delivered** — accepted per week as twelve bars,
-  sent back, reopened, cycle p50/p75 with the unmeasured count — **current
-  work**, **agents used** — one bar split by share of writes, each agent with
-  its mark, share and tokens — and **online now**; **review work** with
-  decisions in 30 days, median time to decide and review load per week, and
-  for a manager the queue — projects led, waiting now, oldest waiting — and
-  **recent decisions**; the **rating** — the latest on top, the history
-  below, *Rate* for anyone but yourself, a dialog taking 1–5 and a required
-  note. What each figure counts is in an (i) beside it, not in paragraphs.
-  Every figure from the response; an empty state, never a zero, where there is
-  nothing. **Current work** shows at most five rows of the chosen list —
-  *In progress* or *In review*, longest waiting first — with *Show all* opening
-  the rest inside the card in a bounded scroll; no card stretches its row
-  (LAI-751). **Agents used** is one row per agent, the token names behind an
-  expand (LAI-751).
-  An **Activity** card (D-079, LAI-751) sits under the summary: a daily heatmap from
-  `GET /people/:id/activity`, **12 weeks or 1 year** (a phone opens on 12
-  weeks; the year scrolls sideways inside the card with the weekday column
-  pinned), in two designs each viewer chooses between and the browser
-  remembers — **A**, one grid with each day split GitHub / Local, and **B**,
-  one grid per source on a shared week axis (the default). GitHub is violet,
-  Local amber, Board slate; a legend per source; a tooltip with the day's whole
-  breakdown — pushed commits, local commits, prompts per agent, sessions, board
-  actions by them and by their agents; arrow keys move between days and each
-  day reads as text; stats — active days, current and longest streak, busiest
-  weekday, pushed vs local — computed on the client. It says plainly when the
-  organisation's switch is off (with a link to Organisation) and when nothing
-  has arrived yet. Context only:
-  nothing on it feeds the rating. A **Tokens** card heads the record, full width
-  (D-084, LAI-769): tokens over 12 weeks, **at least**, with cache reads and
-  the share tied to a task beside it; a bar per week; their top agents and
-  models; agents with *no token data* named; and plainly when the
-  organisation's switch is off or nothing has arrived. Reached from a person's name on Organisation, a Capacity card or a
-  Dashboard *Contributors* row (LAI-817) — links for owners and admins, plain text for everyone
-  else.
+  menu opens the reader's own) — the owner's design *Laika Profile*
+  (2026-11-06, D-139, LAI-1148). **One profile for two cases**: an owner or
+  admin looking at someone else — read-only, and the person sees the look
+  (§4.59) — and **anyone looking at their own**, whatever their role (D-139
+  item 1). Anyone else opening somebody's profile sees a permission notice
+  and the profile is never requested.
+  - **Chrome.** A breadcrumb *Members / <name>*, or *My profile* on your own,
+    and a notice at the top right: *Owners and admins only · read-only ·
+    <first> can see that you looked* — on your own, *Owners and admins see a
+    read-only copy · you can see who looked*.
+  - **Head card**, holding the tabs: avatar, name, the **Builder / Manager**
+    chip, and the **availability pill** inline — *Open to more work · ~6
+    h/week*, *At capacity*, *Away until …*, or a dashed *Availability not
+    set* — then org role · project count · email · member since, and on its
+    own line the note, tags and *set by <first> · updated N ago* (*set by
+    you* on your own). On your own profile the pill is a button opening *My
+    availability* (status, hours a week, note; *Everyone in your spaces sees
+    this*). On someone else's, **⋯** opens *Manage member…* (the **Manage
+    member panel**, LAI-1134, unchanged: Role, Spaces, Tokens, Security,
+    Danger zone, each only when granted), *Copy link to profile* and *See
+    <first>'s cards in Work*. On your own, **Who looked N** opens *Who looked ·
+    last 30 days*: each owner's or admin's look — name · role, *Looked at
+    Overview / Day / Time report / Activity / LLM tokens / Developer setup ·
+    when* — closing on Escape and handing focus back; its foot says every
+    look is listed for 400 days (§4.59).
+  - **Tabs** in the head card, for your own profile and for someone else's:
+    **Overview · Day · Time report · Developer setup** (*Developer access* on
+    your own), each for someone else only for a reader granted it — Day and
+    Time report by *See everyone's analytics*, Developer setup by *See and
+    manage anyone's developer setup* (D-132). **"N to fix"** sits on your own
+    Developer access tab only; on someone else's it appears once their tab is
+    opened, never read to draw the head (D-139 item 5).
+  - **Overview** is **rows of cards that share a height**, so nothing leaves
+    a hole, folding to one column on a phone, **the same for both kinds**
+    (D-139 item 2): Work + This week · Projects + Agents · Activity · Review
+    for others + LLM tokens. Every figure from a response; an empty state in
+    one line, never a zero, where there is nothing.
+    - **Work** — *oldest started <age>*, *Open in Work ›*; three tiles that
+      are its tabs, **In progress · In review · Due in 7 days**; at most five
+      rows of the chosen list, longest waiting first, with ages; *Show all N*
+      opens the rest inside the card in a bounded scroll, at most 50 (*Showing
+      50 of N, oldest first*); and a footer line *Delivered · 12 weeks* —
+      accepted, reopened, cycle p50 / p75, the unmeasured count — or *Nothing
+      accepted yet*.
+    - **This week** — Monday to Sunday; *<tracked> tracked · <set> set* as
+      **two numbers on an empty track**, never a filled bar or a share
+      (D-131 item 4), or *no working hours set*; a bar per day, confirmed
+      solid and drafts hatched, today marked; *Confirmed · Drafts · Agents,
+      apart* (agent minutes beside the person's, never added, D-088 item 8);
+      and the away dates, or *No time away planned*. For someone else it is
+      read on opening, a `time` look they are told about (D-139 item 4).
+      *Time report ›* opens the tab.
+    - **Projects** — a table: project (letter, key, name), role (*Space
+      admin* / *Member*, D-103), open now, hours in the last two weeks,
+      accepted and reviewed in 12 weeks, open first; projects with nothing
+      open, tracked, accepted or reviewed fold into one row *N quiet projects*
+      that expands. On a phone, two-line rows.
+    - **Agents** — *N tools · N online*; one bar of the share of LLM tokens
+      over 12 weeks, then a row per tool with its mark, *online*, *N tokens ·
+      active …* and its share; *Developer setup ›*. With none: *<first>
+      hasn't set up an agent yet* (*You haven't…* on your own) in a dashed
+      box.
+    - **Activity** (D-079, LAI-751) — a daily heatmap, **12 weeks or 1 year**
+      (a phone and a member of under 12 weeks open on 12 weeks; the year
+      scrolls sideways inside the card), **Split** — one grid, each day GitHub
+      top-left and Local bottom-right — or **Stacked** — one grid of both
+      together; days before they joined drawn apart and named so; legends
+      with totals (*commits pushed*, *prompts · sessions · not pushed*); five
+      tiles — active days, current and longest streak, busiest weekday, pushed
+      vs local. It says when the organisation's switch is off and when nothing
+      has arrived.
+    - **Review for others** — decided in 30 days, accepted, sent back, median
+      to decide; accepted and sent back per week over 12 weeks.
+    - **LLM tokens** — 12 weeks, **at least**: tokens, cache reads, tied to a
+      task, cost (*the API-equivalent price, not a bill*); a bar per week;
+      *By agent* and *By model*.
+  - **Day** — a date stepping back from today; for your own *Edit in My day
+    ›*, for someone else *Read-only · only <first> can change their day*.
+    Tiles *Tracked · Confirmed · Drafts · Meetings*; a timeline from 08:00 to
+    18:00, stretched to fit, with the person's lane and a separate **Agents**
+    lane, drafts dashed and hatched, colour the kind and the kind also in
+    words, a now line; then the same entries as a list — when, what (key and
+    title), kind, duration, *Confirmed* / *Draft* — and *Agents · N on cards
+    — beside <first>'s hours, never added to them*. Someone else's drafts are
+    shown, read-only (D-102 rule 1, D-139 item 6); the read is a `time` look.
+    Durations in hours, never `h:mm` (D-139 item 7).
+  - **Time report** — the shared Time report (LAI-1138), `scope` me on your
+    own, the person for someone else (`?tab=hours` still opens it).
+  - **Developer setup** (LAI-1140, unchanged for someone else: read only when
+    opened, *Owners and admins only · read-only · <first> can see that you
+    looked*) and on your own **Developer access** — the same layout from your
+    own reads, *Your setup · owners and admins see a read-only copy, and you
+    can see when they look*: summary, health line, Devices, pending pairing
+    requests with **Approve / Decline**, Tools by device, Repositories &
+    projects, Tokens, recent setup activity; unpair and revoke on your own
+    without the owner-decision label.
+  - **Not on the profile** (D-139 item 8): the rating and its Rate dialog
+    (`ratings` stays in the API), recent decisions, the delivery chart, and
+    Current load with *Show current load*; no (i) definitions.
+  Reached from a person's name on Organisation, a Capacity card or a
+  Dashboard *Contributors* row (LAI-817) — links for owners and admins, plain
+  text for everyone else.
 
 #### 11.4.3 Timeline view
 

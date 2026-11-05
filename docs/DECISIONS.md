@@ -7059,3 +7059,52 @@ difference is two people's time. D-136 counted the reader among the three.
 3. For owners and holders of *See everyone's analytics*, every person whose time contributes
    to any figure served — including agent minutes — is logged as a look, not only the people
    on a row.
+
+## D-139 — The member profile, redesigned: one layout, your own profile for everyone
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner), on the owner's design *Laika Profile*
+(2026-11-06); recorded by Belka. Amends D-078 (one layout for both kinds), D-102 rule 3
+(a profile open is a look) and §3.1's profile rows (the person's own profile). Programme
+LAI-1148.
+
+**Context.** The design draws one profile for two cases — an owner or admin looking at
+someone else (read-only, and the person sees the look), and anyone looking at their own —
+with four tabs (Overview, Day, Time report, Developer setup / access) in both, and a fixed
+Overview of rows that share a height. Today a plain member cannot open their own profile
+(`profile.read` is owner/admin), a `manager` profile omits the work, delivery and agents
+blocks, opening a profile is not a logged look, and several cards the design does not draw
+are still on it. Seven points of the design collided with recorded rules; the owner settled
+each.
+
+**Decision.**
+
+1. **Everyone may read their own profile.** A person reads their own profile and their own
+   activity heatmap whatever their org role, on a session (`/me/profile`,
+   `/me/activity`, LAI-1150). Their own read writes no look (D-102 rule 3: a person
+   reading their own writes none). The `ratings` block is not served to a person about
+   themselves unless they hold `profile.read` — what an owner or admin wrote about someone
+   stays theirs.
+2. **One layout for both kinds** (amends D-078 item 2). A `manager` profile carries
+   `current_work`, `delivery` and `agents` like a `builder`'s; the kind stays a label
+   (§4.1), and the screen draws the same cards for both.
+3. **Opening someone's profile is a look** (amends D-102 rule 3). `GET /users/:id/profile`
+   by anyone but the person writes an `analytics_views` row of a new kind, `profile`,
+   deduped like every other (D-135). *Who looked* names the tab each look came from —
+   Overview (`profile`), Day and Time report (`time`), Activity (`activity`), LLM tokens
+   (`usage`), Developer setup (`developer_setup`) — with the viewer's org role. Looks are
+   kept **400 days** (§4.59, unchanged): the design's "90 days" is not adopted.
+4. **This week is two numbers on an empty track** (D-131 item 4 stands): "36 h 58 min
+   tracked · 40 h set", never a filled bar or a percentage. The figures are read when the
+   profile opens, so opening someone's profile also logs a `time` look for that week —
+   reversing LAI-1139's *Show current load* click, which goes with the Current load card.
+5. **The Developer setup count ("3 to fix") is on your own profile only.** On someone
+   else's it would need their whole developer setup read, and logged, on every open; there
+   the count appears only once their Developer setup tab is opened.
+6. **Someone else's Day shows their drafts, read-only** — D-102 rule 1 already allows an
+   owner or admin to read them; the tab is read-only (rule 4) and the read is logged.
+7. **Durations are hours** (LAI-1147): `1 h 45 min` / `38h 20m`, never the design's `1:45`
+   or `38:20`.
+8. **Removed from the profile:** the owner's or admin's rating card and its Rate dialog
+   (§11.4.2.1; `ratings` and `POST …/ratings` stay in the API, nothing is deleted), the
+   Recent decisions card, the Delivery chart card (it becomes the Work card's one-line
+   *Delivered · 12 weeks* footer), and Current load with *Show current load*.
