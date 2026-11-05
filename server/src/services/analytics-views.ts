@@ -1,7 +1,7 @@
-import { and, desc, eq, gt, isNull, lt, or, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gt, gte, isNull, lt, or, type SQL } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
-import { type AnalyticsViewKind } from '../db/enums.ts';
+import { type AnalyticsViewKind, type OrgRole } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { analyticsViews, users } from '../db/schema.ts';
 import { assertCan } from '../policy/can.ts';
@@ -21,7 +21,8 @@ import { assertCan } from '../policy/can.ts';
 /** One row of `GET /me/analytics-views`. */
 export interface WhoLookedView {
   id: string;
-  viewer: { id: string; name: string };
+  /** Their org role now (D-139 item 3, LAI-1150), so *Who looked* can say it. */
+  viewer: { id: string; name: string; org_role: OrgRole };
   kind: AnalyticsViewKind;
   /** The day read, for My day; `null` for a range. */
   day: string | null;
@@ -31,6 +32,8 @@ export interface WhoLookedView {
 export interface ListAnalyticsViewsOptions {
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
+  /** `?since=`, unix ms: only looks at or after it (LAI-1150). */
+  since?: number | null;
 }
 
 /**
@@ -97,6 +100,29 @@ export function readLogged<T>(
 }
 
 /**
+ * `readLogged` for a read that is a look at several of one person's kinds at
+ * once (D-139 items 3 and 4, LAI-1150): somebody else's profile is a
+ * `profile` look, and the week's hours it carries a `time` one. Each kind is
+ * deduped on its own; the person reading their own writes none.
+ */
+export function readLoggedKinds<T>(
+  db: Db,
+  viewer: ResolvedActor,
+  subjectId: string,
+  kinds: readonly AnalyticsViewKind[],
+  read: () => T,
+  now: number = Date.now(),
+): T {
+  return db.transaction((tx) => {
+    const view = read();
+    if (subjectId !== viewer.userId) {
+      for (const kind of new Set(kinds)) logLook(tx, viewer.userId, subjectId, kind, null, now);
+    }
+    return view;
+  });
+}
+
+/**
  * `readLogged` for a read that shows several people at once (D-130, LAI-1135):
  * the Time report logs **each person it shows per person** — `subjectsOf`
  * names them from the answer, since who appears is what the read found. The
@@ -137,6 +163,8 @@ export function listAnalyticsViews(
 ): WhoLookedView[] {
   assertCan(actor, 'local_activity.read_own');
   const conditions: SQL[] = [eq(analyticsViews.subjectId, actor.userId)];
+  const since = options.since ?? null;
+  if (since !== null) conditions.push(gte(analyticsViews.viewedAt, since));
   if (options.cursor !== null) {
     const key = Number(options.cursor.sortKey);
     conditions.push(
@@ -151,6 +179,7 @@ export function listAnalyticsViews(
       id: analyticsViews.id,
       viewerId: analyticsViews.viewerId,
       viewerName: users.name,
+      viewerRole: users.orgRole,
       kind: analyticsViews.kind,
       day: analyticsViews.day,
       viewedAt: analyticsViews.viewedAt,
@@ -163,9 +192,28 @@ export function listAnalyticsViews(
     .all()
     .map((r) => ({
       id: r.id,
-      viewer: { id: r.viewerId, name: r.viewerName },
+      viewer: { id: r.viewerId, name: r.viewerName, org_role: r.viewerRole },
       kind: r.kind,
       day: r.day,
       viewed_at: r.viewedAt,
     }));
+}
+
+/**
+ * How many looks at the caller there are since `since` — or kept at all, when
+ * it is null — for `GET /me/analytics-views`'s `total` (LAI-1150): *"7 looks
+ * in the last 30 days"* without paging through them. One range of
+ * `analytics_views_subject_idx`. The list's own question, asked by its caller.
+ */
+export function countAnalyticsViews(db: Db, actor: ResolvedActor, since: number | null): number {
+  assertCan(actor, 'local_activity.read_own');
+  const conditions: SQL[] = [eq(analyticsViews.subjectId, actor.userId)];
+  if (since !== null) conditions.push(gte(analyticsViews.viewedAt, since));
+  return (
+    db
+      .select({ n: count() })
+      .from(analyticsViews)
+      .where(and(...conditions))
+      .get()?.n ?? 0
+  );
 }

@@ -7,9 +7,11 @@ import { analyticsViews, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { pruneLocalActivity } from '../../src/jobs/jobs.ts';
 import {
+  countAnalyticsViews,
   listAnalyticsViews,
   LOOK_DEDUPE_MS,
   readLogged,
+  readLoggedKinds,
   readLoggedMany,
 } from '../../src/services/analytics-views.ts';
 import { freshDb, seed, type TestDb } from '../helpers/db.ts';
@@ -248,7 +250,21 @@ describe('listAnalyticsViews (GET /me/analytics-views)', () => {
       ['Ari', 'time', '2026-10-21', NOW],
     ]);
     expect(Object.keys(rows[0]!).sort()).toEqual(['day', 'id', 'kind', 'viewed_at', 'viewer']);
-    expect(rows[2]!.viewer).toEqual({ id: admin, name: 'Ari' });
+    // Each viewer with their org role (D-139 item 3, LAI-1150).
+    expect(rows[2]!.viewer).toEqual({ id: admin, name: 'Ari', org_role: 'admin' });
+    expect(rows[0]!.viewer.org_role).toBe('owner');
+  });
+
+  it('narrows to ?since= and counts what is there (LAI-1150)', () => {
+    // NOW, NOW + 1 and NOW + 2 are the three looks above.
+    const since = listAnalyticsViews(t.db, actor(bea), { limit: 50, cursor: null, since: NOW + 1 });
+    expect(since.map((r) => r.viewed_at)).toEqual([NOW + 2, NOW + 1]);
+    expect(countAnalyticsViews(t.db, actor(bea), NOW + 1)).toBe(2);
+    expect(countAnalyticsViews(t.db, actor(bea), null)).toBe(3);
+    expect(countAnalyticsViews(t.db, actor(bea), NOW + 3)).toBe(0);
+    // Somebody else's looks are never counted for you: Ari's one is hers.
+    expect(countAnalyticsViews(t.db, actor(admin), null)).toBe(1);
+    expect(countAnalyticsViews(t.db, actor(owner), null)).toBe(0);
   });
 
   it('pages on (viewed_at, id) without skipping or repeating', () => {
@@ -275,6 +291,29 @@ describe('listAnalyticsViews (GET /me/analytics-views)', () => {
       code: 'forbidden',
       details: { action: 'local_activity.read_own', reason: 'session_required' },
     });
+  });
+});
+
+describe('readLoggedKinds (D-139 items 3 and 4, LAI-1150)', () => {
+  it('writes one look per kind for somebody else, each deduped on its own', () => {
+    readLoggedKinds(t.db, actor(admin), bea, ['profile', 'time'], () => null, NOW);
+    readLoggedKinds(t.db, actor(admin), bea, ['profile', 'time'], () => null, NOW + 60_000);
+    expect(
+      views()
+        .map((v) => [v.kind, v.day, v.viewedAt])
+        .sort(),
+    ).toEqual([
+      ['profile', null, NOW],
+      ['time', null, NOW],
+    ]);
+    // Past ten minutes it is a new look, of both kinds.
+    readLoggedKinds(t.db, actor(admin), bea, ['profile', 'time'], () => null, NOW + LOOK_DEDUPE_MS);
+    expect(views()).toHaveLength(4);
+  });
+
+  it('writes none for the person reading their own', () => {
+    expect(readLoggedKinds(t.db, actor(bea), bea, ['profile', 'time'], () => 7, NOW)).toBe(7);
+    expect(views()).toEqual([]);
   });
 });
 
