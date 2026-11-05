@@ -205,7 +205,7 @@
   border: 1px solid var(--border-subtle);
   background: var(--brand-panel);
   box-shadow: var(--shadow-modal);
-  backdrop-filter: blur(14px);
+  /* Its blur lives in glass.css, the one home of backdrop-filter (LAI-1132). */
 }
 
 .brand-splash-tagline {

@@ -1,0 +1,321 @@
+/*
+ * Glass (LAI-1132) — the only stylesheet allowed to declare `backdrop-filter`.
+ *
+ * `test/glass-guard.test.ts` fails the build on a `backdrop-filter` anywhere
+ * else in `src/`, on a blur literal here, and on a blur token over 32px. Every
+ * value is a token from `styles/theme.css`; this file holds mechanism only.
+ *
+ * ## Three levels
+ *
+ *   1  chrome that frames the work — the sidebar, the shell header, the space bar
+ *   2  panels and cards — the sign-in hero, dashboard and capacity cards
+ *   3  floating — menus, popovers, dialogs, panels, (toasts, LAI-1129)
+ *
+ * ## The pane is a `::before`, never the element (why this file looks odd)
+ *
+ * `backdrop-filter` on an element makes it the containing block of every
+ * `position: fixed` descendant. The sidebar holds a fixed popover and its
+ * click-catcher, the space bar a fixed menu, and a modal holds the Dropdown
+ * panels portalled into it (LAI-726) — blur any of them directly and those
+ * descendants are placed, and clipped, relative to the bar instead of the
+ * window. So a blurred surface is drawn by a pseudo-element behind the
+ * host's content: the host keeps `background: transparent` and becomes an
+ * isolated stacking context, and the pane under it carries tint, sheen, top
+ * highlight and blur.
+ *
+ * ## Where blur is, and where it deliberately is not
+ *
+ * - **Blurred:** level 1 chrome, the level 2 sign-in hero, level 3 menus,
+ *   and the scrim behind every modal surface.
+ * - **Modal surfaces** (SidePanel, ConfirmDialog, Offboarding, the task
+ *   drawer's frame) are translucent level 3 over a *blurred scrim*: the page
+ *   is already frosted behind them, so they need no blur of their own — one
+ *   blurred layer per modal, and Dropdowns opened inside stay real glass.
+ * - **Tinted, not blurred:** board lanes, dashboard / organisation / capacity
+ *   cards. All that sits behind them is the ambient gradient, which is already
+ *   smooth — a blur would cost GPU and change nothing visible.
+ * - **Solid, always:** task cards, rows, tables, documents, code, inputs.
+ *
+ * ## Never nest a blur
+ *
+ * A blurred surface inside another blurs only its parent's pane, twice the
+ * cost for a muddier result. Anything floating inside chrome (the sidebar's
+ * spaces popover and user menu, a menu inside the space bar) drops its blur
+ * and takes `--glass-solid`. The browser test walks the DOM and fails on any
+ * blurred element with a blurred ancestor.
+ */
+
+/* ------------------------------------------------------------ ambient */
+
+/*
+ * The fixed layer behind the shell, matched to the brand board
+ * (docs/design/laika-brand-board.png): the diagonal navy base, a haze in
+ * the top-left and on the right, and two great discs in the corners — each
+ * lighter toward its rim, where a soft line of light runs. One
+ * pseudo-element, painted once and never animated, so nothing above it
+ * re-blurs.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  contain: strict;
+  background:
+    radial-gradient(
+      circle 38rem at -8% -34%,
+      transparent 58%,
+      var(--ambient-arc) 93%,
+      var(--ambient-rim) 98.6%,
+      transparent 100%
+    ),
+    radial-gradient(
+      circle 44rem at 108% 142%,
+      transparent 60%,
+      var(--ambient-arc) 93%,
+      var(--ambient-rim) 98.6%,
+      transparent 100%
+    ),
+    radial-gradient(52rem 36rem at 4% 0%, var(--ambient-orb-1), transparent 70%),
+    radial-gradient(48rem 34rem at 100% 92%, var(--ambient-orb-2), transparent 70%),
+    radial-gradient(60rem 30rem at 55% 115%, var(--ambient-orb-3), transparent 70%),
+    var(--ambient-base);
+}
+
+/* ------------------------------------------------------- primitives */
+
+/* `GlassSurface` renders one of these; any element may take the class. */
+.glass-1,
+.glass-2,
+.glass-3 {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  border: 1px solid var(--glass-border);
+}
+
+.glass-2 {
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-panel);
+}
+
+.glass-3 {
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-popover);
+}
+
+/* The surface a glass element inside glass uses (and `GlassSurface` picks for
+   itself when nested). Opaque, raised by its border and shadow, never blurred. */
+.glass-solid {
+  background: var(--glass-solid);
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-popover);
+}
+
+/* ----------------------------------------------------------- the pane */
+
+.glass-1::before,
+.glass-2::before,
+.glass-3::before,
+.sidebar::before,
+.shell-head::before,
+.space-bar::before,
+.auth-card::before,
+.dd-panel::before,
+.overflow-menu-list::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: var(--glass-highlight);
+}
+
+/* Level 1 — chrome. */
+.glass-1::before,
+.sidebar::before,
+.shell-head::before,
+.space-bar::before {
+  background: var(--glass-sheen), var(--glass-1);
+  backdrop-filter: blur(var(--glass-blur-1)) saturate(var(--glass-saturate));
+}
+
+/* Level 2 — the sign-in hero. */
+.glass-2::before,
+.auth-card::before {
+  background: var(--glass-sheen), var(--glass-2);
+  backdrop-filter: blur(var(--glass-blur-2)) saturate(var(--glass-saturate));
+}
+
+/* Level 3 — menus and popovers. */
+.glass-3::before,
+.dd-panel::before,
+.overflow-menu-list::before {
+  background: var(--glass-sheen), var(--glass-3);
+  backdrop-filter: blur(var(--glass-blur-3)) saturate(var(--glass-saturate));
+}
+
+/* The startup splash's panel (LAI-1126) — moved here from brand.css so blur
+   has one home. It holds no fixed descendant, so it blurs itself. */
+.brand-splash-panel {
+  backdrop-filter: blur(var(--glass-blur-2)) saturate(var(--glass-saturate));
+}
+
+/* --------------------------------------------- the scrim behind a modal */
+
+/* Darker than the page, and frosted: the modal surface floating over it is
+   translucent level 3, so this one blur is what makes it read as glass. */
+.side-panel-scrim,
+.confirm-scrim,
+.offb-scrim,
+.drawer-scrim {
+  backdrop-filter: blur(var(--glass-blur-scrim)) saturate(var(--glass-saturate));
+}
+
+/* --------------------------------------------------------- never nest */
+
+:is(.glass-1, .glass-2, .glass-3, .sidebar, .shell-head, .space-bar, .auth-card)
+  :is(.glass-1, .glass-2, .glass-3, .dd-panel, .overflow-menu-list)::before {
+  background: var(--glass-solid);
+  backdrop-filter: none;
+}
+
+/* ---------------------------------------------------- states on glass */
+
+.glass-interactive {
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+/* Hover lifts: the pane takes the next level's (higher) alpha, the edge
+   brightens. The host's own background is under the pane, so the change is
+   made on the pane. */
+.glass-interactive:hover {
+  border-color: var(--glass-border-strong);
+}
+
+.glass-1.glass-interactive:hover::before {
+  background: var(--glass-sheen), var(--glass-2);
+}
+
+.glass-2.glass-interactive:hover::before {
+  background: var(--glass-sheen), var(--glass-3);
+}
+
+.glass-3.glass-interactive:hover::before {
+  background: var(--glass-sheen), var(--glass-3-solid);
+}
+
+.glass-solid.glass-interactive:hover {
+  background: var(--glass-3-solid);
+}
+
+.glass-interactive:active {
+  transform: translateY(1px);
+}
+
+/* Selected: the brand glow ring — never colour alone (aria-current/-selected
+   says it too). */
+.glass-selected,
+.glass-interactive[aria-current],
+.glass-interactive[aria-selected='true'] {
+  box-shadow: var(--glass-glow);
+}
+
+/* Focus: a canvas inner ring and a bright outer one, so it holds on any
+   backdrop the glass shows; the transparent outline keeps forced colours. */
+.glass-interactive:focus-visible,
+.glass-1:focus-visible,
+.glass-2:focus-visible,
+.glass-3:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
+}
+
+/* ------------------------------------------------------------ fallbacks */
+
+/* No backdrop-filter at all: the panes go to their opaque steps. Unprefixed
+   only — Safari has it since 18, and a minifier folds the -webkit- twin
+   into one declaration, keeping whichever came last (LAI-1132, measured). */
+@supports not (backdrop-filter: blur(1px)) {
+  :root,
+  :root[data-theme] {
+    --glass-1: var(--glass-1-solid);
+    --glass-2: var(--glass-2-solid);
+    --glass-3: var(--glass-3-solid);
+    --glass-scrim: var(--scrim);
+  }
+}
+
+/*
+ * Reduced transparency: every level is its solid step, nothing blurs, the
+ * scrim is the plain one, and the ambient layer goes — the canvas is solid.
+ * Done by swapping the tokens, so every consumer (tinted lanes and cards
+ * included) follows without a rule of its own.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  :root[data-theme] {
+    --glass-1: var(--glass-1-solid);
+    --glass-2: var(--glass-2-solid);
+    --glass-3: var(--glass-3-solid);
+    --glass-sheen: none;
+    --glass-scrim: var(--scrim);
+  }
+
+  body::before {
+    display: none;
+  }
+
+  *::before,
+  .brand-splash-panel,
+  .side-panel-scrim,
+  .confirm-scrim,
+  .offb-scrim,
+  .drawer-scrim {
+    backdrop-filter: none !important;
+  }
+}
+
+/* Forced colours: system colours, no blur, no ambient, no sheen. */
+@media (forced-colors: active) {
+  body::before {
+    display: none;
+  }
+
+  *::before,
+  .brand-splash-panel,
+  .side-panel-scrim,
+  .confirm-scrim,
+  .offb-scrim,
+  .drawer-scrim {
+    backdrop-filter: none !important;
+  }
+
+  .glass-1::before,
+  .glass-2::before,
+  .glass-3::before,
+  .sidebar::before,
+  .shell-head::before,
+  .space-bar::before,
+  .auth-card::before,
+  .dd-panel::before,
+  .overflow-menu-list::before {
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .glass-1,
+  .glass-2,
+  .glass-3,
+  .glass-solid {
+    border-color: CanvasText;
+  }
+}
