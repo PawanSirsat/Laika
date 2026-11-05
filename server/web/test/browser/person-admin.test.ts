@@ -1,6 +1,7 @@
 /**
  * The person admin panel and the reset-link page, in a real browser (D-104,
- * LAI-988).
+ * LAI-988). Since LAI-1134 the controls live in the **Manage member** panel,
+ * opened from the profile header's ⋯; every test here opens it that way.
  *
  * What the server tests cannot see: that the `409 open_tasks` a deactivation
  * or a removal is refused with becomes the offboarding dialog's question, with
@@ -240,9 +241,18 @@ function stub(viewer: ReturnType<typeof me>, overrides: ApiStub = {}): ApiStub {
 const OWNER = me('u1', 'owner');
 const ADMIN = me('u4', 'admin');
 
+/** The profile header's ⋯ (LAI-1134). */
+const MANAGE_BUTTON = '[data-profile-manage] button[aria-haspopup="menu"]';
+const PANEL = '[data-panel="manage-member"]';
+
+/** Open the Manage member panel the way a reader does: ⋯, then *Manage member…*. */
 async function panel(h: Harness) {
-  const found = h.page.locator('.prof-card[data-section="admin"]');
-  await found.waitFor({ timeout: 20_000 });
+  const more = h.page.locator(MANAGE_BUTTON);
+  await more.waitFor({ timeout: 20_000 });
+  await more.click();
+  await h.page.getByRole('menuitem', { name: 'Manage member…' }).click();
+  const found = h.page.locator(PANEL);
+  await found.waitFor({ timeout: 10_000 });
   return found;
 }
 
@@ -340,14 +350,22 @@ void describe('the Admin panel', () => {
     }
   });
 
-  void test('a person’s own profile has no Admin panel', async () => {
-    const h = await open('/people?user=u1', stub(OWNER));
+  void test('on a person’s own profile the panel holds only their profile kind', async () => {
+    const h = await open('/people?user=u1', stub(OWNER), {
+      before: (page: Page) => watchFor(page, CONTROLS),
+    });
     try {
-      await h.page
-        .locator('.prof-card[data-section="activity"], .prof-card')
-        .first()
-        .waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('.prof-card[data-section="admin"]').count(), 0);
+      const admin = await panel(h);
+      await admin.locator('[data-admin-row="kind"]').waitFor();
+      assert.deepEqual(
+        await admin
+          .locator('[data-admin]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('data-admin'))),
+        ['role'],
+      );
+      for (const sel of CONTROLS) {
+        assert.equal(await everSeen(h.page, sel), false, `own profile offered ${sel}`);
+      }
     } finally {
       await h.close();
     }
@@ -709,7 +727,7 @@ void describe('access', () => {
       assert.doesNotMatch(await credentials.innerText(), /registered \d/);
 
       // The list spans the panel instead of one narrow column.
-      const grid = await admin.locator('.prof-admin-grid').boundingBox();
+      const grid = await admin.locator('.prof-admin').boundingBox();
       const box = await block.boundingBox();
       assert.ok(grid !== null && box !== null);
       assert.ok(
@@ -875,15 +893,16 @@ void describe('every control is the server’s answer', () => {
     }
   });
 
-  void test('with no grant at all about people, there is no panel', async () => {
+  void test('with no grant at all about people, there is no ⋯ and no panel', async () => {
     const h = await open(
       '/people?user=u2',
       stub(ADMIN, { '/api/v1/permissions': permissions('admin', ['org.read', 'profile.read']) }),
-      { before: (page: Page) => watchFor(page, ['.prof-card[data-section="admin"]']) },
+      { before: (page: Page) => watchFor(page, ['[data-profile-manage]', PANEL]) },
     );
     try {
       await h.page.locator('.prof-card').first().waitFor({ timeout: 20_000 });
-      assert.equal(await everSeen(h.page, '.prof-card[data-section="admin"]'), false);
+      assert.equal(await everSeen(h.page, '[data-profile-manage]'), false);
+      assert.equal(await everSeen(h.page, PANEL), false);
     } finally {
       await h.close();
     }
