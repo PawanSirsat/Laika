@@ -58,3 +58,23 @@ bullet). Nothing under `server/web/`, and not `docs/DECISIONS.md`.
   board already held (LAIKA-991, toast/undo); this session briefly filed it as
   LAI-1128 (card LAIKA-996, superseded), and polly then assigned LAI-1135. No
   commit carries LAI-1128 or LAI-1129.
+
+## Submitted red on one web guard (CLAUDE.md §4.4 step 1)
+
+CI's `Gate · web 4/4` fails, and only on this:
+
+```
+server/web/test/api/endpoint-coverage.test.ts:322
+not ok 1 - no endpoint is served, uncalled and unexplained
+  expected: []
+  actual:   [ 'api/v1/time/report' ]
+```
+
+The endpoint is served ahead of its screen, and the exemption list
+(`NO_BROWSER_CALLER`) lives in `server/web/`, SHELL's area, which this task
+was told not to touch. **What turns it green**, either:
+
+- T5 (LAI-1138) calls `/time/report` from the client; or
+- an authorised named crossing (D-033) adds one entry to the *"Built, served,
+  and waiting on a screen"* group, as LAI-1050 and LAI-1056 did:
+  `'api/v1/time/report': 'LAI-1138 — the Time report component (My day, profile, Insights → Time)',`
