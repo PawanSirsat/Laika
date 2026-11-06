@@ -142,6 +142,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'profile.set_kind': 'YYNN',
   'profile.rate': 'CCNN',
   'profile.activity.read': 'YYNN',
+  'profile.read_own': 'YYYY',
   'people.analytics.read': 'CCNN',
   'org.developer_insights.set': 'YYNN',
   'activity_sharing.read_own': 'YYYY',

@@ -41,6 +41,12 @@ export interface ProfileProject {
   readonly open_tasks: number;
   readonly accepted: number;
   readonly reviewed: number;
+  /**
+   * Their confirmed and drafted minutes there over their last 14 days
+   * (LAI-1150). Optional until LAI-1152's profile reads it: the fixtures
+   * written before it was served do not carry it.
+   */
+  readonly minutes_14d?: number;
 }
 
 export interface ProfileTask {
@@ -180,6 +186,8 @@ export interface ProfileCurrentWork {
   readonly in_progress_total: number;
   readonly in_review: readonly ProfileTask[];
   readonly in_review_total: number;
+  /** Their open tasks due in the next seven days (LAI-1150); optional until LAI-1152 reads it. */
+  readonly due_7d?: number;
 }
 
 export interface ProfileActivitySharing {

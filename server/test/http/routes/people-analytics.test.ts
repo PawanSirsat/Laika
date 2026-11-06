@@ -309,6 +309,7 @@ describe('GET /me/analytics-views', () => {
     expect(await ok(await req('/api/v1/me/analytics-views', {}, admin.cookie))).toEqual({
       data: [],
       next_cursor: null,
+      total: 0,
     });
   });
 

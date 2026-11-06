@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
-import { listAnalyticsViews } from '../../services/analytics-views.ts';
+import { countAnalyticsViews, listAnalyticsViews } from '../../services/analytics-views.ts';
 import {
   type DeveloperSetupView,
   getDeveloperSetup,
@@ -48,7 +48,7 @@ import { MyDayQuery, SummaryQuery } from './time.ts';
  * card is on the screen, once per range.
  */
 
-const ActivityQuery = strictObject({
+export const ActivityQuery = strictObject({
   range: z.enum(ACTIVITY_RANGES).default('12w'),
 });
 
@@ -137,8 +137,28 @@ export function peopleRoutes(options: { db: Db; sqlite: Database.Database }): Ho
 }
 
 /**
- * `GET /api/v1/me/analytics-views?limit=&cursor=` (D-102 rule 3, LAI-957): who
- * looked at the caller's analytics, newest first. Mounted at `/api/v1/me`.
+ * `?since=` on *Who looked* (LAI-1150): unix ms, or an ISO 8601 date-time.
+ * Absent means every look kept; anything else is `400`, as `updated_since`.
+ */
+function parseSince(raw: string | undefined): number | null {
+  if (raw === undefined || raw === '') return null;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const at = /^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/.test(raw)
+    ? Date.parse(raw)
+    : NaN;
+  if (Number.isNaN(at)) {
+    throw ApiError.badRequest('since is a unix-millisecond timestamp or an ISO 8601 date-time', {
+      since: raw,
+    });
+  }
+  return at;
+}
+
+/**
+ * `GET /api/v1/me/analytics-views?limit=&cursor=&since=` (D-102 rule 3,
+ * LAI-957): who looked at the caller's analytics, newest first, each viewer
+ * with their org role, and `total` — how many looks since `since` (LAI-1150).
+ * Mounted at `/api/v1/me`.
  */
 export function meAnalyticsViewRoutes(options: { db: Db }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -147,8 +167,12 @@ export function meAnalyticsViewRoutes(options: { db: Db }): Hono<AppEnv> {
   app.get('/analytics-views', (c) => {
     const actor = requireActor(c);
     const { limit, cursor } = parsePageQuery(c.req.query());
-    const rows = listAnalyticsViews(db, actor, { limit, cursor });
-    return c.json(buildPage(rows, limit, (row) => ({ sortKey: row.viewed_at, id: row.id })));
+    const since = parseSince(c.req.query('since'));
+    const rows = listAnalyticsViews(db, actor, { limit, cursor, since });
+    return c.json({
+      ...buildPage(rows, limit, (row) => ({ sortKey: row.viewed_at, id: row.id })),
+      total: countAnalyticsViews(db, actor, since),
+    });
   });
 
   return app;

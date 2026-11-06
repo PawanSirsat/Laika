@@ -91,6 +91,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'profile.set_kind': "Set a member's profile kind",
   'profile.rate': 'Rate a member',
   'profile.activity.read': "View a member's activity heatmap",
+  'profile.read_own': 'View own profile and activity heatmap',
   'people.analytics.read': "View a member's day, time and shared activity",
   'org.developer_insights.set': 'Turn Developer insights on or off',
   'activity_sharing.read_own': 'Read own activity-sharing setting',

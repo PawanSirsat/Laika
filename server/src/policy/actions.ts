@@ -53,6 +53,8 @@ export const ORG_ACTIONS = [
   'profile.set_kind',
   'profile.rate',
   'profile.activity.read',
+  // D-139 item 1 (LAI-1150): a person's own profile and heatmap, every role.
+  'profile.read_own',
   // D-102 rule 1 (LAI-957): a person's day, hours and shared local activity,
   // read by somebody else in the shape the person reads them.
   'people.analytics.read',
@@ -296,6 +298,9 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'profile.rate',
   // The heatmap is part of the profile, and follows its rule (D-078, D-079).
   'profile.activity.read',
+  // **Your own profile** (D-139 item 1, LAI-1150): the profile's rule, for
+  // the person — a token, their own agent's included, reads no profile.
+  'profile.read_own',
   // **A person's day, drafts included, and their local activity** (D-102,
   // LAI-957): the profile's rule, and the rule the person's own `/me` reads
   // follow — a token, an agent's included, reads nobody's day.

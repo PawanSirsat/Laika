@@ -72,6 +72,7 @@ function folderBefore0070(): { dir: string; restore: () => void } {
     '0076_user_availability',
     '0077_member_notices',
     '0078_developer_setup_reads',
+    '0079_analytics_views_profile',
   ]);
   writeFileSync(journalPath, JSON.stringify(journal));
   return {

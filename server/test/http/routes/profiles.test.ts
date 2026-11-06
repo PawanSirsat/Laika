@@ -270,7 +270,10 @@ describe('the bodies (§6.3, LAI-743)', () => {
       ),
     );
     expect(after).toMatchObject({ user: { profile_kind: 'manager' } });
-    expect(after).not.toHaveProperty('agents');
+    // One layout for both kinds (D-139 item 2): the kind adds a queue.
+    expect(after).toHaveProperty('agents');
+    expect(after).toHaveProperty('queue');
+    expect(before).not.toHaveProperty('queue');
   });
 
   it('answers 201 with the rating, and the profile then carries it first', async () => {
@@ -551,5 +554,67 @@ describe('a retried rating (LAI-746)', () => {
     expect(res.status).toBe(400);
     expect((await errorOf(res)).code).toBe('bad_request');
     expect(h.db.select().from(memberRatings).all()).toHaveLength(0);
+  });
+});
+
+describe('your own profile and heatmap, and who looked (D-139, LAI-1150)', () => {
+  it('answers every role its own profile on a session, ratings left out', async () => {
+    for (const person of [member, viewer]) {
+      const own = await ok(req('/api/v1/me/profile', {}, person.cookie));
+      expect(own).toMatchObject({ user: { id: person.id } });
+      expect(own).not.toHaveProperty('ratings');
+      expect(own).toHaveProperty('current_work.due_7d', 0);
+    }
+    // An owner holds profile.read, so their own carries ratings.
+    expect(await ok(req('/api/v1/me/profile', {}, ownerCookie))).toHaveProperty('ratings');
+  });
+
+  it('answers the own heatmap for a range, and refuses another', async () => {
+    const year = await ok(req('/api/v1/me/activity?range=52w', {}, viewer.cookie));
+    expect((year.series as { board_self: number[] }).board_self).toHaveLength(364);
+    expect((await req('/api/v1/me/activity?range=9w', {}, viewer.cookie)).status).toBe(422);
+  });
+
+  it('refuses a token, the person’s own included, by can()', async () => {
+    const token = await mint(member.cookie, { name: 'Claude Code', scope: 'full' });
+    for (const path of ['/api/v1/me/profile', '/api/v1/me/activity']) {
+      const res = await req(path, {}, token);
+      expect(res.status, path).toBe(403);
+      expect(await errorOf(res)).toMatchObject({
+        code: 'forbidden',
+        details: { action: 'profile.read_own' },
+      });
+    }
+    expect((await req('/api/v1/me/profile')).status).toBe(401);
+  });
+
+  it('logs an owner opening a profile, and the person reads it with role and total', async () => {
+    const before = Date.now();
+    await ok(req(`/api/v1/users/${member.id}/profile`, {}, ownerCookie));
+    await ok(req(`/api/v1/users/${member.id}/profile`, {}, ownerCookie)); // the same look
+    await ok(req('/api/v1/me/profile', {}, member.cookie)); // their own: no look
+
+    const since = new Date(before - 1000).toISOString();
+    const page = await ok(
+      req(`/api/v1/me/analytics-views?since=${encodeURIComponent(since)}`, {}, member.cookie),
+    );
+    expect(page.total).toBe(2);
+    expect(
+      (page.data as { kind: string; viewer: { id: string; org_role: string } }[])
+        .map((v) => [v.kind, v.viewer.id, v.viewer.org_role])
+        .sort(),
+    ).toEqual([
+      ['profile', ownerId, 'owner'],
+      ['time', ownerId, 'owner'],
+    ]);
+
+    // Nothing since a moment after now; a malformed since is the caller's.
+    const later = await ok(
+      req(`/api/v1/me/analytics-views?since=${String(Date.now() + 60_000)}`, {}, member.cookie),
+    );
+    expect([later.total, later.data]).toEqual([0, []]);
+    expect((await req('/api/v1/me/analytics-views?since=soon', {}, member.cookie)).status).toBe(
+      400,
+    );
   });
 });
