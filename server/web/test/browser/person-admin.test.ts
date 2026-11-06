@@ -212,6 +212,9 @@ function stub(viewer: ReturnType<typeof me>, overrides: ApiStub = {}): ApiStub {
     },
     '/api/v1/users/u2/profile': profile(PEOPLE[1]!),
     '/api/v1/users/u1/profile': profile(PEOPLE[0]!),
+    // u1's own profile and heatmap, when u1 is the reader (D-139, LAI-1150).
+    '/api/v1/me/profile': profile(PEOPLE[0]!),
+    '/api/v1/me/activity': quietActivity,
     '/api/v1/users/u2/usage': quietUsage('u2'),
     '/api/v1/users/u1/usage': quietUsage('u1'),
     '/api/v1/people/u2/activity': quietActivity,
@@ -350,19 +353,15 @@ void describe('the Admin panel', () => {
     }
   });
 
-  void test('on a person’s own profile the panel holds only their profile kind', async () => {
+  void test('on a person’s own profile there is no ⋯ and no panel — Who looked instead (LAI-1152)', async () => {
     const h = await open('/people?user=u1', stub(OWNER), {
-      before: (page: Page) => watchFor(page, CONTROLS),
+      before: (page: Page) => watchFor(page, [...CONTROLS, MANAGE_BUTTON, PANEL]),
     });
     try {
-      const admin = await panel(h);
-      await admin.locator('[data-admin-row="kind"]').waitFor();
-      assert.deepEqual(
-        await admin
-          .locator('[data-admin]')
-          .evaluateAll((els) => els.map((el) => el.getAttribute('data-admin'))),
-        ['role'],
-      );
+      // The design draws ⋯ on someone else's profile only (SPEC §11.4.2.1).
+      await h.page.locator('[data-profile-who-looked]').waitFor({ timeout: 20_000 });
+      assert.equal(await everSeen(h.page, MANAGE_BUTTON), false, 'own profile drew ⋯');
+      assert.equal(await everSeen(h.page, PANEL), false);
       for (const sel of CONTROLS) {
         assert.equal(await everSeen(h.page, sel), false, `own profile offered ${sel}`);
       }
@@ -942,15 +941,20 @@ void describe('every control is the server’s answer', () => {
     }
   });
 
-  void test('with no grant at all about people, there is no ⋯ and no panel', async () => {
+  void test('with no grant at all about people, ⋯ holds only the links and there is no panel', async () => {
     const h = await open(
       '/people?user=u2',
       stub(ADMIN, { '/api/v1/permissions': permissions('admin', ['org.read', 'profile.read']) }),
-      { before: (page: Page) => watchFor(page, ['[data-profile-manage]', PANEL]) },
+      { before: (page: Page) => watchFor(page, [PANEL]) },
     );
     try {
       await h.page.locator('.prof-card').first().waitFor({ timeout: 20_000 });
-      assert.equal(await everSeen(h.page, '[data-profile-manage]'), false);
+      // ⋯ carries *Copy link* and *See … in Work* for every reader (LAI-1152);
+      // *Manage member…* only when the panel would hold something (LAI-1134).
+      await h.page.locator(MANAGE_BUTTON).click();
+      const items = await h.page.getByRole('menuitem').allInnerTexts();
+      assert.equal(items.length, 2);
+      assert.equal(items.filter((t) => t.includes('Manage member')).length, 0);
       assert.equal(await everSeen(h.page, PANEL), false);
     } finally {
       await h.close();

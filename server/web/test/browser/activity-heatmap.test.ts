@@ -859,7 +859,8 @@ void describe('your own profile (LAI-1154)', () => {
       '/people?user=u1',
       {
         ...own,
-        '/api/v1/users/u1/profile': {
+        // Your own profile is `/me/profile` (LAI-1152), every role's.
+        '/api/v1/me/profile': {
           ...PROFILE,
           user: { ...PROFILE.user, id: 'u1', name: 'Ada Owner', email: 'ada@example.com' },
           activity_sharing: { org_enabled: true, enabled: true },

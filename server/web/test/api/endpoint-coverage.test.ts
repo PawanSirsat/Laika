@@ -56,9 +56,6 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
    * built, and there is nowhere in the app to put it yet.
    */
   'api/v1/me/watching': 'LAI-458 — a "tasks I watch" screen does not exist',
-  // D-139 item 1 (LAI-1150) serves it ahead of its screen: the member's own
-  // profile is LAI-1152's to call (their heatmap is called, LAI-1154).
-  'api/v1/me/profile': 'LAI-1152 — your own profile screen calls it; served first by LAI-1150',
   // Called by something that is not the SPA.
   'webhooks/github': 'GitHub posts here (§9.2); no browser is involved',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
@@ -152,6 +149,11 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     'agent-token only — a session is refused `403`; the device’s launcher reports with it (plan auto-pickup slice B)',
   'api/v1/agents/me/capacity-pings/*/reply':
     'agent-token only — the pinged agent’s own; its launcher or session watcher answers a ping with it (plan auto-pickup slice B)',
+  // D-139 item 8 (LAI-1152): the rating card and its Rate dialog left the
+  // profile, and nothing else in the SPA writes a rating. The API keeps the
+  // endpoint and every rating already written; nothing was deleted.
+  'api/v1/users/*/ratings':
+    'D-139 item 8 — the profile draws no rating any more; the endpoint stays in the API',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */

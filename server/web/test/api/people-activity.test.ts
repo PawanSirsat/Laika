@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   ACTIVITY_RANGES,
-  getMyActivity,
+  getOwnActivity,
   getPeopleActivity,
 } from '../../src/api/people-activity.ts';
 
@@ -35,7 +35,7 @@ void describe('the heatmap read (§6.4)', () => {
 
   void test('your own asks /me/activity with the range, and names nobody (LAI-1154)', async () => {
     const calls = stub({ range: '12w' });
-    await getMyActivity('12w');
+    await getOwnActivity('12w');
     assert.equal(calls[0]?.method, 'GET');
     assert.ok(calls[0]?.url.endsWith('/api/v1/me/activity?range=12w'), calls[0]?.url);
   });

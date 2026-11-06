@@ -694,116 +694,40 @@ const profileStub = (reader: { id: string; name: string; role: string }): ApiStu
   },
 });
 
-void describe('the profile: pill and Current load (frames 2d–2f)', () => {
-  /** Calls for Hemant's load so far. */
-  const loads = (h: Harness): number =>
-    h.calls.filter((c) => c.path === '/api/v1/people/u2/load').length;
+void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-1152)', () => {
+  /** Calls for Hemant's load so far: the profile never makes one now. */
+  const loads = (h: Harness): number => h.calls.filter((c) => c.path.endsWith('/load')).length;
   /** No read happens in a window: a fixed wait, because nothing can end it early. */
   const quiet = (page: Page): Promise<void> => page.waitForTimeout(1_000);
 
   for (const theme of ['Dark', 'Light'] as const) {
-    void test(`Current load is read only when asked, then facts, not a score (${theme})`, async () => {
+    void test(`the pill is their row of the list, on opening, and no load is read (${theme})`, async () => {
       const h = await open(
         '/people?user=u2&tab=overview',
         profileStub({ id: 'u1', name: 'Ada Owner', role: 'owner' }),
       );
       try {
-        const card = h.page.locator('[data-section="load"]');
-        const show = card.locator('[data-load-show]');
-        await show.waitFor({ timeout: 20_000 });
-        // Collapsed (review B1, polly's decision; departs from frame 2f).
-        assert.equal(
-          await show.innerText(),
-          'Show current load · Hemant Purohit can see you looked',
-        );
-        await quiet(h.page);
-        assert.equal(loads(h), 0, 'opening Overview read the load');
-        // The pill comes from that same read: none before it.
-        assert.equal(await h.page.locator('[data-profile-availability]').count(), 0);
-        assert.equal(
-          h.calls.some((c) => c.path === '/api/v1/people/availability'),
-          false,
-          'an owner’s list read would log a look at everyone on it',
-        );
-
-        await show.click();
-        await card.locator('[data-load="week"]').waitFor({ timeout: 20_000 });
-        assert.equal(loads(h), 1);
+        const pill = h.page.locator('.prof-head [data-profile-pill] [data-avail-pill="open"]');
+        await pill.waitFor({ timeout: 20_000 });
         await h.page.setViewportSize({ width: 1366, height: 900 });
         await setTheme(h.page, theme);
-        await card.scrollIntoViewIfNeeded();
-        await shoot(h.page, `current-load-${theme}`);
-        assert.match(
-          await card.innerText(),
-          /facts, not a score · read-only · Hemant can see you looked/,
-        );
-        assert.equal(
-          await card.locator('[data-load-week]').innerText(),
-          '21h 5m tracked of 40h set',
-        );
-        // Neutral and unfilled (plan Q2): the track draws nothing in proportion.
-        const track = card.locator('[data-load-track]');
-        assert.equal(await track.locator('*').count(), 0);
-        assert.equal(await track.getAttribute('style'), null);
-        assert.match(await card.innerText(), /Set by Hemant: Mon–Fri, 08:00–16:00/);
-        assert.match(await card.innerText(), /In progress\s*2/);
-        assert.match(await card.innerText(), /Waiting for review\s*1/);
-        assert.match(await card.innerText(), /Due in 7 days\s*3/);
-        assert.match(await card.innerText(), /Sauce · Space admin/);
-        assert.match(await card.innerText(), /Spaces you can’t open/);
-        assert.match(await card.innerText(), /Fri 20 – Mon 23 Nov/);
-        assert.doesNotMatch(await card.innerText(), /free|%/i);
-
-        const head = h.page.locator('[data-profile-availability]');
-        await head.waitFor({ timeout: 10_000 });
-        assert.match(await head.innerText(), /Open to more work/);
-        assert.match(await head.innerText(), /“Payments and API work”/);
-        assert.match(await head.innerText(), /set by Hemant · updated 3 days ago/);
-        // Moving between tabs is not another look.
-        await h.page.locator('[data-profile-tab="day"]').click();
-        await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+        await shoot(h.page, `profile-pill-${theme}`);
+        assert.match(await pill.innerText(), /Open to more work/);
+        const line = h.page.locator('.prof-head [data-profile-availability]');
+        assert.match(await line.innerText(), /“Payments and API work”/);
+        assert.match(await line.innerText(), /Payments/);
+        assert.match(await line.innerText(), /set by Hemant/);
+        // Current load and its button left the profile (D-139 item 8).
+        assert.equal(await h.page.locator('[data-section="load"]').count(), 0);
+        assert.equal(await h.page.getByText(/Show current load/).count(), 0);
         await quiet(h.page);
-        assert.equal(loads(h), 1);
+        assert.equal(loads(h), 0, 'opening Overview read the load');
+        assert.ok(h.calls.some((c) => c.path === '/api/v1/people/availability'));
       } finally {
         await h.close();
       }
     });
   }
-
-  void test('Show, another person, then back: collapsed again and no second look', async () => {
-    const h = await open('/people?user=u2', {
-      ...profileStub({ id: 'u1', name: 'Ada Owner', role: 'owner' }),
-      '/api/v1/users/u3/profile': profileOf('u3', 'Lindiwe Dube'),
-      '/api/v1/users/u3/usage': quietUsage('u3'),
-      '/api/v1/people/u3/activity': quietYear(),
-      '/api/v1/people/u3/load': LOAD,
-    });
-    try {
-      const show = h.page.locator('[data-section="load"] [data-load-show]');
-      await show.waitFor({ timeout: 20_000 });
-      await show.click();
-      await h.page.locator('[data-load="week"]').waitFor({ timeout: 20_000 });
-      assert.equal(loads(h), 1);
-
-      await navigateInApp(h.page, '/people?user=u3');
-      await h.page.locator('.prof-name', { hasText: 'Lindiwe Dube' }).waitFor({ timeout: 20_000 });
-      await show.waitFor({ timeout: 10_000 });
-      await navigateInApp(h.page, '/people?user=u2');
-      await h.page
-        .locator('.prof-name', { hasText: 'Hemant Purohit' })
-        .waitFor({ timeout: 20_000 });
-      await show.waitFor({ timeout: 10_000 });
-      await quiet(h.page);
-      assert.equal(loads(h), 1, 'coming back to Hemant read his load again');
-      assert.equal(
-        h.calls.filter((c) => c.path === '/api/v1/people/u3/load').length,
-        0,
-        'opening Lindiwe read her load',
-      );
-    } finally {
-      await h.close();
-    }
-  });
 
   for (const tab of ['overview', 'day', 'time'] as const) {
     void test(`opening ?tab=${tab} reads no load`, async () => {
@@ -842,10 +766,10 @@ void describe('the profile: pill and Current load (frames 2d–2f)', () => {
     }
   });
 
-  void test('a reader with profiles but not analytics sees no Current load and asks for none', async () => {
+  void test('a reader with profiles but not analytics asks for no load', async () => {
     // An admin whose *See everyone's analytics* was withdrawn, still holding
     // profiles and the developer-setup grant (LAI-1140's tab): the page may
-    // have tabs for them, and still no Current load.
+    // have tabs for them, and the pill is still the list's.
     const stub = profileStub({ id: 'u1', name: 'Ada Admin', role: 'admin' });
     const h = await open('/people?user=u2', {
       ...stub,

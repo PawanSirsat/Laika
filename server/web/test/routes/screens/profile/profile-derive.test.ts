@@ -4,8 +4,7 @@
  * Every figure on the profile is the server's; these functions only say how a
  * figure reads. The cases that matter are the ones where reading it wrongly
  * would claim something: a cycle time of `0` when nothing was measured, a
- * chart whose tallest bar is scaled by an empty week, a rating sent with a note
- * the server will refuse.
+ * chart whose tallest bar is scaled by an empty week.
  */
 
 import assert from 'node:assert/strict';
@@ -21,9 +20,6 @@ import {
   durationLabel,
   lastActive,
   monthYear,
-  nextAttempt,
-  ratingProblem,
-  scoreLabel,
   sharePercents,
   weekLabel,
 } from '../../../../src/routes/screens/profile/profile-derive.ts';
@@ -68,77 +64,6 @@ void describe('barHeights', () => {
 
   void test('an empty window draws no bars rather than dividing by zero', () => {
     assert.deepEqual(barHeights([0, 0, 0]), [0, 0, 0]);
-  });
-});
-
-void describe('scoreLabel', () => {
-  void test('reads as a score out of five', () => {
-    assert.equal(scoreLabel(4), '4 / 5');
-  });
-});
-
-void describe('ratingProblem — the form refuses what the server would', () => {
-  void test('needs a score', () => {
-    assert.equal(ratingProblem(undefined, 'Fine.'), 'Choose a score from 1 to 5.');
-  });
-
-  void test('needs a note, after trimming', () => {
-    assert.equal(ratingProblem(3, ''), 'Write a short note — what the rating is based on.');
-    assert.equal(ratingProblem(3, '   '), 'Write a short note — what the rating is based on.');
-  });
-
-  void test('caps the note at the server’s 500', () => {
-    assert.equal(ratingProblem(3, 'x'.repeat(500)), undefined);
-    assert.equal(ratingProblem(3, 'x'.repeat(501)), 'Keep the note to 500 characters.');
-    // Trimmed first, as the server trims it.
-    assert.equal(ratingProblem(3, `  ${'x'.repeat(500)}  `), undefined);
-  });
-
-  void test('is satisfied by a score and a note', () => {
-    assert.equal(ratingProblem(5, 'Clears review fast.'), undefined);
-  });
-});
-
-void describe('nextAttempt — one key per rating the reader is trying to save (LAI-746)', () => {
-  let made = 0;
-  const make = (): string => {
-    made += 1;
-    return `k${String(made)}`;
-  };
-
-  void test('starts a fresh attempt when there is none', () => {
-    made = 0;
-    assert.deepEqual(nextAttempt(undefined, 'u2', 4, 'Steady.', make), {
-      key: 'k1',
-      userId: 'u2',
-      score: 4,
-      note: 'Steady.',
-    });
-  });
-
-  void test('keeps the key for a retry of the same rating, so a lost answer cannot duplicate it', () => {
-    made = 0;
-    const first = nextAttempt(undefined, 'u2', 4, 'Steady.', make);
-    assert.equal(nextAttempt(first, 'u2', 4, 'Steady.', make).key, 'k1');
-    // The note is compared as the server stores it: trimmed.
-    assert.equal(nextAttempt(first, 'u2', 4, '  Steady.  ', make).key, 'k1');
-  });
-
-  void test('takes a new key when the rating changed — the old one would be a 409', () => {
-    made = 0;
-    const first = nextAttempt(undefined, 'u2', 4, 'Steady.', make);
-    assert.equal(nextAttempt(first, 'u2', 5, 'Steady.', make).key, 'k2');
-    assert.equal(nextAttempt(first, 'u2', 4, 'Steadier.', make).key, 'k3');
-  });
-
-  void test('takes a new key for another member, whatever the score and note (LAI-749)', () => {
-    // The same score and note about somebody else is a different rating: the
-    // first member's key would answer 409, or worse, name the wrong person.
-    made = 0;
-    const first = nextAttempt(undefined, 'u2', 4, 'Steady.', make);
-    const other = nextAttempt(first, 'u3', 4, 'Steady.', make);
-    assert.equal(other.key, 'k2');
-    assert.equal(other.userId, 'u3');
   });
 });
 
@@ -285,8 +210,8 @@ void describe('the column layout (LAI-751, owner, 2026-10-16)', () => {
 
   void test('every card of a kind appears exactly once across both groups, at every width', () => {
     const cards = {
-      builder: ['agents', 'current', 'delivery', 'projects', 'rating', 'review'],
-      manager: ['decisions', 'projects', 'rating', 'review'],
+      builder: ['agents', 'current', 'delivery', 'projects', 'review'],
+      manager: ['projects', 'review'],
     } as const;
     for (const kind of ['builder', 'manager'] as const) {
       for (const n of [1, 2, 3] as const) {
@@ -311,15 +236,15 @@ void describe('the column layout (LAI-751, owner, 2026-10-16)', () => {
 
   void test('one column is the reading order: the design’s summary, then the record (LAI-1134)', () => {
     assert.deepEqual(columnPlan('builder', 1), [['current', 'agents', 'review', 'projects']]);
-    assert.deepEqual(columnPlan('builder', 1, 'record'), [['delivery', 'rating']]);
+    assert.deepEqual(columnPlan('builder', 1, 'record'), [['delivery']]);
     assert.deepEqual(columnPlan('manager', 1), [['review', 'projects']]);
-    assert.deepEqual(columnPlan('manager', 1, 'record'), [['decisions', 'rating']]);
+    assert.deepEqual(columnPlan('manager', 1, 'record'), []);
   });
 
-  void test('the SPEC must-haves the design leaves out are in the record, never dropped', () => {
+  void test('the record holds Delivered alone: no rating, no recent decisions (D-139 item 8)', () => {
     for (const n of [1, 2, 3] as const) {
-      assert.deepEqual(columnPlan('builder', n, 'record').flat().sort(), ['delivery', 'rating']);
-      assert.deepEqual(columnPlan('manager', n, 'record').flat().sort(), ['decisions', 'rating']);
+      assert.deepEqual(columnPlan('builder', n, 'record'), [['delivery']]);
+      assert.deepEqual(columnPlan('manager', n, 'record'), []);
     }
   });
 

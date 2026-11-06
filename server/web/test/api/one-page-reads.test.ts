@@ -116,6 +116,18 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
         why: 'the newest pages, walking `next_cursor` until one reaches past the window',
       },
     ],
+    /*
+     * LAI-1152: the profile's *Who looked · last 30 days* walks the same log
+     * the same way, until a page reaches past 30 days; the badge is the
+     * server's `total` when it sends one (LAI-1150).
+     */
+    [
+      'routes/screens/profile/ProfileWhoLooked.tsx',
+      {
+        names: ['listAnalyticsViews'],
+        why: 'the newest pages, walking `next_cursor` until one reaches past 30 days',
+      },
+    ],
   ]);
 
 interface Call {

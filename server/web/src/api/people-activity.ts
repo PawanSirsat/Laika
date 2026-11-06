@@ -54,10 +54,13 @@ export function getPeopleActivity(
 }
 
 /**
- * Your own heatmap (D-139 item 1, LAI-1150): the same shape, any org role, on
- * a session, and no look written — reading your own is not looking at anyone.
+ * `GET /me/activity?range=` (D-139 item 1, LAI-1150): your own heatmap, any
+ * role, the answer `/people/:id/activity` gives about you.
  */
-export function getMyActivity(range: ActivityRange, signal?: AbortSignal): Promise<PeopleActivity> {
+export function getOwnActivity(
+  range: ActivityRange,
+  signal?: AbortSignal,
+): Promise<PeopleActivity> {
   return request<PeopleActivity>(
     `/me/activity?range=${range}`,
     signal === undefined ? {} : { signal },

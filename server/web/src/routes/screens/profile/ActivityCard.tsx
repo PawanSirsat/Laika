@@ -12,7 +12,7 @@ import {
 } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import {
-  getMyActivity,
+  getOwnActivity,
   getPeopleActivity,
   type ActivityRange,
   type PeopleActivity,
@@ -54,12 +54,6 @@ export interface ActivityCardProps {
   /** Whose activity. */
   readonly userId: string;
   readonly name: string;
-  /**
-   * Your own profile reads `GET /me/activity` (D-139 item 1, LAI-1150), which
-   * any role may and which writes no look; someone else's the logged
-   * `GET /people/:id/activity`.
-   */
-  readonly self: boolean;
   /** When they joined (`user.created_at`): the days before it are drawn apart (LAI-1154). */
   readonly joinedAt: number;
   /** Who is looking — the design they chose is remembered per viewer. */
@@ -72,6 +66,10 @@ export interface ActivityCardProps {
    * moves when it does.
    */
   readonly sharing: ActivitySwitches;
+  /** The (i) beside the title; the profile draws none (D-139 item 8, LAI-1152). */
+  readonly definitions?: boolean;
+  /** The reader's own heatmap: `/me/activity`, which every role may read (LAI-1150). */
+  readonly own?: boolean;
 }
 
 interface ActivitySwitches {
@@ -178,11 +176,12 @@ function offReason(sharing: ActivitySwitches): Off {
 export function ActivityCard({
   userId,
   name,
-  self,
   joinedAt,
   viewerId,
   canManageOrg,
   sharing,
+  definitions = true,
+  own = false,
 }: ActivityCardProps) {
   const [range, setRange] = useState<ActivityRange>(() => defaultRange(joinedAt));
   const [design, setDesign] = useState<HeatDesign>(() => readDesign(viewerId));
@@ -196,8 +195,8 @@ export function ActivityCard({
   useEffect(() => {
     const controller = new AbortController();
     setLoad({ kind: 'loading' });
-    (self
-      ? getMyActivity(range, controller.signal)
+    (own
+      ? getOwnActivity(range, controller.signal)
       : getPeopleActivity(userId, range, controller.signal)
     )
       .then((activity) => {
@@ -210,7 +209,7 @@ export function ActivityCard({
     return () => {
       controller.abort();
     };
-  }, [userId, self, range, attempt]);
+  }, [userId, range, attempt, own]);
 
   const choose = (next: HeatDesign): void => {
     setDesign(next);
@@ -252,9 +251,11 @@ export function ActivityCard({
           Activity
         </h3>
         <span className="prof-card-caption">{caption}</span>
-        <InfoTip label="About activity">
-          <ActivityDefinitions />
-        </InfoTip>
+        {definitions && (
+          <InfoTip label="About activity">
+            <ActivityDefinitions />
+          </InfoTip>
+        )}
         <span className="prof-card-actions hm-controls">
           <Segmented
             label="Design"
