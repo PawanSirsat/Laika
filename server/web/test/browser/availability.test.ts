@@ -737,7 +737,7 @@ void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-
   }
 
   for (const tab of ['overview', 'day', 'time'] as const) {
-    void test(`opening ?tab=${tab} never reads the whole list, and the load at most once`, async () => {
+    void test(`opening ?tab=${tab} never reads the whole list, and the load exactly once`, async () => {
       const h = await open(
         `/people?user=u2&tab=${tab}`,
         profileStub({ id: 'u1', name: 'Ada Owner', role: 'owner' }),
@@ -749,7 +749,9 @@ void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-
         if (tab === 'day') await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
         await quiet(h.page);
         assert.equal(lists(h), 0, `?tab=${tab} read the whole list`);
-        assert.ok(loads(h) <= 1, `?tab=${tab} read the load ${String(loads(h))} times`);
+        // Once: the pill's read, which This week reuses rather than reading again.
+        await until(() => loads(h) === 1);
+        assert.equal(loads(h), 1, `?tab=${tab} read the load ${String(loads(h))} times`);
       } finally {
         await h.close();
       }

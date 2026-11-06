@@ -56,8 +56,9 @@ only where it renders the Overview. The two branches are reconciled on merge.
   for both cases (own scope on your own; a `time` look on someone else's, as
   D-139 item 4 decided), giving per-day confirmed/drafted and `agent_minutes`.
   Hours set and away dates are the availability the head card already holds
-  (`/me/availability` on your own, the person's `GET /people/availability` row
-  otherwise); a reader not served `work_week` gets *tracked* alone, never a guess.
+  (`/me/availability` on your own; on someone else's the pill's one
+  `GET /people/:id/load` since LAI-1159 — reused, not read again, and never the
+  list). A reader not served `work_week` gets *tracked* alone, never a guess.
 - Agent minutes are said in minutes (D-088 item 8), e.g. *242 min*, not the
   design's *4h 02m*.
 - Durations use D-139 item 7's two forms: `36 h 58 min` in the headline and the

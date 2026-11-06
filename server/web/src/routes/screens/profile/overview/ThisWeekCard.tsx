@@ -23,8 +23,10 @@ type Load =
  * - Confirmed · Drafts · Agents, apart: agent minutes beside the person's,
  *   never added to them, and said in minutes (D-088 item 8).
  * - The hours they set and the days they are away are their availability's
- *   (`work_week`, `away_periods`): the record on your own, the row the reader
- *   may see on someone else's. What the reader was not served is not said.
+ *   (`work_week`, `away_periods`): the record on your own, and on someone
+ *   else's the head card's one `GET /people/:id/load` (LAI-1159) — the same
+ *   read, not a second one, and **never the list**, which would log a look at
+ *   everyone on it. What the reader was not served is not said.
  */
 export function ThisWeekCard({
   userId,

@@ -366,17 +366,69 @@ const BASE: ApiStub = {
   '/api/v1/people/u1/activity': quietYear,
   '/api/v1/people/u2/activity': quietYear,
   '/api/v1/people/u3/activity': quietYear,
-  '/api/v1/people/availability': { data: [] },
 };
 
 /** The page's stub for one profile: the profile, its usage, and its week. */
+/**
+ * Someone else's load, as an analytics reader's pill reads it (LAI-1159): one
+ * person, never the list that logs everyone. This week takes the hours they set
+ * and their time away from this same read rather than asking again.
+ */
+const loadOf = (workWeek: number | null, away: readonly { from: string; to: string }[]) => {
+  const availability = {
+    status: 'capacity',
+    away: null,
+    hours_per_week: null,
+    note: null,
+    tags: [],
+    work_week:
+      workWeek === null
+        ? null
+        : { days: [1, 2, 3, 4, 5], start: '09:00', end: '17:00', minutes: workWeek },
+    away_periods: away.map((a, i) => ({ id: `a${String(i)}`, ...a })),
+    updated_at: NOW - DAY,
+  };
+  return {
+    availability,
+    projects: [],
+    cards: { in_progress: 0, in_review: 0, due_7d: 0 },
+    week: {
+      from: WEEK_DAYS[0],
+      to: WEEK_DAYS[6],
+      confirmed_minutes: 0,
+      drafted_minutes: 0,
+      set_minutes: workWeek,
+    },
+    away,
+  };
+};
+
+const AWAY = [{ from: '2026-11-20', to: '2026-11-23' }];
+
 function stubFor(
   profile: { readonly user: { readonly id: string } },
-  options: { tokens: number; week: readonly (readonly [number, number])[]; agents: number },
+  options: {
+    tokens: number;
+    week: readonly (readonly [number, number])[];
+    agents: number;
+    load?: ReturnType<typeof loadOf>;
+  },
 ): ApiStub {
   const id = profile.user.id;
   return {
     ...BASE,
+    [`/api/v1/people/${id}/load`]: options.load ?? loadOf(2400, AWAY),
+    // The list answers too, with the same row, so a page that read it would
+    // draw the same figures: only the call count can tell (LAI-1159).
+    '/api/v1/people/availability': {
+      data: [
+        {
+          user: { id, name: 'Someone' },
+          availability: (options.load ?? loadOf(2400, AWAY)).availability,
+          spaces: [],
+        },
+      ],
+    },
     [`/api/v1/users/${id}/profile`]: profile,
     // Your own profile is read as yours (D-139 item 1, LAI-1150).
     ...(id === OWNER.id ? { '/api/v1/me/profile': profile, '/api/v1/me/activity': quietYear } : {}),
@@ -515,9 +567,29 @@ void describe('someone else’s busy profile (frame A)', () => {
       assert.equal(await work.locator('.ov-work-row').count(), 0);
 
       // ---- This week: two numbers on an empty track.
+      await until(async () =>
+        (await week.locator('[data-week-total]').innerText()).includes('set'),
+      );
       assert.equal(
         (await week.locator('[data-week-total]').innerText()).replace(/\s+/g, ' ').trim(),
-        '36 h 58 min tracked',
+        '36 h 58 min tracked · 40 h set',
+      );
+      assert.equal(
+        (await week.locator('[data-away]').innerText()).replace(/\s+/g, ' ').trim(),
+        'Away Fri 20 – Mon 23 Nov',
+      );
+      // An analytics reader never reads the list, which would log a look at
+      // everyone on it (LAI-1159); the hours and away dates are the pill's one
+      // load, read once, not again for this card.
+      assert.equal(
+        h.calls.filter((c) => c.path === '/api/v1/people/availability').length,
+        0,
+        'someone else’s Overview read the whole availability list',
+      );
+      assert.equal(
+        h.calls.filter((c) => c.path === '/api/v1/people/u2/load').length,
+        1,
+        'the load was read more than once',
       );
       const track = week.locator('[data-week-track]');
       assert.equal(await track.count(), 1);
@@ -740,7 +812,12 @@ void describe('a new member (frame B)', () => {
   void test('every card says what is empty, in the design’s words', async () => {
     const h = await open(
       '/people?user=u3',
-      stubFor(NEW_MEMBER, { tokens: 0, week: DAYS.map(() => [0, 0] as const), agents: 0 }),
+      stubFor(NEW_MEMBER, {
+        tokens: 0,
+        week: DAYS.map(() => [0, 0] as const),
+        agents: 0,
+        load: loadOf(null, []),
+      }),
     );
     try {
       await h.page.setViewportSize({ width: 1440, height: 1000 });
@@ -761,7 +838,17 @@ void describe('a new member (frame B)', () => {
 
       const week = await card(h.page, 'week');
       await until(async () => (await week.locator('[data-week-total]').count()) === 1, 15_000);
-      assert.match(await week.locator('[data-week-total]').innerText(), /^0 min\s+tracked$/);
+      await until(async () =>
+        (await week.locator('[data-week-total]').innerText()).includes('set'),
+      );
+      assert.equal(
+        (await week.locator('[data-week-total]').innerText()).replace(/\s+/g, ' ').trim(),
+        '0 min tracked · no working hours set',
+      );
+      assert.equal(
+        (await week.locator('[data-away]').innerText()).replace(/\s+/g, ' ').trim(),
+        'Away No time away planned',
+      );
       assert.equal(await week.locator('.ov-day[data-zero="true"]').count(), 7);
 
       const projects = await card(h.page, 'projects');
