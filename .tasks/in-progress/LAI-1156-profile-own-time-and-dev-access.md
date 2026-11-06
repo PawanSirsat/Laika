@@ -2,10 +2,11 @@
 id: LAI-1156
 title: 'Profile Time report and Developer access on your own profile'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-1151, LAI-1152]
-status: backlog
+status: in-progress
+started: 2026-11-06T11:56:00+05:30
 ---
 
 ## Goal
