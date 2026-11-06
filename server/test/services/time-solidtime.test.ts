@@ -878,6 +878,9 @@ describe('an owner’s or admin’s pull of everyone', () => {
     const moved = entry({ id: 'st-b', member_id: BEA_MEMBER, end: at(DAY, 11), hash: hash('b') });
     expect(all([moved])).toMatchObject({ updated: 1, conflicts: 1 });
     expect(live(bea.userId).map((e) => e.minutes)).toEqual([120]);
+    expect(t.db.select({ entry: solidtimeEntries.entryId }).from(solidtimeEntries).all()).toEqual([
+      { entry: id },
+    ]);
     expect(history()).toEqual([
       { change: 'created', by: owner.userId },
       { change: 'edited', by: owner.userId },
@@ -889,6 +892,10 @@ describe('an owner’s or admin’s pull of everyone', () => {
     expect(all([])).toMatchObject({ deleted: 1 });
     expect(live(bea.userId)).toEqual([]);
     expect(history().filter((r) => r.change === 'deleted')).toHaveLength(1);
+    // Never a second entry for the one Solidtime entry, at any step.
+    const rows = t.db.select().from(timeEntries).where(eq(timeEntries.userId, bea.userId)).all();
+    expect(rows.map((r) => [r.id, r.sourceRef])).toEqual([[id, 'st-b']]);
+    expect(history().map((r) => r.change)).toEqual(['created', 'edited', 'edited', 'deleted']);
   });
 
   it('moves a member’s hours to them once an admin confirms who they are', () => {
