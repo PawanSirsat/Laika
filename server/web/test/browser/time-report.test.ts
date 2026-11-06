@@ -882,8 +882,14 @@ void describe('the states (frames 1j–1m)', () => {
       await tr.locator('[data-tr-option="admin"] input').check();
       await h.page.keyboard.press('Escape');
       await tr.locator('[data-tr-empty="filtered"]').waitFor({ timeout: 10_000 });
+      await tr.locator('[data-tr-chip="link"]').click();
+      await tr.locator('[data-tr-link="general"] input').click();
+      await until(() => asked.at(-1)?.searchParams.get('link') === 'general');
       await tr.locator('[data-tr-empty="filtered"] button').click();
       await tr.locator('[data-tr-stat="tracked"]').waitFor({ timeout: 10_000 });
+      // Clear filters takes the Task link off with the rest (LAI-1163).
+      assert.equal(asked.at(-1)?.searchParams.get('link'), null);
+      assert.equal(asked.at(-1)?.searchParams.get('kinds'), null);
     } finally {
       await done(h);
     }
@@ -913,6 +919,11 @@ void describe('the states (frames 1j–1m)', () => {
       const last = asked.at(-1);
       assert.equal(last?.searchParams.get('link'), 'untied');
       assert.equal(last?.searchParams.get('drafts'), 'include');
+      // Confirmed only takes Not on a task yet off, rather than an empty report.
+      await tr.locator('[data-tr-drafts="exclude"]').click();
+      await until(() => asked.at(-1)?.searchParams.get('link') === null);
+      assert.equal(asked.at(-1)?.searchParams.get('link'), null);
+      assert.match(await tr.locator('[data-tr-chip="link"]').innerText(), /All/);
       // General: Ben's meeting alone.
       await pick('general');
       await until(async () => /\b2h\b/.test(await tr.locator('[data-tr-total]').innerText()));
