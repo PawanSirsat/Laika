@@ -577,6 +577,19 @@
   grid-template-columns: minmax(0, 9rem) minmax(2rem, 1fr) auto;
 }
 
+/* Nothing to show (LAI-1153): one sentence in a dashed box, as the profile's cards say it. */
+.usage-person-empty {
+  padding: 1rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card);
+}
+
+.usage-cost-note {
+  margin: -0.375rem 0 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
 .usage-no-data-line {
   margin: 0;
   font-size: var(--text-small);
