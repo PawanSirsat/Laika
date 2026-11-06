@@ -738,37 +738,44 @@ export function deleteDrafts(): Promise<void> {
 export const WRITE_MEMBER_TIME = 'time_entries.write_member';
 
 /**
- * Where a person's confirmed entries are written: the reader's own, or —
- * with `subject`, a member's id — an owner's or admin's change to that
- * member's (D-143, LAI-1165). Those have no Undo: Undo is the person's own.
+ * A person's confirmed entries are written to the reader's own
+ * `/me/time-entries`, or — with `subject`, a member's id — to
+ * `/people/:id/time-entries`, an owner's or admin's change to that member's
+ * (D-143, LAI-1165). Those have no Undo: Undo is the person's own. Each path
+ * is written out whole, so `endpoint-coverage.test.ts` can read it.
  */
-function entriesPath(subject: string | undefined): string {
-  return subject === undefined
-    ? '/me/time-entries'
-    : `/people/${encodeURIComponent(subject)}/time-entries`;
-}
+const person = (subject: string): string => encodeURIComponent(subject);
 
 /** Time typed by hand — a meeting, a call. */
 export function addEntry(entry: NewEntry, onUndo?: OnUndo, subject?: string): Promise<TimeEntry> {
-  return request<TimeEntry>(entriesPath(subject), {
-    method: 'POST',
-    body: entry,
-    ...(subject === undefined ? undoable(onUndo) : {}),
-  });
+  return subject === undefined
+    ? request<TimeEntry>('/me/time-entries', {
+        method: 'POST',
+        body: entry,
+        ...undoable(onUndo),
+      })
+    : request<TimeEntry>(`/people/${person(subject)}/time-entries`, {
+        method: 'POST',
+        body: entry,
+      });
 }
 
 export function updateEntry(id: string, patch: EntryPatch, subject?: string): Promise<TimeEntry> {
-  return request<TimeEntry>(`${entriesPath(subject)}/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: patch,
-  });
+  const init = { method: 'PATCH', body: patch } as const;
+  return subject === undefined
+    ? request<TimeEntry>(`/me/time-entries/${encodeURIComponent(id)}`, init)
+    : request<TimeEntry>(`/people/${person(subject)}/time-entries/${encodeURIComponent(id)}`, init);
 }
 
 export function deleteEntry(id: string, onUndo?: OnUndo, subject?: string): Promise<void> {
-  return request<void>(`${entriesPath(subject)}/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-    ...(subject === undefined ? undoable(onUndo) : {}),
-  });
+  return subject === undefined
+    ? request<void>(`/me/time-entries/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        ...undoable(onUndo),
+      })
+    : request<void>(`/people/${person(subject)}/time-entries/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
 }
 
 /**
@@ -794,8 +801,13 @@ export function getRevisions(
   signal?: AbortSignal,
   subject?: string,
 ): Promise<{ readonly revisions: readonly TimeRevision[] }> {
-  return request<{ readonly revisions: readonly TimeRevision[] }>(
-    `${entriesPath(subject)}/${encodeURIComponent(id)}/revisions`,
-    opts(signal),
-  );
+  return subject === undefined
+    ? request<{ readonly revisions: readonly TimeRevision[] }>(
+        `/me/time-entries/${encodeURIComponent(id)}/revisions`,
+        opts(signal),
+      )
+    : request<{ readonly revisions: readonly TimeRevision[] }>(
+        `/people/${person(subject)}/time-entries/${encodeURIComponent(id)}/revisions`,
+        opts(signal),
+      );
 }
