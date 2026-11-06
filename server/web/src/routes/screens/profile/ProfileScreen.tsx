@@ -527,6 +527,7 @@ export function ProfileScreen({
           <ActivityCard
             userId={user.id}
             name={user.name}
+            joinedAt={user.created_at}
             viewerId={me.id}
             canManageOrg={gates.org('org.developer_insights.set')}
             sharing={profile.activity_sharing}

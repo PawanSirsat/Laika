@@ -1,12 +1,13 @@
 /**
- * The profile's Activity card in a real browser (D-079, LAI-751).
+ * The profile's Activity card in a real browser (D-079, LAI-751; LAI-1154).
  *
  * `activity-derive.test.ts` owns the rules — where a day sits, how dark it is,
- * the streaks. This proves the page: both designs from one response, the
- * choice kept per viewer, one request per range, the tooltip and the
- * cross-highlight, the keyboard, each state's sentence, and a year that
- * scrolls inside the card on a phone with its month labels never under the
- * weekday column.
+ * the streaks. This proves the page: both designs as one grid from one
+ * response, no Board anywhere, the choice kept per viewer, one request per
+ * range, your own profile reading `/me/activity`, the days before joining,
+ * the opening range, the tooltip, the keyboard, each state's sentence, and a
+ * year that scrolls inside the card on a phone with its month labels never
+ * under the weekday column.
  *
  * Days are anchored to `Date.now()` (CONVENTIONS §4): the fixture's last day
  * is today, and every value is placed by its distance from the end.
@@ -117,8 +118,17 @@ function activity(
   };
 }
 
-/** `now` moves the ranges' last day off today, for a calendar shape the clock may not give. */
-function stub(sharing?: Sharing, empty = false, me = ME, now = NOW): ApiStub {
+/**
+ * `now` moves the ranges' last day off today, for a calendar shape the clock
+ * may not give; `joinedAt` is when Bea joined.
+ */
+function stub(
+  sharing?: Sharing,
+  empty = false,
+  me = ME,
+  now = NOW,
+  joinedAt = NOW - 400 * DAY,
+): ApiStub {
   return {
     '/api/v1/me': me,
     '/api/v1/projects': { data: [], next_cursor: null },
@@ -134,6 +144,7 @@ function stub(sharing?: Sharing, empty = false, me = ME, now = NOW): ApiStub {
     // the card is drawn in its final shape from them (LAI-751).
     '/api/v1/users/u2/profile': {
       ...PROFILE,
+      user: { ...PROFILE.user, created_at: joinedAt },
       activity_sharing: sharing ?? { org_enabled: true, enabled: true },
     },
     '/api/v1/people/u2/activity?range=12w': activity('12w', sharing, empty, now),
@@ -141,11 +152,12 @@ function stub(sharing?: Sharing, empty = false, me = ME, now = NOW): ApiStub {
   };
 }
 
-/** Every heatmap request the page made, with its query. */
+/** Every heatmap request the page made: its path and query. */
 function watch(requests: string[]) {
   return (page: Page): Promise<void> => {
     page.on('request', (request: Request) => {
-      if (request.url().includes('/activity?')) requests.push(new URL(request.url()).search);
+      const url = new URL(request.url());
+      if (url.pathname.endsWith('/activity')) requests.push(url.pathname + url.search);
     });
     return Promise.resolve();
   };
@@ -158,38 +170,96 @@ async function card(page: Page) {
   return found;
 }
 
-const cells = (page: Page, kind: string) =>
-  page.locator(`.prof-card[data-section="activity"] .hm-grid[data-kind="${kind}"] .hm-cell`);
+const cells = (page: Page, kind?: string) =>
+  page.locator(
+    `.prof-card[data-section="activity"] .hm-grid${kind === undefined ? '' : `[data-kind="${kind}"]`} .hm-cell`,
+  );
+
+/** The board's words — none of which the card says any more (LAI-1154). */
+const BOARD = /Board|board action|by their agents|actions by them/;
 
 void after(async () => {
   await closeBrowser();
 });
 
 void describe('the Activity card', () => {
-  void test('opens on B: GitHub, Local and Board grids over a year, a square a day', async () => {
+  void test('opens on Split over a year: one grid, a square a day, and no Board anywhere', async () => {
     const h = await open('/people?user=u2', stub());
     try {
       const activityCard = await card(h.page);
-      assert.equal(await activityCard.getAttribute('data-design'), 'stacked');
+      assert.equal(await activityCard.getAttribute('data-design'), 'split');
       assert.equal(await activityCard.getAttribute('data-range'), '52w');
-      for (const kind of ['github', 'local', 'board']) {
-        await until(async () => (await cells(h.page, kind).count()) === 364);
-        assert.equal(await cells(h.page, kind).count(), 364, kind);
-      }
-      // Today's squares carry today's levels; an empty day carries none.
-      const today = (kind: string) =>
-        h.page
-          .locator(`.hm-grid[data-kind="${kind}"] .hm-cell[data-day="${TODAY}"]`)
-          .getAttribute('data-v');
-      assert.equal(await today('github'), '4');
-      assert.equal(await today('local'), '4');
-      assert.equal(await today('board'), '4');
-      const text = await activityCard.innerText();
-      assert.match(text, /5 commits pushed/);
-      assert.match(text, /23 prompts · 3 sessions · 2 not pushed/);
-      assert.match(text, /2 actions by them · 6 by their agents/);
+      assert.equal(await h.page.locator('.hm-grid').count(), 1);
+      await until(async () => (await cells(h.page, 'split').count()) === 364);
+      assert.equal(await cells(h.page, 'split').count(), 364);
+      const today = h.page.locator(`.hm-grid[data-kind="split"] .hm-cell[data-day="${TODAY}"]`);
+      assert.equal(await today.getAttribute('data-g'), '4');
+      assert.equal(await today.getAttribute('data-l'), '4');
+      assert.match(
+        await today.evaluate((el) => getComputedStyle(el).backgroundImage),
+        /linear-gradient/,
+      );
+      const legend = await activityCard.locator('.hm-legend').innerText();
+      assert.match(legend, /Each day: GitHub top-left, Local bottom-right/);
+      assert.match(legend, /5 commits pushed/);
+      assert.match(legend, /23 prompts · 3 sessions · 2 not pushed/);
+      // Board actions are in the fixture and nowhere on the card, its (i) included.
+      assert.doesNotMatch(await activityCard.innerText(), BOARD);
+      assert.doesNotMatch((await today.getAttribute('aria-label')) ?? '', BOARD);
+      // No day before joining in this range: no chip, no note.
+      assert.doesNotMatch(legend, /Before joining/);
+      assert.equal(
+        await activityCard.locator('.prof-card-caption').first().innerText(),
+        'last 12 months',
+      );
     } finally {
       await h.close();
+    }
+  });
+
+  void test('Stacked is one grid of GitHub and Local together; the choice is kept per viewer', async () => {
+    const h = await open('/people?user=u2', stub());
+    try {
+      const activityCard = await card(h.page);
+      await activityCard.locator('input[value="stacked"]').check();
+      assert.equal(await activityCard.getAttribute('data-design'), 'stacked');
+      assert.equal(await h.page.locator('.hm-grid').count(), 1, 'Stacked drew more than one grid');
+      assert.equal(await cells(h.page, 'all').count(), 364);
+      const level = (ago: number) =>
+        h.page
+          .locator(
+            `.hm-grid[data-kind="all"] .hm-cell[data-day="${new Date(NOW - ago * DAY).toISOString().slice(0, 10)}"]`,
+          )
+          .getAttribute('data-v');
+      // Today: 4 pushed + 28 local = 32, the busiest. Three days ago: 1 pushed.
+      // Yesterday: a board action only, which is not on the card.
+      assert.equal(await level(0), '4');
+      assert.equal(await level(3), '1');
+      assert.equal(await level(1), '0');
+      const legend = await activityCard.locator('.hm-legend').innerText();
+      assert.match(legend, /Each day: GitHub and Local together/);
+      assert.match(legend, /5 commits pushed/);
+      assert.match(legend, /23 prompts · 3 sessions · 2 not pushed/);
+      assert.doesNotMatch(await activityCard.innerText(), BOARD);
+
+      await h.page.reload();
+      assert.equal(await (await card(h.page)).getAttribute('data-design'), 'stacked');
+      assert.equal(
+        await h.page.evaluate(() => localStorage.getItem('laika.profile.activity-design.u1')),
+        'stacked',
+      );
+    } finally {
+      await h.close();
+    }
+    // Another viewer on the same browser starts on Split.
+    const other = await open(
+      '/people?user=u2',
+      stub(undefined, false, { ...ME, id: 'u9', name: 'Ari Admin', org_role: 'admin' }),
+    );
+    try {
+      assert.equal(await (await card(other.page)).getAttribute('data-design'), 'split');
+    } finally {
+      await other.close();
     }
   });
 
@@ -198,15 +268,17 @@ void describe('the Activity card', () => {
     try {
       await card(h.page);
       const tile = (name: string) => h.page.locator(`.hm-stats [data-stat="${name}"]`).innerText();
-      // Active: today, yesterday, three days ago.
-      assert.match(await tile('active_days'), /3\s*of 364/);
-      assert.match(await tile('current_streak'), /2\s*days/);
-      assert.match(await tile('longest_streak'), /2\s*days/);
+      // Active: today and three days ago — yesterday's board action is not
+      // on the card (LAI-1154).
+      assert.match(await tile('active_days'), /2\s*of 364$/);
+      assert.match(await tile('current_streak'), /1\s*day$/);
+      // A one-day streak is named by its day: the first of the two, three days ago.
+      const first = shortDate(new Date(NOW - 3 * DAY).toISOString().slice(0, 10)).slice(4);
+      assert.match(await tile('longest_streak'), new RegExp(`1\\s*${first}$`));
       // 5 pushed, 2 not: 71%.
-      assert.match(await tile('pushed_share'), /71%\s*29% local only/);
-      // Today, yesterday and three days ago: three weekdays, each once. A tie
-      // is said, never settled on the first (LAI-751).
-      assert.match(await tile('busiest_weekday'), /—\s*no single busiest day/);
+      assert.match(await tile('pushed_share'), /71%\s*pushed/);
+      // Two weekdays, each once: no single day yet.
+      assert.match(await tile('busiest_weekday'), /—\s*no single day yet/);
     } finally {
       await h.close();
     }
@@ -218,66 +290,25 @@ void describe('the Activity card', () => {
     try {
       const activityCard = await card(h.page);
       await activityCard.locator('input[value="12w"]').check();
-      await until(async () => (await cells(h.page, 'github').count()) === 84);
+      await until(async () => (await cells(h.page).count()) === 84);
       await activityCard.locator('input[value="52w"]').check();
-      await until(async () => (await cells(h.page, 'github').count()) === 364);
+      await until(async () => (await cells(h.page).count()) === 364);
       await activityCard.locator('input[value="12w"]').check();
-      await until(async () => (await cells(h.page, 'github').count()) === 84);
-      assert.deepEqual(requests, ['?range=52w', '?range=12w']);
+      await until(async () => (await cells(h.page).count()) === 84);
+      assert.deepEqual(requests, [
+        '/api/v1/people/u2/activity?range=52w',
+        '/api/v1/people/u2/activity?range=12w',
+      ]);
     } finally {
       await h.close();
     }
   });
 
-  void test('A splits each day; the choice is kept for this viewer and not for another', async () => {
-    const h = await open('/people?user=u2', stub());
-    try {
-      const activityCard = await card(h.page);
-      await activityCard.locator('input[value="split"]').check();
-      assert.equal(await activityCard.getAttribute('data-design'), 'split');
-      assert.equal(await h.page.locator('.hm-grid').count(), 1);
-      const today = h.page.locator(`.hm-grid[data-kind="split"] .hm-cell[data-day="${TODAY}"]`);
-      assert.equal(await today.getAttribute('data-g'), '4');
-      assert.equal(await today.getAttribute('data-l'), '4');
-      assert.match(
-        await today.evaluate((el) => getComputedStyle(el).backgroundImage),
-        /linear-gradient/,
-      );
-      assert.match(
-        await activityCard.locator('.hm-legend').innerText(),
-        /GitHub top-left, Local bottom-right/,
-      );
-
-      await h.page.reload();
-      assert.equal(await (await card(h.page)).getAttribute('data-design'), 'split');
-
-      // Another viewer on the same browser starts on B.
-      await h.page.evaluate(() => {
-        localStorage.setItem('laika.profile.activity-design.someone-else', 'stacked');
-      });
-      assert.equal(
-        await h.page.evaluate(() => localStorage.getItem('laika.profile.activity-design.u1')),
-        'split',
-      );
-    } finally {
-      await h.close();
-    }
-    const other = await open(
-      '/people?user=u2',
-      stub(undefined, false, { ...ME, id: 'u9', name: 'Ari Admin', org_role: 'admin' }),
-    );
-    try {
-      assert.equal(await (await card(other.page)).getAttribute('data-design'), 'stacked');
-    } finally {
-      await other.close();
-    }
-  });
-
-  void test('the tooltip gives the day whole, and B outlines that day in every grid', async () => {
+  void test('the tooltip gives the day whole — GitHub and Local, no board — and rings it', async () => {
     const h = await open('/people?user=u2', stub());
     try {
       await card(h.page);
-      await h.page.locator(`.hm-grid[data-kind="github"] .hm-cell[data-day="${TODAY}"]`).hover();
+      await h.page.locator(`.hm-grid .hm-cell[data-day="${TODAY}"]`).hover();
       const tip = h.page.locator('.hm-tip');
       await tip.waitFor();
       const text = await tip.innerText();
@@ -286,30 +317,12 @@ void describe('the Activity card', () => {
         /2\s*local commits not pushed/,
         /23\s*prompts \(Claude Code 18, Codex 5\)/,
         /3\s*agent sessions/,
-        /1\s*board action by them/,
-        /6\s*board actions by their agents/,
       ]) {
         assert.match(text, part);
       }
-      const ringsNow = () =>
-        h.page
-          .locator('.hm-ring')
-          .evaluateAll((els) =>
-            els.map((el) => [
-              el.closest('.hm-grid')?.getAttribute('data-kind'),
-              el.getAttribute('data-twin'),
-            ]),
-          );
-      // The rings follow the tip, not with it (LAI-715).
-      await until(
-        async () => (await ringsNow()).join('|') === 'github,false|local,true|board,true',
-      );
-      const rings = await ringsNow();
-      assert.deepEqual(rings, [
-        ['github', 'false'],
-        ['local', 'true'],
-        ['board', 'true'],
-      ]);
+      assert.doesNotMatch(text, BOARD);
+      await until(async () => (await h.page.locator('.hm-ring').count()) === 1);
+      assert.equal(await h.page.locator('.hm-ring').count(), 1);
     } finally {
       await h.close();
     }
@@ -319,14 +332,13 @@ void describe('the Activity card', () => {
     const h = await open('/people?user=u2', stub());
     try {
       await card(h.page);
-      const grid = '.hm-grid[data-kind="board"]';
-      const focusable = h.page.locator(`${grid} .hm-cell[tabindex="0"]`);
-      assert.equal(await focusable.count(), 1, 'one day in the tab order per grid');
+      const focusable = h.page.locator('.hm-grid .hm-cell[tabindex="0"]');
+      assert.equal(await focusable.count(), 1, 'one day in the tab order');
       assert.equal(await focusable.getAttribute('data-day'), TODAY);
       await focusable.focus();
       const label = () =>
         h.page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '');
-      assert.match(await label(), /1 board action by them, 6 board actions by their agents/);
+      assert.match(await label(), /4 commits pushed, 2 local commits not pushed/);
 
       await h.page.keyboard.press('ArrowUp');
       const yesterday = new Date(NOW - DAY).toISOString().slice(0, 10);
@@ -334,7 +346,7 @@ void describe('the Activity card', () => {
         await h.page.evaluate(() => document.activeElement?.getAttribute('data-day')),
         yesterday,
       );
-      assert.match(await label(), /1 board action by them, 0 board actions by their agents/);
+      assert.match(await label(), /0 commits pushed, 0 local commits not pushed/);
 
       await h.page.keyboard.press('ArrowLeft');
       const weekBefore = new Date(NOW - 8 * DAY).toISOString().slice(0, 10);
@@ -453,34 +465,24 @@ void describe('the tooltip after a click (LAI-761)', () => {
 });
 
 void describe('the states', () => {
-  void test('Developer insights off: one panel for GitHub and Local, one link, then the board', async () => {
+  void test('Developer insights off: one panel, one link, and nothing else drawn', async () => {
     const h = await open('/people?user=u2', stub({ org_enabled: false, enabled: true }));
     try {
       const activityCard = await card(h.page);
-      const off = activityCard.locator('.hm-off');
-      assert.equal(await off.count(), 1);
-      assert.match(
-        await off.innerText(),
-        /GitHub and Local are not shown: Developer insights are off for this organisation\./,
-      );
-      // Said once, with one way to Organisation — not once per empty grid.
-      assert.equal(await activityCard.locator('a[href="/organisation"]').count(), 1);
-      assert.equal((await activityCard.innerText()).match(/not shown/g)?.length, 1);
-      // No empty grids for GitHub and Local: the board's, alone.
-      assert.deepEqual(
-        await activityCard
-          .locator('.hm-block')
-          .evaluateAll((els) => els.map((el) => el.getAttribute('data-source'))),
-        ['board'],
-      );
-      assert.equal(await cells(h.page, 'board').count(), 364);
-      assert.match(await h.page.locator('[data-stat="pushed_share"]').innerText(), /not collected/);
-
-      // A: the same panel, and the board as a single-colour grid.
-      await activityCard.locator('input[value="split"]').check();
-      assert.equal(await h.page.locator('.hm-grid').getAttribute('data-kind'), 'board');
-      assert.equal(await activityCard.locator('.hm-off').count(), 1);
-      assert.match(await activityCard.locator('.hm-legend').innerText(), /Board/);
+      for (const design of ['split', 'stacked']) {
+        await activityCard.locator(`input[value="${design}"]`).check();
+        const off = activityCard.locator('.hm-off');
+        assert.equal(await off.count(), 1);
+        assert.match(
+          await off.innerText(),
+          /GitHub and Local are not shown: Developer insights are off for this organisation\./,
+        );
+        assert.equal(await activityCard.locator('a[href="/organisation"]').count(), 1);
+        // GitHub and Local are all the card draws: no grid, no tiles, no Board.
+        assert.equal(await activityCard.locator('.hm-grid, .hm-ghost').count(), 0, design);
+        assert.equal(await activityCard.locator('.hm-stats').count(), 0, design);
+        assert.doesNotMatch(await activityCard.innerText(), BOARD);
+      }
     } finally {
       await h.close();
     }
@@ -496,34 +498,29 @@ void describe('the states', () => {
     const h = await open('/people?user=u2', stub({ org_enabled: true, enabled: false }));
     try {
       const activityCard = await card(h.page);
-      await until(async () => (await cells(h.page, 'github').count()) === 364);
+      await until(async () => (await cells(h.page, 'split').count()) === 364);
       assert.equal(await activityCard.locator('.hm-off').count(), 0);
       assert.doesNotMatch(await activityCard.innerText(), /turned on sharing|only they can/);
-      assert.equal(await cells(h.page, 'github').count(), 364);
-      assert.equal(await cells(h.page, 'local').count(), 364);
-      assert.equal(await cells(h.page, 'board').count(), 364);
+      assert.equal(await cells(h.page, 'split').count(), 364);
     } finally {
       await h.close();
     }
   });
 
-  void test('both switches on and nothing arrived: says so in place, and draws the empty grids', async () => {
+  void test('both switches on and nothing arrived: says so in place, and draws the empty grid', async () => {
     const h = await open('/people?user=u2', stub(undefined, true));
     try {
       const activityCard = await card(h.page);
       assert.equal(await activityCard.locator('.hm-off').count(), 0);
-      assert.deepEqual(await activityCard.locator('.hm-block-head .hm-total').allInnerTexts(), [
+      assert.deepEqual(await activityCard.locator('.hm-legend .hm-total').allInnerTexts(), [
         'nothing from their machines yet',
         'nothing from their machines yet',
-        // The empty fixture is empty on the board too.
-        '0 actions by them · 0 by their agents',
       ]);
       assert.match(
-        (await activityCard.locator('.hm-block-head .hm-total').first().getAttribute('title')) ??
-          '',
+        (await activityCard.locator('.hm-legend .hm-total').first().getAttribute('title')) ?? '',
         /they connect it with laika activity on/,
       );
-      assert.equal(await cells(h.page, 'github').count(), 364);
+      assert.equal(await cells(h.page, 'split').count(), 364);
     } finally {
       await h.close();
     }
@@ -640,39 +637,19 @@ void describe('on a phone', () => {
       try {
         const activityCard = await card(h.page);
         assert.equal(await activityCard.getAttribute('data-range'), '12w');
-        assert.equal(await cells(h.page, 'github').count(), 84);
+        assert.equal(await cells(h.page).count(), 84);
 
         await activityCard.locator('input[value="52w"]').check();
-        await until(async () => (await cells(h.page, 'github').count()) === 364);
+        await until(async () => (await cells(h.page).count()) === 364);
         // Measured on the year's answer, not on what stood in for it.
         await h.page
           .locator('.prof-card[data-section="activity"][data-range="52w"][aria-busy="false"]')
           .waitFor();
         assert.equal(
-          await cells(h.page, 'github').last().getAttribute('data-day'),
+          await cells(h.page).last().getAttribute('data-day'),
           new Date(now).toISOString().slice(0, 10),
           'the newest week is not the one this case is about',
         );
-        // Each source's heading — its total and its Less…More key — is whole in
-        // view wherever the year is scrolled (LAI-751).
-        for (const end of ['newest', 'oldest']) {
-          if (end === 'oldest') {
-            await h.page.locator('.hm-scroll').evaluate((el) => {
-              el.scrollLeft = 0;
-            });
-          }
-          const cut = await h.page.evaluate(() => {
-            const view = document.querySelector('.hm-scroll')?.getBoundingClientRect();
-            if (view === undefined) return ['no scroller'];
-            return [
-              ...document.querySelectorAll('.hm-block-head .hm-total, .hm-block-head .hm-ramp'),
-            ]
-              .map((el) => ({ el, box: el.getBoundingClientRect() }))
-              .filter(({ box }) => box.left < view.left - 0.5 || box.right > view.right + 0.5)
-              .map(({ el }) => el.closest('.hm-block')?.getAttribute('data-source') ?? '?');
-          });
-          assert.deepEqual(cut, [], `scrolled to the ${end} week: a heading runs out of view`);
-        }
         await h.page.locator('.hm-scroll').evaluate((el) => {
           el.scrollLeft = el.scrollWidth;
         });
@@ -782,22 +759,166 @@ void describe('on a phone', () => {
   }
 });
 
+/**
+ * A member of four days (LAI-1154): the card opens on 12 weeks, and the
+ * weeks before they joined are drawn apart — no fill, a ring — named so, and
+ * counted in no tile. The joining day is in the series' zone, UTC here.
+ */
+void describe('before joining (LAI-1154)', () => {
+  const JOINED_AT = NOW - 4 * DAY;
+  const JOINED = new Date(JOINED_AT).toISOString().slice(0, 10);
+
+  for (const design of ['split', 'stacked'] as const) {
+    void test(`in ${design}, days before joining are drawn apart, titled, keyed and captioned`, async () => {
+      const h = await open('/people?user=u2', stub(undefined, false, ME, NOW, JOINED_AT), {
+        before: async (page) => {
+          await page.addInitScript((d) => {
+            localStorage.setItem('laika.profile.activity-design.u1', d);
+          }, design);
+        },
+      });
+      try {
+        const activityCard = await card(h.page);
+        // A member of under 12 weeks opens on 12 weeks, on a wide screen too.
+        assert.equal(await activityCard.getAttribute('data-range'), '12w');
+        assert.equal(await activityCard.getAttribute('data-design'), design);
+        assert.equal(
+          await activityCard.locator('.prof-card-caption').first().innerText(),
+          `last 12 weeks · joined ${shortDate(JOINED)}`,
+        );
+
+        const pre = h.page.locator('.hm-grid .hm-cell[data-pre="true"]');
+        // 84 days, the last five since joining.
+        assert.equal(await pre.count(), 79);
+        assert.equal(
+          await pre.last().getAttribute('data-day'),
+          new Date(JOINED_AT - DAY).toISOString().slice(0, 10),
+        );
+        assert.match((await pre.first().getAttribute('aria-label')) ?? '', / · before joining$/);
+        assert.equal(
+          await h.page.locator(`.hm-cell[data-day="${JOINED}"]`).getAttribute('data-pre'),
+          null,
+          'the joining day itself is counted',
+        );
+        const look = await pre.first().evaluate((el) => {
+          const style = getComputedStyle(el);
+          return { bg: style.backgroundColor, image: style.backgroundImage, ring: style.boxShadow };
+        });
+        assert.equal(
+          look.bg,
+          'rgba(0, 0, 0, 0)',
+          'a day before joining must be transparent, and it has a fill',
+        );
+        assert.equal(look.image, 'none');
+        assert.match(
+          look.ring,
+          /inset/,
+          'a day before joining must carry an inset ring, and it has none',
+        );
+
+        assert.match(await activityCard.locator('.hm-legend').innerText(), /Before joining/);
+        const tile = (name: string) =>
+          h.page.locator(`.hm-stats [data-stat="${name}"]`).innerText();
+        // Today and three days ago, of the five days since joining.
+        assert.match(await tile('active_days'), /2\s*of 5 since joining/);
+
+        await pre.first().hover();
+        const tip = h.page.locator('.hm-tip');
+        await tip.waitFor();
+        assert.match(await tip.innerText(), /before joining/);
+        assert.doesNotMatch(await tip.innerText(), /commits pushed/);
+
+        // A year: more of it before joining, and still said.
+        await activityCard.locator('input[value="52w"]').check();
+        await until(async () => (await pre.count()) === 359);
+        assert.equal(await pre.count(), 359);
+        assert.equal(
+          await activityCard.locator('.prof-card-caption').first().innerText(),
+          `last 12 months · joined ${shortDate(JOINED)}`,
+        );
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('a member of 12 weeks or more opens on a year', async () => {
+    const h = await open('/people?user=u2', stub(undefined, false, ME, NOW, NOW - 90 * DAY));
+    try {
+      const activityCard = await card(h.page);
+      assert.equal(await activityCard.getAttribute('data-range'), '52w');
+      // Joined inside the year: the days before it are marked there too.
+      assert.equal(await h.page.locator('.hm-cell[data-pre="true"]').count(), 364 - 91);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * Your own profile reads `GET /me/activity` (D-139 item 1, LAI-1150): any role
+ * may, and it writes no look. Someone else's stays on the logged read.
+ */
+void describe('your own profile (LAI-1154)', () => {
+  void test('reads /me/activity, never /people/:you/activity', async () => {
+    const requests: string[] = [];
+    const own = stub();
+    const h = await open(
+      '/people?user=u1',
+      {
+        ...own,
+        // Your own profile is `/me/profile` (LAI-1152), every role's.
+        '/api/v1/me/profile': {
+          ...PROFILE,
+          user: { ...PROFILE.user, id: 'u1', name: 'Ada Owner', email: 'ada@example.com' },
+          activity_sharing: { org_enabled: true, enabled: true },
+        },
+        '/api/v1/me/activity?range=12w': activity('12w'),
+        '/api/v1/me/activity?range=52w': activity('52w'),
+      },
+      { before: watch(requests) },
+    );
+    try {
+      const activityCard = await card(h.page);
+      assert.equal(await cells(h.page).count(), 364);
+      await activityCard.locator('input[value="12w"]').check();
+      await until(async () => (await cells(h.page).count()) === 84);
+      await activityCard.locator('input[value="52w"]').check();
+      await until(async () => (await cells(h.page).count()) === 364);
+      // Once per range, the way back answered from the cache.
+      assert.deepEqual(requests, [
+        '/api/v1/me/activity?range=52w',
+        '/api/v1/me/activity?range=12w',
+      ]);
+      assert.deepEqual(h.unmatched, []);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('both themes', () => {
-  void test('the heat colours follow the theme', async () => {
+  void test('the heat colours follow the theme, in Split and in Stacked', async () => {
     const h = await open('/people?user=u2', stub());
     try {
-      await card(h.page);
-      const colour = () =>
+      const activityCard = await card(h.page);
+      const colour = (kind: string, ago: number) =>
         h.page
-          .locator(`.hm-grid[data-kind="github"] .hm-cell[data-day="${TODAY}"]`)
+          .locator(
+            `.hm-grid[data-kind="${kind}"] .hm-cell[data-day="${new Date(NOW - ago * DAY).toISOString().slice(0, 10)}"]`,
+          )
           .evaluate((el) => getComputedStyle(el).backgroundColor);
+      // Split, three days ago: GitHub alone at its lowest step, --heat-gh-1.
       await setTheme(h.page, 'Light');
-      const light = await colour();
+      assert.equal(await colour('split', 3), 'rgb(204, 193, 254)');
       await setTheme(h.page, 'Dark');
-      const dark = await colour();
-      // --heat-gh-4: #5f2db7 light, #c0b0fe dark.
-      assert.equal(light, 'rgb(95, 45, 183)');
-      assert.equal(dark, 'rgb(192, 176, 254)');
+      assert.equal(await colour('split', 3), 'rgb(75, 59, 120)');
+      // Stacked, today: the busiest day together, --heat-all-4.
+      await activityCard.locator('input[value="stacked"]').check();
+      await setTheme(h.page, 'Light');
+      assert.equal(await colour('all', 0), 'rgb(72, 77, 88)');
+      await setTheme(h.page, 'Dark');
+      assert.equal(await colour('all', 0), 'rgb(194, 195, 209)');
     } finally {
       await h.close();
     }
