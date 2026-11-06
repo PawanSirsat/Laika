@@ -6,8 +6,9 @@ assignee: shell/belka
 priority: p1
 depends-on: []
 discovered-from: LAI-1153
-status: in-progress
+status: review
 started: 2026-11-06T11:53:15+05:30
+finished: 2026-11-06T11:53:15+05:30
 ---
 
 ## Goal
@@ -23,17 +24,17 @@ never reached production.
 
 ## Acceptance criteria
 
-- [ ] For a reader with *See everyone's analytics*, someone else's pill reads
+- [x] For a reader with *See everyone's analytics*, someone else's pill reads
       only `GET /people/:id/load` for that person — its one `time` look (day
       null) is the one opening the profile already writes (D-139 item 4), so
       D-135's dedupe adds no row — and **never** `GET /people/availability`.
-- [ ] A reader with profiles but without that grant keeps their row of the
+- [x] A reader with profiles but without that grant keeps their row of the
       list, which the server narrows and does not log for them; they never read
       the load.
-- [ ] Browser tests assert the list is never read by an analytics reader on any
+- [x] Browser tests assert the list is never read by an analytics reader on any
       tab, the load once, and the list once for a non-analytics reader; a
       mutation back to the list turns them red.
-- [ ] SPEC §11.4.2's Member profile row says which read the head card makes.
+- [x] SPEC §11.4.2's Member profile row says which read the head card makes.
 
 ## Notes / context
 
