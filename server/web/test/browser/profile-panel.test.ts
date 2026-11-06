@@ -127,6 +127,9 @@ function stub(overrides: ApiStub = {}): ApiStub {
     '/api/v1/projects': { data: [], next_cursor: null },
     '/api/v1/users/u2/profile': profile(PEOPLE[1]!),
     '/api/v1/users/u1/profile': profile(PEOPLE[0]!),
+    // The reader's own profile and heatmap (D-139, LAI-1150).
+    '/api/v1/me/profile': profile(PEOPLE[0]!),
+    '/api/v1/me/activity': quietActivity,
     '/api/v1/users/u2/usage': quietUsage('u2'),
     '/api/v1/users/u1/usage': quietUsage('u1'),
     '/api/v1/people/u2/activity': quietActivity,

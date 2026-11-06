@@ -187,6 +187,9 @@ function stub(overrides: ApiStub = {}, withSetup = true): ApiStub {
     },
     '/api/v1/users/u2/profile': profile(ROWAN),
     '/api/v1/users/u1/profile': profile(OWNER),
+    // The reader's own profile and heatmap (D-139, LAI-1150).
+    '/api/v1/me/profile': profile(OWNER),
+    '/api/v1/me/activity': quietActivity,
     '/api/v1/users/u2/usage': quietUsage('u2'),
     '/api/v1/users/u1/usage': quietUsage('u1'),
     '/api/v1/people/u2/activity': quietActivity,

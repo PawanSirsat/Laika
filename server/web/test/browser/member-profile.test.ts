@@ -663,6 +663,9 @@ void describe('a builder’s profile', () => {
         ...BASE,
         '/api/v1/me': readerRole,
         '/api/v1/users/u2/profile': BUILDER,
+        // The person's own read (D-139, LAI-1150).
+        '/api/v1/me/profile': BUILDER,
+        '/api/v1/me/activity': activityStub,
         '/api/v1/users/u2/usage': {
           ...quietUsage('u2'),
           sharing: { org_enabled: true, enabled: false },

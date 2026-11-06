@@ -183,6 +183,9 @@ const BASE: ApiStub = {
   '/api/v1/users/u2/usage': quietUsage('u2'),
   '/api/v1/people/u1/activity': quietYear(),
   '/api/v1/people/u2/activity': quietYear(),
+  // Your own (D-139 item 1, LAI-1150): every role reads these, and only these.
+  '/api/v1/me/profile': profileOf('u1', 'Ada Owner', 'owner'),
+  '/api/v1/me/activity': quietYear(),
   '/api/v1/me/analytics-views': LOOKS,
   '/api/v1/me': { ...person('u1', 'Ada Owner', 'owner'), memberships: [] },
   '/api/v1/people/availability': {
@@ -564,6 +567,43 @@ void describe('your own profile (frame C)', () => {
         true,
         'focus did not return to Who looked',
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a plain member opens My profile from /me/profile, and nobody else’s', async () => {
+    const h = await open('/people?user=u3', {
+      ...BASE,
+      '/api/v1/me': { ...person('u3', 'Cal Member', 'member'), memberships: [] },
+      '/api/v1/me/profile': profileOf('u3', 'Cal Member'),
+      '/api/v1/users/u3/usage': quietUsage('u3'),
+      '/api/v1/me/availability': RECORD,
+    });
+    try {
+      const head = await headReady(h.page);
+      assert.equal((await head.locator('#prof-name').innerText()).trim(), 'Cal Member');
+      assert.equal(
+        (await h.page.getByRole('navigation', { name: 'Breadcrumb' }).innerText()).trim(),
+        'My profile',
+      );
+      assert.deepEqual(await head.locator('nav.prof-tabs [data-profile-tab]').allInnerTexts(), [
+        'Overview',
+        'Day',
+        'Time report',
+        'Developer access',
+      ]);
+      await h.page.locator('.prof-card[data-section="activity"]').waitFor({ timeout: 20_000 });
+      // Their own reads, never the owners-and-admins ones.
+      assert.ok(h.calls.some((c) => c.path === '/api/v1/me/profile'));
+      assert.ok(h.calls.some((c) => c.path === '/api/v1/me/activity'));
+      assert.equal(
+        h.calls.some(
+          (c) => c.path === '/api/v1/users/u3/profile' || c.path === '/api/v1/people/u3/activity',
+        ),
+        false,
+      );
+      assert.equal(await h.page.getByText('You do not have access to member profiles').count(), 0);
     } finally {
       await h.close();
     }
