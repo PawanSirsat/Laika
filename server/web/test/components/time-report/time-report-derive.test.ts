@@ -7,6 +7,8 @@ import {
   canSwap,
   childCount,
   childWindow,
+  spreadOf,
+  spreadWords,
   dayBars,
   defaultGrouping,
   donutBackground,
@@ -182,11 +184,18 @@ void describe('the figures', () => {
     }
   });
 
-  void test('the strip: six figures, drafts in or out, days so far only', () => {
+  void test('the strip: seven figures, drafts in or out, days so far only', () => {
     const s = statsOf(report(), true, 'me', '2026-11-05', '');
     assert.deepEqual(
       s.map((x) => x.key),
-      ['tracked', 'confirmed', 'drafts', 'meetings', 'active', 'per-day'],
+      ['tracked', 'confirmed', 'drafts', 'meetings', 'active', 'tasks', 'per-day'],
+    );
+    const tasks = s.find((x) => x.key === 'tasks');
+    const spread = spreadOf(report().rows, true);
+    assert.equal(tasks?.value, String(spread.tasks));
+    assert.match(
+      tasks?.sub ?? '',
+      spread.tasks === 0 ? /no time on a task/ : /^across \d+ spaces?$/,
     );
     assert.equal(s[0]?.value, '11 h');
     assert.equal(s[0]?.sub, 'confirmed and drafted');
@@ -194,7 +203,7 @@ void describe('the figures', () => {
     assert.equal(s[3]?.sub, '10% of tracked');
     assert.equal(s[4]?.value, '2');
     assert.equal(s[4]?.sub, 'of 4 days so far');
-    assert.equal(s[5]?.value, '5 h 30 min');
+    assert.equal(s.find((x) => x.key === 'per-day')?.value, '5 h 30 min');
 
     const confirmedOnly = statsOf(report(), false, 'person', '2026-11-05', 'Ada');
     assert.equal(confirmedOnly[0]?.value, '10 h');
@@ -297,6 +306,46 @@ void describe('grouping on the client', () => {
       inside?.children.map((c) => c.face.label),
       ['Zed Most', 'Amy Least'],
     );
+  });
+
+  void test('spread counts spaces and tasks with time, never general time (LAI-1164)', () => {
+    const r = (
+      over: Partial<TimeReportRow> & Pick<TimeReportRow, 'confirmed_minutes' | 'drafted_minutes'>,
+    ): TimeReportRow => ({
+      project: { id: 'p1', slug: 'atlas', name: 'Atlas' },
+      user: { id: 'u1', name: 'Ada', deactivated: false },
+      task: null,
+      untied: false,
+      kind: 'work',
+      ...over,
+    });
+    const rows = [
+      r({
+        task: { id: 't1', key: 'LAI-1', title: 'A' },
+        confirmed_minutes: 60,
+        drafted_minutes: 0,
+      }),
+      r({
+        task: { id: 't1', key: 'LAI-1', title: 'A' },
+        kind: 'meeting',
+        confirmed_minutes: 30,
+        drafted_minutes: 0,
+      }),
+      r({
+        project: { id: 'p2', slug: 'beacon', name: 'Beacon' },
+        task: { id: 't2', key: 'BEA-1', title: 'B' },
+        confirmed_minutes: 0,
+        drafted_minutes: 45,
+      }),
+      // General time on a third space: the space counts, no task does.
+      r({ project: { id: 'p3', slug: 'c', name: 'C' }, confirmed_minutes: 20, drafted_minutes: 0 }),
+      r({ project: null, untied: true, confirmed_minutes: 0, drafted_minutes: 10 }),
+    ];
+    assert.deepEqual(spreadOf(rows, false), { spaces: 2, tasks: 1 });
+    assert.deepEqual(spreadOf(rows, true), { spaces: 3, tasks: 2 });
+    assert.equal(spreadWords({ spaces: 1, tasks: 40 }), '1 space · 40 tasks');
+    const g = groupRows(rows, 'member', 'none', true, kindName)[0];
+    assert.deepEqual(g?.spread, { spaces: 3, tasks: 2 });
   });
 
   void test('a long group shows ten rows, then up to 25 more at a time (LAI-1162)', () => {

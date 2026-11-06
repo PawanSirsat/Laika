@@ -325,6 +325,7 @@ export function statsOf(
   const elapsed = report.by_day.filter((d) => d.day <= today).length;
   const active = report.by_day.filter((d) => counted(d, drafts) > 0).length;
   const who = scope === 'me' ? 'you' : scope === 'person' ? firstName : 'each person';
+  const spread = spreadOf(report.rows, drafts);
   return [
     {
       key: 'tracked',
@@ -370,6 +371,15 @@ export function statsOf(
       label: 'Active days',
       value: String(active),
       sub: `of ${String(elapsed)} ${elapsed === 1 ? 'day' : 'days'} so far`,
+    },
+    {
+      key: 'tasks',
+      label: 'Tasks worked',
+      value: String(spread.tasks),
+      sub:
+        spread.tasks === 0
+          ? 'no time on a task'
+          : `across ${String(spread.spaces)} ${spread.spaces === 1 ? 'space' : 'spaces'}`,
     },
     {
       key: 'per-day',
@@ -628,6 +638,8 @@ export interface GroupChild {
 export interface Group extends GroupChild {
   /** A token, `var(--…)`: the row's mark and its donut slice. */
   readonly color: string;
+  /** How many spaces and tasks the group's counted time went to (D-142, LAI-1164). */
+  readonly spread: Spread;
   /** Folded into the donut's *Other*. */
   readonly other: boolean;
   readonly children: readonly GroupChild[];
@@ -680,6 +692,7 @@ export function groupRows(
     confirmed: number;
     drafted: number;
     kids: Map<string, { face: Face; confirmed: number; drafted: number }>;
+    rows: TimeReportRow[];
   }
   const groups = new Map<string, Acc>();
   for (const row of rows) {
@@ -689,7 +702,9 @@ export function groupRows(
       confirmed: 0,
       drafted: 0,
       kids: new Map<string, { face: Face; confirmed: number; drafted: number }>(),
+      rows: [],
     };
+    g.rows.push(row);
     g.confirmed += row.confirmed_minutes;
     g.drafted += row.drafted_minutes;
     if (second !== 'none') {
@@ -733,6 +748,7 @@ export function groupRows(
       drafted: drafts ? g.drafted : 0,
       total: g.total,
       color,
+      spread: spreadOf(g.rows, drafts),
       other,
       children: children.map((k) => ({ ...k, drafted: drafts ? k.drafted : 0 })),
     };
@@ -756,6 +772,35 @@ export function childWindow(
 ): { readonly draw: number; readonly more: number } {
   const draw = Math.min(n, Math.max(CHILD_STEP, shown));
   return { draw, more: Math.min(MORE_STEP, n - draw) };
+}
+
+/** Spread: how widely time went — distinct spaces and tasks with time counted. */
+export interface Spread {
+  readonly spaces: number;
+  readonly tasks: number;
+}
+
+/**
+ * How many spaces and tasks `rows` hold time on (D-142, LAI-1164): plain
+ * counts, never a score. General time and time not on a task yet name no
+ * task, and a task or space the reader cannot open is not named, so neither
+ * is counted; drafted time counts only when drafts are.
+ */
+export function spreadOf(rows: readonly TimeReportRow[], drafts: boolean): Spread {
+  const spaces = new Set<string>();
+  const tasks = new Set<string>();
+  for (const r of rows) {
+    if (r.confirmed_minutes + (drafts ? r.drafted_minutes : 0) <= 0) continue;
+    if (r.project !== null) spaces.add(r.project.id);
+    if (r.task !== null) tasks.add(r.task.id);
+  }
+  return { spaces: spaces.size, tasks: tasks.size };
+}
+
+/** `3 spaces · 40 tasks`. */
+export function spreadWords(s: Spread): string {
+  const n = (k: number, one: string, many: string) => `${String(k)} ${k === 1 ? one : many}`;
+  return `${n(s.spaces, 'space', 'spaces')} · ${n(s.tasks, 'task', 'tasks')}`;
 }
 
 /** `3 tasks` — how many rows a group opens to. */

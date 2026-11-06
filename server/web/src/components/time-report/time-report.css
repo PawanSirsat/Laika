@@ -948,6 +948,23 @@
   --tr-cols: minmax(0, 1fr) 5.25rem 5.25rem 6rem;
 }
 
+/* People first: Spaces and Tasks before the hours (LAI-1164). */
+.trep-table-spread {
+  --tr-cols: minmax(0, 1fr) 4.5rem 4.5rem 6rem;
+}
+
+.trep-table-spread.trep-table-split {
+  --tr-cols: minmax(0, 1fr) 4.5rem 4.5rem 5.25rem 5.25rem 6rem;
+}
+
+/* The phone's line under the name; the columns say it wider. */
+.trep-row-spread {
+  display: none;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .trep-row {
   display: grid;
   grid-template-columns: var(--tr-cols);
@@ -1354,12 +1371,19 @@
     display: none;
   }
 
-  .trep-table-split {
+  .trep-table-split,
+  .trep-table-spread,
+  .trep-table-spread.trep-table-split {
     --tr-cols: minmax(0, 1fr) 4.5rem;
   }
 
-  .trep-table-split .trep-num:not(:last-child) {
+  .trep-table-split .trep-num:not(:last-child),
+  .trep-table-spread .trep-num:not(:last-child) {
     display: none;
+  }
+
+  .trep-row-spread {
+    display: inline;
   }
 
   .trep-row-meta {

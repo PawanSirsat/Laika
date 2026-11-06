@@ -518,6 +518,59 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
     }
   });
 
+  for (const width of [1440, 390]) {
+    void test(`spread at ${String(width)}: people first show their spaces and tasks; a figure counts tasks (LAI-1164)`, async () => {
+      const asked: URL[] = [];
+      const h = await openWith(
+        '/insights?tab=time',
+        OWNER_STUB(),
+        asked,
+        (u) => ok(orgReport(u)),
+        width,
+      );
+      try {
+        const tr = h.page.locator('[data-time-report="org"]');
+        await tr.locator('[data-tr-row]').first().waitFor({ timeout: 20_000 });
+        // Space first: no spread columns.
+        assert.equal(await tr.locator('[data-tr-spread]').count(), 0);
+        // Laika (t1, t2) and Onroute (no task): two tasks across two spaces.
+        assert.equal(
+          await tr.locator('[data-tr-stat="tasks"] .trep-stat-value .trep-long').innerText(),
+          '2',
+        );
+        assert.match(await tr.locator('[data-tr-stat="tasks"]').innerText(), /across 2 spaces/);
+        await tr.locator('[data-tr-swap]').click();
+        // Ada: LAI-2 in Laika (her untied draft is not read); Ben: a meeting on no task; Zoe: LAI-1.
+        const spread = async (id: string) =>
+          width === 390
+            ? await tr.locator(`[data-tr-row="${id}"] [data-tr-spread-words]`).innerText()
+            : (
+                await tr
+                  .locator(`[data-tr-row="${id}"] [data-tr-spread]`)
+                  .evaluateAll((els) => els.map((el) => el.textContent))
+              ).join('/');
+        if (width === 390) {
+          assert.equal(await spread('u1'), '1 space · 1 task');
+          assert.equal(await spread('u4'), '1 space · 0 tasks');
+        } else {
+          assert.equal(await spread('u1'), '1/1');
+          assert.equal(await spread('u4'), '1/0');
+          assert.equal(await spread('u3'), '1/1');
+        }
+        assert.equal(
+          await h.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+          true,
+          'the page scrolls sideways',
+        );
+        // No score of any kind.
+        assert.doesNotMatch(await tr.innerText(), /efficien|score|rank/i);
+        await shoot(h.page, `spread-${String(width)}`);
+      } finally {
+        await done(h);
+      }
+    });
+  }
+
   void test('a lone group opens by itself (LAI-1162)', async () => {
     const asked: URL[] = [];
     const h = await openWith('/insights?tab=time', OWNER_STUB(), asked, (u) => {
