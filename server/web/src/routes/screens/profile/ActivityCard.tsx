@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import {
+  getOwnActivity,
   getPeopleActivity,
   type ActivityRange,
   type PeopleActivity,
@@ -60,6 +61,8 @@ export interface ActivityCardProps {
   readonly sharing: ActivitySwitches;
   /** The (i) beside the title; the profile draws none (D-139 item 8, LAI-1152). */
   readonly definitions?: boolean;
+  /** The reader's own heatmap: `/me/activity`, which every role may read (LAI-1150). */
+  readonly own?: boolean;
 }
 
 interface ActivitySwitches {
@@ -166,6 +169,7 @@ export function ActivityCard({
   canManageOrg,
   sharing,
   definitions = true,
+  own = false,
 }: ActivityCardProps) {
   const [range, setRange] = useState<ActivityRange>(defaultRange);
   const [design, setDesign] = useState<HeatDesign>(() => readDesign(viewerId));
@@ -179,7 +183,10 @@ export function ActivityCard({
   useEffect(() => {
     const controller = new AbortController();
     setLoad({ kind: 'loading' });
-    getPeopleActivity(userId, range, controller.signal)
+    (own
+      ? getOwnActivity(range, controller.signal)
+      : getPeopleActivity(userId, range, controller.signal)
+    )
       .then((activity) => {
         setLoad({ kind: 'ready', activity });
       })
@@ -190,7 +197,7 @@ export function ActivityCard({
     return () => {
       controller.abort();
     };
-  }, [userId, range, attempt]);
+  }, [userId, range, attempt, own]);
 
   const choose = (next: HeatDesign): void => {
     setDesign(next);

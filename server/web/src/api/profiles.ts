@@ -217,6 +217,15 @@ export function getProfile(userId: string, signal?: AbortSignal): Promise<Member
   );
 }
 
+/**
+ * `GET /me/profile` (D-139 item 1, LAI-1150): your own profile, whatever your
+ * role, the same shape as anyone's. It writes no look, and leaves `ratings`
+ * out unless you also hold `profile.read`.
+ */
+export function getOwnProfile(signal?: AbortSignal): Promise<MemberProfile> {
+  return request<MemberProfile>('/me/profile', signal === undefined ? {} : { signal });
+}
+
 /** Answers the whole profile: the kind decides which blocks it carries. */
 export function setProfileKind(userId: string, kind: ProfileKind): Promise<MemberProfile> {
   return request<MemberProfile>(`/users/${encodeURIComponent(userId)}/profile`, {

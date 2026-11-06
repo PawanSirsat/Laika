@@ -24,6 +24,7 @@ import { ApiError } from '../../../api/errors.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import {
+  getOwnProfile,
   getProfile,
   profileHref,
   setProfileKind,
@@ -155,9 +156,9 @@ function useColumnCount(): ColumnCount {
  * that edits it, *Who looked* lists every look at you, and all four tabs are
  * yours. Anyone else is told so and **the profile is never asked for**.
  *
- * Until LAI-1150's `GET /me/profile` is on the server, your own profile is
- * `GET /users/<you>/profile`, which only `profile.read` may read — so a plain
- * member still sees the permission notice on their own (LAI-1152 notes).
+ * Your own is `GET /me/profile` (LAI-1150), which every role may read, and
+ * its heatmap `GET /me/activity`; a look at someone else is
+ * `GET /users/:id/profile`, `profile.read` alone.
  *
  * ## Every figure is the server's
  *
@@ -180,9 +181,11 @@ export function ProfileScreen({
   // (LAI-970) — a role would show a withdrawn admin what they may not open.
   const gates = useGates(me !== undefined);
   const { settled } = gates;
-  const allowed = gates.org('profile.read');
-  const readsDays = gates.org(PEOPLE_ANALYTICS);
   const own = userId !== undefined && userId === me?.id;
+  // Your own is every role's (D-139 item 1, LAI-1150); anyone else's is
+  // `profile.read`, owners and admins.
+  const allowed = gates.org('profile.read') || (own && gates.org('profile.read_own'));
+  const readsDays = gates.org(PEOPLE_ANALYTICS);
   // Someone else's pill (D-137, LAI-1152): their row of the list, which logs
   // nothing. Your own is the shared store *My availability* reads and saves.
   const theirs = useSharedRow(userId ?? '', allowed && readsSharedRow(userId, me?.id));
@@ -217,7 +220,9 @@ export function ProfileScreen({
     if (!allowed || userId === undefined) return;
     const controller = new AbortController();
     setLoad({ kind: 'loading' });
-    getProfile(userId, controller.signal)
+    // Your own from `/me/profile`, which writes no look and needs no grant
+    // past being signed in; someone else's from `/users/:id/profile`.
+    (own ? getOwnProfile(controller.signal) : getProfile(userId, controller.signal))
       .then((profile) => {
         setLoad({ kind: 'ready', profile });
       })
@@ -228,7 +233,7 @@ export function ProfileScreen({
     return () => {
       controller.abort();
     };
-  }, [allowed, userId, attempt]);
+  }, [allowed, own, userId, attempt]);
 
   const chrome = (name?: string) => <ProfileChrome own={own} name={name} onNavigate={onNavigate} />;
 
@@ -551,6 +556,7 @@ export function ProfileScreen({
             canManageOrg={gates.org('org.developer_insights.set')}
             sharing={profile.activity_sharing}
             definitions={false}
+            own={own}
           />
 
           {/*

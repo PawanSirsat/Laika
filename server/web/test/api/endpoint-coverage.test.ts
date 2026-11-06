@@ -56,10 +56,6 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
    * built, and there is nowhere in the app to put it yet.
    */
   'api/v1/me/watching': 'LAI-458 — a "tasks I watch" screen does not exist',
-  // D-139 item 1 (LAI-1150) serves them ahead of their screens: the member's
-  // own profile and heatmap are LAI-1152's to call.
-  'api/v1/me/profile': 'LAI-1152 — your own profile screen calls it; served first by LAI-1150',
-  'api/v1/me/activity': 'LAI-1152 — your own heatmap on that screen; served first by LAI-1150',
   // Called by something that is not the SPA.
   'webhooks/github': 'GitHub posts here (§9.2); no browser is involved',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',

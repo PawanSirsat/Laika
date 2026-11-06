@@ -270,7 +270,7 @@
 .screen-crumbs-here {
   margin: 0;
   overflow: hidden;
-  font-size: inherit;
+  font-size: var(--text-body);
   font-weight: var(--weight-heavy);
   line-height: inherit;
   color: var(--text-primary);
