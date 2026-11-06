@@ -202,6 +202,11 @@ const BASE: ApiStub = {
       },
     ],
   },
+  // An analytics reader's pill is this one person's load, never the list,
+  // which logs a look at everyone it lists (LAI-1159).
+  '/api/v1/people/u2/load': {
+    availability: { status: 'capacity', note: 'Deep in payments', tags: ['Back-end'], away: null },
+  },
 };
 
 /** An owner who also holds *See and manage anyone's developer setup* (D-132). */
@@ -312,6 +317,9 @@ void describe('someone else’s profile (frame A)', () => {
             spaces: [],
           },
         ],
+      },
+      '/api/v1/people/u2/load': {
+        availability: { status: null, note: null, tags: [], away: null },
       },
     });
     try {
