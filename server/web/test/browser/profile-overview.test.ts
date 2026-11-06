@@ -378,6 +378,8 @@ function stubFor(
   return {
     ...BASE,
     [`/api/v1/users/${id}/profile`]: profile,
+    // Your own profile is read as yours (D-139 item 1, LAI-1150).
+    ...(id === OWNER.id ? { '/api/v1/me/profile': profile, '/api/v1/me/activity': quietYear } : {}),
     [`/api/v1/users/${id}/usage`]: usage(id, options.tokens),
     // The one read This week makes: this person, with drafts (D-139 item 4).
     [`/api/v1/time/report?members=${id}&drafts=include`]: report(options.week, options.agents),

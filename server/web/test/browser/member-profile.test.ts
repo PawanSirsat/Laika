@@ -4,17 +4,13 @@
  * The server tests own the figures and the door. What is left to prove is the
  * page a person reads: that every figure on it is the one the response
  * carried (the Overview's cards in detail are profile-overview.test.ts's,
- * LAI-1153), that a rating is written through the dialog by keyboard and
- * lands on top, and that
- * the way in — a name on Organisation, a Capacity card, a *Work by person*
+ * LAI-1153), and that the way in — a name on Organisation, a Capacity card, a *Work by person*
  * row — is a link for an owner or admin and plain text for anyone else.
  *
  * Fixtures are anchored to `Date.now()`, never to a date (CONVENTIONS §4).
  * The delivery figures that sit side by side are given different values —
  * accepted 4, sent back 6, reopened 7, p50 3 d, p75 4.5 d — so a card showing
  * one field under another's label fails rather than matching by coincidence.
- * The manager's tiles likewise (LAI-750): led 1, decided in 30 days 4,
- * accepted 9, sent back 2, median 5 h, waiting 3, oldest 2 d.
  */
 
 import assert from 'node:assert/strict';
@@ -73,9 +69,6 @@ const MONDAY = (() => {
 })();
 const SINCE = MONDAY - 11 * WEEK;
 const WEEKLY = [0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 2, 0];
-/** A manager's review decisions per week (LAI-750): 9 accepted, 2 sent back. */
-const REVIEWED = [0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 0];
-const SENT_BACK = [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
 
 const reviewWeeks = (accepted: readonly number[], sentBack: readonly number[]) =>
   accepted.map((n, i) => ({ week_start: SINCE + i * WEEK, accepted: n, sent_back: sentBack[i] }));
@@ -251,45 +244,6 @@ function asManager(profile: typeof BUILDER) {
   return { ...rest, user: { ...rest.user, profile_kind: 'manager' } };
 }
 
-const MANAGER = {
-  ...asManager({ ...BUILDER, user: { ...BUILDER.user, id: 'u3', name: 'Cal Lead' } }),
-  review: {
-    accepted: 9,
-    sent_back: 2,
-    last_30_days: 4,
-    per_week: reviewWeeks(REVIEWED, SENT_BACK),
-    time_to_decide: { measured: 10, unmeasured: 1, p50_ms: 5 * HOUR },
-    recent: [
-      {
-        task_id: 't3',
-        key: 'LC-3',
-        title: 'Three',
-        project_slug: 'laika-core',
-        decision: 'accepted',
-        at: NOW - DAY,
-        assignee: { id: 'u2', name: 'Bea Builder' },
-      },
-      {
-        task_id: 't2',
-        key: 'LC-2',
-        title: 'Two',
-        project_slug: 'laika-core',
-        decision: 'sent_back',
-        at: NOW - 4 * DAY,
-        assignee: { id: 'u2', name: 'Bea Builder' },
-      },
-    ],
-  },
-  ratings: [],
-  ratings_total: 0,
-  queue: {
-    projects_led: 1,
-    waiting: 3,
-    oldest_waiting_since: NOW - 2 * DAY,
-    projects: [{ project_id: 'p1', waiting: 3 }],
-  },
-};
-
 const EMPTY = {
   ...BUILDER,
   user: { ...BUILDER.user, id: 'u6', name: 'Nia New' },
@@ -428,12 +382,12 @@ void describe('a builder’s profile', () => {
       assert.match(headText, /Bea Builder/);
       assert.match(headText, /bea@example\.com/);
       assert.match(headText, /Member/);
-      // The sub-line counts the response's projects; the screen's header says
-      // who sees this (the pill it repeated went with LAI-1134).
+      // The sub-line counts the response's projects; the notice above the
+      // head card says who sees this (LAI-1152).
       assert.match(headText, /2 projects/);
       assert.match(
-        await h.page.locator('.prof .screen-bar').innerText(),
-        /Visible to owners and admins only/i,
+        await h.page.locator('[data-profile-notice]').innerText(),
+        /Owners and admins only · read-only · Bea can see that you looked/,
       );
       // The kind is a chip in the header; the control is in the panel.
       assert.equal(
@@ -473,14 +427,9 @@ void describe('a builder’s profile', () => {
       assert.equal(await agents.locator('.ov-tool[data-online="true"]').count(), 1);
       assert.match(await agents.locator('.prof-card-caption').innerText(), /1 online$/);
 
-      const rating = await section(h.page, 'rating');
-      const latest = await rating.locator('.prof-rating-latest').innerText();
-      assert.match(latest, /5 \/ 5/);
-      assert.match(latest, /Clears review fast\./);
-      assert.match(latest, /Ada Owner/);
-      const history = await rating.locator('.prof-rating-history li').allInnerTexts();
-      assert.equal(history.length, 1, 'the history is everything but the latest');
-      assert.match(history[0] ?? '', /3 \/ 5.*Steady delivery/s);
+      // The response still carries ratings; the page draws none (D-139 item 8).
+      assert.equal(await h.page.locator('[data-section="rating"]').count(), 0);
+      assert.doesNotMatch(await h.page.locator('.prof').innerText(), /Clears review fast/);
     } finally {
       await h.close();
     }
@@ -531,7 +480,7 @@ void describe('a builder’s profile', () => {
       '/api/v1/users/u6/profile': EMPTY,
     });
     try {
-      await section(h.page, 'rating');
+      await section(h.page, 'work');
       await until(
         async () => (await h.page.locator('[data-section="tokens"] [data-empty]').count()) === 1,
       );
@@ -545,7 +494,6 @@ void describe('a builder’s profile', () => {
         'none set up',
       );
       assert.match(text, /No review decisions in these 12 weeks/);
-      assert.match(text, /Not rated yet/);
       assert.doesNotMatch(text, /undefined|NaN|null/);
       // A sentence inside the card, not twelve empty bars (LAI-750).
       assert.equal(
@@ -578,6 +526,9 @@ void describe('a builder’s profile', () => {
         ...BASE,
         '/api/v1/me': readerRole,
         '/api/v1/users/u2/profile': BUILDER,
+        // The person's own read (D-139, LAI-1150).
+        '/api/v1/me/profile': BUILDER,
+        '/api/v1/me/activity': activityStub,
         '/api/v1/users/u2/usage': {
           ...quietUsage('u2'),
           sharing: { org_enabled: true, enabled: false },
@@ -598,7 +549,7 @@ void describe('a builder’s profile', () => {
 
 // ------------------------------------------------------- v2 cards (LAI-750)
 
-void describe('definitions and the kind control', () => {
+void describe('the kind control', () => {
   void test('is a labelled radio group that a keyboard moves', async () => {
     let patched: unknown;
     const h = await open('/people?user=u2', {
@@ -676,331 +627,6 @@ void describe('a manager’s profile', () => {
       const patch = h.calls.find((c) => c.method === 'PATCH');
       assert.deepEqual(patch?.body, { profile_kind: 'manager' });
       assert.equal(patch?.path, '/api/v1/users/u2/profile');
-    } finally {
-      await h.close();
-    }
-  });
-});
-
-// -------------------------------------------------------------------- rating
-
-void describe('rating a member', () => {
-  void test('by keyboard: open, choose, write, send — and it lands on top', async () => {
-    const ratings = [...BUILDER.ratings];
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': () => ({
-        ...BUILDER,
-        ratings: [...ratings],
-        ratings_total: ratings.length,
-      }),
-      '/api/v1/users/u2/ratings': (call: { body: unknown }) => {
-        const body = call.body as { score: number; note: string };
-        const created = {
-          id: `r${String(ratings.length + 1)}`,
-          score: body.score,
-          note: body.note,
-          rated_by: { id: 'u1', name: 'Ada Owner' },
-          created_at: Date.now(),
-        };
-        ratings.unshift(created);
-        return created;
-      },
-    });
-    try {
-      const rate = h.page.locator('button.prof-rate');
-      await rate.waitFor({ timeout: 20_000 });
-      await rate.focus();
-      await h.page.keyboard.press('Enter');
-
-      const dialog = h.page.locator('.rating-dialog[role="dialog"]');
-      await dialog.waitFor();
-      const submit = dialog.locator('button.rating-submit');
-      assert.equal(await submit.isDisabled(), true, 'sendable before anything was chosen');
-
-      // Focus starts on the score; arrows move it, as a radio group's do.
-      await h.page.keyboard.press('ArrowRight');
-      await h.page.keyboard.press('ArrowRight');
-      await h.page.keyboard.press('ArrowRight');
-      assert.equal(await dialog.locator('input[name="rating-score"][value="4"]').isChecked(), true);
-      assert.equal(await submit.isDisabled(), true, 'sendable with no note');
-
-      await h.page.keyboard.press('Tab');
-      await h.page.keyboard.type('Owns the release checklist now.');
-      await submit.focus();
-      await h.page.keyboard.press('Enter');
-
-      await dialog.waitFor({ state: 'detached' });
-      await until(async () =>
-        (
-          await h.page
-            .locator('.prof-rating-latest')
-            .innerText()
-            .catch(() => '')
-        ).includes('Owns the release checklist'),
-      );
-      const latest = await h.page.locator('.prof-rating-latest').innerText();
-      assert.match(latest, /4 \/ 5/);
-      assert.match(latest, /Owns the release checklist now\./);
-      // The one it superseded moved into the history, newest first.
-      await until(async () =>
-        /5 \/ 5.*Clears review fast/s.test(
-          (await h.page.locator('.prof-rating-history li').allInnerTexts())[0] ?? '',
-        ),
-      );
-      const history = await h.page.locator('.prof-rating-history li').allInnerTexts();
-      assert.match(history[0] ?? '', /5 \/ 5.*Clears review fast/s);
-
-      const post = h.calls.find(
-        (c) => c.method === 'POST' && c.path === '/api/v1/users/u2/ratings',
-      );
-      assert.deepEqual(post?.body, { score: 4, note: 'Owns the release checklist now.' });
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('Escape closes the dialog without sending, and gives focus back', async () => {
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': BUILDER,
-    });
-    try {
-      const rate = h.page.locator('button.prof-rate');
-      await rate.waitFor({ timeout: 20_000 });
-      await rate.click();
-      await h.page.locator('.rating-dialog').waitFor();
-      await h.page.keyboard.press('Escape');
-      await h.page.locator('.rating-dialog').waitFor({ state: 'detached' });
-
-      assert.equal(await rate.evaluate((el) => el === document.activeElement), true);
-      assert.equal(h.calls.filter((c) => c.method === 'POST').length, 0);
-    } finally {
-      await h.close();
-    }
-  });
-
-  /**
-   * A lost answer must not become two ratings (LAI-746). Each submit of one
-   * rating carries the same `Idempotency-Key`, so the server answers a retry
-   * from the row the first attempt wrote; a changed rating is a new attempt.
-   */
-  void test('retries a lost save with the same Idempotency-Key, and a changed rating with a new one', async () => {
-    const keys: (string | undefined)[] = [];
-    let answer: 'drop' | 'ok' = 'drop';
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': BUILDER,
-    });
-    try {
-      await h.page.route('**/api/v1/users/u2/ratings', async (route) => {
-        keys.push(route.request().headers()['idempotency-key']);
-        if (answer === 'drop') {
-          await route.abort('connectionreset');
-          return;
-        }
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify({ ...BUILDER.ratings[0], note: 'Second try.' }),
-        });
-      });
-
-      await h.page.locator('button.prof-rate').click();
-      const dialog = h.page.locator('.rating-dialog');
-      const submit = dialog.locator('button.rating-submit');
-      await dialog.locator('input[name="rating-score"][value="3"]').check();
-      await dialog.locator('textarea').fill('First try.');
-
-      await submit.click();
-      await until(() => keys.length === 1);
-      await dialog.locator('[role="alert"]').waitFor();
-      await until(async () => !(await submit.isDisabled()));
-      await submit.click();
-      await until(() => keys.length === 2);
-
-      await until(async () => !(await submit.isDisabled()));
-      await dialog.locator('textarea').fill('Second try.');
-      await submit.click();
-      await until(() => keys.length === 3);
-
-      answer = 'ok';
-      await until(async () => !(await submit.isDisabled()));
-      await submit.click();
-      await dialog.waitFor({ state: 'detached' });
-
-      assert.equal(keys.length, 4);
-      assert.match(keys[0] ?? '', /^rating-[0-9a-f]{32}$/);
-      assert.equal(keys[1], keys[0], 'a retry of the same rating took a new key');
-      assert.notEqual(keys[2], keys[1], 'a changed rating kept the old key');
-      assert.equal(keys[3], keys[2], 'the retry that went through took a new key');
-    } finally {
-      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
-      await h.close();
-    }
-  });
-
-  /**
-   * An attempt belongs to the member it rates (LAI-749). The screen stays
-   * mounted when `?user=` changes, so an attempt kept from one member's failed
-   * save must not be reused for the next member's rating of the same score and
-   * note: the server would answer `409` — that key already wrote, or tried to
-   * write, a rating of someone else.
-   */
-  void test('does not carry a failed attempt’s key over to another member', async () => {
-    const sent: { path: string; key: string | undefined }[] = [];
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': BUILDER,
-      '/api/v1/users/u3/profile': {
-        ...BUILDER,
-        user: { ...BUILDER.user, id: 'u3', name: 'Cal Lead' },
-      },
-    });
-    try {
-      await h.page.route('**/api/v1/users/*/ratings', async (route) => {
-        const path = new URL(route.request().url()).pathname;
-        sent.push({ path, key: route.request().headers()['idempotency-key'] });
-        if (path.includes('/u2/')) {
-          await route.abort('connectionreset');
-          return;
-        }
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify(BUILDER.ratings[0]),
-        });
-      });
-
-      const rate = async (): Promise<void> => {
-        await h.page.locator('button.prof-rate').click();
-        const dialog = h.page.locator('.rating-dialog');
-        await dialog.locator('input[name="rating-score"][value="3"]').check();
-        await dialog.locator('textarea').fill('Same note.');
-        await dialog.locator('button.rating-submit').click();
-      };
-
-      // Bea: the save is lost; the dialog says so and is closed.
-      await h.page.locator('.prof-head', { hasText: 'Bea Builder' }).waitFor({ timeout: 20_000 });
-      await rate();
-      await until(() => sent.length === 1);
-      const dialog = h.page.locator('.rating-dialog');
-      await dialog.locator('[role="alert"]').waitFor();
-      await until(async () => !(await dialog.locator('button.rating-cancel').isDisabled()));
-      await dialog.locator('button.rating-cancel').click();
-      await dialog.waitFor({ state: 'detached' });
-
-      // Cal, by changing `?user=` in place — the same screen, still mounted.
-      await h.page.evaluate(() => {
-        history.pushState({}, '', '/people?user=u3');
-        dispatchEvent(new PopStateEvent('popstate'));
-      });
-      await h.page.locator('.prof-head', { hasText: 'Cal Lead' }).waitFor();
-      await rate();
-      await until(() => sent.length === 2);
-      await dialog.waitFor({ state: 'detached' });
-
-      assert.deepEqual(
-        sent.map((s) => s.path),
-        ['/api/v1/users/u2/ratings', '/api/v1/users/u3/ratings'],
-      );
-      assert.match(sent[0]?.key ?? '', /^rating-[0-9a-f]{32}$/);
-      assert.match(sent[1]?.key ?? '', /^rating-[0-9a-f]{32}$/);
-      assert.notEqual(sent[1]?.key, sent[0]?.key, 'Cal’s rating reused Bea’s attempt key');
-    } finally {
-      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
-      await h.close();
-    }
-  });
-
-  void test('keeps the dialog open while a save is in flight — Escape, Cancel and ✕ wait', async () => {
-    let release = (): void => undefined;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let seen = false;
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': BUILDER,
-    });
-    try {
-      await h.page.route('**/api/v1/users/u2/ratings', async (route) => {
-        seen = true;
-        await held;
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify(BUILDER.ratings[0]),
-        });
-      });
-
-      await h.page.locator('button.prof-rate').click();
-      const dialog = h.page.locator('.rating-dialog');
-      await dialog.locator('input[name="rating-score"][value="5"]').check();
-      await dialog.locator('textarea').fill('Held in flight.');
-      await dialog.locator('button.rating-submit').click();
-      await until(() => seen);
-
-      await h.page.keyboard.press('Escape');
-      await h.page.locator('.rating-scrim').click({ position: { x: 5, y: 5 }, force: true });
-      assert.equal(await dialog.locator('button.rating-cancel').isDisabled(), true);
-      assert.equal(await dialog.locator('button.rating-close').isDisabled(), true);
-      await h.page.waitForTimeout(200);
-      assert.equal(await dialog.count(), 1, 'the dialog let go of a save in flight');
-
-      release();
-      await dialog.waitFor({ state: 'detached' });
-    } finally {
-      release();
-      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
-      await h.close();
-    }
-  });
-
-  void test('shows the server’s refusal in the dialog rather than closing it', async () => {
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': BUILDER,
-      '/api/v1/users/u2/ratings': refuse(
-        422,
-        'unprocessable',
-        'A rating needs a note of 1 to 500 characters',
-      ),
-    });
-    try {
-      await h.page.locator('button.prof-rate').click();
-      const dialog = h.page.locator('.rating-dialog');
-      await dialog.locator('input[name="rating-score"][value="2"]').check();
-      await dialog.locator('textarea').fill('Something.');
-      await dialog.locator('button.rating-submit').click();
-
-      await dialog.locator('[role="alert"]').waitFor();
-      assert.match(await dialog.locator('[role="alert"]').innerText(), /1 to 500 characters/);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('offers no rating of yourself', async () => {
-    const self = {
-      ...BUILDER,
-      user: { ...BUILDER.user, id: 'u1', name: 'Ada Owner', org_role: 'owner' },
-    };
-    const h = await open('/people?user=u1', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u1/profile': self,
-    });
-    try {
-      const rating = await section(h.page, 'rating');
-      assert.equal(await h.page.locator('button.prof-rate').count(), 0);
-      assert.match(await rating.innerText(), /cannot rate yourself/i);
     } finally {
       await h.close();
     }
@@ -1334,152 +960,6 @@ void describe('the profile’s smaller fixes (LAI-751)', () => {
         assert.match(await projects.locator('.ov-project-name').first().innerText(), /ARCHIVED/);
       }
     } finally {
-      await h.close();
-    }
-  });
-
-  void test('a decision on an unassigned task reads Unassigned', async () => {
-    const shape = {
-      ...MANAGER,
-      review: {
-        ...MANAGER.review,
-        recent: [{ ...MANAGER.review.recent[0]!, assignee: null }],
-      },
-    };
-    const h = await open('/people?user=u3', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u3/profile': shape,
-    });
-    try {
-      const decisions = await section(h.page, 'decisions');
-      // The manager's queue tiles left the profile (LAI-1153, D-139 item 2).
-      assert.match(await decisions.innerText(), /Unassigned/);
-    } finally {
-      await h.close();
-    }
-  });
-
-  /**
-   * LAI-749 keeps one attempt per member; nothing tested it until now (the
-   * LAI-749 review). Bea fails, Cal fails, and back on Bea the same rating
-   * must go with **Bea's** key — a store of one would have Cal's in it.
-   */
-  void test('going back to a member retries with that member’s own key', async () => {
-    const sent: { path: string; key: string | undefined }[] = [];
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': BUILDER,
-      '/api/v1/users/u3/profile': {
-        ...BUILDER,
-        user: { ...BUILDER.user, id: 'u3', name: 'Cal Lead' },
-      },
-    });
-    try {
-      await h.page.route('**/api/v1/users/*/ratings', async (route) => {
-        const path = new URL(route.request().url()).pathname;
-        sent.push({ path, key: route.request().headers()['idempotency-key'] });
-        await route.abort('connectionreset');
-      });
-      const dialog = h.page.locator('.rating-dialog');
-      const rateAndClose = async (n: number): Promise<void> => {
-        await h.page.locator('button.prof-rate').click();
-        await dialog.locator('input[name="rating-score"][value="4"]').check();
-        await dialog.locator('textarea').fill('Same rating, same note.');
-        await dialog.locator('button.rating-submit').click();
-        await until(() => sent.length === n);
-        await dialog.locator('[role="alert"]').waitFor();
-        await until(async () => !(await dialog.locator('button.rating-cancel').isDisabled()));
-        await dialog.locator('button.rating-cancel').click();
-        await dialog.waitFor({ state: 'detached' });
-      };
-      const goTo = async (id: string, name: string): Promise<void> => {
-        await h.page.evaluate((to) => {
-          history.pushState({}, '', `/people?user=${to}`);
-          dispatchEvent(new PopStateEvent('popstate'));
-        }, id);
-        await h.page.locator('.prof-head', { hasText: name }).waitFor();
-      };
-
-      await h.page.locator('.prof-head', { hasText: 'Bea Builder' }).waitFor({ timeout: 20_000 });
-      await rateAndClose(1);
-      await goTo('u3', 'Cal Lead');
-      await rateAndClose(2);
-      await goTo('u2', 'Bea Builder');
-      await rateAndClose(3);
-
-      assert.deepEqual(
-        sent.map((s) => s.path),
-        ['/api/v1/users/u2/ratings', '/api/v1/users/u3/ratings', '/api/v1/users/u2/ratings'],
-      );
-      assert.notEqual(sent[1]?.key, sent[0]?.key, 'Cal’s rating reused Bea’s key');
-      assert.equal(sent[2]?.key, sent[0]?.key, 'back on Bea, her retry took a new key');
-    } finally {
-      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
-      await h.close();
-    }
-  });
-
-  void test('Back while a rating saves never draws the previous person over the page', async () => {
-    let release = (): void => undefined;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let posted = false;
-    const reads: string[] = [];
-    const h = await open('/people?user=u3', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': (call: { path: string }) => {
-        reads.push(call.path);
-        return BUILDER;
-      },
-      '/api/v1/users/u3/profile': {
-        ...BUILDER,
-        user: { ...BUILDER.user, id: 'u3', name: 'Cal Lead' },
-      },
-    });
-    try {
-      await h.page.route('**/api/v1/users/u2/ratings', async (route) => {
-        posted = true;
-        await held;
-        await route.fulfill({
-          status: 201,
-          contentType: 'application/json',
-          body: JSON.stringify(BUILDER.ratings[0]),
-        });
-      });
-      await h.page.locator('.prof-head', { hasText: 'Cal Lead' }).waitFor({ timeout: 20_000 });
-      // To Bea, as a link would: Back then returns to Cal.
-      await h.page.evaluate(() => {
-        history.pushState({}, '', '/people?user=u2');
-        dispatchEvent(new PopStateEvent('popstate'));
-      });
-      await h.page.locator('.prof-head', { hasText: 'Bea Builder' }).waitFor();
-      const before = reads.length;
-
-      await h.page.locator('button.prof-rate').click();
-      const dialog = h.page.locator('.rating-dialog');
-      await dialog.locator('input[name="rating-score"][value="5"]').check();
-      await dialog.locator('textarea').fill('Saved while leaving.');
-      await dialog.locator('button.rating-submit').click();
-      await until(() => posted);
-
-      await h.page.goBack();
-      await h.page.locator('.prof-head', { hasText: 'Cal Lead' }).waitFor();
-      assert.equal(await dialog.count(), 0, 'Bea’s dialog followed onto Cal’s page');
-
-      release();
-      // Give a late answer every chance to land.
-      await h.page.waitForTimeout(400);
-      assert.match(await h.page.locator('.prof-head').innerText(), /Cal Lead/);
-      assert.doesNotMatch(await h.page.locator('.prof-head').innerText(), /Bea Builder/);
-      assert.equal(reads.length, before, 'Bea’s profile was read again after leaving her');
-      assert.match(h.page.url(), /user=u3/);
-    } finally {
-      release();
-      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
   });

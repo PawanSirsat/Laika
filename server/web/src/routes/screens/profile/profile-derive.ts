@@ -1,6 +1,6 @@
 import type { AgentClient } from '../../../api/agent-clients.ts';
 import { formatDurationMs } from '../../../api/duration.ts';
-import { RATING_NOTE_MAX, type ProfileAgentToken } from '../../../api/profiles.ts';
+import type { ProfileAgentToken } from '../../../api/profiles.ts';
 
 /**
  * How the member profile's figures read (LAI-743).
@@ -70,57 +70,4 @@ export function lastActive(
 /** `1 project`, `3 projects` — a count said as words around it. */
 export function countLabel(n: number, one: string, many: string): string {
   return `${String(n)} ${n === 1 ? one : many}`;
-}
-
-export function scoreLabel(score: number): string {
-  return `${String(score)} / 5`;
-}
-
-/**
- * What stops the rating form, in the reader's words — or `undefined` when the
- * server would take it. The same rules the server applies (§4.21), so the
- * button is not enabled for a request that can only come back `422`.
- */
-export function ratingProblem(score: number | undefined, note: string): string | undefined {
-  if (score === undefined) return 'Choose a score from 1 to 5.';
-  const trimmed = note.trim();
-  if (trimmed === '') return 'Write a short note — what the rating is based on.';
-  if (trimmed.length > RATING_NOTE_MAX) {
-    return `Keep the note to ${String(RATING_NOTE_MAX)} characters.`;
-  }
-  return undefined;
-}
-
-/**
- * One rating the reader is trying to save — of one member — and the key every
- * try of it carries.
- */
-export interface RatingAttempt {
-  readonly key: string;
-  /** The member rated. An attempt never crosses to another (LAI-749). */
-  readonly userId: string;
-  readonly score: number;
-  readonly note: string;
-}
-
-/**
- * The attempt a submit belongs to (LAI-746): the previous one again when the
- * reader is retrying the same rating of the same member — so the server can
- * answer from what it may already have written — and a new one, with a new
- * key, when the member, the score or the note changed, since the old key with
- * a different body is the server's `409`. The note is compared trimmed, as the
- * server stores it.
- */
-export function nextAttempt(
-  previous: RatingAttempt | undefined,
-  userId: string,
-  score: number,
-  note: string,
-  makeKey: () => string,
-): RatingAttempt {
-  const trimmed = note.trim();
-  if (previous?.userId === userId && previous.score === score && previous.note === trimmed) {
-    return previous;
-  }
-  return { key: makeKey(), userId, score, note: trimmed };
 }

@@ -5,7 +5,7 @@ area: server
 assignee: core (belka)
 priority: p2
 depends-on: [LAI-1149]
-status: review
+status: done
 started: 2026-11-06T02:15:32+05:30
 finished: 2026-11-06T02:35:11+05:30
 ---

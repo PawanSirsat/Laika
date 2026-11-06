@@ -17,9 +17,6 @@ import { request } from './client.ts';
 export const PROFILE_KINDS = ['builder', 'manager'] as const;
 export type ProfileKind = (typeof PROFILE_KINDS)[number];
 
-/** A rating's note, after trimming — §4.21's limit. */
-export const RATING_NOTE_MAX = 500;
-
 export interface ProfileUser {
   readonly id: string;
   readonly name: string;
@@ -200,12 +197,21 @@ export interface MemberProfile {
   readonly window: ProfileWindow;
   readonly projects: readonly ProfileProject[];
   readonly review: ProfileReview;
-  /** Newest first, at most the server's cap (50); the first is the current one. */
-  readonly ratings: readonly MemberRating[];
-  readonly ratings_total: number;
+  /**
+   * Newest first, at most the server's cap (50); the first is the current one.
+   * **Absent** on your own profile unless you also hold `profile.read` (D-139
+   * item 1): what an owner or admin wrote about you stays theirs. The profile
+   * draws neither (D-139 item 8).
+   */
+  readonly ratings?: readonly MemberRating[];
+  readonly ratings_total?: number;
   /** D-079's two switches for them (LAI-751): which shape the Activity card takes. */
   readonly activity_sharing: ProfileActivitySharing;
-  /** A builder's only. **Absent** for a manager, not empty. */
+  /**
+   * Every profile's since D-139 item 2 (LAI-1150): a manager's carries them
+   * like a builder's. Optional because a server before LAI-1150 left them out
+   * of a manager's, and the cards read an absence as no card.
+   */
   readonly current_work?: ProfileCurrentWork;
   readonly delivery?: ProfileDelivery;
   readonly agents?: ProfileAgents;
@@ -220,42 +226,21 @@ export function getProfile(userId: string, signal?: AbortSignal): Promise<Member
   );
 }
 
+/**
+ * `GET /me/profile` (D-139 item 1, LAI-1150): your own profile, whatever your
+ * role, the same shape as anyone's. It writes no look, and leaves `ratings`
+ * out unless you also hold `profile.read`.
+ */
+export function getOwnProfile(signal?: AbortSignal): Promise<MemberProfile> {
+  return request<MemberProfile>('/me/profile', signal === undefined ? {} : { signal });
+}
+
 /** Answers the whole profile: the kind decides which blocks it carries. */
 export function setProfileKind(userId: string, kind: ProfileKind): Promise<MemberProfile> {
   return request<MemberProfile>(`/users/${encodeURIComponent(userId)}/profile`, {
     method: 'PATCH',
     body: { profile_kind: kind },
   });
-}
-
-/**
- * Appends a rating. Never an edit — a new one supersedes the last.
- *
- * `idempotencyKey` is the attempt's (LAI-746): the same key on a retry makes
- * the server answer with the rating it already wrote, so a response lost on
- * the way back cannot become a second, undeletable rating.
- */
-export function rateMember(
-  userId: string,
-  rating: { readonly score: number; readonly note: string },
-  idempotencyKey?: string,
-): Promise<MemberRating> {
-  return request<MemberRating>(`/users/${encodeURIComponent(userId)}/ratings`, {
-    method: 'POST',
-    body: { score: rating.score, note: rating.note },
-    ...(idempotencyKey === undefined ? {} : { headers: { 'Idempotency-Key': idempotencyKey } }),
-  });
-}
-
-/**
- * A fresh key for one rating attempt: `rating-` and 32 hex characters.
- *
- * **`getRandomValues`, not `randomUUID`**: production is plain HTTP, which is
- * not a secure context, and `crypto.randomUUID` does not exist there.
- */
-export function attemptKey(): string {
-  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
-  return `rating-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** Where a person's profile lives — a link someone can paste. */

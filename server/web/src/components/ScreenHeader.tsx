@@ -13,8 +13,13 @@ export interface ScreenHeaderProps {
    * `band` — the compact bar every screen had (the default).
    * `page` — a top-level page of the reorganised app (LAI-796): a larger
    * title, a line under it, and a row below for its tabs.
+   * `crumbs` — a breadcrumb whose last step is the title, and the context at
+   * the right; the member profile's chrome (LAI-1152). No band of its own:
+   * the card under it is the page's head.
    */
-  readonly variant?: 'band' | 'page';
+  readonly variant?: 'band' | 'page' | 'crumbs';
+  /** Crumbs only: the steps before the title, each with its own separator. */
+  readonly trail?: ReactNode;
   /** Page only: a sentence under the title. */
   readonly description?: ReactNode;
   /**
@@ -87,6 +92,7 @@ export function ScreenHeader({
   lead,
   below,
   onActionsSlot,
+  trail,
 }: ScreenHeaderProps) {
   const embed = useContext(EmbedContext);
 
@@ -103,6 +109,20 @@ export function ScreenHeader({
         )}
         {children !== undefined && embed.slot !== null && createPortal(children, embed.slot)}
       </>
+    );
+  }
+
+  if (variant === 'crumbs') {
+    return (
+      <header className="screen-crumbs">
+        <nav className="screen-crumbs-trail" aria-label="Breadcrumb">
+          {trail}
+          <h1 className="screen-crumbs-here" aria-current="page">
+            {title}
+          </h1>
+        </nav>
+        {context !== undefined && <div className="screen-crumbs-context">{context}</div>}
+      </header>
     );
   }
 

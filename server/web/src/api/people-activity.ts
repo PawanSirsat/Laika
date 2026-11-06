@@ -52,3 +52,17 @@ export function getPeopleActivity(
     signal === undefined ? {} : { signal },
   );
 }
+
+/**
+ * `GET /me/activity?range=` (D-139 item 1, LAI-1150): your own heatmap, any
+ * role, the answer `/people/:id/activity` gives about you.
+ */
+export function getOwnActivity(
+  range: ActivityRange,
+  signal?: AbortSignal,
+): Promise<PeopleActivity> {
+  return request<PeopleActivity>(
+    `/me/activity?range=${range}`,
+    signal === undefined ? {} : { signal },
+  );
+}

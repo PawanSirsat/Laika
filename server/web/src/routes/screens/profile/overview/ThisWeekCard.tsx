@@ -193,7 +193,8 @@ function WeekFigures({
         </div>
       </dl>
 
-      {availability !== undefined && (
+      {/* No row (null) or not read yet: nothing is known about time away. */}
+      {availability !== undefined && availability !== null && (
         <p className="ov-foot ov-away" data-away>
           <b>Away</b>{' '}
           {periods !== undefined && periods.length > 0 ? (

@@ -194,6 +194,8 @@ const EVERY_ROLE_ORG = [
   // managing them is a signed-in session's, which a browser always is.
   'agent.read_own',
   'agent.manage_own',
+  // Your own profile and heatmap (D-139 item 1, LAI-1150): every role, on a session.
+  'profile.read_own',
 ] as const;
 const ADMIN_UP_ORG = [
   'org.settings.edit',
