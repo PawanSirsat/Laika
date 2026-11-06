@@ -189,9 +189,11 @@ export function ProfileScreen({
   // `profile.read`, owners and admins.
   const allowed = gates.org('profile.read') || (own && gates.org('profile.read_own'));
   const readsDays = gates.org(PEOPLE_ANALYTICS);
-  // Someone else's pill (D-137, LAI-1152): their row of the list, which logs
-  // nothing. Your own is the shared store *My availability* reads and saves.
-  const theirs = useSharedRow(userId ?? '', allowed && readsSharedRow(userId, me?.id));
+  // Someone else's pill (D-137, LAI-1152, LAI-1159): this one person's load for
+  // an analytics reader — the list would log a look at everyone it lists — and
+  // their row of the narrowed, unlogged list otherwise. Your own is the shared
+  // store *My availability* reads and saves.
+  const theirs = useSharedRow(userId ?? '', allowed && readsSharedRow(userId, me?.id), readsDays);
   const [mine] = useSharedAvailability();
   // Your own developer setup (LAI-1156), read beside the profile and not
   // before it: the Developer access tab draws it, and its *N to fix* is the
