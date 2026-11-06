@@ -41,6 +41,35 @@ void describe('a notice in words (D-134)', () => {
     );
   });
 
+  void test('a change to your time names who, what, the day and the card (D-143)', () => {
+    const time = (subject: string | null, task: Notice['task'] = null) =>
+      noticeLine(notice({ kind: 'time_changed', project: null, subject, task }));
+    assert.equal(
+      time('created 2026-11-05 +90'),
+      'Pawan Sirsat added 1 h 30 min to your time on Thu 5 Nov',
+    );
+    assert.equal(
+      time('edited 2026-11-05 -15', { id: 't1', key: 'LAI-42', title: 'Login' }),
+      'Pawan Sirsat changed your time on Thu 5 Nov (−15 min) · LAI-42',
+    );
+    assert.equal(time('edited 2026-11-05 +0'), 'Pawan Sirsat changed your time on Thu 5 Nov');
+    assert.equal(
+      time('deleted 2026-11-05 -60'),
+      'Pawan Sirsat removed 1 h of your time on Thu 5 Nov',
+    );
+    // A move names both days, never a "+0" edit (review L2).
+    assert.equal(
+      time('moved 2026-11-05 2026-11-06 +0'),
+      'Pawan Sirsat moved your time from Thu 5 Nov to Fri 6 Nov',
+    );
+    assert.equal(
+      time('moved 2026-11-05 2026-11-06 -30', { id: 't1', key: 'LAI-42', title: 'Login' }),
+      'Pawan Sirsat moved your time from Thu 5 Nov to Fri 6 Nov (−30 min) · LAI-42',
+    );
+    // A subject it cannot read still says who changed it.
+    assert.equal(time(null), 'Pawan Sirsat changed your time');
+  });
+
   void test('the message is never part of the line', () => {
     assert.equal(noticeLine(notice({ message: '<b>hi</b>' })), 'Pawan Sirsat added you to Sauce');
   });

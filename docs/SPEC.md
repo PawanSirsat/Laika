@@ -256,6 +256,7 @@ be obvious because someone will be asking for it.
 | Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Read and manage own time drafts | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Read and write own time entries | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Change a member's confirmed time | ✓ (session only, not themselves) | ✓ (session only, not for the owner, not themselves) | — | — |
 | Sync own time with Solidtime | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Map Solidtime projects and people | ✓ (session only) | ✓ (session only) | — | — |
 | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
@@ -379,6 +380,25 @@ project's totals and **never a per-person split**.
 `time_entries.read_own` with `time_entries.write_own`, behind §6.4's
 `PUT /org/time`, `/me/time-settings`, `/me/time-drafts`, `/me/time` and
 `/me/time-entries`.
+
+**"Change a member's confirmed time" is `time_entries.write_member`** (D-143,
+LAI-1165, amending D-102 rule 4 and D-088 items 2 and 6), behind §6.4's
+`POST /people/:id/time-entries` and `PATCH`/`DELETE
+/people/:id/time-entries/:entryId`. An owner adds, changes (length, edges,
+note, card) or deletes anybody else's **confirmed** entries; an admin anybody
+else's but the owner's (`403 not_for_owner`, D-133's shape). By role, as the
+Solidtime import is, not a grant. **Never yourself** (`422 use_own_time`):
+your own time keeps its own path, with its Undo. **Session only.** An import
+may be changed here too — never pushed back to Solidtime, so a later re-sync
+of a Solidtime change may put the imported original back, and the history
+keeps both — while the person's own path still refuses it (`403
+imported_entry`). A day in the closed period stays closed (`403
+closed_period`); a card or space the person cannot open themselves is `422
+task_not_visible_to_member`; drafts, the timer and breaks stay the person's
+own, so nothing on this path reaches them. A deactivated person's time can
+still be corrected. Every change is a §4.49 revision
+with `changed_by` the editor, the person gets a `time_changed` notice
+(§4.87), and there is no Undo.
 
 - **Both switches are a web session's**, as D-079's are: the organisation's
   *Time* (`off`, `manual`, `drafts`; §4.45) is its own row and not *Org
@@ -2268,7 +2288,7 @@ over an existing id, and `DELETE` while its entry exists.
 | `entry_id` | FK `time_entries`, cascade |
 | `revision` | integer; `(entry_id, revision)` unique |
 | `change` | `created` \| `edited` \| `deleted` |
-| `changed_by` | FK `users` |
+| `changed_by` | FK `users` — the person, or **somebody else**: an owner or admin who changed their time (D-143), or whoever ran the Solidtime pull that brought the change |
 | `task_id`, `project_id` | nullable — **copies, no FK**: history says what the entry said, and a deleted task must not rewrite it |
 | `day`, `tz`, `started_at`, `ended_at`, `minutes`, `note`, `kind`, `title`, `description` | the entry after the change |
 | `created_at` | |
@@ -3686,18 +3706,19 @@ that ended more than 30 days ago are deleted by §11.6's time retention.
 ### 4.87 `member_notices`
 
 A notice for one member (D-134, LAI-1136): being added to a space, with the
-adder's message and first card if they gave them, and a tool, device or token
-of theirs revoked by somebody else.
+adder's message and first card if they gave them, a tool, device or token
+of theirs revoked by somebody else, and their confirmed time changed by an
+owner or admin (D-143, LAI-1165).
 
 | field | notes |
 | --- | --- |
 | `id` | ULID |
 | `user_id` | FK `users`, cascade — who is told |
 | `actor_user_id` | FK `users`, cascade — who did it |
-| `kind` | `added_to_space` \| `tool_revoked` \| `device_unpaired` \| `token_revoked` (CHECK) |
-| `project_id` | nullable, FK `projects`, set null — the space |
-| `task_id` | nullable, FK `tasks`, set null — the first card |
-| `subject` | nullable, ≤ 120 (CHECK) — the tool, device or token name **as it was** |
+| `kind` | `added_to_space` \| `tool_revoked` \| `device_unpaired` \| `token_revoked` \| `time_changed` (CHECK) |
+| `project_id` | nullable, FK `projects`, set null — the space; for `time_changed`, the entry's space |
+| `task_id` | nullable, FK `tasks`, set null — the first card; for `time_changed`, the entry's card (its key is named from the card's own space) |
+| `subject` | nullable, ≤ 120 (CHECK) — the tool, device or token name **as it was**; for `time_changed`, `<created\|edited\|deleted> <day> <±minutes>`, or `moved <from> <to> <±minutes>` |
 | `message` | nullable, ≤ 500 (CHECK) — the adder's own words |
 | `created_at` | |
 | `read_at` | nullable — set once, by the person |
@@ -4111,7 +4132,7 @@ POST   /api/v1/me/time/timer                 body { tz, task?, kind?, title? } �
 POST   /api/v1/me/time/undo                  body { id } — the change an X-Undo-Id named, taken back → 204   (session only; LAI-831)
 POST   /api/v1/me/time-breaks                body { day, tz, started_at, ended_at } — a gap waved away → 201   DELETE .../:id → 204   (session only; LAI-831)
 POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note?, kind?, title?, description?, started_at?, ended_at? } → 201   PATCH/DELETE .../:id   (session only)
-GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history   (session only)
+GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history, each revision with changed_by and changed_by_name — an owner or admin who changed it is named (D-143)   (session only)
 PUT    /api/v1/org/time                      body { mode } — off | manual | drafts   (owner, admin; session only; LAI-787)
 PUT    /api/v1/org/time/breaks               body { breaks } — the organisation's break schedule → the caller's time settings   (owner, admin; session only; LAI-955)
 GET    /api/v1/me/time/solidtime             ?since= — what the person's CLI writes to Solidtime → { closed_through, push, held, projects, taken }   (session only; LAI-788)
@@ -4153,6 +4174,9 @@ GET    /api/v1/me/developer-setup/activity   → { now, data: [{ at, kind: 'pair
 GET    /api/v1/people/:id/developer-setup    → { now, user, can_revoke, summary, devices, tools, pending_pairing, repositories, tokens: { personal, tool_credentials }, activity } — the member's whole setup; no pairing code or token secret; a space the reader cannot open counted, never named; logged as kind developer_setup; yourself is 422 use_developer_access   (owner, admin by default; session only; D-132, LAI-1137)
 POST   /api/v1/people/:id/agents/:agentId/revoke    → the tool as the setup serves it; D-114 item 2's revoke plus revoked_by and one tool_revoked notice; idempotent; another owner's agent is 404   (owner, admin by default, not on the owner's setup — 403 not_for_owner; session only; D-133)
 POST   /api/v1/people/:id/devices/:deviceId/revoke  → { device, revoked_agent_ids } — the device revoked, every active tool on it revoked, its live pairing requests cancelled, one device_unpaired notice; idempotent   (as above)
+POST   /api/v1/people/:id/time-entries       body as POST /me/time-entries → 201 the entry, on the member's day, its revision by the editor, one time_changed notice; no Undo; yourself is 422 use_own_time; a card or space the member cannot open is 422 task_not_visible_to_member   (time_entries.write_member: owner, admin not on the owner's — 403 not_for_owner; session only; D-143, LAI-1165)
+PATCH  /api/v1/people/:id/time-entries/:entryId    body as PATCH /me/time-entries/:id → the entry; a confirmed one only, an import included (a later Solidtime re-sync may put its original back), never a closed day (403 closed_period); another person's entry is 404; a no-op writes nothing   DELETE → 204   (as above)
+GET    /api/v1/people/:id/time-entries/:entryId/revisions  → { revisions } — as /me/…/revisions, each with changed_by_name   (as above)
 GET    /api/v1/time/report                   ?from=&to=&spaces=&members=&kinds=&link=task|general|untied&drafts=exclude|include&format=json|csv — the Time report, own, people or a space admin's weeks, ≤ 92 days; people logged per person named or shown   (session only; scope by §3.1 / §3.2; 30/min; D-130, D-136, D-142, LAI-1135)
 GET    /api/v1/me/analytics-views            ?limit=&cursor=&since= — who looked at the caller → { data: [{ id, viewer: { id, name, org_role }, kind, day, viewed_at }], next_cursor, total }, newest first; since (unix ms or ISO 8601) narrows both, total counts every look since it   (session only)
 GET    /api/v1/me/availability               PUT .../availability  body { status?, hours_per_week?, note?, tags?, work_week?: { days, start, end } | null } — a merge → AvailabilityView   (every role; session only; D-131, LAI-1130)
@@ -6744,7 +6768,7 @@ call MCP; agents do.
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
-| **Member profile** *(your own for everyone; someone else's for owners and admins — D-139)* | 7 | Someone else's: `GET/PATCH /users/:id/profile` (a `profile` look, D-139 item 3), `GET /people/:id/activity`, `GET /users/:id/usage`, the head card's availability — for a holder of *See everyone's analytics* `GET /people/:id/load` (its one `time` look is the one opening the profile writes, D-135), never `GET /people/availability`, which logs a look at everyone it lists; for any other reader their row of that list, narrowed and unlogged (LAI-1159), and for *This week* `GET /people/:id/time` (a `time` look, D-139 item 4); your own: `GET /me/profile`, `GET /me/activity`, `GET /users/:id/usage` for yourself, `GET/PUT /me/availability`, `GET /me/time`, `GET /me/analytics-views?since=` (*Who looked*); the *Day* tab (the embedded My day, D-140, LAI-1161): `GET /me/time?day=` or `GET /people/:id/time?day=` (drafts read-only, D-102 rule 1) and, for someone else, `GET /people/:id/local-activity`; the *Time report* tab (LAI-1138): `GET /time/report`, `members=<them>` or the reader's own, JSON and `format=csv`; the *Developer setup* tab (LAI-1140): `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId`; your own *Developer access* (LAI-1156): `GET /devices`, `GET /agents`, `GET /project-setups`, `GET /tokens`, `GET /devices/pairing-requests` with `POST /devices/pairing-requests/:id/approve` and `…/deny`, `GET /me/developer-setup/activity`. No rating and no *Current load* on the profile (D-139 item 8: `POST /users/:id/ratings` and `GET /people/:id/load` stay in the API) | — | ✅ D-078, D-079, D-084, D-130, D-131, D-132, D-133, D-137, **D-139**, D-140 (LAI-1148) |
+| **Member profile** *(your own for everyone; someone else's for owners and admins — D-139)* | 7 | Someone else's: `GET/PATCH /users/:id/profile` (a `profile` look, D-139 item 3), `GET /people/:id/activity`, `GET /users/:id/usage`, the head card's availability — for a holder of *See everyone's analytics* `GET /people/:id/load` (its one `time` look is the one opening the profile writes, D-135), never `GET /people/availability`, which logs a look at everyone it lists; for any other reader their row of that list, narrowed and unlogged (LAI-1159), and for *This week* `GET /people/:id/time` (a `time` look, D-139 item 4); your own: `GET /me/profile`, `GET /me/activity`, `GET /users/:id/usage` for yourself, `GET/PUT /me/availability`, `GET /me/time`, `GET /me/analytics-views?since=` (*Who looked*); the *Day* tab (the embedded My day, D-140, LAI-1161): `GET /me/time?day=` or `GET /people/:id/time?day=` (drafts read-only, D-102 rule 1) and, for someone else, `GET /people/:id/local-activity` — and for an owner or admin who may change their confirmed time (D-143, LAI-1165) `POST /people/:id/time-entries`, `PATCH/DELETE /people/:id/time-entries/:entryId` and `GET /people/:id/time-entries/:entryId/revisions`; the *Time report* tab (LAI-1138): `GET /time/report`, `members=<them>` or the reader's own, JSON and `format=csv`; the *Developer setup* tab (LAI-1140): `GET /people/:id/developer-setup`, `POST /people/:id/agents/:agentId/revoke`, `POST /people/:id/devices/:deviceId/revoke`, `DELETE /users/:id/tokens/:tokenId`; your own *Developer access* (LAI-1156): `GET /devices`, `GET /agents`, `GET /project-setups`, `GET /tokens`, `GET /devices/pairing-requests` with `POST /devices/pairing-requests/:id/approve` and `…/deny`, `GET /me/developer-setup/activity`. No rating and no *Current load* on the profile (D-139 item 8: `POST /users/:id/ratings` and `GET /people/:id/load` stay in the API) | — | ✅ D-078, D-079, D-084, D-130, D-131, D-132, D-133, D-137, **D-139**, D-140 (LAI-1148) |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
 | **Time** *(Insights' third tab, `/insights?tab=time`; owners, holders of *See everyone's analytics* and space admins)* | 6 | `GET /time/report` (JSON and `format=csv`; an owner's or analytics reader's report of everyone, or a space admin's one space in whole weeks), `GET /permissions` (which spaces the reader leads), `GET /projects`; its *Availability* view (`&view=availability`, LAI-1139): `GET /people/availability?space=&tag=&open_only=` (A–Z, no sort), and *Add to project…*: `GET /projects/:slug/tasks?status=&assignee=none` (the first card on offer), `POST /projects/:slug/members` with `message` and `assign_task_id` | — | ✅ D-130, D-131, D-136, D-137, D-138, LAI-1138, LAI-1139 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` (LAI-1025: no longer `GET /agents` or the review queue's `waiting_since` — only the removed activity feed and *Needs attention* read them) | all, indirectly via `activity` | ✅ |

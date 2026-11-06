@@ -1,4 +1,5 @@
 import { and, count, desc, eq, isNull, lt, or, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type MemberNoticeKind } from '../db/enums.ts';
@@ -9,8 +10,9 @@ import { assertCan, can } from '../policy/can.ts';
 
 /**
  * A member's notices (SPEC §4.87, D-134, LAI-1136): being added to a space,
- * with the adder's message and first card, and — once LAI-1137 lands — a
- * tool, device or token of theirs revoked by somebody else.
+ * with the adder's message and first card; a tool, device or token of theirs
+ * revoked by somebody else (LAI-1137); and their confirmed time changed by an
+ * owner or admin (D-143, LAI-1165).
  *
  * **Not activity.** §4.8 gains no verb: the adder's `member.added` row is the
  * history, and this is the person being told. **A self-action writes none** —
@@ -66,6 +68,32 @@ export function writeNotice(db: Db, input: WriteNoticeInput): string | null {
   return id;
 }
 
+/**
+ * A `time_changed` notice's `subject` (D-143, LAI-1165): what an owner or
+ * admin did to the member's confirmed time, as `<change> <day> <±minutes>` —
+ * `created 2026-11-05 +30`, `edited 2026-11-05 -15`, `deleted 2026-11-05
+ * -60` — and a move to another day as `moved <from> <to> <±minutes>`. A
+ * snapshot, as every subject is; the client words it (§11.4), and the card,
+ * when there is one, rides `task_id` with its space in `project_id`.
+ */
+export function timeChangedSubject(
+  change: 'created' | 'edited' | 'deleted' | 'moved',
+  day: string,
+  deltaMinutes: number,
+  fromDay?: string,
+): string {
+  const sign = deltaMinutes < 0 ? '-' : '+';
+  const days = change === 'moved' && fromDay !== undefined ? `${fromDay} ${day}` : day;
+  return `${change} ${days} ${sign}${String(Math.abs(deltaMinutes))}`;
+}
+
+/**
+ * The card's own space, for its key (LAI-1165 review M1): a notice's
+ * `project_id` is the space it is about, which need not be — and for a
+ * notice with no space is not — the card's.
+ */
+const taskProject = alias(projects, 'notice_task_project');
+
 /** One row of `GET /me/notices`. */
 export interface NoticeView {
   id: string;
@@ -120,7 +148,7 @@ export function listNotices(
       projectId: projects.id,
       projectSlug: projects.slug,
       projectName: projects.name,
-      projectPrefix: projects.prefix,
+      taskPrefix: taskProject.prefix,
       taskId: tasks.id,
       taskProjectId: tasks.projectId,
       taskNumber: tasks.number,
@@ -134,6 +162,7 @@ export function listNotices(
     .innerJoin(users, eq(users.id, memberNotices.actorUserId))
     .leftJoin(projects, eq(projects.id, memberNotices.projectId))
     .leftJoin(tasks, eq(tasks.id, memberNotices.taskId))
+    .leftJoin(taskProject, eq(taskProject.id, tasks.projectId))
     .where(and(...conditions))
     .orderBy(desc(memberNotices.createdAt), desc(memberNotices.id))
     .limit(options.limit + 1)
@@ -147,11 +176,14 @@ export function listNotices(
           ? null
           : { id: r.projectId, slug: r.projectSlug!, name: r.projectName! },
       task:
-        r.taskId === null || r.taskProjectId === null || !readable(actor, r.taskProjectId)
+        r.taskId === null ||
+        r.taskProjectId === null ||
+        r.taskPrefix === null ||
+        !readable(actor, r.taskProjectId)
           ? null
           : {
               id: r.taskId,
-              key: `${r.projectPrefix}-${String(r.taskNumber)}`,
+              key: `${r.taskPrefix}-${String(r.taskNumber)}`,
               title: r.taskTitle!,
             },
       subject: r.subject,

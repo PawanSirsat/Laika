@@ -25,11 +25,17 @@ import {
   getPersonLocalActivity,
   getPersonSummary,
 } from '../../services/people-analytics.ts';
+import {
+  createMemberEntry,
+  deleteMemberEntry,
+  listMemberRevisions,
+  updateMemberEntry,
+} from '../../services/time-member-entries.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery } from '../pagination.ts';
-import { parseQuery, strictObject, z } from '../validation.ts';
+import { parseBody, parseParams, parseQuery, strictObject, z } from '../validation.ts';
 import { PreviewQuery } from './local-activity.ts';
-import { MyDayQuery, SummaryQuery } from './time.ts';
+import { EntryBody, EntryPatchBody, MyDayQuery, SummaryQuery } from './time.ts';
 
 /**
  * `GET /api/v1/people/:id/activity?range=12w|52w` (SPEC §6.4, D-079, LAI-751):
@@ -65,6 +71,15 @@ const AvailabilityQuery = strictObject({
     .transform((v) => v === 'true')
     .optional(),
 });
+
+const PersonParams = z.object({ id: z.string().min(1).max(64) });
+const EntryParams = z.object({
+  id: z.string().min(1).max(64),
+  entryId: z.string().min(1).max(64),
+});
+
+const json = async (c: { req: { json: () => Promise<unknown> } }): Promise<unknown> =>
+  c.req.json().catch(() => null);
 
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
   const actor = c.get('actor');
@@ -131,6 +146,37 @@ export function peopleRoutes(options: { db: Db; sqlite: Database.Database }): Ho
     return c.json<UnpairedDeviceView>(
       revokeMemberDevice(sqlite, db, actor, c.req.param('id'), c.req.param('deviceId')),
     );
+  });
+
+  // D-143 (LAI-1165): an owner or admin changes a member's confirmed time.
+  // The bodies are `/me/time-entries`' own, so the two cannot accept
+  // different things; who may is the service asking `can()`.
+  app.post('/:id/time-entries', async (c) => {
+    const actor = requireActor(c);
+    const { id } = parseParams(PersonParams, c.req.param());
+    const entry = parseBody(EntryBody, await json(c));
+    return c.json(createMemberEntry(db, actor, id, entry), 201);
+  });
+
+  app.patch('/:id/time-entries/:entryId', async (c) => {
+    const actor = requireActor(c);
+    const { id, entryId } = parseParams(EntryParams, c.req.param());
+    return c.json(
+      updateMemberEntry(db, actor, id, entryId, parseBody(EntryPatchBody, await json(c))),
+    );
+  });
+
+  app.delete('/:id/time-entries/:entryId', (c) => {
+    const actor = requireActor(c);
+    const { id, entryId } = parseParams(EntryParams, c.req.param());
+    deleteMemberEntry(db, actor, id, entryId);
+    return c.body(null, 204);
+  });
+
+  app.get('/:id/time-entries/:entryId/revisions', (c) => {
+    const actor = requireActor(c);
+    const { id, entryId } = parseParams(EntryParams, c.req.param());
+    return c.json({ revisions: listMemberRevisions(db, actor, id, entryId) });
   });
 
   return app;

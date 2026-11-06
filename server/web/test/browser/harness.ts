@@ -220,6 +220,8 @@ const ADMIN_UP_ORG = [
   'org.time.set',
   'time_sync.map',
   'time_sync.import_all',
+  // D-143 (LAI-1165): a member's confirmed time — the admin's never the owner's.
+  'time_entries.write_member',
 ] as const;
 const OWNER_ONLY_ORG = [
   'org.delete',

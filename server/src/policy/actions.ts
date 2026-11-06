@@ -83,6 +83,9 @@ export const ORG_ACTIONS = [
   'time_drafts.manage_own',
   'time_entries.read_own',
   'time_entries.write_own',
+  // D-143 (LAI-1165): an owner or admin adds, changes or deletes a member's
+  // confirmed time — never the owner's for an admin, never their own here.
+  'time_entries.write_member',
   // LAI-788: the Solidtime bridge (D-088 item 10) — a person's own CLI
   // writing their confirmed time to Solidtime and bringing back what they
   // logged there, and an owner's or admin's mapping and pull of everyone.
@@ -346,6 +349,10 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'time_drafts.manage_own',
   'time_entries.read_own',
   'time_entries.write_own',
+  // **Somebody else's confirmed time is changed signed in** (D-143,
+  // LAI-1165): the rule above, and an agent's token that could rewrite a
+  // member's hours would put words in a person's record that nobody typed.
+  'time_entries.write_member',
   // **The Solidtime bridge reads and writes hours per person** (LAI-788), so
   // it follows the rule above: the person's CLI signs in for it, with their
   // password, and keeps no session — a token, an agent's included, never

@@ -2804,6 +2804,8 @@ describe('0067 and 0068 keep context revisions on a populated 0066 database (Pha
         expect.stringMatching(/_developer_setup_reads$/),
         // LAI-1150's profile look: analytics_views rebuilt again.
         expect.stringMatching(/_analytics_views_profile$/),
+        // LAI-1165's time_changed notice: member_notices rebuilt.
+        expect.stringMatching(/_member_notices_time_changed$/),
       ]);
       writeFileSync(journalPath, JSON.stringify(journal));
 
@@ -2940,14 +2942,16 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
     const dropped = journal.entries.splice(at);
     // The guard on this guard: the first entry cut is 0075 and the last kept
     // is 0074 — a later migration lands here and says so. LAI-1130's two new
-    // tables, LAI-1136's one and LAI-1137's and LAI-1150's analytics_views
-    // rebuilds ride along and touch no `tasks` row, so a boot applies five.
+    // tables, LAI-1136's one, LAI-1137's and LAI-1150's analytics_views
+    // rebuilds and LAI-1165's member_notices rebuild ride along and touch no
+    // `tasks` row, so a boot applies six.
     expect(dropped.map((e) => e.tag)).toEqual([
       '0075_task_deliverables',
       '0076_user_availability',
       '0077_member_notices',
       '0078_developer_setup_reads',
       '0079_analytics_views_profile',
+      '0080_member_notices_time_changed',
     ]);
     expect(journal.entries.at(-1)?.tag).toBe('0074_agent_capacity');
     writeFileSync(journalPath, JSON.stringify(journal));
@@ -2999,10 +3003,10 @@ describe('0075 adds the deliverable columns to a populated 0074 database (LAI-11
           })),
         );
         expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
-        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 5);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 6);
         // And again is a no-op.
         runMigrations(db);
-        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 5);
+        expect(db.all(sql`SELECT * FROM __drizzle_migrations`)).toHaveLength(migrations.length + 6);
       } finally {
         sqlite.close();
         rmSync(dir, { recursive: true, force: true });
@@ -3032,6 +3036,7 @@ describe('0077 adds member_notices to a populated 0076 database (LAI-1136)', () 
       '0077_member_notices',
       '0078_developer_setup_reads',
       '0079_analytics_views_profile',
+      '0080_member_notices_time_changed',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3103,6 +3108,7 @@ describe('0078 rebuilds analytics_views on a populated 0077 database (LAI-1137)'
     expect(dropped.map((e) => e.tag)).toEqual([
       '0078_developer_setup_reads',
       '0079_analytics_views_profile',
+      '0080_member_notices_time_changed',
     ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
@@ -3212,7 +3218,10 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
     const at = journal.entries.findIndex((e) => e.tag === '0079_analytics_views_profile');
     const dropped = journal.entries.splice(at);
     // The guard on this guard: a later migration lands here and says so.
-    expect(dropped.map((e) => e.tag)).toEqual(['0079_analytics_views_profile']);
+    expect(dropped.map((e) => e.tag)).toEqual([
+      '0079_analytics_views_profile',
+      '0080_member_notices_time_changed',
+    ]);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }
@@ -3261,6 +3270,93 @@ describe('0079 rebuilds analytics_views for the profile kind (LAI-1150)', () => 
         ]);
         // Every user row survives the rebuild: nothing cascaded the other way.
         expect(db.all(sql`SELECT id FROM users WHERE id = ${viewerId}`)).toHaveLength(1);
+      } finally {
+        sqlite.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+/**
+ * LAI-1165 (D-143): 0080 rebuilds `member_notices` for the `time_changed`
+ * kind. A populated 0079 database keeps every notice of every kind, the
+ * foreign keys and both users' cascades still hold, `time_changed` is
+ * accepted and an unknown kind is still refused. Nothing references
+ * `member_notices`, so the rebuild can cascade into nothing — and every
+ * user row is checked to be there after.
+ */
+describe('0080 rebuilds member_notices for the time_changed kind (LAI-1165)', () => {
+  function folderAt0079(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag === '0080_member_notices_time_changed');
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: a later migration lands here and says so.
+    expect(dropped.map((e) => e.tag)).toEqual(['0080_member_notices_time_changed']);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it(
+    'keeps every notice, accepts time_changed and still refuses an unknown kind',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: folderAt0079() });
+        const s = seed(db);
+        const now = Date.now();
+        const actorId = newId();
+        db.run(sql`
+          INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+          VALUES (${actorId}, 'admin@example.test', 'Admin', 'admin', 1, ${now}, ${now})
+        `);
+        const insertNotice = (kind: string, subject: string | null = null) =>
+          db.run(sql`
+            INSERT INTO member_notices (id, user_id, actor_user_id, kind, project_id, subject, created_at)
+            VALUES (${newId()}, ${s.userId}, ${actorId}, ${kind}, ${s.projectId}, ${subject}, ${now})
+          `);
+        insertNotice('added_to_space');
+        insertNotice('tool_revoked', 'Codex');
+        insertNotice('device_unpaired', 'Belka');
+        insertNotice('token_revoked', 'ci');
+        // Before 0080 the kind is refused: the CHECK is what the rebuild changes.
+        expectSqliteError(() => insertNotice('time_changed'), /member_notices_kind_check/);
+        const before = db.all(sql`SELECT * FROM member_notices ORDER BY id`);
+        expect(before).toHaveLength(4);
+        const usersBefore = db.all(sql`SELECT id FROM users ORDER BY id`);
+
+        runMigrations(db);
+
+        expect(db.all(sql`SELECT * FROM member_notices ORDER BY id`)).toEqual(before);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        expect(db.all(sql`SELECT id FROM users ORDER BY id`)).toEqual(usersBefore);
+        insertNotice('time_changed', 'created 2026-11-06 +30');
+        expectSqliteError(() => insertNotice('time_wiped'), /member_notices_kind_check/);
+        const fks = db.all<{ from: string; table: string; on_delete: string }>(
+          sql`SELECT "from", "table", on_delete FROM pragma_foreign_key_list('member_notices') ORDER BY "from"`,
+        );
+        expect(fks).toEqual([
+          { from: 'actor_user_id', table: 'users', on_delete: 'CASCADE' },
+          { from: 'project_id', table: 'projects', on_delete: 'SET NULL' },
+          { from: 'task_id', table: 'tasks', on_delete: 'SET NULL' },
+          { from: 'user_id', table: 'users', on_delete: 'CASCADE' },
+        ]);
+        const indexes = db.all<{ name: string }>(
+          sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'member_notices' ORDER BY name`,
+        );
+        expect(indexes.map((i) => i.name)).toEqual([
+          'member_notices_created_at_idx',
+          'member_notices_user_idx',
+          // The primary key's own.
+          'sqlite_autoindex_member_notices_1',
+        ]);
       } finally {
         sqlite.close();
         rmSync(dir, { recursive: true, force: true });

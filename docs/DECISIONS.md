@@ -7170,3 +7170,44 @@ report could not show the difference.
 3. **Spread** (LAI-1164): how many spaces and tasks a person's hours went to, as plain
    counts beside the hours — never a score, a rank or an efficiency figure (D-088 item 1
    stands for those).
+
+## D-143 — Owners and admins may change a member's confirmed time
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner); recorded by Belka. Amends D-102
+rule 4 (someone else's day is read-only) and D-088 items 2 and 6 (confirmed time is the
+person's own to write). Task LAI-1165.
+
+**Context.** An owner or admin reading a member's Day tab could see a wrong entry — a
+meeting typed as four hours instead of one — and could only ask the member to fix it. The
+owner asked to be able to correct it there, with the member told and the record kept.
+
+**Decision.**
+
+1. **Owners and admins may add, change (length, edges, note, card) or delete a member's
+   confirmed time entries** — `time_entries.write_member` (§3.1), by role, not a grant.
+   **An admin may not do this to the owner's time** (`403 not_for_owner`), as D-133 holds
+   for the owner's setup.
+2. **Nobody uses this path on themselves** (`422 use_own_time`): your own time keeps its
+   own path, with its Undo.
+3. **Session only**: no token, an agent's or an admin's own, reaches it.
+4. **Imports are editable here too** (the owner, the same day, before release): almost
+   all of the organisation's time is Solidtime imports — one developer's 166 h is all
+   import — so read-only imports would leave nothing to correct. The change stays in
+   Laika: an import is never pushed back to Solidtime. **A later Solidtime re-sync for
+   that person may put the imported original back; the revision history keeps both.**
+   The person's own path still leaves their imports to Solidtime (D-088 item 10).
+   **What stays read-only**: any day in the closed period. Drafts, the timer and breaks
+   stay the person's own; nothing on this path reaches them.
+5. **The editor is on the record.** Every change is a `time_entry_revisions` row with
+   `changed_by` the editor (§4.49), and the entry's history names them (*Changed by …*).
+   An admin's Solidtime pull of everyone is recorded the same way: the puller, not the
+   person.
+6. **The person is told**: a `time_changed` member notice (§4.87) naming who did what, on
+   which day and by how many minutes — a move names both days. **No Undo** for the editor:
+   a mistake is changed back, which is one more revision with their name on it.
+7. **Only on what the person can open**: time goes on a card or space the person can read
+   themselves, or it is `422 task_not_visible_to_member` — an admin sees every space, and
+   the person's own day must not show one they cannot open.
+8. **A deactivated person's time can still be corrected.**
+9. **The right is by role, not a grant**: owners and admins, as the Solidtime import is;
+   no capability switch turns it off for admins.

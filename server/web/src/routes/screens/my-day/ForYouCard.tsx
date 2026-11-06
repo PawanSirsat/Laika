@@ -14,7 +14,8 @@ export interface ForYouCardProps {
  * **For you** (D-134; LAI-1139), at the top of My day → Overview: what
  * somebody else did that concerns you — added you to a space, with their
  * message and the first card they handed you; revoked one of your tools,
- * devices or tokens. Read one, or all; My day's rail carries the unread count.
+ * devices or tokens; changed your confirmed time (D-143). Read one, or all;
+ * My day's rail carries the unread count.
  *
  * **The message is drawn as text.** It is the adder's own words, up to 500
  * characters, and React's text node is the whole of the rendering: no HTML,
