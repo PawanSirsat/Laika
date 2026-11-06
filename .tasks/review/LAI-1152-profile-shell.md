@@ -5,8 +5,9 @@ area: web
 assignee: shell
 priority: p2
 depends-on: [LAI-1150]
-status: in-progress
+status: review
 started: 2026-11-06T02:40:46+05:30
+finished: 2026-11-06T11:05:57+05:30
 ---
 
 ## Goal
@@ -16,24 +17,24 @@ popover), for someone else and for your own, with D-139 item 8's removals.
 
 ## Acceptance criteria
 
-- [ ] Breadcrumb *Members / <name>* or *My profile*, and the top-right notice in
+- [x] Breadcrumb *Members / <name>* or *My profile*, and the top-right notice in
       the two wordings of SPEC §11.4.2.1.
-- [ ] Head card: avatar ring, name, kind chip, the availability pill inline —
+- [x] Head card: avatar ring, name, kind chip, the availability pill inline —
       including a dashed *Availability not set* — meta line, and the note /
       tags / *set by … · updated …* line (*set by you* on your own).
-- [ ] On your own, the pill opens *My availability* (status, hours a week,
+- [x] On your own, the pill opens *My availability* (status, hours a week,
       note) reusing My day's availability editor; saving updates the pill.
-- [ ] ⋯ on someone else's: *Manage member…* (the existing panel), *Copy link
+- [x] ⋯ on someone else's: *Manage member…* (the existing panel), *Copy link
       to profile*, *See <first>'s cards in Work*.
-- [ ] *Who looked N* on your own: the 30-day list with viewer, role, the tab
+- [x] *Who looked N* on your own: the 30-day list with viewer, role, the tab
       each look came from and when; focus trap, Escape, focus returns; footer
       names 400 days.
 - [ ] Tabs inside the head card on **both** your own and someone else's, with
       *Developer access* on your own and its "N to fix" badge on your own only.
-- [ ] A plain member can open *My profile* (via LAI-1150's `/me/profile`).
-- [ ] Removed: the rating card and Rate dialog, recent decisions, Current load
+- [x] A plain member can open *My profile* (via LAI-1150's `/me/profile`).
+- [x] Removed: the rating card and Rate dialog, recent decisions, Current load
       and *Show current load*, the (i) definitions; their tests retired or re-aimed.
-- [ ] Browser tests for each, dark + light + 390px.
+- [x] Browser tests for each, dark + light + 390px.
 
 ## Notes / context
 
@@ -46,4 +47,24 @@ start this task before LAI-1150 merges; that is the deviation from §2 step 1,
 recorded here rather than read loosely. Anything that needs LAI-1150's
 `/me/profile` or `viewer.org_role` is written to switch on when it answers and to
 tolerate its absence.
+
+## Builder's notes (SHELL, at review)
+
+- **"N to fix" on your own Developer access tab is not drawn here.** The count
+  needs the own-setup reads that the Developer access screen assembles from
+  several endpoints; LAI-1156 builds that tab from those reads and its own
+  criterion is *"The N to fix count feeds the tab badge (LAI-1152)"*, so the
+  badge lands with it. That half of the tabs criterion is left unticked; the
+  tabs themselves (inside the head card, both cases, *Developer access* on
+  your own) are done.
+- **LAI-1150 merged while this was in flight**, so the deviation above closed
+  itself: your own profile reads `GET /me/profile` and `GET /me/activity`
+  (every role), and *My profile* is in every reader's menu.
+- **Your own profile has no ⋯** (the design draws it on someone else's only),
+  so an owner or admin no longer sets their *own* Builder/Manager kind from
+  their profile; they can from anyone else's. Flagged for review.
+- The design's own-profile Day, Time report and Developer access tabs reuse
+  what exists until LAI-1155/1156: the embedded own day with *Edit in My
+  day ›*, the Time report `scope` me titled *Time report*, and a link to the
+  Developer access screen.
 
