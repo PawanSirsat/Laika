@@ -57,4 +57,13 @@ routes and the revisions note), §11.4.2 (Member profile row); `docs/DECISIONS.m
       the history's words. Mutations of the policy guard, the admin-on-owner
       refusal, the import-all `changed_by` and the client subject each turn
       their test red.
+- [x] Review round (independent review of PR #307): M1 a `time_changed`
+      notice carries the entry's space and `listNotices` names a card's key
+      from the card's own space (`LAI-1`, never `null-1`); M2 a card or space
+      the member cannot open is `422 task_not_visible_to_member` on create
+      and patch, mutation-checked; L2 a move is `moved <from> <to> <±min>`,
+      worded with both days; L5 an admin on the owner's day sees no edit
+      control (browser, mutation-checked); L3 and L4 recorded in D-143 items
+      8 and 9. L1 (sync revisions worded as a sync) not done: no marker
+      without a schema change.
 - [x] SPEC §3.1, §4.49, §4.87, §6.4, §11.4.2 and D-143 written.
