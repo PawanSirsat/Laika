@@ -151,8 +151,13 @@ function orgReport(url: URL, shape: Shape = 'full'): TimeReport {
   const members = url.searchParams.get('members')?.split(',');
   const kinds = url.searchParams.get('kinds')?.split(',');
   const spaces = url.searchParams.get('spaces')?.split(',');
+  const link = url.searchParams.get('link');
   let rows = ORG_ROWS.filter(
     (r) =>
+      (link === null ||
+        (link === 'task' && r.task !== null) ||
+        (link === 'general' && r.task === null && !r.untied) ||
+        (link === 'untied' && r.untied)) &&
       (members === undefined || members.includes(r.user.id)) &&
       (spaces === undefined || (r.project !== null && spaces.includes(r.project.slug))) &&
       (kinds === undefined || (r.kind !== null && kinds.includes(r.kind))),
@@ -667,7 +672,7 @@ void describe('a space admin’s file (D-136)', () => {
       const csv = asked.find((u) => u.searchParams.get('format') === 'csv');
       assert.ok(csv !== undefined, 'the CSV was not asked for');
       assert.equal(csv.searchParams.get('spaces'), 'laika');
-      for (const none of ['drafts', 'members', 'kinds']) {
+      for (const none of ['drafts', 'members', 'kinds', 'link']) {
         assert.equal(csv.searchParams.get(none), null, `${none} sent for a space admin`);
       }
       assert.equal(new Date(`${csv.searchParams.get('from') ?? ''}T00:00:00Z`).getUTCDay(), 1);
@@ -826,6 +831,41 @@ void describe('the states (frames 1j–1m)', () => {
       await tr.locator('[data-tr-empty="filtered"]').waitFor({ timeout: 10_000 });
       await tr.locator('[data-tr-empty="filtered"] button').click();
       await tr.locator('[data-tr-stat="tracked"]').waitFor({ timeout: 10_000 });
+    } finally {
+      await done(h);
+    }
+  });
+
+  void test('Task link narrows the report by what the time is on; not on a task yet asks for drafts (LAI-1163)', async () => {
+    const asked: URL[] = [];
+    const h = await openWith('/insights?tab=time', OWNER_STUB(), asked, (u) => ok(orgReport(u)));
+    try {
+      const tr = h.page.locator('[data-time-report="org"]');
+      await tr.locator('[data-tr-stat="tracked"]').waitFor({ timeout: 20_000 });
+      assert.equal(asked.at(-1)?.searchParams.get('link'), null, 'link sent unasked');
+      const pick = async (v: string) => {
+        await tr.locator('[data-tr-chip="link"]').click();
+        await tr.locator(`[data-tr-link="${v}"] input`).click();
+      };
+      // On a task: Zoe's 900 and Ada's 240, not Ben's meeting on no task.
+      await pick('task');
+      await until(() => asked.at(-1)?.searchParams.get('link') === 'task');
+      assert.equal(asked.at(-1)?.searchParams.get('link'), 'task');
+      await until(async () => /\b19h\b/.test(await tr.locator('[data-tr-total]').innerText()));
+      assert.match(await tr.locator('[data-tr-total]').innerText(), /\b19h\b/);
+      assert.match(await tr.locator('[data-tr-chip="link"]').innerText(), /On a task/);
+      // Not on a task yet is only ever a draft: picking it asks for drafts too.
+      await pick('untied');
+      await until(() => asked.at(-1)?.searchParams.get('link') === 'untied');
+      const last = asked.at(-1);
+      assert.equal(last?.searchParams.get('link'), 'untied');
+      assert.equal(last?.searchParams.get('drafts'), 'include');
+      // General: Ben's meeting alone.
+      await pick('general');
+      await until(async () => /\b2h\b/.test(await tr.locator('[data-tr-total]').innerText()));
+      assert.match(await tr.locator('[data-tr-total]').innerText(), /\b2h\b/);
+      assert.equal(await tr.locator('[data-tr-row="p2"]').count(), 1, 'Ben’s space is not there');
+      assert.equal(await tr.locator('[data-tr-row="p1"]').count(), 0, 'Laika held on-task time');
     } finally {
       await done(h);
     }

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor } from '../../../src/auth/resolve-actor.ts';
 import { newId } from '../../../src/db/ids.ts';
@@ -353,6 +353,72 @@ describe('own — the caller’s own time', () => {
   });
 });
 
+describe('link — by what the time is on (D-142, LAI-1163)', () => {
+  // Ada's week: 90 confirmed on SKY-1 and 60 drafted on LAI-1 (on a task);
+  // the 45-minute meeting typed on nothing, and 15 drafted marked general
+  // (general); 25 drafted on nothing, not marked (not on a task yet).
+  const general = () => {
+    draft(ownerId, MON, 15);
+    h.db
+      .update(timeDrafts)
+      .set({ general: 1 })
+      .where(and(eq(timeDrafts.userId, ownerId), eq(timeDrafts.day, MON)))
+      .run();
+  };
+  const at = async (link: string) =>
+    (await ok(
+      await report(`from=${MON}&to=${SUN}&members=${ownerId}&drafts=include${link}`),
+    )) as Report;
+  const pair = (r: Report) => [r.totals.confirmed_minutes, r.totals.drafted_minutes];
+  const byDay = (r: Report) =>
+    r.by_day.map((d) => d.confirmed_minutes + d.drafted_minutes).reduce((a, b) => a + b, 0);
+
+  it('splits the figures, the bars and the rows three ways that add up to all', async () => {
+    general();
+    const all = await at('');
+    const task = await at('&link=task');
+    const gen = await at('&link=general');
+    const untied = await at('&link=untied');
+    expect(pair(all)).toEqual([135, 100]);
+    expect(pair(task)).toEqual([90, 60]);
+    expect(pair(gen)).toEqual([45, 15]);
+    expect(pair(untied)).toEqual([0, 25]);
+    expect([byDay(task), byDay(gen), byDay(untied)]).toEqual([150, 60, 25]);
+    expect(task.rows.every((r) => r.task !== null)).toBe(true);
+    expect(gen.rows.every((r) => r.task === null && !r.untied)).toBe(true);
+    expect(untied.rows.map((r) => [r.untied, r.drafted_minutes])).toEqual([[true, 25]]);
+  });
+
+  it('holds back agent minutes when narrowed, as a space or a kind does', async () => {
+    const owner = async (q: string) =>
+      (await ok(await report(`from=${MON}&to=${SUN}${q}`))) as Report;
+    expect((await owner('')).agent_minutes).not.toBeNull();
+    expect((await owner('&link=task')).agent_minutes).toBeNull();
+  });
+
+  it('narrows the file the same way', async () => {
+    const csv = async (link: string) =>
+      (
+        await (
+          await report(`from=${MON}&to=${SUN}&members=${ownerId}&drafts=include&format=csv${link}`)
+        ).text()
+      )
+        .trim()
+        .split('\r\n')
+        .slice(1);
+    const untied = await csv('&link=untied');
+    expect(untied).toHaveLength(1);
+    expect(untied[0]).toMatch(/,0,25$/);
+    expect((await csv('&link=task')).some((l) => l.includes('SKY-1'))).toBe(true);
+    expect((await csv('&link=general')).some((l) => l.includes('SKY-1'))).toBe(false);
+  });
+
+  it('refuses an unknown link', async () => {
+    const [status, code] = await refusal(await report(`from=${MON}&to=${SUN}&link=other`));
+    expect([status, code]).toEqual([422, 'unprocessable']);
+  });
+});
+
 describe('people — per person, every one shown logged', () => {
   it('answers the owner with everyone and logs each person shown, once per ten minutes', async () => {
     const r = (await ok(await report(`from=${MON}&to=${SUN}`))) as Report;
@@ -560,6 +626,11 @@ describe('space_totals — a space admin’s weeks (D-136)', () => {
       422,
       'unprocessable',
       'kinds_not_allowed',
+    ]);
+    expect(await refused(`from=${MON}&to=${SUN}&link=task`)).toEqual([
+      422,
+      'unprocessable',
+      'link_not_allowed',
     ]);
     // Not Monday to Sunday: a part of a week, or a week starting midweek.
     for (const q of [`from=${MON}&to=${WED}`, `from=${TUE}&to=2026-10-26`]) {

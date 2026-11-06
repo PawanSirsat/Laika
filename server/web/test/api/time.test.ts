@@ -166,6 +166,20 @@ void describe('the Time report (D-130, LAI-1138) — the one read that may name 
     );
   });
 
+  void test('link sits after kinds and before drafts, so one report is one address (LAI-1163)', async () => {
+    await getTimeReport({
+      from: '2026-11-02',
+      to: '2026-11-08',
+      kinds: ['work'],
+      link: 'general',
+      drafts: true,
+    });
+    assert.deepEqual(
+      sent.map((s) => s.url),
+      ['/api/v1/time/report?from=2026-11-02&to=2026-11-08&kinds=work&link=general&drafts=include'],
+    );
+  });
+
   void test('the CSV is the server’s file, and a refusal is the server’s sentence', async () => {
     const was = globalThis.fetch;
     const asked: string[] = [];
