@@ -82,16 +82,29 @@ export function getPersonLocalActivity(
   );
 }
 
-/** `GET /me/analytics-views` — who looked at the caller's analytics, newest first. */
+/**
+ * `GET /me/analytics-views` — who looked at the caller's analytics, newest
+ * first. `since` (unix ms) and `total` are LAI-1150's: a server without them
+ * ignores the one and leaves out the other, so a caller filters by time
+ * itself and counts what it read when `total` is absent.
+ */
 export function listAnalyticsViews(
-  query: { readonly limit?: number; readonly cursor?: string | undefined } = {},
+  query: {
+    readonly limit?: number;
+    readonly cursor?: string | undefined;
+    readonly since?: number | undefined;
+  } = {},
   signal?: AbortSignal,
-): Promise<Page<WhoLooked>> {
+): Promise<Page<WhoLooked> & { readonly total?: number }> {
   const params = new URLSearchParams();
   if (query.limit !== undefined) params.set('limit', String(query.limit));
   if (query.cursor !== undefined) params.set('cursor', query.cursor);
+  if (query.since !== undefined) params.set('since', String(query.since));
   const qs = params.toString();
-  return request<Page<WhoLooked>>(`/me/analytics-views${qs === '' ? '' : `?${qs}`}`, opts(signal));
+  return request<Page<WhoLooked> & { readonly total?: number }>(
+    `/me/analytics-views${qs === '' ? '' : `?${qs}`}`,
+    opts(signal),
+  );
 }
 
 /** How a view of the person's analytics reads in their list. */

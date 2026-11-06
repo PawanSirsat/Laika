@@ -6,6 +6,11 @@ export interface AvailabilityPillProps {
   readonly availability: AvailabilitySeen | null | undefined;
   /** Leave out the `~6 h/wk` even when it was sent — a row that has a *Can take* column. */
   readonly hideHours?: boolean;
+  /**
+   * Said in a dashed pill when they have said nothing — the profile's
+   * *Availability not set* (LAI-1152). Absent, nothing is drawn.
+   */
+  readonly unset?: string | undefined;
 }
 
 /**
@@ -13,9 +18,23 @@ export interface AvailabilityPillProps {
  * **and** words — ● open, ■ at capacity, ◐ away until — so it never says it
  * by colour alone. Nothing when they have said nothing.
  */
-export function AvailabilityPill({ availability, hideHours = false }: AvailabilityPillProps) {
+export function AvailabilityPill({
+  availability,
+  hideHours = false,
+  unset,
+}: AvailabilityPillProps) {
   const pill = pillOf(availability);
-  if (pill === null) return null;
+  if (pill === null) {
+    if (unset === undefined) return null;
+    return (
+      <span className="avail-pill" data-avail-pill="none">
+        <span className="avail-pill-glyph" aria-hidden="true">
+          ○
+        </span>
+        <span>{unset}</span>
+      </span>
+    );
+  }
   const hours = hideHours ? '' : pill.hours;
   return (
     <span

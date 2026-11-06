@@ -98,6 +98,8 @@ export interface TimeReportProps {
    * page — My day's open day being edited — so the same stretch is read again.
    */
   readonly version?: string | undefined;
+  /** The heading, when the place it is drawn names it otherwise — the profile's *Time report* tab on your own (LAI-1152). */
+  readonly title?: string | undefined;
 }
 
 type Load =
@@ -166,6 +168,7 @@ export function TimeReport({
   ledSpaces,
   orgName,
   version,
+  title: named,
 }: TimeReportProps) {
   const ids = useId();
   const weekly = ledSpaces !== undefined;
@@ -246,7 +249,8 @@ export function TimeReport({
 
   const label = stretchLabel(range, weekly ? stretch : shownRange);
   const spaceName = ledSpaces?.find((s) => s.slug === space)?.name;
-  const title = scope === 'me' ? 'Overview' : scope === 'person' ? 'Time report' : 'Time';
+  const title =
+    named ?? (scope === 'me' ? 'Overview' : scope === 'person' ? 'Time report' : 'Time');
   const caption =
     weekly && spaceName !== undefined
       ? `${spaceName} · ${label}`
