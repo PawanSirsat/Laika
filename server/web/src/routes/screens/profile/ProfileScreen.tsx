@@ -41,10 +41,11 @@ import { KINDS } from './ManageSections.tsx';
 import { ManageMemberPanel } from './ManageMemberPanel.tsx';
 import { adminControls, anyAdminControl } from './manage-controls.ts';
 import { AvailabilityPopover } from '../my-day/AvailabilityPopover.tsx';
+import { MyDayScreen } from '../my-day/MyDayScreen.tsx';
 import { dayIn, isDay } from '../my-day/my-day-derive.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
-import { DayPanel } from './day/DayPanel.tsx';
+import { PersonLocalActivity } from './PersonLocalActivity.tsx';
 import { DeveloperSetupTab, OwnDeveloperSetupTab } from './DeveloperSetupTab.tsx';
 import { toFixLabel } from './own-setup-derive.ts';
 import { useOwnSetup } from './use-own-setup.ts';
@@ -394,23 +395,54 @@ export function ProfileScreen({
         }
       />
 
-      {shownTab === 'day' && (
-        <DayPanel
-          key={user.id}
-          userId={user.id}
-          own={own}
-          first={first}
-          day={day}
-          onDay={onDay}
-          onNavigate={onNavigate}
-        />
-      )}
+      {shownTab === 'day' &&
+        (own ? (
+          <>
+            <p className="prof-tab-lead">
+              <a
+                href="/my-day"
+                data-profile-edit-day
+                onClick={follow(() => {
+                  onNavigate('/my-day');
+                })}
+              >
+                Edit in My day ›
+              </a>
+            </p>
+            <MyDayScreen
+              key={user.id}
+              me={me}
+              user={user.id}
+              embedded={{ name: user.name }}
+              day={day}
+              onDay={onDay}
+              onNavigate={onNavigate}
+            />
+          </>
+        ) : (
+          <>
+            <MyDayScreen
+              key={user.id}
+              me={me}
+              user={user.id}
+              embedded={{ name: user.name }}
+              day={day}
+              onDay={onDay}
+              onNavigate={onNavigate}
+            />
+            <PersonLocalActivity key={`held-${user.id}`} userId={user.id} name={user.name} />
+          </>
+        ))}
 
       {shownTab === 'time' &&
         (own ? (
           <TimeReport
             key={user.id}
             scope="me"
+            // Your own report names you, as My day's does: with nobody named
+            // the report would be everyone's, so TimeReport never asks for it
+            // and the tab sat on its skeleton (LAI-1161).
+            subject={{ id: user.id, name: user.name }}
             title="Time report"
             today={dayIn(readerZone(), Date.now())}
             anchor={isDay(day) ? day : undefined}

@@ -5,7 +5,7 @@ area: web
 assignee: shell
 priority: p2
 depends-on: [LAI-1151, LAI-1152]
-status: review
+status: done
 started: 2026-11-06T11:56:00+05:30
 finished: 2026-11-06T12:18:21+05:30
 ---
@@ -49,3 +49,7 @@ Design: the owner's *Laika Profile* (2026-11-06), frames A–G (pa–pt). Decisi
   falls back to the agent's stamps, as Developer access does, instead of
   reading as *Needs setup* from checks never made.
 - Time report (own): already `scope="me"`, titled *Time report* — unchanged.
+
+## Accepted (CHIEF, 2026-11-06)
+
+Independent review clean; CI green; merged as #302 (fb19c185).

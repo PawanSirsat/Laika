@@ -10,9 +10,8 @@
  *  - a `?user=` the reader may not read is the not-allowed state, asked of
  *    nobody;
  *  - the person's own My day lists **who looked at my time**;
- *  - a member's profile has **Day** and **Time report** tabs (LAI-1155: the
- *    compact day panel; LAI-1138: the shared report, from
- *    `GET /time/report?members=<them>`).
+ *  - a member's profile has **Day** and **Time report** tabs (LAI-1138: the
+ *    shared report, from `GET /time/report?members=<them>`).
  *
  * Screenshots of the owner's view of a member's day, and of the member's own
  * list, light and dark at 1440 and 390, land in `LAIKA_SHOTS` when it is set.
@@ -153,6 +152,24 @@ function stub(me: typeof ADA, actions: readonly string[]): ApiStub {
   Object.assign(routes, summaryRoutes(data, [], '/api/v1/people/u2/time/summary'));
   // Her Time report (LAI-1138), from the same days, named for her.
   Object.assign(routes, reportRoutes(data, [], GRACE_ROW));
+  routes['/api/v1/people/u2/local-activity'] = {
+    start: YESTERDAY,
+    end: TODAY,
+    tz: 'UTC',
+    days: [
+      {
+        day: TODAY,
+        prompts_by_agent: { 'claude-code': 12 },
+        sessions: 3,
+        commits_local: 2,
+        pushed_commits: 4,
+        tokens: 120_000,
+        cache_read: 0,
+      },
+    ],
+    collectors: 1,
+    oldest_day: YESTERDAY,
+  };
   return routes;
 }
 
@@ -482,23 +499,25 @@ void describe('a member’s profile: Day and Time report (LAI-959, LAI-1134)', (
     '/api/v1/users/u2/profile': PROFILE,
   });
 
-  void test('Day is her day as the compact panel, read only, from GET /people/:id/time (LAI-1155)', async () => {
+  void test('Day is her My day, read only, with what the board holds as she sees it', async () => {
     const h = await openAt(`/people?user=u2&tab=day&day=${TODAY}`, profileStub());
     try {
       await h.page.locator('[data-profile-tab="day"][aria-current="page"]').waitFor({
         timeout: 20_000,
       });
-      await h.page.locator('[data-profile-day] [data-pday-table]').waitFor({ timeout: 20_000 });
-      assert.equal(
-        (await h.page.locator('[data-pday-readonly]').innerText()).trim(),
-        'Read-only · only Grace can change their day',
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      assert.match(
+        await h.page.locator('[data-viewing-banner]').innerText(),
+        /Read-only\. You’re viewing Grace Hopper’s day/,
       );
-      // Not My day embedded: no banner, no write control, no local activity.
-      assert.equal(await h.page.locator('[data-myday-ready], [data-viewing-banner]').count(), 0);
       assert.equal(await h.page.locator('[data-confirm-day], .myday-check').count(), 0);
-      assert.equal(await h.page.locator('[data-person-local-activity]').count(), 0);
-      assert.ok(h.calls.some((c) => c.path === '/api/v1/people/u2/time'));
-      assert.ok(!h.calls.some((c) => c.path === '/api/v1/me/time'));
+      await h.page
+        .locator('[data-person-local-activity] .share-table')
+        .waitFor({ timeout: 10_000 });
+      assert.match(
+        await h.page.locator('[data-person-local-activity]').innerText(),
+        /Claude Code 12/,
+      );
       assert.deepEqual(writes(h), []);
     } finally {
       await h.close();
