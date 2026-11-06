@@ -6,6 +6,7 @@ import {
   barKey,
   canSwap,
   childCount,
+  childWindow,
   dayBars,
   defaultGrouping,
   donutBackground,
@@ -282,6 +283,30 @@ void describe('grouping on the client', () => {
       inside?.children.map((c) => c.face.label),
       ['Amy Least', 'Zed Most'],
     );
+  });
+
+  void test('people the most time first only when the reader asks (D-141)', () => {
+    const g = groupRows(rows, 'member', 'none', true, kindName, 'time');
+    assert.deepEqual(
+      g.map((x) => x.face.label),
+      ['Zed Most', 'Amy Least'],
+    );
+    assert.equal(g[0]?.color, 'var(--accent)', 'the donut colours follow the order');
+    const inside = groupRows(rows, 'space', 'member', true, kindName, 'time')[0];
+    assert.deepEqual(
+      inside?.children.map((c) => c.face.label),
+      ['Zed Most', 'Amy Least'],
+    );
+  });
+
+  void test('a long group shows ten rows, then up to 25 more at a time (LAI-1162)', () => {
+    assert.deepEqual(childWindow(4), { draw: 4, more: 0 });
+    assert.deepEqual(childWindow(85), { draw: 10, more: 25 });
+    assert.deepEqual(childWindow(85, 35), { draw: 35, more: 25 });
+    assert.deepEqual(childWindow(85, 60), { draw: 60, more: 25 });
+    assert.deepEqual(childWindow(85, 85), { draw: 85, more: 0 });
+    assert.deepEqual(childWindow(12, 35), { draw: 12, more: 0 });
+    assert.deepEqual(childWindow(12, 3), { draw: 10, more: 2 }, 'never fewer than ten');
   });
 
   void test('everything else is largest first, with time on nothing last and grey', () => {

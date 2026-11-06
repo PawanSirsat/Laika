@@ -37,6 +37,9 @@ import {
   firstFocus,
   firstGroupings,
   groupRows,
+  childWindow,
+  CHILD_STEP,
+  type PeopleOrder,
   hoursCompact,
   hoursWords,
   presetRange,
@@ -1247,6 +1250,21 @@ function GroupMenu({
   );
 }
 
+/** Run after React has drawn the change a click asked for. */
+function afterPaint(go: () => void): void {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(go);
+  });
+}
+
+/** Focus `selector` inside `scope`; scroll it into view when `show`. */
+function focusIn(scope: Element | null, selector: string, show = false): void {
+  const el = scope?.querySelector<HTMLElement>(selector);
+  if (el === null || el === undefined) return;
+  el.focus({ preventScroll: true });
+  if (show) el.scrollIntoView({ block: 'nearest' });
+}
+
 function Breakdown({
   report,
   scope,
@@ -1264,11 +1282,14 @@ function Breakdown({
     defaultGrouping(scope),
   );
   const [open, setOpen] = useState<ReadonlyMap<string, boolean>>(new Map());
+  // How many of an open group's rows show (LAI-1162): ten, then *Show N more*.
+  const [shown, setShown] = useState<ReadonlyMap<string, number>>(new Map());
+  const [people, setPeople] = useState<PeopleOrder>('az');
   const [menu, setMenu] = useState<string | undefined>();
   const [active, setActive] = useState<string | undefined>();
   const groups = useMemo(
-    () => groupRows(report.rows, first, second, drafts, kindName),
-    [report.rows, first, second, drafts],
+    () => groupRows(report.rows, first, second, drafts, kindName, people),
+    [report.rows, first, second, drafts, people],
   );
   const slices = slicesOf(groups);
   const split = drafts;
@@ -1300,6 +1321,7 @@ function Breakdown({
               if (g === 'none') return;
               setGrouping(([was, then]) => [g, then === g ? was : then]);
               setOpen(new Map());
+              setShown(new Map());
             }}
           />
           <span>then</span>
@@ -1313,6 +1335,7 @@ function Breakdown({
             onPick={(g) => {
               setGrouping(([f]) => [f, g]);
               setOpen(new Map());
+              setShown(new Map());
             }}
           />
           <button
@@ -1325,6 +1348,7 @@ function Breakdown({
               if (second === 'none') return;
               setGrouping([second, first]);
               setOpen(new Map());
+              setShown(new Map());
             }}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1333,7 +1357,29 @@ function Breakdown({
             Swap
           </button>
           {(first === 'member' || second === 'member') && (
-            <span className="trep-quiet trep-small">People are listed A–Z</span>
+            // A–Z unless the reader asks for the most time first (D-141).
+            <div className="trep-segments" role="radiogroup" aria-label="List people">
+              {(
+                [
+                  ['az', 'A–Z'],
+                  ['time', 'Most time'],
+                ] as const
+              ).map(([v, name]) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={people === v}
+                  className={people === v ? 'trep-segment trep-segment-on' : 'trep-segment'}
+                  data-tr-people={v}
+                  onClick={() => {
+                    setPeople(v);
+                  }}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
@@ -1361,10 +1407,12 @@ function Breakdown({
             </div>
           </div>
           <div role="rowgroup">
-            {groups.map((g, i) => {
+            {groups.map((g) => {
               const leaf = g.children.length === 0;
-              const isOpen = !leaf && (open.get(g.face.key) ?? i === 0);
+              // Closed until opened (LAI-1162); a lone group opens by itself.
+              const isOpen = !leaf && (open.get(g.face.key) ?? groups.length === 1);
               const meta = childCount(second, g.children.length);
+              const win = childWindow(g.children.length, shown.get(g.face.key));
               return (
                 <div key={g.face.key} className="trep-group" data-tr-row={g.face.key}>
                   <div role="row" className="trep-row">
@@ -1376,6 +1424,14 @@ function Breakdown({
                         disabled={leaf}
                         onClick={() => {
                           setOpen((m) => new Map(m).set(g.face.key, !isOpen));
+                          // Closed and opened again, it starts from ten.
+                          if (isOpen) {
+                            setShown((m) => {
+                              const next = new Map(m);
+                              next.delete(g.face.key);
+                              return next;
+                            });
+                          }
                         }}
                       >
                         <svg
@@ -1419,7 +1475,7 @@ function Breakdown({
                     </span>
                   </div>
                   {isOpen &&
-                    g.children.map((k) => (
+                    g.children.slice(0, win.draw).map((k) => (
                       <div
                         role="row"
                         key={k.face.key}
@@ -1448,6 +1504,46 @@ function Breakdown({
                         </span>
                       </div>
                     ))}
+                  {isOpen && (win.more > 0 || win.draw > CHILD_STEP) && (
+                    <div role="row" className="trep-row trep-row-child trep-row-more">
+                      <span role="cell" className="trep-cell-child">
+                        {win.more > 0 && (
+                          <button
+                            type="button"
+                            className="trep-more"
+                            data-tr-more
+                            onClick={(event) => {
+                              const at = event.currentTarget.closest('[data-tr-row]');
+                              const last = win.draw + win.more >= g.children.length;
+                              setShown((m) => new Map(m).set(g.face.key, win.draw + win.more));
+                              // The last step takes this button away: keep focus on the row's other one.
+                              if (last) afterPaint(() => focusIn(at, '[data-tr-fewer]'));
+                            }}
+                          >
+                            Show {win.more} more
+                          </button>
+                        )}
+                        <span className="trep-quiet trep-small">
+                          {win.draw} of {g.children.length}
+                        </span>
+                        {win.draw > CHILD_STEP && (
+                          <button
+                            type="button"
+                            className="trep-more"
+                            data-tr-fewer
+                            onClick={(event) => {
+                              const at = event.currentTarget.closest('[data-tr-row]');
+                              setShown((m) => new Map(m).set(g.face.key, CHILD_STEP));
+                              // This button goes with the rows: focus and view go back to the group.
+                              afterPaint(() => focusIn(at, '.trep-row-toggle', true));
+                            }}
+                          >
+                            Show fewer
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}

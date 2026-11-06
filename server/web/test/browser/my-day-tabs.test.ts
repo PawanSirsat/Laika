@@ -195,8 +195,9 @@ void describe('the tabs (LAI-505)', () => {
       assert.deepEqual(h.unmatched, [], 'a report was asked for a stretch nobody stubbed');
       assert.equal(await tr.locator('[data-tr-day]').count(), 7);
       assert.equal(await tr.locator(`[data-tr-day="${week.from}"]`).count(), 1);
-      // Space → Task: Atlas first, open, with its cards.
+      // Space → Task: Atlas first, closed until opened (LAI-1162), with its cards.
       assert.equal(await tr.locator('[data-tr-row="p1"]').count(), 1, 'no Atlas');
+      await tr.locator('[data-tr-row="p1"] .trep-row-toggle').click();
       assert.equal(await tr.locator('[data-tr-child="t11"]').count(), 1, 'no LAI-11');
       assert.match(await tr.locator('[data-tr-label]').innerText(), / – /);
       assert.ok(week.from <= TODAY && TODAY <= week.to);

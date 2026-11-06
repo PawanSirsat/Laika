@@ -13,9 +13,9 @@ import type {
  * the summary strip, the bars, the grouping and the donut — so the component
  * draws and this decides.
  *
- * **Never a ranking** (D-088 item 1, D-131 item 3): people are listed A–Z and
- * nothing is sorted by how much a person logged. No utilisation figure and no
- * money appear anywhere.
+ * **People A–Z by default** (D-088 item 1, D-131 item 3): nothing is sorted
+ * by how much a person logged unless the reader asks for *Most time* (D-141).
+ * No utilisation figure and no money appear anywhere.
  */
 
 // ------------------------------------------------------------------ days
@@ -644,12 +644,17 @@ export const SLOT_COLORS = [
 export const OTHER_COLOR = 'var(--heat-all-3)';
 export const NONE_COLOR = 'var(--chip-neutral)';
 
+/** How people are listed: A–Z, or by the reader's choice the most time first (D-141). */
+export type PeopleOrder = 'az' | 'time';
+
 /**
- * **People A–Z, never by hours** (D-088 item 1). Everything else largest
- * first, with time on nothing last.
+ * **People A–Z unless the reader picks *Most time*** (D-088 item 1, D-141).
+ * Everything else largest first, with time on nothing last.
  */
-function ordered<T extends GroupChild>(dim: Grouping, list: T[]): T[] {
-  if (dim === 'member') return list.sort((a, b) => a.face.sort.localeCompare(b.face.sort));
+function ordered<T extends GroupChild>(dim: Grouping, list: T[], people: PeopleOrder): T[] {
+  if (dim === 'member' && people === 'az') {
+    return list.sort((a, b) => a.face.sort.localeCompare(b.face.sort));
+  }
   return list.sort(
     (a, b) =>
       Number(a.face.none === true) - Number(b.face.none === true) ||
@@ -668,6 +673,7 @@ export function groupRows(
   second: Grouping,
   drafts: boolean,
   kindName: (kind: EntryKind) => string,
+  people: PeopleOrder = 'az',
 ): readonly Group[] {
   interface Acc {
     face: Face;
@@ -701,6 +707,7 @@ export function groupRows(
     [...groups.values()]
       .map((g) => ({ ...g, total: total(g.confirmed, g.drafted) }))
       .filter((g) => g.total > 0),
+    people,
   );
   let slot = 0;
   return list.map((g) => {
@@ -718,6 +725,7 @@ export function groupRows(
       [...g.kids.values()]
         .map((k) => ({ ...k, total: total(k.confirmed, k.drafted) }))
         .filter((k) => k.total > 0),
+      people,
     ).map((k) => ({ face: k.face, confirmed: k.confirmed, drafted: k.drafted, total: k.total }));
     return {
       face: g.face,
@@ -729,6 +737,25 @@ export function groupRows(
       children: children.map((k) => ({ ...k, drafted: drafts ? k.drafted : 0 })),
     };
   });
+}
+
+/**
+ * How many of a group's rows show when it is opened (LAI-1162): a space can
+ * hold hundreds of tasks, so the first ten in the table's order (largest
+ * first; people A–Z unless *Most time*) and *Show N more* adds up to 25 at a
+ * time; never the whole list at once.
+ */
+export const CHILD_STEP = 10;
+/** What *Show N more* adds each time. */
+export const MORE_STEP = 25;
+
+/** The rows to draw of `n`, `shown` asked for so far; and how many the next step adds. */
+export function childWindow(
+  n: number,
+  shown: number = CHILD_STEP,
+): { readonly draw: number; readonly more: number } {
+  const draw = Math.min(n, Math.max(CHILD_STEP, shown));
+  return { draw, more: Math.min(MORE_STEP, n - draw) };
 }
 
 /** `3 tasks` — how many rows a group opens to. */
