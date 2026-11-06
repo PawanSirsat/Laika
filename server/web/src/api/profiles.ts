@@ -197,12 +197,21 @@ export interface MemberProfile {
   readonly window: ProfileWindow;
   readonly projects: readonly ProfileProject[];
   readonly review: ProfileReview;
-  /** Newest first, at most the server's cap (50); the first is the current one. */
-  readonly ratings: readonly MemberRating[];
-  readonly ratings_total: number;
+  /**
+   * Newest first, at most the server's cap (50); the first is the current one.
+   * **Absent** on your own profile unless you also hold `profile.read` (D-139
+   * item 1): what an owner or admin wrote about you stays theirs. The profile
+   * draws neither (D-139 item 8).
+   */
+  readonly ratings?: readonly MemberRating[];
+  readonly ratings_total?: number;
   /** D-079's two switches for them (LAI-751): which shape the Activity card takes. */
   readonly activity_sharing: ProfileActivitySharing;
-  /** A builder's only. **Absent** for a manager, not empty. */
+  /**
+   * Every profile's since D-139 item 2 (LAI-1150): a manager's carries them
+   * like a builder's. Optional because a server before LAI-1150 left them out
+   * of a manager's, and the cards read an absence as no card.
+   */
   readonly current_work?: ProfileCurrentWork;
   readonly delivery?: ProfileDelivery;
   readonly agents?: ProfileAgents;

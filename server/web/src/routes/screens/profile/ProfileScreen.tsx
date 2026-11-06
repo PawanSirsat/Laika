@@ -163,8 +163,9 @@ function useColumnCount(): ColumnCount {
  *
  * Nothing here counts anything: each number is a field of
  * `GET /users/:id/profile`, and an absence reads as a sentence or a dash, never
- * as a zero. A manager's response carries no agent, work or delivery block and
- * a builder's no queue, so those cards are absent — not empty.
+ * as a zero. A builder's response carries no queue; a manager's carries the
+ * work, delivery and agents blocks like a builder's since D-139 item 2, and a
+ * block a server leaves out is a card left out — never an empty one.
  */
 export function ProfileScreen({
   userId,
