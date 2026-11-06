@@ -7183,8 +7183,11 @@ anything missing sends the task back.
   donut with its legend. Every group starts **closed** (one alone opens by
   itself), and an open one shows its first ten rows in the table's order, then *Show N more*
   (25 at a time) and *Show fewer*, with *N of M* (LAI-1162). **People are
-  listed A–Z** unless the reader picks **Most time** beside *Swap*, which
-  orders people by hours for that reader only (D-141); with **Member**
+  listed A–Z** and everything else largest first, until the reader sorts
+  by a **column header** — name, *Spaces*, *Tasks*, *Confirmed*, *Drafted*
+  or *Total*: the first click A–Z or the largest first, the next the other
+  way, `aria-sort` saying which; time on nothing stays last, and the order is
+  that reader's alone (D-141, D-144); with **Member**
   first, each person's **Spaces** and **Tasks** — how many their counted
   time went to, general time naming no task — sit before the hours (on a
   phone, under the name), plain counts and never a score (D-142); no rank number, no

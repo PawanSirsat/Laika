@@ -7,6 +7,7 @@ import {
   canSwap,
   childCount,
   childWindow,
+  nextSort,
   spreadOf,
   spreadWords,
   dayBars,
@@ -296,14 +297,42 @@ void describe('grouping on the client', () => {
     );
   });
 
+  void test('a sorted column, either way; time on nothing stays last (LAI-1166)', () => {
+    assert.deepEqual(nextSort(undefined, 'total'), { key: 'total', dir: 'desc' });
+    assert.deepEqual(nextSort(undefined, 'name'), { key: 'name', dir: 'asc' });
+    assert.deepEqual(nextSort({ key: 'total', dir: 'desc' }, 'total'), {
+      key: 'total',
+      dir: 'asc',
+    });
+    assert.deepEqual(nextSort({ key: 'total', dir: 'asc' }, 'tasks'), {
+      key: 'tasks',
+      dir: 'desc',
+    });
+    const least = groupRows(rows, 'member', 'none', true, kindName, { key: 'total', dir: 'asc' });
+    assert.deepEqual(
+      least.map((x) => x.face.label),
+      ['Amy Least', 'Zed Most'],
+    );
+    const za = groupRows(rows, 'member', 'none', true, kindName, { key: 'name', dir: 'desc' });
+    assert.deepEqual(
+      za.map((x) => x.face.label),
+      ['Zed Most', 'Amy Least'],
+    );
+    const spaces = groupRows(rows, 'space', 'task', true, kindName, { key: 'total', dir: 'asc' });
+    assert.equal(spaces.at(-1)?.face.label, 'No space', 'time on nothing moved off the end');
+  });
+
   void test('people the most time first only when the reader asks (D-141)', () => {
-    const g = groupRows(rows, 'member', 'none', true, kindName, 'time');
+    const g = groupRows(rows, 'member', 'none', true, kindName, { key: 'total', dir: 'desc' });
     assert.deepEqual(
       g.map((x) => x.face.label),
       ['Zed Most', 'Amy Least'],
     );
     assert.equal(g[0]?.color, 'var(--accent)', 'the donut colours follow the order');
-    const inside = groupRows(rows, 'space', 'member', true, kindName, 'time')[0];
+    const inside = groupRows(rows, 'space', 'member', true, kindName, {
+      key: 'total',
+      dir: 'desc',
+    })[0];
     assert.deepEqual(
       inside?.children.map((c) => c.face.label),
       ['Zed Most', 'Amy Least'],

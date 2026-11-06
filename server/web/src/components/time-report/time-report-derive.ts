@@ -656,15 +656,67 @@ export const SLOT_COLORS = [
 export const OTHER_COLOR = 'var(--heat-all-3)';
 export const NONE_COLOR = 'var(--chip-neutral)';
 
-/** How people are listed: A–Z, or by the reader's choice the most time first (D-141). */
-export type PeopleOrder = 'az' | 'time';
+/** A column the table sorts by (D-141, LAI-1166). */
+export type SortKey = 'name' | 'spaces' | 'tasks' | 'confirmed' | 'drafted' | 'total';
+export type SortDir = 'asc' | 'desc';
+export interface TableSort {
+  readonly key: SortKey;
+  readonly dir: SortDir;
+}
+
+/** The first click on a column: names A–Z, figures the largest first. */
+export function firstDir(key: SortKey): SortDir {
+  return key === 'name' ? 'asc' : 'desc';
+}
+
+/** A click on `key` given the sort now: the same column flips, another starts fresh. */
+export function nextSort(now: TableSort | undefined, key: SortKey): TableSort {
+  if (now?.key === key) return { key, dir: now.dir === 'asc' ? 'desc' : 'asc' };
+  return { key, dir: firstDir(key) };
+}
+
+interface Sortable extends GroupChild {
+  readonly spread?: Spread;
+}
+
+function figure(row: Sortable, key: SortKey): number {
+  switch (key) {
+    case 'spaces':
+      return row.spread?.spaces ?? 0;
+    case 'tasks':
+      return row.spread?.tasks ?? 0;
+    case 'confirmed':
+      return row.confirmed;
+    case 'drafted':
+      return row.drafted;
+    default:
+      return row.total;
+  }
+}
 
 /**
- * **People A–Z unless the reader picks *Most time*** (D-088 item 1, D-141).
- * Everything else largest first, with time on nothing last.
+ * **People A–Z unless the reader sorts a column** (D-088 item 1, D-141).
+ * Everything else largest first. Time on nothing is last however it is sorted.
+ * A column a row does not have (spread on a child) leaves its own order.
  */
-function ordered<T extends GroupChild>(dim: Grouping, list: T[], people: PeopleOrder): T[] {
-  if (dim === 'member' && people === 'az') {
+function ordered<T extends Sortable>(dim: Grouping, list: T[], sort?: TableSort): T[] {
+  const none = (a: T, b: T) => Number(a.face.none === true) - Number(b.face.none === true);
+  const name = (a: T, b: T) => a.face.sort.localeCompare(b.face.sort);
+  const usable =
+    sort !== undefined &&
+    ((sort.key !== 'spaces' && sort.key !== 'tasks') || list.every((r) => r.spread));
+  if (usable) {
+    const sign = sort.dir === 'asc' ? 1 : -1;
+    return list.sort(
+      (a, b) =>
+        none(a, b) ||
+        (sort.key === 'name'
+          ? sign * name(a, b)
+          : sign * (figure(a, sort.key) - figure(b, sort.key))) ||
+        name(a, b),
+    );
+  }
+  if (dim === 'member') {
     return list.sort((a, b) => a.face.sort.localeCompare(b.face.sort));
   }
   return list.sort(
@@ -685,7 +737,7 @@ export function groupRows(
   second: Grouping,
   drafts: boolean,
   kindName: (kind: EntryKind) => string,
-  people: PeopleOrder = 'az',
+  sort?: TableSort,
 ): readonly Group[] {
   interface Acc {
     face: Face;
@@ -720,9 +772,14 @@ export function groupRows(
   const list = ordered(
     first,
     [...groups.values()]
-      .map((g) => ({ ...g, total: total(g.confirmed, g.drafted) }))
+      .map((g) => ({
+        ...g,
+        drafted: drafts ? g.drafted : 0,
+        total: total(g.confirmed, g.drafted),
+        spread: spreadOf(g.rows, drafts),
+      }))
       .filter((g) => g.total > 0),
-    people,
+    sort,
   );
   let slot = 0;
   return list.map((g) => {
@@ -738,19 +795,23 @@ export function groupRows(
     const children = ordered(
       second,
       [...g.kids.values()]
-        .map((k) => ({ ...k, total: total(k.confirmed, k.drafted) }))
+        .map((k) => ({
+          ...k,
+          drafted: drafts ? k.drafted : 0,
+          total: total(k.confirmed, k.drafted),
+        }))
         .filter((k) => k.total > 0),
-      people,
+      sort,
     ).map((k) => ({ face: k.face, confirmed: k.confirmed, drafted: k.drafted, total: k.total }));
     return {
       face: g.face,
       confirmed: g.confirmed,
-      drafted: drafts ? g.drafted : 0,
+      drafted: g.drafted,
       total: g.total,
       color,
-      spread: spreadOf(g.rows, drafts),
+      spread: g.spread,
       other,
-      children: children.map((k) => ({ ...k, drafted: drafts ? k.drafted : 0 })),
+      children,
     };
   });
 }
