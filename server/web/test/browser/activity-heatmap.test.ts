@@ -157,7 +157,14 @@ function watch(requests: string[]) {
   return (page: Page): Promise<void> => {
     page.on('request', (request: Request) => {
       const url = new URL(request.url());
-      if (url.pathname.endsWith('/activity')) requests.push(url.pathname + url.search);
+      // The heatmap's reads only: your own profile also reads your setup
+      // activity for the Developer access badge (LAI-1156), a different thing.
+      if (
+        url.pathname.endsWith('/activity') &&
+        !url.pathname.endsWith('/developer-setup/activity')
+      ) {
+        requests.push(url.pathname + url.search);
+      }
     });
     return Promise.resolve();
   };
