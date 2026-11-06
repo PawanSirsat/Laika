@@ -19,6 +19,7 @@ import { KINDS, kindLabel } from './entry-kinds.ts';
 import { folderOf, needsACard } from './folder.ts';
 import { agentDuration, clock, duration, span } from './format.ts';
 import { canChange, splitAt, splitUnderstood } from './my-day-derive.ts';
+import { revisionBy, revisionWords } from './revision-words.ts';
 import { NewEntryPanel, type NewEntryFrom } from './NewEntryPanel.tsx';
 import { TaskChips } from './TaskChips.tsx';
 import { TaskSearch } from './TaskSearch.tsx';
@@ -153,36 +154,6 @@ function agentLine(during: AgentsIn | undefined, who: 'you' | 'they' = 'you'): s
       ? `, ${agentDuration(agentMinutes(during.onCardSeconds))} of it on a card`
       : '';
   return `During this time an agent worked ${worked}${onCard}. Counts only — never what ${who} typed, file names or commit messages.`;
-}
-
-/**
- * What a revision did, in the design's words — and, when it was not the
- * person's own (D-143), who did it: *Changed by Pawan Sirsat*. `personId` is
- * whose entry it is.
- */
-export function revisionWords(
-  r: TimeRevision,
-  source: TimeEntry['source'],
-  first: boolean,
-  personId?: string,
-): string {
-  const by =
-    personId !== undefined && r.changed_by !== personId && source !== 'import'
-      ? (r.changed_by_name ?? 'someone else')
-      : undefined;
-  if (r.change === 'deleted') return by === undefined ? 'Deleted' : `Deleted by ${by}`;
-  if (r.change === 'created' || first) {
-    return source === 'import'
-      ? 'Imported from Solidtime'
-      : by !== undefined
-        ? `Added by ${by} · ${duration(r.minutes)}`
-        : source === 'manual'
-          ? `Added by hand · ${duration(r.minutes)}`
-          : `Confirmed · ${duration(r.minutes)}`;
-  }
-  return by === undefined
-    ? `Edited · ${duration(r.minutes)}`
-    : `Changed by ${by} · ${duration(r.minutes)}`;
 }
 
 type History =
@@ -685,7 +656,9 @@ export function Inspector({
     if (entry !== undefined) {
       const block = placed(entry.id);
       const imported = entry.source === 'import';
-      const changeable = canEdit && canChange(entry);
+      // An owner or admin on somebody else's day may change an import too
+      // (D-143): it stays in Laika, never pushed back. Your own stays Solidtime's.
+      const changeable = canEdit && (readOnly || canChange(entry));
       const untimedEntry = entry.started_at === null || entry.ended_at === null;
       const held: Held = { kind: 'entry', entry };
       const said =
@@ -711,7 +684,9 @@ export function Inspector({
         stopped === entry.id
           ? `Timer stopped. ${duration(entry.minutes)} saved as confirmed time. Check the task and title, then close.`
           : imported
-            ? 'This entry came from Solidtime. Change it there; the next import updates it here.'
+            ? changeable
+              ? `Imported from Solidtime. A change here is kept with your name and shown to ${subject}; a later import of a change made in Solidtime may put its version back.`
+              : 'This entry came from Solidtime. Change it there; the next import updates it here.'
             : readOnly
               ? changeable
                 ? `${subject}’s confirmed time. Changes you make are kept with your name and shown to them.`
@@ -732,7 +707,9 @@ export function Inspector({
           title={name}
           sub={`${whenOf(entry)} · ${duration(entry.minutes)} · ${
             imported
-              ? 'Imported from Solidtime · read-only here'
+              ? changeable
+                ? `Imported from Solidtime · ${subject}’s entry`
+                : 'Imported from Solidtime · read-only here'
               : readOnly
                 ? changeable
                   ? `${subject}’s entry · confirmed`
@@ -922,8 +899,12 @@ export function Inspector({
                           entrySubject ?? readerId,
                         )}
                         {/* Somebody else's change names them in the words (D-143). */}
-                        {(entry.source === 'import' ||
-                          r.changed_by === (entrySubject ?? readerId ?? r.changed_by)) && (
+                        {revisionBy(
+                          r,
+                          entry.source,
+                          i === all.length - 1,
+                          entrySubject ?? readerId,
+                        ) === undefined && (
                           <span className="editor-history-who">
                             {entrySubject === undefined ? ' · You' : ` · ${subject}`}
                           </span>

@@ -107,7 +107,8 @@ export interface TimelineProps {
   readonly readOnly?: boolean;
   /**
    * Somebody else's day an owner or admin may change (D-143): their confirmed
-   * blocks move, their drafts do not — drafts stay the person's own.
+   * blocks move, imports included, and their drafts do not — drafts stay the
+   * person's own.
    */
   readonly lockDrafts?: boolean;
 }
@@ -575,7 +576,7 @@ export function Timeline({
 
   /** A block the pointer or the keys may move: not read, not busy, not an import. */
   const canDrag = (block: LaneBlock): boolean =>
-    !readOnly && !busy && !block.locked && !(lockDrafts && block.kind === 'drafted');
+    !readOnly && !busy && (lockDrafts ? block.kind !== 'drafted' : !block.locked);
   const unchanged = (block: LaneBlock): Edit => ({
     start: block.start,
     end: block.end,

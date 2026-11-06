@@ -791,6 +791,35 @@ void describe('an owner changes a member’s confirmed time on her Day tab (D-14
     }
   });
 
+  void test('an import of hers is the owner’s to correct too, and the write is hers (D-143)', async () => {
+    const sent: StubCall[] = [];
+    const routes: Record<string, unknown> = { ...editStub(ADA, WRITES, sent) };
+    const day = routes[`/api/v1/people/u2/time?day=${TODAY}`] as () => {
+      entries: { id: string; source: string }[];
+    };
+    routes[`/api/v1/people/u2/time?day=${TODAY}`] = () => {
+      const v = day();
+      return {
+        ...v,
+        entries: v.entries.map((e) => (e.id === 'e1' ? { ...e, source: 'import' } : e)),
+      };
+    };
+    const h = await openAt(`/people?user=u2&tab=day&day=${TODAY}`, routes);
+    try {
+      const editor = await openEntry(h);
+      assert.match(await editor.innerText(), /Imported from Solidtime · Grace Hopper’s entry/);
+      assert.equal(await editor.locator('[data-entry-delete]').count(), 1);
+      const end = editor.locator('[data-when-end]');
+      assert.equal(await end.getAttribute('readonly'), null);
+      await end.fill('12:15pm');
+      await end.press('Enter');
+      await until(() => sent.length === 1);
+      assert.equal(sent[0]?.path, '/api/v1/people/u2/time-entries/e1');
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a member who may read her day sees no control to change it', async () => {
     const linus = { ...ADA, id: 'u3', name: 'Linus Torvalds', org_role: 'member' };
     const sent: StubCall[] = [];
