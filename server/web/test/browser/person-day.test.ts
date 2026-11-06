@@ -584,15 +584,19 @@ void describe('a member’s profile: Day and Time report (LAI-959, LAI-1134)', (
     }
   });
 
-  void test('her Overview links to the Time report and reads no time for it (D-102)', async () => {
+  /**
+   * D-139 item 4 reversed D-102's *read nothing on Overview* for the profile:
+   * This week is her week, read once on opening — a `time` look she is told
+   * about — and its *Time report ›* opens the tab (LAI-1153).
+   */
+  void test('her Overview reads this week once, and This week links to the Time report (D-139)', async () => {
     const h = await openAt(`/people?user=u2`, profileStub());
     try {
-      const link = h.page.locator('[data-profile-time-link]');
+      const link = h.page.locator('[data-section="week"] [data-card-link="time"]');
       await link.waitFor({ timeout: 20_000 });
-      assert.ok(
-        !h.calls.some((c) => c.path === '/api/v1/time/report'),
-        'the Overview read her time, a look on every open',
-      );
+      const reads = () => h.calls.filter((c) => c.path === '/api/v1/time/report').length;
+      await until(() => reads() === 1);
+      assert.equal(reads(), 1, 'This week is one read of her week');
       await link.click();
       await h.page.waitForURL(/tab=time/);
       await h.page.locator('[data-time-report="person"]').waitFor({ timeout: 20_000 });
