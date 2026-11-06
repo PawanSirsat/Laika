@@ -939,7 +939,7 @@ void describe('the prototype geometry (LAI-249)', () => {
     }
   });
 
-  void test('a member’s menu has no My profile — absent, not disabled', async () => {
+  void test('a member’s menu has My profile too — your own is every role’s (D-139)', async () => {
     const h = await open('/board?project=laika-core', {
       ...STUB,
       '/api/v1/me': { ...(STUB['/api/v1/me'] as object), org_role: 'member' },
@@ -953,11 +953,11 @@ void describe('the prototype geometry (LAI-249)', () => {
       await until(
         async () =>
           (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|') ===
-          'Switch to dark|Developer access|Sign out',
+          'My profile|Switch to dark|Developer access|Sign out',
       );
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
-        ['Switch to dark', 'Developer access', 'Sign out'],
+        ['My profile', 'Switch to dark', 'Developer access', 'Sign out'],
       );
     } finally {
       await h.close();

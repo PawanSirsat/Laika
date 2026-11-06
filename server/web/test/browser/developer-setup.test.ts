@@ -187,6 +187,9 @@ function stub(overrides: ApiStub = {}, withSetup = true): ApiStub {
     },
     '/api/v1/users/u2/profile': profile(ROWAN),
     '/api/v1/users/u1/profile': profile(OWNER),
+    // The reader's own profile and heatmap (D-139, LAI-1150).
+    '/api/v1/me/profile': profile(OWNER),
+    '/api/v1/me/activity': quietActivity,
     '/api/v1/users/u2/usage': quietUsage('u2'),
     '/api/v1/users/u1/usage': quietUsage('u1'),
     '/api/v1/people/u2/activity': quietActivity,
@@ -256,11 +259,20 @@ void describe('who sees the tab', () => {
     }
   });
 
-  void test('never on your own profile', async () => {
+  void test('your own is Developer access, pointing at its screen, and reads no one’s setup', async () => {
     const h = await at('/people?user=u1&tab=dev');
     try {
       await h.page.locator('.prof-head').waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('[data-profile-tab]').count(), 0);
+      // D-139: your own profile has the tab, by its own name (LAI-1152); until
+      // LAI-1156 draws it here, it links to the Developer access screen.
+      assert.equal(
+        await h.page.locator('[data-profile-tab="dev"]').innerText(),
+        'Developer access',
+      );
+      assert.equal(
+        await h.page.locator('[data-profile-dev-link]').getAttribute('href'),
+        '/developer',
+      );
       assert.equal(h.calls.filter((c) => c.path.includes('/developer-setup')).length, 0);
     } finally {
       await h.close();

@@ -127,6 +127,9 @@ function stub(overrides: ApiStub = {}): ApiStub {
     '/api/v1/projects': { data: [], next_cursor: null },
     '/api/v1/users/u2/profile': profile(PEOPLE[1]!),
     '/api/v1/users/u1/profile': profile(PEOPLE[0]!),
+    // The reader's own profile and heatmap (D-139, LAI-1150).
+    '/api/v1/me/profile': profile(PEOPLE[0]!),
+    '/api/v1/me/activity': quietActivity,
     '/api/v1/users/u2/usage': quietUsage('u2'),
     '/api/v1/users/u1/usage': quietUsage('u1'),
     '/api/v1/people/u2/activity': quietActivity,
@@ -188,7 +191,15 @@ void describe('⋯ on the profile header', () => {
       const menu = h.page.getByRole('menu', { name: 'Manage Bea Builder' });
       await menu.waitFor();
       assert.equal(await more.getAttribute('aria-expanded'), 'true');
-      assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts(), ['Manage member…']);
+      // LAI-1152 put the profile's two links beside it.
+      assert.deepEqual(
+        (await menu.getByRole('menuitem').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')),
+        [
+          'Manage member… Role, spaces, security, deactivate',
+          'Copy link to profile',
+          'See Bea’s cards in Work',
+        ],
+      );
 
       await h.page.keyboard.press('Escape');
       await menu.waitFor({ state: 'detached' });
@@ -451,12 +462,17 @@ void describe('the profile’s tabs (LAI-1134)', () => {
     }
   });
 
-  void test('your own profile: no tabs, as before', async () => {
+  void test('your own profile: all four tabs, Developer access by its own name (D-139)', async () => {
     const h = await at('/people?user=u1', 1440);
     try {
       await h.page.locator('.prof-head').waitFor({ timeout: 20_000 });
       await h.page.locator('.prof-card').first().waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('[data-profile-tab]').count(), 0);
+      assert.deepEqual(await h.page.locator('[data-profile-tab]').allInnerTexts(), [
+        'Overview',
+        'Day',
+        'Time report',
+        'Developer access',
+      ]);
     } finally {
       await h.close();
     }

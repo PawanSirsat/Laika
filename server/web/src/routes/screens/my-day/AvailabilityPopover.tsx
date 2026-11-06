@@ -89,7 +89,19 @@ function problemOf(cause: unknown): Problem {
  *
  * Only on your own day: nobody sets anyone else's.
  */
-export function AvailabilityPopover({ now = Date.now() }: { readonly now?: number }) {
+export function AvailabilityPopover({
+  now = Date.now(),
+  variant = 'chip',
+}: {
+  readonly now?: number;
+  /**
+   * `head` is the profile's head card (LAI-1152): the pill itself is the
+   * button, with a chevron — a dashed *Set availability* when nothing is set —
+   * and the panel is a dialog with a close button.
+   */
+  readonly variant?: 'chip' | 'head';
+}) {
+  const head = variant === 'head';
   // Shared with every other My availability on the page (one per breakpoint).
   const [saved] = useSharedAvailability();
   const setSaved = (next: Availability, at: number): void => {
@@ -264,14 +276,27 @@ export function AvailabilityPopover({ now = Date.now() }: { readonly now?: numbe
       : undefined;
   const updated = updatedAgo(saved?.updated_at, now);
 
-  const trigger =
+  const chevron = (
+    <svg className="avail-chevron" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+  const trigger = head ? (
     saved === undefined ? (
       <span className="avail-trigger-quiet">{failed ? 'Availability' : 'Availability…'}</span>
-    ) : pill === null ? (
-      <span className="avail-trigger-quiet">Set availability</span>
     ) : (
-      <AvailabilityPill availability={saved} />
-    );
+      <span className="avail-head-trigger">
+        <AvailabilityPill availability={saved} unset="Set availability" />
+        {chevron}
+      </span>
+    )
+  ) : saved === undefined ? (
+    <span className="avail-trigger-quiet">{failed ? 'Availability' : 'Availability…'}</span>
+  ) : pill === null ? (
+    <span className="avail-trigger-quiet">Set availability</span>
+  ) : (
+    <AvailabilityPill availability={saved} />
+  );
 
   return (
     <HeaderPopover
@@ -279,9 +304,10 @@ export function AvailabilityPopover({ now = Date.now() }: { readonly now?: numbe
       label={label}
       width="wide"
       align="left"
-      className="avail-pop"
+      className={head ? 'avail-pop avail-pop-head' : 'avail-pop'}
       triggerClassName="myday-chip avail-trigger"
       dataAttr="data-my-availability"
+      dialog={head}
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
@@ -289,7 +315,25 @@ export function AvailabilityPopover({ now = Date.now() }: { readonly now?: numbe
       }}
     >
       <div className="avail-form">
-        <h3 className="avail-form-title">My availability</h3>
+        <div className="avail-form-head">
+          <h3 className="avail-form-title">My availability</h3>
+          {head && (
+            <button
+              type="button"
+              className="avail-close"
+              aria-label="Close"
+              onClick={(event) => {
+                // Back to the pill that opened it, before the panel goes.
+                event.currentTarget.closest('.myday-pop')?.querySelector('button')?.focus();
+                setOpen(false);
+              }}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          )}
+        </div>
         {saved === undefined || draft === undefined ? (
           failed ? (
             <p className="avail-error" role="alert">
