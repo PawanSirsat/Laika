@@ -694,14 +694,21 @@ const profileStub = (reader: { id: string; name: string; role: string }): ApiStu
   },
 });
 
-void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-1152)', () => {
-  /** Calls for Hemant's load so far: the profile never makes one now. */
+void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-1152, LAI-1159)', () => {
+  /** Calls for Hemant's load so far: one, the pill's, for an analytics reader. */
   const loads = (h: Harness): number => h.calls.filter((c) => c.path.endsWith('/load')).length;
+  /**
+   * Reads of the whole availability list. For an analytics reader the server
+   * logs a look at **every person it lists** (LAI-1159), so the profile must
+   * never read it for them.
+   */
+  const lists = (h: Harness): number =>
+    h.calls.filter((c) => c.path === '/api/v1/people/availability').length;
   /** No read happens in a window: a fixed wait, because nothing can end it early. */
   const quiet = (page: Page): Promise<void> => page.waitForTimeout(1_000);
 
   for (const theme of ['Dark', 'Light'] as const) {
-    void test(`the pill is their row of the list, on opening, and no load is read (${theme})`, async () => {
+    void test(`an analytics reader's pill is this one person's load, never the list that logs everyone (${theme})`, async () => {
       const h = await open(
         '/people?user=u2&tab=overview',
         profileStub({ id: 'u1', name: 'Ada Owner', role: 'owner' }),
@@ -715,14 +722,14 @@ void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-
         assert.match(await pill.innerText(), /Open to more work/);
         const line = h.page.locator('.prof-head [data-profile-availability]');
         assert.match(await line.innerText(), /“Payments and API work”/);
-        assert.match(await line.innerText(), /Payments/);
+        assert.match(await line.innerText(), /Front-end/);
         assert.match(await line.innerText(), /set by Hemant/);
         // Current load and its button left the profile (D-139 item 8).
         assert.equal(await h.page.locator('[data-section="load"]').count(), 0);
         assert.equal(await h.page.getByText(/Show current load/).count(), 0);
         await quiet(h.page);
-        assert.equal(loads(h), 0, 'opening Overview read the load');
-        assert.ok(h.calls.some((c) => c.path === '/api/v1/people/availability'));
+        assert.equal(lists(h), 0, 'the pill read the whole list, a look at everyone (LAI-1159)');
+        assert.equal(loads(h), 1, 'the pill reads this person’s load once');
       } finally {
         await h.close();
       }
@@ -730,7 +737,7 @@ void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-
   }
 
   for (const tab of ['overview', 'day', 'time'] as const) {
-    void test(`opening ?tab=${tab} reads no load`, async () => {
+    void test(`opening ?tab=${tab} never reads the whole list, and the load at most once`, async () => {
       const h = await open(
         `/people?user=u2&tab=${tab}`,
         profileStub({ id: 'u1', name: 'Ada Owner', role: 'owner' }),
@@ -741,7 +748,8 @@ void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-
           .waitFor({ timeout: 20_000 });
         if (tab === 'day') await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
         await quiet(h.page);
-        assert.equal(loads(h), 0, `?tab=${tab} read the load`);
+        assert.equal(lists(h), 0, `?tab=${tab} read the whole list`);
+        assert.ok(loads(h) <= 1, `?tab=${tab} read the load ${String(loads(h))} times`);
       } finally {
         await h.close();
       }
@@ -796,6 +804,8 @@ void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-
         false,
         'a reader without analytics asked for the load',
       );
+      // Their list is narrowed and logs nothing, so the pill is their row of it.
+      assert.equal(lists(h), 1, 'a reader without analytics did not read their row of the list');
     } finally {
       await h.close();
     }
