@@ -1516,12 +1516,19 @@ function Breakdown({
                         {g.face.code !== undefined && (
                           <span className="trep-code">{g.face.code}</span>
                         )}
-                        <span className="trep-row-label">{g.face.label}</span>
-                        {meta !== '' && <span className="trep-row-meta">{meta}</span>}
-                        {spread && (
-                          <span className="trep-row-spread" data-tr-spread-words>
-                            {spreadWords(g.spread)}
+                        {spread ? (
+                          // The counts are the columns; on a phone, a line under the name.
+                          <span className="trep-row-text">
+                            <span className="trep-row-label">{g.face.label}</span>
+                            <span className="trep-row-spread" data-tr-spread-words>
+                              {spreadWords(g.spread)}
+                            </span>
                           </span>
+                        ) : (
+                          <>
+                            <span className="trep-row-label">{g.face.label}</span>
+                            {meta !== '' && <span className="trep-row-meta">{meta}</span>}
+                          </>
                         )}
                       </button>
                     </span>

@@ -307,8 +307,8 @@ export interface Stat {
 }
 
 /**
- * The six figures of the strip: Tracked, Confirmed, Drafts waiting, Meetings,
- * Active days and Per active day. *Of N days so far* counts the days up to
+ * The seven figures of the strip: Tracked, Confirmed, Drafts waiting,
+ * Meetings, Active days, Tasks worked (LAI-1164) and Per active day. *Of N days so far* counts the days up to
  * `today`, so a week still running is not read as empty days.
  */
 export function statsOf(
@@ -379,7 +379,7 @@ export function statsOf(
       sub:
         spread.tasks === 0
           ? 'no time on a task'
-          : `across ${String(spread.spaces)} ${spread.spaces === 1 ? 'space' : 'spaces'}`,
+          : `across ${String(spread.taskSpaces)} ${spread.taskSpaces === 1 ? 'space' : 'spaces'}`,
     },
     {
       key: 'per-day',
@@ -778,6 +778,8 @@ export function childWindow(
 export interface Spread {
   readonly spaces: number;
   readonly tasks: number;
+  /** Of `spaces`, those holding time on a task — what *across N spaces* names. */
+  readonly taskSpaces: number;
 }
 
 /**
@@ -789,12 +791,16 @@ export interface Spread {
 export function spreadOf(rows: readonly TimeReportRow[], drafts: boolean): Spread {
   const spaces = new Set<string>();
   const tasks = new Set<string>();
+  const taskSpaces = new Set<string>();
   for (const r of rows) {
     if (r.confirmed_minutes + (drafts ? r.drafted_minutes : 0) <= 0) continue;
     if (r.project !== null) spaces.add(r.project.id);
-    if (r.task !== null) tasks.add(r.task.id);
+    if (r.task !== null) {
+      tasks.add(r.task.id);
+      if (r.project !== null) taskSpaces.add(r.project.id);
+    }
   }
-  return { spaces: spaces.size, tasks: tasks.size };
+  return { spaces: spaces.size, tasks: tasks.size, taskSpaces: taskSpaces.size };
 }
 
 /** `3 spaces · 40 tasks`. */

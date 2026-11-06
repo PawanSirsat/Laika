@@ -193,9 +193,11 @@ void describe('the figures', () => {
     const tasks = s.find((x) => x.key === 'tasks');
     const spread = spreadOf(report().rows, true);
     assert.equal(tasks?.value, String(spread.tasks));
-    assert.match(
-      tasks?.sub ?? '',
-      spread.tasks === 0 ? /no time on a task/ : /^across \d+ spaces?$/,
+    assert.equal(
+      tasks?.sub,
+      spread.tasks === 0
+        ? 'no time on a task'
+        : `across ${String(spread.taskSpaces)} ${spread.taskSpaces === 1 ? 'space' : 'spaces'}`,
     );
     assert.equal(s[0]?.value, '11 h');
     assert.equal(s[0]?.sub, 'confirmed and drafted');
@@ -341,11 +343,11 @@ void describe('grouping on the client', () => {
       r({ project: { id: 'p3', slug: 'c', name: 'C' }, confirmed_minutes: 20, drafted_minutes: 0 }),
       r({ project: null, untied: true, confirmed_minutes: 0, drafted_minutes: 10 }),
     ];
-    assert.deepEqual(spreadOf(rows, false), { spaces: 2, tasks: 1 });
-    assert.deepEqual(spreadOf(rows, true), { spaces: 3, tasks: 2 });
-    assert.equal(spreadWords({ spaces: 1, tasks: 40 }), '1 space · 40 tasks');
+    assert.deepEqual(spreadOf(rows, false), { spaces: 2, tasks: 1, taskSpaces: 1 });
+    assert.deepEqual(spreadOf(rows, true), { spaces: 3, tasks: 2, taskSpaces: 2 });
+    assert.equal(spreadWords({ spaces: 1, tasks: 40, taskSpaces: 1 }), '1 space · 40 tasks');
     const g = groupRows(rows, 'member', 'none', true, kindName)[0];
-    assert.deepEqual(g?.spread, { spaces: 3, tasks: 2 });
+    assert.deepEqual(g?.spread, { spaces: 3, tasks: 2, taskSpaces: 2 });
   });
 
   void test('a long group shows ten rows, then up to 25 more at a time (LAI-1162)', () => {

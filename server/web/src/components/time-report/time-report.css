@@ -957,12 +957,22 @@
   --tr-cols: minmax(0, 1fr) 4.5rem 4.5rem 5.25rem 5.25rem 6rem;
 }
 
-/* The phone's line under the name; the columns say it wider. */
+/* The name, and on a phone the counts on a line under it; the columns say it wider. */
+.trep-row-text {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .trep-row-spread {
   display: none;
-  font-size: var(--text-small);
-  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--text-small);
+  line-height: 1rem;
+  color: var(--text-muted);
 }
 
 .trep-row {
@@ -1383,7 +1393,7 @@
   }
 
   .trep-row-spread {
-    display: inline;
+    display: block;
   }
 
   .trep-row-meta {
