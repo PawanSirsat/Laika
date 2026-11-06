@@ -29,7 +29,8 @@ export interface Notice {
   readonly task: { readonly id: string; readonly key: string; readonly title: string } | null;
   /**
    * The tool, device or token's name as it was; for `time_changed`, what was
-   * done as `<created|edited|deleted> <day> <±minutes>` ({@link timeChangedLine}).
+   * done as `<created|edited|deleted> <day> <±minutes>`, or `moved <from> <to>
+   * <±minutes>` ({@link timeChangedLine}).
    */
   readonly subject: string | null;
   readonly message: string | null;
@@ -92,6 +93,7 @@ export function noticeLine(notice: Notice): string {
 }
 
 const TIME_CHANGED = /^(created|edited|deleted) (\d{4}-\d{2}-\d{2}) ([+-])(\d+)$/;
+const TIME_MOVED = /^moved (\d{4}-\d{2}-\d{2}) (\d{4}-\d{2}-\d{2}) ([+-])(\d+)$/;
 
 /** `2026-11-05` as `Thu 5 Nov`: a calendar day, so no zone moves it. */
 function noticeDay(day: string): string {
@@ -109,12 +111,19 @@ function noticeDay(day: string): string {
  * read still says who changed their time, never nothing.
  */
 function timeChangedLine(who: string, notice: Notice): string {
+  const card = notice.task === null ? '' : ` · ${notice.task.key}`;
+  const moved = TIME_MOVED.exec(notice.subject ?? '');
+  if (moved !== null) {
+    const [, from, to, sign, minutes] = moved;
+    const by =
+      Number(minutes) === 0 ? '' : ` (${sign === '-' ? '−' : '+'}${formatHours(Number(minutes))})`;
+    return `${who} moved your time from ${noticeDay(from ?? '')} to ${noticeDay(to ?? '')}${by}${card}`;
+  }
   const match = TIME_CHANGED.exec(notice.subject ?? '');
   if (match === null) return `${who} changed your time`;
   const [, change, day, sign, minutes] = match;
   const on = noticeDay(day ?? '');
   const length = formatHours(Number(minutes));
-  const card = notice.task === null ? '' : ` · ${notice.task.key}`;
   if (change === 'created') return `${who} added ${length} to your time on ${on}${card}`;
   if (change === 'deleted') return `${who} removed ${length} of your time on ${on}${card}`;
   const by = Number(minutes) === 0 ? '' : ` (${sign === '-' ? '−' : '+'}${length})`;

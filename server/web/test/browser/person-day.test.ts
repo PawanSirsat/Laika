@@ -722,10 +722,15 @@ void describe('an owner changes a member’s confirmed time on her Day tab (D-14
     ],
   };
 
-  function editStub(me: typeof ADA, actions: readonly string[], sent: StubCall[]): ApiStub {
+  function editStub(
+    me: typeof ADA,
+    actions: readonly string[],
+    sent: StubCall[],
+    profile: typeof PROFILE = PROFILE,
+  ): ApiStub {
     const routes: Record<string, unknown> = {
       ...stub(me, actions),
-      '/api/v1/users/u2/profile': PROFILE,
+      '/api/v1/users/u2/profile': profile,
       '/api/v1/people/u2/time-entries/e1/revisions': REVISIONS,
     };
     routes['/api/v1/people/u2/time-entries/e1'] = (call: StubCall) => {
@@ -815,6 +820,34 @@ void describe('an owner changes a member’s confirmed time on her Day tab (D-14
       await end.press('Enter');
       await until(() => sent.length === 1);
       assert.equal(sent[0]?.path, '/api/v1/people/u2/time-entries/e1');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an admin on the owner’s day sees no control to change it, the grant notwithstanding (review L5)', async () => {
+    // Grace is the owner here; the reader an admin holding the action.
+    const admin = { ...ADA, id: 'u3', name: 'Linus Torvalds', org_role: 'admin' };
+    const ownersProfile = { ...PROFILE, user: { ...PROFILE.user, org_role: 'owner' } };
+    const sent: StubCall[] = [];
+    const h = await openAt(
+      `/people?user=u2&tab=day&day=${TODAY}`,
+      editStub(admin, WRITES, sent, ownersProfile),
+    );
+    try {
+      const editor = await openEntry(h);
+      assert.match(
+        await h.page.locator('[data-viewing-banner]').innerText(),
+        /Read-only\. You’re viewing Grace Hopper’s day/,
+      );
+      assert.equal(await editor.locator('[data-entry-delete]').count(), 0);
+      assert.equal(await editor.locator('[data-entry-history]').count(), 0);
+      assert.equal(await editor.locator('[data-when-end]').getAttribute('readonly'), '');
+      assert.equal(await h.page.locator('[data-block-id="e1"] [data-edge]').count(), 0);
+      // A fixed window: nothing *should* happen, so nothing can end it early.
+      await h.page.waitForTimeout(300);
+      assert.deepEqual(sent, []);
+      assert.deepEqual(writes(h), []);
     } finally {
       await h.close();
     }

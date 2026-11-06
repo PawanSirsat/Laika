@@ -57,6 +57,15 @@ void describe('a notice in words (D-134)', () => {
       time('deleted 2026-11-05 -60'),
       'Pawan Sirsat removed 1 h of your time on Thu 5 Nov',
     );
+    // A move names both days, never a "+0" edit (review L2).
+    assert.equal(
+      time('moved 2026-11-05 2026-11-06 +0'),
+      'Pawan Sirsat moved your time from Thu 5 Nov to Fri 6 Nov',
+    );
+    assert.equal(
+      time('moved 2026-11-05 2026-11-06 -30', { id: 't1', key: 'LAI-42', title: 'Login' }),
+      'Pawan Sirsat moved your time from Thu 5 Nov to Fri 6 Nov (−30 min) · LAI-42',
+    );
     // A subject it cannot read still says who changed it.
     assert.equal(time(null), 'Pawan Sirsat changed your time');
   });
