@@ -3,16 +3,14 @@
  *
  * The server tests own the figures and the door. What is left to prove is the
  * page a person reads: that every figure on it is the one the response
- * carried, that a manager's page has no agent, work or delivery block, and
- * that the way in — a name on Organisation, a Capacity card, a *Work by person*
+ * carried (the Overview's cards in detail are profile-overview.test.ts's,
+ * LAI-1153), and that the way in — a name on Organisation, a Capacity card, a *Work by person*
  * row — is a link for an owner or admin and plain text for anyone else.
  *
  * Fixtures are anchored to `Date.now()`, never to a date (CONVENTIONS §4).
  * The delivery figures that sit side by side are given different values —
  * accepted 4, sent back 6, reopened 7, p50 3 d, p75 4.5 d — so a card showing
  * one field under another's label fails rather than matching by coincidence.
- * The manager's tiles likewise (LAI-750): led 1, decided in 30 days 4,
- * accepted 9, sent back 2, median 5 h, waiting 3, oldest 2 d.
  */
 
 import assert from 'node:assert/strict';
@@ -71,9 +69,6 @@ const MONDAY = (() => {
 })();
 const SINCE = MONDAY - 11 * WEEK;
 const WEEKLY = [0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 2, 0];
-/** A manager's review decisions per week (LAI-750): 9 accepted, 2 sent back. */
-const REVIEWED = [0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 0];
-const SENT_BACK = [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
 
 const reviewWeeks = (accepted: readonly number[], sentBack: readonly number[]) =>
   accepted.map((n, i) => ({ week_start: SINCE + i * WEEK, accepted: n, sent_back: sentBack[i] }));
@@ -249,45 +244,6 @@ function asManager(profile: typeof BUILDER) {
   return { ...rest, user: { ...rest.user, profile_kind: 'manager' } };
 }
 
-const MANAGER = {
-  ...asManager({ ...BUILDER, user: { ...BUILDER.user, id: 'u3', name: 'Cal Lead' } }),
-  review: {
-    accepted: 9,
-    sent_back: 2,
-    last_30_days: 4,
-    per_week: reviewWeeks(REVIEWED, SENT_BACK),
-    time_to_decide: { measured: 10, unmeasured: 1, p50_ms: 5 * HOUR },
-    recent: [
-      {
-        task_id: 't3',
-        key: 'LC-3',
-        title: 'Three',
-        project_slug: 'laika-core',
-        decision: 'accepted',
-        at: NOW - DAY,
-        assignee: { id: 'u2', name: 'Bea Builder' },
-      },
-      {
-        task_id: 't2',
-        key: 'LC-2',
-        title: 'Two',
-        project_slug: 'laika-core',
-        decision: 'sent_back',
-        at: NOW - 4 * DAY,
-        assignee: { id: 'u2', name: 'Bea Builder' },
-      },
-    ],
-  },
-  ratings: [],
-  ratings_total: 0,
-  queue: {
-    projects_led: 1,
-    waiting: 3,
-    oldest_waiting_since: NOW - 2 * DAY,
-    projects: [{ project_id: 'p1', waiting: 3 }],
-  },
-};
-
 const EMPTY = {
   ...BUILDER,
   user: { ...BUILDER.user, id: 'u6', name: 'Nia New' },
@@ -410,15 +366,6 @@ async function stat(page: Page, name: string): Promise<string> {
   return (await page.locator(`[data-stat="${name}"] .prof-stat-value`).innerText()).trim();
 }
 
-/** A week chart's bars, as each bar's values: `[accepted]` or `[accepted, sent back]`. */
-async function bars(page: Page, card: string): Promise<number[][]> {
-  return page
-    .locator(`.prof-card[data-section="${card}"] .prof-bars [data-values]`)
-    .evaluateAll((els) =>
-      els.map((el) => (el.getAttribute('data-values') ?? '').split(',').map(Number)),
-    );
-}
-
 // ------------------------------------------------------------------ builder
 
 void describe('a builder’s profile', () => {
@@ -455,72 +402,30 @@ void describe('a builder’s profile', () => {
       await panel.getByRole('button', { name: 'Close' }).click();
       await panel.waitFor({ state: 'detached' });
 
+      // The Overview's cards (LAI-1153): the figures are profile-overview.test.ts's;
+      // here, that each is drawn from this response.
       const projects = await section(h.page, 'projects');
       assert.match(await projects.locator('.prof-card-count').innerText(), /^2$/);
-      const projectText = await projects.innerText();
-      assert.match(projectText, /Laika Core/);
-      assert.match(projectText, /Orbit/);
-      assert.match(projectText, /archived/i);
-
-      const current = await section(h.page, 'current');
-      const currentText = await current.innerText();
-      assert.match(currentText, /LC-7/);
-      assert.match(currentText, /Seven: the migration runner/);
-      // One list at a time (LAI-751): in progress first, review a click away.
-      assert.doesNotMatch(currentText, /ORB-1/);
-      await current.locator('input[name="prof-work"][value="in_review"]').check();
-      assert.match(await current.innerText(), /ORB-1.*Orbit one.*waiting 5 h/s);
-      assert.equal(await stat(h.page, 'in_progress'), '1');
-      assert.equal(await stat(h.page, 'in_review'), '1');
-      // LC-7 started three days ago, and it is the oldest in progress.
-      assert.equal(await stat(h.page, 'oldest_in_progress'), '3 d');
-
-      await section(h.page, 'delivery');
-      await until(async () => (await bars(h.page, 'delivery')).length === 12);
-      const weekly = await bars(h.page, 'delivery');
-      assert.equal(weekly.length, 12, 'one bar per week of the window');
+      assert.match(await projects.innerText(), /Laika Core/);
+      assert.match(await projects.innerText(), /ARCHIVED/);
+      const work = await section(h.page, 'work');
       assert.deepEqual(
-        weekly.map(([n]) => n),
-        WEEKLY,
+        (await work.getByRole('tab').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim()),
+        ['In progress 1', 'In review 1', 'Due in 7 days —'],
       );
-      assert.equal(await stat(h.page, 'accepted'), '4');
-      assert.equal(await stat(h.page, 'sent_back'), '6');
-      assert.equal(await stat(h.page, 'reopened'), '7');
-      assert.equal(await stat(h.page, 'cycle'), '3 d');
-      assert.equal(
-        (await h.page.locator('[data-stat="cycle"] .prof-stat-sub').innerText()).trim(),
-        '/ 4 d 12 h',
+      assert.match(await work.innerText(), /LC-7.*Seven: the migration runner.*3 d/s);
+      assert.match(
+        await work.locator('[data-delivered]').innerText(),
+        /4 accepted · 7 reopened · cycle p50 3 d, p75 4 d 12 h · 1 done with no recorded start/,
       );
-      assert.match(await h.page.locator('.prof-unmeasured').innerText(), /1 .*not measured/i);
-
-      const review = await section(h.page, 'review');
-      assert.equal(
-        await review.locator('[data-stat="review_accepted"] .prof-stat-value').innerText(),
-        '0',
-      );
-      assert.equal(
-        await review.locator('[data-stat="review_sent_back"] .prof-stat-value').innerText(),
-        '1',
-      );
-
+      await section(h.page, 'review');
+      assert.equal(await stat(h.page, 'review_accepted'), '0');
+      assert.equal(await stat(h.page, 'review_sent_back'), '1');
       assert.equal(await stat(h.page, 'review_30d'), '1');
       assert.equal(await stat(h.page, 'decide_p50'), '2 h');
-
       const agents = await section(h.page, 'agents');
-      const agentText = await agents.innerText();
-      assert.match(agentText, /Claude Code/);
-      assert.match(agentText, /Codex/);
-      // Token names wait behind each agent's expand (LAI-751).
-      assert.doesNotMatch(agentText, /Laptop Claude/);
-      await agents.locator('.prof-agent[data-client="claude-code"] .prof-tokens-toggle').click();
-      assert.match(await agents.innerText(), /Laptop Claude/);
-      assert.equal(await agents.locator('.prof-agent[data-online="true"]').count(), 1);
-      // Who is online is this card's (LAI-751, owner, 2026-10-16).
-      assert.equal(await agents.locator('.prof-card-caption').innerText(), '1 online');
-      assert.match(
-        await agents.locator('.prof-agent[data-online="true"]').innerText(),
-        /Claude Code\s*online/,
-      );
+      assert.equal(await agents.locator('.ov-tool[data-online="true"]').count(), 1);
+      assert.match(await agents.locator('.prof-card-caption').innerText(), /1 online$/);
 
       // The response still carries ratings; the page draws none (D-139 item 8).
       assert.equal(await h.page.locator('[data-section="rating"]').count(), 0);
@@ -537,7 +442,7 @@ void describe('a builder’s profile', () => {
       '/api/v1/users/u2/profile': BUILDER,
     });
     try {
-      await section(h.page, 'delivery');
+      await section(h.page, 'work');
       for (const theme of ['Light', 'Dark']) {
         // The theme switch is in the sidebar, which is off-canvas on a phone:
         // switch at laptop width, then measure both.
@@ -568,47 +473,6 @@ void describe('a builder’s profile', () => {
     }
   });
 
-  /**
-   * The server caps three lists at 50 and sends the total (LAI-746). The page
-   * says how many it is not showing, and counts by the total, not the length.
-   */
-  void test('says how many more there are when a list was cut', async () => {
-    const long = {
-      ...BUILDER,
-      current_work: { ...BUILDER.current_work, in_progress_total: 4, in_review_total: 1 },
-      agents: { ...BUILDER.agents, tokens_total: 9 },
-    };
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': long,
-    });
-    try {
-      const current = await section(h.page, 'current');
-      assert.equal(await stat(h.page, 'in_progress'), '4');
-      assert.match(await current.locator('.prof-more').innerText(), /and 3 more/);
-
-      const agents = await section(h.page, 'agents');
-      assert.match(await agents.locator('.prof-more').innerText(), /and 7 more/);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('says nothing about more when nothing was cut', async () => {
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': BUILDER,
-    });
-    try {
-      await section(h.page, 'agents');
-      assert.equal(await h.page.locator('.prof-more').count(), 0);
-    } finally {
-      await h.close();
-    }
-  });
-
   void test('says what is empty for a person with no history', async () => {
     const h = await open('/people?user=u6', {
       ...BASE,
@@ -616,32 +480,31 @@ void describe('a builder’s profile', () => {
       '/api/v1/users/u6/profile': EMPTY,
     });
     try {
-      const text = await (await section(h.page, 'delivery')).page().locator('.prof').innerText();
+      await section(h.page, 'work');
+      await until(
+        async () => (await h.page.locator('[data-section="tokens"] [data-empty]').count()) === 1,
+      );
+      const text = await h.page.locator('.prof').innerText();
       assert.match(text, /No projects yet/);
-      assert.match(text, /Nothing in progress or in review/);
-      assert.match(text, /Nothing accepted in these 12 weeks/);
-      assert.match(text, /No agent has used their tokens yet/);
+      assert.match(text, /Nothing here right now/);
+      assert.match(text, /Nothing accepted yet/);
+      assert.match(text, /Nia hasn’t set up an agent yet/);
       assert.equal(
         await h.page.locator('.prof-card[data-section="agents"] .prof-card-caption').innerText(),
-        'none online',
+        'none set up',
       );
       assert.match(text, /No review decisions in these 12 weeks/);
-      // One line where there is nothing — no tiles of zeros and dashes under it
-      // (LAI-751, owner, 2026-10-16).
-      assert.equal(await h.page.locator('.prof-columns .prof-stats').count(), 0);
       assert.doesNotMatch(text, /undefined|NaN|null/);
-      // A compact sentence inside the card, not twelve empty bars (LAI-750).
-      for (const card of ['delivery', 'review']) {
-        assert.equal(
-          await h.page.locator(`.prof-card[data-section="${card}"] .prof-bars`).count(),
-          0,
-          `an empty ${card} card still draws a chart`,
-        );
-      }
+      // A sentence inside the card, not twelve empty bars (LAI-750).
+      assert.equal(
+        await h.page.locator('.prof-card[data-section="review"] .prof-bars').count(),
+        0,
+        'an empty review card still draws a chart',
+      );
       assert.equal(
         await h.page.locator('.prof-card[data-section="agents"] .prof-share').count(),
         0,
-        'a share bar with no writes',
+        'a share bar with no tokens',
       );
     } finally {
       await h.close();
@@ -655,8 +518,8 @@ void describe('a builder’s profile', () => {
    * line sends nobody — the person or anyone reading — to a switch that is gone.
    */
   for (const [reader, readerRole, line] of [
-    ['an owner', me('u1', 'owner'), /^Nothing has arrived from Bea Builder’s machines yet\.$/],
-    ['the person', me('u2', 'admin'), /^Nothing has arrived from your machines yet: /],
+    ['an owner', me('u1', 'owner'), /^No LLM tokens recorded in these 12 weeks\.$/],
+    ['the person', me('u2', 'admin'), /^No LLM tokens recorded in these 12 weeks\. Tokens arrive /],
   ] as const) {
     void test(`${reader}: a stale personal “off” names no switch on the Tokens card`, async () => {
       const h = await open('/people?user=u2', {
@@ -673,7 +536,7 @@ void describe('a builder’s profile', () => {
       });
       try {
         const empty = (await section(h.page, 'tokens')).locator('.prof-empty');
-        await until(async () => (await empty.innerText()).includes('Nothing has arrived'));
+        await until(async () => (await empty.innerText()).includes('No LLM tokens'));
         const text = await empty.innerText();
         assert.match(text, line);
         assert.doesNotMatch(text, /Share local activity|turned on sharing|Turn on/);
@@ -685,115 +548,6 @@ void describe('a builder’s profile', () => {
 });
 
 // ------------------------------------------------------- v2 cards (LAI-750)
-
-void describe('the agents card, with who is online in it', () => {
-  void test('split one bar by share of writes, with each agent’s real mark, name and share', async () => {
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': BUILDER,
-    });
-    try {
-      const agents = await section(h.page, 'agents');
-      assert.match(await agents.locator('.prof-card-title').innerText(), /3 types/);
-      // *Tools used*, not *Agents used* (LAI-1058, plan §B.7).
-      assert.match(await agents.locator('.prof-card-title').innerText(), /^Tools used · /i);
-
-      const parts = agents.locator('.prof-share-part');
-      assert.deepEqual(
-        await parts.evaluateAll((els) =>
-          els.map((el) => [el.getAttribute('data-client'), (el as HTMLElement).style.flexGrow]),
-        ),
-        [
-          ['claude-code', '6'],
-          ['codex', '3'],
-          ['cursor', '1'],
-        ],
-      );
-      assert.match(
-        (await agents.locator('.prof-share').getAttribute('aria-label')) ?? '',
-        /Claude Code 60%, Codex 30%, Cursor 10%/,
-      );
-
-      const claude = agents.locator('.prof-agent[data-client="claude-code"]');
-      assert.match(await claude.innerText(), /Claude Code.*60%/s);
-      // The vendor's mark, not a two-letter monogram.
-      assert.equal(await claude.locator('.agent-mark-logo svg').count(), 1);
-      // Cursor wrote through a token that is gone: a share, and no token now.
-      const cursor = await agents.locator('.prof-agent[data-client="cursor"]').innerText();
-      assert.match(cursor, /10%/);
-      assert.match(cursor, /no usable token now/);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('says who is online with a live dot on the row, and never where', async () => {
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': BUILDER,
-    });
-    try {
-      const agents = await section(h.page, 'agents');
-      // *Online now* is not a card of its own any more (LAI-751, owner, 2026-10-16).
-      assert.equal(await h.page.locator('.prof-card[data-section="online"]').count(), 0);
-      assert.equal(await agents.locator('.prof-card-caption').innerText(), '1 online');
-      const row = agents.locator('.prof-agent[data-client="claude-code"]');
-      assert.equal(await row.locator('.prof-online .prof-live-dot').count(), 1);
-      assert.equal(await row.locator('.agent-mark').count(), 1);
-      // Laptop Claude was last used two minutes ago.
-      assert.match(await row.innerText(), /Claude Code\s*online.*active 2 min/s);
-      assert.equal(await agents.locator('.prof-live-dot').count(), 1, 'Codex is not online');
-      assert.doesNotMatch(await agents.innerText(), /LC-|laika-core|Laika Core/);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('says presence is off, rather than nobody online, when the org turned it off', async () => {
-    const off = {
-      ...BUILDER,
-      agents: { ...BUILDER.agents, online: { enabled: false, clients: [], last_seen: null } },
-    };
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': off,
-    });
-    try {
-      const agents = await section(h.page, 'agents');
-      assert.equal(await agents.locator('.prof-card-caption').innerText(), 'presence off');
-      assert.equal(await agents.locator('.prof-live-dot').count(), 0);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('an agent online on a token the list does not show still has its row', async () => {
-    const shape = {
-      ...BUILDER,
-      agents: {
-        ...BUILDER.agents,
-        online: { enabled: true, clients: ['claude-code', 'gemini-cli'], last_seen: NOW - MIN },
-      },
-    };
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': shape,
-    });
-    try {
-      const agents = await section(h.page, 'agents');
-      assert.equal(await agents.locator('.prof-card-caption').innerText(), '2 online');
-      const gemini = agents.locator('.prof-agent[data-client="gemini-cli"]');
-      assert.match(await gemini.innerText(), /Gemini CLI\s*online/);
-      assert.equal(await gemini.locator('.prof-live-dot').count(), 1);
-    } finally {
-      await h.close();
-    }
-  });
-});
 
 void describe('the kind control', () => {
   void test('is a labelled radio group that a keyboard moves', async () => {
@@ -837,83 +591,6 @@ void describe('the kind control', () => {
 // ------------------------------------------------------------------ manager
 
 void describe('a manager’s profile', () => {
-  void test('shows projects and review work, and no builder blocks', async () => {
-    const h = await open('/people?user=u3', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u3/profile': MANAGER,
-    });
-    try {
-      await section(h.page, 'projects');
-      const review = await section(h.page, 'review');
-      assert.equal(
-        await review.locator('[data-stat="review_accepted"] .prof-stat-value').innerText(),
-        '9',
-      );
-      assert.equal(
-        await review.locator('[data-stat="review_sent_back"] .prof-stat-value').innerText(),
-        '2',
-      );
-
-      // The queue's and the review's tiles, each its own field (LAI-750).
-      assert.equal(await stat(h.page, 'projects_led'), '1');
-      assert.equal(await stat(h.page, 'review_30d'), '4');
-      assert.equal(await stat(h.page, 'decide_p50'), '5 h');
-      assert.equal(
-        (await h.page.locator('[data-stat="decide_p50"] .prof-stat-sub').innerText()).trim(),
-        '10 timed',
-      );
-      assert.equal(await stat(h.page, 'waiting'), '3');
-      assert.equal(await stat(h.page, 'oldest_waiting'), '2 d');
-
-      // Review load per week: accepted and sent back, stacked, one bar a week.
-      const stacked = JSON.stringify(REVIEWED.map((n, i) => [n, SENT_BACK[i]]));
-      await until(async () => JSON.stringify(await bars(h.page, 'review')) === stacked);
-      assert.deepEqual(
-        await bars(h.page, 'review'),
-        REVIEWED.map((n, i) => [n, SENT_BACK[i]]),
-      );
-      const load = h.page.locator('.prof-card[data-section="review"] .prof-bars');
-      assert.match((await load.getAttribute('aria-label')) ?? '', /Review decisions per week/);
-      assert.match(
-        await load.locator('li').nth(4).innerText(),
-        /0 accepted, 1 sent back/,
-        'a bar without words for a screen reader',
-      );
-
-      // A manager's project bars count their decisions — Laika Core has 2 of
-      // their own open and 0 reviewed — and say what waits.
-      const projects = await section(h.page, 'projects');
-      assert.match(await projects.locator('[data-project="laika-core"]').innerText(), /3 waiting/);
-      assert.equal(
-        (await projects.locator('[data-project="laika-core"] .prof-pbar-n').innerText()).trim(),
-        '0',
-      );
-
-      for (const absent of ['agents', 'current', 'delivery', 'online', 'decisions']) {
-        assert.equal(
-          await h.page.locator(`.prof-card[data-section="${absent}"]`).count(),
-          0,
-          `a manager's page has a ${absent} block`,
-        );
-      }
-      assert.equal(
-        (await h.page.locator('.prof-head [data-kind-chip="manager"]').innerText()).trim(),
-        'Manager',
-      );
-      assert.equal(
-        await (
-          await managePanel(h.page)
-        )
-          .locator('input[name="profile-kind"][value="manager"]')
-          .isChecked(),
-        true,
-      );
-    } finally {
-      await h.close();
-    }
-  });
-
   void test('switching the kind sends PATCH and redraws from the answer', async () => {
     let state: unknown = BUILDER;
     const h = await open('/people?user=u2', {
@@ -939,10 +616,14 @@ void describe('a manager’s profile', () => {
         .locator('input[name="profile-kind"][value="manager"]')
         .click();
 
-      await until(
-        async () => (await h.page.locator('.prof-card[data-section="agents"]').count()) === 0,
+      // The kind is a label (D-139 item 2): the chip follows the answer, and
+      // the same Overview stays — agents says none set up for this answer.
+      await until(async () => (await h.page.locator('[data-kind-chip="manager"]').count()) === 1);
+      assert.equal(await h.page.locator('[data-kind-chip="manager"]').count(), 1);
+      assert.equal(
+        await h.page.locator('.prof-card[data-section="agents"] .prof-card-caption').innerText(),
+        'none set up',
       );
-      assert.equal(await h.page.locator('.prof-card[data-section="agents"]').count(), 0);
       const patch = h.calls.find((c) => c.method === 'PATCH');
       assert.deepEqual(patch?.body, { profile_kind: 'manager' });
       assert.equal(patch?.path, '/api/v1/users/u2/profile');
@@ -1244,598 +925,6 @@ void describe('the ways in are links for owners and admins only', () => {
   });
 });
 
-// --------------------------------------------- the everything-works pass (LAI-751)
-
-/** The owner's own shape: 9 in progress and 34 in review, across two projects. */
-function busy() {
-  const task = (i: number, status: 'in_progress' | 'review') => ({
-    id: `w${String(i)}`,
-    key: `${i % 2 === 0 ? 'LC' : 'ORB'}-${String(100 + i)}`,
-    title: `Work item ${String(i)} with a title long enough to need cutting at a narrow width`,
-    project_slug: i % 2 === 0 ? 'laika-core' : 'orbit',
-    status,
-    status_name: status === 'review' ? 'Code review' : 'In progress',
-    started_at: NOW - (60 - i) * DAY,
-    // Longest waiting first, as the server sends it.
-    review_since: status === 'review' ? NOW - (50 - i) * HOUR : null,
-  });
-  return {
-    ...BUILDER,
-    current_work: {
-      in_progress: Array.from({ length: 9 }, (_, i) => task(i, 'in_progress')),
-      in_progress_total: 9,
-      in_review: Array.from({ length: 34 }, (_, i) => task(i + 9, 'review')),
-      in_review_total: 34,
-    },
-  };
-}
-
-async function rowKeys(page: Page): Promise<string[]> {
-  return page
-    .locator('.prof-card[data-section="current"] .prof-work-row')
-    .evaluateAll((els) => els.map((el) => el.getAttribute('data-task') ?? ''));
-}
-
-void describe('current work stays a card’s height (LAI-751)', () => {
-  void test('five rows of one list, in the server’s order; Show all scrolls inside the card', async () => {
-    const shape = busy();
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': shape,
-    });
-    try {
-      const current = await section(h.page, 'current');
-      // In progress first, capped at five, oldest started first.
-      assert.equal(
-        await current.locator('input[name="prof-work"][value="in_progress"]').isChecked(),
-        true,
-      );
-      assert.deepEqual(
-        await rowKeys(h.page),
-        shape.current_work.in_progress.slice(0, 5).map((t) => t.key),
-      );
-      assert.match(
-        await current.locator('.prof-work-switch').innerText(),
-        /In progress 9.*In review 34/s,
-      );
-
-      // In review: five, longest waiting first, and their wait said.
-      await current.locator('input[name="prof-work"][value="in_review"]').check();
-      assert.deepEqual(
-        await rowKeys(h.page),
-        shape.current_work.in_review.slice(0, 5).map((t) => t.key),
-      );
-      assert.match(await current.locator('.prof-work-row').first().innerText(), /waiting 1 d 17 h/);
-      // One line each: the whole title is on hover.
-      const title = current.locator('.prof-work-row .prof-task-title').first();
-      assert.equal(await title.getAttribute('title'), shape.current_work.in_review[0]?.title);
-
-      const show = current.locator('button.prof-show-all');
-      assert.equal(await show.innerText(), 'Show all 34');
-      assert.equal(await show.getAttribute('aria-expanded'), 'false');
-      await show.click();
-      assert.equal((await rowKeys(h.page)).length, 34);
-      assert.equal(await show.innerText(), 'Show less');
-      const panel = await current.locator('.prof-work-panel').evaluate((el) => ({
-        height: el.clientHeight,
-        scroll: el.scrollHeight,
-      }));
-      assert.ok(panel.height <= 420, `the open list is ${String(panel.height)}px tall`);
-      assert.ok(panel.scroll > panel.height, 'the rest does not scroll inside the card');
-
-      await show.click();
-      assert.equal((await rowKeys(h.page)).length, 5);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('no card at 1366 is taller than its content, and none is unbounded', async () => {
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': busy(),
-    });
-    try {
-      await h.page.setViewportSize({ width: 1366, height: 900 });
-      await section(h.page, 'current');
-      for (const expand of [false, true]) {
-        if (expand) await h.page.locator('button.prof-show-all').click();
-        const cards = await h.page
-          .locator('.prof > .prof-card, .prof-column > .prof-card')
-          .evaluateAll((els) =>
-            els.map((el) => {
-              const box = el.getBoundingClientRect();
-              const last = el.lastElementChild?.getBoundingClientRect();
-              return {
-                name: el.getAttribute('data-section') ?? '',
-                height: Math.round(box.height),
-                // Card padding is 18px; more than that is a stretched card.
-                slack: Math.round(box.bottom - (last?.bottom ?? box.bottom)),
-              };
-            }),
-          );
-        for (const card of cards) {
-          assert.ok(card.slack <= 24, `${card.name}: ${String(card.slack)}px of empty card`);
-          if (card.name !== 'activity') {
-            assert.ok(card.height <= 640, `${card.name}: ${String(card.height)}px tall`);
-          }
-        }
-      }
-    } finally {
-      await h.close();
-    }
-  });
-});
-
-// ------------------------------------- the layout (LAI-751, owner, 2026-10-16)
-
-/**
- * The owner's own profile as they saw it: 9 in progress, 34 in review, four
- * kinds of agent — one of them *Other agent*, one online with no writes —
- * three projects, and nothing accepted in the window.
- */
-function ownerShape() {
-  const base = busy();
-  const token = (id: string, name: string, client: string, ago: number, clientName: string) => ({
-    id,
-    name,
-    client,
-    client_name: clientName,
-    last_used_at: NOW - ago,
-    last_mcp_at: NOW - ago,
-    created_at: NOW - 60 * DAY,
-  });
-  return {
-    ...base,
-    projects: [
-      ...BUILDER.projects.map((project) => ({ ...project, accepted: 0 })),
-      {
-        id: 'p3',
-        slug: 'atlas',
-        name: 'Atlas',
-        key: 'ATL',
-        role: 'member',
-        archived: false,
-        open_tasks: 6,
-        accepted: 0,
-        reviewed: 0,
-      },
-    ],
-    review: EMPTY.review,
-    delivery: {
-      ...EMPTY.delivery,
-      sent_back: 2,
-    },
-    agents: {
-      tokens: [
-        token('k1', 'Laptop Claude', 'claude-code', 2 * MIN, 'claude-code'),
-        token('k2', 'Codex desk', 'codex', 3 * DAY, 'codex_cli_rs'),
-        token('k5', 'Gemini on the desktop', 'gemini-cli', 20 * MIN, 'gemini-cli'),
-        token('k6', 'Copilot in the terminal', 'other', 2 * DAY, 'copilot'),
-      ],
-      tokens_total: 4,
-      online: { enabled: true, clients: ['claude-code', 'gemini-cli'], last_seen: NOW - MIN },
-      writes: [
-        { client: 'claude-code', writes: 20 },
-        { client: 'codex', writes: 5 },
-        { client: 'other', writes: 2 },
-      ],
-      writes_total: 27,
-    },
-  };
-}
-
-interface CardBox {
-  readonly name: string;
-  /** `main` or `record` for a card in columns (LAI-1134); `full` for one across the page. */
-  readonly group: string;
-  readonly left: number;
-  readonly top: number;
-  readonly bottom: number;
-  /** The tallest band inside the card's padding with nothing drawn in it, px. */
-  readonly blank: number;
-}
-
-/**
- * Every card on the page, where it is, and the tallest stretch inside it with
- * nothing drawn — no text, no mark, no filled or bordered box. Measured from
- * what is painted, not from the profile's own classes, so it reads the same
- * on any version of the page.
- */
-async function cardBoxes(page: Page): Promise<{ gap: number; cards: CardBox[] }> {
-  return page.evaluate(() => {
-    const prof = document.querySelector('.prof');
-    const gap = prof === null ? Number.NaN : Number.parseFloat(getComputedStyle(prof).rowGap);
-    const empty = (colour: string) => colour === 'transparent' || colour === 'rgba(0, 0, 0, 0)';
-    const drawn = (el: Element): boolean => {
-      const style = getComputedStyle(el);
-      if (style.visibility === 'hidden' || Number.parseFloat(style.opacity) === 0) return false;
-      if (!empty(style.backgroundColor) || style.backgroundImage !== 'none') return true;
-      for (const side of ['Top', 'Bottom'] as const) {
-        if (
-          Number.parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0 &&
-          style.getPropertyValue(`border-${side.toLowerCase()}-style`) !== 'none'
-        )
-          return true;
-      }
-      if (el instanceof SVGElement || el.tagName === 'IMG') return true;
-      return [...el.childNodes].some(
-        (node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? '').trim() !== '',
-      );
-    };
-    const cards = [...document.querySelectorAll('.prof .prof-card')].map((card) => {
-      const box = card.getBoundingClientRect();
-      const style = getComputedStyle(card);
-      const top =
-        box.top + Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.paddingTop);
-      const bottom =
-        box.bottom -
-        Number.parseFloat(style.borderBottomWidth) -
-        Number.parseFloat(style.paddingBottom);
-      const spans: [number, number][] = [];
-      for (const el of card.querySelectorAll('*')) {
-        const rect = el.getBoundingClientRect();
-        if (rect.width <= 1 || rect.height <= 1 || !drawn(el)) continue;
-        let from = Math.max(rect.top, top);
-        let to = Math.min(rect.bottom, bottom);
-        // Only what shows: a row scrolled out of its list draws nothing here.
-        for (let up = el.parentElement; up !== null && up !== card; up = up.parentElement) {
-          if (getComputedStyle(up).overflowY === 'visible') continue;
-          const clip = up.getBoundingClientRect();
-          from = Math.max(from, clip.top);
-          to = Math.min(to, clip.bottom);
-        }
-        if (to > from) spans.push([from, to]);
-      }
-      spans.sort((a, b) => a[0] - b[0]);
-      let reached = top;
-      let blank = 0;
-      for (const [from, to] of spans) {
-        blank = Math.max(blank, from - reached);
-        reached = Math.max(reached, to);
-      }
-      blank = Math.max(blank, bottom - reached);
-      return {
-        name: card.getAttribute('data-section') ?? '',
-        group: card.closest('.prof-columns')?.getAttribute('data-group') ?? 'full',
-        left: Math.round(box.left),
-        top: box.top,
-        bottom: box.bottom,
-        blank: Math.round(blank),
-      };
-    });
-    return { gap, cards };
-  });
-}
-
-/**
- * Overview since LAI-1134 (frames 1n–1p): the design's summary in columns
- * (`main`), the Activity card across the page, then the record — the Tokens
- * card across the page and the rest in columns (`record`).
- */
-
-/** One group's cards, grouped by the column they sit in, top first. */
-function columnsOf(cards: readonly CardBox[], group = 'main'): CardBox[][] {
-  const columns = new Map<number, CardBox[]>();
-  for (const card of cards) {
-    if (card.group !== group) continue;
-    columns.set(card.left, [...(columns.get(card.left) ?? []), card]);
-  }
-  return [...columns]
-    .sort((a, b) => a[0] - b[0])
-    .map(([, column]) => [...column].sort((a, b) => a.top - b.top));
-}
-
-/**
- * At 1366: the summary in `want` columns, the space between any two cards in
- * a column the page's own gap — never a row stretched to its tallest
- * neighbour — Activity one gap under the summary, the record's columns one gap
- * under its Tokens card, and no card with more than 48 px of nothing inside it.
- */
-async function assertColumns(page: Page, want: number): Promise<CardBox[]> {
-  await page.setViewportSize({ width: 1366, height: 900 });
-  await page.waitForTimeout(200);
-  await until(async () => columnsOf((await cardBoxes(page)).cards).length === want);
-  const { gap, cards } = await cardBoxes(page);
-  assert.ok(gap > 0, 'the page has a gap between its blocks');
-  assert.equal(
-    cards.filter((card) => card.name === 'online').length,
-    0,
-    'Online now is a card of its own',
-  );
-  const activity = cards.find((card) => card.name === 'activity');
-  assert.ok(activity !== undefined, 'the Activity card is on the page');
-  const tokens = cards.find((card) => card.name === 'tokens');
-  assert.ok(tokens !== undefined, 'the Tokens card is on the page');
-  assert.ok(activity.top < tokens.top, 'the record is under Activity');
-
-  const columns = columnsOf(cards);
-  assert.equal(
-    columns.length,
-    want,
-    `at 1366 the summary sits in ${String(columns.length)} columns, not ${String(want)}`,
-  );
-  const check = (group: CardBox[][], start: number): number => {
-    let lowest = start;
-    for (const column of group) {
-      let above = start;
-      for (const [i, card] of column.entries()) {
-        const space = Math.round(card.top - above);
-        // The first card of a column starts where its group starts.
-        if (i > 0 || Number.isFinite(start)) {
-          assert.ok(
-            Math.abs(space - gap) <= 1,
-            `${card.name}: ${String(space)}px above it in its column, not the ${String(gap)}px gap`,
-          );
-        }
-        above = card.bottom;
-      }
-      lowest = Math.max(lowest, above);
-    }
-    return lowest;
-  };
-  // The summary's columns all start together, at its top.
-  const tops = new Set(columns.map((column) => Math.round(column[0]?.top ?? 0)));
-  assert.equal(tops.size, 1, 'the summary’s columns start at one line');
-  const summaryBottom = check(columns, Number.NEGATIVE_INFINITY);
-  assert.ok(
-    Math.abs(Math.round(activity.top - summaryBottom) - gap) <= 1,
-    'Activity sits one gap under the summary',
-  );
-  check(columnsOf(cards, 'record'), tokens.bottom);
-  for (const card of cards) {
-    assert.ok(card.blank <= 48, `${card.name}: ${String(card.blank)}px of empty card at 1366`);
-  }
-  return cards;
-}
-
-/** At 390, one column in reading order — the order the page's code says. */
-async function assertOneColumn(page: Page, order: readonly string[]): Promise<void> {
-  await page.setViewportSize({ width: 390, height: 900 });
-  await page.waitForTimeout(200);
-  await until(
-    async () => new Set((await cardBoxes(page)).cards.map((card) => card.left)).size === 1,
-  );
-  const { cards } = await cardBoxes(page);
-  const lefts = new Set(cards.map((card) => card.left));
-  assert.equal(lefts.size, 1, `at 390 the cards start at ${String(lefts.size)} different lefts`);
-  assert.deepEqual(
-    [...cards].sort((a, b) => a.top - b.top).map((card) => card.name),
-    order,
-    'at 390, top to bottom',
-  );
-  // And a screen reader meets them in the same order.
-  assert.deepEqual(
-    cards.map((card) => card.name),
-    order,
-  );
-}
-
-void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
-  void test('the owner’s own profile: columns, Online in Agents used, nothing stretched', async () => {
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': ownerShape(),
-    });
-    try {
-      await section(h.page, 'current');
-      await h.page.locator('.prof-card[data-section="activity"][aria-busy="false"]').waitFor();
-      await assertColumns(h.page, 3);
-
-      // Online now is a line in Agents used: the header says how many, the
-      // rows which, each with its dot and when it was last active.
-      const agents = await section(h.page, 'agents');
-      assert.match(await agents.locator('.prof-card-head').innerText(), /2 online/);
-      await until(
-        async () =>
-          (
-            await agents
-              .locator('.prof-agent:has(.prof-live-dot)')
-              .evaluateAll((els) => els.map((el) => el.getAttribute('data-client')))
-          ).join('|') === ['claude-code', 'gemini-cli'].join('|'),
-      );
-      const live = await agents
-        .locator('.prof-agent:has(.prof-live-dot)')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('data-client')));
-      assert.deepEqual(live, ['claude-code', 'gemini-cli']);
-      assert.match(
-        await agents.locator('.prof-agent[data-client="gemini-cli"]').innerText(),
-        /Gemini CLI\s*online.*active 20 min/s,
-      );
-
-      // *Other agent*, with its share as a number; no share and no dash for
-      // an agent with no writes.
-      const other = agents.locator('.prof-agent[data-client="other"]');
-      assert.match(await other.innerText(), /^Other agent/m);
-      assert.doesNotMatch(await agents.innerText(), /another agent/);
-      assert.match(await other.locator('.prof-share-pct').innerText(), /^\d+%$/);
-      const gemini = agents.locator('.prof-agent[data-client="gemini-cli"]');
-      assert.equal(await gemini.locator('.prof-share-pct').count(), 0);
-      assert.doesNotMatch(await gemini.innerText(), /—/);
-
-      // Delivery with nothing accepted: one line, and no tiles of zeros.
-      const delivery = await section(h.page, 'delivery');
-      assert.match(
-        await delivery.innerText(),
-        /Nothing accepted in these 12 weeks · 2 sent back\./,
-      );
-      assert.equal(await delivery.locator('.prof-stats').count(), 0);
-      // Review work with no decisions: one line.
-      const review = await section(h.page, 'review');
-      assert.equal(await review.locator('.prof-stats').count(), 0);
-      assert.match(await review.innerText(), /No review decisions in these 12 weeks\./);
-
-      await h.page.setViewportSize({ width: 1024, height: 900 });
-      await h.page.waitForTimeout(200);
-      await until(async () => columnsOf((await cardBoxes(h.page)).cards).length === 2);
-      assert.equal(columnsOf((await cardBoxes(h.page)).cards).length, 2, 'two columns at 1024');
-
-      // *Time this week* (LAI-1138) leads: a link to the Time report, no figures.
-      await assertOneColumn(h.page, [
-        'time',
-        'current',
-        'agents',
-        'review',
-        'projects',
-        'activity',
-        'tokens',
-        'delivery',
-      ]);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('an empty profile: every card its title and one short line', async () => {
-    const h = await open('/people?user=u6', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u6/profile': EMPTY,
-    });
-    try {
-      await section(h.page, 'delivery');
-      await h.page.locator('.prof-card[data-section="activity"][aria-busy="false"]').waitFor();
-      await assertColumns(h.page, 3);
-      await until(async () => (await h.page.locator('.prof-columns .prof-card').count()) === 5);
-      const cards = await h.page.locator('.prof-columns .prof-card').evaluateAll((els) =>
-        els.map((el) => {
-          const lines = el.querySelectorAll('.prof-empty');
-          const line = lines[0];
-          const head = el.querySelector('.prof-card-head');
-          const lineHeight =
-            line === undefined ? 0 : Number.parseFloat(getComputedStyle(line).lineHeight);
-          return {
-            name: el.getAttribute('data-section') ?? '',
-            lines: lines.length,
-            oneLine:
-              line === undefined ? false : line.getBoundingClientRect().height <= lineHeight * 1.5,
-            rest: (el as HTMLElement).innerText
-              .replace((head as HTMLElement | null)?.innerText ?? '', '')
-              .replace((line as HTMLElement | undefined)?.innerText ?? '', '')
-              .trim(),
-          };
-        }),
-      );
-      assert.equal(cards.length, 5);
-      for (const card of cards) {
-        assert.equal(card.lines, 1, `${card.name}: ${String(card.lines)} empty lines`);
-        assert.ok(card.oneLine, `${card.name}: its empty line wraps at 1366`);
-        assert.equal(card.rest, '', `${card.name}: more than its title and one line`);
-      }
-      // No dashed box, no tiles of zeros above it.
-      assert.equal(
-        await h.page
-          .locator('.prof-empty')
-          .evaluateAll(
-            (els) => els.filter((el) => getComputedStyle(el).borderTopStyle !== 'none').length,
-          ),
-        0,
-      );
-      assert.equal(await h.page.locator('.prof-columns .prof-stats').count(), 0);
-
-      // *Time this week* (LAI-1138) leads: a link to the Time report, no figures.
-      await assertOneColumn(h.page, [
-        'time',
-        'current',
-        'agents',
-        'review',
-        'projects',
-        'activity',
-        'tokens',
-        'delivery',
-      ]);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('a manager’s profile: the same columns, with their own cards', async () => {
-    const h = await open('/people?user=u3', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u3/profile': MANAGER,
-    });
-    try {
-      await section(h.page, 'review');
-      await h.page.locator('.prof-card[data-section="activity"][aria-busy="false"]').waitFor();
-      // A manager's summary has two cards, so two columns (LAI-1134); their
-      // record has none since the rating and recent decisions went (D-139 item 8).
-      const cards = await assertColumns(h.page, 2);
-      assert.deepEqual(cards.map((card) => card.name).sort(), [
-        'activity',
-        'projects',
-        'review',
-        'time',
-        'tokens',
-      ]);
-      await assertOneColumn(h.page, ['time', 'review', 'projects', 'activity', 'tokens']);
-    } finally {
-      await h.close();
-    }
-  });
-});
-
-void describe('agents used, one row per agent (LAI-751)', () => {
-  void test('says how many tokens and when last used, the names behind an expand', async () => {
-    const shape = {
-      ...BUILDER,
-      agents: {
-        ...BUILDER.agents,
-        tokens: [
-          ...BUILDER.agents.tokens,
-          {
-            id: 'k3',
-            name: 'claude-code on macOS',
-            client: 'claude-code',
-            client_name: 'claude-code',
-            last_used_at: NOW - 9 * MIN,
-            last_mcp_at: null,
-            created_at: NOW - 10 * DAY,
-          },
-          // Minted, never connected: no agent was used through it.
-          {
-            id: 'k4',
-            name: 'claude-token',
-            client: 'other',
-            client_name: null,
-            last_used_at: null,
-            last_mcp_at: null,
-            created_at: NOW - 5 * DAY,
-          },
-        ],
-        tokens_total: 4,
-      },
-    };
-    const h = await open('/people?user=u2', {
-      ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': shape,
-    });
-    try {
-      const agents = await section(h.page, 'agents');
-      const claude = agents.locator('.prof-agent[data-client="claude-code"]');
-      assert.match(await claude.innerText(), /2 tokens · active 2 min ago/);
-      const toggle = claude.locator('.prof-tokens-toggle');
-      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
-      assert.doesNotMatch(await agents.innerText(), /claude-code on macOS/);
-      await toggle.click();
-      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
-      assert.deepEqual(await claude.locator('.prof-token-names li').allInnerTexts(), [
-        'Laptop Claude',
-        'claude-code on macOS',
-      ]);
-      // The token that never connected is nobody's agent (LAI-751 e).
-      assert.equal(await agents.locator('.prof-agent[data-client="other"]').count(), 0);
-      assert.doesNotMatch(await agents.innerText(), /another agent|claude-token/);
-    } finally {
-      await h.close();
-    }
-  });
-});
-
 void describe('the profile’s smaller fixes (LAI-751)', () => {
   void test('an archived project with a long key keeps a readable name', async () => {
     const shape = {
@@ -1858,9 +947,7 @@ void describe('the profile’s smaller fixes (LAI-751)', () => {
       const projects = await section(h.page, 'projects');
       for (const width of [1366, 1024, 390]) {
         await h.page.setViewportSize({ width, height: 900 });
-        const title = projects.locator('.prof-project-title').first();
-        // A resize can move the card to another column (`columnPlan`), which
-        // remounts it: measure once it has landed, not while it moves.
+        const title = projects.locator('.ov-project-title').first();
         await until(async () => ((await title.boundingBox())?.width ?? 0) >= 60).catch(
           () => undefined,
         );
@@ -1869,11 +956,8 @@ void describe('the profile’s smaller fixes (LAI-751)', () => {
           (box?.width ?? 0) >= 60,
           `${String(width)}: the name is ${String(box?.width)}px wide`,
         );
-        assert.equal(
-          await projects.locator('.prof-project-name').first().getAttribute('title'),
-          'Customer onboarding',
-        );
-        assert.match(await projects.locator('.prof-row-meta').first().innerText(), /ARCHIVED/);
+        assert.equal(await title.getAttribute('title'), 'Customer onboarding');
+        assert.match(await projects.locator('.ov-project-name').first().innerText(), /ARCHIVED/);
       }
     } finally {
       await h.close();

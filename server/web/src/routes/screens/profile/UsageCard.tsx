@@ -114,7 +114,9 @@ export function UsageCard({
       {usage !== undefined && totals !== undefined && (
         <>
           {totals.tokens + totals.cache_read === 0 ? (
-            <p className="prof-empty">{emptyLine(usage, name, self)}</p>
+            <p className="prof-empty usage-person-empty" data-empty>
+              {emptyLine(usage, self)}
+            </p>
           ) : (
             <>
               <dl className="usage-person-stats">
@@ -145,6 +147,7 @@ export function UsageCard({
                   <dd className="usage-cost-caveat">{COST_LABEL}</dd>
                 </div>
               </dl>
+              <p className="usage-cost-note">Cost is the API-equivalent price, not a bill.</p>
               <Columns
                 className="usage-weeks"
                 barClass="usage-week"
@@ -161,7 +164,7 @@ export function UsageCard({
               />
               <div className="usage-person-lists">
                 <div>
-                  <h4 className="usage-person-h">Agents</h4>
+                  <h4 className="usage-person-h">By agent</h4>
                   <BarRows
                     label="Tokens by agent"
                     rows={usage.by_agent.slice(0, TOP).map((a) => ({
@@ -177,7 +180,7 @@ export function UsageCard({
                   />
                 </div>
                 <div>
-                  <h4 className="usage-person-h">Models</h4>
+                  <h4 className="usage-person-h">By model</h4>
                   <BarRows
                     label="Tokens by model"
                     rows={usage.by_model.slice(0, TOP).map((m) => ({
@@ -203,11 +206,12 @@ export function UsageCard({
   );
 }
 
-function emptyLine(usage: PersonUsage, name: string, self: boolean): string {
+function emptyLine(usage: PersonUsage, self: boolean): string {
   if (!usage.sharing.org_enabled) {
     return 'Developer insights are off for this organisation, so no tokens are counted.';
   }
+  // The design's sentence (LAI-1153); your own adds when the next ones come.
   return self
-    ? 'Nothing has arrived from your machines yet: tokens go with the next laika activity sync.'
-    : `Nothing has arrived from ${name}’s machines yet.`;
+    ? 'No LLM tokens recorded in these 12 weeks. Tokens arrive with the next laika activity sync.'
+    : 'No LLM tokens recorded in these 12 weeks.';
 }

@@ -1,6 +1,6 @@
 ---
 id: LAI-1160
-title: 'Profile redesign cleanups: MyDayScreen embedded mode unused, flaky My day tests'
+title: 'Profile redesign cleanups: unused embedded My day and profile CSS, flaky My day tests'
 area: web
 assignee: unclaimed
 priority: p3
@@ -25,6 +25,14 @@ found, none blocking.
       and *the Timeline card as TimelineV2 draws it (LAI-512) — an edge within
       9px of the end resizes it*. Reproduce under load and fix the wait, so a
       green gate does not need a re-run.
+- [ ] About 20 selectors in `server/web/src/routes/screens/profile/profile.css`
+      lost their last user when LAI-1153 replaced the Overview cards
+      (`.prof-columns`, `.prof-column`, `.prof-pbar*`, `.prof-project*`,
+      `.prof-work-*`, `.prof-seg-face`, `.prof-show-all`, `.prof-group-title`,
+      `.prof-agents>li`, `.prof-token-names`, `.prof-tokens-toggle`,
+      `.prof-unmeasured`, `.prof-load`, `.prof-scroll`, `.prof-sub*`,
+      `.prof-error`, `.prof-hours-*`) — grep `server/web/src` for each and
+      delete the ones with no caller (from #300's review).
 
 ## Notes / context
 
