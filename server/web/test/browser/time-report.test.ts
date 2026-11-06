@@ -518,6 +518,106 @@ void describe('Insights → Time, an owner (frames 1g–1i)', () => {
     }
   });
 
+  for (const width of [1440, 390]) {
+    void test(`spread at ${String(width)}: people first show their spaces and tasks; a figure counts tasks (LAI-1164)`, async () => {
+      const asked: URL[] = [];
+      const h = await openWith(
+        '/insights?tab=time',
+        OWNER_STUB(),
+        asked,
+        (u) => ok(orgReport(u)),
+        width,
+      );
+      try {
+        const tr = h.page.locator('[data-time-report="org"]');
+        await tr.locator('[data-tr-row]').first().waitFor({ timeout: 20_000 });
+        // Space first: no spread columns.
+        assert.equal(await tr.locator('[data-tr-spread]').count(), 0);
+        // Laika (t1, t2) and Onroute (no task): two tasks across two spaces.
+        assert.equal(
+          await tr.locator('[data-tr-stat="tasks"] .trep-stat-value .trep-long').innerText(),
+          '2',
+        );
+        // Both tasks are in Laika; Onroute holds only Ben's meeting on no task.
+        assert.match(await tr.locator('[data-tr-stat="tasks"]').innerText(), /across 1 space\b/);
+        await tr.locator('[data-tr-swap]').click();
+        // Ada: LAI-2 in Laika (her untied draft is not read); Ben: a meeting on no task; Zoe: LAI-1.
+        const spread = async (id: string) =>
+          width === 390
+            ? await tr.locator(`[data-tr-row="${id}"] [data-tr-spread-words]`).innerText()
+            : (
+                await tr
+                  .locator(`[data-tr-row="${id}"] [data-tr-spread]`)
+                  .evaluateAll((els) => els.map((el) => el.textContent))
+              ).join('/');
+        if (width === 390) {
+          assert.equal(await spread('u1'), '1 space · 1 task');
+          assert.equal(await spread('u4'), '1 space · 0 tasks');
+          // Under the name, not beside it: the name keeps the row's width.
+          const box = async (sel: string) =>
+            (await tr.locator(`[data-tr-row="u1"] ${sel}`).boundingBox()) ?? {
+              x: 0,
+              y: 0,
+              width: 0,
+              height: 0,
+            };
+          const name = await box('.trep-row-label');
+          const counts = await box('[data-tr-spread-words]');
+          assert.ok(counts.y >= name.y + name.height - 1, 'the counts are not under the name');
+          assert.equal(
+            await tr
+              .locator('[data-tr-row="u1"] .trep-row-label')
+              .evaluate((el) => el.scrollWidth <= el.clientWidth),
+            true,
+            'Ada Lovelace is cut short',
+          );
+        } else {
+          assert.equal(await spread('u1'), '1/1');
+          assert.equal(await spread('u4'), '1/0');
+          assert.equal(await spread('u3'), '1/1');
+          // The row's own count of what it opens to is not said beside the columns.
+          assert.equal(await tr.locator('[data-tr-row="u1"] .trep-row-meta').count(), 0);
+          // The Total row: distinct across everyone, not a sum of the column.
+          assert.deepEqual(
+            await tr
+              .locator('[data-tr-total] .trep-num')
+              .evaluateAll((els) => els.map((el) => el.textContent)),
+            ['2', '2', '21h'],
+          );
+          // Drafts in: Confirmed and Drafted join — six cells in every row.
+          await tr.locator('[data-tr-drafts="include"]').click();
+          await until(() => asked.at(-1)?.searchParams.get('drafts') === 'include');
+          // A new read draws the table afresh, Space first: people first again.
+          await tr.locator('[data-tr-row]').first().waitFor();
+          if ((await tr.locator('[data-tr-row="u1"]').count()) === 0) {
+            await tr.locator('[data-tr-swap]').click();
+          }
+          await tr.locator('[data-tr-row="u1"] .trep-row-toggle').click();
+          await tr.locator('[data-tr-row="u1"] [data-tr-child]').first().waitFor();
+          const cells = await tr
+            .locator('[role="row"]')
+            .evaluateAll((rows) =>
+              rows
+                .filter((r) => !r.classList.contains('trep-row-more'))
+                .map((r) => r.children.length),
+            );
+          assert.ok(cells.length > 4, 'no rows read');
+          assert.deepEqual([...new Set(cells)], [6], `rows of ${cells.join(',')} cells`);
+        }
+        assert.equal(
+          await h.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+          true,
+          'the page scrolls sideways',
+        );
+        // No score of any kind.
+        assert.doesNotMatch(await tr.innerText(), /efficien|score|rank/i);
+        await shoot(h.page, `spread-${String(width)}`);
+      } finally {
+        await done(h);
+      }
+    });
+  }
+
   void test('a lone group opens by itself (LAI-1162)', async () => {
     const asked: URL[] = [];
     const h = await openWith('/insights?tab=time', OWNER_STUB(), asked, (u) => {
