@@ -244,18 +244,6 @@
   line-height: var(--leading-small);
 }
 
-/* A tab's one line above what it holds: *Edit in My day ›* on your own Day. */
-.prof-tab-lead {
-  margin: 0;
-  font-size: var(--text-body);
-}
-
-.prof-tab-lead a {
-  color: var(--accent);
-  font-weight: var(--weight-bold);
-  text-decoration: none;
-}
-
 /* The coloured ring is inline: it is the avatar's own colour (avatar-color.ts). */
 .prof-avatar {
   flex: none;
@@ -1605,18 +1593,6 @@
   border-bottom: 0;
   color: var(--text-primary);
   font-weight: var(--weight-bold);
-}
-
-.prof-hours-note {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--text-small);
-  line-height: var(--leading-body);
-}
-
-.prof-held {
-  gap: 0.75rem;
-  overflow-x: auto;
 }
 
 /* The person's own note on the day (LAI-503), for whoever reads their hours. */

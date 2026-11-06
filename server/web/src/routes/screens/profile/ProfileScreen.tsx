@@ -52,11 +52,10 @@ import { KINDS } from './ManageSections.tsx';
 import { ManageMemberPanel } from './ManageMemberPanel.tsx';
 import { adminControls, anyAdminControl } from './manage-controls.ts';
 import { AvailabilityPopover } from '../my-day/AvailabilityPopover.tsx';
-import { MyDayScreen } from '../my-day/MyDayScreen.tsx';
 import { dayIn, isDay } from '../my-day/my-day-derive.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { TimeReport } from '../../../components/time-report/TimeReport.tsx';
-import { PersonLocalActivity } from './PersonLocalActivity.tsx';
+import { DayPanel } from './day/DayPanel.tsx';
 import { DeveloperSetupTab, OwnDeveloperSetupTab } from './DeveloperSetupTab.tsx';
 import { toFixLabel } from './own-setup-derive.ts';
 import { useOwnSetup } from './use-own-setup.ts';
@@ -475,44 +474,17 @@ export function ProfileScreen({
         }
       />
 
-      {shownTab === 'day' &&
-        (own ? (
-          <>
-            <p className="prof-tab-lead">
-              <a
-                href="/my-day"
-                data-profile-edit-day
-                onClick={follow(() => {
-                  onNavigate('/my-day');
-                })}
-              >
-                Edit in My day ›
-              </a>
-            </p>
-            <MyDayScreen
-              key={user.id}
-              me={me}
-              user={user.id}
-              embedded={{ name: user.name }}
-              day={day}
-              onDay={onDay}
-              onNavigate={onNavigate}
-            />
-          </>
-        ) : (
-          <>
-            <MyDayScreen
-              key={user.id}
-              me={me}
-              user={user.id}
-              embedded={{ name: user.name }}
-              day={day}
-              onDay={onDay}
-              onNavigate={onNavigate}
-            />
-            <PersonLocalActivity key={`held-${user.id}`} userId={user.id} name={user.name} />
-          </>
-        ))}
+      {shownTab === 'day' && (
+        <DayPanel
+          key={user.id}
+          userId={user.id}
+          own={own}
+          first={first}
+          day={day}
+          onDay={onDay}
+          onNavigate={onNavigate}
+        />
+      )}
 
       {shownTab === 'time' &&
         (own ? (
@@ -567,6 +539,7 @@ export function ProfileScreen({
           <ActivityCard
             userId={user.id}
             name={user.name}
+            joinedAt={user.created_at}
             viewerId={me.id}
             canManageOrg={gates.org('org.developer_insights.set')}
             sharing={profile.activity_sharing}

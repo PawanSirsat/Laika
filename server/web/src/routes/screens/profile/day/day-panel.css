@@ -1,0 +1,572 @@
+/*
+ * The profile's Day tab (LAI-1155; the owner's *Laika Profile*, frames D and
+ * G): a card with a date stepper, four tiles, a timeline and its list.
+ * Tokens only — both themes come from them; `theme-single-source.test.ts`
+ * forbids a colour literal here. A block takes its kind's colour from the
+ * same `--kind-*` tokens My day's Timeline uses; a draft has no kind, so it is
+ * drawn in the neutral border colour, dashed and hatched.
+ */
+.pday {
+  container: pday / inline-size;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.125rem 1.125rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-card);
+}
+
+/* ------------------------------------------------------------------ head */
+
+.pday-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+
+.pday-step {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.pday-round {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.pday-round:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pday-chev {
+  width: 0.875rem;
+  height: 0.875rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pday-date {
+  padding: 0 0.375rem;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.pday-today {
+  margin-left: 0.25rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.pday-round:focus-visible,
+.pday-today:focus-visible,
+.pday-edit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pday-head-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pday-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.pday-edit:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.pday-edit .pday-chev {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.pday-readonly {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+/* ----------------------------------------------------------------- empty */
+
+.pday-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 2.5rem 1rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-control);
+  text-align: center;
+}
+
+.pday-empty-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.pday-empty-body {
+  margin: 0;
+  max-width: 32rem;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+}
+
+/* ----------------------------------------------------------------- tiles */
+
+.pday-tiles {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: 0.5rem;
+}
+
+.pday-tile {
+  min-width: 0;
+  padding: 0.5rem 0.6875rem;
+  background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.pday-tile dt {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+}
+
+.pday-tile dd {
+  margin: 0.125rem 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+/* -------------------------------------------------------------- timeline */
+
+.pday-tl {
+  --pday-lane-col: 4.5rem;
+  display: grid;
+  grid-template-columns: var(--pday-lane-col) minmax(0, 1fr);
+  row-gap: 0.375rem;
+  column-gap: 0.625rem;
+}
+
+.pday-lane-name {
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.pday-lane-agents {
+  color: var(--text-muted);
+}
+
+.pday-lane {
+  position: relative;
+  height: 3.25rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.pday-hour {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-subtle);
+}
+
+/* The kind's three tokens, on a block and on a list row's dot. */
+.pday [data-kind='work'] {
+  --pday-k: var(--kind-work);
+  --pday-k-bg: var(--kind-work-bg);
+}
+.pday [data-kind='meeting'] {
+  --pday-k: var(--kind-meeting);
+  --pday-k-bg: var(--kind-meeting-bg);
+}
+.pday [data-kind='thinking'] {
+  --pday-k: var(--kind-thinking);
+  --pday-k-bg: var(--kind-thinking-bg);
+}
+.pday [data-kind='research'] {
+  --pday-k: var(--kind-research);
+  --pday-k-bg: var(--kind-research-bg);
+}
+.pday [data-kind='pairing'] {
+  --pday-k: var(--kind-pairing);
+  --pday-k-bg: var(--kind-pairing-bg);
+}
+.pday [data-kind='review'] {
+  --pday-k: var(--kind-review);
+  --pday-k-bg: var(--kind-review-bg);
+}
+.pday [data-kind='support'] {
+  --pday-k: var(--kind-support);
+  --pday-k-bg: var(--kind-support-bg);
+}
+.pday [data-kind='admin'] {
+  --pday-k: var(--kind-admin);
+  --pday-k-bg: var(--kind-admin-bg);
+}
+
+.pday-block {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  box-sizing: border-box;
+  min-width: 4px;
+  padding: 0 0.375rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  overflow: hidden;
+  border: 1px solid var(--pday-k);
+  border-radius: 5px;
+  background: var(--pday-k-bg);
+  color: var(--text-primary);
+}
+
+/* A draft: the API gives it no kind, so no kind's colour is guessed for it. */
+.pday-block[data-kind='none'] {
+  --pday-k: var(--text-muted);
+  --pday-k-bg: var(--bg-column);
+}
+
+.pday-block[data-pday-block='draft'] {
+  border-style: dashed;
+  background: repeating-linear-gradient(135deg, var(--pday-k-bg) 0 4px, var(--bg-card) 4px 8px);
+}
+
+.pday-block-label,
+.pday-block-sub {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+}
+
+.pday-block-label {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+}
+
+.pday-block-sub {
+  color: var(--text-secondary);
+}
+
+.pday-now {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--overdue);
+}
+
+.pday-agents {
+  position: relative;
+  height: 1.75rem;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.pday-agent {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  box-sizing: border-box;
+  min-width: 4px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: var(--bg-column);
+}
+
+.pday-agent[data-on-card='false'] {
+  border-style: dashed;
+  background: transparent;
+}
+
+.pday-ticks {
+  position: relative;
+  height: 1rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.pday-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.pday-tick[data-edge='start'] {
+  transform: none;
+}
+
+.pday-tick[data-edge='end'] {
+  transform: translateX(-100%);
+}
+
+/* ---------------------------------------------------------------- legend */
+
+.pday-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 1rem;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.pday-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.pday-swatch {
+  width: 1rem;
+  height: 0.75rem;
+  border-radius: 3px;
+  border: 1px solid var(--kind-work);
+  background: var(--kind-work-bg);
+}
+
+.pday-swatch[data-swatch='draft'] {
+  border-style: dashed;
+  background: repeating-linear-gradient(135deg, var(--kind-work-bg) 0 3px, var(--bg-card) 3px 6px);
+}
+
+/* ----------------------------------------------------------------- table */
+
+.pday-table {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pday-row {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr) 6.5rem 4.5rem 6.75rem;
+  column-gap: 0.75rem;
+  row-gap: 0.25rem;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0.375rem 0.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pday-row-head {
+  min-height: 0;
+  padding: 0.4375rem 0.25rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+}
+
+.pday-when {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.pday-what {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.pday-key {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.pday-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.pday-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.pday-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+  background: var(--pday-k);
+}
+
+.pday-num {
+  text-align: right;
+}
+
+.pday-dur {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.pday-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.pday-status[data-status='confirmed'] {
+  border-style: solid;
+  border-color: var(--chip-green-border);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+}
+
+/* ---------------------------------------------------------------- agents */
+
+.pday-agents-line {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-muted);
+}
+
+.pday-agents-line b {
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.pday-prompt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.125rem;
+  padding: 0 0.25rem;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+/* ----------------------------------------------------------------- phone */
+
+/*
+ * The design's phone frame (pl): no labels on the blocks, the axis every
+ * three hours, a narrower lane name, and the list in three columns with What
+ * across the top of each row.
+ */
+@container pday (max-width: 36rem) {
+  .pday-tl {
+    --pday-lane-col: 3.5rem;
+  }
+
+  .pday-block-label,
+  .pday-block-sub {
+    display: none;
+  }
+
+  .pday-tick[data-minor='true'] {
+    display: none;
+  }
+
+  .pday-row-head {
+    display: none;
+  }
+
+  .pday-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .pday-what {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .pday-status-cell {
+    grid-column: 1 / -1;
+  }
+}
