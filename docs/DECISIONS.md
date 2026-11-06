@@ -7108,3 +7108,22 @@ each.
    (§11.4.2.1; `ratings` and `POST …/ratings` stay in the API, nothing is deleted), the
    Recent decisions card, the Delivery chart card (it becomes the Work card's one-line
    *Delivered · 12 weeks* footer), and Current load with *Show current load*.
+
+## D-140 — The profile's Day tab is the embedded My day, not the design's panel
+
+**Date:** 2026-11-06 · **Decided by:** Pawan (owner), after LAI-1155 shipped; recorded by
+Belka. Amends D-139 (the Day tab only; items 6 and 7 stand). Task LAI-1161.
+
+**Context.** LAI-1155 replaced the profile's Day tab — until then the person's My day,
+embedded — with the compact day panel drawn in the owner's design *Laika Profile*. The
+owner's word on seeing it: the Day tab should stay the earlier one, the same as My day,
+with no change.
+
+**Decision.**
+
+1. **Day is My day, embedded** (§11.4.2.1): your own with *Edit in My day ›* above it;
+   someone else's read-only, with their shared local activity beneath, as before LAI-1155.
+2. **The compact day panel is withdrawn** (`profile/day/`), with its tests. The design file
+   is not changed; its Day frame is simply not built.
+3. **Your own Time report names you** (LAI-1161): with no subject the shared report reads as
+   everyone's and was never asked for, so the tab sat on its skeleton.

@@ -848,6 +848,42 @@ void describe('the other two places, for the evidence', () => {
     queue: { projects_led: 0, waiting: 0, oldest_waiting_since: null, projects: [] },
   };
 
+  // Your own profile's Time report names you, as My day's does (LAI-1161):
+  // without a subject the report would be everyone's, so it was never asked
+  // for and the tab sat on its skeleton for ever.
+  void test('your own profile: the Time report tab asks for you and draws', async () => {
+    const data = weekData();
+    const ownProfile = {
+      ...PROFILE,
+      user: { ...PROFILE.user, id: 'u1', name: 'Ada Lovelace', email: 'a@example.com' },
+    };
+    const asked: URL[] = [];
+    const stub: ApiStub = {
+      ...weekStub(data),
+      '/api/v1/users/u1/profile': ownProfile,
+      '/api/v1/me/profile': ownProfile,
+    };
+    const h = await open(`/people?user=u1&tab=time&day=${TODAY}`, stub, {
+      before: async (page) => {
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        page.on('request', (r) => {
+          if (r.url().includes('/api/v1/time/report?')) asked.push(new URL(r.url()));
+        });
+      },
+    });
+    try {
+      const tr = h.page.locator('[data-time-report="me"]');
+      await tr.locator('[data-tr-stat="tracked"]').waitFor({ timeout: 20_000 });
+      assert.ok(asked.length > 0, 'the report was asked for');
+      assert.ok(
+        asked.every((u) => u.searchParams.get('members') === 'u1'),
+        `every read names you: ${asked.map((u) => u.search).join(' ')}`,
+      );
+    } finally {
+      await done(h);
+    }
+  });
+
   for (const theme of ['dark', 'light'] as const) {
     for (const width of [1440, 390]) {
       void test(`${theme} at ${String(width)}: a person's Time report tab, and My day's week`, async () => {

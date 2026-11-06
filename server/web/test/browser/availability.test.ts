@@ -746,11 +746,7 @@ void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-
         await h.page
           .locator(`[data-profile-tab="${tab}"][aria-current="page"]`)
           .waitFor({ timeout: 20_000 });
-        if (tab === 'day') {
-          await h.page
-            .locator('[data-profile-day] :is([data-pday-table], [data-pday-empty])')
-            .waitFor({ timeout: 20_000 });
-        }
+        if (tab === 'day') await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
         await quiet(h.page);
         assert.equal(lists(h), 0, `?tab=${tab} read the whole list`);
         // Once: the pill's read, which This week reuses rather than reading again.
@@ -768,10 +764,8 @@ void describe('the profile: the pill in the head card (D-137, D-139 item 8, LAI-
       profileStub({ id: 'u1', name: 'Ada Owner', role: 'owner' }),
     );
     try {
-      // The profile's Day panel (LAI-1155): the day, and nothing of the reader's own.
-      await h.page
-        .locator('[data-profile-day] :is([data-pday-table], [data-pday-empty])')
-        .waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-day-tab="overview"]').click();
       await quiet(h.page);
       assert.equal(await h.page.locator('[data-my-availability]').count(), 0);
       assert.equal(await h.page.locator('[data-for-you]').count(), 0);
